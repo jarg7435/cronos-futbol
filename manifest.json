@@ -1,0 +1,17 @@
+{
+  "name": "Cronos Fútbol",
+  "short_name": "Cronos",
+  "description": "Control de tiempos para fútbol",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a0e14",
+  "theme_color": "#58a6ff",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/53/53283.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

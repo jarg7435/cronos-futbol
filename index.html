@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cronos Fútbol - Coach Assistant</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0a0e14">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Outfit:wght@600&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <header>
+        <div class="logo">
+            <h1 style="font-family: 'Outfit', sans-serif; color: var(--primary);">CRONOS FÚTBOL</h1>
+        </div>
+        <div class="master-clock-container">
+            <div id="master-timer" style="font-size: 1.5rem; font-weight: bold;">00:00</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">TIEMPO GLOBAL</div>
+        </div>
+        <div class="score-board">
+            <span id="team-a-name">LOCAL</span>
+            <span id="score">0 - 0</span>
+            <span id="team-b-name">VISITANTE</span>
+        </div>
+        <div class="header-actions">
+            <button id="btn-play-pause" class="btn primary">EMPEZAR</button>
+            <button id="btn-export" class="btn">DESCARGAR REGISTRO</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <aside class="sidebar" ondrop="dropToBench(event)" ondragover="allowDrop(event)">
+            <div class="config-section">
+                <h3>CONFIGURACIÓN</h3>
+                <div class="form-group">
+                    <label>Modalidad</label>
+                    <select id="match-mode">
+                        <option value="f7">Fútbol 7 (2x35)</option>
+                        <option value="f11">Fútbol 11 (2x45)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="bench-section">
+                <h3>BANQUILLO</h3>
+                <div id="bench-list" class="bench-container" ondrop="dropToBench(event)" ondragover="allowDrop(event)">
+                    <!-- Suplentes aquí -->
+                </div>
+            </div>
+        </aside>
+
+        <main class="field-area" id="field-dropzone" ondrop="dropToField(event)" ondragover="allowDrop(event)">
+            <div class="pitch" id="football-pitch">
+                <div class="center-circle"></div>
+                <!-- Titulares aquí -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="setup-modal" class="modal">
+        <!-- Contenido dinámico via JS -->
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
