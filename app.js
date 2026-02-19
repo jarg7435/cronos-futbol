@@ -231,8 +231,9 @@ function handleTouchMove(e, player) {
     const x = ((touch.clientX - rect.left) / rect.width) * 100;
     const y = ((touch.clientY - rect.top) / rect.height) * 100;
 
-    chip.style.left = `calc(${x}% - 30px)`;
-    chip.style.top = `calc(${y}% - 30px)`;
+    chip.style.left = `${x}%`;
+    chip.style.top = `${y}%`;
+    chip.style.transform = `translate(-50%, -50%)`;
 }
 
 function handleTouchEnd(e, player) {
@@ -242,6 +243,12 @@ function handleTouchEnd(e, player) {
 
     const touch = e.changedTouches[0];
 
+    // Hide chip temporarily to detect what's underneath
+    const originalDisplay = chip.style.display;
+    chip.style.display = 'none';
+    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY) || document.body;
+    chip.style.display = originalDisplay;
+
     // Create a fake event object to reuse drop logic
     const fakeEvent = {
         preventDefault: () => { },
@@ -250,7 +257,7 @@ function handleTouchEnd(e, player) {
         dataTransfer: {
             getData: () => player.id
         },
-        target: document.elementFromPoint(touch.clientX, touch.clientY) || document.body
+        target: targetEl
     };
 
     // Determine where it was dropped
@@ -288,22 +295,20 @@ function editPlayerNumber(id) {
 
 const FORMATIONS = {
     f7: [
-        { x: 50, y: 85 }, // GK
-        { x: 25, y: 70 }, { x: 75, y: 70 }, // DEF
+        { x: 50, y: 88 }, // GK
+        { x: 30, y: 70 }, { x: 70, y: 70 }, // DEF
         { x: 20, y: 45 }, { x: 50, y: 45 }, { x: 80, y: 45 }, // MID
-        { x: 50, y: 20 }  // FWD
+        { x: 50, y: 15 }  // FWD
     ],
     f11: [
-        { x: 50, y: 90 }, // GK
-        { x: 15, y: 75 }, { x: 35, y: 75 }, { x: 65, y: 75 }, { x: 85, y: 75 }, // DEF
-        { x: 30, y: 50 }, { x: 50, y: 50 }, { x: 70, y: 50 }, // MID
-        { x: 20, y: 25 }, { x: 80, y: 25 }, { x: 50, y: 15 }  // FWD
+        { x: 50, y: 92 }, // GK
+        { x: 15, y: 75 }, { x: 38, y: 78 }, { x: 62, y: 78 }, { x: 85, y: 75 }, // DEF
+        { x: 30, y: 50 }, { x: 50, y: 55 }, { x: 70, y: 50 }, // MID
+        { x: 20, y: 25 }, { x: 80, y: 25 }, { x: 50, y: 12 }  // FWD
     ]
 };
 
 function placeOnField(chip, player) {
-    const pitch = document.getElementById('football-pitch');
-
     if (player.x === 0 && player.y === 0) {
         const fieldPlayers = players.filter(p => p.status === 'field');
         const index = fieldPlayers.indexOf(player);
@@ -320,8 +325,10 @@ function placeOnField(chip, player) {
     }
 
     // Anchor calculation to center the chip on the point
-    chip.style.left = `calc(${player.x}% - 30px)`;
-    chip.style.top = `calc(${player.y}% - 30px)`;
+    // We use px for the offset to keep it centered regardless of scale
+    chip.style.left = `${player.x}%`;
+    chip.style.top = `${player.y}%`;
+    chip.style.transform = `translate(-50%, -50%)`;
 }
 
 function updatePlayerUI(player) {
