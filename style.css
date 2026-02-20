@@ -33,51 +33,28 @@ body {
     flex-direction: column;
 }
 
-/* Forcing horizontal scroll on small devices instead of breaking layout */
-@media (max-width: 1024px) {
+@media (max-width: 768px) {
     body {
-        overflow-x: auto;
-        /* Allow horizontal scroll */
+        min-width: unset;
+        overflow-x: hidden;
+        overflow-y: auto;
     }
 
-    /* Optional: Scale down slightly on tablets to fit more */
     .main-container {
-        min-width: 1024px;
-        /* Canvas size */
+        flex-direction: column;
+        min-width: unset;
     }
-}
 
-/* Adjustments for touch targets */
-.btn {
-    min-height: 44px;
-    /* Touch friendly */
-}
+    .sidebar,
+    .sidebar-right {
+        width: 100% !important;
+        border: none;
+        border-bottom: 1px solid var(--glass-border);
+    }
 
-.sidebar {
-    width: 100% !important;
-    height: auto !important;
-    min-height: 150px;
-    border-right: none;
-    border-top: 1px solid var(--glass-border);
-    padding: 0.4rem;
-    flex-shrink: 0;
-}
-
-.field-area {
-    height: auto;
-    flex: 1;
-    min-height: 400px;
-    /* More height for the pitch */
-    padding: 1rem 0.4rem;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.pitch {
-    width: 100% !important;
-    max-width: 340px;
-    margin: auto;
+    .field-area {
+        min-height: 500px;
+    }
 }
 
 header {
@@ -99,8 +76,7 @@ header {
 
 .sidebar,
 .sidebar-right {
-    width: 250px;
-    /* Reduced width for 3-col layout */
+    width: 280px;
     background: var(--bg-card);
     border-right: 1px solid var(--glass-border);
     display: flex;
@@ -292,54 +268,18 @@ header {
 }
 
 .bench-container .player-chip {
-    position: static;
-    /* Override absolute */
-    width: 100%;
-    height: auto;
-    min-height: 50px;
-    border-radius: 8px;
-    flex-direction: row;
-    /* Horizontal layout */
-    justify-content: space-between;
-    padding: 0 1rem;
-    margin: 0 !important;
-    /* Override inline style margin */
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    position: relative;
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+    margin: 0.5rem auto !important;
 }
 
-/* Reset children positioning for bench */
-.bench-container .player-chip .player-timer,
-.bench-container .player-chip .player-name {
-    position: static;
-    /* Not absolute anymore */
-    background: none;
-    border: none;
-    padding: 0;
-    transform: none;
-}
-
-.bench-container .player-chip .player-number {
-    order: 1;
-    font-size: 1.2rem;
-    width: 30px;
-    text-align: center;
-}
-
-.bench-container .player-chip .player-name {
-    order: 2;
-    flex: 1;
-    text-align: left;
-    padding-left: 1rem;
-    font-size: 0.9rem;
-    color: white;
-    white-space: normal;
-    /* Allow wrap if needed */
-}
-
-.bench-container .player-chip .player-timer {
-    order: 3;
-    font-size: 0.9rem;
-    color: var(--text-muted);
+/* Ensure bench items are centered and look like cards */
+.bench-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 
