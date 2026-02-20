@@ -369,9 +369,6 @@ function renderPlayers() {
             } else {
                 benchAway.appendChild(chip);
             }
-            chip.style.position = 'static';
-            chip.style.margin = 'auto';
-            chip.style.transform = 'none';
         }
     });
 }
