@@ -301,8 +301,10 @@ header {
 /* --- BENCH SPECIFIC STYLES --- */
 .bench-container {
     display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
     padding: 0.5rem;
     overflow-y: auto;
 }
@@ -312,8 +314,8 @@ header {
     width: 60px;
     height: 60px;
     flex-shrink: 0;
-    /* Margin to allow labels (top/bottom -25px) to breathe */
-    margin: 35px auto !important;
+    /* Margin to allow labels (top/bottom -25px) to breathe, horizontal for 2-col */
+    margin: 35px 15px !important;
     display: flex;
     flex-direction: column;
     justify-content: center;
