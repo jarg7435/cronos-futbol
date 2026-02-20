@@ -6,8 +6,13 @@ let timerInterval = null;
 let currentMode = 'f7'; // f7 or f11
 
 const COLORS = {
-    primary: '#58a6ff',
-    secondary: '#f0883e'
+    home: { primary: '#58a6ff', secondary: '#f0883e', shorts: '#ffffff', text: '#ffffff' },
+    away: { primary: '#ff5858', secondary: '#f0883e', shorts: '#000000', text: '#ffffff' }
+};
+
+const TEAM_NAMES = {
+    home: 'LOCAL',
+    away: 'VISITANTE'
 };
 
 // --- CORE FUNCTIONS ---
@@ -20,7 +25,8 @@ function init() {
 
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js')
+        // Use relative path for GitHub Pages compatibility
+        navigator.serviceWorker.register('./sw.js', { scope: './' })
             .then(() => console.log('Cronos PWA Ready'))
             .catch(err => console.log('SW Error:', err));
     }
@@ -30,17 +36,66 @@ function openSetupModal() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content">
+        <div class="modal-content" style="width: 700px; max-width: 95%;">
             <h2>Configuración del Encuentro</h2>
-            <div class="form-group">
-                <label>Nombre Equipo Local</label>
-                <input type="text" id="setup-team-name" value="MIS CRONOS">
+            
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                <!-- HOME CONFIG -->
+                <div style="flex: 1; min-width: 250px;">
+                    <h3>Equipo Local</h3>
+                    <div class="form-group">
+                        <label>Cargar Guardado</label>
+                        <select id="saved-teams-home" onchange="loadTeamFromDropdown('home')">
+                            <option value="">-- Seleccionar --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" id="setup-home-name" value="LOCAL">
+                    </div>
+                    <div class="form-group">
+                        <label>Camiseta</label>
+                        <input type="color" id="setup-home-color" value="#58a6ff">
+                    </div>
+                    <div class="form-group">
+                        <label>Pantalón</label>
+                        <input type="color" id="setup-home-shorts" value="#ffffff">
+                    </div>
+                    <div class="form-group">
+                        <label>Color Número</label>
+                        <input type="color" id="setup-home-text" value="#ffffff">
+                    </div>
+                </div>
+
+                <!-- AWAY CONFIG -->
+                <div style="flex: 1; min-width: 250px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                    <h3>Equipo Visitante</h3>
+                    <div class="form-group">
+                        <label>Cargar Guardado</label>
+                        <select id="saved-teams-away" onchange="loadTeamFromDropdown('away')">
+                            <option value="">-- Seleccionar --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" id="setup-away-name" value="VISITANTE">
+                    </div>
+                    <div class="form-group">
+                        <label>Camiseta</label>
+                        <input type="color" id="setup-away-color" value="#ff5858">
+                    </div>
+                     <div class="form-group">
+                        <label>Pantalón</label>
+                        <input type="color" id="setup-away-shorts" value="#000000">
+                    </div>
+                    <div class="form-group">
+                        <label>Color Número</label>
+                        <input type="color" id="setup-away-text" value="#ffffff">
+                    </div>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Color Camiseta</label>
-                <input type="color" id="setup-team-color" value="#58a6ff">
-            </div>
-            <div class="form-group">
+
+            <div class="form-group" style="margin-top: 1rem;">
                 <label>Modalidad</label>
                 <select id="setup-mode">
                     <option value="f7">Fútbol 7 (2 tiempos de 35 min)</option>
@@ -50,32 +105,136 @@ function openSetupModal() {
             <button class="btn primary" onclick="confirmSetup()">INICIAR PARTIDO</button>
         </div>
     `;
+    populateSavedTeams('home');
+    populateSavedTeams('away');
 }
 
 function confirmSetup() {
-    const teamName = document.getElementById('setup-team-name').value;
-    const teamColor = document.getElementById('setup-team-color').value;
+    // Capture Home
+    TEAM_NAMES.home = document.getElementById('setup-home-name').value.toUpperCase();
+    COLORS.home.primary = document.getElementById('setup-home-color').value;
+    COLORS.home.shorts = document.getElementById('setup-home-shorts').value;
+    COLORS.home.text = document.getElementById('setup-home-text').value;
+
+    // Capture Away
+    TEAM_NAMES.away = document.getElementById('setup-away-name').value.toUpperCase();
+    COLORS.away.primary = document.getElementById('setup-away-color').value;
+    COLORS.away.shorts = document.getElementById('setup-away-shorts').value;
+    COLORS.away.text = document.getElementById('setup-away-text').value;
+
     const mode = document.getElementById('setup-mode').value;
 
-    document.getElementById('team-a-name').textContent = teamName.toUpperCase();
-    COLORS.primary = teamColor;
+    document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
+    document.getElementById('team-b-name').textContent = TEAM_NAMES.away;
+
     currentMode = mode;
-    document.getElementById('match-mode').value = mode;
 
     spawnInitialPlayers();
     renderPlayers();
     document.getElementById('setup-modal').style.display = 'none';
 }
 
+// --- PERSISTENCE ---
+
+function populateSavedTeams(teamKey) {
+    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
+    if (!dropdown) return;
+
+    // Database is shared? Or separate? 
+    // "Base de datos... misma para los equipos..."
+    // So one unique list of saved teams.
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+
+    dropdown.innerHTML = '<option value="">-- Cargar --</option>';
+    teams.forEach((team, index) => {
+        const opt = document.createElement('option');
+        opt.value = index;
+        opt.textContent = team.name;
+        dropdown.appendChild(opt);
+    });
+}
+
+function loadTeamFromDropdown(teamKey) {
+    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
+    const index = dropdown.value;
+    if (index === "") return;
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const team = teams[index];
+
+    if (team) {
+        document.getElementById(`setup-${teamKey}-name`).value = team.name;
+        document.getElementById(`setup-${teamKey}-color`).value = team.color;
+        document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
+        document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
+
+        // Save loaded roster to temporary window object to be picked up by spawn
+        if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
+        window.loadedTeamPlayers[teamKey] = team.players;
+    }
+}
+
+function saveCurrentTeam() {
+    // We need to ask WHICH team to save.
+    // Simple prompt for now, or check what user wants.
+    // "Guardar Equipo" button is generic.
+
+    const choice = prompt("¿Qué equipo quieres guardar?\nEscribe '1' para Local\nEscribe '2' para Visitante");
+    if (!choice) return;
+
+    let teamKey = '';
+    if (choice === '1' || choice.toLowerCase() === 'local') teamKey = 'home';
+    else if (choice === '2' || choice.toLowerCase() === 'visitante') teamKey = 'away';
+    else return;
+
+    const teamName = TEAM_NAMES[teamKey];
+    // Filter players by team
+    const currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
+        id: p.id, // ID might be > 100, but that's fine for roster
+        number: p.number,
+        name: p.name
+    }));
+
+    const newTeam = {
+        name: teamName,
+        color: COLORS[teamKey].primary,
+        shortsColor: COLORS[teamKey].shorts,
+        textColor: COLORS[teamKey].text,
+        players: currentPlayers
+    };
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+
+    // Check if updating existing by name
+    const existingIndex = teams.findIndex(t => t.name === teamName);
+    if (existingIndex >= 0) {
+        if (confirm(`¿Sobrescribir equipo "${teamName}"?`)) {
+            teams[existingIndex] = newTeam;
+        } else {
+            return;
+        }
+    } else {
+        if (teams.length >= 20) {
+            alert('Memoria llena (20 equipos). Borra alguno antes de guardar.');
+            return;
+        }
+        teams.push(newTeam);
+    }
+
+    localStorage.setItem('cronos_teams', JSON.stringify(teams));
+    alert(`Equipo ${teamName} guardado.`);
+
+    // Refresh dropdowns if still in setup 
+    // (but here we are in main game usually)
+}
+
 function setupEventListeners() {
     document.getElementById('btn-play-pause').addEventListener('click', toggleGame);
+    document.getElementById('btn-reset').addEventListener('click', resetMatch);
+    document.getElementById('btn-save-team').addEventListener('click', saveCurrentTeam);
     document.getElementById('btn-export').addEventListener('click', exportData);
-    document.getElementById('match-mode').addEventListener('change', (e) => {
-        console.log("Changing mode to:", e.target.value);
-        currentMode = e.target.value;
-        resetGame();
-    });
 
+    // Match mode is now handled in Setup Modal only
     // Hover feedback
     const dropZones = ['.sidebar', '.field-area'];
     dropZones.forEach(selector => {
@@ -89,25 +248,59 @@ function setupEventListeners() {
 }
 
 function spawnInitialPlayers() {
-    // For prototype, we'll auto-generate some players
-    // F7 = 7 Starters, 7 Subs per team. Total 14.
-    // For simplicity, we'll manage 1 team (the directed team)
+    players = [];
     const count = currentMode === 'f7' ? 14 : 18;
     const startersCount = currentMode === 'f7' ? 7 : 11;
 
-    players = [];
-    for (let i = 1; i <= count; i++) {
-        players.push({
-            id: i,
-            number: i,
-            name: `Jugador ${i}`,
-            status: i <= startersCount ? 'field' : 'bench',
-            time: 0,
-            color: COLORS.primary,
-            history: [],
-            x: 0, y: 0 // field relative coords
-        });
-    }
+    const createTeam = (teamKey, startId) => {
+        const teamColors = COLORS[teamKey];
+        const savedRoster = window.loadedTeamPlayers ? window.loadedTeamPlayers[teamKey] : null;
+
+        if (savedRoster) {
+            savedRoster.forEach((savedP, index) => {
+                // Adjust saved player to current match state
+                players.push({
+                    id: startId + (index + 1),
+                    number: savedP.number,
+                    name: savedP.name,
+                    team: teamKey,
+                    status: index < startersCount ? 'field' : 'bench',
+                    time: 0,
+                    color: teamColors.primary,
+                    shortsColor: teamColors.shorts,
+                    textColor: teamColors.text,
+                    history: [],
+                    x: 0, y: 0
+                });
+            });
+            // If saved roster is smaller than count? Fill the rest?
+            // If saved roster is larger? It will be cut off?
+            // For now assume saved roster replaces default spawn completely.
+        } else {
+            // Default generation
+            for (let i = 1; i <= count; i++) {
+                players.push({
+                    id: startId + i,
+                    number: i,
+                    name: `Jugador ${i}`,
+                    team: teamKey,
+                    status: i <= startersCount ? 'field' : 'bench',
+                    time: 0,
+                    color: teamColors.primary,
+                    shortsColor: teamColors.shorts,
+                    textColor: teamColors.text,
+                    history: [],
+                    x: 0, y: 0
+                });
+            }
+        }
+    };
+
+    createTeam('home', 0);
+    createTeam('away', 100);
+
+    // Clear temp storage
+    window.loadedTeamPlayers = null;
 }
 
 function toggleGame() {
@@ -151,26 +344,34 @@ function formatTime(sec) {
 
 function renderPlayers() {
     const pitch = document.getElementById('football-pitch');
-    const bench = document.getElementById('bench-list');
+    const benchHome = document.getElementById('bench-list');
+    const benchAway = document.getElementById('bench-list-away');
 
-    pitch.innerHTML = `
-        <div class="center-circle"></div>
-        <div class="penalty-area top"></div>
-        <div class="penalty-area bottom"></div>
-        <div class="goal-area top"></div>
-        <div class="goal-area bottom"></div>
-    `;
-    bench.innerHTML = '';
+    // Clear all
+    // pitch.innerHTML = `<img ...>` or keep SVG drawing
+    // We need to preserve the pitch markings!
+    const chips = pitch.querySelectorAll('.player-chip');
+    chips.forEach(c => c.remove());
+
+    benchHome.innerHTML = '';
+    benchAway.innerHTML = '';
 
     players.forEach(p => {
         const chip = createPlayerChip(p);
+
         if (p.status === 'field') {
             pitch.appendChild(chip);
             placeOnField(chip, p);
         } else {
-            bench.appendChild(chip);
-            chip.style.position = 'static'; // Let grid/flex flow handle it
+            // Bench
+            if (p.team === 'home') {
+                benchHome.appendChild(chip);
+            } else {
+                benchAway.appendChild(chip);
+            }
+            chip.style.position = 'static';
             chip.style.margin = 'auto';
+            chip.style.transform = 'none';
         }
     });
 }
@@ -180,11 +381,11 @@ function createPlayerChip(player) {
     div.className = 'player-chip';
     div.id = `player-${player.id}`;
     div.draggable = true;
-    div.style.backgroundColor = player.color;
+    div.style.background = `linear-gradient(to bottom, ${player.color} 50%, ${player.shortsColor} 50%)`;
 
     div.innerHTML = `
         <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
-        <div class="player-number" onclick="editPlayerNumber(${player.id})">${player.number}</div>
+        <div class="player-number" onclick="editPlayerNumber(${player.id})" style="color: ${player.textColor || '#ffffff'}">${player.number}</div>
         <div class="player-name" onclick="editPlayerName(${player.id})">${player.name}</div>
     `;
 
@@ -294,33 +495,51 @@ function editPlayerNumber(id) {
 }
 
 const FORMATIONS = {
-    f7: [
-        { x: 50, y: 88 }, // GK
-        { x: 30, y: 70 }, { x: 70, y: 70 }, // DEF
-        { x: 20, y: 45 }, { x: 50, y: 45 }, { x: 80, y: 45 }, // MID
-        { x: 50, y: 15 }  // FWD
-    ],
-    f11: [
-        { x: 50, y: 92 }, // GK
-        { x: 15, y: 75 }, { x: 38, y: 78 }, { x: 62, y: 78 }, { x: 85, y: 75 }, // DEF
-        { x: 30, y: 50 }, { x: 50, y: 55 }, { x: 70, y: 50 }, // MID
-        { x: 20, y: 25 }, { x: 80, y: 25 }, { x: 50, y: 12 }  // FWD
-    ]
+    f7: {
+        home: [
+            { x: 50, y: 88 }, // GK
+            { x: 30, y: 70 }, { x: 70, y: 70 }, // DEF
+            { x: 20, y: 45 }, { x: 50, y: 45 }, { x: 80, y: 45 }, // MID
+            { x: 50, y: 25 }  // FWD
+        ],
+        away: [
+            { x: 50, y: 12 }, // GK (Top)
+            { x: 30, y: 30 }, { x: 70, y: 30 }, // DEF
+            { x: 20, y: 55 }, { x: 50, y: 55 }, { x: 80, y: 55 }, // MID
+            { x: 50, y: 75 }  // FWD
+        ]
+    },
+    f11: {
+        home: [
+            { x: 50, y: 92 }, // GK
+            { x: 15, y: 75 }, { x: 38, y: 78 }, { x: 62, y: 78 }, { x: 85, y: 75 }, // DEF
+            { x: 30, y: 50 }, { x: 50, y: 55 }, { x: 70, y: 50 }, // MID
+            { x: 20, y: 25 }, { x: 80, y: 25 }, { x: 50, y: 12 }  // FWD
+        ],
+        away: [
+            { x: 50, y: 8 }, // GK (Top)
+            { x: 15, y: 25 }, { x: 38, y: 22 }, { x: 62, y: 22 }, { x: 85, y: 25 }, // DEF
+            { x: 30, y: 50 }, { x: 50, y: 45 }, { x: 70, y: 50 }, // MID
+            { x: 20, y: 75 }, { x: 80, y: 75 }, { x: 50, y: 88 }  // FWD
+        ]
+    }
 };
 
 function placeOnField(chip, player) {
     if (player.x === 0 && player.y === 0) {
-        const fieldPlayers = players.filter(p => p.status === 'field');
+        // Auto-position logic
+        // Filter players of SAME TEAM on field
+        const fieldPlayers = players.filter(p => p.status === 'field' && p.team === player.team);
         const index = fieldPlayers.indexOf(player);
-        const formation = FORMATIONS[currentMode];
+        const formation = FORMATIONS[currentMode][player.team];
 
         if (formation && formation[index]) {
             player.x = formation[index].x;
             player.y = formation[index].y;
         } else {
-            // Fallback grid
-            player.x = 20 + (index % 3) * 30;
-            player.y = 20 + Math.floor(index / 3) * 20;
+            // Fallback
+            player.x = 50;
+            player.y = 50;
         }
     }
 
@@ -338,6 +557,8 @@ function updatePlayerUI(player) {
         timerDiv.textContent = formatTime(player.time);
     }
 }
+
+// --- DRAG & DROP LOGIC (SMART SWAP) ---
 
 // --- DRAG & DROP LOGIC (SMART SWAP) ---
 
@@ -367,7 +588,11 @@ function dropToField(e) {
     if (targetChip && targetChip.id !== `player-${playerId}`) {
         const targetId = targetChip.id.replace('player-', '');
         const targetPlayer = players.find(p => p.id == targetId);
-        handleSmartSwap(player, targetPlayer);
+
+        // Prevent swapping with opp team
+        if (targetPlayer && targetPlayer.team === player.team) {
+            handleSmartSwap(player, targetPlayer);
+        }
     } else {
         player.status = 'field';
         player.x = xPct;
@@ -383,19 +608,40 @@ function dropToBench(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId');
     const player = players.find(p => p.id == playerId);
+    if (!player) return; // or check if player.team === 'home'
+
+    // If trying to drop away player to home bench?
+    if (player.team !== 'home') return;
+
+    handleBenchDrop(e, player);
+}
+
+function dropToAwayBench(e) {
+    e.preventDefault();
+    const playerId = e.dataTransfer.getData('playerId');
+    const player = players.find(p => p.id == playerId);
     if (!player) return;
 
-    const draggedChip = document.getElementById(`player-${playerId}`);
+    if (player.team !== 'away') return;
+
+    handleBenchDrop(e, player);
+}
+
+function handleBenchDrop(e, player) {
+    const draggedChip = document.getElementById(`player-${player.id}`);
     draggedChip.style.display = 'none';
     const targetEl = document.elementFromPoint(e.clientX, e.clientY);
     draggedChip.style.display = 'flex';
 
     const targetChip = targetEl?.closest('.player-chip');
 
-    if (targetChip && targetChip.id !== `player-${playerId}`) {
+    if (targetChip && targetChip.id !== `player-${player.id}`) {
         const targetId = targetChip.id.replace('player-', '');
         const targetPlayer = players.find(p => p.id == targetId);
-        handleSmartSwap(player, targetPlayer);
+
+        if (targetPlayer && targetPlayer.team === player.team) {
+            handleSmartSwap(player, targetPlayer);
+        }
     } else {
         player.status = 'bench';
         player.x = 0; player.y = 0;
@@ -433,6 +679,45 @@ function logMovement(player) {
     player.history.push(`${player.status === 'field' ? 'Entra' : 'Sale'} a las ${timestamp}`);
 }
 
+function resetMatch() {
+    if (!confirm("¿Reiniciar partido? Se perderá el tiempo y las estadísticas, pero se mantendrán los jugadores.")) return;
+
+    // Stop timer
+    isRunning = false;
+    clearInterval(timerInterval);
+    masterTime = 0;
+    updateMasterUI();
+
+    // Reset Play button
+    const btn = document.getElementById('btn-play-pause');
+    btn.textContent = 'EMPEZAR';
+    btn.classList.remove('danger');
+
+    // Reset Players Stats & Positions
+    const startersCount = currentMode === 'f7' ? 7 : 11;
+
+    // Separate counters for home and away to assign field status
+    let homeCount = 0;
+    let awayCount = 0;
+
+    players.forEach((p) => {
+        p.time = 0;
+        p.history = [];
+        p.x = 0;
+        p.y = 0;
+
+        if (p.team === 'home') {
+            homeCount++;
+            p.status = homeCount <= startersCount ? 'field' : 'bench';
+        } else {
+            awayCount++;
+            p.status = awayCount <= startersCount ? 'field' : 'bench';
+        }
+    });
+
+    renderPlayers();
+}
+
 function resetGame() {
     masterTime = 0;
     isRunning = false;
@@ -444,18 +729,118 @@ function resetGame() {
     renderPlayers();
 }
 
+function updateScore(team) {
+    const el = document.getElementById(`score-${team}`);
+    const currentVal = el.textContent;
+    const teamName = team === 'home' ? 'LOCAL' : 'VISITANTE';
+
+    const newVal = prompt(`Goles ${teamName}:`, currentVal);
+
+    // Allow empty to cancel, but if it's a number (even 0), update.
+    if (newVal !== null && newVal.trim() !== "" && !isNaN(newVal)) {
+        el.textContent = parseInt(newVal);
+    }
+}
+
 function exportData() {
-    let csv = "Dorsal,Nombre,Entradas/Salidas,Tiempo Total\n";
-    players.forEach(p => {
-        const historyStr = p.history.join(' / ') || 'Sin cambios';
-        csv += `${p.number},${p.name},"${historyStr}",${formatTime(p.time)}\n`;
+    // 1. Pre-process players to parse shifts
+    const processedPlayers = players.map(p => {
+        let shifts = [];
+        let currentEntry = null;
+
+        // Check for implied start (Starter that hasn't subbed out yet OR Starter that subbed out first)
+        const hasImplicitStart = (p.history.length > 0 && p.history[0].includes('Sale')) ||
+            (p.history.length === 0 && (p.time > 0 || p.status === 'field'));
+
+        if (hasImplicitStart) {
+            currentEntry = "00:00";
+        }
+
+        p.history.forEach(h => {
+            const match = h.match(/(\d{2}:\d{2})/);
+            const timestamp = match ? match[1] : "";
+
+            if (h.includes('Entra')) {
+                currentEntry = timestamp;
+            } else if (h.includes('Sale')) {
+                if (currentEntry) {
+                    shifts.push({ in: currentEntry, out: timestamp });
+                    currentEntry = null;
+                } else {
+                    // Fallback
+                    shifts.push({ in: "00:00", out: timestamp });
+                }
+            }
+        });
+
+        // Process active shift
+        if (currentEntry) {
+            shifts.push({ in: currentEntry, out: "" });
+        }
+
+        return { ...p, processedShifts: shifts };
     });
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
+    // 2. Determine Max Shifts for Columns
+    const maxShifts = Math.max(...processedPlayers.map(p => p.processedShifts.length), 0);
+
+    // 3. Build Header
+    const date = new Date().toLocaleDateString();
+    const mode = currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11';
+    const homeName = TEAM_NAMES.home;
+    const awayName = TEAM_NAMES.away;
+    const scoreHome = document.getElementById('score-home').textContent;
+    const scoreAway = document.getElementById('score-away').textContent;
+
+    let csvContent = "";
+    csvContent += `FECHA: ${date}\n`;
+    csvContent += `MODO: ${mode}\n`;
+    csvContent += `ENCUENTRO: ${homeName} vs ${awayName}\n`;
+    csvContent += `RESULTADO: ${scoreHome} - ${scoreAway}\n`;
+    csvContent += `TIEMPO GLOBAL: ${formatTime(masterTime)}\n\n`;
+
+    // Dynamic Headers
+    // Use semicolon for Excel/Region compatibility
+    let header = "EQUIPO;DORSAL;NOMBRE";
+    for (let i = 1; i <= maxShifts; i++) {
+        header += `;ENTRADA ${i};SALIDA ${i}`;
+    }
+    header += ";TIEMPO TOTAL\n";
+    csvContent += header;
+
+    // 4. Build Rows
+    const sortedPlayers = [...processedPlayers].sort((a, b) => {
+        if (a.team !== b.team) return a.team === 'home' ? -1 : 1;
+        return a.number - b.number;
+    });
+
+    sortedPlayers.forEach(p => {
+        const teamLabel = p.team === 'home' ? homeName : awayName;
+        // Escape name just in case
+        const safeName = `"${p.name.replace(/"/g, '""')}"`;
+
+        let row = `${teamLabel};${p.number};${safeName}`;
+
+        // Add Shifts
+        for (let i = 0; i < maxShifts; i++) {
+            const shift = p.processedShifts[i];
+            if (shift) {
+                row += `;${shift.in};${shift.out}`;
+            } else {
+                row += `;;`; // Empty entry/exit
+            }
+        }
+
+        row += `;${formatTime(p.time)}\n`;
+        csvContent += row;
+    });
+
+    // 5. Download with BOM for UTF-8 and correct MIME
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `reporte_cronos_${new Date().toLocaleDateString()}.csv`);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cronos_match_${Date.now()}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();

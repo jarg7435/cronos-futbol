@@ -24,90 +24,63 @@ body {
     background-color: var(--bg-dark);
     color: var(--text-main);
     overflow: hidden;
-    /* We'll use a flex layout for panes */
+    /* Force landscape logic: use min-width to ensure layout integrity */
+    min-width: 1024px;
+    /* If screen is smaller, browser will scroll horizontally (like a game map) */
+
     height: 100dvh;
-    /* Dynamic viewport height for mobile */
     display: flex;
     flex-direction: column;
 }
 
-@media (max-width: 768px) {
-    header {
-        height: auto;
-        padding: 0.5rem;
-        display: grid;
-        grid-template-columns: 1fr 1.2fr;
-        grid-template-areas:
-            "logo actions"
-            "clock score";
-        gap: 0.4rem;
-        align-items: center;
+/* Forcing horizontal scroll on small devices instead of breaking layout */
+@media (max-width: 1024px) {
+    body {
+        overflow-x: auto;
+        /* Allow horizontal scroll */
     }
 
-    .logo {
-        grid-area: logo;
-    }
-
-    .header-actions {
-        grid-area: actions;
-        display: flex;
-        gap: 0.3rem;
-        justify-content: flex-end;
-    }
-
-    .master-clock-container {
-        grid-area: clock;
-        text-align: left;
-    }
-
-    .score-board {
-        grid-area: score;
-        padding: 0.3rem !important;
-        font-size: 0.7rem;
-        justify-content: center;
-        gap: 0.4rem !important;
-    }
-
-    .btn {
-        padding: 0.4rem 0.6rem;
-        font-size: 0.65rem;
-    }
-
+    /* Optional: Scale down slightly on tablets to fit more */
     .main-container {
-        flex-direction: column-reverse;
-        /* Screen is narrow: bench below field */
-        height: calc(100dvh - 100px);
-        /* Using dvh */
-        overflow-y: auto;
-        /* Allow scrolling if content overflows */
+        min-width: 1024px;
+        /* Canvas size */
     }
+}
 
-    .sidebar {
-        width: 100% !important;
-        height: auto !important;
-        min-height: 150px;
-        border-right: none;
-        border-top: 1px solid var(--glass-border);
-        padding: 0.4rem;
-        flex-shrink: 0;
-    }
+/* Adjustments for touch targets */
+.btn {
+    min-height: 44px;
+    /* Touch friendly */
+}
 
-    .field-area {
-        height: auto;
-        flex: 1;
-        min-height: 400px;
-        /* More height for the pitch */
-        padding: 1rem 0.4rem;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
+}
 
-    .pitch {
-        width: 100% !important;
-        max-width: 340px;
-        margin: auto;
-    }
+.sidebar {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 150px;
+    border-right: none;
+    border-top: 1px solid var(--glass-border);
+    padding: 0.4rem;
+    flex-shrink: 0;
+}
+
+.field-area {
+    height: auto;
+    flex: 1;
+    min-height: 400px;
+    /* More height for the pitch */
+    padding: 1rem 0.4rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pitch {
+    width: 100% !important;
+    max-width: 340px;
+    margin: auto;
+}
 }
 
 header {
@@ -127,8 +100,10 @@ header {
     overflow: hidden;
 }
 
-.sidebar {
-    width: 300px;
+.sidebar,
+.sidebar-right {
+    width: 250px;
+    /* Reduced width for 3-col layout */
     background: var(--bg-card);
     border-right: 1px solid var(--glass-border);
     display: flex;
@@ -136,6 +111,11 @@ header {
     padding: 1rem;
     gap: 1rem;
     flex-shrink: 0;
+}
+
+.sidebar-right {
+    border-right: none;
+    border-left: 1px solid var(--glass-border);
 }
 
 .field-area {
@@ -237,11 +217,11 @@ header {
     align-items: center;
     cursor: grab;
     position: absolute;
-    transition: transform 0.2s, box-shadow 0.2s;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    transition: transform 0.1s, box-shadow 0.1s;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     z-index: 10;
+    /* Prevent scrolling when touching players */
     touch-action: none;
-    /* Critical for mobile drag & drop */
     user-select: none;
 }
 
@@ -304,6 +284,67 @@ header {
 .timer-bench {
     color: var(--secondary);
 }
+
+/* --- BENCH SPECIFIC STYLES --- */
+.bench-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    padding: 0.5rem;
+    overflow-y: auto;
+}
+
+.bench-container .player-chip {
+    position: static;
+    /* Override absolute */
+    width: 100%;
+    height: auto;
+    min-height: 50px;
+    border-radius: 8px;
+    flex-direction: row;
+    /* Horizontal layout */
+    justify-content: space-between;
+    padding: 0 1rem;
+    margin: 0 !important;
+    /* Override inline style margin */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Reset children positioning for bench */
+.bench-container .player-chip .player-timer,
+.bench-container .player-chip .player-name {
+    position: static;
+    /* Not absolute anymore */
+    background: none;
+    border: none;
+    padding: 0;
+    transform: none;
+}
+
+.bench-container .player-chip .player-number {
+    order: 1;
+    font-size: 1.2rem;
+    width: 30px;
+    text-align: center;
+}
+
+.bench-container .player-chip .player-name {
+    order: 2;
+    flex: 1;
+    text-align: left;
+    padding-left: 1rem;
+    font-size: 0.9rem;
+    color: white;
+    white-space: normal;
+    /* Allow wrap if needed */
+}
+
+.bench-container .player-chip .player-timer {
+    order: 3;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
 
 @keyframes blink {
     50% {

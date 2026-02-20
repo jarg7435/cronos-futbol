@@ -3,7 +3,9 @@
   "short_name": "Cronos",
   "description": "Control de tiempos para fútbol",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
+  "orientation": "landscape",
   "background_color": "#0a0e14",
   "theme_color": "#58a6ff",
   "icons": [

@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Cronos Fútbol - Coach Assistant</title>
     <link rel="stylesheet" href="style.css?v=1.3">
     <link rel="manifest" href="manifest.json?v=1.3">
@@ -27,26 +28,29 @@
         </div>
         <div class="score-board">
             <span id="team-a-name">LOCAL</span>
-            <span id="score">0 - 0</span>
+            <span id="score-home" onclick="updateScore('home')" style="cursor: pointer;"
+                title="Editar goles local">0</span>
+            <span> - </span>
+            <span id="score-away" onclick="updateScore('away')" style="cursor: pointer;"
+                title="Editar goles visitante">0</span>
             <span id="team-b-name">VISITANTE</span>
         </div>
         <div class="header-actions">
+            <!-- Buttons specific for Home/Away saving could go here but space is tight. 
+                 We'll keep generic save that saves BOTH or asks which one? 
+                 Let's stick to 'Gestionar Equipos' in logic. -->
             <button id="btn-play-pause" class="btn primary">EMPEZAR</button>
-            <button id="btn-export" class="btn">DESCARGAR REGISTRO</button>
+            <button id="btn-reset" class="btn danger">REINICIAR</button>
+            <button id="btn-save-team" class="btn">GUARDAR</button>
+            <button id="btn-export" class="btn">DESCARGAR</button>
         </div>
     </header>
 
     <div class="main-container">
         <aside class="sidebar" ondrop="dropToBench(event)" ondragover="allowDrop(event)">
             <div class="config-section">
-                <h3>CONFIGURACIÓN</h3>
-                <div class="form-group">
-                    <label>Modalidad</label>
-                    <select id="match-mode">
-                        <option value="f7">Fútbol 7 (2x35)</option>
-                        <option value="f11">Fútbol 11 (2x45)</option>
-                    </select>
-                </div>
+                <h3>LOCAL</h3>
+                <!-- Mode selection is now only in Setup Modal -->
             </div>
 
             <div class="bench-section">
@@ -60,9 +64,28 @@
         <main class="field-area" id="field-dropzone" ondrop="dropToField(event)" ondragover="allowDrop(event)">
             <div class="pitch" id="football-pitch">
                 <div class="center-circle"></div>
+                <div class="penalty-area top"></div>
+                <div class="penalty-area bottom"></div>
+                <div class="goal-area top"></div>
+                <div class="goal-area bottom"></div>
                 <!-- Titulares aquí -->
             </div>
         </main>
+
+        <aside class="sidebar-right" ondrop="dropToAwayBench(event)" ondragover="allowDrop(event)">
+            <div class="config-section">
+                <h3>VISITANTE</h3>
+                <!-- No match mode config here, it's global -->
+            </div>
+
+            <div class="bench-section">
+                <h3>BANQUILLO</h3>
+                <div id="bench-list-away" class="bench-container" ondrop="dropToAwayBench(event)"
+                    ondragover="allowDrop(event)">
+                    <!-- Suplentes Visitante aquí -->
+                </div>
+            </div>
+        </aside>
     </div>
 
     <!-- Configuration Modal -->
