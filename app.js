@@ -1,3 +1,38 @@
+// --- SECURITY & INITIALIZATION ---
+const ACCESS_CODE = '1234';
+
+window.onload = () => {
+    if (sessionStorage.getItem('cronos_access') === 'true') {
+        unlockApp();
+    } else {
+        // Prepare enter key listener
+        document.getElementById('access-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validateAccess();
+        });
+    }
+};
+
+function validateAccess() {
+    const input = document.getElementById('access-input').value;
+    const errorEl = document.getElementById('access-error');
+
+    if (input === ACCESS_CODE) {
+        sessionStorage.setItem('cronos_access', 'true');
+        unlockApp();
+    } else {
+        errorEl.textContent = 'Código incorrecto. Inténtelo de nuevo.';
+        document.getElementById('access-input').value = '';
+    }
+}
+
+function unlockApp() {
+    document.getElementById('access-screen').style.display = 'none';
+    document.getElementById('main-header').style.display = 'flex';
+    document.getElementById('main-container').style.display = 'flex';
+    document.body.classList.remove('locked');
+    init(); // Start the app
+}
+
 // --- CONFIGURATION & STATE ---
 let players = [];
 let masterTime = 0; // seconds

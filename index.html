@@ -17,8 +17,25 @@
         rel="stylesheet">
 </head>
 
-<body>
-    <header>
+<body class="locked">
+    <!-- Access Screen -->
+    <div id="access-screen">
+        <div class="access-card">
+            <h1 style="font-family: 'Outfit', sans-serif; color: var(--primary); margin-bottom: 0.5rem;">CRONOS FÚTBOL
+            </h1>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem;">Introduzca el código de acceso
+            </p>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <input type="password" id="access-input" placeholder="••••" maxlength="4"
+                    style="text-align: center; font-size: 2rem; letter-spacing: 0.5rem;">
+            </div>
+            <button class="btn primary" onclick="validateAccess()" style="width: 100%;">ENTRAR</button>
+            <p id="access-error" style="color: var(--danger); font-size: 0.8rem; margin-top: 1rem; height: 1rem;"></p>
+        </div>
+    </div>
+
+    <!-- Main Content (Hidden initially) -->
+    <header id="main-header" style="display: none;">
         <div class="logo">
             <h1 style="font-family: 'Outfit', sans-serif; color: var(--primary);">CRONOS FÚTBOL</h1>
             <span style="font-size: 0.6rem; color: var(--text-muted); display: block; margin-top: -5px;">v1.4 - Mobile
@@ -48,7 +65,7 @@
         </div>
     </header>
 
-    <div class="main-container">
+    <main class="main-container" id="main-container" style="display: none;">
         <aside class="sidebar" ondrop="dropToBench(event)" ondragover="allowDrop(event)">
             <div class="config-section">
                 <h3>LOCAL</h3>
@@ -88,14 +105,14 @@
                 </div>
             </div>
         </aside>
-    </div>
+        </div>
 
-    <!-- Configuration Modal -->
-    <div id="setup-modal" class="modal">
-        <!-- Contenido dinámico via JS -->
-    </div>
+        <!-- Configuration Modal -->
+        <div id="setup-modal" class="modal">
+            <!-- Contenido dinámico via JS -->
+        </div>
 
-    <script src="app.js?v=1.4"></script>
+        <script src="app.js?v=1.4"></script>
 </body>
 
 </html>
