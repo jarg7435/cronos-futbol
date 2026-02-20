@@ -780,7 +780,6 @@ function exportData() {
         let shifts = [];
         let currentEntry = null;
 
-        // Check for implied start (Starter that hasn't subbed out yet OR Starter that subbed out first)
         const hasImplicitStart = (p.history.length > 0 && p.history[0].includes('Sale')) ||
             (p.history.length === 0 && (p.time > 0 || p.status === 'field'));
 
@@ -799,13 +798,11 @@ function exportData() {
                     shifts.push({ in: currentEntry, out: timestamp });
                     currentEntry = null;
                 } else {
-                    // Fallback
                     shifts.push({ in: "00:00", out: timestamp });
                 }
             }
         });
 
-        // Process active shift
         if (currentEntry) {
             shifts.push({ in: currentEntry, out: "" });
         }
@@ -815,8 +812,9 @@ function exportData() {
 
     // 2. Determine Max Shifts for Columns
     const maxShifts = Math.max(...processedPlayers.map(p => p.processedShifts.length), 0);
+    const totalCols = 3 + (maxShifts * 2) + 1; // Team, Number, Name + (In/Out * Max) + TotalTime
 
-    // 3. Build Header
+    // 3. Build Header and Metadata
     const date = new Date().toLocaleDateString();
     const mode = currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11';
     const homeName = TEAM_NAMES.home;
@@ -824,21 +822,24 @@ function exportData() {
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
 
-    let csvContent = "";
-    csvContent += `FECHA: ${date}\n`;
-    csvContent += `MODO: ${mode}\n`;
-    csvContent += `ENCUENTRO: ${homeName} vs ${awayName}\n`;
-    csvContent += `RESULTADO: ${scoreHome} - ${scoreAway}\n`;
-    csvContent += `TIEMPO GLOBAL: ${formatTime(masterTime)}\n\n`;
+    // Helper to ensure every meta line has the same number of columns as the table
+    const padLine = (content) => content + ";".repeat(totalCols - content.split(';').length) + "\n";
+
+    let csvContent = "sep=;\n"; // Excel hint
+    csvContent += padLine(`FECHA;${date}`);
+    csvContent += padLine(`MODO;${mode}`);
+    csvContent += padLine(`ENCUENTRO;${homeName} vs ${awayName}`);
+    csvContent += padLine(`RESULTADO;${scoreHome} - ${scoreAway}`);
+    csvContent += padLine(`TIEMPO GLOBAL;${formatTime(masterTime)}`);
+    csvContent += padLine(""); // Empty row
 
     // Dynamic Headers
-    // Use semicolon for Excel/Region compatibility
     let header = "EQUIPO;DORSAL;NOMBRE";
     for (let i = 1; i <= maxShifts; i++) {
         header += `;ENTRADA ${i};SALIDA ${i}`;
     }
-    header += ";TIEMPO TOTAL\n";
-    csvContent += header;
+    header += ";TIEMPO TOTAL";
+    csvContent += padLine(header);
 
     // 4. Build Rows
     const sortedPlayers = [...processedPlayers].sort((a, b) => {
@@ -848,26 +849,20 @@ function exportData() {
 
     sortedPlayers.forEach(p => {
         const teamLabel = p.team === 'home' ? homeName : awayName;
-        // Escape name just in case
         const safeName = `"${p.name.replace(/"/g, '""')}"`;
 
         let row = `${teamLabel};${p.number};${safeName}`;
 
-        // Add Shifts
         for (let i = 0; i < maxShifts; i++) {
             const shift = p.processedShifts[i];
-            if (shift) {
-                row += `;${shift.in};${shift.out}`;
-            } else {
-                row += `;;`; // Empty entry/exit
-            }
+            row += shift ? `;${shift.in};${shift.out}` : `;;`;
         }
 
-        row += `;${formatTime(p.time)}\n`;
-        csvContent += row;
+        row += `;${formatTime(p.time)}`;
+        csvContent += padLine(row);
     });
 
-    // 5. Download with BOM for UTF-8 and correct MIME
+    // 5. Download with BOM for UTF-8 compatibility
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
