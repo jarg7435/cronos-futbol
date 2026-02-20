@@ -6,8 +6,8 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Cronos Fútbol - Coach Assistant</title>
-    <link rel="stylesheet" href="style.css?v=1.7">
-    <link rel="manifest" href="manifest.json?v=1.7">
+    <link rel="stylesheet" href="style.css?v=1.8">
+    <link rel="manifest" href="manifest.json?v=1.8">
     <meta name="theme-color" content="#0a0e14">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -18,6 +18,13 @@
 </head>
 
 <body class="locked">
+    <!-- Orientation Warning -->
+    <div id="orientation-warning">
+        <h2 style="color: var(--primary); margin-bottom: 1rem;">Gire su dispositivo</h2>
+        <p style="color: var(--text-muted);">Esta aplicación está optimizada para su uso en modo horizontal.</p>
+        <div style="margin-top: 2rem; font-size: 3rem;">📱🔄</div>
+    </div>
+
     <!-- Access Screen -->
     <div id="access-screen">
         <div class="access-card">
@@ -31,6 +38,15 @@
             </div>
             <button class="btn primary" onclick="validateAccess()" style="width: 100%;">ENTRAR</button>
             <p id="access-error" style="color: var(--danger); font-size: 0.8rem; margin-top: 1rem; height: 1rem;"></p>
+
+            <!-- Force Update Link -->
+            <div style="margin-top: 2rem; border-top: 1px solid var(--glass-border); padding-top: 1rem;">
+                <p style="color: var(--text-muted); font-size: 0.7rem; margin-bottom: 0.5rem;">¿Atascado en una versión
+                    vieja?</p>
+                <button class="btn" onclick="forceUpdate()"
+                    style="background: var(--glass); color: var(--text-muted); font-size: 0.7rem; padding: 0.4rem 0.8rem;">FORZAR
+                    ACTUALIZACIÓN V1.8</button>
+            </div>
         </div>
     </div>
 
@@ -38,8 +54,8 @@
     <header id="main-header" style="display: none;">
         <div class="logo">
             <h1 style="font-family: 'Outfit', sans-serif; color: var(--primary);">CRONOS FÚTBOL</h1>
-            <span style="font-size: 0.6rem; color: var(--text-muted); display: block; margin-top: -5px;">v1.7 - Mobile
-                UX Optimized</span>
+            <span style="font-size: 0.6rem; color: var(--text-muted); display: block; margin-top: -5px;">v1.8 - iPad Fix
+                & Pitch Optimized</span>
         </div>
         <div class="master-clock-container">
             <div id="master-timer" style="font-size: 1.5rem; font-weight: bold;">00:00</div>
@@ -105,14 +121,18 @@
                 </div>
             </div>
         </aside>
-        </div>
 
-        <!-- Configuration Modal -->
-        <div id="setup-modal" class="modal">
-            <!-- Contenido dinámico via JS -->
-        </div>
+        <!-- Mobile Drawer Toggles -->
+        <button id="toggle-bench-home" class="mobile-toggle home" onclick="toggleBench('home')">LOCAL</button>
+        <button id="toggle-bench-away" class="mobile-toggle away" onclick="toggleBench('away')">VISIT.</button>
+    </main>
 
-        <script src="app.js?v=1.7"></script>
+    <!-- Configuration Modal -->
+    <div id="setup-modal" class="modal">
+        <!-- Contenido dinámico via JS -->
+    </div>
+
+    <script src="app.js?v=1.8"></script>
 </body>
 
 </html>
