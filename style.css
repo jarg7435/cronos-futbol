@@ -272,7 +272,8 @@ header {
     width: 60px;
     height: 60px;
     flex-shrink: 0;
-    margin: 0.5rem auto !important;
+    /* Increase margin to allow labels (top/bottom -25px) to breathe */
+    margin: 30px auto !important;
 }
 
 /* Ensure bench items are centered and look like cards */
