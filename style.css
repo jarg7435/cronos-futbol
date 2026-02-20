@@ -61,16 +61,34 @@ body.locked {
     }
 }
 
-/* Landscape layout preserved for all devices */
 body {
     background-color: var(--bg-dark);
     color: var(--text-main);
-    min-width: 1024px;
+    /* Adaptive min-width: 1024px for desktop, 850px for smaller touch devices to fit better */
+    min-width: 850px;
     height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow-x: auto;
     overflow-y: hidden;
+}
+
+/* Compact header on smaller screens */
+@media (max-width: 1024px) {
+    header {
+        height: 50px;
+        padding: 0 1rem;
+    }
+
+    .logo h1 {
+        font-size: 1.2rem;
+    }
+
+    .sidebar,
+    .sidebar-right {
+        width: 220px;
+        padding: 0.8rem;
+    }
 }
 
 header {
@@ -326,8 +344,10 @@ header {
     border-radius: 12px;
     border: 1px solid var(--glass-border);
     width: 400px;
-    max-width: 90%;
-    /* Responsive width */
+    max-width: 95%;
+    /* Mobile Fix: Ensure content is scrollable if it exceeds screen height */
+    max-height: 90vh;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
