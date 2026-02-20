@@ -53,8 +53,6 @@ body {
     /* Touch friendly */
 }
 
-}
-
 .sidebar {
     width: 100% !important;
     height: auto !important;
@@ -80,7 +78,6 @@ body {
     width: 100% !important;
     max-width: 340px;
     margin: auto;
-}
 }
 
 header {
@@ -276,13 +273,13 @@ header {
 }
 
 .timer-active {
-    color: var(--success);
-    border-color: var(--success);
+    color: white;
+    border-color: white;
     animation: blink 2s infinite;
 }
 
 .timer-bench {
-    color: var(--secondary);
+    color: white;
 }
 
 /* --- BENCH SPECIFIC STYLES --- */

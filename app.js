@@ -383,11 +383,10 @@ function createPlayerChip(player) {
     div.draggable = true;
     div.style.background = `linear-gradient(to bottom, ${player.color} 50%, ${player.shortsColor} 50%)`;
 
-    const timerStyle = player.status === 'bench' ? `style="color: ${player.textColor || '#ffffff'}"` : '';
     div.innerHTML = `
-        <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}" ${timerStyle}>${formatTime(player.time)}</div>
+        <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}" style="color: white">${formatTime(player.time)}</div>
         <div class="player-number" onclick="editPlayerNumber(${player.id})" style="color: ${player.textColor || '#ffffff'}">${player.number}</div>
-        <div class="player-name" onclick="editPlayerName(${player.id})" style="color: ${player.textColor || '#ffffff'}">${player.name}</div>
+        <div class="player-name" onclick="editPlayerName(${player.id})" style="color: white">${player.name}</div>
     `;
 
     div.addEventListener('dragstart', (e) => {
