@@ -72,7 +72,7 @@ function registerServiceWorker() {
                     const newWorker = reg.installing;
                     newWorker.onstatechange = () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            if (confirm('Nueva versión disponible (v3.1). ¿Actualizar ahora?')) {
+                            if (confirm('Nueva versión disponible (v3.2). ¿Actualizar ahora?')) {
                                 window.location.reload();
                             }
                         }
@@ -85,7 +85,7 @@ function registerServiceWorker() {
 
 // Global helper for the manual button
 async function forceUpdate() {
-    if (confirm('Esto forzará la descarga de la última versión (v3.1+). ¿Continuar?')) {
+    if (confirm('Esto forzará la descarga de la última versión (v3.2+). ¿Continuar?')) {
         if ('serviceWorker' in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
             for (let registration of registrations) {
@@ -842,10 +842,12 @@ function updateScore(team) {
     }
 }
 
-function exportData() {
-    // 1. Pre-process players to parse shifts
-    const processedPlayers = players.map(p => {
-        let shifts = [];
+async function exportData() {
+    // 1. Process all active and bench players
+    const allPlayers = [...Object.values(PLAYERS['home']), ...Object.values(PLAYERS['away'])];
+
+    const processedPlayers = allPlayers.map(p => {
+        const shifts = [];
         let currentEntry = null;
 
         const hasImplicitStart = (p.history.length > 0 && p.history[0].includes('Sale')) ||
@@ -878,11 +880,22 @@ function exportData() {
         return { ...p, processedShifts: shifts };
     });
 
-    // 2. Determine Max Shifts for Columns
-    const maxShifts = Math.max(...processedPlayers.map(p => p.processedShifts.length), 0);
-    const totalCols = 3 + (maxShifts * 2) + 1; // Team, Number, Name + (In/Out * Max) + TotalTime
+    // 2. Determine Max Shifts and columns
+    const maxShifts = Math.max(...processedPlayers.map(p => p.processedShifts.length), 1);
+    const totalCols = 3 + (maxShifts * 2) + 1; // EQUIPO, DORSAL, NOMBRE + (IN/OUT * max) + TOTAL
 
-    // 3. Build Header and Metadata
+    // 3. Helper Functions for CSV Alignment
+    const q = (v) => `"${(v || "").toString().replace(/"/g, '""')}"`;
+    const makeRow = (cells) => {
+        // Ensure every row has exactly totalCols
+        const rowData = [...cells];
+        while (rowData.length < totalCols) rowData.push("");
+        return rowData.map(q).join(";") + "\n";
+    };
+
+    // 4. Build Content
+    let csvContent = "sep=;\n"; // Excel hint
+
     const date = new Date().toLocaleDateString();
     const mode = currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11';
     const homeName = TEAM_NAMES.home;
@@ -890,57 +903,48 @@ function exportData() {
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
 
-    // Fixed PadLine logic: Simply ensure the line has the total number of semicolons.
-    const padLine = (label, value) => {
-        const base = `"${label.replace(/"/g, '""')}";"${value.replace(/"/g, '""')}"`;
-        const padding = ";".repeat(totalCols - 2);
-        return base + padding + "\n";
-    };
+    // Metadata rows
+    csvContent += makeRow(["FECHA", date]);
+    csvContent += makeRow(["MODO", mode]);
+    csvContent += makeRow(["ENCUENTRO", `${homeName} vs ${awayName}`]);
+    csvContent += makeRow(["RESULTADO", `${scoreHome} - ${scoreAway}`]);
+    csvContent += makeRow(["TIEMPO GLOBAL", formatTime(masterTime)]);
+    csvContent += makeRow([]); // Empty spacer row
 
-    let csvContent = "sep=;\n"; // Excel hint
-    csvContent += padLine(`FECHA`, date);
-    csvContent += padLine(`MODO`, mode);
-    csvContent += padLine(`ENCUENTRO`, `${homeName} vs ${awayName}`);
-    csvContent += padLine(`RESULTADO`, `${scoreHome} - ${scoreAway}`);
-    csvContent += padLine(`TIEMPO GLOBAL`, formatTime(masterTime));
-    csvContent += ";".repeat(totalCols - 1) + "\n"; // Empty row
-
-    // Dynamic Headers
-    let header = `"EQUIPO";"DORSAL";"NOMBRE"`;
+    // Table Headers
+    const headers = ["EQUIPO", "DORSAL", "NOMBRE"];
     for (let i = 1; i <= maxShifts; i++) {
-        header += `;"ENTRADA ${i}";"SALIDA ${i}"`;
+        headers.push(`ENTRADA ${i}`, `SALIDA ${i}`);
     }
-    header += `;"TIEMPO TOTAL"`;
-    csvContent += header + "\n";
+    headers.push("TIEMPO TOTAL");
+    csvContent += makeRow(headers);
 
-    // 4. Build Rows
+    // Data Rows
     const sortedPlayers = [...processedPlayers].sort((a, b) => {
         if (a.team !== b.team) return a.team === 'home' ? -1 : 1;
         return a.number - b.number;
     });
 
     sortedPlayers.forEach(p => {
-        const teamLabel = p.team === 'home' ? homeName : awayName;
-        const safeName = `"${p.name.replace(/"/g, '""')}"`;
-
-        let row = `"${teamLabel}";"${p.number}";${safeName}`;
+        const teamName = p.team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away;
+        const rowCells = [teamName, p.number, p.name];
 
         for (let i = 0; i < maxShifts; i++) {
-            const shift = p.processedShifts[i];
-            row += shift ? `;"${shift.in}";"${shift.out}"` : `;;`;
+            const s = p.processedShifts[i];
+            rowCells.push(s ? s.in : "");
+            rowCells.push(s ? s.out : "");
         }
 
-        row += `;"${formatTime(p.time)}"`;
-        csvContent += row + "\n";
+        rowCells.push(formatTime(p.time));
+        csvContent += makeRow(rowCells);
     });
 
-    // 5. Download with BOM for UTF-8 compatibility
+    // 5. Download
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `cronos_match_${Date.now()}.csv`);
-    link.style.visibility = 'hidden';
+    link.href = url;
+    link.download = `cronos_match_${Date.now()}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
