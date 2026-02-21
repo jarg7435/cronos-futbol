@@ -193,72 +193,81 @@ body {
     }
 
     header {
-        flex-wrap: wrap;
-        height: auto;
-        padding: 0.5rem;
-        gap: 0.5rem;
-        justify-content: center;
+        flex-wrap: nowrap;
+        height: 40px;
+        padding: 0.2rem 0.5rem;
+        gap: 0.3rem;
+        justify-content: space-between;
     }
 
-    .logo h1 {
-        font-size: 0.8rem;
-    }
-
-    .logo span {
+    .logo {
         display: none !important;
     }
 
     .master-clock-container {
-        order: 2;
+        order: 1;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .master-clock-container div:last-child {
+        display: none;
+        /* Hide 'TIEMPO GLOBAL' text */
     }
 
     .master-clock-container #master-timer {
-        font-size: 1rem;
+        font-size: 1.1rem;
     }
 
     .score-board {
-        font-size: 0.7rem;
-        padding: 0.2rem 0.5rem;
-        order: 3;
+        font-size: 0.8rem;
+        padding: 0.2rem 0.6rem;
+        gap: 0.5rem;
+        order: 2;
+        background: none;
+        border: none;
     }
 
     .header-actions {
-        width: 100%;
-        justify-content: center;
-        gap: 0.3rem;
-        order: 4;
+        width: auto;
+        justify-content: flex-end;
+        gap: 0.2rem;
+        order: 3;
     }
 
     .header-actions .btn {
-        padding: 0.5rem 0.8rem;
-        font-size: 0.7rem;
-        flex: 1;
+        padding: 0.4rem 0.6rem;
+        font-size: 0.65rem;
+        flex: none;
     }
 
     /* Reduce chip size for mobile */
     .player-chip {
-        width: 45px;
-        height: 45px;
+        width: 50px;
+        height: 50px;
     }
 
     .player-number {
-        font-size: 1rem;
+        font-size: 1.1rem;
     }
 
     .player-name,
     .player-timer {
-        font-size: 0.6rem;
-        padding: 1px 4px;
-        bottom: -18px;
+        font-size: 0.65rem;
+        padding: 1px 3px;
+        bottom: -20px;
+        background: rgba(0, 0, 0, 0.4) !important;
+        border: none !important;
     }
 
     .player-timer {
-        top: -18px;
+        top: -20px;
     }
 }
 
 header {
-    height: 60px;
+    height: 50px;
     background: var(--bg-card);
     border-bottom: 1px solid var(--glass-border);
     display: flex;
@@ -463,9 +472,10 @@ header {
 }
 
 .timer-active {
-    color: white;
-    border-color: white;
-    animation: blink 2s infinite;
+    color: #ffde59;
+    /* Bright yellow for visibility */
+    background: rgba(0, 0, 0, 0.7) !important;
+    animation: blinkText 1s infinite;
 }
 
 .timer-bench {

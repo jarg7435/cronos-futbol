@@ -72,7 +72,7 @@ function registerServiceWorker() {
                     const newWorker = reg.installing;
                     newWorker.onstatechange = () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            if (confirm('Nueva versión disponible (v2.1). ¿Actualizar ahora?')) {
+                            if (confirm('Nueva versión disponible (v3.0). ¿Actualizar ahora?')) {
                                 window.location.reload();
                             }
                         }
@@ -85,7 +85,7 @@ function registerServiceWorker() {
 
 // Global helper for the manual button
 async function forceUpdate() {
-    if (confirm('Esto forzará la descarga de la última versión (v2.1+). ¿Continuar?')) {
+    if (confirm('Esto forzará la descarga de la última versión (v3.0+). ¿Continuar?')) {
         if ('serviceWorker' in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
             for (let registration of registrations) {

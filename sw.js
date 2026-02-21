@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cronos-futbol-v6';
+const CACHE_NAME = 'cronos-futbol-v7';
 const ASSETS = [
     './',
     './index.html',
