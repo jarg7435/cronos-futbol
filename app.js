@@ -583,6 +583,10 @@ function renderPlayers() {
     const chips = pitch.querySelectorAll('.player-chip');
     chips.forEach(c => c.remove());
 
+    // v5.1 Fix: Clean up orphaned chips from body (from touch dragging)
+    const bodyChips = document.body.querySelectorAll(':scope > .player-chip');
+    bodyChips.forEach(c => c.remove());
+
     benchHome.innerHTML = '';
     benchAway.innerHTML = '';
 
@@ -704,7 +708,7 @@ function handleTouchEnd(e, player) {
 
     if (pitch.contains(actualTarget) || actualTarget.closest('.pitch')) {
         dropToField(fakeEvent);
-        closeDrawers(); // Auto-close drawer on success
+        // v5.1 Fix: Removed closeDrawers() - Drawer stays open for multiple changes
     } else if (sidebarHome.contains(actualTarget) || actualTarget.closest('.sidebar')) {
         dropToBench(fakeEvent);
     } else if (sidebarAway.contains(actualTarget) || actualTarget.closest('.sidebar-right')) {
@@ -890,7 +894,7 @@ function dropToField(e) {
         }
     }
 
-    closeDrawers();
+    // v5.1 Fix: Removed closeDrawers() to keep substitution menu open
     renderPlayers();
 }
 
