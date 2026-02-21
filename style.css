@@ -607,3 +607,45 @@ select {
     font-weight: bold;
     color: var(--primary);
 }
+
+/* --- HIDDEN VISITOR SUPPORT --- */
+.hide-visitor .sidebar-right {
+    display: none !important;
+}
+
+.hide-visitor .field-area {
+    padding-right: 0;
+}
+
+/* --- ROSTER MANAGER STYLES --- */
+.roster-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.roster-table th,
+.roster-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.roster-table th {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.roster-table input {
+    width: 100%;
+    padding: 0.4rem;
+    font-size: 0.8rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid transparent;
+}
+
+.roster-table input:focus {
+    border-color: var(--primary);
+    outline: none;
+}

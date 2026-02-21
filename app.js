@@ -43,6 +43,7 @@ let masterTime = 0; // seconds
 let isRunning = false;
 let timerInterval = null;
 let currentMode = 'f7'; // f7 or f11
+let analyzeAway = true;
 
 const COLORS = {
     home: { primary: '#58a6ff', secondary: '#f0883e', shorts: '#ffffff', text: '#ffffff' },
@@ -173,7 +174,16 @@ function openSetupModal() {
                     <option value="f11">Fútbol 11 (2 tiempos de 45 min)</option>
                 </select>
             </div>
-            <button class="btn primary" onclick="confirmSetup()">INICIAR PARTIDO</button>
+
+            <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 1rem;">
+                <input type="checkbox" id="setup-analyze-away" checked style="width: 20px; height: 20px;">
+                <label for="setup-analyze-away" style="margin: 0; cursor: pointer;">Analizar Equipo Visitante</label>
+            </div>
+
+            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn" onclick="openRosterManager()" style="background: var(--glass); color: var(--primary); font-size: 0.8rem;">GESTIONAR MI PLANTILLA</button>
+                <button class="btn primary" onclick="confirmSetup()">CONTINUAR</button>
+            </div>
         </div>
     `;
     populateSavedTeams('home');
@@ -182,23 +192,160 @@ function openSetupModal() {
 
 function confirmSetup() {
     // Capture Home
-    TEAM_NAMES.home = document.getElementById('setup-home-name').value.toUpperCase();
+    TEAM_NAMES.home = document.getElementById('setup-home-name').value.toUpperCase() || 'LOCAL';
     COLORS.home.primary = document.getElementById('setup-home-color').value;
     COLORS.home.shorts = document.getElementById('setup-home-shorts').value;
     COLORS.home.text = document.getElementById('setup-home-text').value;
 
     // Capture Away
-    TEAM_NAMES.away = document.getElementById('setup-away-name').value.toUpperCase();
+    TEAM_NAMES.away = document.getElementById('setup-away-name').value.toUpperCase() || 'VISITANTE';
     COLORS.away.primary = document.getElementById('setup-away-color').value;
     COLORS.away.shorts = document.getElementById('setup-away-shorts').value;
     COLORS.away.text = document.getElementById('setup-away-text').value;
 
-    const mode = document.getElementById('setup-mode').value;
+    currentMode = document.getElementById('setup-mode').value;
+    analyzeAway = document.getElementById('setup-analyze-away').checked;
 
     document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
     document.getElementById('team-b-name').textContent = TEAM_NAMES.away;
 
-    currentMode = mode;
+    // Apply Visitor Toggle UI
+    if (!analyzeAway) {
+        document.body.classList.add('hide-visitor');
+    } else {
+        document.body.classList.remove('hide-visitor');
+    }
+
+    openConvocationModal();
+}
+
+function openRosterManager() {
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const mode = document.getElementById('setup-mode').value;
+    const limit = mode === 'f7' ? 18 : 25;
+
+    // Ensure array length
+    if (roster[mode].length < limit) {
+        for (let i = roster[mode].length; i < limit; i++) {
+            roster[mode].push({ number: i + 1, name: '', surname: '', alias: '' });
+        }
+    }
+
+    const modal = document.getElementById('setup-modal');
+    modal.innerHTML = `
+        <div class="modal-content" style="width: 800px; max-width: 95%;">
+            <h2>Gestionar Plantilla - ${mode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}</h2>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">Completa los datos de tus ${limit} jugadores. El Alias es el nombre que aparecerá en la ficha.</p>
+            
+            <div style="overflow-x: auto;">
+                <table class="roster-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">#</th>
+                            <th>Nombre</th>
+                            <th>Apellidos</th>
+                            <th>Alias (Ficha)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="roster-tbody">
+                        ${roster[mode].map((p, i) => `
+                            <tr>
+                                <td><input type="number" class="r-num" value="${p.number}" style="width: 40px;"></td>
+                                <td><input type="text" class="r-name" value="${p.name}"></td>
+                                <td><input type="text" class="r-surname" value="${p.surname}"></td>
+                                <td><input type="text" class="r-alias" value="${p.alias}"></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+                <button class="btn" onclick="openSetupModal()">CANCELAR</button>
+                <button class="btn primary" onclick="saveMasterRoster('${mode}')">GUARDAR PLANTILLA</button>
+            </div>
+        </div>
+    `;
+}
+
+function saveMasterRoster(mode) {
+    const rows = document.querySelectorAll('#roster-tbody tr');
+    const playersData = Array.from(rows).map(row => ({
+        number: row.querySelector('.r-num').value,
+        name: row.querySelector('.r-name').value,
+        surname: row.querySelector('.r-surname').value,
+        alias: row.querySelector('.r-alias').value
+    }));
+
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    roster[mode] = playersData;
+    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+
+    alert('Plantilla guardada correctamente.');
+    openSetupModal();
+}
+
+function openConvocationModal() {
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const myPlayers = roster[currentMode] || [];
+    const limit = currentMode === 'f7' ? 14 : 18;
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width: 600px; max-width: 95%;">
+            <h2>Convocatoria - ${TEAM_NAMES.home}</h2>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">Selecciona exactamente ${limit} jugadores para el partido.</p>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 1rem; max-height: 400px; overflow-y: auto;">
+                ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
+                    <div style="background: var(--glass); padding: 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" class="conv-check" data-index="${i}" id="conv-${i}" style="width: 20px; height: 20px;">
+                        <label for="conv-${i}" style="font-size: 0.85rem; cursor: pointer;">
+                            <span style="color: var(--primary); font-weight: bold;">${p.number}</span> ${p.alias || p.name || 'J' + (i + 1)}
+                        </label>
+                    </div>
+                `).join('') : '<p>No tienes jugadores en tu plantilla. Se usarán dorsales por defecto.</p>'}
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+                <span id="conv-count" style="font-size: 0.9rem; font-weight: bold; color: var(--primary);">0 / ${limit}</span>
+                <div style="display: flex; gap: 1rem;">
+                    <button class="btn" onclick="openSetupModal()">ATRÁS</button>
+                    <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>INICIAR PARTIDO</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Handle selection logic
+    const checks = document.querySelectorAll('.conv-check');
+    const countEl = document.getElementById('conv-count');
+    const startBtn = document.getElementById('btn-start-match');
+
+    if (myPlayers.length === 0) {
+        startBtn.disabled = false;
+        countEl.style.display = 'none';
+    }
+
+    checks.forEach(c => {
+        c.addEventListener('change', () => {
+            const selected = document.querySelectorAll('.conv-check:checked').length;
+            countEl.textContent = `${selected} / ${limit}`;
+            startBtn.disabled = (selected !== limit);
+        });
+    });
+}
+
+function startMatchWithConvocation() {
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const myPlayers = roster[currentMode] || [];
+    const checks = document.querySelectorAll('.conv-check:checked');
+
+    const selectedPlayers = Array.from(checks).map(c => myPlayers[c.dataset.index]);
+
+    // If no roster players selected (empty roster), it will fall back to default numbering in spawnInitialPlayers
+    window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
     spawnInitialPlayers();
     renderPlayers();
@@ -320,58 +467,70 @@ function setupEventListeners() {
 
 function spawnInitialPlayers() {
     players = [];
-    const count = currentMode === 'f7' ? 14 : 18;
     const startersCount = currentMode === 'f7' ? 7 : 11;
+    const defaultTotalCount = currentMode === 'f7' ? 14 : 18;
 
-    const createTeam = (teamKey, startId) => {
-        const teamColors = COLORS[teamKey];
-        const savedRoster = window.loadedTeamPlayers ? window.loadedTeamPlayers[teamKey] : null;
+    // --- HOME TEAM (Always analyzed, uses Convocation) ---
+    const homeColors = COLORS.home;
+    const homeConvocation = window.activeConvocation;
 
-        if (savedRoster) {
-            savedRoster.forEach((savedP, index) => {
-                // Adjust saved player to current match state
-                players.push({
-                    id: startId + (index + 1),
-                    number: savedP.number,
-                    name: savedP.name,
-                    team: teamKey,
-                    status: index < startersCount ? 'field' : 'bench',
-                    time: 0,
-                    color: teamColors.primary,
-                    shortsColor: teamColors.shorts,
-                    textColor: teamColors.text,
-                    history: [],
-                    x: 0, y: 0
-                });
+    if (homeConvocation) {
+        homeConvocation.forEach((pData, index) => {
+            players.push({
+                id: (index + 1),
+                number: pData.number,
+                name: pData.alias || pData.name || `J${pData.number}`,
+                team: 'home',
+                status: index < startersCount ? 'field' : 'bench',
+                time: 0,
+                color: homeColors.primary,
+                shortsColor: homeColors.shorts,
+                textColor: homeColors.text,
+                history: [],
+                x: 0, y: 0
             });
-            // If saved roster is smaller than count? Fill the rest?
-            // If saved roster is larger? It will be cut off?
-            // For now assume saved roster replaces default spawn completely.
-        } else {
-            // Default generation
-            for (let i = 1; i <= count; i++) {
-                players.push({
-                    id: startId + i,
-                    number: i,
-                    name: `Jugador ${i}`,
-                    team: teamKey,
-                    status: i <= startersCount ? 'field' : 'bench',
-                    time: 0,
-                    color: teamColors.primary,
-                    shortsColor: teamColors.shorts,
-                    textColor: teamColors.text,
-                    history: [],
-                    x: 0, y: 0
-                });
-            }
+        });
+    } else {
+        // Fallback or Generic Home
+        for (let i = 1; i <= defaultTotalCount; i++) {
+            players.push({
+                id: i,
+                number: i,
+                name: `Jugador ${i}`,
+                team: 'home',
+                status: i <= startersCount ? 'field' : 'bench',
+                time: 0,
+                color: homeColors.primary,
+                shortsColor: homeColors.shorts,
+                textColor: homeColors.text,
+                history: [],
+                x: 0, y: 0
+            });
         }
-    };
+    }
 
-    createTeam('home', 0);
-    createTeam('away', 100);
+    // --- AWAY TEAM (Optional) ---
+    if (analyzeAway) {
+        const awayColors = COLORS.away;
+        for (let i = 1; i <= defaultTotalCount; i++) {
+            players.push({
+                id: 100 + i,
+                number: i,
+                name: `Rival ${i}`,
+                team: 'away',
+                status: i <= startersCount ? 'field' : 'bench',
+                time: 0,
+                color: awayColors.primary,
+                shortsColor: awayColors.shorts,
+                textColor: awayColors.text,
+                history: [],
+                x: 0, y: 0
+            });
+        }
+    }
 
     // Clear temp storage
-    window.loadedTeamPlayers = null;
+    window.activeConvocation = null;
 }
 
 function toggleGame() {
@@ -485,6 +644,9 @@ function handleTouchStart(e, player) {
     touchData.draggedPlayerId = player.id;
     const chip = document.getElementById(`player-${player.id}`);
     chip.classList.add('dragging-active');
+
+    // CRITICAL: Move to body to avoid clipping by sidebar transforms
+    document.body.appendChild(chip);
 }
 
 function handleTouchMove(e, player) {
@@ -507,9 +669,12 @@ function handleTouchEnd(e, player) {
     const chip = document.getElementById(`player-${player.id}`);
     chip.classList.remove('dragging-active');
 
-    // Restore styling so renderPlayers can position it correctly
+    // Restore styling
     chip.style.position = '';
     chip.style.zIndex = '';
+    chip.style.left = '';
+    chip.style.top = '';
+    chip.style.transform = '';
 
     const touch = e.changedTouches[0];
 
@@ -530,24 +695,22 @@ function handleTouchEnd(e, player) {
         target: targetEl
     };
 
-    // Determine where it was dropped using the coordinates and the target
+    // Determine where it was dropped
     const pitch = document.getElementById('football-pitch');
     const sidebarHome = document.querySelector('.sidebar');
     const sidebarAway = document.querySelector('.sidebar-right');
-    const toggleHome = document.getElementById('toggle-bench-home');
-    const toggleAway = document.getElementById('toggle-bench-away');
 
-    // Ensure we have a valid target element
     const actualTarget = fakeEvent.target;
 
     if (pitch.contains(actualTarget) || actualTarget.closest('.pitch')) {
         dropToField(fakeEvent);
-    } else if (sidebarHome.contains(actualTarget) || actualTarget.closest('.sidebar') || (toggleHome && toggleHome.contains(actualTarget))) {
+        closeDrawers(); // Auto-close drawer on success
+    } else if (sidebarHome.contains(actualTarget) || actualTarget.closest('.sidebar')) {
         dropToBench(fakeEvent);
-    } else if (sidebarAway.contains(actualTarget) || actualTarget.closest('.sidebar-right') || (toggleAway && toggleAway.contains(actualTarget))) {
+    } else if (sidebarAway.contains(actualTarget) || actualTarget.closest('.sidebar-right')) {
         dropToAwayBench(fakeEvent);
     } else {
-        renderPlayers(); // Reset visual position if dropped nowhere
+        renderPlayers(); // Resets position and re-appends to correct parent
     }
 
     touchData.draggedPlayerId = null;
