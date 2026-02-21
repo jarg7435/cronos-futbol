@@ -852,7 +852,7 @@ function dropToField(e) {
 
     // Search for a candidate to swap by proximity
     let targetPlayer = null;
-    let minDistance = 15; // Proximity threshold in % of pitch width/height
+    let minDistance = 20; // Proximity threshold in % (v5.2: increased for easier touch)
 
     teamFieldPlayers.forEach(p => {
         if (p.id == player.id) return;
@@ -943,7 +943,8 @@ function handleBenchDrop(e, player) {
             logMovement(player);
         }
     }
-    closeDrawers();
+
+    // v5.2 Fix: Removed closeDrawers() - Menu stays open consistently
     renderPlayers();
 }
 
