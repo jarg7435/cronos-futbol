@@ -255,10 +255,11 @@ body {
     .player-name,
     .player-timer {
         font-size: 0.65rem;
-        padding: 1px 3px;
+        padding: 0;
         bottom: -20px;
-        background: rgba(0, 0, 0, 0.4) !important;
+        background: none !important;
         border: none !important;
+        text-shadow: 0 0 3px black, 1px 1px 1px black;
     }
 
     .player-timer {
@@ -450,36 +451,48 @@ header {
     color: white;
 }
 
-.player-name {
+.player-name,
+.player-timer {
     position: absolute;
-    bottom: -25px;
-    font-size: 0.7rem;
+    width: 140%;
+    /* Slightly wider than the chip to accommodate long names */
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    pointer-events: none;
+    background: none !important;
+    color: white;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 1px 1px 2px black;
     white-space: nowrap;
-    background: rgba(0, 0, 0, 0.6);
-    padding: 2px 6px;
-    border-radius: 4px;
+    z-index: 20;
+}
+
+.player-name {
+    bottom: -22px;
 }
 
 .player-timer {
-    position: absolute;
-    top: -25px;
-    font-size: 0.7rem;
-    font-weight: bold;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--bg-card);
-    border: 1px solid var(--glass-border);
+    top: -22px;
 }
 
 .timer-active {
     color: #ffde59;
-    /* Bright yellow for visibility */
-    background: rgba(0, 0, 0, 0.7) !important;
+    /* Bright yellow */
     animation: blinkText 1s infinite;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 1), 0 0 10px rgba(255, 222, 89, 0.5);
+    background: none !important;
 }
 
 .timer-bench {
     color: white;
+}
+
+@keyframes blinkText {
+    50% {
+        opacity: 0.3;
+    }
 }
 
 /* --- BENCH SPECIFIC STYLES --- */
@@ -494,7 +507,6 @@ header {
     overflow-y: auto;
     max-height: 80vh;
     flex: 1;
-    /* Take up remaining height to allow scrolling */
 }
 
 .bench-container .player-chip {
@@ -502,19 +514,11 @@ header {
     width: 60px;
     height: 60px;
     flex-shrink: 0;
-    /* Margin to allow labels (top/bottom -25px) to breathe, horizontal for 2-col */
     margin: 35px 10px !important;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-}
-
-
-@keyframes blink {
-    50% {
-        opacity: 0.6;
-    }
 }
 
 /* Modal & Buttons */
@@ -533,12 +537,11 @@ header {
 
 .modal-content {
     background: var(--bg-card);
-    padding: 2rem;
+    padding: 2.2rem;
     border-radius: 12px;
     border: 1px solid var(--glass-border);
     width: 400px;
     max-width: 95%;
-    /* Mobile Fix: Ensure content is scrollable if it exceeds screen height */
     max-height: 90vh;
     overflow-y: auto;
     display: flex;
