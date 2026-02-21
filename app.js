@@ -344,6 +344,15 @@ function startMatchWithConvocation() {
 
     const selectedPlayers = Array.from(checks).map(c => myPlayers[c.dataset.index]);
 
+    // v5.3: Close drawer on pitch tap
+    document.getElementById('football-pitch').addEventListener('click', (e) => {
+        // Only if we aren't clicking a player chip (handled by chip interaction)
+        if (e.target.id === 'football-pitch' || e.target.closest('svg')) {
+            closeDrawers();
+        }
+    });
+
+    // Touch event listeners for players (Mobile/iPad)
     // If no roster players selected (empty roster), it will fall back to default numbering in spawnInitialPlayers
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
@@ -707,7 +716,13 @@ function handleTouchEnd(e, player) {
     const actualTarget = fakeEvent.target;
 
     if (pitch.contains(actualTarget) || actualTarget.closest('.pitch')) {
-        dropToField(fakeEvent);
+        // v5.3: Ensure coordinates are passed from the touch end point
+        dropToField({
+            preventDefault: () => { },
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            dataTransfer: { getData: () => player.id }
+        });
         // v5.1 Fix: Removed closeDrawers() - Drawer stays open for multiple changes
     } else if (sidebarHome.contains(actualTarget) || actualTarget.closest('.sidebar')) {
         dropToBench(fakeEvent);
@@ -852,7 +867,7 @@ function dropToField(e) {
 
     // Search for a candidate to swap by proximity
     let targetPlayer = null;
-    let minDistance = 20; // Proximity threshold in % (v5.2: increased for easier touch)
+    let minDistance = 25; // Proximity threshold in % (v5.3: widened for iPad)
 
     teamFieldPlayers.forEach(p => {
         if (p.id == player.id) return;
@@ -963,6 +978,10 @@ function handleSmartSwap(dragged, target) {
     target.status = oldDraggedStatus;
     target.x = oldDraggedX;
     target.y = oldDraggedY;
+
+    // v5.3 Security: Clear coordinates if moving to bench
+    if (dragged.status === 'bench') { dragged.x = 0; dragged.y = 0; }
+    if (target.status === 'bench') { target.x = 0; target.y = 0; }
 
     if (isRunning) {
         logMovement(dragged);
