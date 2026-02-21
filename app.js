@@ -857,59 +857,76 @@ function dropToField(e) {
     const clientX = e.clientX || (e.changedTouches ? e.changedTouches[0].clientX : 0);
     const clientY = e.clientY || (e.changedTouches ? e.changedTouches[0].clientY : 0);
 
-    const xPct = ((clientX - rect.left) / rect.width) * 100;
-    const yPct = ((clientY - rect.top) / rect.height) * 100;
+    const xPct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const yPct = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
 
-    // --- SMART SWAP DETECTION ---
-    // If the team is already full on field, or if dropped near another player, trigger swap.
-    const fieldLimit = currentMode === 'f7' ? 7 : 11;
-    const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
-
-    // Search for a candidate to swap by proximity
+    // --- SMART SWAP DETECTION (LAYER 1: DIRECT HIT) ---
     let targetPlayer = null;
-    let minDistance = 25; // Proximity threshold in % (v5.3: widened for iPad)
-
-    teamFieldPlayers.forEach(p => {
-        if (p.id == player.id) return;
-        const dx = xPct - p.x;
-        const dy = yPct - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < minDistance) {
-            minDistance = dist;
-            targetPlayer = p;
+    const elementsBeneath = document.elementsFromPoint(clientX, clientY);
+    for (const el of elementsBeneath) {
+        const chip = el.closest('.player-chip');
+        if (chip && chip.id !== `player-${player.id}`) {
+            const tid = chip.id.replace('player-', '');
+            const tp = players.find(p => p.id == tid);
+            if (tp && tp.team === player.team && tp.status === 'field') {
+                targetPlayer = tp;
+                break;
+            }
         }
-    });
+    }
 
-    // If no target by proximity but team is full and we are bringing someone from bench
-    if (!targetPlayer && player.status === 'bench' && teamFieldPlayers.length >= fieldLimit) {
-        // Swap with the absolute nearest teammate on field to avoid "breaking" the 7/11 limit
-        let absoluteNearest = null;
-        let absMinDist = 999;
+    // --- LAYER 2: PROXIMITY SEARCH (30%) ---
+    if (!targetPlayer) {
+        const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
+        let minDistance = 30; // Permissive 30% threshold
         teamFieldPlayers.forEach(p => {
+            if (p.id == player.id) return;
             const dx = xPct - p.x;
             const dy = yPct - p.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < absMinDist) {
-                absMinDist = dist;
-                absoluteNearest = p;
+            if (dist < minDistance) {
+                minDistance = dist;
+                targetPlayer = p;
             }
         });
-        targetPlayer = absoluteNearest;
+    }
+
+    // --- LAYER 3: MANDATORY SWAP (FAILSAFE) ---
+    // If team is full and we drop a sub on the field, we FORCE a swap with nearest to prevent losing a spot
+    if (!targetPlayer && player.status === 'bench') {
+        const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
+        const fieldLimit = currentMode === 'f7' ? 7 : 11;
+        if (teamFieldPlayers.length >= fieldLimit) {
+            let absMinDist = 999;
+            teamFieldPlayers.forEach(p => {
+                const dx = xPct - p.x;
+                const dy = yPct - p.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < absMinDist) {
+                    absMinDist = dist;
+                    targetPlayer = p;
+                }
+            });
+        }
     }
 
     if (targetPlayer) {
         handleSmartSwap(player, targetPlayer);
     } else {
-        // Normal move or entering empty slot
-        player.status = 'field';
-        player.x = xPct;
-        player.y = yPct;
-        if (player.history.length === 0 || !player.history[player.history.length - 1].includes('Entra')) {
-            logMovement(player);
+        // Only move if we aren't breaking the field limit
+        const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
+        const fieldLimit = currentMode === 'f7' ? 7 : 11;
+
+        if (player.status === 'field' || teamFieldPlayers.length < fieldLimit) {
+            player.status = 'field';
+            player.x = xPct;
+            player.y = yPct;
+            if (player.history.length === 0 || !player.history[player.history.length - 1].includes('Entra')) {
+                logMovement(player);
+            }
         }
     }
 
-    // v5.1 Fix: Removed closeDrawers() to keep substitution menu open
     renderPlayers();
 }
 
