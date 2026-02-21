@@ -915,50 +915,65 @@ function dropToField(e) {
 function dropToBench(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId');
-    const player = players.find(p => p.id == playerId);
-    if (!player) return; // or check if player.team === 'home'
+    const actualId = playerId || touchData.draggedPlayerId;
+    const player = players.find(p => p.id == actualId);
+    if (!player) return;
 
-    // If trying to drop away player to home bench?
     if (player.team !== 'home') return;
-
     handleBenchDrop(e, player);
 }
 
 function dropToAwayBench(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId');
-    const player = players.find(p => p.id == playerId);
+    const actualId = playerId || touchData.draggedPlayerId;
+    const player = players.find(p => p.id == actualId);
     if (!player) return;
 
     if (player.team !== 'away') return;
-
     handleBenchDrop(e, player);
 }
 
 function handleBenchDrop(e, player) {
-    const draggedChip = document.getElementById(`player-${player.id}`);
-    draggedChip.style.display = 'none';
-    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-    draggedChip.style.display = 'flex';
+    const clientX = e.clientX || (e.changedTouches ? e.changedTouches[0].clientX : 0);
+    const clientY = e.clientY || (e.changedTouches ? e.changedTouches[0].clientY : 0);
 
-    const targetChip = targetEl?.closest('.player-chip');
+    // Filter potential swap targets (bench players of same team, excluding the dragged one)
+    const potentialTargets = players.filter(p => p.team === player.team && p.status === 'bench' && p.id !== player.id);
 
-    if (targetChip && targetChip.id !== `player-${player.id}`) {
-        const targetId = targetChip.id.replace('player-', '');
-        const targetPlayer = players.find(p => p.id == targetId);
+    let targetPlayer = null;
+    let minDistance = 1000;
+    const swapThreshold = 80; // Pixels radius for easier touch detection on mobile
 
-        if (targetPlayer && targetPlayer.team === player.team) {
-            handleSmartSwap(player, targetPlayer);
+    potentialTargets.forEach(tp => {
+        const chip = document.getElementById(`player-${tp.id}`);
+        if (chip) {
+            const rect = chip.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const dx = clientX - centerX;
+            const dy = clientY - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < minDistance && distance < swapThreshold) {
+                minDistance = distance;
+                targetPlayer = tp;
+            }
         }
+    });
+
+    if (targetPlayer) {
+        handleSmartSwap(player, targetPlayer);
     } else {
+        // Fallback: Just move to bench if no specific swap target found
         player.status = 'bench';
-        player.x = 0; player.y = 0;
+        player.x = 0;
+        player.y = 0;
         if (player.history.length > 0 && player.history[player.history.length - 1].includes('Entra')) {
             logMovement(player);
         }
     }
 
-    // v5.2 Fix: Removed closeDrawers() - Menu stays open consistently
     renderPlayers();
 }
 
