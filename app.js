@@ -829,32 +829,59 @@ function closeDrawers() {
 
 function dropToField(e) {
     e.preventDefault();
-    const playerId = e.dataTransfer.getData('playerId');
+    const playerId = e.dataTransfer.getData('playerId') || touchData.draggedPlayerId;
     const player = players.find(p => p.id == playerId);
     if (!player) return;
 
     const pitch = document.getElementById('football-pitch');
     const rect = pitch.getBoundingClientRect();
-    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
-    const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+    const clientX = e.clientX || (e.changedTouches ? e.changedTouches[0].clientX : 0);
+    const clientY = e.clientY || (e.changedTouches ? e.changedTouches[0].clientY : 0);
 
-    // Detect target underneath without pointer-events: none
-    const draggedChip = document.getElementById(`player-${playerId}`);
-    draggedChip.style.display = 'none'; // Temporarily hide to see what's below
-    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-    draggedChip.style.display = 'flex'; // Restore
+    const xPct = ((clientX - rect.left) / rect.width) * 100;
+    const yPct = ((clientY - rect.top) / rect.height) * 100;
 
-    const targetChip = targetEl?.closest('.player-chip');
+    // --- SMART SWAP DETECTION ---
+    // If the team is already full on field, or if dropped near another player, trigger swap.
+    const fieldLimit = currentMode === 'f7' ? 7 : 11;
+    const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
 
-    if (targetChip && targetChip.id !== `player-${playerId}`) {
-        const targetId = targetChip.id.replace('player-', '');
-        const targetPlayer = players.find(p => p.id == targetId);
+    // Search for a candidate to swap by proximity
+    let targetPlayer = null;
+    let minDistance = 15; // Proximity threshold in % of pitch width/height
 
-        // Prevent swapping with opp team
-        if (targetPlayer && targetPlayer.team === player.team) {
-            handleSmartSwap(player, targetPlayer);
+    teamFieldPlayers.forEach(p => {
+        if (p.id == player.id) return;
+        const dx = xPct - p.x;
+        const dy = yPct - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDistance) {
+            minDistance = dist;
+            targetPlayer = p;
         }
+    });
+
+    // If no target by proximity but team is full and we are bringing someone from bench
+    if (!targetPlayer && player.status === 'bench' && teamFieldPlayers.length >= fieldLimit) {
+        // Swap with the absolute nearest teammate on field to avoid "breaking" the 7/11 limit
+        let absoluteNearest = null;
+        let absMinDist = 999;
+        teamFieldPlayers.forEach(p => {
+            const dx = xPct - p.x;
+            const dy = yPct - p.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < absMinDist) {
+                absMinDist = dist;
+                absoluteNearest = p;
+            }
+        });
+        targetPlayer = absoluteNearest;
+    }
+
+    if (targetPlayer) {
+        handleSmartSwap(player, targetPlayer);
     } else {
+        // Normal move or entering empty slot
         player.status = 'field';
         player.x = xPct;
         player.y = yPct;
@@ -862,7 +889,8 @@ function dropToField(e) {
             logMovement(player);
         }
     }
-    closeDrawers(); // Auto-close drawer on mobile
+
+    closeDrawers();
     renderPlayers();
 }
 
