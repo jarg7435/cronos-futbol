@@ -345,12 +345,18 @@ function startMatchWithConvocation() {
     const selectedPlayers = Array.from(checks).map(c => myPlayers[c.dataset.index]);
 
     // v5.3: Close drawer on pitch tap
-    document.getElementById('football-pitch').addEventListener('click', (e) => {
-        // Only if we aren't clicking a player chip (handled by chip interaction)
+    const pitch = document.getElementById('football-pitch');
+    pitch.addEventListener('click', (e) => {
         if (e.target.id === 'football-pitch' || e.target.closest('svg')) {
             closeDrawers();
         }
     });
+    // v5.5: Added touchstart for mobile/iPad
+    pitch.addEventListener('touchstart', (e) => {
+        if (e.target.id === 'football-pitch' || e.target.closest('svg')) {
+            closeDrawers();
+        }
+    }, { passive: true });
 
     // Touch event listeners for players (Mobile/iPad)
     // If no roster players selected (empty roster), it will fall back to default numbering in spawnInitialPlayers
@@ -593,8 +599,12 @@ function renderPlayers() {
     chips.forEach(c => c.remove());
 
     // v5.1 Fix: Clean up orphaned chips from body (from touch dragging)
-    const bodyChips = document.body.querySelectorAll(':scope > .player-chip');
-    bodyChips.forEach(c => c.remove());
+    const allChipsInDoc = document.querySelectorAll('.player-chip');
+    allChipsInDoc.forEach(c => {
+        if (!pitch.contains(c) && !benchHome.contains(c) && !benchAway.contains(c)) {
+            c.remove();
+        }
+    });
 
     benchHome.innerHTML = '';
     benchAway.innerHTML = '';
@@ -690,46 +700,36 @@ function handleTouchEnd(e, player) {
     chip.style.transform = '';
 
     const touch = e.changedTouches[0];
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
 
-    // Hide chip temporarily to detect what's underneath
-    const originalDisplay = chip.style.display;
-    chip.style.display = 'none';
-    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY) || document.body;
-    chip.style.display = originalDisplay;
+    // Detect drop zone by Pure Coordinates (Mathematical Bounding Boxes)
+    const pitchRect = document.getElementById('football-pitch').getBoundingClientRect();
+    const homeBenchRect = document.querySelector('.sidebar').getBoundingClientRect();
+    const awayBenchRect = document.querySelector('.sidebar-right').getBoundingClientRect();
 
-    // Create a fake event object to reuse drop logic
-    const fakeEvent = {
-        preventDefault: () => { },
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        dataTransfer: {
-            getData: () => player.id
-        },
-        target: targetEl
-    };
+    const isInside = (rect, x, y) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 
-    // Determine where it was dropped
-    const pitch = document.getElementById('football-pitch');
-    const sidebarHome = document.querySelector('.sidebar');
-    const sidebarAway = document.querySelector('.sidebar-right');
-
-    const actualTarget = fakeEvent.target;
-
-    if (pitch.contains(actualTarget) || actualTarget.closest('.pitch')) {
-        // v5.3: Ensure coordinates are passed from the touch end point
+    if (isInside(pitchRect, clientX, clientY)) {
         dropToField({
             preventDefault: () => { },
-            clientX: touch.clientX,
-            clientY: touch.clientY,
+            clientX, clientY,
             dataTransfer: { getData: () => player.id }
         });
-        // v5.1 Fix: Removed closeDrawers() - Drawer stays open for multiple changes
-    } else if (sidebarHome.contains(actualTarget) || actualTarget.closest('.sidebar')) {
-        dropToBench(fakeEvent);
-    } else if (sidebarAway.contains(actualTarget) || actualTarget.closest('.sidebar-right')) {
-        dropToAwayBench(fakeEvent);
+    } else if (isInside(homeBenchRect, clientX, clientY)) {
+        dropToBench({
+            preventDefault: () => { },
+            clientX, clientY,
+            dataTransfer: { getData: () => player.id }
+        });
+    } else if (isInside(awayBenchRect, clientX, clientY)) {
+        dropToAwayBench({
+            preventDefault: () => { },
+            clientX, clientY,
+            dataTransfer: { getData: () => player.id }
+        });
     } else {
-        renderPlayers(); // Resets position and re-appends to correct parent
+        renderPlayers();
     }
 
     touchData.draggedPlayerId = null;
@@ -860,54 +860,36 @@ function dropToField(e) {
     const xPct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
     const yPct = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
 
-    // --- SMART SWAP DETECTION (LAYER 1: DIRECT HIT) ---
-    let targetPlayer = null;
-    const elementsBeneath = document.elementsFromPoint(clientX, clientY);
-    for (const el of elementsBeneath) {
-        const chip = el.closest('.player-chip');
-        if (chip && chip.id !== `player-${player.id}`) {
-            const tid = chip.id.replace('player-', '');
-            const tp = players.find(p => p.id == tid);
-            if (tp && tp.team === player.team && tp.status === 'field') {
-                targetPlayer = tp;
-                break;
-            }
-        }
-    }
+    // --- ATOMIC SWAP DETECTION (LAYER 1: COORDINATE SEARCH) ---
+    const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
+    const fieldLimit = currentMode === 'f7' ? 7 : 11;
 
-    // --- LAYER 2: PROXIMITY SEARCH (30%) ---
-    if (!targetPlayer) {
-        const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
-        let minDistance = 30; // Permissive 30% threshold
+    let targetPlayer = null;
+    let minDistance = 30; // 30% Pitch Radius
+
+    teamFieldPlayers.forEach(p => {
+        if (p.id == player.id) return;
+        const dx = xPct - p.x;
+        const dy = yPct - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDistance) {
+            minDistance = dist;
+            targetPlayer = p;
+        }
+    });
+
+    // LAYER 2: FORCE SWAP IF FIELD IS FULL (NO GAPS)
+    if (!targetPlayer && player.status === 'bench' && teamFieldPlayers.length >= fieldLimit) {
+        let absMinDist = 999;
         teamFieldPlayers.forEach(p => {
-            if (p.id == player.id) return;
             const dx = xPct - p.x;
             const dy = yPct - p.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < minDistance) {
-                minDistance = dist;
+            if (dist < absMinDist) {
+                absMinDist = dist;
                 targetPlayer = p;
             }
         });
-    }
-
-    // --- LAYER 3: MANDATORY SWAP (FAILSAFE) ---
-    // If team is full and we drop a sub on the field, we FORCE a swap with nearest to prevent losing a spot
-    if (!targetPlayer && player.status === 'bench') {
-        const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
-        const fieldLimit = currentMode === 'f7' ? 7 : 11;
-        if (teamFieldPlayers.length >= fieldLimit) {
-            let absMinDist = 999;
-            teamFieldPlayers.forEach(p => {
-                const dx = xPct - p.x;
-                const dy = yPct - p.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < absMinDist) {
-                    absMinDist = dist;
-                    targetPlayer = p;
-                }
-            });
-        }
     }
 
     if (targetPlayer) {
