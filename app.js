@@ -1006,8 +1006,8 @@ function updateScore(team) {
 }
 
 async function exportData() {
-    // 1. Process all active and bench players
-    const allPlayers = [...Object.values(PLAYERS['home']), ...Object.values(PLAYERS['away'])];
+    // 1. Process all selected players from the current match
+    const allPlayers = [...players];
 
     const processedPlayers = allPlayers.map(p => {
         const shifts = [];
