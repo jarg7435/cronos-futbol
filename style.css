@@ -64,30 +64,150 @@ body.locked {
 body {
     background-color: var(--bg-dark);
     color: var(--text-main);
-    /* Adaptive min-width: 1024px for desktop, 850px for smaller touch devices to fit better */
-    min-width: 850px;
+    min-width: 1024px;
+    /* Restore fixed width for desktop/iPad */
     height: 100dvh;
     display: flex;
     flex-direction: column;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: hidden;
+    position: relative;
 }
 
-/* Compact header on smaller screens */
-@media (max-width: 1024px) {
-    header {
-        height: 50px;
-        padding: 0 1rem;
-    }
+.mobile-toggle {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    z-index: 1001;
+    background: var(--bg-card);
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    padding: 0.8rem 1rem;
+    border-radius: 8px;
+    font-weight: bold;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+}
 
-    .logo h1 {
-        font-size: 1.2rem;
+.mobile-toggle.home {
+    left: 10px;
+}
+
+.mobile-toggle.away {
+    right: 10px;
+}
+
+/* Portrait orientation warning remains for small devices */
+#orientation-warning {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-dark);
+    z-index: 9999;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 2rem;
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+    #orientation-warning {
+        display: flex;
+    }
+}
+
+/* --- THE MOBILE DRAWER SYSTEM --- */
+@media (max-width: 950px) and (orientation: landscape) {
+    body {
+        min-width: 0 !important;
+        overflow: hidden !important;
     }
 
     .sidebar,
     .sidebar-right {
-        width: 220px;
-        padding: 0.8rem;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        width: 250px;
+        z-index: 2000;
+        transition: transform 0.3s ease;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+    }
+
+    .sidebar {
+        left: 0;
+        transform: translateX(-110%);
+    }
+
+    .sidebar-right {
+        right: 0;
+        transform: translateX(110%);
+    }
+
+    .sidebar.open,
+    .sidebar-right.open {
+        transform: translateX(0);
+    }
+
+    .mobile-toggle {
+        display: block;
+    }
+
+    /* Keep field as main focal point */
+    .field-area {
+        width: 100vw;
+        height: calc(100vh - 45px);
+    }
+
+    .pitch {
+        max-height: 85vh;
+        transform: scale(1.2);
+        /* Increased scale for better view */
+    }
+
+    header {
+        height: 45px;
+        padding: 0 0.5rem;
+    }
+
+    .logo h1 {
+        font-size: 0.9rem;
+    }
+
+    .logo span {
+        display: none !important;
+    }
+
+    .master-clock-container #master-timer {
+        font-size: 1rem;
+    }
+
+    .score-board {
+        font-size: 0.7rem;
+        padding: 0.2rem 0.5rem;
+    }
+
+    /* Reduce chip size proportionally to the 1.1 scale of the pitch */
+    .player-chip {
+        width: 42px;
+        height: 42px;
+    }
+
+    .player-number {
+        font-size: 0.9rem;
+    }
+
+    .player-name,
+    .player-timer {
+        font-size: 0.55rem;
+        padding: 1px 3px;
+        bottom: -18px;
+    }
+
+    .player-timer {
+        top: -18px;
     }
 }
 
@@ -98,7 +218,7 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 2rem;
+    padding: 0 1rem;
     z-index: 100;
 }
 
@@ -110,14 +230,15 @@ header {
 
 .sidebar,
 .sidebar-right {
-    width: 280px;
+    width: 230px;
     background: var(--bg-card);
     border-right: 1px solid var(--glass-border);
     display: flex;
     flex-direction: column;
     padding: 1rem;
     gap: 1rem;
-    flex-shrink: 0;
+    flex-shrink: 1;
+    /* Allow shrinking */
 }
 
 .sidebar-right {
@@ -141,9 +262,11 @@ header {
 
 /* Football Field SVG Styling */
 .pitch {
-    width: 90%;
+    width: 95%;
     height: auto;
-    max-width: 500px;
+    max-width: 750px;
+    max-height: 80vh;
+    /* Allow it to be taller than before if scroll is enabled */
     aspect-ratio: 2 / 3;
     background: var(--field-green);
     border: 4px solid var(--field-line);
@@ -151,6 +274,9 @@ header {
     position: relative;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     flex-shrink: 0;
+    /* Keep its shape */
+    margin: 1rem 0;
+    /* Add space for scrolling */
 }
 
 .pitch::before {
@@ -243,6 +369,14 @@ header {
     /* Removed pointer-events: none to avoid breaking drag start in some browsers */
 }
 
+.player-chip.dragging-active {
+    opacity: 0.8 !important;
+    transform: scale(1.2) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+    /* Critical for elementFromPoint to work on move */
+}
+
 .player-number,
 .player-name {
     cursor: pointer;
@@ -302,6 +436,9 @@ header {
     gap: 0.5rem;
     padding: 0.5rem;
     overflow-y: auto;
+    max-height: 80vh;
+    flex: 1;
+    /* Take up remaining height to allow scrolling */
 }
 
 .bench-container .player-chip {
@@ -310,7 +447,7 @@ header {
     height: 60px;
     flex-shrink: 0;
     /* Margin to allow labels (top/bottom -25px) to breathe, horizontal for 2-col */
-    margin: 35px 15px !important;
+    margin: 35px 10px !important;
     display: flex;
     flex-direction: column;
     justify-content: center;

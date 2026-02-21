@@ -2,13 +2,17 @@
 const ACCESS_CODE = '1234';
 
 window.onload = () => {
+    // Initial check for access
     if (sessionStorage.getItem('cronos_access') === 'true') {
         unlockApp();
     } else {
-        // Prepare enter key listener
-        document.getElementById('access-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') validateAccess();
-        });
+        // Only focus if the element exists
+        const accessInput = document.getElementById('access-input');
+        if (accessInput) {
+            accessInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') validateAccess();
+            });
+        }
     }
 };
 
@@ -60,10 +64,42 @@ function init() {
 
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-        // Use relative path for GitHub Pages compatibility
         navigator.serviceWorker.register('./sw.js', { scope: './' })
-            .then(() => console.log('Cronos PWA Ready'))
+            .then(reg => {
+                console.log('Cronos PWA Ready');
+                // Detect update
+                reg.onupdatefound = () => {
+                    const newWorker = reg.installing;
+                    newWorker.onstatechange = () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            if (confirm('Nueva versión disponible (v1.9). ¿Actualizar ahora?')) {
+                                window.location.reload();
+                            }
+                        }
+                    };
+                };
+            })
             .catch(err => console.log('SW Error:', err));
+    }
+}
+
+// Global helper for the manual button
+async function forceUpdate() {
+    if (confirm('Esto forzará la descarga de la última versión (v1.9+). ¿Continuar?')) {
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+                await registration.unregister();
+            }
+        }
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            for (let key of keys) {
+                await caches.delete(key);
+            }
+        }
+        // Use a cache-busting parameter to force reload from server
+        window.location.href = window.location.pathname + '?v=' + Date.now();
     }
 }
 
@@ -71,7 +107,7 @@ function openSetupModal() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="width: 700px; max-width: 95%;">
+        <div class="modal-content" style="max-width: 95%;">
             <h2>Configuración del Encuentro</h2>
             
             <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
@@ -445,34 +481,35 @@ let touchData = {
 };
 
 function handleTouchStart(e, player) {
-    e.preventDefault();
+    // DO NOT preventDefault here, or clicks (edit name/number) won't work
     touchData.draggedPlayerId = player.id;
     const chip = document.getElementById(`player-${player.id}`);
-    chip.classList.add('dragging');
+    chip.classList.add('dragging-active');
 }
 
 function handleTouchMove(e, player) {
     if (!touchData.draggedPlayerId) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
 
     const touch = e.touches[0];
     const chip = document.getElementById(`player-${player.id}`);
-    const pitch = document.getElementById('football-pitch');
-    const rect = pitch.getBoundingClientRect();
 
-    // Visual move feedback during touch
-    const x = ((touch.clientX - rect.left) / rect.width) * 100;
-    const y = ((touch.clientY - rect.top) / rect.height) * 100;
-
-    chip.style.left = `${x}%`;
-    chip.style.top = `${y}%`;
+    // Use fixed positioning during drag for absolute accuracy relative to finger
+    chip.style.position = 'fixed';
+    chip.style.left = `${touch.clientX}px`;
+    chip.style.top = `${touch.clientY}px`;
     chip.style.transform = `translate(-50%, -50%)`;
+    chip.style.zIndex = '9999';
 }
 
 function handleTouchEnd(e, player) {
     if (!touchData.draggedPlayerId) return;
     const chip = document.getElementById(`player-${player.id}`);
-    chip.classList.remove('dragging');
+    chip.classList.remove('dragging-active');
+
+    // Restore styling so renderPlayers can position it correctly
+    chip.style.position = '';
+    chip.style.zIndex = '';
 
     const touch = e.changedTouches[0];
 
@@ -493,16 +530,24 @@ function handleTouchEnd(e, player) {
         target: targetEl
     };
 
-    // Determine where it was dropped
+    // Determine where it was dropped using the coordinates and the target
     const pitch = document.getElementById('football-pitch');
-    const sidebar = document.querySelector('.sidebar');
+    const sidebarHome = document.querySelector('.sidebar');
+    const sidebarAway = document.querySelector('.sidebar-right');
+    const toggleHome = document.getElementById('toggle-bench-home');
+    const toggleAway = document.getElementById('toggle-bench-away');
 
-    if (pitch.contains(fakeEvent.target) || fakeEvent.target.closest('.pitch')) {
+    // Ensure we have a valid target element
+    const actualTarget = fakeEvent.target;
+
+    if (pitch.contains(actualTarget) || actualTarget.closest('.pitch')) {
         dropToField(fakeEvent);
-    } else if (sidebar.contains(fakeEvent.target) || fakeEvent.target.closest('.sidebar')) {
+    } else if (sidebarHome.contains(actualTarget) || actualTarget.closest('.sidebar') || (toggleHome && toggleHome.contains(actualTarget))) {
         dropToBench(fakeEvent);
+    } else if (sidebarAway.contains(actualTarget) || actualTarget.closest('.sidebar-right') || (toggleAway && toggleAway.contains(actualTarget))) {
+        dropToAwayBench(fakeEvent);
     } else {
-        renderPlayers(); // Reset visual
+        renderPlayers(); // Reset visual position if dropped nowhere
     }
 
     touchData.draggedPlayerId = null;
@@ -598,6 +643,27 @@ function allowDrop(e) {
     e.preventDefault();
 }
 
+
+
+function toggleBench(team) {
+    const selector = team === 'home' ? '.sidebar' : '.sidebar-right';
+    const otherSelector = team === 'home' ? '.sidebar-right' : '.sidebar';
+
+    const drawer = document.querySelector(selector);
+    const otherDrawer = document.querySelector(otherSelector);
+
+    // Close the other one first
+    otherDrawer.classList.remove('open');
+    // Toggle current
+    drawer.classList.toggle('open');
+}
+
+// Helper to close all drawers after a substitution
+function closeDrawers() {
+    document.querySelector('.sidebar').classList.remove('open');
+    document.querySelector('.sidebar-right').classList.remove('open');
+}
+
 function dropToField(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId');
@@ -633,6 +699,7 @@ function dropToField(e) {
             logMovement(player);
         }
     }
+    closeDrawers(); // Auto-close drawer on mobile
     renderPlayers();
 }
 
@@ -681,6 +748,7 @@ function handleBenchDrop(e, player) {
             logMovement(player);
         }
     }
+    closeDrawers();
     renderPlayers();
 }
 
@@ -875,4 +943,4 @@ function exportData() {
 }
 
 // Initialize on load
-window.onload = init;
+// Initialized via window.onload at the top
