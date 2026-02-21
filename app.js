@@ -72,7 +72,7 @@ function registerServiceWorker() {
                     const newWorker = reg.installing;
                     newWorker.onstatechange = () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            if (confirm('Nueva versión disponible (v2.0). ¿Actualizar ahora?')) {
+                            if (confirm('Nueva versión disponible (v2.1). ¿Actualizar ahora?')) {
                                 window.location.reload();
                             }
                         }
@@ -85,7 +85,7 @@ function registerServiceWorker() {
 
 // Global helper for the manual button
 async function forceUpdate() {
-    if (confirm('Esto forzará la descarga de la última versión (v2.0+). ¿Continuar?')) {
+    if (confirm('Esto forzará la descarga de la última versión (v2.1+). ¿Continuar?')) {
         if ('serviceWorker' in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
             for (let registration of registrations) {
@@ -890,24 +890,28 @@ function exportData() {
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
 
-    // Helper to ensure every meta line has the same number of columns as the table
-    const padLine = (content) => content + ";".repeat(totalCols - content.split(';').length) + "\n";
+    // Fixed PadLine logic: Simply ensure the line has the total number of semicolons.
+    const padLine = (label, value) => {
+        const base = `"${label.replace(/"/g, '""')}";"${value.replace(/"/g, '""')}"`;
+        const padding = ";".repeat(totalCols - 2);
+        return base + padding + "\n";
+    };
 
     let csvContent = "sep=;\n"; // Excel hint
-    csvContent += padLine(`FECHA;${date}`);
-    csvContent += padLine(`MODO;${mode}`);
-    csvContent += padLine(`ENCUENTRO;${homeName} vs ${awayName}`);
-    csvContent += padLine(`RESULTADO;${scoreHome} - ${scoreAway}`);
-    csvContent += padLine(`TIEMPO GLOBAL;${formatTime(masterTime)}`);
-    csvContent += padLine(""); // Empty row
+    csvContent += padLine(`FECHA`, date);
+    csvContent += padLine(`MODO`, mode);
+    csvContent += padLine(`ENCUENTRO`, `${homeName} vs ${awayName}`);
+    csvContent += padLine(`RESULTADO`, `${scoreHome} - ${scoreAway}`);
+    csvContent += padLine(`TIEMPO GLOBAL`, formatTime(masterTime));
+    csvContent += ";".repeat(totalCols - 1) + "\n"; // Empty row
 
     // Dynamic Headers
-    let header = "EQUIPO;DORSAL;NOMBRE";
+    let header = `"EQUIPO";"DORSAL";"NOMBRE"`;
     for (let i = 1; i <= maxShifts; i++) {
-        header += `;ENTRADA ${i};SALIDA ${i}`;
+        header += `;"ENTRADA ${i}";"SALIDA ${i}"`;
     }
-    header += ";TIEMPO TOTAL";
-    csvContent += padLine(header);
+    header += `;"TIEMPO TOTAL"`;
+    csvContent += header + "\n";
 
     // 4. Build Rows
     const sortedPlayers = [...processedPlayers].sort((a, b) => {
@@ -919,15 +923,15 @@ function exportData() {
         const teamLabel = p.team === 'home' ? homeName : awayName;
         const safeName = `"${p.name.replace(/"/g, '""')}"`;
 
-        let row = `${teamLabel};${p.number};${safeName}`;
+        let row = `"${teamLabel}";"${p.number}";${safeName}`;
 
         for (let i = 0; i < maxShifts; i++) {
             const shift = p.processedShifts[i];
-            row += shift ? `;${shift.in};${shift.out}` : `;;`;
+            row += shift ? `;"${shift.in}";"${shift.out}"` : `;;`;
         }
 
-        row += `;${formatTime(p.time)}`;
-        csvContent += padLine(row);
+        row += `;"${formatTime(p.time)}"`;
+        csvContent += row + "\n";
     });
 
     // 5. Download with BOM for UTF-8 compatibility
