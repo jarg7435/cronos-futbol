@@ -42,6 +42,7 @@ let players = [];
 let masterTime = 0; // seconds
 let isRunning = false;
 let timerInterval = null;
+let lastTickTime = 0; // timestamp for background sync
 let currentMode = 'f7'; // f7 or f11
 let analyzeAway = true;
 
@@ -478,6 +479,13 @@ function setupEventListeners() {
         });
         el.addEventListener('drop', () => el.classList.remove('drop-hover'));
     });
+
+    // Background Sync (Visibility API)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && isRunning) {
+            tick(); // Force catch-up when coming back from lock/background
+        }
+    });
 }
 
 function spawnInitialPlayers() {
@@ -555,6 +563,7 @@ function toggleGame() {
     if (isRunning) {
         btn.textContent = 'PAUSAR';
         btn.classList.add('danger');
+        lastTickTime = Date.now(); // Record start time
         timerInterval = setInterval(tick, 1000);
     } else {
         btn.textContent = 'REANUDAR';
@@ -564,15 +573,23 @@ function toggleGame() {
 }
 
 function tick() {
-    masterTime++;
-    updateMasterUI();
+    const now = Date.now();
+    const deltaMs = now - lastTickTime;
+    const deltaSec = Math.floor(deltaMs / 1000);
 
-    players.forEach(p => {
-        if (p.status === 'field') {
-            p.time++;
-            updatePlayerUI(p);
-        }
-    });
+    if (deltaSec >= 1) {
+        masterTime += deltaSec;
+        lastTickTime += deltaSec * 1000; // Move forward by whole seconds to keep precision
+
+        updateMasterUI();
+
+        players.forEach(p => {
+            if (p.status === 'field') {
+                p.time += deltaSec;
+                updatePlayerUI(p);
+            }
+        });
+    }
 }
 
 function updateMasterUI() {
@@ -1015,6 +1032,7 @@ function resetMatch() {
     isRunning = false;
     clearInterval(timerInterval);
     masterTime = 0;
+    lastTickTime = 0;
     updateMasterUI();
 
     // Reset Play button
