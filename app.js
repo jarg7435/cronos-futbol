@@ -475,23 +475,15 @@ function openSetupModal() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div style="
-            width:100%; max-width:960px; background:var(--bg-card);
-            border:1px solid var(--glass-border); border-radius:16px;
-            padding:1.5rem; box-sizing:border-box;
-            display:flex; flex-direction:column; gap:1rem;
-            max-height:95vh; overflow-y:auto;
-        ">
-            <h2 style="margin:0; font-family:'Outfit',sans-serif; color:var(--primary); text-align:center; font-size:1.3rem;">
-                ⚽ Configuración del Encuentro
-            </h2>
+        <div class="modal-content" style="width:860px; max-width:98vw;">
+            <h2 style="text-align:center; margin-bottom:1.2rem;">Configuración del Encuentro</h2>
 
-            <!-- FILA EQUIPOS -->
-            <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:1.2rem; align-items:start;">
+            <!-- FILA: Local | Visitante -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1rem;">
 
-                <!-- EQUIPO LOCAL -->
-                <div style="display:flex; flex-direction:column; gap:0.7rem;">
-                    <h3 style="margin:0; color:#58a6ff; font-size:1rem; border-bottom:2px solid #58a6ff; padding-bottom:4px;">🏠 Equipo Local</h3>
+                <!-- LOCAL -->
+                <div style="border:1px solid var(--glass-border); border-radius:10px; padding:1rem;">
+                    <h3 style="margin:0 0 0.8rem; color:#58a6ff; text-align:center; border-bottom:2px solid #58a6ff; padding-bottom:6px;">Equipo Local</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
                         <select id="saved-teams-home" onchange="loadTeamFromDropdown('home')">
@@ -502,60 +494,28 @@ function openSetupModal() {
                         <label>Nombre</label>
                         <input type="text" id="setup-home-name" value="LOCAL">
                     </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.6rem; margin-top:0.4rem;">
                         <div class="form-group">
                             <label>Camiseta</label>
                             <input type="color" id="setup-home-color" value="#58a6ff"
-                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;"
-                                oninput="this.style.outlineColor=this.value">
+                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                         <div class="form-group">
                             <label>Pantalón</label>
                             <input type="color" id="setup-home-shorts" value="#ffffff"
-                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
+                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                         <div class="form-group">
-                            <label>Nº Color</label>
+                            <label>Dorsal</label>
                             <input type="color" id="setup-home-text" value="#ffffff"
-                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
+                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                     </div>
                 </div>
 
-                <!-- COLUMNA CENTRAL -->
-                <div style="display:flex; flex-direction:column; gap:0.7rem; min-width:200px;">
-                    <h3 style="margin:0; color:var(--secondary); font-size:1rem; border-bottom:2px solid var(--secondary); padding-bottom:4px;">⚙️ Partido</h3>
-                    <div class="form-group">
-                        <label>Modalidad</label>
-                        <select id="setup-mode" onchange="updateFormationOptions()">
-                            <option value="f7">Fútbol 7 — 2 × 30 min</option>
-                            <option value="f11">Fútbol 11 — 2 × 40 min</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Sistema de juego</label>
-                        <select id="setup-formation" style="font-weight:600;">
-                            <option value="">-- Sin sistema --</option>
-                        </select>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:10px; margin-top:0.3rem;">
-                        <input type="checkbox" id="setup-analyze-away" style="width:18px;height:18px;flex-shrink:0;">
-                        <label for="setup-analyze-away" style="margin:0;cursor:pointer;font-size:0.85rem;">Analizar Equipo Visitante</label>
-                    </div>
-                    <div style="margin-top:auto; display:flex; flex-direction:column; gap:0.5rem; padding-top:0.8rem;">
-                        <button class="btn primary" onclick="confirmSetup()" style="width:100%;padding:0.75rem;font-size:0.95rem;">
-                            ▶ CONTINUAR AL PARTIDO
-                        </button>
-                        <button class="btn" onclick="openRosterManager()"
-                            style="width:100%;background:var(--glass);color:var(--primary);font-size:0.78rem;">
-                            📋 GESTIONAR PLANTILLA
-                        </button>
-                    </div>
-                </div>
-
-                <!-- EQUIPO VISITANTE -->
-                <div style="display:flex; flex-direction:column; gap:0.7rem;">
-                    <h3 style="margin:0; color:#ff5858; font-size:1rem; border-bottom:2px solid #ff5858; padding-bottom:4px;">✈️ Equipo Visitante</h3>
+                <!-- VISITANTE -->
+                <div style="border:1px solid var(--glass-border); border-radius:10px; padding:1rem;">
+                    <h3 style="margin:0 0 0.8rem; color:#ff5858; text-align:center; border-bottom:2px solid #ff5858; padding-bottom:6px;">Equipo Visitante</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
                         <select id="saved-teams-away" onchange="loadTeamFromDropdown('away')">
@@ -566,25 +526,66 @@ function openSetupModal() {
                         <label>Nombre</label>
                         <input type="text" id="setup-away-name" value="VISITANTE">
                     </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.6rem; margin-top:0.4rem;">
                         <div class="form-group">
                             <label>Camiseta</label>
                             <input type="color" id="setup-away-color" value="#ff5858"
-                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
+                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                         <div class="form-group">
                             <label>Pantalón</label>
                             <input type="color" id="setup-away-shorts" value="#000000"
-                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
+                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                         <div class="form-group">
-                            <label>Nº Color</label>
+                            <label>Dorsal</label>
                             <input type="color" id="setup-away-text" value="#ffffff"
-                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
+                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                     </div>
                 </div>
+            </div>
 
+            <!-- FILA: Modalidad | Sistema | Analizar -->
+            <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:1rem; align-items:end;
+                        background:var(--glass); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem;">
+                <div class="form-group" style="margin:0;">
+                    <label>Modalidad</label>
+                    <select id="setup-mode" onchange="updateFormationOptions()">
+                        <option value="f7">Fútbol 7 (2T x 30')</option>
+                        <option value="f11">Fútbol 11 (2T x 40')</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>Sistema táctico inicial</label>
+                    <select id="setup-formation" style="font-weight:600;">
+                        <option value="">-- Sin formación predefinida --</option>
+                    </select>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; padding-bottom:2px;">
+                    <input type="checkbox" id="setup-analyze-away" style="width:18px;height:18px;flex-shrink:0;">
+                    <label for="setup-analyze-away" style="margin:0;cursor:pointer;white-space:nowrap;">Analizar Visitante</label>
+                </div>
+            </div>
+
+            <!-- BOTONES -->
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; gap:0.6rem; align-items:center;">
+                    <button class="btn" onclick="openRosterManager()"
+                        style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
+                        GESTIONAR PLANTILLA
+                    </button>
+                    ${window._cronosCurrentUser?.role === 'admin' ? `
+                    <button onclick="openAdminPanel()"
+                        style="background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.5);
+                               color:#ffa500; font-size:0.82rem; padding:0.45rem 0.9rem;
+                               border-radius:8px; cursor:pointer; font-weight:700;">
+                        ⚙ ADMIN
+                    </button>` : ''}
+                </div>
+                <button class="btn primary" onclick="confirmSetup()" style="padding:0.65rem 1.8rem;">
+                    CONTINUAR AL PARTIDO
+                </button>
             </div>
         </div>
     `;
