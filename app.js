@@ -1,10 +1,38 @@
-// --- CONFIGURATION & STATE ---
-window.unlockApp = function() {
+// --- SECURITY & INITIALIZATION ---
+const ACCESS_CODE = '1234';
+
+window.onload = () => {
+    if (sessionStorage.getItem('cronos_access') === 'true') {
+        unlockApp();
+    } else {
+        const accessInput = document.getElementById('access-input');
+        if (accessInput) {
+            accessInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') validateAccess();
+            });
+        }
+    }
+};
+
+function validateAccess() {
+    const input = document.getElementById('access-input').value;
+    const errorEl = document.getElementById('access-error');
+    if (input === ACCESS_CODE) {
+        sessionStorage.setItem('cronos_access', 'true');
+        unlockApp();
+    } else {
+        errorEl.textContent = 'Código incorrecto. Inténtelo de nuevo.';
+        document.getElementById('access-input').value = '';
+    }
+}
+
+function unlockApp() {
     document.getElementById('access-screen').style.display = 'none';
     document.body.classList.remove('locked');
     init();
-};
+}
 
+// --- CONFIGURATION & STATE ---
 let players = [];
 let isRunning = false;
 let timerInterval = null;
@@ -447,51 +475,99 @@ function openSetupModal() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content setup-modal-two-cols">
-            <h2 style="text-align: center; margin-bottom: 0.5rem;">Configuración del Encuentro</h2>
-            
-            <!-- Contenedor Principal Izquierda / Derecha -->
-            <div class="setup-teams-container">
-                <!-- Equipo Local (Izquierda) -->
-                <div class="setup-team-block" style="border-top: 3px solid var(--primary);">
+        <div class="modal-content" style="max-width: 95%;">
+            <h2>Configuración del Encuentro</h2>
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 250px;">
                     <h3>Equipo Local</h3>
-                    <div class="form-group"><label>Cargar Guardado</label><select id="saved-teams-home" onchange="loadTeamFromDropdown('home')"><option value="">-- Seleccionar --</option></select></div>
-                    <div class="form-group"><label>Nombre</label><input type="text" id="setup-home-name" value="LOCAL"></div>
-                    
-                    <div class="setup-colors-row" style="margin-top: 10px;">
-                        <div class="form-group"><label>Camiseta</label><div class="color-picker-wrap"><input type="color" id="setup-home-color" value="#58a6ff"></div></div>
-                        <div class="form-group"><label>Pantalón</label><div class="color-picker-wrap"><input type="color" id="setup-home-shorts" value="#ffffff"></div></div>
-                        <div class="form-group"><label>Dorsal</label><div class="color-picker-wrap"><input type="color" id="setup-home-text" value="#ffffff"></div></div>
+                    <div class="form-group">
+                        <label>Cargar Guardado</label>
+                        <select id="saved-teams-home" onchange="loadTeamFromDropdown('home')">
+                            <option value="">-- Seleccionar --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" id="setup-home-name" value="LOCAL">
+                    </div>
+                    <div class="form-group">
+                        <label>Camiseta</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="setup-home-color" value="#58a6ff" oninput="document.getElementById('swatch-home-color').style.background=this.value">
+                            <span id="swatch-home-color" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#58a6ff;flex-shrink:0;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Pantalón</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="setup-home-shorts" value="#ffffff" oninput="document.getElementById('swatch-home-shorts').style.background=this.value">
+                            <span id="swatch-home-shorts" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ffffff;flex-shrink:0;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Color Número</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="setup-home-text" value="#ffffff" oninput="document.getElementById('swatch-home-text').style.background=this.value">
+                            <span id="swatch-home-text" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ffffff;flex-shrink:0;"></span>
+                        </div>
                     </div>
                 </div>
-
-                <!-- Equipo Visitante (Derecha) -->
-                <div class="setup-team-block" style="border-top: 3px solid var(--danger);">
+                <div style="flex: 1; min-width: 250px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
                     <h3>Equipo Visitante</h3>
-                    <div class="form-group"><label>Cargar Guardado</label><select id="saved-teams-away" onchange="loadTeamFromDropdown('away')"><option value="">-- Seleccionar --</option></select></div>
-                    <div class="form-group"><label>Nombre</label><input type="text" id="setup-away-name" value="VISITANTE"></div>
-                    
-                    <div class="setup-colors-row" style="margin-top: 10px;">
-                        <div class="form-group"><label>Camiseta</label><div class="color-picker-wrap"><input type="color" id="setup-away-color" value="#ff5858"></div></div>
-                        <div class="form-group"><label>Pantalón</label><div class="color-picker-wrap"><input type="color" id="setup-away-shorts" value="#000000"></div></div>
-                        <div class="form-group"><label>Dorsal</label><div class="color-picker-wrap"><input type="color" id="setup-away-text" value="#ffffff"></div></div>
+                    <div class="form-group">
+                        <label>Cargar Guardado</label>
+                        <select id="saved-teams-away" onchange="loadTeamFromDropdown('away')">
+                            <option value="">-- Seleccionar --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" id="setup-away-name" value="VISITANTE">
+                    </div>
+                    <div class="form-group">
+                        <label>Camiseta</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="setup-away-color" value="#ff5858" oninput="document.getElementById('swatch-away-color').style.background=this.value">
+                            <span id="swatch-away-color" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ff5858;flex-shrink:0;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Pantalón</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="setup-away-shorts" value="#000000" oninput="document.getElementById('swatch-away-shorts').style.background=this.value">
+                            <span id="swatch-away-shorts" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#000000;flex-shrink:0;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Color Número</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="setup-away-text" value="#ffffff" oninput="document.getElementById('swatch-away-text').style.background=this.value">
+                            <span id="swatch-away-text" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ffffff;flex-shrink:0;"></span>
+                        </div>
                     </div>
                 </div>
             </div>
-
-            <!-- Opciones Generales (Abajo) -->
-            <div class="setup-global-bottom">
-                <div class="form-group" style="flex: 1;"><label>Modalidad</label><select id="setup-mode" onchange="updateFormationOptions()"><option value="f7">Fútbol 7 (2T x 30')</option><option value="f11">Fútbol 11 (2T x 40')</option></select></div>
-                <div class="form-group" style="flex: 1;"><label>Sistema táctico inicial</label><select id="setup-formation" style="font-weight:600;"><option value="">-- Sin sistema --</option></select></div>
-                <div class="form-group" style="flex: 1; flex-direction: row; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 15px;">
-                    <input type="checkbox" id="setup-analyze-away" style="width: 20px; height: 20px;">
-                    <label for="setup-analyze-away" style="margin: 0; cursor: pointer;">Analizar Visitante</label>
-                </div>
+            <div class="form-group" style="margin-top: 1rem;">
+                <label>Modalidad</label>
+                <select id="setup-mode" onchange="updateFormationOptions()">
+                    <option value="f7">Fútbol 7 (2 tiempos de 30 min)</option>
+                    <option value="f11">Fútbol 11 (2 tiempos de 40 min)</option>
+                </select>
             </div>
-
-            <div class="setup-actions-row">
-                <button class="btn" onclick="openRosterManager()" style="background: var(--glass); color: var(--primary); font-size: 0.8rem;">GESTIONAR PLANTILLA</button>
-                <button class="btn primary" onclick="confirmSetup()">CONTINUAR AL PARTIDO</button>
+            <div class="form-group" style="margin-top: 0.6rem;">
+                <label>Sistema de juego inicial</label>
+                <select id="setup-formation" style="font-weight:600;">
+                    <option value="">-- Sin sistema predefinido --</option>
+                </select>
+                <span style="font-size:0.7rem;color:var(--text-muted);margin-top:3px;">Los jugadores se distribuirán automáticamente en campo al iniciar</span>
+            </div>
+            <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 1rem;">
+                <input type="checkbox" id="setup-analyze-away" style="width: 20px; height: 20px;">
+                <label for="setup-analyze-away" style="margin: 0; cursor: pointer;">Analizar Equipo Visitante</label>
+            </div>
+            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn" onclick="openRosterManager()" style="background: var(--glass); color: var(--primary); font-size: 0.8rem;">GESTIONAR MI PLANTILLA</button>
+                <button class="btn primary" onclick="confirmSetup()">CONTINUAR</button>
             </div>
         </div>
     `;
@@ -599,46 +675,86 @@ function openConvocationModal() {
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const limit = currentMode === 'f7' ? 14 : 18;
+    // Columnas: f7→3 cols (18 jugadores), f11→5 cols (25 jugadores)
+    const cols = currentMode === 'f7' ? 3 : 5;
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="width: 600px; max-width: 95%;">
-            <h2>Convocatoria - ${TEAM_NAMES.home}</h2>
-            <p style="font-size: 0.8rem; color: var(--text-muted);">Selecciona exactamente ${limit} jugadores para el partido.</p>
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 1rem; max-height: 400px; overflow-y: auto;">
+        <div class="modal-content" style="width:min(95vw,800px); max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
+            <h2 style="margin-bottom:0.2rem;">Convocatoria — ${TEAM_NAMES.home}</h2>
+            <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.8rem;">
+                Toca cualquier jugador para seleccionarlo · Selecciona exactamente <strong>${limit}</strong>
+            </p>
+
+            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; overflow-y:auto; flex:1;">
                 ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
-                    <div style="background: var(--glass); padding: 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px;">
-                        <input type="checkbox" class="conv-check" data-index="${i}" id="conv-${i}" style="width: 20px; height: 20px;">
-                        <label for="conv-${i}" style="font-size: 0.85rem; cursor: pointer;">
-                            <span style="color: var(--primary); font-weight: bold;">${p.number}</span> ${p.alias || p.name || 'J' + (i + 1)}
-                        </label>
+                    <div class="conv-row" data-index="${i}"
+                        style="background:var(--glass); border:2px solid transparent; border-radius:8px;
+                               padding:8px 10px; display:flex; align-items:center; gap:8px;
+                               cursor:pointer; transition:all 0.15s; user-select:none;">
+                        <span class="conv-dot" style="width:18px;height:18px;border-radius:50%;
+                              background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25);
+                              display:flex;align-items:center;justify-content:center;
+                              font-size:0.6rem;flex-shrink:0;">✓</span>
+                        <span style="font-size:0.82rem;">
+                            <span style="color:var(--primary);font-weight:bold;">${p.number}</span>
+                            ${p.alias || p.name || 'J' + (i + 1)}
+                        </span>
                     </div>
-                `).join('') : '<p>No tienes jugadores en tu plantilla. Se usarán dorsales por defecto.</p>'}
+                `).join('') : '<p style="grid-column:1/-1;">No tienes jugadores. Se usarán dorsales por defecto.</p>'}
             </div>
-            <div style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
-                <span id="conv-count" style="font-size: 0.9rem; font-weight: bold; color: var(--primary);">0 / ${limit}</span>
-                <div style="display: flex; gap: 1rem;">
+
+            <div style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px solid var(--glass-border);
+                        display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                <span id="conv-count" style="font-size:1rem; font-weight:bold; color:var(--primary);">0 / ${limit}</span>
+                <div style="display:flex; gap:0.8rem;">
                     <button class="btn" onclick="openSetupModal()">ATRÁS</button>
-                    <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>INICIAR PARTIDO</button>
+                    <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>
+                        INICIAR PARTIDO
+                    </button>
                 </div>
             </div>
         </div>
     `;
 
-    const checks = document.querySelectorAll('.conv-check');
     const countEl = document.getElementById('conv-count');
     const startBtn = document.getElementById('btn-start-match');
 
     if (myPlayers.length === 0) {
         startBtn.disabled = false;
         countEl.style.display = 'none';
+        return;
     }
 
-    checks.forEach(c => {
-        c.addEventListener('change', () => {
-            const selected = document.querySelectorAll('.conv-check:checked').length;
+    let selected = 0;
+
+    document.querySelectorAll('.conv-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const isSelected = row.classList.contains('conv-selected');
+
+            if (!isSelected && selected >= limit) return; // límite alcanzado
+
+            if (isSelected) {
+                row.classList.remove('conv-selected');
+                row.style.borderColor = 'transparent';
+                row.style.background  = 'var(--glass)';
+                row.querySelector('.conv-dot').style.background = 'rgba(255,255,255,0.1)';
+                row.querySelector('.conv-dot').style.borderColor = 'rgba(255,255,255,0.25)';
+                row.querySelector('.conv-dot').style.color = 'transparent';
+                selected--;
+            } else {
+                row.classList.add('conv-selected');
+                row.style.borderColor = 'var(--primary)';
+                row.style.background  = 'rgba(88,166,255,0.12)';
+                row.querySelector('.conv-dot').style.background  = 'var(--primary)';
+                row.querySelector('.conv-dot').style.borderColor = 'var(--primary)';
+                row.querySelector('.conv-dot').style.color = '#0a0e14';
+                selected++;
+            }
+
             countEl.textContent = `${selected} / ${limit}`;
+            countEl.style.color = selected === limit ? 'var(--secondary)' : 'var(--primary)';
             startBtn.disabled = (selected !== limit);
         });
     });
@@ -647,8 +763,8 @@ function openConvocationModal() {
 function startMatchWithConvocation() {
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
-    const checks = document.querySelectorAll('.conv-check:checked');
-    const selectedPlayers = Array.from(checks).map(c => myPlayers[c.dataset.index]);
+    const rows = document.querySelectorAll('.conv-row.conv-selected');
+    const selectedPlayers = Array.from(rows).map(r => myPlayers[r.dataset.index]);
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
     document.body.classList.remove('setup-mode');
