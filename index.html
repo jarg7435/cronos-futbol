@@ -56,11 +56,13 @@
             doc, getDoc, setDoc, serverTimestamp
         };
 
-        // Observador de sesión — punto de entrada principal
+        // Observador de sesión — solo entra automáticamente si el login fue en ESTA sesión
         onAuthStateChanged(auth, async (user) => {
-            if (user) {
+            if (user && window._loginThisSession) {
                 await checkAuthorization(user);
             } else {
+                // Siempre mostrar pantalla de login al cargar la página
+                await signOut(auth).catch(() => {});
                 showScreen('auth-screen');
             }
         });
@@ -138,7 +140,11 @@
             <!-- Email -->
             <div style="margin-bottom:1rem;">
                 <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Email</label>
+                <!-- Campo trampa invisible para evitar autocompletar del navegador -->
+                <input type="email" style="display:none;" aria-hidden="true">
                 <input type="email" id="auth-email" placeholder="tu@email.com"
+                    autocomplete="off" readonly
+                    onfocus="this.removeAttribute('readonly')"
                     style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
                            border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
@@ -147,7 +153,10 @@
             <!-- Contraseña -->
             <div style="margin-bottom:1.5rem;">
                 <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Contraseña</label>
+                <input type="password" style="display:none;" aria-hidden="true">
                 <input type="password" id="auth-password" placeholder="••••••••"
+                    autocomplete="new-password" readonly
+                    onfocus="this.removeAttribute('readonly')"
                     style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
                            border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
@@ -336,7 +345,7 @@
                            padding:0.4rem 0.8rem; border-radius:8px; cursor:pointer; font-size:0.85rem;">✕ Cerrar</button>
             </div>
 
-            <!-- Tabs: Pendientes / Todos -->
+            <!-- Tabs: Pendientes / Todos / Compartir -->
             <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0;">
                 <button id="atab-pending" onclick="switchAdminTab('pending')"
                     style="flex:1; padding:0.7rem; background:none; border:none; color:#ffa500;
@@ -347,6 +356,11 @@
                     style="flex:1; padding:0.7rem; background:none; border:none; color:#7d8590;
                            font-weight:700; font-size:0.82rem; border-bottom:2px solid transparent; cursor:pointer;">
                     👥 TODOS LOS USUARIOS
+                </button>
+                <button id="atab-share" onclick="switchAdminTab('share')"
+                    style="flex:1; padding:0.7rem; background:none; border:none; color:#7d8590;
+                           font-weight:700; font-size:0.82rem; border-bottom:2px solid transparent; cursor:pointer;">
+                    🔗 COMPARTIR
                 </button>
             </div>
 
@@ -441,6 +455,7 @@
             showAuthError('');
             try {
                 if (authMode === 'login') {
+                    window._loginThisSession = true;
                     await fa.signInWithEmailAndPassword(fa.auth, email, pass);
                     // onAuthStateChanged gestiona el resto
                 } else {
@@ -516,16 +531,101 @@
 
         function switchAdminTab(tab) {
             adminCurrentTab = tab;
-            const tP = document.getElementById('atab-pending');
-            const tA = document.getElementById('atab-all');
-            if (tab === 'pending') {
-                tP.style.color = '#ffa500'; tP.style.borderBottom = '2px solid #ffa500';
-                tA.style.color = '#7d8590'; tA.style.borderBottom = '2px solid transparent';
+            const tabs = { pending: 'atab-pending', all: 'atab-all', share: 'atab-share' };
+            Object.entries(tabs).forEach(([key, id]) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const active = key === tab;
+                el.style.color       = active ? '#ffa500' : '#7d8590';
+                el.style.borderBottom = active ? '2px solid #ffa500' : '2px solid transparent';
+            });
+            if (tab === 'share') {
+                showShareTab();
             } else {
-                tA.style.color = '#ffa500'; tA.style.borderBottom = '2px solid #ffa500';
-                tP.style.color = '#7d8590'; tP.style.borderBottom = '2px solid transparent';
+                loadAdminUsers();
             }
-            loadAdminUsers();
+        }
+
+        function showShareTab() {
+            const appUrl = 'https://jarg7435.github.io/cronos-futbol/';
+            const msgWhatsApp = `¡Hola! Te invito a probar *Cronos Fútbol*, mi aplicación de asistente para entrenadores ⚽\n\nEntra aquí y regístrate con tu email:\n${appUrl}\n\nUna vez registrado, yo activo tu acceso.`;
+            const msgEmail    = `¡Hola!\n\nTe invito a probar Cronos Fútbol, una aplicación de asistente para entrenadores de fútbol.\n\nPuedes registrarte en:\n${appUrl}\n\nUna vez que te registres con tu email, yo activaré tu acceso personalmente.\n\n¡Nos vemos en el campo!`;
+            const waLink  = `https://wa.me/?text=${encodeURIComponent(msgWhatsApp)}`;
+            const emlLink = `mailto:?subject=${encodeURIComponent('Invitación a Cronos Fútbol')}&body=${encodeURIComponent(msgEmail)}`;
+
+            document.getElementById('admin-users-list').innerHTML = `
+                <div style="padding:0.5rem;">
+
+                    <!-- URL de la app -->
+                    <div style="background:rgba(255,165,0,0.08); border:1px solid rgba(255,165,0,0.3);
+                                border-radius:10px; padding:1rem; margin-bottom:1rem;">
+                        <p style="margin:0 0 0.5rem; color:#ffa500; font-weight:700; font-size:0.85rem;">
+                            🔗 Enlace de la aplicación
+                        </p>
+                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                            <input id="share-url-input" type="text" value="${appUrl}" readonly
+                                style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15);
+                                       border-radius:8px; padding:0.6rem 0.8rem; color:white; font-size:0.82rem;
+                                       outline:none; cursor:text;">
+                            <button onclick="copyAppUrl()"
+                                style="background:#ffa500; border:none; color:#0a0e14; font-weight:700;
+                                       padding:0.6rem 1rem; border-radius:8px; cursor:pointer; font-size:0.82rem;
+                                       white-space:nowrap; flex-shrink:0;">
+                                📋 Copiar
+                            </button>
+                        </div>
+                        <p id="copy-confirm" style="margin:0.4rem 0 0; font-size:0.75rem; color:#3fb950; display:none;">
+                            ✅ ¡Enlace copiado al portapapeles!
+                        </p>
+                    </div>
+
+                    <!-- Instrucciones para el usuario -->
+                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+                                border-radius:10px; padding:1rem; margin-bottom:1rem;">
+                        <p style="margin:0 0 0.6rem; color:white; font-weight:700; font-size:0.85rem;">
+                            📋 Instrucciones para enviar
+                        </p>
+                        <ol style="margin:0; padding-left:1.2rem; color:#7d8590; font-size:0.82rem; line-height:1.8;">
+                            <li>Comparte el enlace con la persona</li>
+                            <li>Pídele que se registre con su email y contraseña</li>
+                            <li>Vuelve aquí → pestaña <strong style="color:#ffa500;">⏳ PENDIENTES</strong></li>
+                            <li>Pulsa <strong style="color:#3fb950;">✅ Autorizar</strong> en su cuenta</li>
+                            <li>A partir de ese momento ya puede entrar</li>
+                        </ol>
+                    </div>
+
+                    <!-- Botones de envío directo -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem;">
+                        <a href="${waLink}" target="_blank"
+                            style="display:flex; align-items:center; justify-content:center; gap:0.5rem;
+                                   background:#25d366; border:none; color:white; font-weight:700;
+                                   padding:0.75rem; border-radius:10px; cursor:pointer; font-size:0.85rem;
+                                   text-decoration:none;">
+                            <span style="font-size:1.1rem;">💬</span> Enviar por WhatsApp
+                        </a>
+                        <a href="${emlLink}"
+                            style="display:flex; align-items:center; justify-content:center; gap:0.5rem;
+                                   background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                                   color:#58a6ff; font-weight:700; padding:0.75rem; border-radius:10px;
+                                   cursor:pointer; font-size:0.85rem; text-decoration:none;">
+                            <span style="font-size:1.1rem;">📧</span> Enviar por Email
+                        </a>
+                    </div>
+
+                </div>
+            `;
+        }
+
+        function copyAppUrl() {
+            const url = 'https://jarg7435.github.io/cronos-futbol/';
+            navigator.clipboard.writeText(url).then(() => {
+                const c = document.getElementById('copy-confirm');
+                if (c) { c.style.display = 'block'; setTimeout(() => c.style.display = 'none', 3000); }
+            }).catch(() => {
+                // Fallback para iOS/Safari
+                const el = document.getElementById('share-url-input');
+                if (el) { el.select(); document.execCommand('copy'); }
+            });
         }
 
         async function loadAdminUsers() {
