@@ -23,7 +23,8 @@
         import { initializeApp }
             from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword,
-                 signInWithEmailAndPassword, onAuthStateChanged, signOut }
+                 signInWithEmailAndPassword, onAuthStateChanged, signOut,
+                 setPersistence, browserSessionPersistence }
             from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
             from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -44,6 +45,9 @@
         const app  = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db   = getFirestore(app);
+
+        // Sesión solo dura mientras el navegador está abierto (no persiste al cerrar)
+        setPersistence(auth, browserSessionPersistence).catch(() => {});
 
         // Exponer al scope global para los scripts clásicos
         window._cronos_auth = {

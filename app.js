@@ -475,105 +475,122 @@ function openSetupModal() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="max-width: 95%;">
-            <h2>Configuración del Encuentro</h2>
-            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 250px;">
-                    <h3>Equipo Local</h3>
+        <div style="
+            width:100%; max-width:960px; background:var(--bg-card);
+            border:1px solid var(--glass-border); border-radius:16px;
+            padding:1.5rem; box-sizing:border-box;
+            display:flex; flex-direction:column; gap:1rem;
+            max-height:95vh; overflow-y:auto;
+        ">
+            <h2 style="margin:0; font-family:'Outfit',sans-serif; color:var(--primary); text-align:center; font-size:1.3rem;">
+                ⚽ Configuración del Encuentro
+            </h2>
+
+            <!-- FILA EQUIPOS -->
+            <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:1.2rem; align-items:start;">
+
+                <!-- EQUIPO LOCAL -->
+                <div style="display:flex; flex-direction:column; gap:0.7rem;">
+                    <h3 style="margin:0; color:#58a6ff; font-size:1rem; border-bottom:2px solid #58a6ff; padding-bottom:4px;">🏠 Equipo Local</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
                         <select id="saved-teams-home" onchange="loadTeamFromDropdown('home')">
-                            <option value="">-- Seleccionar --</option>
+                            <option value="">-- Cargar --</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Nombre</label>
                         <input type="text" id="setup-home-name" value="LOCAL">
                     </div>
-                    <div class="form-group">
-                        <label>Camiseta</label>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="setup-home-color" value="#58a6ff" oninput="document.getElementById('swatch-home-color').style.background=this.value">
-                            <span id="swatch-home-color" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#58a6ff;flex-shrink:0;"></span>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                        <div class="form-group">
+                            <label>Camiseta</label>
+                            <input type="color" id="setup-home-color" value="#58a6ff"
+                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;"
+                                oninput="this.style.outlineColor=this.value">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Pantalón</label>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="setup-home-shorts" value="#ffffff" oninput="document.getElementById('swatch-home-shorts').style.background=this.value">
-                            <span id="swatch-home-shorts" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ffffff;flex-shrink:0;"></span>
+                        <div class="form-group">
+                            <label>Pantalón</label>
+                            <input type="color" id="setup-home-shorts" value="#ffffff"
+                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Color Número</label>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="setup-home-text" value="#ffffff" oninput="document.getElementById('swatch-home-text').style.background=this.value">
-                            <span id="swatch-home-text" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ffffff;flex-shrink:0;"></span>
+                        <div class="form-group">
+                            <label>Nº Color</label>
+                            <input type="color" id="setup-home-text" value="#ffffff"
+                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
                         </div>
                     </div>
                 </div>
-                <div style="flex: 1; min-width: 250px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
-                    <h3>Equipo Visitante</h3>
+
+                <!-- COLUMNA CENTRAL -->
+                <div style="display:flex; flex-direction:column; gap:0.7rem; min-width:200px;">
+                    <h3 style="margin:0; color:var(--secondary); font-size:1rem; border-bottom:2px solid var(--secondary); padding-bottom:4px;">⚙️ Partido</h3>
+                    <div class="form-group">
+                        <label>Modalidad</label>
+                        <select id="setup-mode" onchange="updateFormationOptions()">
+                            <option value="f7">Fútbol 7 — 2 × 30 min</option>
+                            <option value="f11">Fútbol 11 — 2 × 40 min</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Sistema de juego</label>
+                        <select id="setup-formation" style="font-weight:600;">
+                            <option value="">-- Sin sistema --</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:0.3rem;">
+                        <input type="checkbox" id="setup-analyze-away" style="width:18px;height:18px;flex-shrink:0;">
+                        <label for="setup-analyze-away" style="margin:0;cursor:pointer;font-size:0.85rem;">Analizar Equipo Visitante</label>
+                    </div>
+                    <div style="margin-top:auto; display:flex; flex-direction:column; gap:0.5rem; padding-top:0.8rem;">
+                        <button class="btn primary" onclick="confirmSetup()" style="width:100%;padding:0.75rem;font-size:0.95rem;">
+                            ▶ CONTINUAR AL PARTIDO
+                        </button>
+                        <button class="btn" onclick="openRosterManager()"
+                            style="width:100%;background:var(--glass);color:var(--primary);font-size:0.78rem;">
+                            📋 GESTIONAR PLANTILLA
+                        </button>
+                    </div>
+                </div>
+
+                <!-- EQUIPO VISITANTE -->
+                <div style="display:flex; flex-direction:column; gap:0.7rem;">
+                    <h3 style="margin:0; color:#ff5858; font-size:1rem; border-bottom:2px solid #ff5858; padding-bottom:4px;">✈️ Equipo Visitante</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
                         <select id="saved-teams-away" onchange="loadTeamFromDropdown('away')">
-                            <option value="">-- Seleccionar --</option>
+                            <option value="">-- Cargar --</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Nombre</label>
                         <input type="text" id="setup-away-name" value="VISITANTE">
                     </div>
-                    <div class="form-group">
-                        <label>Camiseta</label>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="setup-away-color" value="#ff5858" oninput="document.getElementById('swatch-away-color').style.background=this.value">
-                            <span id="swatch-away-color" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ff5858;flex-shrink:0;"></span>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                        <div class="form-group">
+                            <label>Camiseta</label>
+                            <input type="color" id="setup-away-color" value="#ff5858"
+                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Pantalón</label>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="setup-away-shorts" value="#000000" oninput="document.getElementById('swatch-away-shorts').style.background=this.value">
-                            <span id="swatch-away-shorts" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#000000;flex-shrink:0;"></span>
+                        <div class="form-group">
+                            <label>Pantalón</label>
+                            <input type="color" id="setup-away-shorts" value="#000000"
+                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Color Número</label>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="setup-away-text" value="#ffffff" oninput="document.getElementById('swatch-away-text').style.background=this.value">
-                            <span id="swatch-away-text" style="display:inline-block;width:36px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,0.3);background:#ffffff;flex-shrink:0;"></span>
+                        <div class="form-group">
+                            <label>Nº Color</label>
+                            <input type="color" id="setup-away-text" value="#ffffff"
+                                style="width:100%;height:44px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:2px;">
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="form-group" style="margin-top: 1rem;">
-                <label>Modalidad</label>
-                <select id="setup-mode" onchange="updateFormationOptions()">
-                    <option value="f7">Fútbol 7 (2 tiempos de 30 min)</option>
-                    <option value="f11">Fútbol 11 (2 tiempos de 40 min)</option>
-                </select>
-            </div>
-            <div class="form-group" style="margin-top: 0.6rem;">
-                <label>Sistema de juego inicial</label>
-                <select id="setup-formation" style="font-weight:600;">
-                    <option value="">-- Sin sistema predefinido --</option>
-                </select>
-                <span style="font-size:0.7rem;color:var(--text-muted);margin-top:3px;">Los jugadores se distribuirán automáticamente en campo al iniciar</span>
-            </div>
-            <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 1rem;">
-                <input type="checkbox" id="setup-analyze-away" style="width: 20px; height: 20px;">
-                <label for="setup-analyze-away" style="margin: 0; cursor: pointer;">Analizar Equipo Visitante</label>
-            </div>
-            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center;">
-                <button class="btn" onclick="openRosterManager()" style="background: var(--glass); color: var(--primary); font-size: 0.8rem;">GESTIONAR MI PLANTILLA</button>
-                <button class="btn primary" onclick="confirmSetup()">CONTINUAR</button>
+
             </div>
         </div>
     `;
     populateSavedTeams('home');
     populateSavedTeams('away');
-    updateFormationOptions(); // rellenar opciones según modalidad por defecto (f7)
+    updateFormationOptions();
 }
 
 function confirmSetup() {
