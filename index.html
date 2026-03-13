@@ -174,16 +174,18 @@
             <p id="auth-error"
                style="font-size:0.8rem; margin:0.8rem 0 0; text-align:center; min-height:1.2rem; color:#ff5858;"></p>
 
-            <!-- Forzar actualización -->
-            <div style="margin-top:1.5rem; border-top:1px solid rgba(255,255,255,0.07);
-                        padding-top:1rem; text-align:center;">
-                <button onclick="forceUpdate()"
-                    style="background:none; border:1px solid rgba(255,255,255,0.1); color:#7d8590;
-                           font-size:0.68rem; padding:0.3rem 0.8rem; border-radius:6px; cursor:pointer;">
-                    FORZAR ACTUALIZACIÓN V6.9
-                </button>
-            </div>
         </div>
+    </div>
+
+    <!-- Forzar actualización — fijo en la parte inferior, siempre visible -->
+    <div style="position:fixed; bottom:12px; left:0; right:0; text-align:center; z-index:9999;">
+        <button onclick="forceUpdate()"
+            style="background:rgba(10,14,20,0.7); border:1px solid rgba(255,255,255,0.12);
+                   color:#555; font-size:0.65rem; padding:0.35rem 1rem;
+                   border-radius:20px; cursor:pointer; backdrop-filter:blur(6px);
+                   -webkit-backdrop-filter:blur(6px);">
+            ↺ FORZAR ACTUALIZACIÓN
+        </button>
     </div>
 
     <!-- ══ ORIENTATION WARNING ═══════════════════════════════════════════ -->
