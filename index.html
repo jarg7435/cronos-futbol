@@ -255,9 +255,11 @@
 
     <main class="main-container" id="main-container" style="display: none;">
         <aside class="sidebar" ondrop="dropToBench(event)" ondragover="allowDrop(event)">
-            <div class="config-section"><h3>LOCAL</h3></div>
+            <div class="bench-header-compact">
+                <span class="bench-team-label" id="bench-label-home">LOCAL</span>
+                <span class="bench-sub-label">· BANQUILLO</span>
+            </div>
             <div class="bench-section">
-                <h3>BANQUILLO</h3>
                 <div id="bench-list" class="bench-container"
                     ondrop="dropToBench(event)" ondragover="allowDrop(event)"></div>
             </div>
@@ -275,9 +277,11 @@
         </main>
 
         <aside class="sidebar-right" ondrop="dropToAwayBench(event)" ondragover="allowDrop(event)">
-            <div class="config-section"><h3>VISITANTE</h3></div>
+            <div class="bench-header-compact">
+                <span class="bench-team-label" id="bench-label-away">VISITANTE</span>
+                <span class="bench-sub-label">· BANQUILLO</span>
+            </div>
             <div class="bench-section">
-                <h3>BANQUILLO</h3>
                 <div id="bench-list-away" class="bench-container"
                     ondrop="dropToAwayBench(event)" ondragover="allowDrop(event)"></div>
             </div>

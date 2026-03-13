@@ -135,6 +135,8 @@ body.setup-mode header {
         pointer-events: none;
         display: flex;
         flex-direction: column;
+        padding: 0 !important;   /* eliminar padding para ganar espacio */
+        gap: 0 !important;
         /* Permitir scroll vertical dentro del cajón */
         touch-action: pan-y;
     }
@@ -240,8 +242,8 @@ body.setup-mode header {
     .bench-container {
         display: grid !important;
         grid-template-columns: repeat(2, 1fr) !important;
-        gap: 10px !important;
-        padding: 10px 10px 60px !important;
+        gap: 6px !important;
+        padding: 8px 6px 60px !important;
         height: 100%;
         max-height: 100%;
         overflow-y: auto !important;
@@ -749,6 +751,31 @@ header {
 @keyframes blinkText { 50% { opacity: 0.3; } }
 
 /* --- BANQUILLO con scroll fiable (iPad + móvil) --- */
+
+/* Cabecera compacta del cajón móvil */
+.bench-header-compact {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid var(--glass-border);
+    flex-shrink: 0;
+}
+.bench-team-label {
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: var(--primary);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+.bench-sub-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
 .bench-section {
     flex: 1;
     display: flex;
@@ -814,7 +841,7 @@ header {
     width: 60px;
     height: 60px;
     flex-shrink: 0;
-    margin: 32px 8px !important;
+    margin: 24px 6px !important;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -853,137 +880,6 @@ header {
     margin: 0 auto;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
-
-/* --- SETUP MODAL TWO-COLUMNS LAYOUT --- */
-.setup-modal-two-cols {
-    width: 800px !important;
-    max-width: 95% !important;
-    gap: 1.2rem;
-    padding: 1.5rem !important;
-}
-
-.setup-teams-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-}
-
-.setup-team-block {
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--glass-border);
-    border-radius: 10px;
-    padding: 1.2rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
-}
-
-.setup-team-block h3 {
-    text-align: center;
-    color: var(--text-main);
-    margin-bottom: 0.5rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--glass-border);
-}
-
-.setup-colors-row {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-}
-
-.setup-global-bottom {
-    display: flex;
-    gap: 1.5rem;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--glass-border);
-    border-radius: 10px;
-    padding: 1.2rem;
-    align-items: center;
-}
-
-.setup-actions-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 0.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--glass-border);
-}
-
-.color-picker-wrap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-}
-
-input[type="color"] {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    border-radius: 6px;
-    box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
-    outline: none;
-}
-
-input[type="color"]::-webkit-color-swatch-wrapper {
-    padding: 0;
-}
-
-input[type="color"]::-webkit-color-swatch {
-    border: none;
-    border-radius: 6px;
-}
-
-input[type="color"]::-moz-color-swatch {
-    border: none;
-    border-radius: 6px;
-}
-
-@media (max-width: 750px) {
-    .setup-teams-container {
-        grid-template-columns: 1fr;
-    }
-    .setup-global-bottom {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 1rem;
-    }
-    .setup-global-bottom .form-group[style*="justify-content: flex-end"] {
-        justify-content: flex-start !important;
-        margin-top: 0 !important;
-    }
-    .setup-actions-row {
-        flex-direction: column-reverse;
-        gap: 1rem;
-    }
-    .setup-actions-row .btn {
-        width: 100%;
-    }
-}
-
-@media (max-height: 700px) and (orientation: landscape) {
-    .setup-modal-two-cols {
-        gap: 0.8rem;
-        padding: 1rem !important;
-    }
-    .setup-teams-container { gap: 1rem; }
-    .setup-team-block { padding: 0.8rem; gap: 0.5rem; }
-    .setup-team-block h3 { margin-bottom: 0px; padding-bottom: 0.3rem; font-size: 1rem; }
-    .setup-global-bottom { padding: 0.8rem; gap: 1rem; }
-    .form-group label { font-size: 0.7rem; }
-    input, select { padding: 0.4rem; font-size: 0.8rem; }
-    input[type="color"] { width: 28px; height: 28px; }
-    .setup-actions-row { padding-top: 0.5rem; margin-top: 0.2rem; }
-}
-
 
 @media (max-height: 500px) {
     .modal { padding: 1rem 0; }
