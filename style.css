@@ -128,16 +128,15 @@ body.setup-mode header {
         width: 170px;
         z-index: 2000;
         transition: transform 0.3s ease;
-        box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
-        background: rgba(10, 14, 20, 0.95) !important;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        background: rgba(10, 14, 20, 0.55) !important;  /* semi-transparente */
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
         pointer-events: none;
         display: flex;
         flex-direction: column;
-        padding: 0 !important;   /* eliminar padding para ganar espacio */
+        padding: 0 !important;
         gap: 0 !important;
-        /* Permitir scroll vertical dentro del cajón */
         touch-action: pan-y;
     }
 
@@ -758,8 +757,8 @@ header {
     align-items: center;
     gap: 4px;
     padding: 6px 8px;
-    background: rgba(255,255,255,0.04);
-    border-bottom: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.06);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
     flex-shrink: 0;
 }
 .bench-team-label {
