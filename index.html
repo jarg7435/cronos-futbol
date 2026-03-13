@@ -245,6 +245,9 @@
             <button onclick="cerrarSesion()" title="Cerrar sesión"
                 style="background:none; border:1px solid rgba(255,255,255,0.12); color:#7d8590;
                        font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">⏻</button>
+            <button onclick="forceUpdate()" title="Forzar actualización"
+                style="background:none; border:1px solid rgba(255,255,255,0.1); color:#7d8590;
+                       font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">↺</button>
             <!-- Botón admin: solo visible si role=admin -->
             <button id="btn-admin-panel" onclick="openAdminPanel()" title="Panel de Administración"
                 style="display:none; background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.4);
@@ -506,11 +509,30 @@
             location.reload();
         }
 
-        function forceUpdate() {
-            if ('serviceWorker' in navigator)
-                navigator.serviceWorker.getRegistrations().then(r => r.forEach(s => s.unregister()));
-            caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-            setTimeout(() => location.reload(true), 600);
+        async function forceUpdate() {
+            const btn = event?.target;
+            if (btn) { btn.textContent = '⏳ Limpiando...'; btn.disabled = true; }
+
+            try {
+                // 1. Dar de baja todos los Service Workers
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map(r => r.unregister()));
+                }
+                // 2. Borrar todas las cachés
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(k => caches.delete(k)));
+                }
+            } catch(e) {
+                console.warn('Cache clear error:', e);
+            }
+
+            // 3. Forzar recarga sin caché (compatible iOS Safari)
+            setTimeout(() => {
+                const url = location.href.split('?')[0] + '?t=' + Date.now();
+                location.replace(url);
+            }, 400);
         }
 
         // Enter para enviar
