@@ -491,7 +491,8 @@
                 const btnAdmin = document.getElementById('btn-admin-panel');
                 if (btnAdmin) btnAdmin.style.display = 'inline-block';
             }
-            if (typeof openSetupModal === 'function') openSetupModal();
+            // Inicializar la app (registra event listeners de botones y abre setup)
+            if (typeof init === 'function') init();
         }
 
         async function cerrarSesion() {

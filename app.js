@@ -2,16 +2,7 @@
 const ACCESS_CODE = '1234';
 
 window.onload = () => {
-    if (sessionStorage.getItem('cronos_access') === 'true') {
-        unlockApp();
-    } else {
-        const accessInput = document.getElementById('access-input');
-        if (accessInput) {
-            accessInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') validateAccess();
-            });
-        }
-    }
+    // La app arranca desde enterApp() en index.html tras la autenticación Firebase
 };
 
 function validateAccess() {
