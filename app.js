@@ -785,16 +785,10 @@ function openConvocationModal() {
                 selected++;
             }
 
-<<<<<<< HEAD
-            countEl.textContent = `${selected} / ${limit}`;
-            countEl.style.color = selected === limit ? 'var(--secondary)' : 'var(--primary)';
-            startBtn.disabled = (selected !== limit);
-=======
             countEl.textContent = `${selected}`;
             const isValid = (selected >= minLimit && selected <= maxLimit);
             countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
             startBtn.disabled = !isValid;
->>>>>>> bff0450 (Configure call-up limits (F7: 6-14, F11: 7-18) and add 1-5-4-1 formation)
         });
     });
 }
