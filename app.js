@@ -762,24 +762,38 @@ function openConvocationModal() {
     let selected = 0;
 
     // --- PRE-SELECCIÓN DE EQUIPO CARGADO ---
+    // Titulares  → borde naranja (--secondary) + badge "T"
+    // Suplentes  → borde azul   (--primary)   + badge "S"
     const loadedTeam = window.loadedTeamPlayers?.['home'];
     if (loadedTeam) {
         myPlayers.forEach((p, i) => {
-            const isSaved = loadedTeam.some(lp => lp.number == p.number);
-            if (isSaved) {
+            const savedPlayer = loadedTeam.find(lp => lp.number == p.number);
+            if (savedPlayer) {
                 const row = document.querySelector(`.conv-row[data-index="${i}"]`);
                 if (row) {
+                    const isTitular = savedPlayer.status === 'field';
+                    const borderColor = isTitular ? 'var(--secondary)' : 'var(--primary)';
+                    const bgColor     = isTitular ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
                     row.classList.add('conv-selected');
-                    row.style.borderColor = 'var(--primary)';
-                    row.style.background  = 'rgba(88,166,255,0.12)';
-                    row.querySelector('.conv-dot').style.background  = 'var(--primary)';
-                    row.querySelector('.conv-dot').style.borderColor = 'var(--primary)';
+                    row.style.borderColor = borderColor;
+                    row.style.background  = bgColor;
+                    row.querySelector('.conv-dot').style.background  = borderColor;
+                    row.querySelector('.conv-dot').style.borderColor = borderColor;
                     row.querySelector('.conv-dot').style.color = '#0a0e14';
+                    row.querySelector('.conv-dot').textContent = isTitular ? 'T' : 'S';
+                    // Badge titular/suplente
+                    const badge = document.createElement('span');
+                    badge.className = 'conv-status-badge';
+                    badge.textContent = isTitular ? 'TITULAR' : 'SUP';
+                    badge.style.cssText = \`font-size:0.55rem;font-weight:bold;padding:2px 5px;
+                        border-radius:3px;background:\${borderColor};color:#0a0e14;
+                        margin-left:auto;flex-shrink:0;\`;
+                    row.appendChild(badge);
                     selected++;
                 }
             }
         });
-        countEl.textContent = `${selected}`;
+        countEl.textContent = \`\${selected}\`;
         const isValid = (selected >= minLimit && selected <= maxLimit);
         countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
         startBtn.disabled = !isValid;
@@ -798,6 +812,10 @@ function openConvocationModal() {
                 row.querySelector('.conv-dot').style.background = 'rgba(255,255,255,0.1)';
                 row.querySelector('.conv-dot').style.borderColor = 'rgba(255,255,255,0.25)';
                 row.querySelector('.conv-dot').style.color = 'transparent';
+                row.querySelector('.conv-dot').textContent = '✓';
+                // Quitar badge si existe
+                const badge = row.querySelector('.conv-status-badge');
+                if (badge) badge.remove();
                 selected--;
             } else {
                 row.classList.add('conv-selected');
@@ -806,10 +824,11 @@ function openConvocationModal() {
                 row.querySelector('.conv-dot').style.background  = 'var(--primary)';
                 row.querySelector('.conv-dot').style.borderColor = 'var(--primary)';
                 row.querySelector('.conv-dot').style.color = '#0a0e14';
+                row.querySelector('.conv-dot').textContent = '✓';
                 selected++;
             }
 
-            countEl.textContent = `${selected}`;
+            countEl.textContent = \`\${selected}\`;
             const isValid = (selected >= minLimit && selected <= maxLimit);
             countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
             startBtn.disabled = !isValid;
@@ -832,10 +851,15 @@ function startMatchWithConvocation() {
 
     renderPlayers();
 
-    // Aplicar formación inicial si se seleccionó en configuración
-    if (selectedFormationOnStart) {
+    // Aplicar formación inicial SOLO si no hay posiciones guardadas de un equipo cargado.
+    // Si el equipo fue cargado, sus posiciones (x,y) ya fueron restauradas por spawnInitialPlayers
+    // y aplicar la formación las sobreescribiría incorrectamente.
+    const hasLoadedPositions = window.loadedTeamPlayers?.['home']?.some(p => p.x || p.y);
+    if (selectedFormationOnStart && !hasLoadedPositions) {
         applyFormationPreset(selectedFormationOnStart);
     }
+    // Limpiar datos de equipo cargado ya aplicados
+    window.loadedTeamPlayers = {};
 
     document.getElementById('setup-modal').style.display = 'none';
 
@@ -920,16 +944,25 @@ function loadTeamFromDropdown(teamKey) {
         document.getElementById(`setup-${teamKey}-color`).value = team.color;
         document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
         document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
-        
+
+        // Restaurar color secundario si existe
+        if (team.secondaryColor) {
+            const secEl = document.getElementById(`setup-${teamKey}-secondary`);
+            if (secEl) secEl.value = team.secondaryColor;
+            // Guardarlo también en COLORS para que esté disponible al iniciar
+            if (COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
+        }
+
         // Cargar modalidad y formación si están guardadas
         if (team.mode) {
             document.getElementById('setup-mode').value = team.mode;
-            updateFormationOptions(); // Actualizar las opciones de formación según el modo
+            updateFormationOptions();
         }
         if (team.formation) {
             document.getElementById('setup-formation').value = team.formation;
         }
 
+        // Guardar los jugadores de este equipo para restaurar convocatoria, titulares y suplentes
         if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
         window.loadedTeamPlayers[teamKey] = team.players;
     }
@@ -944,17 +977,24 @@ function saveCurrentTeam() {
     else return;
 
     const teamName = TEAM_NAMES[teamKey];
+    // Guardar jugadores: número, nombre, alias, status (titular=field / suplente=bench) y posición en campo
     const currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
-        id: p.id, number: p.number, name: p.name, status: p.status, x: p.x, y: p.y
+        id: p.id,
+        number: p.number,
+        name: p.name,
+        status: p.status,   // 'field' = titular  |  'bench' = suplente
+        x: p.x,
+        y: p.y
     }));
     const newTeam = {
         name: teamName,
         color: COLORS[teamKey].primary,
+        secondaryColor: COLORS[teamKey].secondary,
         shortsColor: COLORS[teamKey].shorts,
         textColor: COLORS[teamKey].text,
-        players: currentPlayers,
-        mode: currentMode,
-        formation: activeFormationKey
+        players: currentPlayers,          // convocatoria completa con titulares y suplentes
+        mode: currentMode,                // 'f7' o 'f11'
+        formation: activeFormationKey     // sistema de juego activo
     };
     const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const existingIndex = teams.findIndex(t => t.name === teamName);
@@ -966,7 +1006,9 @@ function saveCurrentTeam() {
         teams.push(newTeam);
     }
     localStorage.setItem('cronos_teams', JSON.stringify(teams));
-    alert(`Equipo ${teamName} guardado.`);
+    const titulares = currentPlayers.filter(p => p.status === 'field').length;
+    const suplentes = currentPlayers.filter(p => p.status === 'bench').length;
+    alert(`✅ Equipo "${teamName}" guardado.\n\nModalidad: ${currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}\nSistema: ${activeFormationKey || 'sin definir'}\nTitulares: ${titulares} · Suplentes: ${suplentes}`);
 }
 
 function setupEventListeners() {
