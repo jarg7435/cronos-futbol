@@ -761,6 +761,30 @@ function openConvocationModal() {
 
     let selected = 0;
 
+    // --- PRE-SELECCIÓN DE EQUIPO CARGADO ---
+    const loadedTeam = window.loadedTeamPlayers?.['home'];
+    if (loadedTeam) {
+        myPlayers.forEach((p, i) => {
+            const isSaved = loadedTeam.some(lp => lp.number == p.number);
+            if (isSaved) {
+                const row = document.querySelector(`.conv-row[data-index="${i}"]`);
+                if (row) {
+                    row.classList.add('conv-selected');
+                    row.style.borderColor = 'var(--primary)';
+                    row.style.background  = 'rgba(88,166,255,0.12)';
+                    row.querySelector('.conv-dot').style.background  = 'var(--primary)';
+                    row.querySelector('.conv-dot').style.borderColor = 'var(--primary)';
+                    row.querySelector('.conv-dot').style.color = '#0a0e14';
+                    selected++;
+                }
+            }
+        });
+        countEl.textContent = `${selected}`;
+        const isValid = (selected >= minLimit && selected <= maxLimit);
+        countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
+        startBtn.disabled = !isValid;
+    }
+
     document.querySelectorAll('.conv-row').forEach(row => {
         row.addEventListener('click', () => {
             const isSelected = row.classList.contains('conv-selected');
@@ -921,7 +945,7 @@ function saveCurrentTeam() {
 
     const teamName = TEAM_NAMES[teamKey];
     const currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
-        id: p.id, number: p.number, name: p.name
+        id: p.id, number: p.number, name: p.name, status: p.status, x: p.x, y: p.y
     }));
     const newTeam = {
         name: teamName,
@@ -999,10 +1023,11 @@ function spawnInitialPlayers() {
     const defaultTotalCount = currentMode === 'f7' ? 14 : 18;
     const homeColors = COLORS.home;
     const homeConvocation = window.activeConvocation;
+    const loadedHome = window.loadedTeamPlayers?.['home'];
 
     if (homeConvocation) {
         homeConvocation.forEach((pData, index) => {
-            players.push({
+            const playerObj = {
                 id: (index + 1),
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
@@ -1013,7 +1038,18 @@ function spawnInitialPlayers() {
                 shortsColor: homeColors.shorts,
                 textColor: homeColors.text,
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
-            });
+            };
+
+            // Restaurar estado (titular/suplente) y posición (X,Y) si coincide el dorsal
+            if (loadedHome) {
+                const saved = loadedHome.find(lp => lp.number == pData.number);
+                if (saved) {
+                    playerObj.status = saved.status || playerObj.status;
+                    playerObj.x = saved.x !== undefined ? saved.x : 0;
+                    playerObj.y = saved.y !== undefined ? saved.y : 0;
+                }
+            }
+            players.push(playerObj);
         });
     } else {
         for (let i = 1; i <= defaultTotalCount; i++) {
