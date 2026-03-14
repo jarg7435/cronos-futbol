@@ -785,15 +785,15 @@ function openConvocationModal() {
                     const badge = document.createElement('span');
                     badge.className = 'conv-status-badge';
                     badge.textContent = isTitular ? 'TITULAR' : 'SUP';
-                    badge.style.cssText = \`font-size:0.55rem;font-weight:bold;padding:2px 5px;
-                        border-radius:3px;background:\${borderColor};color:#0a0e14;
-                        margin-left:auto;flex-shrink:0;\`;
+                    badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
+                        border-radius:3px;background:${borderColor};color:#0a0e14;
+                        margin-left:auto;flex-shrink:0;`;
                     row.appendChild(badge);
                     selected++;
                 }
             }
         });
-        countEl.textContent = \`\${selected}\`;
+        countEl.textContent = `${selected}`;
         const isValid = (selected >= minLimit && selected <= maxLimit);
         countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
         startBtn.disabled = !isValid;
@@ -828,7 +828,7 @@ function openConvocationModal() {
                 selected++;
             }
 
-            countEl.textContent = \`\${selected}\`;
+            countEl.textContent = `${selected}`;
             const isValid = (selected >= minLimit && selected <= maxLimit);
             countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
             startBtn.disabled = !isValid;
