@@ -1,5 +1,5 @@
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, collection, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
 let isLoginMode = true;
 
@@ -44,6 +44,9 @@ async function handleLogin() {
                 // Usuario Autorizado
                 sessionStorage.setItem('cronos_user_role', userData.role || 'user');
                 sessionStorage.setItem('cronos_access', 'true');
+                if (userData.role === 'admin') {
+                    document.getElementById('btn-admin').style.display = 'block';
+                }
                 unlockApp();
             } else {
                 // Usuario NO Autorizado
@@ -114,17 +117,87 @@ window.onloadAuth = () => {
     // Escuchar si ya hay usuario al arrancar (persistencia de sesión Firebase)
     window.firebaseAuth.onAuthStateChanged(async (user) => {
         if (user) {
-            // Chequear de nuevo en base de datos si sigue autorizado
-             const userDocRef = doc(window.firebaseDb, "users", user.uid);
-             const userDoc = await getDoc(userDocRef);
-             
-             if (userDoc.exists() && userDoc.data().isAuthorized) {
-                 sessionStorage.setItem('cronos_access', 'true');
-                 unlockApp();
-             } else {
-                 document.getElementById('access-error').textContent = 'Tu autorización ha sido revocada.';
-                 window.firebaseAuth.signOut();
-             }
+            const errorEl = document.getElementById('access-error');
+            // Si acabamos de registrar un usuario, handleRegister ya se encarga del mensaje y el signOut
+            // No queremos que este listener pise el mensaje de "Cuenta creada"
+            const userDocRef = doc(window.firebaseDb, "users", user.uid);
+            const userDoc = await getDoc(userDocRef);
+            
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                if (userData.isAuthorized) {
+                    sessionStorage.setItem('cronos_user_role', userData.role || 'user');
+                    sessionStorage.setItem('cronos_access', 'true');
+                    if (userData.role === 'admin') {
+                        document.getElementById('btn-admin').style.display = 'block';
+                    }
+                    unlockApp();
+                } else {
+                    // Solo mostramos el error si NO estamos en el proceso de registro manual
+                    // (Si estamos registrando, el errorEl tendrá el color success temporalmente)
+                    if (errorEl.style.color !== 'var(--success)') {
+                        errorEl.textContent = 'Tu cuenta está pendiente de autorización.';
+                        await window.firebaseAuth.signOut();
+                    }
+                }
+            } else {
+                // Si el documento no existe pero el auth sí (raro), forzar logout
+                await window.firebaseAuth.signOut();
+            }
         }
     });
+};
+
+window.fetchUsers = async () => {
+    const querySnapshot = await getDocs(collection(window.firebaseDb, "users"));
+    const userList = document.getElementById('admin-user-list');
+    userList.innerHTML = '';
+    querySnapshot.forEach((docSnap) => {
+        const user = docSnap.data();
+        const id = docSnap.id;
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td style="padding: 10px;">${user.email}</td>
+            <td style="padding: 10px;">${user.subscriptionPlan || 'free'}</td>
+            <td style="padding: 10px;">
+                <label class="toggle-switch">
+                    <input type="checkbox" ${user.isAuthorized ? 'checked' : ''} onchange="toggleUserAuthorization('${id}', this.checked)">
+                    <span class="slider"></span>
+                </label>
+            </td>
+            <td style="padding: 10px;">
+                <button class="btn" style="font-size: 0.7rem;" onclick="changeUserPlan('${id}', '${user.subscriptionPlan === 'pro' ? 'free' : 'pro'}')">
+                    ${user.subscriptionPlan === 'pro' ? 'Bajar a FREE' : 'Subir a PRO'}
+                </button>
+            </td>
+        `;
+        userList.appendChild(row);
+    });
+};
+
+window.toggleUserAuthorization = async (userId, status) => {
+    try {
+        await updateDoc(doc(window.firebaseDb, "users", userId), {
+            isAuthorized: status
+        });
+        console.log("User authorization updated");
+    } catch (error) {
+        console.error("Error updating authorization", error);
+        alert("Error al actualizar autorización");
+    }
+};
+
+window.changeUserPlan = async (userId, newPlan) => {
+    try {
+        await updateDoc(doc(window.firebaseDb, "users", userId), {
+            subscriptionPlan: newPlan
+        });
+        window.fetchUsers();
+    } catch (error) {
+        console.error("Error updating plan", error);
+    }
+};
+
+window.showUpgradeModal = () => {
+    alert("🚀 ¡Sube a Cronos PRO!\n\n- Equipos ilimitados\n- Exportación PDF personalizada\n- Sincronización en la nube\n\nPróximamente disponible.");
 };

@@ -203,6 +203,28 @@ const FORMATION_PRESETS = {
                 {x:88,y:50}
             ],
         },
+        '541': {
+            label: '1-5-4-1',
+            // GK · 5 DEF · 4 MED · 1 DEL
+            home: [
+                {x:9, y:50},
+                {x:17,y:15},{x:17,y:33},{x:17,y:50},{x:17,y:67},{x:17,y:85},
+                {x:32,y:20},{x:32,y:40},{x:32,y:60},{x:32,y:80},
+                {x:46,y:50}
+            ],
+            away: [
+                {x:91,y:50},
+                {x:83,y:15},{x:83,y:33},{x:83,y:50},{x:83,y:67},{x:83,y:85},
+                {x:68,y:20},{x:68,y:40},{x:68,y:60},{x:68,y:80},
+                {x:54,y:50}
+            ],
+            full: [
+                {x:9, y:50},
+                {x:18,y:15},{x:18,y:33},{x:18,y:50},{x:18,y:67},{x:18,y:85},
+                {x:50,y:20},{x:50,y:40},{x:50,y:60},{x:50,y:80},
+                {x:88,y:50}
+            ],
+        },
     },
 };
 
@@ -683,7 +705,8 @@ function openConvocationModal() {
     document.body.classList.add('setup-mode');
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
-    const limit = currentMode === 'f7' ? 14 : 18;
+    const minLimit = currentMode === 'f7' ? 6 : 7;
+    const maxLimit = currentMode === 'f7' ? 14 : 18;
     // Columnas: f7→3 cols (18 jugadores), f11→5 cols (25 jugadores)
     const cols = currentMode === 'f7' ? 3 : 5;
 
@@ -693,7 +716,7 @@ function openConvocationModal() {
         <div class="modal-content" style="width:min(95vw,800px); max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
             <h2 style="margin-bottom:0.2rem;">Convocatoria — ${TEAM_NAMES.home}</h2>
             <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.8rem;">
-                Toca cualquier jugador para seleccionarlo · Selecciona exactamente <strong>${limit}</strong>
+                Toca cualquier jugador para seleccionarlo · Mínimo <strong>${minLimit}</strong>, Máximo <strong>${maxLimit}</strong>
             </p>
 
             <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; overflow-y:auto; flex:1;">
@@ -716,7 +739,7 @@ function openConvocationModal() {
 
             <div style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px solid var(--glass-border);
                         display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
-                <span id="conv-count" style="font-size:1rem; font-weight:bold; color:var(--primary);">0 / ${limit}</span>
+                <span id="conv-count" style="font-size:1rem; font-weight:bold; color:var(--primary);">0</span>
                 <div style="display:flex; gap:0.8rem;">
                     <button class="btn" onclick="openSetupModal()">ATRÁS</button>
                     <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>
@@ -742,7 +765,7 @@ function openConvocationModal() {
         row.addEventListener('click', () => {
             const isSelected = row.classList.contains('conv-selected');
 
-            if (!isSelected && selected >= limit) return; // límite alcanzado
+            if (!isSelected && selected >= maxLimit) return; // límite máximo alcanzado
 
             if (isSelected) {
                 row.classList.remove('conv-selected');
@@ -762,9 +785,16 @@ function openConvocationModal() {
                 selected++;
             }
 
+<<<<<<< HEAD
             countEl.textContent = `${selected} / ${limit}`;
             countEl.style.color = selected === limit ? 'var(--secondary)' : 'var(--primary)';
             startBtn.disabled = (selected !== limit);
+=======
+            countEl.textContent = `${selected}`;
+            const isValid = (selected >= minLimit && selected <= maxLimit);
+            countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
+            startBtn.disabled = !isValid;
+>>>>>>> bff0450 (Configure call-up limits (F7: 6-14, F11: 7-18) and add 1-5-4-1 formation)
         });
     });
 }
