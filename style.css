@@ -262,6 +262,8 @@ body.setup-mode header {
     }
 
     .player-timer { top: -20px; }
+
+    .fixed-update-container { display: none; }
 }
 
 header {
