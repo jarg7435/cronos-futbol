@@ -896,6 +896,16 @@ function loadTeamFromDropdown(teamKey) {
         document.getElementById(`setup-${teamKey}-color`).value = team.color;
         document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
         document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
+        
+        // Cargar modalidad y formación si están guardadas
+        if (team.mode) {
+            document.getElementById('setup-mode').value = team.mode;
+            updateFormationOptions(); // Actualizar las opciones de formación según el modo
+        }
+        if (team.formation) {
+            document.getElementById('setup-formation').value = team.formation;
+        }
+
         if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
         window.loadedTeamPlayers[teamKey] = team.players;
     }
@@ -918,7 +928,9 @@ function saveCurrentTeam() {
         color: COLORS[teamKey].primary,
         shortsColor: COLORS[teamKey].shorts,
         textColor: COLORS[teamKey].text,
-        players: currentPlayers
+        players: currentPlayers,
+        mode: currentMode,
+        formation: activeFormationKey
     };
     const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const existingIndex = teams.findIndex(t => t.name === teamName);
