@@ -41,6 +41,16 @@ let masterTimeH2 = 0;
 
 let pendingSubstitution = null;
 
+// --- CONFIGURACIÓN DE EMAIL Y WHATSAPP (persiste en localStorage) ---
+let emailConfig = {
+    coachEmail: '',        // correo del entrenador (copia para él)
+    directorEmail: '',     // correo del director deportivo (destino principal)
+    emailjsServiceId: '',  // ID del servicio EmailJS
+    emailjsTemplateId: '', // ID de la plantilla EmailJS
+    emailjsPublicKey: '',  // Clave pública EmailJS
+    whatsappNumber: ''     // número del director deportivo con prefijo país (ej: 34612345678)
+};
+
 const COLORS = {
     home: { primary: '#58a6ff', secondary: '#f0883e', shorts: '#ffffff', text: '#ffffff' },
     away: { primary: '#ff5858', secondary: '#f0883e', shorts: '#000000', text: '#ffffff' }
@@ -445,7 +455,244 @@ function cancelPendingSubstitution() {
 
 // --- CORE FUNCTIONS ---
 
+// ══════════════════════════════════════════════════════════════════
+//  CONFIGURACIÓN Y ENVÍO DE EMAIL (EmailJS)
+// ══════════════════════════════════════════════════════════════════
+
+function loadEmailConfig() {
+    const saved = localStorage.getItem('cronos_email_config');
+    if (saved) {
+        try { emailConfig = { ...emailConfig, ...JSON.parse(saved) }; } catch(e) {}
+    }
+    initEmailJS();
+}
+
+function initEmailJS() {
+    if (emailConfig.emailjsPublicKey && typeof emailjs !== 'undefined') {
+        emailjs.init(emailConfig.emailjsPublicKey);
+        window._emailjsReady = true;
+    }
+}
+
+function openEmailSettings() {
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(95vw,580px); max-height:92vh; overflow-y:auto;">
+            <h2 style="text-align:center; margin-bottom:0.3rem;">📧 Configuración de Envío de Informes</h2>
+            <p style="font-size:0.78rem; color:var(--text-muted); text-align:center; margin-bottom:1.2rem;">
+                Al exportar un informe, se descargará automáticamente <strong>Y</strong> se enviará por email.
+            </p>
+
+            <!-- CORREOS -->
+            <div style="background:var(--glass); border-radius:10px; padding:1rem; margin-bottom:1rem;">
+                <h3 style="margin:0 0 0.8rem; color:var(--primary); font-size:0.9rem;">📬 Destinatarios</h3>
+                <div class="form-group">
+                    <label>Tu correo (Entrenador) — recibirás una copia</label>
+                    <input type="email" id="cfg-coach-email" placeholder="entrenador@ejemplo.com"
+                        value="${emailConfig.coachEmail}"
+                        style="width:100%; padding:0.5rem 0.7rem; border-radius:8px;
+                               border:1px solid var(--glass-border); background:var(--bg);
+                               color:var(--text); font-size:0.9rem;">
+                </div>
+                <div class="form-group" style="margin-top:0.6rem;">
+                    <label>Correo del Director Deportivo — destinatario principal</label>
+                    <input type="email" id="cfg-director-email" placeholder="director@club.com"
+                        value="${emailConfig.directorEmail}"
+                        style="width:100%; padding:0.5rem 0.7rem; border-radius:8px;
+                               border:1px solid var(--glass-border); background:var(--bg);
+                               color:var(--text); font-size:0.9rem;">
+                </div>
+                <div class="form-group" style="margin-top:0.6rem;">
+                    <label>📱 WhatsApp del Director Deportivo — con prefijo de país, sin + ni espacios</label>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span style="color:var(--text-muted); font-size:0.85rem; white-space:nowrap;">+</span>
+                        <input type="tel" id="cfg-whatsapp" placeholder="34612345678"
+                            value="${emailConfig.whatsappNumber}"
+                            style="width:100%; padding:0.5rem 0.7rem; border-radius:8px;
+                                   border:1px solid var(--glass-border); background:var(--bg);
+                                   color:var(--text); font-size:0.9rem; font-family:monospace;">
+                    </div>
+                    <span style="font-size:0.7rem; color:var(--text-muted);">
+                        España: 34 + 9 dígitos (ej: 34612345678) · Al exportar, WhatsApp se abrirá listo para enviar con 1 toque.
+                    </span>
+                </div>
+            </div>
+
+            <!-- EMAILJS -->
+            <div style="background:var(--glass); border-radius:10px; padding:1rem; margin-bottom:1rem;">
+                <h3 style="margin:0 0 0.4rem; color:var(--primary); font-size:0.9rem;">⚙️ Credenciales EmailJS</h3>
+                <p style="font-size:0.72rem; color:var(--text-muted); margin-bottom:0.8rem;">
+                    Servicio <strong>gratuito</strong> (hasta 200 emails/mes). Regístrate en
+                    <a href="https://www.emailjs.com" target="_blank" style="color:var(--primary);">emailjs.com</a>
+                    → conecta tu Gmail → crea una plantilla → copia los 3 datos aquí.
+                </p>
+                <div class="form-group">
+                    <label>Service ID</label>
+                    <input type="text" id="cfg-service-id" placeholder="service_xxxxxxx"
+                        value="${emailConfig.emailjsServiceId}"
+                        style="width:100%; padding:0.5rem 0.7rem; border-radius:8px;
+                               border:1px solid var(--glass-border); background:var(--bg);
+                               color:var(--text); font-size:0.85rem; font-family:monospace;">
+                </div>
+                <div class="form-group" style="margin-top:0.6rem;">
+                    <label>Template ID</label>
+                    <input type="text" id="cfg-template-id" placeholder="template_xxxxxxx"
+                        value="${emailConfig.emailjsTemplateId}"
+                        style="width:100%; padding:0.5rem 0.7rem; border-radius:8px;
+                               border:1px solid var(--glass-border); background:var(--bg);
+                               color:var(--text); font-size:0.85rem; font-family:monospace;">
+                </div>
+                <div class="form-group" style="margin-top:0.6rem;">
+                    <label>Public Key</label>
+                    <input type="text" id="cfg-public-key" placeholder="xxxxxxxxxxxxxxxxxxxxxx"
+                        value="${emailConfig.emailjsPublicKey}"
+                        style="width:100%; padding:0.5rem 0.7rem; border-radius:8px;
+                               border:1px solid var(--glass-border); background:var(--bg);
+                               color:var(--text); font-size:0.85rem; font-family:monospace;">
+                </div>
+            </div>
+
+            <!-- INSTRUCCIONES -->
+            <details style="margin-bottom:1rem;">
+                <summary style="cursor:pointer; color:var(--primary); font-size:0.82rem; font-weight:bold;">
+                    📋 Cómo configurar EmailJS paso a paso
+                </summary>
+                <ol style="font-size:0.78rem; color:var(--text-muted); margin-top:0.6rem; padding-left:1.2rem; line-height:1.7;">
+                    <li>Entra en <strong>emailjs.com</strong> y crea una cuenta gratuita</li>
+                    <li>Ve a <strong>Email Services</strong> → Add New Service → elige Gmail (o el tuyo)</li>
+                    <li>Anota el <strong>Service ID</strong> (ej: service_abc123)</li>
+                    <li>Ve a <strong>Email Templates</strong> → Create New Template</li>
+                    <li>En el template usa estas variables: <code>{{to_email}}</code>, <code>{{coach_email}}</code>, <code>{{subject}}</code>, <code>{{match_info}}</code>, <code>{{report_body}}</code></li>
+                    <li>Anota el <strong>Template ID</strong> (ej: template_xyz789)</li>
+                    <li>Ve a <strong>Account → General</strong> → anota tu <strong>Public Key</strong></li>
+                </ol>
+            </details>
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <button class="btn" onclick="openSetupModal()">VOLVER</button>
+                <div style="display:flex; gap:0.6rem;">
+                    <button class="btn" onclick="testEmailConfig()"
+                        style="background:rgba(88,166,255,0.15); color:var(--primary); border:1px solid var(--primary);">
+                        PROBAR ENVÍO
+                    </button>
+                    <button class="btn primary" onclick="saveEmailSettings()">GUARDAR</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function saveEmailSettings() {
+    emailConfig.coachEmail      = document.getElementById('cfg-coach-email').value.trim();
+    emailConfig.directorEmail   = document.getElementById('cfg-director-email').value.trim();
+    emailConfig.whatsappNumber  = document.getElementById('cfg-whatsapp').value.replace(/[^0-9]/g, '');
+    emailConfig.emailjsServiceId  = document.getElementById('cfg-service-id').value.trim();
+    emailConfig.emailjsTemplateId = document.getElementById('cfg-template-id').value.trim();
+    emailConfig.emailjsPublicKey  = document.getElementById('cfg-public-key').value.trim();
+
+    localStorage.setItem('cronos_email_config', JSON.stringify(emailConfig));
+    initEmailJS();
+
+    const channels = [];
+    if (emailConfig.directorEmail) channels.push('📧 Email');
+    if (emailConfig.whatsappNumber) channels.push('📱 WhatsApp');
+    const channelText = channels.length ? channels.join(' + ') : 'ningún canal configurado';
+    alert(`✅ Configuración guardada.\n\nAl exportar un informe se enviará por: ${channelText}`);
+    openSetupModal();
+}
+
+async function testEmailConfig() {
+    if (!window._emailjsReady) {
+        // Intentar inicializar con los valores del formulario sin guardar
+        const pubKey = document.getElementById('cfg-public-key')?.value.trim();
+        if (pubKey && typeof emailjs !== 'undefined') {
+            emailjs.init(pubKey);
+        } else {
+            alert('❌ EmailJS no está disponible. Completa los datos y guarda primero.');
+            return;
+        }
+    }
+    const svcId = document.getElementById('cfg-service-id')?.value.trim() || emailConfig.emailjsServiceId;
+    const tplId = document.getElementById('cfg-template-id')?.value.trim() || emailConfig.emailjsTemplateId;
+    const toEmail = document.getElementById('cfg-director-email')?.value.trim() || emailConfig.directorEmail;
+    const coachEmail = document.getElementById('cfg-coach-email')?.value.trim() || emailConfig.coachEmail;
+
+    if (!svcId || !tplId || !toEmail) {
+        alert('Rellena primero Service ID, Template ID y el correo del Director.');
+        return;
+    }
+
+    try {
+        await emailjs.send(svcId, tplId, {
+            to_email:    toEmail,
+            coach_email: coachEmail,
+            subject:     '✅ PRUEBA — Cronos Fútbol',
+            match_info:  'Este es un email de prueba desde Cronos Fútbol.',
+            report_body: 'Si recibes este mensaje, el envío automático de informes está correctamente configurado.'
+        });
+        alert('✅ Email de prueba enviado correctamente a:\n' + toEmail);
+    } catch(err) {
+        alert('❌ Error al enviar:\n' + (err.text || JSON.stringify(err)) + '\n\nRevisa que los IDs y la clave pública sean correctos.');
+    }
+
+    // Prueba de WhatsApp
+    const waNum = document.getElementById('cfg-whatsapp')?.value.replace(/[^0-9]/g, '') || emailConfig.whatsappNumber;
+    if (waNum) {
+        if (confirm(`¿Abrir WhatsApp para probar el envío al número +${waNum}?`)) {
+            const testMsg = encodeURIComponent('✅ PRUEBA — Cronos Fútbol\nSi recibes este mensaje, los informes de partido llegarán correctamente a tu WhatsApp.');
+            window.open(`https://wa.me/${waNum}?text=${testMsg}`, '_blank');
+        }
+    }
+}
+
+function sendReportByWhatsApp(matchSummary) {
+    if (!emailConfig.whatsappNumber) return;
+    const num = emailConfig.whatsappNumber.replace(/[^0-9]/g, '');
+    if (!num) return;
+    const msg = encodeURIComponent(matchSummary);
+    // En móvil abre la app de WhatsApp directamente; en PC abre WhatsApp Web
+    window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
+}
+
+async function sendReportByEmail(matchInfo, reportHtml) {
+    if (!emailConfig.directorEmail) return; // sin configuración, no enviar
+    if (!emailConfig.emailjsServiceId || !emailConfig.emailjsTemplateId || !emailConfig.emailjsPublicKey) return;
+
+    if (!window._emailjsReady) {
+        initEmailJS();
+        if (!window._emailjsReady) return;
+    }
+
+    const date = new Date().toLocaleDateString('es-ES');
+    try {
+        await emailjs.send(
+            emailConfig.emailjsServiceId,
+            emailConfig.emailjsTemplateId,
+            {
+                to_email:    emailConfig.directorEmail,
+                coach_email: emailConfig.coachEmail,
+                subject:     `📊 Informe de Partido — ${matchInfo} — ${date}`,
+                match_info:  matchInfo,
+                report_body: reportHtml
+            }
+        );
+        console.log('✅ Informe enviado a', emailConfig.directorEmail);
+    } catch(err) {
+        console.error('Error enviando email:', err);
+        // Notificación no intrusiva — no bloquea al entrenador
+        const toast = document.createElement('div');
+        toast.textContent = '⚠️ El informe se descargó, pero el email no pudo enviarse.';
+        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+            'background:#c0392b;color:#fff;padding:10px 20px;border-radius:8px;' +
+            'font-size:0.82rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.4);';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+    }
+}
+
 function init() {
+    loadEmailConfig();    // carga correos y credenciales EmailJS guardadas
     setupEventListeners();
     openSetupModal();
     registerServiceWorker();
@@ -587,6 +834,11 @@ function openSetupModal() {
                     <button class="btn" onclick="openRosterManager()"
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
                         GESTIONAR PLANTILLA
+                    </button>
+                    <button class="btn" onclick="openEmailSettings()"
+                        title="Configurar envío automático de informes por email"
+                        style="background:var(--glass);color:var(--secondary);font-size:0.82rem;border:1px solid var(--secondary);">
+                        📧 EMAIL
                     </button>
                     ${window._cronosCurrentUser?.role === 'admin' ? `
                     <button onclick="openAdminPanel()"
@@ -1008,7 +1260,8 @@ function saveCurrentTeam() {
     localStorage.setItem('cronos_teams', JSON.stringify(teams));
     const titulares = currentPlayers.filter(p => p.status === 'field').length;
     const suplentes = currentPlayers.filter(p => p.status === 'bench').length;
-    alert(`✅ Equipo "${teamName}" guardado.\n\nModalidad: ${currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}\nSistema: ${activeFormationKey || 'sin definir'}\nTitulares: ${titulares} · Suplentes: ${suplentes}`);
+    const formationDisplay = activeFormationKey ? '1-' + activeFormationKey : 'sin definir';
+    alert(`✅ Equipo "${teamName}" guardado.\n\nModalidad: ${currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}\nSistema: ${formationDisplay}\nTitulares: ${titulares} · Suplentes: ${suplentes}`);
 }
 
 function setupEventListeners() {
@@ -1860,6 +2113,7 @@ async function exportData() {
 
     window.print();
 
+    // --- DESCARGA LOCAL (copia para el entrenador) ---
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1868,4 +2122,91 @@ async function exportData() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    // --- ENVÍO AUTOMÁTICO POR EMAIL (al director deportivo) ---
+    if (emailConfig.directorEmail) {
+        // Construir HTML del informe para incluir en el email
+        const reportHtmlForEmail = `
+<h2 style="color:#333;">📊 Informe de Partido</h2>
+<table style="border-collapse:collapse; font-size:13px;">
+  <tr><td style="padding:4px 10px;"><strong>Fecha:</strong></td><td>${date}</td></tr>
+  <tr><td style="padding:4px 10px;"><strong>Partido:</strong></td><td>${homeName} vs ${awayName}</td></tr>
+  <tr><td style="padding:4px 10px;"><strong>Resultado:</strong></td><td><strong>${scoreHome} - ${scoreAway}</strong></td></tr>
+  <tr><td style="padding:4px 10px;"><strong>Modalidad:</strong></td><td>${mode}</td></tr>
+  <tr><td style="padding:4px 10px;"><strong>Tiempo:</strong></td><td>${formatTime(totalElapsed)}</td></tr>
+</table>
+<br>
+<table style="border-collapse:collapse; width:100%; font-size:12px;">
+  <thead>
+    <tr style="background:#1a1a2e; color:#fff;">
+      <th style="padding:6px 8px; border:1px solid #ccc;">Equipo</th>
+      <th style="padding:6px 8px; border:1px solid #ccc;">Nº</th>
+      <th style="padding:6px 8px; border:1px solid #ccc;">Nombre</th>
+      <th style="padding:6px 8px; border:1px solid #ccc;">Goles</th>
+      <th style="padding:6px 8px; border:1px solid #ccc;">Tarjeta</th>
+      <th style="padding:6px 8px; border:1px solid #ccc;">Tiempo</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${sortedPlayers.map(p => {
+        const tName = p.team === 'home' ? homeName : awayName;
+        const card  = p.cards === 'ninguna' ? '' : (p.cards === 'amarilla' ? '🟨 AMARILLA' : '🟥 ROJA');
+        return '<tr>' +
+          '<td style="padding:5px 8px;border:1px solid #ccc;">' + tName + '</td>' +
+          '<td style="padding:5px 8px;border:1px solid #ccc;text-align:center;">' + p.number + '</td>' +
+          '<td style="padding:5px 8px;border:1px solid #ccc;">' + p.name + '</td>' +
+          '<td style="padding:5px 8px;border:1px solid #ccc;text-align:center;">' + (p.goals||0) + '</td>' +
+          '<td style="padding:5px 8px;border:1px solid #ccc;text-align:center;">' + card + '</td>' +
+          '<td style="padding:5px 8px;border:1px solid #ccc;text-align:right;">' + formatTime(p.time) + '</td>' +
+        '</tr>';
+    }).join('')}
+  </tbody>
+</table>
+<p style="font-size:11px; color:#888; margin-top:12px;">
+  Informe generado automáticamente por Cronos Fútbol · ${date}
+</p>`;
+
+        const matchInfo = `${homeName} ${scoreHome}-${scoreAway} ${awayName}`;
+
+        // --- ENVÍO EMAIL ---
+        sendReportByEmail(matchInfo, reportHtmlForEmail);
+
+        // --- ENVÍO WHATSAPP (abre con 1 toque) ---
+        if (emailConfig.whatsappNumber) {
+            const waMsg =
+`📊 *INFORME DE PARTIDO — Cronos Fútbol*
+━━━━━━━━━━━━━━━━━━━━
+📅 Fecha: ${date}
+⚽ Partido: *${homeName} ${scoreHome} - ${scoreAway} ${awayName}*
+🏟️ Modalidad: ${mode}
+⏱️ Tiempo jugado: ${formatTime(totalElapsed)}
+━━━━━━━━━━━━━━━━━━━━
+👥 *JUGADORES*
+${sortedPlayers.map(p => {
+    const tName = p.team === 'home' ? homeName : awayName;
+    const status = p.status === 'field' ? '🟢' : '🔵';
+    const card = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
+    const goals = p.goals > 0 ? ` ⚽×${p.goals}` : '';
+    return `${status} [${tName}] ${p.number}. ${p.name} — ${formatTime(p.time)}${goals}${card}`;
+}).join('\n')}
+━━━━━━━━━━━━━━━━━━━━
+_Generado por Cronos Fútbol_`;
+            // Pequeño delay para que el CSV se descargue primero
+            setTimeout(() => sendReportByWhatsApp(waMsg), 800);
+        }
+
+        // --- TOAST DE CONFIRMACIÓN ---
+        const channels = [];
+        if (emailConfig.directorEmail) channels.push('📧 email');
+        if (emailConfig.whatsappNumber) channels.push('📱 WhatsApp');
+        const toast = document.createElement('div');
+        toast.textContent = channels.length
+            ? `✅ Informe enviado por ${channels.join(' + ')} al Director Deportivo`
+            : '✅ Informe descargado';
+        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+            'background:#1a7a3e;color:#fff;padding:10px 22px;border-radius:8px;' +
+            'font-size:0.82rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.4);white-space:nowrap;';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+    }
 }
