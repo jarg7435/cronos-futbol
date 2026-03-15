@@ -116,6 +116,172 @@
 
 <body class="locked">
 
+    <!-- ══ PANTALLA DE INSTALACIÓN (se muestra solo si la app no está instalada) ══ -->
+    <div id="install-screen" style="display:none; align-items:center; justify-content:center;
+         min-height:100vh; background:#0a0e14; padding:1.5rem; flex-direction:column;">
+
+        <div style="width:100%; max-width:400px; text-align:center;">
+
+            <!-- Logo -->
+            <div style="margin-bottom:1.5rem;">
+                <div style="font-size:3.5rem; line-height:1;">⚽</div>
+                <h1 style="font-family:'Outfit',sans-serif; color:#58a6ff;
+                           font-size:2rem; margin:0.3rem 0 0.2rem;">CRONOS FÚTBOL</h1>
+                <p style="color:#7d8590; font-size:0.8rem; margin:0;">Coach Assistant · v7.0</p>
+            </div>
+
+            <!-- Tarjeta de instrucciones -->
+            <div id="install-card" style="background:rgba(255,255,255,0.05);
+                 border:1px solid rgba(88,166,255,0.3); border-radius:16px;
+                 padding:1.5rem; margin-bottom:1.2rem; text-align:left;">
+
+                <!-- iOS -->
+                <div id="install-ios" style="display:none;">
+                    <p style="color:#58a6ff; font-weight:700; font-size:0.95rem; margin:0 0 1rem; text-align:center;">
+                        📱 Instala la app en tu iPhone / iPad
+                    </p>
+                    <div style="display:flex; flex-direction:column; gap:0.9rem;">
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">1</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Pulsa el botón de compartir
+                                <span style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                                       border-radius:6px; padding:2px 8px; font-size:1rem;">⬆</span>
+                                en la barra de Safari
+                            </span>
+                        </div>
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">2</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Desplázate hacia abajo y toca
+                                <strong style="color:#fff;">"Añadir a pantalla de inicio"</strong>
+                                <span style="font-size:1rem;"> ＋</span>
+                            </span>
+                        </div>
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">3</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Pulsa <strong style="color:#fff;">"Añadir"</strong> arriba a la derecha
+                            </span>
+                        </div>
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#1a7a3e; color:#fff; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">✓</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Abre la app desde el icono
+                                <span style="font-size:1rem;">⚽</span>
+                                en tu pantalla de inicio
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Android -->
+                <div id="install-android" style="display:none;">
+                    <p style="color:#58a6ff; font-weight:700; font-size:0.95rem; margin:0 0 1rem; text-align:center;">
+                        📱 Instala la app en tu Android
+                    </p>
+                    <div style="display:flex; flex-direction:column; gap:0.9rem;">
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">1</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Toca el menú
+                                <strong style="color:#fff;">⋮</strong>
+                                (tres puntos) arriba a la derecha de Chrome
+                            </span>
+                        </div>
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">2</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Selecciona <strong style="color:#fff;">"Añadir a pantalla de inicio"</strong>
+                            </span>
+                        </div>
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">3</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Pulsa <strong style="color:#fff;">"Instalar"</strong> o <strong style="color:#fff;">"Añadir"</strong>
+                            </span>
+                        </div>
+                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                            <span style="background:#1a7a3e; color:#fff; border-radius:50%;
+                                   width:26px; height:26px; display:flex; align-items:center;
+                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">✓</span>
+                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                                Abre la app desde el icono
+                                <span style="font-size:1rem;">⚽</span>
+                                en tu pantalla de inicio
+                            </span>
+                        </div>
+                    </div>
+                    <!-- Botón install nativo Chrome (si está disponible) -->
+                    <button id="btn-native-install" onclick="triggerNativeInstall()"
+                        style="display:none; width:100%; margin-top:1.2rem; padding:0.75rem;
+                               background:#58a6ff; border:none; border-radius:8px;
+                               color:#0a0e14; font-weight:700; font-size:0.95rem; cursor:pointer;">
+                        ⬇ INSTALAR AHORA
+                    </button>
+                </div>
+
+                <!-- Desktop / PC -->
+                <div id="install-desktop" style="display:none;">
+                    <p style="color:#58a6ff; font-weight:700; font-size:0.95rem; margin:0 0 1rem; text-align:center;">
+                        💻 Usar en ordenador
+                    </p>
+                    <p style="color:#cdd9e5; font-size:0.88rem; line-height:1.6; margin:0 0 0.8rem;">
+                        Puedes usar Cronos Fútbol directamente en el navegador, o instalarlo
+                        como aplicación de escritorio desde la barra de Chrome:
+                    </p>
+                    <div style="display:flex; align-items:flex-start; gap:0.9rem; margin-bottom:0.7rem;">
+                        <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                               width:26px; height:26px; display:flex; align-items:center;
+                               justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">1</span>
+                        <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                            Busca el icono
+                            <strong style="color:#fff;">⊕</strong>
+                            en la barra de direcciones de Chrome
+                        </span>
+                    </div>
+                    <div style="display:flex; align-items:flex-start; gap:0.9rem;">
+                        <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
+                               width:26px; height:26px; display:flex; align-items:center;
+                               justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">2</span>
+                        <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
+                            Haz clic en <strong style="color:#fff;">"Instalar Cronos Fútbol"</strong>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botones -->
+            <button onclick="goToAuth()"
+                style="width:100%; padding:0.9rem; background:#58a6ff; border:none;
+                       border-radius:8px; color:#0a0e14; font-weight:700;
+                       font-size:1rem; cursor:pointer; letter-spacing:0.5px; margin-bottom:0.7rem;">
+                ✅ YA LA INSTALÉ — CONTINUAR
+            </button>
+            <button onclick="goToAuth()"
+                style="width:100%; padding:0.7rem; background:transparent;
+                       border:1px solid rgba(255,255,255,0.15); border-radius:8px;
+                       color:#7d8590; font-size:0.85rem; cursor:pointer;">
+                Continuar sin instalar
+            </button>
+
+        </div>
+    </div>
+
     <!-- ══ PANTALLA DE LOGIN / REGISTRO ══════════════════════════════════ -->
     <div id="auth-screen" style="display:flex; align-items:center; justify-content:center;
          min-height:100vh; background:#0a0e14; padding:1rem;">
@@ -802,6 +968,83 @@
                 alert('Error: ' + err.message);
             }
         }
+    </script>
+
+    <script>
+    // ══════════════════════════════════════════════════════
+    //  LÓGICA DE INSTALACIÓN PWA
+    // ══════════════════════════════════════════════════════
+    let deferredInstallPrompt = null;
+
+    // Capturar el evento nativo de Chrome (Android/Desktop)
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        // Mostrar botón de instalación nativa si está disponible
+        const btn = document.getElementById('btn-native-install');
+        if (btn) btn.style.display = 'block';
+    });
+
+    function triggerNativeInstall() {
+        if (deferredInstallPrompt) {
+            deferredInstallPrompt.prompt();
+            deferredInstallPrompt.userChoice.then(() => {
+                deferredInstallPrompt = null;
+                goToAuth();
+            });
+        }
+    }
+
+    function goToAuth() {
+        document.getElementById('install-screen').style.display = 'none';
+        document.getElementById('auth-screen').style.display   = 'flex';
+        // Marcar que ya vio las instrucciones (no mostrar de nuevo en 30 días)
+        localStorage.setItem('cronos_install_shown', Date.now());
+    }
+
+    function detectDeviceAndShowInstall() {
+        // Si ya está instalada como PWA (standalone), ir directo a auth
+        const isStandalone =
+            window.navigator.standalone === true ||
+            window.matchMedia('(display-mode: standalone)').matches ||
+            window.matchMedia('(display-mode: fullscreen)').matches;
+
+        if (isStandalone) {
+            // Está instalada: mostrar directamente el login
+            document.getElementById('install-screen').style.display = 'none';
+            document.getElementById('auth-screen').style.display   = 'flex';
+            return;
+        }
+
+        // Comprobar si ya mostró las instrucciones recientemente (30 días)
+        const lastShown = parseInt(localStorage.getItem('cronos_install_shown') || '0');
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+        if (Date.now() - lastShown < thirtyDays) {
+            document.getElementById('install-screen').style.display = 'none';
+            document.getElementById('auth-screen').style.display   = 'flex';
+            return;
+        }
+
+        // Detectar dispositivo y mostrar instrucciones correctas
+        const ua = navigator.userAgent.toLowerCase();
+        const isIOS     = /iphone|ipad|ipod/.test(ua);
+        const isAndroid = /android/.test(ua);
+
+        if (isIOS) {
+            document.getElementById('install-ios').style.display     = 'block';
+        } else if (isAndroid) {
+            document.getElementById('install-android').style.display = 'block';
+        } else {
+            document.getElementById('install-desktop').style.display = 'block';
+        }
+
+        // Mostrar pantalla de instalación
+        document.getElementById('install-screen').style.display = 'flex';
+        document.getElementById('auth-screen').style.display    = 'none';
+    }
+
+    // Ejecutar al cargar la página
+    window.addEventListener('load', detectDeviceAndShowInstall);
     </script>
 
 </body>
