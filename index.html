@@ -116,173 +116,195 @@
 
 <body class="locked">
 
-    <!-- ══ PANTALLA DE INSTALACIÓN (se muestra solo si la app no está instalada) ══ -->
-    <div id="install-screen" style="display:none; align-items:center; justify-content:center;
-         min-height:100vh; background:#0a0e14; padding:1.5rem; flex-direction:column;">
+    <!-- ══ PANTALLA DE ONBOARDING (9 pasos) ══════════════════════════════ -->
+    <div id="install-screen" style="display:none;">
+    <style>
+        #onboarding-wrap {
+            display:flex; min-height:100vh; background:#0a0e14;
+            font-family:'Inter',sans-serif; color:#cdd9e5;
+        }
+        /* ── Sidebar ── */
+        #ob-sidebar {
+            width:220px; flex-shrink:0;
+            background:rgba(255,255,255,0.03);
+            border-right:1px solid rgba(255,255,255,0.08);
+            display:flex; flex-direction:column;
+            padding:1.4rem 0;
+        }
+        #ob-sidebar h3 {
+            font-size:0.65rem; letter-spacing:2px; color:#7d8590;
+            padding:0 1.2rem; margin:0 0 0.8rem;
+        }
+        .ob-step-item {
+            display:flex; align-items:center; gap:0.7rem;
+            padding:0.55rem 1.2rem; cursor:pointer;
+            font-size:0.82rem; color:#7d8590;
+            border-left:3px solid transparent;
+            transition:all 0.2s;
+        }
+        .ob-step-item:hover { color:#cdd9e5; background:rgba(255,255,255,0.04); }
+        .ob-step-item.active {
+            color:#58a6ff; border-left-color:#58a6ff;
+            background:rgba(88,166,255,0.08); font-weight:700;
+        }
+        .ob-step-item.done { color:rgba(88,166,255,0.5); }
+        .ob-step-num {
+            width:22px; height:22px; border-radius:50%; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+            font-size:0.7rem; font-weight:700;
+            background:rgba(255,255,255,0.08); color:#7d8590;
+        }
+        .ob-step-item.active .ob-step-num {
+            background:#58a6ff; color:#0a0e14;
+        }
+        .ob-step-item.done .ob-step-num {
+            background:rgba(88,166,255,0.3); color:#58a6ff;
+        }
+        /* ── Main content ── */
+        #ob-main {
+            flex:1; display:flex; flex-direction:column;
+            overflow:hidden;
+        }
+        #ob-topbar {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:0.9rem 1.5rem;
+            border-bottom:1px solid rgba(255,255,255,0.07);
+            background:rgba(255,255,255,0.02);
+        }
+        #ob-logo {
+            display:flex; align-items:center; gap:0.6rem;
+            font-family:'Outfit',sans-serif; font-size:1rem;
+            font-weight:700; color:#58a6ff;
+        }
+        #ob-logo span { color:#f0883e; }
+        #ob-progress-bar {
+            flex:1; height:4px; background:rgba(255,255,255,0.1);
+            border-radius:2px; margin:0 1.5rem;
+        }
+        #ob-progress-fill {
+            height:100%; background:#58a6ff; border-radius:2px;
+            transition:width 0.4s ease;
+        }
+        #ob-step-counter {
+            font-size:0.78rem; color:#7d8590; white-space:nowrap;
+        }
+        #ob-content {
+            flex:1; overflow-y:auto; padding:1.5rem;
+            display:flex; flex-direction:column; gap:1.2rem;
+        }
+        #ob-hero {
+            text-align:center; padding:1rem 0 0.5rem;
+        }
+        #ob-hero .ob-icon { font-size:2.8rem; line-height:1; margin-bottom:0.5rem; }
+        #ob-hero h2 {
+            font-family:'Outfit',sans-serif; color:#58a6ff;
+            font-size:1.5rem; margin:0 0 0.2rem;
+        }
+        #ob-hero p { color:#7d8590; font-size:0.78rem; margin:0; }
+        #ob-card {
+            background:rgba(88,166,255,0.07);
+            border:1px solid rgba(88,166,255,0.25);
+            border-radius:12px; padding:1.2rem;
+        }
+        #ob-card h4 {
+            color:#58a6ff; font-size:0.9rem; margin:0 0 1rem;
+            display:flex; align-items:center; gap:0.5rem;
+        }
+        .ob-instruction {
+            display:flex; align-items:flex-start; gap:0.8rem;
+            margin-bottom:0.8rem;
+        }
+        .ob-instr-num {
+            width:24px; height:24px; border-radius:50%; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+            font-size:0.72rem; font-weight:700;
+            background:#58a6ff; color:#0a0e14;
+        }
+        .ob-instr-num.done { background:#1a7a3e; color:#fff; font-size:0.85rem; }
+        .ob-instr-text { color:#cdd9e5; font-size:0.85rem; line-height:1.5; }
+        .ob-instr-text strong { color:#fff; }
+        #ob-bottom {
+            padding:1rem 1.5rem;
+            border-top:1px solid rgba(255,255,255,0.07);
+            background:rgba(255,255,255,0.02);
+        }
+        #ob-step-label {
+            font-size:0.68rem; color:#58a6ff; font-weight:700;
+            letter-spacing:1px; margin-bottom:0.3rem;
+        }
+        #ob-step-title { font-size:1.1rem; font-weight:700; color:#cdd9e5; margin-bottom:0.3rem; }
+        #ob-step-desc { font-size:0.82rem; color:#7d8590; line-height:1.5; margin-bottom:1rem; }
+        #ob-nav { display:flex; gap:0.7rem; }
+        #ob-btn-prev {
+            padding:0.65rem 1.2rem; background:rgba(255,255,255,0.06);
+            border:1px solid rgba(255,255,255,0.12); border-radius:8px;
+            color:#7d8590; cursor:pointer; font-size:0.85rem;
+        }
+        #ob-btn-next {
+            flex:1; padding:0.65rem; background:#58a6ff; border:none;
+            border-radius:8px; color:#0a0e14; font-weight:700;
+            font-size:0.9rem; cursor:pointer; letter-spacing:0.5px;
+        }
+        #ob-btn-skip {
+            padding:0.65rem 1rem; background:transparent;
+            border:1px solid rgba(255,255,255,0.08); border-radius:8px;
+            color:#555; cursor:pointer; font-size:0.78rem;
+        }
+        /* Responsive móvil */
+        @media (max-width: 600px) {
+            #ob-sidebar { display:none; }
+            #ob-topbar { padding:0.7rem 1rem; }
+            #ob-content { padding:1rem; }
+            #ob-bottom { padding:0.8rem 1rem; }
+        }
+    </style>
 
-        <div style="width:100%; max-width:400px; text-align:center;">
+    <div id="onboarding-wrap">
 
-            <!-- Logo -->
-            <div style="margin-bottom:1.5rem;">
-                <div style="font-size:3.5rem; line-height:1;">⚽</div>
-                <h1 style="font-family:'Outfit',sans-serif; color:#58a6ff;
-                           font-size:2rem; margin:0.3rem 0 0.2rem;">CRONOS FÚTBOL</h1>
-                <p style="color:#7d8590; font-size:0.8rem; margin:0;">Coach Assistant · v7.0</p>
+        <!-- SIDEBAR -->
+        <nav id="ob-sidebar">
+            <h3>PASOS</h3>
+            <div id="ob-steps-list"></div>
+        </nav>
+
+        <!-- MAIN -->
+        <div id="ob-main">
+            <!-- Top bar -->
+            <div id="ob-topbar">
+                <div id="ob-logo">⚽ CRONOS <span>FÚTBOL</span></div>
+                <div id="ob-progress-bar"><div id="ob-progress-fill" style="width:11%;"></div></div>
+                <div id="ob-step-counter">01 / 09</div>
             </div>
 
-            <!-- Tarjeta de instrucciones -->
-            <div id="install-card" style="background:rgba(255,255,255,0.05);
-                 border:1px solid rgba(88,166,255,0.3); border-radius:16px;
-                 padding:1.5rem; margin-bottom:1.2rem; text-align:left;">
-
-                <!-- iOS -->
-                <div id="install-ios" style="display:none;">
-                    <p style="color:#58a6ff; font-weight:700; font-size:0.95rem; margin:0 0 1rem; text-align:center;">
-                        📱 Instala la app en tu iPhone / iPad
-                    </p>
-                    <div style="display:flex; flex-direction:column; gap:0.9rem;">
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">1</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Pulsa el botón de compartir
-                                <span style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
-                                       border-radius:6px; padding:2px 8px; font-size:1rem;">⬆</span>
-                                en la barra de Safari
-                            </span>
-                        </div>
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">2</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Desplázate hacia abajo y toca
-                                <strong style="color:#fff;">"Añadir a pantalla de inicio"</strong>
-                                <span style="font-size:1rem;"> ＋</span>
-                            </span>
-                        </div>
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">3</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Pulsa <strong style="color:#fff;">"Añadir"</strong> arriba a la derecha
-                            </span>
-                        </div>
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#1a7a3e; color:#fff; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">✓</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Abre la app desde el icono
-                                <span style="font-size:1rem;">⚽</span>
-                                en tu pantalla de inicio
-                            </span>
-                        </div>
-                    </div>
+            <!-- Content area -->
+            <div id="ob-content">
+                <div id="ob-hero">
+                    <div class="ob-icon" id="ob-hero-icon">⚽</div>
+                    <h2 id="ob-hero-title">CRONOS FÚTBOL</h2>
+                    <p id="ob-hero-sub">Coach Assistant · v7.0</p>
                 </div>
-
-                <!-- Android -->
-                <div id="install-android" style="display:none;">
-                    <p style="color:#58a6ff; font-weight:700; font-size:0.95rem; margin:0 0 1rem; text-align:center;">
-                        📱 Instala la app en tu Android
-                    </p>
-                    <div style="display:flex; flex-direction:column; gap:0.9rem;">
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">1</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Toca el menú
-                                <strong style="color:#fff;">⋮</strong>
-                                (tres puntos) arriba a la derecha de Chrome
-                            </span>
-                        </div>
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">2</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Selecciona <strong style="color:#fff;">"Añadir a pantalla de inicio"</strong>
-                            </span>
-                        </div>
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">3</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Pulsa <strong style="color:#fff;">"Instalar"</strong> o <strong style="color:#fff;">"Añadir"</strong>
-                            </span>
-                        </div>
-                        <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                            <span style="background:#1a7a3e; color:#fff; border-radius:50%;
-                                   width:26px; height:26px; display:flex; align-items:center;
-                                   justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">✓</span>
-                            <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                                Abre la app desde el icono
-                                <span style="font-size:1rem;">⚽</span>
-                                en tu pantalla de inicio
-                            </span>
-                        </div>
-                    </div>
-                    <!-- Botón install nativo Chrome (si está disponible) -->
-                    <button id="btn-native-install" onclick="triggerNativeInstall()"
-                        style="display:none; width:100%; margin-top:1.2rem; padding:0.75rem;
-                               background:#58a6ff; border:none; border-radius:8px;
-                               color:#0a0e14; font-weight:700; font-size:0.95rem; cursor:pointer;">
-                        ⬇ INSTALAR AHORA
-                    </button>
-                </div>
-
-                <!-- Desktop / PC -->
-                <div id="install-desktop" style="display:none;">
-                    <p style="color:#58a6ff; font-weight:700; font-size:0.95rem; margin:0 0 1rem; text-align:center;">
-                        💻 Usar en ordenador
-                    </p>
-                    <p style="color:#cdd9e5; font-size:0.88rem; line-height:1.6; margin:0 0 0.8rem;">
-                        Puedes usar Cronos Fútbol directamente en el navegador, o instalarlo
-                        como aplicación de escritorio desde la barra de Chrome:
-                    </p>
-                    <div style="display:flex; align-items:flex-start; gap:0.9rem; margin-bottom:0.7rem;">
-                        <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                               width:26px; height:26px; display:flex; align-items:center;
-                               justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">1</span>
-                        <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                            Busca el icono
-                            <strong style="color:#fff;">⊕</strong>
-                            en la barra de direcciones de Chrome
-                        </span>
-                    </div>
-                    <div style="display:flex; align-items:flex-start; gap:0.9rem;">
-                        <span style="background:#58a6ff; color:#0a0e14; border-radius:50%;
-                               width:26px; height:26px; display:flex; align-items:center;
-                               justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0;">2</span>
-                        <span style="color:#cdd9e5; font-size:0.88rem; line-height:1.5;">
-                            Haz clic en <strong style="color:#fff;">"Instalar Cronos Fútbol"</strong>
-                        </span>
-                    </div>
+                <div id="ob-card">
+                    <h4 id="ob-card-title"></h4>
+                    <div id="ob-card-body"></div>
                 </div>
             </div>
 
-            <!-- Botones -->
-            <button onclick="goToAuth()"
-                style="width:100%; padding:0.9rem; background:#58a6ff; border:none;
-                       border-radius:8px; color:#0a0e14; font-weight:700;
-                       font-size:1rem; cursor:pointer; letter-spacing:0.5px; margin-bottom:0.7rem;">
-                ✅ YA LA INSTALÉ — CONTINUAR
-            </button>
-            <button onclick="goToAuth()"
-                style="width:100%; padding:0.7rem; background:transparent;
-                       border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-                       color:#7d8590; font-size:0.85rem; cursor:pointer;">
-                Continuar sin instalar
-            </button>
-
+            <!-- Bottom -->
+            <div id="ob-bottom">
+                <div id="ob-step-label">PASO 01 / 09</div>
+                <div id="ob-step-title"></div>
+                <div id="ob-step-desc"></div>
+                <div id="ob-nav">
+                    <button id="ob-btn-prev" onclick="obPrev()">Anterior</button>
+                    <button id="ob-btn-next" onclick="obNext()">Siguiente →</button>
+                    <button id="ob-btn-skip" onclick="goToAuth()">Saltar</button>
+                </div>
+            </div>
         </div>
     </div>
+    </div>
 
-    <!-- ══ PANTALLA DE LOGIN / REGISTRO ══════════════════════════════════ -->
+<!-- ══ PANTALLA DE LOGIN / REGISTRO ══════════════════════════════════ -->
     <div id="auth-screen" style="display:flex; align-items:center; justify-content:center;
          min-height:100vh; background:#0a0e14; padding:1rem;">
         <div style="width:100%; max-width:380px; background:rgba(255,255,255,0.04);
@@ -975,17 +997,14 @@
 
     <script>
     // ══════════════════════════════════════════════════════
-    //  LÓGICA DE INSTALACIÓN PWA
+    //  ONBOARDING — 9 PASOS
     // ══════════════════════════════════════════════════════
     let deferredInstallPrompt = null;
+    let obCurrentStep = 0;
 
-    // Capturar el evento nativo de Chrome (Android/Desktop)
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferredInstallPrompt = e;
-        // Mostrar botón de instalación nativa si está disponible
-        const btn = document.getElementById('btn-native-install');
-        if (btn) btn.style.display = 'block';
     });
 
     function triggerNativeInstall() {
@@ -993,60 +1012,230 @@
             deferredInstallPrompt.prompt();
             deferredInstallPrompt.userChoice.then(() => {
                 deferredInstallPrompt = null;
-                goToAuth();
+                obNext();
             });
+        } else {
+            obNext();
         }
     }
 
     function goToAuth() {
         document.getElementById('install-screen').style.display = 'none';
-        document.getElementById('auth-screen').style.display   = 'flex';
-        // Marcar que ya vio las instrucciones (no mostrar de nuevo en 30 días)
+        document.getElementById('auth-screen').style.display    = 'flex';
         localStorage.setItem('cronos_install_shown', Date.now());
     }
 
+    // ── Definición de los 9 pasos ──────────────────────────
+    const OB_STEPS = [
+        {
+            icon: '📲', heroTitle: 'CRONOS FÚTBOL', heroSub: 'Coach Assistant · v7.0',
+            sideLabel: '📲 Instalación',
+            stepTitle: 'Instala la app en tu dispositivo',
+            stepDesc:  'Al abrir el enlace por primera vez, la app te guía automáticamente para añadirla a la pantalla de inicio. En Android verás el botón "Instalar ahora" y en iPhone los pasos de Safari.',
+            cardTitle: () => {
+                const ua = navigator.userAgent.toLowerCase();
+                if (/iphone|ipad|ipod/.test(ua)) return '📱 Instala la app en tu iPhone / iPad';
+                if (/android/.test(ua))           return '📱 Instala la app en tu Android';
+                return '💻 Instala la app en tu ordenador';
+            },
+            cardBody: () => {
+                const ua = navigator.userAgent.toLowerCase();
+                const isIOS     = /iphone|ipad|ipod/.test(ua);
+                const isAndroid = /android/.test(ua);
+                if (isIOS) return `
+                    <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa el botón de compartir <strong>⬆</strong> en la barra de Safari</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Toca <strong>"Añadir a pantalla de inicio"</strong> ＋</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"Añadir"</strong> arriba a la derecha</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Abre la app desde el icono ⚽ en tu pantalla de inicio</span></div>`;
+                if (isAndroid) return `
+                    <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Toca el menú <strong>⋮</strong> (tres puntos) de Chrome</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Selecciona <strong>"Añadir a pantalla de inicio"</strong></span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"Instalar"</strong></span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Abre la app desde el icono ⚽ en tu móvil</span></div>
+                    ${deferredInstallPrompt ? '<button onclick="triggerNativeInstall()" style="width:100%;margin-top:0.8rem;padding:0.75rem;background:#58a6ff;border:none;border-radius:8px;color:#0a0e14;font-weight:700;font-size:0.9rem;cursor:pointer;">⬇ INSTALAR AHORA</button>' : ''}`;
+                return `
+                    <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Busca el icono <strong>⊕</strong> en la barra de Chrome</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Haz clic en <strong>"Instalar Cronos Fútbol"</strong></span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">La app se abrirá en su propia ventana</span></div>`;
+            }
+        },
+        {
+            icon: '📝', heroTitle: 'Registro', heroSub: 'Crea tu cuenta de entrenador',
+            sideLabel: '📝 Registro',
+            stepTitle: 'Crea tu cuenta',
+            stepDesc:  'Introduce tu correo electrónico y una contraseña. Una vez registrado, el administrador recibirá tu solicitud y activará tu acceso. Recibirás confirmación cuando esté listo.',
+            cardTitle: () => '📝 Cómo registrarse',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">En la pantalla de inicio pulsa <strong>"REGISTRARSE"</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Introduce tu <strong>correo electrónico</strong> y una <strong>contraseña</strong> (mín. 6 caracteres)</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"REGISTRARSE"</strong> — tu solicitud queda pendiente de aprobación</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Una vez aprobado, ya puedes entrar con tu correo y contraseña</span></div>`
+        },
+        {
+            icon: '🔑', heroTitle: 'Iniciar sesión', heroSub: 'Accede a tu cuenta',
+            sideLabel: '🔑 Iniciar sesión',
+            stepTitle: 'Entra en la aplicación',
+            stepDesc:  'Con tu correo y contraseña ya aprobados, pulsa "ENTRAR". La sesión solo dura mientras tienes la app abierta, por seguridad se cierra al salir.',
+            cardTitle: () => '🔑 Acceso seguro',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Introduce tu <strong>correo</strong> y <strong>contraseña</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Pulsa <strong>"ENTRAR"</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Accederás a la pantalla de configuración del partido</span></div>`
+        },
+        {
+            icon: '👥', heroTitle: 'Gestionar Plantilla', heroSub: 'Registra a tus jugadores',
+            sideLabel: '👥 Gestionar plantilla',
+            stepTitle: 'Introduce a tus jugadores',
+            stepDesc:  'Desde el botón "Gestionar Plantilla" en la configuración, rellena el nombre, apellido, alias y dorsal de cada jugador. Solo tienes que hacerlo una vez — se guardan automáticamente.',
+            cardTitle: () => '👥 Plantilla de jugadores',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa <strong>"GESTIONAR PLANTILLA"</strong> en la pantalla de configuración</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Rellena <strong>dorsal, nombre y alias</strong> de cada jugador (el alias aparece en el campo)</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"GUARDAR PLANTILLA"</strong> — quedan guardados en tu dispositivo</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Fútbol 7: hasta 18 jugadores · Fútbol 11: hasta 25 jugadores</span></div>`
+        },
+        {
+            icon: '⚙️', heroTitle: 'Configurar partido', heroSub: 'Prepara el encuentro',
+            sideLabel: '⚙️ Configurar partido',
+            stepTitle: 'Configura el encuentro',
+            stepDesc:  'Nombre del equipo, colores de la equipación (camiseta, pantalón y dorsal), modalidad (F7 o F11) y sistema táctico inicial. Puedes guardar el equipo y cargarlo en el siguiente partido.',
+            cardTitle: () => '⚙️ Opciones de configuración',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Escribe el <strong>nombre del equipo</strong> local</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Elige los <strong>colores</strong> de camiseta, pantalón y dorsal</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Selecciona <strong>Fútbol 7 o Fútbol 11</strong> y el <strong>sistema táctico</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Pulsa <strong>"CONTINUAR AL PARTIDO"</strong> para ir a la convocatoria</span></div>`
+        },
+        {
+            icon: '📋', heroTitle: 'Convocatoria', heroSub: 'Selecciona los jugadores',
+            sideLabel: '📋 Convocatoria',
+            stepTitle: 'Selecciona la convocatoria',
+            stepDesc:  'Elige los jugadores convocados para este partido (mín. 7, máx. 18 en F7 / mín. 7, máx. 18 en F11). Los primeros titulares se colocan automáticamente según el sistema elegido.',
+            cardTitle: () => '📋 Convocatoria del partido',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Toca los jugadores para <strong>seleccionarlos</strong> — se resaltan en azul</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Los <strong>primeros titulares</strong> se ordenan automáticamente por su posición habitual</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">El contador inferior muestra cuántos llevas seleccionados</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Pulsa <strong>"INICIAR PARTIDO"</strong> cuando tengas la convocatoria lista</span></div>`
+        },
+        {
+            icon: '▶️', heroTitle: 'Control del partido', heroSub: 'Cronómetros en tiempo real',
+            sideLabel: '▶️ Control del partido',
+            stepTitle: 'Controla el partido',
+            stepDesc:  'Pulsa EMPEZAR para iniciar el tiempo. Cada jugador tiene su cronómetro individual. Los puedes arrastrar entre el campo y el banquillo para gestionar los cambios.',
+            cardTitle: () => '▶️ Durante el partido',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa <strong>"EMPEZAR"</strong> para iniciar el cronómetro del partido</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Arrastra jugadores entre el <strong>campo y el banquillo</strong> para hacer cambios</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Toca un jugador para ver su <strong>menú de acciones</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">El tiempo de cada jugador se registra <strong>automáticamente</strong></span></div>`
+        },
+        {
+            icon: '⚡', heroTitle: 'Goles, tarjetas y cambios', heroSub: 'Acciones del partido',
+            sideLabel: '⚡ Goles, tarjetas y cambios',
+            stepTitle: 'Registra las acciones del partido',
+            stepDesc:  'Toca cualquier jugador para asignarle un gol, tarjeta amarilla o roja, o para hacer una sustitución. Todo queda registrado con el minuto exacto.',
+            cardTitle: () => '⚡ Acciones disponibles',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Toca un jugador → aparece el <strong>menú de acciones</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Asigna <strong>⚽ gol</strong>, <strong>🟨 tarjeta amarilla</strong> o <strong>🟥 tarjeta roja</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Para <strong>sustituciones</strong>, arrastra al banquillo o usa el botón de cambio</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Todo queda guardado con el <strong>minuto exacto</strong> de la acción</span></div>`
+        },
+        {
+            icon: '📊', heroTitle: 'Informe y guardado', heroSub: 'Exporta y guarda',
+            sideLabel: '📊 Informe y guardado',
+            stepTitle: 'Exporta el informe y guarda el equipo',
+            stepDesc:  'Al terminar el partido, descarga el informe completo con tiempos, goles y tarjetas. Se envía automáticamente al Director Deportivo si tienes configurado el email o WhatsApp.',
+            cardTitle: () => '📊 Finalizar partido',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa <strong>"GUARDAR"</strong> para salvar el equipo con su convocatoria y formación</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Pulsa <strong>"DESCARGAR"</strong> para exportar el informe en CSV</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">El informe se envía <strong>automáticamente</strong> al Director Deportivo por email y WhatsApp</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">El próximo partido carga el equipo guardado con <strong>un solo toque</strong></span></div>`
+        }
+    ];
+
+    function obRender() {
+        const step  = OB_STEPS[obCurrentStep];
+        const total = OB_STEPS.length;
+        const pct   = Math.round(((obCurrentStep + 1) / total) * 100);
+
+        // Progress bar & counter
+        document.getElementById('ob-progress-fill').style.width = pct + '%';
+        document.getElementById('ob-step-counter').textContent  =
+            String(obCurrentStep + 1).padStart(2,'0') + ' / ' + String(total).padStart(2,'0');
+
+        // Hero
+        document.getElementById('ob-hero-icon').textContent  = step.icon;
+        document.getElementById('ob-hero-title').textContent = step.heroTitle;
+        document.getElementById('ob-hero-sub').textContent   = step.heroSub;
+
+        // Card
+        document.getElementById('ob-card-title').innerHTML = step.cardTitle();
+        document.getElementById('ob-card-body').innerHTML  = step.cardBody();
+
+        // Bottom
+        document.getElementById('ob-step-label').textContent =
+            'PASO ' + String(obCurrentStep + 1).padStart(2,'0') + ' / ' + String(total).padStart(2,'0');
+        document.getElementById('ob-step-title').textContent = step.stepTitle;
+        document.getElementById('ob-step-desc').textContent  = step.stepDesc;
+
+        // Next button text
+        const btnNext = document.getElementById('ob-btn-next');
+        btnNext.textContent = (obCurrentStep === total - 1) ? '✅ ¡Empezar!' : 'Siguiente →';
+
+        // Prev button
+        document.getElementById('ob-btn-prev').style.visibility =
+            obCurrentStep === 0 ? 'hidden' : 'visible';
+
+        // Sidebar
+        const list = document.getElementById('ob-steps-list');
+        list.innerHTML = OB_STEPS.map((s, i) => `
+            <div class="ob-step-item ${i === obCurrentStep ? 'active' : i < obCurrentStep ? 'done' : ''}"
+                 onclick="obGoTo(${i})">
+                <span class="ob-step-num">${i < obCurrentStep ? '✓' : i + 1}</span>
+                ${s.sideLabel}
+            </div>`).join('');
+    }
+
+    function obNext() {
+        if (obCurrentStep >= OB_STEPS.length - 1) { goToAuth(); return; }
+        obCurrentStep++;
+        obRender();
+    }
+
+    function obPrev() {
+        if (obCurrentStep > 0) { obCurrentStep--; obRender(); }
+    }
+
+    function obGoTo(i) {
+        obCurrentStep = i;
+        obRender();
+    }
+
     function detectDeviceAndShowInstall() {
-        // Si ya está instalada como PWA (standalone), ir directo a auth
         const isStandalone =
             window.navigator.standalone === true ||
             window.matchMedia('(display-mode: standalone)').matches ||
             window.matchMedia('(display-mode: fullscreen)').matches;
 
-        if (isStandalone) {
-            // Está instalada: mostrar directamente el login
+        // Si ya está instalada o ya pasó el onboarding (30 días), ir directo al login
+        const lastShown   = parseInt(localStorage.getItem('cronos_install_shown') || '0');
+        const thirtyDays  = 30 * 24 * 60 * 60 * 1000;
+        const alreadySeen = Date.now() - lastShown < thirtyDays;
+
+        if (isStandalone || alreadySeen) {
             document.getElementById('install-screen').style.display = 'none';
-            document.getElementById('auth-screen').style.display   = 'flex';
+            document.getElementById('auth-screen').style.display    = 'flex';
             return;
         }
 
-        // Comprobar si ya mostró las instrucciones recientemente (30 días)
-        const lastShown = parseInt(localStorage.getItem('cronos_install_shown') || '0');
-        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-        if (Date.now() - lastShown < thirtyDays) {
-            document.getElementById('install-screen').style.display = 'none';
-            document.getElementById('auth-screen').style.display   = 'flex';
-            return;
-        }
-
-        // Detectar dispositivo y mostrar instrucciones correctas
-        const ua = navigator.userAgent.toLowerCase();
-        const isIOS     = /iphone|ipad|ipod/.test(ua);
-        const isAndroid = /android/.test(ua);
-
-        if (isIOS) {
-            document.getElementById('install-ios').style.display     = 'block';
-        } else if (isAndroid) {
-            document.getElementById('install-android').style.display = 'block';
-        } else {
-            document.getElementById('install-desktop').style.display = 'block';
-        }
-
-        // Mostrar pantalla de instalación
         document.getElementById('install-screen').style.display = 'flex';
         document.getElementById('auth-screen').style.display    = 'none';
+        obRender();
     }
 
-    // Ejecutar al cargar la página
     window.addEventListener('load', detectDeviceAndShowInstall);
     </script>
 
