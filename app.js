@@ -990,7 +990,8 @@ function registerServiceWorker() {
                 const newWorker = reg.installing;
                 newWorker.onstatechange = () => {
                     if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                        // Nueva versión lista → mostrar aviso y recargar automáticamente
+                        // Nueva versión lista → guardar sesión y recargar automáticamente
+                        sessionStorage.setItem('cronos_post_update', '1');
                         const toast = document.createElement('div');
                         toast.innerHTML = '🔄 Actualizando Cronos Fútbol…';
                         toast.style.cssText =
@@ -1015,6 +1016,9 @@ function registerServiceWorker() {
 
 async function forceUpdate() {
     if (confirm('Esto forzará la descarga de la última versión. ¿Continuar?')) {
+        // Marcar que venimos de una actualización para restaurar la sesión al volver
+        sessionStorage.setItem('cronos_post_update', '1');
+
         if ('serviceWorker' in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
             for (let registration of registrations) await registration.unregister();

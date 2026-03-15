@@ -63,8 +63,41 @@
             doc, getDoc, setDoc, serverTimestamp
         };
 
+        // ── Restaurar sesión tras recarga por actualización ────────────────
+        const _restoredUid   = sessionStorage.getItem('cronos_session_uid');
+        const _restoredEmail = sessionStorage.getItem('cronos_session_email');
+        const _restoredRole  = sessionStorage.getItem('cronos_session_role');
+        const _updateFlag    = sessionStorage.getItem('cronos_post_update');
+
+        if (_restoredUid && _updateFlag === '1') {
+            // Venimos de una actualización forzada: restaurar sesión sin pasar por login
+            sessionStorage.removeItem('cronos_post_update');
+            window._cronosCurrentUser = {
+                uid:   _restoredUid,
+                email: _restoredEmail,
+                role:  _restoredRole
+            };
+            // Mostrar toast de actualización completada
+            window.addEventListener('load', () => {
+                const toast = document.createElement('div');
+                toast.textContent = '✅ App actualizada correctamente';
+                toast.style.cssText =
+                    'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
+                    'background:#1a7a3e;color:#fff;padding:10px 24px;border-radius:8px;' +
+                    'font-size:0.88rem;font-weight:bold;z-index:99999;' +
+                    'box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            });
+            // Entrar directamente sin pasar por Firebase login
+            document.getElementById('install-screen').style.display = 'none';
+            document.getElementById('auth-screen').style.display    = 'none';
+            enterApp();
+        }
+
         // Observador de sesión — solo entra automáticamente si el login fue en ESTA sesión
         onAuthStateChanged(auth, async (user) => {
+            if (window._cronosCurrentUser) return; // ya restaurado por post-update
             if (user && window._loginThisSession) {
                 await checkAuthorization(user);
             } else {
@@ -696,6 +729,12 @@
             if (window._cronosCurrentUser?.role === 'admin') {
                 const btnAdmin = document.getElementById('btn-admin-panel');
                 if (btnAdmin) btnAdmin.style.display = 'inline-block';
+            }
+            // Guardar sesión para sobrevivir a recargas por actualización
+            if (window._cronosCurrentUser) {
+                sessionStorage.setItem('cronos_session_uid',   window._cronosCurrentUser.uid   || '');
+                sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email || '');
+                sessionStorage.setItem('cronos_session_role',  window._cronosCurrentUser.role  || 'user');
             }
             // Inicializar la app (registra event listeners de botones y abre setup)
             if (typeof init === 'function') init();
