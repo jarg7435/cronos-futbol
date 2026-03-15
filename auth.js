@@ -1,16 +1,8 @@
-import { 
-    signInWithEmailAndPassword, 
-    createUserWithEmailAndPassword, 
-    sendPasswordResetEmail,
-    setPersistence,
-    browserLocalPersistence,
-    browserSessionPersistence
-} from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 import { doc, getDoc, setDoc, collection, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
 let isLoginMode = true;
 
-// --- CAMBIAR ENTRE LOGIN Y REGISTRO ---
 window.toggleAuthMode = () => {
     isLoginMode = !isLoginMode;
     document.getElementById('auth-subtitle').textContent = isLoginMode ? 'Iniciar Sesión' : 'Crear Cuenta Nueva';
@@ -19,7 +11,6 @@ window.toggleAuthMode = () => {
     document.getElementById('access-error').textContent = '';
 };
 
-// --- ACCIÓN PRINCIPAL DEL BOTÓN ---
 window.handleAuthAction = async () => {
     if (isLoginMode) {
         await handleLogin();
@@ -28,131 +19,135 @@ window.handleAuthAction = async () => {
     }
 }
 
-// --- INICIAR SESIÓN ---
 async function handleLogin() {
     const email = document.getElementById('auth-email').value;
     const password = document.getElementById('auth-password').value;
     const errorEl = document.getElementById('access-error');
-    const rememberMe = document.getElementById('remember-me').checked;
+    
+    if (!email || !password) {
+        errorEl.textContent = 'Introduza correo y contraseña';
+        return;
+    }
+
+    try {
+        errorEl.textContent = 'Iniciando sesión...';
+        const userCredential = await signInWithEmailAndPassword(window.firebaseAuth, email, password);
+        const user = userCredential.user;
+
+        // Comprobar autorización en Firestore
+        const userDocRef = doc(window.firebaseDb, "users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+
+        if (userDoc.exists()) {
+            const userData = userDoc.data();
+            if (userData.isAuthorized) {
+                // Usuario Autorizado
+                sessionStorage.setItem('cronos_user_role', userData.role || 'user');
+                sessionStorage.setItem('cronos_access', 'true');
+                if (userData.role === 'admin') {
+                    document.getElementById('btn-admin').style.display = 'block';
+                }
+                unlockApp();
+            } else {
+                // Usuario NO Autorizado
+                window.firebaseAuth.signOut();
+                errorEl.textContent = 'Cuenta pendiente de autorización.';
+            }
+        } else {
+            window.firebaseAuth.signOut();
+            errorEl.textContent = 'Error: Contacte con el administrador (Doc not found).';
+        }
+    } catch (error) {
+        console.error("Error signing in", error);
+        errorEl.textContent = 'Usuario o contraseña incorrectos.';
+    }
+}
+
+async function handleRegister() {
+    const email = document.getElementById('auth-email').value;
+    const password = document.getElementById('auth-password').value;
+    const errorEl = document.getElementById('access-error');
     
     if (!email || !password) {
         errorEl.textContent = 'Introduzca correo y contraseña';
         return;
     }
 
-    try {
-        errorEl.style.color = 'var(--primary)';
-        errorEl.textContent = 'Validando...';
-
-        // Configurar persistencia (Recordarme)
-        const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence;
-        await setPersistence(window.firebaseAuth, persistence);
-
-        const userCredential = await signInWithEmailAndPassword(window.firebaseAuth, email, password);
-        const user = userCredential.user;
-
-        const userDoc = await getDoc(doc(window.firebaseDb, "users", user.uid));
-
-        if (userDoc.exists()) {
-            const userData = userDoc.data();
-            if (userData.isAuthorized) {
-                sessionStorage.setItem('cronos_user_role', userData.role || 'user');
-                if (userData.role === 'admin') {
-                    document.getElementById('btn-admin').style.display = 'block';
-                }
-                document.getElementById('auth-screen').style.display = 'none';
-                document.body.classList.remove('locked');
-                if (window.unlockApp) window.unlockApp();
-            } else {
-                await window.firebaseAuth.signOut();
-                errorEl.style.color = 'var(--danger)';
-                errorEl.textContent = 'Cuenta pendiente de autorización.';
-            }
-        }
-    } catch (error) {
-        errorEl.style.color = 'var(--danger)';
-        errorEl.textContent = 'Correo o contraseña incorrectos.';
-    }
-}
-
-// --- REGISTRO NUEVO ---
-async function handleRegister() {
-    const email = document.getElementById('auth-email').value;
-    const password = document.getElementById('auth-password').value;
-    const errorEl = document.getElementById('access-error');
-    
-    if (!email || password.length < 6) {
-        errorEl.textContent = 'Email válido y clave de min. 6 caracteres.';
+    if (password.length < 6) {
+        errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
         return;
     }
 
     try {
+        errorEl.textContent = 'Creando cuenta...';
         const userCredential = await createUserWithEmailAndPassword(window.firebaseAuth, email, password);
         const user = userCredential.user;
 
+        // Crear documento base en la colección `users` en Firestore
+        // El usuario se crea "desautorizado" por defecto
         await setDoc(doc(window.firebaseDb, "users", user.uid), {
             email: user.email,
             role: "user",
             isAuthorized: false,
+            subscriptionPlan: "free",
             createdAt: new Date().toISOString()
         });
 
+        // Cerrar sesión recién creada para que el Admin lo tenga que autorizar primero
         await window.firebaseAuth.signOut();
+        
+        // Volver a la pantalla de login con un mensaje de info
         toggleAuthMode();
         errorEl.style.color = 'var(--success)';
-        errorEl.textContent = '¡Creada! Espera a que el Admin te autorice.';
+        errorEl.textContent = 'Cuenta creada. Esperando autorización.';
+        // resetear color despues de un rato o a la siguiente intencion
+        setTimeout(() => errorEl.style.color = 'var(--danger)', 5000);
+
     } catch (error) {
-        errorEl.textContent = 'Error al registrar. El correo podría existir.';
+        console.error("Error registering", error);
+        if(error.code === 'auth/email-already-in-use') {
+            errorEl.textContent = 'Este correo ya está registrado.';
+        } else {
+            errorEl.textContent = 'Hubo un error al crear la cuenta.';
+        }
     }
 }
 
-// --- OLVIDÉ MI CONTRASEÑA ---
-window.handleForgotPassword = async () => {
-    const email = document.getElementById('auth-email').value;
-    const errorEl = document.getElementById('access-error');
-    
-    if (!email) {
-        errorEl.textContent = 'Escribe tu email arriba primero.';
-        return;
-    }
-
-    try {
-        await sendPasswordResetEmail(window.firebaseAuth, email);
-        errorEl.style.color = 'var(--success)';
-        errorEl.textContent = 'Correo de recuperación enviado.';
-    } catch (error) {
-        errorEl.textContent = 'No se pudo enviar el correo.';
-    }
-};
-
-// --- VER/OCULTAR CONTRASEÑA ---
-document.getElementById('toggle-password').addEventListener('click', function() {
-    const passInput = document.getElementById('auth-password');
-    if (passInput.type === 'password') {
-        passInput.type = 'text';
-        this.textContent = '🔒';
-    } else {
-        passInput.type = 'password';
-        this.textContent = '👁️';
-    }
-});
-
-// --- PERSISTENCIA AUTOMÁTICA AL CARGAR ---
 window.onloadAuth = () => {
+    // Escuchar si ya hay usuario al arrancar (persistencia de sesión Firebase)
     window.firebaseAuth.onAuthStateChanged(async (user) => {
-        if (user && !document.body.classList.contains('unlocked')) {
-            const userDoc = await getDoc(doc(window.firebaseDb, "users", user.uid));
-            if (userDoc.exists() && userDoc.data().isAuthorized) {
-                if (userDoc.data().role === 'admin') document.getElementById('btn-admin').style.display = 'block';
-                document.getElementById('auth-screen').style.display = 'none';
-                document.body.classList.remove('locked');
-                if (window.unlockApp) window.unlockApp();
+        if (user) {
+            const errorEl = document.getElementById('access-error');
+            // Si acabamos de registrar un usuario, handleRegister ya se encarga del mensaje y el signOut
+            // No queremos que este listener pise el mensaje de "Cuenta creada"
+            const userDocRef = doc(window.firebaseDb, "users", user.uid);
+            const userDoc = await getDoc(userDocRef);
+            
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                if (userData.isAuthorized) {
+                    sessionStorage.setItem('cronos_user_role', userData.role || 'user');
+                    sessionStorage.setItem('cronos_access', 'true');
+                    if (userData.role === 'admin') {
+                        document.getElementById('btn-admin').style.display = 'block';
+                    }
+                    unlockApp();
+                } else {
+                    // Solo mostramos el error si NO estamos en el proceso de registro manual
+                    // (Si estamos registrando, el errorEl tendrá el color success temporalmente)
+                    if (errorEl.style.color !== 'var(--success)') {
+                        errorEl.textContent = 'Tu cuenta está pendiente de autorización.';
+                        await window.firebaseAuth.signOut();
+                    }
+                }
+            } else {
+                // Si el documento no existe pero el auth sí (raro), forzar logout
+                await window.firebaseAuth.signOut();
             }
         }
     });
 };
 
-// --- FUNCIONES DE ADMINISTRACIÓN ---
 window.fetchUsers = async () => {
     const querySnapshot = await getDocs(collection(window.firebaseDb, "users"));
     const userList = document.getElementById('admin-user-list');
@@ -162,10 +157,18 @@ window.fetchUsers = async () => {
         const id = docSnap.id;
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${user.email}</td>
-            <td>${user.role}</td>
-            <td>
-                <input type="checkbox" ${user.isAuthorized ? 'checked' : ''} onchange="toggleUserAuthorization('${id}', this.checked)">
+            <td style="padding: 10px;">${user.email}</td>
+            <td style="padding: 10px;">${user.subscriptionPlan || 'free'}</td>
+            <td style="padding: 10px;">
+                <label class="toggle-switch">
+                    <input type="checkbox" ${user.isAuthorized ? 'checked' : ''} onchange="toggleUserAuthorization('${id}', this.checked)">
+                    <span class="slider"></span>
+                </label>
+            </td>
+            <td style="padding: 10px;">
+                <button class="btn" style="font-size: 0.7rem;" onclick="changeUserPlan('${id}', '${user.subscriptionPlan === 'pro' ? 'free' : 'pro'}')">
+                    ${user.subscriptionPlan === 'pro' ? 'Bajar a FREE' : 'Subir a PRO'}
+                </button>
             </td>
         `;
         userList.appendChild(row);
@@ -174,6 +177,27 @@ window.fetchUsers = async () => {
 
 window.toggleUserAuthorization = async (userId, status) => {
     try {
-        await updateDoc(doc(window.firebaseDb, "users", userId), { isAuthorized: status });
-    } catch (e) { console.error(e); }
+        await updateDoc(doc(window.firebaseDb, "users", userId), {
+            isAuthorized: status
+        });
+        console.log("User authorization updated");
+    } catch (error) {
+        console.error("Error updating authorization", error);
+        alert("Error al actualizar autorización");
+    }
+};
+
+window.changeUserPlan = async (userId, newPlan) => {
+    try {
+        await updateDoc(doc(window.firebaseDb, "users", userId), {
+            subscriptionPlan: newPlan
+        });
+        window.fetchUsers();
+    } catch (error) {
+        console.error("Error updating plan", error);
+    }
+};
+
+window.showUpgradeModal = () => {
+    alert("🚀 ¡Sube a Cronos PRO!\n\n- Equipos ilimitados\n- Exportación PDF personalizada\n- Sincronización en la nube\n\nPróximamente disponible.");
 };
