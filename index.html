@@ -1,116 +1,1282 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Cronos Fútbol - Coach Assistant</title>
-    <link rel="stylesheet" href="style.css?v=33">
-    <link rel="manifest" href="manifest.json?v=33">
+    <link rel="stylesheet" href="style.css?v=7.0">
+    <link rel="manifest" href="manifest.json?v=7.0">
     <meta name="theme-color" content="#0a0e14">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Outfit:wght@600&display=swap" rel="stylesheet">
-    
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-        import { getAuth } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Outfit:wght@600&display=swap"
+        rel="stylesheet">
 
+    <!-- EmailJS SDK para envío automático de informes -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script type="text/javascript">
+        // Se inicializa en app.js cuando el usuario configura su cuenta EmailJS
+        window._emailjsReady = false;
+    </script>
+
+    <!-- ══════════════════════════════════════════════
+         FIREBASE SDK
+    ══════════════════════════════════════════════ -->
+    <script type="module">
+        import { initializeApp }
+            from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword,
+                 signInWithEmailAndPassword, onAuthStateChanged, signOut,
+                 setPersistence, browserSessionPersistence }
+            from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
+            from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // ╔══════════════════════════════════════════╗
+        // ║  PEGA AQUÍ TU firebaseConfig             ║
+        // ╚══════════════════════════════════════════╝
         const firebaseConfig = {
-            apiKey: "AIzaSyAWPw-lE6ynYK1CkFpSbwCgRtitDzBpIb4",
-            authDomain: "cronos-futbol-app.firebaseapp.com",
-            projectId: "cronos-futbol-app",
-            storageBucket: "cronos-futbol-app.firebasestorage.app",
+            apiKey:            "AIzaSyAWPw-lE6ynYK1CkFpSbwCgRtitDzBpIb4",
+            authDomain:        "cronos-futbol-app.firebaseapp.com",
+            projectId:         "cronos-futbol-app",
+            storageBucket:     "cronos-futbol-app.firebasestorage.app",
             messagingSenderId: "393110572633",
-            appId: "1:393110572633:web:27a7effed60975e690ab48"
+            appId:             "1:393110572633:web:27a7effed60975e690ab48",
+            measurementId:     "G-WP3921EM1Z"
         };
-        const app = initializeApp(firebaseConfig);
-        window.firebaseAuth = getAuth(app);
-        window.firebaseDb = getFirestore(app);
+
+        const app  = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db   = getFirestore(app);
+
+        // Sesión solo dura mientras el navegador está abierto (no persiste al cerrar)
+        setPersistence(auth, browserSessionPersistence).catch(() => {});
+
+        // Exponer al scope global para los scripts clásicos
+        window._cronos_auth = {
+            auth, db, signOut,
+            createUserWithEmailAndPassword, signInWithEmailAndPassword,
+            doc, getDoc, setDoc, serverTimestamp
+        };
+
+        // ── Restaurar sesión tras recarga por actualización ────────────────
+        const _restoredUid   = sessionStorage.getItem('cronos_session_uid');
+        const _restoredEmail = sessionStorage.getItem('cronos_session_email');
+        const _restoredRole  = sessionStorage.getItem('cronos_session_role');
+        const _updateFlag    = sessionStorage.getItem('cronos_post_update');
+
+        if (_restoredUid && _updateFlag === '1') {
+            // Venimos de una actualización forzada: restaurar sesión sin pasar por login
+            sessionStorage.removeItem('cronos_post_update');
+            window._cronosCurrentUser = {
+                uid:   _restoredUid,
+                email: _restoredEmail,
+                role:  _restoredRole
+            };
+            // Mostrar toast de actualización completada
+            window.addEventListener('load', () => {
+                const toast = document.createElement('div');
+                toast.textContent = '✅ App actualizada correctamente';
+                toast.style.cssText =
+                    'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
+                    'background:#1a7a3e;color:#fff;padding:10px 24px;border-radius:8px;' +
+                    'font-size:0.88rem;font-weight:bold;z-index:99999;' +
+                    'box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            });
+            // Entrar directamente sin pasar por Firebase login
+            document.getElementById('install-screen').style.display = 'none';
+            document.getElementById('auth-screen').style.display    = 'none';
+            enterApp();
+        }
+
+        // Observador de sesión — solo entra automáticamente si el login fue en ESTA sesión
+        onAuthStateChanged(auth, async (user) => {
+            if (window._cronosCurrentUser) return; // ya restaurado por post-update
+            if (user && window._loginThisSession) {
+                await checkAuthorization(user);
+            } else {
+                // Siempre mostrar pantalla de login al cargar la página
+                await signOut(auth).catch(() => {});
+                showScreen('auth-screen');
+            }
+        });
+
+        async function checkAuthorization(user) {
+            try {
+                const ref  = doc(db, 'users', user.uid);
+                const snap = await getDoc(ref);
+
+                if (!snap.exists()) {
+                    // Primera vez: crear doc pendiente de autorización
+                    await setDoc(ref, {
+                        email:        user.email,
+                        isAuthorized: false,
+                        role:         'user',
+                        createdAt:    serverTimestamp(),
+                        lastLogin:    serverTimestamp()
+                    });
+                    showAuthError('Cuenta creada. Pendiente de autorización por el administrador.');
+                    await signOut(auth);
+                    return;
+                }
+
+                const data = snap.data();
+                if (!data.isAuthorized) {
+                    showAuthError('Acceso no autorizado. Contacta con el administrador para activar tu cuenta.');
+                    await signOut(auth);
+                    return;
+                }
+
+                // Usuario autorizado: actualizar lastLogin y entrar
+                await setDoc(ref, { lastLogin: serverTimestamp() }, { merge: true });
+                window._cronosCurrentUser = { uid: user.uid, email: user.email, role: data.role };
+                enterApp();
+
+            } catch (err) {
+                showAuthError('Error de conexión: ' + err.message);
+            }
+        }
+
+        window._checkAuthorization = checkAuthorization;
     </script>
 </head>
+
 <body class="locked">
 
-    <div id="access-screen" class="full-overlay">
-        <div class="access-card">
-            <h1 style="font-family:'Outfit'; color:var(--primary); margin-bottom:0.5rem;">CRONOS FÚTBOL</h1>
-            <p id="auth-subtitle" style="color:var(--text-muted); margin-bottom:1.5rem;">Iniciar Sesión</p>
-            
-            <div class="form-group">
-                <input type="email" id="auth-email" placeholder="Correo electrónico">
-            </div>
-            
-            <div class="form-group" style="position:relative;">
-                <input type="password" id="auth-password" placeholder="Contraseña">
-                <span id="toggle-password" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:1.2rem;">👁️</span>
+    <!-- ══ PANTALLA DE ONBOARDING (9 pasos) ══════════════════════════════ -->
+    <div id="install-screen" style="display:none;">
+    <style>
+        #onboarding-wrap {
+            display:flex; min-height:100vh; background:#0a0e14;
+            font-family:'Inter',sans-serif; color:#cdd9e5;
+        }
+        /* ── Sidebar ── */
+        #ob-sidebar {
+            width:220px; flex-shrink:0;
+            background:rgba(255,255,255,0.03);
+            border-right:1px solid rgba(255,255,255,0.08);
+            display:flex; flex-direction:column;
+            padding:1.4rem 0;
+        }
+        #ob-sidebar h3 {
+            font-size:0.65rem; letter-spacing:2px; color:#7d8590;
+            padding:0 1.2rem; margin:0 0 0.8rem;
+        }
+        .ob-step-item {
+            display:flex; align-items:center; gap:0.7rem;
+            padding:0.55rem 1.2rem; cursor:pointer;
+            font-size:0.82rem; color:#7d8590;
+            border-left:3px solid transparent;
+            transition:all 0.2s;
+        }
+        .ob-step-item:hover { color:#cdd9e5; background:rgba(255,255,255,0.04); }
+        .ob-step-item.active {
+            color:#58a6ff; border-left-color:#58a6ff;
+            background:rgba(88,166,255,0.08); font-weight:700;
+        }
+        .ob-step-item.done { color:rgba(88,166,255,0.5); }
+        .ob-step-num {
+            width:22px; height:22px; border-radius:50%; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+            font-size:0.7rem; font-weight:700;
+            background:rgba(255,255,255,0.08); color:#7d8590;
+        }
+        .ob-step-item.active .ob-step-num {
+            background:#58a6ff; color:#0a0e14;
+        }
+        .ob-step-item.done .ob-step-num {
+            background:rgba(88,166,255,0.3); color:#58a6ff;
+        }
+        /* ── Main content ── */
+        #ob-main {
+            flex:1; display:flex; flex-direction:column;
+            overflow:hidden;
+        }
+        #ob-topbar {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:0.9rem 1.5rem;
+            border-bottom:1px solid rgba(255,255,255,0.07);
+            background:rgba(255,255,255,0.02);
+        }
+        #ob-logo {
+            display:flex; align-items:center; gap:0.6rem;
+            font-family:'Outfit',sans-serif; font-size:1rem;
+            font-weight:700; color:#58a6ff;
+        }
+        #ob-logo span { color:#f0883e; }
+        #ob-progress-bar {
+            flex:1; height:4px; background:rgba(255,255,255,0.1);
+            border-radius:2px; margin:0 1.5rem;
+        }
+        #ob-progress-fill {
+            height:100%; background:#58a6ff; border-radius:2px;
+            transition:width 0.4s ease;
+        }
+        #ob-step-counter {
+            font-size:0.78rem; color:#7d8590; white-space:nowrap;
+        }
+        #ob-content {
+            flex:1; overflow-y:auto; padding:1.5rem;
+            display:flex; flex-direction:column; gap:1.2rem;
+        }
+        #ob-hero {
+            text-align:center; padding:1rem 0 0.5rem;
+        }
+        #ob-hero .ob-icon { font-size:2.8rem; line-height:1; margin-bottom:0.5rem; }
+        #ob-hero h2 {
+            font-family:'Outfit',sans-serif; color:#58a6ff;
+            font-size:1.5rem; margin:0 0 0.2rem;
+        }
+        #ob-hero p { color:#7d8590; font-size:0.78rem; margin:0; }
+        #ob-card {
+            background:rgba(88,166,255,0.07);
+            border:1px solid rgba(88,166,255,0.25);
+            border-radius:12px; padding:1.2rem;
+        }
+        #ob-card h4 {
+            color:#58a6ff; font-size:0.9rem; margin:0 0 1rem;
+            display:flex; align-items:center; gap:0.5rem;
+        }
+        .ob-instruction {
+            display:flex; align-items:flex-start; gap:0.8rem;
+            margin-bottom:0.8rem;
+        }
+        .ob-instr-num {
+            width:24px; height:24px; border-radius:50%; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+            font-size:0.72rem; font-weight:700;
+            background:#58a6ff; color:#0a0e14;
+        }
+        .ob-instr-num.done { background:#1a7a3e; color:#fff; font-size:0.85rem; }
+        .ob-instr-text { color:#cdd9e5; font-size:0.85rem; line-height:1.5; }
+        .ob-instr-text strong { color:#fff; }
+        #ob-bottom {
+            padding:1rem 1.5rem;
+            border-top:1px solid rgba(255,255,255,0.07);
+            background:rgba(255,255,255,0.02);
+        }
+        #ob-step-label {
+            font-size:0.68rem; color:#58a6ff; font-weight:700;
+            letter-spacing:1px; margin-bottom:0.3rem;
+        }
+        #ob-step-title { font-size:1.1rem; font-weight:700; color:#cdd9e5; margin-bottom:0.3rem; }
+        #ob-step-desc { font-size:0.82rem; color:#7d8590; line-height:1.5; margin-bottom:1rem; }
+        #ob-nav { display:flex; gap:0.7rem; }
+        #ob-btn-prev {
+            padding:0.65rem 1.2rem; background:rgba(255,255,255,0.06);
+            border:1px solid rgba(255,255,255,0.12); border-radius:8px;
+            color:#7d8590; cursor:pointer; font-size:0.85rem;
+        }
+        #ob-btn-next {
+            flex:1; padding:0.65rem; background:#58a6ff; border:none;
+            border-radius:8px; color:#0a0e14; font-weight:700;
+            font-size:0.9rem; cursor:pointer; letter-spacing:0.5px;
+        }
+        #ob-btn-skip {
+            padding:0.65rem 1rem; background:transparent;
+            border:1px solid rgba(255,255,255,0.08); border-radius:8px;
+            color:#555; cursor:pointer; font-size:0.78rem;
+        }
+        /* Responsive móvil */
+        @media (max-width: 600px) {
+            #ob-sidebar { display:none; }
+            #ob-topbar { padding:0.7rem 1rem; }
+            #ob-content { padding:1rem; }
+            #ob-bottom { padding:0.8rem 1rem; }
+        }
+    </style>
+
+    <div id="onboarding-wrap">
+
+        <!-- SIDEBAR -->
+        <nav id="ob-sidebar">
+            <h3>PASOS</h3>
+            <div id="ob-steps-list"></div>
+        </nav>
+
+        <!-- MAIN -->
+        <div id="ob-main">
+            <!-- Top bar -->
+            <div id="ob-topbar">
+                <div id="ob-logo">⚽ CRONOS <span>FÚTBOL</span></div>
+                <div id="ob-progress-bar"><div id="ob-progress-fill" style="width:11%;"></div></div>
+                <div id="ob-step-counter">01 / 09</div>
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; font-size:0.8rem; color:var(--text-muted);">
-                <label style="display:flex; align-items:center; cursor:pointer;">
-                    <input type="checkbox" id="remember-me" style="margin-right:5px;"> Recordarme
-                </label>
-                <span onclick="window.handleForgotPassword()" style="text-decoration:underline; cursor:pointer;">Olvidé mi contraseña</span>
+            <!-- Content area -->
+            <div id="ob-content">
+                <div id="ob-hero">
+                    <div class="ob-icon" id="ob-hero-icon">⚽</div>
+                    <h2 id="ob-hero-title">CRONOS FÚTBOL</h2>
+                    <p id="ob-hero-sub">Coach Assistant · v7.0</p>
+                </div>
+                <div id="ob-card">
+                    <h4 id="ob-card-title"></h4>
+                    <div id="ob-card-body"></div>
+                </div>
             </div>
 
-            <button class="btn primary" id="auth-action-btn" onclick="handleAuthAction()" style="width:100%; margin-bottom:1rem;">ENTRAR</button>
-            <p id="access-error" style="color:var(--danger); font-size:0.8rem; min-height:1.2rem; margin-bottom:1rem;"></p>
-            
-            <p style="color:var(--text-muted); font-size:0.8rem; cursor:pointer; text-decoration:underline;" onclick="toggleAuthMode()" id="auth-toggle-link">
-                ¿No tienes cuenta? Regístrate
+            <!-- Bottom -->
+            <div id="ob-bottom">
+                <div id="ob-step-label">PASO 01 / 09</div>
+                <div id="ob-step-title"></div>
+                <div id="ob-step-desc"></div>
+                <div id="ob-nav">
+                    <button id="ob-btn-prev" onclick="obPrev()">Anterior</button>
+                    <button id="ob-btn-next" onclick="obNext()">Siguiente →</button>
+                    <button id="ob-btn-skip" onclick="goToAuth()">Saltar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+<!-- ══ PANTALLA DE LOGIN / REGISTRO ══════════════════════════════════ -->
+    <div id="auth-screen" style="display:flex; align-items:center; justify-content:center;
+         min-height:100vh; background:#0a0e14; padding:1rem;">
+        <div style="width:100%; max-width:380px; background:rgba(255,255,255,0.04);
+                    border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:2rem;">
+
+                        <h1 style="font-family:'Outfit',sans-serif; color:#58a6ff;                       margin:0 0 0.3rem; text-align:center; font-size:1.8rem;">⚽ CRONOS FÚTBOL</h1>
+            <p style="color:#7d8590; font-size:0.82rem; text-align:center; margin:0 0 2rem;">
+                Coach Assistant · v7.0
             </p>
+
+            <!-- Tabs -->
+            <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:1.5rem;">
+                <button id="tab-login" onclick="switchTab('login')"
+                    style="flex:1; padding:0.6rem; background:none; border:none;
+                           color:#58a6ff; font-weight:700; font-size:0.9rem;
+                           border-bottom:2px solid #58a6ff; cursor:pointer;">
+                    ENTRAR
+                </button>
+                <button id="tab-register" onclick="switchTab('register')"
+                    style="flex:1; padding:0.6rem; background:none; border:none;
+                           color:#7d8590; font-weight:700; font-size:0.9rem;
+                           border-bottom:2px solid transparent; cursor:pointer;">
+                    REGISTRARSE
+                </button>
+            </div>
+
+            <!-- Email -->
+            <div style="margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Email</label>
+                <!-- Campo trampa invisible para evitar autocompletar del navegador -->
+                <input type="email" style="display:none;" aria-hidden="true">
+                <input type="email" id="auth-email" placeholder="tu@email.com"
+                    autocomplete="off" readonly
+                    onfocus="this.removeAttribute('readonly')"
+                    style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
+                           border:1px solid rgba(255,255,255,0.15); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+            </div>
+
+            <!-- Contraseña -->
+            <div style="margin-bottom:1.5rem;">
+                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Contraseña</label>
+                <input type="password" style="display:none;" aria-hidden="true">
+                <input type="password" id="auth-password" placeholder="••••••••"
+                    autocomplete="new-password" readonly
+                    onfocus="this.removeAttribute('readonly')"
+                    style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
+                           border:1px solid rgba(255,255,255,0.15); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+            </div>
+
+            <!-- Botón -->
+            <button id="auth-btn" onclick="doAuth()"
+                style="width:100%; padding:0.9rem; background:#58a6ff; border:none;
+                       border-radius:8px; color:#0a0e14; font-weight:700;
+                       font-size:1rem; cursor:pointer; letter-spacing:1px; transition:opacity 0.2s;">
+                ENTRAR
+            </button>
+
+            <!-- Mensaje de estado -->
+            <p id="auth-error"
+               style="font-size:0.8rem; margin:0.8rem 0 0; text-align:center; min-height:1.2rem; color:#ff5858;"></p>
+
         </div>
     </div>
 
-    <header id="main-header" style="display:none;">
-        <div class="logo">
-            <h1>CRONOS<br>FÚTBOL</h1>
-            <span style="font-size:0.6rem; color:var(--text-muted);">v7.2</span>
+    <!-- Forzar actualización — fijo en la parte inferior, siempre visible -->
+    <div class="fixed-update-container" style="position:fixed; bottom:12px; left:0; right:0; text-align:center; z-index:9999;">
+        <button onclick="forceUpdate()"
+            style="background:rgba(10,14,20,0.7); border:1px solid rgba(255,255,255,0.12);
+                   color:#555; font-size:0.65rem; padding:0.35rem 1rem;
+                   border-radius:20px; cursor:pointer; backdrop-filter:blur(6px);
+                   -webkit-backdrop-filter:blur(6px);">
+            ↺ FORZAR ACTUALIZACIÓN
+        </button>
+    </div>
+
+    <!-- ══ ORIENTATION WARNING ═══════════════════════════════════════════ -->
+    <div id="orientation-warning">
+        <h2 style="color: var(--primary); margin-bottom: 1rem;">Gire su dispositivo</h2>
+        <p style="color: var(--text-muted);">Esta aplicación está optimizada para uso en modo horizontal.</p>
+        <div style="margin-top: 2rem; font-size: 3rem;">📱🔄</div>
+    </div>
+
+    <!-- ══ APP PRINCIPAL (oculta hasta autorización) ══════════════════════ -->
+    <header id="main-header" style="display: none;">
+                <div class="logo">
+            <h1 style="font-family: 'Outfit', sans-serif; color: var(--primary);">CRONOS<br>FÚTBOL</h1>
+            <span style="font-size: 0.6rem; color: var(--text-muted); display: block; margin-top: -5px;">v7.0</span>
         </div>
         <div class="master-clock-container">
             <div class="dual-timers">
-                <div class="timer-block active" id="timer-h1-container">
+                <div class="timer-block active" id="timer-h1-container" onclick="editTimer(1)">
                     <span class="timer-label">1ª P</span>
                     <span id="timer-h1" class="timer-val">30:00</span>
                 </div>
-                <div class="timer-block" id="timer-h2-container">
+                <div class="timer-block" id="timer-h2-container" onclick="editTimer(2)">
                     <span class="timer-label">2ª P</span>
                     <span id="timer-h2" class="timer-val">30:00</span>
                 </div>
             </div>
+            <div id="match-phase-label"
+                style="font-size: 0.6rem; color: white; text-align: center; margin-top: 2px;">1ª PARTE</div>
+        </div>
+        <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
+        <div class="score-board">
+            <div class="team-score">
+                <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
+                <div class="score-info">
+                    <span id="team-a-name" class="team-name">LOCAL</span>
+                    <span id="score-home" class="score-num">0</span>
+                </div>
+                <button onclick="changeScore('home',+1)" class="score-btn success">+</button>
+            </div>
+            <span class="score-divider">-</span>
+            <div class="team-score">
+                <button onclick="changeScore('away',-1)" class="score-btn danger">−</button>
+                <div class="score-info">
+                    <span id="team-b-name" class="team-name">VISITANTE</span>
+                    <span id="score-away" class="score-num">0</span>
+                </div>
+                <button onclick="changeScore('away',+1)" class="score-btn success">+</button>
+            </div>
         </div>
         <div class="header-actions">
+            <button id="btn-back-setup" class="btn" onclick="goBackToSetup()"
+                style="background:var(--glass);color:var(--text-muted);" title="Volver a configuración">
+                ← INICIO
+            </button>
             <button id="btn-play-pause" class="btn primary">EMPEZAR</button>
-            <button id="btn-admin" class="btn" style="display:none; background:#ff9800; color:#000;">⚙️ ADMIN</button>
-            <button id="btn-reset" class="btn danger" onclick="location.reload()">REINICIAR</button>
+            <button id="btn-reset" class="btn danger">REINICIAR</button>
             <button id="btn-save-team" class="btn">GUARDAR</button>
+            <button id="btn-export" class="btn">DESCARGAR</button>
+            <button onclick="cerrarSesion()" title="Cerrar sesión"
+                style="background:none; border:1px solid rgba(255,255,255,0.12); color:#7d8590;
+                       font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">⏻</button>
+            <button onclick="forceUpdate()" title="Forzar actualización"
+                style="background:none; border:1px solid rgba(255,255,255,0.1); color:#7d8590;
+                       font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">↺</button>
+            <button onclick="startTutorial()" title="Tutorial y ayuda"
+                style="background:none; border:1px solid rgba(240,136,62,0.3); color:rgba(240,136,62,0.7);
+                       font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">?</button>
+            <!-- Botón admin: solo visible si role=admin -->
+            <button id="btn-admin-panel" onclick="openAdminPanel()" title="Panel de Administración"
+                style="display:none; background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.4);
+                       color:#ffa500; font-size:0.65rem; padding:0.3rem 0.6rem;
+                       border-radius:6px; cursor:pointer;">⚙ ADMIN</button>
         </div>
     </header>
 
-    <main class="main-container" id="main-container" style="display:none;">
-        <aside class="sidebar">
+    <main class="main-container" id="main-container" style="display: none;">
+        <aside class="sidebar" ondrop="dropToBench(event)" ondragover="allowDrop(event)">
+            <div class="bench-header-compact">
+                <span class="bench-team-label" id="bench-label-home">LOCAL</span>
+                <span class="bench-sub-label">· BANQUILLO</span>
+            </div>
             <div class="bench-section">
-                <h3>BANQUILLO LOCAL</h3>
-                <div id="bench-list" class="bench-container"></div>
+                <div id="bench-list" class="bench-container"
+                    ondrop="dropToBench(event)" ondragover="allowDrop(event)"></div>
             </div>
         </aside>
 
-        <main class="field-area">
+        <main class="field-area" id="field-dropzone"
+            ondrop="dropToField(event)" ondragover="allowDrop(event)">
             <div class="pitch" id="football-pitch">
                 <div class="center-circle"></div>
                 <div class="penalty-area left"></div>
                 <div class="penalty-area right"></div>
+                <div class="goal-area left"></div>
+                <div class="goal-area right"></div>
             </div>
         </main>
 
-        <aside class="sidebar-right">
+        <aside class="sidebar-right" ondrop="dropToAwayBench(event)" ondragover="allowDrop(event)">
+            <div class="bench-header-compact">
+                <span class="bench-team-label" id="bench-label-away">VISITANTE</span>
+                <span class="bench-sub-label">· BANQUILLO</span>
+            </div>
             <div class="bench-section">
-                <h3>BANQUILLO VISITANTE</h3>
-                <div id="bench-list-away" class="bench-container"></div>
+                <div id="bench-list-away" class="bench-container"
+                    ondrop="dropToAwayBench(event)" ondragover="allowDrop(event)"></div>
             </div>
         </aside>
+
+        <button id="toggle-bench-home" class="mobile-toggle home" onclick="toggleBench('home')">LOCAL</button>
+        <button id="toggle-bench-away" class="mobile-toggle away" onclick="toggleBench('away')">VISIT.</button>
     </main>
 
-    <script type="module" src="auth.js?v=33"></script>
-    <script src="app.js?v=33"></script>
+    <!-- Modales -->
+    <div id="setup-modal" class="modal"></div>
+
+    <div id="player-action-modal" class="modal">
+        <div class="modal-content" style="width: 320px; text-align: center;">
+            <h2 id="action-player-name" style="color:var(--primary);margin-bottom:0;cursor:pointer;"
+                onclick="editNameFromModal()">Jugador</h2>
+            <p id="action-player-number"
+               style="font-size:0.9rem;color:var(--text-muted);margin-top:-10px;cursor:pointer;"
+               onclick="editNumberFromModal()">Dorsal</p>
+            <div style="display:flex;justify-content:space-around;gap:10px;">
+                <button class="btn" style="background:#f1c40f;color:#000;flex:1;"
+                    onclick="assignCard('amarilla')">🟨 Amarilla</button>
+                <button class="btn" style="background:#e74c3c;color:#fff;flex:1;"
+                    onclick="assignCard('roja')">🟥 Roja</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                        background:var(--glass);padding:10px;border-radius:8px;">
+                <button class="btn danger" style="padding:0.5rem 1rem;" onclick="changeGoals(-1)">-1</button>
+                <div style="display:flex;flex-direction:column;align-items:center;">
+                    <span style="font-size:0.7rem;color:var(--text-muted);">GOLES</span>
+                    <span id="action-player-goals" style="font-size:1.5rem;font-weight:bold;">0 ⚽</span>
+                </div>
+                <button class="btn success" style="padding:0.5rem 1rem;" onclick="changeGoals(1)">+1</button>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:0.5rem;">
+                <button class="btn"
+                    style="flex:1;background:var(--bg-dark);color:var(--text-muted);border:1px solid var(--glass-border);"
+                    onclick="clearPlayerActions()">LIMPIAR</button>
+                <button class="btn primary" style="flex:2;" onclick="closePlayerActionModal()">HECHO</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ PANEL DE ADMINISTRACIÓN ══════════════════════════════════════ -->
+    <div id="admin-panel-modal"
+        style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85);
+               z-index:9999; align-items:center; justify-content:center; padding:1rem;">
+        <div style="background:#0d1117; border:1px solid rgba(255,165,0,0.3); border-radius:16px;
+                    width:100%; max-width:600px; max-height:90vh; display:flex; flex-direction:column;
+                    box-shadow:0 0 40px rgba(255,165,0,0.1);">
+
+            <!-- Cabecera -->
+            <div style="padding:1.2rem 1.5rem; border-bottom:1px solid rgba(255,255,255,0.08);
+                        display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                <div>
+                    <h2 style="margin:0; color:#ffa500; font-family:'Outfit',sans-serif; font-size:1.1rem;">
+                        ⚙ Panel de Administración
+                    </h2>
+                    <p style="margin:0.2rem 0 0; color:#7d8590; font-size:0.75rem;">
+                        Gestiona el acceso de los usuarios a Cronos Fútbol
+                    </p>
+                </div>
+                <button onclick="closeAdminPanel()"
+                    style="background:none; border:1px solid rgba(255,255,255,0.15); color:#7d8590;
+                           padding:0.4rem 0.8rem; border-radius:8px; cursor:pointer; font-size:0.85rem;">✕ Cerrar</button>
+            </div>
+
+            <!-- Tabs: Pendientes / Todos / Compartir -->
+            <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0;">
+                <button id="atab-pending" onclick="switchAdminTab('pending')"
+                    style="flex:1; padding:0.7rem; background:none; border:none; color:#ffa500;
+                           font-weight:700; font-size:0.82rem; border-bottom:2px solid #ffa500; cursor:pointer;">
+                    ⏳ PENDIENTES
+                </button>
+                <button id="atab-all" onclick="switchAdminTab('all')"
+                    style="flex:1; padding:0.7rem; background:none; border:none; color:#7d8590;
+                           font-weight:700; font-size:0.82rem; border-bottom:2px solid transparent; cursor:pointer;">
+                    👥 TODOS LOS USUARIOS
+                </button>
+                <button id="atab-share" onclick="switchAdminTab('share')"
+                    style="flex:1; padding:0.7rem; background:none; border:none; color:#7d8590;
+                           font-weight:700; font-size:0.82rem; border-bottom:2px solid transparent; cursor:pointer;">
+                    🔗 COMPARTIR
+                </button>
+            </div>
+
+            <!-- Lista de usuarios -->
+            <div id="admin-users-list"
+                style="overflow-y:auto; flex:1; padding:1rem; min-height:0;">
+                <p style="color:#7d8590; text-align:center; margin-top:2rem;">Cargando usuarios...</p>
+            </div>
+
+            <!-- Footer -->
+            <div style="padding:0.8rem 1.5rem; border-top:1px solid rgba(255,255,255,0.08);
+                        text-align:center; flex-shrink:0;">
+                <button onclick="loadAdminUsers()"
+                    style="background:none; border:1px solid rgba(255,165,0,0.3); color:#ffa500;
+                           padding:0.4rem 1rem; border-radius:8px; cursor:pointer; font-size:0.78rem;">
+                    🔄 Actualizar lista
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=7.0"></script>
+
+    <!-- Informe imprimible -->
+    <div id="print-report" style="display:none;">
+        <div class="report-header">
+            <h1 style="color:#000;border-bottom:2px solid #000;padding-bottom:10px;">
+                INFORME DE PARTIDO - CRONOS FÚTBOL</h1>
+            <div id="report-metadata"
+                style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0;"></div>
+        </div>
+        <table class="report-table" style="width:100%;border-collapse:collapse;margin-top:20px;">
+            <thead>
+                <tr style="background:#f2f2f2;">
+                    <th style="border:1px solid #ddd;padding:10px;text-align:left;">EQUIPO</th>
+                    <th style="border:1px solid #ddd;padding:10px;text-align:center;">DORSAL</th>
+                    <th style="border:1px solid #ddd;padding:10px;text-align:left;">JUGADOR</th>
+                    <th style="border:1px solid #ddd;padding:10px;text-align:center;">GOLES</th>
+                    <th style="border:1px solid #ddd;padding:10px;text-align:center;">TARJETAS</th>
+                    <th style="border:1px solid #ddd;padding:10px;text-align:right;">TIEMPO TOTAL</th>
+                </tr>
+            </thead>
+            <tbody id="report-players-body"></tbody>
+        </table>
+        <div style="margin-top:50px;border-top:1px solid #eee;padding-top:20px;
+                    font-size:0.8rem;color:#777;text-align:center;">
+            Informe generado automáticamente por Cronos Fútbol - Asistente de Entrenadores.
+        </div>
+    </div>
+
+    <!-- ══ LÓGICA DE AUTH (scope clásico) ════════════════════════════════ -->
+    <script>
+        let authMode = 'login';
+
+        function showScreen(id) {
+            document.getElementById('auth-screen').style.display = (id === 'auth-screen') ? 'flex' : 'none';
+        }
+
+        function showAuthError(msg) {
+            const el = document.getElementById('auth-error');
+            if (!el) return;
+            el.textContent = msg;
+            el.style.color  = msg.startsWith('✅') ? '#3fb950' : '#ff5858';
+        }
+
+        function switchTab(mode) {
+            authMode = mode;
+            const tL = document.getElementById('tab-login');
+            const tR = document.getElementById('tab-register');
+            const btn = document.getElementById('auth-btn');
+            if (mode === 'login') {
+                tL.style.color = '#58a6ff'; tL.style.borderBottom = '2px solid #58a6ff';
+                tR.style.color = '#7d8590'; tR.style.borderBottom = '2px solid transparent';
+                btn.textContent = 'ENTRAR';
+            } else {
+                tR.style.color = '#58a6ff'; tR.style.borderBottom = '2px solid #58a6ff';
+                tL.style.color = '#7d8590'; tL.style.borderBottom = '2px solid transparent';
+                btn.textContent = 'REGISTRARSE';
+            }
+            showAuthError('');
+        }
+
+        async function doAuth() {
+            const fa   = window._cronos_auth;
+            if (!fa) { showAuthError('Firebase no disponible. Revisa tu conexión.'); return; }
+            const email = document.getElementById('auth-email').value.trim();
+            const pass  = document.getElementById('auth-password').value;
+            const btn   = document.getElementById('auth-btn');
+            if (!email || !pass) { showAuthError('Introduce email y contraseña.'); return; }
+
+            btn.disabled = true; btn.textContent = '...';
+            showAuthError('');
+            try {
+                if (authMode === 'login') {
+                    window._loginThisSession = true;
+                    await fa.signInWithEmailAndPassword(fa.auth, email, pass);
+                    // onAuthStateChanged gestiona el resto
+                } else {
+                    const cred = await fa.createUserWithEmailAndPassword(fa.auth, email, pass);
+                    await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), {
+                        email: email, isAuthorized: false, role: 'user',
+                        createdAt: fa.serverTimestamp(), lastLogin: fa.serverTimestamp()
+                    });
+                    showAuthError('✅ Cuenta creada. Espera la autorización del administrador.');
+                    await fa.signOut(fa.auth);
+                }
+            } catch (err) {
+                const msgs = {
+                    'auth/user-not-found':       'No existe cuenta con ese email.',
+                    'auth/wrong-password':        'Contraseña incorrecta.',
+                    'auth/email-already-in-use':  'Ese email ya está registrado.',
+                    'auth/weak-password':         'La contraseña necesita al menos 6 caracteres.',
+                    'auth/invalid-email':         'Email no válido.',
+                    'auth/invalid-credential':    'Email o contraseña incorrectos.',
+                };
+                showAuthError(msgs[err.code] || err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = authMode === 'login' ? 'ENTRAR' : 'REGISTRARSE';
+            }
+        }
+
+        function enterApp() {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.body.classList.remove('locked');
+            // Mostrar botón admin si corresponde
+            if (window._cronosCurrentUser?.role === 'admin') {
+                const btnAdmin = document.getElementById('btn-admin-panel');
+                if (btnAdmin) btnAdmin.style.display = 'inline-block';
+            }
+            // Guardar sesión para sobrevivir a recargas por actualización
+            if (window._cronosCurrentUser) {
+                sessionStorage.setItem('cronos_session_uid',   window._cronosCurrentUser.uid   || '');
+                sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email || '');
+                sessionStorage.setItem('cronos_session_role',  window._cronosCurrentUser.role  || 'user');
+            }
+            // Inicializar la app (registra event listeners de botones y abre setup)
+            if (typeof init === 'function') init();
+        }
+
+        async function cerrarSesion() {
+            if (!confirm('¿Cerrar sesión?')) return;
+            const fa = window._cronos_auth;
+            if (fa) await fa.signOut(fa.auth);
+            location.reload();
+        }
+
+        async function forceUpdate() {
+            const btn = event?.target;
+            if (btn) { btn.textContent = '⏳ Limpiando...'; btn.disabled = true; }
+
+            try {
+                // 1. Dar de baja todos los Service Workers
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map(r => r.unregister()));
+                }
+                // 2. Borrar todas las cachés
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(k => caches.delete(k)));
+                }
+            } catch(e) {
+                console.warn('Cache clear error:', e);
+            }
+
+            // 3. Forzar recarga sin caché (compatible iOS Safari)
+            setTimeout(() => {
+                const url = location.href.split('?')[0] + '?t=' + Date.now();
+                location.replace(url);
+            }, 400);
+        }
+
+        // Enter para enviar
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                const as = document.getElementById('auth-screen');
+                if (as && as.style.display !== 'none') doAuth();
+            }
+        });
+
+        // ══ PANEL DE ADMINISTRACIÓN ══════════════════════════════════════
+
+        let adminCurrentTab = 'pending';
+
+        function openAdminPanel() {
+            document.getElementById('admin-panel-modal').style.display = 'flex';
+            loadAdminUsers();
+        }
+
+        function closeAdminPanel() {
+            document.getElementById('admin-panel-modal').style.display = 'none';
+        }
+
+        function switchAdminTab(tab) {
+            adminCurrentTab = tab;
+            const tabs = { pending: 'atab-pending', all: 'atab-all', share: 'atab-share' };
+            Object.entries(tabs).forEach(([key, id]) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const active = key === tab;
+                el.style.color       = active ? '#ffa500' : '#7d8590';
+                el.style.borderBottom = active ? '2px solid #ffa500' : '2px solid transparent';
+            });
+            if (tab === 'share') {
+                showShareTab();
+            } else {
+                loadAdminUsers();
+            }
+        }
+
+        function showShareTab() {
+            const appUrl = 'https://jarg7435.github.io/cronos-futbol/';
+            const msgWhatsApp = `¡Hola! Te invito a probar *Cronos Fútbol*, mi aplicación de asistente para entrenadores ⚽\n\nEntra aquí y regístrate con tu email:\n${appUrl}\n\nUna vez registrado, yo activo tu acceso.`;
+            const msgEmail    = `¡Hola!\n\nTe invito a probar Cronos Fútbol, una aplicación de asistente para entrenadores de fútbol.\n\nPuedes registrarte en:\n${appUrl}\n\nUna vez que te registres con tu email, yo activaré tu acceso personalmente.\n\n¡Nos vemos en el campo!`;
+            const waLink  = `https://wa.me/?text=${encodeURIComponent(msgWhatsApp)}`;
+            const emlLink = `mailto:?subject=${encodeURIComponent('Invitación a Cronos Fútbol')}&body=${encodeURIComponent(msgEmail)}`;
+
+            document.getElementById('admin-users-list').innerHTML = `
+                <div style="padding:0.5rem;">
+
+                    <!-- URL de la app -->
+                    <div style="background:rgba(255,165,0,0.08); border:1px solid rgba(255,165,0,0.3);
+                                border-radius:10px; padding:1rem; margin-bottom:1rem;">
+                        <p style="margin:0 0 0.5rem; color:#ffa500; font-weight:700; font-size:0.85rem;">
+                            🔗 Enlace de la aplicación
+                        </p>
+                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                            <input id="share-url-input" type="text" value="${appUrl}" readonly
+                                style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15);
+                                       border-radius:8px; padding:0.6rem 0.8rem; color:white; font-size:0.82rem;
+                                       outline:none; cursor:text;">
+                            <button onclick="copyAppUrl()"
+                                style="background:#ffa500; border:none; color:#0a0e14; font-weight:700;
+                                       padding:0.6rem 1rem; border-radius:8px; cursor:pointer; font-size:0.82rem;
+                                       white-space:nowrap; flex-shrink:0;">
+                                📋 Copiar
+                            </button>
+                        </div>
+                        <p id="copy-confirm" style="margin:0.4rem 0 0; font-size:0.75rem; color:#3fb950; display:none;">
+                            ✅ ¡Enlace copiado al portapapeles!
+                        </p>
+                    </div>
+
+                    <!-- Instrucciones para el usuario -->
+                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+                                border-radius:10px; padding:1rem; margin-bottom:1rem;">
+                        <p style="margin:0 0 0.6rem; color:white; font-weight:700; font-size:0.85rem;">
+                            📋 Instrucciones para enviar
+                        </p>
+                        <ol style="margin:0; padding-left:1.2rem; color:#7d8590; font-size:0.82rem; line-height:1.8;">
+                            <li>Comparte el enlace con la persona</li>
+                            <li>Pídele que se registre con su email y contraseña</li>
+                            <li>Vuelve aquí → pestaña <strong style="color:#ffa500;">⏳ PENDIENTES</strong></li>
+                            <li>Pulsa <strong style="color:#3fb950;">✅ Autorizar</strong> en su cuenta</li>
+                            <li>A partir de ese momento ya puede entrar</li>
+                        </ol>
+                    </div>
+
+                    <!-- Botones de envío directo -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem;">
+                        <a href="${waLink}" target="_blank"
+                            style="display:flex; align-items:center; justify-content:center; gap:0.5rem;
+                                   background:#25d366; border:none; color:white; font-weight:700;
+                                   padding:0.75rem; border-radius:10px; cursor:pointer; font-size:0.85rem;
+                                   text-decoration:none;">
+                            <span style="font-size:1.1rem;">💬</span> Enviar por WhatsApp
+                        </a>
+                        <a href="${emlLink}"
+                            style="display:flex; align-items:center; justify-content:center; gap:0.5rem;
+                                   background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                                   color:#58a6ff; font-weight:700; padding:0.75rem; border-radius:10px;
+                                   cursor:pointer; font-size:0.85rem; text-decoration:none;">
+                            <span style="font-size:1.1rem;">📧</span> Enviar por Email
+                        </a>
+                    </div>
+
+                </div>
+            `;
+        }
+
+        function copyAppUrl() {
+            const url = 'https://jarg7435.github.io/cronos-futbol/';
+            navigator.clipboard.writeText(url).then(() => {
+                const c = document.getElementById('copy-confirm');
+                if (c) { c.style.display = 'block'; setTimeout(() => c.style.display = 'none', 3000); }
+            }).catch(() => {
+                // Fallback para iOS/Safari
+                const el = document.getElementById('share-url-input');
+                if (el) { el.select(); document.execCommand('copy'); }
+            });
+        }
+
+        async function loadAdminUsers() {
+            const fa = window._cronos_auth;
+            if (!fa) return;
+            const list = document.getElementById('admin-users-list');
+            list.innerHTML = '<p style="color:#7d8590;text-align:center;margin-top:2rem;">⏳ Cargando...</p>';
+
+            try {
+                // Obtener todos los usuarios de la colección 'users'
+                const { getDocs, collection } = await import(
+                    "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+                const snap = await getDocs(collection(fa.db, 'users'));
+
+                let users = [];
+                snap.forEach(d => users.push({ id: d.id, ...d.data() }));
+
+                // Filtrar según pestaña
+                if (adminCurrentTab === 'pending') {
+                    users = users.filter(u => !u.isAuthorized);
+                }
+
+                // Ordenar: pendientes primero, luego por email
+                users.sort((a, b) => {
+                    if (!a.isAuthorized && b.isAuthorized) return -1;
+                    if (a.isAuthorized && !b.isAuthorized) return 1;
+                    return (a.email || '').localeCompare(b.email || '');
+                });
+
+                if (users.length === 0) {
+                    list.innerHTML = `<p style="color:#7d8590;text-align:center;margin-top:2rem;">
+                        ${adminCurrentTab === 'pending' ? '✅ No hay usuarios pendientes de autorización' : 'No hay usuarios registrados'}
+                    </p>`;
+                    return;
+                }
+
+                list.innerHTML = users.map(u => {
+                    const isSelf = u.id === window._cronosCurrentUser?.uid;
+                    const statusColor = u.isAuthorized ? '#3fb950' : '#ffa500';
+                    const statusText  = u.isAuthorized ? '✅ Autorizado' : '⏳ Pendiente';
+                    const roleTag = u.role === 'admin'
+                        ? '<span style="background:rgba(255,165,0,0.2);color:#ffa500;font-size:0.65rem;padding:2px 6px;border-radius:4px;margin-left:6px;">ADMIN</span>'
+                        : '<span style="background:rgba(255,255,255,0.07);color:#7d8590;font-size:0.65rem;padding:2px 6px;border-radius:4px;margin-left:6px;">USER</span>';
+
+                    const joinDate = u.createdAt?.toDate
+                        ? u.createdAt.toDate().toLocaleDateString('es-ES')
+                        : '—';
+
+                    const actionBtns = isSelf ? '<span style="color:#7d8590;font-size:0.72rem;">(eres tú)</span>' : `
+                        ${!u.isAuthorized ? `
+                        <button onclick="authorizeUser('${u.id}', true)"
+                            style="background:#238636;border:none;color:white;padding:0.4rem 0.8rem;
+                                   border-radius:6px;cursor:pointer;font-size:0.78rem;font-weight:700;">
+                            ✅ Autorizar
+                        </button>` : `
+                        <button onclick="authorizeUser('${u.id}', false)"
+                            style="background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);
+                                   color:#ff5858;padding:0.4rem 0.8rem;border-radius:6px;cursor:pointer;font-size:0.78rem;">
+                            🚫 Revocar
+                        </button>`}
+                        ${u.role !== 'admin' ? `
+                        <button onclick="setUserRole('${u.id}', 'admin')"
+                            style="background:rgba(255,165,0,0.1);border:1px solid rgba(255,165,0,0.3);
+                                   color:#ffa500;padding:0.4rem 0.8rem;border-radius:6px;cursor:pointer;font-size:0.78rem;">
+                            ⭐ Hacer admin
+                        </button>` : `
+                        <button onclick="setUserRole('${u.id}', 'user')"
+                            style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);
+                                   color:#7d8590;padding:0.4rem 0.8rem;border-radius:6px;cursor:pointer;font-size:0.78rem;">
+                            👤 Quitar admin
+                        </button>`}
+                        <button onclick="deleteUser('${u.id}', '${u.email}')"
+                            style="background:none;border:1px solid rgba(255,88,88,0.25);color:#ff5858;
+                                   padding:0.4rem 0.6rem;border-radius:6px;cursor:pointer;font-size:0.78rem;">
+                            🗑
+                        </button>
+                    `;
+
+                    return `
+                        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+                                    border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.7rem;">
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;">
+                                <div>
+                                    <div style="color:white;font-weight:600;font-size:0.9rem;">
+                                        ${u.email || '(sin email)'}${roleTag}
+                                    </div>
+                                    <div style="color:#7d8590;font-size:0.72rem;margin-top:3px;">
+                                        Registrado: ${joinDate} &nbsp;·&nbsp;
+                                        <span style="color:${statusColor}">${statusText}</span>
+                                    </div>
+                                </div>
+                                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+                                    ${actionBtns}
+                                </div>
+                            </div>
+                        </div>`;
+                }).join('');
+
+            } catch (err) {
+                list.innerHTML = `<p style="color:#ff5858;text-align:center;margin-top:2rem;">
+                    Error: ${err.message}</p>`;
+            }
+        }
+
+        async function authorizeUser(uid, authorize) {
+            const fa = window._cronos_auth;
+            if (!fa) return;
+            try {
+                await fa.setDoc(fa.doc(fa.db, 'users', uid),
+                    { isAuthorized: authorize }, { merge: true });
+                loadAdminUsers();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function setUserRole(uid, role) {
+            const fa = window._cronos_auth;
+            if (!fa) return;
+            try {
+                await fa.setDoc(fa.doc(fa.db, 'users', uid),
+                    { role: role }, { merge: true });
+                loadAdminUsers();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function deleteUser(uid, email) {
+            if (!confirm(`¿Eliminar el acceso de ${email}?\n\nSe borrará su registro. No podrá volver a entrar hasta que se vuelva a registrar y autorizar.`)) return;
+            const fa = window._cronos_auth;
+            if (!fa) return;
+            try {
+                const { deleteDoc } = await import(
+                    "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+                await deleteDoc(fa.doc(fa.db, 'users', uid));
+                loadAdminUsers();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+    </script>
+
+    <script>
+    // ══════════════════════════════════════════════════════
+    //  ONBOARDING — 9 PASOS
+    // ══════════════════════════════════════════════════════
+    let deferredInstallPrompt = null;
+    let obCurrentStep = 0;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+    });
+
+    function triggerNativeInstall() {
+        if (deferredInstallPrompt) {
+            deferredInstallPrompt.prompt();
+            deferredInstallPrompt.userChoice.then(() => {
+                deferredInstallPrompt = null;
+                obNext();
+            });
+        } else {
+            obNext();
+        }
+    }
+
+    function goToAuth() {
+        document.getElementById('install-screen').style.display = 'none';
+        document.getElementById('auth-screen').style.display    = 'flex';
+        localStorage.setItem('cronos_install_shown', Date.now());
+    }
+
+    // ── Definición de los 9 pasos ──────────────────────────
+    const OB_STEPS = [
+        {
+            icon: '📲', heroTitle: 'CRONOS FÚTBOL', heroSub: 'Coach Assistant · v7.0',
+            sideLabel: '📲 Instalación',
+            stepTitle: 'Instala la app en tu dispositivo',
+            stepDesc:  'Al abrir el enlace por primera vez, la app te guía automáticamente para añadirla a la pantalla de inicio. En Android verás el botón "Instalar ahora" y en iPhone los pasos de Safari.',
+            cardTitle: () => {
+                const ua = navigator.userAgent.toLowerCase();
+                if (/iphone|ipad|ipod/.test(ua)) return '📱 Instala la app en tu iPhone / iPad';
+                if (/android/.test(ua))           return '📱 Instala la app en tu Android';
+                return '💻 Instala la app en tu ordenador';
+            },
+            cardBody: () => {
+                const ua = navigator.userAgent.toLowerCase();
+                const isIOS     = /iphone|ipad|ipod/.test(ua);
+                const isAndroid = /android/.test(ua);
+                if (isIOS) return `
+                    <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa el botón de compartir <strong>⬆</strong> en la barra de Safari</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Toca <strong>"Añadir a pantalla de inicio"</strong> ＋</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"Añadir"</strong> arriba a la derecha</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Abre la app desde el icono ⚽ en tu pantalla de inicio</span></div>`;
+                if (isAndroid) return `
+                    <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Toca el menú <strong>⋮</strong> (tres puntos) de Chrome</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Selecciona <strong>"Añadir a pantalla de inicio"</strong></span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"Instalar"</strong></span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Abre la app desde el icono ⚽ en tu móvil</span></div>
+                    ${deferredInstallPrompt ? '<button onclick="triggerNativeInstall()" style="width:100%;margin-top:0.8rem;padding:0.75rem;background:#58a6ff;border:none;border-radius:8px;color:#0a0e14;font-weight:700;font-size:0.9rem;cursor:pointer;">⬇ INSTALAR AHORA</button>' : ''}`;
+                return `
+                    <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Busca el icono <strong>⊕</strong> en la barra de Chrome</span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Haz clic en <strong>"Instalar Cronos Fútbol"</strong></span></div>
+                    <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">La app se abrirá en su propia ventana</span></div>`;
+            }
+        },
+        {
+            icon: '📝', heroTitle: 'Registro', heroSub: 'Crea tu cuenta de entrenador',
+            sideLabel: '📝 Registro',
+            stepTitle: 'Crea tu cuenta',
+            stepDesc:  'Introduce tu correo electrónico y una contraseña. Una vez registrado, el administrador recibirá tu solicitud y activará tu acceso. Recibirás confirmación cuando esté listo.',
+            cardTitle: () => '📝 Cómo registrarse',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">En la pantalla de inicio pulsa <strong>"REGISTRARSE"</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Introduce tu <strong>correo electrónico</strong> y una <strong>contraseña</strong> (mín. 6 caracteres)</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"REGISTRARSE"</strong> — tu solicitud queda pendiente de aprobación</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Una vez aprobado, ya puedes entrar con tu correo y contraseña</span></div>`
+        },
+        {
+            icon: '🔑', heroTitle: 'Iniciar sesión', heroSub: 'Accede a tu cuenta',
+            sideLabel: '🔑 Iniciar sesión',
+            stepTitle: 'Entra en la aplicación',
+            stepDesc:  'Con tu correo y contraseña ya aprobados, pulsa "ENTRAR". La sesión solo dura mientras tienes la app abierta, por seguridad se cierra al salir.',
+            cardTitle: () => '🔑 Acceso seguro',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Introduce tu <strong>correo</strong> y <strong>contraseña</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Pulsa <strong>"ENTRAR"</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Accederás a la pantalla de configuración del partido</span></div>`
+        },
+        {
+            icon: '👥', heroTitle: 'Gestionar Plantilla', heroSub: 'Registra a tus jugadores',
+            sideLabel: '👥 Gestionar plantilla',
+            stepTitle: 'Introduce a tus jugadores',
+            stepDesc:  'Desde el botón "Gestionar Plantilla" en la configuración, rellena el nombre, apellido, alias y dorsal de cada jugador. Solo tienes que hacerlo una vez — se guardan automáticamente.',
+            cardTitle: () => '👥 Plantilla de jugadores',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa <strong>"GESTIONAR PLANTILLA"</strong> en la pantalla de configuración</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Rellena <strong>dorsal, nombre y alias</strong> de cada jugador (el alias aparece en el campo)</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Pulsa <strong>"GUARDAR PLANTILLA"</strong> — quedan guardados en tu dispositivo</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Fútbol 7: hasta 18 jugadores · Fútbol 11: hasta 25 jugadores</span></div>`
+        },
+        {
+            icon: '⚙️', heroTitle: 'Configurar partido', heroSub: 'Prepara el encuentro',
+            sideLabel: '⚙️ Configurar partido',
+            stepTitle: 'Configura el encuentro',
+            stepDesc:  'Nombre del equipo, colores de la equipación (camiseta, pantalón y dorsal), modalidad (F7 o F11) y sistema táctico inicial. Puedes guardar el equipo y cargarlo en el siguiente partido.',
+            cardTitle: () => '⚙️ Opciones de configuración',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Escribe el <strong>nombre del equipo</strong> local</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Elige los <strong>colores</strong> de camiseta, pantalón y dorsal</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Selecciona <strong>Fútbol 7 o Fútbol 11</strong> y el <strong>sistema táctico</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Pulsa <strong>"CONTINUAR AL PARTIDO"</strong> para ir a la convocatoria</span></div>`
+        },
+        {
+            icon: '📋', heroTitle: 'Convocatoria', heroSub: 'Selecciona los jugadores',
+            sideLabel: '📋 Convocatoria',
+            stepTitle: 'Selecciona la convocatoria',
+            stepDesc:  'Elige los jugadores convocados para este partido (mín. 7, máx. 18 en F7 / mín. 7, máx. 18 en F11). Los primeros titulares se colocan automáticamente según el sistema elegido.',
+            cardTitle: () => '📋 Convocatoria del partido',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Toca los jugadores para <strong>seleccionarlos</strong> — se resaltan en azul</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Los <strong>primeros titulares</strong> se ordenan automáticamente por su posición habitual</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">El contador inferior muestra cuántos llevas seleccionados</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Pulsa <strong>"INICIAR PARTIDO"</strong> cuando tengas la convocatoria lista</span></div>`
+        },
+        {
+            icon: '▶️', heroTitle: 'Control del partido', heroSub: 'Cronómetros en tiempo real',
+            sideLabel: '▶️ Control del partido',
+            stepTitle: 'Controla el partido',
+            stepDesc:  'Pulsa EMPEZAR para iniciar el tiempo. Cada jugador tiene su cronómetro individual. Los puedes arrastrar entre el campo y el banquillo para gestionar los cambios.',
+            cardTitle: () => '▶️ Durante el partido',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa <strong>"EMPEZAR"</strong> para iniciar el cronómetro del partido</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Arrastra jugadores entre el <strong>campo y el banquillo</strong> para hacer cambios</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Toca un jugador para ver su <strong>menú de acciones</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">El tiempo de cada jugador se registra <strong>automáticamente</strong></span></div>`
+        },
+        {
+            icon: '⚡', heroTitle: 'Goles, tarjetas y cambios', heroSub: 'Acciones del partido',
+            sideLabel: '⚡ Goles, tarjetas y cambios',
+            stepTitle: 'Registra las acciones del partido',
+            stepDesc:  'Toca cualquier jugador para asignarle un gol, tarjeta amarilla o roja, o para hacer una sustitución. Todo queda registrado con el minuto exacto.',
+            cardTitle: () => '⚡ Acciones disponibles',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Toca un jugador → aparece el <strong>menú de acciones</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Asigna <strong>⚽ gol</strong>, <strong>🟨 tarjeta amarilla</strong> o <strong>🟥 tarjeta roja</strong></span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">Para <strong>sustituciones</strong>, arrastra al banquillo o usa el botón de cambio</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">Todo queda guardado con el <strong>minuto exacto</strong> de la acción</span></div>`
+        },
+        {
+            icon: '📊', heroTitle: 'Informe y guardado', heroSub: 'Exporta y guarda',
+            sideLabel: '📊 Informe y guardado',
+            stepTitle: 'Exporta el informe y guarda el equipo',
+            stepDesc:  'Al terminar el partido, descarga el informe completo con tiempos, goles y tarjetas. Se envía automáticamente al Director Deportivo si tienes configurado el email o WhatsApp.',
+            cardTitle: () => '📊 Finalizar partido',
+            cardBody:  () => `
+                <div class="ob-instruction"><span class="ob-instr-num">1</span><span class="ob-instr-text">Pulsa <strong>"GUARDAR"</strong> para salvar el equipo con su convocatoria y formación</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">2</span><span class="ob-instr-text">Pulsa <strong>"DESCARGAR"</strong> para exportar el informe en CSV</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num">3</span><span class="ob-instr-text">El informe se envía <strong>automáticamente</strong> al Director Deportivo por email y WhatsApp</span></div>
+                <div class="ob-instruction"><span class="ob-instr-num done">✓</span><span class="ob-instr-text">El próximo partido carga el equipo guardado con <strong>un solo toque</strong></span></div>`
+        }
+    ];
+
+    function obRender() {
+        const step  = OB_STEPS[obCurrentStep];
+        const total = OB_STEPS.length;
+        const pct   = Math.round(((obCurrentStep + 1) / total) * 100);
+
+        // Progress bar & counter
+        document.getElementById('ob-progress-fill').style.width = pct + '%';
+        document.getElementById('ob-step-counter').textContent  =
+            String(obCurrentStep + 1).padStart(2,'0') + ' / ' + String(total).padStart(2,'0');
+
+        // Hero
+        document.getElementById('ob-hero-icon').textContent  = step.icon;
+        document.getElementById('ob-hero-title').textContent = step.heroTitle;
+        document.getElementById('ob-hero-sub').textContent   = step.heroSub;
+
+        // Card
+        document.getElementById('ob-card-title').innerHTML = step.cardTitle();
+        document.getElementById('ob-card-body').innerHTML  = step.cardBody();
+
+        // Bottom
+        document.getElementById('ob-step-label').textContent =
+            'PASO ' + String(obCurrentStep + 1).padStart(2,'0') + ' / ' + String(total).padStart(2,'0');
+        document.getElementById('ob-step-title').textContent = step.stepTitle;
+        document.getElementById('ob-step-desc').textContent  = step.stepDesc;
+
+        // Next button text
+        const btnNext = document.getElementById('ob-btn-next');
+        btnNext.textContent = (obCurrentStep === total - 1) ? '✅ ¡Empezar!' : 'Siguiente →';
+
+        // Prev button
+        document.getElementById('ob-btn-prev').style.visibility =
+            obCurrentStep === 0 ? 'hidden' : 'visible';
+
+        // Sidebar
+        const list = document.getElementById('ob-steps-list');
+        list.innerHTML = OB_STEPS.map((s, i) => `
+            <div class="ob-step-item ${i === obCurrentStep ? 'active' : i < obCurrentStep ? 'done' : ''}"
+                 onclick="obGoTo(${i})">
+                <span class="ob-step-num">${i < obCurrentStep ? '✓' : i + 1}</span>
+                ${s.sideLabel}
+            </div>`).join('');
+    }
+
+    function obNext() {
+        if (obCurrentStep >= OB_STEPS.length - 1) { goToAuth(); return; }
+        obCurrentStep++;
+        obRender();
+    }
+
+    function obPrev() {
+        if (obCurrentStep > 0) { obCurrentStep--; obRender(); }
+    }
+
+    function obGoTo(i) {
+        obCurrentStep = i;
+        obRender();
+    }
+
+    function detectDeviceAndShowInstall() {
+        const isStandalone =
+            window.navigator.standalone === true ||
+            window.matchMedia('(display-mode: standalone)').matches ||
+            window.matchMedia('(display-mode: fullscreen)').matches;
+
+        // Si ya está instalada o ya pasó el onboarding (30 días), ir directo al login
+        const lastShown   = parseInt(localStorage.getItem('cronos_install_shown') || '0');
+        const thirtyDays  = 30 * 24 * 60 * 60 * 1000;
+        const alreadySeen = Date.now() - lastShown < thirtyDays;
+
+        if (isStandalone || alreadySeen) {
+            document.getElementById('install-screen').style.display = 'none';
+            document.getElementById('auth-screen').style.display    = 'flex';
+            return;
+        }
+
+        document.getElementById('install-screen').style.display = 'flex';
+        document.getElementById('auth-screen').style.display    = 'none';
+        obRender();
+    }
+
+    window.addEventListener('load', detectDeviceAndShowInstall);
+    </script>
+
 </body>
 </html>
