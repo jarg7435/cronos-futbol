@@ -699,21 +699,40 @@ function init() {
 }
 
 function registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js', { scope: './' })
-            .then(reg => {
-                console.log('Cronos PWA Ready');
-                reg.onupdatefound = () => {
-                    const newWorker = reg.installing;
-                    newWorker.onstatechange = () => {
-                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            if (confirm('Nueva versión disponible. ¿Actualizar ahora?')) window.location.reload();
-                        }
-                    };
+    if (!('serviceWorker' in navigator)) return;
+
+    navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then(reg => {
+            console.log('Cronos PWA Ready');
+
+            // Comprobar si hay actualización disponible cada vez que se abre la app
+            reg.update().catch(() => {});
+
+            reg.onupdatefound = () => {
+                const newWorker = reg.installing;
+                newWorker.onstatechange = () => {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                        // Nueva versión lista → mostrar aviso y recargar automáticamente
+                        const toast = document.createElement('div');
+                        toast.innerHTML = '🔄 Actualizando Cronos Fútbol…';
+                        toast.style.cssText =
+                            'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
+                            'background:#1a7a3e;color:#fff;padding:10px 24px;border-radius:8px;' +
+                            'font-size:0.88rem;font-weight:bold;z-index:99999;' +
+                            'box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+                        document.body.appendChild(toast);
+                        // Recargar tras 1.5 s para que el toast sea visible
+                        setTimeout(() => window.location.reload(), 1500);
+                    }
                 };
-            })
-            .catch(err => console.log('SW Error:', err));
-    }
+            };
+        })
+        .catch(err => console.log('SW Error:', err));
+
+    // Si el SW toma el control mientras la página está abierta → recargar también
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+    });
 }
 
 async function forceUpdate() {
