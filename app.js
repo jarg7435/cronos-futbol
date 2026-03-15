@@ -1217,8 +1217,24 @@ function openRosterManager() {
     const modal = document.getElementById('setup-modal');
     modal.innerHTML = `
         <div class="modal-content" style="width: 800px; max-width: 95%;">
-            <h2>Gestionar Plantilla - ${mode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}</h2>
-            <p style="font-size: 0.8rem; color: var(--text-muted);">Completa los datos de tus ${limit} jugadores. El Alias es el nombre que aparecerá en la ficha.</p>
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.3rem;">
+                <h2 style="margin:0;">Gestionar Plantilla - ${mode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}</h2>
+                <button onclick="triggerRosterPhoto()"
+                    title="Haz una foto a la lista de jugadores y la IA la importa automáticamente"
+                    style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
+                           background:rgba(240,136,62,0.15); border:1px solid rgba(240,136,62,0.5);
+                           border-radius:8px; color:var(--secondary); font-size:0.85rem;
+                           font-weight:700; cursor:pointer; white-space:nowrap;">
+                    📷 IMPORTAR CON IA
+                </button>
+            </div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom:0.8rem;">
+                Completa los datos de tus ${limit} jugadores · El Alias es el nombre que aparecerá en la ficha ·
+                <span style="color:var(--secondary);">📷 Haz una foto a la lista y la IA la importa sola</span>
+            </p>
+            <!-- Input oculto para seleccionar imagen -->
+            <input type="file" id="roster-photo-input" accept="image/*" capture="environment"
+                style="display:none;" onchange="processRosterPhoto(this)">
             <div style="overflow-x: auto;">
                 <table class="roster-table">
                     <thead>
@@ -1247,6 +1263,250 @@ function openRosterManager() {
             </div>
         </div>
     `;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  IMPORTACIÓN DE PLANTILLA CON IA (foto → jugadores)
+// ══════════════════════════════════════════════════════════════════
+
+function triggerRosterPhoto() {
+    const input = document.getElementById('roster-photo-input');
+    if (input) input.click();
+}
+
+async function processRosterPhoto(inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+
+    // Mostrar spinner mientras procesa
+    const modal = document.getElementById('setup-modal');
+    const existingContent = modal.querySelector('.modal-content');
+    const spinnerOverlay = document.createElement('div');
+    spinnerOverlay.id = 'ocr-spinner';
+    spinnerOverlay.style.cssText =
+        'position:absolute; inset:0; background:rgba(10,14,20,0.85); border-radius:16px;' +
+        'display:flex; flex-direction:column; align-items:center; justify-content:center;' +
+        'z-index:100; gap:1rem;';
+    spinnerOverlay.innerHTML = `
+        <div style="font-size:2.5rem; animation:spin 1s linear infinite;">⚙️</div>
+        <p style="color:#58a6ff; font-weight:700; font-size:1rem; margin:0;">Analizando la imagen…</p>
+        <p style="color:#7d8590; font-size:0.82rem; margin:0;">La IA está extrayendo los jugadores</p>
+        <style>@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }</style>`;
+    if (existingContent) existingContent.style.position = 'relative';
+    existingContent?.appendChild(spinnerOverlay);
+
+    try {
+        // Convertir imagen a base64
+        const base64 = await new Promise((res, rej) => {
+            const reader = new FileReader();
+            reader.onload  = () => res(reader.result.split(',')[1]);
+            reader.onerror = () => rej(new Error('Error leyendo imagen'));
+            reader.readAsDataURL(file);
+        });
+
+        const mediaType = file.type || 'image/jpeg';
+
+        // Llamar a la API de Claude con la imagen
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                messages: [{
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'image',
+                            source: { type: 'base64', media_type: mediaType, data: base64 }
+                        },
+                        {
+                            type: 'text',
+                            text: `Analiza esta imagen y extrae la lista de jugadores de fútbol.
+Para cada jugador devuelve SOLO un JSON array con este formato exacto, sin texto adicional, sin markdown, sin explicaciones:
+[
+  {"number": 1, "name": "NOMBRE", "surname": "APELLIDOS", "alias": "ALIAS"},
+  ...
+]
+Reglas:
+- "number" es el dorsal (si no aparece, usa el orden: 1, 2, 3...)
+- "name" es el nombre de pila en MAYÚSCULAS
+- "surname" son los apellidos en MAYÚSCULAS
+- "alias" es como se conoce al jugador (si no hay apodo, usa el primer apellido o el nombre)
+- Si ves una lista con formato "Nº NOMBRE APELLIDO" o similar, extráela fielmente
+- Si el texto es ilegible en algún campo, déjalo como cadena vacía ""
+- Devuelve ÚNICAMENTE el array JSON, nada más`
+                        }
+                    ]
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err?.error?.message || 'Error en la API');
+        }
+
+        const data = await response.json();
+        const rawText = data.content?.find(b => b.type === 'text')?.text || '';
+
+        // Parsear JSON de la respuesta
+        const jsonMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        if (!jsonMatch) throw new Error('No se pudieron extraer jugadores de la imagen');
+
+        const extractedPlayers = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(extractedPlayers) || extractedPlayers.length === 0) {
+            throw new Error('No se encontraron jugadores en la imagen');
+        }
+
+        // Quitar spinner y mostrar previsualización
+        spinnerOverlay.remove();
+        showRosterPreview(extractedPlayers);
+
+    } catch (err) {
+        spinnerOverlay.remove();
+        // Mostrar error como toast no intrusivo
+        const toast = document.createElement('div');
+        toast.innerHTML = `❌ <strong>No se pudo analizar la imagen</strong><br>
+            <span style="font-size:0.75rem;">${err.message}</span>`;
+        toast.style.cssText =
+            'position:fixed; bottom:80px; left:50%; transform:translateX(-50%);' +
+            'background:#3d1a1a; border:1px solid #c0392b; color:#ff7b7b;' +
+            'padding:12px 20px; border-radius:10px; font-size:0.82rem;' +
+            'z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,0.5); text-align:center; max-width:90vw;';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+    }
+
+    // Limpiar el input para permitir volver a seleccionar la misma imagen
+    inputEl.value = '';
+}
+
+function showRosterPreview(players) {
+    const mode  = document.getElementById('setup-mode')?.value || 'f11';
+    const limit = mode === 'f7' ? 18 : 25;
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(95vw,820px); max-height:92vh;
+             display:flex; flex-direction:column; overflow:hidden;">
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                <h2 style="margin:0;">✅ Jugadores detectados</h2>
+                <span style="background:rgba(88,166,255,0.15); color:#58a6ff;
+                       border:1px solid rgba(88,166,255,0.3); border-radius:20px;
+                       padding:3px 12px; font-size:0.78rem; font-weight:700;">
+                    ${players.length} jugadores
+                </span>
+            </div>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.8rem;">
+                Revisa y corrige si es necesario antes de cargar en la plantilla.
+            </p>
+
+            <!-- Tabla editable -->
+            <div style="overflow-y:auto; flex:1;">
+                <table class="roster-table" style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th style="width:50px;">#</th>
+                            <th>Nombre</th>
+                            <th>Apellidos</th>
+                            <th>Alias (Ficha)</th>
+                            <th style="width:36px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="preview-tbody">
+                        ${players.map((p, i) => `
+                            <tr id="preview-row-${i}">
+                                <td><input type="number" class="p-num" value="${p.number || i+1}"
+                                    style="width:44px;"></td>
+                                <td><input type="text" class="p-name" value="${p.name || ''}"></td>
+                                <td><input type="text" class="p-surname" value="${p.surname || ''}"></td>
+                                <td><input type="text" class="p-alias" value="${p.alias || ''}"></td>
+                                <td>
+                                    <button onclick="document.getElementById('preview-row-${i}').remove()"
+                                        style="background:none; border:none; color:#ff5858;
+                                               cursor:pointer; font-size:1rem; padding:2px 6px;"
+                                        title="Eliminar fila">✕</button>
+                                </td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Acciones -->
+            <div style="margin-top:0.8rem; padding-top:0.8rem;
+                        border-top:1px solid var(--glass-border);
+                        display:flex; justify-content:space-between; align-items:center; flex-shrink:0; gap:0.6rem; flex-wrap:wrap;">
+                <button class="btn" onclick="openRosterManager()"
+                    style="color:var(--text-muted);">
+                    ← Volver sin importar
+                </button>
+                <div style="display:flex; gap:0.6rem;">
+                    <button class="btn" onclick="triggerRosterPhoto()"
+                        style="background:rgba(240,136,62,0.12); color:var(--secondary);
+                               border:1px solid rgba(240,136,62,0.4);">
+                        📷 Nueva foto
+                    </button>
+                    <button class="btn primary" onclick="confirmRosterImport('${mode}')">
+                        ✅ CARGAR EN PLANTILLA
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Input oculto para nueva foto desde preview -->
+        <input type="file" id="roster-photo-input" accept="image/*" capture="environment"
+            style="display:none;" onchange="processRosterPhoto(this)">
+    `;
+}
+
+function confirmRosterImport(mode) {
+    const rows = document.querySelectorAll('#preview-tbody tr');
+    if (rows.length === 0) { alert('No hay jugadores para importar.'); return; }
+
+    const imported = Array.from(rows).map(row => ({
+        number:  row.querySelector('.p-num')?.value     || '',
+        name:    row.querySelector('.p-name')?.value    || '',
+        surname: row.querySelector('.p-surname')?.value || '',
+        alias:   row.querySelector('.p-alias')?.value   || ''
+    })).filter(p => p.name || p.surname || p.alias);
+
+    // Cargar en la plantilla existente: rellenar desde el principio
+    const limit = mode === 'f7' ? 18 : 25;
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+
+    // Asegurar que hay suficientes filas
+    while (roster[mode].length < limit) {
+        roster[mode].push({ number: roster[mode].length + 1, name: '', surname: '', alias: '' });
+    }
+
+    // Escribir los jugadores importados
+    imported.forEach((p, i) => {
+        if (i < limit) {
+            roster[mode][i] = {
+                number:  p.number || (i + 1),
+                name:    p.name,
+                surname: p.surname,
+                alias:   p.alias
+            };
+        }
+    });
+
+    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+
+    // Toast de éxito y volver al gestor de plantilla
+    const toast = document.createElement('div');
+    toast.textContent = `✅ ${imported.length} jugadores importados correctamente`;
+    toast.style.cssText =
+        'position:fixed; bottom:80px; left:50%; transform:translateX(-50%);' +
+        'background:#1a7a3e; color:#fff; padding:10px 22px; border-radius:8px;' +
+        'font-size:0.85rem; font-weight:700; z-index:9999;' +
+        'box-shadow:0 4px 12px rgba(0,0,0,0.4); white-space:nowrap;';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
+
+    openRosterManager();
 }
 
 function saveMasterRoster(mode) {
