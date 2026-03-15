@@ -459,6 +459,284 @@ function cancelPendingSubstitution() {
 //  CONFIGURACIÓN Y ENVÍO DE EMAIL (EmailJS)
 // ══════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════
+//  MODO DEMO
+// ══════════════════════════════════════════════════════════════════
+
+function startDemo() {
+    if (!confirm('Se cargará un partido de demostración con jugadores de ejemplo.\n\nLos datos actuales NO se modificarán.\n\n¿Continuar?')) return;
+
+    // Configurar modo demo
+    currentMode   = 'f11';
+    analyzeAway   = false;
+    selectedFormationOnStart = '433';
+
+    TEAM_NAMES.home = 'ATLÉTICO';
+    TEAM_NAMES.away = 'VISITANTE';
+    COLORS.home = { primary: '#58a6ff', secondary: '#f0883e', shorts: '#0a0e14', text: '#ffffff' };
+    COLORS.away = { primary: '#ff5858', secondary: '#f0883e', shorts: '#ffffff', text: '#ffffff' };
+
+    document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
+    document.getElementById('team-b-name').textContent = TEAM_NAMES.away;
+    document.body.classList.remove('hide-visitor');
+    document.body.classList.toggle('mode-f11', true);
+
+    half1MaxTime = 45 * 60;
+    half2MaxTime = 45 * 60;
+
+    // Jugadores demo
+    const demoPlayers = [
+        { number:1,  name:'MOLINA',    status:'field' },
+        { number:2,  name:'NAHUEL',    status:'field' },
+        { number:3,  name:'LE NORMAND',status:'field' },
+        { number:4,  name:'WITSEL',    status:'field' },
+        { number:5,  name:'REINILDO',  status:'field' },
+        { number:6,  name:'KOKE',      status:'field' },
+        { number:8,  name:'SAÚL',      status:'field' },
+        { number:10, name:'GRIEZMANN', status:'field' },
+        { number:7,  name:'CORREA',    status:'field' },
+        { number:9,  name:'MORATA',    status:'field' },
+        { number:11, name:'LLORENTE',  status:'field' },
+        { number:13, name:'OBLAK',     status:'bench' },
+        { number:14, name:'HERMOSO',   status:'bench' },
+        { number:17, name:'DE PAUL',   status:'bench' },
+        { number:19, name:'ÁLVAREZ',   status:'bench' },
+        { number:20, name:'BARRIOS',   status:'bench' },
+        { number:22, name:'GALLAGHER', status:'bench' },
+        { number:23, name:'RIQUELME',  status:'bench' },
+    ];
+
+    players = demoPlayers.map((p, i) => ({
+        id: i + 1,
+        number: p.number,
+        name: p.name,
+        team: 'home',
+        status: p.status,
+        time: p.status === 'field' ? Math.floor(Math.random() * 900) : 0,
+        color: COLORS.home.primary,
+        shortsColor: COLORS.home.shorts,
+        textColor: COLORS.home.text,
+        history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+    }));
+
+    document.body.classList.remove('setup-mode', 'hide-visitor');
+    document.getElementById('main-header').style.display    = 'flex';
+    document.getElementById('main-container').style.display = 'flex';
+    document.getElementById('setup-modal').style.display    = 'none';
+
+    renderPlayers();
+    applyFormationPreset('433');
+
+    // Marcar visualmente que es demo
+    const badge = document.createElement('div');
+    badge.id = 'demo-badge';
+    badge.textContent = '🎮 MODO DEMO';
+    badge.style.cssText =
+        'position:fixed;top:8px;left:50%;transform:translateX(-50%);' +
+        'background:rgba(88,166,255,0.2);border:1px solid rgba(88,166,255,0.5);' +
+        'color:#58a6ff;font-size:0.7rem;font-weight:700;padding:3px 12px;' +
+        'border-radius:20px;z-index:9998;pointer-events:none;letter-spacing:1px;';
+    document.body.appendChild(badge);
+
+    injectBenchScrollButtons('bench-list');
+    const pitch = document.getElementById('football-pitch');
+    pitch.addEventListener('click',      () => closeDrawers());
+    pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+
+    // Mostrar toast de bienvenida al demo
+    setTimeout(() => {
+        const toast = document.createElement('div');
+        toast.innerHTML = '🎮 <strong>Modo Demo</strong> — Explora todas las funciones libremente.<br>' +
+            '<span style="font-size:0.75rem;opacity:0.8;">Pulsa ← INICIO para volver a la configuración real</span>';
+        toast.style.cssText =
+            'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);' +
+            'background:#0d2137;border:1px solid rgba(88,166,255,0.4);color:#cdd9e5;' +
+            'padding:12px 20px;border-radius:10px;font-size:0.82rem;z-index:9999;' +
+            'box-shadow:0 4px 16px rgba(0,0,0,0.5);text-align:center;max-width:90vw;';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 6000);
+    }, 500);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  TUTORIAL INTERACTIVO
+// ══════════════════════════════════════════════════════════════════
+
+const TUTORIAL_STEPS = [
+    {
+        title: '👋 Bienvenido a Cronos Fútbol',
+        text:  'Este tutorial te enseñará a usar todas las funciones de la app en menos de 2 minutos. Puedes cerrarlo en cualquier momento y volver cuando quieras.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '⚙️ Configuración del partido',
+        text:  'Aquí introduces los nombres de los equipos, los colores de las equipaciones, la modalidad (Fútbol 7 o Fútbol 11) y el sistema táctico inicial.',
+        target: 'setup-modal',
+        position: 'center'
+    },
+    {
+        title: '👥 Gestionar Plantilla',
+        text:  'Antes de empezar, introduce aquí los nombres y dorsales de tus jugadores. Solo tienes que hacerlo una vez — se guardan automáticamente.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '📋 Convocatoria',
+        text:  'Al pulsar "Continuar al partido", seleccionas los jugadores convocados para ese encuentro. Los primeros 11 (o 7 en Fútbol 7) serán titulares; el resto, suplentes.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '⏱️ Cronómetro',
+        text:  'Pulsa EMPEZAR para iniciar el tiempo. Los cronómetros de cada jugador arrancan automáticamente. Puedes pausar, reanudar y editar el tiempo tocando los marcadores.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '🔄 Realizar un cambio',
+        text:  'Toca un jugador en el campo para ver sus opciones. Puedes sustituirlo arrastrándolo al banquillo o usando el menú de acciones. El tiempo se registra automáticamente.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '💾 Guardar equipo',
+        text:  'Con el botón GUARDAR puedes salvar la convocatoria, los colores, el sistema y las posiciones. La próxima vez, cárgalo desde el desplegable y todo estará listo.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '📊 Exportar informe',
+        text:  'Al pulsar DESCARGAR se genera un informe con los tiempos de cada jugador, goles y tarjetas. Se descarga en tu dispositivo y se envía automáticamente al Director Deportivo si tienes el email configurado.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '📧 Configurar email y WhatsApp',
+        text:  'En el botón EMAIL (pantalla de configuración) introduces el correo del Director Deportivo y su WhatsApp. Cada informe llegará automáticamente al exportar.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '🎮 Prueba el Modo Demo',
+        text:  'Usa el botón DEMO para explorar la app con un partido de ejemplo sin tocar tus datos reales. Ideal para practicar antes del primer partido.',
+        target: null,
+        position: 'center'
+    },
+    {
+        title: '✅ ¡Ya estás listo!',
+        text:  'Eso es todo. Recuerda que puedes volver a este tutorial cuando quieras desde el botón ❓ TUTORIAL en la pantalla de configuración. ¡Mucho éxito en los partidos!',
+        target: null,
+        position: 'center'
+    }
+];
+
+let tutorialStep = 0;
+
+function startTutorial() {
+    tutorialStep = 0;
+    renderTutorialStep();
+}
+
+function renderTutorialStep() {
+    // Eliminar overlay anterior si existe
+    const prev = document.getElementById('tutorial-overlay');
+    if (prev) prev.remove();
+
+    if (tutorialStep >= TUTORIAL_STEPS.length) {
+        // Tutorial completado
+        localStorage.setItem('cronos_tutorial_done', '1');
+        return;
+    }
+
+    const step = TUTORIAL_STEPS[tutorialStep];
+    const total = TUTORIAL_STEPS.length;
+    const isFirst = tutorialStep === 0;
+    const isLast  = tutorialStep === total - 1;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'tutorial-overlay';
+    overlay.style.cssText =
+        'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99999;' +
+        'display:flex;align-items:center;justify-content:center;padding:1rem;' +
+        'backdrop-filter:blur(3px);';
+
+    overlay.innerHTML = `
+        <div style="background:#0d1117;border:1px solid rgba(88,166,255,0.4);
+                    border-radius:16px;padding:1.8rem;width:min(92vw,440px);
+                    box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+
+            <!-- Progreso -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="font-size:0.72rem;color:#7d8590;">
+                    Paso ${tutorialStep + 1} de ${total}
+                </span>
+                <div style="display:flex;gap:4px;">
+                    ${Array.from({length: total}, (_, i) =>
+                        `<div style="width:${i === tutorialStep ? 18 : 6}px;height:6px;border-radius:3px;
+                            background:${i === tutorialStep ? '#58a6ff' : i < tutorialStep ? 'rgba(88,166,255,0.4)' : 'rgba(255,255,255,0.1)'};
+                            transition:all 0.3s;"></div>`
+                    ).join('')}
+                </div>
+                <button onclick="closeTutorial()"
+                    style="background:none;border:none;color:#7d8590;cursor:pointer;
+                           font-size:1.1rem;padding:0;line-height:1;">✕</button>
+            </div>
+
+            <!-- Contenido -->
+            <h3 style="color:#cdd9e5;font-size:1.1rem;margin:0 0 0.7rem;font-family:'Outfit',sans-serif;">
+                ${step.title}
+            </h3>
+            <p style="color:#7d8590;font-size:0.88rem;line-height:1.6;margin:0 0 1.5rem;">
+                ${step.text}
+            </p>
+
+            <!-- Botones de navegación -->
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;">
+                <button onclick="tutorialPrev()"
+                    style="flex:1;padding:0.65rem;background:var(--glass);border:1px solid var(--glass-border);
+                           border-radius:8px;color:#7d8590;cursor:pointer;font-size:0.85rem;
+                           ${isFirst ? 'visibility:hidden;' : ''}">
+                    ← Anterior
+                </button>
+                ${isLast
+                    ? `<button onclick="closeTutorial()"
+                           style="flex:2;padding:0.65rem;background:#58a6ff;border:none;
+                                  border-radius:8px;color:#0a0e14;font-weight:700;
+                                  cursor:pointer;font-size:0.9rem;">
+                           ✅ ¡Listo!
+                       </button>`
+                    : `<button onclick="tutorialNext()"
+                           style="flex:2;padding:0.65rem;background:#58a6ff;border:none;
+                                  border-radius:8px;color:#0a0e14;font-weight:700;
+                                  cursor:pointer;font-size:0.9rem;">
+                           Siguiente →
+                       </button>`
+                }
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+}
+
+function tutorialNext() {
+    tutorialStep++;
+    renderTutorialStep();
+}
+
+function tutorialPrev() {
+    if (tutorialStep > 0) {
+        tutorialStep--;
+        renderTutorialStep();
+    }
+}
+
+function closeTutorial() {
+    const overlay = document.getElementById('tutorial-overlay');
+    if (overlay) overlay.remove();
+}
+
 function loadEmailConfig() {
     const saved = localStorage.getItem('cronos_email_config');
     if (saved) {
@@ -858,6 +1136,16 @@ function openSetupModal() {
                         title="Configurar envío automático de informes por email"
                         style="background:var(--glass);color:var(--secondary);font-size:0.82rem;border:1px solid var(--secondary);">
                         📧 EMAIL
+                    </button>
+                    <button class="btn" onclick="startDemo()"
+                        title="Partido de demostración con datos de ejemplo"
+                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
+                        🎮 DEMO
+                    </button>
+                    <button class="btn" onclick="startTutorial()"
+                        title="Tutorial interactivo paso a paso"
+                        style="background:rgba(240,136,62,0.12);color:var(--secondary);font-size:0.82rem;border:1px solid rgba(240,136,62,0.4);">
+                        ❓ TUTORIAL
                     </button>
                     ${window._cronosCurrentUser?.role === 'admin' ? `
                     <button onclick="openAdminPanel()"
