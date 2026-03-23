@@ -1689,6 +1689,13 @@ function openSetupModal() {
             <!-- BOTONES -->
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; gap:0.6rem; align-items:center;">
+                    <button onclick="cerrarSesion()"
+                        title="Cerrar sesión y salir de la aplicación"
+                        style="background:rgba(220,53,69,0.15); border:1px solid rgba(220,53,69,0.6);
+                               color:#dc3545; font-size:0.82rem; padding:0.45rem 0.9rem;
+                               border-radius:8px; cursor:pointer; font-weight:700;">
+                        🚪 SALIR
+                    </button>
                     <button class="btn" onclick="openRosterManager()"
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
                         GESTIONAR PLANTILLA
