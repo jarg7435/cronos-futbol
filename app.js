@@ -1,6 +1,28 @@
 // --- SECURITY & INITIALIZATION ---
 const ACCESS_CODE = '1234';
 
+// Cierra sesión de Firebase y vuelve a la pantalla de login
+async function cerrarSesion() {
+    try {
+        const fa = window._chronos_auth;
+        if (fa && fa.signOut && fa.auth) {
+            await fa.signOut(fa.auth);
+        }
+    } catch(e) {
+        console.warn('Error al cerrar sesión:', e);
+    }
+    // Limpiar estado local
+    window._chronosCurrentUser = null;
+    window._loginThisSession = false;
+    sessionStorage.removeItem('chronos_access');
+    // Volver a la pantalla de autenticación
+    if (typeof showScreen === 'function') {
+        showScreen('auth-screen');
+    } else {
+        location.reload();
+    }
+}
+
 window.onload = () => {
     // La app arranca desde enterApp() en index.html tras la autenticación Firebase
 };
