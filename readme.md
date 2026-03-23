@@ -1,8 +1,8 @@
-# ⚽ Cronos Fútbol - Coach Assistant
+# ⚽ Chronos Fútbol - Coach Assistant
 
-**Cronos Fútbol** es una aplicación web progresiva (PWA) diseñada para entrenadores de fútbol (F7 y F11) que necesitan llevar un control exhaustivo del tiempo de juego de sus jugadores, gestionar cambios y generar reportes detallados.
+**Chronos Fútbol** es una aplicación web progresiva (PWA) diseñada para entrenadores de fútbol (F7 y F11) que necesitan llevar un control exhaustivo del tiempo de juego de sus jugadores, gestionar cambios y generar reportes detallados.
 
-🔗 **[Abrir Aplicación (Online)](https://jarg7435.github.io/cronos-futbol/)**
+🔗 **[Abrir Aplicación (Online)](https://jarg7435.github.io/chronos-futbol/)**
 
 ## 🚀 Características Principales
 

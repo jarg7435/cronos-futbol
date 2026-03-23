@@ -1,6 +1,6 @@
 {
-  "name": "Cronos Fútbol",
-  "short_name": "Cronos",
+  "name": "Chronos Fútbol - Coach Assistant",
+  "short_name": "Chronos Fútbol",
   "description": "Control de tiempos para fútbol",
   "start_url": "./index.html",
   "scope": "./",
