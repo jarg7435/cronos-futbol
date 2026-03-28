@@ -1,28 +1,6 @@
 // --- SECURITY & INITIALIZATION ---
 const ACCESS_CODE = '1234';
 
-// Cierra sesión de Firebase y vuelve a la pantalla de login
-async function cerrarSesion() {
-    try {
-        const fa = window._chronos_auth;
-        if (fa && fa.signOut && fa.auth) {
-            await fa.signOut(fa.auth);
-        }
-    } catch(e) {
-        console.warn('Error al cerrar sesión:', e);
-    }
-    // Limpiar estado local
-    window._chronosCurrentUser = null;
-    window._loginThisSession = false;
-    sessionStorage.removeItem('chronos_access');
-    // Volver a la pantalla de autenticación
-    if (typeof showScreen === 'function') {
-        showScreen('auth-screen');
-    } else {
-        location.reload();
-    }
-}
-
 window.onload = () => {
     // La app arranca desde enterApp() en index.html tras la autenticación Firebase
 };
@@ -31,7 +9,7 @@ function validateAccess() {
     const input = document.getElementById('access-input').value;
     const errorEl = document.getElementById('access-error');
     if (input === ACCESS_CODE) {
-        sessionStorage.setItem('chronos_access', 'true');
+        sessionStorage.setItem('cronos_access', 'true');
         unlockApp();
     } else {
         errorEl.textContent = 'Código incorrecto. Inténtelo de nuevo.';
@@ -675,7 +653,7 @@ function startDemo() {
 
 const TUTORIAL_STEPS = [
     {
-        title: '👋 Bienvenido a Chronos Fútbol',
+        title: '👋 Bienvenido a Cronos Fútbol',
         text:  'Este tutorial te enseñará a usar todas las funciones de la app en menos de 2 minutos. Puedes cerrarlo en cualquier momento y volver cuando quieras.',
         target: null,
         position: 'center'
@@ -756,7 +734,7 @@ function renderTutorialStep() {
 
     if (tutorialStep >= TUTORIAL_STEPS.length) {
         // Tutorial completado
-        cloudSet('chronos_tutorial_done', '1');
+        cloudSet('cronos_tutorial_done', '1');
         return;
     }
 
@@ -854,7 +832,7 @@ function closeTutorial() {
 
 async function cleanupStaleMatches() {
     try {
-        const fa = window._chronos_auth;
+        const fa = window._cronos_auth;
         if (!fa || !fa.db) return;
         const { collection, query, where, getDocs,
                 updateDoc, deleteDoc, doc } = await import(
@@ -899,7 +877,7 @@ async function cleanupStaleMatches() {
 }
 
 async function startLiveSync() {
-    const fa = window._chronos_auth;
+    const fa = window._cronos_auth;
     if (!fa || !fa.db) return;
 
     // Generar ID legible: nombre-equipo-fecha  (ej: atletico-20032026-a3f)
@@ -934,7 +912,7 @@ async function startLiveSync() {
 }
 
 async function pushLiveSnapshot(status = 'active') {
-    const fa = window._chronos_auth;
+    const fa = window._cronos_auth;
     if (!fa || !fa.db || !liveMatchId) return;
 
     try {
@@ -948,9 +926,8 @@ async function pushLiveSnapshot(status = 'active') {
             id:          liveMatchId,
             status:      status,          // 'active' | 'finished'
             updatedAt:   serverTimestamp(),
-            createdBy:   window._chronosCurrentUser?.uid   || '',
-            coachEmail:  window._chronosCurrentUser?.email || '',
-            clubId:      window._chronosCurrentUser?.clubId || '',
+            createdBy:   window._cronosCurrentUser?.uid   || '',
+            coachEmail:  window._cronosCurrentUser?.email || '',
 
             // Partido
             mode:        currentMode,
@@ -1127,7 +1104,7 @@ function copyLiveUrl() {
 function shareLiveWhatsApp(url) {
     const date = new Date().toLocaleDateString('es-ES');
     const msg  = encodeURIComponent(
-        `⚽ *CHRONOS FÚTBOL — Partido en Vivo*\n` +
+        `⚽ *CRONOS FÚTBOL — Partido en Vivo*\n` +
         `${TEAM_NAMES.home} vs ${TEAM_NAMES.away} · ${date}\n\n` +
         `Sigue el partido en tiempo real:\n${url}\n\n` +
         `_(Necesitas estar registrado en la app para verlo)_`);
@@ -1142,8 +1119,8 @@ function shareLiveEmail(url) {
         `Hola,\n\n` +
         `Puedes seguir el partido en tiempo real desde este enlace:\n${url}\n\n` +
         `${TEAM_NAMES.home} vs ${TEAM_NAMES.away} · ${date}\n\n` +
-        `Necesitas estar registrado y autorizado en Chronos Fútbol para acceder.\n\n` +
-        `Chronos Fútbol — Coach Assistant`);
+        `Necesitas estar registrado y autorizado en Cronos Fútbol para acceder.\n\n` +
+        `Cronos Fútbol — Coach Assistant`);
     const to = emailConfig?.directorEmail || '';
     window.open(`mailto:${to}?subject=${subject}&body=${body}`);
 }
@@ -1168,8 +1145,8 @@ function liveSyncOnAction() {
 
 // ── Referencia al doc de settings del usuario actual ─────────────
 function _userRef() {
-    const fa  = window._chronos_auth;
-    const uid = window._chronosCurrentUser?.uid;
+    const fa  = window._cronos_auth;
+    const uid = window._cronosCurrentUser?.uid;
     if (!fa || !uid) return null;
     return fa.doc(fa.db, 'users', uid);
 }
@@ -1177,8 +1154,8 @@ function _userRef() {
 // ── Guardar un campo en el subdocumento 'data' del usuario ────────
 async function cloudSet(key, value) {
     try {
-        const fa  = window._chronos_auth;
-        const uid = window._chronosCurrentUser?.uid;
+        const fa  = window._cronos_auth;
+        const uid = window._cronosCurrentUser?.uid;
         if (!fa || !uid) {
             // Sin sesión: fallback a localStorage
             localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
@@ -1187,7 +1164,7 @@ async function cloudSet(key, value) {
         const { setDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         await setDoc(
-            doc(fa.db, 'users', uid, 'chronos_data', 'main'),
+            doc(fa.db, 'users', uid, 'cronos_data', 'main'),
             { [key]: typeof value === 'string' ? value : JSON.stringify(value) },
             { merge: true }
         );
@@ -1206,12 +1183,12 @@ async function cloudGet(key, defaultValue) {
     if (cached !== null) return cached;
     // Si no hay caché, intentar Firestore
     try {
-        const fa  = window._chronos_auth;
-        const uid = window._chronosCurrentUser?.uid;
+        const fa  = window._cronos_auth;
+        const uid = window._cronosCurrentUser?.uid;
         if (!fa || !uid) return defaultValue ?? null;
         const { getDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const snap = await getDoc(doc(fa.db, 'users', uid, 'chronos_data', 'main'));
+        const snap = await getDoc(doc(fa.db, 'users', uid, 'cronos_data', 'main'));
         if (snap.exists()) {
             const val = snap.data()[key];
             if (val !== undefined) {
@@ -1229,16 +1206,16 @@ async function cloudGet(key, defaultValue) {
 async function syncFromCloud() {
     // Lectura única — usada solo en la migración inicial
     try {
-        const fa  = window._chronos_auth;
-        const uid = window._chronosCurrentUser?.uid;
+        const fa  = window._cronos_auth;
+        const uid = window._cronosCurrentUser?.uid;
         if (!fa || !uid) return;
         const { getDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const snap = await getDoc(doc(fa.db, 'users', uid, 'chronos_data', 'main'));
+        const snap = await getDoc(doc(fa.db, 'users', uid, 'cronos_data', 'main'));
         if (snap.exists()) {
             const data = snap.data();
             Object.entries(data).forEach(([k, v]) => {
-                if (k.startsWith('chronos_')) localStorage.setItem(k, v);
+                if (k.startsWith('cronos_')) localStorage.setItem(k, v);
             });
             console.log('☁️ Datos sincronizados desde Firestore');
         }
@@ -1252,8 +1229,8 @@ async function syncFromCloud() {
 let _realtimeUnsubscribe = null;
 
 async function startRealtimeSync() {
-    const fa  = window._chronos_auth;
-    const uid = window._chronosCurrentUser?.uid;
+    const fa  = window._cronos_auth;
+    const uid = window._cronosCurrentUser?.uid;
     if (!fa || !uid) return;
 
     // Cancelar listener anterior si existía
@@ -1263,7 +1240,7 @@ async function startRealtimeSync() {
         const { onSnapshot, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-        const docRef = doc(fa.db, 'users', uid, 'chronos_data', 'main');
+        const docRef = doc(fa.db, 'users', uid, 'cronos_data', 'main');
 
         _realtimeUnsubscribe = onSnapshot(docRef, (snap) => {
             if (!snap.exists()) return;
@@ -1273,7 +1250,7 @@ async function startRealtimeSync() {
             let   changed  = false;
 
             Object.entries(data).forEach(([k, v]) => {
-                if (!k.startsWith('chronos_')) return;
+                if (!k.startsWith('cronos_')) return;
                 const current = localStorage.getItem(k);
                 if (current !== v) {
                     localStorage.setItem(k, v);
@@ -1318,11 +1295,11 @@ function stopRealtimeSync() {
 // ── Migración: subir datos locales existentes a Firestore ─────────
 async function migrateLocalToCloud() {
     const keys = [
-        'chronos_master_roster', 'chronos_teams',
-        'chronos_staff', 'chronos_email_config', 'chronos_tutorial_done'
+        'cronos_master_roster', 'cronos_teams',
+        'cronos_staff', 'cronos_email_config', 'cronos_tutorial_done'
     ];
-    const fa  = window._chronos_auth;
-    const uid = window._chronosCurrentUser?.uid;
+    const fa  = window._cronos_auth;
+    const uid = window._cronosCurrentUser?.uid;
     if (!fa || !uid) return;
 
     try {
@@ -1330,8 +1307,8 @@ async function migrateLocalToCloud() {
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
         // Comprobar si ya hay datos en Firestore
-        const snap = await getDoc(doc(fa.db, 'users', uid, 'chronos_data', 'main'));
-        if (snap.exists() && snap.data().chronos_master_roster) {
+        const snap = await getDoc(doc(fa.db, 'users', uid, 'cronos_data', 'main'));
+        if (snap.exists() && snap.data().cronos_master_roster) {
             // Ya tiene datos en la nube — sincronizar hacia local
             await syncFromCloud();
             return;
@@ -1347,7 +1324,7 @@ async function migrateLocalToCloud() {
 
         if (hasData) {
             await setDoc(
-                doc(fa.db, 'users', uid, 'chronos_data', 'main'),
+                doc(fa.db, 'users', uid, 'cronos_data', 'main'),
                 payload,
                 { merge: true }
             );
@@ -1360,7 +1337,7 @@ async function migrateLocalToCloud() {
 }
 
 function loadEmailConfig() {
-    const saved = localStorage.getItem('chronos_email_config');
+    const saved = localStorage.getItem('cronos_email_config');
     if (saved) {
         try { emailConfig = { ...emailConfig, ...JSON.parse(saved) }; } catch(e) {}
     }
@@ -1453,7 +1430,7 @@ function saveEmailSettings() {
     emailConfig.whatsappNumber2 = (document.getElementById('cfg-whatsapp2')?.value || '').replace(/[^0-9]/g,'');
     emailConfig.directorEmail   = (document.getElementById('cfg-director-email')?.value  || '').trim();
     emailConfig.directorEmail2  = (document.getElementById('cfg-director-email2')?.value || '').trim();
-    cloudSet('chronos_email_config', JSON.stringify(emailConfig));
+    cloudSet('cronos_email_config', JSON.stringify(emailConfig));
     const parts = [];
     if (emailConfig.whatsappNumber)  parts.push('📱 WA');
     if (emailConfig.whatsappNumber2) parts.push('📱 WA 2');
@@ -1466,7 +1443,7 @@ function testWhatsApp() {
     loadEmailConfig();
     const num = (document.getElementById('cfg-whatsapp')?.value || emailConfig.whatsappNumber || '').replace(/[^0-9]/g,'');
     if (!num) { alert('Introduce primero el número de WhatsApp.'); return; }
-    const msg = encodeURIComponent('✅ Prueba Chronos Fútbol\nSi recibes esto, el envío automático está listo. ⚽');
+    const msg = encodeURIComponent('✅ Prueba Cronos Fútbol\nSi recibes esto, el envío automático está listo. ⚽');
     window.open('https://wa.me/' + num + '?text=' + msg, '_blank');
 }
 
@@ -1527,7 +1504,7 @@ function registerServiceWorker() {
 
     navigator.serviceWorker.register('./sw.js', { scope: './' })
         .then(reg => {
-            console.log('Chronos PWA Ready');
+            console.log('Cronos PWA Ready');
 
             // Comprobar si hay actualización disponible cada vez que se abre la app
             reg.update().catch(() => {});
@@ -1537,9 +1514,9 @@ function registerServiceWorker() {
                 newWorker.onstatechange = () => {
                     if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                         // Nueva versión lista → guardar sesión y recargar automáticamente
-                        sessionStorage.setItem('chronos_post_update', '1');
+                        sessionStorage.setItem('cronos_post_update', '1');
                         const toast = document.createElement('div');
-                        toast.innerHTML = '🔄 Actualizando Chronos Fútbol…';
+                        toast.innerHTML = '🔄 Actualizando Cronos Fútbol…';
                         toast.style.cssText =
                             'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
                             'background:#1a7a3e;color:#fff;padding:10px 24px;border-radius:8px;' +
@@ -1563,7 +1540,7 @@ function registerServiceWorker() {
 async function forceUpdate() {
     if (confirm('Esto forzará la descarga de la última versión. ¿Continuar?')) {
         // Marcar que venimos de una actualización para restaurar la sesión al volver
-        sessionStorage.setItem('chronos_post_update', '1');
+        sessionStorage.setItem('cronos_post_update', '1');
 
         if ('serviceWorker' in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
@@ -1689,13 +1666,6 @@ function openSetupModal() {
             <!-- BOTONES -->
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; gap:0.6rem; align-items:center;">
-                    <button onclick="cerrarSesion()"
-                        title="Cerrar sesión y salir de la aplicación"
-                        style="background:rgba(220,53,69,0.15); border:1px solid rgba(220,53,69,0.6);
-                               color:#dc3545; font-size:0.82rem; padding:0.45rem 0.9rem;
-                               border-radius:8px; cursor:pointer; font-weight:700;">
-                        🚪 SALIR
-                    </button>
                     <button class="btn" onclick="openRosterManager()"
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
                         GESTIONAR PLANTILLA
@@ -1715,31 +1685,23 @@ function openSetupModal() {
                         style="background:rgba(240,136,62,0.12);color:var(--secondary);font-size:0.82rem;border:1px solid rgba(240,136,62,0.4);">
                         ❓ TUTORIAL
                     </button>
-                    ${['admin','superadmin'].includes(window._chronosCurrentUser?.role) ? `
+                    ${['admin','superadmin'].includes(window._cronosCurrentUser?.role) ? `
                     <button onclick="openAdminPanel()"
                         style="background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.5);
                                color:#ffa500; font-size:0.82rem; padding:0.45rem 0.9rem;
                                border-radius:8px; cursor:pointer; font-weight:700;">
                         ⚙ ADMIN
                     </button>` : ''}
-                    ${window._chronosCurrentUser?.role === 'club_admin' ? `
-                    <button onclick="openClubAdminPanel()"
-                        style="background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);color:var(--primary);font-size:0.82rem;padding:0.45rem 0.9rem;border-radius:8px;cursor:pointer;font-weight:700;">
-                        🏟️ MI CLUB
-                    </button>` : ''}
-                    ${window._chronosCurrentUser?.role === 'club_admin' ? `
-                    <button onclick="openClubAdminPanel()"
-                        style="background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);color:var(--primary);font-size:0.82rem;padding:0.45rem 0.9rem;border-radius:8px;cursor:pointer;font-weight:700;">
-                        🏟️ MI CLUB
-                    </button>` : ''}
-                    ${window._chronosCurrentUser?.role === 'club_admin' ? `
+                    
+                    
+                    ${window._cronosCurrentUser?.role === 'club_admin' ? `
                     <button onclick="openClubAdminPanel()"
                         style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
                                color:var(--primary); font-size:0.82rem; padding:0.45rem 0.9rem;
                                border-radius:8px; cursor:pointer; font-weight:700;">
                         🏟️ MI CLUB
                     </button>` : ''}
-                    ${LIVE_ROLES.includes(window._chronosCurrentUser?.role) ? `
+                    ${LIVE_ROLES.includes(window._cronosCurrentUser?.role) ? `
                     <button onclick="openLiveView()"
                         style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.5);
                                color:#ff5858; font-size:0.82rem; padding:0.45rem 0.9rem;
@@ -1797,7 +1759,7 @@ function confirmSetup() {
 // ══════════════════════════════════════════════════════════════════
 
 function loadStaffConfig() {
-    const saved = localStorage.getItem('chronos_staff');
+    const saved = localStorage.getItem('cronos_staff');
     if (saved) {
         try { staffConfig = { ...staffConfig, ...JSON.parse(saved) }; }
         catch(e) {}
@@ -1809,7 +1771,7 @@ function saveStaffConfig() {
     staffConfig.coach2        = (document.getElementById('staff-coach2')?.value       || '').trim();
     staffConfig.delegate      = (document.getElementById('staff-delegate')?.value     || '').trim();
     staffConfig.fieldDelegate = (document.getElementById('staff-field-delegate')?.value || '').trim();
-    cloudSet('chronos_staff', JSON.stringify(staffConfig));
+    cloudSet('cronos_staff', JSON.stringify(staffConfig));
 }
 
 function renderStaffInBench() {
@@ -1878,7 +1840,7 @@ function renderStaffInBench() {
 }
 
 function openRosterManager() {
-    const roster = JSON.parse(localStorage.getItem('chronos_master_roster') || '{"f7":[], "f11":[]}');
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const mode = document.getElementById('setup-mode').value;
     const limit = mode === 'f7' ? 18 : 25;
 
@@ -2010,7 +1972,7 @@ function triggerRosterPhoto() {
 // ── OCR con Tesseract.js (100% local, sin API, sin coste) ───────────
 // Carga la librería solo cuando se necesita (lazy load)
 // ══════════════════════════════════════════════════════════════════
-//  CHRONOS FÚTBOL — Importación de plantilla con IA (Gemini Vision)
+//  CRONOS FÚTBOL — Importación de plantilla con IA (Gemini Vision)
 //  Motor: Google Gemini 1.5 Flash (gratis hasta 1500 imgs/día)
 //  Fallback: Tesseract.js (100% local, sin límite)
 // ══════════════════════════════════════════════════════════════════
@@ -2234,7 +2196,7 @@ function parsePlayersFromText(text) {
 // ── Contador de uso en Firestore (informativo) ───────────────────────
 async function updateUsageCounter(engine) {
     try {
-        const db2 = window._chronos_db;
+        const db2 = window._cronos_db;
         if (!db2) return;
         const { doc: _doc, getDoc: _getDoc, setDoc: _setDoc } =
             await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -2371,7 +2333,7 @@ function confirmRosterImport(mode) {
 
     // Cargar en la plantilla existente: rellenar desde el principio
     const limit = mode === 'f7' ? 18 : 25;
-    const roster = JSON.parse(localStorage.getItem('chronos_master_roster') || '{"f7":[], "f11":[]}');
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
 
     // Asegurar que hay suficientes filas
     while (roster[mode].length < limit) {
@@ -2392,7 +2354,7 @@ function confirmRosterImport(mode) {
 
     showSpinner('Importando jugadores…');
     setTimeout(() => {
-        cloudSet('chronos_master_roster', JSON.stringify(roster));
+        cloudSet('cronos_master_roster', JSON.stringify(roster));
         hideSpinner();
         showToast('✅ ' + imported.length + ' jugadores importados correctamente');
         openRosterManager();
@@ -2413,9 +2375,9 @@ function saveMasterRoster(mode) {
             if (!alias && name)    alias = name.split(' ')[0];
             return { number, name, surname, alias };
         });
-        const roster = JSON.parse(localStorage.getItem('chronos_master_roster') || '{"f7":[], "f11":[]}');
+        const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
         roster[mode] = playersData;
-        cloudSet('chronos_master_roster', JSON.stringify(roster));
+        cloudSet('cronos_master_roster', JSON.stringify(roster));
         saveStaffConfig();
         hideSpinner();
         // Toast en lugar de alert
@@ -2426,7 +2388,7 @@ function saveMasterRoster(mode) {
 
 function openConvocationModal() {
     document.body.classList.add('setup-mode');
-    const roster = JSON.parse(localStorage.getItem('chronos_master_roster') || '{"f7":[], "f11":[]}');
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const minLimit = currentMode === 'f7' ? 6 : 7;
     const maxLimit = currentMode === 'f7' ? 14 : 18;
@@ -2478,10 +2440,16 @@ function openConvocationModal() {
             </div>` : ''}
 
             <div style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px solid var(--glass-border);
-                        display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                        display:flex; justify-content:space-between; align-items:center; flex-shrink:0;
+                        flex-wrap:wrap; gap:0.5rem;">
                 <span id="conv-count" style="font-size:1rem; font-weight:bold; color:var(--primary);">0</span>
-                <div style="display:flex; gap:0.8rem;">
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
                     <button class="btn" onclick="openSetupModal()">ATRÁS</button>
+                    <button class="btn" onclick="openConvocationMessage()"
+                        style="background:rgba(63,185,80,0.12);border-color:rgba(63,185,80,0.4);
+                               color:#3fb950;font-weight:700;">
+                        📲 ENVIAR CONVOCATORIA
+                    </button>
                     <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>
                         INICIAR PARTIDO
                     </button>
@@ -2577,7 +2545,7 @@ function openConvocationModal() {
 }
 
 function startMatchWithConvocation() {
-    const roster = JSON.parse(localStorage.getItem('chronos_master_roster') || '{"f7":[], "f11":[]}');
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');
     const selectedPlayers = Array.from(rows).map(r => myPlayers[r.dataset.index]);
@@ -2668,7 +2636,7 @@ function injectBenchScrollButtons(containerId) {
 function populateSavedTeams(teamKey) {
     const dropdown = document.getElementById(`saved-teams-${teamKey}`);
     if (!dropdown) return;
-    const teams = JSON.parse(localStorage.getItem('chronos_teams') || '[]');
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     dropdown.innerHTML = '<option value="">-- Cargar --</option>';
     teams.forEach((team, index) => {
         const opt = document.createElement('option');
@@ -2682,7 +2650,7 @@ function loadTeamFromDropdown(teamKey) {
     const dropdown = document.getElementById(`saved-teams-${teamKey}`);
     const index = dropdown.value;
     if (index === "") return;
-    const teams = JSON.parse(localStorage.getItem('chronos_teams') || '[]');
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const team = teams[index];
     if (team) {
         document.getElementById(`setup-${teamKey}-name`).value = team.name;
@@ -2741,7 +2709,7 @@ function saveCurrentTeam() {
         mode: currentMode,                // 'f7' o 'f11'
         formation: activeFormationKey     // sistema de juego activo
     };
-    const teams = JSON.parse(localStorage.getItem('chronos_teams') || '[]');
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const existingIndex = teams.findIndex(t => t.name === teamName);
     if (existingIndex >= 0) {
         if (confirm(`¿Sobrescribir equipo "${teamName}"?`)) teams[existingIndex] = newTeam;
@@ -2752,7 +2720,7 @@ function saveCurrentTeam() {
     }
     showSpinner('Guardando equipo…');
     setTimeout(() => {
-        cloudSet('chronos_teams', JSON.stringify(teams));
+        cloudSet('cronos_teams', JSON.stringify(teams));
         const titulares = currentPlayers.filter(p => p.status === 'field').length;
         const suplentes = currentPlayers.filter(p => p.status === 'bench').length;
         const formationDisplay = activeFormationKey ? '1-' + activeFormationKey : 'sin definir';
@@ -3828,7 +3796,7 @@ async function exportData() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `chronos_${homeName}_vs_${awayName}_${Date.now()}.csv`;
+    link.download = `cronos_${homeName}_vs_${awayName}_${Date.now()}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -3849,7 +3817,7 @@ async function exportData() {
                goals + card + injured + (evts ? ' [' + evts + ']' : '');
     });
 
-    const waMsg = '📊 *INFORME — Chronos Fútbol*\n' +
+    const waMsg = '📊 *INFORME — Cronos Fútbol*\n' +
         '━━━━━━━━━━━━━━━━━━\n' +
         '📅 ' + date + '  |  ' + mode + '\n' +
         '⚽ *' + homeName + ' ' + scoreHome + ' - ' + scoreAway + ' ' + awayName + '*\n' +
@@ -3857,7 +3825,7 @@ async function exportData() {
         '━━━━━━━━━━━━━━━━━━\n' +
         waLines.join('\n') + '\n' +
         '━━━━━━━━━━━━━━━━━━\n' +
-        '_Chronos Fútbol_';
+        '_Cronos Fútbol_';
 
     if (waNumbers.length > 0) {
         const encoded = encodeURIComponent(waMsg);
@@ -3889,7 +3857,20 @@ async function exportData() {
 
 
 // ══════════════════════════════════════════════════════════════════
-//  CHRONOS FÚTBOL — Panel SuperAdmin v3
+//  CRONOS FÚTBOL — Panel SuperAdmin v3
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  ✏️  DATOS DEL SUPERADMINISTRADOR — Rellenar antes de publicar
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const SA_CONFIG = {
+    nombre:      'TU_NOMBRE_O_NOMBRE_COMERCIAL',   // ej: "José · Cronos Fútbol"
+    bizum:       'TU_NUMERO_BIZUM',                // ej: "612 345 678"
+    iban:        'TU_IBAN',                        // ej: "ES12 3456 7890 1234 5678 9012"
+    whatsapp:    'TU_NUMERO_WHATSAPP',             // ej: "34612345678" (sin + ni espacios)
+    email:       'TU_EMAIL_COMERCIAL',             // ej: "cronos@tudominio.com"
+    appUrl:      'https://jarg7435.github.io/cronos-futbol/',
+};
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Tarjetas expandibles · Notificaciones · Usuarios individuales
 // ══════════════════════════════════════════════════════════════════
 
@@ -3900,7 +3881,7 @@ const ROLE_META   = {
     club_admin:  { label:'🏟️ Admin Club',   color:'#58a6ff' },
     director:    { label:'📋 Director Dep.', color:'#f0883e' },
     coordinator: { label:'🎯 Coordinador',  color:'#d2a8ff' },
-    entrenador:  { label:'⚽ Entrenador',   color:'#3fb950' },
+    user:        { label:'⚽ Entrenador',   color:'#3fb950' },
     individual:  { label:'👤 Individual',   color:'#79c0ff' },
 };
 const PLAN_META   = {
@@ -4015,7 +3996,7 @@ const SA_CSS = `
 
 // ── Entrada al panel ─────────────────────────────────────────────────
 function openAdminPanel() {
-    const role = window._chronosCurrentUser?.role;
+    const role = window._cronosCurrentUser?.role;
     if (['superadmin','admin'].includes(role)) openSuperAdminPanel();
     else if (role === 'club_admin')            openClubAdminPanel();
     else showToast('⛔ Sin permisos de administración', 3000);
@@ -4040,7 +4021,7 @@ async function openSuperAdminPanel() {
     <div class="modal-content sa-modal">
       <div class="sa-topbar">
         <div>
-          <div style="font-size:1.2rem;font-weight:700;">⚙️ SuperAdmin · Chronos Fútbol</div>
+          <div style="font-size:1.2rem;font-weight:700;">⚙️ SuperAdmin · Cronos Fútbol</div>
           <div id="sa-subtitle" style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">
             Cargando…</div>
         </div>
@@ -4055,12 +4036,11 @@ async function openSuperAdminPanel() {
         </div>
       </div>
       <div class="sa-tabs">
-        <button class="sa-tab" onclick="saTab('overview')">📊 Resumen</button>
+        <button class="sa-tab active" onclick="saTab('overview')">📊 Resumen</button>
         <button class="sa-tab" onclick="saTab('clubs')">🏟️ Clubes</button>
         <button class="sa-tab" onclick="saTab('individual')">👤 Individuales</button>
         <button class="sa-tab" onclick="saTab('payments')">💳 Pagos</button>
         <button class="sa-tab" onclick="saTab('requests')">📋 Solicitudes</button>
-        <button class="sa-tab" onclick="saTab('platform')">⚙️ Plataforma</button>
         <button class="sa-tab" onclick="saTab('newclub')">➕ Nuevo Club</button>
       </div>
       <div class="sa-body" id="sa-body">
@@ -4070,13 +4050,12 @@ async function openSuperAdminPanel() {
 
     window.saTab = (tab) => {
         document.querySelectorAll('.sa-tab').forEach(b => b.classList.remove('active'));
-        const tabs = ['overview','clubs','individual','payments','requests','platform','newclub'];
-        const idx = tabs.indexOf(tab);
-        if(idx !== -1) document.querySelectorAll('.sa-tab')[idx].classList.add('active');
+        const idx = ['overview','clubs','individual','payments','requests','newclub'].indexOf(tab);
+        document.querySelectorAll('.sa-tab')[idx]?.classList.add('active');
         document.getElementById('sa-body').innerHTML =
             '<p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando…</p>';
         ({overview:saOverview, clubs:saClubs, individual:saIndividual,
-          payments:saPayments, requests:saRequests, platform:saPlatform, newclub:saNewClub})[tab]?.();
+          payments:saPayments, requests:saRequests, newclub:saNewClub})[tab]?.();
     };
     saOverview();
 }
@@ -4084,7 +4063,7 @@ window.openSuperAdminPanel = openSuperAdminPanel;
 
 // ── Helpers Firestore ────────────────────────────────────────────────
 async function saFS() {
-    const fa = window._chronos_auth;
+    const fa = window._cronos_auth;
     const m  = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     return { fa, db: fa.db, ...m };
 }
@@ -4143,7 +4122,7 @@ async function saOverview() {
     const totalClubs   = clubs.length;
     const activeClubs  = clubs.filter(c => c.status !== 'blocked').length;
     const totalUsers   = users.filter(u => !['superadmin','admin'].includes(u.role)).length;
-    const indivUsers   = users.filter(u => u.isIndividual || (u.role === 'user' && !u.clubId)).length;
+    const indivUsers   = users.filter(u => u.role === 'individual').length;
     const pendReqs     = reqs.filter(r => r.status === 'pending').length;
 
     // Notifications
@@ -4244,7 +4223,7 @@ async function saClubs() {
         const clubUsers = users.filter(u => u.clubId === cl._id);
         const dirs   = clubUsers.filter(u => u.role === 'director');
         const coords = clubUsers.filter(u => u.role === 'coordinator');
-        const trainers = clubUsers.filter(u => u.role === 'entrenador');
+        const trainers = clubUsers.filter(u => u.role === 'user');
         const st     = STATUS_META[cl.status||'active'];
         const pl     = PLAN_META[cl.plan||'free'];
         const maxU   = cl.slots?.users ?? -1;
@@ -4490,7 +4469,7 @@ async function saOpenEditor(clubId) {
 //  TAB: USUARIOS INDIVIDUALES
 // ════════════════════════════════════════════════════════════════════
 async function saIndividual() {
-    const users = (await saGetAll('users')).filter(u => u.isIndividual || (u.role === 'user' && !u.clubId));
+    const users = (await saGetAll('users')).filter(u => u.role === 'individual' || u.isIndividual);
     const body  = document.getElementById('sa-body');
 
     const planInfo = `
@@ -4639,7 +4618,7 @@ async function saOpenIndividualEditor(uid) {
         const id = existingUid || ('ind_'+Date.now().toString(36));
         await saWrite('users', id, {
             email, displayName: document.getElementById('iu-name').value.trim(),
-            role:        'entrenador',
+            role:        'individual',
             isIndividual: true,
             isAuthorized: true,
             plan:        document.getElementById('iu-plan').value,
@@ -4651,117 +4630,6 @@ async function saOpenIndividualEditor(uid) {
         });
         msg.style.color='#3fb950'; msg.textContent='✅ Guardado';
         setTimeout(() => saTab('individual'), 1000);
-    };
-}
-
-// ════════════════════════════════════════════════════════════════════
-//  TAB: TODOS LOS USUARIOS (Gestión Global)
-// ════════════════════════════════════════════════════════════════════
-
-
-async function saOpenGlobalUserEditor(uid) {
-    const [u, clubs] = await Promise.all([saGet('users', uid), saGetAll('clubs')]);
-    if (!u) return;
-    
-    const body = document.getElementById('sa-body');
-    body.innerHTML = `
-        <div style="max-width:520px;">
-          <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.2rem;">
-            <button onclick="saTab('users')" class="sa-btn"
-                style="color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
-                ← Volver</button>
-            <h3 style="margin:0;font-size:1rem;">✏️ Editar Perfil: ${u.email || uid}</h3>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:1.2rem;background:var(--glass);padding:1.2rem;border-radius:12px;border:1px solid var(--glass-border);">
-            
-            <div class="sa-g2">
-                <div>
-                    <label class="sa-label">Email</label>
-                    <input class="sa-input" id="gu-email" value="${u.email || ''}" disabled>
-                    <small style="color:var(--text-muted);font-size:0.65rem;">El email no se puede cambiar aquí.</small>
-                </div>
-                <div>
-                    <label class="sa-label">Nombre</label>
-                    <input class="sa-input" id="gu-name" value="${u.displayName || ''}">
-                </div>
-            </div>
-
-            <div class="sa-g2">
-                <div>
-                    <label class="sa-label">Rol del Usuario</label>
-                    <select class="sa-input" id="gu-role">
-                        ${Object.entries(ROLE_META).map(([k,v]) => 
-                            `<option value="${k}" ${u.role===k?'selected':''}>${v.label}</option>`
-                        ).join('')}
-                    </select>
-                </div>
-                <div>
-                    <label class="sa-label">Asignar Club</label>
-                    <select class="sa-input" id="gu-club">
-                        <option value="">-- Sin Club (Independiente / Test) --</option>
-                        ${clubs.map(c => 
-                            `<option value="${c._id}" ${u.clubId===c._id?'selected':''}>${c.name}</option>`
-                        ).join('')}
-                    </select>
-                </div>
-            </div>
-
-            <div class="sa-g2">
-                <div>
-                    <label class="sa-label">Estado</label>
-                    <select class="sa-input" id="gu-status">
-                        ${Object.entries(STATUS_META).map(([k,v]) => 
-                            `<option value="${k}" ${(u.status||'active')===k?'selected':''}>${v.label}</option>`
-                        ).join('')}
-                    </select>
-                </div>
-                <div style="display:flex;align-items:flex-end;">
-                  <div class="sa-flag ${u.isAuthorized?'on':'off'}" id="gu-auth-flag" onclick="saFlipAuth()" style="width:100%;">
-                    <span id="gu-auth-icon">${u.isAuthorized?'✅':'⬜'}</span>
-                    <strong>Cuenta Autorizada</strong>
-                  </div>
-                </div>
-            </div>
-
-            <div style="display:flex;gap:0.6rem;margin-top:0.5rem;">
-                <button onclick="saTab('users')" class="sa-btn"
-                    style="color:var(--text-muted);border-color:var(--glass-border);background:var(--glass);">
-                    Cancelar</button>
-                <button onclick="saSaveGlobalUser('${uid}')" class="sa-btn"
-                    style="flex:1;padding:0.65rem;color:#3fb950;border-color:rgba(63,185,80,0.4);
-                           background:rgba(63,185,80,0.1);font-weight:700;font-size:0.9rem;">
-                    💾 Guardar Cambios</button>
-            </div>
-            <div id="gu-msg" style="font-size:0.8rem;text-align:center;min-height:1rem;"></div>
-          </div>
-        </div>`;
-
-    let currentAuth = !!u.isAuthorized;
-    window.saFlipAuth = () => {
-        currentAuth = !currentAuth;
-        const el = document.getElementById('gu-auth-flag');
-        el.classList.toggle('on', currentAuth);
-        el.classList.toggle('off', !currentAuth);
-        document.getElementById('gu-auth-icon').textContent = currentAuth ? '✅' : '⬜';
-    };
-
-    window.saSaveGlobalUser = async (id) => {
-        const msg = document.getElementById('gu-msg');
-        msg.style.color = 'var(--primary)'; msg.textContent = 'Guardando…';
-        try {
-            const data = {
-                displayName:  document.getElementById('gu-name').value.trim(),
-                role:         document.getElementById('gu-role').value,
-                clubId:       document.getElementById('gu-club').value || null,
-                status:       document.getElementById('gu-status').value,
-                isAuthorized: currentAuth
-            };
-            await saUpd('users', id, data);
-            msg.style.color = '#3fb950'; msg.textContent = '✅ Usuario actualizado correctamente';
-            setTimeout(() => saTab('users'), 1200);
-        } catch(e) {
-            msg.style.color = '#ff5858'; msg.textContent = '⚠️ ' + e.message;
-        }
     };
 }
 
@@ -4854,6 +4722,9 @@ function saPaymentCard(item, type) {
                 <span style="font-size:0.75rem;color:${statusColor};margin-left:0.4rem;">${statusText}</span>
             </div>
             <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                <button class="sa-btn" onclick="saSendPaymentEmail('${item._id}','${type}')"
+                    style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);font-weight:700;">
+                    📧 Enviar aviso</button>
                 <button class="sa-btn" onclick="saRegisterPayment('${item._id}','${type}')"
                     style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.08);font-weight:700;">
                     💳 Registrar pago</button>
@@ -5149,7 +5020,7 @@ async function saRequests() {
                 const cs = await getDoc(doc(db,'clubs',clubId));
                 if (cs.exists()) {
                     const ud = cs.data().usedSlots||{};
-                    const ur = (await getDoc(doc(db,'users',userId))).data()?.role||'entrenador';
+                    const ur = (await getDoc(doc(db,'users',userId))).data()?.role||'user';
                     const k  = ur==='director'?'directors':ur==='coordinator'?'coordinators':'users';
                     await updateDoc(doc(db,'clubs',clubId), { [`usedSlots.${k}`]: Math.max(0,(ud[k]||1)-1) });
                 }
@@ -5243,7 +5114,7 @@ function saNewClub() {
 //  PANEL ADMIN DE CLUB (club_admin)
 // ════════════════════════════════════════════════════════════════════
 async function openClubAdminPanel() {
-    const me = window._chronosCurrentUser;
+    const me = window._cronosCurrentUser;
     if (!me || me.role !== 'club_admin') { showToast('⛔ Sin permisos', 3000); return; }
     const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = await saFS();
     const clubId = me.clubId;
@@ -5286,7 +5157,7 @@ async function openClubAdminPanel() {
       <div class="sa-body">
         <!-- Slots resumen -->
         <div class="sa-stats" style="margin-bottom:1.2rem;">
-            ${['director','coordinator','entrenador'].map(role => {
+            ${['director','coordinator','user'].map(role => {
                 const si = slotOf(role);
                 const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':'Entrenadores';
                 return `<div class="sa-stat">
@@ -5309,7 +5180,7 @@ async function openClubAdminPanel() {
                     <input class="sa-input" id="nu-name" placeholder="Nombre completo"></div>
                 <div><label class="sa-label">Rol</label>
                     <select class="sa-input" id="nu-role">
-                        <option value="entrenador">⚽ Entrenador</option>
+                        <option value="user">⚽ Entrenador</option>
                         ${features.live_view?'<option value="coordinator">🎯 Coordinador</option>':''}
                         ${features.live_view?'<option value="director">📋 Director Dep.</option>':''}
                     </select></div>
@@ -5322,11 +5193,11 @@ async function openClubAdminPanel() {
         </div>
 
         <!-- Lista usuarios por grupo -->
-        ${['director','coordinator','entrenador'].map(role => {
+        ${['director','coordinator','user'].map(role => {
             const roleUsers = users.filter(u => u.role===role);
             if (!roleUsers.length) return '';
-            const labels = {director:'📋 DIRECTORES DEPORTIVOS', coordinator:'🎯 COORDINADORES', entrenador:'⚽ ENTRENADORES'};
-            const cols   = {director:'#f0883e', coordinator:'#d2a8ff', entrenador:'#3fb950'};
+            const labels = {director:'📋 DIRECTORES DEPORTIVOS', coordinator:'🎯 COORDINADORES', user:'⚽ ENTRENADORES'};
+            const cols   = {director:'#f0883e', coordinator:'#d2a8ff', user:'#3fb950'};
             return `<div style="margin-bottom:1rem;">
                 <div style="font-size:0.76rem;font-weight:700;color:${cols[role]};margin-bottom:0.4rem;">
                     ${labels[role]} (${roleUsers.length})</div>
@@ -5395,7 +5266,7 @@ async function checkClubAccess(userData) {
         if (!cl) return true;
         if (cl.status === 'blocked') {
             const { signOut } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
-            await signOut(window._chronos_auth?.auth);
+            await signOut(window._cronos_auth?.auth);
             showToast('🔒 Club suspendido. Contacta con el administrador.', 8000);
             return false;
         }
@@ -5408,76 +5279,504 @@ async function checkClubAccess(userData) {
 window.checkClubAccess = checkClubAccess;
 
 // ════════════════════════════════════════════════════════════════════
-//  TAB: PLATAFORMA — Configuración Global (Pagos, Nombre, etc.)
+//  ENVÍO DE AVISO DE PAGO — Email + WhatsApp
 // ════════════════════════════════════════════════════════════════════
-async function saPlatform() {
-    const fa = window._chronos_auth;
-    const body = document.getElementById('sa-body');
-    
-    // Cargar config actual
-    let config = { bizum: '', iban: '', commercialName: '', whatsapp: '' };
-    try {
-        const snap = await fa.getDoc(fa.doc(fa.db, 'config', 'platform'));
-        if (snap.exists()) config = snap.data();
-    } catch(e) { console.error('Error cargando config:', e); }
 
-    body.innerHTML = `
-    <div style="max-width:600px;margin:0 auto;padding:1rem;">
-        <h3 style="margin-bottom:1.5rem;color:var(--primary);display:flex;align-items:center;gap:0.5rem;">
-            ⚙️ Configuración de la Plataforma
-        </h3>
-        
-        <div class="sa-card" style="padding:1.5rem;background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);border-radius:12px;">
-            <div class="sa-g2">
-                <div>
-                    <label class="sa-label">Número Bizum (Móvil)</label>
-                    <input class="sa-input" id="cfg-bizum" placeholder="600000000" value="${config.bizum || ''}">
-                </div>
-                <div>
-                    <label class="sa-label">WhatsApp (para justificantes)</label>
-                    <input class="sa-input" id="cfg-whatsapp" placeholder="34600000000" value="${config.whatsapp || ''}">
-                </div>
+async function saSendPaymentEmail(id, type) {
+    const item = await saGet(type === 'club' ? 'clubs' : 'users', id);
+    if (!item) return;
+
+    const name      = item.name || item.email || id;
+    const adminEmail= item.adminEmail || item.email || '';
+    const plan      = PLAN_META[item.plan || 'free'];
+    const price     = item.price ? item.price + '€/mes' : 'a convenir';
+    const expires   = item.expiresAt
+        ? new Date(item.expiresAt).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' })
+        : 'sin límite';
+
+    // ── Contenido del email ──────────────────────────────────────
+    const subject = encodeURIComponent(
+        `Cronos Fútbol — Aviso de renovación · ${name}`
+    );
+
+    const body = encodeURIComponent(
+`Hola,
+
+Te contacto en relación a tu plan de Cronos Fútbol para el club "${name}".
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DETALLES DEL PLAN
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Plan:         ${plan.label}
+  Importe:      ${price}
+  Vencimiento:  ${expires}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FORMAS DE PAGO
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+  📱 Bizum:          ${SA_CONFIG.bizum}
+  🏦 Transferencia:  ${SA_CONFIG.iban}
+
+Una vez realizado el pago, envíame el justificante:
+  • Respondiendo a este email, o
+  • Por WhatsApp al ${SA_CONFIG.whatsapp}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONDICIONES
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • El acceso se mantiene activo hasta la fecha de vencimiento.
+  • En caso de impago, el acceso quedará suspendido automáticamente.
+  • Al realizar el pago aceptas las condiciones del servicio.
+
+Puedes acceder a la app en: ${SA_CONFIG.appUrl}
+
+Gracias,
+${SA_CONFIG.nombre}
+${SA_CONFIG.email}
+`
+    );
+
+    // ── Contenido de WhatsApp ────────────────────────────────────
+    const waText = encodeURIComponent(
+`Hola 👋 te escribo desde Cronos Fútbol.
+
+📋 *Aviso de renovación — ${name}*
+• Plan: ${plan.label}
+• Importe: ${price}
+• Vencimiento: ${expires}
+
+💳 *Formas de pago:*
+📱 Bizum: ${SA_CONFIG.bizum}
+🏦 Transferencia: ${SA_CONFIG.iban}
+
+Tras el pago, envíame el justificante por aquí o a ${SA_CONFIG.email} ✅
+
+Gracias! ${SA_CONFIG.nombre}`
+    );
+
+    const waUrl    = `https://wa.me/${SA_CONFIG.whatsapp}?text=${waText}`;
+    const emailUrl = `mailto:${adminEmail}?subject=${subject}&body=${body}`;
+
+    // ── Modal de envío ───────────────────────────────────────────
+    const body_el = document.getElementById('sa-body');
+    body_el.innerHTML = `
+        <div style="max-width:520px;">
+            <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.2rem;">
+                <button onclick="saTab('payments')" class="sa-btn"
+                    style="color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
+                    ← Volver</button>
+                <h3 style="margin:0;font-size:1rem;">📧 Enviar aviso de pago — ${name}</h3>
             </div>
 
-            <div style="margin-top:1rem;">
-                <label class="sa-label">IBAN (Opcional - Transferencia)</label>
-                <input class="sa-input" id="cfg-iban" placeholder="ES00 0000..." value="${config.iban || ''}">
+            <!-- Preview del mensaje -->
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                        border-radius:10px;padding:1rem;margin-bottom:1.2rem;
+                        font-size:0.79rem;color:var(--text-muted);line-height:1.8;
+                        white-space:pre-wrap;font-family:monospace;max-height:260px;overflow-y:auto;">
+Plan: ${plan.label}
+Importe: ${price}
+Vencimiento: ${expires}
+Destinatario: ${adminEmail || '⚠️ Sin email de admin definido'}
+
+📱 Bizum: ${SA_CONFIG.bizum}
+🏦 IBAN: ${SA_CONFIG.iban}
+📞 WhatsApp: ${SA_CONFIG.whatsapp}
             </div>
 
-            <div style="margin-top:1rem;">
-                <label class="sa-label">Nombre Comercial (Aparecerá en correos)</label>
-                <input class="sa-input" id="cfg-name" placeholder="Ej: José · Chronos Fútbol" value="${config.commercialName || ''}">
-                <small style="color:var(--text-muted);font-size:0.7rem;margin-top:0.3rem;display:block;">
-                    Este nombre se usará como remitente y firma en las comunicaciones automáticas.
-                </small>
-            </div>
+            ${SA_CONFIG.bizum === 'TU_NUMERO_BIZUM' ? `
+            <div style="background:rgba(255,165,0,0.1);border:1px solid rgba(255,165,0,0.4);
+                        border-radius:8px;padding:0.7rem 1rem;margin-bottom:1rem;
+                        font-size:0.8rem;color:#ffa500;">
+                ⚠️ Recuerda rellenar tus datos en <strong>SA_CONFIG</strong> dentro de app.js
+                antes de enviar avisos reales.
+            </div>` : ''}
 
-            <div style="margin-top:2rem;display:flex;justify-content:flex-end;">
-                <button onclick="saSaveConfig()" class="sa-btn" 
-                    style="background:var(--primary);color:#000;font-weight:700;padding:0.8rem 2rem;">
-                    💾 Guardar Configuración
+            <!-- Botones de envío -->
+            <div style="display:flex;flex-direction:column;gap:0.7rem;">
+
+                ${adminEmail ? `
+                <a href="${emailUrl}" target="_blank" style="text-decoration:none;">
+                    <button class="sa-btn" style="width:100%;padding:0.7rem;
+                        color:#58a6ff;border-color:rgba(88,166,255,0.4);
+                        background:rgba(88,166,255,0.1);font-weight:700;font-size:0.9rem;
+                        cursor:pointer;">
+                        📧 Abrir en tu cliente de email
+                        <div style="font-size:0.72rem;font-weight:400;color:var(--text-muted);margin-top:0.2rem;">
+                            Para: ${adminEmail}
+                        </div>
+                    </button>
+                </a>` : `
+                <div style="background:rgba(255,88,88,0.08);border:1px solid rgba(255,88,88,0.3);
+                            border-radius:8px;padding:0.7rem 1rem;font-size:0.8rem;color:#ff5858;">
+                    ⚠️ Este club no tiene email de administrador definido.
+                    Edita el club y añade el email del admin.
+                </div>`}
+
+                <a href="${waUrl}" target="_blank" style="text-decoration:none;">
+                    <button class="sa-btn" style="width:100%;padding:0.7rem;
+                        color:#3fb950;border-color:rgba(63,185,80,0.4);
+                        background:rgba(63,185,80,0.1);font-weight:700;font-size:0.9rem;
+                        cursor:pointer;">
+                        📱 Enviar por WhatsApp
+                        <div style="font-size:0.72rem;font-weight:400;color:var(--text-muted);margin-top:0.2rem;">
+                            Se abre WhatsApp con el mensaje listo para enviar
+                        </div>
+                    </button>
+                </a>
+
+                <!-- Registrar aviso enviado -->
+                <button onclick="saMarkNoticeSent('${id}','${type}')" class="sa-btn"
+                    style="padding:0.6rem;color:var(--text-muted);border-color:var(--glass-border);
+                           background:var(--glass);font-size:0.83rem;cursor:pointer;">
+                    ✅ Marcar como "Aviso enviado"
                 </button>
+                <div style="font-size:0.74rem;color:var(--text-muted);text-align:center;">
+                    Pulsa esto después de enviar el email o WhatsApp para registrar la fecha del aviso.
+                </div>
             </div>
-            <div id="cfg-msg" style="margin-top:1rem;text-align:center;font-size:0.9rem;"></div>
-        </div>
-    </div>`;
+        </div>`;
 
-    window.saSaveConfig = async () => {
-        const msg = document.getElementById('cfg-msg');
-        msg.style.color = 'var(--primary)'; msg.textContent = 'Guardando…';
-        try {
-            const data = {
-                bizum: document.getElementById('cfg-bizum').value.trim(),
-                whatsapp: document.getElementById('cfg-whatsapp').value.trim(),
-                iban: document.getElementById('cfg-iban').value.trim(),
-                commercialName: document.getElementById('cfg-name').value.trim(),
-                updatedAt: fa.serverTimestamp()
-            };
-            await fa.setDoc(fa.doc(fa.db, 'config', 'platform'), data, { merge: true });
-            msg.style.color = '#3fb950'; msg.textContent = '✅ Configuración guardada correctamente';
-        } catch(e) {
-            msg.style.color = '#ff5858'; msg.textContent = '⚠️ Error: ' + e.message;
-        }
+    window.saMarkNoticeSent = async (id, type) => {
+        const col = type === 'club' ? 'clubs' : 'users';
+        await saWrite(col, id, {
+            lastNotice: {
+                date: new Date().toISOString(),
+                sentBy: window._cronosCurrentUser?.email || 'superadmin'
+            }
+        });
+        showToast('✅ Aviso registrado correctamente', 3000);
+        saTab('payments');
     };
 }
-window.saPlatform = saPlatform;
+window.saSendPaymentEmail = saSendPaymentEmail;
+
+// ══════════════════════════════════════════════════════════════════
+//  CRONOS FÚTBOL — Envío de convocatoria por WhatsApp / Email
+// ══════════════════════════════════════════════════════════════════
+
+function openConvocationMessage() {
+    // Get currently selected players from convocation screen
+    const rows = document.querySelectorAll('.conv-row.conv-selected');
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+    const mode   = document.getElementById('setup-mode')?.value || 'f11';
+    const myPlayers = roster[mode] || [];
+
+    const selectedPlayers = Array.from(rows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
+    const maxSlots = mode === 'f7' ? 14 : 18;
+
+    // Saved convocation config
+    const saved = JSON.parse(localStorage.getItem('cronos_conv_config') || '{}');
+
+    // Greeting based on current time
+    const hour = new Date().getHours();
+    const defaultGreeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(96vw,680px);max-height:94vh;
+             display:flex;flex-direction:column;overflow:hidden;">
+
+            <!-- Header -->
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                        margin-bottom:0.8rem;flex-shrink:0;">
+                <h2 style="margin:0;font-size:1.1rem;">📲 Enviar Convocatoria</h2>
+                <button onclick="openConvocationModal()"
+                    style="background:none;border:none;color:var(--text-muted);
+                           font-size:1.3rem;cursor:pointer;">✕</button>
+            </div>
+
+            <div style="overflow-y:auto;flex:1;padding-right:0.2rem;">
+
+            <!-- ── DATOS DEL PARTIDO ─────────────────────────── -->
+            <div style="background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.2);
+                        border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
+                <div style="font-size:0.78rem;font-weight:700;color:var(--primary);
+                            margin-bottom:0.7rem;letter-spacing:0.5px;">⚽ DATOS DEL PARTIDO</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;">
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Saludo inicial</label>
+                        <select id="cv-greeting" class="conv-input">
+                            <option value="Buenos días" ${(saved.greeting||defaultGreeting)==='Buenos días'?'selected':''}>Buenos días ☀️</option>
+                            <option value="Buenas tardes" ${(saved.greeting||defaultGreeting)==='Buenas tardes'?'selected':''}>Buenas tardes 🌤️</option>
+                            <option value="Buenas noches" ${(saved.greeting||defaultGreeting)==='Buenas noches'?'selected':''}>Buenas noches 🌙</option>
+                            <option value="Hola" ${(saved.greeting||defaultGreeting)==='Hola'?'selected':''}>Hola 👋</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Tipo de partido</label>
+                        <select id="cv-type" class="conv-input">
+                            <option value="amistoso" ${(saved.type||'')===  'amistoso'?'selected':''}>⚽ Amistoso</option>
+                            <option value="liga" ${(saved.type||'liga')==='liga'?'selected':''}>🏆 Liga</option>
+                            <option value="copa" ${(saved.type||'')==='copa'?'selected':''}>🏅 Copa</option>
+                            <option value="torneo" ${(saved.type||'')==='torneo'?'selected':''}>🎖️ Torneo</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Fecha del partido</label>
+                        <input id="cv-date" type="date" class="conv-input"
+                            value="${saved.date || new Date().toISOString().substring(0,10)}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Rival</label>
+                        <input id="cv-rival" type="text" class="conv-input"
+                            placeholder="Nombre del equipo rival"
+                            value="${saved.rival || ''}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Hora de presentación</label>
+                        <input id="cv-meettime" type="time" class="conv-input"
+                            value="${saved.meettime || ''}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Hora de inicio del partido</label>
+                        <input id="cv-kickoff" type="time" class="conv-input"
+                            value="${saved.kickoff || ''}">
+                    </div>
+                    <div style="grid-column:1/-1;">
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Campo / Lugar</label>
+                        <input id="cv-venue" type="text" class="conv-input"
+                            placeholder="Nombre del campo o dirección"
+                            value="${saved.venue || ''}">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── LISTA DE CONVOCADOS ──────────────────────── -->
+            <div style="background:rgba(63,185,80,0.05);border:1px solid rgba(63,185,80,0.2);
+                        border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
+                <div style="font-size:0.78rem;font-weight:700;color:#3fb950;
+                            margin-bottom:0.7rem;letter-spacing:0.5px;">
+                    👥 CONVOCADOS (${selectedPlayers.length} seleccionados)
+                </div>
+                ${selectedPlayers.length === 0 ? `
+                    <p style="color:var(--text-muted);font-size:0.82rem;margin:0;">
+                        ⚠️ No has seleccionado jugadores. Vuelve atrás y selecciónalos primero.
+                    </p>` : `
+                    <div id="cv-players-list" style="display:flex;flex-direction:column;gap:0.3rem;">
+                        ${selectedPlayers.map((p, i) => `
+                        <div style="display:flex;align-items:center;gap:0.5rem;">
+                            <span style="font-size:0.72rem;color:var(--primary);font-weight:700;
+                                         width:18px;text-align:right;">${i+1}.</span>
+                            <input type="text" class="conv-player-name conv-input"
+                                data-idx="${i}"
+                                value="${p.alias || p.name || 'Jugador ' + (i+1)}"
+                                style="flex:1;padding:0.3rem 0.5rem;font-size:0.82rem;">
+                        </div>`).join('')}
+                    </div>
+                    <p style="font-size:0.72rem;color:var(--text-muted);margin:0.5rem 0 0;">
+                        💡 Puedes editar los nombres antes de enviar
+                    </p>`}
+            </div>
+
+            <!-- ── MENSAJE ADICIONAL ────────────────────────── -->
+            <div style="background:rgba(240,136,62,0.05);border:1px solid rgba(240,136,62,0.2);
+                        border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
+                <div style="font-size:0.78rem;font-weight:700;color:var(--secondary);
+                            margin-bottom:0.7rem;letter-spacing:0.5px;">💬 MENSAJE EXTRA (opcional)</div>
+                <textarea id="cv-extra" class="conv-input" rows="3"
+                    placeholder="ej: ¡Vamos equipo! Estamos preparados para este partido. Recordad traer el equipaje completo. 💪"
+                    style="resize:vertical;">${saved.extra || ''}</textarea>
+            </div>
+
+            <!-- ── ENVÍO ────────────────────────────────────── -->
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                        border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
+                <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);
+                            margin-bottom:0.7rem;letter-spacing:0.5px;">📤 ENVIAR A</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;">
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
+                            📱 WhatsApp (número o grupo)
+                        </label>
+                        <input id="cv-wa" type="tel" class="conv-input"
+                            placeholder="34612345678"
+                            value="${saved.wa || emailConfig?.whatsappNumber || ''}">
+                        <p style="font-size:0.68rem;color:var(--text-muted);margin:0.2rem 0 0;">
+                            Sin + ni espacios. Ej: 34612345678
+                        </p>
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
+                            📧 Email
+                        </label>
+                        <input id="cv-email" type="email" class="conv-input"
+                            placeholder="padres@equipo.com"
+                            value="${saved.email || emailConfig?.directorEmail || ''}">
+                    </div>
+                </div>
+            </div>
+
+            </div><!-- end scroll -->
+
+            <!-- ── BOTONES ──────────────────────────────────── -->
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;padding-top:0.8rem;
+                        border-top:1px solid var(--glass-border);flex-shrink:0;margin-top:0.4rem;">
+                <button onclick="openConvocationModal()" class="btn"
+                    style="color:var(--text-muted);">← Volver</button>
+                <button onclick="previewConvocationMsg()" class="btn"
+                    style="background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.3);
+                           color:var(--primary);flex:1;">
+                    👁️ Vista previa</button>
+                <button onclick="sendConvocationWA()" class="btn"
+                    style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
+                           color:#3fb950;font-weight:700;">
+                    📱 WhatsApp</button>
+                <button onclick="sendConvocationEmail()" class="btn"
+                    style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
+                           color:var(--primary);font-weight:700;">
+                    📧 Email</button>
+            </div>
+        </div>
+        <style>
+        .conv-input {
+            width:100%;padding:0.42rem 0.6rem;
+            background:rgba(255,255,255,0.06);
+            border:1px solid var(--glass-border);
+            border-radius:7px;color:var(--text);font-size:0.85rem;
+            box-sizing:border-box;
+        }
+        .conv-input:focus { outline:none;border-color:rgba(88,166,255,0.5); }
+        </style>
+    `;
+}
+
+// ── Construir el mensaje de convocatoria ─────────────────────────────
+function buildConvocationText() {
+    const greeting  = document.getElementById('cv-greeting')?.value || 'Hola';
+    const type      = document.getElementById('cv-type')?.value || 'liga';
+    const dateVal   = document.getElementById('cv-date')?.value || '';
+    const rival     = document.getElementById('cv-rival')?.value.trim() || '—';
+    const meettime  = document.getElementById('cv-meettime')?.value || '';
+    const kickoff   = document.getElementById('cv-kickoff')?.value || '';
+    const venue     = document.getElementById('cv-venue')?.value.trim() || '';
+    const extra     = document.getElementById('cv-extra')?.value.trim() || '';
+
+    // Format date
+    const dateStr = dateVal
+        ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES', {
+            weekday:'long', day:'numeric', month:'long'})
+        : '—';
+
+    // Player names
+    const playerInputs = document.querySelectorAll('.conv-player-name');
+    const playerLines  = Array.from(playerInputs)
+        .map((el, i) => `${i + 1}. ${el.value.trim() || '—'}`)
+        .join('\n');
+
+    const typeLabels = {
+        amistoso:'amistoso', liga:'de liga', copa:'de copa', torneo:'de torneo'
+    };
+    const typeLabel = typeLabels[type] || type;
+
+    // Build message
+    let msg = `${greeting} familia! 👋\n\n`;
+    msg += `📋 *CONVOCATORIA*\n`;
+    msg += `Partido ${typeLabel}\n`;
+    msg += `📅 ${dateStr}\n`;
+    msg += `🆚 vs ${rival}\n\n`;
+    msg += `👥 *CONVOCADOS:*\n${playerLines}\n\n`;
+
+    if (venue || meettime || kickoff) {
+        msg += `📍 *CONCENTRACIÓN:*\n`;
+        if (venue)    msg += `🏟️ Campo: ${venue}\n`;
+        if (meettime) msg += `🕐 Presentarse: ${meettime}h\n`;
+        if (kickoff)  msg += `⚽ Inicio del partido: ${kickoff}h\n`;
+        msg += '\n';
+    }
+
+    if (extra) {
+        msg += `💬 ${extra}\n\n`;
+    }
+
+    msg += `_Cronos Fútbol_ ⚽`;
+    return msg;
+}
+
+// ── Guardar configuración ───────────────────────────────────────────
+function saveConvConfig() {
+    const cfg = {
+        greeting:  document.getElementById('cv-greeting')?.value,
+        type:      document.getElementById('cv-type')?.value,
+        date:      document.getElementById('cv-date')?.value,
+        rival:     document.getElementById('cv-rival')?.value,
+        meettime:  document.getElementById('cv-meettime')?.value,
+        kickoff:   document.getElementById('cv-kickoff')?.value,
+        venue:     document.getElementById('cv-venue')?.value,
+        extra:     document.getElementById('cv-extra')?.value,
+        wa:        document.getElementById('cv-wa')?.value,
+        email:     document.getElementById('cv-email')?.value,
+    };
+    localStorage.setItem('cronos_conv_config', JSON.stringify(cfg));
+}
+
+// ── Vista previa ────────────────────────────────────────────────────
+function previewConvocationMsg() {
+    saveConvConfig();
+    const msg = buildConvocationText();
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(96vw,560px);max-height:90vh;
+             display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                        margin-bottom:0.8rem;flex-shrink:0;">
+                <h3 style="margin:0;font-size:1rem;">👁️ Vista previa del mensaje</h3>
+                <button onclick="openConvocationMessage()"
+                    style="background:none;border:none;color:var(--text-muted);
+                           font-size:1.3rem;cursor:pointer;">✕</button>
+            </div>
+            <div style="background:#111;border:1px solid var(--glass-border);border-radius:10px;
+                        padding:1rem;overflow-y:auto;flex:1;
+                        white-space:pre-wrap;font-size:0.85rem;line-height:1.6;
+                        color:var(--text);font-family:inherit;">
+${msg.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.8rem;flex-shrink:0;">
+                <button onclick="openConvocationMessage()" class="btn"
+                    style="color:var(--text-muted);flex:1;">← Editar</button>
+                <button onclick="sendConvocationWA()" class="btn"
+                    style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
+                           color:#3fb950;font-weight:700;flex:1;">
+                    📱 WhatsApp</button>
+                <button onclick="sendConvocationEmail()" class="btn"
+                    style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
+                           color:var(--primary);font-weight:700;flex:1;">
+                    📧 Email</button>
+            </div>
+        </div>`;
+}
+
+// ── Enviar por WhatsApp ─────────────────────────────────────────────
+function sendConvocationWA() {
+    saveConvConfig();
+    const num = document.getElementById('cv-wa')?.value.trim()
+             || JSON.parse(localStorage.getItem('cronos_conv_config')||'{}').wa || '';
+    const msg = buildConvocationText();
+    const encoded = encodeURIComponent(msg);
+    if (num) {
+        window.open(`https://wa.me/${num}?text=${encoded}`, '_blank');
+    } else {
+        // Open WhatsApp without number (user selects contact manually)
+        window.open(`https://wa.me/?text=${encoded}`, '_blank');
+    }
+    showToast('📱 WhatsApp abierto — selecciona el contacto o grupo', 4000);
+}
+
+// ── Enviar por Email ────────────────────────────────────────────────
+function sendConvocationEmail() {
+    saveConvConfig();
+    const to      = document.getElementById('cv-email')?.value.trim()
+                 || JSON.parse(localStorage.getItem('cronos_conv_config')||'{}').email || '';
+    const rival   = document.getElementById('cv-rival')?.value.trim() || '';
+    const dateVal = document.getElementById('cv-date')?.value || '';
+    const dateStr = dateVal
+        ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long'})
+        : '';
+    const subject = encodeURIComponent(
+        `⚽ Convocatoria ${dateStr ? '— ' + dateStr : ''}${rival ? ' vs ' + rival : ''}`
+    );
+    const body = encodeURIComponent(buildConvocationText().replace(/[*_]/g,''));
+    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
+    showToast('📧 Email abierto en tu cliente de correo', 3000);
+}

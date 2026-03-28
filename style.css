@@ -1024,3 +1024,240 @@ input, select {
     border-color: var(--primary);
     outline: none;
 }
+
+/* --- ESTILOS EXTRAIDOS DE HTML --- */
+
+        /* Indicador de lesión — lado izquierdo inferior de la ficha */
+        .player-injury-indicator {
+            position: absolute;
+            bottom: -5px;
+            left: -2px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #e74c3c;
+            border: 1.5px solid #fff;
+            z-index: 30;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.55rem;
+            line-height: 1;
+            box-shadow: 0 0 5px rgba(0,0,0,0.8);
+        }
+    
+
+        /* ── Contenedor principal: scroll vertical completo ── */
+        #ob-wrap {
+            min-height: 100vh;
+            background: #0a0e14;
+            font-family: 'Inter', sans-serif;
+            color: #cdd9e5;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        /* ── Cabecera fija compacta ── */
+        #ob-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #0a0e14;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        #ob-logo-text {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #58a6ff;
+            white-space: nowrap;
+        }
+        #ob-logo-text span { color: #f0883e; }
+        #ob-progress-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+        }
+        #ob-progress-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+        }
+        #ob-progress-fill {
+            height: 100%;
+            background: #58a6ff;
+            border-radius: 2px;
+            transition: width 0.35s ease;
+        }
+        #ob-counter {
+            font-size: 0.65rem;
+            color: #7d8590;
+        }
+        #ob-skip-btn {
+            background: none;
+            border: none;
+            color: #7d8590;
+            font-size: 0.75rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            white-space: nowrap;
+        }
+        /* ── Área de contenido scrollable ── */
+        #ob-content {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        /* ── Hero compacto ── */
+        #ob-hero {
+            text-align: center;
+            padding: 8px 0 4px;
+        }
+        #ob-hero-icon { font-size: 2rem; line-height: 1; }
+        #ob-hero-title {
+            font-family: 'Outfit', sans-serif;
+            color: #58a6ff;
+            font-size: 1.2rem;
+            margin: 4px 0 2px;
+        }
+        #ob-hero-sub { color: #7d8590; font-size: 0.75rem; margin: 0; }
+        /* ── Tarjeta de instrucciones ── */
+        #ob-card {
+            background: rgba(88,166,255,0.07);
+            border: 1px solid rgba(88,166,255,0.2);
+            border-radius: 10px;
+            padding: 12px 14px;
+        }
+        #ob-card-title {
+            color: #58a6ff;
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin: 0 0 10px;
+        }
+        .ob-step-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .ob-step-row:last-child { margin-bottom: 0; }
+        .ob-num {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: #58a6ff;
+            color: #0a0e14;
+            font-size: 0.7rem;
+            font-weight: 700;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ob-num.done { background: #1a7a3e; color: #fff; font-size: 0.75rem; }
+        .ob-step-text {
+            font-size: 0.82rem;
+            line-height: 1.45;
+            color: #cdd9e5;
+            padding-top: 2px;
+        }
+        .ob-step-text strong { color: #fff; }
+        /* ── Descripción del paso ── */
+        #ob-step-desc-box {
+            font-size: 0.78rem;
+            color: #7d8590;
+            line-height: 1.5;
+            padding: 0 2px;
+        }
+        /* ── Navegación fija en bottom ── */
+        #ob-nav {
+            position: sticky;
+            bottom: 0;
+            background: #0a0e14;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 10px 16px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        #ob-btn-prev {
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            color: #7d8590;
+            font-size: 0.85rem;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        #ob-btn-next {
+            flex: 1;
+            padding: 12px;
+            background: #58a6ff;
+            border: none;
+            border-radius: 8px;
+            color: #0a0e14;
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+        }
+        /* ── Sidebar pasos — solo en tablet/desktop ── */
+        #ob-sidebar-steps {
+            display: none;
+        }
+        @media (min-width: 640px) {
+            #ob-wrap { flex-direction: row; }
+            #ob-sidebar-steps {
+                display: flex;
+                flex-direction: column;
+                width: 200px;
+                flex-shrink: 0;
+                background: rgba(255,255,255,0.02);
+                border-right: 1px solid rgba(255,255,255,0.08);
+                padding: 16px 0;
+                overflow-y: auto;
+            }
+            #ob-main-col { flex: 1; display: flex; flex-direction: column; }
+        }
+        .ob-sidebar-item {
+            padding: 8px 16px;
+            font-size: 0.78rem;
+            color: #7d8590;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ob-sidebar-item.active {
+            color: #58a6ff;
+            border-left-color: #58a6ff;
+            background: rgba(88,166,255,0.07);
+            font-weight: 700;
+        }
+        .ob-sidebar-item.done { color: rgba(88,166,255,0.5); }
+        .ob-sidebar-num {
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            color: #7d8590;
+            font-size: 0.65rem;
+            font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .ob-sidebar-item.active .ob-sidebar-num { background: #58a6ff; color: #0a0e14; }
+        .ob-sidebar-item.done  .ob-sidebar-num { background: rgba(88,166,255,0.3); color: #58a6ff; }
+    
