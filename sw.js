@@ -6,7 +6,7 @@
 //  Los usuarios verán la nueva versión automáticamente.
 // ─────────────────────────────────────────────────────────────
 const VERSION    = 'v32';
-const CACHE_NAME = 'cronos-cache-v7.2';
+const CACHE_NAME = 'cronos-cache-v7.3';
 
 const ASSETS = [
     './',
