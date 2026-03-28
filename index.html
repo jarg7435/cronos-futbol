@@ -737,7 +737,7 @@
                 // ── LOGIN ──
                 window._loginThisSession = true;
                 const cred = await fa.signInWithEmailAndPassword(fa.auth, email, password);
-                await window._checkAuthorization(cred.user);
+                if (window._checkAuthorization) { await window._checkAuthorization(cred.user); } else if (fa.checkAuthorization) { await fa.checkAuthorization(cred.user); } else { throw new Error("checkAuth not found"); }
             } else {
                 // ── REGISTRO ──
                 const cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);

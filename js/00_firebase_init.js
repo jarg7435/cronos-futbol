@@ -5,7 +5,7 @@
                  signInWithEmailAndPassword, onAuthStateChanged, signOut,
                  setPersistence, browserLocalPersistence, browserSessionPersistence }
             from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
+        import { getFirestore, doc, getDoc, setDoc, serverTimestamp, checkAuthorization: window._checkAuthorization }
             from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         // ╔══════════════════════════════════════════╗
@@ -32,7 +32,7 @@
         window._cronos_auth = {
             auth, db, signOut,
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
-            doc, getDoc, setDoc, serverTimestamp
+            doc, getDoc, setDoc, serverTimestamp, checkAuthorization: window._checkAuthorization
         };
 
         // ── Restaurar sesión tras recarga por actualización ────────────────
@@ -79,7 +79,7 @@
             }
         });
 
-        async function checkAuthorization(user) {
+        window._checkAuthorization = async function checkAuthorization(user) {
             try {
                 const ref  = doc(db, 'users', user.uid);
                 const snap = await getDoc(ref);
@@ -115,5 +115,5 @@
             }
         }
 
-        window._checkAuthorization = checkAuthorization;
+        
     
