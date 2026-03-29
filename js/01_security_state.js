@@ -320,3 +320,28 @@ function applyFormationPreset(key) {
     renderPlayers();
 }
 
+
+// --- CERRAR SESIÓN ---
+async function cerrarSesion() {
+    if (!confirm('¿Cerrar sesión?')) return;
+    try {
+        // Detener cronómetro si está en marcha
+        if (isRunning) {
+            isRunning = false;
+            clearInterval(timerInterval);
+        }
+        // Cerrar sesión en Firebase
+        const fa = window._cronos_auth;
+        if (fa && fa.signOut && fa.auth) {
+            await fa.signOut(fa.auth);
+        }
+    } catch(e) { /* continuar aunque falle */ }
+
+    // Limpiar estado de sesión
+    window._cronosCurrentUser = null;
+    window._loginThisSession  = false;
+    sessionStorage.clear();
+
+    // Recargar para volver al login
+    location.reload();
+}
