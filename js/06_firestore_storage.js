@@ -415,6 +415,45 @@ async function forceUpdate() {
     }
 }
 
+// ── Guardar y restaurar el estado del formulario de setup ─────────
+// Evita que se pierdan nombre/colores/modalidad al entrar al gestor de plantilla
+function saveSetupState() {
+    window._pendingSetupState = {
+        homeName:      document.getElementById('setup-home-name')?.value  || '',
+        homeColor:     document.getElementById('setup-home-color')?.value || '#58a6ff',
+        homeShorts:    document.getElementById('setup-home-shorts')?.value|| '#ffffff',
+        homeText:      document.getElementById('setup-home-text')?.value  || '#ffffff',
+        awayName:      document.getElementById('setup-away-name')?.value  || '',
+        awayColor:     document.getElementById('setup-away-color')?.value || '#ff5858',
+        awayShorts:    document.getElementById('setup-away-shorts')?.value|| '#000000',
+        awayText:      document.getElementById('setup-away-text')?.value  || '#ffffff',
+        mode:          document.getElementById('setup-mode')?.value       || 'f7',
+        formation:     document.getElementById('setup-formation')?.value  || '',
+        analyzeAway:   document.getElementById('setup-analyze-away')?.checked || false,
+    };
+}
+
+function restoreSetupState() {
+    const s = window._pendingSetupState;
+    if (!s) return;
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
+    set('setup-home-name',    s.homeName);
+    set('setup-home-color',   s.homeColor);
+    set('setup-home-shorts',  s.homeShorts);
+    set('setup-home-text',    s.homeText);
+    set('setup-away-name',    s.awayName);
+    set('setup-away-color',   s.awayColor);
+    set('setup-away-shorts',  s.awayShorts);
+    set('setup-away-text',    s.awayText);
+    set('setup-mode',         s.mode);
+    const analyzeEl = document.getElementById('setup-analyze-away');
+    if (analyzeEl) analyzeEl.checked = s.analyzeAway;
+    // Actualizar opciones de formación según la modalidad guardada, luego restaurar selección
+    updateFormationOptions();
+    set('setup-formation', s.formation);
+    window._pendingSetupState = null; // limpiar tras restaurar
+}
+
 function openSetupModal() {
     document.body.classList.add('setup-mode');
     const modal = document.getElementById('setup-modal');
@@ -527,7 +566,7 @@ function openSetupModal() {
             <!-- BOTONES -->
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; gap:0.6rem; align-items:center;">
-                    <button class="btn" onclick="openRosterManager()"
+                    <button class="btn" onclick="saveSetupState(); openRosterManager()"
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
                         GESTIONAR PLANTILLA
                     </button>
@@ -580,6 +619,7 @@ function openSetupModal() {
     populateSavedTeams('home');
     populateSavedTeams('away');
     updateFormationOptions();
+    restoreSetupState(); // restaura nombre/colores/modo si venimos del gestor de plantilla
 }
 
 function confirmSetup() {
