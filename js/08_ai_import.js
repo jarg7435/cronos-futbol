@@ -395,7 +395,7 @@ function confirmRosterImport(mode) {
         cloudSet('cronos_master_roster', JSON.stringify(roster));
         hideSpinner();
         showToast('✅ ' + imported.length + ' jugadores importados correctamente');
-        openRosterManager();
+        openSetupModal();
     }, 400);
 }
 
