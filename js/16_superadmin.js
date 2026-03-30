@@ -25,6 +25,7 @@ const ROLE_META   = {
     coordinator: { label:'🎯 Coordinador',  color:'#d2a8ff' },
     user:        { label:'⚽ Entrenador',   color:'#3fb950' },
     individual:  { label:'👤 Individual',   color:'#79c0ff' },
+    parent:      { label:'👨‍👩‍👧 Padre/Madre', color:'#d2a8ff' },
 };
 const PLAN_META   = {
     free:     { label:'🆓 Gratis',   color:'#7d8590' },
@@ -366,11 +367,13 @@ async function saClubs() {
         const dirs   = clubUsers.filter(u => u.role === 'director');
         const coords = clubUsers.filter(u => u.role === 'coordinator');
         const trainers = clubUsers.filter(u => u.role === 'user');
+        const parents  = clubUsers.filter(u => u.role === 'parent');
         const st     = STATUS_META[cl.status||'active'];
         const pl     = PLAN_META[cl.plan||'free'];
         const maxU   = cl.slots?.users ?? -1;
         const maxD   = cl.slots?.directors ?? -1;
         const maxC   = cl.slots?.coordinators ?? -1;
+        const maxP   = cl.slots?.parents ?? -1;
 
         const userRows = (list, label) => list.length ? list.map(u =>
             `<div class="sa-urow">
@@ -425,13 +428,15 @@ async function saClubs() {
           </div>
           <div class="sa-card-body">
             <!-- Slots -->
-            <div class="sa-g3" style="margin:0.7rem 0;">
+            <div class="sa-g4" style="margin:0.7rem 0;">
                 <div style="font-size:0.76rem;color:var(--text-muted);">
                     📋 Directores: ${saSlotBar(dirs.length, maxD)}</div>
                 <div style="font-size:0.76rem;color:var(--text-muted);">
                     🎯 Coordinadores: ${saSlotBar(coords.length, maxC)}</div>
                 <div style="font-size:0.76rem;color:var(--text-muted);">
                     ⚽ Entrenadores: ${saSlotBar(trainers.length, maxU)}</div>
+                <div style="font-size:0.76rem;color:var(--text-muted);">
+                    👨‍👩‍👧 Padres: ${saSlotBar(parents.length, maxP)}</div>
             </div>
             <!-- Usuarios por sección -->
             ${dirs.length || maxD !== 0 ? `
@@ -449,6 +454,11 @@ async function saClubs() {
                 <div style="font-size:0.76rem;font-weight:700;color:#3fb950;margin-bottom:0.3rem;">
                     ⚽ ENTRENADORES (${trainers.length})</div>
                 ${userRows(trainers,'entrenadores')}
+            </div>
+            <div style="margin-bottom:0.5rem;">
+                <div style="font-size:0.76rem;font-weight:700;color:#d2a8ff;margin-bottom:0.3rem;">
+                    👨‍👩‍👧 PADRES/MADRES (${parents.length})</div>
+                ${userRows(parents,'padres')}
             </div>
             ${cl.notes ? `<div style="font-size:0.75rem;color:var(--text-muted);
                 padding:0.4rem 0.6rem;background:rgba(255,255,255,0.03);
@@ -530,10 +540,12 @@ async function saOpenEditor(clubId) {
                 <input class="sa-input" id="ec-coord" type="number" value="${cl.slots?.coordinators??-1}"></div>
             <div><label class="sa-label">Slots Entren. (-1=∞)</label>
                 <input class="sa-input" id="ec-users" type="number" value="${cl.slots?.users??-1}"></div>
-            <div><label class="sa-label">Expira (vacío=sin límite)</label>
-                <input class="sa-input" id="ec-exp" type="date" value="${cl.expiresAt?cl.expiresAt.substring(0,10):''}"></div>
+            <div><label class="sa-label">Slots Padres (-1=∞)</label>
+                <input class="sa-input" id="ec-parents" type="number" value="${cl.slots?.parents??-1}"></div>
           </div>
           <div class="sa-g2" style="margin-bottom:0.9rem;">
+            <div><label class="sa-label">Expira (vacío=sin límite)</label>
+                <input class="sa-input" id="ec-exp" type="date" value="${cl.expiresAt?cl.expiresAt.substring(0,10):''}"></div>
             <div><label class="sa-label">Plan</label>
                 <select class="sa-input" id="ec-plan">
                     ${Object.entries(PLAN_META).filter(([k])=>!['monthly','annual'].includes(k))
@@ -591,6 +603,7 @@ async function saOpenEditor(clubId) {
                     directors:    +document.getElementById('ec-dir').value   || -1,
                     coordinators: +document.getElementById('ec-coord').value || -1,
                     users:        +document.getElementById('ec-users').value || -1,
+                    parents:      +document.getElementById('ec-parents').value || -1,
                 },
                 plan:      document.getElementById('ec-plan').value,
                 status:    document.getElementById('ec-status').value,
@@ -686,7 +699,7 @@ async function saIndividual() {
             if (snap.exists()) {
                 const ud = snap.data();
                 if (ud.clubId) {
-                    const k = ud.role==='director'?'directors':ud.role==='coordinator'?'coordinators':'users';
+                    const k = ud.role==='director'?'directors':ud.role==='coordinator'?'coordinators':ud.role==='parent'?'parents':'users';
                     const cs = await getDoc(doc(fa.db,'clubs',ud.clubId)).catch(()=>null);
                     if (cs?.exists()) {
                         const cur = cs.data().usedSlots?.[k] || 0;
@@ -737,6 +750,9 @@ async function saOpenIndividualEditor(uid) {
             </div>
             <div><label class="sa-label">Fecha de expiración</label>
                 <input class="sa-input" id="iu-exp" type="date" value="${u.expiresAt?u.expiresAt.substring(0,10):''}"></div>
+            <div><label class="sa-label">Slots Padres/Madres (-1=∞)</label>
+                <input class="sa-input" id="iu-parents" type="number" value="${u.slots?.parents??-1}"
+                    placeholder="-1 = sin límite"></div>
             <div><label class="sa-label">Estado</label>
                 <select class="sa-input" id="iu-status">
                     ${Object.entries(STATUS_META).map(([k,v])=>
@@ -768,6 +784,7 @@ async function saOpenIndividualEditor(uid) {
             expiresAt:   document.getElementById('iu-exp').value||null,
             status:      document.getElementById('iu-status').value,
             notes:       document.getElementById('iu-notes').value.trim(),
+            slots:       { parents: +document.getElementById('iu-parents').value || -1 },
             createdAt:   u.createdAt || new Date().toISOString(),
         });
         msg.style.color='#3fb950'; msg.textContent='✅ Guardado';
@@ -1163,7 +1180,7 @@ async function saRequests() {
                 if (cs.exists()) {
                     const ud = cs.data().usedSlots||{};
                     const ur = (await getDoc(doc(db,'users',userId))).data()?.role||'user';
-                    const k  = ur==='director'?'directors':ur==='coordinator'?'coordinators':'users';
+                    const k  = ur==='director'?'directors':ur==='coordinator'?'coordinators':ur==='parent'?'parents':'users';
                     await updateDoc(doc(db,'clubs',clubId), { [`usedSlots.${k}`]: Math.max(0,(ud[k]||1)-1) });
                 }
             }
@@ -1185,13 +1202,15 @@ function saNewClub() {
                 <input class="sa-input" id="nc-name" placeholder="ej: CD Deportivo Ejemplo"></div>
             <div><label class="sa-label">Email del administrador (1 único, contacto directo) *</label>
                 <input class="sa-input" id="nc-admin" type="email" placeholder="admin@club.com"></div>
-            <div class="sa-g3">
+            <div class="sa-g4" style="margin-bottom:0.7rem;">
                 <div><label class="sa-label">Slots Directores (-1=∞)</label>
                     <input class="sa-input" id="nc-dir" type="number" value="-1"></div>
                 <div><label class="sa-label">Slots Coordinadores (-1=∞)</label>
                     <input class="sa-input" id="nc-coord" type="number" value="-1"></div>
                 <div><label class="sa-label">Slots Entrenadores (-1=∞)</label>
                     <input class="sa-input" id="nc-users" type="number" value="-1"></div>
+                <div><label class="sa-label">Slots Padres (-1=∞)</label>
+                    <input class="sa-input" id="nc-parents" type="number" value="-1"></div>
             </div>
             <div class="sa-g3">
                 <div><label class="sa-label">Plan inicial</label>
@@ -1237,8 +1256,9 @@ function saNewClub() {
                 directors:    +document.getElementById('nc-dir').value   || -1,
                 coordinators: +document.getElementById('nc-coord').value || -1,
                 users:        +document.getElementById('nc-users').value || -1,
+                parents:      +document.getElementById('nc-parents').value || -1,
             },
-            usedSlots: { directors:0, coordinators:0, users:0 },
+            usedSlots: { directors:0, coordinators:0, users:0, parents:0 },
             expiresAt: document.getElementById('nc-exp').value||null,
             notes:     document.getElementById('nc-notes').value.trim(),
             features:  { live_view:true, ai_import:true },
