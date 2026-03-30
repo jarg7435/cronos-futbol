@@ -893,11 +893,113 @@
 
         const role = window._cronosCurrentUser?.role;
 
-        // Botón ADMIN — solo superadmin y admin
+        // SuperAdmin → mostrar selector de rol antes de entrar
+        if (['superadmin','admin'].includes(role)) {
+            showRoleSelector();
+            return;
+        }
+
+        _launchWithRole(role);
+    }
+
+    // ── Selector de rol para SuperAdmin ──────────────────────────
+    function showRoleSelector() {
+        const me = window._cronosCurrentUser;
+        let overlay = document.getElementById('role-selector-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'role-selector-overlay';
+            overlay.style.cssText =
+                'position:fixed;inset:0;background:#0a0e14;z-index:9999;' +
+                'display:flex;align-items:center;justify-content:center;padding:1.5rem;';
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = 'flex';
+        overlay.innerHTML = `
+        <div style="width:100%;max-width:420px;background:rgba(255,255,255,0.04);
+                    border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:2rem;">
+            <div style="text-align:center;margin-bottom:1.5rem;">
+                <div style="font-size:1.4rem;font-weight:700;margin-bottom:0.3rem;">
+                    👑 Bienvenido
+                </div>
+                <div style="font-size:0.82rem;color:#7d8590;">${me?.email || ''}</div>
+                <div style="font-size:0.78rem;color:#ffd700;margin-top:0.3rem;font-weight:700;">
+                    SuperAdministrador
+                </div>
+            </div>
+            <p style="font-size:0.85rem;color:#7d8590;text-align:center;margin-bottom:1.4rem;">
+                ¿Con qué rol quieres entrar?
+            </p>
+            <div style="display:flex;flex-direction:column;gap:0.7rem;">
+                <button onclick="selectRole('superadmin')"
+                    style="width:100%;padding:1rem;background:rgba(255,215,0,0.1);
+                           border:1px solid rgba(255,215,0,0.4);border-radius:10px;
+                           color:#ffd700;font-size:1rem;font-weight:700;cursor:pointer;
+                           text-align:left;display:flex;align-items:center;gap:0.8rem;
+                           transition:background 0.15s;">
+                    <span style="font-size:1.4rem;">👑</span>
+                    <div>
+                        <div>SuperAdmin</div>
+                        <div style="font-size:0.72rem;font-weight:400;color:rgba(255,215,0,0.6);margin-top:0.1rem;">
+                            Gestión de clubs, usuarios, cobros y configuración
+                        </div>
+                    </div>
+                </button>
+                <button onclick="selectRole('user')"
+                    style="width:100%;padding:1rem;background:rgba(63,185,80,0.08);
+                           border:1px solid rgba(63,185,80,0.35);border-radius:10px;
+                           color:#3fb950;font-size:1rem;font-weight:700;cursor:pointer;
+                           text-align:left;display:flex;align-items:center;gap:0.8rem;
+                           transition:background 0.15s;">
+                    <span style="font-size:1.4rem;">⚽</span>
+                    <div>
+                        <div>Entrenador</div>
+                        <div style="font-size:0.72rem;font-weight:400;color:rgba(63,185,80,0.6);margin-top:0.1rem;">
+                            Crear partidos, gestionar plantilla y convocatorias
+                        </div>
+                    </div>
+                </button>
+                <button onclick="selectRole('parent')"
+                    style="width:100%;padding:1rem;background:rgba(210,168,255,0.08);
+                           border:1px solid rgba(210,168,255,0.3);border-radius:10px;
+                           color:#d2a8ff;font-size:1rem;font-weight:700;cursor:pointer;
+                           text-align:left;display:flex;align-items:center;gap:0.8rem;
+                           transition:background 0.15s;">
+                    <span style="font-size:1.4rem;">👨‍👩‍👧</span>
+                    <div>
+                        <div>Padre / Madre</div>
+                        <div style="font-size:0.72rem;font-weight:400;color:rgba(210,168,255,0.6);margin-top:0.1rem;">
+                            Ver partidos en vivo, convocatorias y entrenamientos
+                        </div>
+                    </div>
+                </button>
+            </div>
+            <button onclick="cerrarSesion()"
+                style="width:100%;margin-top:1.2rem;padding:0.5rem;
+                       background:none;border:1px solid rgba(255,255,255,0.08);
+                       border-radius:8px;color:#7d8590;font-size:0.78rem;cursor:pointer;">
+                ⏻ Cerrar sesión
+            </button>
+        </div>`;
+
+        window.selectRole = (selectedRole) => {
+            // Guardar rol elegido en memoria (sin sobreescribir el real en Firestore)
+            window._cronosCurrentUser._activeRole = selectedRole;
+            overlay.style.display = 'none';
+            _launchWithRole(selectedRole);
+        };
+    }
+
+    // ── Lanzar la app con el rol activo ──────────────────────────
+    function _launchWithRole(role) {
+        const activeRole = window._cronosCurrentUser?._activeRole || role;
+
+        // Botón ADMIN — solo superadmin/admin en modo superadmin
         const btnAdmin = document.getElementById('btn-admin-panel');
         if (btnAdmin) {
             btnAdmin.style.display =
-                ['admin','superadmin'].includes(role) ? 'inline-block' : 'none';
+                ['admin','superadmin'].includes(role) && activeRole === 'superadmin'
+                ? 'inline-block' : 'none';
         }
 
         // Botón MI CLUB — solo club_admin
@@ -914,15 +1016,15 @@
                 ? 'inline-block' : 'none';
         }
 
-        // Guardar sesión para sobrevivir a recargas
+        // Guardar sesión
         if (window._cronosCurrentUser) {
             sessionStorage.setItem('cronos_session_uid',   window._cronosCurrentUser.uid   || '');
             sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email || '');
-            sessionStorage.setItem('cronos_session_role',  window._cronosCurrentUser.role  || 'user');
+            sessionStorage.setItem('cronos_session_role',  role || 'user');
         }
 
-        // Inicializar la app principal (app.js)
-        if (typeof init === 'function') init();
+        // Inicializar con el rol activo elegido
+        if (typeof init === 'function') init(activeRole);
     }
 
     // ── Panel admin ──────────────────────────────────────────────
