@@ -346,6 +346,15 @@ async function sendReportByEmail(matchInfo, reportHtml) {
 }
 
 function init() {
+    const role = window._cronosCurrentUser?.role;
+
+    // Padres → pantalla exclusiva, sin acceso a la app del entrenador
+    if (role === 'parent') {
+        registerServiceWorker();
+        if (typeof openParentPanel === 'function') openParentPanel();
+        return;
+    }
+
     loadEmailConfig();    // carga correos (desde localStorage/caché)
     loadStaffConfig();    // carga cuerpo técnico (desde localStorage/caché)
     setupEventListeners();

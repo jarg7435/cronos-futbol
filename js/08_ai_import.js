@@ -488,6 +488,11 @@ function openConvocationModal() {
                                color:#3fb950;font-weight:700;">
                         📲 ENVIAR CONVOCATORIA
                     </button>
+                    <button class="btn" onclick="openTrainingNotification()"
+                        style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
+                               color:#58a6ff;font-weight:700;">
+                        ⚽ INFO ENTRENAMIENTO
+                    </button>
                     <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>
                         INICIAR PARTIDO
                     </button>

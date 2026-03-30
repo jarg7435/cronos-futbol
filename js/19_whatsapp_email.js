@@ -295,6 +295,46 @@ ${msg.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*(.*?)\*/g,'<strong>$1
         </div>`;
 }
 
+// ── Guardar convocatoria en Firestore (para que los padres la vean) ──
+async function saveConvocationToFirestore() {
+    try {
+        const me = window._cronosCurrentUser;
+        const fa = window._cronos_auth;
+        if (!fa || !me) return;
+
+        const dateVal = document.getElementById('cv-date')?.value || '';
+        const dateStr = dateVal
+            ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES',{
+                weekday:'long', day:'numeric', month:'long'})
+            : '';
+        const playerInputs = document.querySelectorAll('.conv-player-name');
+        const players = Array.from(playerInputs).map(el => el.value.trim()).filter(Boolean);
+
+        const payload = {
+            type:       'convocatoria',
+            clubId:     me.clubId || null,
+            coachEmail: me.email  || '',
+            coachUid:   me.uid    || '',
+            matchDate:  dateStr,
+            rival:      document.getElementById('cv-rival')?.value.trim()    || '',
+            venue:      document.getElementById('cv-venue')?.value.trim()    || '',
+            meettime:   document.getElementById('cv-meettime')?.value        || '',
+            kickoff:    document.getElementById('cv-kickoff')?.value         || '',
+            extra:      document.getElementById('cv-extra')?.value.trim()    || '',
+            players,
+            createdAt:  new Date().toISOString(),
+        };
+
+        const { setDoc, doc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const id = 'conv_' + Date.now().toString(36);
+        await setDoc(doc(fa.db, 'cronos_notifications', id), payload);
+        console.log('✅ Convocatoria guardada en Firestore para los padres');
+    } catch(e) {
+        console.warn('saveConvocationToFirestore:', e.message);
+    }
+}
+
 // ── Enviar por WhatsApp ─────────────────────────────────────────────
 function sendConvocationWA() {
     saveConvConfig();
@@ -305,9 +345,9 @@ function sendConvocationWA() {
     if (num) {
         window.open(`https://wa.me/${num}?text=${encoded}`, '_blank');
     } else {
-        // Open WhatsApp without number (user selects contact manually)
         window.open(`https://wa.me/?text=${encoded}`, '_blank');
     }
+    saveConvocationToFirestore(); // guardar para padres
     showToast('📱 WhatsApp abierto — selecciona el contacto o grupo', 4000);
 }
 
@@ -326,5 +366,6 @@ function sendConvocationEmail() {
     );
     const body = encodeURIComponent(buildConvocationText().replace(/[*_]/g,''));
     window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
+    saveConvocationToFirestore(); // guardar para padres
     showToast('📧 Email abierto en tu cliente de correo', 3000);
 }
