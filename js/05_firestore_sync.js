@@ -100,6 +100,7 @@ async function pushLiveSnapshot(status = 'active') {
             updatedAt:   serverTimestamp(),
             createdBy:   window._cronosCurrentUser?.uid   || '',
             coachEmail:  window._cronosCurrentUser?.email || '',
+            clubId:      window._cronosCurrentUser?.clubId || null,
 
             // Partido
             mode:        currentMode,
