@@ -24,6 +24,7 @@ async function openClubAdminPanel() {
     const slotOf = (role) => {
         const max  = role==='director'?(club.slots?.directors??-1)
                    : role==='coordinator'?(club.slots?.coordinators??-1)
+                   : role==='parent'?(club.slots?.parents??-1)
                    : (club.slots?.users??-1);
         const used = users.filter(u=>u.role===role&&u.isAuthorized!==false).length;
         return { max, used, full: max!==-1 && used>=max, unlimited: max===-1 };
@@ -45,9 +46,9 @@ async function openClubAdminPanel() {
       <div class="sa-body">
         <!-- Slots resumen -->
         <div class="sa-stats" style="margin-bottom:1.2rem;">
-            ${['director','coordinator','user'].map(role => {
+            ${['director','coordinator','user','parent'].map(role => {
                 const si = slotOf(role);
-                const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':'Entrenadores';
+                const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Padres':'Entrenadores';
                 return `<div class="sa-stat">
                     <div class="sa-stat-n" style="color:${si.full?'#ff5858':'#3fb950'};">
                         ${si.used}${si.unlimited?'':'/' + si.max}</div>
@@ -69,6 +70,7 @@ async function openClubAdminPanel() {
                 <div><label class="sa-label">Rol</label>
                     <select class="sa-input" id="nu-role">
                         <option value="user">⚽ Entrenador</option>
+                        <option value="parent">👨‍👩‍👧 Padre/Madre</option>
                         ${features.live_view?'<option value="coordinator">🎯 Coordinador</option>':''}
                         ${features.live_view?'<option value="director">📋 Director Dep.</option>':''}
                     </select></div>
@@ -81,11 +83,11 @@ async function openClubAdminPanel() {
         </div>
 
         <!-- Lista usuarios por grupo -->
-        ${['director','coordinator','user'].map(role => {
+        ${['director','coordinator','user','parent'].map(role => {
             const roleUsers = users.filter(u => u.role===role);
             if (!roleUsers.length) return '';
-            const labels = {director:'📋 DIRECTORES DEPORTIVOS', coordinator:'🎯 COORDINADORES', user:'⚽ ENTRENADORES'};
-            const cols   = {director:'#f0883e', coordinator:'#d2a8ff', user:'#3fb950'};
+            const labels = {director:'📋 DIRECTORES DEPORTIVOS', coordinator:'🎯 COORDINADORES', user:'⚽ ENTRENADORES', parent:'👨‍👩‍👧 PADRES/MADRES'};
+            const cols   = {director:'#f0883e', coordinator:'#d2a8ff', user:'#3fb950', parent:'#d2a8ff'};
             return `<div style="margin-bottom:1rem;">
                 <div style="font-size:0.76rem;font-weight:700;color:${cols[role]};margin-bottom:0.4rem;">
                     ${labels[role]} (${roleUsers.length})</div>
@@ -123,7 +125,7 @@ async function openClubAdminPanel() {
             isAuthorized:true, status:'pending_register',
             createdBy:me.uid, createdAt:new Date().toISOString()
         });
-        const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':'usedSlots.users';
+        const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
         await updateDoc(doc(db,'clubs',cid), { [key]: si.used+1 });
         msgEl.style.color='#3fb950';
         msgEl.textContent=`✅ ${email} dado de alta. Debe registrarse con ese email.`;
