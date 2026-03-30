@@ -173,6 +173,11 @@ async function openSuperAdminPanel() {
             style="padding:0.3rem 0.7rem;background:rgba(88,166,255,0.1);
                    border:1px solid rgba(88,166,255,0.3);border-radius:6px;
                    color:var(--primary);font-size:0.78rem;cursor:pointer;">🔄</button>
+          <button onclick="document.getElementById('sa-root-modal').style.display='none'; if(typeof showRoleSelector==='function') showRoleSelector();"
+            style="padding:0.3rem 0.7rem;background:rgba(255,215,0,0.08);
+                   border:1px solid rgba(255,215,0,0.3);border-radius:6px;
+                   color:#ffd700;font-size:0.78rem;cursor:pointer;"
+            title="Cambiar rol">⇄ Rol</button>
           <button onclick="document.getElementById('sa-root-modal').style.display='none'"
             style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;
                    cursor:pointer;line-height:1;padding:0 0.3rem;">✕</button>

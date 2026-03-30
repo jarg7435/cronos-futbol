@@ -345,8 +345,8 @@ async function sendReportByEmail(matchInfo, reportHtml) {
     }
 }
 
-function init() {
-    const role = window._cronosCurrentUser?.role;
+function init(activeRole) {
+    const role = activeRole || window._cronosCurrentUser?._activeRole || window._cronosCurrentUser?.role;
 
     // Padres → pantalla exclusiva, sin acceso a la app del entrenador
     if (role === 'parent') {
@@ -355,12 +355,18 @@ function init() {
         return;
     }
 
-    loadEmailConfig();    // carga correos (desde localStorage/caché)
-    loadStaffConfig();    // carga cuerpo técnico (desde localStorage/caché)
+    // SuperAdmin en modo SuperAdmin → abrir panel directamente
+    if (role === 'superadmin' && ['admin','superadmin'].includes(window._cronosCurrentUser?.role)) {
+        registerServiceWorker();
+        if (typeof openSuperAdminPanel === 'function') openSuperAdminPanel();
+        return;
+    }
+
+    loadEmailConfig();
+    loadStaffConfig();
     setupEventListeners();
     openSetupModal();
     registerServiceWorker();
-    // Sincronizar con Firestore en segundo plano
     migrateLocalToCloud().then(() => {
         loadEmailConfig();
         loadStaffConfig();
