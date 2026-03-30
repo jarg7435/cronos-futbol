@@ -82,7 +82,13 @@
                 }
 
                 await setDoc(ref, { lastLogin: serverTimestamp() }, { merge: true });
-                window._cronosCurrentUser = { uid: user.uid, email: user.email, role: data.role };
+                window._cronosCurrentUser = { 
+                    uid: user.uid, 
+                    email: user.email, 
+                    role: data.role,
+                    clubId: data.clubId || null,
+                    clubName: data.clubName || null
+                };
                 enterApp();
 
             } catch (err) {
@@ -247,6 +253,18 @@
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
             </div>
 
+            <!-- Código de Invitación (Opcional para registro) -->
+            <div id="invite-code-container" style="display:none; margin-bottom:1.5rem;">
+                <label style="font-size:0.78rem; color:#ffd700; display:block; margin-bottom:5px;">¿Tienes un código de invitación? (Opcional)</label>
+                <input type="text" id="auth-invite-code" placeholder="EJ: 3A7B9X"
+                    style="width:100%; padding:0.75rem; background:rgba(255,215,0,0.05);
+                           border:1px solid rgba(255,215,0,0.25); border-radius:8px;
+                           color:#ffd700; font-size:0.95rem; box-sizing:border-box; outline:none; text-transform:uppercase;">
+                <p style="font-size:0.68rem; color:rgba(255,215,0,0.6); margin-top:0.3rem;">
+                    Úsalo para vincularte automáticamente con tu hijo/a.
+                </p>
+            </div>
+
             <!-- Botón -->
             <button id="auth-btn" type="submit" form="auth-form"
                 style="width:100%; padding:0.9rem; background:#58a6ff; border:none;
@@ -271,6 +289,98 @@
                    border-radius:20px; cursor:pointer; backdrop-filter:blur(6px);
                    -webkit-backdrop-filter:blur(6px);">
             ↺ FORZAR ACTUALIZACIÓN
+        </button>
+    </div>
+
+    <!-- ══ PANTALLA DE SELECCIÓN DE ROL (Landing) ══════════════════════ -->
+    <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:9000; 
+         flex-direction:column; align-items:center; justify-content:center; padding:2rem; overflow-y:auto;">
+        
+        <div style="text-align:center; margin-bottom:3rem; animation: fadeIn 0.8s ease-out;">
+            <img src="/assets/img_0f3942d4.png" alt="Chronos Fútbol" style="height:100px; width:auto; margin-bottom:0.5rem;">
+            <h1 style="font-family:'Outfit',sans-serif; color:white; font-size:1.8rem; margin:0;">Bienvenido a Chronos</h1>
+            <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.5rem;">Selecciona una opción para continuar</p>
+        </div>
+
+        <div class="role-cards-container" style="display:flex; gap:1.5rem; width:100%; max-width:1000px; justify-content:center; flex-wrap:wrap;">
+            
+            <!-- Opción Superadmin -->
+            <div id="card-opt-superadmin" class="role-card" onclick="selectOption('superadmin')" style="display:none;">
+                <div class="role-card-icon">👑</div>
+                <h3>Superadministrador</h3>
+                <p>Control total de clubes, usuarios y sistema.</p>
+                <div class="role-card-badge">ADMIN</div>
+            </div>
+
+            <!-- Opción Entrenador -->
+            <div id="card-opt-coach" class="role-card" onclick="selectOption('coach')" style="display:none;">
+                <div class="role-card-icon">⚽</div>
+                <h3>Entrenador</h3>
+                <p>Gestiona partidos, convocatorias e informes en tiempo real.</p>
+            </div>
+
+            <!-- Opción Padre/Madre -->
+            <div id="card-opt-parent" class="role-card" onclick="selectOption('parent')" style="display:none;">
+                <div class="role-card-icon">👨‍👩‍👧</div>
+                <h3>Padre / Madre</h3>
+                <p>Sigue a tu hijo, recibe convocatorias y mira partidos en vivo.</p>
+            </div>
+
+        </div>
+
+        <style>
+            .role-card {
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 20px;
+                padding: 2rem 1.5rem;
+                width: 280px;
+                text-align: center;
+                cursor: pointer;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                position: relative;
+                overflow: hidden;
+                backdrop-filter: blur(10px);
+            }
+            .role-card:hover {
+                background: rgba(88, 166, 255, 0.08);
+                border-color: rgba(88, 166, 255, 0.4);
+                transform: translateY(-8px);
+                box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+            }
+            .role-card-icon {
+                font-size: 3rem;
+                margin-bottom: 1.2rem;
+                filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+            }
+            .role-card h3 {
+                color: white;
+                font-family: 'Outfit', sans-serif;
+                margin-bottom: 0.8rem;
+                font-size: 1.2rem;
+            }
+            .role-card p {
+                color: var(--text-muted);
+                font-size: 0.85rem;
+                line-height: 1.5;
+            }
+            .role-card-badge {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                font-size: 0.6rem;
+                font-weight: 800;
+                color: #ffd700;
+                background: rgba(255, 215, 0, 0.1);
+                padding: 2px 8px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 215, 0, 0.3);
+            }
+        </style>
+
+        <button onclick="cerrarSesion()" style="margin-top:4rem; background:none; border:1px solid rgba(255,255,255,0.1); 
+                color:var(--text-muted); padding:0.6rem 1.5rem; border-radius:30px; cursor:pointer; font-size:0.8rem;">
+            ⏻ Cerrar Sesión
         </button>
     </div>
 
@@ -349,6 +459,12 @@
                        color:#ff5858; font-size:0.65rem; padding:0.3rem 0.6rem;
                        border-radius:6px; cursor:pointer;">
                 🔴 EN VIVO
+            </button>
+            <button id="btn-club-reports" onclick="openClubReports()" title="Informes de todo el club"
+                style="display:none; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                       color:var(--primary); font-size:0.65rem; padding:0.3rem 0.6rem;
+                       border-radius:6px; cursor:pointer;">
+                📊 INFORMES CLUB
             </button>
         </div>
     </header>
@@ -461,6 +577,7 @@
     <script src="js/19_whatsapp_email.js"></script>
     <script src="js/20_parent_panel.js"></script>
     <script src="js/21_coach_comms.js"></script>
+    <script src="js/22_club_reports.js"></script>
 
     <!-- Informe imprimible -->
     <div id="print-report" style="display:none;">
@@ -818,6 +935,10 @@
             tReg.style.color       = !_isLoginMode ? '#58a6ff' : '#7d8590';
             tReg.style.borderBottom= !_isLoginMode ? '2px solid #58a6ff' : '2px solid transparent';
         }
+        const inviteContainer = document.getElementById('invite-code-container');
+        if (inviteContainer) {
+            inviteContainer.style.display = _isLoginMode ? 'none' : 'block';
+        }
         showAuthError('');
     }
 
@@ -859,18 +980,59 @@
                 if (window._checkAuthorization) { await window._checkAuthorization(cred.user); } else if (fa.checkAuthorization) { await fa.checkAuthorization(cred.user); } else { throw new Error("checkAuth not found"); }
             } else {
                 // ── REGISTRO ──
+                const inviteCode = document.getElementById('auth-invite-code')?.value.trim().toUpperCase() || '';
                 const cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
-                // Crear doc en Firestore como pendiente
+                
+                let userRole = 'user'; // Por defecto entrenador/usuario individual
+                let isAuthorized = false;
+                let clubId = null;
+
+                // Si hay código de invitación, intentar vincular
+                if (inviteCode) {
+                    const linksSnap = await fa.getDocs(fa.query(
+                        fa.collection(fa.db, 'cronos_player_links'),
+                        fa.where('inviteCode', '==', inviteCode)
+                    ));
+                    
+                    if (!linksSnap.empty) {
+                        const linkDoc = linksSnap.docs[0];
+                        const linkData = linkDoc.data();
+                        
+                        userRole = 'parent';
+                        isAuthorized = true; // Si tiene invitación válida, se autoriza automáticamente
+                        clubId = linkData.clubId;
+                        
+                        // Actualizar el vínculo con el nuevo UID real
+                        await fa.updateDoc(fa.doc(fa.db, 'cronos_player_links', linkDoc.id), {
+                            parentUid: cred.user.uid,
+                            parentEmail: email,
+                            parentWA: linkData.parentWA || '' // Mantener el WA si existía
+                        });
+                        showAuthError('✅ ¡Vinculación correcta! Cuenta de Padre/Madre autorizada.');
+                    } else {
+                        showAuthError('⚠️ Código de invitación no válido. Cuenta creada como pendiente.');
+                    }
+                }
+
+                // Crear doc en Firestore
                 await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), {
                     email:        email,
-                    isAuthorized: false,
-                    role:         'user',
+                    isAuthorized: isAuthorized,
+                    role:         userRole,
+                    clubId:       clubId,
                     createdAt:    fa.serverTimestamp(),
                     lastLogin:    fa.serverTimestamp()
                 });
-                await fa.signOut(fa.auth);
-                showAuthError('✅ Cuenta creada. Pendiente de autorización por el administrador.');
-                switchTab('login');
+                
+                if (!isAuthorized) {
+                    await fa.signOut(fa.auth);
+                    showAuthError('✅ Cuenta creada. Pendiente de autorización por el administrador.');
+                    switchTab('login');
+                } else {
+                    // Si está autorizado vía código, podemos entrar directo o pedir login
+                    showAuthError('✅ Registro completado. Ya puedes entrar.');
+                    switchTab('login');
+                }
             }
         } catch(e) {
             const msgs = {
@@ -891,141 +1053,100 @@
     function enterApp() {
         document.getElementById('auth-screen').style.display = 'none';
         document.body.classList.remove('locked');
+        showRoleSelection();
+    }
 
+    // ── Mostrar pantalla de selección de rol ──────────────────────
+    function showRoleSelection() {
         const role = window._cronosCurrentUser?.role;
+        const screen = document.getElementById('role-selection-screen');
+        if (!screen) return;
 
-        // SuperAdmin → mostrar selector de rol antes de entrar
+        screen.style.display = 'flex';
+
+        // Ocultar todas las tarjetas inicialmente
+        document.getElementById('card-opt-superadmin').style.display = 'none';
+        document.getElementById('card-opt-coach').style.display      = 'none';
+        document.getElementById('card-opt-parent').style.display     = 'none';
+
+        // Filtrar según el rol real del usuario (desde Firestore)
         if (['superadmin','admin'].includes(role)) {
-            showRoleSelector();
-            return;
+            document.getElementById('card-opt-superadmin').style.display = 'block';
+            document.getElementById('card-opt-coach').style.display      = 'block';
+            document.getElementById('card-opt-parent').style.display     = 'block';
+        } 
+        else if (role === 'club_admin' || role === 'director' || role === 'coordinator' || role === 'user') {
+            document.getElementById('card-opt-coach').style.display      = 'block';
+            document.getElementById('card-opt-parent').style.display     = 'block'; // Entrenadores pueden ver área de familias
+        } 
+        else if (role === 'parent') {
+            document.getElementById('card-opt-parent').style.display     = 'block';
         }
-
-        _launchWithRole(role);
     }
 
-    // ── Selector de rol para SuperAdmin ──────────────────────────
-    function showRoleSelector() {
+    // ── Seleccionar una opción ───────────────────────────────────
+    window.selectOption = (option) => {
+        const screen = document.getElementById('role-selection-screen');
+        if (screen) screen.style.display = 'none';
+
         const me = window._cronosCurrentUser;
-        let overlay = document.getElementById('role-selector-overlay');
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = 'role-selector-overlay';
-            overlay.style.cssText =
-                'position:fixed;inset:0;background:#0a0e14;z-index:9999;' +
-                'display:flex;align-items:center;justify-content:center;padding:1.5rem;';
-            document.body.appendChild(overlay);
-        }
-        overlay.style.display = 'flex';
-        overlay.innerHTML = `
-        <div style="width:100%;max-width:420px;background:rgba(255,255,255,0.04);
-                    border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:2rem;">
-            <div style="text-align:center;margin-bottom:1.5rem;">
-                <div style="font-size:1.4rem;font-weight:700;margin-bottom:0.3rem;">
-                    👑 Bienvenido
-                </div>
-                <div style="font-size:0.82rem;color:#7d8590;">${me?.email || ''}</div>
-                <div style="font-size:0.78rem;color:#ffd700;margin-top:0.3rem;font-weight:700;">
-                    SuperAdministrador
-                </div>
-            </div>
-            <p style="font-size:0.85rem;color:#7d8590;text-align:center;margin-bottom:1.4rem;">
-                ¿Con qué rol quieres entrar?
-            </p>
-            <div style="display:flex;flex-direction:column;gap:0.7rem;">
-                <button onclick="selectRole('superadmin')"
-                    style="width:100%;padding:1rem;background:rgba(255,215,0,0.1);
-                           border:1px solid rgba(255,215,0,0.4);border-radius:10px;
-                           color:#ffd700;font-size:1rem;font-weight:700;cursor:pointer;
-                           text-align:left;display:flex;align-items:center;gap:0.8rem;
-                           transition:background 0.15s;">
-                    <span style="font-size:1.4rem;">👑</span>
-                    <div>
-                        <div>SuperAdmin</div>
-                        <div style="font-size:0.72rem;font-weight:400;color:rgba(255,215,0,0.6);margin-top:0.1rem;">
-                            Gestión de clubs, usuarios, cobros y configuración
-                        </div>
-                    </div>
-                </button>
-                <button onclick="selectRole('user')"
-                    style="width:100%;padding:1rem;background:rgba(63,185,80,0.08);
-                           border:1px solid rgba(63,185,80,0.35);border-radius:10px;
-                           color:#3fb950;font-size:1rem;font-weight:700;cursor:pointer;
-                           text-align:left;display:flex;align-items:center;gap:0.8rem;
-                           transition:background 0.15s;">
-                    <span style="font-size:1.4rem;">⚽</span>
-                    <div>
-                        <div>Entrenador</div>
-                        <div style="font-size:0.72rem;font-weight:400;color:rgba(63,185,80,0.6);margin-top:0.1rem;">
-                            Crear partidos, gestionar plantilla y convocatorias
-                        </div>
-                    </div>
-                </button>
-                <button onclick="selectRole('parent')"
-                    style="width:100%;padding:1rem;background:rgba(210,168,255,0.08);
-                           border:1px solid rgba(210,168,255,0.3);border-radius:10px;
-                           color:#d2a8ff;font-size:1rem;font-weight:700;cursor:pointer;
-                           text-align:left;display:flex;align-items:center;gap:0.8rem;
-                           transition:background 0.15s;">
-                    <span style="font-size:1.4rem;">👨‍👩‍👧</span>
-                    <div>
-                        <div>Padre / Madre</div>
-                        <div style="font-size:0.72rem;font-weight:400;color:rgba(210,168,255,0.6);margin-top:0.1rem;">
-                            Ver partidos en vivo, convocatorias y entrenamientos
-                        </div>
-                    </div>
-                </button>
-            </div>
-            <button onclick="cerrarSesion()"
-                style="width:100%;margin-top:1.2rem;padding:0.5rem;
-                       background:none;border:1px solid rgba(255,255,255,0.08);
-                       border-radius:8px;color:#7d8590;font-size:0.78rem;cursor:pointer;">
-                ⏻ Cerrar sesión
-            </button>
-        </div>`;
+        if (!me) return;
 
-        window.selectRole = (selectedRole) => {
-            // Guardar rol elegido en memoria (sin sobreescribir el real en Firestore)
-            window._cronosCurrentUser._activeRole = selectedRole;
-            overlay.style.display = 'none';
-            _launchWithRole(selectedRole);
-        };
-    }
+        // Establecer el rol activo basado en la opción elegida
+        me._activeRole = (option === 'superadmin') ? me.role : (option === 'coach' ? 'user' : 'parent');
+        
+        _launchWithRole(me._activeRole);
+    };
 
     // ── Lanzar la app con el rol activo ──────────────────────────
     function _launchWithRole(role) {
         const activeRole = window._cronosCurrentUser?._activeRole || role;
 
+        // Limpiar interfaz
+        document.getElementById('main-container').style.display = (activeRole === 'parent') ? 'none' : 'flex';
+        document.getElementById('main-header').style.display    = (activeRole === 'parent') ? 'none' : 'flex';
+
         // Botón ADMIN — solo superadmin/admin en modo superadmin
         const btnAdmin = document.getElementById('btn-admin-panel');
         if (btnAdmin) {
             btnAdmin.style.display =
-                ['admin','superadmin'].includes(role) && activeRole === 'superadmin'
+                (['admin','superadmin'].includes(window._cronosCurrentUser.role) && activeRole === window._cronosCurrentUser.role)
                 ? 'inline-block' : 'none';
         }
 
         // Botón MI CLUB — solo club_admin
         const btnClub = document.getElementById('btn-club-panel');
         if (btnClub) {
-            btnClub.style.display = (role === 'club_admin') ? 'inline-block' : 'none';
+            btnClub.style.display = (window._cronosCurrentUser.role === 'club_admin') ? 'inline-block' : 'none';
         }
 
         // Botón EN VIVO
         const btnLive = document.getElementById('btn-live-view');
         if (btnLive) {
             btnLive.style.display =
-                ['admin','superadmin','club_admin','director','coordinator'].includes(role)
+                ['admin','superadmin','club_admin','director','coordinator'].includes(window._cronosCurrentUser.role)
+                ? 'inline-block' : 'none';
+        }
+
+        // Botón INFORMES CLUB
+        const btnClubReports = document.getElementById('btn-club-reports');
+        if (btnClubReports) {
+            btnClubReports.style.display =
+                ['admin','superadmin','club_admin','director','coordinator'].includes(window._cronosCurrentUser.role)
                 ? 'inline-block' : 'none';
         }
 
         // Guardar sesión
-        if (window._cronosCurrentUser) {
-            sessionStorage.setItem('cronos_session_uid',   window._cronosCurrentUser.uid   || '');
-            sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email || '');
-            sessionStorage.setItem('cronos_session_role',  role || 'user');
-        }
+        sessionStorage.setItem('cronos_session_uid',   window._cronosCurrentUser.uid   || '');
+        sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email || '');
+        sessionStorage.setItem('cronos_session_role',  activeRole || 'user');
 
         // Inicializar con el rol activo elegido
-        if (typeof init === 'function') init(activeRole);
+        if (activeRole === 'parent') {
+            if (typeof openParentPanel === 'function') openParentPanel();
+        } else {
+            if (typeof init === 'function') init(activeRole);
+        }
     }
 
     // ── Panel admin ──────────────────────────────────────────────
@@ -1037,6 +1158,10 @@
             openClubAdminPanel();
         }
     }
+
+    // ── Función para que el Superadmin pueda volver a la selección ──
+    window.showRoleSelector = showRoleSelection;
+    </script>
     </script>
 
 </body>
