@@ -227,7 +227,7 @@ async function openParentPanel() {
             const items = [];
             snap.forEach(d => {
                 const dat = d.data();
-                if (dat.type === 'convocatoria' || dat.type === 'entrenamiento') {
+                if (dat.type === 'convocatoria' || dat.type === 'entrenamiento' || dat.type === 'planificacion_semanal' || dat.type === 'informe_partido') {
                     items.push({ _id: d.id, ...dat });
                 }
             });
@@ -245,17 +245,33 @@ async function openParentPanel() {
             }
 
             body.innerHTML = items.map(n => {
-                const isConv = n.type === 'convocatoria';
-                const accent = isConv ? '#3fb950' : '#58a6ff';
-                const icon   = isConv ? '📋' : '📅';
-                const title  = isConv ? 'Convocatoria' : 'Entrenamiento';
                 const sent   = n.createdAt
                     ? new Date(n.createdAt).toLocaleDateString('es-ES',
                         {day:'numeric', month:'long', year:'numeric'})
                     : '';
 
+                const isConv   = (n.type === 'convocatoria');
+                const isReport = (n.type === 'informe_partido');
+                const isWeekly = (n.type === 'planificacion_semanal');
+                const accent = isConv ? '#3fb950' : (isReport ? '#d2a8ff' : '#58a6ff');
+                const icon   = isConv ? '📋' : (isReport ? '📊' : '📅');
+                const title  = isConv ? 'Convocatoria' : (isReport ? 'Informe Rendimiento' : 'Entrenamiento');
+
                 let inner = '';
-                if (isConv) {
+                if (isReport) {
+                    inner = `
+                        <div style="font-size:0.86rem;font-weight:700;margin-bottom:0.4rem;">
+                            ⚽ vs ${n.rival || 'Rival'}
+                            <span style="float:right;color:#58a6ff;">${n.scoreHome}-${n.scoreAway} 🏁</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.45rem;padding:0.7rem;background:rgba(210,168,255,0.06);border-radius:8px;border:1px solid rgba(210,168,255,0.15);">
+                            <div style="font-size:0.77rem;">⏱️ Minutos: <strong>${n.minutesPlayed}</strong></div>
+                            <div style="font-size:0.77rem;">⚽ Goles: <strong>${n.goals}</strong></div>
+                            <div style="font-size:0.77rem;">🃏 Tarjetas: <strong>${n.cards}</strong></div>
+                            <div style="font-size:0.77rem;">🚑 Estado: <strong>${n.injured ? 'Lesionado' : 'OK'}</strong></div>
+                        </div>
+                    `;
+                } else if (isConv) {
                     inner = `
                         ${n.matchDate ? `<div style="font-size:0.83rem;margin-bottom:0.25rem;">
                             📅 <strong>${n.matchDate}</strong>

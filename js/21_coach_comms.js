@@ -38,15 +38,15 @@ async function openCoachMessaging() {
                 style="font-size:0.78rem;background:var(--glass);color:var(--text-muted);">
                 🔄 Actualizar
             </button>
-            <button onclick="openConvocationMessage()" class="btn"
-                style="font-size:0.78rem;background:rgba(88,166,255,0.1);
-                       border-color:rgba(88,166,255,0.4);color:var(--primary);font-weight:700;">
-                📋 Enviar Convocatoria
-            </button>
             <button onclick="openTrainingNotification()" class="btn"
                 style="font-size:0.78rem;background:rgba(240,136,62,0.1);
                        border-color:rgba(240,136,62,0.4);color:var(--secondary);font-weight:700;">
                 📅 Info Entrenamiento
+            </button>
+            <button onclick="openContactManager()" class="btn"
+                style="font-size:0.78rem;background:rgba(255,255,255,0.05);
+                       border-color:rgba(255,255,255,0.2);color:var(--text-muted);font-weight:700;">
+                📱 Gestión Contactos
             </button>
             <button onclick="sendMatchReportsToParents()" class="btn"
                 style="font-size:0.78rem;background:rgba(63,185,80,0.1);
@@ -133,7 +133,7 @@ async function _loadParentList() {
                     </div>
                     <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.2rem;">
                         👨‍👩‍👧 ${link.parentEmail}
-                        ${link.parentWA ? ` · 📱 +${link.parentWA}` : ''}
+                        ${link.parentPhone ? ` · 📱 ${link.parentPhone}` : ''}
                     </div>
                     <div style="font-size:0.76rem;
                                 color:${unread ? '#58a6ff' : 'var(--text-muted)'};
@@ -487,6 +487,30 @@ async function sendMatchReportsToParents() {
                 });
             }
 
+            // --- NOTIFICACIÓN INTERNA GRATUITA (TAB MENSAJES DEL PADRE) ---
+            const notifId = `notif_rpt_${link.playerNumber}_${Date.now().toString(36)}`;
+            await setDoc(doc(db, 'cronos_notifications', notifId), {
+                type:           'informe_partido',
+                clubId:         me.clubId || null,
+                parentUid:      link.parentUid,
+                playerNumber:   link.playerNumber,
+                rival:          TEAM_NAMES.away,
+                scoreHome,
+                scoreAway,
+                minutesPlayed,
+                goals:          player.goals || 0,
+                cards:          cardIcon,
+                injured:        player.injured || false,
+                createdAt:      new Date().toISOString()
+            });
+
+            // --- OPCIÓN WHATSAPP (SI TIENE TELÉFONO GRABADO) ---
+            if (link.parentPhone) {
+                const waUrl = `https://wa.me/${link.parentPhone}?text=${encodeURIComponent(reportText)}`;
+                // Nota: Abrir WhatsApp individualmente si el coach lo desea, o dejarlo para el hilo
+                console.log(`[WA] Perfil listo para: ${link.parentPhone}`);
+            }
+
             sent++;
         }
 
@@ -499,7 +523,166 @@ async function sendMatchReportsToParents() {
     }
 }
 
+// ── Guardado automático interno para Club Staff ───────────────────────
+async function saveAllMatchReportsInternal() {
+    const me = window._cronosCurrentUser;
+    if (!me || !window.players) return;
+
+    try {
+        const { setDoc, doc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth.db;
+
+        const scoreHome = document.getElementById('score-home')?.textContent || '0';
+        const scoreAway = document.getElementById('score-away')?.textContent || '0';
+        const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
+        const homePlayers = window.players.filter(p => p.team === 'home');
+
+        // Obtener links actuales para vincular playerNumber → parentUid
+        const { collection, getDocs, query, where } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const linksSnap = await getDocs(query(
+            collection(db, 'cronos_player_links'),
+            where('clubId', '==', me.clubId || '')
+        ));
+
+        const linksMap = {};
+        linksSnap.forEach(d => {
+            const data = d.data();
+            linksMap[data.playerNumber] = data;
+        });
+
+        let saved = 0;
+        for (const player of homePlayers) {
+            const link = linksMap[player.number] || {};
+            const reportId = `rpt_${player.number}_${Date.now().toString(36)}`;
+            
+            await setDoc(doc(db, 'cronos_player_reports', reportId), {
+                reportId,
+                playerNumber:   player.number,
+                playerAlias:    player.name,
+                parentUid:      link.parentUid || null,
+                coachUid:       me.uid,
+                coachEmail:     me.email,
+                clubId:         me.clubId || null,
+                matchDate,
+                rival:          TEAM_NAMES.away,
+                scoreHome,
+                scoreAway,
+                minutesPlayed:  formatTime(player.time || 0),
+                goals:          player.goals   || 0,
+                cards:          player.cards   || 'ninguna',
+                injured:        player.injured || false,
+                history:        player.history || [],
+                createdAt:      new Date().toISOString(),
+            });
+            saved++;
+        }
+        console.log(`[AutoReport] ${saved} informes técnicos generados para Staff.`);
+    } catch(e) {
+        console.error('[AutoReport] Error:', e.message);
+    }
+}
+
+// ── Gestión de Contactos (Teléfonos WhatsApp) ─────────────────────────
+async function openContactManager() {
+    const me = window._cronosCurrentUser;
+    const db = window._cronos_auth.db;
+    showSpinner('Cargando contactos…');
+
+    try {
+        const { collection, getDocs, query, where } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        
+        const snap = await getDocs(query(
+            collection(db, 'cronos_player_links'),
+            where('clubId', '==', me.clubId || '')
+        ));
+
+        const links = [];
+        snap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+
+        hideSpinner();
+
+        const modal = document.getElementById('setup-modal');
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+        <div class="modal-content" style="width:min(95vw,500px);max-height:92vh;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-shrink:0;">
+                <h2 style="margin:0;font-size:1rem;">📱 Gestión de Contactos</h2>
+                <button onclick="document.getElementById('setup-modal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+            </div>
+            
+            <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:1rem;">
+                Graba los teléfonos de los padres de forma permanente para enviar WhatsApps directos.
+            </p>
+
+            <div style="flex:1;overflow-y:auto;">
+                <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+                    <thead>
+                        <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);">
+                            <th style="padding:0.5rem;text-align:left;">JUGADOR</th>
+                            <th style="padding:0.5rem;text-align:left;">DORSAL</th>
+                            <th style="padding:0.5rem;text-align:left;">TELÉFONO WHATSAPP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${links.map(link => `
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <td style="padding:0.6rem 0.4rem;">${link.playerAlias || link.playerName || 'Jugador'}</td>
+                            <td style="padding:0.6rem 0.4rem;font-weight:700;color:var(--primary);">#${link.playerNumber}</td>
+                            <td style="padding:0.6rem 0.4rem;">
+                                <input type="text" class="contact-phone" data-linkid="${link._id}"
+                                    value="${link.parentPhone || ''}"
+                                    placeholder="ej: 34600112233"
+                                    style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+                            </td>
+                        </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:1rem;display:flex;gap:0.6rem;flex-shrink:0;">
+                <button onclick="document.getElementById('setup-modal').style.display='none'" class="btn" style="flex:1;">Cancelar</button>
+                <button onclick="saveContactPhones()" class="btn primary" style="flex:2;">💾 Guardar Teléfonos</button>
+            </div>
+        </div>`;
+    } catch(e) {
+        hideSpinner();
+        showToast('⚠️ Error: ' + e.message, 4000);
+    }
+}
+
+async function saveContactPhones() {
+    const inputs = document.querySelectorAll('.contact-phone');
+    const db = window._cronos_auth.db;
+    showSpinner('Guardando cambios…');
+
+    try {
+        const { updateDoc, doc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+        for (const input of inputs) {
+            const linkId = input.dataset.linkid;
+            const phone  = input.value.trim().replace(/\s/g, ''); // Sin espacios
+            await updateDoc(doc(db, 'cronos_player_links', linkId), { parentPhone: phone });
+        }
+
+        hideSpinner();
+        showToast('✅ Teléfonos guardados correctamente', 3000);
+        document.getElementById('setup-modal').style.display = 'none';
+        _loadParentList(); // Recargar lista principal
+    } catch(e) {
+        hideSpinner();
+        showToast('⚠️ Error al guardar: ' + e.message, 4000);
+    }
+}
+
 window.openCoachMessaging      = openCoachMessaging;
 window.openThreadWithParent    = openThreadWithParent;
 window.sendMatchReportsToParents = sendMatchReportsToParents;
 window._loadThreadMessages     = _loadThreadMessages;
+window.openContactManager      = openContactManager;
+window.saveContactPhones       = saveContactPhones;
+window.saveAllMatchReportsInternal = saveAllMatchReportsInternal;
