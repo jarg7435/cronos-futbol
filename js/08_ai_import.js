@@ -491,7 +491,17 @@ function openConvocationModal() {
                     <button class="btn" onclick="openTrainingNotification()"
                         style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
                                color:#58a6ff;font-weight:700;">
-                        ⚽ INFO ENTRENAMIENTO
+                        📅 INFO ENTRENAMIENTO
+                    </button>
+                    <button class="btn" onclick="openCoachMessaging()"
+                        style="background:rgba(210,168,255,0.12);border-color:rgba(210,168,255,0.4);
+                               color:#d2a8ff;font-weight:700;">
+                        💬 MENSAJES
+                    </button>
+                    <button class="btn" onclick="sendMatchReportsToParents()"
+                        style="background:rgba(240,136,62,0.12);border-color:rgba(240,136,62,0.4);
+                               color:var(--secondary);font-weight:700;">
+                        📊 INFORME PARTIDO
                     </button>
                     <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>
                         INICIAR PARTIDO

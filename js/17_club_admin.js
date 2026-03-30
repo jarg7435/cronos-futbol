@@ -68,7 +68,7 @@ async function openClubAdminPanel() {
                 <div><label class="sa-label">Nombre</label>
                     <input class="sa-input" id="nu-name" placeholder="Nombre completo"></div>
                 <div><label class="sa-label">Rol</label>
-                    <select class="sa-input" id="nu-role">
+                    <select class="sa-input" id="nu-role" onchange="caRoleChanged()">
                         <option value="user">⚽ Entrenador</option>
                         <option value="parent">👨‍👩‍👧 Padre/Madre</option>
                         ${features.live_view?'<option value="coordinator">🎯 Coordinador</option>':''}
@@ -78,6 +78,25 @@ async function openClubAdminPanel() {
                     style="color:var(--primary);border-color:rgba(88,166,255,0.4);
                            background:rgba(88,166,255,0.1);font-weight:700;height:34px;">
                     ➕ Alta</button>
+            </div>
+            <!-- Campos extra para Padre/Madre -->
+            <div id="nu-parent-fields" style="display:none;margin-top:0.6rem;">
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.4rem;
+                            padding:0.4rem 0.6rem;background:rgba(210,168,255,0.08);
+                            border:1px solid rgba(210,168,255,0.2);border-radius:6px;">
+                    👨‍👩‍👧 Datos adicionales para Padre/Tutor — vincula al jugador de su hijo/a
+                </div>
+                <div class="sa-g4" style="margin-top:0.4rem;">
+                    <div><label class="sa-label">Nº Dorsal del jugador *</label>
+                        <input class="sa-input" id="nu-player-num" type="number"
+                               placeholder="ej: 7" min="1" max="99"></div>
+                    <div><label class="sa-label">Alias / Nombre del jugador</label>
+                        <input class="sa-input" id="nu-player-alias" placeholder="ej: García"></div>
+                    <div><label class="sa-label">WhatsApp del padre (sin +)</label>
+                        <input class="sa-input" id="nu-parent-wa" type="tel"
+                               placeholder="ej: 34612345678"></div>
+                    <div></div>
+                </div>
             </div>
             <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;"></div>
         </div>
@@ -107,12 +126,29 @@ async function openClubAdminPanel() {
       </div>
     </div>`;
 
+    window.caRoleChanged = () => {
+        const role = document.getElementById('nu-role')?.value;
+        const fields = document.getElementById('nu-parent-fields');
+        if (fields) fields.style.display = role === 'parent' ? 'block' : 'none';
+    };
+
     window.caAddUser = async (cid) => {
         const email  = document.getElementById('nu-email').value.trim();
         const name   = document.getElementById('nu-name').value.trim();
         const role   = document.getElementById('nu-role').value;
         const msgEl  = document.getElementById('nu-msg');
         if (!email) { msgEl.style.color='#ff5858'; msgEl.textContent='⚠️ Email obligatorio.'; return; }
+
+        // Validación extra para padres
+        if (role === 'parent') {
+            const pNum = document.getElementById('nu-player-num')?.value?.trim();
+            if (!pNum) {
+                msgEl.style.color='#ff5858';
+                msgEl.textContent='⚠️ El número de dorsal del jugador es obligatorio para Padre/Tutor.';
+                return;
+            }
+        }
+
         const si = slotOf(role);
         if (si.full) {
             msgEl.style.color='#ff5858';
@@ -127,11 +163,36 @@ async function openClubAdminPanel() {
         });
         const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
         await updateDoc(doc(db,'clubs',cid), { [key]: si.used+1 });
+
+        // Si es padre, guardar el vínculo con el jugador
+        if (role === 'parent') {
+            const pNum   = document.getElementById('nu-player-num')?.value?.trim() || '';
+            const pAlias = document.getElementById('nu-player-alias')?.value?.trim() || '';
+            const pWA    = document.getElementById('nu-parent-wa')?.value?.trim() || '';
+            const linkId = `${cid}_${pNum}`;
+            await setDoc(doc(db, 'cronos_player_links', linkId), {
+                clubId:      cid,
+                playerNumber: pNum,
+                playerAlias:  pAlias,
+                playerName:   pAlias,
+                teamName:     club.name || '',
+                parentUid:    uid,
+                parentEmail:  email,
+                parentWA:     pWA,
+                coachUid:     '',        // Se actualizará cuando el entrenador acceda
+                coachEmail:   '',
+                linkedAt:     new Date().toISOString(),
+            });
+            if (document.getElementById('nu-player-num'))   document.getElementById('nu-player-num').value = '';
+            if (document.getElementById('nu-player-alias'))  document.getElementById('nu-player-alias').value = '';
+            if (document.getElementById('nu-parent-wa'))    document.getElementById('nu-parent-wa').value = '';
+        }
+
         msgEl.style.color='#3fb950';
         msgEl.textContent=`✅ ${email} dado de alta. Debe registrarse con ese email.`;
         document.getElementById('nu-email').value='';
         document.getElementById('nu-name').value='';
-        setTimeout(() => openClubAdminPanel(), 1500);
+        setTimeout(() => openClubAdminPanel(), 1800);
     };
 
     window.caRequestDeletion = async (userId, userEmail, cid) => {
