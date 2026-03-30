@@ -95,7 +95,10 @@ async function openClubAdminPanel() {
                     <div><label class="sa-label">WhatsApp del padre (sin +)</label>
                         <input class="sa-input" id="nu-parent-wa" type="tel"
                                placeholder="ej: 34612345678"></div>
-                    <div></div>
+                    <div id="generated-invite-container" style="display:none; flex-direction:column; justify-content:center;">
+                        <label class="sa-label" style="color:#ffd700;">Código de Invitación</label>
+                        <div id="nu-invite-code-display" style="font-family:monospace; font-weight:bold; color:#ffd700; font-size:1.1rem; letter-spacing:2px;"></div>
+                    </div>
                 </div>
             </div>
             <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;"></div>
@@ -157,18 +160,22 @@ async function openClubAdminPanel() {
         msgEl.style.color='var(--primary)'; msgEl.textContent='Registrando…';
         const uid = 'pre_'+Date.now().toString(36);
         await setDoc(doc(db,'users',uid), {
-            email, displayName:name, role, clubId:cid,
+            email, displayName:name, role, clubId:cid, clubName:club.name||'',
             isAuthorized:true, status:'pending_register',
             createdBy:me.uid, createdAt:new Date().toISOString()
         });
         const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
         await updateDoc(doc(db,'clubs',cid), { [key]: si.used+1 });
 
-        // Si es padre, guardar el vínculo con el jugador
+        // Si es padre, guardar el vínculo con el jugador y generar código
         if (role === 'parent') {
             const pNum   = document.getElementById('nu-player-num')?.value?.trim() || '';
             const pAlias = document.getElementById('nu-player-alias')?.value?.trim() || '';
             const pWA    = document.getElementById('nu-parent-wa')?.value?.trim() || '';
+            
+            // Generar código aleatorio de 6 caracteres
+            const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+            
             const linkId = `${cid}_${pNum}`;
             await setDoc(doc(db, 'cronos_player_links', linkId), {
                 clubId:      cid,
@@ -179,10 +186,20 @@ async function openClubAdminPanel() {
                 parentUid:    uid,
                 parentEmail:  email,
                 parentWA:     pWA,
-                coachUid:     '',        // Se actualizará cuando el entrenador acceda
+                inviteCode:   inviteCode,
+                coachUid:     '',        
                 coachEmail:   '',
                 linkedAt:     new Date().toISOString(),
             });
+
+            // Mostrar el código
+            const codeDisplay = document.getElementById('nu-invite-code-display');
+            const codeContainer = document.getElementById('generated-invite-container');
+            if (codeDisplay && codeContainer) {
+                codeDisplay.textContent = inviteCode;
+                codeContainer.style.display = 'flex';
+            }
+
             if (document.getElementById('nu-player-num'))   document.getElementById('nu-player-num').value = '';
             if (document.getElementById('nu-player-alias'))  document.getElementById('nu-player-alias').value = '';
             if (document.getElementById('nu-parent-wa'))    document.getElementById('nu-parent-wa').value = '';

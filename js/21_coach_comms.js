@@ -64,10 +64,10 @@ async function _loadParentList() {
     try {
         const { db, collection, getDocs, query, where } = await _cFS();
 
-        // Obtener vínculos jugador-padre de este entrenador
+        // Obtener vínculos jugador-padre de este club (antes era solo por coachUid)
         const linksSnap = await getDocs(query(
             collection(db, 'cronos_player_links'),
-            where('coachUid', '==', me.uid)
+            where('clubId', '==', me.clubId)
         ));
         const links = [];
         linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
@@ -83,7 +83,7 @@ async function _loadParentList() {
             return;
         }
 
-        // Obtener hilos de mensajes existentes
+        // Obtener hilos de mensajes existentes (aquí sí mantenemos coachUid para que el chat sea privado entrenador-padre)
         const threadsSnap = await getDocs(query(
             collection(db, 'cronos_messages'),
             where('coachUid', '==', me.uid)
@@ -381,7 +381,7 @@ async function sendMatchReportsToParents() {
 
         const linksSnap = await getDocs(query(
             collection(db, 'cronos_player_links'),
-            where('coachUid', '==', me.uid)
+            where('clubId', '==', me.clubId)
         ));
         const links = [];
         linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
