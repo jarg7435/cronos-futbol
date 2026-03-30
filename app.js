@@ -447,7 +447,14 @@ function endMatch() {
     document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
+    
     stopLiveSync(); // marcar partido como finalizado en Firestore
+    
+    // Generar informes técnicos automáticamente para el Staff (Director/Coordinador)
+    if (typeof saveAllMatchReportsInternal === 'function') {
+        saveAllMatchReportsInternal();
+    }
+
     alert(`🏁 PARTIDO FINALIZADO\n${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}`);
 }
 
