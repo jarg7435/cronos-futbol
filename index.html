@@ -460,6 +460,12 @@
                        border-radius:6px; cursor:pointer;">
                 🔴 EN VIVO
             </button>
+            <button id="btn-coach-comms" onclick="openCoachMessaging()" title="Comunicaciones con Padres"
+                style="display:none; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                       color:var(--primary); font-size:0.65rem; padding:0.3rem 0.6rem;
+                       border-radius:6px; cursor:pointer;">
+                📱 COMUNICACIONES
+            </button>
             <button id="btn-club-reports" onclick="openClubReports()" title="Informes de todo el club"
                 style="display:none; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
                        color:var(--primary); font-size:0.65rem; padding:0.3rem 0.6rem;
@@ -1133,6 +1139,14 @@
         if (btnClubReports) {
             btnClubReports.style.display =
                 ['admin','superadmin','club_admin','director','coordinator'].includes(window._cronosCurrentUser.role)
+                ? 'inline-block' : 'none';
+        }
+
+        // Botón COMUNICACIONES — para entrenadores y staff
+        const btnCoachComms = document.getElementById('btn-coach-comms');
+        if (btnCoachComms) {
+            btnCoachComms.style.display =
+                ['admin','superadmin','club_admin','director','coordinator','coach','user'].includes(window._cronosCurrentUser.role)
                 ? 'inline-block' : 'none';
         }
 
