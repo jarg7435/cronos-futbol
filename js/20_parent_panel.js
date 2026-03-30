@@ -254,42 +254,78 @@ async function openParentPanel() {
                         {day:'numeric', month:'long', year:'numeric'})
                     : '';
 
-                const inner = isConv ? `
-                    ${n.matchDate ? `<div style="font-size:0.83rem;margin-bottom:0.25rem;">
-                        📅 <strong>${n.matchDate}</strong>
-                        ${n.rival ? ` · 🆚 vs <strong>${n.rival}</strong>` : ''}
-                    </div>` : ''}
-                    ${n.venue    ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🏟️ ${n.venue}</div>` : ''}
-                    ${n.meettime ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🕐 Presentación: <strong>${n.meettime}h</strong></div>` : ''}
-                    ${n.kickoff  ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">⚽ Inicio: <strong>${n.kickoff}h</strong></div>` : ''}
-                    ${n.players?.length ? `
-                    <div style="margin-top:0.5rem;padding:0.55rem 0.8rem;
-                                background:rgba(63,185,80,0.07);border-radius:8px;
-                                border:1px solid rgba(63,185,80,0.2);">
-                        <div style="font-size:0.71rem;font-weight:700;
-                                    color:#3fb950;margin-bottom:0.35rem;">
-                            👥 CONVOCADOS (${n.players.length})
+                let inner = '';
+                if (isConv) {
+                    inner = `
+                        ${n.matchDate ? `<div style="font-size:0.83rem;margin-bottom:0.25rem;">
+                            📅 <strong>${n.matchDate}</strong>
+                            ${n.rival ? ` · 🆚 vs <strong>${n.rival}</strong>` : ''}
+                        </div>` : ''}
+                        ${n.venue    ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🏟️ ${n.venue}</div>` : ''}
+                        ${n.meettime ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🕐 Presentación: <strong>${n.meettime}h</strong></div>` : ''}
+                        ${n.kickoff  ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">⚽ Inicio: <strong>${n.kickoff}h</strong></div>` : ''}
+                        ${n.players?.length ? `
+                        <div style="margin-top:0.5rem;padding:0.55rem 0.8rem;
+                                    background:rgba(63,185,80,0.07);border-radius:8px;
+                                    border:1px solid rgba(63,185,80,0.2);">
+                            <div style="font-size:0.71rem;font-weight:700;
+                                        color:#3fb950;margin-bottom:0.35rem;">
+                                👥 CONVOCADOS (${n.players.length})
+                            </div>
+                            <div style="font-size:0.8rem;line-height:1.8;">
+                                ${n.players.map((p,i)=>`${i+1}. ${p}`).join('<br>')}
+                            </div>
+                        </div>` : ''}
+                        ${n.extra ? `<div style="font-size:0.8rem;margin-top:0.5rem;
+                            color:#7d8590;font-style:italic;">💬 ${n.extra}</div>` : ''}
+                    `;
+                } else if (n.type === 'planificacion_semanal') {
+                    const d = new Date(n.weekStartDate + 'T12:00:00');
+                    const weekStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long' });
+                    inner = `
+                        <div style="font-size:0.85rem;font-weight:700;margin-bottom:0.6rem;color:#58a6ff;">
+                            🗓️ Semana del ${weekStr}
                         </div>
-                        <div style="font-size:0.8rem;line-height:1.8;">
-                            ${n.players.map((p,i)=>`${i+1}. ${p}`).join('<br>')}
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%;font-size:0.78rem;border-collapse:collapse;border:1px solid rgba(255,255,255,0.08);">
+                                <thead>
+                                    <tr style="background:rgba(88,166,255,0.08);color:#7d8590;">
+                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">DÍA</th>
+                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">HORA</th>
+                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">NOTA</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${n.days.map(day => `
+                                        <tr>
+                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);font-weight:700;color:var(--primary);">${day.day}</td>
+                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);">${day.time || '—'}</td>
+                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);color:#7d8590;">
+                                                ${day.note || (day.time ? '' : 'Descanso')}
+                                                ${day.venue ? `<br><small>📍 ${day.venue}</small>` : ''}
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
                         </div>
-                    </div>` : ''}
-                    ${n.extra ? `<div style="font-size:0.8rem;margin-top:0.5rem;
-                        color:#7d8590;font-style:italic;">💬 ${n.extra}</div>` : ''}
-                ` : `
-                    ${n.trainDate ? `<div style="font-size:0.83rem;margin-bottom:0.25rem;">
-                        📅 <strong>${n.trainDate}</strong>
-                        ${n.trainTime ? ` · 🕐 <strong>${n.trainTime}h</strong>` : ''}
-                    </div>` : ''}
-                    ${n.venue ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">📍 ${n.venue}</div>` : ''}
-                    ${n.content ? `
-                    <div style="font-size:0.82rem;line-height:1.6;margin-top:0.5rem;
-                                padding:0.55rem 0.8rem;
-                                background:rgba(88,166,255,0.06);
-                                border-radius:8px;border:1px solid rgba(88,166,255,0.15);">
-                        ${n.content.replace(/\n/g,'<br>')}
-                    </div>` : ''}
-                `;
+                    `;
+                } else {
+                    inner = `
+                        ${n.trainDate ? `<div style="font-size:0.83rem;margin-bottom:0.25rem;">
+                            📅 <strong>${n.trainDate}</strong>
+                            ${n.trainTime ? ` · 🕐 <strong>${n.trainTime}h</strong>` : ''}
+                        </div>` : ''}
+                        ${n.venue ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">📍 ${n.venue}</div>` : ''}
+                        ${n.content ? `
+                        <div style="font-size:0.82rem;line-height:1.6;margin-top:0.5rem;
+                                    padding:0.55rem 0.8rem;
+                                    background:rgba(88,166,255,0.06);
+                                    border-radius:8px;border:1px solid rgba(88,166,255,0.15);">
+                            ${n.content.replace(/\n/g,'<br>')}
+                        </div>` : ''}
+                    `;
+                }
 
                 return `
                 <div class="pp-card" style="border-left:3px solid ${accent};">
@@ -497,125 +533,186 @@ window.openParentPanel = openParentPanel;
 // ════════════════════════════════════════════════════════════════════
 function openTrainingNotification() {
     const modal = document.getElementById('setup-modal');
+    const today = new Date();
+    // Obtener el lunes de la semana actual
+    const dayOfWeek = today.getDay(); // 0: domingo, 1: lunes...
+    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    const startOfWeek = new Date(today.setDate(diff)).toISOString().substring(0,10);
+
     modal.style.display = 'flex';
     modal.innerHTML = `
-    <div class="modal-content" style="width:min(96vw,520px);max-height:92vh;
-         display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-content" style="width:min(98vw,680px);max-height:94vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:1.2rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;
-                    margin-bottom:0.9rem;flex-shrink:0;">
-            <h2 style="margin:0;font-size:1rem;">📅 Publicar Info de Entrenamiento</h2>
+                    margin-bottom:1rem;flex-shrink:0;">
+            <div>
+                <h2 style="margin:0;font-size:1.1rem;">📅 Planificación Semanal</h2>
+                <p style="margin:0;font-size:0.75rem;color:var(--text-muted);">
+                    Informa a los padres del horario de toda la semana
+                </p>
+            </div>
             <button onclick="document.getElementById('setup-modal').style.display='none'"
                 style="background:none;border:none;color:var(--text-muted);
-                       font-size:1.3rem;cursor:pointer;">✕</button>
+                       font-size:1.5rem;cursor:pointer;">✕</button>
         </div>
-        <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:0.75rem;">
-            <div>
-                <label style="font-size:0.73rem;color:var(--text-muted);
-                               display:block;margin-bottom:0.3rem;">
-                    📅 Fecha del entrenamiento *
-                </label>
-                <input type="date" id="tr-date"
-                    value="${new Date().toISOString().substring(0,10)}"
-                    style="width:100%;padding:0.6rem;background:rgba(255,255,255,0.06);
-                           border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.9rem;box-sizing:border-box;">
-            </div>
-            <div>
-                <label style="font-size:0.73rem;color:var(--text-muted);
-                               display:block;margin-bottom:0.3rem;">
-                    🕐 Hora de inicio
-                </label>
-                <input type="time" id="tr-time"
-                    style="width:100%;padding:0.6rem;background:rgba(255,255,255,0.06);
-                           border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.9rem;box-sizing:border-box;">
-            </div>
-            <div>
-                <label style="font-size:0.73rem;color:var(--text-muted);
-                               display:block;margin-bottom:0.3rem;">
-                    📍 Lugar
-                </label>
-                <input type="text" id="tr-venue"
-                    placeholder="Ciudad Deportiva, Campo 3…"
-                    style="width:100%;padding:0.6rem;background:rgba(255,255,255,0.06);
-                           border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.9rem;box-sizing:border-box;">
-            </div>
-            <div>
-                <label style="font-size:0.73rem;color:var(--text-muted);
-                               display:block;margin-bottom:0.3rem;">
-                    💬 Indicaciones (equipación, material, etc.)
-                </label>
-                <textarea id="tr-content" rows="4"
-                    placeholder="ej: Traer equipación azul. Hidratación obligatoria."
-                    style="width:100%;padding:0.6rem;background:rgba(255,255,255,0.06);
-                           border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.9rem;
-                           box-sizing:border-box;resize:vertical;"></textarea>
-            </div>
-            <div style="background:rgba(88,166,255,0.06);
-                        border:1px solid rgba(88,166,255,0.18);
-                        border-radius:8px;padding:0.6rem 0.85rem;
-                        font-size:0.77rem;color:var(--text-muted);">
-                💡 Los padres recibirán esta información en la pestaña
-                <strong>Mensajes</strong> de su panel.
-            </div>
-            <div id="tr-msg" style="font-size:0.8rem;min-height:1rem;text-align:center;"></div>
+
+        <div style="margin-bottom:1rem;flex-shrink:0;">
+            <label style="font-size:0.73rem;color:var(--text-muted);display:block;margin-bottom:0.3rem;">
+                🗓️ Semana del Lunes:
+            </label>
+            <input type="date" id="wp-start-date" value="${startOfWeek}"
+                   style="width:180px;padding:0.5rem;background:rgba(255,255,255,0.06);
+                          border:1px solid var(--glass-border);border-radius:6px;color:white;">
         </div>
+
+        <div style="overflow-y:auto;flex:1;background:rgba(0,0,0,0.15);border-radius:8px;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.8rem;text-align:left;">
+                <thead>
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);color:var(--text-muted);">
+                        <th style="padding:0.6rem;">DÍA</th>
+                        <th style="padding:0.6rem;">HORA</th>
+                        <th style="padding:0.6rem;">LUGAR</th>
+                        <th style="padding:0.6rem;">ACTIVIDAD / NOTA</th>
+                    </tr>
+                </thead>
+                <tbody id="wp-tbody">
+                    ${['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((day, i) => `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <td style="padding:0.5rem;font-weight:700;color:var(--primary);">${day}</td>
+                        <td style="padding:0.4rem;">
+                            <input type="time" class="wp-time" style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+                        </td>
+                        <td style="padding:0.4rem;">
+                            <input type="text" class="wp-venue" placeholder="Ciudad Dep." style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+                        </td>
+                        <td style="padding:0.4rem;">
+                            <input type="text" class="wp-note" placeholder="ej: Entrenamiento / Liga" style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+                        </td>
+                    </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+
+        <div id="wp-msg" style="font-size:0.8rem;min-height:1rem;text-align:center;margin-top:0.6rem;"></div>
+
         <div style="display:flex;gap:0.6rem;margin-top:0.9rem;flex-shrink:0;">
             <button onclick="document.getElementById('setup-modal').style.display='none'"
                 class="btn" style="flex:1;color:var(--text-muted);">
                 Cancelar
             </button>
-            <button onclick="sendTrainingNotification()" class="btn primary" style="flex:2;">
-                📤 Publicar
+            <button onclick="copyWeeklyToWhatsApp()" class="btn" style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;border:1px solid rgba(63,185,80,0.4);">
+                📲 Copiar para WhatsApp
+            </button>
+            <button onclick="sendWeeklyPlan()" class="btn primary" style="flex:1.5;">
+                📤 Publicar a Padres
             </button>
         </div>
     </div>`;
 }
+window.openTrainingNotification = openTrainingNotification;
+window.openTrainingNotification = openTrainingNotification;
 
-async function sendTrainingNotification() {
+async function sendWeeklyPlan() {
     const me  = window._cronosCurrentUser;
     const fa  = window._cronos_auth;
-    const date = document.getElementById('tr-date')?.value;
-    const msg  = document.getElementById('tr-msg');
-    if (!date) { msg.style.color='#ff5858'; msg.textContent='⚠️ La fecha es obligatoria.'; return; }
+    const startDate = document.getElementById('wp-start-date')?.value;
+    const msg = document.getElementById('wp-msg');
 
-    msg.style.color='var(--primary)'; msg.textContent='Publicando…';
+    if (!startDate) {
+        msg.style.color = '#ff5858';
+        msg.textContent = '⚠️ Selecciona la fecha de inicio de la semana.';
+        return;
+    }
 
-    const dateStr = new Date(date + 'T12:00:00').toLocaleDateString('es-ES',{
-        weekday:'long', day:'numeric', month:'long'});
+    msg.style.color = 'var(--primary)';
+    msg.textContent = 'Publicando plan semanal…';
+
+    const rows = document.querySelectorAll('#wp-tbody tr');
+    const daysData = Array.from(rows).map((row, i) => {
+        const dayNames = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+        return {
+            day:   dayNames[i],
+            time:  row.querySelector('.wp-time').value,
+            venue: row.querySelector('.wp-venue').value.trim(),
+            note:  row.querySelector('.wp-note').value.trim()
+        };
+    });
 
     const payload = {
-        type:       'entrenamiento',
-        clubId:     me?.clubId || null,
-        coachEmail: me?.email  || '',
-        coachUid:   me?.uid    || '',
-        trainDate:  dateStr,
-        trainTime:  document.getElementById('tr-time')?.value || '',
-        venue:      document.getElementById('tr-venue')?.value.trim() || '',
-        content:    document.getElementById('tr-content')?.value.trim() || '',
-        createdAt:  new Date().toISOString(),
+        type:          'planificacion_semanal',
+        clubId:        me?.clubId || null,
+        coachEmail:    me?.email  || '',
+        coachUid:      me?.uid    || '',
+        weekStartDate: startDate,
+        days:          daysData,
+        createdAt:     new Date().toISOString(),
     };
 
     try {
         const { setDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        
         await setDoc(
-            doc(fa.db, 'cronos_notifications', 'train_' + Date.now().toString(36)),
+            doc(fa.db, 'cronos_notifications', 'week_' + Date.now().toString(36)),
             payload
         );
+
         msg.style.color = '#3fb950';
-        msg.textContent = '✅ Entrenamiento publicado.';
-        showToast('✅ Info de entrenamiento publicada para los padres', 3000);
+        msg.textContent = '✅ Planificación semanal publicada correctamente.';
+        showToast('✅ Planificación semanal enviada a los padres', 3000);
+        
         setTimeout(() => {
             document.getElementById('setup-modal').style.display = 'none';
-        }, 1400);
-    } catch(e) {
+        }, 1500);
+
+    } catch (e) {
         msg.style.color = '#ff5858';
         msg.textContent = '⚠️ Error: ' + e.message;
     }
 }
 
+function copyWeeklyToWhatsApp() {
+    const startDate = document.getElementById('wp-start-date')?.value;
+    if (!startDate) {
+        showToast('⚠️ Selecciona la fecha primero', 3000);
+        return;
+    }
+
+    const d = new Date(startDate + 'T12:00:00');
+    const dateStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long' });
+    
+    let text = `📅 *PLANIFICACIÓN SEMANAL*\n📌 Semana del ${dateStr}\n\n`;
+
+    const rows = document.querySelectorAll('#wp-tbody tr');
+    const dayNames = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+    rows.forEach((row, i) => {
+        const time = row.querySelector('.wp-time').value;
+        const venue = row.querySelector('.wp-venue').value.trim();
+        const note = row.querySelector('.wp-note').value.trim();
+
+        if (time || venue || note) {
+            text += `🔹 *${dayNames[i]}*\n`;
+            if (time)  text += `   🕒 ${time}h\n`;
+            if (venue) text += `   📍 ${venue}\n`;
+            if (note)  text += `   📝 ${note}\n`;
+            text += `\n`;
+        } else {
+            text += `🔹 *${dayNames[i]}*: _Descanso_\n\n`;
+        }
+    });
+
+    text += `⚽ _Enviado desde Chronos Fútbol_`;
+
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('✅ Texto copiado. ¡Ya puedes pegarlo en WhatsApp!', 4000);
+    }).catch(err => {
+        console.error('Error al copiar:', err);
+        showToast('⚠️ No se pudo copiar automáticamente', 3000);
+    });
+}
+
 window.openTrainingNotification = openTrainingNotification;
-window.sendTrainingNotification = sendTrainingNotification;
+window.sendWeeklyPlan          = sendWeeklyPlan;
+window.copyWeeklyToWhatsApp     = copyWeeklyToWhatsApp;

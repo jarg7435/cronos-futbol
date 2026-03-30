@@ -38,10 +38,20 @@ async function openCoachMessaging() {
                 style="font-size:0.78rem;background:var(--glass);color:var(--text-muted);">
                 🔄 Actualizar
             </button>
+            <button onclick="openConvocationMessage()" class="btn"
+                style="font-size:0.78rem;background:rgba(88,166,255,0.1);
+                       border-color:rgba(88,166,255,0.4);color:var(--primary);font-weight:700;">
+                📋 Enviar Convocatoria
+            </button>
+            <button onclick="openTrainingNotification()" class="btn"
+                style="font-size:0.78rem;background:rgba(240,136,62,0.1);
+                       border-color:rgba(240,136,62,0.4);color:var(--secondary);font-weight:700;">
+                📅 Info Entrenamiento
+            </button>
             <button onclick="sendMatchReportsToParents()" class="btn"
                 style="font-size:0.78rem;background:rgba(63,185,80,0.1);
                        border-color:rgba(63,185,80,0.4);color:#3fb950;font-weight:700;">
-                📊 Enviar Informe de Partido
+                📊 Enviar Informes
             </button>
         </div>
 

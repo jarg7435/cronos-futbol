@@ -369,3 +369,4 @@ function sendConvocationEmail() {
     saveConvocationToFirestore(); // guardar para padres
     showToast('📧 Email abierto en tu cliente de correo', 3000);
 }
+window.openConvocationMessage = openConvocationMessage;
