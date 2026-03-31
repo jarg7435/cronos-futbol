@@ -168,11 +168,11 @@ function spawnInitialPlayers() {
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             };
 
-            // If loading a saved team, restore status + field position
+            // Si hay equipo guardado, solo restauramos posiciones x,y en campo.
+            // La convocatoria (initialStatus Titular/Suplente) SIEMPRE tiene prioridad.
             if (loadedHome) {
                 const saved = loadedHome.find(lp => lp.number == pData.number);
                 if (saved) {
-                    playerObj.status = saved.status || playerObj.status;
                     playerObj.x = saved.x !== undefined ? saved.x : 0;
                     playerObj.y = saved.y !== undefined ? saved.y : 0;
                 }

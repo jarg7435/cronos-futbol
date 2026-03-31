@@ -433,7 +433,7 @@ function openConvocationModal() {
     
     // --- MEJORA: Columnas responsivas ---
     const isMobile = window.innerWidth < 640;
-    const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
+    const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 4);
 
     const isLandscape = window.innerHeight < 500;
 
@@ -659,6 +659,7 @@ function startMatchWithConvocation() {
     document.getElementById('main-container').style.display = 'flex';
 
     renderPlayers();
+    updateMasterUI(); // Inicializa display del timer con tiempo correcto (ej: 40:00 para F11)
 
     // Aplicar formación inicial SOLO si no hay posiciones guardadas de un equipo cargado.
     // Si el equipo fue cargado, sus posiciones (x,y) ya fueron restauradas por spawnInitialPlayers
