@@ -38,20 +38,9 @@ async function openCoachMessaging() {
                 style="font-size:0.78rem;background:var(--glass);color:var(--text-muted);">
                 🔄 Actualizar
             </button>
-            <button onclick="openTrainingNotification()" class="btn"
-                style="font-size:0.78rem;background:rgba(240,136,62,0.1);
-                       border-color:rgba(240,136,62,0.4);color:var(--secondary);font-weight:700;">
-                📅 Info Entrenamiento
-            </button>
-            <button onclick="openContactManager()" class="btn"
-                style="font-size:0.78rem;background:rgba(255,255,255,0.05);
-                       border-color:rgba(255,255,255,0.2);color:var(--text-muted);font-weight:700;">
-                📱 Gestión Contactos
-            </button>
-            <button onclick="sendMatchReportsToParents()" class="btn"
-                style="font-size:0.78rem;background:rgba(63,185,80,0.1);
-                       border-color:rgba(63,185,80,0.4);color:#3fb950;font-weight:700;">
-                📊 Enviar Informes
+            <button onclick="openUnifiedCommsMenu()" class="btn"
+                style="font-size:0.78rem;background:rgba(255,255,255,0.05);color:var(--text-muted);">
+                🔙 Menú Principal
             </button>
         </div>
 
@@ -590,6 +579,9 @@ async function openContactManager() {
     const db = window._cronos_auth.db;
     showSpinner('Cargando contactos…');
 
+    // Asegurar que tenemos la config de email cargada
+    if (typeof loadEmailConfig === 'function') loadEmailConfig();
+
     try {
         const { collection, getDocs, query, where } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -607,45 +599,82 @@ async function openContactManager() {
         const modal = document.getElementById('setup-modal');
         modal.style.display = 'flex';
         modal.innerHTML = `
-        <div class="modal-content" style="width:min(95vw,500px);max-height:92vh;display:flex;flex-direction:column;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-shrink:0;">
-                <h2 style="margin:0;font-size:1rem;">📱 Gestión de Contactos</h2>
+        <div class="modal-content" style="width:min(95vw,600px);max-height:92vh;display:flex;flex-direction:column;gap:1.2rem;overflow:hidden;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <h2 style="margin:0;font-size:1.1rem;">📱 Gestión de Contactos</h2>
                 <button onclick="document.getElementById('setup-modal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
             </div>
             
-            <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:1rem;">
-                Graba los teléfonos de los padres de forma permanente para enviar WhatsApps directos.
-            </p>
-
-            <div style="flex:1;overflow-y:auto;">
-                <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
-                    <thead>
-                        <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);">
-                            <th style="padding:0.5rem;text-align:left;">JUGADOR</th>
-                            <th style="padding:0.5rem;text-align:left;">DORSAL</th>
-                            <th style="padding:0.5rem;text-align:left;">TELÉFONO WHATSAPP</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${links.map(link => `
-                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <td style="padding:0.6rem 0.4rem;">${link.playerAlias || link.playerName || 'Jugador'}</td>
-                            <td style="padding:0.6rem 0.4rem;font-weight:700;color:var(--primary);">#${link.playerNumber}</td>
-                            <td style="padding:0.6rem 0.4rem;">
-                                <input type="text" class="contact-phone" data-linkid="${link._id}"
-                                    value="${link.parentPhone || ''}"
-                                    placeholder="ej: 34600112233"
-                                    style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
-                            </td>
-                        </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+            <!-- 1. CORREOS Y WHATSAPP DEL CLUB (Antiguo EMAIL) -->
+            <div style="background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.2); border-radius:12px; padding:1.2rem; flex-shrink:0;">
+                <h3 style="font-size:0.85rem; color:var(--primary); margin:0 0 0.8rem; display:flex; align-items:center; gap:8px;">
+                    📧 Responsables del Club <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">(Para informes y coordinación)</span>
+                </h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.9rem;">
+                    <div>
+                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">Email Director Deportivo</label>
+                        <input type="email" id="cfg-director-email" placeholder="director@club.com" 
+                            value="${emailConfig.directorEmail || ''}"
+                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">Email Coordinador (opcional)</label>
+                        <input type="email" id="cfg-director-email2" placeholder="coordinador@club.com" 
+                            value="${emailConfig.directorEmail2 || ''}"
+                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">WhatsApp Principal (+ prefijo)</label>
+                        <input type="tel" id="cfg-whatsapp" placeholder="34600112233" 
+                            value="${emailConfig.whatsappNumber || ''}"
+                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">WhatsApp Secundario</label>
+                        <input type="tel" id="cfg-whatsapp2" placeholder="34699887766" 
+                            value="${emailConfig.whatsappNumber2 || ''}"
+                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
+                    </div>
+                </div>
             </div>
 
-            <div style="margin-top:1rem;display:flex;gap:0.6rem;flex-shrink:0;">
-                <button onclick="document.getElementById('setup-modal').style.display='none'" class="btn" style="flex:1;">Cancelar</button>
-                <button onclick="saveContactPhones()" class="btn primary" style="flex:2;">💾 Guardar Teléfonos</button>
+            <!-- 2. TELÉFONOS DE PADRES (POR JUGADOR) -->
+            <div style="flex:1;overflow:hidden; display:flex; flex-direction:column; border:1px solid rgba(255,255,255,0.1); border-radius:12px; background:rgba(255,255,255,0.02);">
+                <div style="padding:0.8rem; border-bottom:1px solid rgba(255,255,255,0.1); display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03);">
+                    <h3 style="font-size:0.85rem; color:var(--secondary); margin:0;">👨‍👩‍👧‍👦 Contactos de Padres/Tutores</h3>
+                    <span style="font-size:0.7rem; color:var(--text-muted);">${links.length} vinculados</span>
+                </div>
+                
+                <div style="flex:1; overflow-y:auto; padding:0.5rem;">
+                    <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+                        <thead>
+                            <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <th style="padding:0.6rem;text-align:left;">JUGADOR</th>
+                                <th style="padding:0.6rem;text-align:left;">DORSAL</th>
+                                <th style="padding:0.6rem;text-align:left;">WHATSAPP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${links.sort((a,b) => (a.playerNumber || 0) - (b.playerNumber || 0)).map(link => `
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:0.6rem;">${link.playerAlias || link.playerName || 'Jugador'}</td>
+                                <td style="padding:0.6rem;font-weight:700;color:var(--primary);">#${link.playerNumber}</td>
+                                <td style="padding:0.6rem;">
+                                    <input type="text" class="contact-phone" data-linkid="${link._id}"
+                                        value="${link.parentPhone || ''}"
+                                        placeholder="ej: 34600112233"
+                                        style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;box-sizing:border-box;">
+                                </td>
+                            </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:0.7rem;flex-shrink:0;">
+                <button onclick="document.getElementById('setup-modal').style.display='none'" class="btn" style="flex:1;">CANCELAR</button>
+                <button onclick="saveContactManagerData()" class="btn primary" style="flex:2; font-weight:bold;">💾 GUARDAR CAMBIOS</button>
             </div>
         </div>`;
     } catch(e) {
@@ -654,7 +683,7 @@ async function openContactManager() {
     }
 }
 
-async function saveContactPhones() {
+async function saveContactManagerData() {
     const inputs = document.querySelectorAll('.contact-phone');
     const db = window._cronos_auth.db;
     showSpinner('Guardando cambios…');
@@ -663,20 +692,138 @@ async function saveContactPhones() {
         const { updateDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
+        // 1. Guardar Teléfonos de Padres
         for (const input of inputs) {
             const linkId = input.dataset.linkid;
-            const phone  = input.value.trim().replace(/\s/g, ''); // Sin espacios
+            const phone  = input.value.trim().replace(/\s/g, ''); 
             await updateDoc(doc(db, 'cronos_player_links', linkId), { parentPhone: phone });
         }
 
+        // 2. Guardar Config de Club (Staff)
+        if (typeof emailConfig !== 'undefined') {
+            emailConfig.whatsappNumber  = (document.getElementById('cfg-whatsapp')?.value  || '').replace(/[^0-9]/g,'');
+            emailConfig.whatsappNumber2 = (document.getElementById('cfg-whatsapp2')?.value || '').replace(/[^0-9]/g,'');
+            emailConfig.directorEmail   = (document.getElementById('cfg-director-email')?.value  || '').trim();
+            emailConfig.directorEmail2  = (document.getElementById('cfg-director-email2')?.value || '').trim();
+            
+            if (typeof cloudSet === 'function') {
+                await cloudSet('cronos_email_config', JSON.stringify(emailConfig));
+            }
+        }
+
         hideSpinner();
-        showToast('✅ Teléfonos guardados correctamente', 3000);
+        showToast('✅ Información de contacto actualizada', 3000);
         document.getElementById('setup-modal').style.display = 'none';
-        _loadParentList(); // Recargar lista principal
+        if (typeof _loadParentList === 'function') _loadParentList(); 
+        
     } catch(e) {
         hideSpinner();
         showToast('⚠️ Error al guardar: ' + e.message, 4000);
     }
+}
+
+async function openUnifiedCommsMenu() {
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(95vw,480px);max-height:90vh;display:flex;flex-direction:column;gap:1.5rem;padding:1.8rem;background:linear-gradient(145deg, #0f1218 0%, #0a0e14 100%);border:1px solid rgba(255,255,255,0.1);box-shadow:0 20px 40px rgba(0,0,0,0.6);">
+        
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;margin-bottom:0.5rem;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div style="width:40px;height:40px;background:rgba(88,166,255,0.1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">💬</div>
+                <h2 style="margin:0;font-size:1.4rem;font-family:'Outfit',sans-serif;color:white;letter-spacing:0.5px;">Comunicaciones</h2>
+            </div>
+            <button onclick="document.getElementById('setup-modal').style.display='none'" 
+                style="background:none;border:none;color:var(--text-muted);font-size:1.8rem;cursor:pointer;line-height:1;transition:color 0.2s;"
+                onmouseover="this.style.color='white'" onmouseout="this.style.color='var(--text-muted)'">✕</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr; gap:0.9rem; flex:1; overflow-y:auto; padding-right:5px; scrollbar-width:thin;">
+            
+            <button onclick="openCoachMessaging()" class="btn-comms-card">
+                <span class="icon">💬</span>
+                <div class="content">
+                    <div class="title">Mensajería con Padres</div>
+                    <div class="desc">Chat directo e hilos de mensajes</div>
+                </div>
+            </button>
+
+            <button onclick="openConvocationModal()" class="btn-comms-card" style="--color: #3fb950; --bg: rgba(63,185,80,0.1);">
+                <span class="icon">📲</span>
+                <div class="content">
+                    <div class="title" style="color:#3fb950;">Enviar Convocatoria</div>
+                    <div class="desc">Publicar y notificar el próximo partido</div>
+                </div>
+            </button>
+
+            <button onclick="openTrainingNotification()" class="btn-comms-card" style="--color: var(--secondary); --bg: rgba(240,136,62,0.1);">
+                <span class="icon">📅</span>
+                <div class="content">
+                    <div class="title" style="color:var(--secondary);">Info Entrenamiento</div>
+                    <div class="desc">Notificar horarios y cambios de sesión</div>
+                </div>
+            </button>
+
+            <button onclick="openClubReports()" class="btn-comms-card" style="--color: #ffa500; --bg: rgba(255,165,0,0.1);">
+                <span class="icon">📊</span>
+                <div class="content">
+                    <div class="title" style="color:#ffa500;">Informes de Club</div>
+                    <div class="desc">Ver rendimiento global y estadísticas</div>
+                </div>
+            </button>
+
+            <button onclick="openContactManager()" class="btn-comms-card" style="--color: #7d8590; --bg: rgba(255,255,255,0.05);">
+                <span class="icon">📱</span>
+                <div class="content">
+                    <div class="title">Gestión de Contactos</div>
+                    <div class="desc">Emails y teléfonos de staff/padres</div>
+                </div>
+            </button>
+
+        </div>
+
+    </div>
+    <style>
+        .btn-comms-card {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 1.1rem;
+            background: var(--bg, rgba(88,166,255,0.08));
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            width: 100%;
+            text-decoration: none;
+            color: inherit;
+        }
+        .btn-comms-card:hover {
+            background: var(--bg, rgba(88,166,255,0.15));
+            border-color: var(--color, var(--primary));
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+        }
+        .btn-comms-card .icon {
+            font-size: 1.8rem;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+        .btn-comms-card .content {
+            text-align: left;
+            flex: 1;
+        }
+        .btn-comms-card .title {
+            font-weight: 700;
+            color: var(--color, var(--primary));
+            font-size: 1.05rem;
+            margin-bottom: 2px;
+        }
+        .btn-comms-card .desc {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.3;
+        }
+    </style>`;
 }
 
 window.openCoachMessaging      = openCoachMessaging;
@@ -684,5 +831,6 @@ window.openThreadWithParent    = openThreadWithParent;
 window.sendMatchReportsToParents = sendMatchReportsToParents;
 window._loadThreadMessages     = _loadThreadMessages;
 window.openContactManager      = openContactManager;
-window.saveContactPhones       = saveContactPhones;
+window.saveContactManagerData  = saveContactManagerData;
 window.saveAllMatchReportsInternal = saveAllMatchReportsInternal;
+window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
