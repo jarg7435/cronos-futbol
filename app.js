@@ -2329,68 +2329,73 @@ function openConvocationModal() {
     const myPlayers = roster[currentMode] || [];
     const minLimit = currentMode === 'f7' ? 6 : 7;
     const maxLimit = currentMode === 'f7' ? 14 : 18;
-    // Columnas: f7→3 cols (18 jugadores), f11→5 cols (25 jugadores)
-    const cols = currentMode === 'f7' ? 3 : 5;
+    
+    // --- MEJORA: Columnas responsivas ---
+    const isMobile = window.innerWidth < 640;
+    const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="width:min(95vw,800px); max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
-            <h2 style="margin-bottom:0.2rem;">Convocatoria — ${TEAM_NAMES.home}</h2>
-            <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.8rem;">
-                Toca cualquier jugador para seleccionarlo · Mínimo <strong>${minLimit}</strong>, Máximo <strong>${maxLimit}</strong>
-            </p>
+        <div class="modal-content" style="width:min(96vw,840px); max-height:94vh; display:flex; flex-direction:column; overflow:hidden; padding: ${isMobile ? '1rem 0.8rem' : '1.5rem'};">
+            
+            <div style="flex-shrink:0;">
+                <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">Convocatoria — ${TEAM_NAMES.home}</h2>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.6rem;">
+                    Toca cualquier jugador para seleccionarlo · <span style="color:var(--primary)">${minLimit}-${maxLimit}</span>
+                </p>
+            </div>
 
-            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; overflow-y:auto; flex:1;">
+            <!-- Listado de jugadores con scroll prioritario -->
+            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; overflow-y:auto; flex:1; min-height:180px; padding-right:4px;" id="conv-grid-container">
                 ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
                     <div class="conv-row" data-index="${i}"
                         style="background:var(--glass); border:2px solid transparent; border-radius:8px;
-                               padding:8px 10px; display:flex; align-items:center; gap:8px;
-                               cursor:pointer; transition:all 0.15s; user-select:none;">
-                        <span class="conv-dot" style="width:18px;height:18px;border-radius:50%;
+                               padding:${isMobile ? '6px 8px' : '8px 10px'}; display:flex; align-items:center; gap:8px;
+                               cursor:pointer; transition:all 0.1s; user-select:none;">
+                        <span class="conv-dot" style="width:16px;height:16px;border-radius:50%;
                               background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25);
                               display:flex;align-items:center;justify-content:center;
-                              font-size:0.6rem;flex-shrink:0;">✓</span>
-                        <span style="font-size:0.82rem;">
+                              font-size:0.55rem;flex-shrink:0;">✓</span>
+                        <span style="font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                             <span style="color:var(--primary);font-weight:bold;">${p.number}</span>
                             ${p.alias || p.name || 'J' + (i + 1)}
                         </span>
                     </div>
-                `).join('') : '<p style="grid-column:1/-1;">No tienes jugadores. Se usarán dorsales por defecto.</p>'}
+                `).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.8rem; text-align:center; padding:2rem;">No hay jugadores en la plantilla.</p>'}
             </div>
 
-            <!-- Cuerpo técnico en convocatoria -->
+            <!-- Cuerpo técnico -->
             ${(staffConfig.coach1 || staffConfig.coach2 || staffConfig.delegate || staffConfig.fieldDelegate) ? `
-            <div style="margin-top:0.6rem; padding:0.6rem 0.8rem;
-                        background:rgba(88,166,255,0.06); border-radius:8px;
-                        border:1px solid rgba(88,166,255,0.15);">
-                <p style="font-size:0.68rem; color:var(--text-muted);
-                           margin:0 0 0.4rem; font-weight:700; letter-spacing:0.5px;">
-                    👨‍💼 CUERPO TÉCNICO
-                </p>
-                <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
-                    ${staffConfig.coach1 ? '<span style="font-size:0.72rem;background:rgba(88,166,255,0.15);color:var(--primary);border-radius:4px;padding:2px 8px;font-weight:700;">1ER · ' + staffConfig.coach1 + '</span>' : ''}
-                    ${staffConfig.coach2 ? '<span style="font-size:0.72rem;background:rgba(88,166,255,0.1);color:var(--primary);border-radius:4px;padding:2px 8px;">2DO · ' + staffConfig.coach2 + '</span>' : ''}
-                    ${staffConfig.delegate ? '<span style="font-size:0.72rem;background:rgba(240,136,62,0.12);color:var(--secondary);border-radius:4px;padding:2px 8px;">DEL · ' + staffConfig.delegate + '</span>' : ''}
-                    ${staffConfig.fieldDelegate ? '<span style="font-size:0.72rem;background:rgba(63,185,80,0.12);color:#3fb950;border-radius:4px;padding:2px 8px;">CAM · ' + staffConfig.fieldDelegate + '</span>' : ''}
+            <div style="margin-top:0.5rem; padding:0.4rem 0.6rem; flex-shrink:0;
+                        background:rgba(88,166,255,0.04); border-radius:8px;
+                        border:1px solid rgba(88,166,255,0.12);">
+                <div style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;">
+                    <span style="font-size:0.6rem; color:var(--text-muted); font-weight:700; margin-right:4px;">👨‍💼 STAFF</span>
+                    ${staffConfig.coach1 ? '<span style="font-size:0.65rem;background:rgba(88,166,255,0.15);color:var(--primary);border-radius:4px;padding:1px 6px;font-weight:700;">' + staffConfig.coach1 + '</span>' : ''}
+                    ${staffConfig.coach2 ? '<span style="font-size:0.65rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:4px;padding:1px 6px;">' + staffConfig.coach2 + '</span>' : ''}
                 </div>
             </div>` : ''}
 
-            <div style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px solid var(--glass-border);
-                        display:flex; justify-content:space-between; align-items:center; flex-shrink:0;
-                        flex-wrap:wrap; gap:0.5rem;">
-                <span id="conv-count" style="font-size:1rem; font-weight:bold; color:var(--primary);">0</span>
-                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                    <button class="btn" onclick="openSetupModal()">ATRÁS</button>
-                    <button class="btn" onclick="openConvocationMessage()"
-                        style="background:rgba(63,185,80,0.12);border-color:rgba(63,185,80,0.4);
-                               color:#3fb950;font-weight:700;">
-                        📲 ENVIAR CONVOCATORIA
-                    </button>
-                    <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled>
-                        INICIAR PARTIDO
-                    </button>
+            <div style="margin-top:0.6rem; padding-top:0.6rem; border-top:1px solid var(--glass-border);
+                        display:flex; flex-direction:column; gap:0.5rem; flex-shrink:0;">
+                
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span id="conv-count" style="font-size:1.1rem; font-weight:bold; color:var(--primary);">0</span>
+                    <div style="display:flex; gap:0.4rem;">
+                        <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">← VOLVER</button>
+                        <button class="btn" onclick="openConvocationMessage()"
+                            style="background:rgba(63,185,80,0.1);border-color:rgba(63,185,80,0.3);
+                                   color:#3fb950;font-weight:700; font-size:0.7rem;">
+                            📲 CONVOCATORIA
+                        </button>
+                    </div>
                 </div>
+
+                <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled
+                    style="width:100%; font-weight:900; letter-spacing:1px; padding:0.6rem;">
+                    INICIAR PARTIDO
+                </button>
             </div>
         </div>
     `;
