@@ -443,8 +443,26 @@ async function publishConvocationToApp() {
         }
 
         hideSpinner();
-        showToast(`✅ Convocatoria publicada para ${count} padres`, 4000);
-        setTimeout(() => { document.getElementById('setup-modal').style.display='none'; }, 1500);
+        
+        // --- MEJORA: Feedback detallado según el conteo de envíos ---
+        if (count > 0) {
+            showToast(`✅ Convocatoria publicada para ${count} padres`, 6000);
+            const btnApp = document.querySelector('button[onclick="publishConvocationToApp()"]');
+            if (btnApp) {
+                btnApp.innerHTML = '✅ Publicado';
+                btnApp.style.background = 'rgba(63,185,80,0.2)';
+                btnApp.style.borderColor = 'rgba(63,185,80,0.5)';
+                btnApp.style.color = '#3fb950';
+                // btnApp.disabled = true; // Opcional: dejarlo habilitado por si quiere reenviar tras vincular a alguien
+            }
+        } else {
+            showToast('⚠️ Convocatoria guardada, pero 0 padres notificados (vincúlalos en Gestor de Contactos)', 7000);
+            const btnApp = document.querySelector('button[onclick="publishConvocationToApp()"]');
+            if (btnApp) {
+                btnApp.innerHTML = '⚠️ 0 Padres Notificados';
+                btnApp.style.color = 'var(--secondary)';
+            }
+        }
 
     } catch(e) {
         hideSpinner();
