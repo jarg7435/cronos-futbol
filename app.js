@@ -2349,7 +2349,7 @@ function openConvocationModal() {
             <!-- Listado de jugadores con scroll prioritario -->
             <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; overflow-y:auto; flex:1; min-height:180px; padding-right:4px;" id="conv-grid-container">
                 ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
-                    <div class="conv-row" data-index="${i}"
+                    <div class="conv-row" data-index="${i}" data-status="none"
                         style="background:var(--glass); border:2px solid transparent; border-radius:8px;
                                padding:${isMobile ? '6px 8px' : '8px 10px'}; display:flex; align-items:center; gap:8px;
                                cursor:pointer; transition:all 0.1s; user-select:none;">
@@ -2412,8 +2412,6 @@ function openConvocationModal() {
     let selected = 0;
 
     // --- PRE-SELECCIÓN DE EQUIPO CARGADO ---
-    // Titulares  → borde naranja (--secondary) + badge "T"
-    // Suplentes  → borde azul   (--primary)   + badge "S"
     const loadedTeam = window.loadedTeamPlayers?.['home'];
     if (loadedTeam) {
         myPlayers.forEach((p, i) => {
@@ -2422,21 +2420,24 @@ function openConvocationModal() {
                 const row = document.querySelector(`.conv-row[data-index="${i}"]`);
                 if (row) {
                     const isTitular = savedPlayer.status === 'field';
-                    const borderColor = isTitular ? 'var(--secondary)' : 'var(--primary)';
-                    const bgColor     = isTitular ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
+                    const color   = isTitular ? 'var(--secondary)' : 'var(--primary)';
+                    const bg      = isTitular ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
+                    
                     row.classList.add('conv-selected');
-                    row.style.borderColor = borderColor;
-                    row.style.background  = bgColor;
-                    row.querySelector('.conv-dot').style.background  = borderColor;
-                    row.querySelector('.conv-dot').style.borderColor = borderColor;
-                    row.querySelector('.conv-dot').style.color = '#0a0e14';
-                    row.querySelector('.conv-dot').textContent = isTitular ? 'T' : 'S';
-                    // Badge titular/suplente
+                    row.dataset.status = isTitular ? 'field' : 'bench';
+                    row.style.borderColor = color;
+                    row.style.background  = bg;
+                    const dot = row.querySelector('.conv-dot');
+                    dot.style.background  = color;
+                    dot.style.borderColor = color;
+                    dot.style.color = '#0a0e14';
+                    dot.textContent = isTitular ? 'T' : 'S';
+
                     const badge = document.createElement('span');
                     badge.className = 'conv-status-badge';
-                    badge.textContent = isTitular ? 'TITULAR' : 'SUP';
+                    badge.textContent = isTitular ? 'TITULAR' : 'SUPLENTE';
                     badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
-                        border-radius:3px;background:${borderColor};color:#0a0e14;
+                        border-radius:3px;background:${color};color:#0a0e14;
                         margin-left:auto;flex-shrink:0;`;
                     row.appendChild(badge);
                     selected++;
@@ -2451,11 +2452,21 @@ function openConvocationModal() {
 
     document.querySelectorAll('.conv-row').forEach(row => {
         row.addEventListener('click', () => {
-            const isSelected = row.classList.contains('conv-selected');
+            const currentStatus = row.dataset.status || 'none';
+            let nextStatus = 'none';
 
-            if (!isSelected && selected >= maxLimit) return; // límite máximo alcanzado
+            if (currentStatus === 'none') {
+                if (selected >= maxLimit) return;
+                nextStatus = 'bench';
+            } else if (currentStatus === 'bench') {
+                nextStatus = 'field';
+            } else {
+                nextStatus = 'none';
+            }
 
-            if (isSelected) {
+            row.dataset.status = nextStatus;
+
+            if (nextStatus === 'none') {
                 row.classList.remove('conv-selected');
                 row.style.borderColor = 'transparent';
                 row.style.background  = 'var(--glass)';
@@ -2463,19 +2474,37 @@ function openConvocationModal() {
                 row.querySelector('.conv-dot').style.borderColor = 'rgba(255,255,255,0.25)';
                 row.querySelector('.conv-dot').style.color = 'transparent';
                 row.querySelector('.conv-dot').textContent = '✓';
-                // Quitar badge si existe
                 const badge = row.querySelector('.conv-status-badge');
                 if (badge) badge.remove();
                 selected--;
             } else {
-                row.classList.add('conv-selected');
-                row.style.borderColor = 'var(--primary)';
-                row.style.background  = 'rgba(88,166,255,0.12)';
-                row.querySelector('.conv-dot').style.background  = 'var(--primary)';
-                row.querySelector('.conv-dot').style.borderColor = 'var(--primary)';
-                row.querySelector('.conv-dot').style.color = '#0a0e14';
-                row.querySelector('.conv-dot').textContent = '✓';
-                selected++;
+                const isField = (nextStatus === 'field');
+                const color   = isField ? 'var(--secondary)' : 'var(--primary)';
+                const bg      = isField ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
+                
+                if (currentStatus === 'none') {
+                    row.classList.add('conv-selected');
+                    selected++;
+                }
+                
+                row.style.borderColor = color;
+                row.style.background  = bg;
+                const dot = row.querySelector('.conv-dot');
+                dot.style.background  = color;
+                dot.style.borderColor = color;
+                dot.style.color = '#0a0e14';
+                dot.textContent = isField ? 'T' : 'S';
+
+                let badge = row.querySelector('.conv-status-badge');
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'conv-status-badge';
+                    row.appendChild(badge);
+                }
+                badge.textContent = isField ? 'TITULAR' : 'SUPLENTE';
+                badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
+                    border-radius:3px;background:${color};color:#0a0e14;
+                    margin-left:auto;flex-shrink:0;`;
             }
 
             countEl.textContent = `${selected}`;
@@ -2490,7 +2519,16 @@ function startMatchWithConvocation() {
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');
-    const selectedPlayers = Array.from(rows).map(r => myPlayers[r.dataset.index]);
+    
+    // Guardar selección con el estatus (titular/suplente)
+    const selectedPlayers = Array.from(rows).map(r => {
+        const p = myPlayers[r.dataset.index];
+        return { 
+            ...p, 
+            initialStatus: r.dataset.status || 'bench' 
+        };
+    });
+    
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
     document.body.classList.remove('setup-mode');
@@ -2721,7 +2759,7 @@ function setupEventListeners() {
 
 function spawnInitialPlayers() {
     players = [];
-    const startersCount = currentMode === 'f7' ? 7 : 11;
+    const defaultStartersLimit = currentMode === 'f7' ? 7 : 11;
     const defaultTotalCount = currentMode === 'f7' ? 14 : 18;
     const homeColors = COLORS.home;
     const homeConvocation = window.activeConvocation;
@@ -2734,7 +2772,10 @@ function spawnInitialPlayers() {
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: 'home',
-                status: index < startersCount ? 'field' : 'bench',
+                // STATUS PRIORITIES: 
+                // 1. Convocation choice (Field if 'field', else 'bench')
+                // 2. Default F7/F11 limit as fallback
+                status: pData.initialStatus === 'field' ? 'field' : 'bench',
                 time: 0,
                 color: homeColors.primary,
                 shortsColor: homeColors.shorts,
