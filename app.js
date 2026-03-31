@@ -939,6 +939,7 @@ async function pushLiveSnapshot(status = 'active') {
             // Partido
             mode:        currentMode,
             phase:       matchPhase,
+            isRunning:   isRunning,
             timeH1:      masterTimeH1,
             timeH2:      masterTimeH2,
             formation:   activeFormationKey || '',
