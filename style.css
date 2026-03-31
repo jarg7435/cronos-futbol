@@ -433,10 +433,10 @@ header {
     display: flex !important;
     flex-direction: column;
     justify-content: center;
-    align-items: flex-end;
-    order: 5;
-    flex: 0.8;
-    padding-right: 10px;
+    align-items: center;
+    order: 0;
+    flex: 0 0 auto;
+    padding: 0 15px;
 }
 
 .logo h1 {
