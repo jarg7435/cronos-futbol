@@ -315,7 +315,7 @@ header {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    flex: 1.2;
+    flex: 1;
     padding: 0 5px;
 }
 
@@ -369,14 +369,14 @@ header {
 .score-board {
     order: 4;
     display: flex;
-    flex: 2;
+    flex: 0 0 auto;
     justify-content: center;
     align-items: center;
     gap: 6px;
-    background: var(--bg-dark);
-    padding: 4px 10px;
-    border-radius: 40px;
-    border: 1px solid var(--glass-border);
+    background: rgba(10, 14, 20, 0.35);
+    padding: 3px 8px;
+    border-radius: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .team-score {
@@ -429,25 +429,28 @@ header {
 .score-btn.danger { background: var(--danger); }
 .score-btn.success { background: var(--success); }
 
-/* Logo compacto integrado en el cabecero */
+/* Logo standalone en cabecero */
+.logo-header {
+    order: 5;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 10px;
+}
+
+.logo-header img {
+    height: 55px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+}
+
+/* Mantener .logo-compact para compatibilidad */
 .logo-compact img {
     max-width: 80px;
     height: auto;
     object-fit: contain;
-}
-
-@media (max-width: 950px) {
-    .logo-compact img {
-        height: 28px !important;
-    }
-    .logo-compact {
-        margin-left: 10px !important;
-        padding-left: 10px !important;
-    }
-}
-
-.logo {
-    display: none !important;
 }
 
 @media (min-width: 951px) {
@@ -471,8 +474,12 @@ header {
 
     .score-board {
         transform: scale(0.9);
-        flex: 0 1 auto;
-        padding: 2px 10px;
+        flex: 0 0 auto;
+        padding: 2px 8px;
+    }
+
+    .logo-header img {
+        height: 40px !important;
     }
 
     .score-num { font-size: 1.4rem; }
