@@ -166,6 +166,10 @@ function openConvocationMessage() {
                     style="background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.3);
                            color:var(--primary);flex:1;">
                     👁️ Vista previa</button>
+                <button onclick="publishConvocationToApp()" class="btn"
+                    style="background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
+                           color:var(--primary);font-weight:700;">
+                    📱 Envío Interno</button>
                 <button onclick="sendConvocationWA()" class="btn"
                     style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
                            color:#3fb950;font-weight:700;">
@@ -369,4 +373,84 @@ function sendConvocationEmail() {
     saveConvocationToFirestore(); // guardar para padres
     showToast('📧 Email abierto en tu cliente de correo', 3000);
 }
+async function publishConvocationToApp() {
+    const me = window._cronosCurrentUser;
+    const db = window._cronos_auth.db;
+    
+    // Generar el mensaje base
+    const fullText = buildConvocationText();
+    
+    // Obtener datos del formulario
+    const type      = document.getElementById('cv-type')?.value || 'liga';
+    const dateVal   = document.getElementById('cv-date')?.value || '';
+    const rival     = document.getElementById('cv-rival')?.value.trim() || '';
+    const meettime  = document.getElementById('cv-meettime')?.value || '';
+    const kickoff   = document.getElementById('cv-kickoff')?.value || '';
+    const venue     = document.getElementById('cv-venue')?.value.trim() || '';
+    const extra     = document.getElementById('cv-extra')?.value.trim() || '';
+
+    // Jugadores seleccionados
+    const playerInputs = document.querySelectorAll('.conv-player-name');
+    const playersArr   = Array.from(playerInputs).map(el => el.value.trim());
+
+    if (playersArr.length === 0) {
+        showToast('⚠️ No hay jugadores para convocar', 3000);
+        return;
+    }
+
+    showSpinner('Publicando convocatoria interna…');
+
+    try {
+        const { collection, getDocs, query, where, setDoc, doc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        
+        // Buscar links de los padres para ESTE club
+        const linksSnap = await getDocs(query(
+            collection(db, 'cronos_player_links'),
+            where('clubId', '==', me.clubId || '')
+        ));
+
+        const links = [];
+        linksSnap.forEach(d => links.push(d.data()));
+
+        let count = 0;
+        const dateStr = dateVal ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES', {
+            weekday:'long', day:'numeric', month:'long'}) : '—';
+
+        // Enviar notificación a cada padre de los jugadores convocados
+        // Nota: En una app pro, esto se haría vinculando playerNumber. 
+        // Aquí iteramos para encontrar el link.
+        for (const pName of playersArr) {
+            const link = links.find(l => l.playerAlias === pName || l.playerName === pName);
+            if (link && link.parentUid) {
+                const notifId = `cv_${link.parentUid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type:           'convocatoria',
+                    clubId:         me.clubId || null,
+                    parentUid:      link.parentUid,
+                    matchDate:      dateStr,
+                    rival,
+                    meettime,
+                    kickoff,
+                    venue,
+                    extra,
+                    players:        playersArr, // Lista completa de convocados
+                    fullText,       // Por si acaso
+                    createdAt:      new Date().toISOString()
+                });
+                count++;
+            }
+        }
+
+        hideSpinner();
+        showToast(`✅ Convocatoria publicada para ${count} padres`, 4000);
+        setTimeout(() => { document.getElementById('setup-modal').style.display='none'; }, 1500);
+
+    } catch(e) {
+        hideSpinner();
+        showToast('⚠️ Error: ' + e.message, 5000);
+    }
+}
+
 window.openConvocationMessage = openConvocationMessage;
+window.publishConvocationToApp = publishConvocationToApp;

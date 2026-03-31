@@ -620,8 +620,8 @@ function openTrainingNotification() {
             <button onclick="copyWeeklyToWhatsApp()" class="btn" style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;border:1px solid rgba(63,185,80,0.4);">
                 📲 Copiar para WhatsApp
             </button>
-            <button onclick="sendWeeklyPlan()" class="btn primary" style="flex:1.5;">
-                📤 Publicar a Padres
+            <button onclick="sendWeeklyPlan()" class="btn primary" style="flex:1.5; background:rgba(88,166,255,0.15); border-color:rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">
+                📱 Envío Interno
             </button>
         </div>
     </div>`;
