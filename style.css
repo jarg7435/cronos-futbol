@@ -267,6 +267,7 @@ body.setup-mode header {
 }
 
 header {
+    position: relative;
     height: auto;
     min-height: 50px;
     background: var(--bg-card);
@@ -315,7 +316,7 @@ header {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    flex: 1;
+    flex: 0 0 auto;
     padding: 0 5px;
 }
 
@@ -367,16 +368,19 @@ header {
 }
 
 .score-board {
-    order: 4;
+    /* Centered absolutely in the header, at the timer-row level */
+    position: absolute;
+    left: 50%;
+    bottom: 5px;
+    transform: translateX(-50%);
     display: flex;
-    flex: 0 0 auto;
-    justify-content: center;
     align-items: center;
     gap: 6px;
     background: rgba(10, 14, 20, 0.35);
     padding: 3px 8px;
     border-radius: 30px;
     border: 1px solid rgba(255, 255, 255, 0.08);
+    z-index: 5;
 }
 
 .team-score {
@@ -429,18 +433,22 @@ header {
 .score-btn.danger { background: var(--danger); }
 .score-btn.success { background: var(--success); }
 
-/* Logo standalone en cabecero */
+/* Logo standalone en cabecero — ocupa la altura total del header */
 .logo-header {
-    order: 5;
-    flex: 1;
+    position: absolute;
+    right: 8px;
+    top: 0;
+    bottom: 0;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    padding-right: 10px;
+    padding: 4px 0;
+    z-index: 5;
 }
 
 .logo-header img {
-    height: 55px;
+    height: 90%;
+    max-height: 85px;
+    min-height: 48px;
     width: auto;
     object-fit: contain;
     filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
@@ -473,13 +481,13 @@ header {
     .master-clock-container #master-timer { font-size: 2.2rem; }
 
     .score-board {
-        transform: scale(0.9);
-        flex: 0 0 auto;
-        padding: 2px 8px;
+        transform: translateX(-50%) scale(0.9);
+        padding: 2px 6px;
+        bottom: 3px;
     }
 
     .logo-header img {
-        height: 40px !important;
+        max-height: 60px !important;
     }
 
     .score-num { font-size: 1.4rem; }
