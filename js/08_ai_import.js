@@ -435,10 +435,12 @@ function openConvocationModal() {
     const isMobile = window.innerWidth < 640;
     const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
 
+    const isLandscape = window.innerHeight < 500;
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="width:min(96vw,840px); max-height:94vh; display:flex; flex-direction:column; overflow:hidden; padding: ${isMobile ? '1rem 0.8rem' : '1.5rem'};">
+        <div class="modal-content" style="width:min(96vw,840px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding: ${isMobile ? '1rem 0.8rem' : '1.5rem'};">
             
             <div style="flex-shrink:0;">
                 <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">Convocatoria — ${TEAM_NAMES.home}</h2>
@@ -447,8 +449,8 @@ function openConvocationModal() {
                 </p>
             </div>
 
-            <!-- Listado de jugadores con scroll prioritario -->
-            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; overflow-y:auto; flex:1; min-height:180px; padding-right:4px; margin-bottom:0.5rem;" id="conv-grid-container">
+            <!-- Listado de jugadores -->
+            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
                 ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
                     <div class="conv-row" data-index="${i}"
                         style="background:var(--glass); border:2px solid transparent; border-radius:8px;
@@ -480,8 +482,8 @@ function openConvocationModal() {
             </div>` : ''}
 
             <!-- Botonera rediseñada (Grid en móviles) -->
-            <div style="margin-top:0.4rem; padding-top:0.6rem; border-top:1px solid var(--glass-border);
-                        display:flex; flex-direction:column; gap:0.6rem; flex-shrink:0;">
+            <div style="margin-top:auto; padding-top:1rem; border-top:1px solid var(--glass-border);
+                        display:flex; flex-direction:column; gap:0.6rem;">
                 
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span id="conv-count" style="font-size:1.1rem; font-weight:bold; color:var(--primary);">0</span>
@@ -543,6 +545,7 @@ function openConvocationModal() {
                     const borderColor = isTitular ? 'var(--secondary)' : 'var(--primary)';
                     const bgColor     = isTitular ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
                     row.classList.add('conv-selected');
+                    row.dataset.status = isTitular ? 'field' : 'bench'; // ← needed by startMatchWithConvocation
                     row.style.borderColor = borderColor;
                     row.style.background  = bgColor;
                     row.querySelector('.conv-dot').style.background  = borderColor;

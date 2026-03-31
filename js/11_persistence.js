@@ -146,7 +146,7 @@ function setupEventListeners() {
 
 function spawnInitialPlayers() {
     players = [];
-    const startersCount = currentMode === 'f7' ? 7 : 11;
+    const defaultStartersLimit = currentMode === 'f7' ? 7 : 11;
     const defaultTotalCount = currentMode === 'f7' ? 14 : 18;
     const homeColors = COLORS.home;
     const homeConvocation = window.activeConvocation;
@@ -159,7 +159,8 @@ function spawnInitialPlayers() {
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: 'home',
-                status: index < startersCount ? 'field' : 'bench',
+                // 'field' = Titular (orange), 'bench' = Suplente (blue)
+                status: pData.initialStatus === 'field' ? 'field' : 'bench',
                 time: 0,
                 color: homeColors.primary,
                 shortsColor: homeColors.shorts,
@@ -167,7 +168,7 @@ function spawnInitialPlayers() {
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             };
 
-            // Restaurar estado (titular/suplente) y posición (X,Y) si coincide el dorsal
+            // If loading a saved team, restore status + field position
             if (loadedHome) {
                 const saved = loadedHome.find(lp => lp.number == pData.number);
                 if (saved) {
@@ -182,7 +183,7 @@ function spawnInitialPlayers() {
         for (let i = 1; i <= defaultTotalCount; i++) {
             players.push({
                 id: i, number: i, name: `Jugador ${i}`, team: 'home',
-                status: i <= startersCount ? 'field' : 'bench',
+                status: i <= defaultStartersLimit ? 'field' : 'bench',
                 time: 0, color: homeColors.primary, shortsColor: homeColors.shorts,
                 textColor: homeColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             });
@@ -194,7 +195,7 @@ function spawnInitialPlayers() {
         for (let i = 1; i <= defaultTotalCount; i++) {
             players.push({
                 id: 100 + i, number: i, name: `Rival ${i}`, team: 'away',
-                status: i <= startersCount ? 'field' : 'bench',
+                status: i <= defaultStartersLimit ? 'field' : 'bench',
                 time: 0, color: awayColors.primary, shortsColor: awayColors.shorts,
                 textColor: awayColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             });
