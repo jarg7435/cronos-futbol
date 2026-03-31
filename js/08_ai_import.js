@@ -569,11 +569,21 @@ function openConvocationModal() {
 
     document.querySelectorAll('.conv-row').forEach(row => {
         row.addEventListener('click', () => {
-            const isSelected = row.classList.contains('conv-selected');
+            const currentStatus = row.dataset.status || 'none'; // none, bench, field
+            let nextStatus = 'none';
 
-            if (!isSelected && selected >= maxLimit) return; // límite máximo alcanzado
+            if (currentStatus === 'none') {
+                if (selected >= maxLimit) return;
+                nextStatus = 'bench';
+            } else if (currentStatus === 'bench') {
+                nextStatus = 'field';
+            } else {
+                nextStatus = 'none';
+            }
 
-            if (isSelected) {
+            row.dataset.status = nextStatus;
+
+            if (nextStatus === 'none') {
                 row.classList.remove('conv-selected');
                 row.style.borderColor = 'transparent';
                 row.style.background  = 'var(--glass)';
@@ -581,19 +591,38 @@ function openConvocationModal() {
                 row.querySelector('.conv-dot').style.borderColor = 'rgba(255,255,255,0.25)';
                 row.querySelector('.conv-dot').style.color = 'transparent';
                 row.querySelector('.conv-dot').textContent = '✓';
-                // Quitar badge si existe
                 const badge = row.querySelector('.conv-status-badge');
                 if (badge) badge.remove();
                 selected--;
             } else {
-                row.classList.add('conv-selected');
-                row.style.borderColor = 'var(--primary)';
-                row.style.background  = 'rgba(88,166,255,0.12)';
-                row.querySelector('.conv-dot').style.background  = 'var(--primary)';
-                row.querySelector('.conv-dot').style.borderColor = 'var(--primary)';
-                row.querySelector('.conv-dot').style.color = '#0a0e14';
-                row.querySelector('.conv-dot').textContent = '✓';
-                selected++;
+                const isField = (nextStatus === 'field');
+                const color   = isField ? 'var(--secondary)' : 'var(--primary)';
+                const bg      = isField ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
+                
+                if (currentStatus === 'none') {
+                    row.classList.add('conv-selected');
+                    selected++;
+                }
+                
+                row.style.borderColor = color;
+                row.style.background  = bg;
+                const dot = row.querySelector('.conv-dot');
+                dot.style.background  = color;
+                dot.style.borderColor = color;
+                dot.style.color = '#0a0e14';
+                dot.textContent = isField ? 'T' : 'S';
+
+                // Badge titular/suplente
+                let badge = row.querySelector('.conv-status-badge');
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'conv-status-badge';
+                    row.appendChild(badge);
+                }
+                badge.textContent = isField ? 'TITULAR' : 'SUPLENTE';
+                badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
+                    border-radius:3px;background:${color};color:#0a0e14;
+                    margin-left:auto;flex-shrink:0;`;
             }
 
             countEl.textContent = `${selected}`;
@@ -608,7 +637,16 @@ function startMatchWithConvocation() {
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');
-    const selectedPlayers = Array.from(rows).map(r => myPlayers[r.dataset.index]);
+    
+    // Guardar selección con el estatus (titular/suplente)
+    const selectedPlayers = Array.from(rows).map(r => {
+        const p = myPlayers[r.dataset.index];
+        return { 
+            ...p, 
+            initialStatus: r.dataset.status || 'bench' 
+        };
+    });
+    
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
     document.body.classList.remove('setup-mode');
