@@ -135,24 +135,29 @@ function openConvocationMessage() {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;">
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
-                            📱 WhatsApp (número o grupo)
+                            📱 WhatsApp Principal
                         </label>
                         <input id="cv-wa" type="tel" class="conv-input"
                             placeholder="34612345678"
-                            value="${saved.wa || emailConfig?.whatsappNumber || ''}">
-                        <p style="font-size:0.68rem;color:var(--text-muted);margin:0.2rem 0 0;">
-                            Sin + ni espacios. Ej: 34612345678
+                            value="${saved.wa || (emailConfig.contacts ? emailConfig.contacts.find(c => c.tags.includes('notifs'))?.phone : '') || emailConfig?.whatsappNumber || ''}">
+                        <p style="font-size:0.6rem;color:var(--text-muted);margin:0.2rem 0 0;">
+                            Auto-completado desde Gestión de Contactos.
                         </p>
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
-                            📧 Email
+                            📧 Email Principal
                         </label>
                         <input id="cv-email" type="email" class="conv-input"
                             placeholder="padres@equipo.com"
-                            value="${saved.email || emailConfig?.directorEmail || ''}">
+                            value="${saved.email || (emailConfig.contacts ? emailConfig.contacts.find(c => c.tags.includes('notifs'))?.email : '') || emailConfig?.directorEmail || ''}">
                     </div>
                 </div>
+                <!-- Nota sobre Multi-notificación -->
+                ${(emailConfig.contacts || []).filter(c => c.tags.includes('notifs')).length > 1 ? `
+                <div style="margin-top:0.6rem; font-size:0.68rem; color:var(--primary); background:rgba(88,166,255,0.05); padding:0.4rem; border-radius:4px;">
+                    ℹ️ El "Envío Interno" también llegará a: ${emailConfig.contacts.filter(c => c.tags.includes('notifs')).slice(1).map(c => c.name).join(', ')}
+                </div>` : ''}
             </div>
 
             </div><!-- end scroll -->
@@ -166,6 +171,10 @@ function openConvocationMessage() {
                     style="background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.3);
                            color:var(--primary);flex:1;">
                     👁️ Vista previa</button>
+                <button onclick="publishConvocationToApp()" class="btn"
+                    style="background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
+                           color:var(--primary);font-weight:700;">
+                    📱 Envío Interno</button>
                 <button onclick="sendConvocationWA()" class="btn"
                     style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
                            color:#3fb950;font-weight:700;">
@@ -369,4 +378,123 @@ function sendConvocationEmail() {
     saveConvocationToFirestore(); // guardar para padres
     showToast('📧 Email abierto en tu cliente de correo', 3000);
 }
+async function publishConvocationToApp() {
+    const me = window._cronosCurrentUser;
+    const db = window._cronos_auth.db;
+    
+    // Generar el mensaje base
+    const fullText = buildConvocationText();
+    
+    // Obtener datos del formulario
+    const type      = document.getElementById('cv-type')?.value || 'liga';
+    const dateVal   = document.getElementById('cv-date')?.value || '';
+    const rival     = document.getElementById('cv-rival')?.value.trim() || '';
+    const meettime  = document.getElementById('cv-meettime')?.value || '';
+    const kickoff   = document.getElementById('cv-kickoff')?.value || '';
+    const venue     = document.getElementById('cv-venue')?.value.trim() || '';
+    const extra     = document.getElementById('cv-extra')?.value.trim() || '';
+
+    // Jugadores seleccionados
+    const playerInputs = document.querySelectorAll('.conv-player-name');
+    const playersArr   = Array.from(playerInputs).map(el => el.value.trim());
+
+    if (playersArr.length === 0) {
+        showToast('⚠️ No hay jugadores para convocar', 3000);
+        return;
+    }
+
+    showSpinner('Publicando convocatoria interna…');
+
+    try {
+        const { collection, getDocs, query, where, setDoc, doc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        
+        // Buscar links de los padres para ESTE club
+        const linksSnap = await getDocs(query(
+            collection(db, 'cronos_player_links'),
+            where('clubId', '==', me.clubId || '')
+        ));
+
+        const links = [];
+        linksSnap.forEach(d => links.push(d.data()));
+
+        let count = 0;
+        const dateStr = dateVal ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES', {
+            weekday:'long', day:'numeric', month:'long'}) : '—';
+
+        // --- 1. NOTIFICAR A PADRES VINCULADOS (Lógica actual) ---
+        for (const pName of playersArr) {
+            const link = links.find(l => l.playerAlias === pName || l.playerName === pName);
+            if (link && link.parentUid) {
+                const notifId = `cv_${link.parentUid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type:           'convocatoria',
+                    clubId:         me.clubId || null,
+                    parentUid:      link.parentUid,
+                    matchDate:      dateStr,
+                    rival,
+                    meettime,
+                    kickoff,
+                    venue,
+                    extra,
+                    players:        playersArr,
+                    fullText,
+                    createdAt:      new Date().toISOString()
+                });
+                count++;
+            }
+        }
+
+        // --- 2. NOTIFICAR A CONTACTOS EXTRA (Fuente de la Verdad) ---
+        if (emailConfig.contacts) {
+            const extraNotifs = emailConfig.contacts.filter(c => c.tags.includes('notifs') && c.uid);
+            for (const contact of extraNotifs) {
+                const notifId = `cv_${contact.uid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type:           'convocatoria',
+                    clubId:         me.clubId || null,
+                    parentUid:      contact.uid,
+                    matchDate:      dateStr,
+                    rival,
+                    meettime,
+                    kickoff,
+                    venue,
+                    extra,
+                    players:        playersArr,
+                    fullText,
+                    createdAt:      new Date().toISOString()
+                });
+                count++;
+            }
+        }
+
+        hideSpinner();
+        
+        // --- MEJORA: Feedback detallado según el conteo de envíos ---
+        if (count > 0) {
+            showToast(`✅ Convocatoria publicada para ${count} padres`, 6000);
+            const btnApp = document.querySelector('button[onclick="publishConvocationToApp()"]');
+            if (btnApp) {
+                btnApp.innerHTML = '✅ Publicado';
+                btnApp.style.background = 'rgba(63,185,80,0.2)';
+                btnApp.style.borderColor = 'rgba(63,185,80,0.5)';
+                btnApp.style.color = '#3fb950';
+                // btnApp.disabled = true; // Opcional: dejarlo habilitado por si quiere reenviar tras vincular a alguien
+            }
+        } else {
+            showToast('⚠️ Convocatoria guardada, pero 0 padres notificados (vincúlalos en Gestor de Contactos)', 7000);
+            const btnApp = document.querySelector('button[onclick="publishConvocationToApp()"]');
+            if (btnApp) {
+                btnApp.innerHTML = '⚠️ 0 Padres Notificados';
+                btnApp.style.color = 'var(--secondary)';
+            }
+        }
+
+    } catch(e) {
+        hideSpinner();
+        showToast('⚠️ Error: ' + e.message, 5000);
+    }
+}
+
 window.openConvocationMessage = openConvocationMessage;
+window.publishConvocationToApp = publishConvocationToApp;
