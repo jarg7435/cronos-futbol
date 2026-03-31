@@ -214,8 +214,8 @@
             padding: 1px 4px; white-space: nowrap;
             border: 1px solid rgba(255,255,255,0.2);
         }
-        .chip-yellow::after { content: '🟨'; position:absolute; top:-7px; right:-7px; font-size:0.75rem; }
-        .chip-red::after    { content: '🟥'; position:absolute; top:-7px; right:-7px; font-size:0.75rem; }
+        .chip-yellow::after { content: '🟨'; position:absolute; bottom:-6px; right:-6px; font-size:0.75rem; z-index:35; }
+        .chip-red::after    { content: '🟥'; position:absolute; bottom:-6px; right:-6px; font-size:0.75rem; z-index:35; }
         /* Indicador de lesión en live — lado izquierdo */
         .chip-injured::before {
             content: '✚';
@@ -628,7 +628,8 @@ function renderMatch(data) {
         wallClock: Date.now(),
         maxTime:   maxTime,
         phase:     phase,
-        isLive:    isLive
+        isLive:    isLive,
+        isRunning: data.isRunning ?? true // Sincronización real
     };
 
     // Mostrar tiempo inmediatamente (sin esperar al intervalo)
@@ -638,13 +639,16 @@ function renderMatch(data) {
     if (!timerInterval) {
         timerInterval = setInterval(() => {
             const b = window._timerBase;
-            if (!b || !b.isLive) return;
+            if (!b || !b.isLive || !b.isRunning) return; // NO contar si no está en marcha
             if (b.phase === 'break' || b.phase === 'halftime' || b.phase === 'finished') return;
-            // Calcular segundos transcurridos desde el último snapshot
+            
             const elapsed = (Date.now() - b.wallClock) / 1000;
             const current = Math.floor(b.secs + elapsed);
             updateTimerDisplay(current, b.maxTime, b.phase);
-        }, 250); // 250ms = display muy fluido
+
+            // --- MEJORA: Actualizar tiempos de jugadores 1-a-1 ---
+            tickPlayerTimes(elapsed);
+        }, 250); 
     }
 
     // Field & bench
@@ -686,6 +690,14 @@ function formatTime(secs) {
     return `${m}:${s}`;
 }
 
+function tickPlayerTimes(elapsed) {
+    const els = document.querySelectorAll('.live-player-time[data-base-time]');
+    els.forEach(el => {
+        const base = parseInt(el.getAttribute('data-base-time')) || 0;
+        el.textContent = formatTime(Math.floor(base + elapsed));
+    });
+}
+
 // ── Render field ───────────────────────────────────────────────────
 function renderField(data) {
     const pitch   = document.getElementById('live-pitch');
@@ -717,7 +729,7 @@ function renderField(data) {
                 ${p.number}
             </div>
             <div class="live-player-label">${p.name}</div>
-            <div class="live-player-time">${formatTime(p.time || 0)}</div>
+            <div class="live-player-time" data-base-time="${p.time || 0}">${formatTime(p.time || 0)}</div>
         </div>`;
     }).join('');
 }
