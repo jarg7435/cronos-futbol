@@ -284,16 +284,6 @@
         </div>
     </div>
 
-    <!-- Forzar actualización — fijo en la parte inferior, siempre visible -->
-    <div class="fixed-update-container" style="position:fixed; bottom:12px; left:0; right:0; text-align:center; z-index:9999;">
-        <button onclick="forceUpdate()"
-            style="background:rgba(10,14,20,0.7); border:1px solid rgba(255,255,255,0.12);
-                   color:#555; font-size:0.65rem; padding:0.35rem 1rem;
-                   border-radius:20px; cursor:pointer; backdrop-filter:blur(6px);
-                   -webkit-backdrop-filter:blur(6px);">
-            ↺ FORZAR ACTUALIZACIÓN
-        </button>
-    </div>
 
     <!-- ══ PANTALLA DE SELECCIÓN DE ROL (Landing) ══════════════════════ -->
     <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:9000; 
@@ -396,10 +386,6 @@
 
     <!-- ══ APP PRINCIPAL (oculta hasta autorización) ══════════════════════ -->
     <header id="main-header" style="display: none;">
-                <div class="logo">
-            <div style="display:flex;align-items:center;"><img src="public/assets/img_0f3942d4.png" alt="Chronos Fútbol" style="height:86px;width:auto;object-fit:contain;display:block;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.4));"></div>
-            <span style="font-size: 0.6rem; color: var(--text-muted); display: block; margin-top: -8px;">v7.0</span>
-        </div>
         <div class="master-clock-container">
             <div class="dual-timers">
                 <div class="timer-block active" id="timer-h1-container" onclick="editTimer(1)">
@@ -414,7 +400,9 @@
             <div id="match-phase-label"
                 style="font-size: 0.6rem; color: white; text-align: center; margin-top: 2px;">1ª PARTE</div>
         </div>
+        
         <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
+
         <div class="score-board">
             <div class="team-score">
                 <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
@@ -433,49 +421,31 @@
                 </div>
                 <button onclick="changeScore('away',+1)" class="score-btn success">+</button>
             </div>
+            
+            <!-- Logo integrado a la derecha del marcador -->
+            <div class="logo-compact" style="margin-left: 15px; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 15px; display: flex; align-items: center;">
+                <img src="public/assets/img_0f3942d4.png" alt="Chronos" style="height:35px; width:auto; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">
+            </div>
         </div>
+
         <div class="header-actions">
-            <button id="btn-back-setup" class="btn" onclick="goBackToSetup()"
-                style="background:var(--glass);color:var(--text-muted);" title="Volver a configuración">
-                ← INICIO
-            </button>
             <button id="btn-play-pause" class="btn primary">EMPEZAR</button>
             <button id="btn-reset" class="btn danger">REINICIAR</button>
             <button id="btn-save-team" class="btn">GUARDAR</button>
             <button id="btn-export" class="btn">DESCARGAR</button>
+            
+            <button id="btn-unified-comms" onclick="openUnifiedCommsMenu()" title="Comunicaciones y Reportes"
+                style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                       color:var(--primary); font-size:0.75rem; padding:0.4rem 0.8rem;
+                       border-radius:8px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px;">
+                💬 COMUNICACIONES
+            </button>
+
             <button onclick="cerrarSesion()" title="Cerrar sesión"
                 style="background:none; border:1px solid rgba(255,255,255,0.12); color:#7d8590;
                        font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">⏻</button>
-            <button onclick="forceUpdate()" title="Forzar actualización"
-                style="background:none; border:1px solid rgba(255,255,255,0.1); color:#7d8590;
-                       font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">↺</button>
-            <button onclick="startTutorial()" title="Tutorial y ayuda"
-                style="background:none; border:1px solid rgba(240,136,62,0.3); color:rgba(240,136,62,0.7);
-                       font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">?</button>
-            <!-- Botón admin: solo visible si role=admin -->
-            <button id="btn-admin-panel" onclick="openAdminPanel()" title="Panel de Administración"
-                style="display:none; background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.4);
-                       color:#ffa500; font-size:0.65rem; padding:0.3rem 0.6rem;
-                       border-radius:6px; cursor:pointer;">⚙ ADMIN</button>
-            <button id="btn-live-view" onclick="openLiveView()" title="Ver partidos en vivo"
-                style="display:none; background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.4);
-                       color:#ff5858; font-size:0.65rem; padding:0.3rem 0.6rem;
-                       border-radius:6px; cursor:pointer;">
-                🔴 EN VIVO
-            </button>
-            <button id="btn-coach-comms" onclick="openCoachMessaging()" title="Comunicaciones con Padres"
-                style="display:none; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
-                       color:var(--primary); font-size:0.65rem; padding:0.3rem 0.6rem;
-                       border-radius:6px; cursor:pointer;">
-                📱 COMUNICACIONES
-            </button>
-            <button id="btn-club-reports" onclick="openClubReports()" title="Informes de todo el club"
-                style="display:none; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
-                       color:var(--primary); font-size:0.65rem; padding:0.3rem 0.6rem;
-                       border-radius:6px; cursor:pointer;">
-                📊 INFORMES CLUB
-            </button>
         </div>
+    </header>
     </header>
 
     <main class="main-container" id="main-container" style="display: none;">
@@ -1137,20 +1107,12 @@
                 ? 'inline-block' : 'none';
         }
 
-        // Botón INFORMES CLUB
-        const btnClubReports = document.getElementById('btn-club-reports');
-        if (btnClubReports) {
-            btnClubReports.style.display =
-                ['admin','superadmin','club_admin','director','coordinator'].includes(window._cronosCurrentUser.role)
-                ? 'inline-block' : 'none';
-        }
-
-        // Botón COMUNICACIONES — para entrenadores y staff
-        const btnCoachComms = document.getElementById('btn-coach-comms');
-        if (btnCoachComms) {
-            btnCoachComms.style.display =
+        // Botón UNIFIED COMMS
+        const btnComms = document.getElementById('btn-unified-comms');
+        if (btnComms) {
+            btnComms.style.display =
                 ['admin','superadmin','club_admin','director','coordinator','coach','user'].includes(window._cronosCurrentUser.role)
-                ? 'inline-block' : 'none';
+                ? 'flex' : 'none';
         }
 
         // Guardar sesión

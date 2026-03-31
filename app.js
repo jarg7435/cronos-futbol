@@ -1359,93 +1359,6 @@ function initEmailJS() {
     }
 }
 
-function openEmailSettings() {
-    loadEmailConfig();
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = `
-        <div class="modal-content" style="width:min(95vw,500px); max-height:92vh; overflow-y:auto;">
-            <h2 style="text-align:center; margin-bottom:0.3rem;">📤 Envío de Informes</h2>
-            <p style="font-size:0.8rem; color:var(--text-muted); text-align:center; margin-bottom:1rem;">
-                Al exportar, el informe se envía automáticamente por WhatsApp.<br>
-                El email es opcional y usa tu propio correo personal.
-            </p>
-
-            <div style="background:rgba(37,211,102,0.08); border:1px solid rgba(37,211,102,0.3);
-                        border-radius:10px; padding:1rem; margin-bottom:0.8rem;">
-                <h3 style="font-size:0.85rem; color:#25d366; margin:0 0 0.7rem;">
-                    📱 WhatsApp <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">— automático</span>
-                </h3>
-                <label style="font-size:0.75rem;">Número principal (con prefijo país)</label>
-                <div style="display:flex;gap:5px;align-items:center;margin:4px 0 8px;">
-                    <span style="color:var(--text-muted);">+</span>
-                    <input type="tel" id="cfg-whatsapp" placeholder="34612345678"
-                        value="${emailConfig.whatsappNumber}"
-                        style="flex:1;padding:0.5rem 0.7rem;border-radius:8px;
-                               border:1px solid var(--glass-border);background:var(--bg);
-                               color:var(--text);font-size:0.9rem;font-family:monospace;">
-                </div>
-                <label style="font-size:0.75rem;">2º número (opcional)</label>
-                <div style="display:flex;gap:5px;align-items:center;margin-top:4px;">
-                    <span style="color:var(--text-muted);">+</span>
-                    <input type="tel" id="cfg-whatsapp2" placeholder="34698765432"
-                        value="${emailConfig.whatsappNumber2 || ''}"
-                        style="flex:1;padding:0.5rem 0.7rem;border-radius:8px;
-                               border:1px solid var(--glass-border);background:var(--bg);
-                               color:var(--text);font-size:0.9rem;font-family:monospace;">
-                </div>
-            </div>
-
-            <div style="background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.2);
-                        border-radius:10px; padding:1rem; margin-bottom:0.8rem;">
-                <h3 style="font-size:0.85rem; color:var(--primary); margin:0 0 0.7rem;">
-                    📧 Email <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">— abre tu correo personal</span>
-                </h3>
-                <label style="font-size:0.75rem;">Correo principal</label>
-                <input type="email" id="cfg-director-email" placeholder="director@club.com"
-                    value="${emailConfig.directorEmail}"
-                    style="width:100%;padding:0.5rem 0.7rem;border-radius:8px;margin:4px 0 8px;
-                           border:1px solid var(--glass-border);background:var(--bg);
-                           color:var(--text);font-size:0.9rem;box-sizing:border-box;">
-                <label style="font-size:0.75rem;">2º correo (opcional)</label>
-                <input type="email" id="cfg-director-email2" placeholder="coordinador@club.com"
-                    value="${emailConfig.directorEmail2 || ''}"
-                    style="width:100%;padding:0.5rem 0.7rem;border-radius:8px;margin-top:4px;
-                           border:1px solid var(--glass-border);background:var(--bg);
-                           color:var(--text);font-size:0.9rem;box-sizing:border-box;">
-                <p style="font-size:0.72rem;color:var(--text-muted);margin:6px 0 0;">
-                    Sin registros extra — usa tu propio Gmail, Outlook o cualquier correo.
-                </p>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;gap:0.6rem;">
-                <button class="btn" onclick="openSetupModal()">← VOLVER</button>
-                <div style="display:flex;gap:0.6rem;">
-                    <button class="btn" onclick="testWhatsApp()"
-                        style="background:rgba(37,211,102,0.12);color:#25d366;
-                               border:1px solid rgba(37,211,102,0.4);font-size:0.82rem;">
-                        📱 Probar WA
-                    </button>
-                    <button class="btn primary" onclick="saveEmailSettings()">GUARDAR</button>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-function saveEmailSettings() {
-    emailConfig.whatsappNumber  = (document.getElementById('cfg-whatsapp')?.value  || '').replace(/[^0-9]/g,'');
-    emailConfig.whatsappNumber2 = (document.getElementById('cfg-whatsapp2')?.value || '').replace(/[^0-9]/g,'');
-    emailConfig.directorEmail   = (document.getElementById('cfg-director-email')?.value  || '').trim();
-    emailConfig.directorEmail2  = (document.getElementById('cfg-director-email2')?.value || '').trim();
-    cloudSet('cronos_email_config', JSON.stringify(emailConfig));
-    const parts = [];
-    if (emailConfig.whatsappNumber)  parts.push('📱 WA');
-    if (emailConfig.whatsappNumber2) parts.push('📱 WA 2');
-    if (emailConfig.directorEmail)   parts.push('📧 Email');
-    showToast('✅ ' + (parts.length ? parts.join(' + ') : 'Sin destinatarios configurados'));
-    openSetupModal();
-}
 
 function testWhatsApp() {
     loadEmailConfig();
@@ -1678,10 +1591,10 @@ function openSetupModal() {
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
                         GESTIONAR PLANTILLA
                     </button>
-                    <button class="btn" onclick="openEmailSettings()"
-                        title="Configurar envío automático de informes por email"
+                    <button class="btn" onclick="openContactManager()"
+                        title="Configurar teléfonos de padres y emails del club"
                         style="background:var(--glass);color:var(--secondary);font-size:0.82rem;border:1px solid var(--secondary);">
-                        📧 EMAIL
+                        📱 CONTACTOS
                     </button>
                     <button class="btn" onclick="startDemo()"
                         title="Partido de demostración con datos de ejemplo"

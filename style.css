@@ -429,28 +429,25 @@ header {
 .score-btn.danger { background: var(--danger); }
 .score-btn.success { background: var(--success); }
 
+/* Logo compacto integrado en el cabecero */
+.logo-compact img {
+    max-width: 80px;
+    height: auto;
+    object-fit: contain;
+}
+
+@media (max-width: 950px) {
+    .logo-compact img {
+        height: 28px !important;
+    }
+    .logo-compact {
+        margin-left: 10px !important;
+        padding-left: 10px !important;
+    }
+}
+
 .logo {
-    display: flex !important;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    order: 0;
-    flex: 0 0 auto;
-    padding: 0 15px;
-}
-
-.logo h1 {
-    font-size: 1.5rem !important;
-    line-height: 0.9 !important;
-    text-align: right;
-    letter-spacing: 0.05em;
-    color: var(--primary);
-}
-
-.logo span {
-    display: block !important;
-    font-size: 0.6rem;
-    color: var(--text-muted);
+    display: none !important;
 }
 
 @media (min-width: 951px) {
@@ -473,26 +470,34 @@ header {
     .master-clock-container #master-timer { font-size: 2.2rem; }
 
     .score-board {
-        transform: scale(0.85);
-        flex: 1 1 auto;
+        transform: scale(0.9);
+        flex: 0 1 auto;
+        padding: 2px 10px;
     }
 
-    .score-num { font-size: 1.5rem; }
-    .timer-val { font-size: 1.1rem; }
+    .score-num { font-size: 1.4rem; }
+    .timer-val { font-size: 1rem; }
 
     .timer-block {
-        min-width: 55px;
-        padding: 2px 4px;
+        min-width: 50px;
+        padding: 1px 4px;
     }
 
     .score-btn {
-        width: 30px;
-        height: 30px;
-        font-size: 1.2rem;
+        width: 28px;
+        height: 28px;
+        font-size: 1.1rem;
     }
 
-    .logo h1 { font-size: 1.1rem !important; }
-    header { padding: 0.2rem 0.3rem; }
+    header { 
+        padding: 0.15rem 0.3rem !important; 
+        min-height: 0 !important;
+    }
+    
+    .pitch {
+        margin: 0.2rem 0 !important;
+        max-height: 88vh !important;
+    }
 }
 
 .main-container {
