@@ -237,7 +237,15 @@ function testWhatsApp() {
 
 
 async function sendReportByEmail(matchInfo, reportHtml) {
-    if (!emailConfig.directorEmail) return; // sin configuración, no enviar
+    if (!emailConfig.contacts || emailConfig.contacts.length === 0) {
+        // Fallback para legacy
+        if (!emailConfig.directorEmail) return;
+        emailConfig.contacts = [{ name: 'Director', email: emailConfig.directorEmail, tags: ['reports'] }];
+    }
+
+    const recipients = emailConfig.contacts.filter(c => c.tags.includes('reports') && c.email);
+    if (recipients.length === 0) return;
+
     if (!emailConfig.emailjsServiceId || !emailConfig.emailjsTemplateId || !emailConfig.emailjsPublicKey) return;
 
     if (!window._emailjsReady) {
@@ -246,24 +254,32 @@ async function sendReportByEmail(matchInfo, reportHtml) {
     }
 
     const date = new Date().toLocaleDateString('es-ES');
-    try {
-        await emailjs.send(
-            emailConfig.emailjsServiceId,
-            emailConfig.emailjsTemplateId,
-            {
-                to_email:    emailConfig.directorEmail,
-                coach_email: emailConfig.coachEmail,
-                subject:     `📊 Informe de Partido — ${matchInfo} — ${date}`,
-                match_info:  matchInfo,
-                report_body: reportHtml
-            }
-        );
-        console.log('✅ Informe enviado a', emailConfig.directorEmail);
-    } catch(err) {
-        console.error('Error enviando email:', err);
-        // Notificación no intrusiva — no bloquea al entrenador
+    let successCount = 0;
+
+    for (const contact of recipients) {
+        try {
+            await emailjs.send(
+                emailConfig.emailjsServiceId,
+                emailConfig.emailjsTemplateId,
+                {
+                    to_name:     contact.name,
+                    to_email:    contact.email,
+                    coach_email: emailConfig.coachEmail || '',
+                    subject:     `📊 Informe de Partido — ${matchInfo} — ${date}`,
+                    match_info:  matchInfo,
+                    report_body: reportHtml
+                }
+            );
+            successCount++;
+            console.log(`✅ Informe enviado a ${contact.name} (${contact.email})`);
+        } catch(err) {
+            console.error(`Error enviando email a ${contact.email}:`, err);
+        }
+    }
+
+    if (successCount === 0) {
         const toast = document.createElement('div');
-        toast.textContent = '⚠️ El informe se descargó, pero el email no pudo enviarse.';
+        toast.textContent = '⚠️ El informe se descargó, pero no pudo enviarse por email.';
         toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
             'background:#c0392b;color:#fff;padding:10px 20px;border-radius:8px;' +
             'font-size:0.82rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.4);';

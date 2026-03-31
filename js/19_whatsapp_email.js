@@ -135,24 +135,29 @@ function openConvocationMessage() {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;">
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
-                            📱 WhatsApp (número o grupo)
+                            📱 WhatsApp Principal
                         </label>
                         <input id="cv-wa" type="tel" class="conv-input"
                             placeholder="34612345678"
-                            value="${saved.wa || emailConfig?.whatsappNumber || ''}">
-                        <p style="font-size:0.68rem;color:var(--text-muted);margin:0.2rem 0 0;">
-                            Sin + ni espacios. Ej: 34612345678
+                            value="${saved.wa || (emailConfig.contacts ? emailConfig.contacts.find(c => c.tags.includes('notifs'))?.phone : '') || emailConfig?.whatsappNumber || ''}">
+                        <p style="font-size:0.6rem;color:var(--text-muted);margin:0.2rem 0 0;">
+                            Auto-completado desde Gestión de Contactos.
                         </p>
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
-                            📧 Email
+                            📧 Email Principal
                         </label>
                         <input id="cv-email" type="email" class="conv-input"
                             placeholder="padres@equipo.com"
-                            value="${saved.email || emailConfig?.directorEmail || ''}">
+                            value="${saved.email || (emailConfig.contacts ? emailConfig.contacts.find(c => c.tags.includes('notifs'))?.email : '') || emailConfig?.directorEmail || ''}">
                     </div>
                 </div>
+                <!-- Nota sobre Multi-notificación -->
+                ${(emailConfig.contacts || []).filter(c => c.tags.includes('notifs')).length > 1 ? `
+                <div style="margin-top:0.6rem; font-size:0.68rem; color:var(--primary); background:rgba(88,166,255,0.05); padding:0.4rem; border-radius:4px;">
+                    ℹ️ El "Envío Interno" también llegará a: ${emailConfig.contacts.filter(c => c.tags.includes('notifs')).slice(1).map(c => c.name).join(', ')}
+                </div>` : ''}
             </div>
 
             </div><!-- end scroll -->
@@ -417,9 +422,7 @@ async function publishConvocationToApp() {
         const dateStr = dateVal ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES', {
             weekday:'long', day:'numeric', month:'long'}) : '—';
 
-        // Enviar notificación a cada padre de los jugadores convocados
-        // Nota: En una app pro, esto se haría vinculando playerNumber. 
-        // Aquí iteramos para encontrar el link.
+        // --- 1. NOTIFICAR A PADRES VINCULADOS (Lógica actual) ---
         for (const pName of playersArr) {
             const link = links.find(l => l.playerAlias === pName || l.playerName === pName);
             if (link && link.parentUid) {
@@ -434,8 +437,31 @@ async function publishConvocationToApp() {
                     kickoff,
                     venue,
                     extra,
-                    players:        playersArr, // Lista completa de convocados
-                    fullText,       // Por si acaso
+                    players:        playersArr,
+                    fullText,
+                    createdAt:      new Date().toISOString()
+                });
+                count++;
+            }
+        }
+
+        // --- 2. NOTIFICAR A CONTACTOS EXTRA (Fuente de la Verdad) ---
+        if (emailConfig.contacts) {
+            const extraNotifs = emailConfig.contacts.filter(c => c.tags.includes('notifs') && c.uid);
+            for (const contact of extraNotifs) {
+                const notifId = `cv_${contact.uid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type:           'convocatoria',
+                    clubId:         me.clubId || null,
+                    parentUid:      contact.uid,
+                    matchDate:      dateStr,
+                    rival,
+                    meettime,
+                    kickoff,
+                    venue,
+                    extra,
+                    players:        playersArr,
+                    fullText,
                     createdAt:      new Date().toISOString()
                 });
                 count++;

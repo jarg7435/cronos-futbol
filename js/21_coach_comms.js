@@ -504,6 +504,26 @@ async function sendMatchReportsToParents() {
         }
 
         hideSpinner();
+
+        // --- 3. NOTIFICAR A STAFF / OTROS (Fuente de la Verdad) ---
+        if (emailConfig.contacts) {
+            const staffNotifs = emailConfig.contacts.filter(c => c.tags.includes('notifs') && c.uid);
+            for (const contact of staffNotifs) {
+                const notifId = `notif_match_end_${contact.uid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type:           'aviso_partido_finalizado',
+                    clubId:         me.clubId || null,
+                    parentUid:      contact.uid,
+                    matchDate:      matchDate || new Date().toLocaleDateString('es-ES'),
+                    rival:          TEAM_NAMES.away || 'Rival',
+                    scoreHome:      scoreHome || '0',
+                    scoreAway:      scoreAway || '0',
+                    message:        `📊 El partido ha finalizado. Los informes de los jugadores ya están disponibles para su revisión.`,
+                    createdAt:      new Date().toISOString()
+                });
+            }
+        }
+
         showToast(`✅ Informe enviado a ${sent} padre${sent !== 1 ? 's' : ''}`, 4000);
 
     } catch(e) {
@@ -567,6 +587,25 @@ async function saveAllMatchReportsInternal() {
             });
             saved++;
         }
+        // --- NOTIFICAR A STAFF / OTROS (Fuente de la Verdad) ---
+        if (emailConfig.contacts) {
+            const staffNotifs = emailConfig.contacts.filter(c => c.tags.includes('notifs') && c.uid);
+            for (const contact of staffNotifs) {
+                const notifId = `notif_match_end_staff_${contact.uid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type:           'aviso_partido_finalizado',
+                    clubId:         me.clubId || null,
+                    parentUid:      contact.uid,
+                    matchDate:      matchDate || new Date().toLocaleDateString('es-ES'),
+                    rival:          TEAM_NAMES.away || 'Rival',
+                    scoreHome:      scoreHome || '0',
+                    scoreAway:      scoreAway || '0',
+                    message:        `📊 Partido finalizado y sincronizado con la nube. Los informes técnicos han sido generados.`,
+                    createdAt:      new Date().toISOString()
+                });
+            }
+        }
+
         console.log(`[AutoReport] ${saved} informes técnicos generados para Staff.`);
     } catch(e) {
         console.error('[AutoReport] Error:', e.message);
@@ -596,45 +635,73 @@ async function openContactManager() {
 
         hideSpinner();
 
+        // --- MIGRACIÓN Y PREPARACIÓN DE DATOS ---
+        if (!emailConfig.contacts) {
+            emailConfig.contacts = [];
+            // Migrar Director
+            if (emailConfig.directorEmail) {
+                emailConfig.contacts.push({
+                    id: 'dir_' + Math.random().toString(36).substr(2, 4),
+                    name: 'Director Deportivo',
+                    email: emailConfig.directorEmail,
+                    phone: emailConfig.whatsappNumber || '',
+                    tags: ['reports', 'notifs']
+                });
+            }
+            // Migrar Coordinador
+            if (emailConfig.directorEmail2) {
+                emailConfig.contacts.push({
+                    id: 'coord_' + Math.random().toString(36).substr(2, 4),
+                    name: 'Coordinador',
+                    email: emailConfig.directorEmail2,
+                    phone: emailConfig.whatsappNumber2 || '',
+                    tags: ['reports', 'notifs']
+                });
+            }
+        }
+
         const modal = document.getElementById('setup-modal');
         modal.style.display = 'flex';
         modal.innerHTML = `
-        <div class="modal-content" style="width:min(95vw,600px);max-height:92vh;display:flex;flex-direction:column;gap:1.2rem;overflow:hidden;">
+        <div class="modal-content" style="width:min(98vw,850px);max-height:92vh;display:flex;flex-direction:column;gap:1rem;overflow:hidden;padding:1.4rem;">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-                <h2 style="margin:0;font-size:1.1rem;">📱 Gestión de Contactos</h2>
-                <button onclick="document.getElementById('setup-modal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:1.5rem;">📱</span>
+                    <h2 style="margin:0;font-size:1.2rem;font-family:'Outfit',sans-serif;">Gestión de Contactos (Fuente de la Verdad)</h2>
+                </div>
+                <button onclick="document.getElementById('setup-modal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:1.6rem;cursor:pointer;">✕</button>
             </div>
+
+            <p style="font-size:0.75rem; color:var(--text-muted); margin:-0.5rem 0 0.5rem;">
+                Define quién recibe los informes de partido, convocatorias y avisos del club.
+            </p>
             
-            <!-- 1. CORREOS Y WHATSAPP DEL CLUB (Antiguo EMAIL) -->
-            <div style="background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.2); border-radius:12px; padding:1.2rem; flex-shrink:0;">
-                <h3 style="font-size:0.85rem; color:var(--primary); margin:0 0 0.8rem; display:flex; align-items:center; gap:8px;">
-                    📧 Responsables del Club <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">(Para informes y coordinación)</span>
-                </h3>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.9rem;">
-                    <div>
-                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">Email Director Deportivo</label>
-                        <input type="email" id="cfg-director-email" placeholder="director@club.com" 
-                            value="${emailConfig.directorEmail || ''}"
-                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
-                    </div>
-                    <div>
-                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">Email Coordinador (opcional)</label>
-                        <input type="email" id="cfg-director-email2" placeholder="coordinador@club.com" 
-                            value="${emailConfig.directorEmail2 || ''}"
-                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
-                    </div>
-                    <div>
-                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">WhatsApp Principal (+ prefijo)</label>
-                        <input type="tel" id="cfg-whatsapp" placeholder="34600112233" 
-                            value="${emailConfig.whatsappNumber || ''}"
-                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
-                    </div>
-                    <div>
-                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">WhatsApp Secundario</label>
-                        <input type="tel" id="cfg-whatsapp2" placeholder="34699887766" 
-                            value="${emailConfig.whatsappNumber2 || ''}"
-                            style="width:100%;padding:0.5rem;background:var(--bg);border:1px solid var(--glass-border);border-radius:8px;color:white;font-size:0.8rem;box-sizing:border-box;">
-                    </div>
+            <!-- 1. TABLA UNIFICADA DE CONTACTOS -->
+            <div style="flex:1.2; overflow:hidden; display:flex; flex-direction:column; border:1px solid rgba(88,166,255,0.2); border-radius:12px; background:rgba(88,166,255,0.03);">
+                <div style="padding:0.7rem 1rem; border-bottom:1px solid rgba(88,166,255,0.2); display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size:0.85rem; color:var(--primary); margin:0; font-weight:700;">📋 Lista de Contactos (Staff y Otros)</h3>
+                    <button onclick="addNewContactRow()" class="btn" style="padding:0.3rem 0.8rem; font-size:0.7rem; background:var(--primary); color:white; border:none; border-radius:6px;">
+                        ➕ AÑADIR CONTACTO
+                    </button>
+                </div>
+                
+                <div style="flex:1; overflow-y:auto; padding:0.5rem;">
+                    <table style="width:100%;font-size:0.75rem;border-collapse:collapse;" id="table-custom-contacts">
+                        <thead>
+                            <tr style="color:var(--text-muted); border-bottom:1px solid rgba(255,255,255,0.1); text-align:left;">
+                                <th style="padding:0.5rem;">NOMBRE / CARGO</th>
+                                <th style="padding:0.5rem;">EMAIL</th>
+                                <th style="padding:0.5rem;">WHATSAPP</th>
+                                <th style="padding:0.5rem;">UID (APP)</th>
+                                <th style="padding:0.5rem; text-align:center;">INFORMES</th>
+                                <th style="padding:0.5rem; text-align:center;">AVISOS</th>
+                                <th style="padding:0.5rem; text-align:center;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-custom-contacts">
+                            ${emailConfig.contacts.map(c => renderContactRowMarkup(c)).join('')}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -684,35 +751,56 @@ async function openContactManager() {
 }
 
 async function saveContactManagerData() {
-    const inputs = document.querySelectorAll('.contact-phone');
+    const parentInputs = document.querySelectorAll('.contact-phone');
+    const customRows   = document.querySelectorAll('.custom-contact-row');
     const db = window._cronos_auth.db;
-    showSpinner('Guardando cambios…');
+    showSpinner('Sincronizando Fuente de la Verdad…');
 
     try {
         const { updateDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-        // 1. Guardar Teléfonos de Padres
-        for (const input of inputs) {
+        // 1. Guardar Teléfonos de Padres (en cronos_player_links)
+        for (const input of parentInputs) {
             const linkId = input.dataset.linkid;
             const phone  = input.value.trim().replace(/\s/g, ''); 
             await updateDoc(doc(db, 'cronos_player_links', linkId), { parentPhone: phone });
         }
 
-        // 2. Guardar Config de Club (Staff)
+        // 2. Guardar Lista Unificada de Contactos (en emailConfig)
+        const updatedContacts = [];
+        customRows.forEach(row => {
+            const tags = [];
+            if (row.querySelector('.tag-reports').checked) tags.push('reports');
+            if (row.querySelector('.tag-notifs').checked)  tags.push('notifs');
+
+            updatedContacts.push({
+                id:    row.dataset.id || ('c_' + Math.random().toString(36).substr(2,6)),
+                name:  row.querySelector('.c-name').value.trim(),
+                email: row.querySelector('.c-email').value.trim(),
+                phone: row.querySelector('.c-phone').value.trim().replace(/\s/g, ''),
+                uid:   row.querySelector('.c-uid').value.trim(),
+                tags:  tags
+            });
+        });
+
         if (typeof emailConfig !== 'undefined') {
-            emailConfig.whatsappNumber  = (document.getElementById('cfg-whatsapp')?.value  || '').replace(/[^0-9]/g,'');
-            emailConfig.whatsappNumber2 = (document.getElementById('cfg-whatsapp2')?.value || '').replace(/[^0-9]/g,'');
-            emailConfig.directorEmail   = (document.getElementById('cfg-director-email')?.value  || '').trim();
-            emailConfig.directorEmail2  = (document.getElementById('cfg-director-email2')?.value || '').trim();
+            emailConfig.contacts = updatedContacts;
             
+            // Mantener compatibilidad con campos antiguos por si acaso se usan en otros scripts legacy
+            const firstReport = updatedContacts.find(c => c.tags.includes('reports'));
+            if (firstReport) {
+                emailConfig.directorEmail = firstReport.email;
+                emailConfig.whatsappNumber = firstReport.phone;
+            }
+
             if (typeof cloudSet === 'function') {
                 await cloudSet('cronos_email_config', JSON.stringify(emailConfig));
             }
         }
 
         hideSpinner();
-        showToast('✅ Información de contacto actualizada', 3000);
+        showToast('✅ Fuente de la Verdad actualizada', 3000);
         document.getElementById('setup-modal').style.display = 'none';
         if (typeof _loadParentList === 'function') _loadParentList(); 
         
@@ -721,6 +809,53 @@ async function saveContactManagerData() {
         showToast('⚠️ Error al guardar: ' + e.message, 4000);
     }
 }
+
+// ── FUNCIONES AUXILIARES PARA EL GESTOR DE CONTACTOS ──────────────────
+
+function renderContactRowMarkup(c = {}) {
+    const isReports = (c.tags || []).includes('reports');
+    const isNotifs  = (c.tags || []).includes('notifs');
+    const id = c.id || ('new_' + Date.now());
+
+    return `
+    <tr class="custom-contact-row" data-id="${id}" style="border-bottom:1px solid rgba(255,255,255,0.05);">
+        <td style="padding:0.4rem;">
+            <input type="text" class="c-name" value="${c.name || ''}" placeholder="Nombre / Cargo"
+                style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+        </td>
+        <td style="padding:0.4rem;">
+            <input type="email" class="c-email" value="${c.email || ''}" placeholder="email@ejemplo.com"
+                style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+        </td>
+        <td style="padding:0.4rem;">
+            <input type="tel" class="c-phone" value="${c.phone || ''}" placeholder="34600000000"
+                style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+        </td>
+        <td style="padding:0.4rem;">
+            <input type="text" class="c-uid" value="${c.uid || ''}" placeholder="ID App (opcional)"
+                style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);font-size:0.7rem;">
+        </td>
+        <td style="padding:0.4rem; text-align:center;">
+            <input type="checkbox" class="tag-reports" ${isReports ? 'checked' : ''} style="width:16px;height:16px;">
+        </td>
+        <td style="padding:0.4rem; text-align:center;">
+            <input type="checkbox" class="tag-notifs" ${isNotifs ? 'checked' : ''} style="width:16px;height:16px;">
+        </td>
+        <td style="padding:0.4rem; text-align:center;">
+            <button onclick="this.closest('tr').remove()" style="background:none; border:none; color:#ff5858; cursor:pointer; font-size:1rem;" title="Eliminar">🗑️</button>
+        </td>
+    </tr>`;
+}
+
+window.addNewContactRow = () => {
+    const tbody = document.getElementById('tbody-custom-contacts');
+    if (!tbody) return;
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = `<table>${renderContactRowMarkup({})}</table>`;
+    const newRow = tempDiv.querySelector('tr');
+    tbody.appendChild(newRow);
+    newRow.querySelector('.c-name').focus();
+};
 
 async function openUnifiedCommsMenu() {
     const modal = document.getElementById('setup-modal');
