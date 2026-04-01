@@ -27,7 +27,7 @@ async function openCoachMessaging() {
         <div style="display:flex;justify-content:space-between;align-items:center;
                     margin-bottom:0.8rem;flex-shrink:0;">
             <h2 style="margin:0;font-size:1.05rem;">💬 Mensajes a Padres/Tutores</h2>
-            <button onclick="document.getElementById('setup-modal').style.display='none'"
+            <button onclick="openUnifiedCommsMenu()"
                 style="background:none;border:none;color:var(--text-muted);
                        font-size:1.3rem;cursor:pointer;">✕</button>
         </div>
@@ -669,7 +669,7 @@ async function openContactManager() {
                     <span style="font-size:1.5rem;">📱</span>
                     <h2 style="margin:0;font-size:1.2rem;font-family:'Outfit',sans-serif;">Gestión de Contactos (Fuente de la Verdad)</h2>
                 </div>
-                <button onclick="document.getElementById('setup-modal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:1.6rem;cursor:pointer;">✕</button>
+                <button onclick="document.getElementById('setup-modal').style.display='none'; openUnifiedCommsMenu();" style="background:none;border:none;color:var(--text-muted);font-size:1.6rem;cursor:pointer;">✕</button>
             </div>
 
             <p style="font-size:0.75rem; color:var(--text-muted); margin:-0.5rem 0 0.5rem;">
@@ -748,7 +748,7 @@ async function openContactManager() {
             </div>
 
             <div style="display:flex;gap:0.7rem;flex-shrink:0;">
-                <button onclick="document.getElementById('setup-modal').style.display='none'" class="btn" style="flex:1;">CANCELAR</button>
+                <button onclick="openUnifiedCommsMenu()" class="btn" style="flex:1;">← VOLVER</button>
                 <button onclick="saveContactManagerData()" class="btn primary" style="flex:2; font-weight:bold;">💾 GUARDAR CAMBIOS</button>
             </div>
         </div>`;
@@ -816,7 +816,7 @@ async function saveContactManagerData() {
 
         hideSpinner();
         showToast('✅ Fuente de la Verdad actualizada', 3000);
-        document.getElementById('setup-modal').style.display = 'none';
+        openUnifiedCommsMenu();
         if (typeof _loadParentList === 'function') _loadParentList(); 
         
     } catch(e) {
@@ -889,7 +889,7 @@ async function openUnifiedCommsMenu() {
                 <div style="width:40px;height:40px;background:rgba(88,166,255,0.1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">💬</div>
                 <h2 style="margin:0;font-size:1.4rem;font-family:'Outfit',sans-serif;color:white;letter-spacing:0.5px;">Comunicaciones</h2>
             </div>
-            <button onclick="document.getElementById('setup-modal').style.display='none'" 
+            <button onclick="openSetupModal()" 
                 style="background:none;border:none;color:var(--text-muted);font-size:1.8rem;cursor:pointer;line-height:1;transition:color 0.2s;"
                 onmouseover="this.style.color='white'" onmouseout="this.style.color='var(--text-muted)'">✕</button>
         </div>
