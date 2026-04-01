@@ -44,6 +44,28 @@ async function openCoachMessaging() {
             </button>
         </div>
 
+        <!-- Barra de selección múltiple -->
+        <div id="bulk-msg-bar" style="display:none;background:rgba(88,166,255,0.08);
+             border:1px solid rgba(88,166,255,0.25);border-radius:10px;
+             padding:0.6rem 0.9rem;margin-bottom:0.7rem;flex-shrink:0;
+             display:flex;align-items:center;gap:0.7rem;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:0.4rem;
+                          font-size:0.8rem;font-weight:700;cursor:pointer;color:var(--primary);">
+                <input type="checkbox" id="chk-select-all" style="width:17px;height:17px;"
+                    onchange="toggleSelectAllParents(this.checked)">
+                Seleccionar todos
+            </label>
+            <span id="bulk-count" style="font-size:0.75rem;color:var(--text-muted);flex:1;">
+                0 seleccionados
+            </span>
+            <button onclick="openBulkMessageComposer()"
+                style="padding:0.4rem 0.9rem;background:var(--primary);border:none;
+                       border-radius:7px;color:#0a0e14;font-weight:700;
+                       font-size:0.78rem;cursor:pointer;">
+                ✉️ Mensaje grupal
+            </button>
+        </div>
+
         <div id="coach-parent-list" style="flex:1;overflow-y:auto;">
             <p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando padres vinculados…</p>
         </div>
@@ -107,40 +129,57 @@ async function _loadParentList() {
                 : '';
 
             return `
-            <div onclick="openThreadWithParent('${link.parentUid}','${link.parentEmail}',
-                         '${link.playerNumber}','${link.playerAlias || link.playerName || ''}',
-                         '${link.parentWA || ''}')"
-                style="background:var(--glass);
-                       border:1px solid ${unread ? 'rgba(88,166,255,0.5)' : 'var(--glass-border)'};
-                       border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem;
-                       cursor:pointer;display:flex;justify-content:space-between;
-                       align-items:center;gap:0.8rem;transition:all 0.15s;">
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                        ⚽ ${link.playerAlias || link.playerName || 'Jugador'}
-                        <span style="color:var(--primary);">#${link.playerNumber}</span>
+            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
+                <!-- Checkbox de selección -->
+                <input type="checkbox" class="parent-select-chk"
+                    data-parent-uid="${link.parentUid}"
+                    data-parent-email="${link.parentEmail}"
+                    data-player="${link.playerAlias || link.playerName || ''}"
+                    data-player-num="${link.playerNumber}"
+                    data-parent-wa="${link.parentWA || link.parentPhone || ''}"
+                    style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);"
+                    onchange="updateBulkCount()">
+                <!-- Fila del padre -->
+                <div onclick="openThreadWithParent('${link.parentUid}','${link.parentEmail}',
+                             '${link.playerNumber}','${link.playerAlias || link.playerName || ''}',
+                             '${link.parentWA || link.parentPhone || ''}')"
+                    style="flex:1;background:var(--glass);
+                           border:1px solid ${unread ? 'rgba(88,166,255,0.5)' : 'var(--glass-border)'};
+                           border-radius:10px;padding:0.85rem 1rem;
+                           cursor:pointer;display:flex;justify-content:space-between;
+                           align-items:center;gap:0.8rem;transition:all 0.15s;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
+                            ⚽ ${link.playerAlias || link.playerName || 'Jugador'}
+                            <span style="color:var(--primary);">#${link.playerNumber}</span>
+                        </div>
+                        <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.2rem;">
+                            👨‍👩‍👧 ${link.parentEmail}
+                            ${link.parentPhone ? ` · 📱 ${link.parentPhone}` : ''}
+                        </div>
+                        <div style="font-size:0.76rem;
+                                    color:${unread ? '#58a6ff' : 'var(--text-muted)'};
+                                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                            ${unread ? `<strong>🔵 ${lastMsg}</strong>` : lastMsg}
+                        </div>
                     </div>
-                    <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.2rem;">
-                        👨‍👩‍👧 ${link.parentEmail}
-                        ${link.parentPhone ? ` · 📱 ${link.parentPhone}` : ''}
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;
+                                gap:0.3rem;flex-shrink:0;">
+                        ${unread > 0 ? `
+                        <span style="background:#58a6ff;color:#0a0e14;border-radius:10px;
+                            padding:2px 8px;font-size:0.68rem;font-weight:700;">
+                            ${unread} nuevo${unread > 1 ? 's' : ''}
+                        </span>` : ''}
+                        <span style="font-size:0.68rem;color:var(--text-muted);">${lastTime}</span>
+                        <span style="color:var(--text-muted);font-size:1.1rem;">›</span>
                     </div>
-                    <div style="font-size:0.76rem;
-                                color:${unread ? '#58a6ff' : 'var(--text-muted)'};
-                                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${unread ? `<strong>🔵 ${lastMsg}</strong>` : lastMsg}
-                    </div>
-                </div>
-                <div style="display:flex;flex-direction:column;align-items:flex-end;
-                            gap:0.3rem;flex-shrink:0;">
-                    ${unread > 0 ? `
-                    <span style="background:#58a6ff;color:#0a0e14;border-radius:10px;
-                        padding:2px 8px;font-size:0.68rem;font-weight:700;">
-                        ${unread} nuevo${unread > 1 ? 's' : ''}
-                    </span>` : ''}
-                    <span style="font-size:0.68rem;color:var(--text-muted);">${lastTime}</span>
-                    <span style="color:var(--text-muted);font-size:1.1rem;">›</span>
                 </div>
             </div>`;
+        }).join('');
+
+        // Mostrar barra de selección múltiple
+        const bar = document.getElementById('bulk-msg-bar');
+        if (bar) bar.style.display = 'flex';
         }).join('');
 
     } catch(e) {
@@ -706,46 +745,7 @@ async function openContactManager() {
                 </div>
             </div>
 
-            <!-- 2. TELÉFONOS DE PADRES (POR JUGADOR) -->
-            <div style="flex:1;overflow:hidden; display:flex; flex-direction:column; border:1px solid rgba(255,255,255,0.1); border-radius:12px; background:rgba(255,255,255,0.02);">
-                <div style="padding:0.8rem; border-bottom:1px solid rgba(255,255,255,0.1); display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03);">
-                    <h3 style="font-size:0.85rem; color:var(--secondary); margin:0;">👨‍👩‍👧‍👦 Contactos de Padres/Tutores</h3>
-                    <span style="font-size:0.7rem; color:var(--text-muted);">${links.length} vinculados</span>
-                </div>
-                
-                <div style="flex:1; overflow-y:auto; padding:0.5rem;">
-                    <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
-                        <thead>
-                            <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);">
-                                <th style="padding:0.6rem;text-align:left;">JUGADOR</th>
-                                <th style="padding:0.6rem;text-align:left;">DORSAL</th>
-                                <th style="padding:0.6rem;text-align:left;">WHATSAPP</th>
-                                <th style="padding:0.6rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${links.sort((a,b) => (a.playerNumber || 0) - (b.playerNumber || 0)).map(link => `
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:0.6rem;">${link.playerAlias || link.playerName || 'Jugador'}</td>
-                                <td style="padding:0.6rem;font-weight:700;color:var(--primary);">#${link.playerNumber}</td>
-                                <td style="padding:0.6rem;">
-                                    <input type="text" class="contact-phone" data-linkid="${link._id}"
-                                        value="${link.parentPhone || ''}"
-                                        placeholder="ej: 34600112233"
-                                        style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;box-sizing:border-box;">
-                                </td>
-                                <td style="padding:0.6rem;text-align:center;">
-                                    <input type="checkbox" class="contact-live" data-linkid="${link._id}"
-                                        ${link.canWatchLive ? 'checked' : ''}
-                                        style="width:18px;height:18px;accent-color:#ff5858;"
-                                        title="Puede ver el partido en vivo">
-                                </td>
-                            </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <!-- 2. TABLA DE PADRES/TUTORES (sección separada) -->\n            <div style=\"flex:1;overflow:hidden; display:flex; flex-direction:column; border:1px solid rgba(240,136,62,0.25); border-radius:12px; background:rgba(240,136,62,0.02);\">\n                <div style=\"padding:0.8rem; border-bottom:1px solid rgba(240,136,62,0.2); display:flex; justify-content:space-between; align-items:center; background:rgba(240,136,62,0.04);\">\n                    <div>\n                        <h3 style=\"font-size:0.85rem; color:var(--secondary); margin:0;\">👨‍👩‍👧‍👦 Contactos de Padres/Tutores</h3>\n                        <p style=\"font-size:0.68rem;color:var(--text-muted);margin:0.2rem 0 0;\">Vinculados automáticamente con los jugadores. Independiente del Staff.</p>\n                    </div>\n                    <span style=\"font-size:0.7rem; color:var(--text-muted);\">${links.length} vinculados</span>\n                </div>\n                \n                <div style=\"flex:1; overflow-y:auto; padding:0.5rem;\">\n                    <table style=\"width:100%;font-size:0.75rem;border-collapse:collapse;\">\n                        <thead>\n                            <tr style=\"color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);\">\n                                <th style=\"padding:0.5rem;text-align:left;\">JUGADOR</th>\n                                <th style=\"padding:0.5rem;text-align:left;\">N°</th>\n                                <th style=\"padding:0.5rem;text-align:left;\">WHATSAPP</th>\n                                <th style=\"padding:0.5rem;text-align:left;\">EMAIL</th>\n                                <th style=\"padding:0.5rem;text-align:center;\">INFORMES</th>\n                                <th style=\"padding:0.5rem;text-align:center;\">AVISOS</th>\n                                <th style=\"padding:0.5rem;text-align:center;color:#ff5858;\">EN VIVO 📡</th>\n                            </tr>\n                        </thead>\n                        <tbody>\n                            ${links.sort((a,b) => (a.playerNumber || 0) - (b.playerNumber || 0)).map(link => `\n                            <tr style=\"border-bottom:1px solid rgba(255,255,255,0.05);\">\n                                <td style=\"padding:0.5rem;font-weight:600;\">${link.playerAlias || link.playerName || 'Jugador'}</td>\n                                <td style=\"padding:0.5rem;font-weight:700;color:var(--primary);\">#${link.playerNumber}</td>\n                                <td style=\"padding:0.5rem;\">\n                                    <input type=\"text\" class=\"contact-phone\" data-linkid=\"${link._id}\"\n                                        value=\"${link.parentPhone || ''}\"\n                                        placeholder=\"34600112233\"\n                                        style=\"width:100%;min-width:100px;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;box-sizing:border-box;\">\n                                </td>\n                                <td style=\"padding:0.5rem;\">\n                                    <input type=\"email\" class=\"contact-parent-email\" data-linkid=\"${link._id}\"\n                                        value=\"${link.parentEmail || ''}\"\n                                        placeholder=\"padre@email.com\"\n                                        style=\"width:100%;min-width:120px;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;box-sizing:border-box;\">\n                                </td>\n                                <td style=\"padding:0.5rem;text-align:center;\">\n                                    <input type=\"checkbox\" class=\"contact-reports\" data-linkid=\"${link._id}\"\n                                        ${link.canReceiveReports ? 'checked' : ''}\n                                        style=\"width:16px;height:16px;\"\n                                        title=\"Recibe informes de partido\">\n                                </td>\n                                <td style=\"padding:0.5rem;text-align:center;\">\n                                    <input type=\"checkbox\" class=\"contact-notifs\" data-linkid=\"${link._id}\"\n                                        ${link.canReceiveNotifs !== false ? 'checked' : ''}\n                                        style=\"width:16px;height:16px;\"\n                                        title=\"Recibe avisos y convocatorias\">\n                                </td>\n                                <td style=\"padding:0.5rem;text-align:center;\">\n                                    <input type=\"checkbox\" class=\"contact-live\" data-linkid=\"${link._id}\"\n                                        ${link.canWatchLive ? 'checked' : ''}\n                                        style=\"width:16px;height:16px;accent-color:#ff5858;\"\n                                        title=\"Puede ver el partido en vivo\">\n                                </td>\n                            </tr>\n                            `).join('')}\n                        </tbody>\n                    </table>\n                </div>\n            </div>
 
             <div style="display:flex;gap:0.7rem;flex-shrink:0;">
                 <button onclick="openUnifiedCommsMenu()" class="btn" style="flex:1;">← VOLVER</button>
@@ -768,16 +768,20 @@ async function saveContactManagerData() {
         const { updateDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-        // 1. Guardar Teléfonos y acceso EN VIVO de Padres (en cronos_player_links)
-        const liveInputs  = document.querySelectorAll('.contact-live');
+        // 1. Guardar datos completos de Padres (en cronos_player_links)
         for (const input of parentInputs) {
-            const linkId     = input.dataset.linkid;
-            const phone      = input.value.trim().replace(/\s/g, '');
-            const liveToggle = document.querySelector(`.contact-live[data-linkid="${linkId}"]`);
-            const canWatch   = liveToggle ? liveToggle.checked : false;
+            const linkId      = input.dataset.linkid;
+            const phone       = input.value.trim().replace(/\s/g, '');
+            const emailEl     = document.querySelector(`.contact-parent-email[data-linkid="${linkId}"]`);
+            const liveEl      = document.querySelector(`.contact-live[data-linkid="${linkId}"]`);
+            const reportsEl   = document.querySelector(`.contact-reports[data-linkid="${linkId}"]`);
+            const notifsEl    = document.querySelector(`.contact-notifs[data-linkid="${linkId}"]`);
             await updateDoc(doc(db, 'cronos_player_links', linkId), {
-                parentPhone:   phone,
-                canWatchLive:  canWatch
+                parentPhone:        phone,
+                parentEmail:        emailEl   ? emailEl.value.trim()   : undefined,
+                canWatchLive:       liveEl    ? liveEl.checked          : false,
+                canReceiveReports:  reportsEl ? reportsEl.checked       : false,
+                canReceiveNotifs:   notifsEl  ? notifsEl.checked        : true,
             });
         }
 
@@ -981,6 +985,160 @@ async function openUnifiedCommsMenu() {
         }
     </style>`;
 }
+
+// ── Seleccionar / deseleccionar todos los padres ─────────────────────
+window.toggleSelectAllParents = function(checked) {
+    document.querySelectorAll('.parent-select-chk').forEach(chk => { chk.checked = checked; });
+    updateBulkCount();
+};
+
+window.updateBulkCount = function() {
+    const total = document.querySelectorAll('.parent-select-chk:checked').length;
+    const countEl = document.getElementById('bulk-count');
+    if (countEl) countEl.textContent = total + ' seleccionado' + (total !== 1 ? 's' : '');
+};
+
+// ── Compositor de mensaje grupal ──────────────────────────────────────
+window.openBulkMessageComposer = function() {
+    const selected = Array.from(document.querySelectorAll('.parent-select-chk:checked'))
+        .map(chk => ({
+            parentUid:   chk.dataset.parentUid,
+            parentEmail: chk.dataset.parentEmail,
+            player:      chk.dataset.player,
+            playerNum:   chk.dataset.playerNum,
+            parentWA:    chk.dataset.parentWa
+        }));
+
+    if (!selected.length) {
+        showToast('⚠️ Selecciona al menos un padre para enviar el mensaje', 3000);
+        return;
+    }
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(96vw,540px);max-height:90vh;
+         display:flex;flex-direction:column;gap:0.8rem;">
+
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <h3 style="margin:0;font-size:1rem;">
+                ✉️ Mensaje grupal
+                <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">
+                    (${selected.length} padre${selected.length !== 1 ? 's' : ''})
+                </span>
+            </h3>
+            <button onclick="openCoachMessaging()"
+                style="background:none;border:none;color:var(--text-muted);
+                       font-size:1.3rem;cursor:pointer;">✕</button>
+        </div>
+
+        <!-- Destinatarios -->
+        <div style="background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.2);
+                    border-radius:8px;padding:0.6rem 0.8rem;flex-shrink:0;
+                    max-height:100px;overflow-y:auto;">
+            <p style="font-size:0.68rem;color:var(--primary);margin:0 0 0.4rem;font-weight:700;">
+                DESTINATARIOS
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
+                ${selected.map(s => `
+                <span style="background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.2);
+                             border-radius:5px;padding:2px 8px;font-size:0.7rem;color:var(--primary);">
+                    ⚽ ${s.player || s.parentEmail} #${s.playerNum}
+                </span>`).join('')}
+            </div>
+        </div>
+
+        <!-- Redactor -->
+        <div style="flex:1;display:flex;flex-direction:column;gap:0.5rem;">
+            <label style="font-size:0.75rem;color:var(--text-muted);">Mensaje</label>
+            <textarea id="bulk-msg-text" rows="6"
+                placeholder="Escribe aquí el mensaje para todos los padres seleccionados…"
+                style="flex:1;padding:0.7rem;background:rgba(255,255,255,0.05);
+                       border:1px solid var(--glass-border);border-radius:8px;
+                       color:white;font-size:0.88rem;resize:vertical;
+                       box-sizing:border-box;width:100%;"></textarea>
+        </div>
+
+        <!-- Botones de envío -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;flex-shrink:0;">
+            <button onclick="openCoachMessaging()" class="btn"
+                style="color:var(--text-muted);font-size:0.78rem;">← Volver</button>
+            <button onclick="sendBulkViaFirestore(${JSON.stringify(selected).replace(/"/g,'&quot;')})"
+                class="btn"
+                style="background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
+                       color:var(--primary);font-weight:700;font-size:0.78rem;">
+                📱 Envío Interno
+            </button>
+            <button onclick="sendBulkViaWhatsApp(${JSON.stringify(selected).replace(/"/g,'&quot;')})"
+                class="btn"
+                style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);
+                       color:#25d366;font-weight:700;font-size:0.78rem;">
+                📱 WhatsApp
+            </button>
+        </div>
+    </div>`;
+};
+
+// ── Envío grupal interno (Firestore) ──────────────────────────────────
+window.sendBulkViaFirestore = async function(selected) {
+    const me   = window._cronosCurrentUser;
+    const fa   = window._cronos_auth;
+    if (!fa || !me) return;
+    const text = document.getElementById('bulk-msg-text')?.value.trim();
+    if (!text) { showToast('⚠️ Escribe un mensaje antes de enviar', 3000); return; }
+
+    showSpinner('Enviando mensaje a ' + selected.length + ' padres…');
+    try {
+        const { db, doc, getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
+        let sent = 0;
+        for (const s of selected) {
+            const threadId = `${me.uid}_${s.parentUid}`;
+            const newMsg   = { sender: 'coach', text, timestamp: new Date().toISOString() };
+            const preview  = text.length > 60 ? text.substring(0, 60) + '…' : text;
+            const snap     = await getDoc(doc(db, 'cronos_messages', threadId));
+            if (snap.exists()) {
+                await updateDoc(doc(db, 'cronos_messages', threadId), {
+                    messages: arrayUnion(newMsg), lastMessage: preview,
+                    lastMessageAt: newMsg.timestamp,
+                    unreadByParent: (snap.data().unreadByParent || 0) + 1
+                });
+            } else {
+                await setDoc(doc(db, 'cronos_messages', threadId), {
+                    threadId, coachUid: me.uid, coachEmail: me.email,
+                    parentUid: s.parentUid, parentEmail: s.parentEmail,
+                    messages: [newMsg], lastMessage: preview,
+                    lastMessageAt: newMsg.timestamp,
+                    unreadByCoach: 0, unreadByParent: 1
+                });
+            }
+            sent++;
+        }
+        hideSpinner();
+        showToast(`✅ Mensaje enviado a ${sent} padre${sent !== 1 ? 's' : ''}`, 4000);
+        openCoachMessaging();
+    } catch(e) {
+        hideSpinner();
+        showToast('⚠️ Error: ' + e.message, 4000);
+    }
+};
+
+// ── Envío grupal por WhatsApp (escalonado) ────────────────────────────
+window.sendBulkViaWhatsApp = function(selected) {
+    const text = document.getElementById('bulk-msg-text')?.value.trim();
+    if (!text) { showToast('⚠️ Escribe un mensaje antes de enviar', 3000); return; }
+    const withPhone = selected.filter(s => s.parentWA);
+    if (!withPhone.length) {
+        showToast('⚠️ Ningún padre seleccionado tiene WhatsApp configurado', 4000);
+        return;
+    }
+    const encoded = encodeURIComponent(text);
+    withPhone.forEach((s, i) => {
+        setTimeout(() => {
+            window.open(`https://wa.me/${s.parentWA}?text=${encoded}`, '_blank');
+        }, i * 700);
+    });
+    showToast(`📱 WhatsApp abierto para ${withPhone.length} padre${withPhone.length !== 1 ? 's' : ''}`, 4000);
+};
 
 window.openCoachMessaging      = openCoachMessaging;
 window.openThreadWithParent    = openThreadWithParent;
