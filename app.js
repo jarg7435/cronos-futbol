@@ -1043,6 +1043,49 @@ function showLiveShareModal() {
 
     const liveUrl = `${location.origin}${location.pathname.replace('index.html','')}live.html?match=${liveMatchId}`;
 
+    // Recoger contactos con acceso EN VIVO (staff + padres ya se envían por Firestore)
+    const liveContacts = (emailConfig.contacts || []).filter(c => c.tags && c.tags.includes('live'));
+    const liveCount    = liveContacts.length;
+
+    const liveContactsHtml = liveCount > 0
+        ? `<div style="background:rgba(255,88,88,0.06);border:1px solid rgba(255,88,88,0.2);
+                        border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:1rem;">
+               <p style="font-size:0.7rem;color:#ff5858;font-weight:700;margin:0 0 0.5rem;">
+                   📡 ACCESO EN VIVO AUTORIZADO (${liveCount})
+               </p>
+               <div style="display:flex;flex-direction:column;gap:0.3rem;">
+                   ${liveContacts.map(c => `
+                   <div style="display:flex;align-items:center;justify-content:space-between;
+                               font-size:0.75rem;color:var(--text-muted);">
+                       <span>✅ ${c.name || c.email}</span>
+                       <span style="display:flex;gap:0.3rem;">
+                           ${c.phone ? `<a href="https://wa.me/${c.phone}?text=${encodeURIComponent('⚽ Partido en vivo: ' + liveUrl)}" target="_blank"
+                               style="padding:2px 8px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.4);
+                                      border-radius:5px;color:#25d366;text-decoration:none;font-size:0.68rem;font-weight:700;">
+                               📱 WA</a>` : ''}
+                           ${c.email ? `<a href="mailto:${c.email}?subject=${encodeURIComponent('⚽ Partido en Vivo — ' + TEAM_NAMES.home + ' vs ' + TEAM_NAMES.away)}&body=${encodeURIComponent('Sigue el partido en tiempo real:\n' + liveUrl)}" target="_blank"
+                               style="padding:2px 8px;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);
+                                      border-radius:5px;color:#58a6ff;text-decoration:none;font-size:0.68rem;font-weight:700;">
+                               📧</a>` : ''}
+                       </span>
+                   </div>`).join('')}
+               </div>
+               <button onclick="notifyAllLiveContacts('${liveUrl}')"
+                   style="margin-top:0.7rem;width:100%;padding:0.55rem;
+                          background:rgba(255,88,88,0.2);border:1px solid rgba(255,88,88,0.5);
+                          border-radius:7px;color:#ff5858;font-weight:700;
+                          font-size:0.8rem;cursor:pointer;">
+                   📡 Notificar a todos por WhatsApp
+               </button>
+           </div>`
+        : `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                        border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:1rem;
+                        font-size:0.73rem;color:var(--text-muted);text-align:center;">
+               📡 Sin contactos con acceso EN VIVO configurados.<br>
+               <span style="font-size:0.68rem;">Ve a <strong>Comunicaciones → Gestión de Contactos</strong>
+               y activa la casilla 📡 EN VIVO en quien quieras.</span>
+           </div>`;
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -1071,7 +1114,10 @@ function showLiveShareModal() {
                 </div>
             </div>
 
-            <!-- Botones de compartir -->
+            <!-- Contactos EN VIVO -->
+            ${liveContactsHtml}
+
+            <!-- Botones de compartir manual -->
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:1rem;">
                 <button onclick="shareLiveWhatsApp('${liveUrl}')"
                     style="padding:0.7rem; background:rgba(37,211,102,0.12);
@@ -1132,6 +1178,30 @@ function shareLiveEmail(url) {
     const to = emailConfig?.directorEmail || '';
     window.open(`mailto:${to}?subject=${subject}&body=${body}`);
 }
+
+// ── Notificar a todos los contactos con acceso EN VIVO ──────────────
+window.notifyAllLiveContacts = function(url) {
+    const liveContacts = (emailConfig.contacts || []).filter(c => c.tags && c.tags.includes('live') && c.phone);
+    if (!liveContacts.length) {
+        showToast('⚠️ Ningún contacto tiene WhatsApp configurado para EN VIVO', 4000);
+        return;
+    }
+    const date    = new Date().toLocaleDateString('es-ES');
+    const msg     = encodeURIComponent(
+        `⚽ *PARTIDO EN VIVO — ${TEAM_NAMES.home} vs ${TEAM_NAMES.away}*\n` +
+        `📅 ${date}\n\n` +
+        `Sigue el partido en tiempo real aquí:\n${url}\n\n` +
+        `_Cronos Fútbol_`);
+    let opened = 0;
+    liveContacts.forEach((c, i) => {
+        // Abrimos ventanas escalonadas para no bloquear pop-ups
+        setTimeout(() => {
+            window.open(`https://wa.me/${c.phone}?text=${msg}`, '_blank');
+        }, i * 600);
+        opened++;
+    });
+    showToast(`📡 WhatsApp abierto para ${opened} contacto${opened > 1 ? 's' : ''} con acceso EN VIVO`, 4000);
+};
 
 function confirmStopLive() {
     if (confirm('¿Finalizar la transmisión en vivo?\n\nEl enlace quedará guardado como historial.')) {
@@ -2332,12 +2402,13 @@ function openConvocationModal() {
     
     // --- MEJORA: Columnas responsivas ---
     const isMobile = window.innerWidth < 640;
+    const isLandscape = window.innerHeight < 500;
     const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="width:min(96vw,840px); max-height:94vh; display:flex; flex-direction:column; overflow:hidden; padding: ${isMobile ? '1rem 0.8rem' : '1.5rem'};">
+        <div class="modal-content" style="width:min(96vw,840px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding: ${isMobile ? '1rem 0.8rem' : '1.5rem'};">
             
             <div style="flex-shrink:0;">
                 <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">Convocatoria — ${TEAM_NAMES.home}</h2>
@@ -2346,8 +2417,8 @@ function openConvocationModal() {
                 </p>
             </div>
 
-            <!-- Listado de jugadores con scroll prioritario -->
-            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; overflow-y:auto; flex:1; min-height:180px; padding-right:4px;" id="conv-grid-container">
+            <!-- Listado de jugadores -->
+            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
                 ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
                     <div class="conv-row" data-index="${i}" data-status="none"
                         style="background:var(--glass); border:2px solid transparent; border-radius:8px;
@@ -2377,8 +2448,8 @@ function openConvocationModal() {
                 </div>
             </div>` : ''}
 
-            <div style="margin-top:0.6rem; padding-top:0.6rem; border-top:1px solid var(--glass-border);
-                        display:flex; flex-direction:column; gap:0.5rem; flex-shrink:0;">
+            <div style="margin-top:auto; padding-top:1rem; border-top:1px solid var(--glass-border);
+                        display:flex; flex-direction:column; gap:0.5rem;">
                 
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span id="conv-count" style="font-size:1.1rem; font-weight:bold; color:var(--primary);">0</span>
