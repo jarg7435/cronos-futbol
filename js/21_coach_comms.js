@@ -695,6 +695,7 @@ async function openContactManager() {
                                 <th style="padding:0.5rem;">UID (APP)</th>
                                 <th style="padding:0.5rem; text-align:center;">INFORMES</th>
                                 <th style="padding:0.5rem; text-align:center;">AVISOS</th>
+                                <th style="padding:0.5rem; text-align:center; color:#ff5858;">EN VIVO 📡</th>
                                 <th style="padding:0.5rem; text-align:center;"></th>
                             </tr>
                         </thead>
@@ -719,6 +720,7 @@ async function openContactManager() {
                                 <th style="padding:0.6rem;text-align:left;">JUGADOR</th>
                                 <th style="padding:0.6rem;text-align:left;">DORSAL</th>
                                 <th style="padding:0.6rem;text-align:left;">WHATSAPP</th>
+                                <th style="padding:0.6rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -731,6 +733,12 @@ async function openContactManager() {
                                         value="${link.parentPhone || ''}"
                                         placeholder="ej: 34600112233"
                                         style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;box-sizing:border-box;">
+                                </td>
+                                <td style="padding:0.6rem;text-align:center;">
+                                    <input type="checkbox" class="contact-live" data-linkid="${link._id}"
+                                        ${link.canWatchLive ? 'checked' : ''}
+                                        style="width:18px;height:18px;accent-color:#ff5858;"
+                                        title="Puede ver el partido en vivo">
                                 </td>
                             </tr>
                             `).join('')}
@@ -760,11 +768,17 @@ async function saveContactManagerData() {
         const { updateDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-        // 1. Guardar Teléfonos de Padres (en cronos_player_links)
+        // 1. Guardar Teléfonos y acceso EN VIVO de Padres (en cronos_player_links)
+        const liveInputs  = document.querySelectorAll('.contact-live');
         for (const input of parentInputs) {
-            const linkId = input.dataset.linkid;
-            const phone  = input.value.trim().replace(/\s/g, ''); 
-            await updateDoc(doc(db, 'cronos_player_links', linkId), { parentPhone: phone });
+            const linkId     = input.dataset.linkid;
+            const phone      = input.value.trim().replace(/\s/g, '');
+            const liveToggle = document.querySelector(`.contact-live[data-linkid="${linkId}"]`);
+            const canWatch   = liveToggle ? liveToggle.checked : false;
+            await updateDoc(doc(db, 'cronos_player_links', linkId), {
+                parentPhone:   phone,
+                canWatchLive:  canWatch
+            });
         }
 
         // 2. Guardar Lista Unificada de Contactos (en emailConfig)
@@ -773,6 +787,7 @@ async function saveContactManagerData() {
             const tags = [];
             if (row.querySelector('.tag-reports').checked) tags.push('reports');
             if (row.querySelector('.tag-notifs').checked)  tags.push('notifs');
+            if (row.querySelector('.tag-live').checked)    tags.push('live');
 
             updatedContacts.push({
                 id:    row.dataset.id || ('c_' + Math.random().toString(36).substr(2,6)),
@@ -815,6 +830,7 @@ async function saveContactManagerData() {
 function renderContactRowMarkup(c = {}) {
     const isReports = (c.tags || []).includes('reports');
     const isNotifs  = (c.tags || []).includes('notifs');
+    const isLive    = (c.tags || []).includes('live');
     const id = c.id || ('new_' + Date.now());
 
     return `
@@ -840,6 +856,11 @@ function renderContactRowMarkup(c = {}) {
         </td>
         <td style="padding:0.4rem; text-align:center;">
             <input type="checkbox" class="tag-notifs" ${isNotifs ? 'checked' : ''} style="width:16px;height:16px;">
+        </td>
+        <td style="padding:0.4rem; text-align:center;">
+            <input type="checkbox" class="tag-live" ${isLive ? 'checked' : ''}
+                style="width:16px;height:16px;accent-color:#ff5858;"
+                title="Puede ver los partidos en vivo">
         </td>
         <td style="padding:0.4rem; text-align:center;">
             <button onclick="this.closest('tr').remove()" style="background:none; border:none; color:#ff5858; cursor:pointer; font-size:1rem;" title="Eliminar">🗑️</button>
