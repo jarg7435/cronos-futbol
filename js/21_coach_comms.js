@@ -180,7 +180,6 @@ async function _loadParentList() {
         // Mostrar barra de selección múltiple
         const bar = document.getElementById('bulk-msg-bar');
         if (bar) bar.style.display = 'flex';
-        }).join('');
 
     } catch(e) {
         if (document.getElementById('coach-parent-list')) {
