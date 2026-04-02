@@ -701,54 +701,153 @@ async function openContactManager() {
         const modal = document.getElementById('setup-modal');
         modal.style.display = 'flex';
         modal.innerHTML = `
-        <div class="modal-content" style="width:min(98vw,850px);max-height:92vh;display:flex;flex-direction:column;gap:1rem;overflow:hidden;padding:1.4rem;">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <span style="font-size:1.5rem;">📱</span>
-                    <h2 style="margin:0;font-size:1.2rem;font-family:'Outfit',sans-serif;">Gestión de Contactos (Fuente de la Verdad)</h2>
-                </div>
-                <button onclick="document.getElementById('setup-modal').style.display='none'; openUnifiedCommsMenu();" style="background:none;border:none;color:var(--text-muted);font-size:1.6rem;cursor:pointer;">✕</button>
-            </div>
+        <div class="modal-content" style="width:min(98vw,870px);max-height:92vh;display:flex;flex-direction:column;gap:0.9rem;overflow:hidden;padding:1.4rem;">
 
-            <p style="font-size:0.75rem; color:var(--text-muted); margin:-0.5rem 0 0.5rem;">
-                Define quién recibe los informes de partido, convocatorias y avisos del club.
+            <!-- CABECERA -->
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:1.5rem;">📱</span>
+                    <h2 style="margin:0;font-size:1.2rem;font-family:'Outfit',sans-serif;">Gestión de Contactos</h2>
+                </div>
+                <button onclick="document.getElementById('setup-modal').style.display='none'; openUnifiedCommsMenu();"
+                    style="background:none;border:none;color:var(--text-muted);font-size:1.6rem;cursor:pointer;">✕</button>
+            </div>
+            <p style="font-size:0.73rem;color:var(--text-muted);margin:-0.3rem 0 0;">
+                Define quién recibe informes, convocatorias y avisos. Las dos secciones son independientes.
             </p>
-            
-            <!-- 1. TABLA UNIFICADA DE CONTACTOS -->
-            <div style="flex:1.2; overflow:hidden; display:flex; flex-direction:column; border:1px solid rgba(88,166,255,0.2); border-radius:12px; background:rgba(88,166,255,0.03);">
-                <div style="padding:0.7rem 1rem; border-bottom:1px solid rgba(88,166,255,0.2); display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="font-size:0.85rem; color:var(--primary); margin:0; font-weight:700;">📋 Lista de Contactos (Staff y Otros)</h3>
-                    <button onclick="addNewContactRow()" class="btn" style="padding:0.3rem 0.8rem; font-size:0.7rem; background:var(--primary); color:white; border:none; border-radius:6px;">
-                        ➕ AÑADIR CONTACTO
+
+            <!-- ══ SECCIÓN 1: STAFF / DIRECTIVOS ══ -->
+            <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;
+                        border:1px solid rgba(88,166,255,0.25);border-radius:12px;
+                        background:rgba(88,166,255,0.03);">
+                <div style="padding:0.6rem 1rem;border-bottom:1px solid rgba(88,166,255,0.2);
+                            display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <h3 style="font-size:0.85rem;color:var(--primary);margin:0;font-weight:700;">
+                            📋 Staff y Directivos
+                        </h3>
+                        <p style="font-size:0.67rem;color:var(--text-muted);margin:0.1rem 0 0;">
+                            Director deportivo, coordinadores, delegados, etc.
+                        </p>
+                    </div>
+                    <button onclick="addNewContactRow()" class="btn"
+                        style="padding:0.3rem 0.8rem;font-size:0.7rem;
+                               background:var(--primary);color:#0a0e14;border:none;border-radius:6px;
+                               font-weight:700;white-space:nowrap;">
+                        ➕ AÑADIR STAFF
                     </button>
                 </div>
-                
-                <div style="flex:1; overflow-y:auto; padding:0.5rem;">
+                <div style="flex:1;overflow-y:auto;padding:0.5rem;">
                     <table style="width:100%;font-size:0.75rem;border-collapse:collapse;" id="table-custom-contacts">
                         <thead>
-                            <tr style="color:var(--text-muted); border-bottom:1px solid rgba(255,255,255,0.1); text-align:left;">
-                                <th style="padding:0.5rem;">NOMBRE / CARGO</th>
-                                <th style="padding:0.5rem;">EMAIL</th>
-                                <th style="padding:0.5rem;">WHATSAPP</th>
-                                <th style="padding:0.5rem;">UID (APP)</th>
-                                <th style="padding:0.5rem; text-align:center;">INFORMES</th>
-                                <th style="padding:0.5rem; text-align:center;">AVISOS</th>
-                                <th style="padding:0.5rem; text-align:center; color:#ff5858;">EN VIVO 📡</th>
-                                <th style="padding:0.5rem; text-align:center;"></th>
+                            <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
+                                <th style="padding:0.45rem;">NOMBRE / CARGO</th>
+                                <th style="padding:0.45rem;">EMAIL</th>
+                                <th style="padding:0.45rem;">WHATSAPP</th>
+                                <th style="padding:0.45rem;">UID (APP)</th>
+                                <th style="padding:0.45rem;text-align:center;">INFORMES</th>
+                                <th style="padding:0.45rem;text-align:center;">AVISOS</th>
+                                <th style="padding:0.45rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
+                                <th style="padding:0.45rem;"></th>
                             </tr>
                         </thead>
                         <tbody id="tbody-custom-contacts">
-                            ${emailConfig.contacts.map(c => renderContactRowMarkup(c)).join('')}
+                            ${emailConfig.contacts.filter(c => c.type !== 'parent').map(c => renderContactRowMarkup(c)).join('')}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- 2. TABLA DE PADRES/TUTORES (sección separada) -->\n            <div style=\"flex:1;overflow:hidden; display:flex; flex-direction:column; border:1px solid rgba(240,136,62,0.25); border-radius:12px; background:rgba(240,136,62,0.02);\">\n                <div style=\"padding:0.8rem; border-bottom:1px solid rgba(240,136,62,0.2); display:flex; justify-content:space-between; align-items:center; background:rgba(240,136,62,0.04);\">\n                    <div>\n                        <h3 style=\"font-size:0.85rem; color:var(--secondary); margin:0;\">👨‍👩‍👧‍👦 Contactos de Padres/Tutores</h3>\n                        <p style=\"font-size:0.68rem;color:var(--text-muted);margin:0.2rem 0 0;\">Vinculados automáticamente con los jugadores. Independiente del Staff.</p>\n                    </div>\n                    <span style=\"font-size:0.7rem; color:var(--text-muted);\">${links.length} vinculados</span>\n                </div>\n                \n                <div style=\"flex:1; overflow-y:auto; padding:0.5rem;\">\n                    <table style=\"width:100%;font-size:0.75rem;border-collapse:collapse;\">\n                        <thead>\n                            <tr style=\"color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);\">\n                                <th style=\"padding:0.5rem;text-align:left;\">JUGADOR</th>\n                                <th style=\"padding:0.5rem;text-align:left;\">N°</th>\n                                <th style=\"padding:0.5rem;text-align:left;\">WHATSAPP</th>\n                                <th style=\"padding:0.5rem;text-align:left;\">EMAIL</th>\n                                <th style=\"padding:0.5rem;text-align:center;\">INFORMES</th>\n                                <th style=\"padding:0.5rem;text-align:center;\">AVISOS</th>\n                                <th style=\"padding:0.5rem;text-align:center;color:#ff5858;\">EN VIVO 📡</th>\n                            </tr>\n                        </thead>\n                        <tbody>\n                            ${links.sort((a,b) => (a.playerNumber || 0) - (b.playerNumber || 0)).map(link => `\n                            <tr style=\"border-bottom:1px solid rgba(255,255,255,0.05);\">\n                                <td style=\"padding:0.5rem;font-weight:600;\">${link.playerAlias || link.playerName || 'Jugador'}</td>\n                                <td style=\"padding:0.5rem;font-weight:700;color:var(--primary);\">#${link.playerNumber}</td>\n                                <td style=\"padding:0.5rem;\">\n                                    <input type=\"text\" class=\"contact-phone\" data-linkid=\"${link._id}\"\n                                        value=\"${link.parentPhone || ''}\"\n                                        placeholder=\"34600112233\"\n                                        style=\"width:100%;min-width:100px;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;box-sizing:border-box;\">\n                                </td>\n                                <td style=\"padding:0.5rem;\">\n                                    <input type=\"email\" class=\"contact-parent-email\" data-linkid=\"${link._id}\"\n                                        value=\"${link.parentEmail || ''}\"\n                                        placeholder=\"padre@email.com\"\n                                        style=\"width:100%;min-width:120px;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;box-sizing:border-box;\">\n                                </td>\n                                <td style=\"padding:0.5rem;text-align:center;\">\n                                    <input type=\"checkbox\" class=\"contact-reports\" data-linkid=\"${link._id}\"\n                                        ${link.canReceiveReports ? 'checked' : ''}\n                                        style=\"width:16px;height:16px;\"\n                                        title=\"Recibe informes de partido\">\n                                </td>\n                                <td style=\"padding:0.5rem;text-align:center;\">\n                                    <input type=\"checkbox\" class=\"contact-notifs\" data-linkid=\"${link._id}\"\n                                        ${link.canReceiveNotifs !== false ? 'checked' : ''}\n                                        style=\"width:16px;height:16px;\"\n                                        title=\"Recibe avisos y convocatorias\">\n                                </td>\n                                <td style=\"padding:0.5rem;text-align:center;\">\n                                    <input type=\"checkbox\" class=\"contact-live\" data-linkid=\"${link._id}\"\n                                        ${link.canWatchLive ? 'checked' : ''}\n                                        style=\"width:16px;height:16px;accent-color:#ff5858;\"\n                                        title=\"Puede ver el partido en vivo\">\n                                </td>\n                            </tr>\n                            `).join('')}\n                        </tbody>\n                    </table>\n                </div>\n            </div>
+            <!-- ══ SECCIÓN 2: PADRES / TUTORES ══ -->
+            <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;
+                        border:1px solid rgba(240,136,62,0.25);border-radius:12px;
+                        background:rgba(240,136,62,0.02);">
+                <div style="padding:0.6rem 1rem;border-bottom:1px solid rgba(240,136,62,0.2);
+                            display:flex;justify-content:space-between;align-items:center;
+                            background:rgba(240,136,62,0.04);">
+                    <div>
+                        <h3 style="font-size:0.85rem;color:var(--secondary);margin:0;font-weight:700;">
+                            👨‍👩‍👧‍👦 Padres / Tutores
+                        </h3>
+                        <p style="font-size:0.67rem;color:var(--text-muted);margin:0.1rem 0 0;">
+                            Los vinculados por jugador vienen de la plantilla. También puedes añadir manualmente.
+                        </p>
+                    </div>
+                    <button onclick="addNewParentRow()" class="btn"
+                        style="padding:0.3rem 0.8rem;font-size:0.7rem;
+                               background:var(--secondary);color:#0a0e14;border:none;border-radius:6px;
+                               font-weight:700;white-space:nowrap;">
+                        ➕ AÑADIR PADRE/TUTOR
+                    </button>
+                </div>
+                <div style="flex:1;overflow-y:auto;padding:0.5rem;">
+                    <table style="width:100%;font-size:0.74rem;border-collapse:collapse;">
+                        <thead>
+                            <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <th style="padding:0.45rem;text-align:left;">JUGADOR / NOMBRE</th>
+                                <th style="padding:0.45rem;text-align:left;">N°</th>
+                                <th style="padding:0.45rem;text-align:left;">WHATSAPP</th>
+                                <th style="padding:0.45rem;text-align:left;">EMAIL</th>
+                                <th style="padding:0.45rem;text-align:center;">INFORMES</th>
+                                <th style="padding:0.45rem;text-align:center;">AVISOS</th>
+                                <th style="padding:0.45rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
+                                <th style="padding:0.45rem;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-parent-contacts">
+                            <!-- Padres vinculados por plantilla (Firestore) -->
+                            ${links.sort((a,b) => (a.playerNumber||0)-(b.playerNumber||0)).map(link => `
+                            <tr class="parent-contact-row firestore-linked" data-linkid="${link._id}"
+                                style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:0.45rem;font-weight:600;">
+                                    ${link.playerAlias || link.playerName || 'Jugador'}
+                                    <span style="font-size:0.62rem;color:var(--text-muted);
+                                                 margin-left:4px;background:rgba(255,255,255,0.06);
+                                                 border-radius:3px;padding:1px 4px;">vinculado</span>
+                                </td>
+                                <td style="padding:0.45rem;font-weight:700;color:var(--primary);">#${link.playerNumber}</td>
+                                <td style="padding:0.45rem;">
+                                    <input type="text" class="contact-phone" data-linkid="${link._id}"
+                                        value="${link.parentPhone || ''}" placeholder="34600112233"
+                                        style="width:100%;min-width:90px;padding:0.32rem;
+                                               background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                                               border-radius:6px;color:white;font-size:0.72rem;box-sizing:border-box;">
+                                </td>
+                                <td style="padding:0.45rem;">
+                                    <input type="email" class="contact-parent-email" data-linkid="${link._id}"
+                                        value="${link.parentEmail || ''}" placeholder="padre@email.com"
+                                        style="width:100%;min-width:110px;padding:0.32rem;
+                                               background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                                               border-radius:6px;color:white;font-size:0.72rem;box-sizing:border-box;">
+                                </td>
+                                <td style="padding:0.45rem;text-align:center;">
+                                    <input type="checkbox" class="contact-reports" data-linkid="${link._id}"
+                                        ${link.canReceiveReports ? 'checked' : ''} style="width:15px;height:15px;">
+                                </td>
+                                <td style="padding:0.45rem;text-align:center;">
+                                    <input type="checkbox" class="contact-notifs" data-linkid="${link._id}"
+                                        ${link.canReceiveNotifs !== false ? 'checked' : ''} style="width:15px;height:15px;">
+                                </td>
+                                <td style="padding:0.45rem;text-align:center;">
+                                    <input type="checkbox" class="contact-live" data-linkid="${link._id}"
+                                        ${link.canWatchLive ? 'checked' : ''}
+                                        style="width:15px;height:15px;accent-color:#ff5858;">
+                                </td>
+                                <td style="padding:0.45rem;text-align:center;color:var(--text-muted);font-size:0.65rem;">—</td>
+                            </tr>`).join('')}
+                            <!-- Padres añadidos manualmente (emailConfig) -->
+                            ${emailConfig.contacts.filter(c => c.type === 'parent').map(c => renderParentRowMarkup(c)).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
+            <!-- BOTONES -->
             <div style="display:flex;gap:0.7rem;flex-shrink:0;">
                 <button onclick="openUnifiedCommsMenu()" class="btn" style="flex:1;">← VOLVER</button>
-                <button onclick="saveContactManagerData()" class="btn primary" style="flex:2; font-weight:bold;">💾 GUARDAR CAMBIOS</button>
+                <button onclick="saveContactManagerData()" class="btn primary" style="flex:2;font-weight:bold;">
+                    💾 GUARDAR CAMBIOS
+                </button>
             </div>
         </div>`;
     } catch(e) {
@@ -786,7 +885,9 @@ async function saveContactManagerData() {
 
         // 2. Guardar Lista Unificada de Contactos (en emailConfig)
         const updatedContacts = [];
-        customRows.forEach(row => {
+
+        // 2a. Staff (filas de la tabla azul)
+        document.querySelectorAll('.custom-contact-row').forEach(row => {
             const tags = [];
             if (row.querySelector('.tag-reports').checked) tags.push('reports');
             if (row.querySelector('.tag-notifs').checked)  tags.push('notifs');
@@ -794,11 +895,30 @@ async function saveContactManagerData() {
 
             updatedContacts.push({
                 id:    row.dataset.id || ('c_' + Math.random().toString(36).substr(2,6)),
+                type:  'staff',
                 name:  row.querySelector('.c-name').value.trim(),
                 email: row.querySelector('.c-email').value.trim(),
                 phone: row.querySelector('.c-phone').value.trim().replace(/\s/g, ''),
                 uid:   row.querySelector('.c-uid').value.trim(),
-                tags:  tags
+                tags
+            });
+        });
+
+        // 2b. Padres añadidos manualmente (filas de la tabla naranja, clase manual-parent)
+        document.querySelectorAll('.manual-parent').forEach(row => {
+            const tags = [];
+            if (row.querySelector('.p-reports').checked) tags.push('reports');
+            if (row.querySelector('.p-notifs').checked)  tags.push('notifs');
+            if (row.querySelector('.p-live').checked)    tags.push('live');
+
+            updatedContacts.push({
+                id:     row.dataset.id || ('p_' + Math.random().toString(36).substr(2,6)),
+                type:   'parent',
+                name:   row.querySelector('.p-name').value.trim(),
+                player: row.querySelector('.p-player').value.trim(),
+                phone:  row.querySelector('.p-phone').value.trim().replace(/\s/g, ''),
+                email:  row.querySelector('.p-email').value.trim(),
+                tags
             });
         });
 
@@ -830,6 +950,7 @@ async function saveContactManagerData() {
 
 // ── FUNCIONES AUXILIARES PARA EL GESTOR DE CONTACTOS ──────────────────
 
+// Fila de STAFF (tabla azul)
 function renderContactRowMarkup(c = {}) {
     const isReports = (c.tags || []).includes('reports');
     const isNotifs  = (c.tags || []).includes('notifs');
@@ -854,23 +975,66 @@ function renderContactRowMarkup(c = {}) {
             <input type="text" class="c-uid" value="${c.uid || ''}" placeholder="ID App (opcional)"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);font-size:0.7rem;">
         </td>
-        <td style="padding:0.4rem; text-align:center;">
+        <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="tag-reports" ${isReports ? 'checked' : ''} style="width:16px;height:16px;">
         </td>
-        <td style="padding:0.4rem; text-align:center;">
+        <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="tag-notifs" ${isNotifs ? 'checked' : ''} style="width:16px;height:16px;">
         </td>
-        <td style="padding:0.4rem; text-align:center;">
+        <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="tag-live" ${isLive ? 'checked' : ''}
                 style="width:16px;height:16px;accent-color:#ff5858;"
                 title="Puede ver los partidos en vivo">
         </td>
-        <td style="padding:0.4rem; text-align:center;">
-            <button onclick="this.closest('tr').remove()" style="background:none; border:none; color:#ff5858; cursor:pointer; font-size:1rem;" title="Eliminar">🗑️</button>
+        <td style="padding:0.4rem;text-align:center;">
+            <button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>
         </td>
     </tr>`;
 }
 
+// Fila de PADRE/TUTOR manual (tabla naranja)
+function renderParentRowMarkup(c = {}) {
+    const isReports = (c.tags || []).includes('reports');
+    const isNotifs  = (c.tags || []).includes('notifs');
+    const isLive    = (c.tags || []).includes('live');
+    const id = c.id || ('new_' + Date.now());
+
+    return `
+    <tr class="parent-contact-row manual-parent" data-id="${id}"
+        style="border-bottom:1px solid rgba(255,255,255,0.05);">
+        <td style="padding:0.4rem;">
+            <input type="text" class="p-name" value="${c.name || ''}" placeholder="Nombre padre/madre"
+                style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
+        </td>
+        <td style="padding:0.4rem;">
+            <input type="text" class="p-player" value="${c.player || ''}" placeholder="Nombre jugador"
+                style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
+        </td>
+        <td style="padding:0.4rem;">
+            <input type="tel" class="p-phone" value="${c.phone || ''}" placeholder="34600000000"
+                style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
+        </td>
+        <td style="padding:0.4rem;">
+            <input type="email" class="p-email" value="${c.email || ''}" placeholder="padre@email.com"
+                style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <input type="checkbox" class="p-reports" ${isReports ? 'checked' : ''} style="width:15px;height:15px;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <input type="checkbox" class="p-notifs" ${isNotifs ? 'checked' : ''} style="width:15px;height:15px;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <input type="checkbox" class="p-live" ${isLive ? 'checked' : ''}
+                style="width:15px;height:15px;accent-color:#ff5858;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>
+        </td>
+    </tr>`;
+}
+
+// Añadir fila vacía en la tabla de STAFF
 window.addNewContactRow = () => {
     const tbody = document.getElementById('tbody-custom-contacts');
     if (!tbody) return;
@@ -879,6 +1043,17 @@ window.addNewContactRow = () => {
     const newRow = tempDiv.querySelector('tr');
     tbody.appendChild(newRow);
     newRow.querySelector('.c-name').focus();
+};
+
+// Añadir fila vacía en la tabla de PADRES
+window.addNewParentRow = () => {
+    const tbody = document.getElementById('tbody-parent-contacts');
+    if (!tbody) return;
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = `<table>${renderParentRowMarkup({})}</table>`;
+    const newRow = tempDiv.querySelector('tr');
+    tbody.appendChild(newRow);
+    newRow.querySelector('.p-name').focus();
 };
 
 async function openUnifiedCommsMenu() {
