@@ -358,6 +358,7 @@ function sendConvocationWA() {
     }
     saveConvocationToFirestore(); // guardar para padres
     showToast('📱 WhatsApp abierto — selecciona el contacto o grupo', 4000);
+    setTimeout(() => openConvocationModal(), 1000);
 }
 
 // ── Enviar por Email ────────────────────────────────────────────────
@@ -377,6 +378,7 @@ function sendConvocationEmail() {
     window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
     saveConvocationToFirestore(); // guardar para padres
     showToast('📧 Email abierto en tu cliente de correo', 3000);
+    setTimeout(() => openConvocationModal(), 1000);
 }
 async function publishConvocationToApp() {
     const me = window._cronosCurrentUser;
@@ -481,6 +483,7 @@ async function publishConvocationToApp() {
                 btnApp.style.color = '#3fb950';
                 // btnApp.disabled = true; // Opcional: dejarlo habilitado por si quiere reenviar tras vincular a alguien
             }
+            setTimeout(() => openConvocationModal(), 1500);
         } else {
             showToast('⚠️ Convocatoria guardada, pero 0 padres notificados (vincúlalos en Gestor de Contactos)', 7000);
             const btnApp = document.querySelector('button[onclick="publishConvocationToApp()"]');

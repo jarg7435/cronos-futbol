@@ -567,7 +567,7 @@ function openTrainingNotification() {
                     Informa a los padres del horario de toda la semana
                 </p>
             </div>
-            <button onclick="document.getElementById('setup-modal').style.display='none'"
+            <button onclick="openConvocationModal()"
                 style="background:none;border:none;color:var(--text-muted);
                        font-size:1.5rem;cursor:pointer;">✕</button>
         </div>
@@ -581,39 +581,25 @@ function openTrainingNotification() {
                           border:1px solid var(--glass-border);border-radius:6px;color:white;">
         </div>
 
-        <div style="overflow-y:auto;flex:1;background:rgba(0,0,0,0.15);border-radius:8px;">
-            <table style="width:100%;border-collapse:collapse;font-size:0.8rem;text-align:left;">
-                <thead>
-                    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);color:var(--text-muted);">
-                        <th style="padding:0.6rem;">DÍA</th>
-                        <th style="padding:0.6rem;">HORA</th>
-                        <th style="padding:0.6rem;">LUGAR</th>
-                        <th style="padding:0.6rem;">ACTIVIDAD / NOTA</th>
-                    </tr>
-                </thead>
-                <tbody id="wp-tbody">
-                    ${['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((day, i) => `
-                    <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                        <td style="padding:0.5rem;font-weight:700;color:var(--primary);">${day}</td>
-                        <td style="padding:0.4rem;">
-                            <input type="time" class="wp-time" style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
-                        </td>
-                        <td style="padding:0.4rem;">
-                            <input type="text" class="wp-venue" placeholder="Ciudad Dep." style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
-                        </td>
-                        <td style="padding:0.4rem;">
-                            <input type="text" class="wp-note" placeholder="ej: Entrenamiento / Liga" style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
-                        </td>
-                    </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+        <div style="overflow-y:auto;flex:1;background:rgba(0,0,0,0.15);border-radius:8px;padding:0.4rem;" id="wp-tbody">
+            <div style="display:flex; flex-direction:column; gap:0.6rem;">
+                ${['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((day, i) => `
+                <div class="wp-day-row" data-day="${day}" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.7rem;">
+                    <div style="font-weight:700;color:var(--primary);margin-bottom:0.5rem;">${day}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
+                        <input type="time" class="wp-time" style="flex:1;min-width:80px;padding:0.5rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
+                        <input type="text" class="wp-venue" placeholder="Lugar (ej: Ciudad Dep.)" style="flex:2;min-width:120px;padding:0.5rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
+                        <input type="text" class="wp-note" placeholder="Nota o Actividad (ej: Entrenamiento)" style="width:100%;padding:0.5rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
+                    </div>
+                </div>
+                `).join('')}
+            </div>
         </div>
 
         <div id="wp-msg" style="font-size:0.8rem;min-height:1rem;text-align:center;margin-top:0.6rem;"></div>
 
         <div style="display:flex;gap:0.6rem;margin-top:0.9rem;flex-shrink:0;">
-            <button onclick="document.getElementById('setup-modal').style.display='none'"
+            <button onclick="openConvocationModal()"
                 class="btn" style="flex:1;color:var(--text-muted);">
                 Cancelar
             </button>
@@ -644,11 +630,10 @@ async function sendWeeklyPlan() {
     msg.style.color = 'var(--primary)';
     msg.textContent = 'Publicando plan semanal…';
 
-    const rows = document.querySelectorAll('#wp-tbody tr');
-    const daysData = Array.from(rows).map((row, i) => {
-        const dayNames = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+    const rows = document.querySelectorAll('.wp-day-row');
+    const daysData = Array.from(rows).map((row) => {
         return {
-            day:   dayNames[i],
+            day:   row.dataset.day,
             time:  row.querySelector('.wp-time').value,
             venue: row.querySelector('.wp-venue').value.trim(),
             note:  row.querySelector('.wp-note').value.trim()
@@ -679,7 +664,7 @@ async function sendWeeklyPlan() {
         showToast('✅ Planificación semanal enviada a los padres', 3000);
         
         setTimeout(() => {
-            document.getElementById('setup-modal').style.display = 'none';
+            openConvocationModal();
         }, 1500);
 
     } catch (e) {
@@ -700,16 +685,16 @@ function copyWeeklyToWhatsApp() {
     
     let text = `📅 *PLANIFICACIÓN SEMANAL*\n📌 Semana del ${dateStr}\n\n`;
 
-    const rows = document.querySelectorAll('#wp-tbody tr');
-    const dayNames = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+    const rows = document.querySelectorAll('.wp-day-row');
 
-    rows.forEach((row, i) => {
+    rows.forEach((row) => {
         const time = row.querySelector('.wp-time').value;
         const venue = row.querySelector('.wp-venue').value.trim();
         const note = row.querySelector('.wp-note').value.trim();
+        const dayName = row.dataset.day;
 
         if (time || venue || note) {
-            text += `🔹 *${dayNames[i]}*\n`;
+            text += `🔹 *${dayName}*\n`;
             if (time)  text += `   🕒 ${time}h\n`;
             if (venue) text += `   📍 ${venue}\n`;
             if (note)  text += `   📝 ${note}\n`;
