@@ -557,13 +557,13 @@ function openTrainingNotification() {
 
     modal.style.display = 'flex';
     modal.innerHTML = `
-    <div class="modal-content" style="width:min(98vw,680px);max-height:94vh;
-         display:flex;flex-direction:column;overflow:hidden;padding:1.2rem;">
+    <div class="modal-content" style="width:min(98vw,680px);max-height:96vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0.8rem 1rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;
-                    margin-bottom:1rem;flex-shrink:0;">
+                    margin-bottom:0.5rem;flex-shrink:0;">
             <div>
-                <h2 style="margin:0;font-size:1.1rem;">📅 Planificación Semanal</h2>
-                <p style="margin:0;font-size:0.75rem;color:var(--text-muted);">
+                <h2 style="margin:0;font-size:1.1rem;line-height:1.2;">📅 Planificación Semanal</h2>
+                <p style="margin:0;font-size:0.75rem;color:var(--text-muted);display:none;">
                     Informa a los padres del horario de toda la semana
                 </p>
             </div>
@@ -572,33 +572,37 @@ function openTrainingNotification() {
                        font-size:1.5rem;cursor:pointer;">✕</button>
         </div>
 
-        <div style="margin-bottom:1rem;flex-shrink:0;">
-            <label style="font-size:0.73rem;color:var(--text-muted);display:block;margin-bottom:0.3rem;">
-                🗓️ Semana del Lunes:
-            </label>
-            <input type="date" id="wp-start-date" value="${startOfWeek}"
-                   style="width:180px;padding:0.5rem;background:rgba(255,255,255,0.06);
-                          border:1px solid var(--glass-border);border-radius:6px;color:white;">
-        </div>
+        <div style="overflow-y:auto;flex:1;padding-right:0.2rem;">
 
-        <div style="overflow-y:auto;flex:1;background:rgba(0,0,0,0.15);border-radius:8px;padding:0.4rem;" id="wp-tbody">
-            <div style="display:flex; flex-direction:column; gap:0.6rem;">
+            <div style="margin-bottom:0.8rem;display:flex;align-items:center;gap:0.6rem;">
+                <label style="font-size:0.8rem;color:var(--text-muted);margin:0;white-space:nowrap;">
+                    🗓️ Semana del Lunes:
+                </label>
+                <input type="date" id="wp-start-date" value="${startOfWeek}"
+                       style="flex:1;max-width:180px;padding:0.45rem;background:rgba(255,255,255,0.06);
+                              border:1px solid var(--glass-border);border-radius:6px;color:white;font-size:0.8rem;">
+            </div>
+
+            <div style="background:rgba(0,0,0,0.15);border-radius:8px;padding:0.4rem;" id="wp-tbody">
+                <div style="display:flex; flex-direction:column; gap:0.4rem;">
                 ${['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((day, i) => `
-                <div class="wp-day-row" data-day="${day}" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.7rem;">
-                    <div style="font-weight:700;color:var(--primary);margin-bottom:0.5rem;">${day}</div>
-                    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
-                        <input type="time" class="wp-time" style="flex:1;min-width:80px;padding:0.5rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
-                        <input type="text" class="wp-venue" placeholder="Lugar (ej: Ciudad Dep.)" style="flex:2;min-width:120px;padding:0.5rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
-                        <input type="text" class="wp-note" placeholder="Nota o Actividad (ej: Entrenamiento)" style="width:100%;padding:0.5rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
+                <div class="wp-day-row" data-day="${day}" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.5rem 0.6rem;">
+                    <div style="font-weight:700;color:var(--primary);margin-bottom:0.3rem;font-size:0.85rem;">${day}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
+                        <input type="time" class="wp-time" style="flex:1;min-width:70px;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
+                        <input type="text" class="wp-venue" placeholder="Lugar (ej: Ciudad Dep.)" style="flex:2;min-width:110px;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
+                        <input type="text" class="wp-note" placeholder="Nota o Actividad" style="flex:3;min-width:100%;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.8rem;">
                     </div>
                 </div>
                 `).join('')}
+                </div>
             </div>
-        </div>
 
-        <div id="wp-msg" style="font-size:0.8rem;min-height:1rem;text-align:center;margin-top:0.6rem;"></div>
+        </div> <!-- fin zona scroll -->
 
-        <div style="display:flex;gap:0.6rem;margin-top:0.9rem;flex-shrink:0;">
+        <div id="wp-msg" style="font-size:0.8rem;min-height:0;text-align:center;margin-top:0.4rem;"></div>
+
+        <div style="display:flex;gap:0.5rem;margin-top:0.4rem;padding-top:0.6rem;border-top:1px solid var(--glass-border);flex-shrink:0;">
             <button onclick="openConvocationModal()"
                 class="btn" style="flex:1;color:var(--text-muted);">
                 Cancelar
