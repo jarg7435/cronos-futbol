@@ -127,37 +127,43 @@ function openConvocationMessage() {
                     style="resize:vertical;">${saved.extra || ''}</textarea>
             </div>
 
-            <!-- ── ENVÍO ────────────────────────────────────── -->
+            <!-- ── ENVIAR A ─────────────────────────────────── -->
             <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
                         border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
-                <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);
-                            margin-bottom:0.7rem;letter-spacing:0.5px;">📤 ENVIAR A</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;">
-                    <div>
-                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
-                            📱 WhatsApp Principal
-                        </label>
-                        <input id="cv-wa" type="tel" class="conv-input"
-                            placeholder="34612345678"
-                            value="${saved.wa || (emailConfig.contacts ? emailConfig.contacts.find(c => c.tags.includes('notifs'))?.phone : '') || emailConfig?.whatsappNumber || ''}">
-                        <p style="font-size:0.6rem;color:var(--text-muted);margin:0.2rem 0 0;">
-                            Auto-completado desde Gestión de Contactos.
-                        </p>
+
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
+                        📤 ENVIAR A
                     </div>
-                    <div>
-                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">
-                            📧 Email Principal
-                        </label>
-                        <input id="cv-email" type="email" class="conv-input"
-                            placeholder="padres@equipo.com"
-                            value="${saved.email || (emailConfig.contacts ? emailConfig.contacts.find(c => c.tags.includes('notifs'))?.email : '') || emailConfig?.directorEmail || ''}">
+                    <div style="display:flex;gap:0.4rem;">
+                        <button onclick="_cvSelectAll(true)"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(88,166,255,0.1);
+                                   border:1px solid rgba(88,166,255,0.3);border-radius:5px;
+                                   color:var(--primary);cursor:pointer;">
+                            ✓ Todos
+                        </button>
+                        <button onclick="_cvSelectAll(false)"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid rgba(255,255,255,0.1);border-radius:5px;
+                                   color:var(--text-muted);cursor:pointer;">
+                            ✗ Ninguno
+                        </button>
+                        <button onclick="_cvSavePreselection()"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(63,185,80,0.1);
+                                   border:1px solid rgba(63,185,80,0.3);border-radius:5px;
+                                   color:#3fb950;cursor:pointer;">
+                            💾 Guardar selección
+                        </button>
                     </div>
                 </div>
-                <!-- Nota sobre Multi-notificación -->
-                ${(emailConfig.contacts || []).filter(c => c.tags.includes('notifs')).length > 1 ? `
-                <div style="margin-top:0.6rem; font-size:0.68rem; color:var(--primary); background:rgba(88,166,255,0.05); padding:0.4rem; border-radius:4px;">
-                    ℹ️ El "Envío Interno" también llegará a: ${emailConfig.contacts.filter(c => c.tags.includes('notifs')).slice(1).map(c => c.name).join(', ')}
-                </div>` : ''}
+
+                <div id="cv-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:220px;overflow-y:auto;padding-right:4px;">
+                    ${_buildRecipientsHTML(saved.recipients)}
+                </div>
+
+                <p style="font-size:0.62rem;color:var(--text-muted);margin:0.5rem 0 0;">
+                    💡 Marca quién recibirá esta convocatoria. Pulsa "Guardar selección" para que se recuerde siempre.
+                </p>
             </div>
 
             </div><!-- end scroll -->
@@ -196,6 +202,109 @@ function openConvocationMessage() {
         .conv-input:focus { outline:none;border-color:rgba(88,166,255,0.5); }
         </style>
     `;
+}
+
+// ── Construir HTML de lista de destinatarios ─────────────────────────
+function _buildRecipientsHTML(savedRecipients) {
+    // Recopilar todos los contactos disponibles
+    const allContacts = [];
+
+    // 1. Staff / directivos desde emailConfig
+    const staffContacts = (emailConfig.contacts || []).filter(c => c.type !== 'parent');
+    staffContacts.forEach(c => {
+        if (!c.name && !c.email && !c.phone) return;
+        allContacts.push({
+            id:     c.id || ('s_' + Math.random().toString(36).substr(2,5)),
+            type:   'staff',
+            label:  c.name || c.email || 'Staff',
+            sublabel: c.email || '',
+            phone:  c.phone || '',
+            email:  c.email || '',
+            defaultOn: (c.tags || []).includes('notifs')
+        });
+    });
+
+    // 2. Padres desde emailConfig (tipo parent manual)
+    const parentContacts = (emailConfig.contacts || []).filter(c => c.type === 'parent');
+    parentContacts.forEach(c => {
+        if (!c.name && !c.email && !c.phone) return;
+        allContacts.push({
+            id:     c.id || ('p_' + Math.random().toString(36).substr(2,5)),
+            type:   'parent',
+            label:  c.player ? `${c.name || 'Padre'} (${c.player})` : (c.name || 'Padre'),
+            sublabel: c.email || '',
+            phone:  c.phone || '',
+            email:  c.email || '',
+            defaultOn: true
+        });
+    });
+
+    if (!allContacts.length) {
+        return `<div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:1rem 0;">
+            ⚠️ No hay contactos configurados. Ve a <strong>Gestión de Contactos</strong> para añadirlos.
+        </div>`;
+    }
+
+    // Cargar preselección guardada
+    let savedIds = null;
+    try { savedIds = savedRecipients || JSON.parse(localStorage.getItem('cronos_conv_preselection') || 'null'); } catch(e) {}
+
+    return allContacts.map(c => {
+        const checked = savedIds ? savedIds.includes(c.id) : c.defaultOn;
+        const typeColor = c.type === 'staff' ? 'rgba(88,166,255,0.15)' : 'rgba(240,136,62,0.1)';
+        const typeBorder = c.type === 'staff' ? 'rgba(88,166,255,0.25)' : 'rgba(240,136,62,0.2)';
+        const typeTag = c.type === 'staff' ? '🏢' : '👨‍👩‍👧';
+
+        return `
+        <label style="display:flex;align-items:center;gap:0.6rem;
+                       background:${typeColor};border:1px solid ${typeBorder};
+                       border-radius:8px;padding:0.5rem 0.7rem;cursor:pointer;">
+            <input type="checkbox" class="cv-recipient-chk"
+                data-id="${c.id}"
+                data-phone="${c.phone}"
+                data-email="${c.email}"
+                data-label="${c.label}"
+                ${checked ? 'checked' : ''}
+                style="width:16px;height:16px;flex-shrink:0;accent-color:var(--primary);">
+            <span style="font-size:0.72rem;flex-shrink:0;">${typeTag}</span>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:0.8rem;font-weight:600;color:var(--text);">${c.label}</div>
+                <div style="font-size:0.65rem;color:var(--text-muted);">
+                    ${c.phone ? `📱 ${c.phone}` : ''}${c.phone && c.email ? ' · ' : ''}${c.email ? `📧 ${c.email}` : ''}
+                </div>
+            </div>
+            <div style="display:flex;gap:0.3rem;flex-shrink:0;">
+                ${c.phone ? `<span style="font-size:0.58rem;background:rgba(37,211,102,0.15);
+                    border:1px solid rgba(37,211,102,0.3);border-radius:4px;
+                    padding:1px 5px;color:#3fb950;">WA</span>` : ''}
+                ${c.email ? `<span style="font-size:0.58rem;background:rgba(88,166,255,0.12);
+                    border:1px solid rgba(88,166,255,0.25);border-radius:4px;
+                    padding:1px 5px;color:var(--primary);">Email</span>` : ''}
+            </div>
+        </label>`;
+    }).join('');
+}
+
+// ── Seleccionar/deseleccionar todos ──────────────────────────────────
+window._cvSelectAll = function(val) {
+    document.querySelectorAll('.cv-recipient-chk').forEach(chk => { chk.checked = val; });
+};
+
+// ── Guardar preselección ──────────────────────────────────────────────
+window._cvSavePreselection = function() {
+    const ids = Array.from(document.querySelectorAll('.cv-recipient-chk:checked')).map(c => c.dataset.id);
+    localStorage.setItem('cronos_conv_preselection', JSON.stringify(ids));
+    showToast('✅ Selección guardada como predeterminada', 2500);
+};
+
+// ── Obtener destinatarios seleccionados ───────────────────────────────
+function _cvGetSelectedRecipients() {
+    return Array.from(document.querySelectorAll('.cv-recipient-chk:checked')).map(chk => ({
+        id:    chk.dataset.id,
+        phone: chk.dataset.phone,
+        email: chk.dataset.email,
+        label: chk.dataset.label,
+    }));
 }
 
 // ── Construir el mensaje de convocatoria ─────────────────────────────
@@ -252,17 +361,17 @@ function buildConvocationText() {
 
 // ── Guardar configuración ───────────────────────────────────────────
 function saveConvConfig() {
+    const selectedIds = Array.from(document.querySelectorAll('.cv-recipient-chk:checked')).map(c => c.dataset.id);
     const cfg = {
-        greeting:  document.getElementById('cv-greeting')?.value,
-        type:      document.getElementById('cv-type')?.value,
-        date:      document.getElementById('cv-date')?.value,
-        rival:     document.getElementById('cv-rival')?.value,
-        meettime:  document.getElementById('cv-meettime')?.value,
-        kickoff:   document.getElementById('cv-kickoff')?.value,
-        venue:     document.getElementById('cv-venue')?.value,
-        extra:     document.getElementById('cv-extra')?.value,
-        wa:        document.getElementById('cv-wa')?.value,
-        email:     document.getElementById('cv-email')?.value,
+        greeting:   document.getElementById('cv-greeting')?.value,
+        type:       document.getElementById('cv-type')?.value,
+        date:       document.getElementById('cv-date')?.value,
+        rival:      document.getElementById('cv-rival')?.value,
+        meettime:   document.getElementById('cv-meettime')?.value,
+        kickoff:    document.getElementById('cv-kickoff')?.value,
+        venue:      document.getElementById('cv-venue')?.value,
+        extra:      document.getElementById('cv-extra')?.value,
+        recipients: selectedIds,
     };
     localStorage.setItem('cronos_conv_config', JSON.stringify(cfg));
 }
@@ -347,25 +456,31 @@ async function saveConvocationToFirestore() {
 // ── Enviar por WhatsApp ─────────────────────────────────────────────
 function sendConvocationWA() {
     saveConvConfig();
-    const num = document.getElementById('cv-wa')?.value.trim()
-             || JSON.parse(localStorage.getItem('cronos_conv_config')||'{}').wa || '';
+    const recipients = _cvGetSelectedRecipients().filter(r => r.phone);
     const msg = buildConvocationText();
     const encoded = encodeURIComponent(msg);
-    if (num) {
-        window.open(`https://wa.me/${num}?text=${encoded}`, '_blank');
-    } else {
+
+    if (!recipients.length) {
+        // Fallback: abrir WhatsApp sin número para elegir contacto
         window.open(`https://wa.me/?text=${encoded}`, '_blank');
+        showToast('📱 WhatsApp abierto — ningún contacto con teléfono seleccionado', 4000);
+        return;
     }
-    saveConvocationToFirestore(); // guardar para padres
-    showToast('📱 WhatsApp abierto — selecciona el contacto o grupo', 4000);
-    setTimeout(() => openConvocationModal(), 1000);
+
+    recipients.forEach((r, i) => {
+        setTimeout(() => {
+            window.open(`https://wa.me/${r.phone}?text=${encoded}`, '_blank');
+        }, i * 800);
+    });
+    saveConvocationToFirestore();
+    showToast(`📱 Enviando a ${recipients.length} contacto${recipients.length > 1 ? 's' : ''} por WhatsApp`, 4000);
+    setTimeout(() => openConvocationModal(), 1500);
 }
 
 // ── Enviar por Email ────────────────────────────────────────────────
 function sendConvocationEmail() {
     saveConvConfig();
-    const to      = document.getElementById('cv-email')?.value.trim()
-                 || JSON.parse(localStorage.getItem('cronos_conv_config')||'{}').email || '';
+    const recipients = _cvGetSelectedRecipients().filter(r => r.email);
     const rival   = document.getElementById('cv-rival')?.value.trim() || '';
     const dateVal = document.getElementById('cv-date')?.value || '';
     const dateStr = dateVal
@@ -375,9 +490,17 @@ function sendConvocationEmail() {
         `⚽ Convocatoria ${dateStr ? '— ' + dateStr : ''}${rival ? ' vs ' + rival : ''}`
     );
     const body = encodeURIComponent(buildConvocationText().replace(/[*_]/g,''));
-    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
-    saveConvocationToFirestore(); // guardar para padres
-    showToast('📧 Email abierto en tu cliente de correo', 3000);
+
+    if (!recipients.length) {
+        window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+        showToast('📧 Email abierto — ningún contacto con email seleccionado', 3000);
+        return;
+    }
+
+    const toList = recipients.map(r => r.email).join(',');
+    window.open(`mailto:${toList}?subject=${subject}&body=${body}`, '_blank');
+    saveConvocationToFirestore();
+    showToast(`📧 Email abierto para ${recipients.length} contacto${recipients.length > 1 ? 's' : ''}`, 3000);
     setTimeout(() => openConvocationModal(), 1000);
 }
 async function publishConvocationToApp() {
