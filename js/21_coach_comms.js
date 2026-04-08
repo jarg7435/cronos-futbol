@@ -397,178 +397,325 @@ window.sendCoachMessage = async function(threadId, parentUid, parentEmail, paren
 };
 
 // ════════════════════════════════════════════════════════════════════
-//  ENVIAR INFORMES DE PARTIDO A TODOS LOS PADRES VINCULADOS
+//  ENVIAR INFORMES DE PARTIDO A PADRES Y STAFF
 // ════════════════════════════════════════════════════════════════════
-async function sendMatchReportsToParents() {
+function sendMatchReportsToParents() {
+    if (!window.players || !window.players.length) {
+        showToast('⚠️ No hay partido activo para enviar informes.', 4000);
+        return;
+    }
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(96vw,540px);max-height:90vh;
+         display:flex;flex-direction:column;gap:0.8rem;padding:1.2rem;">
+
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <div>
+                <h3 style="margin:0;font-size:1.1rem;color:var(--primary);">📊 Informes de Rendimiento</h3>
+                <p style="margin:0;font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">
+                    Configura quién debe recibir el reporte del partido
+                </p>
+            </div>
+            <button onclick="document.getElementById('setup-modal').style.display='none'"
+                style="background:none;border:none;color:var(--text-muted);
+                       font-size:1.5rem;cursor:pointer;">✕</button>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                    border-radius:10px;padding:0.9rem;margin-top:0.5rem;flex:1;overflow:hidden;
+                    display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
+                <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
+                    📤 ENVIAR A
+                </div>
+                <div style="display:flex;gap:0.4rem;">
+                    <button onclick="sharedSelectAll(true, 'rpt')"
+                        style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(88,166,255,0.1);
+                               border:1px solid rgba(88,166,255,0.3);border-radius:5px;
+                               color:var(--primary);cursor:pointer;">
+                        ✓ Todos
+                    </button>
+                    <button onclick="sharedSelectAll(false, 'rpt')"
+                        style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(255,255,255,0.05);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:5px;
+                               color:var(--text-muted);cursor:pointer;">
+                        ✗ Ninguno
+                    </button>
+                    <button onclick="sharedSavePreselection('rpt')"
+                        style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(63,185,80,0.1);
+                               border:1px solid rgba(63,185,80,0.3);border-radius:5px;
+                               color:#3fb950;cursor:pointer;">
+                        💾 Guardar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Aquí inyectamos el HTML global que diseñamos en 19_whatsapp_email.js -->
+            <div style="display:flex;flex-direction:column;gap:0.4rem;max-height:200px;overflow-y:auto;padding-right:4px;">
+                ${sharedBuildRecipientsHTML(null, 'rpt')}
+            </div>
+
+            <p style="font-size:0.68rem;color:#ffb74d;margin:0.8rem 0 0 0;text-align:center;">
+                <em>💡 Nota: Staff recibirá un resumen global. Padres recibirán informe individual.</em>
+            </p>
+        </div>
+
+        <div id="rpt-msg" style="font-size:0.8rem;text-align:center;min-height:0;"></div>
+
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;flex-shrink:0;">
+            <button onclick="document.getElementById('setup-modal').style.display='none'" class="btn"
+                style="flex:1;color:var(--text-muted);">
+                Cancelar
+            </button>
+            <button onclick="_executeReportsSend('internal')" class="btn primary"
+                style="flex:1.5;background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
+                       color:var(--primary);font-weight:700;">
+                📱 Envío Interno
+            </button>
+            <button onclick="_executeReportsSend('wa')" class="btn"
+                style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;
+                       border:1px solid rgba(63,185,80,0.4);">
+                📱 WhatsApp
+            </button>
+            <button onclick="_executeReportsSend('email')" class="btn"
+                style="flex:1;background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
+                       color:var(--primary);font-weight:700;">
+                📧 Email
+            </button>
+        </div>
+    </div>`;
+}
+
+// Generador de textos para no duplicar lógica
+function _buildGlobalReportText() {
+    const scoreHome = document.getElementById('score-home')?.textContent || '0';
+    const scoreAway = document.getElementById('score-away')?.textContent || '0';
+    const matchDate = new Date().toLocaleDateString('es-ES', {weekday:'long', day:'numeric', month:'long'});
+    const homePlayers = window.players.filter(p => p.team === 'home');
+    
+    let text = `📊 *RESUMEN GLOBAL DEL PARTIDO*\n━━━━━━━━━━━━━━━━\n`;
+    text += `📅 ${matchDate}\n`;
+    text += `⚽ ${TEAM_NAMES?.home||'Local'} *${scoreHome}* - *${scoreAway}* ${TEAM_NAMES?.away||'Visitante'}\n━━━━━━━━━━━━━━━━\n\n`;
+    
+    homePlayers.forEach(p => {
+        const cardIcon = p.cards === 'amarilla' ? '🟨' : p.cards === 'roja' ? '🟥' : '—';
+        text += `👤 ${p.name} (#${p.number}) - ${window.formatTime ? window.formatTime(p.time||0) : p.time||0} min\n`;
+        text += `   ⚽ Goles: ${p.goals||0} | 🃏 Thrj: ${cardIcon} ${p.injured ? '| 🚑 Lesión' : ''}\n`;
+    });
+    return text + `\n_Cronos Fútbol · Dirección Deportiva_`;
+}
+
+function _buildIndividualReportText(player, scoreHome, scoreAway, matchDate) {
+    const cardIcon = player.cards === 'amarilla' ? '🟨 Amarilla' : player.cards === 'roja' ? '🟥 Roja' : '—';
+    const minutesPlayed = window.formatTime ? window.formatTime(player.time||0) : player.time||0;
+    
+    return `📊 *INFORME INDIVIDUAL DE PARTIDO*\n` +
+           `━━━━━━━━━━━━━━━━\n` +
+           `📅 ${matchDate}\n` +
+           `⚽ ${TEAM_NAMES?.home||'Local'} *${scoreHome}* - *${scoreAway}* ${TEAM_NAMES?.away||'Visitante'}\n` +
+           `━━━━━━━━━━━━━━━━\n` +
+           `👤 *${player.name}* — Dorsal ${player.number}\n\n` +
+           `⏱️ Minutos jugados: *${minutesPlayed}*\n` +
+           `⚽ Goles: *${player.goals || 0}*\n` +
+           `🃏 Tarjetas: *${cardIcon}*\n` +
+           (player.injured ? `🚑 *LESIONADO*\n` : '') +
+           `━━━━━━━━━━━━━━━━\n` +
+           `_Cronos Fútbol · Informe automático_`;
+}
+
+// Ejecutor unificado
+window._executeReportsSend = async function(method) {
     const me = window._cronosCurrentUser;
     const fa = window._cronos_auth;
     if (!fa || !me) return;
 
-    if (!players || !players.length) {
-        showToast('⚠️ No hay partido activo. Inicia un partido primero.', 4000);
+    const recipients = sharedGetSelectedRecipients('rpt');
+    if (!recipients.length) {
+        showToast('⚠️ Selecciona al menos un destinatario.', 3000);
         return;
     }
 
-    if (!confirm('¿Enviar el informe del partido a todos los padres vinculados?\n\nSe enviará la información de cada jugador al padre/tutor correspondiente.')) return;
+    const msgEl = document.getElementById('rpt-msg');
+    if (msgEl) {
+        msgEl.style.color = 'var(--primary)';
+        msgEl.textContent = 'Procesando informes...';
+    }
 
-    showSpinner('Enviando informes a padres…');
+    const { db, collection, getDocs, query, where, doc, getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
+    
+    // Obtener vínculos (solo sirve para saber qué padre es de qué jugador para Internal Envío)
+    const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId)));
+    const links = [];
+    linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
 
-    try {
-        const { db, collection, getDocs, query, where, doc,
-                getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
+    const scoreHome = document.getElementById('score-home')?.textContent || '0';
+    const scoreAway = document.getElementById('score-away')?.textContent || '0';
+    const matchDate = new Date().toLocaleDateString('es-ES', {weekday:'long', day:'numeric', month:'long'});
+    const homePlayers = window.players.filter(p => p.team === 'home');
+    
+    const globalText = _buildGlobalReportText();
+    let sentCount = 0;
 
-        const linksSnap = await getDocs(query(
-            collection(db, 'cronos_player_links'),
-            where('clubId', '==', me.clubId)
-        ));
-        const links = [];
-        linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+    // ----- MODO WHATSAPP -----
+    if (method === 'wa') {
+        const toSend = recipients.filter(r => r.phone);
+        if (!toSend.length) { showToast('⚠️ Ningún seleccionado con WA configurado.',3000); return; }
+        
+        toSend.forEach((r, i) => {
+            setTimeout(() => {
+                let text = globalText;
+                if (r.type === 'parent') {
+                    // Try to deduce player from label, or use links
+                    let matchedPlayer = null;
+                    const link = links.find(l => l.parentPhone === r.phone || (l.parentUid && r.id === l.parentUid));
+                    if (link) {
+                        matchedPlayer = homePlayers.find(p => String(p.number) === String(link.playerNumber));
+                    } else if (r.label.includes('(')) {
+                        const extractedName = r.label.match(/\((.*?)\)/)[1];
+                        matchedPlayer = homePlayers.find(p => p.name === extractedName || p.alias === extractedName);
+                    }
+                    if (matchedPlayer) {
+                        text = _buildIndividualReportText(matchedPlayer, scoreHome, scoreAway, matchDate);
+                    }
+                }
+                window.open(`https://wa.me/${r.phone}?text=${encodeURIComponent(text)}`, '_blank');
+            }, i * 800);
+        });
+        showToast('📱 Abriendo pestañas de WhatsApp...', 3000);
+        if (msgEl) msgEl.textContent = 'Completado.';
+        setTimeout(() => document.getElementById('setup-modal').style.display='none', 2000);
+        return;
+    }
 
-        if (!links.length) {
-            hideSpinner();
-            showToast('⚠️ No hay padres vinculados para recibir informes.', 4000);
-            return;
-        }
+    // ----- MODO EMAIL -----
+    if (method === 'email') {
+        const toSend = recipients.filter(r => r.email);
+        if (!toSend.length) { showToast('⚠️ Ningún seleccionado con Email configurado.',3000); return; }
+        
+        toSend.forEach((r, i) => {
+            setTimeout(() => {
+                let text = globalText;
+                let subject = encodeURIComponent(`📊 Informe Global de Partido — ${matchDate}`);
+                if (r.type === 'parent') {
+                    let matchedPlayer = null;
+                    const link = links.find(l => l.parentEmail === r.email || (l.parentUid && r.id === l.parentUid));
+                    if (link) matchedPlayer = homePlayers.find(p => String(p.number) === String(link.playerNumber));
+                    
+                    if (matchedPlayer) {
+                        text = _buildIndividualReportText(matchedPlayer, scoreHome, scoreAway, matchDate);
+                        subject = encodeURIComponent(`📊 Informe Individual - ${matchedPlayer.name} — ${matchDate}`);
+                    }
+                }
+                const body = encodeURIComponent(text.replace(/[*_]/g, ''));
+                window.open(`mailto:${r.email}?subject=${subject}&body=${body}`, '_blank');
+            }, i * 800);
+        });
+        showToast('📧 Abriendo clientes de correo...', 3000);
+        if (msgEl) msgEl.textContent = 'Completado.';
+        setTimeout(() => document.getElementById('setup-modal').style.display='none', 2000);
+        return;
+    }
 
-        const scoreHome  = document.getElementById('score-home')?.textContent || '0';
-        const scoreAway  = document.getElementById('score-away')?.textContent || '0';
-        const matchDate  = new Date().toLocaleDateString('es-ES',
-            {weekday:'long', day:'numeric', month:'long'});
-        const homePlayers = players.filter(p => p.team === 'home');
-
-        let sent = 0;
-
-        for (const link of links) {
+    // ----- MODO INTERNO -----
+    showSpinner('Enviando informes internamente...');
+    for (const r of recipients) {
+        if (r.type === 'staff') {
+            // Enviar notificación global al UID del staff si lo tiene
+            // Recipient ID for staff might be custom ID or UID... actually emailConfig staff .uid is what we want.
+            // Let's check if there's a matching contact in emailConfig with .uid
+            let uidToNotify = null;
+            if (typeof emailConfig !== 'undefined' && emailConfig.contacts) {
+                const c = emailConfig.contacts.find(x => x.id === r.id || x.phone === r.phone || x.email === r.email);
+                if (c && c.uid) uidToNotify = c.uid;
+            }
+            if (uidToNotify) {
+                await setDoc(doc(db, 'cronos_notifications', `notif_matchsglobe_${uidToNotify}_${Date.now().toString(36)}`), {
+                    type:           'aviso_partido_finalizado',
+                    clubId:         me.clubId || null,
+                    parentUid:      uidToNotify,
+                    matchDate:      matchDate,
+                    rival:          TEAM_NAMES.away || 'Rival',
+                    scoreHome, scoreAway,
+                    message:        globalText.replace(/[*_]/g,''),
+                    createdAt:      new Date().toISOString()
+                });
+                sentCount++;
+            }
+        } 
+        else if (r.type === 'parent') {
+            // Find matched link
+            const link = links.find(l => (r.id && r.id.includes('p_') === false ? l.parentUid === r.id : false)
+                                     || l.parentEmail === r.email 
+                                     || l.parentPhone === r.phone);
+            if (!link) continue;
+            
             const player = homePlayers.find(p => String(p.number) === String(link.playerNumber));
             if (!player) continue;
 
-            const cardIcon = player.cards === 'amarilla' ? '🟨 Amarilla'
-                           : player.cards === 'roja'     ? '🟥 Roja'
-                           : '—';
-            const minutesPlayed = formatTime(player.time || 0);
+            const reportText = _buildIndividualReportText(player, scoreHome, scoreAway, matchDate);
 
-            const reportText =
-                `📊 *INFORME DE PARTIDO*\n` +
-                `━━━━━━━━━━━━━━━━\n` +
-                `📅 ${matchDate}\n` +
-                `⚽ ${TEAM_NAMES.home} *${scoreHome}* - *${scoreAway}* ${TEAM_NAMES.away}\n` +
-                `━━━━━━━━━━━━━━━━\n` +
-                `👤 *${player.name}* — Dorsal ${player.number}\n\n` +
-                `⏱️ Minutos jugados: *${minutesPlayed}*\n` +
-                `⚽ Goles: *${player.goals || 0}*\n` +
-                `🃏 Tarjetas: *${cardIcon}*\n` +
-                (player.injured ? `🚑 *LESIONADO*\n` : '') +
-                `━━━━━━━━━━━━━━━━\n` +
-                `_Cronos Fútbol · Informe automático_`;
-
-            // Guardar informe en cronos_player_reports
+            // Save in cronos_player_reports (for UI queries)
             const reportId = `rpt_${link.playerNumber}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_player_reports', reportId), {
                 reportId,
                 playerNumber:   link.playerNumber,
                 playerAlias:    link.playerAlias || player.name,
                 parentUid:      link.parentUid,
-                coachUid:       me.uid,
-                coachEmail:     me.email,
+                coachUid:       me.uid, coachEmail: me.email,
                 clubId:         me.clubId || null,
-                matchDate,
-                rival:          TEAM_NAMES.away,
-                scoreHome,
-                scoreAway,
-                minutesPlayed,
-                goals:          player.goals   || 0,
-                cards:          player.cards   || 'ninguna',
-                injured:        player.injured || false,
-                history:        player.history || [],
-                createdAt:      new Date().toISOString(),
+                matchDate, rival: TEAM_NAMES.away,
+                scoreHome, scoreAway,
+                minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
+                goals: player.goals || 0,
+                cards: player.cards || 'ninguna',
+                injured: player.injured || false,
+                history: player.history || [],
+                createdAt: new Date().toISOString(),
             });
 
-            // Enviar como mensaje en el hilo
-            const threadId  = `${me.uid}_${link.parentUid}`;
+            // Send via Thread Message
+            const threadId = `${me.uid}_${link.parentUid}`;
             const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
-            const msgEntry   = {
-                sender:    'coach',
-                text:      reportText,
-                timestamp: new Date().toISOString(),
-                type:      'report',
-            };
-
+            const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
             if (threadSnap.exists()) {
                 await updateDoc(doc(db, 'cronos_messages', threadId), {
-                    messages:       arrayUnion(msgEntry),
-                    lastMessage:    '📊 Informe de partido enviado',
-                    lastMessageAt:  msgEntry.timestamp,
-                    unreadByParent: (threadSnap.data().unreadByParent || 0) + 1,
+                    messages: arrayUnion(msgEntry),
+                    lastMessage: '📊 Informe de partido enviado',
+                    lastMessageAt: msgEntry.timestamp, unreadByParent: (threadSnap.data().unreadByParent||0) + 1
                 });
             } else {
                 await setDoc(doc(db, 'cronos_messages', threadId), {
-                    threadId,
-                    coachUid:       me.uid,
-                    coachEmail:     me.email,
-                    parentUid:      link.parentUid,
-                    parentEmail:    link.parentEmail,
-                    messages:       [msgEntry],
-                    lastMessage:    '📊 Informe de partido enviado',
-                    lastMessageAt:  msgEntry.timestamp,
-                    unreadByCoach:  0,
-                    unreadByParent: 1,
+                    threadId, coachUid: me.uid, coachEmail: me.email,
+                    parentUid: link.parentUid, parentEmail: link.parentEmail,
+                    messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
+                    lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
                 });
             }
 
-            // --- NOTIFICACIÓN INTERNA GRATUITA (TAB MENSAJES DEL PADRE) ---
-            const notifId = `notif_rpt_${link.playerNumber}_${Date.now().toString(36)}`;
-            await setDoc(doc(db, 'cronos_notifications', notifId), {
-                type:           'informe_partido',
-                clubId:         me.clubId || null,
-                parentUid:      link.parentUid,
-                playerNumber:   link.playerNumber,
-                rival:          TEAM_NAMES.away,
-                scoreHome,
-                scoreAway,
-                minutesPlayed,
-                goals:          player.goals || 0,
-                cards:          cardIcon,
-                injured:        player.injured || false,
-                createdAt:      new Date().toISOString()
+            // Also a notification for the parent
+            await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${link.playerNumber}_${Date.now().toString(36)}`), {
+                type: 'informe_partido', clubId: me.clubId || null,
+                parentUid: link.parentUid, playerNumber: link.playerNumber,
+                rival: TEAM_NAMES.away, scoreHome, scoreAway,
+                minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
+                goals: player.goals || 0, cards: player.cards || 'ninguna',
+                injured: player.injured || false, createdAt: new Date().toISOString()
             });
 
-            // --- OPCIÓN WHATSAPP (SI TIENE TELÉFONO GRABADO) ---
-            if (link.parentPhone) {
-                const waUrl = `https://wa.me/${link.parentPhone}?text=${encodeURIComponent(reportText)}`;
-                // Nota: Abrir WhatsApp individualmente si el coach lo desea, o dejarlo para el hilo
-                console.log(`[WA] Perfil listo para: ${link.parentPhone}`);
-            }
-
-            sent++;
+            sentCount++;
         }
-
-        hideSpinner();
-
-        // --- 3. NOTIFICAR A STAFF / OTROS (Fuente de la Verdad) ---
-        if (emailConfig.contacts) {
-            const staffNotifs = emailConfig.contacts.filter(c => c.tags.includes('notifs') && c.uid);
-            for (const contact of staffNotifs) {
-                const notifId = `notif_match_end_${contact.uid}_${Date.now().toString(36)}`;
-                await setDoc(doc(db, 'cronos_notifications', notifId), {
-                    type:           'aviso_partido_finalizado',
-                    clubId:         me.clubId || null,
-                    parentUid:      contact.uid,
-                    matchDate:      matchDate || new Date().toLocaleDateString('es-ES'),
-                    rival:          TEAM_NAMES.away || 'Rival',
-                    scoreHome:      scoreHome || '0',
-                    scoreAway:      scoreAway || '0',
-                    message:        `📊 El partido ha finalizado. Los informes de los jugadores ya están disponibles para su revisión.`,
-                    createdAt:      new Date().toISOString()
-                });
-            }
-        }
-
-        showToast(`✅ Informe enviado a ${sent} padre${sent !== 1 ? 's' : ''}`, 4000);
-
-    } catch(e) {
-        hideSpinner();
-        showToast('⚠️ Error: ' + e.message, 5000);
     }
+    hideSpinner();
+
+    if (msgEl) {
+        msgEl.style.color = '#3fb950';
+        msgEl.textContent = `✅ Enviado con éxito a ${sentCount} destinatario(s).`;
+    }
+    showToast(`✅ Informes enviados (${sentCount})`, 4000);
+    setTimeout(() => { document.getElementById('setup-modal').style.display='none'; }, 2000);
 }
 
 // ── Guardado automático interno para Club Staff ───────────────────────
@@ -1313,18 +1460,23 @@ window.openBulkMessageComposer = function() {
         </div>
 
         <!-- Botones -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;flex-shrink:0;">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;flex-shrink:0;">
             <button onclick="openCoachMessaging()" class="btn"
-                style="color:var(--text-muted);font-size:0.78rem;">← Volver</button>
+                style="color:var(--text-muted);font-size:0.78rem;flex:1;">← Volver</button>
             <button onclick="_sendBulkMsgFirestore()" class="btn"
                 style="background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
-                       color:var(--primary);font-weight:700;font-size:0.78rem;">
+                       color:var(--primary);font-weight:700;font-size:0.78rem;flex:1.5;">
                 📱 Envío Interno
             </button>
             <button onclick="_sendBulkMsgWA()" class="btn"
                 style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);
-                       color:#25d366;font-weight:700;font-size:0.78rem;">
+                       color:#25d366;font-weight:700;font-size:0.78rem;flex:1;">
                 📱 WhatsApp
+            </button>
+            <button onclick="_sendBulkMsgEmail()" class="btn"
+                style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.25);
+                       color:var(--primary);font-weight:700;font-size:0.78rem;flex:1;">
+                📧 Email
             </button>
         </div>
     </div>`;
@@ -1408,6 +1560,26 @@ window._sendBulkMsgWA = function() {
         }, i * 700);
     });
     showToast(`📱 WhatsApp abierto para ${withPhone.length} destinatario${withPhone.length !== 1 ? 's' : ''}`, 4000);
+};
+
+// ── Envío grupal por Email ───────────────────────────────────────────
+window._sendBulkMsgEmail = function() {
+    const text = document.getElementById('bulk-msg-text')?.value.trim();
+    if (!text) { showToast('⚠️ Escribe un mensaje antes de enviar', 3000); return; }
+    
+    // El objeto c ya los guardó en data-email, por lo cual selected.parentEmail funciona
+    const withEmail = _msgGetSelected().filter(s => s.parentEmail);
+    if (!withEmail.length) {
+        showToast('⚠️ Ningún destinatario seleccionado tiene Email configurado', 4000);
+        return;
+    }
+    
+    const subject = encodeURIComponent(`💬 Mensaje de Entrenador — ${new Date().toLocaleDateString('es-ES')}`);
+    const body = encodeURIComponent(text.replace(/[*_]/g, ''));
+    
+    const toList = withEmail.map(s => s.parentEmail).join(',');
+    window.open(`mailto:${toList}?subject=${subject}&body=${body}`, '_blank');
+    showToast(`📧 Email abierto para ${withEmail.length} destinatario${withEmail.length !== 1 ? 's' : ''}`, 4000);
 };
 
 window.openCoachMessaging      = openCoachMessaging;

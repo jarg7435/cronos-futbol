@@ -136,19 +136,19 @@ function openConvocationMessage() {
                         📤 ENVIAR A
                     </div>
                     <div style="display:flex;gap:0.4rem;">
-                        <button onclick="_cvSelectAll(true)"
+                        <button onclick="sharedSelectAll(true, 'cv')"
                             style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(88,166,255,0.1);
                                    border:1px solid rgba(88,166,255,0.3);border-radius:5px;
                                    color:var(--primary);cursor:pointer;">
                             ✓ Todos
                         </button>
-                        <button onclick="_cvSelectAll(false)"
+                        <button onclick="sharedSelectAll(false, 'cv')"
                             style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.1);border-radius:5px;
                                    color:var(--text-muted);cursor:pointer;">
                             ✗ Ninguno
                         </button>
-                        <button onclick="_cvSavePreselection()"
+                        <button onclick="sharedSavePreselection('cv')"
                             style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(63,185,80,0.1);
                                    border:1px solid rgba(63,185,80,0.3);border-radius:5px;
                                    color:#3fb950;cursor:pointer;">
@@ -158,7 +158,7 @@ function openConvocationMessage() {
                 </div>
 
                 <div id="cv-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:220px;overflow-y:auto;padding-right:4px;">
-                    ${_buildRecipientsHTML(saved.recipients)}
+                    ${sharedBuildRecipientsHTML(saved.recipients, 'cv')}
                 </div>
 
                 <p style="font-size:0.62rem;color:var(--text-muted);margin:0.5rem 0 0;">
@@ -205,7 +205,8 @@ function openConvocationMessage() {
 }
 
 // ── Construir HTML de lista de destinatarios ─────────────────────────
-function _buildRecipientsHTML(savedRecipients) {
+// ── Construir HTML de lista de destinatarios (Compartido) ────────────
+window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
     // Recopilar todos los contactos disponibles
     const allContacts = [];
 
@@ -247,7 +248,7 @@ function _buildRecipientsHTML(savedRecipients) {
 
     // Cargar preselección guardada
     let savedIds = null;
-    try { savedIds = savedRecipients || JSON.parse(localStorage.getItem('cronos_conv_preselection') || 'null'); } catch(e) {}
+    try { savedIds = savedRecipients || JSON.parse(localStorage.getItem(`cronos_${prefix}_preselection`) || 'null'); } catch(e) {}
 
     return allContacts.map(c => {
         const checked = savedIds ? savedIds.includes(c.id) : c.defaultOn;
@@ -259,8 +260,9 @@ function _buildRecipientsHTML(savedRecipients) {
         <label style="display:flex;align-items:center;gap:0.6rem;
                        background:${typeColor};border:1px solid ${typeBorder};
                        border-radius:8px;padding:0.5rem 0.7rem;cursor:pointer;">
-            <input type="checkbox" class="cv-recipient-chk"
+            <input type="checkbox" class="${prefix}-recipient-chk"
                 data-id="${c.id}"
+                data-type="${c.type}"
                 data-phone="${c.phone}"
                 data-email="${c.email}"
                 data-label="${c.label}"
@@ -283,29 +285,30 @@ function _buildRecipientsHTML(savedRecipients) {
             </div>
         </label>`;
     }).join('');
-}
-
-// ── Seleccionar/deseleccionar todos ──────────────────────────────────
-window._cvSelectAll = function(val) {
-    document.querySelectorAll('.cv-recipient-chk').forEach(chk => { chk.checked = val; });
 };
 
-// ── Guardar preselección ──────────────────────────────────────────────
-window._cvSavePreselection = function() {
-    const ids = Array.from(document.querySelectorAll('.cv-recipient-chk:checked')).map(c => c.dataset.id);
-    localStorage.setItem('cronos_conv_preselection', JSON.stringify(ids));
+// ── Seleccionar/deseleccionar todos (Compartido) ─────────────────────
+window.sharedSelectAll = function(val, prefix = 'cv') {
+    document.querySelectorAll(`.${prefix}-recipient-chk`).forEach(chk => { chk.checked = val; });
+};
+
+// ── Guardar preselección (Compartido) ────────────────────────────────
+window.sharedSavePreselection = function(prefix = 'cv') {
+    const ids = Array.from(document.querySelectorAll(`.${prefix}-recipient-chk:checked`)).map(c => c.dataset.id);
+    localStorage.setItem(`cronos_${prefix}_preselection`, JSON.stringify(ids));
     showToast('✅ Selección guardada como predeterminada', 2500);
 };
 
-// ── Obtener destinatarios seleccionados ───────────────────────────────
-function _cvGetSelectedRecipients() {
-    return Array.from(document.querySelectorAll('.cv-recipient-chk:checked')).map(chk => ({
+// ── Obtener destinatarios seleccionados (Compartido) ─────────────────
+window.sharedGetSelectedRecipients = function(prefix = 'cv') {
+    return Array.from(document.querySelectorAll(`.${prefix}-recipient-chk:checked`)).map(chk => ({
         id:    chk.dataset.id,
+        type:  chk.dataset.type,
         phone: chk.dataset.phone,
         email: chk.dataset.email,
         label: chk.dataset.label,
     }));
-}
+};
 
 // ── Construir el mensaje de convocatoria ─────────────────────────────
 function buildConvocationText() {
@@ -456,7 +459,7 @@ async function saveConvocationToFirestore() {
 // ── Enviar por WhatsApp ─────────────────────────────────────────────
 function sendConvocationWA() {
     saveConvConfig();
-    const recipients = _cvGetSelectedRecipients().filter(r => r.phone);
+    const recipients = sharedGetSelectedRecipients('cv').filter(r => r.phone);
     const msg = buildConvocationText();
     const encoded = encodeURIComponent(msg);
 
@@ -480,7 +483,7 @@ function sendConvocationWA() {
 // ── Enviar por Email ────────────────────────────────────────────────
 function sendConvocationEmail() {
     saveConvConfig();
-    const recipients = _cvGetSelectedRecipients().filter(r => r.email);
+    const recipients = sharedGetSelectedRecipients('cv').filter(r => r.email);
     const rival   = document.getElementById('cv-rival')?.value.trim() || '';
     const dateVal = document.getElementById('cv-date')?.value || '';
     const dateStr = dateVal

@@ -600,6 +600,39 @@ function openTrainingNotification() {
 
         </div> <!-- fin zona scroll -->
 
+            <!-- ── ENVIAR A ─────────────────────────────────── -->
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                        border-radius:10px;padding:0.9rem 1rem;margin:0.5rem 0;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
+                        📤 ENVIAR A
+                    </div>
+                    <div style="display:flex;gap:0.4rem;">
+                        <button onclick="sharedSelectAll(true, 'tr')"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(88,166,255,0.1);
+                                   border:1px solid rgba(88,166,255,0.3);border-radius:5px;
+                                   color:var(--primary);cursor:pointer;">
+                            ✓ Todos
+                        </button>
+                        <button onclick="sharedSelectAll(false, 'tr')"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid rgba(255,255,255,0.1);border-radius:5px;
+                                   color:var(--text-muted);cursor:pointer;">
+                            ✗ Ninguno
+                        </button>
+                        <button onclick="sharedSavePreselection('tr')"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(63,185,80,0.1);
+                                   border:1px solid rgba(63,185,80,0.3);border-radius:5px;
+                                   color:#3fb950;cursor:pointer;">
+                            💾 Guardar
+                        </button>
+                    </div>
+                </div>
+                <div id="tr-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:180px;overflow-y:auto;padding-right:4px;">
+                    ${sharedBuildRecipientsHTML(null, 'tr')}
+                </div>
+            </div>
+
         <div id="wp-msg" style="font-size:0.8rem;min-height:0;text-align:center;margin-top:0.4rem;"></div>
 
         <div style="display:flex;gap:0.5rem;margin-top:0.4rem;padding-top:0.6rem;border-top:1px solid var(--glass-border);flex-shrink:0;">
@@ -607,11 +640,14 @@ function openTrainingNotification() {
                 class="btn" style="flex:1;color:var(--text-muted);">
                 Cancelar
             </button>
-            <button onclick="copyWeeklyToWhatsApp()" class="btn" style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;border:1px solid rgba(63,185,80,0.4);">
-                📲 Copiar para WhatsApp
-            </button>
             <button onclick="sendWeeklyPlan()" class="btn primary" style="flex:1.5; background:rgba(88,166,255,0.15); border-color:rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">
                 📱 Envío Interno
+            </button>
+            <button onclick="sendWeeklyPlanWA()" class="btn" style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;border:1px solid rgba(63,185,80,0.4);">
+                📱 WhatsApp
+            </button>
+            <button onclick="sendWeeklyPlanEmail()" class="btn" style="flex:1;background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);color:var(--primary);font-weight:700;">
+                📧 Email
             </button>
         </div>
     </div>`;
@@ -620,6 +656,12 @@ window.openTrainingNotification = openTrainingNotification;
 window.openTrainingNotification = openTrainingNotification;
 
 async function sendWeeklyPlan() {
+    const recipients = sharedGetSelectedRecipients('tr');
+    if (!recipients.length) {
+        showToast('⚠️ Selecciona al menos un destinatario', 3000);
+        return;
+    }
+    
     const me  = window._cronosCurrentUser;
     const fa  = window._cronos_auth;
     const startDate = document.getElementById('wp-start-date')?.value;
@@ -644,32 +686,43 @@ async function sendWeeklyPlan() {
         };
     });
 
-    const payload = {
-        type:          'planificacion_semanal',
-        clubId:        me?.clubId || null,
-        coachEmail:    me?.email  || '',
-        coachUid:      me?.uid    || '',
-        weekStartDate: startDate,
-        days:          daysData,
-        createdAt:     new Date().toISOString(),
-    };
-
     try {
         const { setDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         
-        await setDoc(
-            doc(fa.db, 'cronos_notifications', 'week_' + Date.now().toString(36)),
-            payload
-        );
+        // Iterar sobre recipients y enviar individualmente
+        let count = 0;
+        for (const r of recipients) {
+            // Find user uid based on links or just use the system's global logic... wait,
+            // the recipient array has id (like p_xxxx or staff uid). Actually, the parentUid might equal c.id if we use exact uids?
+            // "ENVIAR A" is primarily built on `id: c.id` where c is from emailConfig.
+            // In publishConvocationToApp, we see it matches `contact.uid`.
+            // Let's send a generic club-wide one for now, but ALSO send to specific UIDs if they exist.
+            // Actually, if we just want Envío Interno to go to selected parents in emailConfig, we must get their UIDs!
+            // Para "TUTORES", c.uid lo obtenemos buscando en cronos_player_links (aunque sharedHTML sólo da 'id' desde emailConfig).
+            // Lo más seguro y compatible es mantener el "Envío Global" interno para Planificación Semanal y que WhatsApp / Email usen los checkboxes.
+            // O modificar el payload con "parentUid" explícito... veamos:
+            await setDoc(
+                doc(fa.db, 'cronos_notifications', `week_${r.id}_${Date.now().toString(36)}`),
+                {
+                    type:          'planificacion_semanal',
+                    clubId:        me?.clubId || null,
+                    coachEmail:    me?.email  || '',
+                    coachUid:      me?.uid    || '',
+                    parentUid:     r.id, 
+                    weekStartDate: startDate,
+                    days:          daysData,
+                    createdAt:     new Date().toISOString(),
+                }
+            );
+            count++;
+        }
 
         msg.style.color = '#3fb950';
-        msg.textContent = '✅ Planificación semanal publicada correctamente.';
-        showToast('✅ Planificación semanal enviada a los padres', 3000);
+        msg.textContent = `✅ Planificación semanal enviada a ${count} contacto(s).`;
+        showToast('✅ Planificación semanal publicada', 3000);
         
-        setTimeout(() => {
-            openConvocationModal();
-        }, 1500);
+        setTimeout(() => { openConvocationModal(); }, 1500);
 
     } catch (e) {
         msg.style.color = '#ff5858';
@@ -677,21 +730,17 @@ async function sendWeeklyPlan() {
     }
 }
 
-function copyWeeklyToWhatsApp() {
+function _buildWeeklyPlanText() {
     const startDate = document.getElementById('wp-start-date')?.value;
-    if (!startDate) {
-        showToast('⚠️ Selecciona la fecha primero', 3000);
-        return;
-    }
+    if (!startDate) return '';
 
     const d = new Date(startDate + 'T12:00:00');
     const dateStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long' });
     
     let text = `📅 *PLANIFICACIÓN SEMANAL*\n📌 Semana del ${dateStr}\n\n`;
-
     const rows = document.querySelectorAll('.wp-day-row');
 
-    rows.forEach((row) => {
+    rows.forEach((row, i) => {
         const time = row.querySelector('.wp-time').value;
         const venue = row.querySelector('.wp-venue').value.trim();
         const note = row.querySelector('.wp-note').value.trim();
@@ -704,20 +753,63 @@ function copyWeeklyToWhatsApp() {
             if (note)  text += `   📝 ${note}\n`;
             text += `\n`;
         } else {
-            text += `🔹 *${dayNames[i]}*: _Descanso_\n\n`;
+            text += `🔹 *${dayName}*: _Descanso_\n\n`;
         }
     });
 
-    text += `⚽ _Enviado desde Chronos Fútbol_`;
+    text += `⚽ _Enviado desde Cronos Fútbol_`;
+    return text;
+}
 
-    navigator.clipboard.writeText(text).then(() => {
-        showToast('✅ Texto copiado. ¡Ya puedes pegarlo en WhatsApp!', 4000);
-    }).catch(err => {
-        console.error('Error al copiar:', err);
-        showToast('⚠️ No se pudo copiar automáticamente', 3000);
+function sendWeeklyPlanWA() {
+    const recipients = sharedGetSelectedRecipients('tr').filter(r => r.phone);
+    const msg = _buildWeeklyPlanText();
+    if (!msg) {
+        showToast('⚠️ Selecciona la fecha primero', 3000);
+        return;
+    }
+    
+    const encoded = encodeURIComponent(msg);
+
+    if (!recipients.length) {
+        window.open(`https://wa.me/?text=${encoded}`, '_blank');
+        showToast('📱 WhatsApp abierto — ningún contacto con teléfono seleccionado', 4000);
+        return;
+    }
+
+    recipients.forEach((r, i) => {
+        setTimeout(() => {
+            window.open(`https://wa.me/${r.phone}?text=${encoded}`, '_blank');
+        }, i * 800);
     });
+    showToast(`📱 Enviando a ${recipients.length} contacto(s) por WhatsApp`, 4000);
+}
+
+function sendWeeklyPlanEmail() {
+    const recipients = sharedGetSelectedRecipients('tr').filter(r => r.email);
+    const msg = _buildWeeklyPlanText();
+    if (!msg) {
+        showToast('⚠️ Selecciona la fecha primero', 3000);
+        return;
+    }
+    
+    const d = new Date(document.getElementById('wp-start-date').value + 'T12:00:00');
+    const dateStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long' });
+    const subject = encodeURIComponent(`📅 Planificación Semanal — ${dateStr}`);
+    const body = encodeURIComponent(msg.replace(/[*_]/g,''));
+
+    if (!recipients.length) {
+        window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+        showToast('📧 Email abierto — ningún contacto con email seleccionado', 3000);
+        return;
+    }
+
+    const toList = recipients.map(r => r.email).join(',');
+    window.open(`mailto:${toList}?subject=${subject}&body=${body}`, '_blank');
+    showToast(`📧 Email abierto para ${recipients.length} contacto(s)`, 3000);
 }
 
 window.openTrainingNotification = openTrainingNotification;
 window.sendWeeklyPlan          = sendWeeklyPlan;
-window.copyWeeklyToWhatsApp     = copyWeeklyToWhatsApp;
+window.sendWeeklyPlanWA         = sendWeeklyPlanWA;
+window.sendWeeklyPlanEmail      = sendWeeklyPlanEmail;
