@@ -543,15 +543,6 @@ function openSetupModal() {
                         style="background:rgba(240,136,62,0.12);color:var(--secondary);font-size:0.82rem;border:1px solid rgba(240,136,62,0.4);">
                         ❓ TUTORIAL
                     </button>
-                    ${['admin','superadmin'].includes(window._cronosCurrentUser?.role) ? `
-                    <button onclick="openAdminPanel()"
-                        style="background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.5);
-                               color:#ffa500; font-size:0.82rem; padding:0.45rem 0.9rem;
-                               border-radius:8px; cursor:pointer; font-weight:700;">
-                        ⚙ ADMIN
-                    </button>` : ''}
-                    
-                    
                     ${window._cronosCurrentUser?.role === 'club_admin' ? `
                     <button onclick="openClubAdminPanel()"
                         style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
