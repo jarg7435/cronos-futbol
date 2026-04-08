@@ -8,7 +8,8 @@
 
 // ── Función auxiliar para cargar módulo Firestore ─────────────────────
 async function _cFS() {
-    return await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const module = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    return { ...module, db: window._cronos_auth?.db };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1198,19 +1199,37 @@ window.updateBulkCount = function() {
 
 // ── Compositor de mensaje grupal ──────────────────────────────────────
 window.openBulkMessageComposer = function() {
-    const selected = Array.from(document.querySelectorAll('.parent-select-chk:checked'))
+    // Recopilar TODOS los contactos: padres seleccionados + staff de emailConfig
+    const selectedParents = Array.from(document.querySelectorAll('.parent-select-chk:checked'))
         .map(chk => ({
+            id:          chk.dataset.parentUid,
+            type:        'parent',
+            label:       `⚽ ${chk.dataset.player || chk.dataset.parentEmail} #${chk.dataset.playerNum}`,
             parentUid:   chk.dataset.parentUid,
             parentEmail: chk.dataset.parentEmail,
-            player:      chk.dataset.player,
-            playerNum:   chk.dataset.playerNum,
-            parentWA:    chk.dataset.parentWa
+            parentWA:    chk.dataset.parentWa,
+            phone:       chk.dataset.parentWa,
+            email:       chk.dataset.parentEmail,
         }));
 
-    if (!selected.length) {
-        showToast('⚠️ Selecciona al menos un padre para enviar el mensaje', 3000);
-        return;
-    }
+    const staffContacts = (typeof emailConfig !== 'undefined' ? emailConfig.contacts || [] : [])
+        .filter(c => c.type !== 'parent' && (c.phone || c.email))
+        .map(c => ({
+            id:          c.id,
+            type:        'staff',
+            label:       c.name || c.email || 'Staff',
+            parentUid:   c.uid || null,
+            parentEmail: c.email || '',
+            parentWA:    c.phone || '',
+            phone:       c.phone || '',
+            email:       c.email || '',
+        }));
+
+    // Cargar preselección de mensajes guardada
+    let savedMsgPresel = null;
+    try { savedMsgPresel = JSON.parse(localStorage.getItem('cronos_msg_preselection') || 'null'); } catch(e) {}
+
+    const allContacts = [...selectedParents, ...staffContacts];
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
@@ -1219,56 +1238,90 @@ window.openBulkMessageComposer = function() {
          display:flex;flex-direction:column;gap:0.8rem;">
 
         <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-            <h3 style="margin:0;font-size:1rem;">
-                ✉️ Mensaje grupal
-                <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">
-                    (${selected.length} padre${selected.length !== 1 ? 's' : ''})
-                </span>
-            </h3>
+            <h3 style="margin:0;font-size:1rem;">✉️ Mensaje Grupal</h3>
             <button onclick="openCoachMessaging()"
                 style="background:none;border:none;color:var(--text-muted);
                        font-size:1.3rem;cursor:pointer;">✕</button>
         </div>
 
-        <!-- Destinatarios -->
-        <div style="background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.2);
-                    border-radius:8px;padding:0.6rem 0.8rem;flex-shrink:0;
-                    max-height:100px;overflow-y:auto;">
-            <p style="font-size:0.68rem;color:var(--primary);margin:0 0 0.4rem;font-weight:700;">
-                DESTINATARIOS
-            </p>
-            <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
-                ${selected.map(s => `
-                <span style="background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.2);
-                             border-radius:5px;padding:2px 8px;font-size:0.7rem;color:var(--primary);">
-                    ⚽ ${s.player || s.parentEmail} #${s.playerNum}
-                </span>`).join('')}
+        <!-- Selector de destinatarios -->
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                    border-radius:10px;padding:0.8rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
+                <span style="font-size:0.75rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
+                    📤 DESTINATARIOS
+                </span>
+                <div style="display:flex;gap:0.4rem;">
+                    <button onclick="document.querySelectorAll('.msg-recipient-chk').forEach(c=>c.checked=true)"
+                        style="font-size:0.62rem;padding:0.18rem 0.55rem;background:rgba(88,166,255,0.1);
+                               border:1px solid rgba(88,166,255,0.3);border-radius:4px;color:var(--primary);cursor:pointer;">
+                        ✓ Todos
+                    </button>
+                    <button onclick="document.querySelectorAll('.msg-recipient-chk').forEach(c=>c.checked=false)"
+                        style="font-size:0.62rem;padding:0.18rem 0.55rem;background:rgba(255,255,255,0.05);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:var(--text-muted);cursor:pointer;">
+                        ✗ Ninguno
+                    </button>
+                    <button onclick="_msgSavePreselection()"
+                        style="font-size:0.62rem;padding:0.18rem 0.55rem;background:rgba(63,185,80,0.1);
+                               border:1px solid rgba(63,185,80,0.3);border-radius:4px;color:#3fb950;cursor:pointer;">
+                        💾 Guardar
+                    </button>
+                </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:0.35rem;max-height:200px;overflow-y:auto;padding-right:4px;">
+                ${allContacts.length ? allContacts.map(c => {
+                    const isChecked = savedMsgPresel ? savedMsgPresel.includes(c.id) : true;
+                    const typeColor  = c.type === 'staff' ? 'rgba(88,166,255,0.12)' : 'rgba(63,185,80,0.08)';
+                    const typeBorder = c.type === 'staff' ? 'rgba(88,166,255,0.25)' : 'rgba(63,185,80,0.2)';
+                    return `
+                    <label style="display:flex;align-items:center;gap:0.55rem;
+                                   background:${typeColor};border:1px solid ${typeBorder};
+                                   border-radius:7px;padding:0.45rem 0.65rem;cursor:pointer;">
+                        <input type="checkbox" class="msg-recipient-chk"
+                            data-uid="${c.parentUid || ''}"
+                            data-email="${c.parentEmail}"
+                            data-wa="${c.parentWA}"
+                            data-id="${c.id}"
+                            ${isChecked ? 'checked' : ''}
+                            style="width:15px;height:15px;flex-shrink:0;accent-color:var(--primary);">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:0.78rem;font-weight:600;">${c.label}</div>
+                            <div style="font-size:0.63rem;color:var(--text-muted);">
+                                ${c.phone ? `📱 ${c.phone}` : ''}${c.phone && c.email ? ' · ' : ''}${c.email ? `📧 ${c.email}` : ''}
+                            </div>
+                        </div>
+                        ${c.phone ? `<span style="font-size:0.58rem;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:3px;padding:1px 4px;color:#3fb950;">WA</span>` : ''}
+                        ${c.email ? `<span style="font-size:0.58rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.25);border-radius:3px;padding:1px 4px;color:var(--primary);">Email</span>` : ''}
+                    </label>`;
+                }).join('') : `<div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:0.8rem;">
+                    ⚠️ No hay contactos. Ve a Gestión de Contactos para configurarlos.
+                </div>`}
             </div>
         </div>
 
         <!-- Redactor -->
-        <div style="flex:1;display:flex;flex-direction:column;gap:0.5rem;">
+        <div style="flex:1;display:flex;flex-direction:column;gap:0.4rem;">
             <label style="font-size:0.75rem;color:var(--text-muted);">Mensaje</label>
-            <textarea id="bulk-msg-text" rows="6"
-                placeholder="Escribe aquí el mensaje para todos los padres seleccionados…"
+            <textarea id="bulk-msg-text" rows="5"
+                placeholder="Escribe aquí el mensaje para los destinatarios seleccionados…"
                 style="flex:1;padding:0.7rem;background:rgba(255,255,255,0.05);
                        border:1px solid var(--glass-border);border-radius:8px;
                        color:white;font-size:0.88rem;resize:vertical;
                        box-sizing:border-box;width:100%;"></textarea>
         </div>
 
-        <!-- Botones de envío -->
+        <!-- Botones -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;flex-shrink:0;">
             <button onclick="openCoachMessaging()" class="btn"
                 style="color:var(--text-muted);font-size:0.78rem;">← Volver</button>
-            <button onclick="sendBulkViaFirestore(${JSON.stringify(selected).replace(/"/g,'&quot;')})"
-                class="btn"
+            <button onclick="_sendBulkMsgFirestore()" class="btn"
                 style="background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
                        color:var(--primary);font-weight:700;font-size:0.78rem;">
                 📱 Envío Interno
             </button>
-            <button onclick="sendBulkViaWhatsApp(${JSON.stringify(selected).replace(/"/g,'&quot;')})"
-                class="btn"
+            <button onclick="_sendBulkMsgWA()" class="btn"
                 style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);
                        color:#25d366;font-weight:700;font-size:0.78rem;">
                 📱 WhatsApp
@@ -1277,15 +1330,34 @@ window.openBulkMessageComposer = function() {
     </div>`;
 };
 
+// ── Guardar preselección de mensajes ─────────────────────────────────
+window._msgSavePreselection = function() {
+    const ids = Array.from(document.querySelectorAll('.msg-recipient-chk:checked')).map(c => c.dataset.id);
+    localStorage.setItem('cronos_msg_preselection', JSON.stringify(ids));
+    showToast('✅ Selección guardada como predeterminada', 2500);
+};
+
+// ── Obtener destinatarios seleccionados para mensaje ──────────────────
+function _msgGetSelected() {
+    return Array.from(document.querySelectorAll('.msg-recipient-chk:checked')).map(chk => ({
+        parentUid:   chk.dataset.uid,
+        parentEmail: chk.dataset.email,
+        parentWA:    chk.dataset.wa,
+    }));
+}
+
 // ── Envío grupal interno (Firestore) ──────────────────────────────────
-window.sendBulkViaFirestore = async function(selected) {
+window._sendBulkMsgFirestore = async function() {
     const me   = window._cronosCurrentUser;
     const fa   = window._cronos_auth;
     if (!fa || !me) return;
     const text = document.getElementById('bulk-msg-text')?.value.trim();
     if (!text) { showToast('⚠️ Escribe un mensaje antes de enviar', 3000); return; }
 
-    showSpinner('Enviando mensaje a ' + selected.length + ' padres…');
+    const selected = _msgGetSelected().filter(s => s.parentUid);
+    if (!selected.length) { showToast('⚠️ Selecciona al menos un destinatario con cuenta en la app', 3000); return; }
+
+    showSpinner('Enviando mensaje a ' + selected.length + ' destinatarios…');
     try {
         const { db, doc, getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
         let sent = 0;
@@ -1312,7 +1384,7 @@ window.sendBulkViaFirestore = async function(selected) {
             sent++;
         }
         hideSpinner();
-        showToast(`✅ Mensaje enviado a ${sent} padre${sent !== 1 ? 's' : ''}`, 4000);
+        showToast(`✅ Mensaje enviado a ${sent} destinatario${sent !== 1 ? 's' : ''}`, 4000);
         openCoachMessaging();
     } catch(e) {
         hideSpinner();
@@ -1320,13 +1392,13 @@ window.sendBulkViaFirestore = async function(selected) {
     }
 };
 
-// ── Envío grupal por WhatsApp (escalonado) ────────────────────────────
-window.sendBulkViaWhatsApp = function(selected) {
+// ── Envío grupal por WhatsApp ─────────────────────────────────────────
+window._sendBulkMsgWA = function() {
     const text = document.getElementById('bulk-msg-text')?.value.trim();
     if (!text) { showToast('⚠️ Escribe un mensaje antes de enviar', 3000); return; }
-    const withPhone = selected.filter(s => s.parentWA);
+    const withPhone = _msgGetSelected().filter(s => s.parentWA);
     if (!withPhone.length) {
-        showToast('⚠️ Ningún padre seleccionado tiene WhatsApp configurado', 4000);
+        showToast('⚠️ Ningún destinatario seleccionado tiene WhatsApp configurado', 4000);
         return;
     }
     const encoded = encodeURIComponent(text);
@@ -1335,7 +1407,7 @@ window.sendBulkViaWhatsApp = function(selected) {
             window.open(`https://wa.me/${s.parentWA}?text=${encoded}`, '_blank');
         }, i * 700);
     });
-    showToast(`📱 WhatsApp abierto para ${withPhone.length} padre${withPhone.length !== 1 ? 's' : ''}`, 4000);
+    showToast(`📱 WhatsApp abierto para ${withPhone.length} destinatario${withPhone.length !== 1 ? 's' : ''}`, 4000);
 };
 
 window.openCoachMessaging      = openCoachMessaging;
