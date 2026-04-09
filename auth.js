@@ -232,9 +232,13 @@ export function showRoleSelection() {
         if (el) el.style.display = 'none';
     });
 
-    // Mostrar SOLO la autorizada
+    // Mostrar tarjetas
     if (['superadmin','admin'].includes(role)) {
-        document.getElementById('card-opt-superadmin').style.display = 'block';
+        // El Superadministrador ve TODAS para poder trabajar en ellas y corregirlas
+        allCards.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'block';
+        });
     } else if (role === 'club_admin') {
         document.getElementById('card-opt-clubadmin').style.display  = 'block';
     } else if (role === 'director') {
