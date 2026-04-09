@@ -439,9 +439,22 @@ window.sendCoachMessage = async function(threadId, parentUid, parentEmail, paren
 //  ENVIAR INFORMES DE PARTIDO A PADRES Y STAFF
 // ════════════════════════════════════════════════════════════════════
 function sendMatchReportsToParents() {
-    if (!window.players || !window.players.length) {
-        showToast('⚠️ No hay partido activo para enviar informes.', 4000);
-        return;
+    const isSetupMode = !window.players || !window.players.length;
+    let selectedPlayerIds = [];
+
+    if (isSetupMode) {
+        // En modo setup, filtramos destinatarios según la convocatoria actual
+        const convRows = document.querySelectorAll('.conv-row.conv-selected');
+        const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+        const mode   = document.getElementById('setup-mode')?.value || 'f11';
+        const myPlayers = roster[mode] || [];
+        const selectedPlayers = Array.from(convRows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
+        selectedPlayerIds = selectedPlayers.map(p => p.id); // Usamos el ID único (J-01, etc)
+
+        if (selectedPlayers.length === 0) {
+            showToast('⚠️ Primero selecciona jugadores para la convocatoria.', 4000);
+            return;
+        }
     }
 
     const modal = document.getElementById('setup-modal');
@@ -493,8 +506,8 @@ function sendMatchReportsToParents() {
             </div>
 
             <!-- Aquí inyectamos el HTML global que diseñamos en 19_whatsapp_email.js -->
-            <div style="display:flex;flex-direction:column;gap:0.4rem;max-height:200px;overflow-y:auto;padding-right:4px;">
-                ${sharedBuildRecipientsHTML(null, 'rpt')}
+            <div id="rpt-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:280px;overflow-y:auto;padding-right:4px;">
+                ${isSetupMode ? buildConvocationRecipientsHTML(selectedPlayerIds, 'rpt') : sharedBuildRecipientsHTML(null, 'rpt')}
             </div>
 
             <p style="font-size:0.68rem;color:#ffb74d;margin:0.8rem 0 0 0;text-align:center;">
@@ -509,24 +522,71 @@ function sendMatchReportsToParents() {
                 style="flex:1;color:var(--text-muted);">
                 Cancelar
             </button>
-            <button onclick="_executeReportsSend('internal')" class="btn primary"
-                style="flex:1.5;background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
-                       color:var(--primary);font-weight:700;">
-                📱 Envío Interno
-            </button>
-            <button onclick="_executeReportsSend('wa')" class="btn"
-                style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;
-                       border:1px solid rgba(63,185,80,0.4);">
-                📱 WhatsApp
-            </button>
-            <button onclick="_executeReportsSend('email')" class="btn"
-                style="flex:1;background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
-                       color:var(--primary);font-weight:700;">
-                📧 Email
-            </button>
+            ${isSetupMode ? `
+                <button onclick="saveMatchReportPreselection()" class="btn primary"
+                    style="flex:2;background:rgba(63,185,80,0.2);border-color:rgba(63,185,80,0.5);
+                           color:#3fb950;font-weight:700;">
+                    💾 GUARDAR CONFIGURACIÓN DE INFORMES
+                </button>
+            ` : `
+                <button onclick="_executeReportsSend('internal')" class="btn primary"
+                    style="flex:1.5;background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
+                           color:var(--primary);font-weight:700;">
+                    📱 Envío Interno
+                </button>
+                <button onclick="_executeReportsSend('wa')" class="btn"
+                    style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;
+                           border:1px solid rgba(63,185,80,0.4);">
+                    📱 WhatsApp
+                </button>
+            `}
         </div>
     </div>`;
 }
+
+// Nueva función para filtrar destinatarios SOLO según los convocados
+function buildConvocationRecipientsHTML(selectedPlayerIds, prefix = 'rpt') {
+    const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+    const staff = contacts.filter(c => c.type !== 'parent');
+    
+    // Filtramos los padres: solo si su playerId está en la lista de convocados
+    const activeParents = contacts.filter(c => c.type === 'parent' && selectedPlayerIds.includes(c.playerId));
+
+    const allToShow = [...staff, ...activeParents];
+
+    if (!allToShow.length) {
+        return `<div style="text-align:center;color:var(--text-muted);font-size:0.75rem;padding:1rem;">
+            ⚠️ No hay contactos vinculados a los jugadores convocados.
+        </div>`;
+    }
+
+    // Cargar preselección guardada si existe (específica para este "pre-partido")
+    let savedIds = JSON.parse(localStorage.getItem(`cronos_match_rpt_selection`) || 'null');
+
+    return allToShow.map(c => {
+        const checked = savedIds ? savedIds.includes(c.id) : (c.tags || []).includes(prefix);
+        const typeColor = c.type === 'staff' ? 'rgba(88,166,255,0.15)' : 'rgba(240,136,62,0.1)';
+        const typeTag = c.type === 'staff' ? '🏢' : '👨‍👩‍👧';
+
+        return `
+        <label style="display:flex;align-items:center;gap:0.6rem;background:${typeColor};border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.45rem 0.6rem;cursor:pointer;">
+            <input type="checkbox" class="${prefix}-recipient-chk" data-id="${c.id}" ${checked ? 'checked' : ''}
+                style="width:16px;height:16px;accent-color:var(--primary);">
+            <span style="font-size:0.7rem;">${typeTag}</span>
+            <div style="flex:1;">
+                <div style="font-size:0.75rem;font-weight:600;color:white;">${c.name || c.player || 'Contacto'}</div>
+                <div style="font-size:0.62rem;color:var(--text-muted);">${c.type === 'parent' ? 'Padre/Madre' : 'Staff'}</div>
+            </div>
+        </label>`;
+    }).join('');
+}
+
+window.saveMatchReportPreselection = function() {
+    const ids = Array.from(document.querySelectorAll('.rpt-recipient-chk:checked')).map(chk => chk.dataset.id);
+    localStorage.setItem('cronos_match_rpt_selection', JSON.stringify(ids));
+    showToast('✅ Configuración de informes guardada para este partido', 3000);
+    document.getElementById('setup-modal').style.display = 'none';
+};
 
 // Generador de textos para no duplicar lógica
 function _buildGlobalReportText() {
@@ -781,6 +841,16 @@ async function autoDispatchMatchReports() {
         if (typeof loadEmailConfig === 'function') await loadEmailConfig();
         const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
 
+        // --- MEJORA: COMPROBAR PRE-SELECCIÓN DEL PARTIDO ---
+        const preSelectionIds = JSON.parse(localStorage.getItem('cronos_match_rpt_selection') || 'null');
+        
+        function isRecipientAuthorized(contact) {
+            if (preSelectionIds) {
+                return preSelectionIds.includes(contact.id);
+            }
+            return (contact.tags || []).includes('rpt');
+        }
+
         // --- FASE A: INFORME GLOBAL (STAFF + ENTRENADOR) ---
         const globalText = `📊 *INFORME GLOBAL DE PARTIDO*\n` +
                           `━━━━━━━━━━━━━━━━\n` +
@@ -790,7 +860,7 @@ async function autoDispatchMatchReports() {
                           `_Cronos Fútbol_`;
 
         // Destinatarios Staff con tag 'rpt' (Informes)
-        const staffToNotify = contacts.filter(c => c.type !== 'parent' && (c.tags || []).includes('rpt') && c.uid);
+        const staffToNotify = contacts.filter(c => c.type !== 'parent' && isRecipientAuthorized(c) && c.uid);
         
         for (const staff of staffToNotify) {
             const notifId = `notif_global_rpt_${staff.uid}_${Date.now().toString(36)}`;
@@ -821,7 +891,11 @@ async function autoDispatchMatchReports() {
             const linkedParents = links.filter(l => (l.playerId === player.playerId || l.playerNumber == player.number) && l.canReceiveReports && l.parentUid);
             
             // 2. Desde contactos manuales (vinculados por el Entrenador en "📱 Contactos")
-            const manualParents = contacts.filter(c => c.type === 'parent' && c.playerId === player.playerId && (c.tags || []).includes('rpt') && c.uid);
+            // SOLO enviamos si el contacto manual está autorizado (ya sea por pre-selección o por tag rpt global)
+            const manualParents = contacts.filter(c => {
+                if (c.type !== 'parent' || c.playerId !== player.playerId || !c.uid) return false;
+                return isRecipientAuthorized(c);
+            });
 
             const allUids = new Set([...linkedParents.map(l => l.parentUid), ...manualParents.map(c => c.uid)]);
 
@@ -862,6 +936,7 @@ async function autoDispatchMatchReports() {
         }
 
         console.log(`[AutoDispatch] Despacho de informes completado.`);
+        localStorage.removeItem('cronos_match_rpt_selection');
         showToast('✅ Informes enviados automáticamente (Interno)', 4000);
 
     } catch(e) {
@@ -1735,6 +1810,9 @@ window._sendBulkMsgFirestore = async function() {
             }
             sent++;
         }
+
+        // --- LIMPIEZA POST-ENVÍO ---
+        localStorage.removeItem('cronos_match_rpt_selection');
         hideSpinner();
         showToast(`✅ Mensaje enviado a ${sent} destinatario${sent !== 1 ? 's' : ''}`, 4000);
         openCoachMessaging();
