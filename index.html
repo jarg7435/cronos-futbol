@@ -74,9 +74,17 @@
                     return;
                 }
 
-                const data = snap.data();
-                if (!data.isAuthorized) {
-                    showAuthError('Acceso no autorizado. Contacta con el administrador para activar tu cuenta.');
+                await setDoc(ref, { lastLogin: serverTimestamp() }, { merge: true });
+                // Los datos del usuario se establecerán en auth.js tras llamar a enterApp
+
+            } catch (err) {
+                console.error("Firebase init error:", err);
+            }
+        }
+        
+        // Exponer función de inmediato
+        window.__internalCheckAuthorization = checkAuthorization;
+
         // Sesión solo dura mientras el navegador está abierto
         setPersistence(auth, browserLocalPersistence).catch(() => {});
 
