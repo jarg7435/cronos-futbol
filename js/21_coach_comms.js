@@ -471,7 +471,7 @@ function sendMatchReportsToParents() {
                     Configura quién debe recibir el reporte del partido
                 </p>
             </div>
-            <button onclick="document.getElementById('setup-modal').style.display='none'"
+            <button onclick="${isSetupMode ? 'openConvocationModal()' : "document.getElementById('setup-modal').style.display='none'"}"
                 style="background:none;border:none;color:var(--text-muted);
                        font-size:1.5rem;cursor:pointer;">✕</button>
         </div>
@@ -518,7 +518,7 @@ function sendMatchReportsToParents() {
         <div id="rpt-msg" style="font-size:0.8rem;text-align:center;min-height:0;"></div>
 
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap;flex-shrink:0;">
-            <button onclick="document.getElementById('setup-modal').style.display='none'" class="btn"
+            <button onclick="${isSetupMode ? 'openConvocationModal()' : "document.getElementById('setup-modal').style.display='none'"}" class="btn"
                 style="flex:1;color:var(--text-muted);">
                 Cancelar
             </button>
@@ -585,7 +585,12 @@ window.saveMatchReportPreselection = function() {
     const ids = Array.from(document.querySelectorAll('.rpt-recipient-chk:checked')).map(chk => chk.dataset.id);
     localStorage.setItem('cronos_match_rpt_selection', JSON.stringify(ids));
     showToast('✅ Configuración de informes guardada para este partido', 3000);
-    document.getElementById('setup-modal').style.display = 'none';
+    // En lugar de cerrar el modal, volvemos a la pantalla de convocatoria
+    if (typeof openConvocationModal === 'function') {
+        openConvocationModal();
+    } else {
+        document.getElementById('setup-modal').style.display = 'none';
+    }
 };
 
 // Generador de textos para no duplicar lógica
