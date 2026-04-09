@@ -3,7 +3,13 @@
 // ════════════════════════════════════════════════════════════════════
 async function openClubAdminPanel() {
     const me = window._cronosCurrentUser;
-    if (!me || me.role !== 'club_admin') { showToast('⛔ Sin permisos', 3000); return; }
+    const activeRole = me._activeRole || me.role;
+    const isSA = me.role === 'superadmin' || me.role === 'admin';
+
+    if (!me || (!isSA && activeRole !== 'club_admin')) { 
+        showToast('⛔ Sin permisos', 3000); 
+        return; 
+    }
     const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = await saFS();
     const clubId = me.clubId;
     if (!clubId) { showToast('⚠️ Sin club asignado', 3000); return; }
@@ -40,16 +46,25 @@ async function openClubAdminPanel() {
           <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">
               Panel del Administrador del Club</div>
         </div>
-            <div style="display:flex;gap:0.6rem;">
+            <div style="display:flex;gap:0.7rem;">
                 <button onclick="caNotifySuperAdmin('${clubId}')"
                     style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
                            border:1px solid rgba(88,166,255,0.4);border-radius:10px;
                            color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
                     📡 Transmitir al Superadmin
                 </button>
+                <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+                    style="padding:0.45rem 1rem;background:rgba(255,215,0,0.1);
+                           border:1px solid rgba(255,215,0,0.3);border-radius:10px;
+                           color:#ffd700;font-size:0.75rem;font-weight:700;cursor:pointer;">
+                    ⇄ Cambiar Rol
+                </button>
                 <button onclick="logoutUser()"
-                    style="background:none;border:none;color:var(--text-muted);
-                           font-size:1.5rem;cursor:pointer;padding:0.5rem;" title="Cerrar sesión">✕</button>
+                    style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
+                           border:1px solid rgba(255,88,88,0.4);border-radius:10px;
+                           color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
+                    🚪 SALIR
+                </button>
             </div>
       </div>
       <div class="sa-body">

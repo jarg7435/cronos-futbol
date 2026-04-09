@@ -4,7 +4,10 @@
 
 async function openStaffDashboard() {
     const me = window._cronosCurrentUser;
-    if (!me || !['director', 'coordinator', 'superadmin', 'admin'].includes(me.role)) {
+    const activeRole = me?._activeRole || me?.role;
+    const isSA = me?.role === 'superadmin' || me?.role === 'admin';
+
+    if (!me || (!isSA && !['director', 'coordinator'].includes(activeRole))) {
         showToast('⚠️ No tienes permisos para acceder al panel de dirección.', 4000);
         return;
     }
@@ -24,19 +27,28 @@ async function openStaffDashboard() {
                     🏢 Panel de Dirección: <span style="color:var(--primary);">${me.clubName || 'Mi Club'}</span>
                 </h2>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">
-                    Rol: ${me.role === 'director' ? 'Director Deportivo' : 'Coordinador'}
+                    Rol: ${activeRole === 'director' ? 'Director Deportivo' : 'Coordinador'}
                 </div>
             </div>
-            <div style="display:flex;gap:0.6rem;align-items:center;">
+            <div style="display:flex;gap:0.7rem;align-items:center;">
                 <button onclick="location.reload()"
                     style="padding:0.45rem 0.9rem;background:rgba(255,255,255,0.05);
                            border:1px solid var(--glass-border);border-radius:8px;
                            color:white;font-size:0.78rem;cursor:pointer;">
                     🔄 Actualizar
                 </button>
+                <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+                    style="padding:0.45rem 1rem;background:rgba(255,215,0,0.1);
+                           border:1px solid rgba(255,215,0,0.3);border-radius:8px;
+                           color:#ffd700;font-size:0.78rem;font-weight:700;cursor:pointer;">
+                    ⇄ Cambiar Rol
+                </button>
                 <button onclick="logoutUser()"
-                    style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;
-                           cursor:pointer;line-height:1;padding:0 0.3rem;" title="Cerrar sesión">✕</button>
+                    style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
+                           border:1px solid rgba(255,88,88,0.4);border-radius:8px;
+                           color:#ff5858;font-size:0.78rem;font-weight:700;cursor:pointer;">
+                    🚪 SALIR
+                </button>
             </div>
         </div>
 
@@ -134,7 +146,8 @@ async function loadStaffEvents(type) {
     
     try {
         const { collection, getDocs, query, where, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const db = window._cronos_auth.db;
+        const db = window._cronos_auth?.db;
+        if (!db) throw new Error("Base de datos no inicializada. Reintenta en unos segundos.");
         
         const snap = await getDocs(query(
             collection(db, 'cronos_notifications'),
@@ -191,7 +204,8 @@ window.openLiveMatchesView = () => {
 
 window.viewEventDetail = async (type, id) => {
     const { collection, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    const db = window._cronos_auth.db;
+    const db = window._cronos_auth?.db;
+    if (!db) { showToast('⚠️ Base de datos no disponible'); return; }
     const snap = await getDoc(doc(db, 'cronos_notifications', id));
     if (!snap.exists()) return;
     const d = snap.data();

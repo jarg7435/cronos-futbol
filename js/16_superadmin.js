@@ -139,7 +139,9 @@ const SA_CSS = `
 
 // ── Entrada al panel ─────────────────────────────────────────────────
 function openAdminPanel() {
-    const role = window._cronosCurrentUser?.role;
+    const me = window._cronosCurrentUser;
+    const role = me?._activeRole || me?.role;
+    
     if (['superadmin','admin'].includes(role)) openSuperAdminPanel();
     else if (role === 'club_admin')            openClubAdminPanel();
     else showToast('⛔ Sin permisos de administración', 3000);
@@ -178,15 +180,19 @@ async function openSuperAdminPanel() {
           <button onclick="openSuperAdminPanel()"
             style="padding:0.3rem 0.7rem;background:rgba(88,166,255,0.1);
                    border:1px solid rgba(88,166,255,0.3);border-radius:6px;
-                   color:var(--primary);font-size:0.78rem;cursor:pointer;">🔄</button>
+                   color:var(--primary);font-size:0.78rem;cursor:pointer;">🔄 Actualizar</button>
           <button onclick="document.getElementById('sa-root-modal').style.display='none'; if(typeof showRoleSelector==='function') showRoleSelector();"
             style="padding:0.3rem 0.7rem;background:rgba(255,215,0,0.08);
                    border:1px solid rgba(255,215,0,0.3);border-radius:6px;
                    color:#ffd700;font-size:0.78rem;cursor:pointer;"
-            title="Cambiar rol">⇄ Rol</button>
+            title="Cambiar rol">⇄ Cambiar Rol</button>
           <button onclick="logoutUser()"
-            style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;
-                   cursor:pointer;line-height:1;padding:0 0.3rem;" title="Cerrar sesión">✕</button>
+            style="padding:0.3rem 0.9rem;background:rgba(255,88,88,0.15);
+                   border:1px solid rgba(255,88,88,0.4);border-radius:6px;
+                   color:#ff5858;font-size:0.78rem;font-weight:700;cursor:pointer;
+                   display:flex;align-items:center;gap:0.4rem;">
+            🚪 SALIR
+          </button>
         </div>
       </div>
       <div class="sa-tabs">

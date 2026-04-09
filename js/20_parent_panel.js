@@ -5,7 +5,13 @@
 
 async function openParentPanel() {
     const me = window._cronosCurrentUser;
-    if (!me) return;
+    const activeRole = me?._activeRole || me?.role;
+    const isSA = me?.role === 'superadmin' || me?.role === 'admin';
+
+    if (!me || (!isSA && activeRole !== 'parent')) {
+        showToast("⛔ Acceso restringido a padres/tutores", 3000);
+        return;
+    }
 
     // Ocultar app principal
     ['main-header', 'main-container', 'auth-screen'].forEach(id => {
@@ -349,7 +355,14 @@ async function openParentPanel() {
                 return `
                 <div class="pp-card" style="border-left:3px solid ${accent}; position:relative;">
                     <button onclick="dismissNotification('${n._id}')" 
-                        style="position:absolute; top:0.6rem; right:0.6rem; background:none; border:none; color:rgba(255,255,255,0.1); cursor:pointer; font-size:0.8rem;" title="Quitar de mi vista">
+                        style="position:absolute; top:1rem; right:1rem; background:rgba(255,255,255,0.05); 
+                               border:1px solid rgba(255,255,255,0.1); color:var(--text-muted); 
+                               width:28px; height:28px; border-radius:50%; display:flex; 
+                               align-items:center; justify-content:center; cursor:pointer; 
+                               font-size:0.85rem; transition:all 0.2s; z-index:10;" 
+                        onmouseover="this.style.background='rgba(231,76,60,0.2)';this.style.color='#e74c3c';this.style.borderColor='rgba(231,76,60,0.4)';"
+                        onmouseout="this.style.background='rgba(255,255,255,0.05)';this.style.color='var(--text-muted)';this.style.borderColor='rgba(255,255,255,0.1)';"
+                        title="Quitar de mi vista">
                         ✕
                     </button>
                     <div style="display:flex;justify-content:space-between;
@@ -371,7 +384,11 @@ async function openParentPanel() {
         const dismissed = JSON.parse(localStorage.getItem('cronos_dismissed_notifs') || '[]');
         if (!dismissed.includes(id)) dismissed.push(id);
         localStorage.setItem('cronos_dismissed_notifs', JSON.stringify(dismissed));
-        window.ppMsgs(); // Recargar pestaña
+        // Refrescar la pestaña de mensajes inmediatamente
+        if (typeof window.ppMsgs === 'function') {
+            window.ppMsgs();
+        }
+        showToast('🗑️ Mensaje ocultado', 2000);
     };
 
     // ══════════════════════════════════════════════════════════════
