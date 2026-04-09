@@ -910,8 +910,10 @@ async function openContactManager() {
                                     <th style="padding:0.45rem;min-width:130px;">EMAIL</th>
                                     <th style="padding:0.45rem;min-width:110px;">WHATSAPP</th>
                                     <th style="padding:0.45rem;min-width:100px;">UID (APP)</th>
-                                    <th style="padding:0.45rem;text-align:center;">INFORMES</th>
-                                    <th style="padding:0.45rem;text-align:center;">AVISOS</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Convocatorias">CONV.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Entrenamientos">ENTR.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Mensajes">MSJ.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Informes">INF.</th>
                                     <th style="padding:0.45rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
                                     <th style="padding:0.45rem;"></th>
                                 </tr>
@@ -957,8 +959,10 @@ async function openContactManager() {
                                     <th style="padding:0.45rem;text-align:left;min-width:40px;">N°</th>
                                     <th style="padding:0.45rem;text-align:left;min-width:110px;">WHATSAPP</th>
                                     <th style="padding:0.45rem;text-align:left;min-width:130px;">EMAIL</th>
-                                    <th style="padding:0.45rem;text-align:center;">INFORMES</th>
-                                    <th style="padding:0.45rem;text-align:center;">AVISOS</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Convocatorias">CONV.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Entrenamientos">ENTR.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Mensajes">MSJ.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Informes">INF.</th>
                                     <th style="padding:0.45rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
                                     <th style="padding:0.45rem;"></th>
                                 </tr>
@@ -989,12 +993,20 @@ async function openContactManager() {
                                                    color:white;font-size:0.72rem;box-sizing:border-box;">
                                     </td>
                                     <td style="padding:0.45rem;text-align:center;">
-                                        <input type="checkbox" class="contact-reports" data-linkid="${link._id}"
-                                            ${link.canReceiveReports ? 'checked' : ''} style="width:16px;height:16px;">
+                                        <input type="checkbox" class="contact-cv" data-linkid="${link._id}"
+                                            ${link.canReceiveConv !== false ? 'checked' : ''} style="width:16px;height:16px;">
                                     </td>
                                     <td style="padding:0.45rem;text-align:center;">
-                                        <input type="checkbox" class="contact-notifs" data-linkid="${link._id}"
-                                            ${link.canReceiveNotifs !== false ? 'checked' : ''} style="width:16px;height:16px;">
+                                        <input type="checkbox" class="contact-tr" data-linkid="${link._id}"
+                                            ${link.canReceiveTr !== false ? 'checked' : ''} style="width:16px;height:16px;">
+                                    </td>
+                                    <td style="padding:0.45rem;text-align:center;">
+                                        <input type="checkbox" class="contact-msg" data-linkid="${link._id}"
+                                            ${link.canReceiveMsg !== false ? 'checked' : ''} style="width:16px;height:16px;">
+                                    </td>
+                                    <td style="padding:0.45rem;text-align:center;">
+                                        <input type="checkbox" class="contact-rpt" data-linkid="${link._id}"
+                                            ${link.canReceiveReports ? 'checked' : ''} style="width:16px;height:16px;">
                                     </td>
                                     <td style="padding:0.45rem;text-align:center;">
                                         <input type="checkbox" class="contact-live" data-linkid="${link._id}"
@@ -1043,15 +1055,19 @@ async function saveContactManagerData() {
             const linkId      = input.dataset.linkid;
             const phone       = input.value.trim().replace(/\s/g, '');
             const emailEl     = document.querySelector(`.contact-parent-email[data-linkid="${linkId}"]`);
+            const cvEl        = document.querySelector(`.contact-cv[data-linkid="${linkId}"]`);
+            const trEl        = document.querySelector(`.contact-tr[data-linkid="${linkId}"]`);
+            const msgEl       = document.querySelector(`.contact-msg[data-linkid="${linkId}"]`);
+            const rptEl       = document.querySelector(`.contact-rpt[data-linkid="${linkId}"]`);
             const liveEl      = document.querySelector(`.contact-live[data-linkid="${linkId}"]`);
-            const reportsEl   = document.querySelector(`.contact-reports[data-linkid="${linkId}"]`);
-            const notifsEl    = document.querySelector(`.contact-notifs[data-linkid="${linkId}"]`);
             await updateDoc(doc(db, 'cronos_player_links', linkId), {
                 parentPhone:        phone,
                 parentEmail:        emailEl   ? emailEl.value.trim()   : undefined,
                 canWatchLive:       liveEl    ? liveEl.checked          : false,
-                canReceiveReports:  reportsEl ? reportsEl.checked       : false,
-                canReceiveNotifs:   notifsEl  ? notifsEl.checked        : true,
+                canReceiveReports:  rptEl     ? rptEl.checked           : false,
+                canReceiveConv:     cvEl      ? cvEl.checked            : true,
+                canReceiveTr:       trEl      ? trEl.checked            : true,
+                canReceiveMsg:      msgEl     ? msgEl.checked           : true,
             });
         }
 
@@ -1061,9 +1077,11 @@ async function saveContactManagerData() {
         // 2a. Staff (filas de la tabla azul)
         document.querySelectorAll('.custom-contact-row').forEach(row => {
             const tags = [];
-            if (row.querySelector('.tag-reports').checked) tags.push('reports');
-            if (row.querySelector('.tag-notifs').checked)  tags.push('notifs');
-            if (row.querySelector('.tag-live').checked)    tags.push('live');
+            if (row.querySelector('.tag-cv').checked)   tags.push('cv');
+            if (row.querySelector('.tag-tr').checked)   tags.push('tr');
+            if (row.querySelector('.tag-msg').checked)  tags.push('msg');
+            if (row.querySelector('.tag-rpt').checked)  tags.push('rpt');
+            if (row.querySelector('.tag-live').checked) tags.push('live');
 
             updatedContacts.push({
                 id:    row.dataset.id || ('c_' + Math.random().toString(36).substr(2,6)),
@@ -1079,9 +1097,11 @@ async function saveContactManagerData() {
         // 2b. Padres añadidos manualmente (filas de la tabla naranja, clase manual-parent)
         document.querySelectorAll('.manual-parent').forEach(row => {
             const tags = [];
-            if (row.querySelector('.p-reports').checked) tags.push('reports');
-            if (row.querySelector('.p-notifs').checked)  tags.push('notifs');
-            if (row.querySelector('.p-live').checked)    tags.push('live');
+            if (row.querySelector('.p-cv').checked)   tags.push('cv');
+            if (row.querySelector('.p-tr').checked)   tags.push('tr');
+            if (row.querySelector('.p-msg').checked)  tags.push('msg');
+            if (row.querySelector('.p-rpt').checked)  tags.push('rpt');
+            if (row.querySelector('.p-live').checked) tags.push('live');
 
             updatedContacts.push({
                 id:     row.dataset.id || ('p_' + Math.random().toString(36).substr(2,6)),
@@ -1148,10 +1168,16 @@ function renderContactRowMarkup(c = {}) {
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);font-size:0.7rem;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
-            <input type="checkbox" class="tag-reports" ${isReports ? 'checked' : ''} style="width:16px;height:16px;">
+            <input type="checkbox" class="tag-cv" ${isCv ? 'checked' : ''} style="width:16px;height:16px;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
-            <input type="checkbox" class="tag-notifs" ${isNotifs ? 'checked' : ''} style="width:16px;height:16px;">
+            <input type="checkbox" class="tag-tr" ${isTr ? 'checked' : ''} style="width:16px;height:16px;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <input type="checkbox" class="tag-msg" ${isMsg ? 'checked' : ''} style="width:16px;height:16px;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <input type="checkbox" class="tag-rpt" ${isRpt ? 'checked' : ''} style="width:16px;height:16px;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="tag-live" ${isLive ? 'checked' : ''}
@@ -1166,9 +1192,11 @@ function renderContactRowMarkup(c = {}) {
 
 // Fila de PADRE/TUTOR manual (tabla naranja)
 function renderParentRowMarkup(c = {}) {
-    const isReports = (c.tags || []).includes('reports');
-    const isNotifs  = (c.tags || []).includes('notifs');
-    const isLive    = (c.tags || []).includes('live');
+    const isCv = (c.tags || []).includes('cv');
+    const isTr = (c.tags || []).includes('tr');
+    const isMsg = (c.tags || []).includes('msg');
+    const isRpt = (c.tags || []).includes('rpt');
+    const isLive = (c.tags || []).includes('live');
     const id = c.id || ('new_' + Date.now());
 
     return `
@@ -1191,10 +1219,16 @@ function renderParentRowMarkup(c = {}) {
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
-            <input type="checkbox" class="p-reports" ${isReports ? 'checked' : ''} style="width:15px;height:15px;">
+            <input type="checkbox" class="p-cv" ${isCv ? 'checked' : ''} style="width:15px;height:15px;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
-            <input type="checkbox" class="p-notifs" ${isNotifs ? 'checked' : ''} style="width:15px;height:15px;">
+            <input type="checkbox" class="p-tr" ${isTr ? 'checked' : ''} style="width:15px;height:15px;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <input type="checkbox" class="p-msg" ${isMsg ? 'checked' : ''} style="width:15px;height:15px;">
+        </td>
+        <td style="padding:0.4rem;text-align:center;">
+            <input type="checkbox" class="p-rpt" ${isRpt ? 'checked' : ''} style="width:15px;height:15px;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="p-live" ${isLive ? 'checked' : ''}

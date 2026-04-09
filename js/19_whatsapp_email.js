@@ -221,7 +221,7 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
             sublabel: c.email || '',
             phone:  c.phone || '',
             email:  c.email || '',
-            defaultOn: (c.tags || []).includes('notifs')
+            defaultOn: (c.tags || []).includes(prefix)
         });
     });
 
@@ -236,7 +236,7 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
             sublabel: c.email || '',
             phone:  c.phone || '',
             email:  c.email || '',
-            defaultOn: true
+            defaultOn: (c.tags || []).includes(prefix)
         });
     });
 
