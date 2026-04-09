@@ -466,7 +466,7 @@ async function sendMatchReportsToParents() {
             // 1. Obtener convocados
             const convRows = document.querySelectorAll('.conv-row.conv-selected');
             const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
-            const mode   = document.getElementById('setup-mode')?.value || 'f11';
+            const mode   = window.currentMode || 'f11';
             const myPlayers = roster[mode] || [];
             const selectedPlayers = Array.from(convRows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
             
