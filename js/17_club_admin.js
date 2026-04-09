@@ -47,9 +47,9 @@ async function openClubAdminPanel() {
                            color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
                     📡 Transmitir al Superadmin
                 </button>
-                <button onclick="document.getElementById('setup-modal').style.display='none'"
+                <button onclick="logoutUser()"
                     style="background:none;border:none;color:var(--text-muted);
-                           font-size:1.5rem;cursor:pointer;padding:0.5rem;">✕</button>
+                           font-size:1.5rem;cursor:pointer;padding:0.5rem;" title="Cerrar sesión">✕</button>
             </div>
       </div>
       <div class="sa-body">

@@ -28,14 +28,14 @@ async function openClubReports() {
                            color:#3fb950;font-size:0.78rem;font-weight:700;cursor:pointer;">
                     📤 Enviar Informes
                 </button>
-                <button onclick="document.getElementById('setup-modal').style.display='none'"
+                <button onclick="logoutUser()"
                     style="background:none;border:none;color:var(--text-muted);
-                           font-size:1.4rem;cursor:pointer;">✕</button>
+                           font-size:1.4rem;cursor:pointer;" title="Cerrar sesión">✕</button>
             </div>
         </div>
 
         <div style="padding:0.8rem 1.5rem;background:rgba(255,255,255,0.02);
-                    border-bottom:1px solid var(--glass-border);display:flex;gap:1rem;flex-wrap:wrap;">
+                    border-bottom:1px solid var(--glass-border);display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
             <div style="flex:1;min-width:200px;">
                 <input type="text" id="report-search" placeholder="🔍 Buscar por jugador o rival…" 
                     style="width:100%;padding:0.5rem 0.8rem;background:rgba(255,255,255,0.05);
@@ -51,17 +51,44 @@ async function openClubReports() {
             </select>
         </div>
 
-        <div id="club-reports-list" style="flex:1;overflow-y:auto;padding:1.2rem 1.5rem;">
+        <div id="club-reports-list" style="flex:1;overflow-y:auto;padding:1.2rem 1.5rem;background:rgba(0,0,0,0.15);">
             <p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando informes del club…</p>
         </div>
-    </div>`;
+    </div>
+    <style>
+        .rpt-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .rpt-card:hover {
+            background: rgba(88,166,255,0.06);
+            border-color: rgba(88,166,255,0.3);
+            transform: translateX(4px);
+        }
+        .rpt-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 5px;
+            text-transform: uppercase;
+        }
+    </style>`;
 
     await _loadClubReports();
 }
 
 async function _loadClubReports() {
     const me = window._cronosCurrentUser;
-    const { db, collection, getDocs, query, where, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { collection, getDocs, query, where, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const db = window._cronos_auth.db;
 
     try {
         const snap = await getDocs(query(
@@ -95,50 +122,33 @@ function renderClubReportsList(reports) {
         return;
     }
 
-    container.innerHTML = `
-        <table style="width:100%; border-collapse:collapse; font-size:0.85rem; color:var(--text-main);">
-            <thead>
-                <tr style="text-align:left; border-bottom:1px solid var(--glass-border); color:var(--text-muted);">
-                    <th style="padding:0.8rem 0.5rem;">Fecha</th>
-                    <th style="padding:0.8rem 0.5rem;">Jugador</th>
-                    <th style="padding:0.8rem 0.5rem;">Rival</th>
-                    <th style="padding:0.8rem 0.5rem;">Resultado</th>
-                    <th style="padding:0.8rem 0.5rem;">Minutos</th>
-                    <th style="padding:0.8rem 0.5rem;">Goles/Tj</th>
-                    <th style="padding:0.8rem 0.5rem;">Acciones</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${reports.map(r => `
-                    <tr style="border-bottom:1px solid rgba(255,255,255,0.03); transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
-                        <td style="padding:0.8rem 0.5rem;font-size:0.75rem;white-space:nowrap;">
-                            ${new Date(r.createdAt).toLocaleDateString('es-ES', {day:'2-digit', month:'2-digit', year:'2-digit'})}
-                        </td>
-                        <td style="padding:0.8rem 0.5rem;font-weight:700;">
-                            ${r.playerAlias || 'Jugador'} <span style="color:var(--primary); font-size:0.7rem;">#${r.playerNumber}</span>
-                        </td>
-                        <td style="padding:0.8rem 0.5rem;color:var(--text-muted);">${r.rival || '—'}</td>
-                        <td style="padding:0.8rem 0.5rem;">
-                            <span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;font-weight:bold;">
-                                ${r.scoreHome}-${r.scoreAway}
-                            </span>
-                        </td>
-                        <td style="padding:0.8rem 0.5rem;font-family:monospace;">${r.minutesPlayed || '—'}</td>
-                        <td style="padding:0.8rem 0.5rem;">
-                            ${r.goals > 0 ? `⚽ <span style="color:#3fb950;font-weight:bold;">${r.goals}</span>` : ''}
-                            ${r.cards === 'amarilla' ? '🟨' : r.cards === 'roja' ? '🟥' : ''}
-                            ${!r.goals && r.cards === 'ninguna' ? '—' : ''}
-                        </td>
-                        <td style="padding:0.8rem 0.5rem;">
-                            <button onclick="viewReportDetail('${r.id}')" class="btn" 
-                                style="font-size:0.7rem;padding:0.2rem 0.5rem;background:rgba(88,166,255,0.1);color:var(--primary);">
-                                Ver Detalle
-                            </button>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>`;
+    container.innerHTML = reports.map(r => {
+        const date = new Date(r.createdAt).toLocaleDateString('es-ES', {day:'2-digit', month:'2-digit'});
+        return `
+        <div class="rpt-card" onclick="viewReportDetail('${r.id}')">
+            <div style="background:rgba(88,166,255,0.1); width:42px; height:42px; border-radius:10px; 
+                        display:flex; align-items:center; justify-content:center; color:var(--primary); font-weight:bold; font-size:1.1rem; flex-shrink:0;">
+                #${r.playerNumber}
+            </div>
+            <div style="flex:1; min-width:0;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:0.2rem;">
+                    <div style="font-weight:700; font-size:0.92rem; color:white;">${r.playerAlias}</div>
+                    <div style="font-size:0.72rem; color:var(--text-muted);">${date}</div>
+                </div>
+                <div style="font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:0.5rem;">
+                    <span style="color:var(--secondary);">🆚 vs ${r.rival}</span>
+                    <span style="color:rgba(255,255,255,0.15);">|</span>
+                    <span style="font-weight:600; color:var(--text-main);">Result: ${r.scoreHome}-${r.scoreAway}</span>
+                </div>
+            </div>
+            <div style="text-align:right; font-size:0.75rem; color:var(--text-muted);">
+                ${r.goals > 0 ? `<div style="color:#3fb950; font-weight:700;">⚽ ${r.goals} Goles</div>` : ''}
+                ${r.cards !== 'ninguna' ? `<div style="margin-top:2px;">${r.cards==='amarilla'?'🟨 Amarilla':'🟥 Roja'}</div>` : ''}
+                ${r.injured ? `<div style="color:#ff5858; font-weight:bold; font-size:0.65rem;">🚑 Lesionado</div>` : ''}
+            </div>
+            <div style="padding-left:0.5rem; color:rgba(255,255,255,0.1);">❯</div>
+        </div>`;
+    }).join('');
 }
 
 window.filterClubReports = () => {
@@ -378,14 +388,81 @@ window.viewReportDetail = async (id) => {
     const r = (window._allClubReports || []).find(x => x.id === id);
     if (!r) return;
 
-    alert(`Detalle del Informe:\n\n` +
-          `Jugador: ${r.playerAlias} (#${r.playerNumber})\n` +
-          `Partido: ${r.rival} (${r.scoreHome}-${r.scoreAway})\n` +
-          `Minutos: ${r.minutesPlayed}\n` +
-          `Goles: ${r.goals}\n` +
-          `Tarjetas: ${r.cards}\n` +
-          `Lesionado: ${r.injured ? 'SÍ' : 'NO'}\n\n` +
-          `Fecha: ${new Date(r.createdAt).toLocaleString()}`);
+    const modal = document.createElement('div');
+    modal.id = 'report-detail-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10000;padding:1rem;';
+    
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(96vw,500px);max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden;border:1px solid var(--glass-border);">
+        <div style="padding:1.2rem;border-bottom:1px solid var(--glass-border);display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.02);">
+            <h3 style="margin:0;font-size:1rem;color:var(--primary);">📄 Detalle del Informe</h3>
+            <button onclick="document.getElementById('report-detail-modal').remove()" 
+                style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:1.5rem;">
+            <div style="display:flex;gap:1rem;margin-bottom:1.5rem;align-items:center;background:rgba(88,166,255,0.05);padding:1rem;border-radius:12px;border:1px solid rgba(88,166,255,0.1);">
+                <div style="width:50px;height:50px;background:var(--primary);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:bold;color:#0d1117;">
+                    ${r.playerAlias.substring(0,1).toUpperCase()}
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:1.1rem;">${r.playerAlias} <span style="color:var(--text-muted);font-weight:400;">#${r.playerNumber}</span></div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);">${new Date(r.createdAt || Date.now()).toLocaleString('es-ES')}</div>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
+                <div>
+                   <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Rival</label>
+                   <div style="font-size:1rem;font-weight:600;">${r.rival || '—'}</div>
+                </div>
+                <div>
+                   <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Resultado</label>
+                   <div style="font-size:1rem;font-weight:600;">${r.scoreHome}-${r.scoreAway}</div>
+                </div>
+                <div>
+                   <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Minutos</label>
+                   <div style="font-size:1.1rem;color:var(--primary);font-weight:700;">${r.minutesPlayed || '0'}'</div>
+                </div>
+                <div>
+                   <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Goles</label>
+                   <div style="font-size:1.1rem;color:#3fb950;font-weight:700;">${r.goals || '0'}</div>
+                </div>
+            </div>
+
+            <div style="margin-bottom:1.5rem;padding:1rem;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--glass-border);">
+                <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:0.8rem;">Estado Técnico-Físico</label>
+                <div style="display:flex;gap:0.8rem;flex-wrap:wrap;">
+                    <span style="padding:4px 10px; border-radius:10px; font-size:0.75rem; 
+                        background:${r.cards==='ninguna'?'rgba(255,255,255,0.05)':'rgba(255,88,88,0.1)'};
+                        color:${r.cards==='ninguna'?'var(--text-muted)':'#ff5858'};
+                        border:1px solid ${r.cards==='ninguna'?'transparent':'rgba(255,88,88,0.3)'};">
+                        🎴 Tarjetas: ${r.cards || 'Ninguna'}
+                    </span>
+                    <span style="padding:4px 10px; border-radius:10px; font-size:0.75rem; 
+                        background:${r.injured ? 'rgba(255,88,88,0.15)' : 'rgba(63,185,80,0.1)'};
+                        color:${r.injured ? '#ff5858' : '#3fb950'};
+                        border:1px solid ${r.injured ? 'rgba(255,88,88,0.4)' : 'rgba(63,185,80,0.3)'};">
+                        🚑 Lesionado: ${r.injured ? 'SÍ' : 'NO'}
+                    </span>
+                    <span style="padding:4px 10px; border-radius:10px; font-size:0.75rem; background:rgba(210,168,255,0.1); color:#d2a8ff; border:1px solid rgba(210,168,255,0.3);">
+                        ✍️ Notas: ${(r.notes || 'Sin anotaciones adicionales').substring(0,60)}...
+                    </span>
+                </div>
+            </div>
+            
+            ${r.notes ? `
+            <div style="background:rgba(240,136,62,0.03);border:1px solid rgba(240,136,62,0.2);padding:1rem;border-radius:10px;">
+                <label style="font-size:0.7rem;color:var(--secondary);text-transform:uppercase;letter-spacing:1px;">Observaciones Detalladas</label>
+                <p style="margin:0.5rem 0 0;font-size:0.85rem;line-height:1.5;color:var(--text-main);">${r.notes}</p>
+            </div>` : ''}
+        </div>
+        <div style="padding:1rem;border-top:1px solid var(--glass-border);background:rgba(0,0,0,0.2);">
+            <button onclick="document.getElementById('report-detail-modal').remove()" class="btn" style="width:100%;padding:0.6rem;background:var(--glass);">
+                Cerrar Informe
+            </button>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
 };
 
 window.openClubReports = openClubReports;

@@ -34,9 +34,9 @@ async function openStaffDashboard() {
                            color:white;font-size:0.78rem;cursor:pointer;">
                     🔄 Actualizar
                 </button>
-                <button onclick="document.getElementById('setup-modal').style.display='none'"
-                    style="background:none;border:none;color:var(--text-muted);
-                           font-size:1.5rem;cursor:pointer;padding:0.5rem;">✕</button>
+                <button onclick="logoutUser()"
+                    style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;
+                           cursor:pointer;line-height:1;padding:0 0.3rem;" title="Cerrar sesión">✕</button>
             </div>
         </div>
 
@@ -133,7 +133,8 @@ async function loadStaffEvents(type) {
     const container = document.getElementById('staff-dashboard-content');
     
     try {
-        const { db, collection, getDocs, query, where, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { collection, getDocs, query, where, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth.db;
         
         const snap = await getDocs(query(
             collection(db, 'cronos_notifications'),
@@ -189,7 +190,8 @@ window.openLiveMatchesView = () => {
 };
 
 window.viewEventDetail = async (type, id) => {
-    const { db, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { collection, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const db = window._cronos_auth.db;
     const snap = await getDoc(doc(db, 'cronos_notifications', id));
     if (!snap.exists()) return;
     const d = snap.data();

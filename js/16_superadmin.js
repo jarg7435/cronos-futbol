@@ -184,9 +184,9 @@ async function openSuperAdminPanel() {
                    border:1px solid rgba(255,215,0,0.3);border-radius:6px;
                    color:#ffd700;font-size:0.78rem;cursor:pointer;"
             title="Cambiar rol">⇄ Rol</button>
-          <button onclick="document.getElementById('sa-root-modal').style.display='none'"
+          <button onclick="logoutUser()"
             style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;
-                   cursor:pointer;line-height:1;padding:0 0.3rem;">✕</button>
+                   cursor:pointer;line-height:1;padding:0 0.3rem;" title="Cerrar sesión">✕</button>
         </div>
       </div>
       <div class="sa-tabs">
