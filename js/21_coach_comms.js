@@ -1144,9 +1144,11 @@ async function saveContactManagerData() {
 
 // Fila de STAFF (tabla azul)
 function renderContactRowMarkup(c = {}) {
-    const isReports = (c.tags || []).includes('reports');
-    const isNotifs  = (c.tags || []).includes('notifs');
-    const isLive    = (c.tags || []).includes('live');
+    const isCv  = (c.tags || []).includes('cv');
+    const isTr  = (c.tags || []).includes('tr');
+    const isMsg = (c.tags || []).includes('msg');
+    const isRpt = (c.tags || []).includes('rpt');
+    const isLive = (c.tags || []).includes('live');
     const id = c.id || ('new_' + Date.now());
 
     return `
