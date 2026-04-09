@@ -442,6 +442,7 @@ async function sendMatchReportsToParents() {
     const isSetupMode = !window.players || !window.players.length;
     let selectedPlayerIds = [];
     let mergedContacts = [];
+    let filterCriteria = { ids: [], numbers: [] };
     const me = window._cronosCurrentUser;
 
     if (isSetupMode) {
@@ -466,7 +467,7 @@ async function sendMatchReportsToParents() {
         }
 
         // Empaquetamos ambos para la función de filtrado
-        const filterCriteria = { ids: selectedIds, numbers: selectedNums };
+        filterCriteria = { ids: selectedIds, numbers: selectedNums };
 
         // 2. Obtener TODA la base de contactos (Manuales + Firestore)
         if (typeof loadEmailConfig === 'function') await loadEmailConfig();
