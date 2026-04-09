@@ -438,12 +438,14 @@ window.sendCoachMessage = async function(threadId, parentUid, parentEmail, paren
 // ════════════════════════════════════════════════════════════════════
 //  ENVIAR INFORMES DE PARTIDO A PADRES Y STAFF
 // ════════════════════════════════════════════════════════════════════
-function sendMatchReportsToParents() {
+async function sendMatchReportsToParents() {
     const isSetupMode = !window.players || !window.players.length;
     let selectedPlayerIds = [];
+    let mergedContacts = [];
+    const me = window._cronosCurrentUser;
 
     if (isSetupMode) {
-        // En modo setup, filtramos destinatarios según la convocatoria actual
+        // 1. Obtener convocados
         const convRows = document.querySelectorAll('.conv-row.conv-selected');
         const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
         const mode   = document.getElementById('setup-mode')?.value || 'f11';
@@ -454,6 +456,48 @@ function sendMatchReportsToParents() {
         if (selectedPlayers.length === 0) {
             showToast('⚠️ Primero selecciona jugadores para la convocatoria.', 4000);
             return;
+        }
+
+        // 2. Obtener TODA la base de contactos (Manuales + Firestore)
+        if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+        const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+        
+        try {
+            const { db, collection, getDocs, query, where } = await _cFS();
+            const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId)));
+            const links = [];
+            linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+
+            // Fusionar similar a como se hace en Mensajes
+            mergedContacts = [...contacts];
+            links.forEach(l => {
+                const exists = mergedContacts.find(c => 
+                    (l.parentUid && c.uid === l.parentUid) || 
+                    (l.parentEmail && c.email === l.parentEmail) ||
+                    (l.parentPhone && c.phone === l.parentPhone)
+                );
+                if (!exists) {
+                    mergedContacts.push({
+                        id: l._id,
+                        type: 'parent',
+                        name: l.parentName || l.playerAlias || 'Familiar',
+                        player: l.playerAlias || l.playerName || 'Jugador',
+                        playerId: l.playerId, 
+                        playerNumber: l.playerNumber,
+                        uid: l.parentUid,
+                        email: l.parentEmail,
+                        phone: l.parentPhone,
+                        tags: ['rpt'] // Por defecto autorizados si vienen de Firestore con este fin
+                    });
+                } else {
+                    // Si ya existe, nos aseguramos que tenga el playerId para filtrar
+                    if (!exists.playerId) exists.playerId = l.playerId;
+                    if (!exists.playerNumber) exists.playerNumber = l.playerNumber;
+                }
+            });
+        } catch (e) {
+            console.error("Error fetching links for reports:", e);
+            mergedContacts = [...contacts]; // Fallback a solo manuales
         }
     }
 
@@ -507,7 +551,7 @@ function sendMatchReportsToParents() {
 
             <!-- Aquí inyectamos el HTML global que diseñamos en 19_whatsapp_email.js -->
             <div id="rpt-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:280px;overflow-y:auto;padding-right:4px;">
-                ${isSetupMode ? buildConvocationRecipientsHTML(selectedPlayerIds, 'rpt') : sharedBuildRecipientsHTML(null, 'rpt')}
+                ${isSetupMode ? buildConvocationRecipientsHTML(selectedPlayerIds, 'rpt', mergedContacts) : sharedBuildRecipientsHTML(null, 'rpt')}
             </div>
 
             <p style="font-size:0.68rem;color:#ffb74d;margin:0.8rem 0 0 0;text-align:center;">
@@ -545,12 +589,16 @@ function sendMatchReportsToParents() {
 }
 
 // Nueva función para filtrar destinatarios SOLO según los convocados
-function buildConvocationRecipientsHTML(selectedPlayerIds, prefix = 'rpt') {
-    const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+function buildConvocationRecipientsHTML(selectedPlayerIds, prefix = 'rpt', allContacts = null) {
+    const contacts = allContacts || ((typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : []);
     const staff = contacts.filter(c => c.type !== 'parent');
     
     // Filtramos los padres: solo si su playerId está en la lista de convocados
-    const activeParents = contacts.filter(c => c.type === 'parent' && selectedPlayerIds.includes(c.playerId));
+    const activeParents = contacts.filter(c => {
+        if (c.type !== 'parent') return false;
+        // Intentamos casar por ID único (prioritario) o por número de dorsal si no hay ID
+        return selectedPlayerIds.includes(c.playerId);
+    });
 
     const allToShow = [...staff, ...activeParents];
 
@@ -566,16 +614,15 @@ function buildConvocationRecipientsHTML(selectedPlayerIds, prefix = 'rpt') {
     return allToShow.map(c => {
         const checked = savedIds ? savedIds.includes(c.id) : (c.tags || []).includes(prefix);
         const typeColor = c.type === 'staff' ? 'rgba(88,166,255,0.15)' : 'rgba(240,136,62,0.1)';
-        const typeTag = c.type === 'staff' ? '🏢' : '👨‍👩‍👧';
+        const typeTag = c.type === 'staff' ? '🏢 STAFF' : `👨‍👩‍👧 PADRE DE ${c.player || 'JUGADOR'}`;
 
         return `
         <label style="display:flex;align-items:center;gap:0.6rem;background:${typeColor};border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.45rem 0.6rem;cursor:pointer;">
             <input type="checkbox" class="${prefix}-recipient-chk" data-id="${c.id}" ${checked ? 'checked' : ''}
                 style="width:16px;height:16px;accent-color:var(--primary);">
-            <span style="font-size:0.7rem;">${typeTag}</span>
             <div style="flex:1;">
-                <div style="font-size:0.75rem;font-weight:600;color:white;">${c.name || c.player || 'Contacto'}</div>
-                <div style="font-size:0.62rem;color:var(--text-muted);">${c.type === 'parent' ? 'Padre/Madre' : 'Staff'}</div>
+                <div style="font-size:0.75rem;font-weight:600;color:white;">${c.name || 'Sin nombre'}</div>
+                <div style="font-size:0.62rem;color:var(--text-muted);">${typeTag}</div>
             </div>
         </label>`;
     }).join('');
