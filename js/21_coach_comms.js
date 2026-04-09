@@ -466,17 +466,56 @@ async function sendMatchReportsToParents() {
             // 1. Obtener convocados
             const convRows = document.querySelectorAll('.conv-row.conv-selected');
             const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
-            const mode   = window.currentMode || 'f11';
-            const myPlayers = roster[mode] || [];
-            const selectedPlayers = Array.from(convRows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
+            
+            // Intentamos detectar el modo de varias formas (global o por el título si falla)
+            let mode = (typeof currentMode !== 'undefined') ? currentMode : (window.currentMode || 'f11');
+            
+            const selectedPlayers = [];
+            convRows.forEach(row => {
+                const idx = row.dataset.index;
+                let p = roster[mode] ? roster[mode][idx] : null;
+                
+                // Si no lo encuentra en el modo actual, probamos en el otro (f7 <-> f11)
+                if (!p) {
+                    const altMode = mode === 'f11' ? 'f7' : 'f11';
+                    p = roster[altMode] ? roster[altMode][idx] : null;
+                }
+
+                if (p) {
+                    selectedPlayers.push(p);
+                } else {
+                    // FALLBACK MAESTRO: Si no hay datos en el roster, extraemos el número del DOM
+                    const numSpan = row.querySelector('span[style*="font-weight:bold"]');
+                    const num = numSpan ? parseInt(numSpan.textContent) : null;
+                    if (num) {
+                        selectedPlayers.push({ id: `J-${idx+1}`, number: num, alias: 'Jugador ' + num });
+                    }
+                }
+            });
             
             // Coleccionamos tanto IDs (J-01) como Números (10) para máxima compatibilidad
             const selectedIds = selectedPlayers.map(p => p.id).filter(Boolean);
             const selectedNums = selectedPlayers.map(p => p.number).filter(n => n != null);
 
-            if (selectedPlayers.length === 0) {
+            console.log("[Reports] Detección Inteligente:", {
+                rowsFound: convRows.length,
+                playersMatched: selectedPlayers.length,
+                modeUsed: mode,
+                nums: selectedNums
+            });
+
+            if (selectedPlayers.length === 0 && convRows.length > 0) {
+                // Si hay filas de convocatoria pero no pudimos extraer datos, 
+                // hacemos un último intento solo con los números para no bloquear al usuario
+                convRows.forEach((row, i) => {
+                    const numText = row.innerText.match(/\d+/);
+                    if (numText) selectedNums.push(parseInt(numText[0]));
+                });
+            }
+
+            if (selectedPlayers.length === 0 && selectedNums.length === 0) {
                 showToast('⚠️ Primero selecciona jugadores para la convocatoria.', 4000);
-                openConvocationModal();
+                if (typeof openConvocationModal === 'function') openConvocationModal();
                 return;
             }
 
