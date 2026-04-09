@@ -275,13 +275,22 @@ function _launchWithRole(role) {
     const activeRole = window._cronosCurrentUser?._activeRole || role;
     document.getElementById('role-selection-screen').style.display = 'none';
 
-    // Roles que usan la interfaz principal de campo (Entrenador, Director, Coord, Admin Club)
-    const isFieldRole = ['user', 'coach', 'director', 'coordinator', 'club_admin'].includes(activeRole);
+    // Roles que usan la interfaz principal de campo (Entrenador, Usuario local)
+    const isFieldRole = (activeRole === 'user' || activeRole === 'coach');
     const isParent    = (activeRole === 'parent');
-    const isSA       = (activeRole === 'superadmin');
+    const isSA        = (activeRole === 'superadmin');
+    const isAdminJob  = ['director', 'coordinator', 'club_admin'].includes(activeRole);
 
+    // Ocultar campo y cabecera para administradores y staff
     document.getElementById('main-container').style.display = isFieldRole ? 'flex' : 'none';
     document.getElementById('main-header').style.display    = isFieldRole ? 'flex' : 'none';
+
+    // Fondo limpio para roles admin
+    if (isAdminJob || isSA) {
+        document.body.style.background = '#0d1117';
+    } else if (isFieldRole) {
+        document.body.style.background = ''; // Default (css pitch)
+    }
 
     const btnAdmin = document.getElementById('btn-admin-panel');
     if (btnAdmin) {
@@ -311,6 +320,21 @@ function _launchWithRole(role) {
 }
 
 // ── Exportación Global ───────────────────────────────────────
+window.logoutUser = () => {
+    if (!confirm('¿Seguro que deseas salir y volver al inicio?')) return;
+    sessionStorage.clear();
+    // Intentar logout de firebase si está disponible
+    if (window._cronos_auth?.auth) {
+        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js').then(({ signOut }) => {
+            signOut(window._cronos_auth.auth).finally(() => {
+                location.reload();
+            });
+        }).catch(() => location.reload());
+    } else {
+        location.reload();
+    }
+};
+
 window.switchTab = switchTab;
 window.handleRoleChange = handleRoleChange;
 window.doAuth = doAuth;
