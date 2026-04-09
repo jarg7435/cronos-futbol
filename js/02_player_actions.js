@@ -110,12 +110,18 @@ function terminateMatch(reason) {
     matchPhase = 'finished';
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
-    stopLiveSync(); // marcar partido como finalizado en Firestore
+    stopLiveSync(); 
+    
+    // Disparar informes automáticos e internos
+    if (typeof saveAllMatchReportsInternal === 'function') {
+        saveAllMatchReportsInternal();
+    }
+    
     alert(`🏁 PARTIDO FINALIZADO: ${reason}\nResultado final: ${TEAM_NAMES.home} ${document.getElementById('score-home').textContent} - ${document.getElementById('score-away').textContent} ${TEAM_NAMES.away}`);
 }
 
 function endMatch() {
-    if (!confirm('¿Finalizar el partido? Esta acción detiene el reloj y cierra el encuentro.')) return;
+    if (!confirm('¿Finalizar el partido? Esta acción detiene el reloj y enviará automáticamente los informes internos configurados.')) return;
     isRunning = false;
     clearInterval(timerInterval);
     matchPhase = 'finished';
@@ -125,8 +131,14 @@ function endMatch() {
     document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
-    stopLiveSync(); // marcar partido como finalizado en Firestore
-    alert(`🏁 PARTIDO FINALIZADO\n${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}`);
+    stopLiveSync(); 
+
+    // Disparar informes automáticos e internos
+    if (typeof saveAllMatchReportsInternal === 'function') {
+        saveAllMatchReportsInternal();
+    }
+
+    alert(`🏁 PARTIDO FINALIZADO\n${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}\n\nLos informes están siendo enviados internamente.`);
 }
 
 function changeGoals(amount) {

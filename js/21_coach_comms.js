@@ -757,7 +757,118 @@ window._executeReportsSend = async function(method) {
     setTimeout(() => { document.getElementById('setup-modal').style.display='none'; }, 2000);
 }
 
-// ── Guardado automático interno para Club Staff ───────────────────────
+// ── Despacho automático de informes (Interno) ──────────────────────────
+async function autoDispatchMatchReports() {
+    const me = window._cronosCurrentUser;
+    if (!me || !window.players) return;
+
+    try {
+        const { setDoc, doc, collection, getDocs, query, where, updateDoc, arrayUnion } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth.db;
+
+        const scoreHome = document.getElementById('score-home')?.textContent || '0';
+        const scoreAway = document.getElementById('score-away')?.textContent || '0';
+        const rivalName = TEAM_NAMES.away || 'Rival';
+        const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
+        const homePlayers = window.players.filter(p => p.team === 'home');
+
+        // 1. Obtener links y contactos
+        const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId || '')));
+        const links = [];
+        linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+
+        if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+        const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+
+        // --- FASE A: INFORME GLOBAL (STAFF + ENTRENADOR) ---
+        const globalText = `📊 *INFORME GLOBAL DE PARTIDO*\n` +
+                          `━━━━━━━━━━━━━━━━\n` +
+                          `📅 ${matchDate}\n` +
+                          `⚽ ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${rivalName}\n\n` +
+                          `Informes individuales generados y enviados a padres autorizados.\n` +
+                          `_Cronos Fútbol_`;
+
+        // Destinatarios Staff con tag 'rpt' (Informes)
+        const staffToNotify = contacts.filter(c => c.type !== 'parent' && (c.tags || []).includes('rpt') && c.uid);
+        
+        for (const staff of staffToNotify) {
+            const notifId = `notif_global_rpt_${staff.uid}_${Date.now().toString(36)}`;
+            await setDoc(doc(db, 'cronos_notifications', notifId), {
+                type: 'aviso_partido_finalizado',
+                clubId: me.clubId || null,
+                parentUid: staff.uid,
+                matchDate, rival: rivalName, scoreHome, scoreAway,
+                message: globalText.replace(/[*_]/g, ''),
+                createdAt: new Date().toISOString()
+            });
+        }
+
+        // --- FASE B: INFORMES INDIVIDUALES (PADRES) ---
+        for (const player of homePlayers) {
+            // Generar texto individual
+            const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ ${player.goals || 0} goles | ${player.cards === 'amarilla' ? '🟨' : player.cards === 'roja' ? '🟥' : '0 tarjetas'}`;
+            const indivText = `📊 *INFORME INDIVIDUAL: ${player.name}*\n` +
+                             `━━━━━━━━━━━━━━━━\n` +
+                             `📅 ${matchDate}\n` +
+                             `⚽ Partido vs ${rivalName}\n` +
+                             `📈 Rendimiento: ${stats}\n\n` +
+                             `Revisa el panel de informes para más detalles.\n` +
+                             `_Cronos Fútbol_`;
+
+            // Buscar padres vinculados con tag 'rpt'
+            // 1. Desde links de Firestore
+            const linkedParents = links.filter(l => l.playerNumber == player.number && l.canReceiveReports && l.parentUid);
+            
+            // 2. Desde contactos manuales
+            const manualParents = contacts.filter(c => c.type === 'parent' && c.player == player.name && (c.tags || []).includes('rpt') && c.uid);
+
+            const allUids = new Set([...linkedParents.map(l => l.parentUid), ...manualParents.map(c => c.uid)]);
+
+            for (const pUid of allUids) {
+                if (!pUid) continue;
+                
+                // Enviar mensaje al hilo de chat
+                const threadId = `${me.uid}_${pUid}`;
+                const msgEntry = { sender: 'coach', text: indivText, timestamp: new Date().toISOString(), type: 'report' };
+                
+                // Usar updateDoc con arrayUnion para mayor eficiencia
+                try {
+                    await updateDoc(doc(db, 'cronos_messages', threadId), {
+                        messages: arrayUnion(msgEntry),
+                        lastMessage: '📊 Informe de partido enviado',
+                        lastMessageAt: msgEntry.timestamp,
+                        unreadByParent: 1 // o incrementar si fuera necesario, aquí simplificamos
+                    });
+                } catch(e) {
+                    // Si el hilo no existe, lo creamos (fallback)
+                    await setDoc(doc(db, 'cronos_messages', threadId), {
+                        threadId, coachUid: me.uid, coachEmail: me.email,
+                        parentUid: pUid, messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
+                        lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
+                    });
+                }
+
+                // Notificación de nuevo informe
+                await setDoc(doc(db, 'cronos_notifications', `notif_indiv_rpt_${pUid}_${Date.now().toString(36)}`), {
+                    type: 'informe_partido',
+                    clubId: me.clubId || null,
+                    parentUid: pUid,
+                    playerNumber: player.number,
+                    rival: rivalName, scoreHome, scoreAway,
+                    createdAt: new Date().toISOString()
+                });
+            }
+        }
+
+        console.log(`[AutoDispatch] Despacho de informes completado.`);
+        showToast('✅ Informes enviados automáticamente (Interno)', 4000);
+
+    } catch(e) {
+        console.error('[AutoDispatch] Error:', e);
+    }
+}
+
 async function saveAllMatchReportsInternal() {
     const me = window._cronosCurrentUser;
     if (!me || !window.players) return;
@@ -812,26 +923,12 @@ async function saveAllMatchReportsInternal() {
             });
             saved++;
         }
-        // --- NOTIFICAR A STAFF / OTROS (Fuente de la Verdad) ---
-        if (emailConfig.contacts) {
-            const staffNotifs = emailConfig.contacts.filter(c => c.tags.includes('notifs') && c.uid);
-            for (const contact of staffNotifs) {
-                const notifId = `notif_match_end_staff_${contact.uid}_${Date.now().toString(36)}`;
-                await setDoc(doc(db, 'cronos_notifications', notifId), {
-                    type:           'aviso_partido_finalizado',
-                    clubId:         me.clubId || null,
-                    parentUid:      contact.uid,
-                    matchDate:      matchDate || new Date().toLocaleDateString('es-ES'),
-                    rival:          TEAM_NAMES.away || 'Rival',
-                    scoreHome:      scoreHome || '0',
-                    scoreAway:      scoreAway || '0',
-                    message:        `📊 Partido finalizado y sincronizado con la nube. Los informes técnicos han sido generados.`,
-                    createdAt:      new Date().toISOString()
-                });
-            }
-        }
 
-        console.log(`[AutoReport] ${saved} informes técnicos generados para Staff.`);
+        console.log(`[AutoReport] ${saved} informes técnicos persistidos.`);
+        
+        // --- DISPARAR DESPACHO AUTOMÁTICO ---
+        await autoDispatchMatchReports();
+
     } catch(e) {
         console.error('[AutoReport] Error:', e.message);
     }
@@ -887,6 +984,23 @@ async function openContactManager() {
 
         const modal = document.getElementById('setup-modal');
         modal.style.display = 'flex';
+        // 2. FUSIÓN: Asegurar que el Coach esté en la lista de Staff si no está
+        const contacts = emailConfig.contacts || [];
+        const coachExists = contacts.find(c => c.uid === me.uid);
+        if (!coachExists) {
+            contacts.push({
+                id: 'coach_' + me.uid,
+                name: (me.displayName || me.email || 'Entrenador') + ' (TÚ)',
+                email: me.email || '',
+                phone: '', // El coach puede añadirlo si quiere
+                uid: me.uid,
+                type: 'coach',
+                tags: ['rpt', 'msg', 'cv', 'tr', 'live'] // Por defecto todo activo para el coach
+            });
+            // Guardar localmente para esta sesión hasta que dé a "Guardar"
+            emailConfig.contacts = contacts;
+        }
+
         modal.innerHTML = `
         <div class="modal-content" style="width:min(98vw,870px);max-height:92vh;
              display:flex;flex-direction:column;padding:0;overflow:hidden;">
@@ -1113,7 +1227,7 @@ async function saveContactManagerData() {
         // 2. Guardar Lista Unificada de Contactos (en emailConfig)
         const updatedContacts = [];
 
-        // 2a. Staff (filas de la tabla azul)
+        // 2a. Staff y Coach (filas de la tabla azul)
         document.querySelectorAll('.custom-contact-row').forEach(row => {
             const tags = [];
             if (row.querySelector('.tag-cv').checked)   tags.push('cv');
@@ -1124,7 +1238,7 @@ async function saveContactManagerData() {
 
             updatedContacts.push({
                 id:    row.dataset.id || ('c_' + Math.random().toString(36).substr(2,6)),
-                type:  'staff',
+                type:  row.dataset.type || 'staff',
                 name:  row.querySelector('.c-name').value.trim(),
                 email: row.querySelector('.c-email').value.trim(),
                 phone: row.querySelector('.c-phone').value.trim().replace(/\s/g, ''),
@@ -1189,9 +1303,11 @@ function renderContactRowMarkup(c = {}) {
     const isRpt = (c.tags || []).includes('rpt');
     const isLive = (c.tags || []).includes('live');
     const id = c.id || ('new_' + Date.now());
+    const isCoach = c.type === 'coach';
 
     return `
-    <tr class="custom-contact-row" data-id="${id}" style="border-bottom:1px solid rgba(255,255,255,0.05);">
+    <tr class="custom-contact-row" data-id="${id}" data-type="${c.type || 'staff'}" 
+        style="border-bottom:1px solid rgba(255,255,255,0.05); ${isCoach ? 'background:rgba(88,166,255,0.03);' : ''}">
         <td style="padding:0.4rem;">
             <input type="text" class="c-name" value="${c.name || ''}" placeholder="Nombre / Cargo"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
@@ -1206,7 +1322,8 @@ function renderContactRowMarkup(c = {}) {
         </td>
         <td style="padding:0.4rem;">
             <input type="text" class="c-uid" value="${c.uid || ''}" placeholder="ID App (opcional)"
-                style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);font-size:0.7rem;">
+                style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);font-size:0.7rem;"
+                ${isCoach ? 'readonly' : ''}>
         </td>
         <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="tag-cv" ${isCv ? 'checked' : ''} style="width:16px;height:16px;">
@@ -1226,7 +1343,8 @@ function renderContactRowMarkup(c = {}) {
                 title="Puede ver los partidos en vivo">
         </td>
         <td style="padding:0.4rem;text-align:center;">
-            <button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>
+            ${isCoach ? '<span title="Tú" style="font-size:1rem; cursor:help;">👤</span>' : 
+            `<button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>`}
         </td>
     </tr>`;
 }
