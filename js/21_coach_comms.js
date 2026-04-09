@@ -817,11 +817,11 @@ async function autoDispatchMatchReports() {
                              `_Cronos Fútbol_`;
 
             // Buscar padres vinculados con tag 'rpt'
-            // 1. Desde links de Firestore
-            const linkedParents = links.filter(l => l.playerNumber == player.number && l.canReceiveReports && l.parentUid);
+            // 1. Desde links de Firestore (vinculados por App, suelen usar dorsal como fallback si no hay ID)
+            const linkedParents = links.filter(l => (l.playerId === player.playerId || l.playerNumber == player.number) && l.canReceiveReports && l.parentUid);
             
-            // 2. Desde contactos manuales
-            const manualParents = contacts.filter(c => c.type === 'parent' && c.player == player.name && (c.tags || []).includes('rpt') && c.uid);
+            // 2. Desde contactos manuales (vinculados por el Entrenador en "📱 Contactos")
+            const manualParents = contacts.filter(c => c.type === 'parent' && c.playerId === player.playerId && (c.tags || []).includes('rpt') && c.uid);
 
             const allUids = new Set([...linkedParents.map(l => l.parentUid), ...manualParents.map(c => c.uid)]);
 
@@ -1000,6 +1000,11 @@ async function openContactManager() {
             // Guardar localmente para esta sesión hasta que dé a "Guardar"
             emailConfig.contacts = contacts;
         }
+
+        // --- CARGAR PLANTILLA PARA VINCULACIÓN ---
+        const rosterData = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+        const currentSquad = rosterData[currentMode || 'f11'] || [];
+        window._cronos_squad_cache = currentSquad; // Caché global para renderParentRowMarkup
 
         modal.innerHTML = `
         <div class="modal-content" style="width:min(98vw,870px);max-height:92vh;
@@ -1256,11 +1261,16 @@ async function saveContactManagerData() {
             if (row.querySelector('.p-rpt').checked)  tags.push('rpt');
             if (row.querySelector('.p-live').checked) tags.push('live');
 
+            const pPlayerEl = row.querySelector('.p-player');
+            const playerId = pPlayerEl.value;
+            const playerName = playerId ? pPlayerEl.options[pPlayerEl.selectedIndex].text.split('] ')[1] : '';
+
             updatedContacts.push({
                 id:     row.dataset.id || ('p_' + Math.random().toString(36).substr(2,6)),
                 type:   'parent',
                 name:   row.querySelector('.p-name').value.trim(),
-                player: row.querySelector('.p-player').value.trim(),
+                player: playerName,   // Para visualización legacy
+                playerId: playerId,   // El vínculo inequivoco
                 phone:  row.querySelector('.p-phone').value.trim().replace(/\s/g, ''),
                 email:  row.querySelector('.p-email').value.trim(),
                 tags
@@ -1366,8 +1376,14 @@ function renderParentRowMarkup(c = {}) {
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;">
-            <input type="text" class="p-player" value="${c.player || ''}" placeholder="Nombre jugador"
-                style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
+            <select class="p-player" style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
+                <option value="">-- Seleccionar Jugador --</option>
+                ${(window._cronos_squad_cache || []).map(p => `
+                    <option value="${p.id}" ${c.playerId === p.id ? 'selected' : ''}>
+                        [${p.id}] ${p.alias || p.name || 'Sin nombre'}
+                    </option>
+                `).join('')}
+            </select>
         </td>
         <td style="padding:0.4rem;">
             <input type="tel" class="p-phone" value="${c.phone || ''}" placeholder="34600000000"

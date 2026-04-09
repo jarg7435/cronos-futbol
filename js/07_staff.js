@@ -90,9 +90,17 @@ function openRosterManager() {
 
     if (roster[mode].length < limit) {
         for (let i = roster[mode].length; i < limit; i++) {
-            roster[mode].push({ number: i + 1, name: '', surname: '', alias: '' });
+            roster[mode].push({ 
+                id: 'J-' + String(i + 1).padStart(2, '0'), 
+                number: i + 1, name: '', surname: '', alias: '' 
+            });
         }
     }
+
+    // Asegurar que TODOS tengan un ID (migración para los ya guardados)
+    roster[mode].forEach((p, i) => {
+        if (!p.id) p.id = 'J-' + String(i + 1).padStart(2, '0');
+    });
 
     const modal = document.getElementById('setup-modal');
     modal.innerHTML = `
@@ -129,16 +137,19 @@ function openRosterManager() {
                 <table class="roster-table">
                     <thead>
                         <tr>
+                            <th style="width:50px;">ID</th>
                             <th style="width:44px;">#</th>
                             <th>Nombre</th>
                             <th>Apellidos</th>
-                            <th style="color:var(--primary);">★ Alias <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);">(aparece en la ficha)</span></th>
+                            <th style="color:var(--primary);">★ Alias <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);">(en ficha)</span></th>
                         </tr>
                     </thead>
                     <tbody id="roster-tbody">
                         ${roster[mode].map((p, i) => `
                             <tr>
-                                <td><input type="number" class="r-num" value="${p.number}" style="width: 40px;"></td>
+                                <td><input type="text" class="r-id" value="${p.id}" readonly tabindex="-1"
+                                    style="width:45px; background:transparent; border:none; color:var(--text-muted); font-size:0.7rem; font-weight:bold; text-align:center;"></td>
+                                <td><input type="number" class="r-num" value="${p.number}" style="width:40px;"></td>
                                 <td><input type="text" class="r-name" value="${p.name}"></td>
                                 <td><input type="text" class="r-surname" value="${p.surname}"></td>
                                 <td><input type="text" class="r-alias" value="${p.alias}"></td>

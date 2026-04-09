@@ -381,7 +381,9 @@ function confirmRosterImport(mode) {
     // Escribir los jugadores importados
     imported.forEach((p, i) => {
         if (i < limit) {
+            const existingId = roster[mode][i]?.id || ('J-' + String(i + 1).padStart(2, '0'));
             roster[mode][i] = {
+                id: existingId,
                 number:  p.number || (i + 1),
                 name:    p.name,
                 surname: p.surname,
@@ -404,6 +406,7 @@ function saveMasterRoster(mode) {
     setTimeout(() => {
         const rows = document.querySelectorAll('#roster-tbody tr');
         const playersData = Array.from(rows).map(row => {
+            const id      = row.querySelector('.r-id')?.value || '';
             const number  = row.querySelector('.r-num').value;
             const name    = (row.querySelector('.r-name').value || '').trim();
             const surname = (row.querySelector('.r-surname').value || '').trim();
@@ -411,7 +414,7 @@ function saveMasterRoster(mode) {
             // Auto-rellenar alias si está vacío: primer apellido o nombre
             if (!alias && surname) alias = surname.split(' ')[0];
             if (!alias && name)    alias = name.split(' ')[0];
-            return { number, name, surname, alias };
+            return { id, number, name, surname, alias };
         });
         const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
         roster[mode] = playersData;

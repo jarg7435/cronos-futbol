@@ -156,6 +156,7 @@ function spawnInitialPlayers() {
         homeConvocation.forEach((pData, index) => {
             const playerObj = {
                 id: (index + 1),
+                playerId: pData.id || null, // Vínculo permanente
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: 'home',
