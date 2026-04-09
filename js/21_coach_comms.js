@@ -16,7 +16,7 @@ async function _cFS() {
 //  PANEL PRINCIPAL DE MENSAJES (vista entrenador)
 // ════════════════════════════════════════════════════════════════════
 async function openCoachMessaging() {
-    const me = window._cronosCurrentUser;
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     if (!me) return;
 
     const modal = document.getElementById('setup-modal');
@@ -76,7 +76,7 @@ async function openCoachMessaging() {
 }
 
 async function _loadParentList() {
-    const me = window._cronosCurrentUser;
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     const fa = window._cronos_auth;
     if (!fa || !me) return;
 

@@ -145,15 +145,16 @@ async function loadStaffEvents(type) {
     const container = document.getElementById('staff-dashboard-content');
     
     try {
-        const { collection, getDocs, query, where, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { collection, getDocs, query, where, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const db = window._cronos_auth?.db;
         if (!db) throw new Error("Base de datos no inicializada. Reintenta en unos segundos.");
         
+        // Consulta simplificada sin orderBy compuesto para evitar requerir índice de Firestore
+        const clubIdToQuery = me.clubId || 'demo';
         const snap = await getDocs(query(
             collection(db, 'cronos_notifications'),
-            where('clubId', '==', me.clubId),
+            where('clubId', '==', clubIdToQuery),
             where('type', '==', type),
-            orderBy('createdAt', 'desc'),
             limit(50)
         ));
 

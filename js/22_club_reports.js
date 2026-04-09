@@ -4,8 +4,8 @@
 // ════════════════════════════════════════════════════════════════════
 
 async function openClubReports() {
-    const me = window._cronosCurrentUser;
-    if (!me || !me.clubId) {
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
+    if (!me) {
         showToast('⚠️ No tienes un club asignado.', 4000);
         return;
     }

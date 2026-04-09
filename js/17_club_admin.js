@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 //  PANEL ADMIN DE CLUB (club_admin)
 // ════════════════════════════════════════════════════════════════════
-async function openClubAdminPanel() {
+async function openClubAdminPanel(preClubId = null) {
     const me = window._cronosCurrentUser;
     const activeRole = me._activeRole || me.role;
     const isSA = me.role === 'superadmin' || me.role === 'admin';
@@ -11,7 +11,46 @@ async function openClubAdminPanel() {
         return; 
     }
     const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = await saFS();
-    const clubId = me.clubId;
+    
+    // Si el Superadmin no tiene clubId, mostramos un selector de club
+    let clubId = preClubId || me.clubId;
+    if (!clubId && isSA) {
+        const clubsSnap = await getDocs(collection(db, 'clubs'));
+        const clubs = [];
+        clubsSnap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
+        
+        if (!clubs.length) { showToast('⚠️ No hay clubes creados aún', 3000); return; }
+        
+        const modal = document.getElementById('setup-modal');
+        modal.style.display = 'flex';
+        modal.innerHTML = SA_CSS + `
+        <div class="modal-content sa-modal" style="max-width:480px;">
+          <div class="sa-topbar">
+            <div style="font-weight:700;font-size:1rem;">🏟️ Seleccionar Club</div>
+            <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+          </div>
+          <div class="sa-body" style="padding:1.5rem;display:flex;flex-direction:column;gap:0.6rem;">
+            <p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 0.5rem;">
+              Como Superadmin, selecciona el club que deseas gestionar:
+            </p>
+            ${clubs.map(c => `
+              <button onclick="openClubAdminPanel('${c.id}')" 
+                  style="text-align:left;padding:0.8rem 1rem;background:rgba(255,255,255,0.04);
+                         border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;
+                         color:white;font-size:0.9rem;transition:all 0.2s;"
+                  onmouseover="this.style.background='rgba(88,166,255,0.1)';this.style.borderColor='rgba(88,166,255,0.3)';"
+                  onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.borderColor='rgba(255,255,255,0.1)';">
+                🏟️ <strong>${c.name}</strong>
+                <span style="font-size:0.72rem;color:var(--text-muted);display:block;margin-top:0.2rem;">
+                  ${c.adminEmail || 'Sin admin asignado'} · Plan: ${c.plan || 'free'}
+                </span>
+              </button>`).join('')}
+          </div>
+        </div>`;
+        return;
+    }
+    
     if (!clubId) { showToast('⚠️ Sin club asignado', 3000); return; }
 
     const [clubSnap, usersSnap] = await Promise.all([
