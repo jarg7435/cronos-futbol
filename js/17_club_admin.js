@@ -40,10 +40,55 @@ async function openClubAdminPanel() {
           <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">
               Panel del Administrador del Club</div>
         </div>
-        <button onclick="document.getElementById('setup-modal').style.display='none'"
-            style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+            <div style="display:flex;gap:0.6rem;">
+                <button onclick="caNotifySuperAdmin('${clubId}')"
+                    style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
+                           border:1px solid rgba(88,166,255,0.4);border-radius:10px;
+                           color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
+                    📡 Transmitir al Superadmin
+                </button>
+                <button onclick="document.getElementById('setup-modal').style.display='none'"
+                    style="background:none;border:none;color:var(--text-muted);
+                           font-size:1.5rem;cursor:pointer;padding:0.5rem;">✕</button>
+            </div>
       </div>
       <div class="sa-body">
+        <!-- Peticiones de Acceso -->
+        ${(() => {
+            const pendingMembers = users.filter(u => !u.isAuthorized && u.status !== 'removed' && u.requestedRole !== 'club_admin');
+            if (!pendingMembers.length) return '';
+            return `
+            <div style="background:rgba(255,165,0,0.06); border:1px solid rgba(255,165,0,0.25); border-radius:10px; padding:1rem; margin-bottom:1.5rem;">
+                <h3 style="font-size:0.85rem; margin:0 0 0.8rem; color:#ffa500; display:flex; align-items:center; gap:0.5rem;">
+                    🔔 Peticiones de Acceso (${pendingMembers.length})
+                </h3>
+                ${pendingMembers.map(u => {
+                    const si = slotOf(u.requestedRole || 'user');
+                    const roleLabel = ROLE_META[u.requestedRole || 'user']?.label || 'Usuario';
+                    return `
+                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:0.7rem; margin-bottom:0.5rem; border:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-size:0.85rem; font-weight:600;">${u.email}</div>
+                            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+                                Rol solicitado: <strong>${roleLabel}</strong> · 
+                                <span style="color:${si.full ? '#ff5858' : '#31d0aa'};">${si.used}/${si.max === -1 ? '∞' : si.max} slots</span>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:0.4rem;">
+                            <button onclick="caApproveRequest('${u._id}', '${u.requestedRole || 'user'}', '${u.email}')" 
+                                    class="sa-btn" style="color:#3fb950; border-color:rgba(63,185,80,0.3); background:rgba(63,185,80,0.08);">
+                                OK
+                            </button>
+                            <button onclick="caRejectRequest('${u._id}', '${u.email}')" 
+                                    class="sa-btn" style="color:#ff5858; border-color:rgba(255,88,88,0.3); background:rgba(255,88,88,0.08);">
+                                ✕
+                            </button>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>`;
+        })()}
+
         <!-- Slots resumen -->
         <div class="sa-stats" style="margin-bottom:1.2rem;">
             ${['director','coordinator','user','parent'].map(role => {
@@ -222,6 +267,85 @@ async function openClubAdminPanel() {
             createdAt:new Date().toISOString()
         });
         showToast('📋 Solicitud enviada al SuperAdmin. Pendiente de aprobación.', 5000);
+    };
+
+    window.caApproveRequest = async (uid, role, email) => {
+        const si = slotOf(role);
+        if (si.full) {
+            showToast(`⛔ No hay slots libres para el rol ${role}.`, 3000); 
+            return;
+        }
+        if (!confirm(`¿Autorizar acceso a ${email} como ${role}?`)) return;
+
+        try {
+            // 1. Autorizar usuario
+            await updateDoc(doc(db, 'users', uid), {
+                isAuthorized: true,
+                role: role,
+                status: 'active',
+                authorizedAt: new Date().toISOString(),
+                authorizedBy: me.uid
+            });
+
+            // 2. Incrementar contador de slots
+            const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
+            await updateDoc(doc(db, 'clubs', clubId), { [key]: (si.used || 0) + 1 });
+
+            showToast(`✅ ${email} autorizado correctamente.`, 3000);
+            openClubAdminPanel(); // Recargar panel
+        } catch (e) {
+            console.error(e);
+            showToast('❌ Error al autorizar usuario.', 3000);
+        }
+    };
+
+    window.caRejectRequest = async (uid, email) => {
+        if (!confirm(`¿Rechazar solicitud de ${email}?`)) return;
+        try {
+            await updateDoc(doc(db, 'users', uid), {
+                isAuthorized: false,
+                status: 'rejected',
+                rejectedAt: new Date().toISOString(),
+                rejectedBy: me.uid
+            });
+            showToast(`❌ Solicitud de ${email} rechazada.`, 3000);
+            openClubAdminPanel();
+        } catch (e) {
+            showToast('❌ Error al rechazar solicitud.', 3000);
+        }
+    };
+
+    window.caNotifySuperAdmin = async (cid) => {
+        const confirmMsg = '¿Deseas enviar un resumen de todas las solicitudes pendientes y el estado de tu club al Superadmin por canal interno?';
+        if (!confirm(confirmMsg)) return;
+
+        showSpinner('Transmitiendo solicitudes…');
+        try {
+            const pendingUsers = users.filter(u => !u.isAuthorized || u.status === 'pending_register');
+            const summary = `Solicitud de validación del Club: ${club.name}\n\n` +
+                          `Usuarios pendientes: ${pendingUsers.length}\n` +
+                          `Slots usados: ${club.usedSlots?.users || 0}/${club.quotas?.users || 0}\n\n` +
+                          `Pendientes detallados:\n` +
+                          pendingUsers.map(u => `- ${u.email} (${u.role})`).join('\n');
+
+            await setDoc(doc(db, 'platform_requests', `sync_${cid}_${Date.now()}`), {
+                clubId: cid,
+                clubName: club.name,
+                type: 'sync_request',
+                summary: summary,
+                pendingCount: pendingUsers.length,
+                status: 'unread',
+                createdAt: new Date().toISOString(),
+                requestedBy: me.uid,
+                requestedByEmail: me.email
+            });
+
+            hideSpinner();
+            showToast('✅ Solicitudes transmitidas con éxito al Superadministrador.', 5000);
+        } catch (e) {
+            hideSpinner();
+            showToast('❌ Error al transmitir: ' + e.message, 5000);
+        }
     };
 }
 window.openClubAdminPanel = openClubAdminPanel;
