@@ -83,6 +83,9 @@ async function _loadParentList() {
     const body = document.getElementById('coach-parent-list');
     if (!body) return;
 
+    // Asegurar que tenemos la configuración de contactos manuales cargada
+    if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+
     try {
         const { db, collection, getDocs, query, where } = await _cFS();
 
@@ -94,16 +97,48 @@ async function _loadParentList() {
         const links = [];
         linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
 
-        if (!links.length) {
+        if (!links.length && (!emailConfig.contacts || !emailConfig.contacts.length)) {
             body.innerHTML = `
             <div style="text-align:center;color:var(--text-muted);padding:3rem 1rem;">
-                👥 No hay padres vinculados aún.<br>
+                👥 No hay padres vinculados ni contactos configurados aún.<br>
                 <span style="font-size:0.8rem;margin-top:0.5rem;display:block;">
-                    El administrador del club vincula cada padre con su jugador.
+                    Agrega contactos en "Gestión de Contactos" o vincula padres desde el panel de admin.
                 </span>
             </div>`;
             return;
         }
+
+        // --- FUSIÓN CON CONTACTOS MANUALES Y STAFF ---
+        // Obtenemos los contactos de la "Fuente de la Verdad" (emailConfig)
+        const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+        console.log("Merging contacts from emailConfig:", contacts.length);
+
+        contacts.forEach(c => {
+            // Buscamos si ya existe en los links de Firestore para no duplicar
+            const exists = links.find(l => 
+                (c.email && l.parentEmail === c.email) || 
+                (c.phone && (l.parentPhone === c.phone || l.parentWA === c.phone || l.phone === c.phone)) ||
+                (c.uid && (l.parentUid === c.uid || l.uid === c.uid))
+            );
+            
+            if (!exists) {
+                links.push({
+                    _id:            c.id || ('m_' + Math.random().toString(36).substr(2,5)),
+                    isManual:       true,
+                    type:           c.type || 'staff', // staff o parent
+                    parentUid:      c.uid || c.id,
+                    parentEmail:    c.email || '',
+                    parentPhone:    c.phone || '',
+                    parentWA:       c.phone || '',
+                    playerAlias:    c.type === 'staff' ? c.name : (c.player || c.name || 'Familiar'),
+                    playerName:     c.type === 'staff' ? c.name : (c.player || c.name || 'Familiar'),
+                    playerNumber:   c.type === 'staff' ? 'STAFF' : '—'
+                });
+            } else {
+                // Si ya existe en Firestore, le aseguramos el tipo para que salga su icono correcto
+                if (c.type) exists.type = c.type;
+            }
+        });
 
         // Obtener hilos de mensajes existentes (aquí sí mantenemos coachUid para que el chat sea privado entrenador-padre)
         const threadsSnap = await getDocs(query(
@@ -126,37 +161,41 @@ async function _loadParentList() {
             const unread   = thread.unreadByCoach || 0;
             const lastMsg  = thread.lastMessage || '— Sin mensajes —';
             const lastTime = thread.lastMessageAt
-                ? new Date(thread.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
+                ? new Date(thread.lastMessageAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
                 : '';
+
+            const typeIcon = link.type === 'staff' ? '🏢' : '👨‍👩‍👧';
+            const displayNum = link.playerNumber && link.playerNumber !== '—' ? `#${link.playerNumber}` : '';
+            const isUnread = unread > 0;
 
             return `
             <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
                 <!-- Checkbox de selección -->
                 <input type="checkbox" class="parent-select-chk"
-                    data-parent-uid="${link.parentUid}"
-                    data-parent-email="${link.parentEmail}"
+                    data-parent-uid="${link.parentUid || ''}"
+                    data-parent-email="${link.parentEmail || ''}"
                     data-player="${link.playerAlias || link.playerName || ''}"
-                    data-player-num="${link.playerNumber}"
-                    data-parent-wa="${link.parentWA || link.parentPhone || ''}"
+                    data-player-num="${link.playerNumber || ''}"
+                    data-parent-wa="${link.parentPhone || link.parentWA || ''}"
                     style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);"
                     onchange="updateBulkCount()">
-                <!-- Fila del padre -->
-                <div onclick="openThreadWithParent('${link.parentUid}','${link.parentEmail}',
+                <!-- Fila del contacto -->
+                <div onclick="openThreadWithParent('${link.parentUid || link._id}','${link.parentEmail}',
                              '${link.playerNumber}','${link.playerAlias || link.playerName || ''}',
-                             '${link.parentWA || link.parentPhone || ''}')"
+                             '${link.parentPhone || link.parentWA || ''}')"
                     style="flex:1;background:var(--glass);
-                           border:1px solid ${unread ? 'rgba(88,166,255,0.5)' : 'var(--glass-border)'};
+                           border:1px solid ${isUnread ? 'rgba(88,166,255,0.5)' : 'var(--glass-border)'};
                            border-radius:10px;padding:0.85rem 1rem;
                            cursor:pointer;display:flex;justify-content:space-between;
                            align-items:center;gap:0.8rem;transition:all 0.15s;">
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                            ⚽ ${link.playerAlias || link.playerName || 'Jugador'}
-                            <span style="color:var(--primary);">#${link.playerNumber}</span>
+                            ${typeIcon} ${link.playerAlias || link.playerName || 'Contacto'}
+                            <span style="color:var(--primary);">${displayNum}</span>
                         </div>
                         <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.2rem;">
-                            👨‍👩‍👧 ${link.parentEmail}
-                            ${link.parentPhone ? ` · 📱 ${link.parentPhone}` : ''}
+                            ${link.parentEmail || 'Sin email'}
+                            ${link.parentPhone || link.parentWA ? ` · 📱 ${link.parentPhone || link.parentWA}` : ''}
                         </div>
                         <div style="font-size:0.76rem;
                                     color:${unread ? '#58a6ff' : 'var(--text-muted)'};
@@ -1382,37 +1421,28 @@ window.updateBulkCount = function() {
 
 // ── Compositor de mensaje grupal ──────────────────────────────────────
 window.openBulkMessageComposer = function() {
-    // Recopilar TODOS los contactos: padres seleccionados + staff de emailConfig
-    const selectedParents = Array.from(document.querySelectorAll('.parent-select-chk:checked'))
-        .map(chk => ({
-            id:          chk.dataset.parentUid,
-            type:        'parent',
-            label:       `⚽ ${chk.dataset.player || chk.dataset.parentEmail} #${chk.dataset.playerNum}`,
-            parentUid:   chk.dataset.parentUid,
-            parentEmail: chk.dataset.parentEmail,
-            parentWA:    chk.dataset.parentWa,
-            phone:       chk.dataset.parentWa,
-            email:       chk.dataset.parentEmail,
-        }));
-
-    const staffContacts = (typeof emailConfig !== 'undefined' ? emailConfig.contacts || [] : [])
-        .filter(c => c.type !== 'parent' && (c.phone || c.email))
-        .map(c => ({
-            id:          c.id,
-            type:        'staff',
-            label:       c.name || c.email || 'Staff',
-            parentUid:   c.uid || null,
-            parentEmail: c.email || '',
-            parentWA:    c.phone || '',
-            phone:       c.phone || '',
-            email:       c.email || '',
-        }));
+    // Recopilar ABSOLUTAMENTE TODOS los que el usuario marcó con el checkbox
+    const allSelected = Array.from(document.querySelectorAll('.parent-select-chk:checked'))
+        .map(chk => {
+            // Intentar buscar el contacto original en emailConfig para saber su tipo real
+            const c = (emailConfig.contacts || []).find(x => x.id === chk.dataset.parentUid || x.email === chk.dataset.parentEmail);
+            return {
+                id:          chk.dataset.parentUid,
+                type:        c ? c.type : 'parent',
+                label:       chk.dataset.player + (chk.dataset.playerNum ? ` #${chk.dataset.playerNum}` : ''),
+                parentUid:   chk.dataset.parentUid,
+                parentEmail: chk.dataset.parentEmail,
+                parentWA:    chk.dataset.parentWa,
+                phone:       chk.dataset.parentWa,
+                email:       chk.dataset.parentEmail,
+            };
+        });
 
     // Cargar preselección de mensajes guardada
     let savedMsgPresel = null;
     try { savedMsgPresel = JSON.parse(localStorage.getItem('cronos_msg_preselection') || 'null'); } catch(e) {}
 
-    const allContacts = [...selectedParents, ...staffContacts];
+    const allContacts = allSelected;
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
