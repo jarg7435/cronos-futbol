@@ -443,160 +443,174 @@ async function sendMatchReportsToParents() {
     let selectedPlayerIds = [];
     let mergedContacts = [];
     let filterCriteria = { ids: [], numbers: [] };
-    const me = window._cronosCurrentUser;
 
-    if (isSetupMode) {
-        // 1. Obtener convocados
-        const convRows = document.querySelectorAll('.conv-row.conv-selected');
-        const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
-        const mode   = document.getElementById('setup-mode')?.value || 'f11';
-        const myPlayers = roster[mode] || [];
-        const selectedPlayers = Array.from(convRows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
-        
-        // Coleccionamos tanto IDs (J-01) como Números (10) para máxima compatibilidad
-        const selectedIds = selectedPlayers.map(p => p.id).filter(Boolean);
-        const selectedNums = selectedPlayers.map(p => p.number).filter(n => n != null);
+    // 1. Mostrar modal inmediatamente para dar feedback (Cargando...)
+    const modal = document.getElementById('setup-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(96vw,400px); text-align:center; padding:2rem;">
+        <div class="spinner" style="margin:0 auto 1rem;"></div>
+        <p style="color:white;font-size:0.9rem;">Cargando lista de destinatarios...</p>
+    </div>`;
 
-        console.log("[Reports] Jugadores seleccionados:", selectedPlayers.length);
-        console.log("[Reports] IDs buscados:", selectedIds);
-        console.log("[Reports] Números buscados:", selectedNums);
-
-        if (selectedPlayers.length === 0) {
-            showToast('⚠️ Primero selecciona jugadores para la convocatoria.', 4000);
+    try {
+        const me = window._cronosCurrentUser;
+        if (!me) {
+            showToast('⚠️ Usuario no identificado. Por favor, recarga.', 4000);
+            modal.style.display = 'none';
             return;
         }
 
-        // Empaquetamos ambos para la función de filtrado
-        filterCriteria = { ids: selectedIds, numbers: selectedNums };
+        if (isSetupMode) {
+            // 1. Obtener convocados
+            const convRows = document.querySelectorAll('.conv-row.conv-selected');
+            const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+            const mode   = document.getElementById('setup-mode')?.value || 'f11';
+            const myPlayers = roster[mode] || [];
+            const selectedPlayers = Array.from(convRows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
+            
+            // Coleccionamos tanto IDs (J-01) como Números (10) para máxima compatibilidad
+            const selectedIds = selectedPlayers.map(p => p.id).filter(Boolean);
+            const selectedNums = selectedPlayers.map(p => p.number).filter(n => n != null);
 
-        // 2. Obtener TODA la base de contactos (Manuales + Firestore)
-        if (typeof loadEmailConfig === 'function') await loadEmailConfig();
-        const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
-        
-        try {
-            const { db, collection, getDocs, query, where } = await _cFS();
-            const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId)));
-            const links = [];
-            linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+            if (selectedPlayers.length === 0) {
+                showToast('⚠️ Primero selecciona jugadores para la convocatoria.', 4000);
+                openConvocationModal();
+                return;
+            }
 
-            // Fusionar similar a como se hace en Mensajes
-            mergedContacts = [...contacts];
-            links.forEach(l => {
-                const exists = mergedContacts.find(c => 
-                    (l.parentUid && c.uid === l.parentUid) || 
-                    (l.parentEmail && c.email === l.parentEmail) ||
-                    (l.parentPhone && c.phone === l.parentPhone)
-                );
-                if (!exists) {
-                    mergedContacts.push({
-                        id: l._id,
-                        type: 'parent',
-                        name: l.parentName || l.playerAlias || 'Familiar',
-                        player: l.playerAlias || l.playerName || 'Jugador',
-                        playerId: l.playerId, 
-                        playerNumber: l.playerNumber,
-                        uid: l.parentUid,
-                        email: l.parentEmail,
-                        phone: l.parentPhone,
-                        tags: ['rpt'] // Por defecto autorizados si vienen de Firestore con este fin
-                    });
-                } else {
-                    // Si ya existe, nos aseguramos que tenga el playerId para filtrar
-                    if (!exists.playerId) exists.playerId = l.playerId;
-                    if (!exists.playerNumber) exists.playerNumber = l.playerNumber;
-                }
-            });
-        } catch (e) {
-            console.error("Error fetching links for reports:", e);
-            mergedContacts = [...contacts]; // Fallback a solo manuales
+            filterCriteria = { ids: selectedIds, numbers: selectedNums };
+
+            // 2. Obtener TODA la base de contactos (Manuales + Firestore)
+            if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+            const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+            
+            try {
+                const { db, collection, getDocs, query, where } = await _cFS();
+                const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId || '')));
+                const links = [];
+                linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+
+                mergedContacts = [...contacts];
+                links.forEach(l => {
+                    const exists = mergedContacts.find(c => 
+                        (l.parentUid && c.uid === l.parentUid) || 
+                        (l.parentEmail && c.email === l.parentEmail) ||
+                        (l.parentPhone && c.phone === l.parentPhone)
+                    );
+                    if (!exists) {
+                        mergedContacts.push({
+                            id: l._id,
+                            type: 'parent',
+                            name: l.parentName || l.playerAlias || 'Familiar',
+                            player: l.playerAlias || l.playerName || 'Jugador',
+                            playerId: l.playerId, 
+                            playerNumber: l.playerNumber,
+                            uid: l.parentUid,
+                            email: l.parentEmail,
+                            phone: l.parentPhone,
+                            tags: ['rpt']
+                        });
+                    } else {
+                        if (!exists.playerId) exists.playerId = l.playerId;
+                        if (!exists.playerNumber) exists.playerNumber = l.playerNumber;
+                    }
+                });
+            } catch (e) {
+                console.warn("Reports: Fallback to manual contacts:", e);
+                mergedContacts = [...contacts];
+            }
         }
-    }
 
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
+        // 3. Renderizar modal oficial
+        modal.innerHTML = `
+        <div class="modal-content" style="width:min(96vw,540px);max-height:90vh;
+             display:flex;flex-direction:column;gap:0.8rem;padding:1.2rem;">
 
-    modal.innerHTML = `
-    <div class="modal-content" style="width:min(96vw,540px);max-height:90vh;
-         display:flex;flex-direction:column;gap:0.8rem;padding:1.2rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <div>
+                    <h3 style="margin:0;font-size:1.1rem;color:var(--primary);">📊 Informes de Rendimiento</h3>
+                    <p style="margin:0;font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">
+                        Configura quién debe recibir el reporte del partido
+                    </p>
+                </div>
+                <button onclick="${isSetupMode ? 'openConvocationModal()' : "document.getElementById('setup-modal').style.display='none'"}"
+                    style="background:none;border:none;color:var(--text-muted);
+                           font-size:1.5rem;cursor:pointer;">✕</button>
+            </div>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-            <div>
-                <h3 style="margin:0;font-size:1.1rem;color:var(--primary);">📊 Informes de Rendimiento</h3>
-                <p style="margin:0;font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">
-                    Configura quién debe recibir el reporte del partido
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                        border-radius:10px;padding:0.9rem;margin-top:0.5rem;flex:1;overflow:hidden;
+                        display:flex;flex-direction:column;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
+                        📤 ENVIAR A
+                    </div>
+                    <div style="display:flex;gap:0.4rem;">
+                        <button onclick="sharedSelectAll(true, 'rpt')"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(88,166,255,0.1);
+                                   border:1px solid rgba(88,166,255,0.3);border-radius:5px;
+                                   color:var(--primary);cursor:pointer;">
+                            ✓ Todos
+                        </button>
+                        <button onclick="sharedSelectAll(false, 'rpt')"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid rgba(255,255,255,0.1);border-radius:5px;
+                                   color:var(--text-muted);cursor:pointer;">
+                            ✗ Ninguno
+                        </button>
+                        <button onclick="sharedSavePreselection('rpt')"
+                            style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(63,185,80,0.1);
+                                   border:1px solid rgba(63,185,80,0.3);border-radius:5px;
+                                   color:#3fb950;cursor:pointer;">
+                            💾 Guardar
+                        </button>
+                    </div>
+                </div>
+
+                <div id="rpt-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:280px;overflow-y:auto;padding-right:4px;">
+                    ${isSetupMode ? buildConvocationRecipientsHTML(filterCriteria, 'rpt', mergedContacts) : sharedBuildRecipientsHTML(null, 'rpt')}
+                </div>
+
+                <p style="font-size:0.68rem;color:#ffb74d;margin:0.8rem 0 0 0;text-align:center;">
+                    <em>💡 Nota: Staff recibirá un resumen global. Padres recibirán informe individual.</em>
                 </p>
             </div>
-            <button onclick="${isSetupMode ? 'openConvocationModal()' : "document.getElementById('setup-modal').style.display='none'"}"
-                style="background:none;border:none;color:var(--text-muted);
-                       font-size:1.5rem;cursor:pointer;">✕</button>
-        </div>
 
-        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
-                    border-radius:10px;padding:0.9rem;margin-top:0.5rem;flex:1;overflow:hidden;
-                    display:flex;flex-direction:column;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
-                <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
-                    📤 ENVIAR A
-                </div>
-                <div style="display:flex;gap:0.4rem;">
-                    <button onclick="sharedSelectAll(true, 'rpt')"
-                        style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(88,166,255,0.1);
-                               border:1px solid rgba(88,166,255,0.3);border-radius:5px;
-                               color:var(--primary);cursor:pointer;">
-                        ✓ Todos
+            <div id="rpt-msg" style="font-size:0.8rem;text-align:center;min-height:0;"></div>
+
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;flex-shrink:0;">
+                <button onclick="${isSetupMode ? 'openConvocationModal()' : "document.getElementById('setup-modal').style.display='none'"}" class="btn"
+                    style="flex:1;color:var(--text-muted);">
+                    Cancelar
+                </button>
+                ${isSetupMode ? `
+                    <button onclick="saveMatchReportPreselection()" class="btn primary"
+                        style="flex:2;background:rgba(63,185,80,0.2);border-color:rgba(63,185,80,0.5);
+                               color:#3fb950;font-weight:700;">
+                        💾 GUARDAR CONFIGURACIÓN DE INFORMES
                     </button>
-                    <button onclick="sharedSelectAll(false, 'rpt')"
-                        style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(255,255,255,0.05);
-                               border:1px solid rgba(255,255,255,0.1);border-radius:5px;
-                               color:var(--text-muted);cursor:pointer;">
-                        ✗ Ninguno
+                ` : `
+                    <button onclick="_executeReportsSend('internal')" class="btn primary"
+                        style="flex:1.5;background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
+                               color:var(--primary);font-weight:700;">
+                        📱 Envío Interno
                     </button>
-                    <button onclick="sharedSavePreselection('rpt')"
-                        style="font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(63,185,80,0.1);
-                               border:1px solid rgba(63,185,80,0.3);border-radius:5px;
-                               color:#3fb950;cursor:pointer;">
-                        💾 Guardar
+                    <button onclick="_executeReportsSend('wa')" class="btn"
+                        style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;
+                               border:1px solid rgba(63,185,80,0.4);">
+                        📱 WhatsApp
                     </button>
-                </div>
+                `}
             </div>
+        </div>`;
 
-            <!-- Aquí inyectamos el HTML global que diseñamos en 19_whatsapp_email.js -->
-            <div id="rpt-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:280px;overflow-y:auto;padding-right:4px;">
-                ${isSetupMode ? buildConvocationRecipientsHTML(filterCriteria, 'rpt', mergedContacts) : sharedBuildRecipientsHTML(null, 'rpt')}
-            </div>
-
-            <p style="font-size:0.68rem;color:#ffb74d;margin:0.8rem 0 0 0;text-align:center;">
-                <em>💡 Nota: Staff recibirá un resumen global. Padres recibirán informe individual.</em>
-            </p>
-        </div>
-
-        <div id="rpt-msg" style="font-size:0.8rem;text-align:center;min-height:0;"></div>
-
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;flex-shrink:0;">
-            <button onclick="${isSetupMode ? 'openConvocationModal()' : "document.getElementById('setup-modal').style.display='none'"}" class="btn"
-                style="flex:1;color:var(--text-muted);">
-                Cancelar
-            </button>
-            ${isSetupMode ? `
-                <button onclick="saveMatchReportPreselection()" class="btn primary"
-                    style="flex:2;background:rgba(63,185,80,0.2);border-color:rgba(63,185,80,0.5);
-                           color:#3fb950;font-weight:700;">
-                    💾 GUARDAR CONFIGURACIÓN DE INFORMES
-                </button>
-            ` : `
-                <button onclick="_executeReportsSend('internal')" class="btn primary"
-                    style="flex:1.5;background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
-                           color:var(--primary);font-weight:700;">
-                    📱 Envío Interno
-                </button>
-                <button onclick="_executeReportsSend('wa')" class="btn"
-                    style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;
-                           border:1px solid rgba(63,185,80,0.4);">
-                    📱 WhatsApp
-                </button>
-            `}
-        </div>
-    </div>`;
+    } catch (err) {
+        console.error("Error in reports modal:", err);
+        showToast('⚠️ Error al cargar informes: ' + err.message, 5000);
+        modal.style.display = 'none';
+    }
 }
 
 // Nueva función para filtrar destinatarios SOLO según los convocados
