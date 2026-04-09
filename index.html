@@ -77,32 +77,10 @@
                 const data = snap.data();
                 if (!data.isAuthorized) {
                     showAuthError('Acceso no autorizado. Contacta con el administrador para activar tu cuenta.');
-                    await signOut(auth);
-                    return;
-                }
-
-                await setDoc(ref, { lastLogin: serverTimestamp() }, { merge: true });
-                window._cronosCurrentUser = { 
-                    uid: user.uid, 
-                    email: user.email, 
-                    role: data.role,
-                    clubId: data.clubId || null,
-                    clubName: data.clubName || null
-                };
-                enterApp();
-
-            } catch (err) {
-                showAuthError('Error de conexión: ' + err.message);
-            }
-        }
-        
-        // Exponer función de inmediato en TODOS lados
-        window._checkAuthorization = checkAuthorization;
-
         // Sesión solo dura mientras el navegador está abierto
         setPersistence(auth, browserLocalPersistence).catch(() => {});
 
-        // Exponer al scope global para los scripts clásicos, incluyendo la función ya definida
+        // Exponer al scope global para los scripts clásicos
         window._cronos_auth = {
             auth, db, signOut,
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
@@ -141,13 +119,17 @@
         // Observador de sesión
         onAuthStateChanged(auth, async (user) => {
             if (window._cronosCurrentUser) return;
-            if (user && window._loginThisSession) {
-                await checkAuthorization(user);
-            } else {
-                await signOut(auth).catch(() => {});
-                if (typeof showScreen === 'function') {
-                    showScreen('auth-screen');
+            if (user) {
+                // Si hay usuario, verificamos autorización (la función estará en auth.js)
+                if (window._checkAuthorization) {
+                    await window._checkAuthorization(user);
+                } else {
+                    // Si auth.js aún no carga, esperamos un poco o reintentamos
+                    console.log("Esperando a auth.js...");
+                    setTimeout(() => { if(window._checkAuthorization) window._checkAuthorization(user); }, 500);
                 }
+            } else {
+                if (typeof showScreen === 'function') showScreen('auth-screen');
             }
         });
 </script>
@@ -587,7 +569,7 @@
 
     <!-- ══ PANEL DE ADMINISTRACIÓN ══════════════════════════════════════ -->
 
-    <script src="auth.js"></script>
+    <script type="module" src="auth.js"></script>
     <script src="js/01_security_state.js"></script>
     <script src="js/02_player_actions.js"></script>
     <script src="js/03_core_utils.js"></script>
