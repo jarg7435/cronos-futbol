@@ -220,19 +220,31 @@ export function showRoleSelection() {
     const screen = document.getElementById('role-selection-screen');
     if (!screen) return;
     screen.style.display = 'flex';
-    ['card-opt-superadmin', 'card-opt-coach', 'card-opt-parent'].forEach(id => {
+
+    // Ocultar todas primero
+    const allCards = [
+        'card-opt-superadmin', 'card-opt-clubadmin', 
+        'card-opt-director', 'card-opt-coordinator',
+        'card-opt-coach', 'card-opt-parent'
+    ];
+    allCards.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
     });
+
+    // Mostrar SOLO la autorizada
     if (['superadmin','admin'].includes(role)) {
         document.getElementById('card-opt-superadmin').style.display = 'block';
-        document.getElementById('card-opt-coach').style.display      = 'block';
-        document.getElementById('card-opt-parent').style.display     = 'block';
-    } else if (['club_admin', 'director', 'coordinator', 'coach', 'user'].includes(role)) {
-        document.getElementById('card-opt-coach').style.display      = 'block';
-        document.getElementById('card-opt-parent').style.display     = 'block';
+    } else if (role === 'club_admin') {
+        document.getElementById('card-opt-clubadmin').style.display  = 'block';
+    } else if (role === 'director') {
+        document.getElementById('card-opt-director').style.display   = 'block';
+    } else if (role === 'coordinator') {
+        document.getElementById('card-opt-coordinator').style.display = 'block';
+    } else if (['coach', 'user'].includes(role)) {
+        document.getElementById('card-opt-coach').style.display       = 'block';
     } else if (role === 'parent') {
-        document.getElementById('card-opt-parent').style.display     = 'block';
+        document.getElementById('card-opt-parent').style.display      = 'block';
     }
 }
 
@@ -240,15 +252,32 @@ export function showRoleSelection() {
 export function selectOption(option) {
     const me = window._cronosCurrentUser;
     if (!me) return;
-    me._activeRole = (option === 'superadmin') ? me.role : (option === 'coach' ? 'user' : 'parent');
+
+    // Mapeo estricto del botón a rol interno
+    const map = {
+        'superadmin':  'superadmin',
+        'clubadmin':   'club_admin',
+        'director':    'director',
+        'coordinator': 'coordinator',
+        'coach':       'user',
+        'parent':      'parent'
+    };
+    
+    me._activeRole = map[option] || me.role;
     _launchWithRole(me._activeRole);
 }
 
 function _launchWithRole(role) {
     const activeRole = window._cronosCurrentUser?._activeRole || role;
     document.getElementById('role-selection-screen').style.display = 'none';
-    document.getElementById('main-container').style.display = (activeRole === 'parent') ? 'none' : 'flex';
-    document.getElementById('main-header').style.display    = (activeRole === 'parent') ? 'none' : 'flex';
+
+    // Roles que usan la interfaz principal de campo (Entrenador, Director, Coord, Admin Club)
+    const isFieldRole = ['user', 'coach', 'director', 'coordinator', 'club_admin'].includes(activeRole);
+    const isParent    = (activeRole === 'parent');
+    const isSA       = (activeRole === 'superadmin');
+
+    document.getElementById('main-container').style.display = isFieldRole ? 'flex' : 'none';
+    document.getElementById('main-header').style.display    = isFieldRole ? 'flex' : 'none';
 
     const btnAdmin = document.getElementById('btn-admin-panel');
     if (btnAdmin) {
@@ -263,8 +292,15 @@ function _launchWithRole(role) {
     sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email);
     sessionStorage.setItem('cronos_session_role', activeRole);
 
-    if (activeRole === 'parent') { if (typeof openParentPanel === 'function') openParentPanel(); } 
-    else { if (typeof init === 'function') init(activeRole); }
+    if (activeRole === 'parent') { 
+        if (typeof openParentPanel === 'function') openParentPanel(); 
+    } else if (activeRole === 'superadmin') {
+        if (typeof openSuperAdminPanel === 'function') openSuperAdminPanel();
+    } else if (activeRole === 'club_admin') {
+        if (typeof openClubAdminPanel === 'function') openClubAdminPanel();
+    } else { 
+        if (typeof init === 'function') init(activeRole); 
+    }
 }
 
 // ── Exportación Global ───────────────────────────────────────
