@@ -95,7 +95,7 @@ async function openParentPanel() {
                 ${me.email || ''}
             </div>
         </div>
-        <button onclick="cerrarSesion()"
+        <button onclick="logoutUser()"
             style="background:none;border:1px solid rgba(255,88,88,0.35);
                    color:rgba(255,88,88,0.75);font-size:0.74rem;
                    padding:0.35rem 0.85rem;border-radius:6px;cursor:pointer;">
@@ -224,9 +224,12 @@ async function openParentPanel() {
                 snap = await getDocs(collection(fa.db,'cronos_notifications'));
             }
 
+            const dismissed = JSON.parse(localStorage.getItem('cronos_dismissed_notifs') || '[]');
             const items = [];
             snap.forEach(d => {
                 const dat = d.data();
+                if (dismissed.includes(d.id)) return; // Saltar borrados locales
+
                 if (dat.type === 'convocatoria' || dat.type === 'entrenamiento' || dat.type === 'planificacion_semanal' || dat.type === 'informe_partido') {
                     items.push({ _id: d.id, ...dat });
                 }
@@ -344,9 +347,13 @@ async function openParentPanel() {
                 }
 
                 return `
-                <div class="pp-card" style="border-left:3px solid ${accent};">
+                <div class="pp-card" style="border-left:3px solid ${accent}; position:relative;">
+                    <button onclick="dismissNotification('${n._id}')" 
+                        style="position:absolute; top:0.6rem; right:0.6rem; background:none; border:none; color:rgba(255,255,255,0.1); cursor:pointer; font-size:0.8rem;" title="Quitar de mi vista">
+                        ✕
+                    </button>
                     <div style="display:flex;justify-content:space-between;
-                                margin-bottom:0.55rem;flex-wrap:wrap;gap:0.3rem;">
+                                margin-bottom:0.55rem;flex-wrap:wrap;gap:0.3rem; padding-right:1.5rem;">
                         <span style="font-weight:700;color:${accent};">${icon} ${title}</span>
                         <span style="font-size:0.71rem;color:#7d8590;">${sent}</span>
                     </div>
@@ -357,6 +364,14 @@ async function openParentPanel() {
         } catch(e) {
             body.innerHTML = `<div class="pp-empty">⚠️ ${e.message}</div>`;
         }
+    };
+
+    window.dismissNotification = (id) => {
+        if (!confirm('¿Deseas quitar este mensaje de tu bandeja de entrada?')) return;
+        const dismissed = JSON.parse(localStorage.getItem('cronos_dismissed_notifs') || '[]');
+        if (!dismissed.includes(id)) dismissed.push(id);
+        localStorage.setItem('cronos_dismissed_notifs', JSON.stringify(dismissed));
+        window.ppMsgs(); // Recargar pestaña
     };
 
     // ══════════════════════════════════════════════════════════════
