@@ -451,12 +451,22 @@ async function sendMatchReportsToParents() {
         const mode   = document.getElementById('setup-mode')?.value || 'f11';
         const myPlayers = roster[mode] || [];
         const selectedPlayers = Array.from(convRows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
-        selectedPlayerIds = selectedPlayers.map(p => p.id); // Usamos el ID único (J-01, etc)
+        
+        // Coleccionamos tanto IDs (J-01) como Números (10) para máxima compatibilidad
+        const selectedIds = selectedPlayers.map(p => p.id).filter(Boolean);
+        const selectedNums = selectedPlayers.map(p => p.number).filter(n => n != null);
+
+        console.log("[Reports] Jugadores seleccionados:", selectedPlayers.length);
+        console.log("[Reports] IDs buscados:", selectedIds);
+        console.log("[Reports] Números buscados:", selectedNums);
 
         if (selectedPlayers.length === 0) {
             showToast('⚠️ Primero selecciona jugadores para la convocatoria.', 4000);
             return;
         }
+
+        // Empaquetamos ambos para la función de filtrado
+        const filterCriteria = { ids: selectedIds, numbers: selectedNums };
 
         // 2. Obtener TODA la base de contactos (Manuales + Firestore)
         if (typeof loadEmailConfig === 'function') await loadEmailConfig();
@@ -551,7 +561,7 @@ async function sendMatchReportsToParents() {
 
             <!-- Aquí inyectamos el HTML global que diseñamos en 19_whatsapp_email.js -->
             <div id="rpt-recipients-list" style="display:flex;flex-direction:column;gap:0.4rem;max-height:280px;overflow-y:auto;padding-right:4px;">
-                ${isSetupMode ? buildConvocationRecipientsHTML(selectedPlayerIds, 'rpt', mergedContacts) : sharedBuildRecipientsHTML(null, 'rpt')}
+                ${isSetupMode ? buildConvocationRecipientsHTML(filterCriteria, 'rpt', mergedContacts) : sharedBuildRecipientsHTML(null, 'rpt')}
             </div>
 
             <p style="font-size:0.68rem;color:#ffb74d;margin:0.8rem 0 0 0;text-align:center;">
@@ -589,16 +599,28 @@ async function sendMatchReportsToParents() {
 }
 
 // Nueva función para filtrar destinatarios SOLO según los convocados
-function buildConvocationRecipientsHTML(selectedPlayerIds, prefix = 'rpt', allContacts = null) {
+function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allContacts = null) {
     const contacts = allContacts || ((typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : []);
     const staff = contacts.filter(c => c.type !== 'parent');
     
-    // Filtramos los padres: solo si su playerId está en la lista de convocados
+    const { ids, numbers } = filterCriteria || { ids: [], numbers: [] };
+
+    // Filtramos los padres: solo si su playerId o playerNumber coincide con la convocatoria
     const activeParents = contacts.filter(c => {
         if (c.type !== 'parent') return false;
-        // Intentamos casar por ID único (prioritario) o por número de dorsal si no hay ID
-        return selectedPlayerIds.includes(c.playerId);
+        
+        // 1. Intentar por ID único (J-01, etc)
+        const matchById = c.playerId && ids.includes(c.playerId);
+        if (matchById) return true;
+
+        // 2. Intentar por Número de dorsal como fallback
+        const matchByNum = c.playerNumber != null && numbers.includes(parseInt(c.playerNumber));
+        if (matchByNum) return true;
+
+        return false;
     });
+
+    console.log(`[Reports] Mostrando ${staff.length} staff y ${activeParents.length} padres.`);
 
     const allToShow = [...staff, ...activeParents];
 
