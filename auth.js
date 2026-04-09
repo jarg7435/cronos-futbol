@@ -1,203 +1,293 @@
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
-import { doc, getDoc, setDoc, collection, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+/**
+ * auth.js - Gestión de Autenticación y Autorización
+ * Cronos Fútbol
+ */
 
-let isLoginMode = true;
+// ── Estado Local ──────────────────────────────────────────────
+let _isLoginMode = true;
 
-window.toggleAuthMode = () => {
-    isLoginMode = !isLoginMode;
-    document.getElementById('auth-subtitle').textContent = isLoginMode ? 'Iniciar Sesión' : 'Crear Cuenta Nueva';
-    document.getElementById('auth-action-btn').textContent = isLoginMode ? 'ENTRAR' : 'REGISTRARSE';
-    document.getElementById('auth-toggle-link').textContent = isLoginMode ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión';
-    document.getElementById('access-error').textContent = '';
-};
+// ── Cambiar entre Login y Registro ──────────────────────────
+export function switchTab(tab) {
+    _isLoginMode = (tab === 'login');
+    const loginTab = document.getElementById('tab-login');
+    const regTab   = document.getElementById('tab-register');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    
+    if (loginTab) loginTab.classList.toggle('active', _isLoginMode);
+    if (regTab)   regTab.classList.toggle('active', !_isLoginMode);
+    
+    if (loginForm)    loginForm.style.display = _isLoginMode ? 'block' : 'none';
+    if (registerForm) registerForm.style.display = _isLoginMode ? 'none' : 'block';
+    
+    const errorEl = document.getElementById('auth-error');
+    if (errorEl) errorEl.textContent = '';
 
-window.handleAuthAction = async () => {
-    if (isLoginMode) {
-        await handleLogin();
-    } else {
-        await handleRegister();
+    if (!_isLoginMode) {
+        loadClubOptions();
     }
 }
 
-async function handleLogin() {
-    const email = document.getElementById('auth-email').value;
-    const password = document.getElementById('auth-password').value;
-    const errorEl = document.getElementById('access-error');
+// ── Cargar Clubes en el Registro ─────────────────────────────
+export async function loadClubOptions() {
+    const select = document.getElementById('auth-club-select');
+    if (!select) return;
     
-    if (!email || !password) {
-        errorEl.textContent = 'Introduza correo y contraseña';
-        return;
-    }
+    const fa = window._cronos_auth;
+    if (!fa) return;
 
     try {
-        errorEl.textContent = 'Iniciando sesión...';
-        const userCredential = await signInWithEmailAndPassword(window.firebaseAuth, email, password);
-        const user = userCredential.user;
-
-        // Comprobar autorización en Firestore
-        const userDocRef = doc(window.firebaseDb, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
-
-        if (userDoc.exists()) {
-            const userData = userDoc.data();
-            if (userData.isAuthorized) {
-                // Usuario Autorizado
-                sessionStorage.setItem('cronos_user_role', userData.role || 'user');
-                sessionStorage.setItem('cronos_access', 'true');
-                if (userData.role === 'admin') {
-                    document.getElementById('btn-admin').style.display = 'block';
-                }
-                unlockApp();
-            } else {
-                // Usuario NO Autorizado
-                window.firebaseAuth.signOut();
-                errorEl.textContent = 'Cuenta pendiente de autorización.';
+        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const snap = await m.getDocs(m.collection(fa.db, 'clubs'));
+        let html = '<option value="">-- Selecciona un club --</option>';
+        snap.forEach(doc => {
+            const club = doc.data();
+            if (club.status !== 'blocked') {
+                html += `<option value="${doc.id}">${club.name}</option>`;
             }
-        } else {
-            window.firebaseAuth.signOut();
-            errorEl.textContent = 'Error: Contacte con el administrador (Doc not found).';
-        }
-    } catch (error) {
-        console.error("Error signing in", error);
-        errorEl.textContent = 'Usuario o contraseña incorrectos.';
+        });
+        select.innerHTML = html;
+    } catch(e) {
+        select.innerHTML = '<option value="">Error al cargar clubes</option>';
     }
 }
 
-async function handleRegister() {
-    const email = document.getElementById('auth-email').value;
-    const password = document.getElementById('auth-password').value;
-    const errorEl = document.getElementById('access-error');
+// ── Manejar Cambio de Rol en Registro ────────────────────────
+export function handleRoleChange() {
+    const role = document.getElementById('auth-role')?.value;
+    const isParent = (role === 'parent');
+    const isClubAdmin = (role === 'club_admin');
     
+    const clubCont = document.getElementById('club-container');
+    const newClubCont = document.getElementById('new-club-container');
+    const inviteCont = document.getElementById('invite-code-container');
+
+    if (clubCont) clubCont.style.display = (!isClubAdmin) ? 'block' : 'none';
+    if (newClubCont) newClubCont.style.display = isClubAdmin ? 'block' : 'none';
+    if (inviteCont) inviteCont.style.display = isParent ? 'block' : 'none';
+}
+
+// ── Mostrar Error ───────────────────────────────────────────
+export function showAuthError(msg) {
+    const el = document.getElementById('auth-error');
+    if (el) {
+        el.textContent  = msg;
+        el.style.color  = (msg.startsWith('✅') || msg.includes('correct')) ? '#3fb950' : '#ff5858';
+    }
+}
+
+// ── Mostrar Pantallas ───────────────────────────────────────
+export function showScreen(screenId) {
+    ['auth-screen','install-screen','onboarding-screen'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (id === screenId) ? 'flex' : 'none';
+    });
+}
+
+// ── Login / Registro ────────────────────────────────────────
+export async function doAuth() {
+    const fa = window._cronos_auth;
+    if (!fa) { showAuthError('Firebase no disponible. Revisa tu conexión.'); return; }
+
+    const email    = document.getElementById('auth-email')?.value.trim();
+    const password = document.getElementById('auth-password')?.value;
     if (!email || !password) {
-        errorEl.textContent = 'Introduzca correo y contraseña';
-        return;
+        showAuthError('Introduce email y contraseña.'); return;
     }
 
-    if (password.length < 6) {
-        errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
-        return;
-    }
+    showAuthError('⏳ Conectando…');
 
     try {
-        errorEl.textContent = 'Creando cuenta...';
-        const userCredential = await createUserWithEmailAndPassword(window.firebaseAuth, email, password);
-        const user = userCredential.user;
-
-        // Crear documento base en la colección `users` en Firestore
-        // El usuario se crea "desautorizado" por defecto
-        await setDoc(doc(window.firebaseDb, "users", user.uid), {
-            email: user.email,
-            role: "user",
-            isAuthorized: false,
-            subscriptionPlan: "free",
-            createdAt: new Date().toISOString()
-        });
-
-        // Cerrar sesión recién creada para que el Admin lo tenga que autorizar primero
-        await window.firebaseAuth.signOut();
-        
-        // Volver a la pantalla de login con un mensaje de info
-        toggleAuthMode();
-        errorEl.style.color = 'var(--success)';
-        errorEl.textContent = 'Cuenta creada. Esperando autorización.';
-        // resetear color despues de un rato o a la siguiente intencion
-        setTimeout(() => errorEl.style.color = 'var(--danger)', 5000);
-
-    } catch (error) {
-        console.error("Error registering", error);
-        if(error.code === 'auth/email-already-in-use') {
-            errorEl.textContent = 'Este correo ya está registrado.';
+        if (_isLoginMode) {
+            // ── LOGIN ──
+            window._loginThisSession = true;
+            const cred = await fa.signInWithEmailAndPassword(fa.auth, email, password);
+            if (window._checkAuthorization) { await window._checkAuthorization(cred.user); } 
+            else if (fa.checkAuthorization) { await fa.checkAuthorization(cred.user); } 
+            else { throw new Error("checkAuth not found"); }
         } else {
-            errorEl.textContent = 'Hubo un error al crear la cuenta.';
-        }
-    }
-}
+            // ── REGISTRO ──
+            const requestedRole = document.getElementById('auth-role')?.value || 'user';
+            const selectedClubId = document.getElementById('auth-club-select')?.value || null;
+            const newClubName = document.getElementById('auth-new-club-name')?.value.trim() || '';
+            const reqCoaches = parseInt(document.getElementById('auth-req-coaches')?.value) || 0;
+            const reqParents = parseInt(document.getElementById('auth-req-parents')?.value) || 0;
+            const inviteCode = document.getElementById('auth-invite-code')?.value.trim().toUpperCase() || '';
 
-window.onloadAuth = () => {
-    // Escuchar si ya hay usuario al arrancar (persistencia de sesión Firebase)
-    window.firebaseAuth.onAuthStateChanged(async (user) => {
-        if (user) {
-            const errorEl = document.getElementById('access-error');
-            // Si acabamos de registrar un usuario, handleRegister ya se encarga del mensaje y el signOut
-            // No queremos que este listener pise el mensaje de "Cuenta creada"
-            const userDocRef = doc(window.firebaseDb, "users", user.uid);
-            const userDoc = await getDoc(userDocRef);
+            // Validaciones básicas
+            if (requestedRole === 'club_admin' && !newClubName) {
+                showAuthError('⚠️ El nombre del club es obligatorio.'); return;
+            }
+            if (requestedRole !== 'club_admin' && !selectedClubId && requestedRole !== 'superadmin' && requestedRole !== 'parent') {
+                showAuthError('⚠️ Debes seleccionar un club.'); return;
+            }
+
+            const cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
             
-            if (userDoc.exists()) {
-                const userData = userDoc.data();
-                if (userData.isAuthorized) {
-                    sessionStorage.setItem('cronos_user_role', userData.role || 'user');
-                    sessionStorage.setItem('cronos_access', 'true');
-                    if (userData.role === 'admin') {
-                        document.getElementById('btn-admin').style.display = 'block';
-                    }
-                    unlockApp();
-                } else {
-                    // Solo mostramos el error si NO estamos en el proceso de registro manual
-                    // (Si estamos registrando, el errorEl tendrá el color success temporalmente)
-                    if (errorEl.style.color !== 'var(--success)') {
-                        errorEl.textContent = 'Tu cuenta está pendiente de autorización.';
-                        await window.firebaseAuth.signOut();
-                    }
+            let finalRole = requestedRole;
+            let isAuthorized = false;
+            let clubId = selectedClubId;
+
+            // Superadmin automático (por correo)
+            if (email === 'jarg7435@gmail.com') {
+                finalRole = 'superadmin';
+                isAuthorized = true;
+            }
+
+            // Lógica de invitación para padres
+            if (requestedRole === 'parent' && inviteCode) {
+                const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const linksSnap = await m.getDocs(m.query(
+                    m.collection(fa.db, 'cronos_player_links'),
+                    m.where('inviteCode', '==', inviteCode)
+                ));
+                
+                if (!linksSnap.empty) {
+                    const linkDoc = linksSnap.docs[0];
+                    const linkData = linkDoc.data();
+                    isAuthorized = true;
+                    clubId = linkData.clubId;
+                    
+                    await m.updateDoc(m.doc(fa.db, 'cronos_player_links', linkDoc.id), {
+                        parentUid: cred.user.uid,
+                        parentEmail: email
+                    });
+                    showAuthError('✅ Vinculación correcta. Padre autorizado.');
                 }
+            }
+
+            // Crear documento en Firestore
+            const userData = {
+                email:         email,
+                isAuthorized:  isAuthorized,
+                role:          finalRole,
+                requestedRole: requestedRole,
+                clubId:        clubId,
+                createdAt:     fa.serverTimestamp(),
+                lastLogin:     fa.serverTimestamp(),
+                status:        isAuthorized ? 'active' : 'pending'
+            };
+
+            if (requestedRole === 'club_admin') {
+                userData.requestedClubName = newClubName;
+                userData.requestedQuotas = { coaches: reqCoaches, parents: reqParents };
+            }
+
+            await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), userData);
+            
+            if (!isAuthorized) {
+                await fa.signOut(fa.auth);
+                showAuthError('✅ Solicitud enviada. Espera la aprobación.');
+                switchTab('login');
             } else {
-                // Si el documento no existe pero el auth sí (raro), forzar logout
-                await window.firebaseAuth.signOut();
+                showAuthError('✅ Registro completado. Ya puedes entrar.');
+                switchTab('login');
             }
         }
-    });
-};
-
-window.fetchUsers = async () => {
-    const querySnapshot = await getDocs(collection(window.firebaseDb, "users"));
-    const userList = document.getElementById('admin-user-list');
-    userList.innerHTML = '';
-    querySnapshot.forEach((docSnap) => {
-        const user = docSnap.data();
-        const id = docSnap.id;
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td style="padding: 10px;">${user.email}</td>
-            <td style="padding: 10px;">${user.subscriptionPlan || 'free'}</td>
-            <td style="padding: 10px;">
-                <label class="toggle-switch">
-                    <input type="checkbox" ${user.isAuthorized ? 'checked' : ''} onchange="toggleUserAuthorization('${id}', this.checked)">
-                    <span class="slider"></span>
-                </label>
-            </td>
-            <td style="padding: 10px;">
-                <button class="btn" style="font-size: 0.7rem;" onclick="changeUserPlan('${id}', '${user.subscriptionPlan === 'pro' ? 'free' : 'pro'}')">
-                    ${user.subscriptionPlan === 'pro' ? 'Bajar a FREE' : 'Subir a PRO'}
-                </button>
-            </td>
-        `;
-        userList.appendChild(row);
-    });
-};
-
-window.toggleUserAuthorization = async (userId, status) => {
-    try {
-        await updateDoc(doc(window.firebaseDb, "users", userId), {
-            isAuthorized: status
-        });
-        console.log("User authorization updated");
-    } catch (error) {
-        console.error("Error updating authorization", error);
-        alert("Error al actualizar autorización");
+    } catch(e) {
+        showAuthError('Error: ' + e.message);
+        window._loginThisSession = false;
     }
-};
+}
 
-window.changeUserPlan = async (userId, newPlan) => {
-    try {
-        await updateDoc(doc(window.firebaseDb, "users", userId), {
-            subscriptionPlan: newPlan
-        });
-        window.fetchUsers();
-    } catch (error) {
-        console.error("Error updating plan", error);
+// ── Entrar en la app tras login ─────────────────────────────
+export function enterApp() {
+    const authScreen = document.getElementById('auth-screen');
+    if (authScreen) authScreen.style.display = 'none';
+    document.body.classList.remove('locked');
+    showRoleSelection();
+}
+
+// ── Selección de Rol (Multi-Perfil) ─────────────────────────
+export function showRoleSelection() {
+    const role = window._cronosCurrentUser?.role;
+    const screen = document.getElementById('role-selection-screen');
+    if (!screen) return;
+
+    screen.style.display = 'flex';
+
+    // Ocultar tarjetas
+    ['card-opt-superadmin', 'card-opt-coach', 'card-opt-parent'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    // Mostrar según rol real
+    if (['superadmin','admin'].includes(role)) {
+        document.getElementById('card-opt-superadmin').style.display = 'block';
+        document.getElementById('card-opt-coach').style.display      = 'block';
+        document.getElementById('card-opt-parent').style.display     = 'block';
+    } 
+    else if (['club_admin', 'director', 'coordinator', 'user', 'coach'].includes(role)) {
+        document.getElementById('card-opt-coach').style.display      = 'block';
+        document.getElementById('card-opt-parent').style.display     = 'block';
+    } 
+    else if (role === 'parent') {
+        document.getElementById('card-opt-parent').style.display     = 'block';
     }
-};
+}
 
-window.showUpgradeModal = () => {
-    alert("🚀 ¡Sube a Cronos PRO!\n\n- Equipos ilimitados\n- Exportación PDF personalizada\n- Sincronización en la nube\n\nPróximamente disponible.");
-};
+// ── Seleccionar una Opción ──────────────────────────────────
+export function selectOption(option) {
+    const screen = document.getElementById('role-selection-screen');
+    if (screen) screen.style.display = 'none';
+
+    const me = window._cronosCurrentUser;
+    if (!me) return;
+
+    me._activeRole = (option === 'superadmin') ? me.role : (option === 'coach' ? 'user' : 'parent');
+    _launchWithRole(me._activeRole);
+}
+
+// ── Lanzar App con Rol Activo ───────────────────────────────
+export function _launchWithRole(role) {
+    const activeRole = window._cronosCurrentUser?._activeRole || role;
+
+    document.getElementById('main-container').style.display = (activeRole === 'parent') ? 'none' : 'flex';
+    document.getElementById('main-header').style.display    = (activeRole === 'parent') ? 'none' : 'flex';
+
+    // Visibilidad de botones según rol y contexto
+    const btnAdmin = document.getElementById('btn-admin-panel');
+    if (btnAdmin) {
+        btnAdmin.style.display = (['admin','superadmin','club_admin'].includes(window._cronosCurrentUser.role) && 
+                                 (activeRole === window._cronosCurrentUser.role || activeRole === 'user')) 
+                                 ? 'inline-block' : 'none';
+    }
+
+    const btnClub = document.getElementById('btn-club-panel');
+    if (btnClub) {
+        btnClub.style.display = (window._cronosCurrentUser.role === 'club_admin') ? 'inline-block' : 'none';
+    }
+
+    // Persistencia
+    sessionStorage.setItem('cronos_session_uid',   window._cronosCurrentUser.uid   || '');
+    sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email || '');
+    sessionStorage.setItem('cronos_session_role',  activeRole || 'user');
+
+    if (activeRole === 'parent') {
+        if (typeof openParentPanel === 'function') openParentPanel();
+    } else {
+        if (typeof init === 'function') init(activeRole);
+    }
+}
+
+// ── Panel Admin ─────────────────────────────────────────────
+export function openAdminPanel() {
+    const role = window._cronosCurrentUser?.role;
+    if (['admin','superadmin'].includes(role) && typeof openSuperAdminPanel === 'function') {
+        openSuperAdminPanel();
+    } else if (role === 'club_admin' && typeof openClubAdminPanel === 'function') {
+        openClubAdminPanel();
+    }
+}
+
+// Exponer funciones globales para compatibilidad con index.html (onclick)
+window.switchTab = switchTab;
+window.handleRoleChange = handleRoleChange;
+window.doAuth = doAuth;
+window.selectOption = selectOption;
+window.openAdminPanel = openAdminPanel;
+window.showRoleSelector = showRoleSelection;
+window.enterApp = enterApp;
+window.showAuthError = showAuthError;
+window.showScreen = showScreen;

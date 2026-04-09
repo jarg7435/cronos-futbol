@@ -256,16 +256,56 @@
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
             </div>
 
-            <!-- Código de Invitación (Opcional para registro) -->
+            <!-- Selector de Rol (Solo registro) -->
+            <div id="role-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">¿Quién eres?</label>
+                <select id="auth-role" onchange="handleRoleChange()"
+                    style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
+                           border:1px solid rgba(255,255,255,0.15); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                    <option value="user">⚽ Entrenador</option>
+                    <option value="parent">👨‍👩‍👧 Padre / Madre</option>
+                    <option value="director">📋 Director Deportivo</option>
+                    <option value="coordinator">🎯 Coordinador</option>
+                    <option value="club_admin">🏟️ Administrador de Club (Nuevo Club)</option>
+                </select>
+            </div>
+
+            <!-- Selector de Club (Solo registro para roles que no son admin) -->
+            <div id="club-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Selecciona tu Club</label>
+                <select id="auth-club-select"
+                    style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
+                           border:1px solid rgba(255,255,255,0.15); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                    <option value="">Cargando clubes...</option>
+                </select>
+            </div>
+
+            <!-- Datos de Nuevo Club (Solo para Admin de Club en registro) -->
+            <div id="new-club-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#58a6ff; display:block; margin-bottom:5px;">Nombre de tu Club</label>
+                <input type="text" id="auth-new-club-name" placeholder="Ej: Real Madrid C.F."
+                    style="width:100%; padding:0.75rem; background:rgba(88,166,255,0.05);
+                           border:1px solid rgba(88,166,255,0.25); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none; margin-bottom:0.5rem;">
+                
+                <label style="font-size:0.72rem; color:#7d8590; display:block; margin-bottom:5px;">Cuotas solicitadas (Opcional)</label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                    <input type="number" id="auth-req-coaches" placeholder="Nº Entrenadores" title="Entrenadores"
+                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem;">
+                    <input type="number" id="auth-req-parents" placeholder="Nº Padres" title="Padres"
+                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem;">
+                </div>
+            </div>
+
+            <!-- Código de Invitación (Opcional para registro de padres) -->
             <div id="invite-code-container" style="display:none; margin-bottom:1.5rem;">
-                <label style="font-size:0.78rem; color:#ffd700; display:block; margin-bottom:5px;">¿Tienes un código de invitación? (Opcional)</label>
+                <label style="font-size:0.78rem; color:#ffd700; display:block; margin-bottom:5px;">¿Tienes un código de invitación?</label>
                 <input type="text" id="auth-invite-code" placeholder="EJ: 3A7B9X"
                     style="width:100%; padding:0.75rem; background:rgba(255,215,0,0.05);
                            border:1px solid rgba(255,215,0,0.25); border-radius:8px;
                            color:#ffd700; font-size:0.95rem; box-sizing:border-box; outline:none; text-transform:uppercase;">
-                <p style="font-size:0.68rem; color:rgba(255,215,0,0.6); margin-top:0.3rem;">
-                    Úsalo para vincularte automáticamente con tu hijo/a.
-                </p>
             </div>
 
             <!-- Botón -->
@@ -317,6 +357,14 @@
                 <div class="role-card-icon">👨‍👩‍👧</div>
                 <h3>Padre / Madre</h3>
                 <p>Sigue a tu hijo, recibe convocatorias y mira partidos en vivo.</p>
+            </div>
+
+            <!-- Opción Administrador de Club -->
+            <div id="card-opt-clubadmin" class="role-card" onclick="selectOption('clubadmin')" style="display:none;">
+                <div class="role-card-icon">🏟️</div>
+                <h3>Administrador Club</h3>
+                <p>Gestiona el personal, cuotas e informes deportivos de tu club.</p>
+                <div class="role-card-badge" style="background:var(--primary);color:white;">CLUB</div>
             </div>
 
         </div>
@@ -539,6 +587,7 @@
 
     <!-- ══ PANEL DE ADMINISTRACIÓN ══════════════════════════════════════ -->
 
+    <script src="auth.js"></script>
     <script src="js/01_security_state.js"></script>
     <script src="js/02_player_actions.js"></script>
     <script src="js/03_core_utils.js"></script>
@@ -897,205 +946,6 @@
     window.addEventListener('load', detectDeviceAndShowInstall);
     </script>
 
-
-    <script>
-    // ════════════════════════════════════════════════════════════
-    //  CRONOS FÚTBOL — Funciones de autenticación y arranque
-    // ════════════════════════════════════════════════════════════
-
-    let _isLoginMode = true;
-
-    // ── Cambiar entre ENTRAR / REGISTRARSE ───────────────────────
-    function switchTab(mode) {
-        _isLoginMode = (mode === 'login');
-        const tLogin  = document.getElementById('tab-login');
-        const tReg    = document.getElementById('tab-register');
-        if (tLogin) {
-            tLogin.style.color       = _isLoginMode ? '#58a6ff' : '#7d8590';
-            tLogin.style.borderBottom= _isLoginMode ? '2px solid #58a6ff' : '2px solid transparent';
-        }
-        if (tReg) {
-            tReg.style.color       = !_isLoginMode ? '#58a6ff' : '#7d8590';
-            tReg.style.borderBottom= !_isLoginMode ? '2px solid #58a6ff' : '2px solid transparent';
-        }
-        const inviteContainer = document.getElementById('invite-code-container');
-        if (inviteContainer) {
-            inviteContainer.style.display = _isLoginMode ? 'none' : 'block';
-        }
-        showAuthError('');
-    }
-
-    // ── Mostrar / ocultar pantallas ──────────────────────────────
-    function showScreen(screenId) {
-        ['auth-screen','install-screen','onboarding-screen'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.style.display = (id === screenId) ? 'flex' : 'none';
-        });
-    }
-
-    // ── Mostrar error en pantalla de login ───────────────────────
-    function showAuthError(msg) {
-        const el = document.getElementById('auth-error');
-        if (el) {
-            el.textContent  = msg;
-            el.style.color  = msg.startsWith('✅') ? '#3fb950' : '#ff5858';
-        }
-    }
-
-    // ── Login / Registro ─────────────────────────────────────────
-    async function doAuth() {
-        const fa = window._cronos_auth;
-        if (!fa) { showAuthError('Firebase no disponible. Revisa tu conexión.'); return; }
-
-        const email    = document.getElementById('auth-email')?.value.trim();
-        const password = document.getElementById('auth-password')?.value;
-        if (!email || !password) {
-            showAuthError('Introduce email y contraseña.'); return;
-        }
-
-        showAuthError('⏳ Conectando…');
-
-        try {
-            if (_isLoginMode) {
-                // ── LOGIN ──
-                window._loginThisSession = true;
-                const cred = await fa.signInWithEmailAndPassword(fa.auth, email, password);
-                if (window._checkAuthorization) { await window._checkAuthorization(cred.user); } else if (fa.checkAuthorization) { await fa.checkAuthorization(cred.user); } else { throw new Error("checkAuth not found"); }
-            } else {
-                // ── REGISTRO ──
-                const inviteCode = document.getElementById('auth-invite-code')?.value.trim().toUpperCase() || '';
-                const cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
-                
-                let userRole = 'user'; // Por defecto entrenador/usuario individual
-                let isAuthorized = false;
-                let clubId = null;
-
-                // Si hay código de invitación, intentar vincular
-                if (inviteCode) {
-                    const linksSnap = await fa.getDocs(fa.query(
-                        fa.collection(fa.db, 'cronos_player_links'),
-                        fa.where('inviteCode', '==', inviteCode)
-                    ));
-                    
-                    if (!linksSnap.empty) {
-                        const linkDoc = linksSnap.docs[0];
-                        const linkData = linkDoc.data();
-                        
-                        userRole = 'parent';
-                        isAuthorized = true; // Si tiene invitación válida, se autoriza automáticamente
-                        clubId = linkData.clubId;
-                        
-                        // Actualizar el vínculo con el nuevo UID real
-                        await fa.updateDoc(fa.doc(fa.db, 'cronos_player_links', linkDoc.id), {
-                            parentUid: cred.user.uid,
-                            parentEmail: email,
-                            parentWA: linkData.parentWA || '' // Mantener el WA si existía
-                        });
-                        showAuthError('✅ ¡Vinculación correcta! Cuenta de Padre/Madre autorizada.');
-                    } else {
-                        showAuthError('⚠️ Código de invitación no válido. Cuenta creada como pendiente.');
-                    }
-                }
-
-                // Crear doc en Firestore
-                await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), {
-                    email:        email,
-                    isAuthorized: isAuthorized,
-                    role:         userRole,
-                    clubId:       clubId,
-                    createdAt:    fa.serverTimestamp(),
-                    lastLogin:    fa.serverTimestamp()
-                });
-                
-                if (!isAuthorized) {
-                    await fa.signOut(fa.auth);
-                    showAuthError('✅ Cuenta creada. Pendiente de autorización por el administrador.');
-                    switchTab('login');
-                } else {
-                    // Si está autorizado vía código, podemos entrar directo o pedir login
-                    showAuthError('✅ Registro completado. Ya puedes entrar.');
-                    switchTab('login');
-                }
-            }
-        } catch(e) {
-            const msgs = {
-                'auth/invalid-email':        'Email no válido.',
-                'auth/user-not-found':       'Usuario no encontrado.',
-                'auth/wrong-password':       'Contraseña incorrecta.',
-                'auth/invalid-credential':   'Email o contraseña incorrectos.',
-                'auth/email-already-in-use': 'Este email ya está registrado.',
-                'auth/weak-password':        'Contraseña demasiado corta (mínimo 6 caracteres).',
-                'auth/too-many-requests':    'Demasiados intentos. Espera unos minutos.',
-            };
-            showAuthError(msgs[e.code] || ('Error: ' + e.message));
-            window._loginThisSession = false;
-        }
-    }
-
-    // ── Entrar en la app tras login exitoso ──────────────────────
-    function enterApp() {
-        document.getElementById('auth-screen').style.display = 'none';
-        document.body.classList.remove('locked');
-        showRoleSelection();
-    }
-
-    // ── Mostrar pantalla de selección de rol ──────────────────────
-    function showRoleSelection() {
-        const role = window._cronosCurrentUser?.role;
-        const screen = document.getElementById('role-selection-screen');
-        if (!screen) return;
-
-        screen.style.display = 'flex';
-
-        // Ocultar todas las tarjetas inicialmente
-        document.getElementById('card-opt-superadmin').style.display = 'none';
-        document.getElementById('card-opt-coach').style.display      = 'none';
-        document.getElementById('card-opt-parent').style.display     = 'none';
-
-        // Filtrar según el rol real del usuario (desde Firestore)
-        if (['superadmin','admin'].includes(role)) {
-            document.getElementById('card-opt-superadmin').style.display = 'block';
-            document.getElementById('card-opt-coach').style.display      = 'block';
-            document.getElementById('card-opt-parent').style.display     = 'block';
-        } 
-        else if (role === 'club_admin' || role === 'director' || role === 'coordinator' || role === 'user') {
-            document.getElementById('card-opt-coach').style.display      = 'block';
-            document.getElementById('card-opt-parent').style.display     = 'block'; // Entrenadores pueden ver área de familias
-        } 
-        else if (role === 'parent') {
-            document.getElementById('card-opt-parent').style.display     = 'block';
-        }
-    }
-
-    // ── Seleccionar una opción ───────────────────────────────────
-    window.selectOption = (option) => {
-        const screen = document.getElementById('role-selection-screen');
-        if (screen) screen.style.display = 'none';
-
-        const me = window._cronosCurrentUser;
-        if (!me) return;
-
-        // Establecer el rol activo basado en la opción elegida
-        me._activeRole = (option === 'superadmin') ? me.role : (option === 'coach' ? 'user' : 'parent');
-        
-        _launchWithRole(me._activeRole);
-    };
-
-    // ── Lanzar la app con el rol activo ──────────────────────────
-    function _launchWithRole(role) {
-        const activeRole = window._cronosCurrentUser?._activeRole || role;
-
-        // Limpiar interfaz
-        document.getElementById('main-container').style.display = (activeRole === 'parent') ? 'none' : 'flex';
-        document.getElementById('main-header').style.display    = (activeRole === 'parent') ? 'none' : 'flex';
-
-        // Botón ADMIN — solo superadmin/admin en modo superadmin
-        const btnAdmin = document.getElementById('btn-admin-panel');
-        if (btnAdmin) {
-            btnAdmin.style.display =
-                (['admin','superadmin'].includes(window._cronosCurrentUser.role) && activeRole === window._cronosCurrentUser.role)
-                ? 'inline-block' : 'none';
-        }
 
         // Botón MI CLUB — solo club_admin
         const btnClub = document.getElementById('btn-club-panel');
