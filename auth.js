@@ -302,6 +302,9 @@ function _launchWithRole(role) {
         if (typeof openSuperAdminPanel === 'function') openSuperAdminPanel();
     } else if (activeRole === 'club_admin') {
         if (typeof openClubAdminPanel === 'function') openClubAdminPanel();
+    } else if (['director', 'coordinator'].includes(activeRole)) {
+        if (typeof init === 'function') init(activeRole);
+        if (typeof openStaffDashboard === 'function') openStaffDashboard();
     } else { 
         if (typeof init === 'function') init(activeRole); 
     }

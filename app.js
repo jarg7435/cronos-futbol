@@ -1491,11 +1491,15 @@ async function sendReportByEmail(matchInfo, reportHtml) {
     }
 }
 
-function init() {
+function init(role) {
     loadEmailConfig();    // carga correos (desde localStorage/caché)
-    loadStaffConfig();    // carga cuerpo técnico (desde localStorage/caché)
+    loadStaffConfig();    // carga cuerpo técnico (desde localStorage/cacché)
     setupEventListeners();
-    openSetupModal();
+    
+    // Solo abrir configuración de partido si es entrenador/usuario
+    if (!['director', 'coordinator', 'club_admin'].includes(role)) {
+        openSetupModal();
+    }
     registerServiceWorker();
     // Sincronizar con Firestore en segundo plano
     migrateLocalToCloud().then(() => {
