@@ -1,6 +1,23 @@
 // --- SECURITY & INITIALIZATION ---
 const ACCESS_CODE = '1234';
 
+// ── Helper Global: Usuario efectivo con fallbacks para Superadmin ─────
+// Permite que el Superadmin pueda acceder a cualquier panel aunque no tenga
+// clubId propio. Si tiene rol SA y no tiene clubId, usa 'demo' como fallback.
+window._getEffectiveUser = function() {
+    const me = window._cronosCurrentUser;
+    if (!me) return null;
+    const isSA = me.role === 'superadmin' || me.role === 'admin';
+    return {
+        ...me,
+        _isSuperAdmin: isSA,
+        // Si el SA no tiene clubId, usar 'demo' para no bloquear módulos
+        clubId: me.clubId || (isSA ? '_sa_preview' : null),
+        clubName: me.clubName || (isSA ? 'Vista Superadmin' : null),
+        uid: me.uid || 'sa_user',
+    };
+};
+
 window.onload = () => {
     // La app arranca desde enterApp() en index.html tras la autenticación Firebase
 };
