@@ -180,15 +180,19 @@ async function openSuperAdminPanel() {
           <button onclick="openSuperAdminPanel()"
             style="padding:0.3rem 0.7rem;background:rgba(88,166,255,0.1);
                    border:1px solid rgba(88,166,255,0.3);border-radius:6px;
-                   color:var(--primary);font-size:0.78rem;cursor:pointer;">🔄</button>
+                   color:var(--primary);font-size:0.78rem;cursor:pointer;">🔄 Actualizar</button>
           <button onclick="document.getElementById('sa-root-modal').style.display='none'; if(typeof showRoleSelector==='function') showRoleSelector();"
             style="padding:0.3rem 0.7rem;background:rgba(255,215,0,0.08);
                    border:1px solid rgba(255,215,0,0.3);border-radius:6px;
                    color:#ffd700;font-size:0.78rem;cursor:pointer;"
-            title="Cambiar rol">⇄ Rol</button>
+            title="Cambiar rol">⇄ Cambiar Rol</button>
           <button onclick="logoutUser()"
-            style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;
-                   cursor:pointer;line-height:1;padding:0 0.3rem;" title="Cerrar sesión">✕</button>
+            style="padding:0.3rem 0.9rem;background:rgba(255,88,88,0.15);
+                   border:1px solid rgba(255,88,88,0.4);border-radius:6px;
+                   color:#ff5858;font-size:0.78rem;font-weight:700;cursor:pointer;
+                   display:flex;align-items:center;gap:0.4rem;">
+            🚪 SALIR
+          </button>
         </div>
       </div>
       <div class="sa-tabs">
@@ -197,6 +201,7 @@ async function openSuperAdminPanel() {
         <button class="sa-tab" onclick="saTab('individual')">👤 Individuales</button>
         <button class="sa-tab" onclick="saTab('payments')">💳 Pagos</button>
         <button class="sa-tab" onclick="saTab('requests')">📋 Solicitudes</button>
+        <button class="sa-tab" onclick="saTab('tarifas')">💰 Tarifas</button>
         <button class="sa-tab" onclick="saTab('newclub')">➕ Nuevo Club</button>
       </div>
       <div class="sa-body" id="sa-body">
@@ -206,12 +211,12 @@ async function openSuperAdminPanel() {
 
     window.saTab = (tab) => {
         document.querySelectorAll('.sa-tab').forEach(b => b.classList.remove('active'));
-        const idx = ['overview','clubs','individual','payments','requests','newclub'].indexOf(tab);
+        const idx = ['overview','clubs','individual','payments','requests','tarifas','newclub'].indexOf(tab);
         document.querySelectorAll('.sa-tab')[idx]?.classList.add('active');
         document.getElementById('sa-body').innerHTML =
             '<p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando…</p>';
         ({overview:saOverview, clubs:saClubs, individual:saIndividual,
-          payments:saPayments, requests:saRequests, newclub:saNewClub})[tab]?.();
+          payments:saPayments, requests:saRequests, tarifas:saTariffs, newclub:saNewClub})[tab]?.();
     };
     saOverview();
 }
@@ -1083,22 +1088,27 @@ async function saOpenPaymentForm(id, type) {
     };
 }
 
-// ── TAB: SOLICITUDES (BAJAS + NUEVOS CLUBES) ──────────────────────────
-// ── TAB: SOLICITUDES (BAJAS + NUEVOS CLUBES) ──────────────────────────
+// ── TAB: SOLICITUDES (BAJAS + NUEVOS CLUBES + INDIVIDUALES) ──────────────────────────
+// ── TAB: SOLICITUDES (BAJAS + NUEVOS CLUBES + INDIVIDUALES) ──────────────────────────
 async function saRequests() {
-    const { db, collection, getDocs, doc, query, where, updateDoc, getDoc } = await saFS();
-    
-    // 1. Obtener solicitudes de baja y de alta (club_admin no autorizados)
-    const [delReqsSnap, usersSnap] = await Promise.all([
+    const { db, collection, getDocs, doc, query, where, updateDoc, getDoc, setDoc } = await saFS();
+
+    // 1. Obtener los tres tipos de solicitudes pendientes en paralelo
+    const [delReqsSnap, clubUsersSnap, indivUsersSnap] = await Promise.all([
         getDocs(query(collection(db, 'deletion_requests'), where('status', '==', 'pending'))),
-        getDocs(query(collection(db, 'users'), where('requestedRole', '==', 'club_admin'), where('isAuthorized', '==', false)))
+        getDocs(query(collection(db, 'users'), where('requestedRole', '==', 'club_admin'),  where('isAuthorized', '==', false))),
+        getDocs(query(collection(db, 'users'), where('requestedRole', '==', 'individual'), where('isAuthorized', '==', false))),
     ]);
 
-    const delReqs = []; delReqsSnap.forEach(d => delReqs.push({ _id: d.id, ...d.data() }));
-    const clubReqs = []; usersSnap.forEach(d => clubReqs.push({ _id: d.id, ...d.data() }));
+    const delReqs   = []; delReqsSnap.forEach(d  => delReqs.push({ _id: d.id, ...d.data() }));
+    const clubReqs  = []; clubUsersSnap.forEach(d => clubReqs.push({ _id: d.id, ...d.data() }));
+    const indivReqs = []; indivUsersSnap.forEach(d => {
+        const u = d.data();
+        if (u.status !== 'rejected') indivReqs.push({ _id: d.id, ...u });
+    });
 
     const body = document.getElementById('sa-body');
-    if (!delReqs.length && !clubReqs.length) {
+    if (!delReqs.length && !clubReqs.length && !indivReqs.length) {
         body.innerHTML = `
             <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4rem 2rem; opacity:0.6;">
                 <div style="font-size:3rem; margin-bottom:1rem;">✅</div>
@@ -1108,17 +1118,15 @@ async function saRequests() {
         return;
     }
 
-    let html = `
-        <div style="display:flex; gap:1.5rem; flex-direction:column;">
-    `;
+    let html = `<div style="display:flex; gap:1.5rem; flex-direction:column;">`;
 
-    // ── SECCIÓN: NUEVOS CLUBES ──
+    // ── SECCIÓN A: NUEVOS CLUBES ─────────────────────────────────────
     if (clubReqs.length) {
         html += `
         <section>
             <h3 style="font-size:0.9rem; margin:0 0 1rem; color:#58a6ff; display:flex; align-items:center; gap:0.6rem;">
                 <span style="background:rgba(88,166,255,0.15); padding:4px 8px; border-radius:6px;">🏟️</span>
-                Nuevas Solicitudes de Alta de Club (${clubReqs.length})
+                Solicitudes de Nuevo Club (${clubReqs.length})
             </h3>
             <div style="display:grid; gap:0.8rem;">
             ${clubReqs.map(r => `
@@ -1127,28 +1135,34 @@ async function saRequests() {
                         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:0.8rem;">
                             <div>
                                 <div style="font-weight:700; font-size:1.05rem; color:var(--text);">${r.requestedClubName || 'Club sin nombre'}</div>
-                                <div style="font-size:0.8rem; color:#58a6ff;">Admin: ${r.email}</div>
+                                <div style="font-size:0.8rem; color:#58a6ff;">👤 Admin: ${r.email}</div>
                             </div>
                             <div style="text-align:right;">
                                 ${saBadge('ALTA PENDIENTE', '#58a6ff')}
                                 <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">
-                                    ${r.createdAt ? new Date(r.createdAt.seconds * 1000).toLocaleDateString('es-ES') : '—'}
+                                    ${r.createdAt ? new Date(r.createdAt.seconds ? r.createdAt.seconds*1000 : r.createdAt).toLocaleDateString('es-ES') : '—'}
                                 </div>
                             </div>
                         </div>
-                        
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; background:rgba(255,255,255,0.03); 
-                                    padding:0.7rem; border-radius:8px; margin-bottom:1rem; border:1px solid rgba(255,255,255,0.05);">
-                            <div style="font-size:0.8rem; color:var(--text-muted);">
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0.5rem;
+                                    background:rgba(255,255,255,0.03); padding:0.7rem; border-radius:8px;
+                                    margin-bottom:1rem; border:1px solid rgba(255,255,255,0.05);">
+                            <div style="font-size:0.78rem; color:var(--text-muted);">
+                                📋 Directores: <strong style="color:var(--text);">${r.requestedQuotas?.directors || 0}</strong>
+                            </div>
+                            <div style="font-size:0.78rem; color:var(--text-muted);">
+                                🎯 Coordinadores: <strong style="color:var(--text);">${r.requestedQuotas?.coordinators || 0}</strong>
+                            </div>
+                            <div style="font-size:0.78rem; color:var(--text-muted);">
                                 ⚽ Entrenadores: <strong style="color:var(--text);">${r.requestedQuotas?.coaches || 0}</strong>
                             </div>
-                            <div style="font-size:0.8rem; color:var(--text-muted);">
-                                👨‍👩‍👧 Padres/Tutores: <strong style="color:var(--text);">${r.requestedQuotas?.parents || 0}</strong>
+                            <div style="font-size:0.78rem; color:var(--text-muted);">
+                                👨‍👩‍👧 Padres: <strong style="color:var(--text);">${r.requestedQuotas?.parents || 0}</strong>
                             </div>
                         </div>
-
                         <div style="display:flex; gap:0.65rem;">
-                            <button class="sa-btn" onclick="saApproveClubRequest('${r._id}','${r.requestedClubName}','${r.email}', ${r.requestedQuotas?.coaches || 0}, ${r.requestedQuotas?.parents || 0})"
+                            <button class="sa-btn"
+                                onclick="saApproveClubRequest('${r._id}','${(r.requestedClubName||'').replace(/'/g,"\\'")}','${r.email}',${r.requestedQuotas?.directors||0},${r.requestedQuotas?.coordinators||0},${r.requestedQuotas?.coaches||0},${r.requestedQuotas?.parents||0})"
                                 style="flex:2; color:#3fb950; border-color:rgba(63,185,80,0.4); background:rgba(63,185,80,0.08); font-weight:700; padding:0.6rem;">
                                 ✅ Autorizar Club y Admin
                             </button>
@@ -1163,11 +1177,76 @@ async function saRequests() {
         </section>`;
     }
 
-    // ── SECCIÓN: SOLICITUDES DE BAJA ──
+    // ── SECCIÓN B: USUARIOS INDIVIDUALES ────────────────────────────
+    if (indivReqs.length) {
+        html += `
+        <section>
+            <h3 style="font-size:0.9rem; margin:0 0 1rem; color:#79c0ff; display:flex; align-items:center; gap:0.6rem;">
+                <span style="background:rgba(121,192,255,0.15); padding:4px 8px; border-radius:6px;">👤</span>
+                Solicitudes de Usuario Individual (${indivReqs.length})
+            </h3>
+            <div style="display:grid; gap:0.8rem;">
+            ${indivReqs.map(r => `
+                <div class="sa-card" style="border-color:rgba(121,192,255,0.3); background:rgba(121,192,255,0.03);">
+                    <div style="padding:1rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:0.8rem;">
+                            <div>
+                                <div style="font-weight:700; font-size:1.05rem; color:var(--text);">
+                                    ${r.displayName || r.firstName + ' ' + r.lastName || 'Sin nombre'}
+                                </div>
+                                <div style="font-size:0.8rem; color:#79c0ff;">📧 ${r.email}</div>
+                                <div style="font-size:0.74rem; color:var(--text-muted); margin-top:2px;">
+                                    Se creará su club personal: <em>"${r.displayName || (r.firstName + ' ' + r.lastName) || r.email}"</em>
+                                </div>
+                            </div>
+                            <div style="text-align:right;">
+                                ${saBadge('INDIVIDUAL PENDIENTE', '#79c0ff')}
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">
+                                    ${r.createdAt ? new Date(r.createdAt.seconds ? r.createdAt.seconds*1000 : r.createdAt).toLocaleDateString('es-ES') : '—'}
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Asignar precio antes de aprobar -->
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;
+                                    background:rgba(255,255,255,0.03); padding:0.7rem; border-radius:8px;
+                                    margin-bottom:1rem; border:1px solid rgba(255,255,255,0.05);">
+                            <div>
+                                <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">Plan</label>
+                                <select class="sa-input" id="iplan-${r._id}" style="font-size:0.78rem; padding:0.3rem 0.5rem;">
+                                    <option value="trial">⏳ Prueba</option>
+                                    <option value="monthly">📅 Mensual</option>
+                                    <option value="annual">📆 Anual</option>
+                                    <option value="free">🆓 Gratis</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">Precio (€/mes)</label>
+                                <input class="sa-input" id="iprice-${r._id}" type="number" min="0"
+                                    placeholder="ej: 9" style="font-size:0.78rem; padding:0.3rem 0.5rem;">
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:0.65rem;">
+                            <button class="sa-btn"
+                                onclick="saApproveIndividualRequest('${r._id}','${(r.displayName || r.email).replace(/'/g,"\\'")}','${r.email}')"
+                                style="flex:2; color:#3fb950; border-color:rgba(63,185,80,0.4); background:rgba(63,185,80,0.08); font-weight:700; padding:0.6rem;">
+                                ✅ Autorizar Usuario Individual
+                            </button>
+                            <button class="sa-btn" onclick="saRejectIndividualRequest('${r._id}')"
+                                style="flex:1; color:#ff5858; border-color:rgba(255,88,88,0.4); background:rgba(255,88,88,0.08); font-weight:700;">
+                                ❌ Rechazar
+                            </button>
+                        </div>
+                    </div>
+                </div>`).join('')}
+            </div>
+        </section>`;
+    }
+
+    // ── SECCIÓN C: SOLICITUDES DE BAJA ──────────────────────────────
     if (delReqs.length) {
         html += `
         <section>
-            <h3 style="font-size:0.9rem; margin:1.5rem 0 1rem; color:#f0883e; display:flex; align-items:center; gap:0.6rem;">
+            <h3 style="font-size:0.9rem; margin:0 0 1rem; color:#f0883e; display:flex; align-items:center; gap:0.6rem;">
                 <span style="background:rgba(240,136,62,0.15); padding:4px 8px; border-radius:6px;">❌</span>
                 Solicitudes de Baja de Usuario (${delReqs.length})
             </h3>
@@ -1187,13 +1266,11 @@ async function saRequests() {
                                 </div>
                             </div>
                         </div>
-
                         ${r.reason ? `
-                        <div style="font-size:0.82rem; color:var(--text-muted); background:rgba(0,0,0,0.2); 
+                        <div style="font-size:0.82rem; color:var(--text-muted); background:rgba(0,0,0,0.2);
                                     padding:0.7rem; border-radius:8px; margin-bottom:1rem; border:1px solid rgba(255,255,255,0.05);">
                             <strong>Motivo:</strong> ${r.reason}
                         </div>` : ''}
-
                         <div style="display:flex; gap:0.65rem;">
                             <button class="sa-btn" onclick="saResolve('${r._id}','${r.userId}','${r.clubId||''}',true)"
                                 style="flex:2; color:#3fb950; border-color:rgba(63,185,80,0.4); background:rgba(63,185,80,0.08); font-weight:700; padding:0.6rem;">
@@ -1213,84 +1290,138 @@ async function saRequests() {
     html += `</div>`;
     body.innerHTML = html;
 
-    window.saApproveClubRequest = async (uid, clubName, email, nCoaches, nParents) => {
+    // ── Aprobar solicitud de club ─────────────────────────────────────
+    window.saApproveClubRequest = async (uid, clubName, email, nDir, nCoord, nCoach, nParents) => {
         if (!confirm(`¿Confirmar alta del club "${clubName}"?`)) return;
-        
         try {
             const id = clubName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
                 .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').substring(0,28)
                 + '-' + Date.now().toString(36).slice(-4);
-            
-            // 1. Crear el Club
-            await saWrite('clubs', id, {
-                name: clubName, adminEmail: email, status:'active',
-                plan: 'trial', price: 0,
-                slots: { directors: 10, coordinators: 10, users: nCoaches || 20, parents: nParents || 50 },
-                usedSlots: { directors:1, coordinators:0, users:0, parents:0 },
-                createdAt: new Date().toISOString(),
-            });
 
-            // 2. Autorizar al Admin
+            await saWrite('clubs', id, {
+                name: clubName, adminEmail: email, status: 'active',
+                plan: 'trial', price: 0,
+                slots: {
+                    directors:    parseInt(nDir)    || 10,
+                    coordinators: parseInt(nCoord)  || 10,
+                    users:        parseInt(nCoach)  || 20,
+                    parents:      parseInt(nParents)|| 50,
+                },
+                usedSlots: { directors: 1, coordinators: 0, users: 0, parents: 0 },
+                createdAt: new Date().toISOString(),
+            }, false);
+
             await saUpd('users', uid, {
-                isAuthorized: true,
-                role: 'club_admin',
-                clubId: id,
-                status: 'active',
-                authorizedAt: new Date().toISOString()
+                isAuthorized: true, role: 'club_admin',
+                clubId: id, status: 'active',
+                authorizedAt: new Date().toISOString(),
             });
 
             showToast(`✅ Club "${clubName}" autorizado`, 4000);
             saRequests();
-        } catch (e) {
+        } catch(e) {
             console.error(e);
             showToast('❌ Error: ' + e.message, 5000);
         }
     };
 
+    // ── Rechazar solicitud de club ────────────────────────────────────
     window.saRejectClubRequest = async (uid) => {
         if (!confirm('¿Rechazar esta solicitud de club? El usuario no será autorizado.')) return;
         try {
-            await saUpd('users', uid, { 
-                requestedRole: 'rejected', 
-                isAuthorized: false,
-                status: 'rejected',
-                rejectedAt: new Date().toISOString()
+            await saUpd('users', uid, {
+                requestedRole: 'rejected', isAuthorized: false,
+                status: 'rejected', rejectedAt: new Date().toISOString(),
             });
             showToast('❌ Solicitud rechazada', 3000);
             saRequests();
-        } catch (e) {
-            showToast('❌ Error: ' + e.message, 4000);
+        } catch(e) { showToast('❌ Error: ' + e.message, 4000); }
+    };
+
+    // ── Aprobar usuario individual ────────────────────────────────────
+    window.saApproveIndividualRequest = async (uid, displayName, email) => {
+        if (!confirm(`¿Autorizar a "${displayName}" como usuario individual?`)) return;
+        try {
+            const plan  = document.getElementById(`iplan-${uid}`)?.value  || 'trial';
+            const price = parseFloat(document.getElementById(`iprice-${uid}`)?.value) || 0;
+
+            // Generar ID de club personal
+            const clubId = 'ind-' + uid.substring(0,12);
+            const clubName = displayName;
+
+            // Crear el club personal del usuario individual
+            await saWrite('clubs', clubId, {
+                name:        clubName,
+                adminEmail:  email,
+                type:        'individual',
+                status:      'active',
+                plan:        plan,
+                price:       price,
+                slots:       { directors: 0, coordinators: 0, users: 1, parents: 30 },
+                usedSlots:   { directors: 0, coordinators: 0, users: 1, parents: 0 },
+                createdAt:   new Date().toISOString(),
+            }, false);
+
+            // Autorizar al usuario
+            await saUpd('users', uid, {
+                isAuthorized: true,
+                role:         'individual',
+                clubId:       clubId,
+                clubName:     clubName,
+                plan:         plan,
+                price:        price,
+                status:       'active',
+                authorizedAt: new Date().toISOString(),
+            });
+
+            showToast(`✅ "${displayName}" autorizado como usuario individual`, 4000);
+            saRequests();
+        } catch(e) {
+            console.error(e);
+            showToast('❌ Error: ' + e.message, 5000);
         }
     };
 
+    // ── Rechazar usuario individual ───────────────────────────────────
+    window.saRejectIndividualRequest = async (uid) => {
+        if (!confirm('¿Rechazar esta solicitud de usuario individual?')) return;
+        try {
+            await saUpd('users', uid, {
+                isAuthorized: false,
+                status:       'rejected',
+                rejectedAt:   new Date().toISOString(),
+            });
+            showToast('❌ Solicitud rechazada', 3000);
+            saRequests();
+        } catch(e) { showToast('❌ Error: ' + e.message, 4000); }
+    };
+
+    // ── Aprobar/Rechazar baja ─────────────────────────────────────────
     window.saResolve = async (reqId, userId, clubId, approve) => {
         try {
-            await updateDoc(doc(db,'deletion_requests',reqId), {
-                status: approve?'approved':'rejected', resolvedAt: new Date().toISOString()
+            await updateDoc(doc(db, 'deletion_requests', reqId), {
+                status: approve ? 'approved' : 'rejected',
+                resolvedAt: new Date().toISOString(),
             });
             if (approve) {
-                // Obtenemos el rol antes de marcar como removido para descontar slot
-                const userSnap = await getDoc(doc(db,'users',userId));
+                const userSnap = await getDoc(doc(db, 'users', userId));
                 const ur = userSnap.data()?.role || 'user';
-                
-                await updateDoc(doc(db,'users',userId), {
-                    isAuthorized:false, status:'removed', removedAt:new Date().toISOString()
+                await updateDoc(doc(db, 'users', userId), {
+                    isAuthorized: false, status: 'removed',
+                    removedAt: new Date().toISOString(),
                 });
-                
                 if (clubId) {
-                    const cs = await getDoc(doc(db,'clubs',clubId));
+                    const cs = await getDoc(doc(db, 'clubs', clubId));
                     if (cs.exists()) {
-                        const ud = cs.data().usedSlots||{};
+                        const ud = cs.data().usedSlots || {};
                         const k  = ur==='director'?'directors':ur==='coordinator'?'coordinators':ur==='parent'?'parents':'users';
-                        await updateDoc(doc(db,'clubs',clubId), { [`usedSlots.${k}`]: Math.max(0, (ud[k]||1)-1) });
+                        await updateDoc(doc(db,'clubs',clubId), { [`usedSlots.${k}`]: Math.max(0,(ud[k]||1)-1) });
                     }
                 }
             }
-            showToast(approve?'✅ Baja aprobada':'❌ Solicitud rechazada', 3000);
+            showToast(approve ? '✅ Baja aprobada' : '❌ Solicitud rechazada', 3000);
             saRequests();
-        } catch (e) {
-            showToast('❌ Error: ' + e.message, 4000);
-        }
+        } catch(e) { showToast('❌ Error: ' + e.message, 4000); }
     };
 }
 
@@ -1445,6 +1576,164 @@ function saNewClub() {
         ['nc-name','nc-admin','nc-exp','nc-notes'].forEach(i => {
             const el=document.getElementById(i); if(el) el.value='';
         });
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  TAB: TARIFAS — Gestión de precios por tipo de cuenta
+// ════════════════════════════════════════════════════════════════════
+async function saTariffs() {
+    const [clubTariff, indivTariff] = await Promise.all([
+        saGet('tariffs', 'club').catch(() => null),
+        saGet('tariffs', 'individual').catch(() => null),
+    ]);
+    const ct = clubTariff  || {};
+    const it = indivTariff || {};
+
+    document.getElementById('sa-body').innerHTML = `
+    <div style="max-width:660px;">
+      <h3 style="margin:0 0 0.3rem; font-size:1rem;">💰 Gestión de Tarifas</h3>
+      <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 1.5rem;">
+        Define los precios base globales. Puedes sobrescribir el precio de cada cuenta
+        individualmente desde las pestañas <strong>Clubes</strong> e <strong>Individuales</strong>.
+      </p>
+
+      <!-- ── Tarifa Club ── -->
+      <div class="sa-card expanded" style="border-color:rgba(88,166,255,0.3); margin-bottom:1rem;">
+        <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')" style="cursor:pointer;">
+          <div class="sa-card-title">
+            <span class="sa-chevron">▼</span> 🏟️ Tarifa Base — Clubes
+          </div>
+          <div style="font-size:0.78rem; color:var(--text-muted);">
+            ${ct.monthly != null ? ct.monthly + '€/mes' : 'Sin precio definido'}
+            ${ct.annual  != null ? ' · ' + ct.annual + '€/año' : ''}
+          </div>
+        </div>
+        <div class="sa-card-body" style="padding-top:0.8rem;">
+          <div class="sa-g2" style="margin-bottom:0.7rem;">
+            <div><label class="sa-label">Precio mensual (€)</label>
+              <input class="sa-input" id="ct-monthly" type="number" min="0"
+                value="${ct.monthly ?? ''}" placeholder="ej: 29"></div>
+            <div><label class="sa-label">Precio anual (€)</label>
+              <input class="sa-input" id="ct-annual" type="number" min="0"
+                value="${ct.annual ?? ''}" placeholder="ej: 299"></div>
+          </div>
+          <div style="margin-bottom:0.7rem;">
+            <label class="sa-label">Descripción / Qué incluye</label>
+            <textarea class="sa-input" id="ct-desc" rows="2" style="resize:vertical;"
+              placeholder="ej: Hasta 5 equipos, IA, Live View, padres…">${ct.description || ''}</textarea>
+          </div>
+          <div class="sa-g4" style="margin-bottom:0.7rem;">
+            <div><label class="sa-label">Slots Directores (-1=∞)</label>
+              <input class="sa-input" id="ct-dir"    type="number" value="${ct.defaultSlots?.directors    ?? -1}"></div>
+            <div><label class="sa-label">Slots Coordinadores (-1=∞)</label>
+              <input class="sa-input" id="ct-coord"  type="number" value="${ct.defaultSlots?.coordinators ?? -1}"></div>
+            <div><label class="sa-label">Slots Entrenadores (-1=∞)</label>
+              <input class="sa-input" id="ct-coaches" type="number" value="${ct.defaultSlots?.coaches     ?? -1}"></div>
+            <div><label class="sa-label">Slots Padres (-1=∞)</label>
+              <input class="sa-input" id="ct-parents" type="number" value="${ct.defaultSlots?.parents     ?? -1}"></div>
+          </div>
+          <button onclick="saveTariff('club')" class="sa-btn"
+            style="color:#58a6ff; border-color:rgba(88,166,255,0.4);
+                   background:rgba(88,166,255,0.1); font-weight:700; padding:0.5rem 1.2rem;">
+            💾 Guardar tarifa de clubes</button>
+          <div id="ct-msg" style="font-size:0.8rem; margin-top:0.4rem; min-height:1rem;"></div>
+        </div>
+      </div>
+
+      <!-- ── Tarifa Individual ── -->
+      <div class="sa-card expanded" style="border-color:rgba(121,192,255,0.3); margin-bottom:1rem;">
+        <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')" style="cursor:pointer;">
+          <div class="sa-card-title">
+            <span class="sa-chevron">▼</span> 👤 Tarifa Base — Usuarios Individuales
+          </div>
+          <div style="font-size:0.78rem; color:var(--text-muted);">
+            ${it.monthly != null ? it.monthly + '€/mes' : 'Sin precio definido'}
+            ${it.annual  != null ? ' · ' + it.annual + '€/año' : ''}
+          </div>
+        </div>
+        <div class="sa-card-body" style="padding-top:0.8rem;">
+          <div class="sa-g2" style="margin-bottom:0.7rem;">
+            <div><label class="sa-label">Precio mensual (€)</label>
+              <input class="sa-input" id="it-monthly" type="number" min="0"
+                value="${it.monthly ?? ''}" placeholder="ej: 9"></div>
+            <div><label class="sa-label">Precio anual (€)</label>
+              <input class="sa-input" id="it-annual" type="number" min="0"
+                value="${it.annual ?? ''}" placeholder="ej: 89"></div>
+          </div>
+          <div style="margin-bottom:0.7rem;">
+            <label class="sa-label">Descripción / Qué incluye</label>
+            <textarea class="sa-input" id="it-desc" rows="2" style="resize:vertical;"
+              placeholder="ej: 1 equipo, IA, sin Live View…">${it.description || ''}</textarea>
+          </div>
+          <div class="sa-g2" style="margin-bottom:0.7rem;">
+            <div><label class="sa-label">Slots Padres/Madres (-1=∞)</label>
+              <input class="sa-input" id="it-parents" type="number" value="${it.defaultSlots?.parents ?? 30}"></div>
+            <div><label class="sa-label">Período de prueba (días)</label>
+              <input class="sa-input" id="it-trial" type="number" value="${it.trialDays ?? 30}" placeholder="30"></div>
+          </div>
+          <button onclick="saveTariff('individual')" class="sa-btn"
+            style="color:#79c0ff; border-color:rgba(121,192,255,0.4);
+                   background:rgba(121,192,255,0.1); font-weight:700; padding:0.5rem 1.2rem;">
+            💾 Guardar tarifa individual</button>
+          <div id="it-msg" style="font-size:0.8rem; margin-top:0.4rem; min-height:1rem;"></div>
+        </div>
+      </div>
+
+      <!-- ── Resumen ── -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);
+                  border-radius:10px; padding:1rem 1.2rem; font-size:0.82rem;">
+        <div style="font-weight:700; color:var(--text-muted); margin-bottom:0.5rem; font-size:0.73rem;">
+          📊 RESUMEN ACTUAL</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; color:var(--text-muted);">
+          <div>🏟️ Tarifa club mensual:
+            <strong style="color:var(--text);">${ct.monthly != null ? ct.monthly + '€' : '—'}</strong></div>
+          <div>🏟️ Tarifa club anual:
+            <strong style="color:var(--text);">${ct.annual  != null ? ct.annual  + '€' : '—'}</strong></div>
+          <div>👤 Tarifa individual mensual:
+            <strong style="color:var(--text);">${it.monthly != null ? it.monthly + '€' : '—'}</strong></div>
+          <div>👤 Tarifa individual anual:
+            <strong style="color:var(--text);">${it.annual  != null ? it.annual  + '€' : '—'}</strong></div>
+        </div>
+      </div>
+    </div>`;
+
+    window.saveTariff = async (type) => {
+        const isClub = (type === 'club');
+        const pfx    = isClub ? 'ct' : 'it';
+        const msg    = document.getElementById(`${pfx}-msg`);
+        msg.style.color = 'var(--primary)'; msg.textContent = 'Guardando…';
+
+        const data = {
+            type,
+            monthly:     parseFloat(document.getElementById(`${pfx}-monthly`).value) || 0,
+            annual:      parseFloat(document.getElementById(`${pfx}-annual`).value)  || 0,
+            description: document.getElementById(`${pfx}-desc`).value.trim(),
+            updatedAt:   new Date().toISOString(),
+        };
+
+        if (isClub) {
+            data.defaultSlots = {
+                directors:    parseInt(document.getElementById('ct-dir').value)     || -1,
+                coordinators: parseInt(document.getElementById('ct-coord').value)   || -1,
+                coaches:      parseInt(document.getElementById('ct-coaches').value) || -1,
+                parents:      parseInt(document.getElementById('ct-parents').value) || -1,
+            };
+        } else {
+            data.defaultSlots = { parents: parseInt(document.getElementById('it-parents').value) || 30 };
+            data.trialDays    = parseInt(document.getElementById('it-trial').value) || 30;
+        }
+
+        try {
+            await saWrite('tariffs', type, data, false);
+            msg.style.color  = '#3fb950';
+            msg.textContent  = '✅ Tarifa guardada correctamente';
+            showToast(`✅ Tarifa ${isClub ? 'de clubes' : 'individual'} actualizada`, 3000);
+            setTimeout(() => saTariffs(), 1600);
+        } catch(e) {
+            msg.style.color  = '#ff5858';
+            msg.textContent  = '❌ Error: ' + e.message;
+        }
     };
 }
 

@@ -1,35 +1,145 @@
 // ════════════════════════════════════════════════════════════════════
-//  PANEL ADMIN DE CLUB (club_admin)
+//  PANEL ADMIN DE CLUB (club_admin) — v3
+//  Secciones expandibles por rol · Aprobación de solicitudes
+//  Solicitud de ampliación de cuota al SuperAdmin
 // ════════════════════════════════════════════════════════════════════
-async function openClubAdminPanel() {
-    const me = window._cronosCurrentUser;
-    if (!me || me.role !== 'club_admin') { showToast('⛔ Sin permisos', 3000); return; }
+async function openClubAdminPanel(preClubId = null) {
+    const me         = window._cronosCurrentUser;
+    const activeRole = me._activeRole || me.role;
+    const isSA       = me.role === 'superadmin' || me.role === 'admin';
+
+    if (!me || (!isSA && activeRole !== 'club_admin')) {
+        showToast('⛔ Sin permisos', 3000);
+        return;
+    }
+
     const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = await saFS();
-    const clubId = me.clubId;
+
+    // ── Si el SA no tiene clubId, mostrar selector de club ──────────
+    let clubId = preClubId || me.clubId;
+    if (!clubId && isSA) {
+        const clubsSnap = await getDocs(collection(db, 'clubs'));
+        const clubs = [];
+        clubsSnap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
+        if (!clubs.length) { showToast('⚠️ No hay clubes creados aún', 3000); return; }
+        window._sa_clubs_cache = clubs;
+
+        const modal = document.getElementById('setup-modal');
+        modal.style.display = 'flex';
+        modal.innerHTML = SA_CSS + `
+        <div class="modal-content sa-modal" style="max-width:480px;">
+          <div class="sa-topbar">
+            <div style="font-weight:700; font-size:1rem;">🏟️ Seleccionar Club</div>
+            <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+          </div>
+          <div class="sa-body" style="padding:1.5rem;display:flex;flex-direction:column;gap:0.6rem;">
+            <p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 0.5rem;">
+              Como Superadmin, selecciona el club que deseas gestionar:</p>
+            ${clubs.map((c, idx) => `
+              <button data-club-idx="${idx}"
+                  style="text-align:left;padding:0.8rem 1rem;background:rgba(255,255,255,0.04);
+                         border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;
+                         color:white;font-size:0.9rem;transition:all 0.2s;width:100%;"
+                  onmouseover="this.style.background='rgba(88,166,255,0.1)';this.style.borderColor='rgba(88,166,255,0.3)';"
+                  onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.borderColor='rgba(255,255,255,0.1)';"
+                  onclick="openClubAdminPanel(window._sa_clubs_cache[this.dataset.clubIdx].id)">
+                🏟️ <strong>${c.name}</strong>
+                <span style="font-size:0.72rem;color:var(--text-muted);display:block;margin-top:0.2rem;">
+                  ${c.adminEmail || 'Sin admin'} · Plan: ${c.plan || 'free'}
+                </span>
+              </button>`).join('')}
+          </div>
+        </div>`;
+        return;
+    }
+
     if (!clubId) { showToast('⚠️ Sin club asignado', 3000); return; }
 
     const [clubSnap, usersSnap] = await Promise.all([
-        getDoc(doc(db,'clubs',clubId)),
-        getDocs(query(collection(db,'users'), where('clubId','==',clubId)))
+        getDoc(doc(db, 'clubs', clubId)),
+        getDocs(query(collection(db, 'users'), where('clubId', '==', clubId)))
     ]);
     if (!clubSnap.exists()) { showToast('⚠️ Club no encontrado', 3000); return; }
-    const club  = clubSnap.data();
-    if (club.status==='blocked') {
-        showToast('🔒 Club suspendido. Contacta con el administrador de la plataforma.', 6000); return;
+    const club = clubSnap.data();
+    if (club.status === 'blocked') {
+        showToast('🔒 Club suspendido. Contacta con el administrador de la plataforma.', 6000);
+        return;
     }
-    const users = [];
+
+    const users    = [];
     usersSnap.forEach(d => users.push({ _id: d.id, ...d.data() }));
     const features = club.features || {};
 
+    // ── Helper: info de slots de un rol ─────────────────────────────
     const slotOf = (role) => {
-        const max  = role==='director'?(club.slots?.directors??-1)
-                   : role==='coordinator'?(club.slots?.coordinators??-1)
-                   : role==='parent'?(club.slots?.parents??-1)
-                   : (club.slots?.users??-1);
-        const used = users.filter(u=>u.role===role&&u.isAuthorized!==false).length;
-        return { max, used, full: max!==-1 && used>=max, unlimited: max===-1 };
+        const max  = role === 'director'     ? (club.slots?.directors    ?? -1)
+                   : role === 'coordinator'  ? (club.slots?.coordinators ?? -1)
+                   : role === 'parent'       ? (club.slots?.parents      ?? -1)
+                   :                           (club.slots?.users        ?? -1);
+        const used = users.filter(u => u.role === role && u.isAuthorized !== false && u.status !== 'removed').length;
+        return { max, used, full: max !== -1 && used >= max, unlimited: max === -1 };
     };
 
+    // ── Pendientes de aprobación (auto-registro) ─────────────────────
+    const pendingMembers = users.filter(u =>
+        !u.isAuthorized && u.status !== 'removed' && u.status !== 'rejected' &&
+        u.requestedRole !== 'club_admin'
+    );
+
+    // ── Render de una fila de usuario ────────────────────────────────
+    const userRow = (u) => `
+        <div class="sa-urow">
+            <div>
+                <span style="font-size:0.83rem;">${u.email || u._id}</span>
+                ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${u.displayName}</span>` : ''}
+                ${!u.isAuthorized ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🔒</span>' : ''}
+                ${u.status === 'pending_register' ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ffa50022;color:#ffa500;">Pendiente registro</span>' : ''}
+            </div>
+            <button class="sa-btn" onclick="caRequestDeletion('${u._id}','${(u.email||u._id).replace(/'/g,"\\'")}','${clubId}')"
+                style="font-size:0.72rem;color:#ffa500;border-color:rgba(255,165,0,0.3);background:rgba(255,165,0,0.07);">
+                📋 Dar de baja</button>
+        </div>`;
+
+    // ── Render de sección acordeón por rol ───────────────────────────
+    const roleSections = [
+        { role: 'director',    label: '📋 Directores Deportivos', color: '#f0883e',  slotKey: 'directors'    },
+        { role: 'coordinator', label: '🎯 Coordinadores',         color: '#d2a8ff',  slotKey: 'coordinators' },
+        { role: 'user',        label: '⚽ Entrenadores',           color: '#3fb950',  slotKey: 'users'        },
+        { role: 'parent',      label: '👨‍👩‍👧 Padres / Madres / Tutores', color: '#79c0ff', slotKey: 'parents' },
+    ];
+
+    const accordionSections = roleSections.map(({ role, label, color, slotKey }) => {
+        const si          = slotOf(role);
+        const roleUsers   = users.filter(u => u.role === role && u.status !== 'removed');
+        const slotsLabel  = si.unlimited ? `${si.used} · ∞` : `${si.used}/${si.max}`;
+        const slotsColor  = si.full ? '#ff5858' : '#3fb950';
+        const sectionId   = `ca-section-${role}-${clubId}`;
+
+        return `
+        <div class="sa-card" id="${sectionId}" style="margin-bottom:0.6rem; border-color:${color}33;">
+          <div class="sa-card-head" onclick="document.getElementById('${sectionId}').classList.toggle('expanded')">
+            <div class="sa-card-title">
+              <span class="sa-chevron">▼</span>
+              <span style="color:${color};">${label}</span>
+              <span class="sa-badge" style="background:${color}22;color:${color};">${slotsLabel}</span>
+              ${si.full ? '<span class="sa-badge" style="background:#ff585822;color:#ff5858;">Cuota llena</span>' : ''}
+            </div>
+            <button class="sa-btn"
+                onclick="event.stopPropagation(); caRequestQuota('${clubId}','${role}','${label.replace(/'/g,"\\'")}','${slotKey}')"
+                style="font-size:0.71rem;color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
+                📩 Solicitar ampliación</button>
+          </div>
+          <div class="sa-card-body">
+            ${roleUsers.length
+                ? roleUsers.map(u => userRow(u)).join('')
+                : `<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin ${label.split(' ')[1]?.toLowerCase() || 'usuarios'} registrados.</p>`
+            }
+          </div>
+        </div>`;
+    }).join('');
+
+    // ── Modal principal ─────────────────────────────────────────────
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = SA_CSS + `
@@ -37,100 +147,134 @@ async function openClubAdminPanel() {
       <div class="sa-topbar">
         <div>
           <div style="font-size:1.15rem;font-weight:700;">🏟️ ${club.name}</div>
-          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">
-              Panel del Administrador del Club</div>
+          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador del Club</div>
         </div>
-        <button onclick="document.getElementById('setup-modal').style.display='none'"
-            style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+        <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+          <button onclick="caNotifySuperAdmin('${clubId}')"
+              style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
+                     border:1px solid rgba(88,166,255,0.4);border-radius:10px;
+                     color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
+              📡 Transmitir al SuperAdmin</button>
+          <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+              style="padding:0.45rem 1rem;background:rgba(255,215,0,0.1);
+                     border:1px solid rgba(255,215,0,0.3);border-radius:10px;
+                     color:#ffd700;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              ⇄ Cambiar Rol</button>
+          <button onclick="logoutUser()"
+              style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
+                     border:1px solid rgba(255,88,88,0.4);border-radius:10px;
+                     color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              🚪 SALIR</button>
+        </div>
       </div>
+
       <div class="sa-body">
-        <!-- Slots resumen -->
+
+        <!-- ── BLOQUE A: Peticiones de acceso automático ── -->
+        ${pendingMembers.length ? `
+        <div style="background:rgba(255,165,0,0.06);border:1px solid rgba(255,165,0,0.25);
+                    border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
+          <h3 style="font-size:0.85rem;margin:0 0 0.8rem;color:#ffa500;
+                     display:flex;align-items:center;gap:0.5rem;">
+            🔔 Solicitudes de Acceso (${pendingMembers.length})
+          </h3>
+          ${pendingMembers.map(u => {
+              const si        = slotOf(u.requestedRole || 'user');
+              const roleLabel = ROLE_META[u.requestedRole || 'user']?.label || 'Usuario';
+              return `
+              <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;
+                          margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.05);
+                          display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-size:0.85rem;font-weight:600;">${u.email}</div>
+                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+                    Rol solicitado: <strong>${roleLabel}</strong> ·
+                    <span style="color:${si.full ? '#ff5858' : '#31d0aa'};">
+                      ${si.used}/${si.max === -1 ? '∞' : si.max} slots</span>
+                  </div>
+                </div>
+                <div style="display:flex;gap:0.4rem;">
+                  <button onclick="caApproveRequest('${u._id}','${u.requestedRole||'user'}','${(u.email||'').replace(/'/g,"\\'")}' )"
+                      class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
+                      ✅ Aceptar</button>
+                  <button onclick="caRejectRequest('${u._id}','${(u.email||'').replace(/'/g,"\\'")}' )"
+                      class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
+                      ✕ Rechazar</button>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>` : ''}
+
+        <!-- ── BLOQUE B: Resumen de cuotas ── -->
         <div class="sa-stats" style="margin-bottom:1.2rem;">
-            ${['director','coordinator','user','parent'].map(role => {
-                const si = slotOf(role);
-                const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Padres':'Entrenadores';
-                return `<div class="sa-stat">
-                    <div class="sa-stat-n" style="color:${si.full?'#ff5858':'#3fb950'};">
-                        ${si.used}${si.unlimited?'':'/' + si.max}</div>
-                    <div class="sa-stat-l">${label}${si.unlimited?' ∞':''}</div>
-                    ${si.full?'<div style="font-size:0.65rem;color:#ff5858;">Límite</div>':''}
-                </div>`;
-            }).join('')}
+          ${['director','coordinator','user','parent'].map(role => {
+              const si    = slotOf(role);
+              const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Padres':'Entrenadores';
+              return `<div class="sa-stat">
+                <div class="sa-stat-n" style="color:${si.full?'#ff5858':'#3fb950'};">
+                  ${si.used}${si.unlimited ? '' : '/' + si.max}</div>
+                <div class="sa-stat-l">${label}${si.unlimited?' ∞':''}</div>
+                ${si.full ? '<div style="font-size:0.65rem;color:#ff5858;">Límite alcanzado</div>' : ''}
+              </div>`;
+          }).join('')}
         </div>
 
-        <!-- Alta nueva usuario -->
+        <!-- ── BLOQUE C: Dar de alta usuario ── -->
         <div class="sa-card" style="border-color:rgba(88,166,255,0.25);margin-bottom:1.2rem;">
-            <div style="font-weight:700;color:var(--primary);margin-bottom:0.7rem;font-size:0.9rem;">
-                ➕ Dar de alta usuario</div>
-            <div class="sa-g4" style="align-items:end;">
-                <div><label class="sa-label">Email *</label>
-                    <input class="sa-input" id="nu-email" type="email" placeholder="usuario@email.com"></div>
-                <div><label class="sa-label">Nombre</label>
-                    <input class="sa-input" id="nu-name" placeholder="Nombre completo"></div>
-                <div><label class="sa-label">Rol</label>
-                    <select class="sa-input" id="nu-role" onchange="caRoleChanged()">
-                        <option value="user">⚽ Entrenador</option>
-                        <option value="parent">👨‍👩‍👧 Padre/Madre</option>
-                        ${features.live_view?'<option value="coordinator">🎯 Coordinador</option>':''}
-                        ${features.live_view?'<option value="director">📋 Director Dep.</option>':''}
-                    </select></div>
-                <button onclick="caAddUser('${clubId}')" class="sa-btn"
-                    style="color:var(--primary);border-color:rgba(88,166,255,0.4);
-                           background:rgba(88,166,255,0.1);font-weight:700;height:34px;">
-                    ➕ Alta</button>
+          <div style="font-weight:700;color:var(--primary);margin-bottom:0.7rem;font-size:0.9rem;">
+            ➕ Dar de alta usuario</div>
+          <div class="sa-g4" style="align-items:end;">
+            <div><label class="sa-label">Email *</label>
+              <input class="sa-input" id="nu-email" type="email" placeholder="usuario@email.com"></div>
+            <div><label class="sa-label">Nombre</label>
+              <input class="sa-input" id="nu-name" placeholder="Nombre completo"></div>
+            <div><label class="sa-label">Rol</label>
+              <select class="sa-input" id="nu-role" onchange="caRoleChanged()">
+                <option value="user">⚽ Entrenador</option>
+                <option value="parent">👨‍👩‍👧 Padre/Madre</option>
+                ${features.live_view ? '<option value="coordinator">🎯 Coordinador</option>' : ''}
+                ${features.live_view ? '<option value="director">📋 Director Dep.</option>' : ''}
+              </select></div>
+            <button onclick="caAddUser('${clubId}')" class="sa-btn"
+                style="color:var(--primary);border-color:rgba(88,166,255,0.4);
+                       background:rgba(88,166,255,0.1);font-weight:700;height:34px;">
+                ➕ Alta</button>
+          </div>
+          <!-- Campos extra para Padre/Madre -->
+          <div id="nu-parent-fields" style="display:none;margin-top:0.6rem;">
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.4rem;
+                        padding:0.4rem 0.6rem;background:rgba(210,168,255,0.08);
+                        border:1px solid rgba(210,168,255,0.2);border-radius:6px;">
+              👨‍👩‍👧 Datos adicionales para Padre/Tutor — vincula al jugador de su hijo/a
             </div>
-            <!-- Campos extra para Padre/Madre -->
-            <div id="nu-parent-fields" style="display:none;margin-top:0.6rem;">
-                <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.4rem;
-                            padding:0.4rem 0.6rem;background:rgba(210,168,255,0.08);
-                            border:1px solid rgba(210,168,255,0.2);border-radius:6px;">
-                    👨‍👩‍👧 Datos adicionales para Padre/Tutor — vincula al jugador de su hijo/a
-                </div>
-                <div class="sa-g4" style="margin-top:0.4rem;">
-                    <div><label class="sa-label">Nº Dorsal del jugador *</label>
-                        <input class="sa-input" id="nu-player-num" type="number"
-                               placeholder="ej: 7" min="1" max="99"></div>
-                    <div><label class="sa-label">Alias / Nombre del jugador</label>
-                        <input class="sa-input" id="nu-player-alias" placeholder="ej: García"></div>
-                    <div><label class="sa-label">WhatsApp del padre (sin +)</label>
-                        <input class="sa-input" id="nu-parent-wa" type="tel"
-                               placeholder="ej: 34612345678"></div>
-                    <div id="generated-invite-container" style="display:none; flex-direction:column; justify-content:center;">
-                        <label class="sa-label" style="color:#ffd700;">Código de Invitación</label>
-                        <div id="nu-invite-code-display" style="font-family:monospace; font-weight:bold; color:#ffd700; font-size:1.1rem; letter-spacing:2px;"></div>
-                    </div>
-                </div>
+            <div class="sa-g4" style="margin-top:0.4rem;">
+              <div><label class="sa-label">Nº Dorsal del jugador *</label>
+                <input class="sa-input" id="nu-player-num" type="number" placeholder="ej: 7" min="1" max="99"></div>
+              <div><label class="sa-label">Alias / Nombre del jugador</label>
+                <input class="sa-input" id="nu-player-alias" placeholder="ej: García"></div>
+              <div><label class="sa-label">WhatsApp del padre (sin +)</label>
+                <input class="sa-input" id="nu-parent-wa" type="tel" placeholder="ej: 34612345678"></div>
+              <div id="generated-invite-container" style="display:none;flex-direction:column;justify-content:center;">
+                <label class="sa-label" style="color:#ffd700;">Código de Invitación</label>
+                <div id="nu-invite-code-display"
+                    style="font-family:monospace;font-weight:bold;color:#ffd700;font-size:1.1rem;letter-spacing:2px;"></div>
+              </div>
             </div>
-            <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;"></div>
+          </div>
+          <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;"></div>
         </div>
 
-        <!-- Lista usuarios por grupo -->
-        ${['director','coordinator','user','parent'].map(role => {
-            const roleUsers = users.filter(u => u.role===role);
-            if (!roleUsers.length) return '';
-            const labels = {director:'📋 DIRECTORES DEPORTIVOS', coordinator:'🎯 COORDINADORES', user:'⚽ ENTRENADORES', parent:'👨‍👩‍👧 PADRES/MADRES'};
-            const cols   = {director:'#f0883e', coordinator:'#d2a8ff', user:'#3fb950', parent:'#d2a8ff'};
-            return `<div style="margin-bottom:1rem;">
-                <div style="font-size:0.76rem;font-weight:700;color:${cols[role]};margin-bottom:0.4rem;">
-                    ${labels[role]} (${roleUsers.length})</div>
-                ${roleUsers.map(u => `
-                <div class="sa-urow">
-                    <div>
-                        <span style="font-size:0.83rem;">${u.email||u._id}</span>
-                        ${u.displayName?`<span style="color:var(--text-muted);font-size:0.74rem;"> · ${u.displayName}</span>`:''}
-                        ${!u.isAuthorized?'<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🔒</span>':''}
-                    </div>
-                    <button class="sa-btn" onclick="caRequestDeletion('${u._id}','${u.email||u._id}','${clubId}')"
-                        style="font-size:0.72rem;color:#ffa500;border-color:rgba(255,165,0,0.3);background:rgba(255,165,0,0.07);">
-                        📋 Baja</button>
-                </div>`).join('')}
-            </div>`;
-        }).join('')}
-      </div>
+        <!-- ── BLOQUE D: Miembros por rol (acordeón) ── -->
+        <div style="margin-bottom:0.5rem;font-size:0.73rem;color:var(--text-muted);
+                    padding:0 0.2rem;font-weight:600;">👥 MIEMBROS DEL CLUB</div>
+        ${accordionSections}
+
+      </div><!-- /sa-body -->
     </div>`;
 
+    // ── Bindings ─────────────────────────────────────────────────────
     window.caRoleChanged = () => {
-        const role = document.getElementById('nu-role')?.value;
+        const role   = document.getElementById('nu-role')?.value;
         const fields = document.getElementById('nu-parent-fields');
         if (fields) fields.style.display = role === 'parent' ? 'block' : 'none';
     };
@@ -142,7 +286,6 @@ async function openClubAdminPanel() {
         const msgEl  = document.getElementById('nu-msg');
         if (!email) { msgEl.style.color='#ff5858'; msgEl.textContent='⚠️ Email obligatorio.'; return; }
 
-        // Validación extra para padres
         if (role === 'parent') {
             const pNum = document.getElementById('nu-player-num')?.value?.trim();
             if (!pNum) {
@@ -155,73 +298,155 @@ async function openClubAdminPanel() {
         const si = slotOf(role);
         if (si.full) {
             msgEl.style.color='#ff5858';
-            msgEl.textContent=`⛔ Límite alcanzado. Solicita al SuperAdmin ampliar el plan.`; return;
+            msgEl.textContent='⛔ Límite alcanzado. Solicita al SuperAdmin ampliar el plan.';
+            return;
         }
         msgEl.style.color='var(--primary)'; msgEl.textContent='Registrando…';
-        const uid = 'pre_'+Date.now().toString(36);
+
+        const uid = 'pre_' + Date.now().toString(36);
         await setDoc(doc(db,'users',uid), {
-            email, displayName:name, role, clubId:cid, clubName:club.name||'',
-            isAuthorized:true, status:'pending_register',
-            createdBy:me.uid, createdAt:new Date().toISOString()
+            email, displayName: name, role, clubId: cid, clubName: club.name || '',
+            isAuthorized: true, status: 'pending_register',
+            createdBy: me.uid, createdAt: new Date().toISOString()
         });
         const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
-        await updateDoc(doc(db,'clubs',cid), { [key]: si.used+1 });
+        await updateDoc(doc(db,'clubs',cid), { [key]: si.used + 1 });
 
-        // Si es padre, guardar el vínculo con el jugador y generar código
         if (role === 'parent') {
-            const pNum   = document.getElementById('nu-player-num')?.value?.trim() || '';
+            const pNum   = document.getElementById('nu-player-num')?.value?.trim()  || '';
             const pAlias = document.getElementById('nu-player-alias')?.value?.trim() || '';
-            const pWA    = document.getElementById('nu-parent-wa')?.value?.trim() || '';
-            
-            // Generar código aleatorio de 6 caracteres
+            const pWA    = document.getElementById('nu-parent-wa')?.value?.trim()    || '';
             const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            
-            const linkId = `${cid}_${pNum}`;
-            await setDoc(doc(db, 'cronos_player_links', linkId), {
-                clubId:      cid,
-                playerNumber: pNum,
-                playerAlias:  pAlias,
-                playerName:   pAlias,
-                teamName:     club.name || '',
-                parentUid:    uid,
-                parentEmail:  email,
-                parentWA:     pWA,
-                inviteCode:   inviteCode,
-                coachUid:     '',        
-                coachEmail:   '',
-                linkedAt:     new Date().toISOString(),
+            const linkId     = `${cid}_${pNum}`;
+            await setDoc(doc(db,'cronos_player_links',linkId), {
+                clubId: cid, playerNumber: pNum, playerAlias: pAlias,
+                playerName: pAlias, teamName: club.name || '',
+                parentUid: uid, parentEmail: email, parentWA: pWA,
+                inviteCode, coachUid: '', coachEmail: '',
+                linkedAt: new Date().toISOString(),
             });
-
-            // Mostrar el código
-            const codeDisplay = document.getElementById('nu-invite-code-display');
+            const codeDisplay   = document.getElementById('nu-invite-code-display');
             const codeContainer = document.getElementById('generated-invite-container');
             if (codeDisplay && codeContainer) {
                 codeDisplay.textContent = inviteCode;
                 codeContainer.style.display = 'flex';
             }
-
-            if (document.getElementById('nu-player-num'))   document.getElementById('nu-player-num').value = '';
-            if (document.getElementById('nu-player-alias'))  document.getElementById('nu-player-alias').value = '';
-            if (document.getElementById('nu-parent-wa'))    document.getElementById('nu-parent-wa').value = '';
+            if (document.getElementById('nu-player-num'))   document.getElementById('nu-player-num').value   = '';
+            if (document.getElementById('nu-player-alias'))  document.getElementById('nu-player-alias').value  = '';
+            if (document.getElementById('nu-parent-wa'))    document.getElementById('nu-parent-wa').value    = '';
         }
 
-        msgEl.style.color='#3fb950';
-        msgEl.textContent=`✅ ${email} dado de alta. Debe registrarse con ese email.`;
-        document.getElementById('nu-email').value='';
-        document.getElementById('nu-name').value='';
+        msgEl.style.color = '#3fb950';
+        msgEl.textContent = `✅ ${email} dado de alta. Debe registrarse con ese email.`;
+        document.getElementById('nu-email').value = '';
+        document.getElementById('nu-name').value  = '';
         setTimeout(() => openClubAdminPanel(), 1800);
     };
 
+    // ── Aprobar solicitud de acceso (auto-registro) ──────────────────
+    window.caApproveRequest = async (uid, role, email) => {
+        const si = slotOf(role);
+        if (si.full) {
+            showToast(`⛔ No hay slots libres para el rol ${role}. Solicita ampliación al SuperAdmin.`, 4000);
+            return;
+        }
+        if (!confirm(`¿Autorizar acceso a ${email} como ${role}?`)) return;
+        try {
+            await updateDoc(doc(db,'users',uid), {
+                isAuthorized: true, role, status: 'active',
+                authorizedAt: new Date().toISOString(), authorizedBy: me.uid
+            });
+            const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
+            await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used || 0) + 1 });
+            showToast(`✅ ${email} autorizado correctamente.`, 3000);
+            openClubAdminPanel();
+        } catch(e) {
+            showToast('❌ Error al autorizar usuario: ' + e.message, 3000);
+        }
+    };
+
+    // ── Rechazar solicitud de acceso ─────────────────────────────────
+    window.caRejectRequest = async (uid, email) => {
+        if (!confirm(`¿Rechazar solicitud de ${email}?`)) return;
+        try {
+            await updateDoc(doc(db,'users',uid), {
+                isAuthorized: false, status: 'rejected',
+                rejectedAt: new Date().toISOString(), rejectedBy: me.uid
+            });
+            showToast(`❌ Solicitud de ${email} rechazada.`, 3000);
+            openClubAdminPanel();
+        } catch(e) { showToast('❌ Error al rechazar: ' + e.message, 3000); }
+    };
+
+    // ── Solicitar baja al SuperAdmin ─────────────────────────────────
     window.caRequestDeletion = async (userId, userEmail, cid) => {
         const reason = prompt(`Motivo de solicitud de baja para ${userEmail}:`);
         if (!reason?.trim()) return;
         await setDoc(doc(db,'deletion_requests',`${userId}_${Date.now()}`), {
-            userId, userEmail, clubId:cid,
-            requestedBy:me.uid, requestedByEmail:me.email,
-            reason:reason.trim(), status:'pending',
-            createdAt:new Date().toISOString()
+            userId, userEmail, clubId: cid,
+            requestedBy: me.uid, requestedByEmail: me.email,
+            reason: reason.trim(), status: 'pending',
+            createdAt: new Date().toISOString()
         });
         showToast('📋 Solicitud enviada al SuperAdmin. Pendiente de aprobación.', 5000);
+    };
+
+    // ── Solicitar ampliación de cuota al SuperAdmin ──────────────────
+    window.caRequestQuota = async (cid, role, roleLabel, slotKey) => {
+        const current = slotOf(role);
+        const extra   = prompt(
+            `Solicitar ampliación de cuota para ${roleLabel}\n` +
+            `Slots actuales: ${current.unlimited ? '∞' : current.max}\n\n` +
+            `¿Cuántos slots adicionales necesitas?`
+        );
+        if (!extra || isNaN(parseInt(extra))) return;
+        const requestedExtra = parseInt(extra);
+        await setDoc(doc(db,'platform_requests',`quota_${cid}_${role}_${Date.now()}`), {
+            type:        'quota_increase',
+            clubId:      cid,
+            clubName:    club.name || '',
+            role,
+            roleLabel,
+            slotKey,
+            currentMax:  current.max,
+            currentUsed: current.used,
+            requestedExtra,
+            requestedBy:      me.uid,
+            requestedByEmail: me.email,
+            status:      'unread',
+            createdAt:   new Date().toISOString(),
+        });
+        showToast(`✅ Solicitud enviada al SuperAdmin: +${requestedExtra} slots para ${roleLabel}.`, 5000);
+    };
+
+    // ── Transmitir estado al SuperAdmin ─────────────────────────────
+    window.caNotifySuperAdmin = async (cid) => {
+        if (!confirm('¿Enviar resumen de estado del club al SuperAdmin?')) return;
+        showSpinner('Transmitiendo…');
+        try {
+            const pendingUsers  = users.filter(u => !u.isAuthorized || u.status === 'pending_register');
+            const summary = `Club: ${club.name}\n` +
+                `Pendientes de acceso: ${pendingUsers.length}\n` +
+                `Directores: ${slotOf('director').used} · ` +
+                `Coordinadores: ${slotOf('coordinator').used} · ` +
+                `Entrenadores: ${slotOf('user').used} · ` +
+                `Padres: ${slotOf('parent').used}\n\n` +
+                pendingUsers.map(u => `- ${u.email} (${u.requestedRole||u.role})`).join('\n');
+
+            await setDoc(doc(db,'platform_requests',`sync_${cid}_${Date.now()}`), {
+                clubId: cid, clubName: club.name,
+                type: 'sync_request', summary,
+                pendingCount: pendingUsers.length,
+                status: 'unread',
+                createdAt: new Date().toISOString(),
+                requestedBy: me.uid, requestedByEmail: me.email
+            });
+            hideSpinner();
+            showToast('✅ Estado del club transmitido al SuperAdmin.', 5000);
+        } catch(e) {
+            hideSpinner();
+            showToast('❌ Error: ' + e.message, 5000);
+        }
     };
 }
 window.openClubAdminPanel = openClubAdminPanel;
@@ -245,4 +470,3 @@ async function checkClubAccess(userData) {
     return true;
 }
 window.checkClubAccess = checkClubAccess;
-
