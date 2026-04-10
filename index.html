@@ -210,13 +210,13 @@
 
             <!-- Tabs -->
             <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:1.5rem;">
-                <button id="tab-login" onclick="switchTab('login')"
+                <button id="tab-login" onclick="switchTab('login'); document.getElementById('role-container').style.display='none';"
                     style="flex:1; padding:0.6rem; background:none; border:none;
                            color:#58a6ff; font-weight:700; font-size:0.9rem;
                            border-bottom:2px solid #58a6ff; cursor:pointer;">
                     ENTRAR
                 </button>
-                <button id="tab-register" onclick="switchTab('register')"
+                <button id="tab-register" onclick="switchTab('register'); document.getElementById('role-container').style.display='block';"
                     style="flex:1; padding:0.6rem; background:none; border:none;
                            color:#7d8590; font-weight:700; font-size:0.9rem;
                            border-bottom:2px solid transparent; cursor:pointer;">
@@ -253,8 +253,9 @@
                     style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
                            border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <option value="user">⚽ Entrenador</option>
-                    <option value="parent">👨‍👩‍👧 Padre / Madre</option>
+                    <option value="user">⚽ Entrenador (pertenezco a un club)</option>
+                    <option value="individual">👤 Entrenador Individual (sin club)</option>
+                    <option value="parent">👨‍👩‍👧 Padre / Madre / Tutor</option>
                     <option value="director">📋 Director Deportivo</option>
                     <option value="coordinator">🎯 Coordinador</option>
                     <option value="club_admin">🏟️ Administrador de Club (Nuevo Club)</option>
@@ -281,12 +282,35 @@
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none; margin-bottom:0.5rem;">
                 
                 <label style="font-size:0.72rem; color:#7d8590; display:block; margin-bottom:5px;">Cuotas solicitadas (Opcional)</label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.4rem;">
+                    <input type="number" id="auth-req-directors" placeholder="Nº Directores" title="Directores Deportivos"
+                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem;">
+                    <input type="number" id="auth-req-coordinators" placeholder="Nº Coordinadores" title="Coordinadores"
+                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem;">
+                </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
                     <input type="number" id="auth-req-coaches" placeholder="Nº Entrenadores" title="Entrenadores"
                         style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem;">
                     <input type="number" id="auth-req-parents" placeholder="Nº Padres" title="Padres"
                         style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem;">
                 </div>
+            </div>
+
+            <!-- Nombre y Apellidos (Solo para usuario individual) -->
+            <div id="individual-name-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#79c0ff; display:block; margin-bottom:5px;">Tu nombre completo</label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                    <input type="text" id="auth-firstname" placeholder="Nombre"
+                        style="padding:0.75rem; background:rgba(121,192,255,0.05);
+                               border:1px solid rgba(121,192,255,0.25); border-radius:8px;
+                               color:white; font-size:0.9rem; box-sizing:border-box; outline:none;">
+                    <input type="text" id="auth-lastname" placeholder="Apellidos"
+                        style="padding:0.75rem; background:rgba(121,192,255,0.05);
+                               border:1px solid rgba(121,192,255,0.25); border-radius:8px;
+                               color:white; font-size:0.9rem; box-sizing:border-box; outline:none;">
+                </div>
+                <p style="font-size:0.72rem; color:#7d8590; margin:0.4rem 0 0;">
+                    Tu nombre se usará como nombre de tu equipo en la app.</p>
             </div>
 
             <!-- Código de Invitación (Opcional para registro de padres) -->
@@ -373,6 +397,14 @@
                 <h3>Padre / Madre</h3>
                 <p>Sigue a tu hijo, recibe convocatorias y mira partidos en vivo.</p>
                 <div class="role-card-badge" style="background:#d2a8ff;color:white;">FAMILIA</div>
+            </div>
+
+            <!-- Opción Usuario Individual -->
+            <div id="card-opt-individual" class="role-card" onclick="selectOption('individual')" style="display:none;">
+                <div class="role-card-icon">👤</div>
+                <h3>Entrenador Individual</h3>
+                <p>Gestiona tu propio equipo de forma independiente, sin pertenecer a un club.</p>
+                <div class="role-card-badge" style="background:#79c0ff;color:#0d1117;">INDIVIDUAL</div>
             </div>
 
         </div>
