@@ -338,7 +338,104 @@ export function selectOption(option) {
     };
 
     me._activeRole = map[option] || me.role;
+
+    // ── MODO PRUEBA multi-rol: el SuperAdmin necesita un club para roles no-SA ──
+    const isSA         = ['superadmin','admin'].includes(me.role);
+    const needsClub    = ['club_admin','director','coordinator','user','parent','individual'].includes(me._activeRole);
+    const alreadyHasClub = !!me.clubId;
+
+    if (isSA && needsClub && !alreadyHasClub) {
+        // Mostrar selector de club antes de entrar al rol
+        _saPickTestClub(me._activeRole);
+        return;
+    }
+
     _launchWithRole(me._activeRole);
+}
+
+// ── Selector de club para pruebas del SuperAdmin ─────────────────────
+async function _saPickTestClub(targetRole) {
+    const me = window._cronosCurrentUser;
+    try {
+        const fa = window._cronos_auth;
+        const m  = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const snap = await m.getDocs(m.collection(fa.db, 'clubs'));
+        const clubs = [];
+        snap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
+
+        // Crear overlay de selección
+        const overlay = document.createElement('div');
+        overlay.id = 'sa-club-picker';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:99999;' +
+            'display:flex;align-items:center;justify-content:center;padding:1rem;';
+        overlay.innerHTML = `
+        <div style="background:#161b22;border:1px solid rgba(88,166,255,0.3);border-radius:16px;
+                    padding:1.5rem;width:min(96vw,440px);max-height:85vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <div>
+                    <div style="font-weight:700;font-size:1rem;color:white;">🧪 Modo Prueba</div>
+                    <div style="font-size:0.76rem;color:#7d8590;margin-top:2px;">
+                        ¿En qué club quieres actuar como <strong style="color:#58a6ff;">${targetRole}</strong>?
+                    </div>
+                </div>
+                <button id="sa-picker-close"
+                    style="background:none;border:none;color:#7d8590;font-size:1.5rem;cursor:pointer;">✕</button>
+            </div>
+            ${clubs.length === 0
+                ? `<p style="color:#7d8590;text-align:center;padding:1.5rem;">No hay clubes creados aún.<br>
+                   <span style="font-size:0.78rem;">Crea uno desde el panel SuperAdmin.</span></p>`
+                : clubs.map(c => `
+                <button class="sa-club-btn" data-id="${c.id}" data-name="${(c.name||c.id).replace(/"/g,'')}"
+                    style="width:100%;text-align:left;padding:0.85rem 1rem;margin-bottom:0.5rem;
+                           background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
+                           border-radius:10px;cursor:pointer;color:white;font-size:0.88rem;transition:all 0.2s;">
+                    🏟️ <strong>${c.name || c.id}</strong>
+                    <span style="font-size:0.7rem;color:#7d8590;display:block;margin-top:2px;">
+                        ${c.adminEmail || 'Sin admin'} · Plan: ${c.plan || 'free'}
+                    </span>
+                </button>`).join('')
+            }
+            <button id="sa-picker-noclub"
+                style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.03);
+                       border:1px dashed rgba(255,255,255,0.15);border-radius:8px;
+                       color:#7d8590;font-size:0.8rem;cursor:pointer;margin-top:0.3rem;">
+                Continuar sin club asignado (funcionalidad limitada)
+            </button>
+        </div>`;
+        document.body.appendChild(overlay);
+
+        // Hover effects
+        overlay.querySelectorAll('.sa-club-btn').forEach(btn => {
+            btn.addEventListener('mouseenter', () => {
+                btn.style.background    = 'rgba(88,166,255,0.1)';
+                btn.style.borderColor   = 'rgba(88,166,255,0.35)';
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.background    = 'rgba(255,255,255,0.04)';
+                btn.style.borderColor   = 'rgba(255,255,255,0.1)';
+            });
+            btn.addEventListener('click', () => {
+                me.clubId   = btn.dataset.id;
+                me.clubName = btn.dataset.name;
+                overlay.remove();
+                showToast(`🧪 Actuando en "${btn.dataset.name}" como ${targetRole}`, 3000);
+                _launchWithRole(me._activeRole);
+            });
+        });
+
+        document.getElementById('sa-picker-close').addEventListener('click', () => {
+            overlay.remove();
+            document.getElementById('role-selection-screen').style.display = 'flex';
+        });
+        document.getElementById('sa-picker-noclub').addEventListener('click', () => {
+            overlay.remove();
+            _launchWithRole(me._activeRole);
+        });
+
+    } catch(e) {
+        console.error('Error cargando clubes para prueba:', e);
+        _launchWithRole(me._activeRole);
+    }
 }
 
 function _launchWithRole(role) {
