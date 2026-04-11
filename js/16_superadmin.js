@@ -137,6 +137,22 @@ const SA_CSS = `
 .sa-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:3px;}
 </style>`;
 
+// ── Helpers seguros para spinner (por si no está disponible globalmente) ──
+function _saSpinner(msg) {
+    if (typeof showSpinner === 'function') { showSpinner(msg); return; }
+    // Fallback: mini overlay propio
+    var el = document.createElement('div');
+    el.id = '_sa_spinner';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    el.innerHTML = '<div style="background:#161b22;border:1px solid rgba(88,166,255,0.3);border-radius:12px;padding:1.2rem 2rem;color:white;font-size:0.9rem;display:flex;align-items:center;gap:0.8rem;"><div class="spinner" style="width:18px;height:18px;border:2px solid rgba(88,166,255,0.3);border-top-color:#58a6ff;border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0;"></div>' + (msg||'Procesando…') + '</div>';
+    document.body.appendChild(el);
+}
+function _saHideSpinner() {
+    if (typeof hideSpinner === 'function') { hideSpinner(); }
+    var el = document.getElementById('_sa_spinner');
+    if (el) el.remove();
+}
+
 // ── Entrada al panel ─────────────────────────────────────────────────
 function openAdminPanel() {
     const me = window._cronosCurrentUser;
@@ -587,55 +603,47 @@ Todos sus usuarios perderán acceso inmediatamente.
     };
     // ── Activar / Bloquear / Eliminar usuario de club ─────────────────
     window.saSetClubUserStatus = async (uid, email, newStatus, clubId) => {
-        const labels  = { active:'activar', blocked:'bloquear', removed:'eliminar definitivamente' };
-        if (!confirm(`¿Deseas ${labels[newStatus]} a ${email}?`)) return;
-        showSpinner('Procesando…');
+        const labels = { active:'activar', blocked:'bloquear', removed:'eliminar definitivamente' };
+        if (!confirm('¿Deseas ' + (labels[newStatus]||newStatus) + ' a ' + email + '?')) return;
+        _saSpinner('Procesando…');
         try {
             const { fa, doc, getDoc, updateDoc, deleteDoc } = await saFS();
 
-            // Leer rol del usuario para ajustar slots
-            const uSnap = await getDoc(doc(fa.db,'users',uid));
-            const ud    = uSnap.exists() ? uSnap.data() : {};
-            const role  = ud.role || 'user';
-            const slotKey = role==='director'?'usedSlots.directors'
-                          : role==='coordinator'?'usedSlots.coordinators'
-                          : role==='parent'?'usedSlots.parents'
-                          : 'usedSlots.users';
+            const uSnap   = await getDoc(doc(fa.db, 'users', uid));
+            const ud      = uSnap.exists() ? uSnap.data() : {};
+            const role    = ud.role || 'user';
+            const slotSub = role==='director'?'directors':role==='coordinator'?'coordinators':role==='parent'?'parents':'users';
+            const slotKey = 'usedSlots.' + slotSub;
 
             if (newStatus === 'removed') {
-                // Eliminar el documento de usuario
-                await deleteDoc(doc(fa.db,'users',uid));
-                // Decrementar slot del club
-                const cSnap = await getDoc(doc(fa.db,'clubs',clubId)).catch(()=>null);
-                if (cSnap?.exists()) {
-                    const cur = cSnap.data().usedSlots?.[slotKey.split('.')[1]] || 1;
-                    await updateDoc(doc(fa.db,'clubs',clubId), { [slotKey]: Math.max(0, cur - 1) });
+                await deleteDoc(doc(fa.db, 'users', uid));
+                const cSnap = await getDoc(doc(fa.db, 'clubs', clubId)).catch(()=>null);
+                if (cSnap && cSnap.exists()) {
+                    const cur = (cSnap.data().usedSlots || {})[slotSub] || 1;
+                    await updateDoc(doc(fa.db, 'clubs', clubId), { [slotKey]: Math.max(0, cur - 1) });
                 }
-                hideSpinner();
-                showToast(`🗑️ ${email} eliminado del club`, 3500);
+                _saHideSpinner();
+                showToast('🗑️ ' + email + ' eliminado del club', 3500);
             } else {
-                // Activar o bloquear
                 const isActive = newStatus === 'active';
-                await updateDoc(doc(fa.db,'users',uid), {
-                    isAuthorized: isActive,
-                    status:       newStatus,
-                    ...(isActive ? { authorizedAt: new Date().toISOString() } : { blockedAt: new Date().toISOString() }),
-                });
-                // Ajustar slots: bloquear resta, activar suma
-                const cSnap = await getDoc(doc(fa.db,'clubs',clubId)).catch(()=>null);
-                if (cSnap?.exists()) {
-                    const cur = cSnap.data().usedSlots?.[slotKey.split('.')[1]] || 0;
+                const upd = { isAuthorized: isActive, status: newStatus };
+                if (isActive)  upd.authorizedAt = new Date().toISOString();
+                else           upd.blockedAt    = new Date().toISOString();
+                await updateDoc(doc(fa.db, 'users', uid), upd);
+                const cSnap = await getDoc(doc(fa.db, 'clubs', clubId)).catch(()=>null);
+                if (cSnap && cSnap.exists()) {
+                    const cur   = (cSnap.data().usedSlots || {})[slotSub] || 0;
                     const delta = isActive ? 1 : -1;
-                    await updateDoc(doc(fa.db,'clubs',clubId), { [slotKey]: Math.max(0, cur + delta) });
+                    await updateDoc(doc(fa.db, 'clubs', clubId), { [slotKey]: Math.max(0, cur + delta) });
                 }
-                hideSpinner();
-                showToast(isActive ? `✅ ${email} activado` : `🔒 ${email} bloqueado`, 3000);
+                _saHideSpinner();
+                showToast(isActive ? '✅ ' + email + ' activado' : '🔒 ' + email + ' bloqueado', 3000);
             }
             saClubs();
         } catch(e) {
-            hideSpinner();
+            _saHideSpinner();
             showToast('⚠️ Error: ' + e.message, 4000);
-            console.error(e);
+            console.error('[saSetClubUserStatus]', e);
         }
     };
 
@@ -645,7 +653,7 @@ Todos sus usuarios perderán acceso inmediatamente.
         if (!confirm(`⚠️ ELIMINAR CLUB: "${name}"\n\nAcción IRREVERSIBLE.\nTodos los usuarios del club quedarán desactivados.\n\n¿Confirmar?`)) return;
         const second = prompt(`Escribe el nombre exacto del club para confirmar:\n"${name}"`);
         if (second !== name) { showToast('❌ Nombre incorrecto. Club NO eliminado.', 4000); return; }
-        showSpinner('Eliminando club…');
+        _saSpinner('Eliminando club…');
         try {
             const { fa, doc, deleteDoc, collection, getDocs, query, where, updateDoc } = await saFS();
             const usersSnap = await getDocs(query(collection(fa.db,'users'), where('clubId','==',id)));
@@ -659,7 +667,7 @@ Todos sus usuarios perderán acceso inmediatamente.
             ));
             await Promise.all(promises);
             await deleteDoc(doc(fa.db,'clubs',id));
-            hideSpinner();
+            _saHideSpinner();
             showToast(`🗑️ Club "${name}" eliminado (${usersSnap.size} usuarios desactivados)`, 5000);
             saTab('clubs');
         } catch(e) {
@@ -895,7 +903,7 @@ async function saIndividual() {
     // ── Eliminar usuario individual definitivamente ──────────────────
     window.saDeleteIndividual = async (uid, email) => {
         if (!confirm(`⚠️ ELIMINAR usuario individual:\n${email}\n\nEsta acción es IRREVERSIBLE.\nSe eliminará su cuenta y su club personal.\n\n¿Confirmar?`)) return;
-        showSpinner('Eliminando usuario…');
+        _saSpinner('Eliminando usuario…');
         try {
             const { fa, doc, deleteDoc, getDoc, collection, getDocs, query, where } = await saFS();
 
@@ -924,7 +932,7 @@ async function saIndividual() {
             // Eliminar el usuario
             await deleteDoc(doc(fa.db, 'users', uid));
 
-            hideSpinner();
+            _saHideSpinner();
             showToast(`🗑️ Usuario "${email}" eliminado definitivamente`, 4000);
             saIndividual();
         } catch(e) {
@@ -1785,6 +1793,14 @@ async function saPending() {
     clubs.forEach(c => { clubMap[c._id] = c.name || c._id; });
 
     // Usuarios pendientes: isAuthorized=false, no son SA/admin, no son club_admin ni individual (esos van a Solicitudes)
+    // Solicitudes de nuevos usuarios enviadas por club admins (user_request)
+    const { db: db2, collection: col2, getDocs: gd2, query: q2, where: w2, doc: doc2,
+            setDoc: sd2, updateDoc: ud2 } = await saFS();
+    const userReqSnap = await gd2(q2(col2(db2,'platform_requests'),
+        w2('type','==','user_request'), w2('status','==','pending_sa')));
+    const userRequests = [];
+    userReqSnap.forEach(d => userRequests.push({ _id: d.id, ...d.data() }));
+
     const pending = users.filter(u =>
         !u.isAuthorized &&
         !['superadmin','admin'].includes(u.role) &&
@@ -1802,7 +1818,7 @@ async function saPending() {
         byClub[cid].users.push(u);
     });
 
-    if (!pending.length) {
+    if (!pending.length && !userRequests.length) {
         body.innerHTML = `
         <div style="text-align:center;padding:5rem 2rem;opacity:0.7;">
             <div style="font-size:3rem;margin-bottom:1rem;">✅</div>
@@ -1821,7 +1837,52 @@ async function saPending() {
         individual:  '👤 Individual',
     };
 
-    let html = `
+    let html = '';
+
+    // ── Sección A: Solicitudes de usuarios nuevos enviadas por Club Admins ──
+    if (userRequests.length) {
+        html += '<div style="margin-bottom:1.5rem;">'
+            + '<h3 style="font-size:0.9rem;margin:0 0 0.8rem;color:#58a6ff;">'
+            + '📩 Solicitudes de nuevos usuarios de club (' + userRequests.length + ')'
+            + '</h3>';
+        userRequests.forEach(r => {
+            html += '<div class="sa-card" style="border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.03);margin-bottom:0.7rem;">'
+                + '<div style="padding:0.9rem 1rem;">'
+                + '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.6rem;">'
+                + '<div>'
+                + '<div style="font-weight:700;font-size:0.95rem;">' + (r.requestedEmail || '—') + '</div>'
+                + '<div style="font-size:0.76rem;color:var(--text-muted);margin-top:2px;">'
+                + '🏟️ ' + (r.clubName||r.clubId) + ' · Rol: <strong style="color:var(--primary);">' + (r.requestedRoleLabel||r.requestedRole) + '</strong>'
+                + (r.requestedName ? ' · ' + r.requestedName : '')
+                + '</div>'
+                + '<div style="font-size:0.71rem;color:var(--text-muted);margin-top:1px;">Solicitado por: ' + (r.requestedByEmail||'—') + ' · ' + (r.createdAt ? new Date(r.createdAt).toLocaleDateString('es-ES') : '—') + '</div>'
+                + '</div>'
+                + '<span class="sa-badge" style="background:rgba(88,166,255,0.15);color:#58a6ff;">PENDIENTE SA</span>'
+                + '</div>'
+                + '<div style="display:flex;gap:0.5rem;">'
+                + '<button class="sa-btn" '
+                + 'data-req-id="' + r._id + '" '
+                + 'data-email="' + (r.requestedEmail||'').replace(/"/g,'') + '" '
+                + 'data-role="' + (r.requestedRole||'user') + '" '
+                + 'data-club="' + (r.clubId||'') + '" '
+                + 'data-pnum="' + (r.playerNumber||'') + '" '
+                + 'data-palias="' + (r.playerAlias||'').replace(/"/g,'') + '" '
+                + 'data-pwa="' + (r.parentWA||'') + '" '
+                + 'onclick="var b=this;saApproveUserRequest(b.dataset.reqId,b.dataset.email,b.dataset.role,b.dataset.club,b.dataset.pnum,b.dataset.palias,b.dataset.pwa)" '
+                + 'style="flex:2;color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.08);font-weight:700;padding:0.5rem;">Aprobar: el usuario ya puede registrarse</button>'
+                + '<button class="sa-btn" '
+                + 'data-req-id="' + r._id + '" '
+                + 'data-email="' + (r.requestedEmail||'').replace(/"/g,'') + '" '
+                + 'onclick="var b=this;saRejectUserRequest(b.dataset.reqId,b.dataset.email)" '
+                + 'style="flex:1;color:#ff5858;border-color:rgba(255,88,88,0.4);background:rgba(255,88,88,0.08);font-weight:700;">Rechazar</button>'
+                + '</div>'
+                + '</div></div>';
+        });
+        html += '</div>';
+    }
+
+    // ── Sección B: Usuarios auto-registrados pendientes de activación ──
+    html += `
     <div style="margin-bottom:1.2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
         <h3 style="margin:0;font-size:0.95rem;">
             🔔 Usuarios pendientes de activación —
@@ -1890,6 +1951,56 @@ async function saPending() {
     });
 
     body.innerHTML = html;
+
+    // ── Aprobar solicitud de usuario de club ────────────────────────────
+    window.saApproveUserRequest = async (reqId, email, role, clubId, playerNum, playerAlias, parentWA) => {
+        if (!confirm('¿Aprobar alta de ' + email + ' como ' + role + ' en el club?')) return;
+        try {
+            // 1. Crear usuario pre-autorizado en Firestore (pending_register: espera que se registre)
+            const uid = 'pre_' + Date.now().toString(36);
+            await sd2(doc2(db2,'users',uid), {
+                email, displayName: '', role, requestedRole: role,
+                clubId, isAuthorized: true,
+                status: 'pending_register',
+                approvedBySA: true,
+                approvedAt:   new Date().toISOString(),
+                createdAt:    new Date().toISOString(),
+            });
+            // 2. Si es padre, crear el vínculo de jugador
+            if (role === 'parent' && playerNum) {
+                await sd2(doc2(db2,'cronos_player_links', clubId + '_' + playerNum), {
+                    clubId, playerNumber: playerNum, playerAlias,
+                    playerName: playerAlias, parentWA,
+                    parentEmail: email, parentUid: uid,
+                    inviteCode: Math.random().toString(36).substring(2,8).toUpperCase(),
+                    linkedAt: new Date().toISOString(),
+                });
+            }
+            // 3. Marcar solicitud como aprobada
+            await ud2(doc2(db2,'platform_requests',reqId), {
+                status: 'approved_sa', approvedAt: new Date().toISOString()
+            });
+            showToast('✅ Aprobado. ' + email + ' ya puede registrarse en la app con su email.', 5000);
+            saPending();
+        } catch(e) {
+            showToast('❌ Error: ' + e.message, 4000);
+            console.error(e);
+        }
+    };
+
+    // ── Rechazar solicitud de usuario de club ────────────────────────────
+    window.saRejectUserRequest = async (reqId, email) => {
+        if (!confirm('¿Rechazar la solicitud para ' + email + '?')) return;
+        try {
+            await ud2(doc2(db2,'platform_requests',reqId), {
+                status: 'rejected', rejectedAt: new Date().toISOString()
+            });
+            showToast('❌ Solicitud rechazada', 3000);
+            saPending();
+        } catch(e) {
+            showToast('❌ Error: ' + e.message, 4000);
+        }
+    };
 
     // ── Activar un usuario ──────────────────────────────────────────
     window.saActivateUser = async (uid, email, clubId) => {

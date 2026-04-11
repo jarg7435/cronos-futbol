@@ -246,26 +246,32 @@ async function openClubAdminPanel(preClubId = null) {
           }).join('')}
         </div>
 
-        <!-- ── BLOQUE C: Dar de alta usuario ── -->
+        <!-- ── BLOQUE C: Solicitar nuevo usuario al SuperAdmin ── -->
         <div class="sa-card" style="border-color:rgba(88,166,255,0.25);margin-bottom:1.2rem;">
-          <div style="font-weight:700;color:var(--primary);margin-bottom:0.7rem;font-size:0.9rem;">
-            ➕ Dar de alta usuario</div>
+          <div style="font-weight:700;color:var(--primary);margin-bottom:0.4rem;font-size:0.9rem;">
+            📩 Solicitar nuevo usuario al SuperAdmin</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.8rem;
+                      padding:0.5rem 0.7rem;background:rgba(88,166,255,0.05);
+                      border:1px solid rgba(88,166,255,0.15);border-radius:8px;line-height:1.5;">
+            <strong style="color:var(--primary);">Flujo correcto:</strong>
+            1️⃣ Tú solicitas aquí → 2️⃣ SuperAdmin aprueba → 3️⃣ El usuario se registra en la app → 4️⃣ Tú le das acceso
+          </div>
           <div class="sa-g4" style="align-items:end;">
-            <div><label class="sa-label">Email *</label>
+            <div><label class="sa-label">Email del nuevo usuario *</label>
               <input class="sa-input" id="nu-email" type="email" placeholder="usuario@email.com"></div>
-            <div><label class="sa-label">Nombre</label>
-              <input class="sa-input" id="nu-name" placeholder="Nombre completo"></div>
-            <div><label class="sa-label">Rol</label>
+            <div><label class="sa-label">Nombre completo</label>
+              <input class="sa-input" id="nu-name" placeholder="Nombre y apellidos"></div>
+            <div><label class="sa-label">Rol solicitado</label>
               <select class="sa-input" id="nu-role" onchange="caRoleChanged()">
                 <option value="user">⚽ Entrenador</option>
-                <option value="parent">👨‍👩‍👧 Padre/Madre</option>
+                <option value="parent">👨‍👩‍👧 Padre/Madre/Tutor</option>
                 ${features.live_view ? '<option value="coordinator">🎯 Coordinador</option>' : ''}
                 ${features.live_view ? '<option value="director">📋 Director Dep.</option>' : ''}
               </select></div>
-            <button onclick="caAddUser('${clubId}')" class="sa-btn"
+            <button onclick="caSolicitarUsuario('${clubId}')" class="sa-btn"
                 style="color:var(--primary);border-color:rgba(88,166,255,0.4);
                        background:rgba(88,166,255,0.1);font-weight:700;height:34px;">
-                ➕ Alta</button>
+                📩 Solicitar</button>
           </div>
           <!-- Campos extra para Padre/Madre -->
           <div id="nu-parent-fields" style="display:none;margin-top:0.6rem;">
@@ -281,14 +287,9 @@ async function openClubAdminPanel(preClubId = null) {
                 <input class="sa-input" id="nu-player-alias" placeholder="ej: García"></div>
               <div><label class="sa-label">WhatsApp del padre (sin +)</label>
                 <input class="sa-input" id="nu-parent-wa" type="tel" placeholder="ej: 34612345678"></div>
-              <div id="generated-invite-container" style="display:none;flex-direction:column;justify-content:center;">
-                <label class="sa-label" style="color:#ffd700;">Código de Invitación</label>
-                <div id="nu-invite-code-display"
-                    style="font-family:monospace;font-weight:bold;color:#ffd700;font-size:1.1rem;letter-spacing:2px;"></div>
-              </div>
             </div>
           </div>
-          <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;"></div>
+          <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;color:#3fb950;"></div>
         </div>
 
         <!-- ── BLOQUE D: Miembros por rol (acordeón) ── -->
@@ -306,6 +307,63 @@ async function openClubAdminPanel(preClubId = null) {
         if (fields) fields.style.display = role === 'parent' ? 'block' : 'none';
     };
 
+    // ── Solicitar nuevo usuario al SuperAdmin (nuevo flujo correcto) ──────
+    window.caSolicitarUsuario = async (cid) => {
+        const email   = document.getElementById('nu-email').value.trim();
+        const name    = document.getElementById('nu-name').value.trim();
+        const role    = document.getElementById('nu-role').value;
+        const msgEl   = document.getElementById('nu-msg');
+
+        if (!email) { msgEl.style.color='#ff5858'; msgEl.textContent='⚠️ Email obligatorio.'; return; }
+
+        const si = slotOf(role);
+        if (si.full) {
+            msgEl.style.color = '#ff5858';
+            msgEl.textContent = '⛔ Cuota llena para este rol. Solicita ampliación al SuperAdmin.';
+            return;
+        }
+
+        msgEl.style.color = 'var(--primary)'; msgEl.textContent = 'Enviando solicitud…';
+
+        const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+        const pNum   = document.getElementById('nu-player-num')?.value?.trim() || '';
+        const pAlias = document.getElementById('nu-player-alias')?.value?.trim() || '';
+        const pWA    = document.getElementById('nu-parent-wa')?.value?.trim() || '';
+
+        try {
+            // Crear solicitud para el SuperAdmin en platform_requests
+            const reqId = 'user_req_' + cid + '_' + Date.now().toString(36);
+            await setDoc(doc(db, 'platform_requests', reqId), {
+                type:             'user_request',
+                clubId:           cid,
+                clubName:         club.name || '',
+                requestedEmail:   email,
+                requestedName:    name,
+                requestedRole:    role,
+                requestedRoleLabel: ROLE_LABELS[role] || role,
+                playerNumber:     pNum   || null,
+                playerAlias:      pAlias || null,
+                parentWA:         pWA    || null,
+                requestedBy:      me.uid,
+                requestedByEmail: me.email,
+                status:           'pending_sa',
+                createdAt:        new Date().toISOString(),
+            });
+
+            msgEl.style.color   = '#3fb950';
+            msgEl.textContent   = '✅ Solicitud enviada al SuperAdmin. Cuando la apruebe, el usuario podrá registrarse.';
+            document.getElementById('nu-email').value = '';
+            document.getElementById('nu-name').value  = '';
+            if (document.getElementById('nu-player-num'))   document.getElementById('nu-player-num').value   = '';
+            if (document.getElementById('nu-player-alias'))  document.getElementById('nu-player-alias').value  = '';
+            if (document.getElementById('nu-parent-wa'))    document.getElementById('nu-parent-wa').value    = '';
+        } catch(e) {
+            msgEl.style.color   = '#ff5858';
+            msgEl.textContent   = '❌ Error: ' + e.message;
+        }
+    };
+
+    // ── Alta directa (mantenida para compatibilidad interna) ─────────────
     window.caAddUser = async (cid) => {
         const email  = document.getElementById('nu-email').value.trim();
         const name   = document.getElementById('nu-name').value.trim();
