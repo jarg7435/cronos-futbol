@@ -755,13 +755,25 @@ async function saIndividual() {
             <div class="sa-card-meta">
                 ${saExpireLabel(u.expiresAt)}
                 <button class="sa-btn" onclick="event.stopPropagation();saEditIndividual('${u._id}')"
+                    title="Editar"
                     style="font-size:0.73rem;color:var(--primary);
                            border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">✏️</button>
-                <button class="sa-btn" onclick="event.stopPropagation();saToggleUser('${u._id}',${!!u.isAuthorized})"
-                    style="font-size:0.73rem;color:${u.isAuthorized?'#ff5858':'#3fb950'};
-                           border-color:${u.isAuthorized?'rgba(255,88,88,0.3)':'rgba(63,185,80,0.3)'};
-                           background:${u.isAuthorized?'rgba(255,88,88,0.07)':'rgba(63,185,80,0.07)'};">
-                    ${u.isAuthorized?'🔒':'✅'}</button>
+                ${u.isAuthorized ? `
+                <button class="sa-btn" onclick="event.stopPropagation();saSetIndividualStatus('${u._id}','${(u.email||u._id).replace(/'/g,"\'")}','blocked')"
+                    title="Bloquear acceso"
+                    style="font-size:0.73rem;color:#ffa500;
+                           border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);font-weight:700;">
+                    🔒 Bloquear</button>` : `
+                <button class="sa-btn" onclick="event.stopPropagation();saSetIndividualStatus('${u._id}','${(u.email||u._id).replace(/'/g,"\'")}','active')"
+                    title="Activar usuario"
+                    style="font-size:0.73rem;color:#3fb950;
+                           border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);font-weight:700;">
+                    ✅ Activar</button>`}
+                <button class="sa-btn" onclick="event.stopPropagation();saDeleteIndividual('${u._id}','${(u.email||u._id).replace(/'/g,"\'")}')"
+                    title="Eliminar usuario definitivamente"
+                    style="font-size:0.73rem;color:#ff5858;
+                           border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);font-weight:700;">
+                    🗑️ Eliminar</button>
             </div>
           </div>
           <div class="sa-card-body">
@@ -781,32 +793,76 @@ async function saIndividual() {
     window.saToggleICard = (id) => {
         document.getElementById(`icard-${id}`)?.classList.toggle('expanded');
     };
-    window.saDeleteUser = async (uid, email) => {
-        if (!confirm('⚠️ ELIMINAR usuario ' + email + '\n\nEsta acción es permanente. ¿Confirmar?')) return;
+
+    // ── Activar o bloquear usuario individual ──────────────────────────
+    window.saSetIndividualStatus = async (uid, email, newStatus) => {
+        const isActive  = newStatus === 'active';
+        const isBlocked = newStatus === 'blocked';
+        const labels    = { active: 'activar', blocked: 'bloquear' };
+        if (!confirm(`¿Deseas ${labels[newStatus]} a ${email}?`)) return;
         try {
-            const { fa, doc, deleteDoc, getDoc, updateDoc } = await saFS();
-            const snap = await getDoc(doc(fa.db,'users',uid));
-            if (snap.exists()) {
-                const ud = snap.data();
-                if (ud.clubId) {
-                    const k = ud.role==='director'?'directors':ud.role==='coordinator'?'coordinators':ud.role==='parent'?'parents':'users';
-                    const cs = await getDoc(doc(fa.db,'clubs',ud.clubId)).catch(()=>null);
-                    if (cs?.exists()) {
-                        const cur = cs.data().usedSlots?.[k] || 0;
-                        await updateDoc(doc(fa.db,'clubs',ud.clubId), { ['usedSlots.'+k]: Math.max(0,cur-1) });
-                    }
-                }
-            }
-            await deleteDoc(doc(fa.db,'users',uid));
-            showToast('🗑️ Usuario eliminado', 3000);
-            saLoadUsers();
-        } catch(e) { showToast('⚠️ Error: '+e.message, 4000); }
+            await saUpd('users', uid, {
+                isAuthorized: isActive,
+                status:       newStatus,
+                ...(isActive  ? { authorizedAt: new Date().toISOString() } : {}),
+                ...(isBlocked ? { blockedAt:    new Date().toISOString() } : {}),
+            });
+            showToast(isActive ? `✅ ${email} activado` : `🔒 ${email} bloqueado`, 3000);
+            saIndividual();
+        } catch(e) { showToast('⚠️ Error: ' + e.message, 4000); }
     };
+
+    // Compatibilidad con código antiguo en tab Clubes
     window.saToggleUser = async (uid, cur) => {
         await saUpd('users', uid, { isAuthorized: !cur });
         showToast(!cur ? '✅ Activado' : '🔒 Bloqueado', 2000);
         saIndividual();
     };
+
+    // ── Eliminar usuario individual definitivamente ──────────────────
+    window.saDeleteIndividual = async (uid, email) => {
+        if (!confirm(`⚠️ ELIMINAR usuario individual:\n${email}\n\nEsta acción es IRREVERSIBLE.\nSe eliminará su cuenta y su club personal.\n\n¿Confirmar?`)) return;
+        showSpinner('Eliminando usuario…');
+        try {
+            const { fa, doc, deleteDoc, getDoc, collection, getDocs, query, where } = await saFS();
+
+            // Obtener datos del usuario para saber su clubId personal
+            const snap = await getDoc(doc(fa.db, 'users', uid));
+            const userData = snap.exists() ? snap.data() : {};
+
+            // Si tiene un club personal (ind-...), eliminarlo también
+            if (userData.clubId && userData.clubId.startsWith('ind-')) {
+                try {
+                    await deleteDoc(doc(fa.db, 'clubs', userData.clubId));
+                } catch(e) { /* no bloquear si el club ya no existe */ }
+            }
+
+            // Eliminar vínculos de jugador si los hay
+            try {
+                const linksSnap = await getDocs(query(
+                    collection(fa.db, 'cronos_player_links'),
+                    where('clubId', '==', userData.clubId || '')
+                ));
+                for (const d of linksSnap.docs) {
+                    await deleteDoc(doc(fa.db, 'cronos_player_links', d.id));
+                }
+            } catch(e) { /* opcional */ }
+
+            // Eliminar el usuario
+            await deleteDoc(doc(fa.db, 'users', uid));
+
+            hideSpinner();
+            showToast(`🗑️ Usuario "${email}" eliminado definitivamente`, 4000);
+            saIndividual();
+        } catch(e) {
+            hideSpinner();
+            showToast('⚠️ Error: ' + e.message, 4000);
+        }
+    };
+
+    // saDeleteUser global (usado desde tab Clubes) — redirige a saDeleteIndividual
+    window.saDeleteUser = (uid, email) => saDeleteIndividual(uid, email);
+
     window.saEditIndividual = (uid) => saOpenIndividualEditor(uid);
     window.saAddIndividual  = ()    => saOpenIndividualEditor(null);
 }
