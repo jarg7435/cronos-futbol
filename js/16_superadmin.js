@@ -412,45 +412,43 @@ async function saClubs() {
         const maxC   = cl.slots?.coordinators ?? -1;
         const maxP   = cl.slots?.parents ?? -1;
 
-        const userRows = (list, label) => list.length ? list.map(u => {
-            const isActive  = u.isAuthorized && u.status !== 'blocked' && u.status !== 'removed';
-            const isBlocked = u.status === 'blocked' || (!u.isAuthorized && u.status !== 'removed');
-            const isRemoved = u.status === 'removed';
-            const uid    = u._id;
-            const email  = (u.email || u._id).replace(/'/g, "\'");
-            const clubId = cl._id;
+        const userRows = (list, label) => {
+            if (!list.length) return '<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin ' + label + '</p>';
+            return list.map(function(u) {
+                var isActive  = u.isAuthorized && u.status !== 'blocked' && u.status !== 'removed';
+                var isBlocked = u.status === 'blocked' || (!u.isAuthorized && u.status !== 'removed' && u.status !== 'pending_register');
+                var isRemoved = u.status === 'removed';
+                var uid       = u._id;
+                var email     = (u.email || u._id).replace(/'/g, '');
+                var cid       = cl._id;
+                var name      = u.displayName ? ' <span style="color:var(--text-muted);font-size:0.74rem;"> · ' + u.displayName + '</span>' : '';
 
-            const statusBadge =
-                isRemoved ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🗑️ Baja</span>'
-              : isBlocked ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🔒 Bloqueado</span>'
-              : isActive  ? '<span class="sa-badge" style="margin-left:0.3rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
-              : '<span class="sa-badge" style="margin-left:0.3rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
+                var badge = isRemoved
+                    ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🗑️ Baja</span>'
+                    : isBlocked
+                        ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🔒 Bloqueado</span>'
+                        : isActive
+                            ? '<span class="sa-badge" style="margin-left:0.3rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
+                            : '<span class="sa-badge" style="margin-left:0.3rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
 
-            return `<div class="sa-urow" style="opacity:${isRemoved ? '0.5' : '1'};">
-                <div style="flex:1;min-width:0;">
-                    <span style="font-size:0.83rem;font-weight:600;">${u.email||u._id}</span>
-                    ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${u.displayName}</span>` : ''}
-                    ${statusBadge}
-                </div>
-                <div style="display:flex;gap:0.3rem;flex-shrink:0;">
-                    ${!isActive && !isRemoved ? `
-                    <button class="sa-btn" onclick="saSetClubUserStatus('${uid}','${email}','active','${clubId}')"
-                        title="Activar usuario"
-                        style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);font-weight:700;">
-                        ✅ Activar</button>` : ''}
-                    ${isActive ? `
-                    <button class="sa-btn" onclick="saSetClubUserStatus('${uid}','${email}','blocked','${clubId}')"
-                        title="Bloquear acceso"
-                        style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);font-weight:700;">
-                        🔒 Bloquear</button>` : ''}
-                    ${!isRemoved ? `
-                    <button class="sa-btn" onclick="saSetClubUserStatus('${uid}','${email}','removed','${clubId}')"
-                        title="Eliminar definitivamente"
-                        style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);font-weight:700;">
-                        🗑️ Eliminar</button>` : ''}
-                </div>
-            </div>`;
-        }).join('') : `<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin ${label}</p>`;
+                var btnActivar  = '<button class="sa-btn" onclick="saSetClubUserStatus(&quot;' + uid + '&quot;,&quot;' + email + '&quot;,&quot;active&quot;,&quot;' + cid + '&quot;)" style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);font-weight:700;">✅ Activar</button>';
+                var btnBloquear = '<button class="sa-btn" onclick="saSetClubUserStatus(&quot;' + uid + '&quot;,&quot;' + email + '&quot;,&quot;blocked&quot;,&quot;' + cid + '&quot;)" style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);font-weight:700;">🔒 Bloquear</button>';
+                var btnEliminar = '<button class="sa-btn" onclick="saSetClubUserStatus(&quot;' + uid + '&quot;,&quot;' + email + '&quot;,&quot;removed&quot;,&quot;' + cid + '&quot;)" style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);font-weight:700;">🗑️ Eliminar</button>';
+
+                var btns = '';
+                if (!isActive && !isRemoved) btns += btnActivar;
+                if (isActive)                btns += btnBloquear;
+                if (!isRemoved)              btns += btnEliminar;
+
+                return '<div class="sa-urow" style="opacity:' + (isRemoved ? '0.5' : '1') + ';">'
+                     + '<div style="flex:1;min-width:0;">'
+                     + '<span style="font-size:0.83rem;font-weight:600;">' + (u.email || u._id) + '</span>'
+                     + name + badge
+                     + '</div>'
+                     + '<div style="display:flex;gap:0.3rem;flex-shrink:0;">' + btns + '</div>'
+                     + '</div>';
+            }).join('');
+        };
 
         return `
         <div class="sa-card ${cl.status==='blocked'?'blocked':''}" id="card-${cl._id}">
