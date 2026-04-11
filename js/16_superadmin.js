@@ -412,24 +412,45 @@ async function saClubs() {
         const maxC   = cl.slots?.coordinators ?? -1;
         const maxP   = cl.slots?.parents ?? -1;
 
-        const userRows = (list, label) => list.length ? list.map(u =>
-            `<div class="sa-urow">
-                <div>
-                    <span style="font-size:0.83rem;">${u.email||u._id}</span>
-                    ${u.displayName?`<span style="color:var(--text-muted);font-size:0.74rem;"> · ${u.displayName}</span>`:''}
-                    ${!u.isAuthorized?'<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🔒</span>':''}
+        const userRows = (list, label) => list.length ? list.map(u => {
+            const isActive  = u.isAuthorized && u.status !== 'blocked' && u.status !== 'removed';
+            const isBlocked = u.status === 'blocked' || (!u.isAuthorized && u.status !== 'removed');
+            const isRemoved = u.status === 'removed';
+            const uid    = u._id;
+            const email  = (u.email || u._id).replace(/'/g, "\'");
+            const clubId = cl._id;
+
+            const statusBadge =
+                isRemoved ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🗑️ Baja</span>'
+              : isBlocked ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🔒 Bloqueado</span>'
+              : isActive  ? '<span class="sa-badge" style="margin-left:0.3rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
+              : '<span class="sa-badge" style="margin-left:0.3rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
+
+            return `<div class="sa-urow" style="opacity:${isRemoved ? '0.5' : '1'};">
+                <div style="flex:1;min-width:0;">
+                    <span style="font-size:0.83rem;font-weight:600;">${u.email||u._id}</span>
+                    ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${u.displayName}</span>` : ''}
+                    ${statusBadge}
                 </div>
-                <div style="display:flex;gap:0.3rem;">
-                    <button class="sa-btn" onclick="saDeleteUser('${u._id}','${u.email||u._id}' )"
-                        style="font-size:0.7rem;color:#ff5858;
-                               border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">🗑️</button>
-                    <button class="sa-btn" onclick="saToggleUser('${u._id}',${!!u.isAuthorized})"
-                        style="font-size:0.7rem;color:${u.isAuthorized?'#ff5858':'#3fb950'};
-                               border-color:${u.isAuthorized?'rgba(255,88,88,0.3)':'rgba(63,185,80,0.3)'};
-                               background:${u.isAuthorized?'rgba(255,88,88,0.07)':'rgba(63,185,80,0.07)'};">
-                        ${u.isAuthorized?'🔒':'✅'}</button>
+                <div style="display:flex;gap:0.3rem;flex-shrink:0;">
+                    ${!isActive && !isRemoved ? `
+                    <button class="sa-btn" onclick="saSetClubUserStatus('${uid}','${email}','active','${clubId}')"
+                        title="Activar usuario"
+                        style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);font-weight:700;">
+                        ✅ Activar</button>` : ''}
+                    ${isActive ? `
+                    <button class="sa-btn" onclick="saSetClubUserStatus('${uid}','${email}','blocked','${clubId}')"
+                        title="Bloquear acceso"
+                        style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);font-weight:700;">
+                        🔒 Bloquear</button>` : ''}
+                    ${!isRemoved ? `
+                    <button class="sa-btn" onclick="saSetClubUserStatus('${uid}','${email}','removed','${clubId}')"
+                        title="Eliminar definitivamente"
+                        style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);font-weight:700;">
+                        🗑️ Eliminar</button>` : ''}
                 </div>
-            </div>`).join('') : `<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin ${label}</p>`;
+            </div>`;
+        }).join('') : `<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin ${label}</p>`;
 
         return `
         <div class="sa-card ${cl.status==='blocked'?'blocked':''}" id="card-${cl._id}">
@@ -566,6 +587,60 @@ Todos sus usuarios perderán acceso inmediatamente.
         showToast(!currentlyActive ? '✅ Usuario activado' : '🔒 Usuario bloqueado', 2000);
         saClubs();
     };
+    // ── Activar / Bloquear / Eliminar usuario de club ─────────────────
+    window.saSetClubUserStatus = async (uid, email, newStatus, clubId) => {
+        const labels  = { active:'activar', blocked:'bloquear', removed:'eliminar definitivamente' };
+        if (!confirm(`¿Deseas ${labels[newStatus]} a ${email}?`)) return;
+        showSpinner('Procesando…');
+        try {
+            const { fa, doc, getDoc, updateDoc, deleteDoc } = await saFS();
+
+            // Leer rol del usuario para ajustar slots
+            const uSnap = await getDoc(doc(fa.db,'users',uid));
+            const ud    = uSnap.exists() ? uSnap.data() : {};
+            const role  = ud.role || 'user';
+            const slotKey = role==='director'?'usedSlots.directors'
+                          : role==='coordinator'?'usedSlots.coordinators'
+                          : role==='parent'?'usedSlots.parents'
+                          : 'usedSlots.users';
+
+            if (newStatus === 'removed') {
+                // Eliminar el documento de usuario
+                await deleteDoc(doc(fa.db,'users',uid));
+                // Decrementar slot del club
+                const cSnap = await getDoc(doc(fa.db,'clubs',clubId)).catch(()=>null);
+                if (cSnap?.exists()) {
+                    const cur = cSnap.data().usedSlots?.[slotKey.split('.')[1]] || 1;
+                    await updateDoc(doc(fa.db,'clubs',clubId), { [slotKey]: Math.max(0, cur - 1) });
+                }
+                hideSpinner();
+                showToast(`🗑️ ${email} eliminado del club`, 3500);
+            } else {
+                // Activar o bloquear
+                const isActive = newStatus === 'active';
+                await updateDoc(doc(fa.db,'users',uid), {
+                    isAuthorized: isActive,
+                    status:       newStatus,
+                    ...(isActive ? { authorizedAt: new Date().toISOString() } : { blockedAt: new Date().toISOString() }),
+                });
+                // Ajustar slots: bloquear resta, activar suma
+                const cSnap = await getDoc(doc(fa.db,'clubs',clubId)).catch(()=>null);
+                if (cSnap?.exists()) {
+                    const cur = cSnap.data().usedSlots?.[slotKey.split('.')[1]] || 0;
+                    const delta = isActive ? 1 : -1;
+                    await updateDoc(doc(fa.db,'clubs',clubId), { [slotKey]: Math.max(0, cur + delta) });
+                }
+                hideSpinner();
+                showToast(isActive ? `✅ ${email} activado` : `🔒 ${email} bloqueado`, 3000);
+            }
+            saClubs();
+        } catch(e) {
+            hideSpinner();
+            showToast('⚠️ Error: ' + e.message, 4000);
+            console.error(e);
+        }
+    };
+
     window.saEditClub = (id) => saOpenEditor(id);
 
     window.saDeleteClub = async (id, name) => {
