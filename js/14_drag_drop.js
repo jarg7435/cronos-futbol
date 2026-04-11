@@ -605,6 +605,86 @@ async function exportData() {
         }, waNumbers.length > 0 ? 1500 : 0);
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  GUARDAR INFORME EN FIRESTORE → director/coordinador lo ve en app
+    // ══════════════════════════════════════════════════════════════════
+    _saveReportToFirestore({
+        homeName, awayName, scoreHome, scoreAway,
+        date, mode, sortedPlayers, totalElapsed
+    });
+}
+
+// ── Guarda el informe en cronos_player_reports y notifica al director ──
+async function _saveReportToFirestore({ homeName, awayName, scoreHome, scoreAway,
+                                         date, mode, sortedPlayers, totalElapsed }) {
+    const me = window._cronosCurrentUser;
+    const fa = window._cronos_auth;
+    if (!fa || !me) return;
+
+    const clubId = me.clubId || null;
+
+    try {
+        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = fa.db;
+
+        const matchDate = new Date().toISOString();
+        const batchId   = 'match_' + Date.now().toString(36);
+        let saved = 0;
+
+        // 1. Guardar un documento por jugador local en cronos_player_reports
+        for (const p of sortedPlayers.filter(pl => pl.team === 'home')) {
+            const reportId = 'rpt_' + p.number + '_' + Date.now().toString(36);
+            await m.setDoc(m.doc(db, 'cronos_player_reports', reportId), {
+                reportId,
+                batchId,
+                playerNumber:  p.number,
+                playerAlias:   p.name,
+                parentUid:     null,   // se enlazará si existe vínculo
+                coachUid:      me.uid,
+                coachEmail:    me.email,
+                clubId,
+                matchDate,
+                rival:         awayName,
+                scoreHome,
+                scoreAway,
+                minutesPlayed: typeof formatTime === 'function' ? formatTime(p.time || 0) : '0:00',
+                goals:         p.goals   || 0,
+                cards:         p.cards   || 'ninguna',
+                injured:       p.injured || false,
+                history:       p.history || [],
+                events:        p.events  || [],
+                createdAt:     matchDate,
+            });
+            saved++;
+        }
+
+        // 2. Crear una única notificación de tipo "match_report" en cronos_notifications
+        //    El panel del director la leerá desde ahí
+        if (clubId) {
+            const notifId = 'notif_rpt_' + batchId;
+            await m.setDoc(m.doc(db, 'cronos_notifications', notifId), {
+                type:        'match_report',
+                clubId,
+                batchId,
+                coachUid:    me.uid,
+                coachEmail:  me.email,
+                rival:       awayName,
+                scoreHome,
+                scoreAway,
+                playerCount: saved,
+                matchDate,
+                createdAt:   matchDate,
+                readBy:      [],   // array de UIDs que ya abrieron el informe
+            });
+        }
+
+        console.log('[Cronos] Informe guardado en Firestore:', saved, 'jugadores, batchId:', batchId);
+        if (saved > 0) showToast('✅ Informe enviado al Director Deportivo en la app', 3500);
+
+    } catch(e) {
+        console.error('[Cronos] Error guardando informe en Firestore:', e.message);
+        // No bloqueamos al entrenador, ya tiene el CSV descargado
+    }
 }
 
 

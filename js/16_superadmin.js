@@ -201,6 +201,7 @@ async function openSuperAdminPanel() {
         <button class="sa-tab" onclick="saTab('individual')">👤 Individuales</button>
         <button class="sa-tab" onclick="saTab('payments')">💳 Pagos</button>
         <button class="sa-tab" onclick="saTab('requests')">📋 Solicitudes</button>
+        <button class="sa-tab" onclick="saTab('pending')">🔔 Pendientes</button>
         <button class="sa-tab" onclick="saTab('tarifas')">💰 Tarifas</button>
         <button class="sa-tab" onclick="saTab('newclub')">➕ Nuevo Club</button>
       </div>
@@ -211,12 +212,12 @@ async function openSuperAdminPanel() {
 
     window.saTab = (tab) => {
         document.querySelectorAll('.sa-tab').forEach(b => b.classList.remove('active'));
-        const idx = ['overview','clubs','individual','payments','requests','tarifas','newclub'].indexOf(tab);
+        const idx = ['overview','clubs','individual','payments','requests','pending','tarifas','newclub'].indexOf(tab);
         document.querySelectorAll('.sa-tab')[idx]?.classList.add('active');
         document.getElementById('sa-body').innerHTML =
             '<p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando…</p>';
         ({overview:saOverview, clubs:saClubs, individual:saIndividual,
-          payments:saPayments, requests:saRequests, tarifas:saTariffs, newclub:saNewClub})[tab]?.();
+          payments:saPayments, requests:saRequests, pending:saPending, tarifas:saTariffs, newclub:saNewClub})[tab]?.();
     };
     saOverview();
 }
@@ -286,8 +287,11 @@ async function saOverview() {
     const indivUsers   = users.filter(u => u.role === 'individual').length;
     
     // Solicitudes de nuevos clubes (usuarios con requestedRole='club_admin' no autorizados)
-    const clubReqs = users.filter(u => u.requestedRole === 'club_admin' && !u.isAuthorized).length;
-    const pendReqs = reqs.filter(r => r.status === 'pending').length;
+    const clubReqs   = users.filter(u => u.requestedRole === 'club_admin' && !u.isAuthorized).length;
+    const pendReqs   = reqs.filter(r => r.status === 'pending').length;
+    const pendUsers  = users.filter(u => !u.isAuthorized && !['superadmin','admin'].includes(u.role) &&
+                          u.requestedRole !== 'club_admin' && u.requestedRole !== 'individual' &&
+                          u.status !== 'rejected' && u.status !== 'removed').length;
 
     // Notifications
     const now = new Date();
@@ -295,6 +299,8 @@ async function saOverview() {
     
     if (clubReqs > 0)
         alerts.push({ type:'info', msg:`🏟️ ${clubReqs} solicitud${clubReqs>1?'es':''} de nuevo club pendiente${clubReqs>1?'s':''}` });
+    if (pendUsers > 0)
+        alerts.push({ type:'warn', msg:`🔔 ${pendUsers} usuario${pendUsers>1?'s':''} pendiente${pendUsers>1?'s':''} de activación` });
 
     clubs.forEach(c => {
         if (!c.expiresAt) return;
@@ -360,6 +366,12 @@ async function saOverview() {
                        border-color:${pendReqs>0?'rgba(255,165,0,0.35)':'var(--glass-border)'};
                        background:${pendReqs>0?'rgba(255,165,0,0.08)':'var(--glass)'};">
                 📋 Solicitudes ${pendReqs>0?`<strong>(${pendReqs})</strong>`:''}
+            </button>
+            <button class="sa-btn" onclick="saTab('pending')"
+                style="color:${pendUsers>0?'#3fb950':'var(--text-muted)'};
+                       border-color:${pendUsers>0?'rgba(63,185,80,0.35)':'var(--glass-border)'};
+                       background:${pendUsers>0?'rgba(63,185,80,0.08)':'var(--glass)'};">
+                🔔 Pendientes ${pendUsers>0?`<strong>(${pendUsers})</strong>`:''}
             </button>
             <button class="sa-btn" onclick="saTab('newclub')"
                 style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
@@ -1576,6 +1588,212 @@ function saNewClub() {
         ['nc-name','nc-admin','nc-exp','nc-notes'].forEach(i => {
             const el=document.getElementById(i); if(el) el.value='';
         });
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  TAB: PENDIENTES — Activación de usuarios con ✅ palomilla
+// ════════════════════════════════════════════════════════════════════
+async function saPending() {
+    const body = document.getElementById('sa-body');
+    body.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando usuarios pendientes…</p>';
+
+    const [clubs, users] = await Promise.all([saGetAll('clubs'), saGetAll('users')]);
+    const clubMap = {};
+    clubs.forEach(c => { clubMap[c._id] = c.name || c._id; });
+
+    // Usuarios pendientes: isAuthorized=false, no son SA/admin, no son club_admin ni individual (esos van a Solicitudes)
+    const pending = users.filter(u =>
+        !u.isAuthorized &&
+        !['superadmin','admin'].includes(u.role) &&
+        !['superadmin','admin','club_admin','individual','rejected'].includes(u.requestedRole) &&
+        u.status !== 'rejected' &&
+        u.status !== 'removed'
+    );
+
+    // Agrupar por club
+    const byClub = {};
+    pending.forEach(u => {
+        const cid   = u.clubId || '_sin_club';
+        const cname = clubMap[cid] || (cid === '_sin_club' ? '⚠️ Sin club asignado' : cid);
+        if (!byClub[cid]) byClub[cid] = { name: cname, users: [] };
+        byClub[cid].users.push(u);
+    });
+
+    if (!pending.length) {
+        body.innerHTML = `
+        <div style="text-align:center;padding:5rem 2rem;opacity:0.7;">
+            <div style="font-size:3rem;margin-bottom:1rem;">✅</div>
+            <div style="font-size:1.05rem;font-weight:600;">Sin usuarios pendientes</div>
+            <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.4rem;">
+                Todos los usuarios registrados están activos o en Solicitudes.</div>
+        </div>`;
+        return;
+    }
+
+    const ROLE_LABELS = {
+        director:    '📋 Director Dep.',
+        coordinator: '🎯 Coordinador',
+        user:        '⚽ Entrenador',
+        parent:      '👨‍👩‍👧 Padre/Madre',
+        individual:  '👤 Individual',
+    };
+
+    let html = `
+    <div style="margin-bottom:1.2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+        <h3 style="margin:0;font-size:0.95rem;">
+            🔔 Usuarios pendientes de activación —
+            <span style="color:#3fb950;">${pending.length} total</span>
+        </h3>
+        <button onclick="saActivateAll()" class="sa-btn"
+            style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-weight:700;">
+            ✅ Activar todos</button>
+    </div>`;
+
+    Object.entries(byClub).forEach(([cid, club]) => {
+        html += `
+        <div class="sa-card expanded" style="border-color:rgba(88,166,255,0.25);margin-bottom:1rem;">
+            <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
+                <div class="sa-card-title">
+                    <span class="sa-chevron">▼</span>
+                    🏟️ ${club.name}
+                    <span class="sa-badge" style="background:rgba(255,165,0,0.15);color:#ffa500;">
+                        ${club.users.length} pendiente${club.users.length!==1?'s':''}
+                    </span>
+                </div>
+                <button onclick="event.stopPropagation();saActivateClub('${cid}')" class="sa-btn"
+                    style="font-size:0.71rem;color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.07);">
+                    ✅ Activar todos del club</button>
+            </div>
+            <div class="sa-card-body">
+                ${club.users.map(u => {
+                    const roleLabel = ROLE_LABELS[u.requestedRole || u.role] || u.requestedRole || '—';
+                    const since     = u.createdAt
+                        ? new Date(u.createdAt.seconds ? u.createdAt.seconds*1000 : u.createdAt)
+                            .toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'})
+                        : '—';
+                    return `
+                    <div class="sa-urow" style="padding:0.5rem 0.6rem;margin-bottom:0.35rem;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:0.84rem;font-weight:600;">${u.email}</div>
+                            <div style="font-size:0.71rem;color:var(--text-muted);margin-top:1px;">
+                                ${roleLabel}
+                                ${u.displayName ? ` · ${u.displayName}` : ''}
+                                · Registro: ${since}
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:0.35rem;flex-shrink:0;align-items:center;">
+                            <select id="role-sel-${u._id}" class="sa-input"
+                                style="font-size:0.72rem;padding:0.25rem 0.4rem;width:140px;">
+                                <option value="user"        ${(u.requestedRole||u.role)==='user'        ?'selected':''}>⚽ Entrenador</option>
+                                <option value="parent"      ${(u.requestedRole||u.role)==='parent'      ?'selected':''}>👨‍👩‍👧 Padre/Madre</option>
+                                <option value="coordinator" ${(u.requestedRole||u.role)==='coordinator' ?'selected':''}>🎯 Coordinador</option>
+                                <option value="director"    ${(u.requestedRole||u.role)==='director'    ?'selected':''}>📋 Director Dep.</option>
+                            </select>
+                            <button onclick="saActivateUser('${u._id}','${(u.email||'').replace(/'/g,"\'")}','${cid}')"
+                                class="sa-btn"
+                                style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);
+                                       font-weight:700;font-size:0.8rem;padding:0.3rem 0.75rem;">
+                                ✅</button>
+                            <button onclick="saRejectPending('${u._id}','${(u.email||'').replace(/'/g,"\'")}' )"
+                                class="sa-btn"
+                                style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);
+                                       font-size:0.8rem;padding:0.3rem 0.6rem;">
+                                ✕</button>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
+    });
+
+    body.innerHTML = html;
+
+    // ── Activar un usuario ──────────────────────────────────────────
+    window.saActivateUser = async (uid, email, clubId) => {
+        const role = document.getElementById(`role-sel-${uid}`)?.value || 'user';
+        if (!confirm(`¿Activar a ${email} como ${role}?`)) return;
+        try {
+            // Actualizar usuario
+            await saUpd('users', uid, {
+                isAuthorized: true,
+                role,
+                status:       'active',
+                authorizedAt: new Date().toISOString(),
+                authorizedBy: window._cronosCurrentUser.uid,
+            });
+
+            // Actualizar contador de slots del club
+            if (clubId && clubId !== '_sin_club') {
+                const club = await saGet('clubs', clubId);
+                if (club) {
+                    const k   = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
+                    const cur = club.usedSlots?.[k.split('.')[1]] || 0;
+                    await saUpd('clubs', clubId, { [k]: cur + 1 });
+                }
+            }
+
+            showToast(`✅ ${email} activado como ${role}`, 3000);
+            saPending();
+        } catch(e) {
+            showToast('❌ Error: ' + e.message, 4000);
+        }
+    };
+
+    // ── Rechazar un usuario pendiente ──────────────────────────────
+    window.saRejectPending = async (uid, email) => {
+        if (!confirm(`¿Rechazar y desactivar la cuenta de ${email}?`)) return;
+        try {
+            await saUpd('users', uid, {
+                isAuthorized: false,
+                status:       'rejected',
+                rejectedAt:   new Date().toISOString(),
+            });
+            showToast(`❌ ${email} rechazado`, 3000);
+            saPending();
+        } catch(e) {
+            showToast('❌ Error: ' + e.message, 4000);
+        }
+    };
+
+    // ── Activar todos los usuarios de un club ──────────────────────
+    window.saActivateClub = async (clubId) => {
+        const clubUsers = byClub[clubId]?.users || [];
+        if (!clubUsers.length) return;
+        if (!confirm(`¿Activar a los ${clubUsers.length} usuarios pendientes del club "${byClub[clubId]?.name}"?`)) return;
+        let ok = 0;
+        for (const u of clubUsers) {
+            const role = document.getElementById(`role-sel-${u._id}`)?.value || u.requestedRole || 'user';
+            try {
+                await saUpd('users', u._id, {
+                    isAuthorized: true, role, status: 'active',
+                    authorizedAt: new Date().toISOString(),
+                    authorizedBy: window._cronosCurrentUser.uid,
+                });
+                ok++;
+            } catch(e) { console.error(e); }
+        }
+        showToast(`✅ ${ok} usuarios activados`, 3000);
+        saPending();
+    };
+
+    // ── Activar TODOS de todos los clubes ──────────────────────────
+    window.saActivateAll = async () => {
+        if (!confirm(`¿Activar a TODOS los ${pending.length} usuarios pendientes con sus roles por defecto?`)) return;
+        let ok = 0;
+        for (const u of pending) {
+            const role = u.requestedRole || u.role || 'user';
+            try {
+                await saUpd('users', u._id, {
+                    isAuthorized: true, role, status: 'active',
+                    authorizedAt: new Date().toISOString(),
+                    authorizedBy: window._cronosCurrentUser.uid,
+                });
+                ok++;
+            } catch(e) { console.error(e); }
+        }
+        showToast(`✅ ${ok} usuarios activados de golpe`, 4000);
+        saPending();
     };
 }
 
