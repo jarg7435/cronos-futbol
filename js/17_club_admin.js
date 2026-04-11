@@ -88,18 +88,45 @@ async function openClubAdminPanel(preClubId = null) {
     );
 
     // ── Render de una fila de usuario ────────────────────────────────
-    const userRow = (u) => `
-        <div class="sa-urow">
-            <div>
-                <span style="font-size:0.83rem;">${u.email || u._id}</span>
+    const userRow = (u) => {
+        const isBlocked = u.status === 'blocked';
+        const isRemoved = u.status === 'removed';
+        const isPending = u.status === 'pending_register';
+        const isActive  = u.isAuthorized && !isBlocked && !isRemoved;
+
+        const statusBadge =
+            isRemoved ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ff585822;color:#ff5858;">🗑️ Baja</span>'
+          : isBlocked ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ff585822;color:#ff5858;">🔒 Bloqueado</span>'
+          : isPending ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente registro</span>'
+          : isActive  ? '<span class="sa-badge" style="margin-left:0.4rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
+          : '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
+
+        const uid   = u._id;
+        const email = (u.email || u._id).replace(/'/g, "\'");
+
+        return `
+        <div class="sa-urow" style="opacity:${isRemoved ? '0.45' : '1'};">
+            <div style="flex:1;min-width:0;">
+                <span style="font-size:0.83rem;font-weight:600;">${u.email || u._id}</span>
                 ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${u.displayName}</span>` : ''}
-                ${!u.isAuthorized ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ff585822;color:#ff5858;">🔒</span>' : ''}
-                ${u.status === 'pending_register' ? '<span class="sa-badge" style="margin-left:0.3rem;background:#ffa50022;color:#ffa500;">Pendiente registro</span>' : ''}
+                ${statusBadge}
             </div>
-            <button class="sa-btn" onclick="caRequestDeletion('${u._id}','${(u.email||u._id).replace(/'/g,"\\'")}','${clubId}')"
-                style="font-size:0.72rem;color:#ffa500;border-color:rgba(255,165,0,0.3);background:rgba(255,165,0,0.07);">
-                📋 Dar de baja</button>
+            <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;">
+                ${!isActive && !isRemoved ? `<button class="sa-btn"
+                    onclick="caSetUserStatus('${uid}','${email}','active','${clubId}')"
+                    style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);">
+                    ✅ Activar</button>` : ''}
+                ${isActive ? `<button class="sa-btn"
+                    onclick="caSetUserStatus('${uid}','${email}','blocked','${clubId}')"
+                    style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);">
+                    🔒 Bloquear</button>` : ''}
+                ${!isRemoved ? `<button class="sa-btn"
+                    onclick="caSetUserStatus('${uid}','${email}','removed','${clubId}')"
+                    style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">
+                    🗑️ Baja</button>` : ''}
+            </div>
         </div>`;
+    };
 
     // ── Render de sección acordeón por rol ───────────────────────────
     const roleSections = [
@@ -379,17 +406,74 @@ async function openClubAdminPanel(preClubId = null) {
     };
 
     // ── Solicitar baja al SuperAdmin ─────────────────────────────────
-    window.caRequestDeletion = async (userId, userEmail, cid) => {
-        const reason = prompt(`Motivo de solicitud de baja para ${userEmail}:`);
-        if (!reason?.trim()) return;
-        await setDoc(doc(db,'deletion_requests',`${userId}_${Date.now()}`), {
-            userId, userEmail, clubId: cid,
-            requestedBy: me.uid, requestedByEmail: me.email,
-            reason: reason.trim(), status: 'pending',
-            createdAt: new Date().toISOString()
-        });
-        showToast('📋 Solicitud enviada al SuperAdmin. Pendiente de aprobación.', 5000);
+    // ── Cambiar estado de un usuario (activo / bloqueado / baja) ──────────
+    window.caSetUserStatus = async (userId, userEmail, newStatus, cid) => {
+        const labels = { active:'activar', blocked:'bloquear', removed:'dar de baja definitivamente' };
+        if (!confirm(`¿Deseas ${labels[newStatus] || newStatus} a ${userEmail}?`)) return;
+
+        try {
+            const isActive    = newStatus === 'active';
+            const isBlocked   = newStatus === 'blocked';
+            const isRemoved   = newStatus === 'removed';
+
+            // Si es baja definitiva, pedir motivo y registrar en deletion_requests
+            if (isRemoved) {
+                const reason = prompt(`Motivo de baja para ${userEmail} (se registra en el sistema):`);
+                if (reason === null) return; // canceló
+                await setDoc(doc(db,'deletion_requests',`${userId}_${Date.now()}`), {
+                    userId, userEmail, clubId: cid,
+                    requestedBy: me.uid, requestedByEmail: me.email,
+                    reason: reason.trim() || 'Sin motivo indicado',
+                    status: 'approved', // el club_admin puede dar de baja directamente
+                    resolvedAt: new Date().toISOString(),
+                    createdAt:  new Date().toISOString()
+                });
+            }
+
+            // Actualizar documento del usuario
+            await updateDoc(doc(db,'users',userId), {
+                isAuthorized: isActive,
+                status:       newStatus,
+                ...(isActive   ? { authorizedAt: new Date().toISOString(), authorizedBy: me.uid } : {}),
+                ...(isBlocked  ? { blockedAt:    new Date().toISOString(), blockedBy:    me.uid } : {}),
+                ...(isRemoved  ? { removedAt:    new Date().toISOString(), removedBy:    me.uid } : {}),
+            });
+
+            // Actualizar slots del club si se bloquea o da de baja
+            if (isBlocked || isRemoved) {
+                const userSnap = await getDoc(doc(db,'users',userId)).catch(()=>null);
+                const role = userSnap?.data()?.role || 'user';
+                const key  = role==='director'?'usedSlots.directors'
+                           : role==='coordinator'?'usedSlots.coordinators'
+                           : role==='parent'?'usedSlots.parents'
+                           : 'usedSlots.users';
+                const si = slotOf(role);
+                await updateDoc(doc(db,'clubs',cid), { [key]: Math.max(0, (si.used||1) - 1) });
+            }
+            // Si se reactiva, volver a sumar al slot
+            if (isActive) {
+                const userSnap = await getDoc(doc(db,'users',userId)).catch(()=>null);
+                const role = userSnap?.data()?.role || 'user';
+                const key  = role==='director'?'usedSlots.directors'
+                           : role==='coordinator'?'usedSlots.coordinators'
+                           : role==='parent'?'usedSlots.parents'
+                           : 'usedSlots.users';
+                const si = slotOf(role);
+                await updateDoc(doc(db,'clubs',cid), { [key]: (si.used||0) + 1 });
+            }
+
+            const toasts = { active:'✅ Usuario activado', blocked:'🔒 Usuario bloqueado', removed:'🗑️ Usuario dado de baja' };
+            showToast(toasts[newStatus] || '✅ Hecho', 3000);
+            openClubAdminPanel();
+        } catch(e) {
+            showToast('❌ Error: ' + e.message, 4000);
+            console.error(e);
+        }
     };
+
+    // Mantener por compatibilidad (se usaba desde código externo)
+    window.caRequestDeletion = (userId, userEmail, cid) =>
+        window.caSetUserStatus(userId, userEmail, 'removed', cid);
 
     // ── Solicitar ampliación de cuota al SuperAdmin ──────────────────
     window.caRequestQuota = async (cid, role, roleLabel, slotKey) => {

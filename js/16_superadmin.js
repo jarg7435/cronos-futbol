@@ -448,18 +448,27 @@ async function saClubs() {
                 <span style="font-size:0.76rem;color:var(--text-muted);">
                     👥 ${clubUsers.length} usuarios
                 </span>
-                <div style="display:flex;gap:0.3rem;">
+                <div style="display:flex;gap:0.3rem;align-items:center;">
                     <button class="sa-btn" onclick="event.stopPropagation();saEditClub('${cl._id}')"
+                        title="Editar club"
                         style="font-size:0.73rem;color:var(--primary);
                                border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">✏️</button>
-                    <button class="sa-btn" onclick="event.stopPropagation();saDeleteClub('${cl._id}','${cl.name||cl._id}' )"
+                    ${cl.status === 'blocked' ? `
+                    <button class="sa-btn" onclick="event.stopPropagation();saSetClubStatus('${cl._id}','active')"
+                        title="Activar club"
+                        style="font-size:0.73rem;color:#3fb950;
+                               border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);font-weight:700;">
+                        ✅ Activar</button>` : `
+                    <button class="sa-btn" onclick="event.stopPropagation();saSetClubStatus('${cl._id}','blocked')"
+                        title="Bloquear club — todos sus usuarios perderán acceso"
+                        style="font-size:0.73rem;color:#ffa500;
+                               border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);font-weight:700;">
+                        🔒 Bloquear</button>`}
+                    <button class="sa-btn" onclick="event.stopPropagation();saDeleteClub('${cl._id}','${cl.name||cl._id}')"
+                        title="Eliminar club definitivamente"
                         style="font-size:0.73rem;color:#ff5858;
-                               border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">🗑️</button>
-                    <button class="sa-btn" onclick="event.stopPropagation();saBlockClub('${cl._id}',${cl.status!=='blocked'})"
-                        style="font-size:0.73rem;color:${cl.status==='blocked'?'#3fb950':'#ff5858'};
-                               border-color:${cl.status==='blocked'?'rgba(63,185,80,0.3)':'rgba(255,88,88,0.3)'};
-                               background:${cl.status==='blocked'?'rgba(63,185,80,0.07)':'rgba(255,88,88,0.07)'};">
-                        ${cl.status==='blocked'?'✅':'🔒'}</button>
+                               border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);font-weight:700;">
+                        🗑️ Eliminar</button>
                 </div>
             </div>
           </div>
@@ -509,12 +518,49 @@ async function saClubs() {
         const c = document.getElementById(`card-${id}`);
         c.classList.toggle('expanded');
     };
-    window.saBlockClub = async (id, block) => {
-        if (!confirm(block ? '⚠️ Bloquear este club. Todos sus usuarios perderán acceso.' : '¿Activar club?')) return;
-        await saUpd('clubs', id, { status: block ? 'blocked' : 'active' });
-        showToast(block ? '🔒 Club bloqueado' : '✅ Club activado', 3000);
+    // ── Cambiar estado de un club (active / blocked) ──────────────────
+    window.saSetClubStatus = async (id, newStatus) => {
+        const club = await saGet('clubs', id);
+        if (!club) return;
+        const msgs = {
+            blocked: `⚠️ BLOQUEAR CLUB: "${club.name}"
+
+Todos sus usuarios perderán acceso inmediatamente.
+¿Confirmar?`,
+            active:  `¿Activar el club "${club.name}" y restaurar el acceso a sus usuarios?`,
+        };
+        if (!confirm(msgs[newStatus])) return;
+
+        const { fa, collection, getDocs, query, where, updateDoc, doc } = await saFS();
+
+        // Bloquear/desbloquear todos los usuarios del club en paralelo
+        const usersSnap = await getDocs(query(collection(fa.db,'users'), where('clubId','==',id)));
+        const promises  = [];
+        usersSnap.forEach(d => {
+            const u = d.data();
+            // Al activar solo reactivamos los que no estaban en removed/rejected
+            if (newStatus === 'active' && ['removed','rejected'].includes(u.status)) return;
+            promises.push(updateDoc(doc(fa.db,'users',d.id), {
+                isAuthorized: newStatus === 'active',
+                status: newStatus === 'active' ? 'active' : 'blocked',
+            }));
+        });
+        await Promise.all(promises);
+
+        // Actualizar estado del club
+        await saUpd('clubs', id, {
+            status: newStatus,
+            [`${newStatus}At`]: new Date().toISOString(),
+        });
+
+        const toasts = { blocked: '🔒 Club bloqueado y usuarios suspendidos', active: '✅ Club activado y usuarios restaurados' };
+        showToast(toasts[newStatus] || '✅ Hecho', 4000);
         saClubs();
     };
+
+    // Compatibilidad con código antiguo
+    window.saBlockClub = async (id, block) => saSetClubStatus(id, block ? 'blocked' : 'active');
+
     window.saToggleUser = async (uid, currentlyActive) => {
         await saUpd('users', uid, { isAuthorized: !currentlyActive });
         showToast(!currentlyActive ? '✅ Usuario activado' : '🔒 Usuario bloqueado', 2000);
@@ -523,21 +569,28 @@ async function saClubs() {
     window.saEditClub = (id) => saOpenEditor(id);
 
     window.saDeleteClub = async (id, name) => {
-        if (!confirm(`⚠️ ELIMINAR CLUB: "${name}"\n\nEsto eliminará el club permanentemente.\nLos usuarios del club quedarán sin club asignado.\n\n¿Confirmar eliminación?`)) return;
-        const second = prompt(`Para confirmar, escribe exactamente el nombre del club:\n"${name}"`);
+        if (!confirm(`⚠️ ELIMINAR CLUB: "${name}"\n\nAcción IRREVERSIBLE.\nTodos los usuarios del club quedarán desactivados.\n\n¿Confirmar?`)) return;
+        const second = prompt(`Escribe el nombre exacto del club para confirmar:\n"${name}"`);
         if (second !== name) { showToast('❌ Nombre incorrecto. Club NO eliminado.', 4000); return; }
+        showSpinner('Eliminando club…');
         try {
             const { fa, doc, deleteDoc, collection, getDocs, query, where, updateDoc } = await saFS();
-            // Remove club reference from all its users
             const usersSnap = await getDocs(query(collection(fa.db,'users'), where('clubId','==',id)));
             const promises  = [];
-            usersSnap.forEach(d => promises.push(updateDoc(doc(fa.db,'users',d.id), { clubId: null, status:'removed' })));
+            usersSnap.forEach(d => promises.push(
+                updateDoc(doc(fa.db,'users',d.id), {
+                    clubId: null, clubName: null,
+                    isAuthorized: false, status: 'removed',
+                    removedAt: new Date().toISOString(),
+                })
+            ));
             await Promise.all(promises);
-            // Delete club document
             await deleteDoc(doc(fa.db,'clubs',id));
-            showToast(`🗑️ Club "${name}" eliminado`, 4000);
+            hideSpinner();
+            showToast(`🗑️ Club "${name}" eliminado (${usersSnap.size} usuarios desactivados)`, 5000);
             saTab('clubs');
         } catch(e) {
+            hideSpinner();
             showToast('⚠️ Error: ' + e.message, 4000);
         }
     };
