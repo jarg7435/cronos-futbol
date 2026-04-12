@@ -1,36 +1,23 @@
 // --- SECURITY & INITIALIZATION ---
 const ACCESS_CODE = '1234';
 
-// --- FUNCIONALIDAD DEL OJO (MOSTRAR/OCULTAR CONTRASEÑA) ---
-document.addEventListener('DOMContentLoaded', () => {
+// --- FUNCIONAMIENTO DEL OJO (CONTRASEÑA) ---
+window.toggleRegPassword = function() {
+    const passInput = document.getElementById('register-password');
     const toggleBtn = document.getElementById('toggle-pwd-register');
-    const passwordInput = document.getElementById('register-password');
 
-    if (toggleBtn && passwordInput) {
-        toggleBtn.addEventListener('click', () => {
-            // Cambiamos el tipo de input
-            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-            passwordInput.setAttribute('type', type);
-            
-            // Cambiamos el icono
-            toggleBtn.textContent = type === 'password' ? '👁️' : '🔒';
-        });
+    if (passInput && toggleBtn) {
+        if (passInput.type === 'password') {
+            passInput.type = 'text';
+            toggleBtn.textContent = '🔒'; // Cambia a candado cuando se ve
+        } else {
+            passInput.type = 'password';
+            toggleBtn.textContent = '👁️'; // Cambia a ojo cuando se oculta
+        }
     }
-});
+};
 
-// --- CAPTURA DE ROL Y CLUB ---
-// Esta función servirá para que cuando des clic en "Crear Cuenta", 
-// el sistema lea lo que el usuario eligió en los nuevos campos.
-function getRegistrationExtraDetails() {
-    return {
-        role: document.getElementById('reg-role').value,
-        clubName: document.getElementById('reg-club').value,
-        status: 'pending' // Importante: el Superadmin debe aprobarlo
-    };
-}
 // ── Helper Global: Usuario efectivo con fallbacks para Superadmin ─────
-// Permite que el Superadmin pueda acceder a cualquier panel aunque no tenga
-// clubId propio. Si tiene rol SA y no tiene clubId, usa 'demo' como fallback.
 window._getEffectiveUser = function() {
     const me = window._cronosCurrentUser;
     if (!me) return null;
@@ -38,15 +25,10 @@ window._getEffectiveUser = function() {
     return {
         ...me,
         _isSuperAdmin: isSA,
-        // Si el SA no tiene clubId, usar 'demo' para no bloquear módulos
         clubId: me.clubId || (isSA ? '_sa_preview' : null),
         clubName: me.clubName || (isSA ? 'Vista Superadmin' : null),
         uid: me.uid || 'sa_user',
     };
-};
-
-window.onload = () => {
-    // La app arranca desde enterApp() en index.html tras la autenticación Firebase
 };
 
 function validateAccess() {
