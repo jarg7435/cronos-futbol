@@ -1,6 +1,33 @@
 // --- SECURITY & INITIALIZATION ---
 const ACCESS_CODE = '1234';
 
+// --- FUNCIONALIDAD DEL OJO (MOSTRAR/OCULTAR CONTRASEÑA) ---
+document.addEventListener('DOMContentLoaded', () => {
+    const toggleBtn = document.getElementById('toggle-pwd-register');
+    const passwordInput = document.getElementById('register-password');
+
+    if (toggleBtn && passwordInput) {
+        toggleBtn.addEventListener('click', () => {
+            // Cambiamos el tipo de input
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            
+            // Cambiamos el icono
+            toggleBtn.textContent = type === 'password' ? '👁️' : '🔒';
+        });
+    }
+});
+
+// --- CAPTURA DE ROL Y CLUB ---
+// Esta función servirá para que cuando des clic en "Crear Cuenta", 
+// el sistema lea lo que el usuario eligió en los nuevos campos.
+function getRegistrationExtraDetails() {
+    return {
+        role: document.getElementById('reg-role').value,
+        clubName: document.getElementById('reg-club').value,
+        status: 'pending' // Importante: el Superadmin debe aprobarlo
+    };
+}
 // ── Helper Global: Usuario efectivo con fallbacks para Superadmin ─────
 // Permite que el Superadmin pueda acceder a cualquier panel aunque no tenga
 // clubId propio. Si tiene rol SA y no tiene clubId, usa 'demo' como fallback.
