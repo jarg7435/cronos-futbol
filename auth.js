@@ -29,6 +29,12 @@ export async function switchTab(tab) {
     const errorEl = document.getElementById('auth-error');
     if (errorEl) errorEl.textContent = '';
 
+    const loginPwdSec    = document.getElementById('login-pwd-section');
+    const registerPwdSec = document.getElementById('register-pwd-section');
+    
+    if (loginPwdSec)    loginPwdSec.style.display    = _isLoginMode ? 'block' : 'none';
+    if (registerPwdSec) registerPwdSec.style.display = _isLoginMode ? 'none'  : 'block';
+
     if (!_isLoginMode) {
         loadClubOptions();
         handleRoleChange();
@@ -45,21 +51,46 @@ export async function switchTab(tab) {
 export async function loadClubOptions() {
     const select = document.getElementById('auth-club-select');
     if (!select) return;
-    const fa = window._cronos_auth;
-    if (!fa) return;
+
+    select.innerHTML = '<option value="">⏳ Cargando clubes...</option>';
+
+    // Esperar hasta 4 segundos a que Firebase esté listo
+    let fa = window._cronos_auth;
+    if (!fa) {
+        for (let i = 0; i < 8; i++) {
+            await new Promise(r => setTimeout(r, 500));
+            fa = window._cronos_auth;
+            if (fa) break;
+        }
+    }
+    if (!fa || !fa.db) {
+        select.innerHTML = '<option value="">⚠️ Firebase no disponible. Recarga la página.</option>';
+        return;
+    }
+
     try {
         const m    = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const snap = await m.getDocs(m.collection(fa.db, 'clubs'));
-        let html   = '<option value="">-- Selecciona tu club --</option>';
+
+        if (snap.empty) {
+            select.innerHTML = '<option value="">No hay clubes registrados aún</option>';
+            return;
+        }
+
+        let html = '<option value="">-- Selecciona tu club --</option>';
         snap.forEach(doc => {
             const club = doc.data();
             if (club.status !== 'blocked') {
-                html += `<option value="${doc.id}">${club.name}</option>`;
+                html += '<option value="' + doc.id + '">' + (club.name || doc.id) + '</option>';
             }
         });
         select.innerHTML = html;
     } catch(e) {
-        select.innerHTML = '<option value="">Error al cargar clubes</option>';
+        console.error('[Cronos] Error cargando clubes:', e);
+        // Si es error de permisos, intentar sin autenticación con REST
+        select.innerHTML = '<option value="">⚠️ Error al cargar clubes — actualiza la página</option>';
+        // Reintento automático en 2 segundos
+        setTimeout(() => loadClubOptions(), 2000);
     }
 }
 
@@ -97,6 +128,9 @@ export function showAuthError(msg) {
 }
 
 // ── Verificación de Autorización ────────────────────────────
+// Emails con acceso automático de superadmin (sin necesidad de doc en Firestore)
+const SUPERADMIN_EMAILS = ['jarg7435@gmail.com'];
+
 export async function checkAuthorization(user) {
     if (!user) return;
     const fa = window._cronos_auth;
@@ -106,23 +140,73 @@ export async function checkAuthorization(user) {
         const ref  = fa.doc(fa.db, 'users', user.uid);
         const snap = await fa.getDoc(ref);
 
+        // ── CASO 1: Documento NO existe ───────────────────────────
         if (!snap.exists()) {
+            // Si es el superadmin, recrear documento automáticamente
+            if (SUPERADMIN_EMAILS.includes(user.email)) {
+                await fa.setDoc(ref, {
+                    email:        user.email,
+                    role:         'superadmin',
+                    isAuthorized: true,
+                    status:       'active',
+                    createdAt:    fa.serverTimestamp(),
+                    lastLogin:    fa.serverTimestamp(),
+                    autoRecovered: true,
+                });
+                window._cronosCurrentUser = {
+                    uid:   user.uid,
+                    email: user.email,
+                    role:  'superadmin',
+                    clubId: null, clubName: null,
+                };
+                enterApp();
+                return;
+            }
+
+            // Para otros usuarios: cerrar sesión y explicar qué hacer
             await fa.signOut(fa.auth);
-            showAuthError('Cuenta pendiente de registro en base de datos.');
+            showAuthError(
+                '⚠️ Tu cuenta no está registrada en el sistema. ' +
+                'Si ya te registraste y fuiste dado de baja, ' +
+                'puedes volver a registrarte con el mismo email.'
+            );
             return;
         }
 
         const data = snap.data();
-        if (!data.isAuthorized) {
-            showAuthError('⏳ Acceso pendiente de aprobación. Contacta con tu administrador.');
+
+        // ── CASO 2: Cuenta eliminada (removed) ───────────────────
+        if (data.status === 'removed') {
+            // El trigger de Firestore ya borró Auth; si aún puede entrar
+            // es que Auth no se borró. Limpiar Firestore y dejar registrarse.
             await fa.signOut(fa.auth);
+            showAuthError(
+                '🔄 Tu cuenta fue dada de baja. ' +
+                'Puedes registrarte de nuevo con el mismo email.'
+            );
             return;
         }
 
-        // Actualizar último login
+        // ── CASO 3: Cuenta bloqueada ──────────────────────────────
+        if (data.status === 'blocked') {
+            await fa.signOut(fa.auth);
+            showAuthError('🔒 Cuenta bloqueada. Contacta con tu administrador.');
+            return;
+        }
+
+        // ── CASO 4: Pendiente de aprobación ──────────────────────
+        if (!data.isAuthorized) {
+            await fa.signOut(fa.auth);
+            showAuthError(
+                '⏳ Acceso pendiente de aprobación. ' +
+                'El administrador de tu club debe confirmar tu acceso.'
+            );
+            return;
+        }
+
+        // ── CASO 5: Usuario activo y autorizado ───────────────────
         await fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true });
 
-        // Establecer usuario global
         window._cronosCurrentUser = {
             uid:         user.uid,
             email:       user.email,
@@ -148,7 +232,16 @@ export async function doAuth() {
     if (!fa) { showAuthError('Firebase no disponible.'); return; }
 
     const email    = document.getElementById('auth-email')?.value.trim();
-    const password = document.getElementById('auth-password')?.value;
+    let password;
+    let passwordConfirm;
+
+    if (_isLoginMode) {
+        password = document.getElementById('auth-password')?.value;
+    } else {
+        password = document.getElementById('register-password')?.value;
+        passwordConfirm = document.getElementById('register-password-confirm')?.value;
+    }
+
     if (!email || !password) {
         showAuthError('Introduce email y contraseña.'); return;
     }
@@ -181,6 +274,35 @@ export async function doAuth() {
         }
         if (requestedRole === 'individual' && (!firstName || !lastName)) {
             showAuthError('⚠️ Nombre y apellidos obligatorios.'); return;
+        }
+
+        // ── Validaciones de contraseña ────────────────────────────
+        if (password !== passwordConfirm) {
+            showAuthError('❌ Las contraseñas no coinciden');
+            return;
+        }
+
+        if (typeof validatePasswordStrength === 'function') {
+            const valObj = validatePasswordStrength(password);
+            if (!valObj.valid) {
+                showAuthError('❌ Contraseña no cumple los requisitos mínimos');
+                return;
+            }
+        }
+
+        // ── Buscar y limpiar si el usuario fue eliminado anteriormente ──
+        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const q = m.query(
+            m.collection(fa.db, 'users'),
+            m.where('email', '==', email),
+            m.where('status', 'in', ['removed', 'blocked'])
+        );
+        const snapshot = await m.getDocs(q);
+
+        if (!snapshot.empty) {
+            const oldDoc = snapshot.docs[0];
+            await m.deleteDoc(m.doc(fa.db, 'users', oldDoc.id));
+            console.log('✅ Registro anterior limpiado, permitiendo nuevo registro');
         }
 
         // ── Crear cuenta Firebase Auth ────────────────────────────
@@ -223,6 +345,8 @@ export async function doAuth() {
             role:          finalRole,
             requestedRole,
             clubId,
+            status:        isAuthorized ? 'active' : 'pending',
+            requestedSlot: null,
             createdAt:     fa.serverTimestamp(),
             lastLogin:     fa.serverTimestamp(),
         };

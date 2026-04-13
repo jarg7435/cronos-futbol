@@ -196,9 +196,9 @@
 
 <!-- ══ PANTALLA DE LOGIN / REGISTRO ══════════════════════════════════ -->
     <div id="auth-screen" style="display:flex; align-items:center; justify-content:center;
-         min-height:100vh; background:#0a0e14; padding:1rem;">
+         min-height:100vh; background:#0a0e14; padding:1rem; overflow-y:auto; align-items:flex-start;">
         <div style="width:100%; max-width:380px; background:rgba(255,255,255,0.04);
-                    border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:2rem;">
+                    border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:1.5rem; margin:auto 0;">
 
             <div style="display:flex;justify-content:center;margin-bottom:0.5rem;padding:0.5rem;">
                 <img src="public/assets/img_7a937812.png" alt="Chronos Fútbol" 
@@ -260,27 +260,9 @@
                                border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                                color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
                     <button type="button" id="toggle-pwd-register" 
-        onclick="window.toggleRegPassword()"
-        style="position:absolute; right:0.5rem; background:none; border:none; cursor:pointer; font-size:1.2rem; padding:0.3rem 0.5rem;">
-    👁️
-</button>
+                            style="position:absolute;right:0.5rem;background:none;border:none;
+                                   cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;">👁️</button>
                 </div>
-<div style="margin-bottom:1.5rem;">
-    <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">¿Cuál es tu cargo?</label>
-    <select id="reg-role" required style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:white; font-size:0.95rem; outline:none;">
-        <option value="" disabled selected style="background:#0a0e14;">Selecciona tu Rol</option>
-        <option value="coach" style="background:#0a0e14;">Entrenador</option>
-        <option value="coordinator" style="background:#0a0e14;">Coordinador</option>
-        <option value="director" style="background:#0a0e14;">Director Deportivo</option>
-        <option value="admin" style="background:#0a0e14;">Administrador de Club</option>
-        <option value="parent" style="background:#0a0e14;">Padre / Madre / Tutor</option>
-    </select>
-</div>
-<div style="margin-bottom:1.5rem;">
-    <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Nombre de tu Club / Equipo</label>
-    <input type="text" id="reg-club" placeholder="Ej: Chronos Fútbol Club" required 
-           style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-</div>
                 <div id="password-feedback"></div>
 
                 <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px; margin-top:10px;">Confirmar Contraseña</label>
@@ -1044,7 +1026,6 @@
     window.addEventListener('load', detectDeviceAndShowInstall);
 
     // ── Funciones globales faltantes ─────────────────────────────────────────
-    // cerrarSesion: alias de logoutUser (definida en auth.js como window.logoutUser)
     window.cerrarSesion = function() {
         if (typeof window.logoutUser === 'function') {
             window.logoutUser();
@@ -1055,12 +1036,10 @@
             }
         }
     };
-
-    // openUnifiedCommsMenu: se define en js/19_whatsapp_email.js o js/21_coach_comms.js
-    // Este stub evita el error si esos módulos aún no han cargado
     if (typeof window.openUnifiedCommsMenu === 'undefined') {
         window.openUnifiedCommsMenu = function() {
-            console.warn('openUnifiedCommsMenu: módulo de comunicaciones no cargado todavía.');
+            if (typeof openClubReports === 'function') openClubReports();
+            else console.warn('openUnifiedCommsMenu: módulo de comunicaciones no cargado.');
         };
     }
     </script>
