@@ -2,11 +2,20 @@
 //  CUERPO TÉCNICO
 // ══════════════════════════════════════════════════════════════════
 
+// Inicialización segura — evita TypeError si app.js aún no declaró staffConfig
+if (typeof window.staffConfig === 'undefined') {
+    window.staffConfig = { coach1: '', coach2: '', delegate: '', fieldDelegate: '' };
+}
+
 function loadStaffConfig() {
+    // Asegurar que siempre existe el objeto base antes de mergear
+    if (typeof window.staffConfig !== 'object' || window.staffConfig === null) {
+        window.staffConfig = { coach1: '', coach2: '', delegate: '', fieldDelegate: '' };
+    }
     const saved = localStorage.getItem('cronos_staff');
     if (saved) {
         try { staffConfig = { ...staffConfig, ...JSON.parse(saved) }; }
-        catch(e) {}
+        catch(e) { console.warn('[Staff] Error leyendo staffConfig:', e); }
     }
 }
 
