@@ -627,3 +627,6 @@ async function publishConvocationToApp() {
 
 window.openConvocationMessage = openConvocationMessage;
 window.publishConvocationToApp = publishConvocationToApp;
+
+// Alias para compatibilidad con llamadas desde 21_coach_comms.js y otros módulos
+window.openConvocationModal = openConvocationMessage;

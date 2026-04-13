@@ -1663,7 +1663,7 @@ async function openUnifiedCommsMenu() {
                 <div style="width:40px;height:40px;background:rgba(88,166,255,0.1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">💬</div>
                 <h2 style="margin:0;font-size:1.4rem;font-family:'Outfit',sans-serif;color:white;letter-spacing:0.5px;">Comunicaciones</h2>
             </div>
-            <button onclick="openSetupModal()" 
+        <button onclick="document.getElementById('setup-modal').style.display='none';" 
                 style="background:none;border:none;color:var(--text-muted);font-size:1.8rem;cursor:pointer;line-height:1;transition:color 0.2s;"
                 onmouseover="this.style.color='white'" onmouseout="this.style.color='var(--text-muted)'">✕</button>
         </div>
@@ -1678,7 +1678,7 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
-            <button onclick="openConvocationModal()" class="btn-comms-card" style="--color: #3fb950; --bg: rgba(63,185,80,0.1);">
+            <button onclick="openConvocationMessage()" class="btn-comms-card" style="--color: #3fb950; --bg: rgba(63,185,80,0.1);">
                 <span class="icon">📲</span>
                 <div class="content">
                     <div class="title" style="color:#3fb950;">Enviar Convocatoria</div>
@@ -1694,11 +1694,11 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
-            <button onclick="openClubReports()" class="btn-comms-card" style="--color: #ffa500; --bg: rgba(255,165,0,0.1);">
+            <button onclick="sendMatchReportsToParents(false)" class="btn-comms-card" style="--color: #ffa500; --bg: rgba(255,165,0,0.1);">
                 <span class="icon">📊</span>
                 <div class="content">
-                    <div class="title" style="color:#ffa500;">Informes de Club</div>
-                    <div class="desc">Ver rendimiento global y estadísticas</div>
+                    <div class="title" style="color:#ffa500;">Informe de Partido</div>
+                    <div class="desc">Enviar informe de rendimiento a padres y staff</div>
                 </div>
             </button>
 
@@ -1999,6 +1999,182 @@ window._sendBulkMsgEmail = function() {
     window.open(`mailto:${toList}?subject=${subject}&body=${body}`, '_blank');
     showToast(`📧 Email abierto para ${withEmail.length} destinatario${withEmail.length !== 1 ? 's' : ''}`, 4000);
 };
+
+// ════════════════════════════════════════════════════════════════════
+//  NOTIFICACIÓN DE ENTRENAMIENTO
+// ════════════════════════════════════════════════════════════════════
+async function openTrainingNotification() {
+    const me    = window._cronosCurrentUser;
+    const modal = document.getElementById('setup-modal');
+    if (!modal) return;
+
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(96vw,560px);max-height:90vh;
+         display:flex;flex-direction:column;overflow:hidden;">
+
+        <div style="display:flex;justify-content:space-between;align-items:center;
+                    margin-bottom:0.8rem;flex-shrink:0;">
+            <h2 style="margin:0;font-size:1.05rem;">📅 Info de Entrenamiento</h2>
+            <button onclick="openUnifiedCommsMenu()"
+                style="background:none;border:none;color:var(--text-muted);
+                       font-size:1.3rem;cursor:pointer;">✕</button>
+        </div>
+
+        <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;">
+                <div>
+                    <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Día de entrenamiento</label>
+                    <select id="tr-day" style="width:100%;padding:0.4rem 0.6rem;background:rgba(255,255,255,0.06);
+                            border:1px solid var(--glass-border);border-radius:7px;color:white;font-size:0.85rem;">
+                        <option value="Lunes">Lunes</option>
+                        <option value="Martes">Martes</option>
+                        <option value="Miércoles">Miércoles</option>
+                        <option value="Jueves">Jueves</option>
+                        <option value="Viernes">Viernes</option>
+                        <option value="Sábado">Sábado</option>
+                        <option value="Domingo">Domingo</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Hora</label>
+                    <input id="tr-time" type="time"
+                        style="width:100%;padding:0.4rem 0.6rem;background:rgba(255,255,255,0.06);
+                               border:1px solid var(--glass-border);border-radius:7px;color:white;font-size:0.85rem;">
+                </div>
+                <div style="grid-column:1/-1;">
+                    <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Campo / Lugar</label>
+                    <input id="tr-venue" type="text" placeholder="Nombre del campo o dirección"
+                        style="width:100%;padding:0.4rem 0.6rem;background:rgba(255,255,255,0.06);
+                               border:1px solid var(--glass-border);border-radius:7px;color:white;
+                               font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div style="grid-column:1/-1;">
+                    <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Mensaje adicional (opcional)</label>
+                    <textarea id="tr-extra" rows="3" placeholder="ej: Recordad traer el equipamiento completo. ¡Hasta el lunes! 💪"
+                        style="width:100%;padding:0.4rem 0.6rem;background:rgba(255,255,255,0.06);
+                               border:1px solid var(--glass-border);border-radius:7px;color:white;
+                               font-size:0.85rem;box-sizing:border-box;resize:vertical;"></textarea>
+                </div>
+            </div>
+
+            <!-- Destinatarios -->
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                        border-radius:9px;padding:0.75rem;">
+                <div style="font-size:0.72rem;font-weight:700;color:var(--text-muted);
+                            letter-spacing:0.5px;margin-bottom:0.5rem;">📤 ENVIAR A</div>
+                <div id="tr-recipients"
+                     style="display:flex;flex-direction:column;gap:0.3rem;max-height:180px;overflow-y:auto;">
+                    ${typeof sharedBuildRecipientsHTML === 'function'
+                        ? sharedBuildRecipientsHTML(null, 'tr')
+                        : '<p style="color:var(--text-muted);font-size:0.78rem;">Cargando contactos…</p>'}
+                </div>
+            </div>
+        </div><!-- end scroll -->
+
+        <!-- Botones -->
+        <div style="display:flex;gap:0.5rem;padding-top:0.8rem;
+                    border-top:1px solid var(--glass-border);flex-shrink:0;margin-top:0.4rem;">
+            <button onclick="openUnifiedCommsMenu()" class="btn"
+                style="color:var(--text-muted);">← Volver</button>
+            <button onclick="_sendTrainingWA()" class="btn"
+                style="flex:1;background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
+                       color:#3fb950;font-weight:700;">
+                📱 WhatsApp
+            </button>
+            <button onclick="_sendTrainingEmail()" class="btn"
+                style="flex:1;background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
+                       color:var(--primary);font-weight:700;">
+                📧 Email
+            </button>
+            <button onclick="_publishTrainingInternal()" class="btn"
+                style="flex:1;background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
+                       color:var(--primary);font-weight:700;">
+                📱 App Interna
+            </button>
+        </div>
+    </div>`;
+}
+
+function _buildTrainingText() {
+    const day   = document.getElementById('tr-day')?.value   || '';
+    const time  = document.getElementById('tr-time')?.value  || '';
+    const venue = document.getElementById('tr-venue')?.value.trim() || '';
+    const extra = document.getElementById('tr-extra')?.value.trim() || '';
+    const hour  = new Date().getHours();
+    const greeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
+
+    let msg = `${greeting} familia! 👋\n\n`;
+    msg += `📅 *ENTRENAMIENTO*\n`;
+    if (day)   msg += `🗓️ Día: *${day}*\n`;
+    if (time)  msg += `🕐 Hora: *${time}h*\n`;
+    if (venue) msg += `🏟️ Campo: *${venue}*\n`;
+    if (extra) msg += `\n💬 ${extra}\n`;
+    msg += `\n_Cronos Fútbol_ ⚽`;
+    return msg;
+}
+
+window._sendTrainingWA = function() {
+    const recipients = typeof sharedGetSelectedRecipients === 'function'
+        ? sharedGetSelectedRecipients('tr').filter(r => r.phone)
+        : [];
+    const encoded = encodeURIComponent(_buildTrainingText());
+    if (!recipients.length) {
+        window.open(`https://wa.me/?text=${encoded}`, '_blank');
+    } else {
+        recipients.forEach((r, i) =>
+            setTimeout(() => window.open(`https://wa.me/${r.phone}?text=${encoded}`, '_blank'), i * 800));
+    }
+    if (typeof showToast === 'function')
+        showToast(`📱 WhatsApp abierto para entrenamiento`, 3000);
+};
+
+window._sendTrainingEmail = function() {
+    const recipients = typeof sharedGetSelectedRecipients === 'function'
+        ? sharedGetSelectedRecipients('tr').filter(r => r.email)
+        : [];
+    const subject = encodeURIComponent('📅 Info de Entrenamiento — Cronos Fútbol');
+    const body    = encodeURIComponent(_buildTrainingText().replace(/[*_]/g, ''));
+    const toList  = recipients.map(r => r.email).join(',');
+    window.open(`mailto:${toList}?subject=${subject}&body=${body}`, '_blank');
+    if (typeof showToast === 'function')
+        showToast('📧 Email abierto', 3000);
+};
+
+window._publishTrainingInternal = async function() {
+    const me = window._cronosCurrentUser;
+    const fa = window._cronos_auth;
+    if (!fa || !me?.clubId) {
+        if (typeof showToast === 'function')
+            showToast('⚠️ Sin club asignado', 3000);
+        return;
+    }
+    try {
+        const { setDoc, doc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const id = 'tr_' + Date.now().toString(36);
+        await setDoc(doc(fa.db, 'cronos_notifications', id), {
+            type:       'planificacion_semanal',
+            clubId:     me.clubId,
+            coachUid:   me.uid,
+            coachEmail: me.email,
+            day:        document.getElementById('tr-day')?.value   || '',
+            time:       document.getElementById('tr-time')?.value  || '',
+            venue:      document.getElementById('tr-venue')?.value || '',
+            extra:      document.getElementById('tr-extra')?.value || '',
+            fullText:   _buildTrainingText(),
+            createdAt:  new Date().toISOString(),
+        });
+        if (typeof showToast === 'function')
+            showToast('✅ Entrenamiento publicado en la app', 4000);
+        openUnifiedCommsMenu();
+    } catch(e) {
+        if (typeof showToast === 'function')
+            showToast('⚠️ Error: ' + e.message, 4000);
+    }
+};
+
+window.openTrainingNotification = openTrainingNotification;
 
 window.openCoachMessaging      = openCoachMessaging;
 window.openThreadWithParent    = openThreadWithParent;
