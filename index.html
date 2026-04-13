@@ -56,23 +56,26 @@
         const db   = getFirestore(app);
 
         // Definimos primero la funcion con hoisting natural
-        // Fallback auth — la lógica real está en auth.js
         async function checkAuthorization(user) {
-            try {
-            if (window._checkAuthorization) {
+            // Fallback: la lógica real está en auth.js (window._checkAuthorization)
+            if (typeof window._checkAuthorization === 'function') {
                 return window._checkAuthorization(user);
             }
             try {
                 const ref  = doc(db, 'users', user.uid);
                 const snap = await getDoc(ref);
                 if (!snap.exists()) {
-                    if (typeof showAuthError==='function') showAuthError('Pendiente de autorización.');
-                    await signOut(auth); return;
+                    if (typeof showAuthError === 'function')
+                        showAuthError('Pendiente de autorización por el administrador.');
+                    await signOut(auth);
+                    return;
                 }
                 const d = snap.data();
                 if (!d.isAuthorized) {
-                    if (typeof showAuthError==='function') showAuthError('⏳ Acceso pendiente de aprobación.');
-                    await signOut(auth); return;
+                    if (typeof showAuthError === 'function')
+                        showAuthError('⏳ Acceso pendiente de aprobación.');
+                    await signOut(auth);
+                    return;
                 }
                 await setDoc(ref, { lastLogin: serverTimestamp() }, { merge: true });
             } catch (err) {
@@ -135,18 +138,18 @@
                     setTimeout(() => { if(window._checkAuthorization) window._checkAuthorization(user); }, 500);
                 }
             } else {
-                // Mostrar login de forma robusta
+                // Mostrar pantalla de login de forma robusta
                 if (typeof showScreen === 'function') {
                     showScreen('auth-screen');
                 } else {
-                    const _tryShow = () => {
-                        const _el = document.getElementById('auth-screen');
-                        if (_el) {
+                    const _try = () => {
+                        const el = document.getElementById('auth-screen');
+                        if (el) {
                             document.body.classList.remove('locked');
-                            _el.style.display = 'flex';
-                        } else { setTimeout(_tryShow, 150); }
+                            el.style.display = 'flex';
+                        } else { setTimeout(_try, 150); }
                     };
-                    _tryShow();
+                    _try();
                 }
             }
         });
@@ -1034,7 +1037,6 @@
 
 
     <script>
-    // ── Stubs de seguridad ───────────────────────────────────────────
     window.cerrarSesion = window.cerrarSesion || function() {
         if (typeof window.logoutUser === 'function') window.logoutUser();
         else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
