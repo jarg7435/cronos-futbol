@@ -1045,5 +1045,55 @@
         if (typeof openClubReports === 'function') openClubReports();
     };
     </script>
+    <script>
+    // ══ STUBS DE SEGURIDAD Y EYE TOGGLES ══════════════════════════════════════
+
+    // 1. cerrarSesion
+    window.cerrarSesion = window.cerrarSesion || function() {
+        if (typeof window.logoutUser === 'function') window.logoutUser();
+        else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
+    };
+
+    // 2. openUnifiedCommsMenu — se sobreescribe cuando cargue 21_coach_comms.js
+    window.openUnifiedCommsMenu = window.openUnifiedCommsMenu || function() {
+        if (typeof openClubReports === 'function') openClubReports();
+    };
+
+    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
+    window.showRoleSelector = window.showRoleSelector || function() {
+        if      (typeof window.showRoleSelection === 'function') window.showRoleSelection();
+        else if (typeof window.showRoleSelector  === 'function') window.showRoleSelector();
+        else {
+            // Fallback: volver a la pantalla de auth
+            const rs = document.getElementById('role-selection-screen');
+            if (rs) { rs.style.display = 'flex'; }
+        }
+    };
+
+    // 4. EYE TOGGLES para contraseña — los botones existen pero no tienen handler
+    (function () {
+        function wireToggle(inputId, btnId) {
+            var btn = document.getElementById(btnId);
+            var inp = document.getElementById(inputId);
+            if (!btn || !inp) return;
+            btn.addEventListener('click', function () {
+                var show = (inp.type === 'password');
+                inp.type  = show ? 'text'     : 'password';
+                btn.textContent = show ? '🙈' : '👁️';
+            });
+        }
+        // Puede que el DOM no esté listo aún si el script está en <body>
+        function tryWire() {
+            wireToggle('auth-password',             'toggle-pwd-login');
+            wireToggle('register-password',         'toggle-pwd-register');
+            wireToggle('register-password-confirm', 'toggle-pwd-confirm');
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', tryWire);
+        } else {
+            tryWire();
+        }
+    })();
+    </script>
 </body>
 </html>
