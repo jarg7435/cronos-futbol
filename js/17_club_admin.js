@@ -82,10 +82,16 @@ async function openClubAdminPanel(preClubId = null) {
     };
 
     // ── Pendientes de aprobación (auto-registro) ─────────────────────
-    const pendingMembers = users.filter(u =>
-        !u.isAuthorized && u.status !== 'removed' && u.status !== 'rejected' &&
-        u.requestedRole !== 'club_admin'
+    // Paso 1: Solicitudes de auto-registro pendientes de aprobación SA (status='pending')
+    const pendingAutoReg = users.filter(u =>
+        u.status === 'pending' && u.requestedRole !== 'club_admin'
     );
+    // Paso 2: Aprobados por SA, pendientes de confirmación por club admin (status='pending_club')
+    const pendingClubApproval = users.filter(u =>
+        u.status === 'pending_club' && u.approvedBySA === true
+    );
+    // Compat: mantener pendingMembers para el resto del código
+    const pendingMembers = [...pendingAutoReg];
 
     // ── Render de una fila de usuario ────────────────────────────────
     const userRow = (u) => {
@@ -197,7 +203,44 @@ async function openClubAdminPanel(preClubId = null) {
 
       <div class="sa-body">
 
-        <!-- ── BLOQUE A: Peticiones de acceso automático ── -->
+        <!-- ── BLOQUE 0: Aprobados por SA, pendientes de confirmación club ── -->
+        ${pendingClubApproval.length ? `
+        <div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.25);
+                    border-radius:10px;padding:1rem;margin-bottom:1.2rem;">
+          <h3 style="font-size:0.85rem;margin:0 0 0.8rem;color:#3fb950;
+                     display:flex;align-items:center;gap:0.5rem;">
+            ✅ Pendientes de tu confirmación (aprobados por SA)
+            <span style="background:rgba(63,185,80,0.15);color:#3fb950;padding:1px 8px;border-radius:10px;font-size:0.7rem;">${pendingClubApproval.length}</span>
+          </h3>
+          <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.7rem;padding:0.4rem 0.6rem;background:rgba(63,185,80,0.05);border-radius:6px;border:1px solid rgba(63,185,80,0.15);">
+            El SuperAdmin ya los aprobó. Tú debes dar el acceso final.
+          </p>
+          ${pendingClubApproval.map(u => {
+              const roleLabel = ROLE_META[u.role]?.label || u.role || 'Usuario';
+              const roleIcon  = ROLE_META[u.role]?.icon  || '👤';
+              return \`
+              <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;
+                          margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.06);
+                          display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-size:0.85rem;font-weight:600;">\${u.email}</div>
+                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+                    \${roleIcon} \${roleLabel} · Aprobado por SA ✅
+                  </div>
+                </div>
+                <div style="display:flex;gap:0.4rem;">
+                  <button onclick="caConfirmClubAccess('\${u._id}','\${u.role||'user'}','\${(u.email||'').replace(/'/g,\"\\'\")}')"
+                      class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
+                      ✅ Confirmar acceso</button>
+                  <button onclick="caRejectRequest('\${u._id}','\${(u.email||'').replace(/'/g,\"\\'\")}')"
+                      class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
+                      ✕ Rechazar</button>
+                </div>
+              </div>\`;
+          }).join('')}
+        </div>` : ''}
+
+        <!-- ── BLOQUE A: Solicitudes de acceso automático ── -->
         ${pendingMembers.length ? `
         <div style="background:rgba(255,165,0,0.06);border:1px solid rgba(255,165,0,0.25);
                     border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
@@ -428,7 +471,29 @@ async function openClubAdminPanel(preClubId = null) {
         setTimeout(() => openClubAdminPanel(), 1800);
     };
 
-    // ── Aprobar solicitud de acceso (auto-registro) ──────────────────
+    // ── Confirmar acceso (paso 2: club admin confirma tras SA) ──────────
+    window.caConfirmClubAccess = async (uid, role, email) => {
+        const si = slotOf(role);
+        if (si.full) {
+            showToast(`⛔ No hay slots libres para ${role}. Solicita ampliación al SuperAdmin.`, 4000);
+            return;
+        }
+        if (!confirm(`¿Confirmar acceso definitivo a ${email} como ${role}?`)) return;
+        try {
+            await updateDoc(doc(db,'users',uid), {
+                isAuthorized: true, status: 'active',
+                authorizedAt: new Date().toISOString(), authorizedBy: me.uid,
+            });
+            const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
+            await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used||0) + 1 });
+            showToast(`✅ ${email} tiene acceso completo a la app.`, 4000);
+            openClubAdminPanel();
+        } catch(e) {
+            showToast('❌ Error: ' + e.message, 3000);
+        }
+    };
+
+    // ── Aprobar solicitud de acceso (auto-registro pendiente SA) ────────────
     window.caApproveRequest = async (uid, role, email) => {
         const si = slotOf(role);
         if (si.full) {
