@@ -1861,6 +1861,155 @@ window.addNewParentRow = () => {
     newRow.querySelector('.p-name').focus();
 };
 
+
+// ════════════════════════════════════════════════════════════════════
+//  NOTIFICACIÓN DE ENTRENAMIENTO (faltaba - bug #9)
+// ════════════════════════════════════════════════════════════════════
+async function openTrainingNotification() {
+    const me    = window._cronosCurrentUser;
+    const modal = document.getElementById('setup-modal');
+    if (!modal) return;
+
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(96vw,520px);max-height:90vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0;">
+        <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--glass-border);
+                    display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <h3 style="margin:0;font-size:1rem;color:var(--secondary);">
+                📅 Info de Entrenamiento
+            </h3>
+            <button onclick="openUnifiedCommsMenu()"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:1rem 1.2rem;">
+            <div style="display:grid;gap:0.7rem;">
+                <div>
+                    <label style="font-size:0.76rem;color:var(--text-muted);display:block;margin-bottom:0.3rem;">
+                        📅 Fecha y hora
+                    </label>
+                    <input type="datetime-local" id="tr-datetime"
+                        style="width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+                               color:white;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:0.76rem;color:var(--text-muted);display:block;margin-bottom:0.3rem;">
+                        📍 Lugar / Campo
+                    </label>
+                    <input type="text" id="tr-location" placeholder="Campo de fútbol…"
+                        style="width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+                               color:white;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:0.76rem;color:var(--text-muted);display:block;margin-bottom:0.3rem;">
+                        📝 Notas adicionales
+                    </label>
+                    <textarea id="tr-notes" rows="3" placeholder="Cambio de horario, ropa especial, material necesario…"
+                        style="width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+                               color:white;font-size:0.85rem;box-sizing:border-box;resize:none;"></textarea>
+                </div>
+                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);
+                            border-radius:8px;padding:0.75rem;">
+                    <div style="font-size:0.72rem;color:#f0883e;font-weight:700;margin-bottom:0.4rem;">
+                        📤 DESTINATARIOS
+                    </div>
+                    <div style="font-size:0.78rem;color:var(--text-muted);">
+                        Se enviará a <strong style="color:white;">padres/tutores</strong> +
+                        <strong style="color:white;">dirección deportiva</strong> del club.
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);
+                    display:flex;gap:0.5rem;flex-shrink:0;">
+            <button onclick="openUnifiedCommsMenu()" class="btn" style="color:var(--text-muted);">← Volver</button>
+            <button onclick="_sendTrainingNotification()"
+                style="flex:1;padding:0.5rem;background:rgba(240,136,62,0.15);
+                       border:1px solid rgba(240,136,62,0.4);border-radius:7px;
+                       color:#f0883e;font-weight:700;cursor:pointer;font-size:0.85rem;">
+                📅 Enviar Aviso de Entrenamiento
+            </button>
+        </div>
+    </div>`;
+}
+
+window._sendTrainingNotification = async function() {
+    const me       = window._cronosCurrentUser;
+    const datetime = document.getElementById('tr-datetime')?.value || '';
+    const location = document.getElementById('tr-location')?.value.trim() || '';
+    const notes    = document.getElementById('tr-notes')?.value.trim() || '';
+
+    if (!datetime && !location) {
+        if (typeof showToast === 'function') showToast('⚠️ Indica al menos fecha/hora o lugar', 3000);
+        return;
+    }
+
+    if (typeof showSpinner === 'function') showSpinner('Enviando aviso de entrenamiento…');
+
+    try {
+        const { db, collection, getDocs, query, where, setDoc, doc } = await _cFS();
+
+        // Cargar contactos (padres) y dirección
+        if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+        const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+
+        const [dirSnap, coordSnap] = await Promise.all([
+            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','director'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','coordinator'))).catch(()=>({forEach:()=>{}})),
+        ]);
+        const staff = [];
+        dirSnap.forEach(d   => staff.push({ uid:d.id, ...d.data() }));
+        coordSnap.forEach(d => staff.push({ uid:d.id, ...d.data() }));
+
+        const dtFmt = datetime
+            ? new Date(datetime).toLocaleString('es-ES', {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
+            : '—';
+
+        const msg = `📅 *AVISO DE ENTRENAMIENTO*\n━━━━━━━━━━━━━━━━\n` +
+                   `📅 ${dtFmt}\n` +
+                   (location ? `📍 ${location}\n` : '') +
+                   (notes    ? `📝 ${notes}\n`     : '') +
+                   `\n_Cronos Fútbol_ ⚽`;
+
+        // Notificación interna a staff
+        for (const s of staff) {
+            await setDoc(doc(db,'cronos_notifications',`tr_staff_${s.uid}_${Date.now().toString(36)}`), {
+                type:'planificacion_semanal', clubId:me.clubId||null,
+                parentUid:s.uid, staffUid:s.uid,
+                coachEmail:me.email, datetime, location, notes, message:msg,
+                createdAt:new Date().toISOString(),
+            });
+        }
+
+        // WhatsApp a padres si tienen teléfono
+        const parents = contacts.filter(c => c.type === 'parent' && c.phone);
+        let sentWA = 0;
+        for (const p of parents) {
+            try {
+                window.open(`https://wa.me/${p.phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`, '_blank');
+                sentWA++;
+            } catch(_) {}
+            await new Promise(r => setTimeout(r, 300));
+        }
+
+        if (typeof hideSpinner === 'function') hideSpinner();
+        let toastMsg = `✅ Aviso enviado a ${staff.length} dirección`;
+        if (sentWA > 0) toastMsg += ` + ${sentWA} padre(s) por WhatsApp`;
+        if (typeof showToast === 'function') showToast(toastMsg, 5000);
+        openUnifiedCommsMenu();
+
+    } catch (e) {
+        if (typeof hideSpinner === 'function') hideSpinner();
+        if (typeof showToast  === 'function') showToast('⚠️ Error: '+e.message, 4000);
+        console.error('[TrainingNotif]', e);
+    }
+};
+
+window.openTrainingNotification = openTrainingNotification;
+
 async function openUnifiedCommsMenu() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';

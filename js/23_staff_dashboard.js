@@ -131,20 +131,20 @@ async function openStaffDashboard() {
                            color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
                     🔄 Cambiar Club</button>` : ''}
                 <button onclick="openStaffDashboard()"
-                    style="padding:0.4rem 0.8rem;background:rgba(255,255,255,0.05);
-                           border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.73rem;cursor:pointer;">
-                    🔄 Actualizar</button>
-                <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
-                    style="padding:0.4rem 0.9rem;background:rgba(255,215,0,0.08);
-                           border:1px solid rgba(255,215,0,0.3);border-radius:8px;
-                           color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
-                    ⇄ Cambiar Rol</button>
-                <button onclick="logoutUser()"
-                    style="padding:0.4rem 0.9rem;background:rgba(255,88,88,0.12);
-                           border:1px solid rgba(255,88,88,0.4);border-radius:8px;
-                           color:#ff5858;font-size:0.73rem;font-weight:700;cursor:pointer;">
-                    🚪 SALIR</button>
+                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                           color:var(--text-muted);padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    🔄</button>
+                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
+                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
+                           color:#ffd700;padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    ⇄ Rol</button>
+                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
+                    style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                           color:#ff5858;padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    🚪</button>
             </div>
         </div>
 

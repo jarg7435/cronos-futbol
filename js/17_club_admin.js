@@ -3,6 +3,23 @@
 //  Secciones expandibles por rol · Aprobación de solicitudes
 //  Solicitud de ampliación de cuota al SuperAdmin
 // ════════════════════════════════════════════════════════════════════
+// Guardia: SA_CSS puede no estar definido si 16_superadmin.js no cargó aún
+if (typeof window.SA_CSS === 'undefined') {
+    window.SA_CSS = '<style>.sa-modal{background:#0d1117!important;border:1px solid rgba(255,255,255,0.1)!important;border-radius:16px!important;max-width:860px!important;width:98vw!important;max-height:92vh!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;font-family:Inter,sans-serif!important}.sa-body{flex:1;overflow-y:auto;padding:1rem 1.2rem}.sa-topbar{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;flex-wrap:wrap;gap:0.5rem}.sa-btn{display:inline-flex;align-items:center;gap:0.3rem;padding:0.32rem 0.65rem;border:1px solid rgba(255,255,255,0.1);border-radius:7px;background:rgba(255,255,255,0.04);color:white;font-size:0.78rem;font-weight:600;cursor:pointer}.sa-label{display:block;font-size:0.72rem;color:#8b949e;margin-bottom:0.3rem;font-weight:600}.sa-input{width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:white;font-size:0.85rem;box-sizing:border-box}</style>';
+}
+if (typeof window.ROLE_META === 'undefined') {
+    window.ROLE_META = {
+        superadmin:  { label:'Superadministrador', icon:'👑', color:'#ffd700' },
+        admin:       { label:'Administrador',       icon:'⚙️',  color:'#58a6ff' },
+        club_admin:  { label:'Admin de Club',       icon:'🏟️', color:'#58a6ff' },
+        director:    { label:'Director Deportivo',  icon:'📋', color:'#f0883e' },
+        coordinator: { label:'Coordinador',         icon:'🎯', color:'#d2a8ff' },
+        user:        { label:'Entrenador',          icon:'⚽', color:'#3fb950' },
+        parent:      { label:'Padre / Madre / Tutor', icon:'👨‍👩‍👧', color:'#79c0ff' },
+        individual:  { label:'Entrenador Individual', icon:'👤', color:'#79c0ff' },
+    };
+}
+
 async function openClubAdminPanel(preClubId = null) {
     const me         = window._cronosCurrentUser;
     const activeRole = me._activeRole || me.role;
@@ -13,7 +30,26 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
-    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = await saFS();
+    let _fsResult;
+    try {
+        _fsResult = await saFS();
+    } catch (err) {
+        const _modal = document.getElementById('setup-modal');
+        if (_modal) {
+            _modal.style.display = 'flex';
+            _modal.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;color:white;text-align:center;max-width:400px;margin:auto;">
+                <div style="font-size:1.5rem;margin-bottom:1rem;">⚠️</div>
+                <p style="color:#ff5858;">Error de conexión: ${err.message}</p>
+                <button onclick="document.getElementById('setup-modal').style.display='none'"
+                    style="margin-top:1rem;padding:0.5rem 1.2rem;background:rgba(255,88,88,0.15);
+                           border:1px solid rgba(255,88,88,0.4);border-radius:7px;color:#ff5858;cursor:pointer;">
+                    Cerrar
+                </button>
+            </div>`;
+        }
+        return;
+    }
+    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = _fsResult;
 
     // ── Si el SA no tiene clubId, mostrar selector de club ──────────
     let clubId = preClubId || me.clubId;
