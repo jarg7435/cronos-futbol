@@ -1039,10 +1039,22 @@
     <script>
     // ══ STUBS GLOBALES ══════════════════════════════════════════════
 
-    // cerrarSesion
-    window.cerrarSesion = window.cerrarSesion || function() {
-        if (typeof window.logoutUser === 'function') window.logoutUser();
-        else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
+    // cerrarSesion — busca logoutUser en el momento del clic (no al definirse)
+    window.cerrarSesion = function() {
+        if (typeof window.logoutUser === 'function') {
+            window.logoutUser();
+        } else {
+            if (confirm('¿Seguro que deseas salir?')) {
+                sessionStorage.clear();
+                // Intentar signOut de Firebase directamente
+                var fa = window._cronos_auth;
+                if (fa && fa.auth && fa.signOut) {
+                    fa.signOut(fa.auth).finally(function() { location.reload(); });
+                } else {
+                    location.reload();
+                }
+            }
+        }
     };
 
     // openUnifiedCommsMenu — stub hasta que cargue 21_coach_comms.js
