@@ -1,35 +1,3 @@
-// ── Guards: SA_CSS y ROLE_META pueden no existir si 16_superadmin.js no cargó aún ──
-if (typeof window.SA_CSS === 'undefined') {
-    window.SA_CSS = `<style>
-.sa-modal{background:#0d1117!important;border:1px solid rgba(255,255,255,.1)!important;
-border-radius:16px!important;max-width:860px!important;width:98vw!important;
-max-height:92vh!important;display:flex!important;flex-direction:column!important;
-overflow:hidden!important;font-family:Inter,sans-serif!important}
-.sa-topbar{display:flex;align-items:center;justify-content:space-between;
-padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;flex-wrap:wrap;gap:.5rem}
-.sa-body{flex:1;overflow-y:auto;padding:1rem 1.2rem;-webkit-overflow-scrolling:touch}
-.sa-btn{display:inline-flex;align-items:center;gap:.3rem;padding:.32rem .65rem;
-border:1px solid rgba(255,255,255,.1);border-radius:7px;background:rgba(255,255,255,.04);
-color:white;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
-.sa-label{display:block;font-size:.72rem;color:#8b949e;margin-bottom:.3rem;font-weight:600}
-.sa-input{width:100%;padding:.5rem .75rem;background:rgba(255,255,255,.06);
-border:1px solid rgba(255,255,255,.1);border-radius:8px;color:white;font-size:.85rem;
-box-sizing:border-box;outline:none}
-</style>`;
-}
-if (typeof window.ROLE_META === 'undefined') {
-    window.ROLE_META = {
-        superadmin:  { label:'Superadministrador',    icon:'👑', color:'#ffd700' },
-        admin:       { label:'Administrador',          icon:'⚙️',  color:'#58a6ff' },
-        club_admin:  { label:'Admin de Club',          icon:'🏟️', color:'#58a6ff' },
-        director:    { label:'Director Deportivo',     icon:'📋', color:'#f0883e' },
-        coordinator: { label:'Coordinador',            icon:'🎯', color:'#d2a8ff' },
-        user:        { label:'Entrenador',             icon:'⚽', color:'#3fb950' },
-        parent:      { label:'Padre / Madre / Tutor',  icon:'👨‍👩‍👧', color:'#79c0ff' },
-        individual:  { label:'Entrenador Individual',  icon:'👤', color:'#79c0ff' },
-    };
-}
-
 // ════════════════════════════════════════════════════════════════════
 //  PANEL ADMIN DE CLUB (club_admin) — v3
 //  Secciones expandibles por rol · Aprobación de solicitudes
@@ -45,27 +13,7 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
-    let _saf;
-    try {
-        _saf = await saFS();
-    } catch(err) {
-        const _em = document.getElementById('setup-modal');
-        if (_em) {
-            _em.style.display = 'flex';
-            _em.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;
-                color:white;text-align:center;max-width:380px;margin:auto;
-                border:1px solid rgba(255,88,88,0.3);">
-                <div style="font-size:1.8rem;margin-bottom:0.8rem;">⚠️</div>
-                <p style="color:#ff5858;margin:0;">Error de conexión:<br>${err.message}</p>
-                <button onclick="document.getElementById('setup-modal').style.display='none'"
-                    style="margin-top:1.2rem;padding:.5rem 1.2rem;background:rgba(255,88,88,.15);
-                    border:1px solid rgba(255,88,88,.4);border-radius:7px;color:#ff5858;cursor:pointer;">
-                    Cerrar
-                </button></div>`;
-        }
-        return;
-    }
-    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = _saf;
+    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = await saFS();
 
     // ── Si el SA no tiene clubId, mostrar selector de club ──────────
     let clubId = preClubId || me.clubId;
@@ -136,8 +84,13 @@ async function openClubAdminPanel(preClubId = null) {
     // ── Pendientes de aprobación (auto-registro) ─────────────────────
     const pendingMembers = users.filter(u =>
         !u.isAuthorized && u.status !== 'removed' && u.status !== 'rejected' &&
-        u.requestedRole !== 'club_admin'
+        u.requestedRole !== 'club_admin' && u.status !== 'pending_sa'
     );
+
+    // Usuarios que el SA ya aprobó → Club Admin debe confirmar el alta final
+    const saApprovedPending = users.filter(u =>
+        !u.isAuthorized && u.status === 'active' && u.authorizedBySA
+    ).concat(users.filter(u => u.status === 'pending_register'));
 
     // ── Render de una fila de usuario ────────────────────────────────
     const userRow = (u) => {
@@ -480,25 +433,74 @@ async function openClubAdminPanel(preClubId = null) {
         setTimeout(() => openClubAdminPanel(), 1800);
     };
 
-    // ── Aprobar solicitud de acceso (auto-registro) ──────────────────
+    // ── Enviar solicitud de usuario al SuperAdmin para aprobación ──────
     window.caApproveRequest = async (uid, role, email) => {
         const si = slotOf(role);
         if (si.full) {
             showToast(`⛔ No hay slots libres para el rol ${role}. Solicita ampliación al SuperAdmin.`, 4000);
             return;
         }
-        if (!confirm(`¿Autorizar acceso a ${email} como ${role}?`)) return;
+        if (!confirm(`¿Enviar solicitud de acceso de ${email} al SuperAdmin?`)) return;
+        try {
+            // Marcar usuario como pendiente de aprobación SA
+            await updateDoc(doc(db,'users',uid), {
+                status: 'pending_sa',
+                sentToSAAt: new Date().toISOString(),
+                sentToSABy: me.uid,
+            });
+
+            // Crear entrada en platform_requests para que el SA la vea
+            const reqId = 'user_req_' + clubId + '_' + Date.now().toString(36);
+            await setDoc(doc(db, 'platform_requests', reqId), {
+                type:               'user_request',
+                clubId,
+                clubName:           club.name || '',
+                requestedEmail:     email,
+                requestedRole:      role,
+                requestedRoleLabel: ROLE_LABELS[role] || role,
+                userUid:            uid,
+                requestedBy:        me.uid,
+                requestedByEmail:   me.email,
+                status:             'pending_sa',
+                createdAt:          new Date().toISOString(),
+            });
+
+            showToast(`✅ Solicitud de ${email} enviada al SuperAdmin. Pendiente de aprobación.`, 4000);
+            openClubAdminPanel();
+        } catch(e) {
+            showToast('❌ Error: ' + e.message, 3000);
+        }
+    };
+
+    // ── Confirmar acceso TRAS aprobación del SA ──────────────────────
+    window.caConfirmSAApproved = async (uid, role, email, platformReqId) => {
+        const si = slotOf(role);
+        if (si.full) {
+            showToast(`⛔ No hay slots libres. Solicita ampliación al SuperAdmin.`, 4000);
+            return;
+        }
+        if (!confirm(`El SuperAdmin aprobó a ${email}. ¿Confirmar acceso definitivo?`)) return;
         try {
             await updateDoc(doc(db,'users',uid), {
                 isAuthorized: true, role, status: 'active',
-                authorizedAt: new Date().toISOString(), authorizedBy: me.uid
+                authorizedAt: new Date().toISOString(), authorizedBy: me.uid,
+                authorizedBySA: true,
             });
             const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
             await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used || 0) + 1 });
-            showToast(`✅ ${email} autorizado correctamente.`, 3000);
+            // Marcar platform_request como completado
+            if (platformReqId) {
+                const { setDoc: _sd, doc: _doc } = await saFS().catch(()=>({}));
+                if (_sd) await updateDoc(doc(db,'platform_requests',platformReqId), {
+                    status: 'completed',
+                    completedAt: new Date().toISOString(),
+                    completedBy: me.uid,
+                });
+            }
+            showToast(`✅ ${email} tiene acceso completo a la app.`, 3000);
             openClubAdminPanel();
         } catch(e) {
-            showToast('❌ Error al autorizar usuario: ' + e.message, 3000);
+            showToast('❌ Error: ' + e.message, 3000);
         }
     };
 
