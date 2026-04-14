@@ -128,9 +128,6 @@ export function showAuthError(msg) {
 }
 
 // ── Verificación de Autorización ────────────────────────────
-// Emails con acceso automático de superadmin (sin necesidad de doc en Firestore)
-const SUPERADMIN_EMAILS = ['jarg7435@gmail.com'];
-
 export async function checkAuthorization(user) {
     if (!user) return;
     const fa = window._cronos_auth;
@@ -140,73 +137,31 @@ export async function checkAuthorization(user) {
         const ref  = fa.doc(fa.db, 'users', user.uid);
         const snap = await fa.getDoc(ref);
 
-        // ── CASO 1: Documento NO existe ───────────────────────────
         if (!snap.exists()) {
-            // Si es el superadmin, recrear documento automáticamente
-            if (SUPERADMIN_EMAILS.includes(user.email)) {
-                await fa.setDoc(ref, {
-                    email:        user.email,
-                    role:         'superadmin',
-                    isAuthorized: true,
-                    status:       'active',
-                    createdAt:    fa.serverTimestamp(),
-                    lastLogin:    fa.serverTimestamp(),
-                    autoRecovered: true,
-                });
-                window._cronosCurrentUser = {
-                    uid:   user.uid,
-                    email: user.email,
-                    role:  'superadmin',
-                    clubId: null, clubName: null,
-                };
-                enterApp();
-                return;
-            }
-
-            // Para otros usuarios: cerrar sesión y explicar qué hacer
             await fa.signOut(fa.auth);
-            showAuthError(
-                '⚠️ Tu cuenta no está registrada en el sistema. ' +
-                'Si ya te registraste y fuiste dado de baja, ' +
-                'puedes volver a registrarte con el mismo email.'
-            );
+            showAuthError('Cuenta pendiente de registro en base de datos.');
             return;
         }
 
         const data = snap.data();
-
-        // ── CASO 2: Cuenta eliminada (removed) ───────────────────
-        if (data.status === 'removed') {
-            // El trigger de Firestore ya borró Auth; si aún puede entrar
-            // es que Auth no se borró. Limpiar Firestore y dejar registrarse.
-            await fa.signOut(fa.auth);
-            showAuthError(
-                '🔄 Tu cuenta fue dada de baja. ' +
-                'Puedes registrarte de nuevo con el mismo email.'
-            );
-            return;
-        }
-
-        // ── CASO 3: Cuenta bloqueada ──────────────────────────────
-        if (data.status === 'blocked') {
-            await fa.signOut(fa.auth);
-            showAuthError('🔒 Cuenta bloqueada. Contacta con tu administrador.');
-            return;
-        }
-
-        // ── CASO 4: Pendiente de aprobación ──────────────────────
         if (!data.isAuthorized) {
+            const status = data.status || 'pending';
+            const msgs = {
+                'pending':         '⏳ Tu solicitud está pendiente de revisión por el administrador de tu club.',
+                'pending_sa':      '⏳ Tu solicitud ha sido enviada al SuperAdmin. En breve recibirás confirmación.',
+                'pending_register':'⏳ Tu acceso está preparado. Inicia sesión con el email que te indicaron.',
+                'rejected':        '❌ Tu solicitud fue denegada. Contacta con el administrador de tu club.',
+                'blocked':         '🔒 Tu cuenta está suspendida. Contacta con el administrador.',
+            };
+            showAuthError(msgs[status] || '⏳ Acceso pendiente de aprobación. Contacta con tu administrador.');
             await fa.signOut(fa.auth);
-            showAuthError(
-                '⏳ Acceso pendiente de aprobación. ' +
-                'El administrador de tu club debe confirmar tu acceso.'
-            );
             return;
         }
 
-        // ── CASO 5: Usuario activo y autorizado ───────────────────
+        // Actualizar último login
         await fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true });
 
+        // Establecer usuario global
         window._cronosCurrentUser = {
             uid:         user.uid,
             email:       user.email,
@@ -381,7 +336,7 @@ export async function doAuth() {
             };
             showAuthError(
                 msgByRole[requestedRole] ||
-                '✅ Solicitud enviada. El administrador de tu club confirmará tu acceso.'
+                '✅ Solicitud enviada al administrador de tu club. Cuando sea aprobada por el SuperAdmin, podrás acceder.'
             );
             switchTab('login');
         } else {
