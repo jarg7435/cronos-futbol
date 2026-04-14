@@ -1,25 +1,40 @@
+// ── Guards: SA_CSS y ROLE_META pueden no existir si 16_superadmin.js no cargó aún ──
+if (typeof window.SA_CSS === 'undefined') {
+    window.SA_CSS = `<style>
+.sa-modal{background:#0d1117!important;border:1px solid rgba(255,255,255,.1)!important;
+border-radius:16px!important;max-width:860px!important;width:98vw!important;
+max-height:92vh!important;display:flex!important;flex-direction:column!important;
+overflow:hidden!important;font-family:Inter,sans-serif!important}
+.sa-topbar{display:flex;align-items:center;justify-content:space-between;
+padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;flex-wrap:wrap;gap:.5rem}
+.sa-body{flex:1;overflow-y:auto;padding:1rem 1.2rem;-webkit-overflow-scrolling:touch}
+.sa-btn{display:inline-flex;align-items:center;gap:.3rem;padding:.32rem .65rem;
+border:1px solid rgba(255,255,255,.1);border-radius:7px;background:rgba(255,255,255,.04);
+color:white;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.sa-label{display:block;font-size:.72rem;color:#8b949e;margin-bottom:.3rem;font-weight:600}
+.sa-input{width:100%;padding:.5rem .75rem;background:rgba(255,255,255,.06);
+border:1px solid rgba(255,255,255,.1);border-radius:8px;color:white;font-size:.85rem;
+box-sizing:border-box;outline:none}
+</style>`;
+}
+if (typeof window.ROLE_META === 'undefined') {
+    window.ROLE_META = {
+        superadmin:  { label:'Superadministrador',    icon:'👑', color:'#ffd700' },
+        admin:       { label:'Administrador',          icon:'⚙️',  color:'#58a6ff' },
+        club_admin:  { label:'Admin de Club',          icon:'🏟️', color:'#58a6ff' },
+        director:    { label:'Director Deportivo',     icon:'📋', color:'#f0883e' },
+        coordinator: { label:'Coordinador',            icon:'🎯', color:'#d2a8ff' },
+        user:        { label:'Entrenador',             icon:'⚽', color:'#3fb950' },
+        parent:      { label:'Padre / Madre / Tutor',  icon:'👨‍👩‍👧', color:'#79c0ff' },
+        individual:  { label:'Entrenador Individual',  icon:'👤', color:'#79c0ff' },
+    };
+}
+
 // ════════════════════════════════════════════════════════════════════
 //  PANEL ADMIN DE CLUB (club_admin) — v3
 //  Secciones expandibles por rol · Aprobación de solicitudes
 //  Solicitud de ampliación de cuota al SuperAdmin
 // ════════════════════════════════════════════════════════════════════
-// Guardia: SA_CSS puede no estar definido si 16_superadmin.js no cargó aún
-if (typeof window.SA_CSS === 'undefined') {
-    window.SA_CSS = '<style>.sa-modal{background:#0d1117!important;border:1px solid rgba(255,255,255,0.1)!important;border-radius:16px!important;max-width:860px!important;width:98vw!important;max-height:92vh!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;font-family:Inter,sans-serif!important}.sa-body{flex:1;overflow-y:auto;padding:1rem 1.2rem}.sa-topbar{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;flex-wrap:wrap;gap:0.5rem}.sa-btn{display:inline-flex;align-items:center;gap:0.3rem;padding:0.32rem 0.65rem;border:1px solid rgba(255,255,255,0.1);border-radius:7px;background:rgba(255,255,255,0.04);color:white;font-size:0.78rem;font-weight:600;cursor:pointer}.sa-label{display:block;font-size:0.72rem;color:#8b949e;margin-bottom:0.3rem;font-weight:600}.sa-input{width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:white;font-size:0.85rem;box-sizing:border-box}</style>';
-}
-if (typeof window.ROLE_META === 'undefined') {
-    window.ROLE_META = {
-        superadmin:  { label:'Superadministrador', icon:'👑', color:'#ffd700' },
-        admin:       { label:'Administrador',       icon:'⚙️',  color:'#58a6ff' },
-        club_admin:  { label:'Admin de Club',       icon:'🏟️', color:'#58a6ff' },
-        director:    { label:'Director Deportivo',  icon:'📋', color:'#f0883e' },
-        coordinator: { label:'Coordinador',         icon:'🎯', color:'#d2a8ff' },
-        user:        { label:'Entrenador',          icon:'⚽', color:'#3fb950' },
-        parent:      { label:'Padre / Madre / Tutor', icon:'👨‍👩‍👧', color:'#79c0ff' },
-        individual:  { label:'Entrenador Individual', icon:'👤', color:'#79c0ff' },
-    };
-}
-
 async function openClubAdminPanel(preClubId = null) {
     const me         = window._cronosCurrentUser;
     const activeRole = me._activeRole || me.role;
@@ -30,26 +45,27 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
-    let _fsResult;
+    let _saf;
     try {
-        _fsResult = await saFS();
-    } catch (err) {
-        const _modal = document.getElementById('setup-modal');
-        if (_modal) {
-            _modal.style.display = 'flex';
-            _modal.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;color:white;text-align:center;max-width:400px;margin:auto;">
-                <div style="font-size:1.5rem;margin-bottom:1rem;">⚠️</div>
-                <p style="color:#ff5858;">Error de conexión: ${err.message}</p>
+        _saf = await saFS();
+    } catch(err) {
+        const _em = document.getElementById('setup-modal');
+        if (_em) {
+            _em.style.display = 'flex';
+            _em.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;
+                color:white;text-align:center;max-width:380px;margin:auto;
+                border:1px solid rgba(255,88,88,0.3);">
+                <div style="font-size:1.8rem;margin-bottom:0.8rem;">⚠️</div>
+                <p style="color:#ff5858;margin:0;">Error de conexión:<br>${err.message}</p>
                 <button onclick="document.getElementById('setup-modal').style.display='none'"
-                    style="margin-top:1rem;padding:0.5rem 1.2rem;background:rgba(255,88,88,0.15);
-                           border:1px solid rgba(255,88,88,0.4);border-radius:7px;color:#ff5858;cursor:pointer;">
+                    style="margin-top:1.2rem;padding:.5rem 1.2rem;background:rgba(255,88,88,.15);
+                    border:1px solid rgba(255,88,88,.4);border-radius:7px;color:#ff5858;cursor:pointer;">
                     Cerrar
-                </button>
-            </div>`;
+                </button></div>`;
         }
         return;
     }
-    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = _fsResult;
+    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = _saf;
 
     // ── Si el SA no tiene clubId, mostrar selector de club ──────────
     let clubId = preClubId || me.clubId;
@@ -118,16 +134,10 @@ async function openClubAdminPanel(preClubId = null) {
     };
 
     // ── Pendientes de aprobación (auto-registro) ─────────────────────
-    // Paso 1: Solicitudes de auto-registro pendientes de aprobación SA (status='pending')
-    const pendingAutoReg = users.filter(u =>
-        u.status === 'pending' && u.requestedRole !== 'club_admin'
+    const pendingMembers = users.filter(u =>
+        !u.isAuthorized && u.status !== 'removed' && u.status !== 'rejected' &&
+        u.requestedRole !== 'club_admin'
     );
-    // Paso 2: Aprobados por SA, pendientes de confirmación por club admin (status='pending_club')
-    const pendingClubApproval = users.filter(u =>
-        u.status === 'pending_club' && u.approvedBySA === true
-    );
-    // Compat: mantener pendingMembers para el resto del código
-    const pendingMembers = [...pendingAutoReg];
 
     // ── Render de una fila de usuario ────────────────────────────────
     const userRow = (u) => {
@@ -239,44 +249,7 @@ async function openClubAdminPanel(preClubId = null) {
 
       <div class="sa-body">
 
-        <!-- ── BLOQUE 0: Aprobados por SA, pendientes de confirmación club ── -->
-        ${pendingClubApproval.length ? `
-        <div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.25);
-                    border-radius:10px;padding:1rem;margin-bottom:1.2rem;">
-          <h3 style="font-size:0.85rem;margin:0 0 0.8rem;color:#3fb950;
-                     display:flex;align-items:center;gap:0.5rem;">
-            ✅ Pendientes de tu confirmación (aprobados por SA)
-            <span style="background:rgba(63,185,80,0.15);color:#3fb950;padding:1px 8px;border-radius:10px;font-size:0.7rem;">${pendingClubApproval.length}</span>
-          </h3>
-          <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.7rem;padding:0.4rem 0.6rem;background:rgba(63,185,80,0.05);border-radius:6px;border:1px solid rgba(63,185,80,0.15);">
-            El SuperAdmin ya los aprobó. Tú debes dar el acceso final.
-          </p>
-          ${pendingClubApproval.map(u => {
-              const roleLabel = ROLE_META[u.role]?.label || u.role || 'Usuario';
-              const roleIcon  = ROLE_META[u.role]?.icon  || '👤';
-              return \`
-              <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;
-                          margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.06);
-                          display:flex;justify-content:space-between;align-items:center;">
-                <div>
-                  <div style="font-size:0.85rem;font-weight:600;">\${u.email}</div>
-                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
-                    \${roleIcon} \${roleLabel} · Aprobado por SA ✅
-                  </div>
-                </div>
-                <div style="display:flex;gap:0.4rem;">
-                  <button onclick="caConfirmClubAccess('\${u._id}','\${u.role||'user'}','\${(u.email||'').replace(/'/g,\"\\'\")}')"
-                      class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
-                      ✅ Confirmar acceso</button>
-                  <button onclick="caRejectRequest('\${u._id}','\${(u.email||'').replace(/'/g,\"\\'\")}')"
-                      class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
-                      ✕ Rechazar</button>
-                </div>
-              </div>\`;
-          }).join('')}
-        </div>` : ''}
-
-        <!-- ── BLOQUE A: Solicitudes de acceso automático ── -->
+        <!-- ── BLOQUE A: Peticiones de acceso automático ── -->
         ${pendingMembers.length ? `
         <div style="background:rgba(255,165,0,0.06);border:1px solid rgba(255,165,0,0.25);
                     border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
@@ -507,29 +480,7 @@ async function openClubAdminPanel(preClubId = null) {
         setTimeout(() => openClubAdminPanel(), 1800);
     };
 
-    // ── Confirmar acceso (paso 2: club admin confirma tras SA) ──────────
-    window.caConfirmClubAccess = async (uid, role, email) => {
-        const si = slotOf(role);
-        if (si.full) {
-            showToast(`⛔ No hay slots libres para ${role}. Solicita ampliación al SuperAdmin.`, 4000);
-            return;
-        }
-        if (!confirm(`¿Confirmar acceso definitivo a ${email} como ${role}?`)) return;
-        try {
-            await updateDoc(doc(db,'users',uid), {
-                isAuthorized: true, status: 'active',
-                authorizedAt: new Date().toISOString(), authorizedBy: me.uid,
-            });
-            const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
-            await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used||0) + 1 });
-            showToast(`✅ ${email} tiene acceso completo a la app.`, 4000);
-            openClubAdminPanel();
-        } catch(e) {
-            showToast('❌ Error: ' + e.message, 3000);
-        }
-    };
-
-    // ── Aprobar solicitud de acceso (auto-registro pendiente SA) ────────────
+    // ── Aprobar solicitud de acceso (auto-registro) ──────────────────
     window.caApproveRequest = async (uid, role, email) => {
         const si = slotOf(role);
         if (si.full) {

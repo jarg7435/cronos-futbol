@@ -177,7 +177,7 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
         </div>
     </div>
     <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-        <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();"
+        <button onclick="var p=document.getElementById('sa-panel');if(p)p.remove();if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
             style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);color:#ffd700;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⇄ Cambiar rol</button>
         <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
             style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⏻ Salir</button>

@@ -131,20 +131,12 @@ async function openStaffDashboard() {
                            color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
                     🔄 Cambiar Club</button>` : ''}
                 <button onclick="openStaffDashboard()"
-                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
-                           color:var(--text-muted);padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    🔄</button>
-                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
-                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
-                           color:#ffd700;padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    ⇄ Rol</button>
-                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
-                    style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
-                           color:#ff5858;padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    🚪</button>
+                    style="padding:0.4rem 0.8rem;background:rgba(255,255,255,0.05);
+                           border:1px solid var(--glass-border);border-radius:8px;
+                           color:white;font-size:0.73rem;cursor:pointer;">
+                    🔄 Actualizar</button>
+                <button onclick="if(typeof window.showRoleSelector==='function')window.showRoleSelector();else if(typeof window.showRoleSelection==='function')window.showRoleSelection();" style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);color:#ffd700;padding:0.32rem 0.65rem;border-radius:6px;cursor:pointer;font-size:0.73rem;font-weight:700;">⇄ Rol</button>
+                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();" style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;padding:0.32rem 0.65rem;border-radius:6px;cursor:pointer;font-size:0.73rem;font-weight:700;">🚪 Salir</button>
             </div>
         </div>
 
@@ -155,8 +147,7 @@ async function openStaffDashboard() {
             <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
             <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
             <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
-            <button onclick="openLiveMatchesView()" class="staff-tab"
-                style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
+            <button onclick="openLiveMatchesView()" class="staff-tab" style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.08);margin-left:0.3rem;">
                 🔴 En Vivo</button>
         </div>
 
@@ -472,67 +463,59 @@ async function _sdLoadMessages() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
     const clubId    = me.clubId;
-    if (!container) return;
 
     if (!clubId) {
-        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⚠️ Sin club asignado.</div>`;
+        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
+            ⚠️ Sin club asignado.</div>`;
         return;
     }
 
     try {
-        const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
+        const { db, collection, getDocs, query, where } = await _sdFS();
 
-        // Buscar threads donde este staff es destinatario (campo staffUid)
-        // y threads donde es parentUid (compatibilidad retroactiva)
-        const [snapStaff, snapParent] = await Promise.all([
-            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
-            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
-        ]);
+        // Buscar hilos donde este usuario es el destinatario (parentUid = me.uid)
+        const snap = await getDocs(query(
+            collection(db, 'cronos_messages'),
+            where('parentUid', '==', me.uid)
+        ));
 
-        const threadsMap = {};
-        snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        const threads = Object.values(threadsMap)
-            .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
-
-        if (!threads.length) {
+        if (snap.empty) {
             container.innerHTML = `
             <div style="text-align:center;padding:4rem;color:var(--text-muted);">
                 <div style="font-size:2rem;margin-bottom:0.8rem;">💬</div>
                 Sin mensajes recibidos aún.<br>
-                <span style="font-size:0.78rem;">Los mensajes de los entrenadores aparecerán aquí.</span>
+                <span style="font-size:0.78rem;">Los mensajes que te envíen los entrenadores aparecerán aquí.</span>
             </div>`;
             return;
         }
 
-        let html = `<div style="margin-bottom:0.8rem;font-size:0.78rem;color:var(--text-muted);">
-            ${threads.length} conversación${threads.length!==1?'es':''}</div>`;
+        let html = `<div style="margin-bottom:1rem;font-size:0.82rem;color:var(--text-muted);">
+            Hilos de mensajes recibidos — ${snap.size}</div>`;
+
+        const threads = [];
+        snap.forEach(d => threads.push({ _id: d.id, ...d.data() }));
+        threads.sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
 
         threads.forEach(t => {
-            const unread    = (t.unreadByStaff || t.unreadByParent || 0);
-            const lastMsg   = t.lastMessage   || '—';
-            const lastT     = t.lastMessageAt
+            const unread  = t.unreadByParent || 0;
+            const lastMsg = t.lastMessage || '—';
+            const lastT   = t.lastMessageAt
                 ? new Date(t.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
                 : '';
-            const isReport  = lastMsg.includes('📊');
-            const isCollective = t.recipientType === 'staff' || (t.messages||[]).some(m=>m.type==='collective_report');
-
             html += `
-            <div class="sd-card ${unread>0?'sd-report-unread':''}"
-                 onclick="sdOpenStaffThread('${t._id}','${t.coachUid||''}','${(t.coachEmail||'').replace(/'/g,"\\'")}')"
+            <div class="sd-card ${unread > 0 ? 'sd-report-unread' : ''}"
+                 onclick="sdOpenThread('${t._id}','${t.coachUid}','${t.coachEmail}')"
                  style="cursor:pointer;">
                 <div style="flex:1;min-width:0;">
                     <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                        ${isCollective?'📊':'✉️'} ${t.coachEmail||'Entrenador'}
-                        ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
-                            border-radius:10px;padding:1px 7px;font-size:0.62rem;
-                            font-weight:700;margin-left:6px;">
-                            ${unread} nuevo${unread>1?'s':''}</span>`:''}
+                        ✉️ ${t.coachEmail || 'Entrenador'}
+                        ${unread > 0 ? `<span style="background:#58a6ff;color:#0a0e14;border-radius:10px;
+                            padding:1px 7px;font-size:0.65rem;font-weight:700;margin-left:6px;">
+                            ${unread} nuevo${unread > 1 ? 's' : ''}</span>` : ''}
                     </div>
-                    <div style="font-size:0.76rem;
-                                color:${unread?'#58a6ff':'var(--text-muted)'};
+                    <div style="font-size:0.76rem;color:${unread?'#58a6ff':'var(--text-muted)'};
                                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${unread?`<strong>🔵 ${lastMsg}</strong>`:lastMsg}
+                        ${unread ? `<strong>🔵 ${lastMsg}</strong>` : lastMsg}
                     </div>
                 </div>
                 <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
@@ -541,89 +524,34 @@ async function _sdLoadMessages() {
 
         container.innerHTML = html;
 
-        window.sdOpenStaffThread = async (threadId, coachUid, coachEmail) => {
+        window.sdOpenThread = async (threadId, coachUid, coachEmail) => {
             if (typeof _loadThreadMessages === 'function') {
-                const { db:db2, doc:doc2, updateDoc:upd } = await _sdFS();
+                // Reutilizar la función del módulo coach comms
+                const { db: db2, doc, updateDoc } = await _sdFS();
+                // Montar mini-chat
                 container.innerHTML = `
                 <div style="display:flex;flex-direction:column;height:100%;">
                     <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;flex-shrink:0;">
-                        <button onclick="switchStaffTab('mensajes')"
-                            style="padding:0.35rem 0.7rem;background:rgba(255,255,255,0.05);
-                                   border:1px solid var(--glass-border);border-radius:7px;
-                                   color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
-                            ← Volver
-                        </button>
-                        <div style="font-weight:700;font-size:0.88rem;">💬 ${coachEmail}</div>
-                    </div>
-                    <div id="thread-messages"
-                         style="flex:1;overflow-y:auto;display:flex;
-                                flex-direction:column;gap:0.5rem;min-height:200px;">
-                        <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
-                    </div>
-                    <!-- Staff puede responder al entrenador -->
-                    <div style="margin-top:0.7rem;border-top:1px solid var(--glass-border);
-                                padding-top:0.7rem;flex-shrink:0;">
-                        <div style="display:flex;gap:0.5rem;align-items:flex-end;">
-                            <textarea id="staff-reply-input"
-                                placeholder="Responder al entrenador… (Enter para enviar)"
-                                rows="2"
-                                style="flex:1;padding:0.55rem 0.75rem;
-                                       background:rgba(255,255,255,0.06);
-                                       border:1px solid var(--glass-border);border-radius:8px;
-                                       color:white;font-size:0.85rem;resize:none;"
-                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){
-                                    event.preventDefault();
-                                    sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}');
-                                }">
-                            </textarea>
-                            <button onclick="sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}')"
-                                class="btn primary" style="padding:0.55rem 0.9rem;flex-shrink:0;">
-                                Enviar ›
-                            </button>
+                        <button onclick="switchStaffTab('mensajes')" class="btn"
+                            style="font-size:0.76rem;color:var(--text-muted);">← Volver</button>
+                        <div style="font-weight:700;font-size:0.88rem;">
+                            💬 ${coachEmail}
                         </div>
                     </div>
+                    <div id="thread-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:0.5rem;min-height:200px;">
+                        <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
+                    </div>
                 </div>`;
-
-                await _loadThreadMessages(threadId, 'parent');  // 'parent' perspective: staff on right
-                try {
-                    const data = {};
-                    data['unreadByStaff']  = 0;
-                    data['unreadByParent'] = 0;
-                    await upd(doc2(db2,'cronos_messages',threadId), data);
-                } catch(_) {}
-            } else {
-                if (typeof showToast==='function') showToast('ℹ️ Módulo de mensajería no cargado.', 3000);
-            }
-        };
-
-        // Staff replies to coach
-        window.sdSendReplyToCoach = async (threadId, coachUid, coachEmail) => {
-            const input = document.getElementById('staff-reply-input');
-            const text  = (input?.value||'').trim();
-            if (!text) return;
-
-            const { db:db2, doc:doc2, getDoc, updateDoc:upd, arrayUnion } = await _sdFS();
-            const newMsg = { sender:'parent', text, timestamp:new Date().toISOString() };
-
-            try {
-                const snap = await getDoc(doc2(db2,'cronos_messages',threadId));
-                const preview = text.length>60 ? text.substring(0,60)+'…' : text;
-                if (snap.exists()) {
-                    await upd(doc2(db2,'cronos_messages',threadId), {
-                        messages: arrayUnion(newMsg),
-                        lastMessage: preview, lastMessageAt: newMsg.timestamp,
-                        unreadByCoach: (snap.data().unreadByCoach||0) + 1,
-                    });
-                }
-                if (input) input.value = '';
                 await _loadThreadMessages(threadId, 'parent');
-            } catch(e) {
-                if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 3000);
+                try { await updateDoc(doc(db2,'cronos_messages',threadId), { unreadByParent: 0 }); } catch(e) {}
+            } else {
+                showToast('ℹ️ Módulo de mensajería no cargado.', 3000);
             }
         };
 
     } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${e.message}</div>`;
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">
+            ⚠️ ${e.message}</div>`;
     }
 }
 
