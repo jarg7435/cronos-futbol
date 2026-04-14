@@ -1665,6 +1665,54 @@ async function openTrainingNotification() {
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
 
+    // Build 7-day rows
+    const days = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+    const dayRows = days.map((d, i) => `
+        <div class="tr-day-row" id="tr-day-${i}"
+            style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;">
+            <!-- Cabecera día -->
+            <div onclick="document.getElementById('tr-day-body-${i}').classList.toggle('hidden');
+                          this.querySelector('.tr-chev').textContent=document.getElementById('tr-day-body-${i}').classList.contains('hidden')?'▸':'▾';"
+                style="display:flex;align-items:center;gap:0.5rem;padding:0.55rem 0.8rem;
+                       cursor:pointer;background:rgba(255,255,255,0.03);user-select:none;">
+                <input type="checkbox" id="tr-cb-${i}" onclick="event.stopPropagation();
+                    var body=document.getElementById('tr-day-body-${i}');
+                    if(this.checked){body.classList.remove('hidden');}
+                    else{body.classList.add('hidden');}"
+                    style="width:16px;height:16px;cursor:pointer;accent-color:var(--secondary);">
+                <label for="tr-cb-${i}"
+                    style="font-size:0.82rem;font-weight:700;color:var(--text-muted);cursor:pointer;flex:1;">
+                    ${d}</label>
+                <span class="tr-chev" style="font-size:0.7rem;color:var(--text-muted);">▸</span>
+            </div>
+            <!-- Cuerpo día (colapsable) -->
+            <div id="tr-day-body-${i}" class="hidden"
+                style="padding:0.6rem 0.8rem;display:grid;grid-template-columns:1fr 1fr;
+                       gap:0.5rem;background:rgba(255,255,255,0.01);">
+                <div>
+                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">🕐 Hora</label>
+                    <input type="time" id="tr-time-${i}"
+                        style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.06);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:6px;
+                               color:white;font-size:0.8rem;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">📍 Lugar</label>
+                    <input type="text" id="tr-place-${i}" placeholder="Campo…"
+                        style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.06);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:6px;
+                               color:white;font-size:0.8rem;box-sizing:border-box;">
+                </div>
+                <div style="grid-column:1/-1;">
+                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">📝 Notas</label>
+                    <input type="text" id="tr-note-${i}" placeholder="Ropa especial, material…"
+                        style="width:100%;padding:0.4rem;background:rgba(255,255,255,0.06);
+                               border:1px solid rgba(255,255,255,0.1);border-radius:6px;
+                               color:white;font-size:0.8rem;box-sizing:border-box;">
+                </div>
+            </div>
+        </div>`).join('');
+
     modal.style.display = 'flex';
     modal.innerHTML = `
     <div class="modal-content" style="width:min(96vw,520px);max-height:90vh;
@@ -1672,134 +1720,111 @@ async function openTrainingNotification() {
         <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--glass-border);
                     display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
             <h3 style="margin:0;font-size:1rem;color:var(--secondary);">
-                📅 Aviso de Entrenamiento
+                📅 Planificación Semanal de Entrenamientos
             </h3>
             <button onclick="openUnifiedCommsMenu()"
                 style="background:none;border:none;color:var(--text-muted);
                        font-size:1.3rem;cursor:pointer;">✕</button>
         </div>
-        <div style="flex:1;overflow-y:auto;padding:1rem 1.2rem;">
-            <div style="display:grid;gap:0.75rem;">
-                <div>
-                    <label style="font-size:0.76rem;color:var(--text-muted);
-                                  display:block;margin-bottom:0.3rem;">📅 Fecha y hora</label>
-                    <input type="datetime-local" id="tr-datetime"
-                        style="width:100%;padding:0.5rem 0.75rem;
-                               background:rgba(255,255,255,0.06);
-                               border:1px solid rgba(255,255,255,0.1);
-                               border-radius:8px;color:white;font-size:0.85rem;
-                               box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="font-size:0.76rem;color:var(--text-muted);
-                                  display:block;margin-bottom:0.3rem;">📍 Lugar / Campo</label>
-                    <input type="text" id="tr-location" placeholder="Campo de fútbol…"
-                        style="width:100%;padding:0.5rem 0.75rem;
-                               background:rgba(255,255,255,0.06);
-                               border:1px solid rgba(255,255,255,0.1);
-                               border-radius:8px;color:white;font-size:0.85rem;
-                               box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="font-size:0.76rem;color:var(--text-muted);
-                                  display:block;margin-bottom:0.3rem;">📝 Notas</label>
-                    <textarea id="tr-notes" rows="3"
-                        placeholder="Cambio de horario, material, instrucciones…"
-                        style="width:100%;padding:0.5rem 0.75rem;
-                               background:rgba(255,255,255,0.06);
-                               border:1px solid rgba(255,255,255,0.1);
-                               border-radius:8px;color:white;font-size:0.85rem;
-                               box-sizing:border-box;resize:none;"></textarea>
-                </div>
-                <div style="background:rgba(240,136,62,0.06);
-                            border:1px solid rgba(240,136,62,0.2);
-                            border-radius:8px;padding:0.7rem;">
-                    <div style="font-size:0.72rem;color:#f0883e;
-                                font-weight:700;margin-bottom:0.3rem;">
-                        📤 Se enviará a:
-                    </div>
-                    <div style="font-size:0.78rem;color:var(--text-muted);">
-                        Padres/tutores (WhatsApp) +
-                        Dirección deportiva (notificación app)
-                    </div>
-                </div>
-            </div>
+        <p style="margin:0.5rem 1.2rem;font-size:0.75rem;color:var(--text-muted);">
+            Activa los días que habrá entrenamiento, rellena hora y lugar, y envía a los padres.
+        </p>
+        <style>
+            .tr-day-row .hidden { display:none!important; }
+        </style>
+        <div style="flex:1;overflow-y:auto;padding:0.6rem 1.2rem;display:grid;gap:0.4rem;">
+            ${dayRows}
         </div>
-        <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);
+        <div style="background:rgba(240,136,62,0.05);border-top:1px solid rgba(240,136,62,0.15);
+                    padding:0.55rem 1.2rem;font-size:0.72rem;color:#f0883e;flex-shrink:0;">
+            📤 Se enviará a <strong>padres/tutores</strong> (WhatsApp) + <strong>dirección deportiva</strong> (app)
+        </div>
+        <div style="padding:0.8rem 1.2rem;border-top:1px solid var(--glass-border);
                     display:flex;gap:0.5rem;flex-shrink:0;">
             <button onclick="openUnifiedCommsMenu()" class="btn"
                 style="color:var(--text-muted);">← Volver</button>
-            <button onclick="_sendTrainingNotificationNow()"
-                style="flex:1;padding:0.5rem;
-                       background:rgba(240,136,62,0.15);
-                       border:1px solid rgba(240,136,62,0.4);
-                       border-radius:7px;color:#f0883e;
-                       font-weight:700;cursor:pointer;font-size:0.85rem;">
-                📅 Enviar Aviso de Entrenamiento
+            <button onclick="_sendWeeklyTraining()"
+                style="flex:1;padding:0.5rem;background:rgba(240,136,62,0.15);
+                       border:1px solid rgba(240,136,62,0.4);border-radius:7px;
+                       color:#f0883e;font-weight:700;cursor:pointer;font-size:0.85rem;">
+                📅 Enviar Planificación Semanal
             </button>
         </div>
     </div>`;
 }
 
-window._sendTrainingNotificationNow = async function() {
-    const me       = window._cronosCurrentUser;
-    const datetime = document.getElementById('tr-datetime')?.value || '';
-    const location = document.getElementById('tr-location')?.value.trim() || '';
-    const notes    = document.getElementById('tr-notes')?.value.trim() || '';
+window._sendWeeklyTraining = async function() {
+    const me = window._cronosCurrentUser;
+    const days = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 
-    if (!datetime && !location) {
-        if (typeof showToast==='function') showToast('⚠️ Indica al menos fecha/hora o lugar', 3000);
+    const selected = [];
+    for (let i = 0; i < 7; i++) {
+        if (!document.getElementById('tr-cb-' + i)?.checked) continue;
+        const time  = document.getElementById('tr-time-' + i)?.value || '';
+        const place = document.getElementById('tr-place-' + i)?.value.trim() || '';
+        const note  = document.getElementById('tr-note-' + i)?.value.trim() || '';
+        if (!time && !place) continue;  // skip días sin datos
+        selected.push({ day: days[i], time, place, note });
+    }
+
+    if (!selected.length) {
+        if (typeof showToast === 'function') showToast('⚠️ Activa al menos un día con hora o lugar', 3000);
         return;
     }
-    if (typeof showSpinner==='function') showSpinner('Enviando aviso…');
+    if (typeof showSpinner === 'function') showSpinner('Enviando planificación…');
+
     try {
         const { db, collection, getDocs, query, where, setDoc, doc } = await _cFS();
 
         const [dirSnap, coordSnap] = await Promise.all([
-            getDocs(query(collection(db,'users'),where('clubId','==',me.clubId||''),where('role','==','director'))).catch(()=>({forEach:()=>{}})),
-            getDocs(query(collection(db,'users'),where('clubId','==',me.clubId||''),where('role','==','coordinator'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','director'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','coordinator'))).catch(()=>({forEach:()=>{}})),
         ]);
         const staff = [];
-        dirSnap.forEach(d   => staff.push({uid:d.id,...d.data()}));
+        dirSnap.forEach(d => staff.push({uid:d.id,...d.data()}));
         coordSnap.forEach(d => staff.push({uid:d.id,...d.data()}));
 
-        const dtFmt = datetime
-            ? new Date(datetime).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
-            : '';
-        const msg = '📅 *AVISO DE ENTRENAMIENTO*\n━━━━━━━━━━━━━━━━\n' +
-                   (dtFmt ? `📅 ${dtFmt}\n` : '') +
-                   (location ? `📍 ${location}\n` : '') +
-                   (notes ? `📝 ${notes}\n` : '') +
-                   '\n_Cronos Fútbol_ ⚽';
+        const msgLines = ['📅 *PLANIFICACIÓN DE ENTRENAMIENTOS*', '━━━━━━━━━━━━━━━━'];
+        selected.forEach(s => {
+            msgLines.push(`\n📆 *${s.day}*`);
+            if (s.time)  msgLines.push(`   🕐 ${s.time}`);
+            if (s.place) msgLines.push(`   📍 ${s.place}`);
+            if (s.note)  msgLines.push(`   📝 ${s.note}`);
+        });
+        msgLines.push('\n_Cronos Fútbol_ ⚽');
+        const msg = msgLines.join('\n');
 
+        // Notificar a staff vía app
         for (const s of staff) {
             await setDoc(doc(db,'cronos_notifications',`tr_staff_${s.uid}_${Date.now().toString(36)}`), {
                 type:'planificacion_semanal', clubId:me.clubId||null,
-                parentUid:s.uid, staffUid:s.uid,
-                coachEmail:me.email, datetime, location, notes, message:msg,
+                parentUid:s.uid, coachEmail:me.email,
+                schedule: selected, message:msg,
                 createdAt:new Date().toISOString(),
             });
         }
 
-        if (typeof loadEmailConfig==='function') await loadEmailConfig();
-        const contacts = (typeof emailConfig!=='undefined' && emailConfig?.contacts) ? emailConfig.contacts : [];
-        const parents  = contacts.filter(c => c.type==='parent' && c.phone);
+        // WhatsApp a padres
+        if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+        const contacts = (typeof emailConfig !== 'undefined' && emailConfig?.contacts) ? emailConfig.contacts : [];
+        const parents  = contacts.filter(c => c.type === 'parent' && c.phone);
         for (const p of parents) {
-            window.open('https://wa.me/'+p.phone.replace(/\D/g,'')+'?text='+encodeURIComponent(msg),'_blank');
-            await new Promise(r=>setTimeout(r,350));
+            window.open('https://wa.me/' + p.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent(msg), '_blank');
+            await new Promise(r => setTimeout(r, 400));
         }
 
-        if (typeof hideSpinner==='function') hideSpinner();
-        if (typeof showToast==='function')
-            showToast(`✅ Aviso enviado${staff.length?` a ${staff.length} dirección`:''}${parents.length?` + ${parents.length} padres`:''}`, 5000);
+        if (typeof hideSpinner === 'function') hideSpinner();
+        if (typeof showToast === 'function')
+            showToast(`✅ Enviado: ${selected.length} días${staff.length ? ` a ${staff.length} staff` : ''}${parents.length ? ` + ${parents.length} padres` : ''}`, 5000);
         openUnifiedCommsMenu();
     } catch(e) {
-        if (typeof hideSpinner==='function') hideSpinner();
-        if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 4000);
-        console.error('[TrainingNotif]', e);
+        if (typeof hideSpinner === 'function') hideSpinner();
+        if (typeof showToast  === 'function') showToast('⚠️ Error: ' + e.message, 4000);
+        console.error('[WeeklyTraining]', e);
     }
 };
 window.openTrainingNotification = openTrainingNotification;
+
 
 async function openUnifiedCommsMenu() {
     const modal = document.getElementById('setup-modal');
