@@ -49,9 +49,9 @@ async function openTestRolePicker(targetRole) {
                            color:white;font-size:0.88rem;cursor:pointer;transition:all 0.2s;"
                     onmouseover="this.style.background='rgba(88,166,255,0.1)';this.style.borderColor='rgba(88,166,255,0.3)';"
                     onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.borderColor='rgba(255,255,255,0.1)';">
-                    🏟️ <strong>${c.name || c.id}</strong>
+                    🏟️ <strong>${typeof escapeHtml==='function'?escapeHtml(c.name||c.id):c.name||c.id}</strong>
                     <span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:2px;">
-                        ${c.adminEmail || 'Sin admin'} · Plan: ${c.plan || 'free'}
+                        ${typeof escapeHtml==='function'?escapeHtml(c.adminEmail||'Sin admin'):c.adminEmail||'Sin admin'} · Plan: ${typeof escapeHtml==='function'?escapeHtml(c.plan||'free'):c.plan||'free'}
                     </span>
                 </button>`).join('')
             }
@@ -113,7 +113,7 @@ async function openStaffDashboard() {
             <div>
                 <h2 style="margin:0;font-size:1.15rem;display:flex;align-items:center;gap:0.7rem;">
                     🏢 Panel de Dirección:
-                    <span style="color:var(--primary);">${me.clubName || 'Mi Club'}</span>
+                    <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||'Mi Club'):me.clubName||'Mi Club'}</span>
                     ${isSA ? `<span style="font-size:0.65rem;background:rgba(255,215,0,0.12);
                         border:1px solid rgba(255,215,0,0.3);color:#ffd700;
                         padding:2px 7px;border-radius:5px;font-weight:700;">🧪 PRUEBA</span>` : ''}
@@ -131,12 +131,20 @@ async function openStaffDashboard() {
                            color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
                     🔄 Cambiar Club</button>` : ''}
                 <button onclick="openStaffDashboard()"
-                    style="padding:0.4rem 0.8rem;background:rgba(255,255,255,0.05);
-                           border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.73rem;cursor:pointer;">
-                    🔄 Actualizar</button>
-                <button onclick="if(typeof window.showRoleSelector==='function')window.showRoleSelector();else if(typeof window.showRoleSelection==='function')window.showRoleSelection();" style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);color:#ffd700;padding:0.32rem 0.65rem;border-radius:6px;cursor:pointer;font-size:0.73rem;font-weight:700;">⇄ Rol</button>
-                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();" style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;padding:0.32rem 0.65rem;border-radius:6px;cursor:pointer;font-size:0.73rem;font-weight:700;">🚪 Salir</button>
+                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                           color:var(--text-muted);padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    🔄</button>
+                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
+                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
+                           color:#ffd700;padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    ⇄ Rol</button>
+                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
+                    style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                           color:#ff5858;padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    🚪</button>
             </div>
         </div>
 
@@ -147,7 +155,8 @@ async function openStaffDashboard() {
             <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
             <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
             <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
-            <button onclick="openLiveMatchesView()" class="staff-tab" style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.08);margin-left:0.3rem;">
+            <button onclick="openLiveMatchesView()" class="staff-tab"
+                style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
                 🔴 En Vivo</button>
         </div>
 
@@ -242,10 +251,10 @@ async function _sdLoadEvents(type) {
                         <span style="font-size:0.73rem;color:var(--text-muted);">${date}</span>
                     </div>
                     <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.15rem;">
-                        ${type==='convocatoria' ? `🆚 vs ${d.rival||'Rival'}` : `⚽ ${d.category||'Entrenamiento'}`}
+                        ${type==='convocatoria' ? `🆚 vs ${typeof escapeHtml==='function'?escapeHtml(d.rival||'Rival'):d.rival||'Rival'}` : `⚽ ${typeof escapeHtml==='function'?escapeHtml(d.category||'Entrenamiento'):d.category||'Entrenamiento'}`}
                     </div>
                     <div style="font-size:0.76rem;color:var(--text-muted);">
-                        Por: <strong>${d.coachEmail||'Entrenador'}</strong>
+                        Por: <strong>${typeof escapeHtml==='function'?escapeHtml(d.coachEmail||'Entrenador'):d.coachEmail||'Entrenador'}</strong>
                         ${d.players ? ` · 👥 ${d.players.length} convocados` : ''}
                     </div>
                 </div>
@@ -266,7 +275,7 @@ async function _sdLoadEvents(type) {
             alert(txt);
         };
     } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${e.message}</div>`;
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 }
 
@@ -333,7 +342,7 @@ async function _sdLoadReports() {
                 📊 Informes recibidos — ${sortedMatches.length} partido${sortedMatches.length !== 1 ? 's' : ''}
             </h3>
             <span style="font-size:0.73rem;color:var(--text-muted);">
-                Club: <strong style="color:var(--primary);">${me.clubName || clubId}</strong>
+                Club: <strong style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||clubId):me.clubName||clubId}</strong>
             </span>
         </div>`;
 
@@ -352,12 +361,12 @@ async function _sdLoadReports() {
                 <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.35rem;">
                     <div>
                         <div style="font-weight:700;font-size:1rem;">
-                            🆚 vs <span style="color:var(--primary);">${m.rival || 'Sin rival'}</span>
+                            🆚 vs <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>
                         </div>
                         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
                             📅 ${dateStr} ·
                             ⚽ Marcador: <strong style="color:white;">${score}</strong> ·
-                            👤 ${m.coachEmail || 'Entrenador'}
+                            👤 ${typeof escapeHtml==='function'?escapeHtml(m.coachEmail||'Entrenador'):m.coachEmail||'Entrenador'}
                         </div>
                     </div>
                     <div style="text-align:right;flex-shrink:0;">
@@ -393,7 +402,7 @@ async function _sdLoadReports() {
                                 .map(p => `
                                 <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
                                     <td style="padding:0.35rem 0.5rem;color:var(--primary);font-weight:700;">${p.playerNumber || '—'}</td>
-                                    <td style="padding:0.35rem 0.5rem;font-weight:600;">${p.playerAlias || 'Jugador'}</td>
+                                    <td style="padding:0.35rem 0.5rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(p.playerAlias||'Jugador'):p.playerAlias||'Jugador'}</td>
                                     <td style="padding:0.35rem 0.5rem;text-align:center;">${p.minutesPlayed || '0:00'}</td>
                                     <td style="padding:0.35rem 0.5rem;text-align:center;">
                                         ${p.goals > 0 ? `<strong style="color:#ffa500;">${p.goals}</strong>` : '—'}
@@ -431,7 +440,7 @@ async function _sdLoadReports() {
                                   ev.type === 'red'     ? '🟥' :
                                   ev.type === 'sub_in'  ? '▶️' :
                                   ev.type === 'sub_out' ? '⏸️' : '•'}
-                                ${ev.player}
+                                ${typeof escapeHtml==='function'?escapeHtml(ev.player):ev.player}
                             </span>`).join('')}
                     </div>` : ''}
                 </div>
@@ -452,7 +461,7 @@ async function _sdLoadReports() {
     } catch(e) {
         console.error('[StaffDashboard] Error cargando informes:', e);
         container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">
-            ⚠️ Error al cargar informes: ${e.message}</div>`;
+            ⚠️ Error al cargar informes: ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 }
 
@@ -463,59 +472,67 @@ async function _sdLoadMessages() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
     const clubId    = me.clubId;
+    if (!container) return;
 
     if (!clubId) {
-        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
-            ⚠️ Sin club asignado.</div>`;
+        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⚠️ Sin club asignado.</div>`;
         return;
     }
 
     try {
-        const { db, collection, getDocs, query, where } = await _sdFS();
+        const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
-        // Buscar hilos donde este usuario es el destinatario (parentUid = me.uid)
-        const snap = await getDocs(query(
-            collection(db, 'cronos_messages'),
-            where('parentUid', '==', me.uid)
-        ));
+        // Buscar threads donde este staff es destinatario (campo staffUid)
+        // y threads donde es parentUid (compatibilidad retroactiva)
+        const [snapStaff, snapParent] = await Promise.all([
+            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
+        ]);
 
-        if (snap.empty) {
+        const threadsMap = {};
+        snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        const threads = Object.values(threadsMap)
+            .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
+
+        if (!threads.length) {
             container.innerHTML = `
             <div style="text-align:center;padding:4rem;color:var(--text-muted);">
                 <div style="font-size:2rem;margin-bottom:0.8rem;">💬</div>
                 Sin mensajes recibidos aún.<br>
-                <span style="font-size:0.78rem;">Los mensajes que te envíen los entrenadores aparecerán aquí.</span>
+                <span style="font-size:0.78rem;">Los mensajes de los entrenadores aparecerán aquí.</span>
             </div>`;
             return;
         }
 
-        let html = `<div style="margin-bottom:1rem;font-size:0.82rem;color:var(--text-muted);">
-            Hilos de mensajes recibidos — ${snap.size}</div>`;
-
-        const threads = [];
-        snap.forEach(d => threads.push({ _id: d.id, ...d.data() }));
-        threads.sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
+        let html = `<div style="margin-bottom:0.8rem;font-size:0.78rem;color:var(--text-muted);">
+            ${threads.length} conversación${threads.length!==1?'es':''}</div>`;
 
         threads.forEach(t => {
-            const unread  = t.unreadByParent || 0;
-            const lastMsg = t.lastMessage || '—';
-            const lastT   = t.lastMessageAt
+            const unread    = (t.unreadByStaff || t.unreadByParent || 0);
+            const lastMsg   = t.lastMessage   || '—';
+            const lastT     = t.lastMessageAt
                 ? new Date(t.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
                 : '';
+            const isReport  = lastMsg.includes('📊');
+            const isCollective = t.recipientType === 'staff' || (t.messages||[]).some(m=>m.type==='collective_report');
+
             html += `
-            <div class="sd-card ${unread > 0 ? 'sd-report-unread' : ''}"
-                 onclick="sdOpenThread('${t._id}','${t.coachUid}','${t.coachEmail}')"
+            <div class="sd-card ${unread>0?'sd-report-unread':''}"
+                 onclick="sdOpenStaffThread('${t._id}','${t.coachUid||''}','${(t.coachEmail||'').replace(/'/g,"\\'")}')"
                  style="cursor:pointer;">
                 <div style="flex:1;min-width:0;">
                     <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                        ✉️ ${t.coachEmail || 'Entrenador'}
-                        ${unread > 0 ? `<span style="background:#58a6ff;color:#0a0e14;border-radius:10px;
-                            padding:1px 7px;font-size:0.65rem;font-weight:700;margin-left:6px;">
-                            ${unread} nuevo${unread > 1 ? 's' : ''}</span>` : ''}
+                        ${isCollective?'📊':'✉️'} ${typeof escapeHtml==='function'?escapeHtml(t.coachEmail||'Entrenador'):t.coachEmail||'Entrenador'}
+                        ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
+                            border-radius:10px;padding:1px 7px;font-size:0.62rem;
+                            font-weight:700;margin-left:6px;">
+                            ${unread} nuevo${unread>1?'s':''}</span>`:''}
                     </div>
-                    <div style="font-size:0.76rem;color:${unread?'#58a6ff':'var(--text-muted)'};
+                    <div style="font-size:0.76rem;
+                                color:${unread?'#58a6ff':'var(--text-muted)'};
                                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${unread ? `<strong>🔵 ${lastMsg}</strong>` : lastMsg}
+                        ${unread?`<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>`:typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}
                     </div>
                 </div>
                 <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
@@ -524,34 +541,89 @@ async function _sdLoadMessages() {
 
         container.innerHTML = html;
 
-        window.sdOpenThread = async (threadId, coachUid, coachEmail) => {
+        window.sdOpenStaffThread = async (threadId, coachUid, coachEmail) => {
             if (typeof _loadThreadMessages === 'function') {
-                // Reutilizar la función del módulo coach comms
-                const { db: db2, doc, updateDoc } = await _sdFS();
-                // Montar mini-chat
+                const { db:db2, doc:doc2, updateDoc:upd } = await _sdFS();
                 container.innerHTML = `
                 <div style="display:flex;flex-direction:column;height:100%;">
                     <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;flex-shrink:0;">
-                        <button onclick="switchStaffTab('mensajes')" class="btn"
-                            style="font-size:0.76rem;color:var(--text-muted);">← Volver</button>
-                        <div style="font-weight:700;font-size:0.88rem;">
-                            💬 ${coachEmail}
-                        </div>
+                        <button onclick="switchStaffTab('mensajes')"
+                            style="padding:0.35rem 0.7rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid var(--glass-border);border-radius:7px;
+                                   color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
+                            ← Volver
+                        </button>
+                        <div style="font-weight:700;font-size:0.88rem;">💬 ${typeof escapeHtml==='function'?escapeHtml(coachEmail):coachEmail}</div>
                     </div>
-                    <div id="thread-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:0.5rem;min-height:200px;">
+                    <div id="thread-messages"
+                         style="flex:1;overflow-y:auto;display:flex;
+                                flex-direction:column;gap:0.5rem;min-height:200px;">
                         <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
                     </div>
+                    <!-- Staff puede responder al entrenador -->
+                    <div style="margin-top:0.7rem;border-top:1px solid var(--glass-border);
+                                padding-top:0.7rem;flex-shrink:0;">
+                        <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                            <textarea id="staff-reply-input"
+                                placeholder="Responder al entrenador… (Enter para enviar)"
+                                rows="2"
+                                style="flex:1;padding:0.55rem 0.75rem;
+                                       background:rgba(255,255,255,0.06);
+                                       border:1px solid var(--glass-border);border-radius:8px;
+                                       color:white;font-size:0.85rem;resize:none;"
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){
+                                    event.preventDefault();
+                                    sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}');
+                                }">
+                            </textarea>
+                            <button onclick="sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}')"
+                                class="btn primary" style="padding:0.55rem 0.9rem;flex-shrink:0;">
+                                Enviar ›
+                            </button>
+                        </div>
+                    </div>
                 </div>`;
-                await _loadThreadMessages(threadId, 'parent');
-                try { await updateDoc(doc(db2,'cronos_messages',threadId), { unreadByParent: 0 }); } catch(e) {}
+
+                await _loadThreadMessages(threadId, 'parent');  // 'parent' perspective: staff on right
+                try {
+                    const data = {};
+                    data['unreadByStaff']  = 0;
+                    data['unreadByParent'] = 0;
+                    await upd(doc2(db2,'cronos_messages',threadId), data);
+                } catch(_) {}
             } else {
-                showToast('ℹ️ Módulo de mensajería no cargado.', 3000);
+                if (typeof showToast==='function') showToast('ℹ️ Módulo de mensajería no cargado.', 3000);
+            }
+        };
+
+        // Staff replies to coach
+        window.sdSendReplyToCoach = async (threadId, coachUid, coachEmail) => {
+            const input = document.getElementById('staff-reply-input');
+            const text  = (input?.value||'').trim();
+            if (!text) return;
+
+            const { db:db2, doc:doc2, getDoc, updateDoc:upd, arrayUnion } = await _sdFS();
+            const newMsg = { sender:'parent', text, timestamp:new Date().toISOString() };
+
+            try {
+                const snap = await getDoc(doc2(db2,'cronos_messages',threadId));
+                const preview = text.length>60 ? text.substring(0,60)+'…' : text;
+                if (snap.exists()) {
+                    await upd(doc2(db2,'cronos_messages',threadId), {
+                        messages: arrayUnion(newMsg),
+                        lastMessage: preview, lastMessageAt: newMsg.timestamp,
+                        unreadByCoach: (snap.data().unreadByCoach||0) + 1,
+                    });
+                }
+                if (input) input.value = '';
+                await _loadThreadMessages(threadId, 'parent');
+            } catch(e) {
+                if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 3000);
             }
         };
 
     } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">
-            ⚠️ ${e.message}</div>`;
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 }
 

@@ -1,965 +1,634 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Central de Informes de Club v2.0
-//
-//  CORRECCIONES v2.0:
-//  - Línea de tiempo completa en el detalle de cada informe
-//    (goles, tarjetas, cambios, lesiones con su minuto)
-//  - Agrupación por partido en la lista principal
-//  - Informe individual profesional por jugador (para padres)
-//    con logo del club
-//  - Botón de actualizar en la cabecera
-//  - Envío correcto de informe individual a cada padre
+//  CRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v2.0
+//  FIXED: Tab Informes lee cronos_player_reports en tiempo real
+//  ADDED: Modo Prueba multi-rol para SuperAdmin
 // ════════════════════════════════════════════════════════════════════
 
-'use strict';
-
 // ── Helper Firestore ─────────────────────────────────────────────────
-async function _rpFS() {
-    const m  = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+async function _sdFS() {
+    const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     return { ...m, db: window._cronos_auth?.db };
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  openClubReports() — abre el panel de informes
+//  MODO PRUEBA MULTI-ROL — Solo SuperAdmin
+//  Permite al SA actuar temporalmente con el clubId de cualquier club
 // ════════════════════════════════════════════════════════════════════
-async function openClubReports() {
-    const me = window._getEffectiveUser
-        ? window._getEffectiveUser()
-        : window._cronosCurrentUser;
-    if (!me) {
-        if (typeof showToast === 'function')
-            showToast('⚠️ No tienes un club asignado.', 4000);
+window._testRoleClubId = null; // club seleccionado en modo prueba
+
+async function openTestRolePicker(targetRole) {
+    const me = window._cronosCurrentUser;
+    if (!['superadmin','admin'].includes(me?.role)) return;
+
+    const { db, collection, getDocs } = await _sdFS();
+    const snap  = await getDocs(collection(db, 'clubs'));
+    const clubs = [];
+    snap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="max-width:460px;padding:1.5rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;">
+            <div>
+                <h3 style="margin:0;font-size:1rem;">🧪 Modo Prueba — ${targetRole}</h3>
+                <p style="margin:0.2rem 0 0;font-size:0.75rem;color:var(--text-muted);">
+                    Selecciona el club en el que quieres actuar como <strong>${targetRole}</strong>
+                </p>
+            </div>
+            <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer;">✕</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;max-height:380px;overflow-y:auto;">
+            ${clubs.length === 0
+                ? `<p style="color:var(--text-muted);text-align:center;padding:2rem;">No hay clubes creados.</p>`
+                : clubs.map(c => `
+                <button onclick="window._applyTestRole('${c.id}','${(c.name||'').replace(/'/g,"\\'")}','${targetRole}')"
+                    style="text-align:left;padding:0.9rem 1rem;background:rgba(255,255,255,0.04);
+                           border:1px solid rgba(255,255,255,0.1);border-radius:10px;
+                           color:white;font-size:0.88rem;cursor:pointer;transition:all 0.2s;"
+                    onmouseover="this.style.background='rgba(88,166,255,0.1)';this.style.borderColor='rgba(88,166,255,0.3)';"
+                    onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.borderColor='rgba(255,255,255,0.1)';">
+                    🏟️ <strong>${typeof escapeHtml==='function'?escapeHtml(c.name||c.id):c.name||c.id}</strong>
+                    <span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:2px;">
+                        ${typeof escapeHtml==='function'?escapeHtml(c.adminEmail||'Sin admin'):c.adminEmail||'Sin admin'} · Plan: ${typeof escapeHtml==='function'?escapeHtml(c.plan||'free'):c.plan||'free'}
+                    </span>
+                </button>`).join('')
+            }
+        </div>
+    </div>`;
+
+    window._applyTestRole = (clubId, clubName, role) => {
+        window._testRoleClubId = clubId;
+        // Inyectar temporalmente el clubId en el usuario activo
+        window._cronosCurrentUser.clubId   = clubId;
+        window._cronosCurrentUser.clubName = clubName;
+        window._cronosCurrentUser._activeRole = role === 'director' ? 'director' : 'coordinator';
+        showToast(`🧪 Modo prueba: ${role} en "${clubName}"`, 3500);
+        modal.style.display = 'none';
+        if (role === 'director' || role === 'coordinator') {
+            openStaffDashboard();
+        } else if (role === 'coach' || role === 'user') {
+            if (typeof init === 'function') init('user');
+            document.getElementById('main-container').style.display = 'flex';
+            document.getElementById('main-header').style.display    = 'flex';
+        } else if (role === 'parent') {
+            if (typeof openParentPanel === 'function') openParentPanel();
+        } else if (role === 'club_admin') {
+            if (typeof openClubAdminPanel === 'function') openClubAdminPanel(clubId);
+        }
+    };
+}
+window.openTestRolePicker = openTestRolePicker;
+
+// ════════════════════════════════════════════════════════════════════
+//  PANEL PRINCIPAL DE DIRECCIÓN
+// ════════════════════════════════════════════════════════════════════
+async function openStaffDashboard() {
+    const me         = window._cronosCurrentUser;
+    const activeRole = me?._activeRole || me?.role;
+    const isSA       = ['superadmin','admin'].includes(me?.role);
+
+    // Si el SA no tiene clubId, lanzar selector de prueba
+    if (isSA && !me?.clubId) {
+        await openTestRolePicker('director');
+        return;
+    }
+
+    if (!me || (!isSA && !['director','coordinator'].includes(activeRole))) {
+        showToast('⚠️ No tienes permisos para acceder al panel de dirección.', 4000);
         return;
     }
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-    <div class="modal-content" style="width:min(96vw,900px);max-height:93vh;
-         display:flex;flex-direction:column;overflow:hidden;padding:0;">
+    <div class="modal-content" style="width:min(96vw,960px);max-height:94vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;">
 
-        <!-- ── Header ─────────────────────────────────────── -->
+        <!-- Header -->
         <div style="display:flex;justify-content:space-between;align-items:center;
-                    padding:0.85rem 1.3rem;
-                    border-bottom:1px solid var(--glass-border);
-                    flex-shrink:0;flex-wrap:wrap;gap:0.4rem;">
-            <h2 style="margin:0;font-size:1rem;display:flex;
-                        align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                📊 Informes del Club:
-                <span style="color:var(--primary);">
-                    ${me.clubName || 'Mi Club'}
-                </span>
-            </h2>
-            <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
-                <button onclick="_loadClubReports()"
-                        title="Recargar informes"
-                        style="padding:0.35rem 0.7rem;
-                               background:rgba(255,255,255,0.05);
-                               border:1px solid var(--glass-border);
-                               border-radius:7px;color:white;
-                               font-size:0.73rem;cursor:pointer;">
-                    🔄 Actualizar
-                </button>
-                <button onclick="openSendReportsModal()"
-                    style="padding:0.35rem 0.8rem;
-                           background:rgba(63,185,80,0.12);
-                           border:1px solid rgba(63,185,80,0.35);
-                           border-radius:7px;color:#3fb950;
-                           font-size:0.73rem;font-weight:700;cursor:pointer;">
-                    📤 Enviar Informes
-                </button>
-                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();"
-                    style="background:none;border:none;
-                           color:var(--text-muted);font-size:1.3rem;cursor:pointer;"
-                    title="Cerrar">✕</button>
+                    padding:1.2rem 1.5rem;background:linear-gradient(to right,#161b22,#0d1117);
+                    border-bottom:1px solid var(--glass-border);flex-shrink:0;">
+            <div>
+                <h2 style="margin:0;font-size:1.15rem;display:flex;align-items:center;gap:0.7rem;">
+                    🏢 Panel de Dirección:
+                    <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||'Mi Club'):me.clubName||'Mi Club'}</span>
+                    ${isSA ? `<span style="font-size:0.65rem;background:rgba(255,215,0,0.12);
+                        border:1px solid rgba(255,215,0,0.3);color:#ffd700;
+                        padding:2px 7px;border-radius:5px;font-weight:700;">🧪 PRUEBA</span>` : ''}
+                </h2>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">
+                    ${activeRole === 'director' ? '📋 Director Deportivo' : '🎯 Coordinador'}
+                    ${isSA ? ' · SuperAdmin en modo prueba' : ''}
+                </div>
+            </div>
+            <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;">
+                ${isSA ? `
+                <button onclick="openTestRolePicker('director')"
+                    style="padding:0.4rem 0.8rem;background:rgba(255,215,0,0.08);
+                           border:1px solid rgba(255,215,0,0.3);border-radius:8px;
+                           color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
+                    🔄 Cambiar Club</button>` : ''}
+                <button onclick="openStaffDashboard()"
+                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                           color:var(--text-muted);padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    🔄</button>
+                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
+                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
+                           color:#ffd700;padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    ⇄ Rol</button>
+                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
+                    style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                           color:#ff5858;padding:0.32rem 0.6rem;border-radius:6px;
+                           cursor:pointer;font-size:0.72rem;font-weight:600;">
+                    🚪</button>
             </div>
         </div>
 
-        <!-- ── Buscador y filtros ─────────────────────────── -->
-        <div style="padding:0.65rem 1.3rem;
-                    background:rgba(255,255,255,0.02);
-                    border-bottom:1px solid var(--glass-border);
-                    display:flex;gap:0.7rem;flex-wrap:wrap;align-items:center;">
-            <input type="text" id="report-search"
-                   placeholder="🔍 Buscar por jugador o rival…"
-                   oninput="filterClubReports()"
-                   style="flex:1;min-width:160px;padding:0.45rem 0.7rem;
-                          background:rgba(255,255,255,0.05);
-                          border:1px solid var(--glass-border);
-                          border-radius:6px;color:white;font-size:0.84rem;
-                          outline:none;">
-            <select id="report-filter-role"
-                    onchange="filterClubReports()"
-                    style="padding:0.45rem;background:rgba(255,255,255,0.05);
-                           border:1px solid var(--glass-border);
-                           border-radius:6px;color:white;font-size:0.84rem;">
-                <option value="all">📅 Todos los informes</option>
-                <option value="today">Hoy</option>
-                <option value="week">Esta semana</option>
-            </select>
+        <!-- Tabs -->
+        <div style="display:flex;gap:0.2rem;padding:0.5rem 1.5rem;background:#161b22;
+                    border-bottom:1px solid var(--glass-border);flex-shrink:0;overflow-x:auto;">
+            <button onclick="switchStaffTab('convocatorias')" class="staff-tab active" id="tab-convocatorias">📋 Convoc.</button>
+            <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
+            <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
+            <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
+            <button onclick="openLiveMatchesView()" class="staff-tab"
+                style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
+                🔴 En Vivo</button>
         </div>
 
-        <!-- ── Lista ─────────────────────────────────────── -->
-        <div id="club-reports-list"
-             style="flex:1;overflow-y:auto;padding:1rem 1.3rem;
-                    background:rgba(0,0,0,0.12);
-                    -webkit-overflow-scrolling:touch;">
-            <p style="color:var(--text-muted);text-align:center;padding:3rem;">
-                ⏳ Cargando informes del club…
-            </p>
+        <!-- Contenido -->
+        <div id="staff-dashboard-content"
+             style="flex:1;overflow-y:auto;padding:1.5rem;background:#0d1117;">
+            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
+                <div class="spinner" style="margin:0 auto 1rem;"></div>
+                Cargando…
+            </div>
         </div>
     </div>
 
     <style>
-        .rpt-card {
-            background:rgba(255,255,255,0.03);
-            border:1px solid var(--glass-border,rgba(255,255,255,0.1));
-            border-radius:10px;padding:0.9rem;margin-bottom:0.65rem;
-            cursor:pointer;transition:all 0.2s;
+        .staff-tab {
+            padding:0.55rem 1.1rem;background:none;border:none;
+            border-bottom:2px solid transparent;color:var(--text-muted);
+            font-size:0.82rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;
         }
-        .rpt-card:hover {
-            background:rgba(88,166,255,0.06);
-            border-color:rgba(88,166,255,0.3);
+        .staff-tab:hover { color:white;background:rgba(255,255,255,0.03); }
+        .staff-tab.active { color:var(--primary);border-bottom-color:var(--primary);background:rgba(88,166,255,0.05); }
+        .sd-card {
+            background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+            border-radius:12px;padding:1rem;margin-bottom:0.9rem;
+            display:flex;justify-content:space-between;align-items:center;gap:1rem;
+            transition:border-color 0.2s;
         }
-        .rpt-badge {
-            font-size:0.62rem;font-weight:700;padding:2px 6px;
+        .sd-card:hover { border-color:rgba(88,166,255,0.3); }
+        .sd-badge {
+            font-size:0.65rem;font-weight:700;padding:2px 8px;
             border-radius:5px;text-transform:uppercase;
         }
-        .rpt-timeline {
-            display:flex;flex-wrap:wrap;gap:0.35rem 0.65rem;
-            padding:0.5rem 0.6rem;
-            background:rgba(255,255,255,0.025);border-radius:7px;
-            font-size:0.71rem;margin-top:0.6rem;
-            border:1px solid rgba(255,255,255,0.06);
+        .sd-report-card {
+            background:rgba(255,255,255,0.03);border:1px solid rgba(88,166,255,0.15);
+            border-radius:12px;padding:1rem 1.2rem;margin-bottom:0.7rem;cursor:pointer;
+            transition:all 0.2s;
         }
-        .rpt-tl-ev {
-            display:inline-flex;align-items:center;gap:0.2rem;
-            white-space:nowrap;color:var(--text-muted,#8b949e);
-        }
-        .rpt-tl-ev strong { color:white; }
+        .sd-report-card:hover { border-color:rgba(88,166,255,0.4);background:rgba(88,166,255,0.05); }
+        .sd-report-unread { border-color:rgba(255,165,0,0.5);background:rgba(255,165,0,0.04); }
     </style>`;
 
-    await _loadClubReports();
+    switchStaffTab('convocatorias');
+}
+
+// ── Cambiar tab ──────────────────────────────────────────────────────
+window.switchStaffTab = async (tab) => {
+    document.querySelectorAll('.staff-tab').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`tab-${tab}`);
+    if (btn) btn.classList.add('active');
+
+    const container = document.getElementById('staff-dashboard-content');
+    container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⏳ Cargando…</div>`;
+
+    if (tab === 'convocatorias')  await _sdLoadEvents('convocatoria');
+    if (tab === 'entrenamientos') await _sdLoadEvents('planificacion_semanal');
+    if (tab === 'informes')       await _sdLoadReports();
+    if (tab === 'mensajes')       await _sdLoadMessages();
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  TAB: CONVOCATORIAS / ENTRENAMIENTOS
+// ════════════════════════════════════════════════════════════════════
+async function _sdLoadEvents(type) {
+    const me        = window._cronosCurrentUser;
+    const container = document.getElementById('staff-dashboard-content');
+    try {
+        const { db, collection, getDocs, query, where, limit } = await _sdFS();
+        const clubId = me.clubId || 'demo';
+        const snap   = await getDocs(query(
+            collection(db, 'cronos_notifications'),
+            where('clubId', '==', clubId),
+            where('type',   '==', type),
+            limit(50)
+        ));
+        if (snap.empty) {
+            container.innerHTML = `<div style="text-align:center;padding:4rem;color:var(--text-muted);">
+                Sin ${type === 'convocatoria' ? 'convocatorias' : 'entrenamientos'} registrados aún.</div>`;
+            return;
+        }
+        let html = '';
+        snap.forEach(docSnap => {
+            const d    = docSnap.data();
+            const date = d.createdAt
+                ? new Date(d.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})
+                : '—';
+            html += `
+            <div class="sd-card">
+                <div style="flex:1;min-width:0;">
+                    <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.35rem;">
+                        <span class="sd-badge" style="background:${type==='convocatoria'?'rgba(88,166,255,0.15)':'rgba(210,168,255,0.15)'};
+                            color:${type==='convocatoria'?'var(--primary)':'#d2a8ff'};">${type}</span>
+                        <span style="font-size:0.73rem;color:var(--text-muted);">${date}</span>
+                    </div>
+                    <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.15rem;">
+                        ${type==='convocatoria' ? `🆚 vs ${typeof escapeHtml==='function'?escapeHtml(d.rival||'Rival'):d.rival||'Rival'}` : `⚽ ${typeof escapeHtml==='function'?escapeHtml(d.category||'Entrenamiento'):d.category||'Entrenamiento'}`}
+                    </div>
+                    <div style="font-size:0.76rem;color:var(--text-muted);">
+                        Por: <strong>${typeof escapeHtml==='function'?escapeHtml(d.coachEmail||'Entrenador'):d.coachEmail||'Entrenador'}</strong>
+                        ${d.players ? ` · 👥 ${d.players.length} convocados` : ''}
+                    </div>
+                </div>
+                <button onclick="sdViewEventDetail('${docSnap.id}')" class="btn"
+                    style="font-size:0.75rem;padding:0.4rem 0.8rem;flex-shrink:0;">
+                    Ver detalles</button>
+            </div>`;
+        });
+        container.innerHTML = html;
+
+        window.sdViewEventDetail = async (id) => {
+            const { db: db2, doc, getDoc } = await _sdFS();
+            const s = await getDoc(doc(db2, 'cronos_notifications', id));
+            if (!s.exists()) return;
+            const d = s.data();
+            let txt = d.fullText || d.extra || 'Sin detalles.';
+            if (d.players?.length) txt += '\n\nConvocados:\n' + d.players.join(', ');
+            alert(txt);
+        };
+    } catch(e) {
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  _loadClubReports() — carga los datos de Firestore
+//  TAB: INFORMES DE PARTIDO  ← NUEVO, FUNCIONAL
 // ════════════════════════════════════════════════════════════════════
-async function _loadClubReports() {
-    const me = window._getEffectiveUser
-        ? window._getEffectiveUser()
-        : window._cronosCurrentUser;
-    const container = document.getElementById('club-reports-list');
-    if (!container) return;
+async function _sdLoadReports() {
+    const me        = window._cronosCurrentUser;
+    const container = document.getElementById('staff-dashboard-content');
+    const clubId    = me.clubId;
+    if (!clubId) {
+        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
+            ⚠️ Sin club asignado. Usa el modo prueba para seleccionar un club.</div>`;
+        return;
+    }
 
     try {
-        const { db, collection, getDocs, query, where } = await _rpFS();
-        if (!db) {
+        const { db, collection, getDocs, query, where, orderBy, limit, doc, updateDoc } = await _sdFS();
+
+        // Cargar informes del club (los genera el entrenador via saveAllMatchReportsInternal)
+        const snap = await getDocs(query(
+            collection(db, 'cronos_player_reports'),
+            where('clubId', '==', clubId),
+            limit(100)
+        ));
+
+        if (snap.empty) {
             container.innerHTML = `
-            <div style="text-align:center;color:#ff5858;padding:2rem;">
-                ⚠️ Base de datos no disponible. Recarga la página.</div>`;
+            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
+                <div style="font-size:2.5rem;margin-bottom:1rem;">📊</div>
+                <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">
+                    Sin informes de partido aún</div>
+                <div style="font-size:0.8rem;">
+                    Los informes aparecen aquí cuando un entrenador finaliza un partido
+                    y pulsa <strong>"Enviar Informe"</strong> en la app.</div>
+            </div>`;
             return;
         }
 
-        const snap = await getDocs(query(
-            collection(db, 'cronos_player_reports'),
-            where('clubId', '==', me.clubId || '_preview'),
-        ));
+        // Agrupar por partido (matchDate + rival)
+        const matches = {};
+        snap.forEach(docSnap => {
+            const r   = { _id: docSnap.id, ...docSnap.data() };
+            const key = `${r.matchDate || 'sin-fecha'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
+            if (!matches[key]) {
+                matches[key] = {
+                    key, matchDate: r.matchDate, rival: r.rival,
+                    scoreHome: r.scoreHome, scoreAway: r.scoreAway,
+                    coachEmail: r.coachEmail, createdAt: r.createdAt,
+                    players: [],
+                };
+            }
+            matches[key].players.push(r);
+        });
 
-        window._allClubReports = [];
-        snap.forEach(d => window._allClubReports.push({ id: d.id, ...d.data() }));
+        // Ordenar por fecha descendente
+        const sortedMatches = Object.values(matches).sort((a, b) => {
+            return (b.createdAt || '').localeCompare(a.createdAt || '');
+        });
 
-        // Ordenar por fecha descendente en memoria
-        window._allClubReports.sort((a, b) =>
-            (b.createdAt || '').localeCompare(a.createdAt || ''));
+        let html = `
+        <div style="margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;font-size:0.95rem;color:white;">
+                📊 Informes recibidos — ${sortedMatches.length} partido${sortedMatches.length !== 1 ? 's' : ''}
+            </h3>
+            <span style="font-size:0.73rem;color:var(--text-muted);">
+                Club: <strong style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||clubId):me.clubName||clubId}</strong>
+            </span>
+        </div>`;
 
-        renderClubReportsList(window._allClubReports);
+        sortedMatches.forEach((m, idx) => {
+            const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
+            const injured = m.players.filter(p => p.injured).length;
+            const dateStr = m.matchDate
+                ? new Date(m.matchDate).toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'})
+                : '—';
+            const score   = (m.scoreHome != null && m.scoreAway != null)
+                ? `${m.scoreHome} – ${m.scoreAway}` : '—';
+            const key64   = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g,'');
 
-    } catch (e) {
-        console.error('[ClubReports]', e);
-        if (container) container.innerHTML = `
-            <div style="text-align:center;color:#ff5858;padding:2rem;">
-                ⚠️ Error al cargar informes: ${e.message}</div>`;
+            html += `
+            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
+                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.35rem;">
+                    <div>
+                        <div style="font-weight:700;font-size:1rem;">
+                            🆚 vs <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>
+                        </div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                            📅 ${dateStr} ·
+                            ⚽ Marcador: <strong style="color:white;">${score}</strong> ·
+                            👤 ${typeof escapeHtml==='function'?escapeHtml(m.coachEmail||'Entrenador'):m.coachEmail||'Entrenador'}
+                        </div>
+                    </div>
+                    <div style="text-align:right;flex-shrink:0;">
+                        <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">
+                            ${m.players.length} jugadores
+                        </span>
+                        ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;margin-left:4px;">
+                            ⚽ ${goals} goles</span>` : ''}
+                        ${injured > 0 ? `<span class="sd-badge" style="background:rgba(255,88,88,0.12);color:#ff5858;margin-left:4px;">
+                            🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
+                        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px;">
+                            ▼ Ver detalles
+                        </div>
+                    </div>
+                </div>
+                <!-- Tabla de jugadores (oculta por defecto) -->
+                <div id="rdetail-${key64}" style="display:none;margin-top:0.8rem;
+                     border-top:1px solid var(--glass-border);padding-top:0.8rem;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                        <thead>
+                            <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.08);">
+                                <th style="padding:0.35rem 0.5rem;text-align:left;">Nº</th>
+                                <th style="padding:0.35rem 0.5rem;text-align:left;">Jugador</th>
+                                <th style="padding:0.35rem 0.5rem;text-align:center;">⏱ Minutos</th>
+                                <th style="padding:0.35rem 0.5rem;text-align:center;">⚽ Goles</th>
+                                <th style="padding:0.35rem 0.5rem;text-align:center;">🟨 Tarjetas</th>
+                                <th style="padding:0.35rem 0.5rem;text-align:center;">🩹 Lesión</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${m.players
+                                .sort((a, b) => (a.playerNumber || 0) - (b.playerNumber || 0))
+                                .map(p => `
+                                <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                    <td style="padding:0.35rem 0.5rem;color:var(--primary);font-weight:700;">${p.playerNumber || '—'}</td>
+                                    <td style="padding:0.35rem 0.5rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(p.playerAlias||'Jugador'):p.playerAlias||'Jugador'}</td>
+                                    <td style="padding:0.35rem 0.5rem;text-align:center;">${p.minutesPlayed || '0:00'}</td>
+                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
+                                        ${p.goals > 0 ? `<strong style="color:#ffa500;">${p.goals}</strong>` : '—'}
+                                    </td>
+                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
+                                        ${p.cards && p.cards !== 'ninguna'
+                                            ? `<span style="background:${p.cards==='red'?'rgba(255,88,88,0.2)':'rgba(255,215,0,0.15)'};
+                                                           color:${p.cards==='red'?'#ff5858':'#ffd700'};
+                                                           padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:700;">
+                                                ${p.cards==='red'?'🟥 Roja':'🟨 Amarilla'}</span>`
+                                            : '—'}
+                                    </td>
+                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
+                                        ${p.injured ? '🩹 Sí' : '—'}
+                                    </td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>
+                    <!-- Historial de acciones si existe -->
+                    ${m.players.some(p => p.history?.length) ? `
+                    <div style="margin-top:0.7rem;padding:0.6rem 0.7rem;background:rgba(255,255,255,0.02);
+                                border-radius:8px;font-size:0.73rem;color:var(--text-muted);">
+                        <strong style="color:white;display:block;margin-bottom:0.3rem;">📋 Línea de tiempo</strong>
+                        ${m.players.flatMap(p =>
+                            (p.history || []).map(ev => ({
+                                ...ev,
+                                player: p.playerAlias || `#${p.playerNumber}`
+                            }))
+                        ).sort((a,b) => (a.minute||0) - (b.minute||0))
+                        .map(ev => `
+                            <span style="margin-right:0.8rem;white-space:nowrap;">
+                                <strong style="color:white;">${ev.minute || '?'}'</strong>
+                                ${ev.type === 'goal'    ? '⚽' :
+                                  ev.type === 'yellow'  ? '🟨' :
+                                  ev.type === 'red'     ? '🟥' :
+                                  ev.type === 'sub_in'  ? '▶️' :
+                                  ev.type === 'sub_out' ? '⏸️' : '•'}
+                                ${typeof escapeHtml==='function'?escapeHtml(ev.player):ev.player}
+                            </span>`).join('')}
+                    </div>` : ''}
+                </div>
+            </div>`;
+        });
+
+        container.innerHTML = html;
+
+        window.sdToggleReport = (key64) => {
+            const card   = document.getElementById(`rcard-${key64}`);
+            const detail = document.getElementById(`rdetail-${key64}`);
+            if (!detail) return;
+            const isOpen = detail.style.display !== 'none';
+            detail.style.display = isOpen ? 'none' : 'block';
+            card.style.borderColor = isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(88,166,255,0.5)';
+        };
+
+    } catch(e) {
+        console.error('[StaffDashboard] Error cargando informes:', e);
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">
+            ⚠️ Error al cargar informes: ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  renderClubReportsList() — agrupa por partido y renderiza
+//  TAB: MENSAJES (mensajes recibidos desde entrenadores)
 // ════════════════════════════════════════════════════════════════════
-function renderClubReportsList(reports) {
-    const container = document.getElementById('club-reports-list');
+async function _sdLoadMessages() {
+    const me        = window._cronosCurrentUser;
+    const container = document.getElementById('staff-dashboard-content');
+    const clubId    = me.clubId;
     if (!container) return;
 
-    if (!reports.length) {
-        container.innerHTML = `
-        <div style="text-align:center;color:var(--text-muted);padding:4rem 2rem;">
-            <div style="font-size:3rem;margin-bottom:1rem;">📂</div>
-            Sin informes para los filtros seleccionados.
-        </div>`;
+    if (!clubId) {
+        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⚠️ Sin club asignado.</div>`;
         return;
     }
 
-    // ── Agrupar por partido ────────────────────────────────────────
-    const matches = {};
-    reports.forEach(r => {
-        const key = `${r.matchDate || r.createdAt?.slice(0,10) || '?'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
-        if (!matches[key]) {
-            matches[key] = {
-                key,
-                matchDate:  r.matchDate || r.createdAt?.slice(0,10),
-                rival:      r.rival,
-                scoreHome:  r.scoreHome,
-                scoreAway:  r.scoreAway,
-                coachEmail: r.coachEmail,
-                teamName:   r.teamName || '',
-                createdAt:  r.createdAt,
-                players:    [],
-            };
+    try {
+        const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
+
+        // Buscar threads donde este staff es destinatario (campo staffUid)
+        // y threads donde es parentUid (compatibilidad retroactiva)
+        const [snapStaff, snapParent] = await Promise.all([
+            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
+        ]);
+
+        const threadsMap = {};
+        snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        const threads = Object.values(threadsMap)
+            .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
+
+        if (!threads.length) {
+            container.innerHTML = `
+            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
+                <div style="font-size:2rem;margin-bottom:0.8rem;">💬</div>
+                Sin mensajes recibidos aún.<br>
+                <span style="font-size:0.78rem;">Los mensajes de los entrenadores aparecerán aquí.</span>
+            </div>`;
+            return;
         }
-        matches[key].players.push(r);
-    });
 
-    const sorted = Object.values(matches).sort(
-        (a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        let html = `<div style="margin-bottom:0.8rem;font-size:0.78rem;color:var(--text-muted);">
+            ${threads.length} conversación${threads.length!==1?'es':''}</div>`;
 
-    let html = `
-    <div style="margin-bottom:0.7rem;font-size:0.76rem;color:var(--text-muted);">
-        ${sorted.length} partido${sorted.length !== 1 ? 's' : ''} ·
-        ${reports.length} registros de jugadores
-    </div>`;
+        threads.forEach(t => {
+            const unread    = (t.unreadByStaff || t.unreadByParent || 0);
+            const lastMsg   = t.lastMessage   || '—';
+            const lastT     = t.lastMessageAt
+                ? new Date(t.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
+                : '';
+            const isReport  = lastMsg.includes('📊');
+            const isCollective = t.recipientType === 'staff' || (t.messages||[]).some(m=>m.type==='collective_report');
 
-    sorted.forEach(m => {
-        const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
-        const injured = m.players.filter(p => p.injured).length;
-        const cards   = m.players.filter(p =>
-            p.cards && p.cards !== 'ninguna').length;
-        const dateStr = m.matchDate
-            ? new Date(m.matchDate).toLocaleDateString('es-ES',
-                { day:'2-digit', month:'2-digit', year:'2-digit' })
-            : '—';
-        const score = (m.scoreHome != null && m.scoreAway != null)
-            ? `${m.scoreHome}-${m.scoreAway}` : '—';
-        const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
-
-        html += `
-        <div class="rpt-card" id="rpcard-${key64}">
-            <!-- Cabecera del partido — siempre visible -->
-            <div onclick="toggleMatchReport('${key64}')"
-                 style="display:flex;justify-content:space-between;
-                        align-items:start;gap:0.5rem;">
-                <div>
-                    <div style="font-weight:700;font-size:0.95rem;">
-                        🆚 vs <span style="color:var(--primary);">
-                            ${m.rival || 'Sin rival'}</span>
+            html += `
+            <div class="sd-card ${unread>0?'sd-report-unread':''}"
+                 onclick="sdOpenStaffThread('${t._id}','${t.coachUid||''}','${(t.coachEmail||'').replace(/'/g,"\\'")}')"
+                 style="cursor:pointer;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
+                        ${isCollective?'📊':'✉️'} ${typeof escapeHtml==='function'?escapeHtml(t.coachEmail||'Entrenador'):t.coachEmail||'Entrenador'}
+                        ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
+                            border-radius:10px;padding:1px 7px;font-size:0.62rem;
+                            font-weight:700;margin-left:6px;">
+                            ${unread} nuevo${unread>1?'s':''}</span>`:''}
                     </div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);
-                                margin-top:2px;">
-                        📅 ${dateStr} ·
-                        <strong style="color:white;">${score}</strong> ·
-                        ${m.coachEmail || 'Entrenador'}
+                    <div style="font-size:0.76rem;
+                                color:${unread?'#58a6ff':'var(--text-muted)'};
+                                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                        ${unread?`<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>`:typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}
                     </div>
                 </div>
-                <div style="text-align:right;flex-shrink:0;">
-                    <span class="rpt-badge"
-                          style="background:rgba(63,185,80,0.12);color:#3fb950;">
-                        ${m.players.length} jugadores
-                    </span>
-                    ${goals > 0 ? `<span class="rpt-badge"
-                        style="background:rgba(255,165,0,0.1);color:#ffa500;margin-left:3px;">
-                        ⚽ ${goals}</span>` : ''}
-                    ${cards > 0 ? `<span class="rpt-badge"
-                        style="background:rgba(255,215,0,0.1);color:#ffd700;margin-left:3px;">
-                        🟨 ${cards}</span>` : ''}
-                    ${injured > 0 ? `<span class="rpt-badge"
-                        style="background:rgba(255,88,88,0.1);color:#ff5858;margin-left:3px;">
-                        🩹 ${injured}</span>` : ''}
-                    <div style="font-size:0.6rem;color:var(--text-muted);margin-top:3px;">
-                        ▼ Ver jugadores
-                    </div>
-                </div>
-            </div>
-
-            <!-- Detalle del partido (oculto por defecto) -->
-            <div id="rpdetail-${key64}"
-                 style="display:none;margin-top:0.7rem;
-                        border-top:1px solid var(--glass-border);
-                        padding-top:0.7rem;">
-                ${_buildMatchTimeline(m)}
-                <div style="display:grid;gap:0.3rem;margin-top:0.6rem;">
-                    ${m.players
-                        .sort((a, b) => (a.playerNumber||0) - (b.playerNumber||0))
-                        .map(p => `
-                        <div style="display:flex;align-items:center;gap:0.5rem;
-                                    padding:0.4rem 0.5rem;
-                                    background:rgba(255,255,255,0.025);
-                                    border-radius:7px;cursor:pointer;"
-                             onclick="viewReportDetail('${p.id}')">
-                            <div style="background:rgba(88,166,255,0.12);
-                                        width:30px;height:30px;border-radius:8px;
-                                        display:flex;align-items:center;
-                                        justify-content:center;
-                                        color:var(--primary);font-weight:700;
-                                        font-size:0.8rem;flex-shrink:0;">
-                                #${p.playerNumber || '?'}
-                            </div>
-                            <div style="flex:1;min-width:0;">
-                                <div style="font-weight:700;font-size:0.82rem;">
-                                    ${p.playerAlias || 'Jugador'}
-                                </div>
-                                <div style="font-size:0.68rem;
-                                            color:var(--text-muted);">
-                                    ⏱ ${p.minutesPlayed || '—'}
-                                    ${p.goals > 0 ? ` · ⚽ ${p.goals}` : ''}
-                                    ${p.cards && p.cards !== 'ninguna'
-                                        ? ` · ${p.cards==='red'||p.cards==='roja'?'🟥':'🟨'}`
-                                        : ''}
-                                    ${p.injured ? ' · 🩹' : ''}
-                                </div>
-                            </div>
-                            <div style="font-size:0.68rem;color:var(--text-muted);
-                                        flex-shrink:0;">
-                                Ver →
-                            </div>
-                        </div>`).join('')}
-                </div>
-            </div>
-        </div>`;
-    });
-
-    container.innerHTML = html;
-
-    window.toggleMatchReport = (key64) => {
-        const card   = document.getElementById(`rpcard-${key64}`);
-        const detail = document.getElementById(`rpdetail-${key64}`);
-        if (!detail) return;
-        const isOpen = detail.style.display !== 'none';
-        detail.style.display = isOpen ? 'none' : 'block';
-        if (card) card.style.borderColor = isOpen
-            ? 'var(--glass-border)'
-            : 'rgba(88,166,255,0.45)';
-    };
-}
-
-// ── Construir línea de tiempo de un partido ───────────────────────────
-function _buildMatchTimeline(match) {
-    const evIcon = {
-        goal:'⚽', yellow:'🟨', red:'🟥',
-        sub_in:'▶️', sub_out:'⏸️', injury:'🩹',
-    };
-
-    const allEvents = [];
-    match.players.forEach(p => {
-        const alias = p.playerAlias || `#${p.playerNumber || '?'}`;
-        (p.history || []).forEach(ev => {
-            allEvents.push({ ...ev, playerAlias: alias });
+                <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
+            </div>`;
         });
-        if (p.subInMinute)  allEvents.push({ type:'sub_in',  minute:p.subInMinute,  playerAlias:alias });
-        if (p.subOutMinute) allEvents.push({ type:'sub_out', minute:p.subOutMinute, playerAlias:alias });
-        if (p.injuryMinute) allEvents.push({ type:'injury',  minute:p.injuryMinute, playerAlias:alias });
-    });
 
-    if (!allEvents.length) return '';
+        container.innerHTML = html;
 
-    allEvents.sort((a, b) => (a.minute || 0) - (b.minute || 0));
+        window.sdOpenStaffThread = async (threadId, coachUid, coachEmail) => {
+            if (typeof _loadThreadMessages === 'function') {
+                const { db:db2, doc:doc2, updateDoc:upd } = await _sdFS();
+                container.innerHTML = `
+                <div style="display:flex;flex-direction:column;height:100%;">
+                    <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;flex-shrink:0;">
+                        <button onclick="switchStaffTab('mensajes')"
+                            style="padding:0.35rem 0.7rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid var(--glass-border);border-radius:7px;
+                                   color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
+                            ← Volver
+                        </button>
+                        <div style="font-weight:700;font-size:0.88rem;">💬 ${typeof escapeHtml==='function'?escapeHtml(coachEmail):coachEmail}</div>
+                    </div>
+                    <div id="thread-messages"
+                         style="flex:1;overflow-y:auto;display:flex;
+                                flex-direction:column;gap:0.5rem;min-height:200px;">
+                        <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
+                    </div>
+                    <!-- Staff puede responder al entrenador -->
+                    <div style="margin-top:0.7rem;border-top:1px solid var(--glass-border);
+                                padding-top:0.7rem;flex-shrink:0;">
+                        <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                            <textarea id="staff-reply-input"
+                                placeholder="Responder al entrenador… (Enter para enviar)"
+                                rows="2"
+                                style="flex:1;padding:0.55rem 0.75rem;
+                                       background:rgba(255,255,255,0.06);
+                                       border:1px solid var(--glass-border);border-radius:8px;
+                                       color:white;font-size:0.85rem;resize:none;"
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){
+                                    event.preventDefault();
+                                    sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}');
+                                }">
+                            </textarea>
+                            <button onclick="sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}')"
+                                class="btn primary" style="padding:0.55rem 0.9rem;flex-shrink:0;">
+                                Enviar ›
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
 
-    return `
-    <div class="rpt-timeline">
-        <strong style="color:white;font-size:0.69rem;
-                       width:100%;display:block;margin-bottom:0.25rem;">
-            📋 Línea de tiempo del partido</strong>
-        ${allEvents.map(ev => `
-        <span class="rpt-tl-ev">
-            <strong>${ev.minute || '?'}'</strong>
-            ${evIcon[ev.type] || '•'}
-            ${ev.playerAlias}
-        </span>`).join('')}
-    </div>`;
+                await _loadThreadMessages(threadId, 'parent');  // 'parent' perspective: staff on right
+                try {
+                    const data = {};
+                    data['unreadByStaff']  = 0;
+                    data['unreadByParent'] = 0;
+                    await upd(doc2(db2,'cronos_messages',threadId), data);
+                } catch(_) {}
+            } else {
+                if (typeof showToast==='function') showToast('ℹ️ Módulo de mensajería no cargado.', 3000);
+            }
+        };
+
+        // Staff replies to coach
+        window.sdSendReplyToCoach = async (threadId, coachUid, coachEmail) => {
+            const input = document.getElementById('staff-reply-input');
+            const text  = (input?.value||'').trim();
+            if (!text) return;
+
+            const { db:db2, doc:doc2, getDoc, updateDoc:upd, arrayUnion } = await _sdFS();
+            const newMsg = { sender:'parent', text, timestamp:new Date().toISOString() };
+
+            try {
+                const snap = await getDoc(doc2(db2,'cronos_messages',threadId));
+                const preview = text.length>60 ? text.substring(0,60)+'…' : text;
+                if (snap.exists()) {
+                    await upd(doc2(db2,'cronos_messages',threadId), {
+                        messages: arrayUnion(newMsg),
+                        lastMessage: preview, lastMessageAt: newMsg.timestamp,
+                        unreadByCoach: (snap.data().unreadByCoach||0) + 1,
+                    });
+                }
+                if (input) input.value = '';
+                await _loadThreadMessages(threadId, 'parent');
+            } catch(e) {
+                if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 3000);
+            }
+        };
+
+    } catch(e) {
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+    }
 }
 
-// ════════════════════════════════════════════════════════════════════
-//  filterClubReports() — aplica búsqueda y filtro temporal
-// ════════════════════════════════════════════════════════════════════
-window.filterClubReports = function filterClubReports() {
-    const q    = (document.getElementById('report-search')?.value || '').toLowerCase();
-    const time = document.getElementById('report-filter-role')?.value || 'all';
-
-    let filtered = window._allClubReports || [];
-
-    if (q) {
-        filtered = filtered.filter(r =>
-            (r.playerAlias || '').toLowerCase().includes(q) ||
-            (r.rival       || '').toLowerCase().includes(q)
-        );
-    }
-
-    if (time === 'today') {
-        const today = new Date().toDateString();
-        filtered = filtered.filter(r =>
-            new Date(r.createdAt).toDateString() === today);
-    } else if (time === 'week') {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        filtered = filtered.filter(r => new Date(r.createdAt) > weekAgo);
-    }
-
-    renderClubReportsList(filtered);
+window.openLiveMatchesView = () => {
+    window.open('./live.html', '_blank');
 };
 
-// ════════════════════════════════════════════════════════════════════
-//  viewReportDetail() — informe INDIVIDUAL de un jugador
-//  Diseño profesional con logo del club, línea de tiempo propia
-// ════════════════════════════════════════════════════════════════════
-window.viewReportDetail = function viewReportDetail(id) {
-    const r = (window._allClubReports || []).find(x => x.id === id);
-    if (!r) return;
-
-    const me       = window._cronosCurrentUser;
-    const logoUrl  = me?.clubLogoUrl || r.clubLogoUrl || '';
-    const clubName = me?.clubName    || r.clubName    || 'Cronos Fútbol';
-
-    const evIcon = {
-        goal:'⚽', yellow:'🟨', red:'🟥',
-        sub_in:'▶️ Entra', sub_out:'⏸️ Sale', injury:'🩹 Lesión',
-    };
-
-    // Línea de tiempo individual del jugador
-    const events = [];
-    (r.history || []).forEach(ev => events.push(ev));
-    if (r.subInMinute)  events.push({ type:'sub_in',  minute:r.subInMinute  });
-    if (r.subOutMinute) events.push({ type:'sub_out', minute:r.subOutMinute });
-    if (r.injuryMinute) events.push({ type:'injury',  minute:r.injuryMinute });
-    events.sort((a, b) => (a.minute || 0) - (b.minute || 0));
-
-    const timelineHtml = events.length ? `
-    <div style="background:rgba(255,255,255,0.03);border-radius:8px;
-                padding:0.8rem;border:1px solid rgba(255,255,255,0.07);">
-        <div style="font-size:0.7rem;color:var(--text-muted);
-                    text-transform:uppercase;letter-spacing:0.8px;
-                    margin-bottom:0.6rem;font-weight:700;">
-            📋 Línea de tiempo
-        </div>
-        ${events.map(ev => `
-        <div style="display:flex;align-items:center;gap:0.7rem;
-                    padding:0.28rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">
-            <div style="width:34px;text-align:center;font-weight:700;
-                        color:var(--primary);font-size:0.85rem;flex-shrink:0;">
-                ${ev.minute || '?'}'
-            </div>
-            <div style="font-size:0.82rem;color:white;">
-                ${evIcon[ev.type] || ev.type || '•'}
-            </div>
-        </div>`).join('')}
-    </div>` : '';
-
-    const existing = document.getElementById('report-detail-modal');
-    if (existing) existing.remove();
-
-    const modal = document.createElement('div');
-    modal.id = 'report-detail-modal';
-    modal.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.88);',
-        'display:flex;align-items:center;justify-content:center;',
-        'z-index:10000;padding:1rem;',
-    ].join('');
-
-    modal.innerHTML = `
-    <div style="width:min(96vw,480px);max-height:91vh;display:flex;
-                flex-direction:column;overflow:hidden;border-radius:14px;
-                border:1px solid var(--glass-border);
-                background:#0d1117;font-family:Inter,sans-serif;">
-
-        <!-- ── Cabecera del club (profesional) ──────────────── -->
-        <div style="background:linear-gradient(135deg,#161b22,#0d1117);
-                    padding:1.1rem 1.3rem;border-bottom:1px solid var(--glass-border);
-                    display:flex;align-items:center;gap:0.9rem;flex-shrink:0;">
-            ${logoUrl
-                ? `<img src="${logoUrl}" alt="${clubName}"
-                        style="height:44px;width:44px;border-radius:8px;
-                               object-fit:contain;flex-shrink:0;">`
-                : `<div style="width:44px;height:44px;border-radius:8px;
-                               background:rgba(88,166,255,0.12);
-                               display:flex;align-items:center;justify-content:center;
-                               font-size:1.3rem;flex-shrink:0;">🏟️</div>`}
-            <div style="flex:1;min-width:0;">
-                <div style="font-family:'Outfit',sans-serif;font-weight:700;
-                            color:white;font-size:0.95rem;overflow:hidden;
-                            text-overflow:ellipsis;white-space:nowrap;">
-                    ${clubName}
-                </div>
-                <div style="font-size:0.68rem;color:var(--text-muted);">
-                    Informe Individual de Partido
-                </div>
-            </div>
-            <button onclick="document.getElementById('report-detail-modal').remove()"
-                style="background:none;border:none;color:var(--text-muted);
-                       font-size:1.4rem;cursor:pointer;flex-shrink:0;">✕</button>
-        </div>
-
-        <!-- ── Cuerpo ─────────────────────────────────────── -->
-        <div style="flex:1;overflow-y:auto;padding:1.1rem 1.3rem;
-                    -webkit-overflow-scrolling:touch;">
-
-            <!-- Jugador -->
-            <div style="display:flex;align-items:center;gap:0.9rem;
-                        margin-bottom:1.1rem;
-                        background:rgba(88,166,255,0.06);
-                        padding:0.8rem;border-radius:10px;
-                        border:1px solid rgba(88,166,255,0.12);">
-                <div style="width:46px;height:46px;border-radius:50%;
-                            background:var(--primary,#58a6ff);
-                            display:flex;align-items:center;justify-content:center;
-                            font-size:1.2rem;font-weight:800;color:#0d1117;
-                            flex-shrink:0;">
-                    ${(r.playerAlias || '?').substring(0,1).toUpperCase()}
-                </div>
-                <div>
-                    <div style="font-weight:700;font-size:1.05rem;">
-                        ${r.playerAlias || 'Jugador'}
-                        <span style="color:var(--text-muted);font-weight:400;
-                                     font-size:0.85rem;">
-                            #${r.playerNumber || '?'}
-                        </span>
-                    </div>
-                    <div style="font-size:0.73rem;color:var(--text-muted);">
-                        ${new Date(r.createdAt || Date.now()).toLocaleString('es-ES',
-                            { day:'2-digit', month:'long', year:'numeric',
-                              hour:'2-digit', minute:'2-digit' })}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Stats del partido -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;
-                        gap:0.8rem;margin-bottom:1.1rem;">
-                <div style="background:rgba(255,255,255,0.03);
-                            border-radius:9px;padding:0.7rem;
-                            border:1px solid var(--glass-border);">
-                    <div style="font-size:0.65rem;color:var(--text-muted);
-                                text-transform:uppercase;letter-spacing:0.8px;
-                                margin-bottom:0.25rem;">Rival</div>
-                    <div style="font-weight:700;">${r.rival || '—'}</div>
-                </div>
-                <div style="background:rgba(255,255,255,0.03);
-                            border-radius:9px;padding:0.7rem;
-                            border:1px solid var(--glass-border);">
-                    <div style="font-size:0.65rem;color:var(--text-muted);
-                                text-transform:uppercase;letter-spacing:0.8px;
-                                margin-bottom:0.25rem;">Resultado</div>
-                    <div style="font-weight:700;font-size:1.05rem;">
-                        ${r.scoreHome ?? '—'}–${r.scoreAway ?? '—'}
-                    </div>
-                </div>
-                <div style="background:rgba(88,166,255,0.06);
-                            border-radius:9px;padding:0.7rem;
-                            border:1px solid rgba(88,166,255,0.15);">
-                    <div style="font-size:0.65rem;color:var(--text-muted);
-                                text-transform:uppercase;letter-spacing:0.8px;
-                                margin-bottom:0.25rem;">⏱ Minutos jugados</div>
-                    <div style="font-weight:800;font-size:1.2rem;color:var(--primary);">
-                        ${r.minutesPlayed || '0'}
-                    </div>
-                </div>
-                <div style="background:rgba(63,185,80,0.05);
-                            border-radius:9px;padding:0.7rem;
-                            border:1px solid rgba(63,185,80,0.15);">
-                    <div style="font-size:0.65rem;color:var(--text-muted);
-                                text-transform:uppercase;letter-spacing:0.8px;
-                                margin-bottom:0.25rem;">⚽ Goles</div>
-                    <div style="font-weight:800;font-size:1.2rem;color:#3fb950;">
-                        ${r.goals || '0'}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Estado físico / tarjetas -->
-            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.1rem;">
-                <span style="padding:5px 11px;border-radius:20px;font-size:0.75rem;
-                    background:${r.cards && r.cards !== 'ninguna'
-                        ? 'rgba(255,215,0,0.1)':'rgba(255,255,255,0.04)'};
-                    color:${r.cards && r.cards !== 'ninguna'?'#ffd700':'var(--text-muted)'};
-                    border:1px solid ${r.cards && r.cards !== 'ninguna'
-                        ? 'rgba(255,215,0,0.3)':'rgba(255,255,255,0.08)'};">
-                    🎴 Tarjeta: ${r.cards
-                        ? (r.cards === 'ninguna' ? 'Ninguna' : r.cards)
-                        : 'Ninguna'}
-                </span>
-                <span style="padding:5px 11px;border-radius:20px;font-size:0.75rem;
-                    background:${r.injured?'rgba(255,88,88,0.12)':'rgba(63,185,80,0.08)'};
-                    color:${r.injured?'#ff5858':'#3fb950'};
-                    border:1px solid ${r.injured
-                        ? 'rgba(255,88,88,0.35)':'rgba(63,185,80,0.25)'};">
-                    🚑 Lesión: ${r.injured ? 'SÍ' : 'NO'}
-                </span>
-            </div>
-
-            <!-- Línea de tiempo individual -->
-            ${timelineHtml}
-
-            <!-- Observaciones del entrenador -->
-            ${r.notes ? `
-            <div style="background:rgba(240,136,62,0.04);
-                        border:1px solid rgba(240,136,62,0.18);
-                        padding:0.85rem;border-radius:9px;margin-top:0.9rem;">
-                <div style="font-size:0.65rem;color:#f0883e;
-                            text-transform:uppercase;letter-spacing:0.8px;
-                            margin-bottom:0.4rem;font-weight:700;">
-                    ✍️ Observaciones del entrenador
-                </div>
-                <p style="margin:0;font-size:0.84rem;line-height:1.55;color:white;">
-                    ${r.notes}
-                </p>
-            </div>` : ''}
-        </div>
-
-        <!-- ── Pie con botones ────────────────────────────── -->
-        <div style="padding:0.8rem 1.1rem;border-top:1px solid var(--glass-border);
-                    background:rgba(0,0,0,0.2);display:flex;gap:0.5rem;flex-shrink:0;">
-            <button onclick="_rpSendParentReport('${r.id}')"
-                    style="flex:1;padding:0.48rem;
-                           background:rgba(63,185,80,0.14);
-                           border:1px solid rgba(63,185,80,0.35);
-                           border-radius:7px;color:#3fb950;
-                           font-size:0.78rem;font-weight:700;cursor:pointer;">
-                📱 Enviar a familia
-            </button>
-            <button onclick="document.getElementById('report-detail-modal').remove()"
-                    style="flex:1;padding:0.48rem;
-                           background:rgba(255,255,255,0.05);
-                           border:1px solid var(--glass-border);
-                           border-radius:7px;color:var(--text-muted);
-                           font-size:0.78rem;cursor:pointer;">
-                Cerrar
-            </button>
-        </div>
-    </div>`;
-
-    document.body.appendChild(modal);
-};
-
-// ── Enviar informe individual al padre/madre por WhatsApp ─────────────
-window._rpSendParentReport = async function _rpSendParentReport(reportId) {
-    const r = (window._allClubReports || []).find(x => x.id === reportId);
-    if (!r) return;
-
-    // Buscar el número de WhatsApp del padre en cronos_player_links
-    let phone = null;
-    try {
-        const { db, doc, getDoc } = await _rpFS();
-        const me     = window._cronosCurrentUser;
-        const linkId = `${me.clubId}_${r.playerNumber}`;
-        const snap   = await getDoc(doc(db, 'cronos_player_links', linkId));
-        if (snap.exists()) phone = snap.data().parentWA || null;
-    } catch (_) {}
-
-    // Construir texto del informe
-    const evIcon = {
-        goal:'⚽ Gol', yellow:'🟨 Amarilla', red:'🟥 Roja',
-        sub_in:'▶️ Entra', sub_out:'⏸️ Sale', injury:'🩹 Lesión',
-    };
-    const events = [];
-    (r.history || []).forEach(ev => events.push(ev));
-    if (r.subInMinute)  events.push({ type:'sub_in',  minute:r.subInMinute  });
-    if (r.subOutMinute) events.push({ type:'sub_out', minute:r.subOutMinute });
-    if (r.injuryMinute) events.push({ type:'injury',  minute:r.injuryMinute });
-    events.sort((a, b) => (a.minute || 0) - (b.minute || 0));
-
-    const me       = window._cronosCurrentUser;
-    const clubName = me?.clubName || 'Cronos Fútbol';
-    const fecha    = r.matchDate
-        ? new Date(r.matchDate).toLocaleDateString('es-ES',
-            { day:'2-digit', month:'long', year:'numeric' })
-        : '—';
-
-    let msg = `⚽ *INFORME DE PARTIDO*\n`;
-    msg += `━━━━━━━━━━━━━━━━\n`;
-    msg += `🏟️ *${clubName}*\n`;
-    msg += `📅 ${fecha}\n`;
-    msg += `🆚 vs *${r.rival || '—'}* (${r.scoreHome ?? '?'}-${r.scoreAway ?? '?'})\n\n`;
-    msg += `👤 *${r.playerAlias || 'Jugador'} #${r.playerNumber || '?'}*\n`;
-    msg += `━━━━━━━━━━━━━━━━\n`;
-    msg += `⏱ Minutos jugados: *${r.minutesPlayed || '0'}*\n`;
-    msg += `⚽ Goles: *${r.goals || '0'}*\n`;
-    msg += `🎴 Tarjeta: *${r.cards && r.cards !== 'ninguna' ? r.cards : 'Ninguna'}*\n`;
-    msg += `🚑 Lesión: *${r.injured ? 'SÍ' : 'NO'}*\n`;
-
-    if (events.length) {
-        msg += `\n📋 *Acciones:*\n`;
-        events.forEach(ev => {
-            msg += `• ${ev.minute || '?'}' ${evIcon[ev.type] || ev.type}\n`;
-        });
-    }
-
-    if (r.notes) {
-        msg += `\n✍️ *Observaciones:*\n${r.notes}\n`;
-    }
-    msg += `\n_Cronos Fútbol · Informe automático_ ⚽`;
-
-    const encoded = encodeURIComponent(msg);
-    const target  = phone
-        ? `https://wa.me/${phone}?text=${encoded}`
-        : `https://wa.me/?text=${encoded}`;
-
-    window.open(target, '_blank');
-};
-
-// ════════════════════════════════════════════════════════════════════
-//  Modal de envío masivo
-// ════════════════════════════════════════════════════════════════════
-window.openSendReportsModal = function openSendReportsModal() {
-    const allContacts = [];
-    const staffContacts = (typeof emailConfig !== 'undefined'
-        ? emailConfig.contacts || [] : [])
-        .filter(c => c.type !== 'parent' && (c.phone || c.email));
-    staffContacts.forEach(c => allContacts.push({
-        id: c.id, type:'staff',
-        label: c.name || c.email || 'Staff',
-        phone: c.phone || '', email: c.email || '', uid: c.uid || null,
-        defaultOn: (c.tags || []).includes('reports'),
-    }));
-
-    const parentContacts = (typeof emailConfig !== 'undefined'
-        ? emailConfig.contacts || [] : [])
-        .filter(c => c.type === 'parent' && (c.phone || c.email));
-    parentContacts.forEach(c => allContacts.push({
-        id: c.id, type:'parent',
-        label: c.player ? `${c.name || 'Padre'} (${c.player})` : (c.name || 'Padre'),
-        phone: c.phone || '', email: c.email || '', uid: null,
-        defaultOn: true,
-    }));
-
-    let savedPresel = null;
-    try {
-        savedPresel = JSON.parse(
-            localStorage.getItem('cronos_reports_preselection') || 'null');
-    } catch (_) {}
-
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = `
-    <div class="modal-content"
-         style="width:min(96vw,500px);max-height:90vh;
-                display:flex;flex-direction:column;gap:0.7rem;padding:1.2rem;">
-
-        <div style="display:flex;justify-content:space-between;
-                    align-items:center;flex-shrink:0;">
-            <h3 style="margin:0;font-size:1rem;">📤 Enviar Informes</h3>
-            <button onclick="openClubReports()"
-                style="background:none;border:none;color:var(--text-muted);
-                       font-size:1.3rem;cursor:pointer;">✕</button>
-        </div>
-
-        <!-- Destinatarios -->
-        <div style="background:rgba(255,255,255,0.03);
-                    border:1px solid var(--glass-border);
-                    border-radius:9px;padding:0.75rem;">
-            <div style="display:flex;justify-content:space-between;
-                        align-items:center;margin-bottom:0.5rem;">
-                <span style="font-size:0.72rem;font-weight:700;
-                             color:var(--text-muted);letter-spacing:0.5px;">
-                    📋 DESTINATARIOS
-                </span>
-                <div style="display:flex;gap:0.35rem;">
-                    <button onclick="document.querySelectorAll('.rpt-recipient-chk')
-                                .forEach(c=>c.checked=true)"
-                        style="font-size:0.6rem;padding:0.16rem 0.5rem;
-                               background:rgba(88,166,255,0.1);
-                               border:1px solid rgba(88,166,255,0.3);
-                               border-radius:4px;color:var(--primary);cursor:pointer;">
-                        ✓ Todos
-                    </button>
-                    <button onclick="document.querySelectorAll('.rpt-recipient-chk')
-                                .forEach(c=>c.checked=false)"
-                        style="font-size:0.6rem;padding:0.16rem 0.5rem;
-                               background:rgba(255,255,255,0.05);
-                               border:1px solid rgba(255,255,255,0.1);
-                               border-radius:4px;color:var(--text-muted);cursor:pointer;">
-                        ✗ Ninguno
-                    </button>
-                    <button onclick="_rptSavePreselection()"
-                        style="font-size:0.6rem;padding:0.16rem 0.5rem;
-                               background:rgba(63,185,80,0.1);
-                               border:1px solid rgba(63,185,80,0.3);
-                               border-radius:4px;color:#3fb950;cursor:pointer;">
-                        💾 Guardar
-                    </button>
-                </div>
-            </div>
-
-            <div style="display:flex;flex-direction:column;gap:0.3rem;
-                        max-height:230px;overflow-y:auto;padding-right:3px;">
-                ${allContacts.length
-                    ? allContacts.map(c => {
-                        const isChecked = savedPresel
-                            ? savedPresel.includes(c.id) : c.defaultOn;
-                        const tColor  = c.type === 'staff'
-                            ? 'rgba(88,166,255,0.1)':'rgba(240,136,62,0.08)';
-                        const tBorder = c.type === 'staff'
-                            ? 'rgba(88,166,255,0.22)':'rgba(240,136,62,0.2)';
-                        return `
-                        <label style="display:flex;align-items:center;gap:0.5rem;
-                                      background:${tColor};border:1px solid ${tBorder};
-                                      border-radius:7px;padding:0.4rem 0.6rem;
-                                      cursor:pointer;">
-                            <input type="checkbox" class="rpt-recipient-chk"
-                                   data-id="${c.id}" data-phone="${c.phone}"
-                                   data-email="${c.email}" data-uid="${c.uid||''}"
-                                   ${isChecked ? 'checked' : ''}
-                                   style="width:14px;height:14px;flex-shrink:0;
-                                          accent-color:var(--primary);">
-                            <div style="flex:1;min-width:0;">
-                                <div style="font-size:0.77rem;font-weight:600;">
-                                    ${c.type === 'staff' ? '🏢' : '👨‍👩‍👧'} ${c.label}
-                                </div>
-                                <div style="font-size:0.62rem;color:var(--text-muted);">
-                                    ${c.phone ? `📱 ${c.phone}` : ''}
-                                    ${c.phone && c.email ? ' · ' : ''}
-                                    ${c.email ? `📧 ${c.email}` : ''}
-                                </div>
-                            </div>
-                        </label>`;
-                    }).join('')
-                    : `<div style="text-align:center;color:var(--text-muted);
-                                   font-size:0.78rem;padding:1rem;">
-                           ⚠️ Sin contactos configurados.
-                       </div>`}
-            </div>
-        </div>
-
-        <!-- Filtro de periodo -->
-        <div style="background:rgba(255,255,255,0.02);
-                    border:1px solid var(--glass-border);
-                    border-radius:8px;padding:0.65rem 0.8rem;">
-            <label style="font-size:0.7rem;color:var(--text-muted);
-                          display:block;margin-bottom:0.3rem;">
-                📅 Informes a incluir
-            </label>
-            <select id="rpt-period"
-                    style="width:100%;padding:0.4rem;
-                           background:rgba(255,255,255,0.05);
-                           border:1px solid var(--glass-border);
-                           border-radius:6px;color:white;font-size:0.83rem;">
-                <option value="last">Último partido</option>
-                <option value="week">Última semana</option>
-                <option value="all">Todos los disponibles</option>
-            </select>
-        </div>
-
-        <!-- Botones de envío -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;
-                    gap:0.4rem;flex-shrink:0;">
-            <button onclick="openClubReports()"
-                    style="padding:0.45rem;background:rgba(255,255,255,0.05);
-                           border:1px solid var(--glass-border);border-radius:7px;
-                           color:var(--text-muted);font-size:0.76rem;cursor:pointer;">
-                ← Volver
-            </button>
-            <button onclick="_sendReportsViaWA()"
-                    style="padding:0.45rem;background:rgba(37,211,102,0.14);
-                           border:1px solid rgba(37,211,102,0.35);border-radius:7px;
-                           color:#25d366;font-weight:700;font-size:0.76rem;cursor:pointer;">
-                📱 WhatsApp
-            </button>
-            <button onclick="_sendReportsViaEmail()"
-                    style="padding:0.45rem;background:rgba(88,166,255,0.14);
-                           border:1px solid rgba(88,166,255,0.35);border-radius:7px;
-                           color:var(--primary);font-weight:700;font-size:0.76rem;cursor:pointer;">
-                📧 Email
-            </button>
-        </div>
-    </div>`;
-};
-
-window._rptSavePreselection = function() {
-    const ids = Array.from(
-        document.querySelectorAll('.rpt-recipient-chk:checked'))
-        .map(c => c.dataset.id);
-    localStorage.setItem('cronos_reports_preselection', JSON.stringify(ids));
-    if (typeof showToast === 'function')
-        showToast('✅ Selección guardada como predeterminada', 2500);
-};
-
-function _rptBuildReportText(reports) {
-    if (!reports.length) return 'No hay informes disponibles.';
-    const grouped = {};
-    reports.forEach(r => {
-        const key = r.matchDate
-            || new Date(r.createdAt).toLocaleDateString('es-ES');
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(r);
-    });
-    let msg = `📊 *INFORMES DEL CLUB*\n━━━━━━━━━━━━━━━━\n\n`;
-    Object.entries(grouped).forEach(([date, rpts]) => {
-        msg += `📅 *${date}*\n`;
-        rpts.forEach(r => {
-            msg += `• ${r.playerAlias || 'Jugador'} #${r.playerNumber} — `;
-            msg += `vs ${r.rival || '—'} (${r.scoreHome}-${r.scoreAway}) `;
-            msg += `⏱️${r.minutesPlayed || '—'}`;
-            if (r.goals > 0) msg += ` ⚽${r.goals}`;
-            if (r.cards === 'amarilla') msg += ' 🟨';
-            if (r.cards === 'roja')     msg += ' 🟥';
-            msg += '\n';
-        });
-        msg += '\n';
-    });
-    msg += `_Cronos Fútbol_ ⚽`;
-    return msg;
-}
-
-function _rptGetFilteredReports() {
-    const period = document.getElementById('rpt-period')?.value || 'last';
-    const all    = window._allClubReports || [];
-    if (!all.length) return [];
-    if (period === 'last') {
-        const latestDate = all[0]?.matchDate || '';
-        return latestDate
-            ? all.filter(r => r.matchDate === latestDate)
-            : [all[0]];
-    }
-    if (period === 'week') {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        return all.filter(r => new Date(r.createdAt) > weekAgo);
-    }
-    return all;
-}
-
-window._sendReportsViaWA = function() {
-    const recipients = Array.from(
-        document.querySelectorAll('.rpt-recipient-chk:checked'))
-        .filter(c => c.dataset.phone);
-    if (!recipients.length) {
-        if (typeof showToast === 'function')
-            showToast('⚠️ Sin destinatario con WhatsApp', 3000);
-        return;
-    }
-    const text = encodeURIComponent(
-        _rptBuildReportText(_rptGetFilteredReports()));
-    recipients.forEach((r, i) => {
-        setTimeout(() => window.open(
-            `https://wa.me/${r.dataset.phone}?text=${text}`, '_blank'),
-            i * 850);
-    });
-    if (typeof showToast === 'function')
-        showToast(`📱 Enviando a ${recipients.length} contacto(s)`, 4000);
-};
-
-window._sendReportsViaEmail = function() {
-    const recipients = Array.from(
-        document.querySelectorAll('.rpt-recipient-chk:checked'))
-        .filter(c => c.dataset.email);
-    if (!recipients.length) {
-        if (typeof showToast === 'function')
-            showToast('⚠️ Sin destinatario con email', 3000);
-        return;
-    }
-    const toList  = recipients.map(r => r.dataset.email).join(',');
-    const subject = encodeURIComponent(
-        `📊 Informes del Club — ${new Date().toLocaleDateString('es-ES')}`);
-    const body    = encodeURIComponent(
-        _rptBuildReportText(_rptGetFilteredReports()).replace(/[*_]/g, ''));
-    window.open(`mailto:${toList}?subject=${subject}&body=${body}`, '_blank');
-    if (typeof showToast === 'function')
-        showToast(`📧 Email abierto para ${recipients.length} destinatario(s)`, 3000);
-};
-
-window.openClubReports = openClubReports;
+window.openStaffDashboard = openStaffDashboard;
