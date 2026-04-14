@@ -260,7 +260,7 @@ async function updateUsageCounter(engine) {
 function showOCRError(msg) {
     const toast = document.createElement('div');
     toast.innerHTML = `❌ <strong>No se pudo analizar la imagen</strong><br>
-        <span style="font-size:0.78rem;">${msg}</span><br>
+        <span style="font-size:0.78rem;">${typeof escapeHtml==='function'?escapeHtml(msg):msg}</span><br>
         <span style="font-size:0.72rem;color:#ffaaaa;">Consejo: usa buena iluminación y que el texto sea legible</span>`;
     toast.style.cssText =
         'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
@@ -316,11 +316,11 @@ function showRosterPreview(players) {
                     <tbody id="preview-tbody">
                         ${players.map((p, i) => `
                             <tr id="preview-row-${i}">
-                                <td><input type="number" class="p-num" value="${p.number || i+1}"
+                                <td><input type="number" class="p-num" value="${typeof escapeAttr==='function'?escapeAttr(p.number||i+1):p.number||i+1}"
                                     style="width:44px;"></td>
-                                <td><input type="text" class="p-name" value="${p.name || ''}"></td>
-                                <td><input type="text" class="p-surname" value="${p.surname || ''}"></td>
-                                <td><input type="text" class="p-alias" value="${p.alias || ''}"></td>
+                                <td><input type="text" class="p-name" value="${typeof escapeAttr==='function'?escapeAttr(p.name):p.name}"></td>
+                                <td><input type="text" class="p-surname" value="${typeof escapeAttr==='function'?escapeAttr(p.surname):p.surname}"></td>
+                                <td><input type="text" class="p-alias" value="${typeof escapeAttr==='function'?escapeAttr(p.alias):p.alias}"></td>
                                 <td>
                                     <button onclick="document.getElementById('preview-row-${i}').remove()"
                                         style="background:none; border:none; color:#ff5858;
@@ -464,8 +464,8 @@ function openConvocationModal() {
                               display:flex;align-items:center;justify-content:center;
                               font-size:0.55rem;flex-shrink:0;">✓</span>
                         <span style="font-size:0.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            <span style="color:var(--primary);font-weight:bold;">${p.number}</span>
-                            ${p.alias || p.name || 'J' + (i + 1)}
+                            <span style="color:var(--primary);font-weight:bold;">${typeof escapeHtml==='function'?escapeHtml(p.number):p.number}</span>
+                            ${typeof escapeHtml==='function'?escapeHtml(p.alias||p.name||'J'+(i+1)):p.alias||p.name||'J'+(i+1)}
                         </span>
                     </div>
                 `).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.8rem; text-align:center; padding:2rem;">No hay jugadores en la plantilla.</p>'}
@@ -478,9 +478,9 @@ function openConvocationModal() {
                         border:1px solid rgba(88,166,255,0.12);">
                 <div style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;">
                     <span style="font-size:0.62rem; color:var(--text-muted); font-weight:700; margin-right:4px;">👨‍💼 STAFF</span>
-                    ${staffConfig.coach1 ? '<span style="font-size:0.65rem;background:rgba(88,166,255,0.15);color:var(--primary);border-radius:4px;padding:1px 6px;font-weight:700;">' + staffConfig.coach1 + '</span>' : ''}
-                    ${staffConfig.coach2 ? '<span style="font-size:0.65rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:4px;padding:1px 6px;">' + staffConfig.coach2 + '</span>' : ''}
-                    ${staffConfig.delegate ? '<span style="font-size:0.65rem;background:rgba(240,136,62,0.1);color:var(--secondary);border-radius:4px;padding:1px 6px;">' + staffConfig.delegate + '</span>' : ''}
+                    ${staffConfig.coach1 ? '<span style="font-size:0.65rem;background:rgba(88,166,255,0.15);color:var(--primary);border-radius:4px;padding:1px 6px;font-weight:700;">' + (typeof escapeHtml==='function'?escapeHtml(staffConfig.coach1):staffConfig.coach1) + '</span>' : ''}
+                    ${staffConfig.coach2 ? '<span style="font-size:0.65rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:4px;padding:1px 6px;">' + (typeof escapeHtml==='function'?escapeHtml(staffConfig.coach2):staffConfig.coach2) + '</span>' : ''}
+                    ${staffConfig.delegate ? '<span style="font-size:0.65rem;background:rgba(240,136,62,0.1);color:var(--secondary);border-radius:4px;padding:1px 6px;">' + (typeof escapeHtml==='function'?escapeHtml(staffConfig.delegate):staffConfig.delegate) + '</span>' : ''}
                 </div>
             </div>` : ''}
 
@@ -689,4 +689,3 @@ function startMatchWithConvocation() {
     pitch.addEventListener('click', () => closeDrawers());
     pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
 }
-
