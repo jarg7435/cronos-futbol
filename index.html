@@ -386,7 +386,7 @@
 
 
     <!-- ══ PANTALLA DE SELECCIÓN DE ROL (Landing) ══════════════════════ -->
-    <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:9000; 
+    <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:99000; 
          flex-direction:column; align-items:center; justify-content:center; padding:2rem; overflow-y:auto;">
         
         <div style="text-align:center; margin-bottom:3rem; animation: fadeIn 0.8s ease-out;">
@@ -1036,61 +1036,53 @@
     </script>
 
 
-
     <script>
-    // ══ STUBS DE SEGURIDAD Y EYE TOGGLES ══════════════════════════════════════
+    // ══ STUBS GLOBALES ══════════════════════════════════════════════
 
-    // 1. cerrarSesion
+    // cerrarSesion
     window.cerrarSesion = window.cerrarSesion || function() {
         if (typeof window.logoutUser === 'function') window.logoutUser();
         else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
     };
 
-    // 2. openUnifiedCommsMenu — se sobreescribe cuando cargue 21_coach_comms.js
-    window.openUnifiedCommsMenu = window.openUnifiedCommsMenu || function() {
-        if (typeof openClubReports === 'function') openClubReports();
-    };
+    // openUnifiedCommsMenu — stub hasta que cargue 21_coach_comms.js
+    if (!window._ucmStubSet) {
+        window._ucmStubSet = true;
+        if (!window.openUnifiedCommsMenu) {
+            window.openUnifiedCommsMenu = function() {
+                var m = document.getElementById('setup-modal');
+                if (m) { m.style.display = 'flex'; m.innerHTML = '<div class="modal-content" style="padding:2rem;color:white;text-align:center;"><p>⏳ Módulo de comunicaciones cargando...</p><button onclick="document.getElementById('setup-modal').style.display='none'" class="btn" style="margin-top:1rem;">Cerrar</button></div>'; }
+            };
+        }
+    }
 
-    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
-    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
-    if (!window._roleSelectStubSet) {
-        window._roleSelectStubSet = true;
-        var _origShowRoleSelector = window.showRoleSelector;
+    // BUG 1: showRoleSelector — auth.js lo sobreescribe al cargar, pero lo necesitamos ya
+    if (!window._rsStubSet) {
+        window._rsStubSet = true;
         window.showRoleSelector = function() {
-            if (typeof window.showRoleSelection === 'function') {
-                window.showRoleSelection();
-            } else if (_origShowRoleSelector && _origShowRoleSelector !== window.showRoleSelector) {
-                _origShowRoleSelector();
-            } else {
-                var rs = document.getElementById('role-selection-screen');
-                if (rs) { rs.style.display = 'flex'; }
-            }
+            if (typeof window.showRoleSelection === 'function') return window.showRoleSelection();
+            var rs = document.getElementById('role-selection-screen');
+            if (rs) { rs.style.display = 'flex'; document.body.classList.remove('locked'); }
         };
     }
 
-    // 4. EYE TOGGLES para contraseña — los botones existen pero no tienen handler
-    (function () {
-        function wireToggle(inputId, btnId) {
-            var btn = document.getElementById(btnId);
-            var inp = document.getElementById(inputId);
-            if (!btn || !inp) return;
-            btn.addEventListener('click', function () {
-                var show = (inp.type === 'password');
-                inp.type  = show ? 'text'     : 'password';
-                btn.textContent = show ? '🙈' : '👁️';
+    // BUG 2: Eye toggles de contraseña — conectar botones 👁
+    (function wireEyes() {
+        function wire(inputId, btnId) {
+            var i = document.getElementById(inputId), b = document.getElementById(btnId);
+            if (!i || !b) return;
+            b.addEventListener('click', function() {
+                i.type = (i.type === 'password') ? 'text' : 'password';
+                b.textContent = (i.type === 'text') ? '🙈' : '👁️';
             });
         }
-        // Puede que el DOM no esté listo aún si el script está en <body>
         function tryWire() {
-            wireToggle('auth-password',             'toggle-pwd-login');
-            wireToggle('register-password',         'toggle-pwd-register');
-            wireToggle('register-password-confirm', 'toggle-pwd-confirm');
+            wire('auth-password', 'toggle-pwd-login');
+            wire('register-password', 'toggle-pwd-register');
+            wire('register-password-confirm', 'toggle-pwd-confirm');
         }
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', tryWire);
-        } else {
-            tryWire();
-        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tryWire);
+        else tryWire();
     })();
     </script>
 </body>

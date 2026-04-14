@@ -1,9 +1,12 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FÚTBOL — Service Worker
-//  Incrementa VERSION en cada deploy para forzar actualización
+//  INSTRUCCIÓN PARA EL DESARROLLADOR:
+//  Cada vez que subas una versión nueva a GitHub,
+//  incrementa el número de VERSION (v31, v32, etc.)
+//  Los usuarios verán la nueva versión automáticamente.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v33';
-const CACHE_NAME = 'cronos-cache-v8.0';
+const VERSION    = 'v34';
+const CACHE_NAME = 'cronos-cache-v9.0';
 
 const ASSETS = [
     './',
@@ -15,11 +18,13 @@ const ASSETS = [
     'https://cdn-icons-png.flaticon.com/512/53/53283.png'
 ];
 
-// ── INSTALL ──────────────────────────────────────────────────
+// ── INSTALL: precachear todos los assets ─────────────────────
 self.addEventListener('install', (e) => {
     e.waitUntil(
         caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
     );
+    // Activa el nuevo SW inmediatamente sin esperar a que
+    // el usuario cierre todas las pestañas
     self.skipWaiting();
 });
 
@@ -34,31 +39,28 @@ self.addEventListener('activate', (e) => {
             )
         )
     );
+    // Toma el control de todas las pestañas abiertas de inmediato
     self.clients.claim();
 });
 
 // ── FETCH: Red primero, caché como respaldo ───────────────────
+// Así los usuarios siempre reciben la versión más reciente
+// cuando tienen conexión. Si están offline, sirve la caché.
 self.addEventListener('fetch', (e) => {
-    // ⚠️ CRÍTICO: ignorar cualquier petición que NO sea http o https
-    // (chrome-extension://, moz-extension://, etc. no se pueden cachear)
+    // Ignorar URLs que no son http/https (chrome-extension://, etc.)
     if (!e.request.url.startsWith('http')) return;
 
-    // Solo interceptar GET
+    // Solo interceptar peticiones GET
     if (e.request.method !== 'GET') return;
 
+    // No cachear peticiones de Firebase (auth, Firestore, Functions)
+    const _u = e.request.url;
+    if (_u.includes('firebaseapp.com') || _u.includes('googleapis.com') ||
+        _u.includes('identitytoolkit') || _u.includes('securetoken.google')) return;
+
+
+    // Para los archivos principales de la app → RED PRIMERO
     const url = new URL(e.request.url);
-
-    // Ignorar peticiones de Firebase (autenticación, Firestore, Functions)
-    // No queremos cachear respuestas de la API
-    const isFirebase =
-        url.hostname.includes('firebaseapp.com')     ||
-        url.hostname.includes('googleapis.com')      ||
-        url.hostname.includes('identitytoolkit.google.com') ||
-        url.hostname.includes('securetoken.google.com');
-
-    if (isFirebase) return;
-
-    // Archivos principales de la app → RED PRIMERO
     const isAppFile =
         url.pathname.endsWith('.html') ||
         url.pathname.endsWith('.js')   ||
@@ -83,7 +85,7 @@ self.addEventListener('fetch', (e) => {
                 )
         );
     } else {
-        // Imágenes, fuentes → CACHÉ PRIMERO
+        // Para imágenes, fuentes, etc. → CACHÉ PRIMERO (más rápido)
         e.respondWith(
             caches.match(e.request).then(
                 (cached) => cached || fetch(e.request)
