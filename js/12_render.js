@@ -22,6 +22,15 @@ function renderPlayers() {
 
     sortBenchUI('home');
     if (analyzeAway) sortBenchUI('away');
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  FIX: Restaurar tarjeta del cuerpo técnico después de re-renderizar
+    //  renderPlayers() destruye el contenido de bench-list con innerHTML='',
+    //  lo que elimina la tarjeta de staff generada por 07_staff.js.
+    //  Sin esta llamada, el staff desaparece tras cada acción (gol, tarjeta,
+    //  sustitución, arrastre, etc.)
+    // ═══════════════════════════════════════════════════════════════════
+    if (typeof renderStaffInBench === 'function') renderStaffInBench();
 }
 
 function sortBenchUI(team) {
@@ -197,4 +206,3 @@ function handleTouchEnd(e, player) {
     touchData.draggedPlayerId = null;
     touchData.hasMoved = false;
 }
-

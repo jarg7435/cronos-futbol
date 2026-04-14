@@ -34,12 +34,22 @@ function closePlayerActionModal() {
     renderStaffInBench();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  toggleInjury — UNA SOLA DEFINICIÓN (la duplicada fue eliminada)
+//  La versión anterior estaba duplicada: la segunda sobrescribía
+//  a esta y NO llamaba a logEvent(), por lo que las lesiones no
+//  quedaban registradas en la Timeline del jugador.
+// ═══════════════════════════════════════════════════════════════════
 function toggleInjury() {
     if (!activeActionPlayerId) return;
     const p = players.find(x => x.id === activeActionPlayerId);
     if (!p) return;
+
     p.injured = !p.injured;
+
+    // Registrar evento en la Timeline cuando se lesiona (no al deslesionar)
     if (p.injured) logEvent(p, 'LESIÓN');
+
     // Actualizar botón en el modal para reflejar estado
     const btn = document.getElementById('btn-injury');
     if (btn) {
@@ -47,22 +57,7 @@ function toggleInjury() {
         btn.style.border     = p.injured ? '1px solid #e74c3c' : '';
         btn.textContent      = p.injured ? '🚑 Lesionado ✓' : '🚑 Lesión';
     }
-    renderPlayers();
-    liveSyncOnAction();
-}
 
-function toggleInjury() {
-    if (!activeActionPlayerId) return;
-    const p = players.find(x => x.id === activeActionPlayerId);
-    if (!p) return;
-    p.injured = !p.injured;
-    // Actualizar aspecto del botón en el modal
-    const btn = document.getElementById('btn-injury');
-    if (btn) {
-        btn.style.borderColor  = p.injured ? '#e74c3c' : 'transparent';
-        btn.style.background   = p.injured ? 'rgba(231,76,60,0.15)' : 'var(--glass)';
-        btn.querySelector('span').style.color = p.injured ? '#e74c3c' : 'var(--text-muted)';
-    }
     renderPlayers();
     liveSyncOnAction();
 }
@@ -110,13 +105,13 @@ function terminateMatch(reason) {
     matchPhase = 'finished';
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
-    stopLiveSync(); 
-    
+    stopLiveSync();
+
     // Disparar informes automáticos e internos
     if (typeof saveAllMatchReportsInternal === 'function') {
         saveAllMatchReportsInternal();
     }
-    
+
     alert(`🏁 PARTIDO FINALIZADO: ${reason}\nResultado final: ${TEAM_NAMES.home} ${document.getElementById('score-home').textContent} - ${document.getElementById('score-away').textContent} ${TEAM_NAMES.away}`);
 }
 
@@ -131,7 +126,7 @@ function endMatch() {
     document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
-    stopLiveSync(); 
+    stopLiveSync();
 
     // Disparar informes automáticos e internos
     if (typeof saveAllMatchReportsInternal === 'function') {
@@ -231,4 +226,3 @@ function cancelPendingSubstitution() {
     if (cancelBtn) cancelBtn.remove();
     updateMasterUI();
 }
-
