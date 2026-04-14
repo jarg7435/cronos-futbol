@@ -145,15 +145,7 @@ export async function checkAuthorization(user) {
 
         const data = snap.data();
         if (!data.isAuthorized) {
-            const status = data.status || 'pending';
-            const msgs = {
-                'pending':         '⏳ Tu solicitud está pendiente de revisión por el administrador de tu club.',
-                'pending_sa':      '⏳ Tu solicitud ha sido enviada al SuperAdmin. En breve recibirás confirmación.',
-                'pending_register':'⏳ Tu acceso está preparado. Inicia sesión con el email que te indicaron.',
-                'rejected':        '❌ Tu solicitud fue denegada. Contacta con el administrador de tu club.',
-                'blocked':         '🔒 Tu cuenta está suspendida. Contacta con el administrador.',
-            };
-            showAuthError(msgs[status] || '⏳ Acceso pendiente de aprobación. Contacta con tu administrador.');
+            showAuthError('⏳ Acceso pendiente de aprobación. Contacta con tu administrador.');
             await fa.signOut(fa.auth);
             return;
         }
@@ -330,14 +322,31 @@ export async function doAuth() {
         // ── Post-registro ─────────────────────────────────────────
         if (!isAuthorized) {
             await fa.signOut(fa.auth);
+            // Obtener nombre del club seleccionado
+            const clubSelect = document.getElementById('auth-club-select');
+            const clubName = clubSelect?.options[clubSelect?.selectedIndex]?.text || 'tu club';
+
             const msgByRole = {
-                club_admin:  '✅ Solicitud de club enviada al SuperAdmin. Recibirás confirmación por correo.',
-                individual:  '✅ Solicitud enviada al SuperAdmin. Pendiente de aprobación.',
+                club_admin:  '✅ Solicitud enviada. El SuperAdmin revisará la creación de tu club.',
+                individual:  '✅ Registro completado. Pendiente de aprobación por el SuperAdmin.',
             };
-            showAuthError(
-                msgByRole[requestedRole] ||
-                '✅ Solicitud enviada al administrador de tu club. Cuando sea aprobada por el SuperAdmin, podrás acceder.'
-            );
+
+            const pendingMsg = msgByRole[requestedRole] ||
+                `✅ Solicitud registrada correctamente en "${clubName}".
+
+` +
+                `⏳ ¿Qué ocurre ahora?
+` +
+                `• El administrador de ${clubName} revisará tu solicitud.
+` +
+                `• La enviará al SuperAdmin para aprobación final.
+` +
+                `• Cuando sea aprobada podrás acceder con este email.
+
+` +
+                `📧 Guarda tu email y contraseña.`;
+
+            showAuthError(pendingMsg);
             switchTab('login');
         } else {
             showAuthError('✅ Registro completado. Entrando…');
