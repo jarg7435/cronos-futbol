@@ -505,7 +505,7 @@
             }
         </style>
 
-        <button onclick="cerrarSesion()" style="margin-top:4rem; background:none; border:1px solid rgba(255,255,255,0.1); 
+        <button onclick="_doLogout()" style="margin-top:4rem; background:none; border:1px solid rgba(255,255,255,0.1); 
                 color:var(--text-muted); padding:0.6rem 1.5rem; border-radius:30px; cursor:pointer; font-size:0.8rem;">
             ⏻ Cerrar Sesión
         </button>
@@ -1039,23 +1039,26 @@
     <script>
     // ══ STUBS GLOBALES ══════════════════════════════════════════════
 
-    // cerrarSesion — busca logoutUser en el momento del clic (no al definirse)
-    window.cerrarSesion = function() {
-        if (typeof window.logoutUser === 'function') {
-            window.logoutUser();
+    // _doLogout: función de cierre de sesión robusta
+    // Llamada directamente desde botón, no depende de auth.js
+    window._doLogout = function() {
+        if (!confirm('¿Seguro que deseas cerrar sesión?')) return;
+        sessionStorage.clear();
+        localStorage.removeItem('cronos_session_uid');
+        localStorage.removeItem('cronos_session_email');
+        localStorage.removeItem('cronos_session_role');
+        var fa = window._cronos_auth;
+        if (fa && fa.auth) {
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js')
+                .then(function(m) { m.signOut(fa.auth).finally(function() { location.reload(); }); })
+                .catch(function() { location.reload(); });
         } else {
-            if (confirm('¿Seguro que deseas salir?')) {
-                sessionStorage.clear();
-                // Intentar signOut de Firebase directamente
-                var fa = window._cronos_auth;
-                if (fa && fa.auth && fa.signOut) {
-                    fa.signOut(fa.auth).finally(function() { location.reload(); });
-                } else {
-                    location.reload();
-                }
-            }
+            location.reload();
         }
     };
+    // cerrarSesion — alias para compatibilidad
+    window.cerrarSesion = window._doLogout;
+    window.logoutUser   = window._doLogout;
 
     // openUnifiedCommsMenu — stub hasta que cargue 21_coach_comms.js
     if (!window._ucmStubSet) {
