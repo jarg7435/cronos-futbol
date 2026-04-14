@@ -1361,11 +1361,16 @@ async function saveAllMatchReportsInternal() {
 // ── Gestión de Contactos (Teléfonos WhatsApp) ─────────────────────────
 async function openContactManager() {
     const me = window._cronosCurrentUser;
-    const db = window._cronos_auth.db;
-    showSpinner('Cargando contactos…');
+    if (!me) { if(typeof showToast==='function') showToast('⚠️ No hay sesión activa',3000); return; }
+    const fa = window._cronos_auth;
+    if (!fa || !fa.db) { if(typeof showToast==='function') showToast('⚠️ Firebase no disponible',3000); return; }
+    const db = fa.db;
+    if (typeof showSpinner === 'function') showSpinner('Cargando contactos…');
 
-    // Asegurar que tenemos la config de email cargada
-    if (typeof loadEmailConfig === 'function') loadEmailConfig();
+    // Asegurar que tenemos la config de email cargada y que emailConfig existe
+    if (typeof window.emailConfig === 'undefined') window.emailConfig = { contacts: [] };
+    if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+    if (!window.emailConfig) window.emailConfig = { contacts: [] };
 
     try {
         const { collection, getDocs, query, where } = await import(
@@ -1382,7 +1387,8 @@ async function openContactManager() {
         hideSpinner();
 
         // --- MIGRACIÓN Y PREPARACIÓN DE DATOS ---
-        if (!emailConfig.contacts) {
+        if (!emailConfig || !emailConfig.contacts) {
+            if (!emailConfig) emailConfig = {};
             emailConfig.contacts = [];
             // Migrar Director
             if (emailConfig.directorEmail) {

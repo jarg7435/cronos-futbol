@@ -151,12 +151,12 @@ async function openStaffDashboard() {
         <!-- Tabs -->
         <div style="display:flex;gap:0.2rem;padding:0.5rem 1.5rem;background:#161b22;
                     border-bottom:1px solid var(--glass-border);flex-shrink:0;overflow-x:auto;">
-            <button onclick="switchStaffTab('convocatorias')" class="staff-tab active" id="tab-convocatorias">📋 Convocatorias</button>
-            <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entrenamientos</button>
-            <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes de Partido</button>
+            <button onclick="switchStaffTab('convocatorias')" class="staff-tab active" id="tab-convocatorias">📋 Convoc.</button>
+            <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
+            <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
             <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
             <button onclick="openLiveMatchesView()" class="staff-tab"
-                style="color:#3fb950;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
+                style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
                 🔴 En Vivo</button>
         </div>
 
