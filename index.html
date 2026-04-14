@@ -1085,5 +1085,36 @@
         else tryWire();
     })();
     </script>
+
+    <script>
+    // ══ PATCH: ocultar botón ADMIN para entrenadores (role='user') ══
+    (function patchAdminBtn() {
+        // Override openSetupModal after app.js loads to strip ADMIN button for coaches
+        window.addEventListener('load', function() {
+            var _origOpenSetup = window.openSetupModal;
+            if (typeof _origOpenSetup !== 'function') return;
+            window.openSetupModal = function() {
+                _origOpenSetup.apply(this, arguments);
+                // After modal renders, remove ADMIN button if user is plain coach
+                setTimeout(function() {
+                    var u = window._cronosCurrentUser;
+                    if (!u) return;
+                    var role = u._activeRole || u.role;
+                    var isAdmin = ['admin','superadmin','club_admin'].includes(u.role) ||
+                                  ['admin','superadmin','club_admin'].includes(role);
+                    if (!isAdmin) {
+                        // Remove any admin/club buttons visible for this user
+                        document.querySelectorAll('#setup-modal button').forEach(function(btn) {
+                            var txt = btn.textContent || '';
+                            if (txt.includes('ADMIN') || txt.includes('MI CLUB')) {
+                                btn.style.display = 'none';
+                            }
+                        });
+                    }
+                }, 50);
+            };
+        });
+    })();
+    </script>
 </body>
 </html>
