@@ -1036,15 +1036,7 @@
     </script>
 
 
-    <script>
-    window.cerrarSesion = window.cerrarSesion || function() {
-        if (typeof window.logoutUser === 'function') window.logoutUser();
-        else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
-    };
-    window.openUnifiedCommsMenu = window.openUnifiedCommsMenu || function() {
-        if (typeof openClubReports === 'function') openClubReports();
-    };
-    </script>
+
     <script>
     // ══ STUBS DE SEGURIDAD Y EYE TOGGLES ══════════════════════════════════════
 
@@ -1060,15 +1052,21 @@
     };
 
     // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
-    window.showRoleSelector = window.showRoleSelector || function() {
-        if      (typeof window.showRoleSelection === 'function') window.showRoleSelection();
-        else if (typeof window.showRoleSelector  === 'function') window.showRoleSelector();
-        else {
-            // Fallback: volver a la pantalla de auth
-            const rs = document.getElementById('role-selection-screen');
-            if (rs) { rs.style.display = 'flex'; }
-        }
-    };
+    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
+    if (!window._roleSelectStubSet) {
+        window._roleSelectStubSet = true;
+        var _origShowRoleSelector = window.showRoleSelector;
+        window.showRoleSelector = function() {
+            if (typeof window.showRoleSelection === 'function') {
+                window.showRoleSelection();
+            } else if (_origShowRoleSelector && _origShowRoleSelector !== window.showRoleSelector) {
+                _origShowRoleSelector();
+            } else {
+                var rs = document.getElementById('role-selection-screen');
+                if (rs) { rs.style.display = 'flex'; }
+            }
+        };
+    }
 
     // 4. EYE TOGGLES para contraseña — los botones existen pero no tienen handler
     (function () {
