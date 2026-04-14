@@ -57,14 +57,16 @@ function renderStaffInBench() {
     if (staff.delegate)      extras.push({ tag:'DEL', name:staff.delegate,      bg:'rgba(240,136,62,0.2)', color:'#f0883e' });
     if (staff.fieldDelegate) extras.push({ tag:'CAM', name:staff.fieldDelegate, bg:'rgba(63,185,80,0.2)',  color:'#3fb950' });
 
-    let html = '<div style="font-size:0.6rem;color:#7d8590;font-weight:700;letter-spacing:0.5px;margin-bottom:5px;">👨‍💼 CUERPO TÉCNICO</div>';
+    const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => s;
+
+    let html = '<div style="font-size:0.6rem;color:#7d8590;font-weight:700;letter-spacing:0.5px;margin-bottom:5px;">&#x1F468;&#x200D;&#x1F4BC; CUERPO TECNICO</div>';
 
     if (staff.coach1) {
         html += `<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
             <span style="font-size:0.6rem;background:rgba(88,166,255,0.25);color:#58a6ff;
                          border-radius:3px;padding:1px 5px;flex-shrink:0;font-weight:700;">1ER</span>
             <span style="font-size:0.73rem;font-weight:700;color:#cdd9e5;
-                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${staff.coach1}</span>
+                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(staff.coach1)}</span>
         </div>`;
     }
 
@@ -73,15 +75,15 @@ function renderStaffInBench() {
             <summary style="cursor:pointer;color:#7d8590;font-size:0.65rem;
                             list-style:none;display:flex;align-items:center;
                             gap:4px;margin-top:2px;user-select:none;">
-                <span>▾</span> ${extras.length} más
+                <span>&#9662;</span> ${extras.length} m&#225;s
             </summary>
             <div style="margin-top:5px;display:flex;flex-direction:column;gap:4px;">
                 ${extras.map(e =>
                     `<div style="display:flex;align-items:center;gap:5px;">
                         <span style="font-size:0.6rem;background:${e.bg};color:${e.color};
-                                     border-radius:3px;padding:1px 5px;flex-shrink:0;font-weight:700;">${e.tag}</span>
+                                     border-radius:3px;padding:1px 5px;flex-shrink:0;font-weight:700;">${esc(e.tag)}</span>
                         <span style="font-size:0.72rem;color:#cdd9e5;white-space:nowrap;
-                                     overflow:hidden;text-overflow:ellipsis;">${e.name}</span>
+                                     overflow:hidden;text-overflow:ellipsis;">${esc(e.name)}</span>
                     </div>`
                 ).join('')}
             </div>
@@ -111,6 +113,8 @@ function openRosterManager() {
         if (!p.id) p.id = 'J-' + String(i + 1).padStart(2, '0');
     });
 
+    const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => s;
+
     const modal = document.getElementById('setup-modal');
     modal.innerHTML = `
         <div class="modal-content" style="width: 800px; max-width: 95%;">
@@ -122,22 +126,22 @@ function openRosterManager() {
                                background:var(--glass); border:1px solid var(--glass-border);
                                border-radius:8px; color:var(--text-muted); font-size:0.85rem;
                                font-weight:600; cursor:pointer; white-space:nowrap;">
-                        ← Volver
+                        &#8592; Volver
                     </button>
-                    <h2 style="margin:0;">Gestionar Plantilla - ${mode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}</h2>
+                    <h2 style="margin:0;">Gestionar Plantilla - ${mode === 'f7' ? 'F&#250;tbol 7' : 'F&#250;tbol 11'}</h2>
                 </div>
                 <button onclick="triggerRosterPhoto()"
-                    title="Haz una foto a la lista de jugadores y la IA la importa automáticamente"
+                    title="Haz una foto a la lista de jugadores y la IA la importa autom&#225;ticamente"
                     style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
                            background:rgba(240,136,62,0.15); border:1px solid rgba(240,136,62,0.5);
                            border-radius:8px; color:var(--secondary); font-size:0.85rem;
                            font-weight:700; cursor:pointer; white-space:nowrap;">
-                    📷 IMPORTAR CON IA
+                    &#x1F4F7; IMPORTAR CON IA
                 </button>
             </div>
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom:0.8rem;">
-                Completa los datos de tus ${limit} jugadores · El Alias es el nombre que aparecerá en la ficha ·
-                <span style="color:var(--secondary);">📷 Haz una foto a la lista y la IA la importa sola</span>
+                Completa los datos de tus ${limit} jugadores &#183; El Alias es el nombre que aparecer&#225; en la ficha &#183;
+                <span style="color:var(--secondary);">&#x1F4F7; Haz una foto a la lista y la IA la importa sola</span>
             </p>
             <!-- Input oculto para seleccionar imagen -->
             <input type="file" id="roster-photo-input" accept="image/*" capture="environment"
@@ -150,53 +154,53 @@ function openRosterManager() {
                             <th style="width:44px;">#</th>
                             <th>Nombre</th>
                             <th>Apellidos</th>
-                            <th style="color:var(--primary);">★ Alias <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);">(en ficha)</span></th>
+                            <th style="color:var(--primary);">&#9733; Alias <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);">(en ficha)</span></th>
                         </tr>
                     </thead>
                     <tbody id="roster-tbody">
                         ${roster[mode].map((p, i) => `
                             <tr>
-                                <td><input type="text" class="r-id" value="${p.id}" readonly tabindex="-1"
+                                <td><input type="text" class="r-id" value="${esc(p.id)}" readonly tabindex="-1"
                                     style="width:45px; background:transparent; border:none; color:var(--text-muted); font-size:0.7rem; font-weight:bold; text-align:center;"></td>
                                 <td><input type="number" class="r-num" value="${p.number}" style="width:40px;"></td>
-                                <td><input type="text" class="r-name" value="${p.name}"></td>
-                                <td><input type="text" class="r-surname" value="${p.surname}"></td>
-                                <td><input type="text" class="r-alias" value="${p.alias}"></td>
+                                <td><input type="text" class="r-name" value="${esc(p.name)}"></td>
+                                <td><input type="text" class="r-surname" value="${esc(p.surname)}"></td>
+                                <td><input type="text" class="r-alias" value="${esc(p.alias)}"></td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             </div>
-            <!-- CUERPO TÉCNICO -->
+            <!-- CUERPO TECNICO -->
             <div style="margin-top:1.2rem; padding:1rem; background:var(--glass);
                         border-radius:10px; border:1px solid var(--glass-border);">
                 <h3 style="font-size:0.85rem; color:var(--primary); margin:0 0 0.8rem;
                            display:flex; align-items:center; gap:0.5rem;">
-                    👨‍💼 Cuerpo Técnico
+                    &#x1F468;&#x200D;&#x1F4BC; Cuerpo T&#233;cnico
                     <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400;">
-                        — aparecerá en el banquillo durante el partido
+                        &#8212; aparecer&#225; en el banquillo durante el partido
                     </span>
                 </h3>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem;">
                     <div class="form-group" style="margin:0;">
                         <label style="font-size:0.75rem;">1er Entrenador</label>
-                        <input type="text" id="staff-coach1" value="${staffConfig.coach1}"
+                        <input type="text" id="staff-coach1" value="${esc(staffConfig.coach1)}"
                                placeholder="Nombre del entrenador"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
                                       color:var(--text);font-size:0.85rem;">
                     </div>
                     <div class="form-group" style="margin:0;">
-                        <label style="font-size:0.75rem;">2º Entrenador</label>
-                        <input type="text" id="staff-coach2" value="${staffConfig.coach2}"
-                               placeholder="Nombre del 2º entrenador"
+                        <label style="font-size:0.75rem;">2&#186; Entrenador</label>
+                        <input type="text" id="staff-coach2" value="${esc(staffConfig.coach2)}"
+                               placeholder="Nombre del 2&#186; entrenador"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
                                       color:var(--text);font-size:0.85rem;">
                     </div>
                     <div class="form-group" style="margin:0;">
                         <label style="font-size:0.75rem;">Delegado de Equipo</label>
-                        <input type="text" id="staff-delegate" value="${staffConfig.delegate}"
+                        <input type="text" id="staff-delegate" value="${esc(staffConfig.delegate)}"
                                placeholder="Nombre del delegado"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
@@ -207,8 +211,8 @@ function openRosterManager() {
                             Delegado de Campo
                             <span style="color:var(--text-muted);font-size:0.68rem;">(solo en casa, opcional)</span>
                         </label>
-                        <input type="text" id="staff-field-delegate" value="${staffConfig.fieldDelegate}"
-                               placeholder="Dejar vacío si se juega fuera"
+                        <input type="text" id="staff-field-delegate" value="${esc(staffConfig.fieldDelegate)}"
+                               placeholder="Dejar vac&#237;o si se juega fuera"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
                                       color:var(--text);font-size:0.85rem;">
@@ -223,4 +227,3 @@ function openRosterManager() {
         </div>
     `;
 }
-

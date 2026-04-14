@@ -3,8 +3,8 @@ let activeActionPlayerId = null;
 
 function openPlayerActionModal(player) {
     activeActionPlayerId = player.id;
-    document.getElementById('action-player-name').innerHTML = `${player.name} <span style="font-size:0.8rem">✏️</span>`;
-    document.getElementById('action-player-number').innerHTML = `Dorsal ${player.number} <span style="font-size:0.8rem">✏️</span>`;
+    document.getElementById('action-player-name').innerHTML = `${escapeHtml(player.name)} <span style="font-size:0.8rem">✏️</span>`;
+    document.getElementById('action-player-number').innerHTML = `Dorsal ${escapeHtml(String(player.number))} <span style="font-size:0.8rem">✏️</span>`;
     document.getElementById('action-player-goals').textContent = `${player.goals || 0} ⚽`;
     // Resaltar botón de tarjeta activa
     const btnAmarilla = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
@@ -34,22 +34,13 @@ function closePlayerActionModal() {
     renderStaffInBench();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  toggleInjury — UNA SOLA DEFINICIÓN (la duplicada fue eliminada)
-//  La versión anterior estaba duplicada: la segunda sobrescribía
-//  a esta y NO llamaba a logEvent(), por lo que las lesiones no
-//  quedaban registradas en la Timeline del jugador.
-// ═══════════════════════════════════════════════════════════════════
+// Versión ÚNICA de toggleInjury — con logEvent al lesionar
 function toggleInjury() {
     if (!activeActionPlayerId) return;
     const p = players.find(x => x.id === activeActionPlayerId);
     if (!p) return;
-
     p.injured = !p.injured;
-
-    // Registrar evento en la Timeline cuando se lesiona (no al deslesionar)
     if (p.injured) logEvent(p, 'LESIÓN');
-
     // Actualizar botón en el modal para reflejar estado
     const btn = document.getElementById('btn-injury');
     if (btn) {
@@ -57,7 +48,6 @@ function toggleInjury() {
         btn.style.border     = p.injured ? '1px solid #e74c3c' : '';
         btn.textContent      = p.injured ? '🚑 Lesionado ✓' : '🚑 Lesión';
     }
-
     renderPlayers();
     liveSyncOnAction();
 }
@@ -105,13 +95,13 @@ function terminateMatch(reason) {
     matchPhase = 'finished';
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
-    stopLiveSync();
-
+    stopLiveSync(); 
+    
     // Disparar informes automáticos e internos
     if (typeof saveAllMatchReportsInternal === 'function') {
         saveAllMatchReportsInternal();
     }
-
+    
     alert(`🏁 PARTIDO FINALIZADO: ${reason}\nResultado final: ${TEAM_NAMES.home} ${document.getElementById('score-home').textContent} - ${document.getElementById('score-away').textContent} ${TEAM_NAMES.away}`);
 }
 
@@ -126,7 +116,7 @@ function endMatch() {
     document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
-    stopLiveSync();
+    stopLiveSync(); 
 
     // Disparar informes automáticos e internos
     if (typeof saveAllMatchReportsInternal === 'function') {
@@ -175,7 +165,7 @@ function editNameFromModal() {
     const newName = prompt(`Editar nombre para dorsal ${player.number}:`, player.name);
     if (newName !== null && newName.trim() !== "") {
         player.name = newName.trim();
-        document.getElementById('action-player-name').innerHTML = `${player.name} <span style="font-size:0.8rem">✏️</span>`;
+        document.getElementById('action-player-name').innerHTML = `${escapeHtml(player.name)} <span style="font-size:0.8rem">✏️</span>`;
         renderPlayers();
     }
 }
@@ -186,7 +176,7 @@ function editNumberFromModal() {
     const newNum = prompt(`Editar dorsal para ${player.name}:`, player.number);
     if (newNum !== null && !isNaN(newNum)) {
         player.number = newNum;
-        document.getElementById('action-player-number').innerHTML = `Dorsal ${player.number} <span style="font-size:0.8rem">✏️</span>`;
+        document.getElementById('action-player-number').innerHTML = `Dorsal ${escapeHtml(String(player.number))} <span style="font-size:0.8rem">✏️</span>`;
         renderPlayers();
     }
 }
