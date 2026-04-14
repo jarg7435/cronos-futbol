@@ -73,10 +73,11 @@ function createPlayerChip(player) {
 
     // Sanitizar nombre del jugador para prevenir XSS
     const safeName = typeof escapeHtml === 'function' ? escapeHtml(player.name) : player.name;
+    const safeNumber = typeof escapeHtml === 'function' ? escapeHtml(String(player.number)) : player.number;
 
     div.innerHTML = `
         <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
-        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${player.number}</div>
+        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${safeNumber}</div>
         <div class="player-name" style="pointer-events: none;">${safeName}${injuredLabel}</div>
         ${indicatorsHTML}
     `;
@@ -206,3 +207,4 @@ function handleTouchEnd(e, player) {
     touchData.draggedPlayerId = null;
     touchData.hasMoved = false;
 }
+
