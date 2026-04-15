@@ -23,11 +23,14 @@ function renderPlayers() {
     sortBenchUI('home');
     if (analyzeAway) sortBenchUI('away');
 
-    // Re-renderizar la tarjeta del cuerpo técnico después de limpiar el bench
-    // Esto evita que la staff card desaparezca al re-renderizar jugadores
-    if (typeof renderStaffInBench === 'function') {
-        renderStaffInBench();
-    }
+    // ═══════════════════════════════════════════════════════════════════
+    //  FIX: Restaurar tarjeta del cuerpo técnico después de re-renderizar
+    //  renderPlayers() destruye el contenido de bench-list con innerHTML='',
+    //  lo que elimina la tarjeta de staff generada por 07_staff.js.
+    //  Sin esta llamada, el staff desaparece tras cada acción (gol, tarjeta,
+    //  sustitución, arrastre, etc.)
+    // ═══════════════════════════════════════════════════════════════════
+    if (typeof renderStaffInBench === 'function') renderStaffInBench();
 }
 
 function sortBenchUI(team) {
@@ -71,14 +74,10 @@ function createPlayerChip(player) {
         ? `<span style="color:#ff4040;font-weight:900;margin-left:2px;">✚</span>`
         : '';
 
-    // Sanitizar nombre del jugador para prevenir XSS
-    const safeName = typeof escapeHtml === 'function' ? escapeHtml(player.name) : player.name;
-    const safeNumber = typeof escapeHtml === 'function' ? escapeHtml(String(player.number)) : player.number;
-
     div.innerHTML = `
         <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
-        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${safeNumber}</div>
-        <div class="player-name" style="pointer-events: none;">${safeName}${injuredLabel}</div>
+        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${player.number}</div>
+        <div class="player-name" style="pointer-events: none;">${player.name}${injuredLabel}</div>
         ${indicatorsHTML}
     `;
 
@@ -124,8 +123,8 @@ function createPlayerChip(player) {
     return div;
 }
 
-let touchData = { draggedPlayerId: null, hasMoved: false, clone: null };
-let lastTouchTime = 0;
+if (typeof touchData === "undefined") var touchData = { draggedPlayerId: null, hasMoved: false, clone: null };
+if (typeof lastTouchTime === "undefined") var lastTouchTime = 0;
 
 function handleTouchStart(e, player) {
     const now = new Date().getTime();
@@ -207,4 +206,3 @@ function handleTouchEnd(e, player) {
     touchData.draggedPlayerId = null;
     touchData.hasMoved = false;
 }
-

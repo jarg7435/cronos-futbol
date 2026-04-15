@@ -713,7 +713,6 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
             </div>
         </label>`;
     }).join('');
-    }).join('');
 }
 
 window.saveMatchReportPreselection = function() {
