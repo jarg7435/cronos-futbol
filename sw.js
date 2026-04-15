@@ -5,8 +5,8 @@
 //  incrementa el número de VERSION (v31, v32, etc.)
 //  Los usuarios verán la nueva versión automáticamente.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v34';
-const CACHE_NAME = 'cronos-cache-v9.0';
+const VERSION    = 'v35';
+const CACHE_NAME = 'cronos-cache-v10.0';
 
 const ASSETS = [
     './',
