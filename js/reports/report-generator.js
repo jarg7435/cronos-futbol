@@ -2,12 +2,12 @@
  * Chronos Fútbol - ReportGenerator v9.0
  * Genera informes profesionales en CSV y PDF (HTML-Print) con branding oficial.
  *
- * v9.0:
- *   - generatePDF() implementada: informe HTML profesional A4 landscape
- *   - Incluye marcador, estadísticas, metadatos, goleadores
- *   - Tabla completa con shifts, eventos, sustituciones con colores
- *   - Eliminado console.log de debug
- *   - BOM UTF-8 en CSV para compatibilidad Excel
+ * FIXED v9.0:
+ *   - generatePDF() implementada completamente: genera informe HTML
+ *     profesional con todas las estadísticas del partido.
+ *   - Soporta datos simples (matchData) y datos enriquecidos desde
+ *     la app principal (shifts, eventos, sustituciones).
+ *   - Eliminado console.log de debug.
  */
 
 class ReportGenerator {
@@ -49,16 +49,20 @@ class ReportGenerator {
 
     /**
      * generatePDF() — Genera un informe profesional del partido.
-     * Crea HTML con formato de impresión A4 landscape y abre diálogo
-     * de impresión del navegador (Guardar como PDF).
+     * Crea un HTML con formato de impresión y lo abre en una nueva ventana
+     * con el diálogo de impresión (permite "Guardar como PDF").
      *
      * matchData esperado:
-     *   { date, homeTeam, awayTeam, homeScore, awayScore,
+     *   {
+     *     date, homeTeam, awayTeam, homeScore, awayScore,
      *     mode, half1Time, half2Time, formation,
-     *     players: [{ number, name, team, time, goals, cards, injured,
-     *                 status, shiftsH1:[], shiftsH2:[], descanso,
-     *                 events:[{type,time,half}], history:[] }],
-     *     subColorMap: { subId: colorHex } }
+     *     players: [{
+     *       number, name, team, time, goals, cards, injured,
+     *       status, shiftsH1:[], shiftsH2:[], descanso,
+     *       events:[{type,time,half}], history:[]
+     *     }],
+     *     subColorMap: { subId: colorHex }
+     *   }
      */
     async generatePDF() {
         const d       = this.matchData;
@@ -95,10 +99,11 @@ class ReportGenerator {
             return (a.number || 0) - (b.number || 0);
         });
 
+        // ── Detectar máximos de shifts para tabla avanzada ─────────
         const maxH1 = Math.max(...sorted.map(p => (p.shiftsH1 || []).length), 1);
         const maxH2 = Math.max(...sorted.map(p => (p.shiftsH2 || []).length), 1);
 
-        // ── Leyenda de sustituciones ──────────────────────────────
+        // ── Generar leyenda de sustituciones ──────────────────────
         const legendEntries = Object.entries(subColorMap);
         const legendHTML = legendEntries.length > 0 ? `
             <div class="legend-box">
@@ -111,7 +116,7 @@ class ReportGenerator {
                 }).join('')}
             </div>` : '';
 
-        // ── Filas de jugadores ────────────────────────────────────
+        // ── Generar filas de jugadores ────────────────────────────
         const playerRows = sorted.map(p => {
             const teamLabel = p.team === 'home' ? home : away;
             const cardDisplay = p.cards === 'ninguna' ? '—' :
@@ -122,6 +127,7 @@ class ReportGenerator {
             const s = minutes % 60;
             const timeStr = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 
+            // Eventos del jugador
             const evts = (p.events || []).map(e => {
                 const icon = e.type === 'GOL' ? '⚽' :
                              e.type === 'AMARILLA' ? '🟨' :
@@ -129,6 +135,7 @@ class ReportGenerator {
                 return `${icon} ${e.time}(${e.half || ''})`;
             }).join(' &nbsp; ');
 
+            // Shifts con colores
             const makeShiftCells = (shifts, maxLen) => {
                 let cells = '';
                 for (let i = 0; i < maxLen; i++) {
@@ -157,8 +164,7 @@ class ReportGenerator {
                 <td class="center time-cell">${timeStr}</td>
             </tr>`;
         }).join('');
-
-        // ── Goleadores resumen ────────────────────────────────────
+        // ── Generar goleadores resumen ────────────────────────────
         const scorers = sorted.filter(p => p.goals > 0).map(p =>
             `⚽ ${p.number} ${p.name} (${p.goals})`
         ).join(' &nbsp;|&nbsp; ') || '—';
@@ -179,6 +185,8 @@ class ReportGenerator {
         background: #fff;
         padding: 15px 20px;
     }
+
+    /* ── Header ─────────────────────────────────── */
     .report-header {
         display: flex;
         align-items: center;
@@ -203,6 +211,8 @@ class ReportGenerator {
         color: #888;
         text-align: right;
     }
+
+    /* ── Scoreboard ─────────────────────────────── */
     .scoreboard {
         display: flex;
         justify-content: center;
@@ -226,6 +236,8 @@ class ReportGenerator {
         color: #0d1117;
         letter-spacing: 4px;
     }
+
+    /* ── Stats bar ──────────────────────────────── */
     .stats-bar {
         display: flex;
         justify-content: center;
@@ -246,6 +258,8 @@ class ReportGenerator {
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
+
+    /* ── Metadata ───────────────────────────────── */
     .metadata {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -269,6 +283,8 @@ class ReportGenerator {
         font-weight: 700;
         color: #222;
     }
+
+    /* ── Scorers ────────────────────────────────── */
     .scorers {
         text-align: center;
         padding: 6px;
@@ -276,6 +292,8 @@ class ReportGenerator {
         font-size: 11px;
         color: #333;
     }
+
+    /* ── Table ──────────────────────────────────── */
     .report-table {
         width: 100%;
         border-collapse: collapse;
@@ -325,6 +343,8 @@ class ReportGenerator {
         text-align: center !important;
         letter-spacing: 0.5px;
     }
+
+    /* ── Legend ─────────────────────────────────── */
     .legend-box {
         margin-top: 8px;
         padding: 8px 12px;
@@ -343,6 +363,8 @@ class ReportGenerator {
         color: #000;
         margin: 2px 4px 2px 0;
     }
+
+    /* ── Footer ─────────────────────────────────── */
     .report-footer {
         margin-top: 20px;
         padding-top: 10px;
@@ -351,6 +373,8 @@ class ReportGenerator {
         color: #999;
         text-align: center;
     }
+
+    /* ── Print helpers ──────────────────────────── */
     @media print {
         body { padding: 0; }
         .no-print { display: none !important; }
@@ -359,6 +383,7 @@ class ReportGenerator {
 </head>
 <body>
 
+<!-- Header -->
 <div class="report-header">
     <div>
         <div class="report-title">INFORME DE PARTIDO</div>
@@ -370,12 +395,14 @@ class ReportGenerator {
     </div>
 </div>
 
+<!-- Marcador -->
 <div class="scoreboard">
     <div class="team-name">${home}</div>
     <div class="score">${scoreH} – ${scoreA}</div>
     <div class="team-name">${away}</div>
 </div>
 
+<!-- Estadísticas rápidas -->
 <div class="stats-bar">
     <div class="stat-item">
         <div class="stat-value">${players.length}</div>
@@ -403,6 +430,7 @@ class ReportGenerator {
     </div>
 </div>
 
+<!-- Metadatos -->
 <div class="metadata">
     <div class="meta-item">
         <div class="meta-label">Fecha</div>
@@ -438,8 +466,10 @@ class ReportGenerator {
     </div>
 </div>
 
+<!-- Goleadores -->
 <div class="scorers"><strong>Goleadores:</strong> ${scorers}</div>
 
+<!-- Tabla principal -->
 <table class="report-table">
 <thead>
     <tr>
@@ -467,10 +497,12 @@ class ReportGenerator {
 
  ${legendHTML}
 
+<!-- Footer -->
 <div class="report-footer">
     Informe generado automáticamente por Cronos Fútbol — Asistente de Entrenadores
 </div>
 
+<!-- Botón imprimir (solo en pantalla, no se imprime) -->
 <div class="no-print" style="text-align:center;margin-top:20px;">
     <button onclick="window.print()" style="
         padding:10px 30px;
@@ -504,6 +536,7 @@ class ReportGenerator {
             a.click();
         }
 
+        // Limpiar URL tras 60s
         setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
 }
