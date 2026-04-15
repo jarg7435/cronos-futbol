@@ -156,7 +156,7 @@ Reglas:
 }
 
 // ── Tesseract.js fallback (100% local) ──────────────────────────────
-let _tesseractLoaded = false;
+if (typeof _tesseractLoaded === "undefined") var _tesseractLoaded = false;
 async function callTesseract(base64, setStatus) {
     if (!_tesseractLoaded) {
         await new Promise((res, rej) => {

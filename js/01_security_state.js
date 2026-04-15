@@ -1,5 +1,5 @@
 // --- SECURITY & INITIALIZATION ---
-const ACCESS_CODE = '1234';
+if (typeof ACCESS_CODE === "undefined") var ACCESS_CODE = '1234';
 
 window.onload = () => {
     // La app arranca desde enterApp() en index.html tras la autenticación Firebase
@@ -24,30 +24,30 @@ function unlockApp() {
 }
 
 // --- CONFIGURATION & STATE ---
-let players = [];
-let isRunning = false;
-let timerInterval = null;
-let lastTickTime = 0;
-let currentMode = 'f7';
-let matchPhase = '1st_half';
-let analyzeAway = false;
-let activeFormationKey = null;
-let selectedFormationOnStart = '';
+if (typeof players === "undefined") var players = [];
+if (typeof isRunning === "undefined") var isRunning = false;
+if (typeof timerInterval === "undefined") var timerInterval = null;
+if (typeof lastTickTime === "undefined") var lastTickTime = 0;
+if (typeof currentMode === "undefined") var currentMode = 'f7';
+if (typeof matchPhase === "undefined") var matchPhase = '1st_half';
+if (typeof analyzeAway === "undefined") var analyzeAway = false;
+if (typeof activeFormationKey === "undefined") var activeFormationKey = null;
+if (typeof selectedFormationOnStart === "undefined") var selectedFormationOnStart = '';
 
-let half1MaxTime = 30 * 60;
-let half2MaxTime = 30 * 60;
-let masterTimeH1 = 0;
-let masterTimeH2 = 0;
+if (typeof half1MaxTime === "undefined") var half1MaxTime = 30 * 60;
+if (typeof half2MaxTime === "undefined") var half2MaxTime = 30 * 60;
+if (typeof masterTimeH1 === "undefined") var masterTimeH1 = 0;
+if (typeof masterTimeH2 === "undefined") var masterTimeH2 = 0;
 
-let pendingSubstitution = null;
+if (typeof pendingSubstitution === "undefined") var pendingSubstitution = null;
 
 // --- SINCRONIZACIÓN EN VIVO (Firestore) ---
-let liveMatchId    = null;   // ID del partido en Firestore
-let liveSyncTimer  = null;   // Intervalo de sincronización del cronómetro
-let liveIsActive   = false;  // true cuando hay partido en vivo activo
+if (typeof liveMatchId === "undefined") var liveMatchId    = null;   // ID del partido en Firestore
+if (typeof liveSyncTimer === "undefined") var liveSyncTimer  = null;   // Intervalo de sincronización del cronómetro
+if (typeof liveIsActive === "undefined") var liveIsActive   = false;  // true cuando hay partido en vivo activo
 
 // --- CUERPO TÉCNICO (persiste en localStorage) ---
-let staffConfig = {
+if (typeof staffConfig === "undefined") var staffConfig = {
     coach1:    '',   // Primer entrenador
     coach2:    '',   // Segundo entrenador
     delegate:  '',   // Delegado de equipo
@@ -55,7 +55,7 @@ let staffConfig = {
 };
 
 // --- CONFIGURACIÓN DE EMAIL Y WHATSAPP (persiste en localStorage) ---
-let emailConfig = {
+if (typeof emailConfig === "undefined") var emailConfig = {
     coachEmail: '',        // correo del entrenador (copia para él)
     directorEmail: '',     // correo del director deportivo (destino principal)
     emailjsServiceId: '',  // ID del servicio EmailJS

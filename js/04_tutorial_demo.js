@@ -101,7 +101,7 @@ function startDemo() {
 //  TUTORIAL INTERACTIVO
 // ══════════════════════════════════════════════════════════════════
 
-const TUTORIAL_STEPS = [
+if (typeof TUTORIAL_STEPS === "undefined") var TUTORIAL_STEPS = [
     {
         title: '👋 Bienvenido a Cronos Fútbol',
         text:  'Este tutorial te enseñará a usar todas las funciones de la app en menos de 2 minutos. Puedes cerrarlo en cualquier momento y volver cuando quieras.',
@@ -170,7 +170,7 @@ const TUTORIAL_STEPS = [
     }
 ];
 
-let tutorialStep = 0;
+if (typeof tutorialStep === "undefined") var tutorialStep = 0;
 
 function startTutorial() {
     tutorialStep = 0;

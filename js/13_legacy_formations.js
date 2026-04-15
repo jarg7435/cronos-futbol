@@ -1,5 +1,5 @@
 // --- FORMACIONES HEREDADAS (para posicionamiento inicial si no se usa preset) ---
-const FORMATIONS = {
+if (typeof FORMATIONS === "undefined") var FORMATIONS = {
     f7: {
         home: [
             {x:8,y:50}, {x:20,y:30},{x:20,y:70},
@@ -24,7 +24,7 @@ const FORMATIONS = {
     }
 };
 
-const FORMATIONS_FULL = {
+if (typeof FORMATIONS_FULL === "undefined") var FORMATIONS_FULL = {
     f7: { home: [{x:5,y:50},{x:25,y:30},{x:25,y:70},{x:55,y:18},{x:50,y:50},{x:55,y:82},{x:85,y:50}] },
     f11: { home: [
         {x:5,y:50},{x:22,y:15},{x:18,y:38},{x:18,y:62},{x:22,y:85},
