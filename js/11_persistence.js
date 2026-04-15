@@ -353,234 +353,45 @@ function formatTime(sec) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  FIN DE PARTIDO — con opción de volver
+//  FIN DE PARTIDO — con opción de volver (FIX: siempre sobreescribe)
 // ════════════════════════════════════════════════════════════════════
 
 /**
  * endMatch() — Finaliza el partido, muestra pantalla post-partido.
- * Si ya está definida en app.js este bloque no la sobreescribe.
+ *
+ * FIX v2: Se eliminó el guard `if (typeof window.endMatch !== 'function')`
+ * porque app.js define una versión básica que SOLO muestra un alert()
+ * y no registra salidas ni muestra el modal post-partido. Esta versión
+ * mejorada SIEMPRE debe ejecutarse para:
+ *   - Registrar la salida de jugadores en campo al finalizar
+ *   - Llamar a saveAllMatchReportsInternal() correctamente (await)
+ *   - Mostrar el modal post-partido con opciones (enviar informes, volver, etc.)
  */
-if (typeof window.endMatch !== 'function') {
-    window.endMatch = function endMatch() {
-        if (!confirm('¿Finalizar el partido?')) return;
+window.endMatch = function endMatch() {
+    if (!confirm('¿Finalizar el partido?')) return;
 
-        // Detener cronómetro
-        isRunning = false;
-        clearInterval(timerInterval);
-        matchPhase = 'finished';
+    // Detener cronómetro
+    isRunning = false;
+    clearInterval(timerInterval);
+    matchPhase = 'finished';
 
-        // Registrar salida de todos los jugadores en campo
-        const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
-        (players || []).filter(p => p.status === 'field').forEach(p => {
-            p.history.push('Sale a las ' + finalTime + ' (FIN)');
-        });
+    // Registrar salida de todos los jugadores en campo
+    const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
+    (players || []).filter(p => p.status === 'field').forEach(p => {
+        p.history.push('Sale a las ' + finalTime + ' (FIN)');
+    });
 
-        updateMasterUI();
+    updateMasterUI();
 
-        // Guardar informes automáticamente si la función existe
-        if (typeof saveAllMatchReportsInternal === 'function') {
-            saveAllMatchReportsInternal().catch(e =>
-                console.warn('[endMatch] saveAllMatchReportsInternal:', e));
-        }
-
-        _showPostMatchOptions();
-    };
-}
-
-/**
- * _showPostMatchOptions() — Modal post-partido sobre la vista del partido.
- * Usa #setup-modal para no destruir el estado del partido en #main-container.
- * Así el entrenador puede volver si lo necesita.
- */
-window._showPostMatchOptions = function _showPostMatchOptions() {
-    const home   = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'Local';
-    const away   = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || 'Visitante';
-    const scoreH = (typeof scoreHome  !== 'undefined') ? scoreHome  : '—';
-    const scoreA = (typeof scoreAway  !== 'undefined') ? scoreAway  : '—';
-
-    // Estadísticas rápidas del partido
-    const totalPlayers  = (players || []).filter(p => p.team === 'home').length;
-    const totalGoals    = (players || []).filter(p => p.team === 'home').reduce((s, p) => s + (p.goals || 0), 0);
-    const totalCards    = (players || []).filter(p => p.team === 'home' && p.cards && p.cards !== 'ninguna').length;
-    const totalInjured  = (players || []).filter(p => p.team === 'home' && p.injured).length;
-    const h1min = Math.floor((masterTimeH1 || 0) / 60);
-    const h2min = Math.floor((masterTimeH2 || 0) / 60);
-
-    const modal = document.getElementById('setup-modal');
-    if (!modal) return;
-
-    modal.style.display = 'flex';
-    modal.innerHTML = \`
-    <div class="modal-content" style="width:min(96vw,480px);max-height:94vh;
-         display:flex;flex-direction:column;overflow:hidden;padding:0;">
-
-        <!-- Header -->
-        <div style="background:linear-gradient(135deg,#161b22,#0d1117);
-                    padding:1.2rem 1.5rem;border-bottom:1px solid var(--glass-border);">
-            <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;">
-                <span style="font-size:1.8rem;">🏁</span>
-                <div>
-                    <div style="font-family:'Outfit',sans-serif;font-weight:700;
-                                font-size:1.1rem;color:white;">
-                        ¡Partido Finalizado!
-                    </div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);">
-                        1ª parte: \${h1min}' · 2ª parte: \${h2min}'
-                    </div>
-                </div>
-            </div>
-            <!-- Marcador -->
-            <div style="display:flex;justify-content:center;align-items:center;
-                        gap:1.2rem;background:rgba(255,255,255,0.04);
-                        border-radius:10px;padding:0.8rem;
-                        border:1px solid rgba(255,255,255,0.08);">
-                <span style="font-size:0.9rem;font-weight:700;color:white;">\${home}</span>
-                <span style="font-size:1.8rem;font-weight:800;
-                             color:var(--primary);letter-spacing:2px;">
-                    \${scoreH} – \${scoreA}
-                </span>
-                <span style="font-size:0.9rem;font-weight:700;color:white;">\${away}</span>
-            </div>
-        </div>
-
-        <!-- Stats rápidas -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;
-                    border-bottom:1px solid var(--glass-border);">
-            \${[
-                ['👥', totalPlayers, 'Jugadores'],
-                ['⚽', totalGoals,   'Goles'],
-                ['🟨', totalCards,   'Tarjetas'],
-                ['🩹', totalInjured, 'Lesiones'],
-            ].map(([icon, val, lbl]) => \`
-            <div style="text-align:center;padding:0.8rem 0.4rem;
-                        border-right:1px solid var(--glass-border);">
-                <div style="font-size:1rem;">\${icon}</div>
-                <div style="font-size:1.2rem;font-weight:800;color:white;">\${val}</div>
-                <div style="font-size:0.62rem;color:var(--text-muted);">\${lbl}</div>
-            </div>\`).join('')}
-        </div>
-
-        <!-- Opciones -->
-        <div style="flex:1;overflow-y:auto;padding:1.1rem;
-                    display:flex;flex-direction:column;gap:0.6rem;">
-
-            <!-- ENVIAR INFORMES — acción principal -->
-            <button onclick="_postMatchSendReports()"
-                style="display:flex;align-items:center;gap:0.9rem;
-                       padding:0.9rem 1rem;width:100%;
-                       background:rgba(63,185,80,0.12);
-                       border:1px solid rgba(63,185,80,0.35);
-                       border-radius:10px;cursor:pointer;
-                       color:white;font-size:0.92rem;font-weight:700;
-                       transition:all 0.2s;"
-                onmouseover="this.style.background='rgba(63,185,80,0.2)'"
-                onmouseout="this.style.background='rgba(63,185,80,0.12)'">
-                <span style="font-size:1.4rem;">📊</span>
-                <div style="text-align:left;">
-                    <div style="color:#3fb950;">Enviar Informes a Padres</div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);
-                                font-weight:400;">WhatsApp · Email · App interna</div>
-                </div>
-            </button>
-
-            <!-- VOLVER AL PARTIDO -->
-            <button onclick="_postMatchReturn()"
-                style="display:flex;align-items:center;gap:0.9rem;
-                       padding:0.9rem 1rem;width:100%;
-                       background:rgba(88,166,255,0.1);
-                       border:1px solid rgba(88,166,255,0.3);
-                       border-radius:10px;cursor:pointer;
-                       color:white;font-size:0.92rem;font-weight:600;
-                       transition:all 0.2s;"
-                onmouseover="this.style.background='rgba(88,166,255,0.18)'"
-                onmouseout="this.style.background='rgba(88,166,255,0.1)'">
-                <span style="font-size:1.4rem;">↩️</span>
-                <div style="text-align:left;">
-                    <div style="color:var(--primary);">Volver al Partido</div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);
-                                font-weight:400;">Los datos del partido se conservan</div>
-                </div>
-            </button>
-
-            <!-- COMUNICACIONES -->
-            <button onclick="openUnifiedCommsMenu ? openUnifiedCommsMenu() : null"
-                style="display:flex;align-items:center;gap:0.9rem;
-                       padding:0.9rem 1rem;width:100%;
-                       background:rgba(255,255,255,0.04);
-                       border:1px solid var(--glass-border);
-                       border-radius:10px;cursor:pointer;
-                       color:white;font-size:0.92rem;font-weight:600;
-                       transition:all 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.08)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.04)'">
-                <span style="font-size:1.4rem;">💬</span>
-                <div style="text-align:left;">
-                    <div>Comunicaciones</div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);
-                                font-weight:400;">Convocatoria, mensajes y más</div>
-                </div>
-            </button>
-
-            <!-- NUEVA CONFIGURACIÓN -->
-            <button onclick="_postMatchNewSetup()"
-                style="display:flex;align-items:center;gap:0.9rem;
-                       padding:0.9rem 1rem;width:100%;
-                       background:rgba(255,255,255,0.03);
-                       border:1px solid rgba(255,255,255,0.08);
-                       border-radius:10px;cursor:pointer;
-                       color:var(--text-muted);font-size:0.88rem;
-                       transition:all 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
-                <span style="font-size:1.2rem;">🔄</span>
-                <div style="text-align:left;">
-                    <div>Nueva Configuración</div>
-                    <div style="font-size:0.7rem;color:rgba(125,133,144,0.8);
-                                font-weight:400;">Volver a la pantalla inicial del partido</div>
-                </div>
-            </button>
-
-        </div>
-    </div>\`;
-};
-
-/** Desde la pantalla post-partido → abre el módulo de envío de informes */
-window._postMatchSendReports = function() {
-    if (typeof sendMatchReportsToParents === 'function') {
-        sendMatchReportsToParents(false);
-    } else if (typeof openUnifiedCommsMenu === 'function') {
-        openUnifiedCommsMenu();
-    } else {
-        document.getElementById('setup-modal').style.display = 'none';
+    // Detener transmisión en vivo si está activa
+    if (typeof stopLiveSync === 'function') {
+        try { stopLiveSync(); } catch (_) {}
     }
-};
 
-/**
- * Volver al partido — cierra el modal y muestra el main-container.
- * El estado del partido (jugadores, crono, goles) se conserva intacto.
- */
-window._postMatchReturn = function() {
-    const modal = document.getElementById('setup-modal');
-    if (modal) modal.style.display = 'none';
-
-    // Asegurar que el contenedor principal está visible
-    const mc = document.getElementById('main-container');
-    const mh = document.getElementById('main-header');
-    if (mc) mc.style.display = 'flex';
-    if (mh) mh.style.display = 'flex';
-
-    if (typeof showToast === 'function')
-        showToast('↩️ Volviste al partido — los datos siguen activos', 3000);
-};
-
-/** Desde la pantalla post-partido → nueva configuración */
-window._postMatchNewSetup = function() {
-    if (!confirm('¿Empezar una nueva configuración? Se perderá el estado actual del partido.')) return;
-    if (typeof openSetupModal === 'function') {
-        openSetupModal();
-    } else {
-        const modal = document.getElementById('setup-modal');
-        if (modal) modal.style.display = 'none';
+    // Guardar informes automáticamente si la función existe (con await correcto)
+    if (typeof saveAllMatchReportsInternal === 'function') {
+        saveAllMatchReportsInternal().catch(function() {});
     }
-};
 
+    _showPostMatchOptions();
+};
