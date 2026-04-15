@@ -237,23 +237,17 @@ export async function doAuth() {
             }
         }
 
-        // ── Buscar y limpiar si el usuario fue eliminado anteriormente ──
-        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const q = m.query(
-            m.collection(fa.db, 'users'),
-            m.where('email', '==', email),
-            m.where('status', 'in', ['removed', 'blocked'])
-        );
-        const snapshot = await m.getDocs(q);
-
-        if (!snapshot.empty) {
-            const oldDoc = snapshot.docs[0];
-            await m.deleteDoc(m.doc(fa.db, 'users', oldDoc.id));
-            console.log('✅ Registro anterior limpiado, permitiendo nuevo registro');
-        }
-
         // ── Crear cuenta Firebase Auth ────────────────────────────
         const cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
+        
+        // ── Limpiar documento antiguo si existe (ahora SÍ estamos autenticados) ──
+        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        try {
+            const oldSnap = await m.getDoc(m.doc(fa.db, 'users', cred.user.uid));
+            if (oldSnap.exists() && ['removed','blocked'].includes(oldSnap.data()?.status)) {
+                await m.deleteDoc(m.doc(fa.db, 'users', cred.user.uid));
+            }
+        } catch(e) { /* ignorar si falla la limpieza */ }
 
         let finalRole    = requestedRole;
         let isAuthorized = false;
@@ -322,31 +316,14 @@ export async function doAuth() {
         // ── Post-registro ─────────────────────────────────────────
         if (!isAuthorized) {
             await fa.signOut(fa.auth);
-            // Obtener nombre del club seleccionado
-            const clubSelect = document.getElementById('auth-club-select');
-            const clubName = clubSelect?.options[clubSelect?.selectedIndex]?.text || 'tu club';
-
             const msgByRole = {
-                club_admin:  '✅ Solicitud enviada. El SuperAdmin revisará la creación de tu club.',
-                individual:  '✅ Registro completado. Pendiente de aprobación por el SuperAdmin.',
+                club_admin:  '✅ Solicitud de club enviada al SuperAdmin. Recibirás confirmación por correo.',
+                individual:  '✅ Solicitud enviada al SuperAdmin. Pendiente de aprobación.',
             };
-
-            const pendingMsg = msgByRole[requestedRole] ||
-                `✅ Solicitud registrada correctamente en "${clubName}".
-
-` +
-                `⏳ ¿Qué ocurre ahora?
-` +
-                `• El administrador de ${clubName} revisará tu solicitud.
-` +
-                `• La enviará al SuperAdmin para aprobación final.
-` +
-                `• Cuando sea aprobada podrás acceder con este email.
-
-` +
-                `📧 Guarda tu email y contraseña.`;
-
-            showAuthError(pendingMsg);
+            showAuthError(
+                msgByRole[requestedRole] ||
+                '✅ Solicitud enviada. El administrador de tu club confirmará tu acceso.'
+            );
             switchTab('login');
         } else {
             showAuthError('✅ Registro completado. Entrando…');
