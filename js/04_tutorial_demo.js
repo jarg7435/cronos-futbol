@@ -101,76 +101,7 @@ function startDemo() {
 //  TUTORIAL INTERACTIVO
 // ══════════════════════════════════════════════════════════════════
 
-if (typeof TUTORIAL_STEPS === "undefined") var TUTORIAL_STEPS = [
-    {
-        title: '👋 Bienvenido a Cronos Fútbol',
-        text:  'Este tutorial te enseñará a usar todas las funciones de la app en menos de 2 minutos. Puedes cerrarlo en cualquier momento y volver cuando quieras.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '⚙️ Configuración del partido',
-        text:  'Aquí introduces los nombres de los equipos, los colores de las equipaciones, la modalidad (Fútbol 7 o Fútbol 11) y el sistema táctico inicial.',
-        target: 'setup-modal',
-        position: 'center'
-    },
-    {
-        title: '👥 Gestionar Plantilla',
-        text:  'Antes de empezar, introduce aquí los nombres y dorsales de tus jugadores. Solo tienes que hacerlo una vez — se guardan automáticamente.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '📋 Convocatoria',
-        text:  'Al pulsar "Continuar al partido", seleccionas los jugadores convocados para ese encuentro. Los primeros 11 (o 7 en Fútbol 7) serán titulares; el resto, suplentes.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '⏱️ Cronómetro',
-        text:  'Pulsa EMPEZAR para iniciar el tiempo. Los cronómetros de cada jugador arrancan automáticamente. Puedes pausar, reanudar y editar el tiempo tocando los marcadores.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '🔄 Realizar un cambio',
-        text:  'Toca un jugador en el campo para ver sus opciones. Puedes sustituirlo arrastrándolo al banquillo o usando el menú de acciones. El tiempo se registra automáticamente.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '💾 Guardar equipo',
-        text:  'Con el botón GUARDAR puedes salvar la convocatoria, los colores, el sistema y las posiciones. La próxima vez, cárgalo desde el desplegable y todo estará listo.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '📊 Exportar informe',
-        text:  'Al pulsar DESCARGAR se genera un informe con los tiempos de cada jugador, goles y tarjetas. Se descarga en tu dispositivo y se envía automáticamente al Director Deportivo si tienes el email configurado.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '📧 Configurar email y WhatsApp',
-        text:  'En el botón EMAIL (pantalla de configuración) introduces el correo del Director Deportivo y su WhatsApp. Cada informe llegará automáticamente al exportar.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '🎮 Prueba el Modo Demo',
-        text:  'Usa el botón DEMO para explorar la app con un partido de ejemplo sin tocar tus datos reales. Ideal para practicar antes del primer partido.',
-        target: null,
-        position: 'center'
-    },
-    {
-        title: '✅ ¡Ya estás listo!',
-        text:  'Eso es todo. Recuerda que puedes volver a este tutorial cuando quieras desde el botón ❓ TUTORIAL en la pantalla de configuración. ¡Mucho éxito en los partidos!',
-        target: null,
-        position: 'center'
-    }
-];
-
-if (typeof tutorialStep === "undefined") var tutorialStep = 0;
+// NOTA: TUTORIAL_STEPS y tutorialStep declarados en app.js
 
 function startTutorial() {
     tutorialStep = 0;

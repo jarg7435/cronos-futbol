@@ -87,7 +87,7 @@ async function syncFromCloud() {
 
 // ── Listener en tiempo real: cualquier cambio en Firestore ────────
 // se aplica automáticamente en este dispositivo al instante
-if (typeof _realtimeUnsubscribe === "undefined") var _realtimeUnsubscribe = null;
+// NOTA: _realtimeUnsubscribe declarado en app.js
 
 async function startRealtimeSync() {
     const fa  = window._cronos_auth;

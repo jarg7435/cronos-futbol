@@ -156,7 +156,8 @@ Reglas:
 }
 
 // ── Tesseract.js fallback (100% local) ──────────────────────────────
-if (typeof _tesseractLoaded === "undefined") var _tesseractLoaded = false;
+// NOTA: _tesseractLoaded declarado en app.js
+
 async function callTesseract(base64, setStatus) {
     if (!_tesseractLoaded) {
         await new Promise((res, rej) => {
@@ -689,3 +690,4 @@ function startMatchWithConvocation() {
     pitch.addEventListener('click', () => closeDrawers());
     pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
 }
+
