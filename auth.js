@@ -1,6 +1,6 @@
 /**
  * auth.js - Gestión de Autenticación y Autorización
- * Cronos Fútbol — v5.1 (multi-rol sin queries, compatible con firestore rules)
+ * Cronos Fútbol — v5.2 (multi-rol, sin docs secundarios, 100% compatible con firestore rules actuales)
  */
 
 // ── Estado Local ──────────────────────────────────────────────
@@ -135,14 +135,15 @@ export async function checkAuthorization(user) {
     }
 
     try {
-        // ── Leer SOLO el documento principal (por uid) ─────────
-        // Esto siempre está permitido por la regla: request.auth.uid == userId
+        // ── Leer SOLO el documento principal users/{uid} ────────
+        // Siempre permitido: request.auth.uid == userId
         const ref  = fa.doc(fa.db, 'users', user.uid);
         const snap = await fa.getDoc(ref);
 
         // ── CASO 1: Documento NO existe ─────────────────────────
         if (!snap.exists()) {
             if (SUPERADMIN_EMAILS.includes(user.email)) {
+                const allRoles = [{ role: 'superadmin', clubId: null, clubName: null, isAuthorized: true }];
                 await fa.setDoc(ref, {
                     email:        user.email,
                     role:         'superadmin',
@@ -151,7 +152,7 @@ export async function checkAuthorization(user) {
                     createdAt:    fa.serverTimestamp(),
                     lastLogin:    fa.serverTimestamp(),
                     autoRecovered: true,
-                    allRoles: [{ role: 'superadmin', clubId: null, clubName: null, isAuthorized: true }],
+                    allRoles:     allRoles,
                 });
                 window._cronosCurrentUser = {
                     uid:     user.uid,
@@ -203,7 +204,6 @@ export async function checkAuthorization(user) {
         }
 
         // ── Obtener todos los roles desde allRoles ──────────────
-        // Compatibilidad: si no existe allRoles, construir desde el documento
         const allRoles = data.allRoles || [{
             role:        data.role,
             clubId:      data.clubId      || null,
@@ -253,7 +253,7 @@ export async function checkAuthorization(user) {
     }
 }
 
-// ── Selector Multi-Rol (sin query, usa datos del documento) ──
+// ── Selector Multi-Rol (sin query, usa allRoles del doc principal) ──
 function _showMultiRolePicker(user, roles) {
     const prev = document.getElementById('multi-role-picker');
     if (prev) prev.remove();
@@ -274,7 +274,7 @@ function _showMultiRolePicker(user, roles) {
         individual:  '👤  Usuario Individual',
     };
 
-    const cards = roles.map(r => {
+    const cards = roles.map((r, idx) => {
         const label    = roleLabels[r.role] || r.role;
         const clubInfo = r.clubName
             ? '<div style="font-size:0.78rem;color:#7d8590;margin-top:4px;">🏟️ ' +
@@ -286,10 +286,7 @@ function _showMultiRolePicker(user, roles) {
             : '';
         const opacity  = disabled ? 'opacity:0.45;cursor:not-allowed;' : 'cursor:pointer;';
 
-        return '<button class="mrp-btn" data-role="' + r.role + '" data-clubid="' + (r.clubId||'') + '" ' +
-            'data-clubname="' + (r.clubName||'') + '" ' +
-            'data-fn="' + (r.firstName||'') + '" data-ln="' + (r.lastName||'') + '" ' +
-            'data-dn="' + (r.displayName||'') + '" ' +
+        return '<button class="mrp-btn" data-idx="' + idx + '" ' +
             'style="width:100%;text-align:left;padding:1rem;margin-bottom:0.6rem;' +
             'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);' +
             'border-radius:12px;color:white;font-size:0.9rem;transition:all 0.2s;' +
@@ -327,13 +324,11 @@ function _showMultiRolePicker(user, roles) {
             btn.style.borderColor = 'rgba(255,255,255,0.1)';
         });
         btn.addEventListener('click', () => {
-            const role = btn.dataset.role;
-            const isAuth = roles.find(r => r.role === role &&
-                (r.clubId || null) === (btn.dataset.clubid || null));
+            const idx = parseInt(btn.dataset.idx);
+            const r = roles[idx];
+            if (!r) return;
 
-            if (!isAuth) return;
-
-            if (!isAuth.isAuthorized && role !== 'superadmin') {
+            if (!r.isAuthorized && r.role !== 'superadmin') {
                 if (typeof showToast === 'function') {
                     showToast('⏳ Este rol está pendiente de aprobación', 3000);
                 }
@@ -345,15 +340,15 @@ function _showMultiRolePicker(user, roles) {
             window._cronosCurrentUser = {
                 uid:         user.uid,
                 email:       user.email,
-                role:        role,
-                clubId:      btn.dataset.clubid   || null,
-                clubName:    btn.dataset.clubname  || null,
-                firstName:   btn.dataset.fn        || null,
-                lastName:    btn.dataset.ln        || null,
-                displayName: btn.dataset.dn        || null,
+                role:        r.role,
+                clubId:      r.clubId      || null,
+                clubName:    r.clubName    || null,
+                firstName:   r.firstName   || null,
+                lastName:    r.lastName    || null,
+                displayName: r.displayName || null,
             };
 
-            // Actualizar lastLogin
+            // Actualizar lastLogin (merge en doc propio = permitido)
             const fa = window._cronos_auth;
             fa.setDoc(
                 fa.doc(fa.db, 'users', user.uid),
@@ -446,7 +441,7 @@ export async function doAuth() {
             }
         }
 
-        // ── Crear cuenta Firebase Auth ──────────────────────────
+        // ── Intentar crear cuenta Firebase Auth ─────────────────
         let cred;
         let isAddingRole = false;
 
@@ -454,7 +449,7 @@ export async function doAuth() {
             cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
         } catch (createErr) {
             if (createErr.code === 'auth/email-already-in-use') {
-                // Email ya existe → verificar contraseña para añadir rol
+                // ── Email ya existe → verificar contraseña y añadir rol ──
                 window._addingRole = true;
                 try {
                     cred = await fa.signInWithEmailAndPassword(fa.auth, email, password);
@@ -478,6 +473,7 @@ export async function doAuth() {
         let isAuthorized = false;
         let clubId       = selectedClubId;
         let clubName     = null;
+        let displayName  = null;
 
         if (SUPERADMIN_EMAILS.includes(email)) {
             isAuthorized = true;
@@ -514,22 +510,19 @@ export async function doAuth() {
             } catch(e) { /* ignorar */ }
         }
 
-        // ── Registrar displayName para individual ───────────────
-        let displayName = null;
         if (requestedRole === 'individual') {
             displayName = firstName + ' ' + lastName;
         }
 
+        // ═══════════════════════════════════════════════════════
+        // AÑADIR ROL A CUENTA EXISTENTE
+        // ═══════════════════════════════════════════════════════
         if (isAddingRole) {
-            // ═══════════════════════════════════════════════════
-            // AÑADIR ROL A CUENTA EXISTENTE (sin queries)
-            // ═══════════════════════════════════════════════════
 
             // 1. Leer documento principal (permitido: uid == userId)
             const primarySnap = await fa.getDoc(fa.doc(fa.db, 'users', cred.user.uid));
 
             if (!primarySnap.exists()) {
-                // No debería pasar, pero manejar
                 window._addingRole = false;
                 showAuthError('❌ Error: no se encontró tu documento de usuario.');
                 return;
@@ -537,14 +530,18 @@ export async function doAuth() {
 
             const primaryData = primarySnap.data();
 
-            // 2. Verificar duplicado en allRoles
+            // 2. Construir allRoles (compatible con documentos antiguos sin allRoles)
             const currentRoles = primaryData.allRoles || [{
                 role:        primaryData.role,
                 clubId:      primaryData.clubId      || null,
                 clubName:    primaryData.clubName    || null,
                 isAuthorized: primaryData.isAuthorized || false,
+                firstName:   primaryData.firstName   || null,
+                lastName:    primaryData.lastName    || null,
+                displayName: primaryData.displayName || null,
             }];
 
+            // 3. Verificar duplicado (mismo rol + mismo club)
             const duplicate = currentRoles.find(r =>
                 r.role === requestedRole &&
                 (r.clubId || null) === (clubId || null)
@@ -560,57 +557,33 @@ export async function doAuth() {
                 return;
             }
 
-            // 3. Añadir nuevo rol al array allRoles
-            const newRoleEntry = {
+            // 4. Añadir nuevo rol al array
+            currentRoles.push({
                 role:        finalRole,
                 clubId:      clubId,
                 clubName:    clubName,
                 isAuthorized: isAuthorized,
-                firstName:   firstName || null,
-                lastName:    lastName || null,
+                firstName:   requestedRole === 'individual' ? firstName : null,
+                lastName:    requestedRole === 'individual' ? lastName : null,
                 displayName: displayName,
-            };
+            });
 
-            currentRoles.push(newRoleEntry);
-
-            // 4. Actualizar documento principal
+            // 5. Actualizar documento principal (merge = update, permitido)
+            //    Se actualizan: allRoles, y los campos top-level del documento
             await fa.setDoc(
                 fa.doc(fa.db, 'users', cred.user.uid),
-                { allRoles: currentRoles },
+                {
+                    allRoles: currentRoles,
+                    lastLogin: fa.serverTimestamp(),
+                },
                 { merge: true }
             );
 
-            // 5. Crear documento secundario (para queries del club admin)
-            const secondaryId = cred.user.uid + '_' + requestedRole + '_' + (clubId || 'global');
-            const secondaryData = {
-                email,
-                uid:       cred.user.uid,
-                isAuthorized,
-                role:      finalRole,
-                clubId,
-                clubName,
-                status:    isAuthorized ? 'active' : 'pending',
-                createdAt: fa.serverTimestamp(),
-                lastLogin: fa.serverTimestamp(),
-            };
-
-            if (requestedRole === 'club_admin') {
-                secondaryData.requestedClubName = newClubName;
-                secondaryData.requestedQuotas   = {
-                    directors:    reqDirectors,
-                    coordinators: reqCoordinators,
-                    coaches:      reqCoaches,
-                    parents:      reqParents,
-                };
+            // Si el nuevo rol está autorizado, actualizar también status por si acaso
+            if (isAuthorized) {
+                // No tocamos isAuthorized/status del documento principal
+                // porque representa el rol principal, no el nuevo rol
             }
-            if (requestedRole === 'individual') {
-                secondaryData.firstName    = firstName;
-                secondaryData.lastName     = lastName;
-                secondaryData.displayName  = displayName;
-                secondaryData.isIndividual = true;
-            }
-
-            await fa.setDoc(fa.doc(fa.db, 'users', secondaryId), secondaryData);
 
             window._addingRole = false;
 
@@ -635,69 +608,70 @@ export async function doAuth() {
                 );
             }
             setTimeout(() => location.reload(), 2000);
+            return;
+        }
 
-        } else {
-            // ═══════════════════════════════════════════════════
-            // NUEVO USUARIO (primer registro)
-            // ═══════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════════
+        // NUEVO USUARIO (primer registro)
+        // ═══════════════════════════════════════════════════════
 
-            const allRoles = [{
-                role:        finalRole,
-                clubId:      clubId,
-                clubName:    clubName,
-                isAuthorized: isAuthorized,
-                firstName:   firstName || null,
-                lastName:    lastName || null,
-                displayName: displayName,
-            }];
+        const allRoles = [{
+            role:        finalRole,
+            clubId:      clubId,
+            clubName:    clubName,
+            isAuthorized: isAuthorized,
+            firstName:   firstName || null,
+            lastName:    lastName || null,
+            displayName: displayName,
+        }];
 
-            const userData = {
-                email,
-                isAuthorized,
-                role:          finalRole,
-                clubId,
-                clubName,
-                allRoles,
-                status:        isAuthorized ? 'active' : 'pending',
-                requestedSlot: null,
-                createdAt:     fa.serverTimestamp(),
-                lastLogin:     fa.serverTimestamp(),
+        const userData = {
+            email,
+            isAuthorized,
+            role:          finalRole,
+            clubId,
+            clubName,
+            allRoles,
+            status:        isAuthorized ? 'active' : 'pending',
+            requestedSlot: null,
+            createdAt:     fa.serverTimestamp(),
+            lastLogin:     fa.serverTimestamp(),
+        };
+
+        if (requestedRole === 'club_admin') {
+            userData.requestedClubName = newClubName;
+            userData.requestedQuotas   = {
+                directors:    reqDirectors,
+                coordinators: reqCoordinators,
+                coaches:      reqCoaches,
+                parents:      reqParents,
             };
+        }
 
-            if (requestedRole === 'club_admin') {
-                userData.requestedClubName = newClubName;
-                userData.requestedQuotas   = {
-                    directors:    reqDirectors,
-                    coordinators: reqCoordinators,
-                    coaches:      reqCoaches,
-                    parents:      reqParents,
-                };
-            }
+        if (requestedRole === 'individual') {
+            userData.firstName    = firstName;
+            userData.lastName     = lastName;
+            userData.displayName  = displayName;
+            userData.isIndividual = true;
+        }
 
-            if (requestedRole === 'individual') {
-                userData.firstName    = firstName;
-                userData.lastName     = lastName;
-                userData.displayName  = displayName;
-                userData.isIndividual = true;
-            }
+        // Crear documento users/{uid} (permitido: request.auth.uid == userId)
+        await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), userData);
 
-            await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), userData);
-
-            // Post-registro
-            if (!isAuthorized) {
-                await fa.signOut(fa.auth);
-                const msgByRole = {
-                    club_admin:  '✅ Solicitud de club enviada al SuperAdmin. Recibirás confirmación por correo.',
-                    individual:  '✅ Solicitud enviada al SuperAdmin. Pendiente de aprobación.',
-                };
-                showAuthError(
-                    msgByRole[requestedRole] ||
-                    '✅ Solicitud enviada. El administrador de tu club confirmará tu acceso.'
-                );
-                switchTab('login');
-            } else {
-                showAuthError('✅ Registro completado. Entrando…');
-            }
+        // Post-registro
+        if (!isAuthorized) {
+            await fa.signOut(fa.auth);
+            const msgByRole = {
+                club_admin:  '✅ Solicitud de club enviada al SuperAdmin. Recibirás confirmación por correo.',
+                individual:  '✅ Solicitud enviada al SuperAdmin. Pendiente de aprobación.',
+            };
+            showAuthError(
+                msgByRole[requestedRole] ||
+                '✅ Solicitud enviada. El administrador de tu club confirmará tu acceso.'
+            );
+            switchTab('login');
+        } else {
+            showAuthError('✅ Registro completado. Entrando…');
         }
 
     } catch(e) {
