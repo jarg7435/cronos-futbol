@@ -157,7 +157,7 @@ async function _loadStaffList() {
                 : '';
 
             return `
-            <div onclick="openThreadWithStaff('${s.uid}','${(s.email||'').replace(/'/g,"\\'")}','${s.role}')"
+            <div onclick="openThreadWithStaff('${typeof escapeAttr==='function'?escapeAttr(s.uid):s.uid}','${(typeof escapeAttr==='function'?escapeAttr(s.email||''):s.email||'').replace(/'/g,"\\'")}','${typeof escapeAttr==='function'?escapeAttr(s.role):s.role}')"
                  style="display:flex;align-items:center;gap:0.8rem;margin-bottom:0.6rem;
                         background:${unread?'rgba(240,136,62,0.06)':'var(--glass)'};
                         border:1px solid ${unread?'rgba(240,136,62,0.45)':'var(--glass-border)'};
@@ -171,18 +171,18 @@ async function _loadStaffList() {
                 </div>
                 <div style="flex:1;min-width:0;">
                     <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.1rem;">
-                        ${s.displayName || s.email || s.uid}
+                        ${typeof escapeHtml==='function'?escapeHtml(s.displayName || s.email || s.uid):s.displayName || s.email || s.uid}
                         ${unread>0?`<span style="background:#f0883e;color:#0a0e14;border-radius:10px;
                             padding:1px 7px;font-size:0.62rem;font-weight:700;margin-left:6px;">
                             ${unread} nuevo${unread>1?'s':''}</span>`:''}
                     </div>
                     <div style="font-size:0.7rem;color:var(--text-muted);">
                         ${roleLabel[s.role]||s.role}
-                        ${s.email?' · '+s.email:''}
+                        ${s.email?' · '+(typeof escapeHtml==='function'?escapeHtml(s.email):s.email):''}
                     </div>
                     <div style="font-size:0.74rem;color:${unread?'#f0883e':'var(--text-muted)'};
                                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.15rem;">
-                        ${unread?`<strong>🔵 ${lastMsg}</strong>`:lastMsg}
+                        ${unread?`<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>`:(typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg)}
                     </div>
                 </div>
                 <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastTime}</span>
@@ -190,7 +190,7 @@ async function _loadStaffList() {
         }).join('');
 
     } catch(e) {
-        body.innerHTML = `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ ${e.message}</div>`;
+        body.innerHTML = `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 }
 
@@ -218,13 +218,13 @@ async function openThreadWithStaff(staffUid, staffEmail, staffRole) {
             </button>
             <div style="flex:1;min-width:0;">
                 <div style="font-weight:700;font-size:0.9rem;">
-                    ${roleIcon[staffRole]||'🏢'} ${staffEmail}
+                    ${roleIcon[staffRole]||'🏢'} ${typeof escapeHtml==='function'?escapeHtml(staffEmail):staffEmail}
                 </div>
                 <div style="font-size:0.7rem;color:var(--text-muted);">
                     ${roleLabel[staffRole]||staffRole}
                 </div>
             </div>
-            <a href="mailto:${staffEmail}"
+            <a href="mailto:${typeof escapeAttr==='function'?escapeAttr(staffEmail):staffEmail}"
                style="padding:0.32rem 0.65rem;background:rgba(88,166,255,0.1);
                       border:1px solid rgba(88,166,255,0.3);border-radius:6px;
                       color:var(--primary);font-size:0.72rem;text-decoration:none;font-weight:700;">
@@ -246,10 +246,10 @@ async function openThreadWithStaff(staffUid, staffEmail, staffRole) {
                            color:white;font-size:0.88rem;resize:none;box-sizing:border-box;"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){
                         event.preventDefault();
-                        sendCoachMessage('${threadId}','${staffUid}','${staffEmail}','','staff');
+                        sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(staffUid):staffUid}','${typeof escapeAttr==='function'?escapeAttr(staffEmail):staffEmail}','','staff');
                     }">
                 </textarea>
-                <button onclick="sendCoachMessage('${threadId}','${staffUid}','${staffEmail}','','staff')"
+                <button onclick="sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(staffUid):staffUid}','${typeof escapeAttr==='function'?escapeAttr(staffEmail):staffEmail}','','staff')"
                     class="btn primary" style="padding:0.6rem 1rem;flex-shrink:0;">
                     Enviar ›
                 </button>
@@ -299,7 +299,6 @@ async function _loadParentList() {
         // --- FUSIÓN CON CONTACTOS MANUALES Y STAFF ---
         // Obtenemos los contactos de la "Fuente de la Verdad" (emailConfig)
         const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
-        console.log("Merging contacts from emailConfig:", contacts.length);
 
         contacts.forEach(c => {
             // Buscamos si ya existe en los links de Firestore para no duplicar
@@ -360,17 +359,17 @@ async function _loadParentList() {
             <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
                 <!-- Checkbox de selección -->
                 <input type="checkbox" class="parent-select-chk"
-                    data-parent-uid="${link.parentUid || ''}"
-                    data-parent-email="${link.parentEmail || ''}"
-                    data-player="${link.playerAlias || link.playerName || ''}"
-                    data-player-num="${link.playerNumber || ''}"
-                    data-parent-wa="${link.parentPhone || link.parentWA || ''}"
+                    data-parent-uid="${typeof escapeAttr==='function'?escapeAttr(link.parentUid||''):link.parentUid||''}"
+                    data-parent-email="${typeof escapeAttr==='function'?escapeAttr(link.parentEmail||''):link.parentEmail||''}"
+                    data-player="${typeof escapeAttr==='function'?escapeAttr(link.playerAlias||link.playerName||''):link.playerAlias||link.playerName||''}"
+                    data-player-num="${typeof escapeAttr==='function'?escapeAttr(link.playerNumber||''):link.playerNumber||''}"
+                    data-parent-wa="${typeof escapeAttr==='function'?escapeAttr(link.parentPhone||link.parentWA||''):link.parentPhone||link.parentWA||''}"
                     style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);"
                     onchange="updateBulkCount()">
                 <!-- Fila del contacto -->
-                <div onclick="openThreadWithParent('${link.parentUid || link._id}','${link.parentEmail}',
-                             '${link.playerNumber}','${link.playerAlias || link.playerName || ''}',
-                             '${link.parentPhone || link.parentWA || ''}')"
+                <div onclick="openThreadWithParent('${typeof escapeAttr==='function'?escapeAttr(link.parentUid||link._id):link.parentUid||link._id}','${typeof escapeAttr==='function'?escapeAttr(link.parentEmail):link.parentEmail}',
+                             '${typeof escapeAttr==='function'?escapeAttr(link.playerNumber):link.playerNumber}','${typeof escapeAttr==='function'?escapeAttr(link.playerAlias||link.playerName||''):link.playerAlias||link.playerName||''}',
+                             '${typeof escapeAttr==='function'?escapeAttr(link.parentPhone||link.parentWA||''):link.parentPhone||link.parentWA||''}')"
                     style="flex:1;background:var(--glass);
                            border:1px solid ${isUnread ? 'rgba(88,166,255,0.5)' : 'var(--glass-border)'};
                            border-radius:10px;padding:0.85rem 1rem;
@@ -378,17 +377,17 @@ async function _loadParentList() {
                            align-items:center;gap:0.8rem;transition:all 0.15s;">
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                            ${typeIcon} ${link.playerAlias || link.playerName || 'Contacto'}
-                            <span style="color:var(--primary);">${displayNum}</span>
+                            ${typeIcon} ${typeof escapeHtml==='function'?escapeHtml(link.playerAlias || link.playerName || 'Contacto'):link.playerAlias || link.playerName || 'Contacto'}
+                            <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(displayNum):displayNum}</span>
                         </div>
                         <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.2rem;">
-                            ${link.parentEmail || 'Sin email'}
-                            ${link.parentPhone || link.parentWA ? ` · 📱 ${link.parentPhone || link.parentWA}` : ''}
+                            ${typeof escapeHtml==='function'?escapeHtml(link.parentEmail || 'Sin email'):link.parentEmail || 'Sin email'}
+                            ${link.parentPhone || link.parentWA ? ` · 📱 ${typeof escapeHtml==='function'?escapeHtml(link.parentPhone || link.parentWA):link.parentPhone || link.parentWA}` : ''}
                         </div>
                         <div style="font-size:0.76rem;
                                     color:${unread ? '#58a6ff' : 'var(--text-muted)'};
                                     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                            ${unread ? `<strong>🔵 ${lastMsg}</strong>` : lastMsg}
+                            ${unread ? `<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>` : (typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg)}
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;
@@ -412,7 +411,7 @@ async function _loadParentList() {
     } catch(e) {
         if (document.getElementById('coach-parent-list')) {
             document.getElementById('coach-parent-list').innerHTML =
-                `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ Error: ${e.message}</div>`;
+                `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ Error: ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
         }
     }
 }
@@ -442,24 +441,24 @@ async function openThreadWithParent(parentUid, parentEmail, playerNumber, player
             </button>
             <div style="flex:1;min-width:0;">
                 <div style="font-weight:700;font-size:0.9rem;">
-                    ⚽ ${playerAlias || 'Jugador'}
-                    <span style="color:var(--primary);">#${playerNumber}</span>
+                    ⚽ ${typeof escapeHtml==='function'?escapeHtml(playerAlias||'Jugador'):playerAlias||'Jugador'}
+                    <span style="color:var(--primary);">#${typeof escapeAttr==='function'?escapeAttr(playerNumber):playerNumber}</span>
                 </div>
                 <div style="font-size:0.73rem;color:var(--text-muted);
                             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                    👨‍👩‍👧 ${parentEmail}
+                    👨‍👩‍👧 ${typeof escapeHtml==='function'?escapeHtml(parentEmail):parentEmail}
                 </div>
             </div>
             <!-- Botones rápidos WhatsApp / Email -->
             <div style="display:flex;gap:0.4rem;flex-shrink:0;">
                 ${parentWA ? `
-                <a href="https://wa.me/${parentWA}" target="_blank"
+                <a href="https://wa.me/${typeof escapeAttr==='function'?escapeAttr(parentWA):parentWA}" target="_blank"
                     style="padding:0.35rem 0.7rem;background:rgba(37,211,102,0.12);
                            border:1px solid rgba(37,211,102,0.4);border-radius:6px;
                            color:#25d366;font-size:0.72rem;text-decoration:none;font-weight:700;">
                     📱 WA
                 </a>` : ''}
-                <a href="mailto:${parentEmail}"
+                <a href="mailto:${typeof escapeAttr==='function'?escapeAttr(parentEmail):parentEmail}"
                     style="padding:0.35rem 0.7rem;background:rgba(88,166,255,0.1);
                            border:1px solid rgba(88,166,255,0.3);border-radius:6px;
                            color:var(--primary);font-size:0.72rem;text-decoration:none;font-weight:700;">
@@ -487,10 +486,10 @@ async function openThreadWithParent(parentUid, parentEmail, playerNumber, player
                            color:white;font-size:0.88rem;resize:none;box-sizing:border-box;"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){
                         event.preventDefault();
-                        sendCoachMessage('${threadId}','${parentUid}','${parentEmail}','${parentWA||''}');
+                        sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(parentUid):parentUid}','${typeof escapeAttr==='function'?escapeAttr(parentEmail):parentEmail}','${typeof escapeAttr==='function'?escapeAttr(parentWA||''):parentWA||''}');
                     }">
                 </textarea>
-                <button onclick="sendCoachMessage('${threadId}','${parentUid}','${parentEmail}','${parentWA||''}')"
+                <button onclick="sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(parentUid):parentUid}','${typeof escapeAttr==='function'?escapeAttr(parentEmail):parentEmail}','${typeof escapeAttr==='function'?escapeAttr(parentWA||''):parentWA||''}')"
                     class="btn primary" style="padding:0.6rem 1rem;flex-shrink:0;">
                     Enviar ›
                 </button>
@@ -552,7 +551,7 @@ async function _loadThreadMessages(threadId, perspective) {
                                     : 'rgba(255,255,255,0.1)'};
                             border-radius:12px;padding:0.5rem 0.85rem;">
                     <div style="font-size:0.84rem;line-height:1.55;white-space:pre-wrap;">
-                        ${m.text.replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
+                        ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
                     </div>
                     <div style="font-size:0.64rem;color:var(--text-muted);
                                 text-align:right;margin-top:0.25rem;">
@@ -567,7 +566,7 @@ async function _loadThreadMessages(threadId, perspective) {
 
     } catch(e) {
         if (container) container.innerHTML =
-            `<div style="text-align:center;color:#ff5858;padding:1rem;">⚠️ ${e.message}</div>`;
+            `<div style="text-align:center;color:#ff5858;padding:1rem;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 }
 
@@ -706,12 +705,6 @@ async function sendMatchReportsToParents() {
             const selectedIds = selectedPlayers.map(p => p.id).filter(Boolean);
             const selectedNums = selectedPlayers.map(p => p.number).filter(n => n != null);
 
-            console.log("[Reports] Detección Inteligente:", {
-                rowsFound: convRows.length,
-                playersMatched: selectedPlayers.length,
-                modeUsed: mode,
-                nums: selectedNums
-            });
 
             if (selectedPlayers.length === 0 && convRows.length > 0) {
                 // Si hay filas de convocatoria pero no pudimos extraer datos, 
@@ -881,8 +874,6 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
         return false;
     });
 
-    console.log(`[Reports] Mostrando ${staff.length} staff y ${activeParents.length} padres.`);
-
     const allToShow = [...staff, ...activeParents];
 
     if (!allToShow.length) {
@@ -910,18 +901,17 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
             
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.15rem;">
-                    <span style="font-weight:700;font-size:0.88rem;color:white;">${c.name || 'Sin nombre'}</span>
+                    <span style="font-weight:700;font-size:0.88rem;color:white;">${typeof escapeHtml==='function'?escapeHtml(c.name||'Sin nombre'):c.name||'Sin nombre'}</span>
                     <span style="font-size:0.6rem;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.05);color:var(--text-muted);font-weight:700;text-transform:uppercase;">
                         ${typeLabel}
                     </span>
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);display:flex;align-items:center;gap:0.4rem;">
-                    ${typeIcon} ${c.type === 'staff' ? 'Personal del club' : `Tutor de ${c.player || 'Jugador'}`}
-                    ${c.playerNumber && c.playerNumber !== '—' ? `<span style="color:${accent};font-weight:700;">#${c.playerNumber}</span>` : ''}
+                    ${typeIcon} ${c.type === 'staff' ? 'Personal del club' : `Tutor de ${typeof escapeHtml==='function'?escapeHtml(c.player||'Jugador'):c.player||'Jugador'}`}
+                    ${c.playerNumber && c.playerNumber !== '—' ? `<span style="color:${accent};font-weight:700;">#${typeof escapeAttr==='function'?escapeAttr(c.playerNumber):c.playerNumber}</span>` : ''}
                 </div>
             </div>
         </label>`;
-    }).join('');
     }).join('');
 }
 
@@ -1284,7 +1274,6 @@ async function autoDispatchMatchReports() {
             }
         }
 
-        console.log(`[AutoDispatch] Despacho de informes completado.`);
         localStorage.removeItem('cronos_match_rpt_selection');
         showToast('✅ Informes enviados automáticamente (Interno)', 4000);
 
@@ -1348,8 +1337,6 @@ async function saveAllMatchReportsInternal() {
             saved++;
         }
 
-        console.log(`[AutoReport] ${saved} informes técnicos persistidos.`);
-        
         // --- DISPARAR DESPACHO AUTOMÁTICO ---
         await autoDispatchMatchReports();
 
@@ -1557,25 +1544,25 @@ async function openContactManager() {
                             </thead>
                             <tbody id="tbody-parent-contacts">
                                 ${links.sort((a,b) => (a.playerNumber||0)-(b.playerNumber||0)).map(link => `
-                                <tr class="parent-contact-row firestore-linked" data-linkid="${link._id}"
+                                <tr class="parent-contact-row firestore-linked" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
                                     style="border-bottom:1px solid rgba(255,255,255,0.05);">
                                     <td style="padding:0.45rem;font-weight:600;">
-                                        ${link.playerAlias || link.playerName || 'Jugador'}
+                                        ${typeof escapeHtml==='function'?escapeHtml(link.playerAlias || link.playerName || 'Jugador'):link.playerAlias || link.playerName || 'Jugador'}
                                         <span style="font-size:0.6rem;color:var(--text-muted);
                                                      margin-left:3px;background:rgba(255,255,255,0.06);
                                                      border-radius:3px;padding:1px 4px;">vinculado</span>
                                     </td>
-                                    <td style="padding:0.45rem;font-weight:700;color:var(--primary);">#${link.playerNumber}</td>
+                                    <td style="padding:0.45rem;font-weight:700;color:var(--primary);">#${typeof escapeAttr==='function'?escapeAttr(link.playerNumber):link.playerNumber}</td>
                                     <td style="padding:0.45rem;">
-                                        <input type="text" class="contact-phone" data-linkid="${link._id}"
-                                            value="${link.parentPhone || ''}" placeholder="34600112233"
+                                        <input type="text" class="contact-phone" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
+                                            value="${typeof escapeAttr==='function'?escapeAttr(link.parentPhone||''):link.parentPhone||''}" placeholder="34600112233"
                                             style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);
                                                    border:1px solid rgba(255,255,255,0.1);border-radius:6px;
                                                    color:white;font-size:0.72rem;box-sizing:border-box;">
                                     </td>
                                     <td style="padding:0.45rem;">
-                                        <input type="email" class="contact-parent-email" data-linkid="${link._id}"
-                                            value="${link.parentEmail || ''}" placeholder="padre@email.com"
+                                        <input type="email" class="contact-parent-email" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
+                                            value="${typeof escapeAttr==='function'?escapeAttr(link.parentEmail||''):link.parentEmail||''}" placeholder="padre@email.com"
                                             style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);
                                                    border:1px solid rgba(255,255,255,0.1);border-radius:6px;
                                                    color:white;font-size:0.72rem;box-sizing:border-box;">
@@ -1746,22 +1733,22 @@ function renderContactRowMarkup(c = {}) {
     const isCoach = c.type === 'coach';
 
     return `
-    <tr class="custom-contact-row" data-id="${id}" data-type="${c.type || 'staff'}" 
+    <tr class="custom-contact-row" data-id="${typeof escapeAttr==='function'?escapeAttr(id):id}" data-type="${typeof escapeAttr==='function'?escapeAttr(c.type||'staff'):c.type||'staff'}" 
         style="border-bottom:1px solid rgba(255,255,255,0.05); ${isCoach ? 'background:rgba(88,166,255,0.03);' : ''}">
         <td style="padding:0.4rem;">
-            <input type="text" class="c-name" value="${c.name || ''}" placeholder="Nombre / Cargo"
+            <input type="text" class="c-name" value="${typeof escapeAttr==='function'?escapeAttr(c.name||''):c.name||''}" placeholder="Nombre / Cargo"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
         </td>
         <td style="padding:0.4rem;">
-            <input type="email" class="c-email" value="${c.email || ''}" placeholder="email@ejemplo.com"
+            <input type="email" class="c-email" value="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}" placeholder="email@ejemplo.com"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
         </td>
         <td style="padding:0.4rem;">
-            <input type="tel" class="c-phone" value="${c.phone || ''}" placeholder="34600000000"
+            <input type="tel" class="c-phone" value="${typeof escapeAttr==='function'?escapeAttr(c.phone||''):c.phone||''}" placeholder="34600000000"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
         </td>
         <td style="padding:0.4rem;">
-            <input type="text" class="c-uid" value="${c.uid || ''}" placeholder="ID App (opcional)"
+            <input type="text" class="c-uid" value="${typeof escapeAttr==='function'?escapeAttr(c.uid||''):c.uid||''}" placeholder="ID App (opcional)"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);font-size:0.7rem;"
                 ${isCoach ? 'readonly' : ''}>
         </td>
@@ -1799,28 +1786,28 @@ function renderParentRowMarkup(c = {}) {
     const id = c.id || ('new_' + Date.now());
 
     return `
-    <tr class="parent-contact-row manual-parent" data-id="${id}"
+    <tr class="parent-contact-row manual-parent" data-id="${typeof escapeAttr==='function'?escapeAttr(id):id}"
         style="border-bottom:1px solid rgba(255,255,255,0.05);">
         <td style="padding:0.4rem;">
-            <input type="text" class="p-name" value="${c.name || ''}" placeholder="Nombre padre/madre"
+            <input type="text" class="p-name" value="${typeof escapeAttr==='function'?escapeAttr(c.name||''):c.name||''}" placeholder="Nombre padre/madre"
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;">
             <select class="p-player" style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
                 <option value="">-- Seleccionar Jugador --</option>
                 ${(window._cronos_squad_cache || []).map(p => `
-                    <option value="${p.id}" ${c.playerId === p.id ? 'selected' : ''}>
-                        [${p.id}] ${p.alias || p.name || 'Sin nombre'}
+                    <option value="${typeof escapeAttr==='function'?escapeAttr(p.id):p.id}" ${c.playerId === p.id ? 'selected' : ''}>
+                        [${typeof escapeHtml==='function'?escapeHtml(p.id):p.id}] ${typeof escapeHtml==='function'?escapeHtml(p.alias||p.name||'Sin nombre'):p.alias||p.name||'Sin nombre'}
                     </option>
                 `).join('')}
             </select>
         </td>
         <td style="padding:0.4rem;">
-            <input type="tel" class="p-phone" value="${c.phone || ''}" placeholder="34600000000"
+            <input type="tel" class="p-phone" value="${typeof escapeAttr==='function'?escapeAttr(c.phone||''):c.phone||''}" placeholder="34600000000"
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;">
-            <input type="email" class="p-email" value="${c.email || ''}" placeholder="padre@email.com"
+            <input type="email" class="p-email" value="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}" placeholder="padre@email.com"
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
@@ -2044,19 +2031,19 @@ async function openUnifiedCommsMenu() {
 
             <!-- CONVOCATORIA -->
             <button onclick="openConvocationModal()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.1);">
-                <span class="icon">📋</span>
+                <span class="icon">📲</span>
                 <div class="content">
-                    <div class="title" style="color:#3fb950;">Convocatoria</div>
-                    <div class="desc">Seleccionar jugadores + enviar a dirección</div>
+                    <div class="title" style="color:#3fb950;">Enviar Convocatoria</div>
+                    <div class="desc">A padres + dirección deportiva</div>
                 </div>
             </button>
 
             <!-- ENTRENAMIENTO -->
             <button onclick="openTrainingModal()" class="btn-comms-card" style="--color:var(--secondary);--bg:rgba(240,136,62,0.1);">
-                <span class="icon">🏋️</span>
+                <span class="icon">📅</span>
                 <div class="content">
-                    <div class="title" style="color:var(--secondary);">Entrenamiento</div>
-                    <div class="desc">Seleccionar jugadores + enviar info a dirección</div>
+                    <div class="title" style="color:var(--secondary);">Info Entrenamiento</div>
+                    <div class="desc">Horarios y cambios a padres + dirección</div>
                 </div>
             </button>
 
@@ -2196,16 +2183,16 @@ window.openBulkMessageComposer = function() {
                                    background:${typeColor};border:1px solid ${typeBorder};
                                    border-radius:7px;padding:0.45rem 0.65rem;cursor:pointer;">
                         <input type="checkbox" class="msg-recipient-chk"
-                            data-uid="${c.parentUid || ''}"
-                            data-email="${c.parentEmail}"
-                            data-wa="${c.parentWA}"
-                            data-id="${c.id}"
+                            data-uid="${typeof escapeAttr==='function'?escapeAttr(c.parentUid||''):c.parentUid||''}"
+                            data-email="${typeof escapeAttr==='function'?escapeAttr(c.parentEmail):c.parentEmail}"
+                            data-wa="${typeof escapeAttr==='function'?escapeAttr(c.parentWA):c.parentWA}"
+                            data-id="${typeof escapeAttr==='function'?escapeAttr(c.id):c.id}"
                             ${isChecked ? 'checked' : ''}
                             style="width:15px;height:15px;flex-shrink:0;accent-color:var(--primary);">
                         <div style="flex:1;min-width:0;">
-                            <div style="font-size:0.78rem;font-weight:600;">${c.label}</div>
+                            <div style="font-size:0.78rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(c.label):c.label}</div>
                             <div style="font-size:0.63rem;color:var(--text-muted);">
-                                ${c.phone ? `📱 ${c.phone}` : ''}${c.phone && c.email ? ' · ' : ''}${c.email ? `📧 ${c.email}` : ''}
+                                ${c.phone ? `📱 ${typeof escapeHtml==='function'?escapeHtml(c.phone):c.phone}` : ''}${c.phone && c.email ? ' · ' : ''}${c.email ? `📧 ${typeof escapeHtml==='function'?escapeHtml(c.email):c.email}` : ''}
                             </div>
                         </div>
                         ${c.phone ? `<span style="font-size:0.58rem;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:3px;padding:1px 4px;color:#3fb950;">WA</span>` : ''}
@@ -2466,7 +2453,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
                         border-radius:8px;padding:0.75rem;margin-bottom:0.9rem;">
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.3rem;">Partido</div>
                 <div style="font-weight:700;font-size:0.95rem;">
-                    🆚 vs ${rival}
+                    🆚 vs ${typeof escapeHtml==='function'?escapeHtml(rival):rival}
                     <span style="color:var(--primary);margin-left:0.5rem;">${scoreHome}–${scoreAway}</span>
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">📅 ${matchDate}</div>
@@ -2532,7 +2519,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
                 listEl.innerHTML = staffList.map(s => `
                 <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;">
                     <span>${s.role==='director'?'📋':'🎯'}</span>
-                    <span style="color:white;">${s.displayName||s.email}</span>
+                    <span style="color:white;">${typeof escapeHtml==='function'?escapeHtml(s.displayName||s.email):s.displayName||s.email}</span>
                     <span style="font-size:0.65rem;color:var(--text-muted);">
                         (${s.role==='director'?'Director Deportivo':'Coordinador'})
                     </span>
@@ -2699,12 +2686,12 @@ window.openIndividualReports = async function openIndividualReports() {
                                      font-weight:700;font-size:0.8rem;padding:2px 7px;border-radius:5px;">
                             #${p.number}
                         </span>
-                        <span style="font-weight:700;font-size:0.88rem;">${p.name||'Jugador'}</span>
+                        <span style="font-weight:700;font-size:0.88rem;">${typeof escapeHtml==='function'?escapeHtml(p.name||'Jugador'):p.name||'Jugador'}</span>
                     </div>
                     <div style="text-align:right;font-size:0.7rem;">
                         ${linked
                             ? `<span style="color:#3fb950;font-weight:700;">✅ Vinculado</span><br>
-                               <span style="color:var(--text-muted);">${link.parentEmail||''}</span>`
+                               <span style="color:var(--text-muted);">${typeof escapeHtml==='function'?escapeHtml(link.parentEmail||''):link.parentEmail||''}</span>`
                             : `<span style="color:#ff5858;">⚠️ Sin vincular</span>`}
                     </div>
                 </div>
@@ -2732,7 +2719,7 @@ window.openIndividualReports = async function openIndividualReports() {
         window._individualReportLinks   = links;
 
     } catch(e) {
-        body.innerHTML = `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ ${e.message}</div>`;
+        body.innerHTML = `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 };
 
@@ -2860,7 +2847,6 @@ window.publishConvocationToApp = async function() {
                 createdAt:  new Date().toISOString(),
             });
         }
-        if (staff.length) console.log(`[Convocatoria] Notificados ${staff.length} miembros de dirección`);
     } catch(e) {
         console.warn('[publishConvocation→staff]', e.message);
     }
