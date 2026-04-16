@@ -1693,7 +1693,7 @@ function openSetupModal() {
 
             <!-- BOTONES -->
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; gap:0.6rem; align-items:center;">
+                <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
                     <button class="btn" onclick="openRosterManager()"
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
                         GESTIONAR PLANTILLA
@@ -1703,15 +1703,15 @@ function openSetupModal() {
                         style="background:var(--glass);color:var(--secondary);font-size:0.82rem;border:1px solid var(--secondary);">
                         📱 CONTACTOS
                     </button>
-                    <button class="btn" onclick="startDemo()"
-                        title="Partido de demostración con datos de ejemplo"
-                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
-                        🎮 DEMO
+                    <button class="btn" onclick="openConvocationModal()"
+                        title="Crear y enviar convocatorias a padres y staff"
+                        style="background:rgba(63,185,80,0.12);color:#3fb950;font-size:0.82rem;border:1px solid rgba(63,185,80,0.4);">
+                        📋 CONVOCATORIA
                     </button>
-                    <button class="btn" onclick="startTutorial()"
-                        title="Tutorial interactivo paso a paso"
-                        style="background:rgba(240,136,62,0.12);color:var(--secondary);font-size:0.82rem;border:1px solid rgba(240,136,62,0.4);">
-                        ❓ TUTORIAL
+                    <button class="btn" onclick="openTrainingNotification()"
+                        title="Crear y enviar planificación de entrenamiento semanal"
+                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
+                        🏃 ENTRENAMIENTO
                     </button>
                     ${['admin','superadmin'].includes(window._cronosCurrentUser?.role) ? `
                     <button onclick="openAdminPanel()"
@@ -1728,14 +1728,6 @@ function openSetupModal() {
                                color:var(--primary); font-size:0.82rem; padding:0.45rem 0.9rem;
                                border-radius:8px; cursor:pointer; font-weight:700;">
                         🏟️ MI CLUB
-                    </button>` : ''}
-                    ${LIVE_ROLES.includes(window._cronosCurrentUser?.role) ? `
-                    <button onclick="openLiveView()"
-                        style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.5);
-                               color:#ff5858; font-size:0.82rem; padding:0.45rem 0.9rem;
-                               border-radius:8px; cursor:pointer; font-weight:700;
-                               animation:livePulse 2s ease-in-out infinite;">
-                        🔴 PARTIDOS EN VIVO
                     </button>` : ''}
                 </div>
                 <button class="btn primary" onclick="confirmSetup()" style="padding:0.65rem 1.8rem;">

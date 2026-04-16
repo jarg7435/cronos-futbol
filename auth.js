@@ -602,7 +602,18 @@ function _launchWithRole(role) {
     } else if (activeRole === 'superadmin') {
         if (typeof openSuperAdminPanel === 'function') openSuperAdminPanel();
     } else if (activeRole === 'club_admin') {
-        if (typeof openClubAdminPanel === 'function') openClubAdminPanel();
+        if (typeof openClubAdminPanel === 'function') {
+            openClubAdminPanel()
+                .catch(e => {
+                    console.error('[ClubAdmin] Error al abrir panel:', e);
+                    if (typeof showToast === 'function') showToast('⚠️ Error: ' + e.message, 5000);
+                    document.getElementById('role-selection-screen').style.display = 'flex';
+                });
+        } else {
+            console.error('[ClubAdmin] openClubAdminPanel no está definida');
+            document.getElementById('role-selection-screen').style.display = 'flex';
+            if (typeof showToast === 'function') showToast('⚠️ Error al cargar el panel', 3000);
+        }
     } else if (['director', 'coordinator'].includes(activeRole)) {
         if (typeof init === 'function') init(activeRole);
         if (typeof openStaffDashboard === 'function') openStaffDashboard();
