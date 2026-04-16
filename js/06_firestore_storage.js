@@ -87,7 +87,7 @@ async function syncFromCloud() {
 
 // ── Listener en tiempo real: cualquier cambio en Firestore ────────
 // se aplica automáticamente en este dispositivo al instante
-// NOTA: _realtimeUnsubscribe declarado en app.js
+let _realtimeUnsubscribe = null;
 
 async function startRealtimeSync() {
     const fa  = window._cronos_auth;
@@ -533,15 +533,15 @@ function openSetupModal() {
                         style="background:var(--glass);color:var(--secondary);font-size:0.82rem;border:1px solid var(--secondary);">
                         📱 CONTACTOS
                     </button>
-                    <button class="btn" onclick="startDemo()"
-                        title="Partido de demostración con datos de ejemplo"
-                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
-                        🎮 DEMO
+                    <button class="btn" onclick="openConvocationModal()"
+                        title="Convocar jugadores para el partido"
+                        style="background:rgba(63,185,80,0.12);color:#3fb950;font-size:0.82rem;border:1px solid rgba(63,185,80,0.4);">
+                        📋 CONVOCATORIA
                     </button>
-                    <button class="btn" onclick="startTutorial()"
-                        title="Tutorial interactivo paso a paso"
-                        style="background:rgba(240,136,62,0.12);color:var(--secondary);font-size:0.82rem;border:1px solid rgba(240,136,62,0.4);">
-                        ❓ TUTORIAL
+                    <button class="btn" onclick="openTrainingPanel()"
+                        title="Planificar sesión de entrenamiento"
+                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
+                        🏃 ENTRENAMIENTO
                     </button>
                     ${window._cronosCurrentUser?.role === 'club_admin' ? `
                     <button onclick="openClubAdminPanel()"
@@ -549,14 +549,6 @@ function openSetupModal() {
                                color:var(--primary); font-size:0.82rem; padding:0.45rem 0.9rem;
                                border-radius:8px; cursor:pointer; font-weight:700;">
                         🏟️ MI CLUB
-                    </button>` : ''}
-                    ${LIVE_ROLES.includes(window._cronosCurrentUser?.role) ? `
-                    <button onclick="openLiveView()"
-                        style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.5);
-                               color:#ff5858; font-size:0.82rem; padding:0.45rem 0.9rem;
-                               border-radius:8px; cursor:pointer; font-weight:700;
-                               animation:livePulse 2s ease-in-out infinite;">
-                        🔴 PARTIDOS EN VIVO
                     </button>` : ''}
                 </div>
                 <button class="btn primary" onclick="confirmSetup()" style="padding:0.65rem 1.8rem;">

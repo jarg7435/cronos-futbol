@@ -258,25 +258,15 @@ async function openClubAdminPanel(preClubId = null) {
           ${pendingClubApproval.map(u => {
               const roleLabel = ROLE_META[u.role]?.label || u.role || 'Usuario';
               const roleIcon  = ROLE_META[u.role]?.icon  || '👤';
-              return \`
-              <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;
-                          margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.06);
-                          display:flex;justify-content:space-between;align-items:center;">
-                <div>
-                  <div style="font-size:0.85rem;font-weight:600;">\${typeof escapeHtml==='function'?escapeHtml(u.email):u.email}</div>
-                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
-                    \${roleIcon} \${roleLabel} · Aprobado por SA ✅
-                  </div>
-                </div>
-                <div style="display:flex;gap:0.4rem;">
-                  <button onclick="caConfirmClubAccess('\${u._id}','\${u.role||'user'}','\${(typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,\"\\'\")}')"
-                      class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
-                      ✅ Confirmar acceso</button>
-                  <button onclick="caRejectRequest('\${u._id}','\${(typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,\"\\'\")}')"
-                      class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
-                      ✕ Rechazar</button>
-                </div>
-              </div>\`;
+              const escEmail = (typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+              const escId    = u._id.replace(/'/g,"\\'");
+              return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">' +
+                '<div><div style="font-size:0.85rem;font-weight:600;">' + (typeof escapeHtml==='function'?escapeHtml(u.email):u.email) + '</div>' +
+                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + roleIcon + ' ' + roleLabel + ' · Aprobado por SA ✅</div></div>' +
+                '<div style="display:flex;gap:0.4rem;">' +
+                '<button onclick="caConfirmClubAccess(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">✅ Confirmar acceso</button>' +
+                '<button onclick="caRejectRequest(\'' + escId + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
+                '</div></div>';
           }).join('')}
         </div>` : ''}
 
@@ -382,7 +372,7 @@ async function openClubAdminPanel(preClubId = null) {
 
         <!-- ── BLOQUE E: Toggle envío informes individualizados a padres ── -->
         <div class="sa-card" style="border-color:rgba(210,168,255,0.3);margin-top:1rem;">
-          <div class="sa-card-head" onclick="document.getElementById('ca-features-section').classList.toggle('expanded')">
+          <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
             <div class="sa-card-title">
               <span class="sa-chevron">▼</span>
               <span style="color:#d2a8ff;">⚙️ Configuración del Club</span>
@@ -414,7 +404,7 @@ async function openClubAdminPanel(preClubId = null) {
 
         <!-- ── BLOQUE F: Contactos del Club con permisos ── -->
         <div class="sa-card" style="border-color:rgba(88,166,255,0.3);margin-top:1rem;">
-          <div class="sa-card-head" onclick="document.getElementById('ca-contacts-section').classList.toggle('expanded')">
+          <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
             <div class="sa-card-title">
               <span class="sa-chevron">▼</span>
               <span style="color:#58a6ff;">📇 Contactos del Club — Permisos</span>
@@ -434,71 +424,25 @@ async function openClubAdminPanel(preClubId = null) {
                 const meta = ROLE_META[u.role] || {icon:'👤',color:'#8b949e',label:u.role||'?'};
                 const perms = u.permissions || {};
                 const uid = u._id;
-                return \`
-                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                            border-radius:8px;padding:0.7rem 0.8rem;margin-bottom:0.5rem;">
-                  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
-                    <span>\${meta.icon}</span>
-                    <div style="flex:1;min-width:0;">
-                      <div style="font-weight:700;font-size:0.82rem;color:white;">
-                        \${typeof escapeHtml==='function'?escapeHtml(u.email||u._id):u.email||u._id}
-                        \${u.displayName ? '<span style="color:#7d8590;font-weight:400;font-size:0.75rem;"> · '+
-                          (typeof escapeHtml==='function'?escapeHtml(u.displayName):u.displayName)+'</span>' : ''}
-                      </div>
-                      <div style="font-size:0.68rem;color:\${meta.color};">\${meta.label}</div>
-                    </div>
-                  </div>
-                  <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
-                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
-                      <input type="checkbox" \${perms.receiveConvocatorias?'checked':''}
-                        onchange="caSetPermission('\${uid}','receiveConvocatorias',this.checked)"
-                        style="width:14px;height:14px;accent-color:#3fb950;">
-                      📋 Convocatorias
-                    </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
-                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
-                      <input type="checkbox" \${perms.receiveEntrenamientos?'checked':''}
-                        onchange="caSetPermission('\${uid}','receiveEntrenamientos',this.checked)"
-                        style="width:14px;height:14px;accent-color:#58a6ff;">
-                      🏃 Entrenamientos
-                    </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
-                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
-                      <input type="checkbox" \${perms.receiveMessages?'checked':''}
-                        onchange="caSetPermission('\${uid}','receiveMessages',this.checked)"
-                        style="width:14px;height:14px;accent-color:#d2a8ff;">
-                      💬 Mensajes
-                    </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
-                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
-                      <input type="checkbox" \${perms.receiveReports?'checked':''}
-                        onchange="caSetPermission('\${uid}','receiveReports',this.checked)"
-                        style="width:14px;height:14px;accent-color:#f0883e;">
-                      📊 Informes
-                    </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
-                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
-                      <input type="checkbox" \${perms.receiveIndividualReports?'checked':''}
-                        onchange="caSetPermission('\${uid}','receiveIndividualReports',this.checked)"
-                        style="width:14px;height:14px;accent-color:#ffa500;">
-                      📝 Inf. Individual
-                    </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
-                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
-                      <input type="checkbox" \${perms.liveView?'checked':''}
-                        onchange="caSetPermission('\${uid}','liveView',this.checked)"
-                        style="width:14px;height:14px;accent-color:#ff5858;">
-                      🔴 En Vivo
-                    </label>
-                  </div>
-                </div>\`;
+                const permToggle = (key, icon, label, color) =>
+                  '<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">' +
+                  '<input type="checkbox" ' + (perms[key]?'checked':'') + ' onchange="caSetPermission(\'' + uid.replace(/'/g,"\\'") + '\',\'' + key + '\',this.checked)" style="width:14px;height:14px;accent-color:' + color + ';"> ' +
+                  icon + ' ' + label + '</label>';
+                return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:0.7rem 0.8rem;margin-bottom:0.5rem;">' +
+                  '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">' +
+                  '<span>' + meta.icon + '</span>' +
+                  '<div style="flex:1;min-width:0;">' +
+                  '<div style="font-weight:700;font-size:0.82rem;color:white;">' + (typeof escapeHtml==='function'?escapeHtml(u.email||u._id):u.email||u._id) +
+                  (u.displayName ? ' <span style="color:#7d8590;font-weight:400;font-size:0.75rem;"> · ' + (typeof escapeHtml==='function'?escapeHtml(u.displayName):u.displayName) + '</span>' : '') +
+                  '</div><div style="font-size:0.68rem;color:' + meta.color + ';">' + meta.label + '</div></div></div>' +
+                  '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' +
+                  permToggle('receiveConvocatorias','📋','Convocatorias','#3fb950') +
+                  permToggle('receiveEntrenamientos','🏃','Entrenamientos','#58a6ff') +
+                  permToggle('receiveMessages','💬','Mensajes','#d2a8ff') +
+                  permToggle('receiveReports','📊','Informes','#f0883e') +
+                  permToggle('receiveIndividualReports','📝','Inf. Individual','#ffa500') +
+                  permToggle('liveView','🔴','En Vivo','#ff5858') +
+                  '</div></div>';
             }).join('')}
           </div>
         </div>
