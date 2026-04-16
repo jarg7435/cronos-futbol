@@ -164,6 +164,7 @@ class ReportGenerator {
                 <td class="center time-cell">${timeStr}</td>
             </tr>`;
         }).join('');
+
         // ── Generar goleadores resumen ────────────────────────────
         const scorers = sorted.filter(p => p.goals > 0).map(p =>
             `⚽ ${p.number} ${p.name} (${p.goals})`
