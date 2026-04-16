@@ -294,7 +294,7 @@ window.saClubs = async function saClubs() {
                     <div style="display:flex;gap:0.5rem;align-items:center;">
                         ${pend>0?`<span style="background:rgba(255,215,0,0.2);color:#ffd700;padding:1px 8px;border-radius:10px;font-size:0.68rem;font-weight:700;">${pend} pend.</span>`:''}
                         <span style="font-size:0.68rem;color:#8b949e;">${vis.length} usuarios</span>
-                        <button onclick="openClubAdminPanel('${(typeof escapeAttr==='function'?escapeAttr(c.id):c.id).replace(/'/g,"\\'")}')" style="padding:0.22rem 0.5rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.3);border-radius:5px;color:#58a6ff;font-size:0.68rem;cursor:pointer;font-weight:700;">⚙️ Gestionar</button>
+                        <button onclick="var sp=document.getElementById('sa-panel');if(sp)sp.remove();openClubAdminPanel('${(typeof escapeAttr==='function'?escapeAttr(c.id):c.id).replace(/'/g,"\\'")}')" style="padding:0.22rem 0.5rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.3);border-radius:5px;color:#58a6ff;font-size:0.68rem;cursor:pointer;font-weight:700;">⚙️ Gestionar</button>
                     </div>
                 </div>
                 ${vis.length?`<div>${vis.map(u=>renderRow(u,c.id)).join('')}</div>`:`<p style="margin:0;padding:0.6rem 0.9rem;color:#8b949e;font-size:0.8rem;">Sin usuarios asignados.</p>`}

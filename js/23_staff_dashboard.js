@@ -99,7 +99,11 @@ async function openStaffDashboard() {
                 ${typeof escapeHtml==='function'?escapeHtml(me.email||''):me.email||''}
             </div>
         </div>
-        <div style="display:flex;gap:0.4rem;">
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+            <button onclick="sdOpenLive()"
+                style="background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.5);
+                       color:#ff5858;padding:0.35rem 0.85rem;border-radius:6px;cursor:pointer;
+                       font-size:0.74rem;font-weight:700;">🔴 En Vivo</button>
             <button onclick="window.saGoBackToRoles&&saGoBackToRoles();"
                 style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
                        color:#ffd700;padding:0.35rem 0.85rem;border-radius:6px;cursor:pointer;
@@ -275,21 +279,14 @@ async function openStaffDashboard() {
             snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
             reports.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-            if (!reports.length) {
-                body.innerHTML = `<div class="sd-empty">
-                    📊 No hay informes de partido disponibles.<br>
-                    <span style="font-size:0.8rem;color:#555;">
-                        Aquí aparecerán los informes enviados por los entrenadores
-                        tras cada partido.
-                    </span>
-                </div>`;
-                return;
-            }
+            // Filtrar informes eliminados localmente
+            const dismissed = JSON.parse(localStorage.getItem('cronos_staff_dismissed_info') || '[]');
 
             // Agrupar por partido
             const matches = {};
             reports.forEach(r => {
                 const key = `${r.matchDate || r.createdAt?.slice(0,10) || '?'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
+                if (dismissed.includes(key)) return; // Saltar eliminados
                 if (!matches[key]) {
                     matches[key] = {
                         key, matchDate: r.matchDate || r.createdAt?.slice(0,10),
@@ -302,6 +299,17 @@ async function openStaffDashboard() {
             });
 
             const sorted = Object.values(matches).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+            if (!sorted.length) {
+                body.innerHTML = `<div class="sd-empty">
+                    📊 No hay informes de partido disponibles.<br>
+                    <span style="font-size:0.8rem;color:#555;">
+                        Aquí aparecerán los informes enviados por los entrenadores
+                        tras cada partido.
+                    </span>
+                </div>`;
+                return;
+            }
 
             body.innerHTML = `<div style="margin-bottom:0.8rem;font-size:0.76rem;color:#7d8590;">
                 ${sorted.length} partido${sorted.length !== 1 ? 's' : ''} · ${reports.length} informes de jugadores
@@ -476,5 +484,13 @@ async function openStaffDashboard() {
     // Cargar pestaña inicial
     sdConvocatorias();
 }
+
+// ══════════════════════════════════════════════════════════════
+// BOTÓN EN VIVO — abre live.html en nueva pestaña
+// ══════════════════════════════════════════════════════════════
+window.sdOpenLive = function() {
+    const liveUrl = location.origin + location.pathname.replace('index.html', '') + 'live.html';
+    window.open(liveUrl, '_blank');
+};
 
 window.openStaffDashboard = openStaffDashboard;
