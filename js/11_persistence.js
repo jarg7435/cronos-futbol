@@ -29,7 +29,6 @@ function loadTeamFromDropdown(teamKey) {
         if (team.secondaryColor) {
             const secEl = document.getElementById(`setup-${teamKey}-secondary`);
             if (secEl) secEl.value = team.secondaryColor;
-            // Guardarlo también en COLORS para que esté disponible al iniciar
             if (COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
         }
 
@@ -57,12 +56,11 @@ function saveCurrentTeam() {
     else return;
 
     const teamName = TEAM_NAMES[teamKey];
-    // Guardar jugadores: número, nombre, alias, status (titular=field / suplente=bench) y posición en campo
     const currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
         id: p.id,
         number: p.number,
         name: p.name,
-        status: p.status,   // 'field' = titular  |  'bench' = suplente
+        status: p.status,
         x: p.x,
         y: p.y
     }));
@@ -72,9 +70,9 @@ function saveCurrentTeam() {
         secondaryColor: COLORS[teamKey].secondary,
         shortsColor: COLORS[teamKey].shorts,
         textColor: COLORS[teamKey].text,
-        players: currentPlayers,          // convocatoria completa con titulares y suplentes
-        mode: currentMode,                // 'f7' o 'f11'
-        formation: activeFormationKey     // sistema de juego activo
+        players: currentPlayers,
+        mode: currentMode,
+        formation: activeFormationKey
     };
     const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const existingIndex = teams.findIndex(t => t.name === teamName);
@@ -156,11 +154,10 @@ function spawnInitialPlayers() {
         homeConvocation.forEach((pData, index) => {
             const playerObj = {
                 id: (index + 1),
-                playerId: pData.id || null, // Vínculo permanente
+                playerId: pData.id || null,
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: 'home',
-                // 'field' = Titular (orange), 'bench' = Suplente (blue)
                 status: pData.initialStatus === 'field' ? 'field' : 'bench',
                 time: 0,
                 color: homeColors.primary,
@@ -169,8 +166,6 @@ function spawnInitialPlayers() {
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             };
 
-            // Si hay equipo guardado, solo restauramos posiciones x,y en campo.
-            // La convocatoria (initialStatus Titular/Suplente) SIEMPRE tiene prioridad.
             if (loadedHome) {
                 const saved = loadedHome.find(lp => lp.number == pData.number);
                 if (saved) {
@@ -299,7 +294,6 @@ function editTimer(half) {
     }
 }
 
-// ── SPINNER DE CARGA ──────────────────────────────────────────────
 function showSpinner(msg) {
     msg = msg || 'Guardando…';
     let overlay = document.getElementById('cronos-spinner');
@@ -350,10 +344,10 @@ function formatTime(sec) {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-
 }
+
 // ════════════════════════════════════════════════════════════════════
-//  FIN DE PARTIDO — con opción de volver (FIX: siempre sobreescribe)
+//  FIN DE PARTIDO — con opción de volver
 // ════════════════════════════════════════════════════════════════════
 
 /**
@@ -364,12 +358,10 @@ function formatTime(sec) {
 window.endMatch = function endMatch() {
     if (!confirm('¿Finalizar el partido?')) return;
 
-    // Detener cronómetro
     isRunning = false;
     clearInterval(timerInterval);
     matchPhase = 'finished';
 
-    // Registrar salida de todos los jugadores en campo
     const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
     (players || []).filter(p => p.status === 'field').forEach(p => {
         p.history.push('Sale a las ' + finalTime + ' (FIN)');
@@ -377,12 +369,10 @@ window.endMatch = function endMatch() {
 
     updateMasterUI();
 
-    // Detener sincronización en vivo
     if (typeof stopLiveSync === 'function') {
         stopLiveSync();
     }
 
-    // Guardar informes automáticamente si la función existe
     if (typeof saveAllMatchReportsInternal === 'function') {
         saveAllMatchReportsInternal().catch(() => {});
     }
@@ -401,7 +391,6 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
     const scoreH = (typeof scoreHome  !== 'undefined') ? scoreHome  : '—';
     const scoreA = (typeof scoreAway  !== 'undefined') ? scoreAway  : '—';
 
-    // Estadísticas rápidas del partido
     const totalPlayers  = (players || []).filter(p => p.team === 'home').length;
     const totalGoals    = (players || []).filter(p => p.team === 'home').reduce((s, p) => s + (p.goals || 0), 0);
     const totalCards    = (players || []).filter(p => p.team === 'home' && p.cards && p.cards !== 'ninguna').length;
@@ -489,4 +478,99 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
             <!-- VOLVER AL PARTIDO -->
             <button onclick="_postMatchReturn()"
                 style="display:flex;align-items:center;gap:0.9rem;
-                       padding:0.9rem 1rem;width:100
+                       padding:0.9rem 1rem;width:100%;
+                       background:rgba(88,166,255,0.1);
+                       border:1px solid rgba(88,166,255,0.3);
+                       border-radius:10px;cursor:pointer;
+                       color:white;font-size:0.92rem;font-weight:600;
+                       transition:all 0.2s;"
+                onmouseover="this.style.background='rgba(88,166,255,0.18)'"
+                onmouseout="this.style.background='rgba(88,166,255,0.1)'">
+                <span style="font-size:1.4rem;">↩️</span>
+                <div style="text-align:left;">
+                    <div style="color:var(--primary);">Volver al Partido</div>
+                    <div style="font-size:0.72rem;color:var(--text-muted);
+                                font-weight:400;">Los datos del partido se conservan</div>
+                </div>
+            </button>
+
+            <!-- COMUNICACIONES -->
+            <button onclick="openUnifiedCommsMenu ? openUnifiedCommsMenu() : null"
+                style="display:flex;align-items:center;gap:0.9rem;
+                       padding:0.9rem 1rem;width:100%;
+                       background:rgba(255,255,255,0.04);
+                       border:1px solid var(--glass-border);
+                       border-radius:10px;cursor:pointer;
+                       color:white;font-size:0.92rem;font-weight:600;
+                       transition:all 0.2s;"
+                onmouseover="this.style.background='rgba(255,255,255,0.08)'"
+                onmouseout="this.style.background='rgba(255,255,255,0.04)'">
+                <span style="font-size:1.4rem;">💬</span>
+                <div style="text-align:left;">
+                    <div>Comunicaciones</div>
+                    <div style="font-size:0.72rem;color:var(--text-muted);
+                                font-weight:400;">Convocatoria, mensajes y más</div>
+                </div>
+            </button>
+
+            <!-- NUEVA CONFIGURACIÓN -->
+            <button onclick="_postMatchNewSetup()"
+                style="display:flex;align-items:center;gap:0.9rem;
+                       padding:0.9rem 1rem;width:100%;
+                       background:rgba(255,255,255,0.03);
+                       border:1px solid rgba(255,255,255,0.08);
+                       border-radius:10px;cursor:pointer;
+                       color:var(--text-muted);font-size:0.88rem;
+                       transition:all 0.2s;"
+                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
+                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
+                <span style="font-size:1.2rem;">🔄</span>
+                <div style="text-align:left;">
+                    <div>Nueva Configuración</div>
+                    <div style="font-size:0.7rem;color:rgba(125,133,144,0.8);
+                                font-weight:400;">Volver a la pantalla inicial del partido</div>
+                </div>
+            </button>
+
+        </div>
+    </div>`;
+};
+
+/** Desde la pantalla post-partido → abre el módulo de envío de informes */
+window._postMatchSendReports = function() {
+    if (typeof sendMatchReportsToParents === 'function') {
+        sendMatchReportsToParents(false);
+    } else if (typeof openUnifiedCommsMenu === 'function') {
+        openUnifiedCommsMenu();
+    } else {
+        document.getElementById('setup-modal').style.display = 'none';
+    }
+};
+
+/**
+ * Volver al partido — cierra el modal y muestra el main-container.
+ * El estado del partido (jugadores, crono, goles) se conserva intacto.
+ */
+window._postMatchReturn = function() {
+    const modal = document.getElementById('setup-modal');
+    if (modal) modal.style.display = 'none';
+
+    const mc = document.getElementById('main-container');
+    const mh = document.getElementById('main-header');
+    if (mc) mc.style.display = 'flex';
+    if (mh) mh.style.display = 'flex';
+
+    if (typeof showToast === 'function')
+        showToast('↩️ Volviste al partido — los datos siguen activos', 3000);
+};
+
+/** Desde la pantalla post-partido → nueva configuración */
+window._postMatchNewSetup = function() {
+    if (!confirm('¿Empezar una nueva configuración? Se perderá el estado actual del partido.')) return;
+    if (typeof openSetupModal === 'function') {
+        openSetupModal();
+    } else {
+        const modal = document.getElementById('setup-modal');
+        if (modal) modal.style.display = 'none';
+    }
+};
