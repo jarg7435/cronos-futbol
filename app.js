@@ -1693,7 +1693,7 @@ function openSetupModal() {
 
             <!-- BOTONES -->
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+                <div style="display:flex; gap:0.6rem; align-items:center;">
                     <button class="btn" onclick="openRosterManager()"
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
                         GESTIONAR PLANTILLA
@@ -1704,13 +1704,13 @@ function openSetupModal() {
                         📱 CONTACTOS
                     </button>
                     <button class="btn" onclick="openConvocationModal()"
-                        title="Crear y enviar convocatorias a padres y staff"
-                        style="background:rgba(63,185,80,0.12);color:#3fb950;font-size:0.82rem;border:1px solid rgba(63,185,80,0.4);">
+                        title="Gestionar convocatoria del partido"
+                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
                         📋 CONVOCATORIA
                     </button>
-                    <button class="btn" onclick="openTrainingNotification()"
-                        title="Crear y enviar planificación de entrenamiento semanal"
-                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
+                    <button class="btn" onclick="openTrainingPanel()"
+                        title="Gestionar entrenamientos"
+                        style="background:rgba(63,185,80,0.12);color:#3fb950;font-size:0.82rem;border:1px solid rgba(63,185,80,0.4);">
                         🏃 ENTRENAMIENTO
                     </button>
                     ${['admin','superadmin'].includes(window._cronosCurrentUser?.role) ? `
@@ -1729,6 +1729,7 @@ function openSetupModal() {
                                border-radius:8px; cursor:pointer; font-weight:700;">
                         🏟️ MI CLUB
                     </button>` : ''}
+
                 </div>
                 <button class="btn primary" onclick="confirmSetup()" style="padding:0.65rem 1.8rem;">
                     CONTINUAR AL PARTIDO
@@ -1772,6 +1773,117 @@ function confirmSetup() {
     half2MaxTime = defaultTime * 60;
 
     openConvocationModal();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  PANEL DE ENTRENAMIENTO
+// ══════════════════════════════════════════════════════════════════
+function openTrainingPanel() {
+    const isMobile = window.innerWidth < 640;
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(96vw,700px); max-height:92vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '1rem 0.8rem' : '1.5rem'};">
+            <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <div>
+                    <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">🏃 Entrenamientos</h2>
+                    <p style="font-size:0.75rem; color:var(--text-muted);">Gestiona las sesiones de entrenamiento de tu equipo</p>
+                </div>
+                <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">← VOLVER</button>
+            </div>
+
+            <div style="background:rgba(63,185,80,0.06); border:1px solid rgba(63,185,80,0.2); border-radius:10px; padding:1rem; margin-bottom:1rem;">
+                <div style="font-size:0.82rem; font-weight:700; color:#3fb950; margin-bottom:0.6rem; letter-spacing:0.5px;">📋 NUEVO ENTRENAMIENTO</div>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:0.5rem; margin-bottom:0.8rem;">
+                    <div>
+                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">📅 Fecha</label>
+                        <input type="date" id="tr-date" class="conv-input" value="${new Date().toISOString().substring(0,10)}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🕐 Hora</label>
+                        <input type="time" id="tr-time" class="conv-input">
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🏟️ Lugar</label>
+                        <input type="text" id="tr-venue" class="conv-input" placeholder="Campo de entrenamiento">
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">⏱️ Duración (min)</label>
+                        <input type="number" id="tr-duration" class="conv-input" placeholder="90" min="15" max="300" value="90">
+                    </div>
+                </div>
+                <div style="margin-bottom:0.8rem;">
+                    <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">📝 Objetivos / Ejercicios</label>
+                    <textarea id="tr-notes" class="conv-input" rows="3" placeholder="Describe los ejercicios y objetivos de la sesión..." style="resize:vertical;min-height:60px;"></textarea>
+                </div>
+                <button class="btn" onclick="saveTrainingSession()" style="width:100%; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700; font-size:0.82rem;">
+                    💾 GUARDAR ENTRENAMIENTO
+                </button>
+            </div>
+
+            <div id="tr-list" style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:1rem;">
+                ⏳ Cargando entrenamientos...
+            </div>
+        </div>`;
+    loadTrainingSessions();
+}
+
+function saveTrainingSession() {
+    const date = document.getElementById('tr-date')?.value;
+    const time = document.getElementById('tr-time')?.value;
+    const venue = document.getElementById('tr-venue')?.value.trim();
+    const duration = document.getElementById('tr-duration')?.value;
+    const notes = document.getElementById('tr-notes')?.value.trim();
+    if (!date) { showToast('⚠️ Fecha obligatoria', 3000); return; }
+
+    const trainings = JSON.parse(localStorage.getItem('cronos_trainings') || '[]');
+    trainings.unshift({
+        id: 'tr_' + Date.now(),
+        date, time: time || '', venue: venue || '',
+        duration: duration || '90',
+        notes: notes || '',
+        createdAt: new Date().toISOString()
+    });
+    if (trainings.length > 50) trainings.length = 50;
+    localStorage.setItem('cronos_trainings', JSON.stringify(trainings));
+    showToast('✅ Entrenamiento guardado', 3000);
+    document.getElementById('tr-date').value = '';
+    document.getElementById('tr-time').value = '';
+    document.getElementById('tr-venue').value = '';
+    document.getElementById('tr-notes').value = '';
+    loadTrainingSessions();
+}
+
+function loadTrainingSessions() {
+    const listEl = document.getElementById('tr-list');
+    if (!listEl) return;
+    const trainings = JSON.parse(localStorage.getItem('cronos_trainings') || '[]');
+    if (!trainings.length) {
+        listEl.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1.5rem;">No hay entrenamientos guardados.</p>';
+        return;
+    }
+    const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-ES', {day:'numeric',month:'short',year:'numeric'}) : '';
+    listEl.innerHTML = '<div style="font-size:0.73rem; font-weight:700; color:var(--text-muted); margin-bottom:0.5rem; letter-spacing:0.5px;">HISTORIAL DE ENTRENAMIENTOS (' + trainings.length + ')</div>' +
+        trainings.slice(0, 20).map(t => `
+            <div style="background:var(--glass); border:1px solid var(--glass-border); border-radius:8px; padding:0.7rem 0.9rem; margin-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:700; color:white; font-size:0.82rem;">📅 ${fmtDate(t.date)} ${t.time ? '· ' + t.time : ''}</div>
+                    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+                        ${t.venue ? '🏟️ ' + (typeof escapeHtml==='function'?escapeHtml(t.venue):t.venue) + ' · ' : ''}⏱️ ${t.duration} min
+                    </div>
+                    ${t.notes ? '<div style="font-size:0.72rem; color:#8b949e; margin-top:3px; overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📝 ' + (typeof escapeHtml==='function'?escapeHtml(t.notes):t.notes) + '</div>' : ''}
+                </div>
+                <button onclick="deleteTraining('${t.id}')" style="background:none;border:none;color:#ff5858;font-size:0.7rem;cursor:pointer;padding:0.3rem;" title="Eliminar">🗑️</button>
+            </div>`).join('');
+}
+
+function deleteTraining(id) {
+    if (!confirm('¿Eliminar este entrenamiento?')) return;
+    let trainings = JSON.parse(localStorage.getItem('cronos_trainings') || '[]');
+    trainings = trainings.filter(t => t.id !== id);
+    localStorage.setItem('cronos_trainings', JSON.stringify(trainings));
+    showToast('🗑️ Entrenamiento eliminado', 3000);
+    loadTrainingSessions();
 }
 
 // ══════════════════════════════════════════════════════════════════
