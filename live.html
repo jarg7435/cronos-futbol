@@ -513,8 +513,8 @@ async function checkUserAccess(user) {
         userData = { uid: user.uid, ...snap.data() };
         if (!userData.isAuthorized) { errEl.textContent = 'Cuenta pendiente de autorización.'; await signOut(auth); return; }
         
-        // Roles con acceso: superadmin, admin, club_admin, director, coordinator, user
-        const AUTHORIZED_ROLES = ['superadmin', 'admin', 'club_admin', 'director', 'coordinator', 'user'];
+        // Roles con acceso: superadmin, admin, club_admin, director, coordinator, user, parent
+        const AUTHORIZED_ROLES = ['superadmin', 'admin', 'club_admin', 'director', 'coordinator', 'user', 'parent'];
         if (!AUTHORIZED_ROLES.includes(userData.role)) {
             errEl.textContent = 'No tienes permiso para ver partidos en vivo. Contacta con el administrador.';
             await signOut(auth); return;
