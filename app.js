@@ -1738,9 +1738,17 @@ function openSetupModal() {
                         🔴 PARTIDOS EN VIVO
                     </button>` : ''}
                 </div>
-                <button class="btn primary" onclick="confirmSetup()" style="padding:0.65rem 1.8rem;">
-                    CONTINUAR AL PARTIDO
-                </button>
+                <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.8rem;">
+                    <button class="btn primary" onclick="confirmSetup()" style="padding:0.65rem 1.8rem;">
+                        CONTINUAR AL PARTIDO
+                    </button>
+                    <button class="btn" onclick="openConvocationModal()" style="padding:0.65rem 1.2rem; background:rgba(63,185,80,0.12); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700;">
+                        CONVOCATORIA
+                    </button>
+                    <button class="btn" onclick="openTrainingModal()" style="padding:0.65rem 1.2rem; background:rgba(240,136,62,0.12); border:1px solid rgba(240,136,62,0.4); color:var(--secondary); font-weight:700;">
+                        ENTRENAMIENTO
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -2418,80 +2426,141 @@ function openConvocationModal() {
     document.body.classList.add('setup-mode');
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
-    const minLimit = currentMode === 'f7' ? 6 : 7;
+    const minLimit = currentMode === 'f7' ? 7 : 11;
     const maxLimit = currentMode === 'f7' ? 14 : 18;
-    
-    // --- MEJORA: Columnas responsivas ---
+
+    // Responsive detection
     const isMobile = window.innerWidth < 640;
-    const isLandscape = window.innerHeight < 500;
-    const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
+    const isTablet = window.innerWidth >= 640 && window.innerWidth < 1024;
+    const cols = isMobile ? 1 : (currentMode === 'f7' ? 3 : 4);
+
+    // Load saved config
+    const saved = JSON.parse(localStorage.getItem('cronos_conv_config') || '{}');
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="width:min(96vw,840px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding: ${isMobile ? '1rem 0.8rem' : '1.5rem'};">
-            
-            <div style="flex-shrink:0;">
-                <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">Convocatoria — ${TEAM_NAMES.home}</h2>
-                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.6rem;">
-                    Toca cualquier jugador para seleccionarlo · <span style="color:var(--primary)">${minLimit}-${maxLimit}</span>
-                </p>
-            </div>
+        <div class="modal-content" style="width:min(96vw,860px); max-height:96vh; display:flex; flex-direction:column; overflow:hidden; padding:${isMobile ? '0.8rem' : '1.5rem'};">
 
-            <!-- Listado de jugadores -->
-            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
-                ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
-                    <div class="conv-row" data-index="${i}" data-status="none"
-                        style="background:var(--glass); border:2px solid transparent; border-radius:8px;
-                               padding:${isMobile ? '6px 8px' : '8px 10px'}; display:flex; align-items:center; gap:8px;
-                               cursor:pointer; transition:all 0.1s; user-select:none;">
-                        <span class="conv-dot" style="width:16px;height:16px;border-radius:50%;
-                              background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25);
-                              display:flex;align-items:center;justify-content:center;
-                              font-size:0.55rem;flex-shrink:0;">✓</span>
-                        <span style="font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            <span style="color:var(--primary);font-weight:bold;">${p.number}</span>
-                            ${p.alias || p.name || 'J' + (i + 1)}
-                        </span>
+            <!-- ═══ HEADER ═══ -->
+            <div style="flex-shrink:0; margin-bottom:0.6rem;">
+                <h2 style="margin:0 0 0.4rem; font-size:${isMobile ? '1.05rem' : '1.3rem'}; display:flex; align-items:center; gap:0.4rem;">
+                    <span style="font-size:1.15em;">📋</span> Convocatoria
+                    <span style="color:var(--primary);">— ${TEAM_NAMES.home}</span>
+                </h2>
+
+                <!-- Match details grid -->
+                <div style="background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.15);
+                            border-radius:10px; padding:${isMobile ? '0.5rem 0.6rem' : '0.65rem 0.85rem'};
+                            display:grid;
+                            grid-template-columns:${isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(170px, 1fr))'};
+                            gap:${isMobile ? '0.3rem' : '0.4rem 0.7rem'}; font-size:${isMobile ? '0.73rem' : '0.8rem'};">
+                    <div>
+                        <label style="font-size:0.62rem; color:var(--text-muted); display:block; margin-bottom:0.1rem;">📅 Fecha</label>
+                        <input id="conv-date" type="date" class="conv-input" value="${saved.date || new Date().toISOString().substring(0,10)}">
                     </div>
-                `).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.8rem; text-align:center; padding:2rem;">No hay jugadores en la plantilla.</p>'}
-            </div>
-
-            <!-- Cuerpo técnico -->
-            ${(staffConfig.coach1 || staffConfig.coach2 || staffConfig.delegate || staffConfig.fieldDelegate) ? `
-            <div style="margin-top:0.5rem; padding:0.4rem 0.6rem; flex-shrink:0;
-                        background:rgba(88,166,255,0.04); border-radius:8px;
-                        border:1px solid rgba(88,166,255,0.12);">
-                <div style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;">
-                    <span style="font-size:0.6rem; color:var(--text-muted); font-weight:700; margin-right:4px;">👨‍💼 STAFF</span>
-                    ${staffConfig.coach1 ? '<span style="font-size:0.65rem;background:rgba(88,166,255,0.15);color:var(--primary);border-radius:4px;padding:1px 6px;font-weight:700;">' + staffConfig.coach1 + '</span>' : ''}
-                    ${staffConfig.coach2 ? '<span style="font-size:0.65rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:4px;padding:1px 6px;">' + staffConfig.coach2 + '</span>' : ''}
+                    <div>
+                        <label style="font-size:0.62rem; color:var(--text-muted); display:block; margin-bottom:0.1rem;">⏰ Hora</label>
+                        <input id="conv-time" type="time" class="conv-input" value="${saved.time || ''}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.62rem; color:var(--text-muted); display:block; margin-bottom:0.1rem;">🏟️ Campo / Lugar</label>
+                        <input id="conv-venue" type="text" class="conv-input" placeholder="Nombre del campo" value="${saved.venue || ''}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.62rem; color:var(--text-muted); display:block; margin-bottom:0.1rem;">🆚 Rival</label>
+                        <input id="conv-rival" type="text" class="conv-input" placeholder="Equipo rival" value="${saved.rival || ''}">
+                    </div>
                 </div>
-            </div>` : ''}
+            </div>
 
-            <div style="margin-top:auto; padding-top:1rem; border-top:1px solid var(--glass-border);
-                        display:flex; flex-direction:column; gap:0.5rem;">
-                
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span id="conv-count" style="font-size:1.1rem; font-weight:bold; color:var(--primary);">0</span>
-                    <div style="display:flex; gap:0.4rem;">
-                        <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">← VOLVER</button>
-                        <button class="btn" onclick="openConvocationMessage()"
-                            style="background:rgba(63,185,80,0.1);border-color:rgba(63,185,80,0.3);
-                                   color:#3fb950;font-weight:700; font-size:0.7rem;">
-                            📲 CONVOCATORIA
-                        </button>
+            <!-- ═══ SCROLLABLE PLAYER LIST ═══ -->
+            <div style="flex:1; overflow-y:auto; overflow-x:hidden; min-height:0; padding-right:0.15rem;
+                        -webkit-overflow-scrolling:touch;" id="conv-scroll-area">
+
+                <!-- Counter -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem; padding:0 0.1rem;">
+                    <p style="font-size:${isMobile ? '0.65rem' : '0.7rem'}; color:var(--text-muted); margin:0;">
+                        Toca para seleccionar · Min <span style="color:var(--secondary)">${minLimit}</span> · Max <span style="color:var(--primary)">${maxLimit}</span>
+                    </p>
+                    <span id="conv-count" style="font-size:0.9rem; font-weight:bold; color:var(--primary);">0 / ${maxLimit}</span>
+                </div>
+
+                <!-- Player grid -->
+                <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:${isMobile ? '4px' : '5px'};" id="conv-grid-container">
+                    ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
+                        <div class="conv-row" data-index="${i}" data-status="none"
+                            style="background:var(--glass); border:2px solid transparent; border-radius:8px;
+                                   padding:${isMobile ? '7px 9px' : '9px 11px'}; display:flex; align-items:center; gap:8px;
+                                   cursor:pointer; transition:all 0.15s; user-select:none;">
+                            <span class="conv-dot" style="width:18px; height:18px; border-radius:50%;
+                                  background:rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.2);
+                                  display:flex; align-items:center; justify-content:center;
+                                  font-size:0.6rem; flex-shrink:0; transition:all 0.15s;">\u2713</span>
+                            <div style="flex:1; min-width:0;">
+                                <span style="font-size:0.8rem; font-weight:700; color:var(--primary);">${p.number}</span>
+                                <span style="font-size:0.8rem; margin-left:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:inline-block; max-width:calc(100% - 26px);">
+                                    ${p.alias || p.name || 'Jugador ' + (i + 1)}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.8rem; text-align:center; padding:2rem;">No hay jugadores. Ve a Gestionar Plantilla.</p>'}
+                </div>
+
+                <!-- Staff -->
+                ${(staffConfig.coach1 || staffConfig.coach2 || staffConfig.delegate || staffConfig.fieldDelegate) ? `
+                <div style="margin-top:0.4rem; padding:0.35rem 0.5rem; background:rgba(88,166,255,0.04);
+                            border-radius:7px; border:1px solid rgba(88,166,255,0.1);">
+                    <div style="display:flex; flex-wrap:wrap; gap:0.3rem; align-items:center;">
+                        <span style="font-size:0.58rem; color:var(--text-muted); font-weight:700;">STAFF</span>
+                        ${staffConfig.coach1 ? '<span style="font-size:0.6rem;background:rgba(88,166,255,0.15);color:var(--primary);border-radius:3px;padding:1px 5px;font-weight:700;">' + staffConfig.coach1 + '</span>' : ''}
+                        ${staffConfig.coach2 ? '<span style="font-size:0.6rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:3px;padding:1px 5px;">' + staffConfig.coach2 + '</span>' : ''}
+                        ${staffConfig.delegate ? '<span style="font-size:0.6rem;background:rgba(240,136,62,0.15);color:var(--secondary);border-radius:3px;padding:1px 5px;">' + staffConfig.delegate + '</span>' : ''}
                     </div>
+                </div>` : ''}
+
+            </div><!-- end scroll -->
+
+            <!-- ═══ BOTTOM BUTTONS (always visible, no scroll needed) ═══ -->
+            <div style="flex-shrink:0; padding-top:0.6rem; border-top:1px solid var(--glass-border);
+                        display:flex; flex-direction:column; gap:0.35rem; margin-top:0.5rem;">
+
+                <div style="display:flex; gap:0.3rem; flex-wrap:wrap;">
+                    <button class="btn" onclick="openSetupModal()"
+                        style="padding:0.4rem 0.65rem; font-size:0.68rem; flex:${isMobile ? '1' : 'none'}; min-width:fit-content;">
+                        ← VOLVER
+                    </button>
+                    <button class="btn" onclick="sendInternalConvocation('convocation')"
+                        style="padding:0.4rem 0.65rem; font-size:0.68rem; background:rgba(88,166,255,0.1);
+                               border-color:rgba(88,166,255,0.3); color:var(--primary); font-weight:700;
+                               flex:${isMobile ? '1' : 'none'}; min-width:fit-content;">
+                        📨 ENVIAR CONVOCACION
+                    </button>
+                    <button class="btn" onclick="sendConvocationToWhatsApp()"
+                        style="padding:0.4rem 0.65rem; font-size:0.68rem; background:rgba(63,185,80,0.12);
+                               border-color:rgba(63,185,80,0.4); color:#3fb950; font-weight:700;
+                               flex:${isMobile ? '1' : 'none'}; min-width:fit-content;">
+                        📱 WHATSAPP
+                    </button>
                 </div>
 
                 <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled
-                    style="width:100%; font-weight:900; letter-spacing:1px; padding:0.6rem;">
-                    INICIAR PARTIDO
+                    style="width:100%; font-weight:900; letter-spacing:1px; padding:0.55rem; font-size:0.82rem;">
+                    ⚽ IR AL PARTIDO
                 </button>
             </div>
+
         </div>
+
+        <style>
+        #conv-scroll-area::-webkit-scrollbar { width:4px; }
+        #conv-scroll-area::-webkit-scrollbar-track { background:transparent; }
+        #conv-scroll-area::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:4px; }
+        .conv-row:active { transform:scale(0.98); }
+        </style>
     `;
 
+    // ── Interaction ──
     const countEl = document.getElementById('conv-count');
     const startBtn = document.getElementById('btn-start-match');
 
@@ -2503,125 +2572,96 @@ function openConvocationModal() {
 
     let selected = 0;
 
-    // --- PRE-SELECCIÓN DE EQUIPO CARGADO ---
+    // Pre-select from loaded team
     const loadedTeam = window.loadedTeamPlayers?.['home'];
     if (loadedTeam) {
         myPlayers.forEach((p, i) => {
             const savedPlayer = loadedTeam.find(lp => lp.number == p.number);
             if (savedPlayer) {
-                const row = document.querySelector(`.conv-row[data-index="${i}"]`);
-                if (row) {
-                    const isTitular = savedPlayer.status === 'field';
-                    const color   = isTitular ? 'var(--secondary)' : 'var(--primary)';
-                    const bg      = isTitular ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
-                    
+                const row = document.querySelector('.conv-row[data-index="' + i + '"]');
+                if (row && selected < maxLimit) {
                     row.classList.add('conv-selected');
-                    row.dataset.status = isTitular ? 'field' : 'bench';
-                    row.style.borderColor = color;
-                    row.style.background  = bg;
+                    row.dataset.status = 'called';
+                    row.style.borderColor = 'var(--primary)';
+                    row.style.background = 'rgba(88,166,255,0.12)';
                     const dot = row.querySelector('.conv-dot');
-                    dot.style.background  = color;
-                    dot.style.borderColor = color;
+                    dot.style.background = 'var(--primary)';
+                    dot.style.borderColor = 'var(--primary)';
                     dot.style.color = '#0a0e14';
-                    dot.textContent = isTitular ? 'T' : 'S';
-
-                    const badge = document.createElement('span');
-                    badge.className = 'conv-status-badge';
-                    badge.textContent = isTitular ? 'TITULAR' : 'SUPLENTE';
-                    badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
-                        border-radius:3px;background:${color};color:#0a0e14;
-                        margin-left:auto;flex-shrink:0;`;
-                    row.appendChild(badge);
+                    dot.textContent = '\u2713';
                     selected++;
                 }
             }
         });
-        countEl.textContent = `${selected}`;
-        const isValid = (selected >= minLimit && selected <= maxLimit);
-        countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
-        startBtn.disabled = !isValid;
+        countEl.textContent = selected + ' / ' + maxLimit;
+        const ok = (selected >= minLimit && selected <= maxLimit);
+        countEl.style.color = ok ? 'var(--secondary)' : 'var(--primary)';
+        startBtn.disabled = !ok;
     }
 
+    // Click handlers — 2-state only (called / not called)
     document.querySelectorAll('.conv-row').forEach(row => {
         row.addEventListener('click', () => {
-            const currentStatus = row.dataset.status || 'none';
-            let nextStatus = 'none';
-
-            if (currentStatus === 'none') {
-                if (selected >= maxLimit) return;
-                nextStatus = 'bench';
-            } else if (currentStatus === 'bench') {
-                nextStatus = 'field';
-            } else {
-                nextStatus = 'none';
+            const cur = row.dataset.status || 'none';
+            let next = 'none';
+            if (cur === 'none') {
+                if (selected >= maxLimit) {
+                    showToast('Maximo ' + maxLimit + ' convocados permitidos', 2500);
+                    return;
+                }
+                next = 'called';
             }
 
-            row.dataset.status = nextStatus;
+            row.dataset.status = next;
 
-            if (nextStatus === 'none') {
+            if (next === 'none') {
                 row.classList.remove('conv-selected');
                 row.style.borderColor = 'transparent';
-                row.style.background  = 'var(--glass)';
-                row.querySelector('.conv-dot').style.background = 'rgba(255,255,255,0.1)';
-                row.querySelector('.conv-dot').style.borderColor = 'rgba(255,255,255,0.25)';
-                row.querySelector('.conv-dot').style.color = 'transparent';
-                row.querySelector('.conv-dot').textContent = '✓';
-                const badge = row.querySelector('.conv-status-badge');
-                if (badge) badge.remove();
+                row.style.background = 'var(--glass)';
+                const dot = row.querySelector('.conv-dot');
+                dot.style.background = 'rgba(255,255,255,0.08)';
+                dot.style.borderColor = 'rgba(255,255,255,0.2)';
+                dot.style.color = 'transparent';
+                dot.textContent = '\u2713';
                 selected--;
             } else {
-                const isField = (nextStatus === 'field');
-                const color   = isField ? 'var(--secondary)' : 'var(--primary)';
-                const bg      = isField ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
-                
-                if (currentStatus === 'none') {
-                    row.classList.add('conv-selected');
-                    selected++;
-                }
-                
-                row.style.borderColor = color;
-                row.style.background  = bg;
+                if (cur === 'none') { row.classList.add('conv-selected'); selected++; }
+                row.style.borderColor = 'var(--primary)';
+                row.style.background = 'rgba(88,166,255,0.12)';
                 const dot = row.querySelector('.conv-dot');
-                dot.style.background  = color;
-                dot.style.borderColor = color;
+                dot.style.background = 'var(--primary)';
+                dot.style.borderColor = 'var(--primary)';
                 dot.style.color = '#0a0e14';
-                dot.textContent = isField ? 'T' : 'S';
-
-                let badge = row.querySelector('.conv-status-badge');
-                if (!badge) {
-                    badge = document.createElement('span');
-                    badge.className = 'conv-status-badge';
-                    row.appendChild(badge);
-                }
-                badge.textContent = isField ? 'TITULAR' : 'SUPLENTE';
-                badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
-                    border-radius:3px;background:${color};color:#0a0e14;
-                    margin-left:auto;flex-shrink:0;`;
+                dot.textContent = '\u2713';
             }
 
-            countEl.textContent = `${selected}`;
-            const isValid = (selected >= minLimit && selected <= maxLimit);
-            countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
-            startBtn.disabled = !isValid;
+            countEl.textContent = selected + ' / ' + maxLimit;
+            const valid = (selected >= minLimit && selected <= maxLimit);
+            countEl.style.color = valid ? 'var(--secondary)' : 'var(--primary)';
+            startBtn.disabled = !valid;
         });
     });
 }
-
 function startMatchWithConvocation() {
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');
     
-    // Guardar selección con el estatus (titular/suplente)
-    const selectedPlayers = Array.from(rows).map(r => {
+    const numStarters = currentMode === 'f7' ? 7 : 11;
+
+    // Build selected players — first N are starters, rest are subs
+    const selectedPlayers = Array.from(rows).map((r, idx) => {
         const p = myPlayers[r.dataset.index];
         return { 
             ...p, 
-            initialStatus: r.dataset.status || 'bench' 
+            initialStatus: idx < numStarters ? 'field' : 'bench'
         };
     });
     
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
+
+    // Save convocation match details
+    saveConvData();
 
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();
@@ -2656,6 +2696,388 @@ function startMatchWithConvocation() {
     pitch.addEventListener('click', () => closeDrawers());
     pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
 }
+
+
+// ══════════════════════════════════════════════════════════════════
+//  TRAINING MODAL — Same structure as convocation but without IR AL PARTIDO
+// ══════════════════════════════════════════════════════════════════
+
+function openTrainingModal() {
+    document.body.classList.add('setup-mode');
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const myPlayers = roster[currentMode] || [];
+    const maxLimit = currentMode === 'f7' ? 14 : 18;
+
+    const isMobile = window.innerWidth < 640;
+    const cols = isMobile ? 1 : (currentMode === 'f7' ? 3 : 4);
+
+    const saved = JSON.parse(localStorage.getItem('cronos_training_config') || '{}');
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(96vw,860px); max-height:96vh; display:flex; flex-direction:column; overflow:hidden; padding:${isMobile ? '0.8rem' : '1.5rem'};">
+
+            <div style="flex-shrink:0; margin-bottom:0.8rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <h2 style="margin:0; font-size:${isMobile ? '1.1rem' : '1.4rem'}; display:flex; align-items:center; gap:0.5rem;">
+                        <span style="font-size:1.2em;">🏋️</span> Entrenamiento — <span style="color:var(--secondary);">${TEAM_NAMES.home}</span>
+                    </h2>
+                </div>
+
+                <div style="background:rgba(240,136,62,0.06); border:1px solid rgba(240,136,62,0.15);
+                            border-radius:10px; padding:${isMobile ? '0.6rem' : '0.8rem 1rem'}; display:grid;
+                            grid-template-columns:${isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))'};
+                            gap:${isMobile ? '0.4rem' : '0.5rem 1rem'}; font-size:${isMobile ? '0.75rem' : '0.82rem'};">
+                    <div>
+                        <label style="font-size:0.65rem; color:var(--text-muted); display:block; margin-bottom:0.15rem;">📅 Fecha</label>
+                        <input id="train-date" type="date" class="conv-input" value="${saved.date || new Date().toISOString().substring(0,10)}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.65rem; color:var(--text-muted); display:block; margin-bottom:0.15rem;">⏰ Hora</label>
+                        <input id="train-time" type="time" class="conv-input" value="${saved.time || ''}">
+                    </div>
+                    <div style="${isMobile ? '' : 'grid-column:1/-1;'}">
+                        <label style="font-size:0.65rem; color:var(--text-muted); display:block; margin-bottom:0.15rem;">🏟️ Lugar</label>
+                        <input id="train-venue" type="text" class="conv-input" placeholder="Campo o lugar del entrenamiento" value="${saved.venue || ''}">
+                    </div>
+                    <div style="${isMobile ? '' : 'grid-column:1/-1;'}">
+                        <label style="font-size:0.65rem; color:var(--text-muted); display:block; margin-bottom:0.15rem;">💬 Notas adicionales</label>
+                        <input id="train-notes" type="text" class="conv-input" placeholder="Ej: Traer guantes, material técnico..." value="${saved.notes || ''}">
+                    </div>
+                </div>
+            </div>
+
+            <div style="flex:1; overflow-y:auto; overflow-x:hidden; min-height:0; padding-right:0.2rem;" id="train-scroll-area">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; padding:0 0.2rem;">
+                    <p style="font-size:${isMobile ? '0.7rem' : '0.75rem'}; color:var(--text-muted); margin:0;">
+                        Toca para seleccionar · Max <span style="color:var(--secondary)">${maxLimit}</span>
+                    </p>
+                    <span id="train-count" style="font-size:1rem; font-weight:bold; color:var(--secondary);">0 / ${maxLimit}</span>
+                </div>
+
+                <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:${isMobile ? '5px' : '6px'};" id="train-grid-container">
+                    ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
+                        <div class="train-row" data-index="${i}" data-status="none"
+                            style="background:var(--glass); border:2px solid transparent; border-radius:8px;
+                                   padding:${isMobile ? '8px 10px' : '10px 12px'}; display:flex; align-items:center; gap:${isMobile ? '8px' : '10px'};
+                                   cursor:pointer; transition:all 0.15s; user-select:none;">
+                            <span class="train-dot" style="width:${isMobile ? '18px' : '20px'}; height:${isMobile ? '18px' : '20px'}; border-radius:50%;
+                                  background:rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.2);
+                                  display:flex; align-items:center; justify-content:center;
+                                  font-size:0.6rem; flex-shrink:0; transition:all 0.15s;">✓</span>
+                            <div style="flex:1; min-width:0;">
+                                <span style="font-size:${isMobile ? '0.8rem' : '0.85rem'}; font-weight:700; color:var(--primary);">${p.number}</span>
+                                <span style="font-size:${isMobile ? '0.8rem' : '0.85rem'}; margin-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:inline-block; max-width:calc(100% - 30px);">
+                                    ${p.alias || p.name || 'Jugador ' + (i + 1)}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.85rem; text-align:center; padding:2rem;">No hay jugadores en la plantilla.</p>'}
+                </div>
+            </div>
+
+            <div style="flex-shrink:0; padding-top:0.8rem; border-top:1px solid var(--glass-border);
+                        display:flex; flex-direction:column; gap:0.5rem; margin-top:0.6rem;">
+                <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                    <button class="btn" onclick="openSetupModal()" style="padding:0.45rem 0.8rem; font-size:0.72rem; flex:${isMobile ? '1' : 'none'}; min-width:fit-content;">
+                        ← VOLVER
+                    </button>
+                    <button class="btn" id="btn-send-internal-train" onclick="sendInternalConvocation('training')"
+                        style="padding:0.45rem 0.8rem; font-size:0.72rem; background:rgba(88,166,255,0.1);
+                               border-color:rgba(88,166,255,0.3); color:var(--primary); font-weight:700;
+                               flex:${isMobile ? '1' : 'none'}; min-width:fit-content;">
+                        📨 ENVIAR ENTRENAMIENTO
+                    </button>
+                    <button class="btn" id="btn-send-wa-train" onclick="sendTrainingToWhatsApp()"
+                        style="padding:0.45rem 0.8rem; font-size:0.72rem; background:rgba(63,185,80,0.12);
+                               border-color:rgba(63,185,80,0.4); color:#3fb950; font-weight:700;
+                               flex:${isMobile ? '1' : 'none'}; min-width:fit-content;">
+                        📱 ENVIAR POR WHATSAPP
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <style>
+        #train-scroll-area::-webkit-scrollbar { width:4px; }
+        #train-scroll-area::-webkit-scrollbar-track { background:transparent; }
+        #train-scroll-area::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:4px; }
+        .train-row:active { transform:scale(0.98); }
+        </style>
+    `;
+
+    const countEl = document.getElementById('train-count');
+    let selected = 0;
+
+    if (myPlayers.length === 0) {
+        countEl.style.display = 'none';
+        return;
+    }
+
+    document.querySelectorAll('.train-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const currentStatus = row.dataset.status || 'none';
+            let nextStatus = 'none';
+
+            if (currentStatus === 'none') {
+                if (selected >= maxLimit) {
+                    showToast('Máximo ' + maxLimit + ' seleccionados', 2500);
+                    return;
+                }
+                nextStatus = 'called';
+            } else {
+                nextStatus = 'none';
+            }
+
+            row.dataset.status = nextStatus;
+
+            if (nextStatus === 'none') {
+                row.classList.remove('train-selected');
+                row.style.borderColor = 'transparent';
+                row.style.background = 'var(--glass)';
+                const dot = row.querySelector('.train-dot');
+                dot.style.background = 'rgba(255,255,255,0.08)';
+                dot.style.borderColor = 'rgba(255,255,255,0.2)';
+                dot.style.color = 'transparent';
+                dot.textContent = '✓';
+                selected--;
+            } else {
+                if (currentStatus === 'none') {
+                    row.classList.add('train-selected');
+                    selected++;
+                }
+                row.style.borderColor = 'var(--secondary)';
+                row.style.background = 'rgba(240,136,62,0.12)';
+                const dot = row.querySelector('.train-dot');
+                dot.style.background = 'var(--secondary)';
+                dot.style.borderColor = 'var(--secondary)';
+                dot.style.color = '#0a0e14';
+                dot.textContent = '✓';
+            }
+
+            countEl.textContent = selected + ' / ' + maxLimit;
+        });
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  SAVE CONVOCATION / TRAINING DATA
+// ══════════════════════════════════════════════════════════════════
+
+function saveConvData() {
+    const cfg = {
+        date:  document.getElementById('conv-date')?.value || '',
+        time:  document.getElementById('conv-time')?.value || '',
+        venue: document.getElementById('conv-venue')?.value || '',
+        rival: document.getElementById('conv-rival')?.value || '',
+        mode:  currentMode,
+        team:  TEAM_NAMES.home,
+        savedAt: new Date().toISOString()
+    };
+    localStorage.setItem('cronos_conv_data', JSON.stringify(cfg));
+}
+
+function saveTrainingData() {
+    const cfg = {
+        date:  document.getElementById('train-date')?.value || '',
+        time:  document.getElementById('train-time')?.value || '',
+        venue: document.getElementById('train-venue')?.value || '',
+        notes: document.getElementById('train-notes')?.value || '',
+        mode:  currentMode,
+        team:  TEAM_NAMES.home,
+        savedAt: new Date().toISOString()
+    };
+    localStorage.setItem('cronos_training_data', JSON.stringify(cfg));
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  GET SELECTED PLAYERS HELPER
+// ══════════════════════════════════════════════════════════════════
+
+function getSelectedConvocationPlayers() {
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const myPlayers = roster[currentMode] || [];
+    const rows = document.querySelectorAll('.conv-row.conv-selected');
+    return Array.from(rows).map(r => myPlayers[parseInt(r.dataset.index)]).filter(Boolean);
+}
+
+function getSelectedTrainingPlayers() {
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const myPlayers = roster[currentMode] || [];
+    const rows = document.querySelectorAll('.train-row.train-selected');
+    return Array.from(rows).map(r => myPlayers[parseInt(r.dataset.index)]).filter(Boolean);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  SEND INTERNAL CONVOCATION/TRAINING (Firestore)
+//  Saves to: clubs/{clubId}/messages collection
+//  Visible by: sports_director, coordinator
+// ══════════════════════════════════════════════════════════════════
+
+function sendInternalConvocation(type) {
+    const db = window._cronos_auth?.db;
+    const currentUser = window._cronosCurrentUser;
+    if (!db || !currentUser) {
+        showToast('Error: No hay conexión con la base de datos', 3000);
+        return;
+    }
+
+    const isConvocation = (type === 'convocation');
+    
+    if (isConvocation) {
+        saveConvData();
+        var players = getSelectedConvocationPlayers();
+        var data = JSON.parse(localStorage.getItem('cronos_conv_data') || '{}');
+    } else {
+        saveTrainingData();
+        var players = getSelectedTrainingPlayers();
+        var data = JSON.parse(localStorage.getItem('cronos_training_data') || '{}');
+    }
+
+    if (players.length === 0) {
+        showToast('Selecciona al menos un jugador', 2500);
+        return;
+    }
+
+    // Format date for display
+    var dateStr = data.date ? new Date(data.date + 'T12:00:00').toLocaleDateString('es-ES', {
+        weekday:'long', day:'numeric', month:'long'
+    }) : 'Sin fecha';
+
+    var playerList = players.map((p, i) => (i+1) + '. ' + (p.alias || p.name || 'Jugador')).join('\n');
+
+    var messageBody = (isConvocation ? '📋 CONVOCATORIA' : '🏋️ ENTRENAMIENTO') + '\n';
+    messageBody += 'Equipo: ' + (data.team || TEAM_NAMES.home) + '\n';
+    messageBody += '📅 ' + dateStr + '\n';
+    if (data.time) messageBody += '⏰ ' + data.time + 'h\n';
+    if (data.venue) messageBody += '🏟️ ' + data.venue + '\n';
+    if (!isConvocation && data.notes) messageBody += '💬 ' + data.notes + '\n';
+    if (isConvocation && data.rival) messageBody += '🆚 vs ' + data.rival + '\n';
+    messageBody += '\n👥 CONVOCADOS:\n' + playerList;
+
+    // Save to Firestore
+    var clubId = currentUser.clubId || currentUser.uid;
+    var messageRef = db.collection('clubs').doc(clubId).collection('messages').doc();
+
+    messageRef.set({
+        type: isConvocation ? 'convocation' : 'training',
+        from: currentUser.uid,
+        fromName: currentUser.displayName || currentUser.email || 'Entrenador',
+        fromRole: currentUser.role || 'coach',
+        body: messageBody,
+        players: players.map(p => ({ number: p.number, name: p.alias || p.name || '' })),
+        matchData: data,
+        createdAt: new Date().toISOString(),
+        readBy: {}
+    }).then(function() {
+        showToast('✅ ' + (isConvocation ? 'Convocatoria' : 'Entrenamiento') + ' enviada correctamente', 3000);
+    }).catch(function(err) {
+        console.warn('Error sending internal message:', err);
+        showToast('❌ Error al enviar. Inténtalo de nuevo.', 3000);
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  SEND CONVOCATION BY WHATSAPP
+// ══════════════════════════════════════════════════════════════════
+
+function sendConvocationToWhatsApp() {
+    saveConvData();
+    var players = getSelectedConvocationPlayers();
+    if (players.length === 0) {
+        showToast('Selecciona al menos un jugador', 2500);
+        return;
+    }
+
+    var data = JSON.parse(localStorage.getItem('cronos_conv_data') || '{}');
+    var hour = new Date().getHours();
+    var greeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
+
+    var dateStr = data.date ? new Date(data.date + 'T12:00:00').toLocaleDateString('es-ES', {
+        weekday:'long', day:'numeric', month:'long'
+    }) : '';
+
+    var msg = greeting + ' familia! 👋\n\n';
+    msg += '📋 *CONVOCATORIA*\n';
+    msg += 'Equipo: ' + (data.team || TEAM_NAMES.home) + '\n';
+    if (dateStr) msg += '📅 ' + dateStr + '\n';
+    if (data.time) msg += '⏰ Hora: ' + data.time + 'h\n';
+    if (data.rival) msg += '🆚 vs ' + data.rival + '\n';
+    if (data.venue) msg += '🏟️ Campo: ' + data.venue + '\n';
+    msg += '\n👥 *CONVOCADOS:*\n';
+    players.forEach(function(p, i) {
+        msg += (i+1) + '. ' + (p.alias || p.name || 'Jugador') + '\n';
+    });
+    msg += '\n_Cronos Fútbol_ ⚽';
+
+    // Save config for next time
+    var savedCfg = JSON.parse(localStorage.getItem('cronos_conv_config') || '{}');
+    savedCfg.wa = savedCfg.wa || '';
+    localStorage.setItem('cronos_conv_config', JSON.stringify(Object.assign(savedCfg, data)));
+
+    var num = savedCfg.wa;
+    var encoded = encodeURIComponent(msg);
+    if (num) {
+        window.open('https://wa.me/' + num + '?text=' + encoded, '_blank');
+    } else {
+        window.open('https://wa.me/?text=' + encoded, '_blank');
+    }
+    showToast('📱 WhatsApp abierto — selecciona el contacto o grupo', 4000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  SEND TRAINING BY WHATSAPP
+// ══════════════════════════════════════════════════════════════════
+
+function sendTrainingToWhatsApp() {
+    saveTrainingData();
+    var players = getSelectedTrainingPlayers();
+    if (players.length === 0) {
+        showToast('Selecciona al menos un jugador', 2500);
+        return;
+    }
+
+    var data = JSON.parse(localStorage.getItem('cronos_training_data') || '{}');
+    var hour = new Date().getHours();
+    var greeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
+
+    var dateStr = data.date ? new Date(data.date + 'T12:00:00').toLocaleDateString('es-ES', {
+        weekday:'long', day:'numeric', month:'long'
+    }) : '';
+
+    var msg = greeting + ' familia! 👋\n\n';
+    msg += '🏋️ *ENTRENAMIENTO*\n';
+    msg += 'Equipo: ' + (data.team || TEAM_NAMES.home) + '\n';
+    if (dateStr) msg += '📅 ' + dateStr + '\n';
+    if (data.time) msg += '⏰ Hora: ' + data.time + 'h\n';
+    if (data.venue) msg += '🏟️ Lugar: ' + data.venue + '\n';
+    if (data.notes) msg += '💬 ' + data.notes + '\n';
+    msg += '\n👥 *CONVOCADOS:*\n';
+    players.forEach(function(p, i) {
+        msg += (i+1) + '. ' + (p.alias || p.name || 'Jugador') + '\n';
+    });
+    msg += '\n_Cronos Fútbol_ ⚽';
+
+    var savedCfg = JSON.parse(localStorage.getItem('cronos_training_config') || '{}');
+    localStorage.setItem('cronos_training_config', JSON.stringify(Object.assign(savedCfg, data)));
+
+    var num = savedCfg.wa || '';
+    var encoded = encodeURIComponent(msg);
+    if (num) {
+        window.open('https://wa.me/' + num + '?text=' + encoded, '_blank');
+    } else {
+        window.open('https://wa.me/?text=' + encoded, '_blank');
+    }
+    showToast('📱 WhatsApp abierto — selecciona el contacto o grupo', 4000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  END OF NEW FUNCTIONS
+// ══════════════════════════════════════════════════════════════════
+
+// --- BOTONES DE SCROLL EN BANQUILLO ---
 
 // --- BOTONES DE SCROLL EN BANQUILLO ---
 function injectBenchScrollButtons(containerId) {
