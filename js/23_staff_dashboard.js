@@ -1,634 +1,480 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v2.0
-//  FIXED: Tab Informes lee cronos_player_reports en tiempo real
-//  ADDED: Modo Prueba multi-rol para SuperAdmin
+//  CRONOS FÚTBOL — Staff Dashboard (Director Deportivo / Coordinador) v1.0
+//  Pestañas: 📋 Convocatorias · 📊 Informes de Equipos
 // ════════════════════════════════════════════════════════════════════
 
-// ── Helper Firestore ─────────────────────────────────────────────────
-async function _sdFS() {
-    const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    return { ...m, db: window._cronos_auth?.db };
-}
+'use strict';
 
-// ════════════════════════════════════════════════════════════════════
-//  MODO PRUEBA MULTI-ROL — Solo SuperAdmin
-//  Permite al SA actuar temporalmente con el clubId de cualquier club
-// ════════════════════════════════════════════════════════════════════
-window._testRoleClubId = null; // club seleccionado en modo prueba
-
-async function openTestRolePicker(targetRole) {
-    const me = window._cronosCurrentUser;
-    if (!['superadmin','admin'].includes(me?.role)) return;
-
-    const { db, collection, getDocs } = await _sdFS();
-    const snap  = await getDocs(collection(db, 'clubs'));
-    const clubs = [];
-    snap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
-
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = `
-    <div class="modal-content" style="max-width:460px;padding:1.5rem;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;">
-            <div>
-                <h3 style="margin:0;font-size:1rem;">🧪 Modo Prueba — ${targetRole}</h3>
-                <p style="margin:0.2rem 0 0;font-size:0.75rem;color:var(--text-muted);">
-                    Selecciona el club en el que quieres actuar como <strong>${targetRole}</strong>
-                </p>
-            </div>
-            <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
-                style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer;">✕</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:0.5rem;max-height:380px;overflow-y:auto;">
-            ${clubs.length === 0
-                ? `<p style="color:var(--text-muted);text-align:center;padding:2rem;">No hay clubes creados.</p>`
-                : clubs.map(c => `
-                <button onclick="window._applyTestRole('${c.id}','${(c.name||'').replace(/'/g,"\\'")}','${targetRole}')"
-                    style="text-align:left;padding:0.9rem 1rem;background:rgba(255,255,255,0.04);
-                           border:1px solid rgba(255,255,255,0.1);border-radius:10px;
-                           color:white;font-size:0.88rem;cursor:pointer;transition:all 0.2s;"
-                    onmouseover="this.style.background='rgba(88,166,255,0.1)';this.style.borderColor='rgba(88,166,255,0.3)';"
-                    onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.borderColor='rgba(255,255,255,0.1)';">
-                    🏟️ <strong>${typeof escapeHtml==='function'?escapeHtml(c.name||c.id):c.name||c.id}</strong>
-                    <span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:2px;">
-                        ${typeof escapeHtml==='function'?escapeHtml(c.adminEmail||'Sin admin'):c.adminEmail||'Sin admin'} · Plan: ${typeof escapeHtml==='function'?escapeHtml(c.plan||'free'):c.plan||'free'}
-                    </span>
-                </button>`).join('')
-            }
-        </div>
-    </div>`;
-
-    window._applyTestRole = (clubId, clubName, role) => {
-        window._testRoleClubId = clubId;
-        // Inyectar temporalmente el clubId en el usuario activo
-        window._cronosCurrentUser.clubId   = clubId;
-        window._cronosCurrentUser.clubName = clubName;
-        window._cronosCurrentUser._activeRole = role === 'director' ? 'director' : 'coordinator';
-        showToast(`🧪 Modo prueba: ${role} en "${clubName}"`, 3500);
-        modal.style.display = 'none';
-        if (role === 'director' || role === 'coordinator') {
-            openStaffDashboard();
-        } else if (role === 'coach' || role === 'user') {
-            if (typeof init === 'function') init('user');
-            document.getElementById('main-container').style.display = 'flex';
-            document.getElementById('main-header').style.display    = 'flex';
-        } else if (role === 'parent') {
-            if (typeof openParentPanel === 'function') openParentPanel();
-        } else if (role === 'club_admin') {
-            if (typeof openClubAdminPanel === 'function') openClubAdminPanel(clubId);
-        }
-    };
-}
-window.openTestRolePicker = openTestRolePicker;
-
-// ════════════════════════════════════════════════════════════════════
-//  PANEL PRINCIPAL DE DIRECCIÓN
-// ════════════════════════════════════════════════════════════════════
 async function openStaffDashboard() {
-    const me         = window._cronosCurrentUser;
+    const me = window._cronosCurrentUser;
     const activeRole = me?._activeRole || me?.role;
-    const isSA       = ['superadmin','admin'].includes(me?.role);
+    const isSA = me?.role === 'superadmin' || me?.role === 'admin';
 
-    // Si el SA no tiene clubId, lanzar selector de prueba
-    if (isSA && !me?.clubId) {
-        await openTestRolePicker('director');
+    if (!me || (!isSA && !['director', 'coordinator'].includes(activeRole))) {
+        if (typeof showToast === 'function') showToast('⛔ Acceso restringido', 3000);
         return;
     }
 
-    if (!me || (!isSA && !['director','coordinator'].includes(activeRole))) {
-        showToast('⚠️ No tienes permisos para acceder al panel de dirección.', 4000);
-        return;
+    // Ocultar app principal
+    ['main-header', 'main-container', 'auth-screen'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    const fa = window._cronos_auth;
+    const clubId = me.clubId || null;
+    let clubName = '';
+
+    if (fa && clubId) {
+        try {
+            const { doc, getDoc } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const cs = await getDoc(doc(fa.db, 'clubs', clubId));
+            if (cs.exists()) clubName = cs.data().name || '';
+        } catch(e) {}
     }
 
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = `
-    <div class="modal-content" style="width:min(96vw,960px);max-height:94vh;
-         display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;">
+    const roleIcon = activeRole === 'director' ? '📋' : '🎯';
+    const roleLabel = activeRole === 'director' ? 'Director Deportivo' : 'Coordinador';
 
-        <!-- Header -->
-        <div style="display:flex;justify-content:space-between;align-items:center;
-                    padding:1.2rem 1.5rem;background:linear-gradient(to right,#161b22,#0d1117);
-                    border-bottom:1px solid var(--glass-border);flex-shrink:0;">
-            <div>
-                <h2 style="margin:0;font-size:1.15rem;display:flex;align-items:center;gap:0.7rem;">
-                    🏢 Panel de Dirección:
-                    <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||'Mi Club'):me.clubName||'Mi Club'}</span>
-                    ${isSA ? `<span style="font-size:0.65rem;background:rgba(255,215,0,0.12);
-                        border:1px solid rgba(255,215,0,0.3);color:#ffd700;
-                        padding:2px 7px;border-radius:5px;font-weight:700;">🧪 PRUEBA</span>` : ''}
-                </h2>
-                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">
-                    ${activeRole === 'director' ? '📋 Director Deportivo' : '🎯 Coordinador'}
-                    ${isSA ? ' · SuperAdmin en modo prueba' : ''}
-                </div>
+    // Crear / reutilizar contenedor
+    let panel = document.getElementById('staff-dashboard');
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'staff-dashboard';
+        document.body.appendChild(panel);
+    }
+    panel.style.cssText =
+        'position:fixed;inset:0;background:#0a0e14;z-index:8000;' +
+        'display:flex;flex-direction:column;overflow:hidden;font-family:inherit;';
+
+    panel.innerHTML = `
+    <style>
+        #staff-dashboard .sd-tab {
+            padding:0.55rem 1.1rem;
+            background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.1);
+            border-radius:8px;
+            color:#7d8590;
+            font-size:0.84rem;
+            cursor:pointer;
+            transition:all 0.15s;
+            white-space:nowrap;
+        }
+        #staff-dashboard .sd-tab.active {
+            background:rgba(240,136,62,0.15);
+            border-color:rgba(240,136,62,0.5);
+            color:#f0883e;
+            font-weight:700;
+        }
+        #staff-dashboard .sd-card {
+            background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.1);
+            border-radius:12px;
+            padding:1rem 1.2rem;
+            margin-bottom:0.75rem;
+        }
+        #staff-dashboard .sd-empty {
+            text-align:center;
+            color:#7d8590;
+            padding:4rem 1rem;
+            font-size:0.9rem;
+            line-height:1.8;
+        }
+        @keyframes sdPulse{0%,100%{opacity:1}50%{opacity:0.35}}
+    </style>
+
+    <!-- TOPBAR -->
+    <div style="display:flex;justify-content:space-between;align-items:center;
+                padding:0.85rem 1.2rem;
+                border-bottom:1px solid rgba(255,255,255,0.08);
+                background:rgba(10,14,20,0.98);flex-shrink:0;">
+        <div>
+            <div style="font-size:1rem;font-weight:700;color:white;">
+                ${roleIcon} Panel de ${roleLabel}
+                ${clubName ? `<span style="font-size:0.74rem;color:#7d8590;
+                    font-weight:400;margin-left:0.4rem;">· ${typeof escapeHtml==='function'?escapeHtml(clubName):clubName}</span>` : ''}
             </div>
-            <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;">
-                ${isSA ? `
-                <button onclick="openTestRolePicker('director')"
-                    style="padding:0.4rem 0.8rem;background:rgba(255,215,0,0.08);
-                           border:1px solid rgba(255,215,0,0.3);border-radius:8px;
-                           color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
-                    🔄 Cambiar Club</button>` : ''}
-                <button onclick="openStaffDashboard()"
-                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
-                           color:var(--text-muted);padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    🔄</button>
-                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
-                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
-                           color:#ffd700;padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    ⇄ Rol</button>
-                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
-                    style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
-                           color:#ff5858;padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    🚪</button>
+            <div style="font-size:0.71rem;color:#7d8590;margin-top:0.12rem;">
+                ${typeof escapeHtml==='function'?escapeHtml(me.email||''):me.email||''}
             </div>
         </div>
-
-        <!-- Tabs -->
-        <div style="display:flex;gap:0.2rem;padding:0.5rem 1.5rem;background:#161b22;
-                    border-bottom:1px solid var(--glass-border);flex-shrink:0;overflow-x:auto;">
-            <button onclick="switchStaffTab('convocatorias')" class="staff-tab active" id="tab-convocatorias">📋 Convoc.</button>
-            <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
-            <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
-            <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
-            <button onclick="openLiveMatchesView()" class="staff-tab"
-                style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
-                🔴 En Vivo</button>
-        </div>
-
-        <!-- Contenido -->
-        <div id="staff-dashboard-content"
-             style="flex:1;overflow-y:auto;padding:1.5rem;background:#0d1117;">
-            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
-                <div class="spinner" style="margin:0 auto 1rem;"></div>
-                Cargando…
-            </div>
+        <div style="display:flex;gap:0.4rem;">
+            <button onclick="window.saGoBackToRoles&&saGoBackToRoles();"
+                style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
+                       color:#ffd700;padding:0.35rem 0.85rem;border-radius:6px;cursor:pointer;
+                       font-size:0.74rem;font-weight:700;">⇄ Cambiar rol</button>
+            <button onclick="if(typeof logoutUser==='function')logoutUser();"
+                style="background:none;border:1px solid rgba(255,88,88,0.35);
+                       color:rgba(255,88,88,0.75);font-size:0.74rem;
+                       padding:0.35rem 0.85rem;border-radius:6px;cursor:pointer;">
+                ⏻ Salir
+            </button>
         </div>
     </div>
 
-    <style>
-        .staff-tab {
-            padding:0.55rem 1.1rem;background:none;border:none;
-            border-bottom:2px solid transparent;color:var(--text-muted);
-            font-size:0.82rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;
-        }
-        .staff-tab:hover { color:white;background:rgba(255,255,255,0.03); }
-        .staff-tab.active { color:var(--primary);border-bottom-color:var(--primary);background:rgba(88,166,255,0.05); }
-        .sd-card {
-            background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
-            border-radius:12px;padding:1rem;margin-bottom:0.9rem;
-            display:flex;justify-content:space-between;align-items:center;gap:1rem;
-            transition:border-color 0.2s;
-        }
-        .sd-card:hover { border-color:rgba(88,166,255,0.3); }
-        .sd-badge {
-            font-size:0.65rem;font-weight:700;padding:2px 8px;
-            border-radius:5px;text-transform:uppercase;
-        }
-        .sd-report-card {
-            background:rgba(255,255,255,0.03);border:1px solid rgba(88,166,255,0.15);
-            border-radius:12px;padding:1rem 1.2rem;margin-bottom:0.7rem;cursor:pointer;
-            transition:all 0.2s;
-        }
-        .sd-report-card:hover { border-color:rgba(88,166,255,0.4);background:rgba(88,166,255,0.05); }
-        .sd-report-unread { border-color:rgba(255,165,0,0.5);background:rgba(255,165,0,0.04); }
-    </style>`;
+    <!-- TABS -->
+    <div style="display:flex;gap:0.5rem;padding:0.7rem 1.2rem;
+                border-bottom:1px solid rgba(255,255,255,0.08);
+                flex-shrink:0;">
+        <button class="sd-tab active" onclick="sdTab('convocatorias',this)">📋 Convocatorias</button>
+        <button class="sd-tab" onclick="sdTab('informes',this)">📊 Informes</button>
+    </div>
 
-    switchStaffTab('convocatorias');
-}
+    <!-- CUERPO -->
+    <div id="sd-body" style="flex:1;overflow-y:auto;padding:1.1rem 1.2rem;">
+        <p style="color:#7d8590;text-align:center;padding:3rem;">⏳ Cargando…</p>
+    </div>`;
 
-// ── Cambiar tab ──────────────────────────────────────────────────────
-window.switchStaffTab = async (tab) => {
-    document.querySelectorAll('.staff-tab').forEach(b => b.classList.remove('active'));
-    const btn = document.getElementById(`tab-${tab}`);
-    if (btn) btn.classList.add('active');
+    // ── Router ────────────────────────────────────────────────────
+    window.sdTab = (tab, btn) => {
+        panel.querySelectorAll('.sd-tab').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        document.getElementById('sd-body').innerHTML =
+            '<p style="color:#7d8590;text-align:center;padding:3rem;">⏳ Cargando…</p>';
+        ({ convocatorias: sdConvocatorias, informes: sdInformes })[tab]?.();
+    };
 
-    const container = document.getElementById('staff-dashboard-content');
-    container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⏳ Cargando…</div>`;
+    // ══════════════════════════════════════════════════════════════
+    // TAB 1 · CONVOCATORIAS RECIBIDAS
+    // ══════════════════════════════════════════════════════════════
+    window.sdConvocatorias = async () => {
+        const body = document.getElementById('sd-body');
+        try {
+            const { collection, getDocs, query, where } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-    if (tab === 'convocatorias')  await _sdLoadEvents('convocatoria');
-    if (tab === 'entrenamientos') await _sdLoadEvents('planificacion_semanal');
-    if (tab === 'informes')       await _sdLoadReports();
-    if (tab === 'mensajes')       await _sdLoadMessages();
-};
-
-// ════════════════════════════════════════════════════════════════════
-//  TAB: CONVOCATORIAS / ENTRENAMIENTOS
-// ════════════════════════════════════════════════════════════════════
-async function _sdLoadEvents(type) {
-    const me        = window._cronosCurrentUser;
-    const container = document.getElementById('staff-dashboard-content');
-    try {
-        const { db, collection, getDocs, query, where, limit } = await _sdFS();
-        const clubId = me.clubId || 'demo';
-        const snap   = await getDocs(query(
-            collection(db, 'cronos_notifications'),
-            where('clubId', '==', clubId),
-            where('type',   '==', type),
-            limit(50)
-        ));
-        if (snap.empty) {
-            container.innerHTML = `<div style="text-align:center;padding:4rem;color:var(--text-muted);">
-                Sin ${type === 'convocatoria' ? 'convocatorias' : 'entrenamientos'} registrados aún.</div>`;
-            return;
-        }
-        let html = '';
-        snap.forEach(docSnap => {
-            const d    = docSnap.data();
-            const date = d.createdAt
-                ? new Date(d.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})
-                : '—';
-            html += `
-            <div class="sd-card">
-                <div style="flex:1;min-width:0;">
-                    <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.35rem;">
-                        <span class="sd-badge" style="background:${type==='convocatoria'?'rgba(88,166,255,0.15)':'rgba(210,168,255,0.15)'};
-                            color:${type==='convocatoria'?'var(--primary)':'#d2a8ff'};">${type}</span>
-                        <span style="font-size:0.73rem;color:var(--text-muted);">${date}</span>
-                    </div>
-                    <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.15rem;">
-                        ${type==='convocatoria' ? `🆚 vs ${typeof escapeHtml==='function'?escapeHtml(d.rival||'Rival'):d.rival||'Rival'}` : `⚽ ${typeof escapeHtml==='function'?escapeHtml(d.category||'Entrenamiento'):d.category||'Entrenamiento'}`}
-                    </div>
-                    <div style="font-size:0.76rem;color:var(--text-muted);">
-                        Por: <strong>${typeof escapeHtml==='function'?escapeHtml(d.coachEmail||'Entrenador'):d.coachEmail||'Entrenador'}</strong>
-                        ${d.players ? ` · 👥 ${d.players.length} convocados` : ''}
-                    </div>
-                </div>
-                <button onclick="sdViewEventDetail('${docSnap.id}')" class="btn"
-                    style="font-size:0.75rem;padding:0.4rem 0.8rem;flex-shrink:0;">
-                    Ver detalles</button>
-            </div>`;
-        });
-        container.innerHTML = html;
-
-        window.sdViewEventDetail = async (id) => {
-            const { db: db2, doc, getDoc } = await _sdFS();
-            const s = await getDoc(doc(db2, 'cronos_notifications', id));
-            if (!s.exists()) return;
-            const d = s.data();
-            let txt = d.fullText || d.extra || 'Sin detalles.';
-            if (d.players?.length) txt += '\n\nConvocados:\n' + d.players.join(', ');
-            alert(txt);
-        };
-    } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════
-//  TAB: INFORMES DE PARTIDO  ← NUEVO, FUNCIONAL
-// ════════════════════════════════════════════════════════════════════
-async function _sdLoadReports() {
-    const me        = window._cronosCurrentUser;
-    const container = document.getElementById('staff-dashboard-content');
-    const clubId    = me.clubId;
-    if (!clubId) {
-        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
-            ⚠️ Sin club asignado. Usa el modo prueba para seleccionar un club.</div>`;
-        return;
-    }
-
-    try {
-        const { db, collection, getDocs, query, where, orderBy, limit, doc, updateDoc } = await _sdFS();
-
-        // Cargar informes del club (los genera el entrenador via saveAllMatchReportsInternal)
-        const snap = await getDocs(query(
-            collection(db, 'cronos_player_reports'),
-            where('clubId', '==', clubId),
-            limit(100)
-        ));
-
-        if (snap.empty) {
-            container.innerHTML = `
-            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
-                <div style="font-size:2.5rem;margin-bottom:1rem;">📊</div>
-                <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">
-                    Sin informes de partido aún</div>
-                <div style="font-size:0.8rem;">
-                    Los informes aparecen aquí cuando un entrenador finaliza un partido
-                    y pulsa <strong>"Enviar Informe"</strong> en la app.</div>
-            </div>`;
-            return;
-        }
-
-        // Agrupar por partido (matchDate + rival)
-        const matches = {};
-        snap.forEach(docSnap => {
-            const r   = { _id: docSnap.id, ...docSnap.data() };
-            const key = `${r.matchDate || 'sin-fecha'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
-            if (!matches[key]) {
-                matches[key] = {
-                    key, matchDate: r.matchDate, rival: r.rival,
-                    scoreHome: r.scoreHome, scoreAway: r.scoreAway,
-                    coachEmail: r.coachEmail, createdAt: r.createdAt,
-                    players: [],
-                };
+            let snap;
+            if (clubId) {
+                snap = await getDocs(query(
+                    collection(fa.db, 'cronos_notifications'),
+                    where('clubId', '==', clubId)
+                ));
+            } else {
+                snap = await getDocs(collection(fa.db, 'cronos_notifications'));
             }
-            matches[key].players.push(r);
-        });
 
-        // Ordenar por fecha descendente
-        const sortedMatches = Object.values(matches).sort((a, b) => {
-            return (b.createdAt || '').localeCompare(a.createdAt || '');
-        });
+            const dismissed = JSON.parse(localStorage.getItem('cronos_staff_dismissed_conv') || '[]');
+            const items = [];
+            snap.forEach(d => {
+                const dat = d.data();
+                if (dismissed.includes(d.id)) return;
+                if (dat.type === 'convocatoria') {
+                    items.push({ _id: d.id, ...dat });
+                }
+            });
+            items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-        let html = `
-        <div style="margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
-            <h3 style="margin:0;font-size:0.95rem;color:white;">
-                📊 Informes recibidos — ${sortedMatches.length} partido${sortedMatches.length !== 1 ? 's' : ''}
-            </h3>
-            <span style="font-size:0.73rem;color:var(--text-muted);">
-                Club: <strong style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||clubId):me.clubName||clubId}</strong>
-            </span>
-        </div>`;
+            if (!items.length) {
+                body.innerHTML = `<div class="sd-empty">
+                    📋 No hay convocatorias recibidas.<br>
+                    <span style="font-size:0.8rem;color:#555;">
+                        Aquí aparecerán las convocatorias enviadas por los entrenadores.
+                    </span>
+                </div>`;
+                return;
+            }
 
-        sortedMatches.forEach((m, idx) => {
-            const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
-            const injured = m.players.filter(p => p.injured).length;
-            const dateStr = m.matchDate
-                ? new Date(m.matchDate).toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'})
-                : '—';
-            const score   = (m.scoreHome != null && m.scoreAway != null)
-                ? `${m.scoreHome} – ${m.scoreAway}` : '—';
-            const key64   = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g,'');
+            body.innerHTML = items.map(n => {
+                const sent = n.createdAt
+                    ? new Date(n.createdAt).toLocaleDateString('es-ES', { day:'numeric', month:'long', year:'numeric' })
+                    : '';
+                const isConv = true;
 
-            html += `
-            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
-                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.35rem;">
-                    <div>
-                        <div style="font-weight:700;font-size:1rem;">
-                            🆚 vs <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>
-                        </div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-                            📅 ${dateStr} ·
-                            ⚽ Marcador: <strong style="color:white;">${score}</strong> ·
-                            👤 ${typeof escapeHtml==='function'?escapeHtml(m.coachEmail||'Entrenador'):m.coachEmail||'Entrenador'}
-                        </div>
+                return `
+                <div class="sd-card" style="border-left:3px solid #3fb950; position:relative;">
+                    <button onclick="sdDismissConv('${typeof escapeAttr==='function'?escapeAttr(n._id):n._id}')"
+                        style="position:absolute; top:1rem; right:1rem; background:rgba(255,88,88,0.08);
+                               border:1px solid rgba(255,88,88,0.3); color:#ff5858;
+                               width:30px; height:30px; border-radius:50%; display:flex;
+                               align-items:center; justify-content:center; cursor:pointer;
+                               font-size:0.85rem; z-index:10;"
+                        title="Eliminar convocatoria">
+                        🗑️
+                    </button>
+                    <div style="display:flex;justify-content:space-between;
+                                margin-bottom:0.55rem;flex-wrap:wrap;gap:0.3rem; padding-right:2rem;">
+                        <span style="font-weight:700;color:#3fb950;">📋 Convocatoria</span>
+                        <span style="font-size:0.71rem;color:#7d8590;">${sent}</span>
                     </div>
-                    <div style="text-align:right;flex-shrink:0;">
-                        <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">
-                            ${m.players.length} jugadores
-                        </span>
-                        ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;margin-left:4px;">
-                            ⚽ ${goals} goles</span>` : ''}
-                        ${injured > 0 ? `<span class="sd-badge" style="background:rgba(255,88,88,0.12);color:#ff5858;margin-left:4px;">
-                            🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
-                        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px;">
-                            ▼ Ver detalles
-                        </div>
-                    </div>
-                </div>
-                <!-- Tabla de jugadores (oculta por defecto) -->
-                <div id="rdetail-${key64}" style="display:none;margin-top:0.8rem;
-                     border-top:1px solid var(--glass-border);padding-top:0.8rem;">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
-                        <thead>
-                            <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.08);">
-                                <th style="padding:0.35rem 0.5rem;text-align:left;">Nº</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:left;">Jugador</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">⏱ Minutos</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">⚽ Goles</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">🟨 Tarjetas</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">🩹 Lesión</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${m.players
-                                .sort((a, b) => (a.playerNumber || 0) - (b.playerNumber || 0))
-                                .map(p => `
-                                <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                                    <td style="padding:0.35rem 0.5rem;color:var(--primary);font-weight:700;">${p.playerNumber || '—'}</td>
-                                    <td style="padding:0.35rem 0.5rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(p.playerAlias||'Jugador'):p.playerAlias||'Jugador'}</td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">${p.minutesPlayed || '0:00'}</td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
-                                        ${p.goals > 0 ? `<strong style="color:#ffa500;">${p.goals}</strong>` : '—'}
-                                    </td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
-                                        ${p.cards && p.cards !== 'ninguna'
-                                            ? `<span style="background:${p.cards==='red'?'rgba(255,88,88,0.2)':'rgba(255,215,0,0.15)'};
-                                                           color:${p.cards==='red'?'#ff5858':'#ffd700'};
-                                                           padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:700;">
-                                                ${p.cards==='red'?'🟥 Roja':'🟨 Amarilla'}</span>`
-                                            : '—'}
-                                    </td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
-                                        ${p.injured ? '🩹 Sí' : '—'}
-                                    </td>
-                                </tr>`).join('')}
-                        </tbody>
-                    </table>
-                    <!-- Historial de acciones si existe -->
-                    ${m.players.some(p => p.history?.length) ? `
-                    <div style="margin-top:0.7rem;padding:0.6rem 0.7rem;background:rgba(255,255,255,0.02);
-                                border-radius:8px;font-size:0.73rem;color:var(--text-muted);">
-                        <strong style="color:white;display:block;margin-bottom:0.3rem;">📋 Línea de tiempo</strong>
-                        ${m.players.flatMap(p =>
-                            (p.history || []).map(ev => ({
-                                ...ev,
-                                player: p.playerAlias || `#${p.playerNumber}`
-                            }))
-                        ).sort((a,b) => (a.minute||0) - (b.minute||0))
-                        .map(ev => `
-                            <span style="margin-right:0.8rem;white-space:nowrap;">
-                                <strong style="color:white;">${ev.minute || '?'}'</strong>
-                                ${ev.type === 'goal'    ? '⚽' :
-                                  ev.type === 'yellow'  ? '🟨' :
-                                  ev.type === 'red'     ? '🟥' :
-                                  ev.type === 'sub_in'  ? '▶️' :
-                                  ev.type === 'sub_out' ? '⏸️' : '•'}
-                                ${typeof escapeHtml==='function'?escapeHtml(ev.player):ev.player}
-                            </span>`).join('')}
+                    ${n.matchDate ? `<div style="font-size:0.83rem;margin-bottom:0.25rem;">
+                        📅 <strong>${typeof escapeHtml==='function'?escapeHtml(n.matchDate):n.matchDate}</strong>
+                        ${n.rival ? ` · 🆚 vs <strong>${typeof escapeHtml==='function'?escapeHtml(n.rival):n.rival}</strong>` : ''}
                     </div>` : ''}
-                </div>
-            </div>`;
-        });
-
-        container.innerHTML = html;
-
-        window.sdToggleReport = (key64) => {
-            const card   = document.getElementById(`rcard-${key64}`);
-            const detail = document.getElementById(`rdetail-${key64}`);
-            if (!detail) return;
-            const isOpen = detail.style.display !== 'none';
-            detail.style.display = isOpen ? 'none' : 'block';
-            card.style.borderColor = isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(88,166,255,0.5)';
-        };
-
-    } catch(e) {
-        console.error('[StaffDashboard] Error cargando informes:', e);
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">
-            ⚠️ Error al cargar informes: ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════
-//  TAB: MENSAJES (mensajes recibidos desde entrenadores)
-// ════════════════════════════════════════════════════════════════════
-async function _sdLoadMessages() {
-    const me        = window._cronosCurrentUser;
-    const container = document.getElementById('staff-dashboard-content');
-    const clubId    = me.clubId;
-    if (!container) return;
-
-    if (!clubId) {
-        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⚠️ Sin club asignado.</div>`;
-        return;
-    }
-
-    try {
-        const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
-
-        // Buscar threads donde este staff es destinatario (campo staffUid)
-        // y threads donde es parentUid (compatibilidad retroactiva)
-        const [snapStaff, snapParent] = await Promise.all([
-            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
-            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
-        ]);
-
-        const threadsMap = {};
-        snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        const threads = Object.values(threadsMap)
-            .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
-
-        if (!threads.length) {
-            container.innerHTML = `
-            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
-                <div style="font-size:2rem;margin-bottom:0.8rem;">💬</div>
-                Sin mensajes recibidos aún.<br>
-                <span style="font-size:0.78rem;">Los mensajes de los entrenadores aparecerán aquí.</span>
-            </div>`;
-            return;
-        }
-
-        let html = `<div style="margin-bottom:0.8rem;font-size:0.78rem;color:var(--text-muted);">
-            ${threads.length} conversación${threads.length!==1?'es':''}</div>`;
-
-        threads.forEach(t => {
-            const unread    = (t.unreadByStaff || t.unreadByParent || 0);
-            const lastMsg   = t.lastMessage   || '—';
-            const lastT     = t.lastMessageAt
-                ? new Date(t.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
-                : '';
-            const isReport  = lastMsg.includes('📊');
-            const isCollective = t.recipientType === 'staff' || (t.messages||[]).some(m=>m.type==='collective_report');
-
-            html += `
-            <div class="sd-card ${unread>0?'sd-report-unread':''}"
-                 onclick="sdOpenStaffThread('${t._id}','${t.coachUid||''}','${(t.coachEmail||'').replace(/'/g,"\\'")}')"
-                 style="cursor:pointer;">
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                        ${isCollective?'📊':'✉️'} ${typeof escapeHtml==='function'?escapeHtml(t.coachEmail||'Entrenador'):t.coachEmail||'Entrenador'}
-                        ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
-                            border-radius:10px;padding:1px 7px;font-size:0.62rem;
-                            font-weight:700;margin-left:6px;">
-                            ${unread} nuevo${unread>1?'s':''}</span>`:''}
-                    </div>
-                    <div style="font-size:0.76rem;
-                                color:${unread?'#58a6ff':'var(--text-muted)'};
-                                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${unread?`<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>`:typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}
-                    </div>
-                </div>
-                <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
-            </div>`;
-        });
-
-        container.innerHTML = html;
-
-        window.sdOpenStaffThread = async (threadId, coachUid, coachEmail) => {
-            if (typeof _loadThreadMessages === 'function') {
-                const { db:db2, doc:doc2, updateDoc:upd } = await _sdFS();
-                container.innerHTML = `
-                <div style="display:flex;flex-direction:column;height:100%;">
-                    <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;flex-shrink:0;">
-                        <button onclick="switchStaffTab('mensajes')"
-                            style="padding:0.35rem 0.7rem;background:rgba(255,255,255,0.05);
-                                   border:1px solid var(--glass-border);border-radius:7px;
-                                   color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
-                            ← Volver
-                        </button>
-                        <div style="font-weight:700;font-size:0.88rem;">💬 ${typeof escapeHtml==='function'?escapeHtml(coachEmail):coachEmail}</div>
-                    </div>
-                    <div id="thread-messages"
-                         style="flex:1;overflow-y:auto;display:flex;
-                                flex-direction:column;gap:0.5rem;min-height:200px;">
-                        <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
-                    </div>
-                    <!-- Staff puede responder al entrenador -->
-                    <div style="margin-top:0.7rem;border-top:1px solid var(--glass-border);
-                                padding-top:0.7rem;flex-shrink:0;">
-                        <div style="display:flex;gap:0.5rem;align-items:flex-end;">
-                            <textarea id="staff-reply-input"
-                                placeholder="Responder al entrenador… (Enter para enviar)"
-                                rows="2"
-                                style="flex:1;padding:0.55rem 0.75rem;
-                                       background:rgba(255,255,255,0.06);
-                                       border:1px solid var(--glass-border);border-radius:8px;
-                                       color:white;font-size:0.85rem;resize:none;"
-                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){
-                                    event.preventDefault();
-                                    sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}');
-                                }">
-                            </textarea>
-                            <button onclick="sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}')"
-                                class="btn primary" style="padding:0.55rem 0.9rem;flex-shrink:0;">
-                                Enviar ›
-                            </button>
+                    ${n.venue ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🏟️ ${typeof escapeHtml==='function'?escapeHtml(n.venue):n.venue}</div>` : ''}
+                    ${n.meettime ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🕐 Presentación: <strong>${typeof escapeHtml==='function'?escapeHtml(n.meettime):n.meettime}h</strong></div>` : ''}
+                    ${n.kickoff ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">⚽ Inicio: <strong>${typeof escapeHtml==='function'?escapeHtml(n.kickoff):n.kickoff}h</strong></div>` : ''}
+                    ${n.coachEmail ? `<div style="font-size:0.72rem;color:#7d8590;margin-top:0.4rem;">📧 Enviada por: ${typeof escapeHtml==='function'?escapeHtml(n.coachEmail):n.coachEmail}</div>` : ''}
+                    ${n.players?.length ? `
+                    <div style="margin-top:0.5rem;padding:0.55rem 0.8rem;
+                                background:rgba(63,185,80,0.07);border-radius:8px;
+                                border:1px solid rgba(63,185,80,0.2);">
+                        <div style="font-size:0.71rem;font-weight:700;
+                                    color:#3fb950;margin-bottom:0.35rem;">
+                            👥 CONVOCADOS (${n.players.length})
                         </div>
+                        <div style="font-size:0.8rem;line-height:1.8;">
+                            ${n.players.map((p, i) => `${i + 1}. ${typeof escapeHtml==='function'?escapeHtml(p):p}`).join('<br>')}
+                        </div>
+                    </div>` : ''}
+                    ${n.extra ? `<div style="font-size:0.8rem;margin-top:0.5rem;
+                        color:#7d8590;font-style:italic;">💬 ${typeof escapeHtml==='function'?escapeHtml(n.extra):n.extra}</div>` : ''}
+                    <div style="margin-top:0.7rem;display:flex;gap:0.4rem;flex-wrap:wrap;">
+                        <button onclick="sdSaveConv('${typeof escapeAttr==='function'?escapeAttr(n._id):n._id}')"
+                            style="padding:0.35rem 0.8rem;background:rgba(63,185,80,0.12);
+                                   border:1px solid rgba(63,185,80,0.35);border-radius:7px;
+                                   color:#3fb950;font-size:0.75rem;font-weight:700;cursor:pointer;">
+                            💾 Guardar</button>
+                        <button onclick="sdDismissConv('${typeof escapeAttr==='function'?escapeAttr(n._id):n._id}')"
+                            style="padding:0.35rem 0.8rem;background:rgba(255,88,88,0.1);
+                                   border:1px solid rgba(255,88,88,0.3);border-radius:7px;
+                                   color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
+                            🗑️ Eliminar</button>
                     </div>
                 </div>`;
+            }).join('');
 
-                await _loadThreadMessages(threadId, 'parent');  // 'parent' perspective: staff on right
-                try {
-                    const data = {};
-                    data['unreadByStaff']  = 0;
-                    data['unreadByParent'] = 0;
-                    await upd(doc2(db2,'cronos_messages',threadId), data);
-                } catch(_) {}
-            } else {
-                if (typeof showToast==='function') showToast('ℹ️ Módulo de mensajería no cargado.', 3000);
+        } catch (e) {
+            body.innerHTML = `<div class="sd-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+        }
+    };
+
+    // ── Guardar convocatoria localmente ──
+    window.sdSaveConv = (id) => {
+        const saved = JSON.parse(localStorage.getItem('cronos_staff_saved_conv') || '[]');
+        if (!saved.includes(id)) saved.push(id);
+        localStorage.setItem('cronos_staff_saved_conv', JSON.stringify(saved));
+        if (typeof showToast === 'function') showToast('💾 Convocatoria guardada', 2000);
+    };
+
+    // ── Eliminar / descartar convocatoria ──
+    window.sdDismissConv = (id) => {
+        if (!confirm('¿Deseas eliminar esta convocatoria?')) return;
+        const dismissed = JSON.parse(localStorage.getItem('cronos_staff_dismissed_conv') || '[]');
+        if (!dismissed.includes(id)) dismissed.push(id);
+        localStorage.setItem('cronos_staff_dismissed_conv', JSON.stringify(dismissed));
+        if (typeof sdConvocatorias === 'function') sdConvocatorias();
+        if (typeof showToast === 'function') showToast('🗑️ Convocatoria eliminada', 2000);
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    // TAB 2 · INFORMES DE EQUIPOS
+    // ══════════════════════════════════════════════════════════════
+    window.sdInformes = async () => {
+        const body = document.getElementById('sd-body');
+        try {
+            const { collection, getDocs, query, where } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+            const snap = await getDocs(query(
+                collection(fa.db, 'cronos_player_reports'),
+                where('clubId', '==', clubId || '_none')
+            ));
+
+            const reports = [];
+            snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
+            reports.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+            if (!reports.length) {
+                body.innerHTML = `<div class="sd-empty">
+                    📊 No hay informes de partido disponibles.<br>
+                    <span style="font-size:0.8rem;color:#555;">
+                        Aquí aparecerán los informes enviados por los entrenadores
+                        tras cada partido.
+                    </span>
+                </div>`;
+                return;
             }
-        };
 
-        // Staff replies to coach
-        window.sdSendReplyToCoach = async (threadId, coachUid, coachEmail) => {
-            const input = document.getElementById('staff-reply-input');
-            const text  = (input?.value||'').trim();
-            if (!text) return;
-
-            const { db:db2, doc:doc2, getDoc, updateDoc:upd, arrayUnion } = await _sdFS();
-            const newMsg = { sender:'parent', text, timestamp:new Date().toISOString() };
-
-            try {
-                const snap = await getDoc(doc2(db2,'cronos_messages',threadId));
-                const preview = text.length>60 ? text.substring(0,60)+'…' : text;
-                if (snap.exists()) {
-                    await upd(doc2(db2,'cronos_messages',threadId), {
-                        messages: arrayUnion(newMsg),
-                        lastMessage: preview, lastMessageAt: newMsg.timestamp,
-                        unreadByCoach: (snap.data().unreadByCoach||0) + 1,
-                    });
+            // Agrupar por partido
+            const matches = {};
+            reports.forEach(r => {
+                const key = `${r.matchDate || r.createdAt?.slice(0,10) || '?'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
+                if (!matches[key]) {
+                    matches[key] = {
+                        key, matchDate: r.matchDate || r.createdAt?.slice(0,10),
+                        rival: r.rival, scoreHome: r.scoreHome, scoreAway: r.scoreAway,
+                        coachEmail: r.coachEmail, teamName: r.teamName || '',
+                        createdAt: r.createdAt, players: [],
+                    };
                 }
-                if (input) input.value = '';
-                await _loadThreadMessages(threadId, 'parent');
-            } catch(e) {
-                if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 3000);
-            }
-        };
+                matches[key].players.push(r);
+            });
 
-    } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
-    }
+            const sorted = Object.values(matches).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+            body.innerHTML = `<div style="margin-bottom:0.8rem;font-size:0.76rem;color:#7d8590;">
+                ${sorted.length} partido${sorted.length !== 1 ? 's' : ''} · ${reports.length} informes de jugadores
+            </div>` + sorted.map(m => {
+                const goals = m.players.reduce((s, p) => s + (p.goals || 0), 0);
+                const dateStr = m.matchDate
+                    ? new Date(m.matchDate).toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit', year:'2-digit' })
+                    : '—';
+                const score = (m.scoreHome != null && m.scoreAway != null) ? `${m.scoreHome}-${m.scoreAway}` : '—';
+                const matchKey = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
+
+                return `
+                <div class="sd-card" id="sd-rpcard-${matchKey}" style="position:relative;">
+                    <button onclick="sdDeleteInforme('${matchKey}')"
+                        style="position:absolute;top:1rem;right:1rem;background:rgba(255,88,88,0.08);
+                               border:1px solid rgba(255,88,88,0.3);color:#ff5858;
+                               width:30px;height:30px;border-radius:50%;display:flex;
+                               align-items:center;justify-content:center;cursor:pointer;
+                               font-size:0.8rem;z-index:10;" title="Eliminar informe">
+                        🗑️
+                    </button>
+                    <div onclick="sdToggleInforme('${matchKey}')"
+                         style="display:flex;justify-content:space-between;
+                                align-items:start;gap:0.5rem;cursor:pointer;padding-right:2rem;">
+                        <div>
+                            <div style="font-weight:700;font-size:0.95rem;">
+                                🆚 vs <span style="color:#f0883e;">
+                                    ${typeof escapeHtml==='function'?escapeHtml(m.rival || 'Sin rival'):m.rival || 'Sin rival'}
+                                </span>
+                            </div>
+                            <div style="font-size:0.72rem;color:#7d8590;margin-top:2px;">
+                                📅 ${dateStr} · <strong style="color:white;">${score}</strong>
+                                ${m.coachEmail ? ` · ${typeof escapeHtml==='function'?escapeHtml(m.coachEmail):m.coachEmail}` : ''}
+                            </div>
+                            ${goals > 0 ? `<div style="font-size:0.72rem;color:#3fb950;margin-top:2px;">⚽ ${goals} goles</div>` : ''}
+                        </div>
+                        <div style="font-size:0.62rem;color:#7d8590;text-align:right;">
+                            ${m.players.length} jugadores<br>▼ Ver
+                        </div>
+                    </div>
+                    <div id="sd-rpdetail-${matchKey}" style="display:none;margin-top:0.7rem;
+                            border-top:1px solid rgba(255,255,255,0.08);padding-top:0.7rem;">
+                        <div style="display:flex;gap:0.4rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                            <button onclick="sdDownloadInforme('${matchKey}')"
+                                style="padding:0.3rem 0.7rem;background:rgba(88,166,255,0.12);
+                                       border:1px solid rgba(88,166,255,0.3);border-radius:6px;
+                                       color:#58a6ff;font-size:0.72rem;font-weight:700;cursor:pointer;">
+                                📥 Descargar</button>
+                            <button onclick="sdShareInforme('${matchKey}')"
+                                style="padding:0.3rem 0.7rem;background:rgba(63,185,80,0.12);
+                                       border:1px solid rgba(63,185,80,0.3);border-radius:6px;
+                                       color:#3fb950;font-size:0.72rem;font-weight:700;cursor:pointer;">
+                                📤 Compartir</button>
+                        </div>
+                        ${m.players.sort((a,b)=>(a.playerNumber||0)-(b.playerNumber||0)).map(p => `
+                        <div style="display:flex;align-items:center;gap:0.5rem;
+                                    padding:0.4rem 0.5rem;background:rgba(255,255,255,0.025);
+                                    border-radius:7px;margin-bottom:0.3rem;">
+                            <div style="background:rgba(240,136,62,0.12);width:30px;height:30px;
+                                        border-radius:8px;display:flex;align-items:center;
+                                        justify-content:center;color:#f0883e;font-weight:700;
+                                        font-size:0.8rem;flex-shrink:0;">
+                                #${p.playerNumber || '?'}
+                            </div>
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-weight:700;font-size:0.82rem;">
+                                    ${typeof escapeHtml==='function'?escapeHtml(p.playerAlias || 'Jugador'):p.playerAlias || 'Jugador'}
+                                </div>
+                                <div style="font-size:0.68rem;color:#7d8590;">
+                                    ⏱ ${p.minutesPlayed || '—'}
+                                    ${p.goals > 0 ? ` · ⚽ ${p.goals}` : ''}
+                                    ${p.cards && p.cards !== 'ninguna' ? ` · ${p.cards === 'roja' ? '🟥' : '🟨'}` : ''}
+                                    ${p.injured ? ' · 🩹' : ''}
+                                </div>
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+
+            // Store match data globally for download/share
+            window._sdMatches = matches;
+
+        } catch (e) {
+            body.innerHTML = `<div class="sd-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+        }
+    };
+
+    // ── Toggle detalle de informe ──
+    window.sdToggleInforme = (key64) => {
+        const card = document.getElementById(`sd-rpcard-${key64}`);
+        const detail = document.getElementById(`sd-rpdetail-${key64}`);
+        if (!detail) return;
+        const isOpen = detail.style.display !== 'none';
+        detail.style.display = isOpen ? 'none' : 'block';
+        if (card) card.style.borderColor = isOpen ? 'rgba(255,255,255,0.1)' : 'rgba(240,136,62,0.5)';
+    };
+
+    // ── Descargar informe como texto ──
+    window.sdDownloadInforme = (key64) => {
+        const key = decodeURIComponent(escape(atob(key64)));
+        const m = window._sdMatches?.[key];
+        if (!m) return;
+
+        let text = `INFORME DE PARTIDO - ${m.teamName || 'Equipo'}\n`;
+        text += `========================================\n`;
+        text += `Rival: ${m.rival || '—'}\n`;
+        text += `Fecha: ${m.matchDate || '—'}\n`;
+        text += `Resultado: ${m.scoreHome ?? '—'} - ${m.scoreAway ?? '—'}\n`;
+        text += `Entrenador: ${m.coachEmail || '—'}\n\n`;
+        text += `JUGADORES:\n`;
+        text += `----------------------------------------\n`;
+        m.players.sort((a,b)=>(a.playerNumber||0)-(b.playerNumber||0)).forEach(p => {
+            text += `#${p.playerNumber || '?'} ${p.playerAlias || 'Jugador'} | `;
+            text += `Min: ${p.minutesPlayed || '0'} | Goles: ${p.goals || 0} | `;
+            text += `Tarjeta: ${p.cards && p.cards !== 'ninguna' ? p.cards : 'Ninguna'} | `;
+            text += `Lesion: ${p.injured ? 'Sí' : 'No'}\n`;
+        });
+        text += `\nGenerado por Chronos Fútbol`;
+
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `informe_${m.rival || 'partido'}_${m.matchDate || 'fecha'}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+        if (typeof showToast === 'function') showToast('📥 Informe descargado', 2000);
+    };
+
+    // ── Compartir informe (Web Share API o copiar al portapapeles) ──
+    window.sdShareInforme = async (key64) => {
+        const key = decodeURIComponent(escape(atob(key64)));
+        const m = window._sdMatches?.[key];
+        if (!m) return;
+
+        let text = `📋 INFORME - ${m.teamName || 'Equipo'} vs ${m.rival || '—'}\n`;
+        text += `📅 ${m.matchDate || '—'} · Resultado: ${m.scoreHome ?? '—'}-${m.scoreAway ?? '—'}\n\n`;
+        m.players.sort((a,b)=>(a.playerNumber||0)-(b.playerNumber||0)).forEach(p => {
+            text += `#${p.playerNumber || '?'} ${p.playerAlias || 'Jugador'} - ${p.minutesPlayed || '0'}min`;
+            if (p.goals > 0) text += ` - ⚽${p.goals}`;
+            text += '\n';
+        });
+
+        if (navigator.share) {
+            try {
+                await navigator.share({ title: `Informe: vs ${m.rival}`, text });
+                return;
+            } catch (e) { /* fallback */ }
+        }
+
+        // Fallback: copiar al portapapeles
+        try {
+            await navigator.clipboard.writeText(text);
+            if (typeof showToast === 'function') showToast('📋 Informe copiado al portapapeles', 3000);
+        } catch (e) {
+            if (typeof showToast === 'function') showToast('⚠️ No se pudo copiar', 3000);
+        }
+    };
+
+    // ── Eliminar informe ──
+    window.sdDeleteInforme = async (key64) => {
+        if (!confirm('¿Deseas eliminar este informe de tu vista?')) return;
+        const key = decodeURIComponent(escape(atob(key64)));
+        const dismissed = JSON.parse(localStorage.getItem('cronos_staff_dismissed_info') || '[]');
+        if (!dismissed.includes(key)) dismissed.push(key);
+        localStorage.setItem('cronos_staff_dismissed_info', JSON.stringify(dismissed));
+        if (typeof sdInformes === 'function') sdInformes();
+        if (typeof showToast === 'function') showToast('🗑️ Informe eliminado', 2000);
+    };
+
+    // Cargar pestaña inicial
+    sdConvocatorias();
 }
-
-window.openLiveMatchesView = () => {
-    window.open('./live.html', '_blank');
-};
 
 window.openStaffDashboard = openStaffDashboard;

@@ -258,25 +258,25 @@ async function openClubAdminPanel(preClubId = null) {
           ${pendingClubApproval.map(u => {
               const roleLabel = ROLE_META[u.role]?.label || u.role || 'Usuario';
               const roleIcon  = ROLE_META[u.role]?.icon  || '👤';
-              return `
+              return \`
               <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;
                           margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.06);
                           display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                  <div style="font-size:0.85rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(u.email):u.email}</div>
+                  <div style="font-size:0.85rem;font-weight:600;">\${typeof escapeHtml==='function'?escapeHtml(u.email):u.email}</div>
                   <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
-                    ${roleIcon} ${roleLabel} · Aprobado por SA ✅
+                    \${roleIcon} \${roleLabel} · Aprobado por SA ✅
                   </div>
                 </div>
                 <div style="display:flex;gap:0.4rem;">
-                  <button onclick="caConfirmClubAccess('${u._id}','${u.role||'user'}','${u.email||''}')"
+                  <button onclick="caConfirmClubAccess('\${u._id}','\${u.role||'user'}','\${(typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,\"\\'\")}')"
                       class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
                       ✅ Confirmar acceso</button>
-                  <button onclick="caRejectRequest('${u._id}','${u.email||''}')"
+                  <button onclick="caRejectRequest('\${u._id}','\${(typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,\"\\'\")}')"
                       class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
                       ✕ Rechazar</button>
                 </div>
-              </div>`;
+              </div>\`;
           }).join('')}
         </div>` : ''}
 
@@ -379,6 +379,129 @@ async function openClubAdminPanel(preClubId = null) {
         <div style="margin-bottom:0.5rem;font-size:0.73rem;color:var(--text-muted);
                     padding:0 0.2rem;font-weight:600;">👥 MIEMBROS DEL CLUB</div>
         ${accordionSections}
+
+        <!-- ── BLOQUE E: Toggle envío informes individualizados a padres ── -->
+        <div class="sa-card" style="border-color:rgba(210,168,255,0.3);margin-top:1rem;">
+          <div class="sa-card-head" onclick="document.getElementById('ca-features-section').classList.toggle('expanded')">
+            <div class="sa-card-title">
+              <span class="sa-chevron">▼</span>
+              <span style="color:#d2a8ff;">⚙️ Configuración del Club</span>
+            </div>
+          </div>
+          <div class="sa-card-body" id="ca-features-section">
+            <div style="background:rgba(210,168,255,0.06);border:1px solid rgba(210,168,255,0.2);
+                        border-radius:8px;padding:0.8rem;margin-bottom:0.6rem;">
+              <div style="display:flex;align-items:center;gap:0.7rem;">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;flex:1;">
+                  <input type="checkbox" id="ca-toggle-individual-reports"
+                    ${features.sendIndividualReports ? 'checked' : ''}
+                    onchange="caToggleFeature('${clubId}','sendIndividualReports',this.checked)"
+                    style="width:20px;height:20px;accent-color:#d2a8ff;">
+                  <div>
+                    <div style="font-size:0.85rem;font-weight:700;color:white;">
+                      📊 Enviar informes individualizados a padres
+                    </div>
+                    <div style="font-size:0.72rem;color:#7d8590;margin-top:0.15rem;">
+                      Si está activado, los entrenadores podrán enviar el informe de cada jugador
+                      directamente al padre/tutor vinculado a ese jugador.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── BLOQUE F: Contactos del Club con permisos ── -->
+        <div class="sa-card" style="border-color:rgba(88,166,255,0.3);margin-top:1rem;">
+          <div class="sa-card-head" onclick="document.getElementById('ca-contacts-section').classList.toggle('expanded')">
+            <div class="sa-card-title">
+              <span class="sa-chevron">▼</span>
+              <span style="color:#58a6ff;">📇 Contactos del Club — Permisos</span>
+              <span class="sa-badge" style="background:rgba(88,166,255,0.15);color:#58a6ff;">
+                ${users.filter(u=>u.status==='active'&&u.isAuthorized!==false).length} usuarios
+              </span>
+            </div>
+          </div>
+          <div class="sa-card-body" id="ca-contacts-section">
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.8rem;
+                        padding:0.4rem 0.6rem;background:rgba(88,166,255,0.05);
+                        border-radius:6px;border:1px solid rgba(88,166,255,0.15);">
+              Configura qué puede recibir o acceder cada usuario del club.
+              Los cambios se guardan automáticamente.
+            </div>
+            ${users.filter(u=>u.status==='active'&&u.isAuthorized!==false).sort((a,b)=>(a.role||'').localeCompare(b.role||'')).map(u => {
+                const meta = ROLE_META[u.role] || {icon:'👤',color:'#8b949e',label:u.role||'?'};
+                const perms = u.permissions || {};
+                const uid = u._id;
+                return \`
+                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                            border-radius:8px;padding:0.7rem 0.8rem;margin-bottom:0.5rem;">
+                  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+                    <span>\${meta.icon}</span>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-weight:700;font-size:0.82rem;color:white;">
+                        \${typeof escapeHtml==='function'?escapeHtml(u.email||u._id):u.email||u._id}
+                        \${u.displayName ? '<span style="color:#7d8590;font-weight:400;font-size:0.75rem;"> · '+
+                          (typeof escapeHtml==='function'?escapeHtml(u.displayName):u.displayName)+'</span>' : ''}
+                      </div>
+                      <div style="font-size:0.68rem;color:\${meta.color};">\${meta.label}</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
+                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
+                      <input type="checkbox" \${perms.receiveConvocatorias?'checked':''}
+                        onchange="caSetPermission('\${uid}','receiveConvocatorias',this.checked)"
+                        style="width:14px;height:14px;accent-color:#3fb950;">
+                      📋 Convocatorias
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
+                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
+                      <input type="checkbox" \${perms.receiveEntrenamientos?'checked':''}
+                        onchange="caSetPermission('\${uid}','receiveEntrenamientos',this.checked)"
+                        style="width:14px;height:14px;accent-color:#58a6ff;">
+                      🏃 Entrenamientos
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
+                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
+                      <input type="checkbox" \${perms.receiveMessages?'checked':''}
+                        onchange="caSetPermission('\${uid}','receiveMessages',this.checked)"
+                        style="width:14px;height:14px;accent-color:#d2a8ff;">
+                      💬 Mensajes
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
+                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
+                      <input type="checkbox" \${perms.receiveReports?'checked':''}
+                        onchange="caSetPermission('\${uid}','receiveReports',this.checked)"
+                        style="width:14px;height:14px;accent-color:#f0883e;">
+                      📊 Informes
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
+                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
+                      <input type="checkbox" \${perms.receiveIndividualReports?'checked':''}
+                        onchange="caSetPermission('\${uid}','receiveIndividualReports',this.checked)"
+                        style="width:14px;height:14px;accent-color:#ffa500;">
+                      📝 Inf. Individual
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;
+                                  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                                  padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">
+                      <input type="checkbox" \${perms.liveView?'checked':''}
+                        onchange="caSetPermission('\${uid}','liveView',this.checked)"
+                        style="width:14px;height:14px;accent-color:#ff5858;">
+                      🔴 En Vivo
+                    </label>
+                  </div>
+                </div>\`;
+            }).join('')}
+          </div>
+        </div>
 
       </div><!-- /sa-body -->
     </div>`;
@@ -697,6 +820,43 @@ async function openClubAdminPanel(preClubId = null) {
     };
 }
 window.openClubAdminPanel = openClubAdminPanel;
+
+// ════════════════════════════════════════════════════════════════════
+//  TOGGLE DE FEATURES DEL CLUB (ej: informes individualizados)
+// ════════════════════════════════════════════════════════════════════
+window.caToggleFeature = async function caToggleFeature(clubId, featureKey, value) {
+    try {
+        const { db, doc, updateDoc } = await saFS();
+        await updateDoc(doc(db, 'clubs', clubId), {
+            [`features.${featureKey}`]: value
+        });
+        const label = featureKey === 'sendIndividualReports'
+            ? 'Envío de informes individualizados'
+            : featureKey;
+        showToast(`${value ? '✅' : '⏹️'} ${label} ${value ? 'activado' : 'desactivado'}`, 3000);
+    } catch (e) {
+        showToast('❌ Error: ' + e.message, 4000);
+    }
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  PERMISOS INDIVIDUALES POR USUARIO
+// ════════════════════════════════════════════════════════════════════
+window.caSetPermission = async function caSetPermission(userId, permKey, value) {
+    try {
+        const { db, doc, getDoc, updateDoc } = await saFS();
+        const uSnap = await getDoc(doc(db, 'users', userId));
+        if (!uSnap.exists()) { showToast('⚠️ Usuario no encontrado', 3000); return; }
+
+        const currentPerms = uSnap.data().permissions || {};
+        currentPerms[permKey] = value;
+
+        await updateDoc(doc(db, 'users', userId), { permissions: currentPerms });
+        showToast('✅ Permiso actualizado', 2000);
+    } catch (e) {
+        showToast('❌ Error: ' + e.message, 4000);
+    }
+};
 
 // ── Verificar acceso al club al iniciar sesión ───────────────────────
 async function checkClubAccess(userData) {

@@ -136,6 +136,28 @@ window.saGet = async function saGet(col, id) {
 // openSuperAdminPanel()
 // ═══════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════
+// saGoBackToRoles() — volver al selector de roles desde cualquier panel
+// ═══════════════════════════════════════════════════════════════════
+window.saGoBackToRoles = function saGoBackToRoles() {
+    // Cerrar panel SA
+    const saPanel = document.getElementById('sa-panel');
+    if (saPanel) saPanel.remove();
+    // Cerrar modal de club admin si está abierto
+    const modal = document.getElementById('setup-modal');
+    if (modal) modal.style.display = 'none';
+    // Ocultar paneles de campo (no son relevantes para SA)
+    const mainH = document.getElementById('main-header');
+    if (mainH) mainH.style.display = 'none';
+    const mainC = document.getElementById('main-container');
+    if (mainC) mainC.style.display = 'none';
+    // Restaurar body
+    document.body.style.background = '#0d1117';
+    document.body.classList.remove('locked');
+    // Mostrar selector de roles
+    if (typeof showRoleSelector === 'function') showRoleSelector();
+};
+
 window.openSuperAdminPanel = async function openSuperAdminPanel() {
     ['main-header','role-selection-screen','install-screen','auth-screen'].forEach(id => {
         const el = document.getElementById(id);
@@ -177,7 +199,7 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
         </div>
     </div>
     <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-        <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();"
+        <button onclick="saGoBackToRoles()"
             style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);color:#ffd700;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⇄ Cambiar rol</button>
         <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
             style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⏻ Salir</button>
