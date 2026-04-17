@@ -1,10 +1,10 @@
 // --- PLAYER ACTION MODAL ---
-// NOTA: activeActionPlayerId declarado en app.js
+let activeActionPlayerId = null;
 
 function openPlayerActionModal(player) {
     activeActionPlayerId = player.id;
-    document.getElementById('action-player-name').innerHTML = `${typeof escapeHtml==='function'?escapeHtml(player.name):player.name} <span style="font-size:0.8rem">✏️</span>`;
-    document.getElementById('action-player-number').innerHTML = `Dorsal ${typeof escapeHtml==='function'?escapeHtml(player.number):player.number} <span style="font-size:0.8rem">✏️</span>`;
+    document.getElementById('action-player-name').innerHTML = `${player.name} <span style="font-size:0.8rem">✏️</span>`;
+    document.getElementById('action-player-number').innerHTML = `Dorsal ${player.number} <span style="font-size:0.8rem">✏️</span>`;
     document.getElementById('action-player-goals').textContent = `${player.goals || 0} ⚽`;
     // Resaltar botón de tarjeta activa
     const btnAmarilla = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
@@ -51,7 +51,21 @@ function toggleInjury() {
     liveSyncOnAction();
 }
 
-// DUPLICADO ELIMINADO — la versión correcta con logEvent está arriba (líneas 37-52)
+function toggleInjury() {
+    if (!activeActionPlayerId) return;
+    const p = players.find(x => x.id === activeActionPlayerId);
+    if (!p) return;
+    p.injured = !p.injured;
+    // Actualizar aspecto del botón en el modal
+    const btn = document.getElementById('btn-injury');
+    if (btn) {
+        btn.style.borderColor  = p.injured ? '#e74c3c' : 'transparent';
+        btn.style.background   = p.injured ? 'rgba(231,76,60,0.15)' : 'var(--glass)';
+        btn.querySelector('span').style.color = p.injured ? '#e74c3c' : 'var(--text-muted)';
+    }
+    renderPlayers();
+    liveSyncOnAction();
+}
 
 function assignCard(type) {
     if (!activeActionPlayerId) return;
@@ -166,7 +180,7 @@ function editNameFromModal() {
     const newName = prompt(`Editar nombre para dorsal ${player.number}:`, player.name);
     if (newName !== null && newName.trim() !== "") {
         player.name = newName.trim();
-        document.getElementById('action-player-name').innerHTML = `${typeof escapeHtml==='function'?escapeHtml(player.name):player.name} <span style="font-size:0.8rem">✏️</span>`;
+        document.getElementById('action-player-name').innerHTML = `${player.name} <span style="font-size:0.8rem">✏️</span>`;
         renderPlayers();
     }
 }
@@ -177,7 +191,7 @@ function editNumberFromModal() {
     const newNum = prompt(`Editar dorsal para ${player.name}:`, player.number);
     if (newNum !== null && !isNaN(newNum)) {
         player.number = newNum;
-        document.getElementById('action-player-number').innerHTML = `Dorsal ${typeof escapeHtml==='function'?escapeHtml(player.number):player.number} <span style="font-size:0.8rem">✏️</span>`;
+        document.getElementById('action-player-number').innerHTML = `Dorsal ${player.number} <span style="font-size:0.8rem">✏️</span>`;
         renderPlayers();
     }
 }
@@ -215,6 +229,7 @@ function cancelPendingSubstitution() {
     document.querySelectorAll('.player-chip').forEach(c => c.classList.remove('sub-selected', 'sub-target'));
     const cancelBtn = document.getElementById('btn-cancel-sub');
     if (cancelBtn) cancelBtn.remove();
+    // NOTA: NO tocamos groupSubMode aquí para evitar el bug circular
     updateMasterUI();
 }
 

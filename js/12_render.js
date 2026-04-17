@@ -1,4 +1,140 @@
-// --- RENDER ---
+// --- RENDER + CAMBIO GRUPAL ---
+
+// ── Estado del cambio grupal ──
+let groupSubMode = false;          // true = modo selección activo
+let groupSelectedOut = new Set();   // IDs de titulares seleccionados (campo → amarillo)
+let groupSelectedIn  = new Set();   // IDs de suplentes seleccionados (banquillo → verde)
+
+// ── Toggle: 1er click activa modo, 2º click ejecuta ──
+function toggleGroupSubMode() {
+    const btn = document.getElementById('btn-group-sub');
+    if (!btn) return;
+
+    if (!groupSubMode) {
+        // ── ACTIVAR modo selección ──
+        cancelPendingSubstitution();  // limpiar cambio individual pendiente
+        groupSubMode = true;
+        groupSelectedOut.clear();
+        groupSelectedIn.clear();
+
+        // Cambiar apariencia del botón a "EJECUTAR"
+        btn.textContent = '✅ EJECUTAR';
+        btn.classList.add('mode-group-active');
+
+        // Abrir el banquillo si está cerrado (móvil)
+        closeDrawers();
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar && !sidebar.classList.contains('open')) {
+            if (typeof toggleBench === 'function') toggleBench('home');
+        }
+
+        showToast('Cambio grupal: selecciona titulares (campo) y suplentes (banquillo)');
+    } else {
+        // ── 2º CLICK: Intentar ejecutar ──
+        if (groupSelectedOut.size === 0 && groupSelectedIn.size === 0) {
+            // No seleccionó nada → simplemente desactivar
+            exitGroupSubMode();
+            return;
+        }
+
+        if (groupSelectedOut.size !== groupSelectedIn.size) {
+            showToast(`Selecciona ${groupSelectedOut.size} suplente(s) del banquillo o ${groupSelectedIn.size} titular(es) más del campo`);
+            return;
+        }
+
+        if (groupSelectedOut.size === groupSelectedIn.size && groupSelectedOut.size > 0) {
+            executeGroupSubstitution();
+        }
+    }
+}
+
+// ── Ejecutar los cambios grupales ──
+function executeGroupSubstitution() {
+    const outArr = Array.from(groupSelectedOut);
+    const inArr  = Array.from(groupSelectedIn);
+
+    // Emparejar por orden de selección (1º titular con 1º suplente, etc.)
+    for (let i = 0; i < outArr.length; i++) {
+        const starter  = players.find(p => p.id === outArr[i]);
+        const sub      = players.find(p => p.id === inArr[i]);
+        if (starter && sub) {
+            // forcedSubId único por par para distinguir en CSV (#C1, #C2, ...)
+            const forcedSubId = 'C' + (i + 1);
+            handleSmartSwap(sub, starter, null, null, forcedSubId);
+        }
+    }
+
+    // Salir del modo grupal
+    exitGroupSubMode();
+    renderPlayers();
+    if (typeof liveSyncOnAction === 'function') liveSyncOnAction();
+    showToast(`Cambio grupal realizado: ${outArr.length} jugador(es) cambiado(s)`);
+}
+
+// ── Salir del modo grupal y limpiar ──
+function exitGroupSubMode() {
+    groupSubMode = false;
+    groupSelectedOut.clear();
+    groupSelectedIn.clear();
+
+    // Restaurar botón
+    const btn = document.getElementById('btn-group-sub');
+    if (btn) {
+        btn.textContent = '🔄 GRUPAL';
+        btn.classList.remove('mode-group-active');
+    }
+
+    // Quitar marcas visuales
+    document.querySelectorAll('.player-chip').forEach(c => {
+        c.classList.remove('group-sub-out', 'group-sub-in');
+    });
+}
+
+// ── Click en jugador en modo grupal ──
+function handleGroupSubClick(player) {
+    const chip = document.getElementById(`player-${player.id}`);
+    if (!chip) return;
+
+    if (player.status === 'field') {
+        // Toggle titular (amarillo)
+        if (groupSelectedOut.has(player.id)) {
+            groupSelectedOut.delete(player.id);
+            chip.classList.remove('group-sub-out');
+        } else {
+            groupSelectedOut.add(player.id);
+            chip.classList.add('group-sub-out');
+        }
+    } else if (player.status === 'bench') {
+        // Toggle suplente (verde)
+        if (groupSelectedIn.has(player.id)) {
+            groupSelectedIn.delete(player.id);
+            chip.classList.remove('group-sub-in');
+        } else {
+            groupSelectedIn.add(player.id);
+            chip.classList.add('group-sub-in');
+        }
+    }
+}
+
+// ── Mostrar toast informativo ──
+function showToast(msg) {
+    // Reutilizar toast existente o crear uno
+    let toast = document.getElementById('toast-msg');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast-msg';
+        toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.88);color:#fff;padding:10px 20px;border-radius:8px;font-size:0.8rem;z-index:99999;text-align:center;pointer-events:none;transition:opacity 0.3s;max-width:85vw;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+}
+
+// ──────────────────────────────────────────
+// ── RENDER (original) ──
+// ──────────────────────────────────────────
 
 function renderPlayers() {
     const pitch = document.getElementById('football-pitch');
@@ -22,12 +158,6 @@ function renderPlayers() {
 
     sortBenchUI('home');
     if (analyzeAway) sortBenchUI('away');
-
-    // Re-renderizar la tarjeta del cuerpo técnico después de limpiar el bench
-    // Esto evita que la staff card desaparezca al re-renderizar jugadores
-    if (typeof renderStaffInBench === 'function') {
-        renderStaffInBench();
-    }
 }
 
 function sortBenchUI(team) {
@@ -71,14 +201,10 @@ function createPlayerChip(player) {
         ? `<span style="color:#ff4040;font-weight:900;margin-left:2px;">✚</span>`
         : '';
 
-    // Sanitizar nombre del jugador para prevenir XSS
-    const safeName = typeof escapeHtml === 'function' ? escapeHtml(player.name) : player.name;
-    const safeNumber = typeof escapeHtml === 'function' ? escapeHtml(String(player.number)) : player.number;
-
     div.innerHTML = `
         <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
-        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${safeNumber}</div>
-        <div class="player-name" style="pointer-events: none;">${safeName}${injuredLabel}</div>
+        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${player.number}</div>
+        <div class="player-name" style="pointer-events: none;">${player.name}${injuredLabel}</div>
         ${indicatorsHTML}
     `;
 
@@ -86,6 +212,7 @@ function createPlayerChip(player) {
         e.dataTransfer.setData('playerId', player.id);
         div.classList.add('dragging');
         cancelPendingSubstitution();
+        if (groupSubMode) exitGroupSubMode(); // cancelar modo grupal al arrastrar
     });
     div.addEventListener('dragend', () => div.classList.remove('dragging'));
     div.addEventListener('touchstart', (e) => handleTouchStart(e, player), { passive: false });
@@ -110,6 +237,12 @@ function createPlayerChip(player) {
             return;
         }
         tapTimer = setTimeout(() => {
+            // ── Si estamos en modo grupal, usar la lógica grupal ──
+            if (groupSubMode) {
+                handleGroupSubClick(player);
+                return;
+            }
+            // ── Flujo normal de cambio individual ──
             if (player.status === 'bench') selectForSubstitution(player);
             else if (player.status === 'field' && pendingSubstitution) confirmSubstitutionWith(player);
         }, 450);
@@ -124,7 +257,8 @@ function createPlayerChip(player) {
     return div;
 }
 
-// NOTA: touchData y lastTouchTime declarados en app.js
+let touchData = { draggedPlayerId: null, hasMoved: false, clone: null };
+let lastTouchTime = 0;
 
 function handleTouchStart(e, player) {
     const now = new Date().getTime();
@@ -206,4 +340,3 @@ function handleTouchEnd(e, player) {
     touchData.draggedPlayerId = null;
     touchData.hasMoved = false;
 }
-

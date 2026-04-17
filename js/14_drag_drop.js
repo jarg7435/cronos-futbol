@@ -182,7 +182,7 @@ function handleBenchDrop(e, player) {
     renderPlayers();
 }
 
-function handleSmartSwap(dragged, target) {
+function handleSmartSwap(dragged, target, starterEl, subEl, forcedSubId) {
     if (dragged.cards === 'roja') {
         if (target.status === 'bench') {
             dragged.status = 'bench'; dragged.x = 0; dragged.y = 0;
@@ -215,8 +215,8 @@ function handleSmartSwap(dragged, target) {
     if (target.status === 'field') { const c = clampToField(target.x, target.y); target.x = c.x; target.y = c.y; }
 
     if (isRunning) {
-        // Generar ID de sustitución compartido para emparejar los dos jugadores
-        const subId = Date.now();
+        // forcedSubId para cambio grupal (C1, C2...), Date.now() para cambio individual
+        const subId = forcedSubId || Date.now();
         logMovement(dragged, subId);
         logMovement(target,  subId);
     }
@@ -477,20 +477,15 @@ async function exportData() {
 
     const metaEl = document.getElementById('report-metadata');
     const bodyEl = document.getElementById('report-players-body');
-    const safeHomeName = typeof escapeHtml === 'function' ? escapeHtml(homeName) : homeName;
-    const safeAwayName = typeof escapeHtml === 'function' ? escapeHtml(awayName) : awayName;
     metaEl.innerHTML = `
-        <div><strong>Fecha:</strong> ${typeof escapeHtml==='function'?escapeHtml(date):date}</div>
-        <div><strong>Partido:</strong> ${safeHomeName} vs ${safeAwayName}</div>
+        <div><strong>Fecha:</strong> ${date}</div>
+        <div><strong>Partido:</strong> ${homeName} vs ${awayName}</div>
         <div><strong>Resultado:</strong> ${scoreHome} - ${scoreAway}</div>
-        <div><strong>Competición:</strong> ${typeof escapeHtml==='function'?escapeHtml(mode):mode}</div>
+        <div><strong>Competición:</strong> ${mode}</div>
         <div><strong>Tiempo Global:</strong> ${formatTime(totalElapsed)}</div>
     `;
     bodyEl.innerHTML = sortedPlayers.map(p => {
         const teamName = p.team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away;
-        const safeTeamName = typeof escapeHtml === 'function' ? escapeHtml(teamName) : teamName;
-        const safePName = typeof escapeHtml === 'function' ? escapeHtml(p.name) : p.name;
-        const safePNumber = typeof escapeHtml === 'function' ? escapeHtml(String(p.number)) : p.number;
         const cardDisplay = p.cards === 'ninguna' ? "" : (p.cards === 'amarilla' ? "🟨 AMARILLA" : "🟥 ROJA");
         // Generar celdas de entrada/salida con colores de sustitución
         const makeShiftCells = (shifts) => shifts.map(s => {
@@ -502,9 +497,9 @@ async function exportData() {
         }).join('');
 
         return `<tr>
-            <td style="border:1px solid #ddd;padding:8px;">${safeTeamName}</td>
-            <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;">${safePNumber}</td>
-            <td style="border:1px solid #ddd;padding:8px;">${safePName}</td>
+            <td style="border:1px solid #ddd;padding:8px;">${teamName}</td>
+            <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;">${p.number}</td>
+            <td style="border:1px solid #ddd;padding:8px;">${p.name}</td>
             <td style="border:1px solid #ddd;padding:8px;text-align:center;">${p.goals || 0}</td>
             <td style="border:1px solid #ddd;padding:8px;text-align:center;">${cardDisplay}</td>
             <td style="border:1px solid #ddd;padding:8px;text-align:center;">${p.injured ? '🚑' : '-'}</td>
@@ -531,7 +526,7 @@ async function exportData() {
             usedColors.forEach(([sid, color]) => {
                 const paired = processedPlayers.filter(p =>
                     p.history.some(h => h.includes('#' + sid))
-                ).map(p => p.number + ' ' + (typeof escapeHtml==='function'?escapeHtml(p.name):p.name));
+                ).map(p => p.number + ' ' + p.name);
                 pairsByColor[color] = paired;
             });
             legendEl.innerHTML = '<strong style="font-size:0.85rem;">🔄 Leyenda de sustituciones:</strong><br>' +
