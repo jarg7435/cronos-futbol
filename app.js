@@ -460,20 +460,140 @@ function endMatch() {
     matchPhase = 'finished';
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
-    document.getElementById('phase-actions').innerHTML = '';
     document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
     
     stopLiveSync(); // marcar partido como finalizado en Firestore
     
+    // ── Guardar datos del partido terminado para poder volver ──
+    try {
+        const matchData = {
+            id: 'match_' + Date.now(),
+            date: new Date().toISOString(),
+            home: TEAM_NAMES.home,
+            away: TEAM_NAMES.away,
+            scoreHome,
+            scoreAway,
+            mode: currentMode,
+            players: JSON.parse(JSON.stringify(window.players || [])),
+            events: JSON.parse(JSON.stringify(window.matchEvents || [])),
+            half1Time: typeof half1Time !== 'undefined' ? half1Time : 0,
+            half2Time: typeof half2Time !== 'undefined' ? half2Time : 0,
+        };
+        const saved = JSON.parse(localStorage.getItem('cronos_finished_matches') || '[]');
+        saved.unshift(matchData);
+        // Guardar máximo 20 partidos
+        if (saved.length > 20) saved.length = 20;
+        localStorage.setItem('cronos_finished_matches', JSON.stringify(saved));
+        window._lastFinishedMatch = matchData;
+    } catch(e) { /* silencioso */ }
+
     // Generar informes técnicos automáticamente para el Staff (Director/Coordinador)
     if (typeof saveAllMatchReportsInternal === 'function') {
         saveAllMatchReportsInternal();
     }
 
-    alert(`🏁 PARTIDO FINALIZADO\n${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}`);
+    // Mostrar opciones post-partido
+    showPostMatchOptions(scoreHome, scoreAway);
 }
+
+function showPostMatchOptions(scoreHome, scoreAway) {
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(95vw,440px);padding:1.5rem;text-align:center;">
+        <div style="font-size:2.5rem;margin-bottom:0.5rem;">🏁</div>
+        <h2 style="margin:0 0 0.3rem;color:white;">PARTIDO FINALIZADO</h2>
+        <p style="font-size:1.2rem;color:#f0883e;font-weight:800;margin:0.5rem 0;">
+            ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}
+        </p>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1.2rem;">
+            ${new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
+        </p>
+        <div style="display:flex;flex-direction:column;gap:0.6rem;">
+            <button onclick="document.getElementById('setup-modal').style.display='none';"
+                style="padding:0.7rem;background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);
+                       border-radius:10px;color:var(--primary);font-weight:700;cursor:pointer;font-size:0.9rem;">
+                ⚽ VOLVER AL PARTIDO
+            </button>
+            <button onclick="document.getElementById('setup-modal').style.display='none'; if(typeof openUnifiedCommsMenu==='function') openUnifiedCommsMenu();"
+                style="padding:0.7rem;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.3);
+                       border-radius:10px;color:#d2a8ff;font-weight:700;cursor:pointer;font-size:0.9rem;">
+                📊 ENVIAR INFORMES
+            </button>
+            <button onclick="document.getElementById('setup-modal').style.display='none'; openSetupModal();"
+                style="padding:0.7rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                       border-radius:10px;color:var(--text-muted);font-weight:600;cursor:pointer;font-size:0.85rem;">
+                🏠 INICIO
+            </button>
+        </div>
+    </div>`;
+}
+
+// ── Ver partidos terminados ──
+function showFinishedMatches() {
+    const saved = JSON.parse(localStorage.getItem('cronos_finished_matches') || '[]');
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    
+    const listHtml = saved.length === 0
+        ? '<p style="color:var(--text-muted);text-align:center;padding:2rem;">No hay partidos terminados guardados.</p>'
+        : saved.map((m, i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.7rem 0.8rem;
+                        background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-bottom:0.5rem;">
+                <div style="text-align:left;">
+                    <div style="font-weight:700;color:white;font-size:0.9rem;">${typeof escapeHtml==='function'?escapeHtml(m.home):m.home} ${m.scoreHome} - ${m.scoreAway} ${typeof escapeHtml==='function'?escapeHtml(m.away):m.away}</div>
+                    <div style="font-size:0.72rem;color:var(--text-muted);">${new Date(m.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})} · ${m.mode.toUpperCase()}</div>
+                </div>
+                <button onclick="loadFinishedMatch(${i});"
+                    style="padding:0.35rem 0.8rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.3);
+                           border-radius:7px;color:#58a6ff;font-size:0.75rem;cursor:pointer;font-weight:700;">
+                    VER
+                </button>
+            </div>`).join('');
+
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(95vw,480px);max-height:90vh;display:flex;flex-direction:column;padding:1.2rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h2 style="margin:0;color:white;font-size:1.1rem;">📋 Partidos Terminados</h2>
+            <button onclick="document.getElementById('setup-modal').style.display='none';"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;">
+            ${listHtml}
+        </div>
+    </div>`;
+}
+
+function loadFinishedMatch(index) {
+    const saved = JSON.parse(localStorage.getItem('cronos_finished_matches') || '[]');
+    const m = saved[index];
+    if (!m) return;
+    
+    // Restaurar datos del partido
+    if (m.players) window.players = m.players;
+    if (m.events) window.matchEvents = m.events;
+    if (m.mode) currentMode = m.mode;
+    if (m.home) TEAM_NAMES.home = m.home;
+    if (m.away) TEAM_NAMES.away = m.away;
+    matchPhase = 'finished';
+    
+    // Actualizar UI
+    document.getElementById('score-home').textContent = m.scoreHome;
+    document.getElementById('score-away').textContent = m.scoreAway;
+    document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
+    document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
+    document.getElementById('btn-play-pause').classList.remove('danger');
+    document.getElementById('phase-actions').innerHTML = '';
+    
+    document.getElementById('setup-modal').style.display = 'none';
+    if (typeof renderPlayers === 'function') renderPlayers();
+    
+    if (typeof showToast === 'function') showToast('📋 Partido cargado: ' + m.home + ' ' + m.scoreHome + '-' + m.scoreAway + ' ' + m.away, 4000);
+}
+window.showFinishedMatches = showFinishedMatches;
+window.loadFinishedMatch = loadFinishedMatch;
 
 function changeGoals(amount) {
     if (!activeActionPlayerId) return;
@@ -1713,7 +1833,7 @@ function openSetupModal() {
                         style="background:rgba(63,185,80,0.12);color:#3fb950;font-size:0.82rem;border:1px solid rgba(63,185,80,0.4);">
                         🏃 ENTRENAMIENTO
                     </button>
-                    ${['admin','superadmin'].includes(window._cronosCurrentUser?.role) ? `
+                    ${(['admin','superadmin'].includes(window._cronosCurrentUser?.role) && !['user','coach','individual'].includes(window._cronosCurrentUser?._activeRole)) ? `
                     <button onclick="openAdminPanel()"
                         style="background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.5);
                                color:#ffa500; font-size:0.82rem; padding:0.45rem 0.9rem;
@@ -1776,114 +1896,135 @@ function confirmSetup() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  PANEL DE ENTRENAMIENTO
+//  PANEL DE ENTRENAMIENTO — Planificación Semanal
 // ══════════════════════════════════════════════════════════════════
+window._trWeekOffset = window._trWeekOffset || 0;
+
 function openTrainingPanel() {
     const isMobile = window.innerWidth < 640;
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
+    renderTrainingWeek();
+}
+
+function _getWeekMonday(offset) {
+    const now = new Date();
+    const dow = now.getDay();
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + (offset || 0) * 7);
+    mon.setHours(0,0,0,0);
+    return mon;
+}
+
+function renderTrainingWeek() {
+    const isMobile = window.innerWidth < 640;
+    const modal = document.getElementById('setup-modal');
+    const offset = window._trWeekOffset || 0;
+    const monday = _getWeekMonday(offset);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+
+    const DAYS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO','DOMINGO'];
+    const DAYS_SHORT = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+    const dayDates = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); dayDates.push(d); }
+
+    const fmtD = d => d.toLocaleDateString('es-ES', {day:'numeric',month:'short'});
+    const fmtDD = d => d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0');
+    const weekKey = monday.toISOString().substring(0, 10);
+
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    const weekData = allWeeks[weekKey] || {};
+
+    const typeOpts = ['','entrenamiento','partido liga','partido amistoso'];
+
     modal.innerHTML = `
-        <div class="modal-content" style="width:min(96vw,700px); max-height:92vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '1rem 0.8rem' : '1.5rem'};">
-            <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <div class="modal-content" style="width:min(98vw,1150px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '0.6rem' : '1.5rem'};">
+            <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem;">
                 <div>
-                    <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">🏃 Entrenamientos</h2>
-                    <p style="font-size:0.75rem; color:var(--text-muted);">Gestiona las sesiones de entrenamiento de tu equipo</p>
+                    <h2 style="margin:0 0 0.05rem; font-size:${isMobile ? '1rem' : '1.35rem'};">🏃 Planificación Semanal</h2>
+                    <p style="font-size:0.72rem; color:var(--text-muted);">Entrenamientos y partidos de la semana</p>
                 </div>
-                <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">← VOLVER</button>
+                <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
+                    <button class="btn" onclick="window._trWeekOffset=(window._trWeekOffset||0)-1; renderTrainingWeek();" style="padding:0.35rem 0.6rem; font-size:0.85rem; line-height:1;">◀</button>
+                    <span style="font-size:0.82rem; font-weight:700; color:white; min-width:${isMobile?'140px':'200px'}; text-align:center;">
+                        ${fmtD(monday)} — ${fmtD(sunday)}
+                    </span>
+                    <button class="btn" onclick="window._trWeekOffset=(window._trWeekOffset||0)+1; renderTrainingWeek();" style="padding:0.35rem 0.6rem; font-size:0.85rem; line-height:1;">▶</button>
+                    <button class="btn" onclick="window._trWeekOffset=0; renderTrainingWeek();" style="padding:0.35rem 0.7rem; font-size:0.68rem; background:rgba(88,166,255,0.12); border-color:rgba(88,166,255,0.3); color:#58a6ff;">HOY</button>
+                    <button class="btn" onclick="openSetupModal()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>
+                </div>
             </div>
 
-            <div style="background:rgba(63,185,80,0.06); border:1px solid rgba(63,185,80,0.2); border-radius:10px; padding:1rem; margin-bottom:1rem;">
-                <div style="font-size:0.82rem; font-weight:700; color:#3fb950; margin-bottom:0.6rem; letter-spacing:0.5px;">📋 NUEVO ENTRENAMIENTO</div>
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:0.5rem; margin-bottom:0.8rem;">
-                    <div>
-                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">📅 Fecha</label>
-                        <input type="date" id="tr-date" class="conv-input" value="${new Date().toISOString().substring(0,10)}">
-                    </div>
-                    <div>
-                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🕐 Hora</label>
-                        <input type="time" id="tr-time" class="conv-input">
-                    </div>
-                    <div>
-                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🏟️ Lugar</label>
-                        <input type="text" id="tr-venue" class="conv-input" placeholder="Campo de entrenamiento">
-                    </div>
-                    <div>
-                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">⏱️ Duración (min)</label>
-                        <input type="number" id="tr-duration" class="conv-input" placeholder="90" min="15" max="300" value="90">
-                    </div>
-                </div>
-                <div style="margin-bottom:0.8rem;">
-                    <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">📝 Objetivos / Ejercicios</label>
-                    <textarea id="tr-notes" class="conv-input" rows="3" placeholder="Describe los ejercicios y objetivos de la sesión..." style="resize:vertical;min-height:60px;"></textarea>
-                </div>
-                <button class="btn" onclick="saveTrainingSession()" style="width:100%; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700; font-size:0.82rem;">
-                    💾 GUARDAR ENTRENAMIENTO
-                </button>
+            <div style="flex:1; overflow-x:auto; border:1px solid rgba(63,185,80,0.15); border-radius:12px;">
+                <table style="width:100%; border-collapse:collapse; font-size:${isMobile ? '0.7rem' : '0.8rem'};">
+                    <thead>
+                        <tr style="background:rgba(63,185,80,0.08);">
+                            <th style="padding:0.55rem 0.4rem; text-align:left; color:#3fb950; font-size:0.72rem; letter-spacing:0.5px; border-bottom:2px solid rgba(63,185,80,0.25); white-space:nowrap;">DÍA</th>
+                            <th style="padding:0.55rem 0.4rem; text-align:left; color:#3fb950; font-size:0.72rem; letter-spacing:0.5px; border-bottom:2px solid rgba(63,185,80,0.25); white-space:nowrap;">🏟️ LUGAR</th>
+                            <th style="padding:0.55rem 0.4rem; text-align:left; color:#3fb950; font-size:0.72rem; letter-spacing:0.5px; border-bottom:2px solid rgba(63,185,80,0.25); white-space:nowrap;">👕 EQUIPACIONES</th>
+                            <th style="padding:0.55rem 0.4rem; text-align:left; color:#3fb950; font-size:0.72rem; letter-spacing:0.5px; border-bottom:2px solid rgba(63,185,80,0.25); white-space:nowrap;">📋 TIPO</th>
+                            <th style="padding:0.55rem 0.4rem; text-align:left; color:#3fb950; font-size:0.72rem; letter-spacing:0.5px; border-bottom:2px solid rgba(63,185,80,0.25); white-space:nowrap;">🕐 HORA</th>
+                            <th style="padding:0.55rem 0.4rem; text-align:left; color:#3fb950; font-size:0.72rem; letter-spacing:0.5px; border-bottom:2px solid rgba(63,185,80,0.25); white-space:nowrap;">⏱️ DURACIÓN</th>
+                        </tr>
+                    </thead>
+                    <tbody>${DAYS.map((dayName, i) => {
+                        const ds = dayDates[i].toISOString().substring(0, 10);
+                        const dd = weekData[ds] || {};
+                        const isWE = i >= 5;
+                        const today = new Date(); today.setHours(0,0,0,0);
+                        const isToday = dayDates[i].getTime() === today.getTime();
+                        const rowBg = isToday ? 'background:rgba(88,166,255,0.06);' : (isWE ? 'background:rgba(240,136,62,0.03);' : '');
+                        const optSel = (v) => typeOpts.map(o => `<option value="${o}" ${dd.tipo===o?'selected':''} style="background:#161b22;">${o ? o.charAt(0).toUpperCase()+o.slice(1) : '— Seleccionar —'}</option>`).join('');
+                        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04); ${rowBg}">
+                            <td style="padding:0.45rem 0.4rem; white-space:nowrap; vertical-align:middle;">
+                                <div style="font-weight:700; color:${isToday?'#58a6ff':(isWE?'#f0883e':'white')}; font-size:0.82rem;">${isMobile?DAYS_SHORT[i]:dayName} ${isToday?'●':''}</div>
+                                <div style="font-size:0.68rem; color:var(--text-muted);">${fmtDD(dayDates[i])}</div>
+                            </td>
+                            <td style="padding:0.3rem 0.25rem;"><input type="text" class="conv-input" data-day="${ds}" data-field="lugar" value="${dd.lugar||''}" placeholder="Campo / Instalación" style="width:100%; min-width:${isMobile?'80px':'130px'}; padding:0.35rem 0.45rem; font-size:0.76rem;"></td>
+                            <td style="padding:0.3rem 0.25rem;"><input type="text" class="conv-input" data-day="${ds}" data-field="equipaciones" value="${dd.equipaciones||''}" placeholder="1a / 2a equipación" style="width:100%; min-width:${isMobile?'80px':'130px'}; padding:0.35rem 0.45rem; font-size:0.76rem;"></td>
+                            <td style="padding:0.3rem 0.25rem;"><select class="conv-input" data-day="${ds}" data-field="tipo" style="width:100%; min-width:${isMobile?'90px':'140px'}; padding:0.35rem 0.45rem; font-size:0.76rem; background:var(--glass); color:white; border:1px solid var(--glass-border); border-radius:6px;">${optSel()}</select></td>
+                            <td style="padding:0.3rem 0.25rem;"><input type="time" class="conv-input" data-day="${ds}" data-field="hora" value="${dd.hora||''}" style="width:100%; min-width:${isMobile?'75px':'100px'}; padding:0.35rem 0.45rem; font-size:0.76rem;"></td>
+                            <td style="padding:0.3rem 0.25rem;"><input type="text" class="conv-input" data-day="${ds}" data-field="duracion" value="${dd.duracion||''}" placeholder="90 min" style="width:100%; min-width:${isMobile?'70px':'90px'}; padding:0.35rem 0.45rem; font-size:0.76rem;"></td>
+                        </tr>`;
+                    }).join('')}</tbody>
+                </table>
             </div>
 
-            <div id="tr-list" style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:1rem;">
-                ⏳ Cargando entrenamientos...
+            <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
+                <button class="btn" onclick="clearTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(255,88,88,0.08); border:1px solid rgba(255,88,88,0.25); color:#ff5858;">🗑️ LIMPIAR SEMANA</button>
+                <button class="btn" onclick="saveTrainingWeek()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700;">💾 GUARDAR SEMANA</button>
             </div>
         </div>`;
-    loadTrainingSessions();
 }
 
-function saveTrainingSession() {
-    const date = document.getElementById('tr-date')?.value;
-    const time = document.getElementById('tr-time')?.value;
-    const venue = document.getElementById('tr-venue')?.value.trim();
-    const duration = document.getElementById('tr-duration')?.value;
-    const notes = document.getElementById('tr-notes')?.value.trim();
-    if (!date) { showToast('⚠️ Fecha obligatoria', 3000); return; }
-
-    const trainings = JSON.parse(localStorage.getItem('cronos_trainings') || '[]');
-    trainings.unshift({
-        id: 'tr_' + Date.now(),
-        date, time: time || '', venue: venue || '',
-        duration: duration || '90',
-        notes: notes || '',
-        createdAt: new Date().toISOString()
+function saveTrainingWeek() {
+    const offset = window._trWeekOffset || 0;
+    const monday = _getWeekMonday(offset);
+    const weekKey = monday.toISOString().substring(0, 10);
+    const inputs = document.querySelectorAll('[data-day][data-field]');
+    const weekData = {};
+    inputs.forEach(inp => {
+        const day = inp.dataset.day;
+        const field = inp.dataset.field;
+        const val = inp.value.trim();
+        if (val) { if (!weekData[day]) weekData[day] = {}; weekData[day][field] = val; }
     });
-    if (trainings.length > 50) trainings.length = 50;
-    localStorage.setItem('cronos_trainings', JSON.stringify(trainings));
-    showToast('✅ Entrenamiento guardado', 3000);
-    document.getElementById('tr-date').value = '';
-    document.getElementById('tr-time').value = '';
-    document.getElementById('tr-venue').value = '';
-    document.getElementById('tr-notes').value = '';
-    loadTrainingSessions();
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    allWeeks[weekKey] = weekData;
+    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+    if (typeof showToast === 'function') showToast('✅ Semana guardada correctamente', 3000);
 }
 
-function loadTrainingSessions() {
-    const listEl = document.getElementById('tr-list');
-    if (!listEl) return;
-    const trainings = JSON.parse(localStorage.getItem('cronos_trainings') || '[]');
-    if (!trainings.length) {
-        listEl.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1.5rem;">No hay entrenamientos guardados.</p>';
-        return;
-    }
-    const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-ES', {day:'numeric',month:'short',year:'numeric'}) : '';
-    listEl.innerHTML = '<div style="font-size:0.73rem; font-weight:700; color:var(--text-muted); margin-bottom:0.5rem; letter-spacing:0.5px;">HISTORIAL DE ENTRENAMIENTOS (' + trainings.length + ')</div>' +
-        trainings.slice(0, 20).map(t => `
-            <div style="background:var(--glass); border:1px solid var(--glass-border); border-radius:8px; padding:0.7rem 0.9rem; margin-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:700; color:white; font-size:0.82rem;">📅 ${fmtDate(t.date)} ${t.time ? '· ' + t.time : ''}</div>
-                    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
-                        ${t.venue ? '🏟️ ' + (typeof escapeHtml==='function'?escapeHtml(t.venue):t.venue) + ' · ' : ''}⏱️ ${t.duration} min
-                    </div>
-                    ${t.notes ? '<div style="font-size:0.72rem; color:#8b949e; margin-top:3px; overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📝 ' + (typeof escapeHtml==='function'?escapeHtml(t.notes):t.notes) + '</div>' : ''}
-                </div>
-                <button onclick="deleteTraining('${t.id}')" style="background:none;border:none;color:#ff5858;font-size:0.7rem;cursor:pointer;padding:0.3rem;" title="Eliminar">🗑️</button>
-            </div>`).join('');
-}
-
-function deleteTraining(id) {
-    if (!confirm('¿Eliminar este entrenamiento?')) return;
-    let trainings = JSON.parse(localStorage.getItem('cronos_trainings') || '[]');
-    trainings = trainings.filter(t => t.id !== id);
-    localStorage.setItem('cronos_trainings', JSON.stringify(trainings));
-    showToast('🗑️ Entrenamiento eliminado', 3000);
-    loadTrainingSessions();
+function clearTrainingWeek() {
+    if (!confirm('¿Limpiar todos los datos de esta semana?')) return;
+    const offset = window._trWeekOffset || 0;
+    const monday = _getWeekMonday(offset);
+    const weekKey = monday.toISOString().substring(0, 10);
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    delete allWeeks[weekKey];
+    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+    renderTrainingWeek();
+    if (typeof showToast === 'function') showToast('🗑️ Semana limpiada', 3000);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2523,7 +2664,7 @@ function openConvocationModal() {
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const maxConvoked = currentMode === 'f7' ? 14 : 18;
-    const minForMatch = currentMode === 'f7' ? 7 : 11;
+    const minForMatch = currentMode === 'f7' ? 5 : 7;
 
     const isMobile = window.innerWidth < 640;
     const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
@@ -2642,6 +2783,7 @@ function openConvocationModal() {
     const countEl = document.getElementById('conv-count');
     const goBtn   = document.getElementById('btn-go-titulares');
     const maxTitulares = currentMode === 'f7' ? 7 : 11;
+    const minTitulares = currentMode === 'f7' ? 5 : 7;
     let convocados = 0;
     let titulares = 0;
 
@@ -2689,7 +2831,7 @@ function openConvocationModal() {
             }
         });
         countEl.innerHTML = '<span style="color:var(--primary)">' + convocados + ' convocados</span> \u00b7 <span style="color:#f0883e;font-weight:700;">' + titulares + ' titulares</span>';
-        goBtn.disabled = titulares < maxTitulares;
+        goBtn.disabled = titulares < minTitulares;
     }
 
     // \u2500\u2500 Click handler: 3 estados (none \u2192 convocado \u2192 titular \u2192 none) \u2500\u2500
@@ -2751,7 +2893,7 @@ function openConvocationModal() {
             }
 
             countEl.innerHTML = '<span style="color:var(--primary)">' + convocados + ' convocados</span> \u00b7 <span style="color:#f0883e;font-weight:700;">' + titulares + ' titulares</span>';
-            const isValid = titulares >= maxTitulares;
+            const isValid = titulares >= minTitulares;
             countEl.style.color = isValid ? '#f0883e' : 'var(--primary)';
             goBtn.disabled = !isValid;
         });
@@ -2801,8 +2943,14 @@ function goToTitularSelection() {
 
     const titularCount = matchPlayers.filter(p => p.initialStatus === 'field').length;
 
-    if (titularCount < maxTitulares) {
-        alert('Necesitas exactamente ' + maxTitulares + ' titulares (naranja) para iniciar el partido.\nActualmente tienes ' + titularCount + ' titulares de ' + matchPlayers.length + ' convocados.');
+    const minTitulares = currentMode === 'f7' ? 5 : 7;
+    const maxConvocados = currentMode === 'f7' ? 14 : 18;
+    if (titularCount < minTitulares) {
+        alert('Necesitas al menos ' + minTitulares + ' titulares (naranja) para iniciar el partido.\nActualmente tienes ' + titularCount + ' titulares de ' + matchPlayers.length + ' convocados.');
+        return;
+    }
+    if (matchPlayers.length > maxConvocados) {
+        alert('Máximo ' + maxConvocados + ' convocados para Fútbol ' + (currentMode === 'f7' ? '7' : '11') + '.\nActualmente tienes ' + matchPlayers.length + ' convocados.\nElimina jugadores de la convocatoria antes de iniciar.');
         return;
     }
 
