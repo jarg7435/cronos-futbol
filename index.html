@@ -537,6 +537,8 @@
         
         <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
 
+        <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode()" title="Cambio grupal: selecciona varios jugadores y cámbialos a la vez">🔄 GRUPAL</button>
+
         <div class="score-board">
             <div class="team-score">
                 <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
@@ -591,7 +593,6 @@
             <div class="bench-header-compact">
                 <span class="bench-team-label" id="bench-label-home">LOCAL</span>
                 <span class="bench-sub-label">· BANQUILLO</span>
-                <button id="btn-group-sub" class="btn-group-sub" onclick="toggleGroupSubMode()" title="Cambio grupal">🔄 GRUPAL</button>
             </div>
             <div class="bench-section">
                 <div id="bench-list" class="bench-container"
