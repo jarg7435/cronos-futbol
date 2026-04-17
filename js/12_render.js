@@ -158,6 +158,18 @@ function renderPlayers() {
 
     sortBenchUI('home');
     if (analyzeAway) sortBenchUI('away');
+
+    // Re-aplicar marcas visuales del cambio grupal tras re-render
+    if (groupSubMode) {
+        groupSelectedOut.forEach(id => {
+            const chip = document.getElementById(`player-${id}`);
+            if (chip) chip.classList.add('group-sub-out');
+        });
+        groupSelectedIn.forEach(id => {
+            const chip = document.getElementById(`player-${id}`);
+            if (chip) chip.classList.add('group-sub-in');
+        });
+    }
 }
 
 function sortBenchUI(team) {
@@ -274,6 +286,9 @@ function handleTouchStart(e, player) {
     touchData.draggedPlayerId = player.id;
     touchData.hasMoved = false;
 
+    // En modo grupal, NO crear clon ni atenuar (es solo selección por tap)
+    if (groupSubMode) return;
+
     // Crear CLON visual para el arrastre — la ficha original queda en su sitio
     const original = document.getElementById(`player-${player.id}`);
     const clone = original.cloneNode(true);
@@ -315,6 +330,14 @@ function handleTouchEnd(e, player) {
     }
     const original = document.getElementById(`player-${player.id}`);
     if (original) original.style.opacity = '';
+
+    // Si estamos en modo grupal y NO hubo movimiento, NO ejecutar drop
+    // Dejar que el click handler gestione la selección
+    if (groupSubMode && !touchData.hasMoved) {
+        touchData.draggedPlayerId = null;
+        touchData.hasMoved = false;
+        return;
+    }
 
     const touch = e.changedTouches[0];
     const clientX = touch.clientX;
