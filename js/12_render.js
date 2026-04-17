@@ -1,50 +1,68 @@
 // --- RENDER + CAMBIO GRUPAL ---
 
 // ── Estado del cambio grupal ──
-let groupSubMode = false;          // true = modo selección activo
-let groupSelectedOut = new Set();   // IDs de titulares seleccionados (campo → amarillo)
-let groupSelectedIn  = new Set();   // IDs de suplentes seleccionados (banquillo → verde)
+let groupSubMode = false;
+let groupSelectedOut = new Set();
+let groupSelectedIn  = new Set();
 
 // ── Toggle: 1er click activa modo, 2º click ejecuta ──
 function toggleGroupSubMode() {
-    const btn = document.getElementById('btn-group-sub');
-    if (!btn) return;
+    try {
+        var btn = document.getElementById('btn-group-sub');
 
-    if (!groupSubMode) {
         // ── ACTIVAR modo selección ──
-        cancelPendingSubstitution();  // limpiar cambio individual pendiente
-        groupSubMode = true;
-        groupSelectedOut.clear();
-        groupSelectedIn.clear();
+        if (!groupSubMode) {
+            // 1) Feedback visual INMEDIATO antes de nada
+            if (btn) {
+                btn.textContent = '✅ EJECUTAR';
+                btn.classList.add('mode-group-active');
+            }
 
-        // Cambiar apariencia del botón a "EJECUTAR"
-        btn.textContent = '✅ EJECUTAR';
-        btn.classList.add('mode-group-active');
+            // 2) Limpiar cambio individual pendiente (inline, sin llamar a cancelPendingSubstitution)
+            pendingSubstitution = null;
+            pendingSubstituteEl = null;
+            document.querySelectorAll('.player-chip').forEach(function(c) {
+                c.classList.remove('sub-selected', 'sub-target');
+            });
+            var oldCancel = document.getElementById('btn-cancel-sub');
+            if (oldCancel) oldCancel.remove();
 
-        // Abrir el banquillo si está cerrado (móvil)
-        closeDrawers();
-        const sidebar = document.querySelector('.sidebar');
-        if (sidebar && !sidebar.classList.contains('open')) {
-            if (typeof toggleBench === 'function') toggleBench('home');
+            // 3) Activar estado
+            groupSubMode = true;
+            groupSelectedOut.clear();
+            groupSelectedIn.clear();
+
+            // 4) Abrir el banquillo (móvil)
+            try {
+                var sidebar = document.querySelector('.sidebar');
+                if (sidebar && sidebar.classList && !sidebar.classList.contains('open')) {
+                    if (typeof toggleBench === 'function') toggleBench('home');
+                }
+            } catch(benchErr) {}
+
+            // 5) Toast
+            try { showToast('GRUPAL activado: toca titulares (campo) y suplentes (banquillo)'); } catch(e) {}
+            return;
         }
 
-        showToast('Cambio grupal: selecciona titulares (campo) y suplentes (banquillo)');
-    } else {
-        // ── 2º CLICK: Intentar ejecutar ──
+        // ── 2º CLICK: Ejecutar o desactivar ──
         if (groupSelectedOut.size === 0 && groupSelectedIn.size === 0) {
-            // No seleccionó nada → simplemente desactivar
             exitGroupSubMode();
             return;
         }
 
         if (groupSelectedOut.size !== groupSelectedIn.size) {
-            showToast(`Selecciona ${groupSelectedOut.size} suplente(s) del banquillo o ${groupSelectedIn.size} titular(es) más del campo`);
+            var diff = Math.abs(groupSelectedOut.size - groupSelectedIn.size);
+            showToast('Faltan ' + diff + ' jugador(es): mismo numero de titulares y suplentes');
             return;
         }
 
-        if (groupSelectedOut.size === groupSelectedIn.size && groupSelectedOut.size > 0) {
+        if (groupSelectedOut.size > 0) {
             executeGroupSubstitution();
         }
+    } catch(err) {
+        console.error('toggleGroupSubMode error:', err);
+        exitGroupSubMode();
     }
 }
 
@@ -116,21 +134,7 @@ function handleGroupSubClick(player) {
     }
 }
 
-// ── Mostrar toast informativo ──
-function showToast(msg) {
-    // Reutilizar toast existente o crear uno
-    let toast = document.getElementById('toast-msg');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'toast-msg';
-        toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.88);color:#fff;padding:10px 20px;border-radius:8px;font-size:0.8rem;z-index:99999;text-align:center;pointer-events:none;transition:opacity 0.3s;max-width:85vw;';
-        document.body.appendChild(toast);
-    }
-    toast.textContent = msg;
-    toast.style.opacity = '1';
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
-}
+
 
 // ──────────────────────────────────────────
 // ── RENDER (original) ──
