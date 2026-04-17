@@ -140,21 +140,16 @@ window.saGet = async function saGet(col, id) {
 // saGoBackToRoles() — volver al selector de roles desde cualquier panel
 // ═══════════════════════════════════════════════════════════════════
 window.saGoBackToRoles = function saGoBackToRoles() {
-    // Cerrar panel SA
     const saPanel = document.getElementById('sa-panel');
     if (saPanel) saPanel.remove();
-    // Cerrar modal de club admin si está abierto
     const modal = document.getElementById('setup-modal');
     if (modal) modal.style.display = 'none';
-    // Ocultar paneles de campo (no son relevantes para SA)
     const mainH = document.getElementById('main-header');
     if (mainH) mainH.style.display = 'none';
     const mainC = document.getElementById('main-container');
     if (mainC) mainC.style.display = 'none';
-    // Restaurar body
     document.body.style.background = '#0d1117';
     document.body.classList.remove('locked');
-    // Mostrar selector de roles
     if (typeof showRoleSelector === 'function') showRoleSelector();
 };
 
@@ -168,7 +163,6 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     const setupModal = document.getElementById('setup-modal');
     if (setupModal) setupModal.style.display = 'none';
 
-    // Contar pendientes para badge
     let pendingCount = 0;
     try {
         const { db, collection, query, where, getDocs } = await saFS();
@@ -209,6 +203,7 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     <button id="sa-tab-clubs"    onclick="saTab('clubs')"    style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid #58a6ff;color:#58a6ff;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🏟️ Clubes</button>
     <button id="sa-tab-requests" onclick="saTab('requests')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">📋 Solicitudes${badge}</button>
     <button id="sa-tab-trash"    onclick="saTab('trash')"    style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🗑️ Rastros</button>
+    <button id="sa-tab-pricing" onclick="saTab('pricing')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">💰 Cuotas</button>
 </div>
 <div id="sa-body" style="flex:1;overflow-y:auto;padding:1.1rem;-webkit-overflow-scrolling:touch;"></div>`;
     document.body.appendChild(panel);
@@ -221,7 +216,7 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
 // ═══════════════════════════════════════════════════════════════════
 
 window.saTab = function saTab(tab) {
-    ['clubs','requests','trash'].forEach(t => {
+    ['clubs','requests','pricing','trash'].forEach(t => {
         const b = document.getElementById('sa-tab-'+t);
         if (!b) return;
         b.style.borderBottomColor = (t===tab)?'#58a6ff':'transparent';
@@ -229,6 +224,7 @@ window.saTab = function saTab(tab) {
     });
     if      (tab==='clubs')    saClubs();
     else if (tab==='requests') saRequests();
+    else if (tab==='pricing')  saPricing();
     else if (tab==='trash')    saTrash();
 };
 
@@ -239,7 +235,12 @@ window.saTab = function saTab(tab) {
 window.saClubs = async function saClubs() {
     const body = document.getElementById('sa-body');
     if (!body) return;
-    body.innerHTML = `<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando clubes…</div>`;
+    body.innerHTML = `
+    <div style="display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <button onclick="saCreateClub()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">🏟️ Alta Nuevo Club</button>
+        <button onclick="saCreateIndividual()" class="sa-btn" style="color:#79c0ff;border-color:rgba(121,192,255,0.4);background:rgba(121,192,255,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">👤 Alta Entrenador Individual</button>
+    </div>
+    <div id="sa-clubs-list"><div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando clubes…</div></div>`;
     try {
         const { db, collection, getDocs } = await saFS();
         const [clubsSnap, usersSnap] = await Promise.all([
@@ -303,7 +304,8 @@ window.saClubs = async function saClubs() {
             html += `<div style="margin-bottom:1rem;border:1px solid rgba(255,215,0,0.2);border-radius:10px;overflow:hidden;"><div style="background:rgba(255,215,0,0.07);padding:0.6rem 0.9rem;"><span style="font-weight:700;color:#ffd700;font-size:0.9rem;">⚠️ Sin club asignado (${orphans.length})</span></div><div>${orphans.map(u=>renderRow(u,'')).join('')}</div></div>`;
         }
         if (!html) html = `<p style="color:#8b949e;text-align:center;padding:2rem;">Sin clubes creados aún.</p>`;
-        body.innerHTML = html;
+        const listEl = document.getElementById('sa-clubs-list');
+        if (listEl) listEl.innerHTML = html; else body.innerHTML = html;
     } catch (e) {
         body.innerHTML = `<p style="color:#ff5858;text-align:center;padding:2rem;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</p>`;
         console.error('[saClubs]', e);
@@ -375,6 +377,10 @@ window.saRequests = async function saRequests() {
                     q.parents      ? `${q.parents} Padres`    : '',
                 ].filter(Boolean).join(' · ');
                 extraRows += `<div style="grid-column:1/-1;"><div style="color:#8b949e;font-size:0.67rem;">Cuotas pedidas</div><div style="color:white;font-size:0.8rem;">${parts||'–'}</div></div>`;
+            }
+            if (item.category || item.requestedCategory) {
+                const cat = item.category || item.requestedCategory || '';
+                extraRows += `<div><div style="color:#8b949e;font-size:0.67rem;">Categoría</div><div style="color:white;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(cat):cat}</div></div>`;
             }
             if (item.playerNumber) {
                 extraRows += `<div><div style="color:#8b949e;font-size:0.67rem;">Dorsal jugador</div><div style="color:white;">#${item.playerNumber}${item.playerAlias?' · '+(typeof escapeHtml==='function'?escapeHtml(item.playerAlias):item.playerAlias):''}</div></div>`;
@@ -704,4 +710,241 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
     } catch (e) { console.error('[setupClubsSyncListener]', e); }
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// saPricing() — Configuración de Cuotas y Precios
+// ═══════════════════════════════════════════════════════════════════
 
+window.saPricing = async function saPricing() {
+    const body = document.getElementById('sa-body');
+    if (!body) return;
+    body.innerHTML = '<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando configuración de cuotas…</div>';
+
+    let existingConfig = null;
+    try {
+        existingConfig = await saGet('platform_config', 'pricing');
+    } catch (_) {}
+
+    const cfg = existingConfig || {};
+    const rolePrices = cfg.rolePrices || {
+        director: { monthly: 0, label: 'Director Deportivo', icon: '📋' },
+        coordinator: { monthly: 0, label: 'Coordinador', icon: '🎯' },
+        user: { monthly: 0, label: 'Entrenador', icon: '⚽' },
+        parent: { monthly: 0, label: 'Padre / Madre / Tutor', icon: '👨\u200D👩\u200D👧' },
+    };
+    const individualPrices = cfg.individualPrices || {
+        base: 0,
+        tiers: [
+            { minConfirmations: 1, price: 0 },
+            { minConfirmations: 5, price: 0 },
+            { minConfirmations: 10, price: 0 },
+            { minConfirmations: 20, price: 0 },
+        ],
+    };
+    const billingFrequency = cfg.billingFrequency || 'mensual';
+    const specialOffers = cfg.specialOffers || [
+        { id: 'pack5', label: 'Pack 5 Entrenadores', discount: 10, enabled: false },
+        { id: 'pack10', label: 'Pack 10 Entrenadores', discount: 15, enabled: false },
+        { id: 'pack20', label: 'Pack 20 Entrenadores', discount: 25, enabled: false },
+    ];
+    const currency = cfg.currency || 'EUR';
+
+    const freqOpts = [
+        { value: 'semanal', label: 'Semanal' },
+        { value: 'mensual', label: 'Mensual' },
+        { value: 'anual', label: 'Anual' },
+    ];
+    const curSymbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : currency;
+
+    const freqPriceLabel = (freq, monthlyPrice) => {
+        if (!monthlyPrice) return 'Gratis';
+        const m = parseFloat(monthlyPrice);
+        if (freq === 'semanal') return curSymbol + (m / 4).toFixed(2) + '/sem';
+        if (freq === 'mensual') return curSymbol + m.toFixed(2) + '/mes';
+        if (freq === 'anual') return curSymbol + (m * 10).toFixed(2) + '/año';
+        return curSymbol + m.toFixed(2);
+    };
+
+    body.innerHTML = `
+    <h2 style="margin:0 0 1rem;font-size:1.05rem;color:white;font-weight:800;">💰 Configuración de Cuotas y Precios</h2>
+
+    <!-- Precios por rol para clubes -->
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;">
+            <span style="font-size:1rem;">🏟️</span>
+            <span style="font-weight:700;font-size:0.88rem;color:white;">Precios por Rol (Clubes)</span>
+        </div>
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                <thead>
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                        <th style="text-align:left;padding:0.45rem 0.5rem;color:#8b949e;font-weight:600;">Rol</th>
+                        <th style="text-align:right;padding:0.45rem 0.5rem;color:#8b949e;font-weight:600;">Precio / mes</th>
+                        <th style="text-align:right;padding:0.45rem 0.5rem;color:#8b949e;font-weight:600;">Precio (${freqOpts.find(f=>f.value===billingFrequency).label})</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${Object.entries(rolePrices).map(([key, rp]) => `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                        <td style="padding:0.45rem 0.5rem;color:white;">${rp.icon} ${rp.label}</td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;">
+                            <input id="sp-role-${key}" type="number" min="0" step="0.01" value="${rp.monthly || 0}" class="sa-input" style="width:90px;text-align:right;padding:0.3rem 0.5rem;font-size:0.8rem;">
+                        </td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;color:#3fb950;font-weight:600;">${freqPriceLabel(billingFrequency, rp.monthly)}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Entrenador Individual -->
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;">
+            <span style="font-size:1rem;">👤</span>
+            <span style="font-weight:700;font-size:0.88rem;color:white;">Entrenador Individual</span>
+        </div>
+        <div style="margin-bottom:0.6rem;">
+            <label class="sa-label">Precio base / mes (${curSymbol})</label>
+            <input id="sp-ind-base" type="number" min="0" step="0.01" value="${individualPrices.base || 0}" class="sa-input" style="width:130px;">
+        </div>
+        <div style="font-size:0.78rem;color:#8b949e;margin-bottom:0.4rem;font-weight:600;">Escalado por confirmaciones aprobadas:</div>
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                <thead>
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                        <th style="text-align:left;padding:0.4rem 0.5rem;color:#8b949e;font-weight:600;">Desde N confirmaciones</th>
+                        <th style="text-align:right;padding:0.4rem 0.5rem;color:#8b949e;font-weight:600;">Precio / mes (${curSymbol})</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${individualPrices.tiers.map((t, i) => `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                        <td style="padding:0.4rem 0.5rem;color:white;">${t.minConfirmations}+</td>
+                        <td style="padding:0.4rem 0.5rem;text-align:right;">
+                            <input id="sp-ind-tier-${i}" type="number" min="0" step="0.01" value="${t.price || 0}" class="sa-input" style="width:90px;text-align:right;padding:0.3rem 0.5rem;font-size:0.8rem;">
+                        </td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Frecuencia de facturación -->
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;">
+            <span style="font-size:1rem;">📅</span>
+            <span style="font-weight:700;font-size:0.88rem;color:white;">Frecuencia de Facturación</span>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            ${freqOpts.map(f => `
+            <label style="display:flex;align-items:center;gap:0.4rem;padding:0.5rem 0.8rem;background:rgba(255,255,255,${billingFrequency===f.value?'0.1':'0.03'});border:1px solid rgba(${billingFrequency===f.value?'88,166,255':'255,255,255'},0.${billingFrequency===f.value?'4':'1'});border-radius:8px;cursor:pointer;color:${billingFrequency===f.value?'#58a6ff':'#8b949e'};font-size:0.82rem;font-weight:600;">
+                <input type="radio" name="sp-billing" value="${f.value}" ${billingFrequency===f.value?'checked':''}> ${f.label}
+            </label>`).join('')}
+        </div>
+    </div>
+
+    <!-- Ofertas especiales -->
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.9rem 1rem;margin-bottom:1rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;">
+            <span style="font-size:1rem;">🎁</span>
+            <span style="font-weight:700;font-size:0.88rem;color:white;">Ofertas Especiales / Packs</span>
+        </div>
+        ${specialOffers.map((o, i) => `
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+            <input id="sp-offer-en-${i}" type="checkbox" ${o.enabled?'checked':''} style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer;">
+            <span style="flex:1;color:white;font-size:0.82rem;">${o.label}</span>
+            <input id="sp-offer-d-${i}" type="number" min="0" max="100" value="${o.discount}" class="sa-input" style="width:65px;text-align:right;padding:0.25rem 0.4rem;font-size:0.78rem;">
+            <span style="color:#8b949e;font-size:0.78rem;">% desc.</span>
+        </div>`).join('')}
+    </div>
+
+    <!-- Moneda -->
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.9rem 1rem;margin-bottom:1rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+            <span style="font-size:1rem;">💱</span>
+            <span style="font-weight:700;font-size:0.88rem;color:white;">Moneda</span>
+        </div>
+        <select id="sp-currency" class="sa-input" style="width:140px;padding:0.4rem 0.6rem;">
+            <option value="EUR" ${currency==='EUR'?'selected':''}>EUR (€)</option>
+            <option value="USD" ${currency==='USD'?'selected':''}>USD ($)</option>
+            <option value="MXN" ${currency==='MXN'?'selected':''}>MXN ($)</option>
+            <option value="COP" ${currency==='COP'?'selected':''}>COP ($)</option>
+            <option value="ARS" ${currency==='ARS'?'selected':''}>ARS ($)</option>
+        </select>
+    </div>
+
+    <div style="display:flex;gap:0.6rem;justify-content:flex-end;margin-top:1rem;">
+        <button onclick="saSavePricing()" style="padding:0.55rem 1.4rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:8px;color:#3fb950;font-weight:700;cursor:pointer;font-size:0.88rem;">💾 Guardar Configuración</button>
+    </div>`;
+};
+
+window.saSavePricing = async function saSavePricing() {
+    _saShowSpinner('Guardando configuración de cuotas…');
+    try {
+        const { db, doc, setDoc } = await saFS();
+        const roleKeys = ['director', 'coordinator', 'user', 'parent'];
+        const roleMeta = {
+            director: { monthly: 0, label: 'Director Deportivo', icon: '📋' },
+            coordinator: { monthly: 0, label: 'Coordinador', icon: '🎯' },
+            user: { monthly: 0, label: 'Entrenador', icon: '⚽' },
+            parent: { monthly: 0, label: 'Padre / Madre / Tutor', icon: '👨\u200D👩\u200D👧' },
+        };
+        const rolePrices = {};
+        roleKeys.forEach(k => {
+            const input = document.getElementById('sp-role-' + k);
+            rolePrices[k] = {
+                ...roleMeta[k],
+                monthly: input ? parseFloat(input.value) || 0 : 0,
+            };
+        });
+
+        const baseInput = document.getElementById('sp-ind-base');
+        const individualPrices = {
+            base: baseInput ? parseFloat(baseInput.value) || 0 : 0,
+            tiers: [],
+        };
+        for (let i = 0; i < 4; i++) {
+            const inp = document.getElementById('sp-ind-tier-' + i);
+            individualPrices.tiers.push({
+                minConfirmations: [1, 5, 10, 20][i],
+                price: inp ? parseFloat(inp.value) || 0 : 0,
+            });
+        }
+
+        const freqRadio = document.querySelector('input[name="sp-billing"]:checked');
+        const billingFrequency = freqRadio ? freqRadio.value : 'mensual';
+
+        const specialOffers = [
+            { id: 'pack5', label: 'Pack 5 Entrenadores', discount: 10, enabled: false },
+            { id: 'pack10', label: 'Pack 10 Entrenadores', discount: 15, enabled: false },
+            { id: 'pack20', label: 'Pack 20 Entrenadores', discount: 25, enabled: false },
+        ];
+        specialOffers.forEach((o, i) => {
+            const enEl = document.getElementById('sp-offer-en-' + i);
+            const dEl = document.getElementById('sp-offer-d-' + i);
+            o.enabled = enEl ? enEl.checked : false;
+            o.discount = dEl ? parseFloat(dEl.value) || 0 : o.discount;
+        });
+
+        const currencyEl = document.getElementById('sp-currency');
+        const currency = currencyEl ? currencyEl.value : 'EUR';
+
+        const config = {
+            rolePrices,
+            individualPrices,
+            billingFrequency,
+            specialOffers,
+            currency,
+            updatedAt: new Date().toISOString(),
+            updatedBy: window._cronosCurrentUser?.email || 'superadmin',
+        };
+
+        await setDoc(doc(db, 'platform_config', 'pricing'), config);
+        _saHideSpinner();
+        _saToast('✅ Configuración de cuotas guardada correctamente.', 5000);
+        saPricing();
+    } catch (e) {
+        _saHideSpinner();
+        _saToast('⚠️ Error: ' + e.message, 5000);
+        console.error('[saSavePricing]', e);
+    }
+};
