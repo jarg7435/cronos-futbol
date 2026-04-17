@@ -1198,8 +1198,10 @@ async function autoDispatchMatchReports() {
                           `Informes individuales generados y enviados a padres autorizados.\n` +
                           `_Cronos Fútbol_`;
 
-        // Destinatarios Staff con tag 'rpt' (Informes)
+        // Destinatarios Staff con tag 'rpt' (Informes) desde contactos
         const staffToNotify = contacts.filter(c => c.type !== 'parent' && isRecipientAuthorized(c) && c.uid);
+        // IDs ya notificados para evitar duplicados
+        const notifiedUids = new Set(staffToNotify.map(s => s.uid));
         
         for (const staff of staffToNotify) {
             const notifId = `notif_global_rpt_${staff.uid}_${Date.now().toString(36)}`;
@@ -1212,6 +1214,30 @@ async function autoDispatchMatchReports() {
                 createdAt: new Date().toISOString()
             });
         }
+
+        // RESpaldo: Notificar a directores/coordinadores desde colección users
+        try {
+            const [ds, cs] = await Promise.all([
+                getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','director'))),
+                getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','coordinator'))),
+            ]);
+            const staffFromUsers = [];
+            ds.forEach(d => { if (!notifiedUids.has(d.id)) staffFromUsers.push({uid:d.id,...d.data()}); });
+            cs.forEach(d => { if (!notifiedUids.has(d.id)) staffFromUsers.push({uid:d.id,...d.data()}); });
+
+            for (const s of staffFromUsers) {
+                const notifId = `notif_global_rpt_${s.uid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type: 'aviso_partido_finalizado',
+                    clubId: me.clubId || null,
+                    parentUid: s.uid,
+                    staffUid: s.uid,
+                    matchDate, rival: rivalName, scoreHome, scoreAway,
+                    message: globalText.replace(/[*_]/g, ''),
+                    createdAt: new Date().toISOString()
+                });
+            }
+        } catch(e) { /* fallo silencioso del respaldo */ }
 
         // --- FASE B: INFORMES INDIVIDUALES (PADRES) ---
         for (const player of homePlayers) {
@@ -2074,6 +2100,15 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
+            <!-- PARTIDOS TERMINADOS -->
+            <button onclick="showFinishedMatches()" class="btn-comms-card" style="--color:#ff5858;--bg:rgba(255,88,88,0.08);">
+                <span class="icon">📋</span>
+                <div class="content">
+                    <div class="title" style="color:#ff5858;">Partidos Terminados</div>
+                    <div class="desc">Ver y volver a partidos finalizados</div>
+                </div>
+            </button>
+
         </div>
     </div>
     <style>
@@ -2814,19 +2849,20 @@ window._sendAllIndividualReports = async function() {
 // ── También notificar a staff cuando se publica convocatoria/entrenamiento ──
 const _origPublishConvocation = window.publishConvocationToApp;
 window.publishConvocationToApp = async function() {
-    // Llamar al original primero
+    // Llamar al original primero (envía a padres vía cronos_player_links + contactos tag 'notifs')
     if (typeof _origPublishConvocation === 'function') await _origPublishConvocation();
 
-    // Además notificar a directores y coordinadores
+    // Además notificar a directores, coordinadores y padres desde colección users
     const me = window._cronosCurrentUser;
     const fa = window._cronos_auth;
     if (!fa || !me?.clubId) return;
 
     try {
         const { db, collection, getDocs, query, where, setDoc, doc } = await _cFS();
-        const [ds, cs] = await Promise.all([
+        const [ds, cs, ps] = await Promise.all([
             getDocs(query(collection(db,'users'), where('clubId','==',me.clubId), where('role','==','director'))),
             getDocs(query(collection(db,'users'), where('clubId','==',me.clubId), where('role','==','coordinator'))),
+            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId), where('role','==','parent'))),
         ]);
         const staff = [];
         ds.forEach(d => staff.push({ uid:d.id, ...d.data() }));
@@ -2834,16 +2870,49 @@ window.publishConvocationToApp = async function() {
 
         const dateVal = document.getElementById('cv-date')?.value || '';
         const rival   = document.getElementById('cv-rival')?.value.trim() || '';
+        const venue   = document.getElementById('cv-venue')?.value.trim() || '';
+        const kickoff = document.getElementById('cv-time')?.value || '';
+        const meettime= document.getElementById('cv-meettime')?.value || '';
+        const dateStr = dateVal ? new Date(dateVal+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'}) : '';
 
+        // Notificar a directores y coordinadores
         for (const s of staff) {
             await setDoc(doc(db,'cronos_notifications',`cv_staff_${s.uid}_${Date.now().toString(36)}`), {
                 type:       'convocatoria',
                 clubId:     me.clubId,
-                parentUid:  s.uid,   // compat con staff dashboard que filtra por parentUid
+                parentUid:  s.uid,
                 staffUid:   s.uid,
                 coachEmail: me.email,
-                matchDate:  dateVal,
-                rival,
+                matchDate:  dateStr,
+                rival, venue, kickoff, meettime,
+                createdAt:  new Date().toISOString(),
+            });
+        }
+
+        // Respaldo: Notificar a padres desde users si no fueron notificados por links
+        const playerInputs = document.querySelectorAll('.conv-player-name');
+        const playersArr = Array.from(playerInputs).map(el => el.value.trim());
+
+        // IDs de padres ya notificados (desde el original publishConvocationToApp)
+        const alreadyNotified = new Set();
+        if (typeof window._cronos_published_parent_uids === 'object') {
+            window._cronos_published_parent_uids.forEach(uid => alreadyNotified.add(uid));
+        }
+
+        for (const pSnap of ps) {
+            const parentData = pSnap.data();
+            if (!parentData.uid && !pSnap.id) continue;
+            const pUid = parentData.uid || pSnap.id;
+            if (alreadyNotified.has(pUid)) continue;
+
+            await setDoc(doc(db,'cronos_notifications',`cv_parent_${pUid}_${Date.now().toString(36)}`), {
+                type:       'convocatoria',
+                clubId:     me.clubId,
+                parentUid:  pUid,
+                coachEmail: me.email,
+                matchDate:  dateStr,
+                rival, venue, kickoff, meettime,
+                players:    playersArr,
                 createdAt:  new Date().toISOString(),
             });
         }
