@@ -40,7 +40,8 @@ export async function switchTab(tab) {
         handleRoleChange();
     } else {
         ['club-container', 'new-club-container',
-         'individual-name-container', 'invite-code-container'].forEach(id => {
+         'individual-name-container', 'invite-code-container',
+         'category-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
         });
@@ -101,11 +102,13 @@ export function handleRoleChange() {
     const isParent     = (role === 'parent');
     const isClubAdmin  = (role === 'club_admin');
     const isIndividual = (role === 'individual');
+    const isCoach      = (role === 'user');
 
     const clubCont    = document.getElementById('club-container');
     const newClubCont = document.getElementById('new-club-container');
     const inviteCont  = document.getElementById('invite-code-container');
     const indivCont   = document.getElementById('individual-name-container');
+    const catCont     = document.getElementById('category-container');
 
     // Selector de club: mostrar para todos los roles de club (no admin, no individual)
     if (clubCont)    clubCont.style.display    = (!isClubAdmin && !isIndividual) ? 'block' : 'none';
@@ -115,6 +118,8 @@ export function handleRoleChange() {
     if (inviteCont)  inviteCont.style.display   = isParent ? 'block' : 'none';
     // Nombre y apellidos: solo para usuario individual
     if (indivCont)   indivCont.style.display    = isIndividual ? 'block' : 'none';
+    // Selector de categoría: solo para entrenador de club
+    if (catCont)     catCont.style.display      = isCoach ? 'block' : 'none';
 }
 
 // ── Mostrar Error / Éxito ────────────────────────────────────
@@ -147,6 +152,7 @@ export async function checkAuthorization(user) {
                 await fa.setDoc(ref, {
                     email:        user.email,
                     role:         'superadmin',
+                    roles:        ['superadmin'],
                     isAuthorized: true,
                     status:       'active',
                     createdAt:    fa.serverTimestamp(),
@@ -157,6 +163,7 @@ export async function checkAuthorization(user) {
                     uid:   user.uid,
                     email: user.email,
                     role:  'superadmin',
+                    roles: ['superadmin'],
                     clubId: null, clubName: null,
                 };
                 enterApp();
@@ -204,6 +211,22 @@ export async function checkAuthorization(user) {
             return;
         }
 
+        // ── FORCE SUPERADMIN: si el email está en la lista, SIEMPRE es SA ──
+        if (SUPERADMIN_EMAILS.includes(user.email) && data.role !== 'superadmin') {
+            await fa.setDoc(ref, {
+                role: 'superadmin', roles: ['superadmin'],
+                isAuthorized: true, status: 'active',
+                lastLogin: fa.serverTimestamp(),
+            }, { merge: true });
+            window._cronosCurrentUser = {
+                uid: user.uid, email: user.email,
+                role: 'superadmin', roles: ['superadmin'],
+                clubId: null, clubName: null,
+            };
+            enterApp();
+            return;
+        }
+
         // ── CASO 5: Usuario activo y autorizado ───────────────────
         await fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true });
 
@@ -211,11 +234,13 @@ export async function checkAuthorization(user) {
             uid:         user.uid,
             email:       user.email,
             role:        data.role,
+            roles:       data.roles || [data.role],
             clubId:      data.clubId      || null,
             clubName:    data.clubName    || null,
             firstName:   data.firstName   || null,
             lastName:    data.lastName    || null,
             displayName: data.displayName || null,
+            category:    data.category    || null,
         };
 
         enterApp();
@@ -268,12 +293,18 @@ export async function doAuth() {
         const lastName        = document.getElementById('auth-lastname')?.value.trim()   || '';
         const inviteCode      = document.getElementById('auth-invite-code')?.value.trim().toUpperCase() || '';
 
+        // Categoría del entrenador (solo para entrenadores de club)
+        const coachCategory = document.getElementById('auth-category')?.value || '';
+
         // ── Validaciones por rol ──────────────────────────────────
         if (requestedRole === 'club_admin' && !newClubName) {
             showAuthError('⚠️ Indica el nombre de tu club.'); return;
         }
         if (requestedRole === 'individual' && (!firstName || !lastName)) {
             showAuthError('⚠️ Nombre y apellidos obligatorios.'); return;
+        }
+        if (requestedRole === 'user' && !coachCategory) {
+            showAuthError('⚠️ Selecciona la categoría que entrenas.'); return;
         }
 
         // ── Validaciones de contraseña ────────────────────────────
@@ -343,6 +374,7 @@ export async function doAuth() {
             email,
             isAuthorized,
             role:          finalRole,
+            roles:         [finalRole],
             requestedRole,
             clubId,
             status:        isAuthorized ? 'active' : 'pending',
@@ -366,8 +398,14 @@ export async function doAuth() {
         if (requestedRole === 'individual') {
             userData.firstName    = firstName;
             userData.lastName     = lastName;
-            userData.displayName  = `${firstName} ${lastName}`;
+            userData.displayName  = firstName + ' ' + lastName;
             userData.isIndividual = true;
+        }
+
+        // Categoría del entrenador
+        if (requestedRole === 'user' && coachCategory) {
+            userData.category = coachCategory;
+            userData.displayName = coachCategory;
         }
 
         await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), userData);
@@ -435,13 +473,37 @@ export function showRoleSelection() {
         if (el) el.style.display = 'block';
     };
 
+    // Soporte multi-rol: mostrar tarjetas según los roles asignados al usuario
+    const roles = window._cronosCurrentUser?.roles || [role];
+
     if (['superadmin', 'admin'].includes(role)) {
-        // El SuperAdmin ve TODAS las opciones
+        // El SuperAdmin ve todas para poder gestionarlas (rol exclusivo)
         allCards.forEach(id => show(id));
     } else {
-        // Todos los demás usuarios ven todas las opciones EXCEPTO superadmin
-        allCards.filter(id => id !== 'card-opt-superadmin').forEach(id => show(id));
+        // Usuario con uno o varios roles: mostrar solo las tarjetas correspondientes
+        const roleCardMap = {
+            'club_admin':  'card-opt-clubadmin',
+            'director':    'card-opt-director',
+            'coordinator': 'card-opt-coordinator',
+            'user':        'card-opt-coach',
+            'coach':       'card-opt-coach',
+            'parent':      'card-opt-parent',
+            'individual':  'card-opt-individual',
+        };
+        const shown = new Set();
+        roles.forEach(r => {
+            const cardId = roleCardMap[r];
+            if (cardId && !shown.has(cardId)) {
+                show(cardId);
+                shown.add(cardId);
+            }
+        });
+        // Fallback: si no se mostró ninguna tarjeta, usar el rol principal
+        if (shown.size === 0 && roleCardMap[role]) {
+            show(roleCardMap[role]);
+        }
     }
+
 }
 
 // ── Lanzar App con la opción seleccionada ─────────────────────
@@ -602,18 +664,7 @@ function _launchWithRole(role) {
     } else if (activeRole === 'superadmin') {
         if (typeof openSuperAdminPanel === 'function') openSuperAdminPanel();
     } else if (activeRole === 'club_admin') {
-        if (typeof openClubAdminPanel === 'function') {
-            openClubAdminPanel()
-                .catch(e => {
-                    console.error('[ClubAdmin] Error al abrir panel:', e);
-                    if (typeof showToast === 'function') showToast('⚠️ Error: ' + e.message, 5000);
-                    document.getElementById('role-selection-screen').style.display = 'flex';
-                });
-        } else {
-            console.error('[ClubAdmin] openClubAdminPanel no está definida');
-            document.getElementById('role-selection-screen').style.display = 'flex';
-            if (typeof showToast === 'function') showToast('⚠️ Error al cargar el panel', 3000);
-        }
+        if (typeof openClubAdminPanel === 'function') openClubAdminPanel();
     } else if (['director', 'coordinator'].includes(activeRole)) {
         if (typeof init === 'function') init(activeRole);
         if (typeof openStaffDashboard === 'function') openStaffDashboard();
