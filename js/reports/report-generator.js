@@ -247,7 +247,9 @@ class ReportGenerator {
         margin-bottom: 14px;
         border-bottom: 1px solid #eee;
     }
-    .stat-item { text-align: center; }
+    .stat-item {
+        text-align: center;
+    }
     .stat-value {
         font-size: 18px;
         font-weight: 800;
@@ -496,7 +498,7 @@ class ReportGenerator {
 </tbody>
 </table>
 
- ${legendHTML}
+${legendHTML}
 
 <!-- Footer -->
 <div class="report-footer">
