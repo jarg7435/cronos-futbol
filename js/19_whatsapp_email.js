@@ -3,6 +3,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 function openConvocationMessage() {
+    // Get currently selected players from convocation screen
     const rows = document.querySelectorAll('.conv-row.conv-selected');
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
     const mode   = document.getElementById('setup-mode')?.value || 'f11';
@@ -11,8 +12,10 @@ function openConvocationMessage() {
     const selectedPlayers = Array.from(rows).map(r => myPlayers[r.dataset.index]).filter(Boolean);
     const maxSlots = mode === 'f7' ? 14 : 18;
 
+    // Saved convocation config
     const saved = JSON.parse(localStorage.getItem('cronos_conv_config') || '{}');
 
+    // Greeting based on current time
     const hour = new Date().getHours();
     const defaultGreeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
 
@@ -60,29 +63,29 @@ function openConvocationMessage() {
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Fecha del partido</label>
                         <input id="cv-date" type="date" class="conv-input"
-                            value="${saved.date || new Date().toISOString().substring(0,10)}">
+                            value="${typeof escapeAttr==='function'?escapeAttr(saved.date || new Date().toISOString().substring(0,10)):saved.date || new Date().toISOString().substring(0,10)}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Rival</label>
                         <input id="cv-rival" type="text" class="conv-input"
                             placeholder="Nombre del equipo rival"
-                            value="${saved.rival || ''}">
+                            value="${typeof escapeAttr==='function'?escapeAttr(saved.rival || ''):saved.rival || ''}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Hora de presentación</label>
                         <input id="cv-meettime" type="time" class="conv-input"
-                            value="${saved.meettime || ''}">
+                            value="${typeof escapeAttr==='function'?escapeAttr(saved.meettime || ''):saved.meettime || ''}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Hora de inicio del partido</label>
                         <input id="cv-kickoff" type="time" class="conv-input"
-                            value="${saved.kickoff || ''}">
+                            value="${typeof escapeAttr==='function'?escapeAttr(saved.kickoff || ''):saved.kickoff || ''}">
                     </div>
                     <div style="grid-column:1/-1;">
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Campo / Lugar</label>
                         <input id="cv-venue" type="text" class="conv-input"
                             placeholder="Nombre del campo o dirección"
-                            value="${saved.venue || ''}">
+                            value="${typeof escapeAttr==='function'?escapeAttr(saved.venue || ''):saved.venue || ''}">
                     </div>
                 </div>
             </div>
@@ -105,7 +108,7 @@ function openConvocationMessage() {
                                          width:18px;text-align:right;">${i+1}.</span>
                             <input type="text" class="conv-player-name conv-input"
                                 data-idx="${i}"
-                                value="${p.alias || p.name || 'Jugador ' + (i+1)}"
+                                value="${typeof escapeAttr==='function'?escapeAttr(p.alias || p.name || 'Jugador ' + (i+1)):p.alias || p.name || 'Jugador ' + (i+1)}"
                                 style="flex:1;padding:0.3rem 0.5rem;font-size:0.82rem;">
                         </div>`).join('')}
                     </div>
@@ -121,7 +124,7 @@ function openConvocationMessage() {
                             margin-bottom:0.7rem;letter-spacing:0.5px;">💬 MENSAJE EXTRA (opcional)</div>
                 <textarea id="cv-extra" class="conv-input" rows="3"
                     placeholder="ej: ¡Vamos equipo! Estamos preparados para este partido. Recordad traer el equipaje completo. 💪"
-                    style="resize:vertical;">${saved.extra || ''}</textarea>
+                    style="resize:vertical;">${typeof escapeHtml==='function'?escapeHtml(saved.extra || ''):saved.extra || ''}</textarea>
             </div>
 
             <!-- ── ENVIAR A ─────────────────────────────────── -->
@@ -201,10 +204,13 @@ function openConvocationMessage() {
     `;
 }
 
+// ── Construir HTML de lista de destinatarios ─────────────────────────
 // ── Construir HTML de lista de destinatarios (Compartido) ────────────
 window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
+    // Recopilar todos los contactos disponibles
     const allContacts = [];
 
+    // 1. Staff / directivos desde emailConfig
     const staffContacts = (emailConfig.contacts || []).filter(c => c.type !== 'parent');
     staffContacts.forEach(c => {
         if (!c.name && !c.email && !c.phone) return;
@@ -219,6 +225,7 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
         });
     });
 
+    // 2. Padres desde emailConfig (tipo parent manual)
     const parentContacts = (emailConfig.contacts || []).filter(c => c.type === 'parent');
     parentContacts.forEach(c => {
         if (!c.name && !c.email && !c.phone) return;
@@ -239,6 +246,7 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
         </div>`;
     }
 
+    // Cargar preselección guardada
     let savedIds = null;
     try { savedIds = savedRecipients || JSON.parse(localStorage.getItem(`cronos_${prefix}_preselection`) || 'null'); } catch(e) {}
 
@@ -253,18 +261,18 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
                        background:${typeColor};border:1px solid ${typeBorder};
                        border-radius:8px;padding:0.5rem 0.7rem;cursor:pointer;">
             <input type="checkbox" class="${prefix}-recipient-chk"
-                data-id="${c.id}"
-                data-type="${c.type}"
-                data-phone="${c.phone}"
-                data-email="${c.email}"
-                data-label="${c.label}"
+                data-id="${typeof escapeAttr==='function'?escapeAttr(c.id):c.id}"
+                data-type="${typeof escapeAttr==='function'?escapeAttr(c.type):c.type}"
+                data-phone="${typeof escapeAttr==='function'?escapeAttr(c.phone):c.phone}"
+                data-email="${typeof escapeAttr==='function'?escapeAttr(c.email):c.email}"
+                data-label="${typeof escapeAttr==='function'?escapeAttr(c.label):c.label}"
                 ${checked ? 'checked' : ''}
                 style="width:16px;height:16px;flex-shrink:0;accent-color:var(--primary);">
             <span style="font-size:0.72rem;flex-shrink:0;">${typeTag}</span>
             <div style="flex:1;min-width:0;">
-                <div style="font-size:0.8rem;font-weight:600;color:var(--text);">${c.label}</div>
+                <div style="font-size:0.8rem;font-weight:600;color:var(--text);">${typeof escapeHtml==='function'?escapeHtml(c.label):c.label}</div>
                 <div style="font-size:0.65rem;color:var(--text-muted);">
-                    ${c.phone ? `📱 ${c.phone}` : ''}${c.phone && c.email ? ' · ' : ''}${c.email ? `📧 ${c.email}` : ''}
+                    ${c.phone ? `📱 ${typeof escapeHtml==='function'?escapeHtml(c.phone):c.phone}` : ''}${c.phone && c.email ? ' · ' : ''}${c.email ? `📧 ${typeof escapeHtml==='function'?escapeHtml(c.email):c.email}` : ''}
                 </div>
             </div>
             <div style="display:flex;gap:0.3rem;flex-shrink:0;">
@@ -313,11 +321,13 @@ function buildConvocationText() {
     const venue     = document.getElementById('cv-venue')?.value.trim() || '';
     const extra     = document.getElementById('cv-extra')?.value.trim() || '';
 
+    // Format date
     const dateStr = dateVal
         ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES', {
             weekday:'long', day:'numeric', month:'long'})
         : '—';
 
+    // Player names
     const playerInputs = document.querySelectorAll('.conv-player-name');
     const playerLines  = Array.from(playerInputs)
         .map((el, i) => `${i + 1}. ${el.value.trim() || '—'}`)
@@ -328,6 +338,7 @@ function buildConvocationText() {
     };
     const typeLabel = typeLabels[type] || type;
 
+    // Build message
     let msg = `${greeting} familia! 👋\n\n`;
     msg += `📋 *CONVOCATORIA*\n`;
     msg += `Partido ${typeLabel}\n`;
@@ -388,7 +399,7 @@ function previewConvocationMsg() {
                         padding:1rem;overflow-y:auto;flex:1;
                         white-space:pre-wrap;font-size:0.85rem;line-height:1.6;
                         color:var(--text);font-family:inherit;">
- ${msg.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
+${(typeof escapeHtml==='function'?escapeHtml(msg):msg.replace(/</g,'&lt;').replace(/>/g,'&gt;')).replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
             </div>
             <div style="display:flex;gap:0.5rem;margin-top:0.8rem;flex-shrink:0;">
                 <button onclick="openConvocationMessage()" class="btn"
@@ -439,7 +450,7 @@ async function saveConvocationToFirestore() {
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const id = 'conv_' + Date.now().toString(36);
         await setDoc(doc(fa.db, 'cronos_notifications', id), payload);
-        console.log('✅ Convocatoria guardada en Firestore para los padres');
+
     } catch(e) {
         console.warn('saveConvocationToFirestore:', e.message);
     }
@@ -453,6 +464,7 @@ function sendConvocationWA() {
     const encoded = encodeURIComponent(msg);
 
     if (!recipients.length) {
+        // Fallback: abrir WhatsApp sin número para elegir contacto
         window.open(`https://wa.me/?text=${encoded}`, '_blank');
         showToast('📱 WhatsApp abierto — ningún contacto con teléfono seleccionado', 4000);
         return;
@@ -494,13 +506,14 @@ function sendConvocationEmail() {
     showToast(`📧 Email abierto para ${recipients.length} contacto${recipients.length > 1 ? 's' : ''}`, 3000);
     setTimeout(() => openConvocationModal(), 1000);
 }
-
 async function publishConvocationToApp() {
     const me = window._cronosCurrentUser;
     const db = window._cronos_auth.db;
-
+    
+    // Generar el mensaje base
     const fullText = buildConvocationText();
-
+    
+    // Obtener datos del formulario
     const type      = document.getElementById('cv-type')?.value || 'liga';
     const dateVal   = document.getElementById('cv-date')?.value || '';
     const rival     = document.getElementById('cv-rival')?.value.trim() || '';
@@ -509,6 +522,7 @@ async function publishConvocationToApp() {
     const venue     = document.getElementById('cv-venue')?.value.trim() || '';
     const extra     = document.getElementById('cv-extra')?.value.trim() || '';
 
+    // Jugadores seleccionados
     const playerInputs = document.querySelectorAll('.conv-player-name');
     const playersArr   = Array.from(playerInputs).map(el => el.value.trim());
 
@@ -522,7 +536,8 @@ async function publishConvocationToApp() {
     try {
         const { collection, getDocs, query, where, setDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-
+        
+        // Buscar links de los padres para ESTE club
         const linksSnap = await getDocs(query(
             collection(db, 'cronos_player_links'),
             where('clubId', '==', me.clubId || '')
@@ -535,6 +550,7 @@ async function publishConvocationToApp() {
         const dateStr = dateVal ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES', {
             weekday:'long', day:'numeric', month:'long'}) : '—';
 
+        // --- 1. NOTIFICAR A PADRES VINCULADOS (Lógica actual) ---
         for (const pName of playersArr) {
             const link = links.find(l => l.playerAlias === pName || l.playerName === pName);
             if (link && link.parentUid) {
@@ -557,6 +573,7 @@ async function publishConvocationToApp() {
             }
         }
 
+        // --- 2. NOTIFICAR A CONTACTOS EXTRA (Fuente de la Verdad) ---
         if (emailConfig.contacts) {
             const extraNotifs = emailConfig.contacts.filter(c => c.tags.includes('notifs') && c.uid);
             for (const contact of extraNotifs) {
@@ -580,7 +597,8 @@ async function publishConvocationToApp() {
         }
 
         hideSpinner();
-
+        
+        // --- MEJORA: Feedback detallado según el conteo de envíos ---
         if (count > 0) {
             showToast(`✅ Convocatoria publicada para ${count} padres`, 6000);
             const btnApp = document.querySelector('button[onclick="publishConvocationToApp()"]');
@@ -589,6 +607,7 @@ async function publishConvocationToApp() {
                 btnApp.style.background = 'rgba(63,185,80,0.2)';
                 btnApp.style.borderColor = 'rgba(63,185,80,0.5)';
                 btnApp.style.color = '#3fb950';
+                // btnApp.disabled = true; // Opcional: dejarlo habilitado por si quiere reenviar tras vincular a alguien
             }
             setTimeout(() => openConvocationModal(), 1500);
         } else {
@@ -606,4 +625,7 @@ async function publishConvocationToApp() {
     }
 }
 
+window.openConvocationMessage = openConvocationMessage;
 window.publishConvocationToApp = publishConvocationToApp;
+
+// NOTA: window.openConvocationModal eliminado — no debe sobreescribir la versión correcta de app.js
