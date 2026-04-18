@@ -367,12 +367,19 @@ header {
     animation: blinkText 1s infinite;
 }
 
-.score-board {
-    /* Centered absolutely in the header, at the timer-row level */
+/* ── Contenedor flex: botón GRUPAL + marcador ── */
+.score-area {
     position: absolute;
     left: 50%;
     bottom: 5px;
     transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 5;
+}
+
+.score-board {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -380,15 +387,10 @@ header {
     padding: 3px 8px;
     border-radius: 30px;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    z-index: 5;
 }
 
-/* ── Botón Cambio Grupal — junto al marcador ── */
+/* ── Botón Cambio Grupal ── */
 #btn-group-sub {
-    position: absolute;
-    right: calc(50% + 80px);
-    bottom: 10px;
-    z-index: 10;
     background: rgba(255,222,89,0.12);
     border: 1px solid rgba(255,222,89,0.35);
     color: #ffde59;
@@ -402,6 +404,7 @@ header {
     transition: all 0.25s ease;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
 }
 #btn-group-sub:hover {
     background: rgba(255,222,89,0.25);
@@ -417,6 +420,34 @@ header {
 @keyframes groupBtnPulse {
     0%, 100% { box-shadow: 0 0 5px rgba(46,204,113,0.3); }
     50% { box-shadow: 0 0 18px rgba(46,204,113,0.7); }
+}
+
+/* ── Selección visual: titular sale (amarillo) ── */
+.player-chip.group-sub-out {
+    outline: 3px solid #ffde59 !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 14px rgba(255,222,89,0.7), 0 0 4px rgba(255,222,89,0.9) inset !important;
+    transform: scale(1.08);
+    z-index: 10;
+    animation: groupOutPulse 1s infinite;
+}
+@keyframes groupOutPulse {
+    0%, 100% { outline-color: #ffde59; }
+    50% { outline-color: #ffa502; }
+}
+
+/* ── Selección visual: suplente entra (verde) ── */
+.player-chip.group-sub-in {
+    outline: 3px solid #2ecc71 !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 14px rgba(46,204,113,0.7), 0 0 4px rgba(46,204,113,0.9) inset !important;
+    transform: scale(1.08);
+    z-index: 10;
+    animation: groupInPulse 1s infinite;
+}
+@keyframes groupInPulse {
+    0%, 100% { outline-color: #2ecc71; }
+    50% { outline-color: #27ae60; }
 }
 
 .team-score {
@@ -516,15 +547,16 @@ header {
 @media (max-width: 950px) {
     .master-clock-container #master-timer { font-size: 2.2rem; }
 
-    .score-board {
-        transform: translateX(-50%) scale(0.9);
-        padding: 2px 6px;
+    .score-area {
         bottom: 3px;
+        gap: 5px;
+    }
+
+    .score-board {
+        padding: 2px 6px;
     }
 
     #btn-group-sub {
-        right: calc(50% + 65px);
-        bottom: 6px;
         font-size: 0.6rem;
         padding: 4px 8px;
     }
