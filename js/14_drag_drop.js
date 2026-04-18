@@ -182,11 +182,11 @@ function handleBenchDrop(e, player) {
     renderPlayers();
 }
 
-function handleSmartSwap(dragged, target, starterEl, subEl, forcedSubId) {
+function handleSmartSwap(dragged, target, forcedSubId) {
     if (dragged.cards === 'roja') {
         if (target.status === 'bench') {
             dragged.status = 'bench'; dragged.x = 0; dragged.y = 0;
-            if (isRunning) logMovement(dragged);
+            if (isRunning) logMovement(dragged, forcedSubId);
             renderPlayers(); sortBenchUI(dragged.team); return;
         } else {
             alert("Un jugador expulsado no puede volver al campo."); return;
@@ -215,7 +215,7 @@ function handleSmartSwap(dragged, target, starterEl, subEl, forcedSubId) {
     if (target.status === 'field') { const c = clampToField(target.x, target.y); target.x = c.x; target.y = c.y; }
 
     if (isRunning) {
-        // forcedSubId para cambio grupal (C1, C2...), Date.now() para cambio individual
+        // ID de sustitución: usar forcedSubId si viene (cambio grupal), sino Date.now()
         const subId = forcedSubId || Date.now();
         logMovement(dragged, subId);
         logMovement(target,  subId);

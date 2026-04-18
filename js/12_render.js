@@ -1,5 +1,139 @@
 // --- RENDER ---
 
+// ══════════════════════════════════════════════
+//  ESTADO DEL CAMBIO GRUPAL
+// ══════════════════════════════════════════════
+let groupSubMode = false;
+let groupSelectedOut = new Set();   // IDs de titulares seleccionados (salen)
+let groupSelectedIn  = new Set();   // IDs de suplentes seleccionados (entran)
+
+function toggleGroupSubMode() {
+    const btn = document.getElementById('btn-group-sub');
+    if (!btn) return;
+
+    // ── Si ya estamos en modo grupal ──
+    if (groupSubMode) {
+        // Si hay jugadores seleccionados en ambos lados → EJECUTAR
+        if (groupSelectedOut.size > 0 && groupSelectedIn.size > 0) {
+            executeGroupSubstitution();
+            return;
+        }
+        // Si no hay selecciones → desactivar
+        clearGroupSubSelection();
+        groupSubMode = false;
+        btn.textContent = '🔄 GRUPAL';
+        btn.classList.remove('mode-group-active');
+        return;
+    }
+
+    // ── Activar modo grupal ──
+    // Feedback visual INMEDIATO
+    groupSubMode = true;
+    btn.textContent = '🔄 GRUPAL';
+    btn.classList.add('mode-group-active');
+
+    // Limpiar cualquier sustitución individual pendiente
+    pendingSubstitution = null;
+    const highlight = document.querySelector('.sub-highlight');
+    if (highlight) highlight.classList.remove('sub-highlight');
+}
+
+function handleGroupSubClick(player) {
+    if (!groupSubMode) return;
+
+    const el = document.getElementById('player-' + player.id);
+    if (!el) return;
+
+    if (player.status === 'field') {
+        // Titular → marcar como SALIENTE
+        if (groupSelectedOut.has(player.id)) {
+            groupSelectedOut.delete(player.id);
+            el.classList.remove('group-sub-out');
+        } else {
+            groupSelectedOut.add(player.id);
+            el.classList.add('group-sub-out');
+            // Sonido/tactil
+            if (navigator.vibrate) navigator.vibrate(30);
+        }
+    } else if (player.status === 'bench') {
+        // Suplente → marcar como ENTRANTE
+        if (groupSelectedIn.has(player.id)) {
+            groupSelectedIn.delete(player.id);
+            el.classList.remove('group-sub-in');
+        } else {
+            groupSelectedIn.add(player.id);
+            el.classList.add('group-sub-in');
+            if (navigator.vibrate) navigator.vibrate(30);
+        }
+    }
+
+    // Actualizar texto del botón según selecciones
+    const btn = document.getElementById('btn-group-sub');
+    if (btn && groupSubMode) {
+        const outCount = groupSelectedOut.size;
+        const inCount = groupSelectedIn.size;
+        if (outCount > 0 || inCount > 0) {
+            btn.textContent = '✅ EJECUTAR (' + outCount + '→' + inCount + ')';
+        } else {
+            btn.textContent = '🔄 GRUPAL';
+        }
+    }
+}
+
+function executeGroupSubstitution() {
+    const outArr = Array.from(groupSelectedOut);
+    const inArr  = Array.from(groupSelectedIn);
+    const count = Math.min(outArr.length, inArr.length);
+
+    if (count === 0) {
+        clearGroupSubSelection();
+        groupSubMode = false;
+        const btn = document.getElementById('btn-group-sub');
+        if (btn) { btn.textContent = '🔄 GRUPAL'; btn.classList.remove('mode-group-active'); }
+        return;
+    }
+
+    for (let i = 0; i < count; i++) {
+        const outPlayer = players.find(p => p.id === outArr[i]);
+        const inPlayer  = players.find(p => p.id === inArr[i]);
+        if (outPlayer && inPlayer) {
+            const forcedSubId = 'C' + (i + 1);
+            handleSmartSwap(outPlayer, inPlayer, forcedSubId);
+        }
+    }
+
+    // Limpiar estado
+    clearGroupSubSelection();
+    groupSubMode = false;
+    const btn = document.getElementById('btn-group-sub');
+    if (btn) { btn.textContent = '🔄 GRUPAL'; btn.classList.remove('mode-group-active'); }
+    renderPlayers();
+}
+
+function clearGroupSubSelection() {
+    groupSelectedOut.forEach(id => {
+        const el = document.getElementById('player-' + id);
+        if (el) el.classList.remove('group-sub-out');
+    });
+    groupSelectedIn.forEach(id => {
+        const el = document.getElementById('player-' + id);
+        if (el) el.classList.remove('group-sub-in');
+    });
+    groupSelectedOut.clear();
+    groupSelectedIn.clear();
+}
+
+function reapplyGroupSubMarks() {
+    groupSelectedOut.forEach(id => {
+        const el = document.getElementById('player-' + id);
+        if (el) el.classList.add('group-sub-out');
+    });
+    groupSelectedIn.forEach(id => {
+        const el = document.getElementById('player-' + id);
+        if (el) el.classList.add('group-sub-in');
+    });
+}
+
 function renderPlayers() {
     const pitch = document.getElementById('football-pitch');
     const benchHome = document.getElementById('bench-list');
@@ -22,6 +156,9 @@ function renderPlayers() {
 
     sortBenchUI('home');
     if (analyzeAway) sortBenchUI('away');
+
+    // Re-aplicar marcas visuales del modo grupal después de re-renderizar
+    if (groupSubMode) reapplyGroupSubMarks();
 }
 
 function sortBenchUI(team) {
@@ -81,14 +218,24 @@ function createPlayerChip(player) {
     div.addEventListener('touchstart', (e) => handleTouchStart(e, player), { passive: false });
     div.addEventListener('touchmove',  (e) => handleTouchMove(e, player),  { passive: false });
     div.addEventListener('touchend',   (e) => handleTouchEnd(e, player),   { passive: false });
+    div.style.touchAction = 'manipulation';
 
     let lastTap = 0;
     let tapTimer = null;
+    let _skipNextClick = false;
 
     div.addEventListener('click', (e) => {
+        if (_skipNextClick) { _skipNextClick = false; return; }
         if (div.classList.contains('dragging')) return;
         if (player.cards === 'roja' && player.status === 'bench') return;
         e.stopPropagation();
+
+        // ── MODO GRUPAL: prioridad máxima ──
+        if (groupSubMode) {
+            handleGroupSubClick(player);
+            return;
+        }
+
         const currentTime = new Date().getTime();
         const tapLength = currentTime - lastTap;
         lastTap = currentTime;
@@ -172,6 +319,14 @@ function handleTouchEnd(e, player) {
     }
     const original = document.getElementById(`player-${player.id}`);
     if (original) original.style.opacity = '';
+
+    // ── Si NO se movió → es un toque, NO arrastre ──
+    if (!touchData.hasMoved) {
+        touchData.draggedPlayerId = null;
+        touchData.hasMoved = false;
+        // El click (o handleGroupSubClick) se encargará
+        return;
+    }
 
     const touch = e.changedTouches[0];
     const clientX = touch.clientX;
