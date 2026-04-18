@@ -202,22 +202,38 @@ function handleTouchEnd(e, player) {
 //  ATTACH LISTENER AL BOTÓN GRUPAL (touch + click)
 // ══════════════════════════════════════════════
 (function attachGroupSubBtn() {
-    // Intentar en cuanto el DOM esté listo, con reintentos
     function tryAttach() {
         var btn = document.getElementById('btn-group-sub');
-        if (!btn) { setTimeout(tryAttach, 200); return; }
+        if (!btn) { setTimeout(tryAttach, 300); return; }
 
-        // Ya tiene onclick en el HTML, pero añadimos touchend para tablet/móvil
-        // como respaldo directo (sin esperar al click sintético de 300ms)
+        // Evitar doble ejecución en dispositivos táctiles
+        var touchFired = false;
+
+        btn.addEventListener('touchstart', function() {
+            touchFired = true;
+        }, { passive: true });
+
         btn.addEventListener('touchend', function(e) {
-            e.preventDefault();  // bloquear el click sintético
-            e.stopPropagation();
-            toggleGroupSubMode();
+            if (touchFired) {
+                e.preventDefault(); // bloquear click sintético
+                touchFired = false;
+                toggleGroupSubMode();
+            }
         }, { passive: false });
 
-        // El onclick del HTML cubre PC y como fallback general
+        btn.addEventListener('click', function(e) {
+            if (touchFired) {
+                // El touchend ya gestionó, no hacer nada
+                touchFired = false;
+                return;
+            }
+            // PC: click directo sin touch previo
+            toggleGroupSubMode();
+        });
+
+        // Quitar el onclick del HTML para evitar triple ejecución
+        btn.removeAttribute('onclick');
     }
-    // Ejecutar tras la carga del script (el botón ya existe en el HTML)
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', tryAttach);
     } else {
