@@ -21,7 +21,7 @@ function toggleGroupSubMode() {
         // Si no hay selecciones → desactivar
         clearGroupSubSelection();
         groupSubMode = false;
-        btn.textContent = '🔄 GRUPAL';
+        btn.textContent = '\u{1F504} GRUPAL';
         btn.classList.remove('mode-group-active');
         return;
     }
@@ -29,7 +29,7 @@ function toggleGroupSubMode() {
     // ── Activar modo grupal ──
     // Feedback visual INMEDIATO
     groupSubMode = true;
-    btn.textContent = '🔄 GRUPAL';
+    btn.textContent = '\u{1F504} GRUPAL';
     btn.classList.add('mode-group-active');
 
     // Limpiar cualquier sustitución individual pendiente
@@ -52,7 +52,6 @@ function handleGroupSubClick(player) {
         } else {
             groupSelectedOut.add(player.id);
             el.classList.add('group-sub-out');
-            // Sonido/tactil
             if (navigator.vibrate) navigator.vibrate(30);
         }
     } else if (player.status === 'bench') {
@@ -73,9 +72,9 @@ function handleGroupSubClick(player) {
         const outCount = groupSelectedOut.size;
         const inCount = groupSelectedIn.size;
         if (outCount > 0 || inCount > 0) {
-            btn.textContent = '✅ EJECUTAR (' + outCount + '→' + inCount + ')';
+            btn.textContent = '\u2705 EJECUTAR (' + outCount + '\u2192' + inCount + ')';
         } else {
-            btn.textContent = '🔄 GRUPAL';
+            btn.textContent = '\u{1F504} GRUPAL';
         }
     }
 }
@@ -89,7 +88,7 @@ function executeGroupSubstitution() {
         clearGroupSubSelection();
         groupSubMode = false;
         const btn = document.getElementById('btn-group-sub');
-        if (btn) { btn.textContent = '🔄 GRUPAL'; btn.classList.remove('mode-group-active'); }
+        if (btn) { btn.textContent = '\u{1F504} GRUPAL'; btn.classList.remove('mode-group-active'); }
         return;
     }
 
@@ -106,7 +105,7 @@ function executeGroupSubstitution() {
     clearGroupSubSelection();
     groupSubMode = false;
     const btn = document.getElementById('btn-group-sub');
-    if (btn) { btn.textContent = '🔄 GRUPAL'; btn.classList.remove('mode-group-active'); }
+    if (btn) { btn.textContent = '\u{1F504} GRUPAL'; btn.classList.remove('mode-group-active'); }
     renderPlayers();
 }
 
@@ -157,6 +156,11 @@ function renderPlayers() {
     sortBenchUI('home');
     if (analyzeAway) sortBenchUI('away');
 
+    // Re-renderizar la tarjeta del cuerpo técnico después de limpiar el bench
+    if (typeof renderStaffInBench === 'function') {
+        renderStaffInBench();
+    }
+
     // Re-aplicar marcas visuales del modo grupal después de re-renderizar
     if (groupSubMode) reapplyGroupSubMarks();
 }
@@ -185,11 +189,11 @@ function createPlayerChip(player) {
     div.style.background = `linear-gradient(to bottom, ${player.color} 50%, ${player.shortsColor} 50%)`;
 
     let indicatorsHTML = '';
-    if (player.goals > 0)           indicatorsHTML += `<div class="player-goal-indicator">${player.goals} ⚽</div>`;
+    if (player.goals > 0)           indicatorsHTML += `<div class="player-goal-indicator">${player.goals} \u26BD</div>`;
     if (player.cards === 'amarilla') indicatorsHTML += `<div class="player-card-indicator amarilla"></div>`;
     else if (player.cards === 'roja') indicatorsHTML += `<div class="player-card-indicator roja"></div>`;
 
-    // Lesión: borde rojo en chip + ✚ en la etiqueta del nombre (siempre visible)
+    // Lesión: borde rojo en chip + ✚ en la etiqueta del nombre
     if (player.injured) {
         div.style.border = '3px solid #e74c3c';
         div.style.boxShadow = '0 0 10px rgba(231,76,60,0.9), 0 4px 6px rgba(0,0,0,0.3)';
@@ -199,13 +203,17 @@ function createPlayerChip(player) {
     }
 
     const injuredLabel = player.injured
-        ? `<span style="color:#ff4040;font-weight:900;margin-left:2px;">✚</span>`
+        ? `<span style="color:#ff4040;font-weight:900;margin-left:2px;">\u271A</span>`
         : '';
+
+    // Sanitizar nombre del jugador para prevenir XSS
+    const safeName = typeof escapeHtml === 'function' ? escapeHtml(player.name) : player.name;
+    const safeNumber = typeof escapeHtml === 'function' ? escapeHtml(String(player.number)) : player.number;
 
     div.innerHTML = `
         <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
-        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${player.number}</div>
-        <div class="player-name" style="pointer-events: none;">${player.name}${injuredLabel}</div>
+        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${safeNumber}</div>
+        <div class="player-name" style="pointer-events: none;">${safeName}${injuredLabel}</div>
         ${indicatorsHTML}
     `;
 
@@ -278,7 +286,7 @@ function handleTouchStart(e, player) {
     touchData.draggedPlayerId = player.id;
     touchData.hasMoved = false;
 
-    // Crear CLON visual para el arrastre — la ficha original queda en su sitio
+    // Crear CLON visual para el arrastre
     const original = document.getElementById(`player-${player.id}`);
     const clone = original.cloneNode(true);
     clone.id = `drag-clone-${player.id}`;
@@ -294,7 +302,7 @@ function handleTouchStart(e, player) {
     document.body.appendChild(clone);
     touchData.clone = clone;
 
-    // Atenuar la ficha original para indicar que se está moviendo
+    // Atenuar la ficha original
     original.style.opacity = '0.3';
 }
 
@@ -395,4 +403,3 @@ function handleTouchEnd(e, player) {
         tryAttach();
     }
 })();
-
