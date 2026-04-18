@@ -1,13 +1,14 @@
 // --- RENDER ---
 
 // ══════════════════════════════════════════════
-//  ESTADO DEL CAMBIO GRUPAL
+//  ESTADO DEL CAMBIO GRUPAL (con aislamiento por equipo)
 // ══════════════════════════════════════════════
 let groupSubMode = false;
-let groupSubTeam = null;  // 'home' o 'away'
+let groupSubTeam = null;  // 'home' o 'away' — equipo activo en modo grupal
 let groupSelectedOut = new Set();   // IDs de titulares seleccionados (salen)
 let groupSelectedIn  = new Set();   // IDs de suplentes seleccionados (entran)
 
+// ── TOGGLE MODO GRUPAL (acepta 'home' o 'away') ────────────────────
 function toggleGroupSubMode(team) {
     const btnId = team === 'away' ? 'btn-group-sub-away' : 'btn-group-sub';
     const btn = document.getElementById(btnId);
@@ -15,10 +16,12 @@ function toggleGroupSubMode(team) {
 
     // ── Si ya estamos en modo grupal para ESTE equipo ──
     if (groupSubMode && groupSubTeam === team) {
+        // Si hay jugadores seleccionados en ambos lados → EJECUTAR
         if (groupSelectedOut.size > 0 && groupSelectedIn.size > 0) {
             executeGroupSubstitution(team);
             return;
         }
+        // Si no hay selecciones → desactivar
         clearGroupSubSelection();
         groupSubMode = false;
         groupSubTeam = null;
@@ -27,7 +30,7 @@ function toggleGroupSubMode(team) {
         return;
     }
 
-    // ── Si estaba activo para OTRO equipo → cerrar ese primero ──
+    // ── Si ya estaba activo para OTRO equipo → desactivar el otro ──
     if (groupSubMode && groupSubTeam && groupSubTeam !== team) {
         const otherBtnId = groupSubTeam === 'away' ? 'btn-group-sub-away' : 'btn-group-sub';
         const otherBtn = document.getElementById(otherBtnId);
@@ -38,20 +41,23 @@ function toggleGroupSubMode(team) {
         clearGroupSubSelection();
     }
 
-    // ── Activar modo grupal para este equipo ──
+    // ── Activar modo grupal para ESTE equipo ──
     groupSubMode = true;
     groupSubTeam = team;
     btn.textContent = '\u{1F504} GRUPAL';
     btn.classList.add('mode-group-active');
 
+    // Limpiar cualquier sustitución individual pendiente
     pendingSubstitution = null;
     const highlight = document.querySelector('.sub-highlight');
     if (highlight) highlight.classList.remove('sub-highlight');
 }
 
+// ── CLICK EN JUGADOR DENTRO DEL MODO GRUPAL ────────────────────────
 function handleGroupSubClick(player) {
     if (!groupSubMode || !groupSubTeam) return;
-    // CRITICO: Solo procesar jugadores del equipo activo
+
+    // AISLAMIENTO POR EQUIPO: solo afecta jugadores del equipo activo
     if (player.team !== groupSubTeam) return;
 
     const el = document.getElementById('player-' + player.id);
@@ -93,6 +99,7 @@ function handleGroupSubClick(player) {
     }
 }
 
+// ── EJECUTAR CAMBIO GRUPAL ────────────────────────────────────────
 function executeGroupSubstitution(team) {
     const outArr = Array.from(groupSelectedOut);
     const inArr  = Array.from(groupSelectedIn);
@@ -102,8 +109,8 @@ function executeGroupSubstitution(team) {
         clearGroupSubSelection();
         groupSubMode = false;
         groupSubTeam = null;
-        const btnId2 = team === 'away' ? 'btn-group-sub-away' : 'btn-group-sub';
-        const btn = document.getElementById(btnId2);
+        const btnId = team === 'away' ? 'btn-group-sub-away' : 'btn-group-sub';
+        const btn = document.getElementById(btnId);
         if (btn) { btn.textContent = '\u{1F504} GRUPAL'; btn.classList.remove('mode-group-active'); }
         return;
     }
@@ -121,8 +128,8 @@ function executeGroupSubstitution(team) {
     clearGroupSubSelection();
     groupSubMode = false;
     groupSubTeam = null;
-    const btnId3 = team === 'away' ? 'btn-group-sub-away' : 'btn-group-sub';
-    const btn = document.getElementById(btnId3);
+    const btnId = team === 'away' ? 'btn-group-sub-away' : 'btn-group-sub';
+    const btn = document.getElementById(btnId);
     if (btn) { btn.textContent = '\u{1F504} GRUPAL'; btn.classList.remove('mode-group-active'); }
     renderPlayers();
 }
@@ -381,27 +388,37 @@ function handleTouchEnd(e, player) {
 }
 
 // ══════════════════════════════════════════════
-//  ATTACH LISTENER AL BOTÓN GRUPAL (touch + click)
+//  ATTACH LISTENERS A LOS BOTONES GRUPAL (touch + click)
 // ══════════════════════════════════════════════
 function attachGroupSubBtnEvents(btnId, team) {
     function tryAttach() {
         var btn = document.getElementById(btnId);
         if (!btn) { setTimeout(tryAttach, 300); return; }
+
+        // Evitar doble ejecución en dispositivos táctiles
         var touchFired = false;
+
         btn.addEventListener('touchstart', function() {
             touchFired = true;
         }, { passive: true });
+
         btn.addEventListener('touchend', function(e) {
             if (touchFired) {
-                e.preventDefault();
+                e.preventDefault(); // bloquear click sintético
                 touchFired = false;
                 toggleGroupSubMode(team);
             }
         }, { passive: false });
+
         btn.addEventListener('click', function(e) {
-            if (touchFired) { touchFired = false; return; }
+            if (touchFired) {
+                touchFired = false;
+                return;
+            }
             toggleGroupSubMode(team);
         });
+
+        // Quitar el onclick del HTML para evitar triple ejecución
         btn.removeAttribute('onclick');
     }
     if (document.readyState === 'loading') {
@@ -410,17 +427,19 @@ function attachGroupSubBtnEvents(btnId, team) {
         tryAttach();
     }
 }
+
+// GRUPAL LOCAL (siempre disponible)
 attachGroupSubBtnEvents('btn-group-sub', 'home');
-// GRUPAL visitante: solo attach si existe el botón (modo ambos equipos)
+
+// GRUPAL VISITANTE: solo attach si existe el botón (modo ambos equipos)
 (function() {
-    function waitAway() {
+    function checkAwayBtn() {
         var btn = document.getElementById('btn-group-sub-away');
-        if (btn) { attachGroupSubBtnEvents('btn-group-sub-away', 'away'); }
-        else { setTimeout(waitAway, 500); }
+        if (btn) {
+            attachGroupSubBtnEvents('btn-group-sub-away', 'away');
+        } else {
+            setTimeout(checkAwayBtn, 500);
+        }
     }
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', waitAway);
-    } else {
-        waitAway();
-    }
+    checkAwayBtn();
 })();

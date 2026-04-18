@@ -543,11 +543,6 @@ function openSetupModal() {
                         style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
                         🏃 ENTRENAMIENTO
                     </button>
-                    <button class="btn" onclick="if(typeof showFinishedMatches==='function') showFinishedMatches();"
-                        title="Ver partidos terminados"
-                        style="background:rgba(240,136,62,0.1);color:#f0883e;font-size:0.82rem;border:1px solid rgba(240,136,62,0.35);">
-                        📋 PARTIDOS TERMINADOS
-                    </button>
                     ${window._cronosCurrentUser?.role === 'club_admin' ? `
                     <button onclick="openClubAdminPanel()"
                         style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
