@@ -87,7 +87,7 @@ async function syncFromCloud() {
 
 // ── Listener en tiempo real: cualquier cambio en Firestore ────────
 // se aplica automáticamente en este dispositivo al instante
-let _realtimeUnsubscribe = null;
+// _realtimeUnsubscribe ya declarado en app.js
 
 async function startRealtimeSync() {
     const fa  = window._cronos_auth;
@@ -542,6 +542,11 @@ function openSetupModal() {
                         title="Planificar sesión de entrenamiento"
                         style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
                         🏃 ENTRENAMIENTO
+                    </button>
+                    <button class="btn" onclick="if(typeof showFinishedMatches==='function') showFinishedMatches();"
+                        title="Ver partidos terminados"
+                        style="background:rgba(240,136,62,0.1);color:#f0883e;font-size:0.82rem;border:1px solid rgba(240,136,62,0.35);">
+                        📋 PARTIDOS TERMINADOS
                     </button>
                     ${window._cronosCurrentUser?.role === 'club_admin' ? `
                     <button onclick="openClubAdminPanel()"

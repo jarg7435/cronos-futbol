@@ -1,5 +1,5 @@
 // --- PLAYER ACTION MODAL ---
-// NOTA: activeActionPlayerId declarado en app.js
+// activeActionPlayerId ya declarado en app.js
 
 function openPlayerActionModal(player) {
     activeActionPlayerId = player.id;

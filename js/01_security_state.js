@@ -1,5 +1,5 @@
 // --- SECURITY & INITIALIZATION ---
-const ACCESS_CODE = '1234';
+// ACCESS_CODE declarado en app.js
 
 window.onload = () => {
     // La app arranca desde enterApp() en index.html tras la autenticación Firebase
@@ -23,63 +23,13 @@ function unlockApp() {
     init();
 }
 
-// --- CONFIGURATION & STATE ---
-let players = [];
-let isRunning = false;
-let timerInterval = null;
-let lastTickTime = 0;
-let currentMode = 'f7';
-let matchPhase = '1st_half';
-let analyzeAway = false;
-let activeFormationKey = null;
-let selectedFormationOnStart = '';
-
-let half1MaxTime = 30 * 60;
-let half2MaxTime = 30 * 60;
-let masterTimeH1 = 0;
-let masterTimeH2 = 0;
-
-let pendingSubstitution = null;
-
-// --- SINCRONIZACIÓN EN VIVO (Firestore) ---
-let liveMatchId    = null;   // ID del partido en Firestore
-let liveSyncTimer  = null;   // Intervalo de sincronización del cronómetro
-let liveIsActive   = false;  // true cuando hay partido en vivo activo
-
-// --- CUERPO TÉCNICO (persiste en localStorage) ---
-let staffConfig = {
-    coach1:    '',   // Primer entrenador
-    coach2:    '',   // Segundo entrenador
-    delegate:  '',   // Delegado de equipo
-    fieldDelegate: '' // Delegado de campo (opcional, solo en casa)
-};
-
-// --- CONFIGURACIÓN DE EMAIL Y WHATSAPP (persiste en localStorage) ---
-let emailConfig = {
-    coachEmail: '',        // correo del entrenador (copia para él)
-    directorEmail: '',     // correo del director deportivo (destino principal)
-    emailjsServiceId: '',  // ID del servicio EmailJS
-    emailjsTemplateId: '', // ID de la plantilla EmailJS
-    emailjsPublicKey: '',  // Clave pública EmailJS
-    whatsappNumber: ''     // número del director deportivo con prefijo país (ej: 34612345678)
-};
-
-const COLORS = {
-    home: { primary: '#58a6ff', secondary: '#f0883e', shorts: '#ffffff', text: '#ffffff' },
-    away: { primary: '#ff5858', secondary: '#f0883e', shorts: '#000000', text: '#ffffff' }
-};
-
-const TEAM_NAMES = { home: 'LOCAL', away: 'VISITANTE' };
+// --- CONFIGURATION & STATE (todas las variables ya declaradas en app.js) ---
 
 // ══════════════════════════════════════════════════════════════════
-//  FORMACIONES PREDEFINIDAS
-//  El campo es HORIZONTAL (aspect-ratio 3:2).
-//  x = izquierda→derecha (%), y = arriba→abajo (%)
-//  LOCAL ocupa el LADO IZQUIERDO (x: 5-46) en modo ambos equipos.
-//  VISITANTE ocupa el LADO DERECHO (x: 54-95), espejo del local.
-//  FULL = local solo, ocupa campo completo (x: 5-92).
+//  FORMACIONES PREDEFINIDAS → usando FORMATION_PRESETS de app.js
 // ══════════════════════════════════════════════════════════════════
-const FORMATION_PRESETS = {
+/* FORMATION_PRESETS bloque omitido (ya existe en app.js) */
+if (false) const _unused_FORMATION_PRESETS = {
     // ─── FÚTBOL 7 ───────────────────────────────────────────────────────────────
     // Campo horizontal. Local lado izquierdo (x≈9-47), Visitante lado derecho (x≈53-91).
     // Full = local solo, campo completo (x≈9-88).
@@ -249,17 +199,9 @@ const FORMATION_PRESETS = {
             ],
         },
     },
-};
+}; // fin del bloque if(false) — FORMATION_PRESETS no se ejecuta
 
-// Márgenes seguros en % del campo.
-// Chip radio ≈ 4.5%, etiqueta (crono/nombre) ≈ 6% adicional → total mínimo ≈ 11%
-// Usamos 13% para tener holgura y garantizar visibilidad en cualquier tamaño de pantalla.
-const FIELD_MARGIN = {
-    minX: 8,   // margen izquierdo
-    maxX: 92,  // margen derecho
-    minY: 13,  // margen superior (espacio para el crono)
-    maxY: 87,  // margen inferior (espacio para el nombre)
-};
+// FIELD_MARGIN declarado en app.js
 
 function clampToField(x, y) {
     return {

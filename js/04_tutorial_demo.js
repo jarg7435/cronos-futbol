@@ -101,7 +101,7 @@ function startDemo() {
 //  TUTORIAL INTERACTIVO
 // ══════════════════════════════════════════════════════════════════
 
-// NOTA: TUTORIAL_STEPS y tutorialStep declarados en app.js
+// TUTORIAL_STEPS y tutorialStep ya declarados en app.js
 
 function startTutorial() {
     tutorialStep = 0;

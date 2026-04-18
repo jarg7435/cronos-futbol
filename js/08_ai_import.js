@@ -156,8 +156,7 @@ Reglas:
 }
 
 // ── Tesseract.js fallback (100% local) ──────────────────────────────
-// NOTA: _tesseractLoaded declarado en app.js
-
+// _tesseractLoaded ya declarado en app.js
 async function callTesseract(base64, setStatus) {
     if (!_tesseractLoaded) {
         await new Promise((res, rej) => {
@@ -428,6 +427,266 @@ function saveMasterRoster(mode) {
     }, 300);
 }
 
-// NOTA: openConvocationModal() y startMatchWithConvocation() eliminadas de aquí.
-// Las versiones correctas están en app.js — este archivo no debe sobreescribirlas.
+function openConvocationModal() {
+    document.body.classList.add('setup-mode');
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const myPlayers = roster[currentMode] || [];
+    const minLimit = currentMode === 'f7' ? 6 : 7;
+    const maxLimit = currentMode === 'f7' ? 14 : 18;
+    
+    // --- MEJORA: Columnas responsivas ---
+    const isMobile = window.innerWidth < 640;
+    const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 4);
+
+    const isLandscape = window.innerHeight < 500;
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(96vw,840px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding: ${isMobile ? '1rem 0.8rem' : '1.5rem'};">
+            
+            <div style="flex-shrink:0;">
+                <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">Convocatoria — ${TEAM_NAMES.home}</h2>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.6rem;">
+                    Toca cualquier jugador para seleccionarlo · <span style="color:var(--primary)">${minLimit}-${maxLimit}</span>
+                </p>
+            </div>
+
+            <!-- Listado de jugadores -->
+            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
+                ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
+                    <div class="conv-row" data-index="${i}"
+                        style="background:var(--glass); border:2px solid transparent; border-radius:8px;
+                               padding:${isMobile ? '6px 8px' : '8px 10px'}; display:flex; align-items:center; gap:8px;
+                               cursor:pointer; transition:all 0.1s; user-select:none;">
+                        <span class="conv-dot" style="width:16px;height:16px;border-radius:50%;
+                              background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25);
+                              display:flex;align-items:center;justify-content:center;
+                              font-size:0.55rem;flex-shrink:0;">✓</span>
+                        <span style="font-size:0.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            <span style="color:var(--primary);font-weight:bold;">${typeof escapeHtml==='function'?escapeHtml(p.number):p.number}</span>
+                            ${typeof escapeHtml==='function'?escapeHtml(p.alias||p.name||'J'+(i+1)):p.alias||p.name||'J'+(i+1)}
+                        </span>
+                    </div>
+                `).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.8rem; text-align:center; padding:2rem;">No hay jugadores en la plantilla.</p>'}
+            </div>
+
+            <!-- Cuerpo técnico más compacto -->
+            ${(staffConfig.coach1 || staffConfig.coach2 || staffConfig.delegate || staffConfig.fieldDelegate) ? `
+            <div style="margin-bottom:0.6rem; padding:0.4rem 0.6rem; flex-shrink:0;
+                        background:rgba(88,166,255,0.04); border-radius:8px;
+                        border:1px solid rgba(88,166,255,0.12);">
+                <div style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;">
+                    <span style="font-size:0.62rem; color:var(--text-muted); font-weight:700; margin-right:4px;">👨‍💼 STAFF</span>
+                    ${staffConfig.coach1 ? '<span style="font-size:0.65rem;background:rgba(88,166,255,0.15);color:var(--primary);border-radius:4px;padding:1px 6px;font-weight:700;">' + (typeof escapeHtml==='function'?escapeHtml(staffConfig.coach1):staffConfig.coach1) + '</span>' : ''}
+                    ${staffConfig.coach2 ? '<span style="font-size:0.65rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:4px;padding:1px 6px;">' + (typeof escapeHtml==='function'?escapeHtml(staffConfig.coach2):staffConfig.coach2) + '</span>' : ''}
+                    ${staffConfig.delegate ? '<span style="font-size:0.65rem;background:rgba(240,136,62,0.1);color:var(--secondary);border-radius:4px;padding:1px 6px;">' + (typeof escapeHtml==='function'?escapeHtml(staffConfig.delegate):staffConfig.delegate) + '</span>' : ''}
+                </div>
+            </div>` : ''}
+
+            <!-- Botonera rediseñada (Grid en móviles) -->
+            <div style="margin-top:auto; padding-top:1rem; border-top:1px solid var(--glass-border);
+                        display:flex; flex-direction:column; gap:0.6rem;">
+                
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span id="conv-count" style="font-size:1.1rem; font-weight:bold; color:var(--primary);">0</span>
+                    <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 1rem; font-size:0.75rem;">← VOLVER</button>
+                </div>
+
+                <div style="display:grid; grid-template-columns:${isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(130px, 1fr))'}; gap:0.4rem;">
+                    <button class="btn" onclick="openConvocationMessage()"
+                        style="background:rgba(63,185,80,0.1);border-color:rgba(63,185,80,0.3);
+                               color:#3fb950;font-weight:700; font-size:0.72rem; padding:0.5rem 2px;">
+                        📲 CONVOCATORIA
+                    </button>
+                    <button class="btn" onclick="openTrainingNotification()"
+                        style="background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.3);
+                               color:#58a6ff;font-weight:700; font-size:0.72rem; padding:0.5rem 2px;">
+                        📅 ENTRENAMIENTO
+                    </button>
+                    <button class="btn" onclick="openCoachMessaging()"
+                        style="background:rgba(210,168,255,0.1);border-color:rgba(210,168,255,0.3);
+                               color:#d2a8ff;font-weight:700; font-size:0.72rem; padding:0.5rem 2px;">
+                        💬 MENSAJES
+                    </button>
+                    <button class="btn" onclick="sendMatchReportsToParents()"
+                        style="background:rgba(240,136,62,0.1);border-color:rgba(240,136,62,0.3);
+                               color:var(--secondary);font-weight:700; font-size:0.72rem; padding:0.5rem 2px;">
+                        📊 INFORME
+                    </button>
+                    <button class="btn primary" id="btn-start-match" onclick="startMatchWithConvocation()" disabled
+                        style="grid-column: 1 / -1; font-weight:900; letter-spacing:1px; padding:0.65rem;">
+                        INICIAR PARTIDO
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const countEl = document.getElementById('conv-count');
+    const startBtn = document.getElementById('btn-start-match');
+
+    if (myPlayers.length === 0) {
+        startBtn.disabled = false;
+        countEl.style.display = 'none';
+        return;
+    }
+
+    let selected = 0;
+
+    // --- PRE-SELECCIÓN DE EQUIPO CARGADO ---
+    // Titulares  → borde naranja (--secondary) + badge "T"
+    // Suplentes  → borde azul   (--primary)   + badge "S"
+    const loadedTeam = window.loadedTeamPlayers?.['home'];
+    if (loadedTeam) {
+        myPlayers.forEach((p, i) => {
+            const savedPlayer = loadedTeam.find(lp => lp.number == p.number);
+            if (savedPlayer) {
+                const row = document.querySelector(`.conv-row[data-index="${i}"]`);
+                if (row) {
+                    const isTitular = savedPlayer.status === 'field';
+                    const borderColor = isTitular ? 'var(--secondary)' : 'var(--primary)';
+                    const bgColor     = isTitular ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
+                    row.classList.add('conv-selected');
+                    row.dataset.status = isTitular ? 'field' : 'bench'; // ← needed by startMatchWithConvocation
+                    row.style.borderColor = borderColor;
+                    row.style.background  = bgColor;
+                    row.querySelector('.conv-dot').style.background  = borderColor;
+                    row.querySelector('.conv-dot').style.borderColor = borderColor;
+                    row.querySelector('.conv-dot').style.color = '#0a0e14';
+                    row.querySelector('.conv-dot').textContent = isTitular ? 'T' : 'S';
+                    // Badge titular/suplente
+                    const badge = document.createElement('span');
+                    badge.className = 'conv-status-badge';
+                    badge.textContent = isTitular ? 'TITULAR' : 'SUP';
+                    badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
+                        border-radius:3px;background:${borderColor};color:#0a0e14;
+                        margin-left:auto;flex-shrink:0;`;
+                    row.appendChild(badge);
+                    selected++;
+                }
+            }
+        });
+        countEl.textContent = `${selected}`;
+        const isValid = (selected >= minLimit && selected <= maxLimit);
+        countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
+        startBtn.disabled = !isValid;
+    }
+
+    document.querySelectorAll('.conv-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const currentStatus = row.dataset.status || 'none'; // none, bench, field
+            let nextStatus = 'none';
+
+            if (currentStatus === 'none') {
+                if (selected >= maxLimit) return;
+                nextStatus = 'bench';
+            } else if (currentStatus === 'bench') {
+                nextStatus = 'field';
+            } else {
+                nextStatus = 'none';
+            }
+
+            row.dataset.status = nextStatus;
+
+            if (nextStatus === 'none') {
+                row.classList.remove('conv-selected');
+                row.style.borderColor = 'transparent';
+                row.style.background  = 'var(--glass)';
+                row.querySelector('.conv-dot').style.background = 'rgba(255,255,255,0.1)';
+                row.querySelector('.conv-dot').style.borderColor = 'rgba(255,255,255,0.25)';
+                row.querySelector('.conv-dot').style.color = 'transparent';
+                row.querySelector('.conv-dot').textContent = '✓';
+                const badge = row.querySelector('.conv-status-badge');
+                if (badge) badge.remove();
+                selected--;
+            } else {
+                const isField = (nextStatus === 'field');
+                const color   = isField ? 'var(--secondary)' : 'var(--primary)';
+                const bg      = isField ? 'rgba(240,136,62,0.15)' : 'rgba(88,166,255,0.12)';
+                
+                if (currentStatus === 'none') {
+                    row.classList.add('conv-selected');
+                    selected++;
+                }
+                
+                row.style.borderColor = color;
+                row.style.background  = bg;
+                const dot = row.querySelector('.conv-dot');
+                dot.style.background  = color;
+                dot.style.borderColor = color;
+                dot.style.color = '#0a0e14';
+                dot.textContent = isField ? 'T' : 'S';
+
+                // Badge titular/suplente
+                let badge = row.querySelector('.conv-status-badge');
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'conv-status-badge';
+                    row.appendChild(badge);
+                }
+                badge.textContent = isField ? 'TITULAR' : 'SUPLENTE';
+                badge.style.cssText = `font-size:0.55rem;font-weight:bold;padding:2px 5px;
+                    border-radius:3px;background:${color};color:#0a0e14;
+                    margin-left:auto;flex-shrink:0;`;
+            }
+
+            countEl.textContent = `${selected}`;
+            const isValid = (selected >= minLimit && selected <= maxLimit);
+            countEl.style.color = isValid ? 'var(--secondary)' : 'var(--primary)';
+            startBtn.disabled = !isValid;
+        });
+    });
+}
+
+function startMatchWithConvocation() {
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    const myPlayers = roster[currentMode] || [];
+    const rows = document.querySelectorAll('.conv-row.conv-selected');
+    
+    // Guardar selección con el estatus (titular/suplente)
+    const selectedPlayers = Array.from(rows).map(r => {
+        const p = myPlayers[r.dataset.index];
+        return { 
+            ...p, 
+            initialStatus: r.dataset.status || 'bench' 
+        };
+    });
+    
+    window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
+
+    document.body.classList.remove('setup-mode');
+    spawnInitialPlayers();
+
+    document.getElementById('main-header').style.display = 'flex';
+    document.getElementById('main-container').style.display = 'flex';
+
+    renderPlayers();
+    updateMasterUI(); // Inicializa display del timer con tiempo correcto (ej: 40:00 para F11)
+
+    // Aplicar formación inicial SOLO si no hay posiciones guardadas de un equipo cargado.
+    // Si el equipo fue cargado, sus posiciones (x,y) ya fueron restauradas por spawnInitialPlayers
+    // y aplicar la formación las sobreescribiría incorrectamente.
+    const hasLoadedPositions = window.loadedTeamPlayers?.['home']?.some(p => p.x || p.y);
+    if (selectedFormationOnStart && !hasLoadedPositions) {
+        applyFormationPreset(selectedFormationOnStart);
+    }
+    // Limpiar datos de equipo cargado ya aplicados
+    window.loadedTeamPlayers = {};
+
+    // Iniciar transmisión en vivo automáticamente (el director puede conectarse cuando quiera)
+    setTimeout(() => startLiveSync(), 800);
+
+    document.getElementById('setup-modal').style.display = 'none';
+
+    // Inyectar botones de scroll en ambos banquillos
+    injectBenchScrollButtons('bench-list');
+    if (analyzeAway) injectBenchScrollButtons('bench-list-away');
+    // Mostrar cuerpo técnico en el banquillo
+    renderStaffInBench();
+
+    const pitch = document.getElementById('football-pitch');
+    pitch.addEventListener('click', () => closeDrawers());
+    pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+}
 
