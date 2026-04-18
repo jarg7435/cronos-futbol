@@ -1816,7 +1816,7 @@ function openSetupModal() {
             </div>
 
             <!-- BOTONES -->
-            <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:0.5rem;">
                 <div style="display:flex; gap:0.6rem; align-items:center;">
                     <button class="btn" onclick="openRosterManager()"
                         style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
@@ -1880,6 +1880,11 @@ function confirmSetup() {
     currentMode = document.getElementById('setup-mode').value;
     analyzeAway = document.getElementById('setup-analyze-away').checked;
     selectedFormationOnStart = document.getElementById('setup-formation')?.value || '';
+    // Si no se seleccionó formación, usar la predeterminada del modo
+    if (!selectedFormationOnStart) {
+        selectedFormationOnStart = currentMode === 'f7' ? '231' : '442';
+        document.getElementById('setup-formation').value = selectedFormationOnStart;
+    }
 
     document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
     document.getElementById('team-b-name').textContent = TEAM_NAMES.away;
