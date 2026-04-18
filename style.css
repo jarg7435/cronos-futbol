@@ -367,19 +367,12 @@ header {
     animation: blinkText 1s infinite;
 }
 
-/* ── Contenedor flex: botón GRUPAL + marcador ── */
-.score-area {
+.score-board {
+    /* Centered absolutely in the header, at the timer-row level */
     position: absolute;
     left: 50%;
     bottom: 5px;
     transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    z-index: 5;
-}
-
-.score-board {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -387,9 +380,17 @@ header {
     padding: 3px 8px;
     border-radius: 30px;
     border: 1px solid rgba(255, 255, 255, 0.08);
+    z-index: 5;
 }
 
-/* ── Botón Cambio Grupal ── */
+/* ── Botón cambio grupal — posicionado a la izquierda del marcador ── */
+.group-sub-container {
+    position: absolute;
+    left: calc(50% - 130px);
+    bottom: 8px;
+    z-index: 200;
+    transform: translateX(-100%);
+}
 #btn-group-sub {
     background: rgba(255,222,89,0.12);
     border: 1px solid rgba(255,222,89,0.35);
@@ -547,15 +548,16 @@ header {
 @media (max-width: 950px) {
     .master-clock-container #master-timer { font-size: 2.2rem; }
 
-    .score-area {
-        bottom: 3px;
-        gap: 5px;
-    }
-
     .score-board {
+        transform: translateX(-50%) scale(0.9);
         padding: 2px 6px;
+        bottom: 3px;
     }
 
+    .group-sub-container {
+        left: calc(50% - 100px);
+        bottom: 6px;
+    }
     #btn-group-sub {
         font-size: 0.6rem;
         padding: 4px 8px;
@@ -1356,48 +1358,3 @@ input, select {
         .ob-sidebar-item.active .ob-sidebar-num { background: #58a6ff; color: #0a0e14; }
         .ob-sidebar-item.done  .ob-sidebar-num { background: rgba(88,166,255,0.3); color: #58a6ff; }
     
-
-/* ══════════════════════════════════════════════════════════════════
-   RESPONSIVE — Convocation & Training modals
-   PC, Tablet, Mobile with scroll
-   ══════════════════════════════════════════════════════════════════ */
-
-/* Mobile: full scroll */
-@media (max-width: 639px) {
-    .modal-content {
-        padding: 0.8rem !important;
-        max-height: 97vh !important;
-        gap: 0.5rem;
-    }
-    .modal-content h2 {
-        font-size: 1.1rem !important;
-    }
-    .conv-input {
-        padding: 0.38rem 0.5rem !important;
-        font-size: 0.82rem !important;
-    }
-    .conv-row, .train-row {
-        padding: 8px 10px !important;
-    }
-}
-
-/* Tablet */
-@media (min-width: 640px) and (max-width: 1023px) {
-    .modal-content {
-        padding: 1.2rem !important;
-    }
-}
-
-/* Desktop */
-@media (min-width: 1024px) {
-    .modal-content {
-        padding: 1.5rem !important;
-    }
-}
-
-/* Landscape mobile — ensure scroll works */
-@media (max-width: 639px) and (orientation: landscape) {
-    .modal-content {
-        max-height: 98vh !important;
-    }
-}

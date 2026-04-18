@@ -359,6 +359,24 @@
                     Tu nombre se usará como nombre de tu equipo en la app.</p>
             </div>
 
+            <!-- Selector de Categoría (Solo para Entrenador de club) -->
+            <div id="category-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">⚽ Categoría que entrenas</label>
+                <select id="auth-category"
+                    style="width:100%; padding:0.75rem; background:rgba(63,185,80,0.05);
+                           border:1px solid rgba(63,185,80,0.25); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                    <option value="">-- Selecciona categoría --</option>
+                    <option value="Prebenjamín">🟢 Prebenjamín</option>
+                    <option value="Benjamín">🔵 Benjamín</option>
+                    <option value="Alevín">🟡 Alevín</option>
+                    <option value="Infantil">🟠 Infantil</option>
+                    <option value="Cadete">🔴 Cadete</option>
+                    <option value="Juvenil">🟣 Juvenil</option>
+                    <option value="Regional">⚪ Regional</option>
+                </select>
+            </div>
+
             <!-- Código de Invitación (Opcional para registro de padres) -->
             <div id="invite-code-container" style="display:none; margin-bottom:1.5rem;">
                 <label style="font-size:0.78rem; color:#ffd700; display:block; margin-bottom:5px;">¿Tienes un código de invitación?</label>
@@ -537,10 +555,8 @@
         
         <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
 
-        <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode()" title="Cambio grupal: selecciona varios jugadores y cámbialos a la vez">🔄 GRUPAL</button>
-
         <div class="score-board">
-            <div class="team-score">
+                <div class="team-score">
                 <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
                 <div class="score-info">
                     <span id="team-a-name" class="team-name">LOCAL</span>
@@ -557,6 +573,11 @@
                 </div>
                 <button onclick="changeScore('away',+1)" class="score-btn success">+</button>
             </div>
+        </div>
+
+        <!-- Botón cambio grupal — a la izquierda del marcador -->
+        <div class="group-sub-container">
+            <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode()" title="Cambio grupal">GRUPAL</button>
         </div>
 
         <!-- Logo independiente — lado derecho del eje del campo -->
