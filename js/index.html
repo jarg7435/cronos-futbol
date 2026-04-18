@@ -257,7 +257,9 @@
                         style="width:100%; padding:0.75rem; padding-right:2.5rem; background:rgba(255,255,255,0.06);
                                border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                                color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <button type="button" id="toggle-pwd-login" onclick="var i=document.getElementById('auth-password');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='text'?'🙈':'👁️';" style="position:absolute;right:0.5rem;background:none;border:none;cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;">👁️</button>
+                    <button type="button" id="toggle-pwd-login" 
+                            style="position:absolute;right:0.5rem;background:none;border:none;
+                                   cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;">👁️</button>
                 </div>
             </div>
 
@@ -270,7 +272,9 @@
                         style="width:100%; padding:0.75rem; padding-right:2.5rem; background:rgba(255,255,255,0.06);
                                border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                                color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <button type="button" id="toggle-pwd-register" onclick="var i=document.getElementById('register-password');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='text'?'🙈':'👁️';" style="position:absolute;right:0.5rem;background:none;border:none;cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;">👁️</button>
+                    <button type="button" id="toggle-pwd-register" 
+                            style="position:absolute;right:0.5rem;background:none;border:none;
+                                   cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;">👁️</button>
                 </div>
                 <div id="password-feedback"></div>
 
@@ -281,7 +285,9 @@
                         style="width:100%; padding:0.75rem; padding-right:2.5rem; background:rgba(255,255,255,0.06);
                                border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                                color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <button type="button" id="toggle-pwd-confirm" onclick="var i=document.getElementById('register-password-confirm');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='text'?'🙈':'👁️';" style="position:absolute;right:0.5rem;background:none;border:none;cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;">👁️</button>
+                    <button type="button" id="toggle-pwd-confirm" 
+                            style="position:absolute;right:0.5rem;background:none;border:none;
+                                   cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;">👁️</button>
                 </div>
                 <div id="password-match-feedback"></div>
             </div>
@@ -380,7 +386,7 @@
 
 
     <!-- ══ PANTALLA DE SELECCIÓN DE ROL (Landing) ══════════════════════ -->
-    <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:99000; 
+    <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:9000; 
          flex-direction:column; align-items:center; justify-content:center; padding:2rem; overflow-y:auto;">
         
         <div style="text-align:center; margin-bottom:3rem; animation: fadeIn 0.8s ease-out;">
@@ -531,23 +537,26 @@
         
         <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
 
-        <div class="score-board">
-            <div class="team-score">
-                <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
-                <div class="score-info">
-                    <span id="team-a-name" class="team-name">LOCAL</span>
-                    <span id="score-home" class="score-num">0</span>
+        <div class="score-area">
+            <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode()" title="Cambio grupal">🔄 GRUPAL</button>
+            <div class="score-board">
+                <div class="team-score">
+                    <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
+                    <div class="score-info">
+                        <span id="team-a-name" class="team-name">LOCAL</span>
+                        <span id="score-home" class="score-num">0</span>
+                    </div>
+                    <button onclick="changeScore('home',+1)" class="score-btn success">+</button>
                 </div>
-                <button onclick="changeScore('home',+1)" class="score-btn success">+</button>
-            </div>
-            <span class="score-divider">-</span>
-            <div class="team-score">
-                <button onclick="changeScore('away',-1)" class="score-btn danger">−</button>
-                <div class="score-info">
-                    <span id="team-b-name" class="team-name">VISITANTE</span>
-                    <span id="score-away" class="score-num">0</span>
+                <span class="score-divider">-</span>
+                <div class="team-score">
+                    <button onclick="changeScore('away',-1)" class="score-btn danger">−</button>
+                    <div class="score-info">
+                        <span id="team-b-name" class="team-name">VISITANTE</span>
+                        <span id="score-away" class="score-num">0</span>
+                    </div>
+                    <button onclick="changeScore('away',+1)" class="score-btn success">+</button>
                 </div>
-                <button onclick="changeScore('away',+1)" class="score-btn success">+</button>
             </div>
         </div>
 
@@ -1030,97 +1039,61 @@
     </script>
 
 
-    <script>
-    // ══ STUBS GLOBALES ══════════════════════════════════════════════
 
-    // cerrarSesion
+    <script>
+    // ══ STUBS DE SEGURIDAD Y EYE TOGGLES ══════════════════════════════════════
+
+    // 1. cerrarSesion
     window.cerrarSesion = window.cerrarSesion || function() {
         if (typeof window.logoutUser === 'function') window.logoutUser();
         else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
     };
 
-    // openUnifiedCommsMenu — stub hasta que cargue 21_coach_comms.js
-    if (!window._ucmStubSet) {
-        window._ucmStubSet = true;
-        if (!window.openUnifiedCommsMenu) {
-            window.openUnifiedCommsMenu = function() {
-                var m = document.getElementById('setup-modal');
-                if (!m) return;
-                m.style.display = 'flex';
-                var d = document.createElement('div');
-                d.className = 'modal-content';
-                d.style.cssText = 'padding:2rem;color:white;text-align:center;';
-                d.innerHTML = '<p>\u23F3 M\u00f3dulo de comunicaciones cargando...</p>';
-                var btn = document.createElement('button');
-                btn.className = 'btn';
-                btn.style.marginTop = '1rem';
-                btn.textContent = 'Cerrar';
-                btn.onclick = function() { m.style.display = 'none'; };
-                d.appendChild(btn);
-                m.innerHTML = '';
-                m.appendChild(d);
-            };
-        }
-    }
+    // 2. openUnifiedCommsMenu — se sobreescribe cuando cargue 21_coach_comms.js
+    window.openUnifiedCommsMenu = window.openUnifiedCommsMenu || function() {
+        if (typeof openClubReports === 'function') openClubReports();
+    };
 
-    // BUG 1: showRoleSelector — auth.js lo sobreescribe al cargar, pero lo necesitamos ya
-    if (!window._rsStubSet) {
-        window._rsStubSet = true;
+    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
+    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
+    if (!window._roleSelectStubSet) {
+        window._roleSelectStubSet = true;
+        var _origShowRoleSelector = window.showRoleSelector;
         window.showRoleSelector = function() {
-            if (typeof window.showRoleSelection === 'function') return window.showRoleSelection();
-            var rs = document.getElementById('role-selection-screen');
-            if (rs) { rs.style.display = 'flex'; document.body.classList.remove('locked'); }
+            if (typeof window.showRoleSelection === 'function') {
+                window.showRoleSelection();
+            } else if (_origShowRoleSelector && _origShowRoleSelector !== window.showRoleSelector) {
+                _origShowRoleSelector();
+            } else {
+                var rs = document.getElementById('role-selection-screen');
+                if (rs) { rs.style.display = 'flex'; }
+            }
         };
     }
 
-    // BUG 2: Eye toggles de contraseña — conectar botones 👁
-    (function wireEyes() {
-        function wire(inputId, btnId) {
-            var i = document.getElementById(inputId), b = document.getElementById(btnId);
-            if (!i || !b) return;
-            b.addEventListener('click', function() {
-                i.type = (i.type === 'password') ? 'text' : 'password';
-                b.textContent = (i.type === 'text') ? '🙈' : '👁️';
+    // 4. EYE TOGGLES para contraseña — los botones existen pero no tienen handler
+    (function () {
+        function wireToggle(inputId, btnId) {
+            var btn = document.getElementById(btnId);
+            var inp = document.getElementById(inputId);
+            if (!btn || !inp) return;
+            btn.addEventListener('click', function () {
+                var show = (inp.type === 'password');
+                inp.type  = show ? 'text'     : 'password';
+                btn.textContent = show ? '🙈' : '👁️';
             });
         }
+        // Puede que el DOM no esté listo aún si el script está en <body>
         function tryWire() {
-            wire('auth-password', 'toggle-pwd-login');
-            wire('register-password', 'toggle-pwd-register');
-            wire('register-password-confirm', 'toggle-pwd-confirm');
+            wireToggle('auth-password',             'toggle-pwd-login');
+            wireToggle('register-password',         'toggle-pwd-register');
+            wireToggle('register-password-confirm', 'toggle-pwd-confirm');
         }
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tryWire);
-        else tryWire();
-    })();
-    </script>
-
-    <script>
-    // ══ PATCH: ocultar botón ADMIN para entrenadores (role='user') ══
-    (function patchAdminBtn() {
-        // Override openSetupModal after app.js loads to strip ADMIN button for coaches
-        window.addEventListener('load', function() {
-            var _origOpenSetup = window.openSetupModal;
-            if (typeof _origOpenSetup !== 'function') return;
-            window.openSetupModal = function() {
-                _origOpenSetup.apply(this, arguments);
-                // After modal renders, remove ADMIN button if user is plain coach
-                setTimeout(function() {
-                    var u = window._cronosCurrentUser;
-                    if (!u) return;
-                    var role = u._activeRole || u.role;
-                    var isAdmin = ['admin','superadmin','club_admin'].includes(u.role) ||
-                                  ['admin','superadmin','club_admin'].includes(role);
-                    if (!isAdmin) {
-                        // Remove any admin/club buttons visible for this user
-                        document.querySelectorAll('#setup-modal button').forEach(function(btn) {
-                            var txt = btn.textContent || '';
-                            if (txt.includes('ADMIN') || txt.includes('MI CLUB')) {
-                                btn.style.display = 'none';
-                            }
-                        });
-                    }
-                }, 50);
-            };
-        });
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', tryWire);
+        } else {
+            tryWire();
+        }
     })();
     </script>
 </body>
