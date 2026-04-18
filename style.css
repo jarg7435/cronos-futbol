@@ -367,12 +367,19 @@ header {
     animation: blinkText 1s infinite;
 }
 
-.score-board {
-    /* Centered absolutely in the header, at the timer-row level */
+/* ── Contenedor flex: botón GRUPAL + marcador ── */
+.score-area {
     position: absolute;
     left: 50%;
     bottom: 5px;
     transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 5;
+}
+
+.score-board {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -380,17 +387,9 @@ header {
     padding: 3px 8px;
     border-radius: 30px;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    z-index: 5;
 }
 
-/* ── Botón cambio grupal — posicionado a la izquierda del marcador ── */
-.group-sub-container {
-    position: absolute;
-    left: calc(50% - 130px);
-    bottom: 8px;
-    z-index: 200;
-    transform: translateX(-100%);
-}
+/* ── Botón cambio grupal ── */
 #btn-group-sub {
     background: rgba(255,222,89,0.12);
     border: 1px solid rgba(255,222,89,0.35);
@@ -548,15 +547,12 @@ header {
 @media (max-width: 950px) {
     .master-clock-container #master-timer { font-size: 2.2rem; }
 
-    .score-board {
-        transform: translateX(-50%) scale(0.9);
-        padding: 2px 6px;
+    .score-area {
         bottom: 3px;
+        gap: 5px;
     }
-
-    .group-sub-container {
-        left: calc(50% - 100px);
-        bottom: 6px;
+    .score-board {
+        padding: 2px 6px;
     }
     #btn-group-sub {
         font-size: 0.6rem;

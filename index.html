@@ -555,7 +555,9 @@
         
         <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
 
-        <div class="score-board">
+        <div class="score-area">
+            <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode()" title="Cambio grupal">GRUPAL</button>
+            <div class="score-board">
                 <div class="team-score">
                 <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
                 <div class="score-info">
@@ -575,10 +577,7 @@
             </div>
         </div>
 
-        <!-- Botón cambio grupal — a la izquierda del marcador -->
-        <div class="group-sub-container">
-            <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode()" title="Cambio grupal">GRUPAL</button>
-        </div>
+        </div><!-- /score-area -->
 
         <!-- Logo independiente — lado derecho del eje del campo -->
         <div class="logo-header">
