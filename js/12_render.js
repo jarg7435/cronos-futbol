@@ -269,8 +269,9 @@ function createPlayerChip(player) {
     return div;
 }
 
-let touchData = { draggedPlayerId: null, hasMoved: false, clone: null };
-let lastTouchTime = 0;
+// touchData y lastTouchTime ya declarados en app.js — NO redeclarar con let
+touchData = { draggedPlayerId: null, hasMoved: false, clone: null };
+lastTouchTime = 0;
 
 function handleTouchStart(e, player) {
     const now = new Date().getTime();
