@@ -430,3 +430,4 @@ function saveMasterRoster(mode) {
 
 // NOTA: openConvocationModal() y startMatchWithConvocation() eliminadas de aquí.
 // Las versiones correctas están en app.js — este archivo no debe sobreescribirlas.
+
