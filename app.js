@@ -1991,8 +1991,11 @@ function renderTrainingWeek() {
             </div>
 
             <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
-                <button class="btn" onclick="clearTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(255,88,88,0.08); border:1px solid rgba(255,88,88,0.25); color:#ff5858;">🗑️ LIMPIAR SEMANA</button>
-                <button class="btn" onclick="saveTrainingWeek()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700;">💾 GUARDAR SEMANA</button>
+                <button class="btn" onclick="openTrainingSendPanel('directors')" style="padding:0.45rem 0.9rem; font-size:0.72rem; background:rgba(88,166,255,0.1); border:1px solid rgba(88,166,255,0.3); color:var(--primary); font-weight:700;">📋 DIRECTORES</button>
+                <button class="btn" onclick="openTrainingSendPanel('coordinators')" style="padding:0.45rem 0.9rem; font-size:0.72rem; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3); color:#f0883e; font-weight:700;">🎯 COORDINADORES</button>
+                <button class="btn" onclick="openTrainingSendPanel('parents')" style="padding:0.45rem 0.9rem; font-size:0.72rem; background:rgba(63,185,80,0.1); border:1px solid rgba(63,185,80,0.3); color:#3fb950; font-weight:700;">👨‍👩‍👧 PADRES</button>
+                <button class="btn" onclick="clearTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(255,88,88,0.08); border:1px solid rgba(255,88,88,0.25); color:#ff5858;">🗑️ LIMPIAR</button>
+                <button class="btn" onclick="saveTrainingWeek()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700;">💾 GUARDAR</button>
             </div>
         </div>`;
 }
@@ -2025,6 +2028,186 @@ function clearTrainingWeek() {
     localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
     renderTrainingWeek();
     if (typeof showToast === 'function') showToast('🗑️ Semana limpiada', 3000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  ENVIAR ENTRENAMIENTO POR WHATSAPP / EMAIL
+// ══════════════════════════════════════════════════════════════════
+
+function _getTrainingWeekText() {
+    const offset = window._trWeekOffset || 0;
+    const monday = _getWeekMonday(offset);
+    const weekKey = monday.toISOString().substring(0, 10);
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    const weekData = allWeeks[weekKey] || {};
+    if (Object.keys(weekData).length === 0) return null;
+
+    const DAYS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+    const fmtD = d => {
+        const date = new Date(d + 'T12:00:00');
+        return date.toLocaleDateString('es-ES', {day:'numeric', month:'short'});
+    };
+    const fmtDD = d => d;
+
+    let text = '';
+    Object.keys(weekData).sort().forEach(ds => {
+        const dd = weekData[ds];
+        const dayIdx = new Date(ds + 'T12:00:00').getDay();
+        const dayNum = dayIdx === 0 ? 6 : dayIdx - 1;
+        const dayName = DAYS[dayNum];
+        text += `📅 *${dayName} ${fmtD(ds)}*\n`;
+        if (dd.tipo)    text += `📋 ${dd.tipo}\n`;
+        if (dd.hora)    text += `🕐 ${dd.hora}\n`;
+        if (dd.duracion) text += `⏱️ ${dd.duracion}\n`;
+        if (dd.lugar)   text += `🏟️ ${dd.lugar}\n`;
+        if (dd.equipaciones) text += `👕 ${dd.equipaciones}\n`;
+        text += '\n';
+    });
+    return text.trim();
+}
+
+function openTrainingSendPanel(target) {
+    const weekText = _getTrainingWeekText();
+    if (!weekText) {
+        if (typeof showToast === 'function') showToast('⚠️ No hay entrenamientos para enviar esta semana', 3000);
+        return;
+    }
+
+    const isParents = target === 'parents';
+    const isCoordinators = target === 'coordinators';
+    window._trTarget = target;
+
+    const hour = new Date().getHours();
+    const greeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
+
+    let title;
+    if (isParents) title = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Enviar Entrenamiento a Padres';
+    else if (isCoordinators) title = '\u{1F3AF} Enviar Entrenamiento a Coordinadores';
+    else title = '\u{1F4CB} Enviar Entrenamiento a Directores';
+
+    const saved = JSON.parse(localStorage.getItem('cronos_conv_config') || '{}');
+
+    // Build preview message
+    const fullMessage = isParents
+        ? `${greeting} familia! 👋\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}\n_Cronos Fútbol_ ⚽`
+        : `${greeting}! 👋\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}\n_Cronos Fútbol_ ⚽`;
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="width:min(96vw,680px);max-height:94vh;
+             display:flex;flex-direction:column;overflow:hidden;padding:1.5rem;">
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <h2 style="margin:0;font-size:1.1rem;">${title}</h2>
+                <button onclick="renderTrainingWeek()"
+                    style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+            </div>
+
+            <!-- Saludo -->
+            <div style="margin-bottom:0.8rem;">
+                <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Saludo inicial</label>
+                <select id="tr-greeting" class="conv-input" onchange="updateTrainingPreview()">
+                    <option value="Buenos días" ${greeting==='Buenos días'?'selected':''}>Buenos días ☀️</option>
+                    <option value="Buenas tardes" ${greeting==='Buenas tardes'?'selected':''}>Buenas tardes 🌤️</option>
+                    <option value="Buenas noches" ${greeting==='Buenas noches'?'selected':''}>Buenas noches 🌙</option>
+                    <option value="Hola" ${greeting==='Hola'?'selected':''}>Hola 👋</option>
+                </select>
+            </div>
+
+            <!-- Mensaje extra -->
+            <div style="margin-bottom:0.8rem;">
+                <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">💬 Mensaje extra (opcional)</label>
+                <textarea id="tr-extra" class="conv-input" rows="2" placeholder="ej: Recordad traer botellas de agua 💧"
+                    oninput="updateTrainingPreview()"></textarea>
+            </div>
+
+            <!-- Vista previa -->
+            <div style="background:rgba(63,185,80,0.05);border:1px solid rgba(63,185,80,0.2);
+                        border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;flex:1;overflow-y:auto;">
+                <div style="font-size:0.78rem;font-weight:700;color:#3fb950;margin-bottom:0.5rem;">👁️ Vista previa</div>
+                <pre id="tr-preview" style="font-family:inherit;font-size:0.82rem;white-space:pre-wrap;
+                     color:var(--text);margin:0;line-height:1.5;">${fullMessage}</pre>
+            </div>
+
+            <!-- Destinatarios -->
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                        border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
+                <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;">📤 ENVIAR A</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;">
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">📱 WhatsApp</label>
+                        <input id="tr-wa" type="tel" class="conv-input" placeholder="34612345678"
+                            value="${saved.wa || emailConfig?.whatsappNumber || ''}">
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">📧 Email</label>
+                        <input id="tr-email" type="email" class="conv-input" placeholder="directores@club.com"
+                            value="${saved.email || emailConfig?.directorEmail || ''}">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botones -->
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;padding-top:0.8rem;
+                        border-top:1px solid var(--glass-border);">
+                <button onclick="renderTrainingWeek()" class="btn" style="color:var(--text-muted);">← Volver</button>
+                <button onclick="sendTrainingWA()" class="btn"
+                    style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
+                           color:#3fb950;font-weight:700;flex:1;">📱 WhatsApp</button>
+                <button onclick="sendTrainingEmail()" class="btn"
+                    style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
+                           color:var(--primary);font-weight:700;flex:1;">📧 Email</button>
+            </div>
+        </div>
+        <style>
+        .conv-input {
+            width:100%;padding:0.42rem 0.6rem;
+            background:rgba(255,255,255,0.06);
+            border:1px solid var(--glass-border);
+            border-radius:7px;color:var(--text);font-size:0.85rem;box-sizing:border-box;
+        }
+        .conv-input:focus { outline:none;border-color:rgba(88,166,255,0.5); }
+        </style>
+    `;
+}
+
+function updateTrainingPreview() {
+    const preview = document.getElementById('tr-preview');
+    if (!preview) return;
+    const greeting = document.getElementById('tr-greeting')?.value || 'Hola';
+    const extra = document.getElementById('tr-extra')?.value.trim();
+    const weekText = _getTrainingWeekText() || 'No hay entrenamientos';
+
+    const isParents = window._trTarget === 'parents';
+    const audience = isParents ? 'familia! 👋' : '! 👋';
+    let msg = `${greeting} ${audience}\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}`;
+    if (extra) msg += `\n💬 ${extra}\n`;
+    msg += `\n_Cronos Fútbol_ ⚽`;
+    preview.textContent = msg;
+}
+
+function sendTrainingWA() {
+    const preview = document.getElementById('tr-preview');
+    const wa = document.getElementById('tr-wa')?.value.trim();
+    if (!preview || !wa) {
+        if (typeof showToast === 'function') showToast('⚠️ Introduce un número de WhatsApp', 3000);
+        return;
+    }
+    const text = encodeURIComponent(preview.textContent);
+    window.open('https://wa.me/' + wa.replace(/[^0-9]/g, '') + '?text=' + text, '_blank');
+}
+
+function sendTrainingEmail() {
+    const preview = document.getElementById('tr-preview');
+    const email = document.getElementById('tr-email')?.value.trim();
+    if (!preview || !email) {
+        if (typeof showToast === 'function') showToast('⚠️ Introduce un email', 3000);
+        return;
+    }
+    const subject = encodeURIComponent('Planificación Semanal - Entrenamiento');
+    const body = encodeURIComponent(preview.textContent);
+    window.open('mailto:' + email + '?subject=' + subject + '&body=' + body, '_blank');
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2764,6 +2947,11 @@ function openConvocationModal() {
                         style="flex:1; background:rgba(88,166,255,0.1); border:1px solid rgba(88,166,255,0.3);
                                color:var(--primary); font-weight:700; font-size:0.72rem;">
                         \u{1F4CB} DIRECTORES
+                    </button>
+                    <button class="btn" onclick="saveConvData(); saveConvPlayers(); openConvocationMessage('coordinators')"
+                        style="flex:1; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3);
+                               color:#f0883e; font-weight:700; font-size:0.72rem;">
+                        \u{1F3AF} COORDINADORES
                     </button>
                     <button class="btn" onclick="saveConvData(); saveConvPlayers(); openConvocationMessage('parents')"
                         style="flex:1; background:rgba(63,185,80,0.1); border:1px solid rgba(63,185,80,0.3);
@@ -5773,6 +5961,7 @@ function openConvocationMessage(target) {
     // Obtener jugadores convocados guardados (se guardan antes de abrir este panel)
     const selectedPlayers = window._savedConvokedPlayers || [];
     const isParents = target === 'parents';
+    const isCoordinators = target === 'coordinators';
 
     // Pre-llenar con datos guardados de la convocatoria
     const convData = JSON.parse(localStorage.getItem('cronos_conv_data') || '{}');
@@ -5782,7 +5971,10 @@ function openConvocationMessage(target) {
     const hour = new Date().getHours();
     const defaultGreeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
 
-    const title = isParents ? '👨‍👩‍👧 Enviar Convocatoria a Padres' : '📋 Enviar Convocatoria a Directores';
+    let title;
+    if (isParents) title = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Enviar Convocatoria a Padres';
+    else if (isCoordinators) title = '\u{1F3AF} Enviar Convocatoria a Coordinadores';
+    else title = '\u{1F4CB} Enviar Convocatoria a Directores';
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
