@@ -55,6 +55,9 @@ window.SA_CSS = `<style>
 .sa-urow{display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.3rem;border-bottom:1px solid rgba(255,255,255,0.04);}
 .sa-urow:last-child{border-bottom:none;}
 .sa-g4{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.6rem;align-items:start;}
+.sa-role-row{display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.65rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;cursor:pointer;transition:background 0.15s;user-select:none;}
+.sa-role-row:hover{background:rgba(255,255,255,0.08);}
+.sa-role-row.active{background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.3);}
 </style>`;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -136,6 +139,31 @@ window.saGet = async function saGet(col, id) {
 // openSuperAdminPanel()
 // ═══════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════
+// openAdminPanel() — OVERRIDE CRÍTICO
+// app.js llama openSuperAdminPanel() en scope local (no window.*),
+// así que debemos sobreescribir openAdminPanel para forzar la llamada
+// al override de window.openSuperAdminPanel definido abajo.
+// ═══════════════════════════════════════════════════════
+window.openAdminPanel = function openAdminPanel() {
+    var role = window._cronosCurrentUser ? window._cronosCurrentUser.role : null;
+    if (role === 'superadmin' || role === 'admin') {
+        if (typeof window.openSuperAdminPanel === 'function') {
+            window.openSuperAdminPanel();
+        } else {
+            openSuperAdminPanel();
+        }
+    } else if (role === 'club_admin') {
+        if (typeof window.openClubAdminPanel === 'function') {
+            window.openClubAdminPanel();
+        } else {
+            openClubAdminPanel();
+        }
+    } else {
+        if (typeof showToast === 'function') showToast('⛔ Sin permisos de administración', 3000);
+    }
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // saGoBackToRoles() — volver al selector de roles desde cualquier panel
 // ═══════════════════════════════════════════════════════════════════
@@ -159,6 +187,10 @@ window.saGoBackToRoles = function saGoBackToRoles() {
 };
 
 window.openSuperAdminPanel = async function openSuperAdminPanel() {
+    // Cerrar modal viejo de app.js si existe
+    const oldModal = document.getElementById('sa-root-modal');
+    if (oldModal) oldModal.style.display = 'none';
+
     ['main-header','role-selection-screen','install-screen','auth-screen'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -232,120 +264,222 @@ window.saTab = function saTab(tab) {
     else if (tab==='trash')    saTrash();
 };
 
+// ═══════════════════════════════════════════════════════
+// Helpers para organigrama de clubes e individuales
 // ═══════════════════════════════════════════════════════════════════
-// saClubs()
+
+// Genera HTML de fila de rol expandible con contador
+function _saRoleRowHTML(role, entityId, icon, label, count, isIndividual) {
+    var cntText = count === 1 ? '1 aceptada' : count + ' aceptadas';
+    var cntColor = count > 0 ? '#3fb950' : '#8b949e';
+    var cntBg = count > 0 ? 'rgba(63,185,80,0.15)' : 'rgba(139,148,158,0.12)';
+    var detailId = isIndividual ? 'ind-' + entityId : entityId;
+    return '<div class="sa-role-row" onclick="event.stopPropagation();saShowRoleDetail(\'' + entityId + '\',\'' + role + '\',\'' + detailId + '\')">'
+        + '<span style="font-size:0.88rem;">' + icon + '</span>'
+        + '<span style="font-size:0.82rem;color:white;font-weight:600;">' + label + '</span>'
+        + '<span style="flex:1;"></span>'
+        + '<span style="background:' + cntBg + ';color:' + cntColor + ';padding:2px 10px;border-radius:12px;font-size:0.7rem;font-weight:700;">' + cntText + '</span>'
+        + '</div>';
+}
+
+// Genera HTML de fila de usuario (reutilizable)
+window._saRenderUserRow = function(u, cid) {
+    var st = u.status || (u.isAuthorized ? 'active' : 'pending');
+    var meta = window.ROLE_META[u.role] || { icon:'👤', color:'#8b949e', label:u.role||'?' };
+    var _escA = typeof escapeAttr==='function'?escapeAttr:function(s){return s;};
+    var _escH = typeof escapeHtml==='function'?escapeHtml:function(s){return s;};
+    var em = _escA(u.email||u.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var eid = _escA(u.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var ecid = _escA(cid).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var _stC = {active:'#3fb950',blocked:'#f0883e',removed:'#ff5858',pending:'#ffd700',pending_club:'#ffa500',pending_register:'#79c0ff'};
+    var _stL = {active:'Activo',blocked:'Bloqueado',removed:'Baja',pending:'⏳ Pend.SA',pending_club:'⏳ Pend.Club',pending_register:'⏳ Sin registrar'};
+    return '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.48rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.04);">'
+        + '<span title="' + _escA(meta.label) + '">' + meta.icon + '</span>'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-size:0.81rem;color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _escH(u.email||u.id) + '</div>'
+        + '<div style="font-size:0.68rem;color:' + (_stC[st]||'#8b949e') + ';">' + meta.label + ' · ' + (_stL[st]||st) + '</div>'
+        + '</div>'
+        + '<div style="display:flex;gap:0.2rem;flex-shrink:0;">'
+        + (st==='pending'?'<button onclick="saQuickApprove(\'' + eid + '\',\'' + em + '\',\'' + ecid + '\')" title="Aprobar (SA)" style="padding:0.22rem 0.45rem;background:rgba(255,215,0,0.15);border:1px solid rgba(255,215,0,0.4);border-radius:5px;color:#ffd700;font-size:0.68rem;cursor:pointer;font-weight:700;">✅ SA</button>':'')
+        + (st==='active'?'<button onclick="saSetClubUserStatus(\'' + eid + '\',\'' + em + '\',\'blocked\',\'' + ecid + '\')" style="padding:0.22rem 0.45rem;background:rgba(240,136,62,0.15);border:1px solid rgba(240,136,62,0.4);border-radius:5px;color:#f0883e;font-size:0.68rem;cursor:pointer;">🔒</button>':'')
+        + (st==='blocked'?'<button onclick="saSetClubUserStatus(\'' + eid + '\',\'' + em + '\',\'active\',\'' + ecid + '\')" style="padding:0.22rem 0.45rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:5px;color:#3fb950;font-size:0.68rem;cursor:pointer;">✅</button>':'')
+        + (st!=='removed'?'<button onclick="saSetClubUserStatus(\'' + eid + '\',\'' + em + '\',\'removed\',\'' + ecid + '\')" style="padding:0.22rem 0.45rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:5px;color:#ff5858;font-size:0.68rem;cursor:pointer;">🗑️</button>':'')
+        + '</div></div>';
+};
+
+// Muestra usuarios de un rol dentro de un club/individual (toggle)
+window.saShowRoleDetail = async function(entityId, role, detailId) {
+    var detailEl = document.getElementById('sa-role-detail-' + detailId);
+    if (!detailEl) return;
+    if (detailEl.dataset._role === role && detailEl.style.display !== 'none') {
+        detailEl.style.display = 'none';
+        detailEl.dataset._role = '';
+        return;
+    }
+    detailEl.style.display = 'block';
+    detailEl.dataset._role = role;
+    detailEl.innerHTML = '<div style="text-align:center;padding:1rem;color:#8b949e;font-size:0.82rem;">⏳ Cargando...</div>';
+    try {
+        var r = await saFS();
+        var users = [];
+        if (role === '_self') {
+            var self = await saGet('users', entityId);
+            if (self) users = [self];
+        } else {
+            var snap = await r.getDocs(r.query(r.collection(r.db,'users'), r.where('clubId','==',entityId), r.where('role','==',role)));
+            snap.forEach(function(d){ users.push({id:d.id,...d.data()}); });
+        }
+        if (!users.length) {
+            detailEl.innerHTML = '<div style="text-align:center;padding:1rem;color:#8b949e;font-size:0.82rem;">Sin usuarios en esta categoría.</div>';
+            return;
+        }
+        detailEl.innerHTML = users.map(function(u){ return window._saRenderUserRow(u, entityId); }).join('');
+    } catch (e) {
+        detailEl.innerHTML = '<div style="color:#ff5858;font-size:0.82rem;">⚠️ ' + e.message + '</div>';
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// saClubs() — Vista organigrama: Clubes + Individuales
 // ═══════════════════════════════════════════════════════════════════
 
 window.saClubs = async function saClubs() {
-    const body = document.getElementById('sa-body');
+    var body = document.getElementById('sa-body');
     if (!body) return;
-    body.innerHTML = `
-    <div style="display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap;">
-        <button onclick="saCreateClub()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">🏟️ Alta Nuevo Club</button>
-        <button onclick="saCreateIndividual()" class="sa-btn" style="color:#79c0ff;border-color:rgba(121,192,255,0.4);background:rgba(121,192,255,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">👤 Alta Entrenador Individual</button>
-    </div>
-    <div id="sa-clubs-list"><div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando clubes…</div></div>`;
+    var _escH = typeof escapeHtml==='function'?escapeHtml:function(s){return s;};
+    var _escA = typeof escapeAttr==='function'?escapeAttr:function(s){return s;};
+    body.innerHTML = '<div style="display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap;">'
+        + '<button onclick="saCreateClub()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">🏟️ Alta Nuevo Club</button>'
+        + '<button onclick="saCreateIndividual()" class="sa-btn" style="color:#79c0ff;border-color:rgba(121,192,255,0.4);background:rgba(121,192,255,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">👤 Alta Entrenador Individual</button>'
+        + '</div>'
+        + '<div id="sa-clubs-list"><div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando clubes…</div></div>';
     try {
-        const { db, collection, getDocs } = await saFS();
-        const [clubsSnap, usersSnap] = await Promise.all([
-            getDocs(collection(db,'clubs')),
-            getDocs(collection(db,'users')),
-        ]);
-        const clubs = {};
-        clubsSnap.forEach(d => { clubs[d.id] = { id:d.id, users:[], ...d.data() }; });
-        const orphans = [];
-        usersSnap.forEach(d => {
-            const u = { id:d.id, ...d.data() };
+        var r = await saFS();
+        var clubsSnap = await r.getDocs(r.collection(r.db,'clubs'));
+        var usersSnap = await r.getDocs(r.collection(r.db,'users'));
+        var clubs = {};
+        clubsSnap.forEach(function(d){ clubs[d.id] = { id:d.id, users:[], ...d.data() }; });
+        var orphans = [];
+        usersSnap.forEach(function(d){
+            var u = { id:d.id, ...d.data() };
             if (['superadmin','admin'].includes(u.role)) return;
             if (u.clubId && clubs[u.clubId]) clubs[u.clubId].users.push(u);
             else orphans.push(u);
         });
+        var individuals = orphans.filter(function(u){ return u.role === 'individual' || u.isIndividual; });
+        var realOrphans = orphans.filter(function(u){ return u.role !== 'individual' && !u.isIndividual; });
 
-        const stColor = { active:'#3fb950', blocked:'#f0883e', removed:'#ff5858', pending:'#ffd700', pending_club:'#ffa500', pending_register:'#79c0ff' };
-        const stLabel = { active:'Activo', blocked:'Bloqueado', removed:'Baja', pending:'⏳ Pend.SA', pending_club:'⏳ Pend.Club', pending_register:'⏳ Sin registrar' };
+        var html = '';
 
-        const renderRow = (u, cid) => {
-            const st   = u.status || (u.isAuthorized?'active':'pending');
-            const meta = window.ROLE_META[u.role] || { icon:'👤', color:'#8b949e', label:u.role||'?' };
-            const _escA = typeof escapeAttr==='function'?escapeAttr:function(s){return s;};
-            const _escH = typeof escapeHtml==='function'?escapeHtml:function(s){return s;};
-            const em   = _escA(u.email||u.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            const eid  = _escA(u.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            const ecid = _escA(cid).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            return `
-            <div style="display:flex;align-items:center;gap:0.4rem;padding:0.48rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.04);">
-                <span title="${_escA(meta.label)}">${meta.icon}</span>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-size:0.81rem;color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escH(u.email||u.id)}</div>
-                    <div style="font-size:0.68rem;color:${stColor[st]||'#8b949e'};">${meta.label} · ${stLabel[st]||st}</div>
-                </div>
-                <div style="display:flex;gap:0.2rem;flex-shrink:0;">
-                    ${st==='pending'?`<button onclick="saQuickApprove('${eid}','${em}','${ecid}')" title="Aprobar (SA)" style="padding:0.22rem 0.45rem;background:rgba(255,215,0,0.15);border:1px solid rgba(255,215,0,0.4);border-radius:5px;color:#ffd700;font-size:0.68rem;cursor:pointer;font-weight:700;">✅ SA</button>`:''}
-                    ${st==='active'?`<button onclick="saSetClubUserStatus('${eid}','${em}','blocked','${ecid}')" style="padding:0.22rem 0.45rem;background:rgba(240,136,62,0.15);border:1px solid rgba(240,136,62,0.4);border-radius:5px;color:#f0883e;font-size:0.68rem;cursor:pointer;">🔒</button>`:''}
-                    ${st==='blocked'?`<button onclick="saSetClubUserStatus('${eid}','${em}','active','${ecid}')" style="padding:0.22rem 0.45rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:5px;color:#3fb950;font-size:0.68rem;cursor:pointer;">✅</button>`:''}
-                    ${st!=='removed'?`<button onclick="saSetClubUserStatus('${eid}','${em}','removed','${ecid}')" style="padding:0.22rem 0.45rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:5px;color:#ff5858;font-size:0.68rem;cursor:pointer;">🗑️</button>`:''}
-                </div>
-            </div>`;
-        };
+        // ═════════════════════════════════════════
+        // SECCIÓN: CLUBES (expandibles con sub-opciones)
+        // ═════════════════════════════════════════
+        Object.values(clubs).forEach(function(c){
+            var vis = c.users.filter(function(u){ return !['superadmin','admin'].includes(u.role); });
+            var pend = vis.filter(function(u){ return ['pending','pending_club'].includes(u.status); }).length;
+            var active = vis.filter(function(u){ return u.status === 'active'; });
+            var counts = {
+                director:    active.filter(function(u){ return u.role === 'director'; }).length,
+                coordinator: active.filter(function(u){ return u.role === 'coordinator'; }).length,
+                user:        active.filter(function(u){ return u.role === 'user'; }).length,
+                parent:      active.filter(function(u){ return u.role === 'parent'; }).length,
+            };
+            var cName = _escH(c.name || c.id);
+            var cNameAttr = _escA(c.name || c.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            var cId = c.id;
+            var planLabel = (c.plan && c.plan !== 'free') ? '<span class="sa-badge">' + _escH(c.plan) + '</span>' : '';
+            var priceLabel = c.price ? '<span style="font-size:0.68rem;color:#3fb950;">' + c.price + '€/mes</span>' : '';
+            var pendBadge = pend > 0 ? '<span style="background:rgba(255,215,0,0.2);color:#ffd700;padding:1px 8px;border-radius:10px;font-size:0.68rem;font-weight:700;">' + pend + ' pend.</span>' : '';
+            var totalAccepted = counts.director + counts.coordinator + counts.user + counts.parent;
 
-        // Separar usuarios individuales de los huérfanos
-        const individuals = orphans.filter(u => u.role === 'individual' || u.isIndividual);
-        const realOrphans = orphans.filter(u => u.role !== 'individual' && !u.isIndividual);
-
-        let html = '';
-        Object.values(clubs).forEach(c => {
-            const vis  = c.users.filter(u => !['superadmin','admin'].includes(u.role));
-            const pend = vis.filter(u => ['pending','pending_club'].includes(u.status)).length;
-            const planLabel = (c.plan && c.plan !== 'free') ? `<span style="background:rgba(88,166,255,0.12);color:#58a6ff;padding:1px 8px;border-radius:10px;font-size:0.68rem;font-weight:700;">${c.plan}</span>` : '';
-            const priceLabel = c.price ? `<span style="font-size:0.68rem;color:#3fb950;">${c.price}€/mes</span>` : '';
-            const expLabel = c.expiresAt ? (() => {
-                const d = Math.ceil((new Date(c.expiresAt) - new Date()) / 86400000);
-                return `<span style="font-size:0.68rem;color:${d<0?'#ff5858':d<=7?'#ffa500':'#3fb950'};">${d<0?'Vencido':d<=7?'Vence '+d+'d':'Exp. '+new Date(c.expiresAt).toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}</span>`;
-            })() : '';
-            html += `
-            <div style="margin-bottom:1rem;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;">
-                <div style="background:rgba(88,166,255,0.07);padding:0.6rem 0.9rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;">
-                    <span style="font-weight:700;color:white;font-size:0.9rem;">🏟️ ${typeof escapeHtml==='function'?escapeHtml(c.name||c.id):(c.name||c.id)}</span>
-                    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                        ${planLabel}${priceLabel}${expLabel}
-                        ${pend>0?`<span style="background:rgba(255,215,0,0.2);color:#ffd700;padding:1px 8px;border-radius:10px;font-size:0.68rem;font-weight:700;">${pend} pend.</span>`:''}
-                        <span style="font-size:0.68rem;color:#8b949e;">${vis.length} usuarios</span>
-                        <button onclick="saClubQuotas('${c.id}','${(typeof escapeHtml==='function'?escapeHtml(c.name||c.id):(c.name||c.id)).replace(/'/g,"\\\'")}')" style="padding:0.25rem 0.55rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.35);border-radius:6px;color:#58a6ff;font-size:0.72rem;cursor:pointer;font-weight:700;white-space:nowrap;">💳 Cuotas</button>
-                    </div>
-                </div>
-                ${vis.length?`<div>${vis.map(u=>renderRow(u,c.id)).join('')}</div>`:`<p style="margin:0;padding:0.6rem 0.9rem;color:#8b949e;font-size:0.8rem;">Sin usuarios asignados.</p>`}
-            </div>`;
+            html += '<div class="sa-card" id="sa-club-' + cId + '" style="margin-bottom:1rem;border-left:3px solid #58a6ff;">'
+                + '<div class="sa-card-head" onclick="document.getElementById(\'sa-club-' + cId + '\').classList.toggle(\'expanded\')">'
+                + '<div class="sa-card-title">'
+                + '🏟️ ' + cName + ' '
+                + planLabel + priceLabel + pendBadge
+                + '<span style="font-size:0.68rem;color:#8b949e;">' + vis.length + ' usuarios · ' + totalAccepted + ' aceptadas</span>'
+                + '</div>'
+                + '<span class="sa-chevron">▼</span>'
+                + '</div>'
+                + '<div class="sa-card-body">'
+                + '<div style="display:flex;flex-direction:column;gap:0.35rem;">'
+                // Cuotas button
+                + '<div class="sa-role-row" onclick="event.stopPropagation();saClubQuotas(\'' + cId + '\',\'' + cNameAttr + '\')" style="background:rgba(88,166,255,0.08);border-color:rgba(88,166,255,0.2);">'
+                + '<span style="font-size:0.88rem;">💳</span>'
+                + '<span style="font-size:0.82rem;color:#58a6ff;font-weight:600;">Cuotas</span>'
+                + '<span style="flex:1;"></span>'
+                + '<span style="font-size:0.72rem;color:#8b949e;">→</span>'
+                + '</div>'
+                // Role rows with counts
+                + _saRoleRowHTML('director', cId, '📋', 'Directores Deportivos', counts.director, false)
+                + _saRoleRowHTML('coordinator', cId, '🎯', 'Coordinadores', counts.coordinator, false)
+                + _saRoleRowHTML('user', cId, '⚽', 'Entrenadores', counts.user, false)
+                + _saRoleRowHTML('parent', cId, '👨‍👩‍👧', 'Padres/Madres/Tutores', counts.parent, false)
+                + '</div>'
+                + '<div id="sa-role-detail-' + cId + '" style="display:none;margin-top:0.7rem;border-top:1px solid rgba(255,255,255,0.1);padding-top:0.7rem;"></div>'
+                + '</div></div>';
         });
 
-        // Sección de Entrenadores Individuales
+        // ═════════════════════════════════════════
+        // SECCIÓN: USUARIOS INDIVIDUALES (expandibles con sub-opciones)
+        // ═════════════════════════════════════════
         if (individuals.length) {
-            html += `<div style="margin-bottom:1rem;border:1px solid rgba(121,192,255,0.2);border-radius:10px;overflow:hidden;"><div style="background:rgba(121,192,255,0.07);padding:0.6rem 0.9rem;display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:700;color:#79c0ff;font-size:0.9rem;">👤 Entrenadores Individuales (${individuals.length})</span></div><div>${individuals.map(u=>{
-                const st = u.status || (u.isAuthorized?'active':'pending');
-                const planLabel = u.plan && u.plan !== 'free' ? `<span style="background:rgba(121,192,255,0.12);color:#79c0ff;padding:1px 8px;border-radius:10px;font-size:0.65rem;font-weight:700;">${u.plan}</span>` : '';
-                const priceLabel = u.price ? `<span style="font-size:0.65rem;color:#3fb950;">${u.price}€/mes</span>` : '';
-                return `<div style="display:flex;align-items:center;gap:0.4rem;padding:0.48rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.04);">
-                    <div style="flex:1;min-width:0;">
-                        <div style="font-size:0.81rem;color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${typeof escapeHtml==='function'?escapeHtml(u.email||u.id):(u.email||u.id)}</div>
-                        <div style="font-size:0.68rem;color:${stColor[st]||'#8b949e'};">${stLabel[st]||st} ${planLabel} ${priceLabel}</div>
-                    </div>
-                    <div style="display:flex;gap:0.2rem;flex-shrink:0;">
-                        <button onclick="saIndividualQuotas('${u.id}','${(u.email||u.id).replace(/'/g,"\\\'")}')" style="padding:0.22rem 0.45rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.35);border-radius:5px;color:#58a6ff;font-size:0.68rem;cursor:pointer;font-weight:700;">💳</button>
-                        ${st==='active'?`<button onclick="saSetClubUserStatus('${u.id}','${(u.email||u.id).replace(/'/g,"\\\'")}','blocked','')" style="padding:0.22rem 0.45rem;background:rgba(240,136,62,0.15);border:1px solid rgba(240,136,62,0.4);border-radius:5px;color:#f0883e;font-size:0.68rem;cursor:pointer;">🔒</button>`:''}
-                        ${st==='blocked'?`<button onclick="saSetClubUserStatus('${u.id}','${(u.email||u.id).replace(/'/g,"\\\'")}','active','')" style="padding:0.22rem 0.45rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:5px;color:#3fb950;font-size:0.68rem;cursor:pointer;">✅</button>`:''}
-                        ${st!=='removed'?`<button onclick="saSetClubUserStatus('${u.id}','${(u.email||u.id).replace(/'/g,"\\\'")}','removed','')" style="padding:0.22rem 0.45rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:5px;color:#ff5858;font-size:0.68rem;cursor:pointer;">🗑️</button>`:''}
-                    </div>
-                </div>`;
-            }).join('')}</div></div>`;
+            html += '<div style="margin-top:1rem;margin-bottom:0.5rem;font-size:0.85rem;color:#79c0ff;font-weight:700;">👤 Usuarios Individuales (' + individuals.length + ')</div>';
+            individuals.forEach(function(u){
+                var st = u.status || (u.isAuthorized ? 'active' : 'pending');
+                var stColor = {active:'#3fb950',blocked:'#f0883e',removed:'#ff5858',pending:'#ffd700'};
+                var stLabel = {active:'Activo',blocked:'Bloqueado',removed:'Baja',pending:'Pendiente'};
+                var linkedParents = orphans.filter(function(o){ return o.clubId === u.id && o.role === 'parent' && o.status === 'active'; }).length;
+                var uEmail = _escH(u.email || u.id);
+                var uEmailAttr = _escA(u.email || u.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+                var uId = u.id;
+
+                html += '<div class="sa-card" id="sa-ind-' + uId + '" style="margin-bottom:1rem;border-left:3px solid #79c0ff;">'
+                    + '<div class="sa-card-head" onclick="document.getElementById(\'sa-ind-' + uId + '\').classList.toggle(\'expanded\')">'
+                    + '<div class="sa-card-title">'
+                    + '👤 ' + uEmail + ' '
+                    + '<span style="font-size:0.68rem;color:' + (stColor[st]||'#8b949e') + ';">' + (stLabel[st]||st) + '</span>'
+                    + '</div>'
+                    + '<span class="sa-chevron">▼</span>'
+                    + '</div>'
+                    + '<div class="sa-card-body">'
+                    + '<div style="display:flex;flex-direction:column;gap:0.35rem;">'
+                    // Cuota button
+                    + '<div class="sa-role-row" onclick="event.stopPropagation();saIndividualQuotas(\'' + uId + '\',\'' + uEmailAttr + '\')" style="background:rgba(121,192,255,0.08);border-color:rgba(121,192,255,0.2);">'
+                    + '<span style="font-size:0.88rem;">💳</span>'
+                    + '<span style="font-size:0.82rem;color:#79c0ff;font-weight:600;">Cuota</span>'
+                    + '<span style="flex:1;"></span>'
+                    + '<span style="font-size:0.72rem;color:#8b949e;">→</span>'
+                    + '</div>'
+                    // Entrenador/Administrador (the individual themselves)
+                    + _saRoleRowHTML('_self', uId, '⚽', 'Entrenador/Administrador', st==='active'?1:0, true)
+                    // Padres/Madres/Tutores
+                    + _saRoleRowHTML('parent', uId, '👨‍👩‍👧', 'Padres/Madres/Tutores', linkedParents, true)
+                    + '</div>'
+                    + '<div id="sa-role-detail-ind-' + uId + '" style="display:none;margin-top:0.7rem;border-top:1px solid rgba(255,255,255,0.1);padding-top:0.7rem;"></div>'
+                    + '</div></div>';
+            });
         }
 
+        // ═════════════════════════════════════════
+        // SECCIÓN: HUÉRFANOS (expandible)
+        // ═════════════════════════════════════════
         if (realOrphans.length) {
-            html += `<div style="margin-bottom:1rem;border:1px solid rgba(255,215,0,0.2);border-radius:10px;overflow:hidden;"><div style="background:rgba(255,215,0,0.07);padding:0.6rem 0.9rem;"><span style="font-weight:700;color:#ffd700;font-size:0.9rem;">⚠️ Sin club asignado (${realOrphans.length})</span></div><div>${realOrphans.map(u=>renderRow(u,'')).join('')}</div></div>`;
+            html += '<div class="sa-card" style="border-left:3px solid #ffd700;">'
+                + '<div class="sa-card-head" onclick="this.parentElement.classList.toggle(\'expanded\')">'
+                + '<div class="sa-card-title">⚠️ Sin club asignado (' + realOrphans.length + ')</div>'
+                + '<span class="sa-chevron">▼</span>'
+                + '</div>'
+                + '<div class="sa-card-body">'
+                + realOrphans.map(function(u){ return window._saRenderUserRow(u, ''); }).join('')
+                + '</div></div>';
         }
-        if (!html) html = `<p style="color:#8b949e;text-align:center;padding:2rem;">Sin clubes creados aún.</p>`;
-        const listEl = document.getElementById('sa-clubs-list');
+
+        if (!html) html = '<p style="color:#8b949e;text-align:center;padding:2rem;">Sin clubes creados aún.</p>';
+        var listEl = document.getElementById('sa-clubs-list');
         if (listEl) listEl.innerHTML = html; else body.innerHTML = html;
     } catch (e) {
-        body.innerHTML = `<p style="color:#ff5858;text-align:center;padding:2rem;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</p>`;
+        body.innerHTML = '<p style="color:#ff5858;text-align:center;padding:2rem;">⚠️ ' + _escH(e.message) + '</p>';
         console.error('[saClubs]', e);
     }
 };
