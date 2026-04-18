@@ -450,6 +450,40 @@ header {
     50% { outline-color: #27ae60; }
 }
 
+/* ── Botón cambio grupal VISITANTE ── */
+#btn-group-sub-away {
+    background: rgba(255,100,100,0.12);
+    border: 1px solid rgba(255,100,100,0.35);
+    color: #ff6464;
+    font-size: 0.7rem;
+    padding: 5px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    transition: all 0.25s ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+}
+#btn-group-sub-away:hover {
+    background: rgba(255,100,100,0.25);
+    box-shadow: 0 0 10px rgba(255,100,100,0.3);
+}
+#btn-group-sub-away.mode-group-active {
+    background: rgba(46,204,113,0.3);
+    border: 2px solid rgba(46,204,113,0.8);
+    color: #2ecc71;
+    animation: groupBtnPulse 1.5s infinite;
+    padding: 5px 14px;
+}
+
+/* Ocultar GRUPAL visitante cuando no hay equipo visitante */
+.hide-visitor #btn-group-sub-away {
+    display: none !important;
+}
+
 .team-score {
     display: flex;
     align-items: center;
