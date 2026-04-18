@@ -308,9 +308,13 @@ function applyFormationPreset(key) {
     const preset = presets[key];
     const useFullField = !analyzeAway; // solo local → campo completo
 
+    // CRITICO: Ordenar jugadores por DORSAL antes de asignar posiciones.
+    // Esto garantiza que el portero (dorsal 1) vaya a la posicion de portero,
+    // el dorsal 2 al primer defensa, etc., sin importar el orden del array.
+    const sortedField = players.filter(p => p.status === 'field').sort((a, b) => (a.number || 0) - (b.number || 0));
+
     let homeIdx = 0, awayIdx = 0;
-    players.forEach(p => {
-        if (p.status !== 'field') return;
+    sortedField.forEach(p => {
         if (p.team === 'home') {
             const positions = useFullField ? preset.full : preset.home;
             if (positions[homeIdx]) {
@@ -3869,7 +3873,9 @@ const FORMATIONS_FULL = {
 
 function placeOnField(chip, player) {
     if (player.x === 0 && player.y === 0) {
-        const fieldPlayers = players.filter(p => p.status === 'field' && p.team === player.team);
+        const fieldPlayers = players
+            .filter(p => p.status === 'field' && p.team === player.team)
+            .sort((a, b) => (a.number || 0) - (b.number || 0));
         const index = fieldPlayers.indexOf(player);
         const formationSet = (!analyzeAway && player.team === 'home') ? FORMATIONS_FULL : FORMATIONS;
         const formation = formationSet[currentMode]?.[player.team];
