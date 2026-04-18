@@ -422,35 +422,7 @@ header {
     50% { box-shadow: 0 0 18px rgba(46,204,113,0.7); }
 }
 
-/* ── Selección visual: titular sale (amarillo) ── */
-.player-chip.group-sub-out {
-    outline: 3px solid #ffde59 !important;
-    outline-offset: 2px;
-    box-shadow: 0 0 14px rgba(255,222,89,0.7), 0 0 4px rgba(255,222,89,0.9) inset !important;
-    transform: scale(1.08);
-    z-index: 10;
-    animation: groupOutPulse 1s infinite;
-}
-@keyframes groupOutPulse {
-    0%, 100% { outline-color: #ffde59; }
-    50% { outline-color: #ffa502; }
-}
-
-/* ── Selección visual: suplente entra (verde) ── */
-.player-chip.group-sub-in {
-    outline: 3px solid #2ecc71 !important;
-    outline-offset: 2px;
-    box-shadow: 0 0 14px rgba(46,204,113,0.7), 0 0 4px rgba(46,204,113,0.9) inset !important;
-    transform: scale(1.08);
-    z-index: 10;
-    animation: groupInPulse 1s infinite;
-}
-@keyframes groupInPulse {
-    0%, 100% { outline-color: #2ecc71; }
-    50% { outline-color: #27ae60; }
-}
-
-/* ── Botón cambio grupal VISITANTE ── */
+/* ── Botón cambio grupal VISITANTE (rojo, a la derecha del marcador) ── */
 #btn-group-sub-away {
     background: rgba(255,100,100,0.12);
     border: 1px solid rgba(255,100,100,0.35);
@@ -482,6 +454,34 @@ header {
 /* Ocultar GRUPAL visitante cuando no hay equipo visitante */
 .hide-visitor #btn-group-sub-away {
     display: none !important;
+}
+
+/* ── Selección visual: titular sale (amarillo) ── */
+.player-chip.group-sub-out {
+    outline: 3px solid #ffde59 !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 14px rgba(255,222,89,0.7), 0 0 4px rgba(255,222,89,0.9) inset !important;
+    transform: scale(1.08);
+    z-index: 10;
+    animation: groupOutPulse 1s infinite;
+}
+@keyframes groupOutPulse {
+    0%, 100% { outline-color: #ffde59; }
+    50% { outline-color: #ffa502; }
+}
+
+/* ── Selección visual: suplente entra (verde) ── */
+.player-chip.group-sub-in {
+    outline: 3px solid #2ecc71 !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 14px rgba(46,204,113,0.7), 0 0 4px rgba(46,204,113,0.9) inset !important;
+    transform: scale(1.08);
+    z-index: 10;
+    animation: groupInPulse 1s infinite;
+}
+@keyframes groupInPulse {
+    0%, 100% { outline-color: #2ecc71; }
+    50% { outline-color: #27ae60; }
 }
 
 .team-score {

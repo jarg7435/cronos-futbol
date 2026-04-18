@@ -556,7 +556,7 @@
         <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
 
         <div class="score-area">
-            <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode('home')" title="Cambio grupal">GRUPAL</button>
+            <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode('home')" title="Cambio grupal local">GRUPAL</button>
             <div class="score-board">
                 <div class="team-score">
                 <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
@@ -576,8 +576,8 @@
                 <button onclick="changeScore('away',+1)" class="score-btn success">+</button>
             </div>
         </div>
+        <button id="btn-group-sub-away" type="button" onclick="toggleGroupSubMode('away')" title="Cambio grupal visitante">GRUPAL</button>
 
-            <button id="btn-group-sub-away" type="button" onclick="toggleGroupSubMode('away')" title="Cambio grupal visitante">GRUPAL</button>
         </div><!-- /score-area -->
 
         <!-- Logo independiente — lado derecho del eje del campo -->
