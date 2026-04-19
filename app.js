@@ -302,8 +302,13 @@ function updateFormationOptions() {
 
 // --- APLICAR FORMACIÓN ---
 function applyFormationPreset(key) {
+    console.log('[FORMACIÓN] applyFormationPreset called:', key,
+        '| currentMode:', currentMode, '| analyzeAway:', analyzeAway,
+        '| players count:', players.length);
+
     const presets = FORMATION_PRESETS[currentMode];
-    if (!presets || !presets[key]) return;
+    if (!presets) { console.warn('[FORMACIÓN] No presets para modo:', currentMode); return; }
+    if (!presets[key]) { console.warn('[FORMACIÓN] No preset para key:', key, '| disponibles:', Object.keys(presets)); return; }
 
     const preset = presets[key];
     const useFullField = !analyzeAway; // solo local → campo completo
@@ -311,6 +316,8 @@ function applyFormationPreset(key) {
     // CRÍTICO: Ordenar por dorsal para asignar posiciones correctas de la formación.
     // Sin esto, los jugadores se colocan en orden de adición al array, no por dorsal.
     const sortedPlayers = [...players].sort((a, b) => (a.number || 0) - (b.number || 0));
+    console.log('[FORMACIÓN] Jugadores ordenados por dorsal:',
+        sortedPlayers.filter(p => p.status === 'field').map(p => `#${p.number} ${p.name} (${p.team})`).join(', '));
 
     let homeIdx = 0, awayIdx = 0;
     sortedPlayers.forEach(p => {
@@ -320,6 +327,7 @@ function applyFormationPreset(key) {
             if (positions[homeIdx]) {
                 const pos = clampToField(positions[homeIdx].x, positions[homeIdx].y);
                 p.x = pos.x; p.y = pos.y;
+                console.log(`[FORMACIÓN] ${p.team} #${p.number} ${p.name} → pos[${homeIdx}] (${pos.x}, ${pos.y})`);
                 homeIdx++;
             }
         } else if (p.team === 'away') {
@@ -327,6 +335,7 @@ function applyFormationPreset(key) {
             if (positions && positions[awayIdx]) {
                 const pos = clampToField(positions[awayIdx].x, positions[awayIdx].y);
                 p.x = pos.x; p.y = pos.y;
+                console.log(`[FORMACIÓN] ${p.team} #${p.number} ${p.name} → pos[${awayIdx}] (${pos.x}, ${pos.y})`);
                 awayIdx++;
             }
         }
@@ -338,7 +347,21 @@ function applyFormationPreset(key) {
         btn.classList.toggle('active', btn.dataset.fkey === key);
     });
 
+    // ACTUALIZAR POSICIONES DIRECTAMENTE EN EL DOM (sin depender de renderPlayers)
+    players.forEach(p => {
+        if (p.status !== 'field') return;
+        const chip = document.getElementById(`player-${p.id}`);
+        if (chip) {
+            chip.style.left = `${p.x}%`;
+            chip.style.top = `${p.y}%`;
+            chip.style.transform = 'translate(-50%, -50%)';
+            console.log(`[FORMACIÓN] DOM actualizado: player-${p.id} → (${p.x}%, ${p.y}%)`);
+        }
+    });
+
+    // Re-renderizar completo como respaldo
     renderPlayers();
+    console.log('[FORMACIÓN] Completada. activeFormationKey:', activeFormationKey);
 }
 
 // --- PLAYER ACTION MODAL ---
@@ -1885,6 +1908,8 @@ function confirmSetup() {
         selectedFormationOnStart = currentMode === 'f7' ? '231' : '442';
         document.getElementById('setup-formation').value = selectedFormationOnStart;
     }
+    console.log('[FORMACIÓN] confirmSetup → selectedFormationOnStart:', selectedFormationOnStart,
+        '| currentMode:', currentMode, '| analyzeAway:', analyzeAway);
 
     document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
     document.getElementById('team-b-name').textContent = TEAM_NAMES.away;
@@ -3160,14 +3185,18 @@ function goToTitularSelection() {
     document.getElementById('main-header').style.display = 'flex';
     document.getElementById('main-container').style.display = 'flex';
 
-    renderPlayers();
-
-    // Aplicar formación inicial siempre que se haya seleccionado una.
+    // CRÍTICO: Aplicar formación ANTES de renderizar, para que los jugadores
+    // tengan posiciones correctas desde el primer render.
     // Si el usuario eligió formación en setup, respetarla aunque el equipo tenga posiciones guardadas.
     if (selectedFormationOnStart) {
         applyFormationPreset(selectedFormationOnStart);
+    } else {
+        console.warn('[FORMACIÓN] selectedFormationOnStart está vacío — no se aplica formación');
     }
     window.loadedTeamPlayers = {};
+
+    // Renderizar jugadores (las posiciones ya están asignadas por applyFormationPreset)
+    renderPlayers();
 
     // Iniciar transmisi\u00f3n en vivo
     setTimeout(() => startLiveSync(), 800);
@@ -3212,15 +3241,15 @@ function startMatchWithConvocation() {
     document.getElementById('main-header').style.display = 'flex';
     document.getElementById('main-container').style.display = 'flex';
 
-    renderPlayers();
-
-    // Aplicar formación inicial siempre que se haya seleccionado una.
-    // Si el usuario eligió formación en setup, respetarla aunque el equipo tenga posiciones guardadas.
+    // CRÍTICO: Aplicar formación ANTES de renderizar
     if (selectedFormationOnStart) {
         applyFormationPreset(selectedFormationOnStart);
     }
     // Limpiar datos de equipo cargado ya aplicados
     window.loadedTeamPlayers = {};
+
+    // Renderizar jugadores (las posiciones ya están asignadas por applyFormationPreset)
+    renderPlayers();
 
     // Iniciar transmisión en vivo automáticamente (el director puede conectarse cuando quiera)
     setTimeout(() => startLiveSync(), 800);
@@ -3456,11 +3485,14 @@ function spawnInitialPlayers() {
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             };
 
-            // Restaurar estado (titular/suplente) y posición (X,Y) si coincide el dorsal
+            // Restaurar posición (X,Y) si coincide el dorsal.
+            // NOTA: NO restauramos status aquí — la convocatoria (initialStatus) tiene prioridad.
+            // Si el usuario eligió formación en setup, applyFormationPreset() sobreescribirá
+            // estas posiciones x,y con las coordenadas del preset seleccionado.
             if (loadedHome) {
                 const saved = loadedHome.find(lp => lp.number == pData.number);
                 if (saved) {
-                    playerObj.status = saved.status || playerObj.status;
+                    // Solo restaurar x,y para jugadores titulares que no tengan formación asignada
                     playerObj.x = saved.x !== undefined ? saved.x : 0;
                     playerObj.y = saved.y !== undefined ? saved.y : 0;
                 }
