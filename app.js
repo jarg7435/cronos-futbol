@@ -1781,6 +1781,18 @@ function openSetupModal() {
                                 style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                     </div>
+                    <div style="display:flex; gap:0.5rem; margin-top:0.7rem;">
+                        <button class="btn" onclick="saveTeamSetup('home')"
+                            style="flex:1; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.5);
+                                   color:#3fb950; font-weight:800; font-size:0.78rem; padding:0.4rem 0;">
+                            💾 GUARDAR
+                        </button>
+                        <button class="btn" onclick="deleteTeamSetup('home')"
+                            style="flex:1; background:rgba(255,88,88,0.12); border:1px solid rgba(255,88,88,0.4);
+                                   color:#ff5858; font-weight:800; font-size:0.78rem; padding:0.4rem 0;">
+                            🗑️ BORRAR
+                        </button>
+                    </div>
                 </div>
 
                 <!-- VISITANTE -->
@@ -1812,6 +1824,18 @@ function openSetupModal() {
                             <input type="color" id="setup-away-text" value="#ffffff"
                                 style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; margin-top:0.7rem;">
+                        <button class="btn" onclick="saveTeamSetup('away')"
+                            style="flex:1; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.5);
+                                   color:#3fb950; font-weight:800; font-size:0.78rem; padding:0.4rem 0;">
+                            💾 GUARDAR
+                        </button>
+                        <button class="btn" onclick="deleteTeamSetup('away')"
+                            style="flex:1; background:rgba(255,88,88,0.12); border:1px solid rgba(255,88,88,0.4);
+                                   color:#ff5858; font-weight:800; font-size:0.78rem; padding:0.4rem 0;">
+                            🗑️ BORRAR
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2946,6 +2970,22 @@ function openConvocationModal() {
                 </div>
             </div>
 
+            <!-- \u2500\u2500 CONTADORES EN TIEMPO REAL \u2500\u2500 -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:0.8rem;">
+                <div id="conv-counter-conv" style="background:rgba(88,166,255,0.1); border:2px solid rgba(88,166,255,0.35);
+                            border-radius:10px; padding:0.7rem 1rem; text-align:center;">
+                    <div style="font-size:0.68rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">Convocados</div>
+                    <div id="conv-num-conv" style="font-size:2.2rem; font-weight:900; color:var(--primary); line-height:1;">0</div>
+                    <div style="font-size:0.6rem; color:var(--text-muted);">de ${maxConvoked} max</div>
+                </div>
+                <div id="conv-counter-tit" style="background:rgba(240,136,62,0.1); border:2px solid rgba(240,136,62,0.35);
+                            border-radius:10px; padding:0.7rem 1rem; text-align:center;">
+                    <div style="font-size:0.68rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">Titulares</div>
+                    <div id="conv-num-tit" style="font-size:2.2rem; font-weight:900; color:#f0883e; line-height:1;">0</div>
+                    <div style="font-size:0.6rem; color:var(--text-muted);">min ${minForMatch} · max ${maxTitulares}</div>
+                </div>
+            </div>
+
             <!-- \u2500\u2500 LISTADO DE JUGADORES \u2500\u2500 -->
             <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
                 ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
@@ -3004,10 +3044,34 @@ function openConvocationModal() {
 
     const countEl = document.getElementById('conv-count');
     const goBtn   = document.getElementById('btn-go-titulares');
+    const numConvEl = document.getElementById('conv-num-conv');
+    const numTitEl  = document.getElementById('conv-num-tit');
+    const counterConvBox = document.getElementById('conv-counter-conv');
+    const counterTitBox  = document.getElementById('conv-counter-tit');
     const maxTitulares = currentMode === 'f7' ? 7 : 11;
     const minTitulares = currentMode === 'f7' ? 5 : 7;
     let convocados = 0;
     let titulares = 0;
+
+    // Función auxiliar para actualizar los contadores visuales
+    function updateConvCounters() {
+        if (numConvEl) numConvEl.textContent = convocados;
+        if (numTitEl) numTitEl.textContent = titulares;
+        // Color de fondo dinámico según estado
+        if (counterConvBox) {
+            counterConvBox.style.background = convocados > 0 ? 'rgba(88,166,255,0.2)' : 'rgba(88,166,255,0.1)';
+        }
+        if (counterTitBox) {
+            const isValid = titulares >= minTitulares;
+            counterTitBox.style.background = isValid ? 'rgba(240,136,62,0.2)' : 'rgba(240,136,62,0.1)';
+            counterTitBox.style.borderColor = isValid ? 'rgba(240,136,62,0.6)' : 'rgba(240,136,62,0.35)';
+        }
+        // Mantener también el contador de texto plano
+        if (countEl) {
+            countEl.innerHTML = '<span style="color:var(--primary)">' + convocados + ' convocados</span> \u00b7 <span style="color:#f0883e;font-weight:700;">' + titulares + ' titulares</span>';
+        }
+        goBtn.disabled = titulares < minTitulares;
+    }
 
     // \u2500\u2500 Pre-restaurar desde equipo cargado \u2500\u2500
     const loadedTeam = window.loadedTeamPlayers?.['home'];
@@ -3052,8 +3116,7 @@ function openConvocationModal() {
                 convocados++;
             }
         });
-        countEl.innerHTML = '<span style="color:var(--primary)">' + convocados + ' convocados</span> \u00b7 <span style="color:#f0883e;font-weight:700;">' + titulares + ' titulares</span>';
-        goBtn.disabled = titulares < minTitulares;
+        updateConvCounters();
     }
 
     // \u2500\u2500 Click handler: 3 estados (none \u2192 convocado \u2192 titular \u2192 none) \u2500\u2500
@@ -3114,10 +3177,7 @@ function openConvocationModal() {
                 convocados--;
             }
 
-            countEl.innerHTML = '<span style="color:var(--primary)">' + convocados + ' convocados</span> \u00b7 <span style="color:#f0883e;font-weight:700;">' + titulares + ' titulares</span>';
-            const isValid = titulares >= minTitulares;
-            countEl.style.color = isValid ? '#f0883e' : 'var(--primary)';
-            goBtn.disabled = !isValid;
+            updateConvCounters();
         });
     });
 }
