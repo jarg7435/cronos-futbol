@@ -29,6 +29,7 @@ function loadTeamFromDropdown(teamKey) {
         if (team.secondaryColor) {
             const secEl = document.getElementById(`setup-${teamKey}-secondary`);
             if (secEl) secEl.value = team.secondaryColor;
+            // Guardarlo también en COLORS para que esté disponible al iniciar
             if (COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
         }
 
@@ -56,11 +57,12 @@ function saveCurrentTeam() {
     else return;
 
     const teamName = TEAM_NAMES[teamKey];
+    // Guardar jugadores: número, nombre, alias, status (titular=field / suplente=bench) y posición en campo
     const currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
         id: p.id,
         number: p.number,
         name: p.name,
-        status: p.status,
+        status: p.status,   // 'field' = titular  |  'bench' = suplente
         x: p.x,
         y: p.y
     }));
@@ -70,9 +72,9 @@ function saveCurrentTeam() {
         secondaryColor: COLORS[teamKey].secondary,
         shortsColor: COLORS[teamKey].shorts,
         textColor: COLORS[teamKey].text,
-        players: currentPlayers,
-        mode: currentMode,
-        formation: activeFormationKey
+        players: currentPlayers,          // convocatoria completa con titulares y suplentes
+        mode: currentMode,                // 'f7' o 'f11'
+        formation: activeFormationKey     // sistema de juego activo
     };
     const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const existingIndex = teams.findIndex(t => t.name === teamName);
@@ -91,6 +93,111 @@ function saveCurrentTeam() {
         const formationDisplay = activeFormationKey ? '1-' + activeFormationKey : 'sin definir';
         hideSpinner();
         showToast('✅ ' + teamName + ' guardado · ' + (currentMode === 'f7' ? 'F7' : 'F11') + ' · ' + formationDisplay + ' · ' + titulares + 'T + ' + suplentes + 'S');
+    }, 300);
+}
+
+// ── GUARDAR EQUIPO DESDE EL PANEL DE CREACIÓN ──────────────────────
+// Lee nombre, colores y modalidad directamente del formulario del setup.
+// No requiere que el partido esté en marcha.
+function saveTeamSetup(teamKey) {
+    const nameEl = document.getElementById('setup-' + teamKey + '-name');
+    const colorEl = document.getElementById('setup-' + teamKey + '-color');
+    const shortsEl = document.getElementById('setup-' + teamKey + '-shorts');
+    const textEl = document.getElementById('setup-' + teamKey + '-text');
+    const modeEl = document.getElementById('setup-mode');
+    const formEl = document.getElementById('setup-formation');
+
+    const teamName = (nameEl ? nameEl.value : '').trim().toUpperCase();
+    if (!teamName) {
+        showToast('⚠️ Escribe un nombre para el equipo', 2500);
+        return;
+    }
+
+    // Si hay jugadores creados, incluirlos; si no, guardar sin jugadores
+    let currentPlayers = [];
+    if (typeof players !== 'undefined' && players.length > 0) {
+        currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
+            id: p.id,
+            number: p.number,
+            name: p.name,
+            status: p.status,
+            x: p.x,
+            y: p.y
+        }));
+    }
+
+    // Cargar jugadores de la plantilla (cronos_master_roster) para guardarlos con el equipo
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+    const mode = modeEl ? modeEl.value : 'f7';
+    const rosterPlayers = roster[mode] || [];
+
+    const newTeam = {
+        name: teamName,
+        color: colorEl ? colorEl.value : '#ffffff',
+        shortsColor: shortsEl ? shortsEl.value : '#ffffff',
+        textColor: textEl ? textEl.value : '#ffffff',
+        secondaryColor: (typeof COLORS !== 'undefined' && COLORS[teamKey]) ? COLORS[teamKey].secondary : null,
+        players: currentPlayers.length > 0 ? currentPlayers : rosterPlayers,
+        mode: mode,
+        formation: formEl ? formEl.value : ''
+    };
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const existingIndex = teams.findIndex(t => t.name === teamName);
+    if (existingIndex >= 0) {
+        if (!confirm('¿Sobrescribir equipo "' + teamName + '"?')) return;
+        teams[existingIndex] = newTeam;
+    } else {
+        if (teams.length >= 20) { showToast('⚠️ Memoria llena (20 equipos)', 2500); return; }
+        teams.push(newTeam);
+    }
+
+    showSpinner('Guardando equipo…');
+    setTimeout(() => {
+        cloudSet('cronos_teams', JSON.stringify(teams));
+        populateSavedTeams(teamKey);
+        // Seleccionar el equipo recién guardado en el dropdown
+        const dropdown = document.getElementById('saved-teams-' + teamKey);
+        if (dropdown) {
+            const newIndex = teams.findIndex(t => t.name === teamName);
+            if (newIndex >= 0) dropdown.value = newIndex;
+        }
+        hideSpinner();
+        const formationDisplay = newTeam.formation ? '1-' + newTeam.formation : 'sin definir';
+        showToast('✅ ' + teamName + ' guardado · ' + (mode === 'f7' ? 'F7' : 'F11') + ' · ' + formationDisplay, 3000);
+    }, 300);
+}
+
+// ── BORRAR EQUIPO GUARDADO ──────────────────────────────────────────
+// Elimina el equipo seleccionado en el dropdown de ese equipo.
+function deleteTeamSetup(teamKey) {
+    const dropdown = document.getElementById('saved-teams-' + teamKey);
+    if (!dropdown) return;
+    const index = dropdown.value;
+    if (index === "") {
+        showToast('⚠️ Selecciona un equipo en "Cargar Guardado" para borrarlo', 2500);
+        return;
+    }
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const teamName = teams[index] ? teams[index].name : '';
+    if (!teamName) return;
+
+    if (!confirm('¿Borrar equipo "' + teamName + '"?\nEsta acción no se puede deshacer.')) return;
+
+    teams.splice(index, 1);
+    showSpinner('Borrando equipo…');
+    setTimeout(() => {
+        cloudSet('cronos_teams', JSON.stringify(teams));
+        // Limpiar formulario de ese equipo
+        document.getElementById('setup-' + teamKey + '-name').value = teamKey === 'home' ? 'LOCAL' : 'VISITANTE';
+        document.getElementById('setup-' + teamKey + '-color').value = teamKey === 'home' ? '#58a6ff' : '#ff5858';
+        document.getElementById('setup-' + teamKey + '-shorts').value = teamKey === 'home' ? '#ffffff' : '#000000';
+        document.getElementById('setup-' + teamKey + '-text').value = '#ffffff';
+        // Refrescar dropdown
+        populateSavedTeams(teamKey);
+        hideSpinner();
+        showToast('🗑️ ' + teamName + ' borrado', 2500);
     }, 300);
 }
 
@@ -154,10 +261,11 @@ function spawnInitialPlayers() {
         homeConvocation.forEach((pData, index) => {
             const playerObj = {
                 id: (index + 1),
-                playerId: pData.id || null,
+                playerId: pData.id || null, // Vínculo permanente
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: 'home',
+                // 'field' = Titular (orange), 'bench' = Suplente (blue)
                 status: pData.initialStatus === 'field' ? 'field' : 'bench',
                 time: 0,
                 color: homeColors.primary,
@@ -166,6 +274,8 @@ function spawnInitialPlayers() {
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             };
 
+            // Si hay equipo guardado, solo restauramos posiciones x,y en campo.
+            // La convocatoria (initialStatus Titular/Suplente) SIEMPRE tiene prioridad.
             if (loadedHome) {
                 const saved = loadedHome.find(lp => lp.number == pData.number);
                 if (saved) {
@@ -294,6 +404,7 @@ function editTimer(half) {
     }
 }
 
+// ── SPINNER DE CARGA ──────────────────────────────────────────────
 function showSpinner(msg) {
     msg = msg || 'Guardando…';
     let overlay = document.getElementById('cronos-spinner');
@@ -358,10 +469,12 @@ function formatTime(sec) {
 window.endMatch = function endMatch() {
     if (!confirm('¿Finalizar el partido?')) return;
 
+    // Detener cronómetro
     isRunning = false;
     clearInterval(timerInterval);
     matchPhase = 'finished';
 
+    // Registrar salida de todos los jugadores en campo
     const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
     (players || []).filter(p => p.status === 'field').forEach(p => {
         p.history.push('Sale a las ' + finalTime + ' (FIN)');
@@ -369,10 +482,12 @@ window.endMatch = function endMatch() {
 
     updateMasterUI();
 
+    // Detener sincronización en vivo
     if (typeof stopLiveSync === 'function') {
         stopLiveSync();
     }
 
+    // Guardar informes automáticamente si la función existe
     if (typeof saveAllMatchReportsInternal === 'function') {
         saveAllMatchReportsInternal().catch(() => {});
     }
@@ -391,6 +506,7 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
     const scoreH = (typeof scoreHome  !== 'undefined') ? scoreHome  : '—';
     const scoreA = (typeof scoreAway  !== 'undefined') ? scoreAway  : '—';
 
+    // Estadísticas rápidas del partido
     const totalPlayers  = (players || []).filter(p => p.team === 'home').length;
     const totalGoals    = (players || []).filter(p => p.team === 'home').reduce((s, p) => s + (p.goals || 0), 0);
     const totalCards    = (players || []).filter(p => p.team === 'home' && p.cards && p.cards !== 'ninguna').length;
@@ -555,6 +671,7 @@ window._postMatchReturn = function() {
     const modal = document.getElementById('setup-modal');
     if (modal) modal.style.display = 'none';
 
+    // Asegurar que el contenedor principal está visible
     const mc = document.getElementById('main-container');
     const mh = document.getElementById('main-header');
     if (mc) mc.style.display = 'flex';
@@ -574,3 +691,4 @@ window._postMatchNewSetup = function() {
         if (modal) modal.style.display = 'none';
     }
 };
+
