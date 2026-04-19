@@ -1,4 +1,7 @@
-// --- FORMACIONES HEREDADAS → usando FORMATIONS y FORMATIONS_FULL de app.js ---
+// --- FORMACIONES HEREDADAS (para posicionamiento inicial si no se usa preset) ---
+// NOTA: FORMATIONS y FORMATIONS_FULL ya están declarados en app.js como const.
+// Este archivo solo sobreescribe placeOnField() con la versión que ordena por dorsal.
+// NO redeclaramos const para evitar SyntaxError por redeclaración.
 
 function placeOnField(chip, player) {
     if (player.x === 0 && player.y === 0) {
@@ -22,12 +25,3 @@ function placeOnField(chip, player) {
     chip.style.top = `${player.y}%`;
     chip.style.transform = `translate(-50%, -50%)`;
 }
-
-function updatePlayerUI(player) {
-    const chip = document.getElementById(`player-${player.id}`);
-    if (chip) {
-        const timerDiv = chip.querySelector('.player-timer');
-        if (timerDiv) timerDiv.textContent = formatTime(player.time);
-    }
-}
-
