@@ -5,9 +5,9 @@
 //  incrementa el número de VERSION (v31, v32, etc.)
 //  Los usuarios verán la nueva versión automáticamente.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v35';
-const CACHE_NAME = 'cronos-cache-v10.0';
-
+const VERSION    = 'v36';
+const CACHE_NAME = 'cronos-cache-v10.1';
+>>>>>>> f6bb68e (feat: optimización seleccion Local/Visitante, gestión plantillas, RBAC y módulos Staff/Padres)
 const ASSETS = [
     './',
     './index.html',
@@ -17,7 +17,6 @@ const ASSETS = [
     './manifest.json',
     'https://cdn-icons-png.flaticon.com/512/53/53283.png'
 ];
-
 // ── INSTALL: precachear todos los assets ─────────────────────
 self.addEventListener('install', (e) => {
     e.waitUntil(
@@ -27,7 +26,6 @@ self.addEventListener('install', (e) => {
     // el usuario cierre todas las pestañas
     self.skipWaiting();
 });
-
 // ── ACTIVATE: borrar cachés antiguas ─────────────────────────
 self.addEventListener('activate', (e) => {
     e.waitUntil(
@@ -42,23 +40,18 @@ self.addEventListener('activate', (e) => {
     // Toma el control de todas las pestañas abiertas de inmediato
     self.clients.claim();
 });
-
 // ── FETCH: Red primero, caché como respaldo ───────────────────
 // Así los usuarios siempre reciben la versión más reciente
 // cuando tienen conexión. Si están offline, sirve la caché.
 self.addEventListener('fetch', (e) => {
     // Ignorar URLs que no son http/https (chrome-extension://, etc.)
     if (!e.request.url.startsWith('http')) return;
-
     // Solo interceptar peticiones GET
     if (e.request.method !== 'GET') return;
-
     // No cachear peticiones de Firebase (auth, Firestore, Functions)
     const _u = e.request.url;
     if (_u.includes('firebaseapp.com') || _u.includes('googleapis.com') ||
         _u.includes('identitytoolkit') || _u.includes('securetoken.google')) return;
-
-
     // Para los archivos principales de la app → RED PRIMERO
     const url = new URL(e.request.url);
     const isAppFile =
@@ -67,7 +60,6 @@ self.addEventListener('fetch', (e) => {
         url.pathname.endsWith('.css')  ||
         url.pathname === '/'           ||
         url.pathname.endsWith('/');
-
     if (isAppFile) {
         e.respondWith(
             fetch(e.request)
