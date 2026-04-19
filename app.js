@@ -313,9 +313,12 @@ function applyFormationPreset(key) {
     const preset = presets[key];
     const useFullField = !analyzeAway; // solo local → campo completo
 
-    // CRÍTICO: Ordenar por dorsal para asignar posiciones correctas de la formación.
-    // Sin esto, los jugadores se colocan en orden de adición al array, no por dorsal.
-    const sortedPlayers = [...players].sort((a, b) => (a.number || 0) - (b.number || 0));
+    // CRÍTICO: Ordenar por selección para asignar posiciones correctas de la formación.
+    // Sin esto, los jugadores se colocan en orden de adición al array, no por dorsal ni por selección.
+    const sortedPlayers = [...players].sort((a, b) => {
+        if (a.titularOrder !== undefined && b.titularOrder !== undefined) return a.titularOrder - b.titularOrder;
+        return (a.number || 0) - (b.number || 0);
+    });
     console.log('[FORMACIÓN] Jugadores ordenados por dorsal:',
         sortedPlayers.filter(p => p.status === 'field').map(p => `#${p.number} ${p.name} (${p.team})`).join(', '));
 
@@ -1840,6 +1843,15 @@ function openSetupModal() {
                 </div>
             </div>
 
+            <!-- FILA: Mi Equipo (Local/Visitante) -->
+            <div style="margin-bottom:1rem; text-align:center; background:var(--glass); border:1px solid var(--glass-border); padding:0.8rem; border-radius:10px;">
+                <label style="font-weight:bold; color:var(--text); margin-right:1rem;">Mi equipo jugará como:</label>
+                <select id="user-team-role" style="padding:0.4rem 1rem; border-radius:6px; background:var(--bg); border:1px solid var(--glass-border); color:var(--text); font-weight:bold;">
+                    <option value="home">Equipo Local (Izquierda)</option>
+                    <option value="away">Equipo Visitante (Derecha)</option>
+                </select>
+            </div>
+
             <!-- FILA: Modalidad | Sistema | Analizar -->
             <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:1rem; align-items:end;
                         background:var(--glass); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem;">
@@ -1926,6 +1938,7 @@ function confirmSetup() {
 
     currentMode = document.getElementById('setup-mode').value;
     analyzeAway = document.getElementById('setup-analyze-away').checked;
+    window._userTeamRole = document.getElementById('user-team-role')?.value || 'home';
     selectedFormationOnStart = document.getElementById('setup-formation')?.value || '';
     // Si no se seleccionó formación, usar la predeterminada del modo
     if (!selectedFormationOnStart) {
@@ -2467,6 +2480,7 @@ function openRosterManager() {
             </div>
 
             <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+                <button class="btn" onclick="clearMasterRoster('${mode}')" style="background:rgba(255,88,88,0.15);color:#ff5858;border:1px solid rgba(255,88,88,0.5);margin-right:auto;">🗑️ BORRAR PLANTILLA</button>
                 <button class="btn" onclick="openSetupModal()">CANCELAR</button>
                 <button class="btn primary" onclick="saveMasterRoster('${mode}')">GUARDAR PLANTILLA</button>
             </div>
@@ -2900,6 +2914,16 @@ function saveMasterRoster(mode) {
     }, 300);
 }
 
+function clearMasterRoster(mode) {
+    if (!confirm('¿Seguro que quieres borrar a TODOS los jugadores de la plantilla actual (' + (mode==='f7'?'F7':'F11') + ')?')) return;
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    roster[mode] = [];
+    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+    if (typeof cloudSet === 'function') cloudSet('cronos_master_roster', JSON.stringify(roster));
+    showToast('🗑️ Plantilla borrada');
+    openRosterManager();
+}
+
 function openConvocationModal() {
     document.body.classList.add('setup-mode');
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
@@ -3052,6 +3076,7 @@ function openConvocationModal() {
     const minTitulares = currentMode === 'f7' ? 5 : 7;
     let convocados = 0;
     let titulares = 0;
+    window._titularSelectionOrder = [];
 
     // Función auxiliar para actualizar los contadores visuales
     function updateConvCounters() {
@@ -3100,6 +3125,7 @@ function openConvocationModal() {
                     badge.style.display = 'inline';
                     badge.style.fontWeight = '900';
                     titulares++;
+                    window._titularSelectionOrder.push(i);
                 } else {
                     row.style.borderColor = 'var(--primary)';
                     row.style.background  = 'rgba(88,166,255,0.12)';
@@ -3162,6 +3188,7 @@ function openConvocationModal() {
                 badge.style.display = 'inline';
                 badge.style.fontWeight = '900';
                 titulares++;
+                window._titularSelectionOrder.push(parseInt(row.dataset.index));
             } else {
                 // Estado 3: Deseleccionar (volver a none)
                 row.dataset.state = 'none';
@@ -3175,6 +3202,8 @@ function openConvocationModal() {
                 badge.style.display = 'none';
                 titulares--;
                 convocados--;
+                const idx = parseInt(row.dataset.index);
+                window._titularSelectionOrder = window._titularSelectionOrder.filter(i => i !== idx);
             }
 
             updateConvCounters();
@@ -3220,7 +3249,12 @@ function goToTitularSelection() {
     const allRows = document.querySelectorAll('#conv-grid-container .conv-row[data-state="convocado"], #conv-grid-container .conv-row[data-state="titular"]');
     const matchPlayers = Array.from(allRows).map(r => {
         const p = myPlayers[parseInt(r.dataset.index)];
-        return p ? { ...p, initialStatus: r.dataset.state === 'titular' ? 'field' : 'bench' } : null;
+        const isTitular = r.dataset.state === 'titular';
+        return p ? { 
+            ...p, 
+            initialStatus: isTitular ? 'field' : 'bench',
+            titularOrder: isTitular ? window._titularSelectionOrder.indexOf(parseInt(r.dataset.index)) : 999
+        } : null;
     }).filter(Boolean);
 
     const titularCount = matchPlayers.filter(p => p.initialStatus === 'field').length;
@@ -3527,17 +3561,18 @@ function spawnInitialPlayers() {
     const homeConvocation = window.activeConvocation;
     const loadedHome = window.loadedTeamPlayers?.['home'];
 
-    if (homeConvocation) {
+    const userRole = window._userTeamRole || 'home';
+    const loadedAway = window.loadedTeamPlayers?.['away'];
+
+    if (userRole === 'home' && homeConvocation) {
         homeConvocation.forEach((pData, index) => {
             const playerObj = {
                 id: (index + 1),
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: 'home',
-                // STATUS PRIORITIES: 
-                // 1. Convocation choice (Field if 'field', else 'bench')
-                // 2. Default F7/F11 limit as fallback
                 status: pData.initialStatus === 'field' ? 'field' : 'bench',
+                titularOrder: pData.titularOrder,
                 time: 0,
                 color: homeColors.primary,
                 shortsColor: homeColors.shorts,
@@ -3545,14 +3580,9 @@ function spawnInitialPlayers() {
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             };
 
-            // Restaurar posición (X,Y) si coincide el dorsal.
-            // NOTA: NO restauramos status aquí — la convocatoria (initialStatus) tiene prioridad.
-            // Si el usuario eligió formación en setup, applyFormationPreset() sobreescribirá
-            // estas posiciones x,y con las coordenadas del preset seleccionado.
             if (loadedHome) {
                 const saved = loadedHome.find(lp => lp.number == pData.number);
                 if (saved) {
-                    // Solo restaurar x,y para jugadores titulares que no tengan formación asignada
                     playerObj.x = saved.x !== undefined ? saved.x : 0;
                     playerObj.y = saved.y !== undefined ? saved.y : 0;
                 }
@@ -3562,7 +3592,7 @@ function spawnInitialPlayers() {
     } else {
         for (let i = 1; i <= defaultTotalCount; i++) {
             players.push({
-                id: i, number: i, name: `Jugador ${i}`, team: 'home',
+                id: i, number: i, name: `Local ${i}`, team: 'home',
                 status: i <= startersCount ? 'field' : 'bench',
                 time: 0, color: homeColors.primary, shortsColor: homeColors.shorts,
                 textColor: homeColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
@@ -3570,15 +3600,43 @@ function spawnInitialPlayers() {
         }
     }
 
-    if (analyzeAway) {
+    if (analyzeAway || userRole === 'away') {
         const awayColors = COLORS.away;
-        for (let i = 1; i <= defaultTotalCount; i++) {
-            players.push({
-                id: 100 + i, number: i, name: `Rival ${i}`, team: 'away',
-                status: i <= startersCount ? 'field' : 'bench',
-                time: 0, color: awayColors.primary, shortsColor: awayColors.shorts,
-                textColor: awayColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+        
+        if (userRole === 'away' && homeConvocation) {
+            homeConvocation.forEach((pData, index) => {
+                const playerObj = {
+                    id: 100 + (index + 1),
+                    number: pData.number,
+                    name: pData.alias || pData.name || `J${pData.number}`,
+                    team: 'away',
+                    status: pData.initialStatus === 'field' ? 'field' : 'bench',
+                    titularOrder: pData.titularOrder,
+                    time: 0,
+                    color: awayColors.primary,
+                    shortsColor: awayColors.shorts,
+                    textColor: awayColors.text,
+                    history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+                };
+
+                if (loadedAway) {
+                    const saved = loadedAway.find(lp => lp.number == pData.number);
+                    if (saved) {
+                        playerObj.x = saved.x !== undefined ? saved.x : 0;
+                        playerObj.y = saved.y !== undefined ? saved.y : 0;
+                    }
+                }
+                players.push(playerObj);
             });
+        } else {
+            for (let i = 1; i <= defaultTotalCount; i++) {
+                players.push({
+                    id: 100 + i, number: i, name: `Visitante ${i}`, team: 'away',
+                    status: i <= startersCount ? 'field' : 'bench',
+                    time: 0, color: awayColors.primary, shortsColor: awayColors.shorts,
+                    textColor: awayColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+                });
+            }
         }
     }
 
@@ -3968,10 +4026,13 @@ const FORMATIONS_FULL = {
 
 function placeOnField(chip, player) {
     if (player.x === 0 && player.y === 0) {
-        // CRÍTICO: Ordenar por dorsal para asignar posiciones correctas de la formación.
+        // CRÍTICO: Ordenar por selección o dorsal para asignar posiciones correctas de la formación.
         const fieldPlayers = players
             .filter(p => p.status === 'field' && p.team === player.team)
-            .sort((a, b) => (a.number || 0) - (b.number || 0));
+            .sort((a, b) => {
+                if (a.titularOrder !== undefined && b.titularOrder !== undefined) return a.titularOrder - b.titularOrder;
+                return (a.number || 0) - (b.number || 0);
+            });
         const index = fieldPlayers.indexOf(player);
         const formationSet = (!analyzeAway && player.team === 'home') ? FORMATIONS_FULL : FORMATIONS;
         const formation = formationSet[currentMode]?.[player.team];
