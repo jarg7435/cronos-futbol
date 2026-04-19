@@ -5,12 +5,13 @@
 
 function placeOnField(chip, player) {
     if (player.x === 0 && player.y === 0) {
-        // CRÍTICO: Ordenar por dorsal para que el portero (1) vaya a portería,
-        // defensa (2,3) a línea defensiva, etc. Sin esto, el orden es arbitrario
-        // según cómo se añadió cada jugador al array players.
+        // CRÍTICO: Ordenar por selección o dorsal para que el portero vaya a portería.
         const fieldPlayers = players
             .filter(p => p.status === 'field' && p.team === player.team)
-            .sort((a, b) => (a.number || 0) - (b.number || 0));
+            .sort((a, b) => {
+                if (a.titularOrder !== undefined && b.titularOrder !== undefined) return a.titularOrder - b.titularOrder;
+                return (a.number || 0) - (b.number || 0);
+            });
         const index = fieldPlayers.indexOf(player);
         const formationSet = (!analyzeAway && player.team === 'home') ? FORMATIONS_FULL : FORMATIONS;
         const formation = formationSet[currentMode]?.[player.team];
