@@ -1,0 +1,425 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══════════════════════════════════════════════════════════════
+    //  HELPERS — se cachean por petición (no múltiples lecturas)
+    // ═══════════════════════════════════════════════════════════════
+
+    function myData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function myRole() {
+      return myData().role;
+    }
+
+    function myClubId() {
+      return myData().clubId;
+    }
+
+    function isSuperAdmin() {
+      return myRole() == 'superadmin' || myRole() == 'admin';
+    }
+
+    function isClubAdmin() {
+      return myRole() == 'club_admin';
+    }
+
+    // Coach = role 'user' (con club) o 'individual' (sin club)
+    function isCoach() {
+      return myRole() in ['user', 'coach', 'individual'];
+    }
+
+    function isDirectorOrCoord() {
+      return myRole() in ['director', 'coordinator'];
+    }
+
+    // Staff = club_admin + director + coordinador
+    function isStaff() {
+      return isClubAdmin() || isDirectorOrCoord();
+    }
+
+    // Coach O staff (para enviar notificaciones, convocatorias, etc.)
+    function isCoachOrStaff() {
+      return isCoach() || isStaff();
+    }
+
+    function belongsToClub(clubId) {
+      return myClubId() == clubId;
+    }
+
+    function isStaffOfClub(clubId) {
+      return isSuperAdmin() || (isStaff() && belongsToClub(clubId));
+    }
+
+    function isCoachOrStaffOfClub(clubId) {
+      return isSuperAdmin() || (isCoachOrStaff() && belongsToClub(clubId));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  DENEGAR TODO POR DEFECTO
+    // ═══════════════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  USERS
+    // ═══════════════════════════════════════════════════════════════
+    match /users/{userId} {
+
+      // CREAR: solo tu propio documento al registrarte
+      allow create: if request.auth != null
+              && (request.auth.uid == userId
+                  || userId.matches(request.auth.uid + '_'));
+
+      // LEER:
+      //   - Tu propio documento
+      //   - SuperAdmin lee todos
+      //   - Club Admin lee los usuarios de su club (necesario para panel gestión)
+      //   - Director/Coordinador leen miembros de su club
+      allow read: if request.auth != null
+                  && (request.auth.uid == userId
+                      || isSuperAdmin()
+                      || (isStaff() && resource.data.clubId == myClubId()));
+
+      // ACTUALIZAR:
+      //   - Tu propio documento (perfil)
+      //   - SuperAdmin actualiza cualquiera
+      //   - Club Admin actualiza usuarios de su club (aprobar, bloquear, etc.)
+      allow update: if request.auth != null
+                    && (request.auth.uid == userId
+                        || isSuperAdmin()
+                        || (isClubAdmin() && resource.data.clubId == myClubId()));
+
+      // ELIMINAR: solo superadmin
+      allow delete: if request.auth != null && isSuperAdmin();
+
+      // Subcolección datos propios del usuario
+      match /cronos_data/{docId} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid == userId;
+      }
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CLUBS
+    // ═══════════════════════════════════════════════════════════════
+    match /clubs/{clubId} {
+
+      // LEER: público (necesario para el selector de clubs en el registro,
+      //         donde el usuario AÚN NO está autenticado)
+      allow read: if true;
+
+      // CREAR: solo superadmin
+      allow create: if request.auth != null && isSuperAdmin();
+
+      // ACTUALIZAR: superadmin O club_admin de ese club
+      allow update: if request.auth != null
+                    && (isSuperAdmin()
+                        || (isClubAdmin() && belongsToClub(clubId)));
+
+      // ELIMINAR: solo superadmin
+      allow delete: if request.auth != null && isSuperAdmin();
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CRONOS_MASTER_ROSTER — plantilla de jugadores del entrenador
+    //  FIX: colección que faltaba en las reglas originales
+    // ═══════════════════════════════════════════════════════════════
+    match /cronos_master_roster/{docId} {
+
+      // LEER: el propio entrenador, staff de su club, o superadmin
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || request.auth.uid == resource.data.coachUid
+                      || (isStaff() && resource.data.clubId == myClubId()));
+
+      // CREAR/ACTUALIZAR: el propio entrenador o superadmin
+      allow create, update: if request.auth != null
+                            && (isSuperAdmin()
+                                || request.auth.uid == request.resource.data.coachUid);
+
+      allow delete: if request.auth != null
+                    && (isSuperAdmin()
+                        || request.auth.uid == resource.data.coachUid);
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CRONOS_STAFF — configuración del cuerpo técnico
+    //  FIX: colección que faltaba en las reglas originales
+    // ═══════════════════════════════════════════════════════════════
+    match /cronos_staff/{docId} {
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || request.auth.uid == resource.data.coachUid
+                      || (isStaff() && resource.data.clubId == myClubId()));
+
+      allow create, update: if request.auth != null
+                            && (isSuperAdmin()
+                                || request.auth.uid == request.resource.data.coachUid);
+
+      allow delete: if request.auth != null
+                    && (isSuperAdmin()
+                        || request.auth.uid == resource.data.coachUid);
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  LIVE_MATCHES — partidos en vivo
+    // ═══════════════════════════════════════════════════════════════
+    match /live_matches/{matchId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || resource.data.clubId == null
+                      || belongsToClub(resource.data.clubId));
+
+      allow create: if request.auth != null
+                    && (isSuperAdmin()
+                        || (request.resource.data.clubId != null
+                            && belongsToClub(request.resource.data.clubId)));
+
+      allow update: if request.auth != null
+                    && (isSuperAdmin()
+                        || resource.data.clubId == null
+                        || belongsToClub(resource.data.clubId));
+
+      allow delete: if request.auth != null
+                    && (isSuperAdmin()
+                        || request.auth.uid == resource.data.coachUid);
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CRONOS_NOTIFICATIONS — convocatorias, entrenamientos, informes
+    //  FIX: coach (role='user') incluido en CREAR para poder enviar
+    //       convocatorias y avisos de entrenamiento a padres
+    // ═══════════════════════════════════════════════════════════════
+    match /cronos_notifications/{notifId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || (resource.data.clubId != null
+                          && belongsToClub(resource.data.clubId))
+                      || resource.data.parentUid == request.auth.uid
+                      || resource.data.staffUid  == request.auth.uid);
+
+      // Coach Y staff pueden crear notificaciones
+      allow create: if request.auth != null
+                    && (isSuperAdmin()
+                        || (request.resource.data.clubId != null
+                            && isCoachOrStaffOfClub(request.resource.data.clubId))
+                        // Notificaciones sin clubId (ej. SA a staff)
+                        || (request.resource.data.clubId == null && isSuperAdmin()));
+
+      allow update: if request.auth != null
+                    && (isSuperAdmin()
+                        || (resource.data.clubId != null
+                            && belongsToClub(resource.data.clubId))
+                        || resource.data.parentUid == request.auth.uid
+                        || resource.data.staffUid  == request.auth.uid);
+
+      allow delete: if request.auth != null
+                    && (isSuperAdmin()
+                        || (resource.data.clubId != null
+                            && isStaffOfClub(resource.data.clubId)));
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CRONOS_PLAYER_LINKS — vinculación padre-jugador
+    // ═══════════════════════════════════════════════════════════════
+    match /cronos_player_links/{linkId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || request.auth.uid == resource.data.parentUid
+                      || (resource.data.clubId != null
+                          && isCoachOrStaffOfClub(resource.data.clubId)));
+
+      // Coach también puede crear vínculos (alta de padres desde gestión contactos)
+      allow create: if request.auth != null
+                    && (isSuperAdmin()
+                        || (request.resource.data.clubId != null
+                            && isCoachOrStaffOfClub(request.resource.data.clubId)));
+
+      allow update: if request.auth != null
+                    && (isSuperAdmin()
+                        || request.auth.uid == resource.data.parentUid
+                        || (resource.data.clubId != null
+                            && isCoachOrStaffOfClub(resource.data.clubId)));
+
+      allow delete: if request.auth != null
+                    && (isSuperAdmin()
+                        || (resource.data.clubId != null
+                            && isStaffOfClub(resource.data.clubId)));
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CRONOS_PLAYER_REPORTS — informes post-partido
+    // ═══════════════════════════════════════════════════════════════
+    match /cronos_player_reports/{reportId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || (resource.data.clubId != null
+                          && belongsToClub(resource.data.clubId)));
+
+      // Coach puede crear y actualizar informes
+      allow create, update: if request.auth != null
+                            && (isSuperAdmin()
+                                || (request.resource.data.clubId != null
+                                    && isCoachOrStaffOfClub(request.resource.data.clubId)));
+
+      allow delete: if request.auth != null
+                    && (isSuperAdmin()
+                        || (resource.data.clubId != null
+                            && isStaffOfClub(resource.data.clubId)));
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CRONOS_MESSAGES — mensajería interna
+    // ═══════════════════════════════════════════════════════════════
+    match /cronos_messages/{messageId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || request.auth.uid == resource.data.fromUid
+                      || request.auth.uid == resource.data.toUid
+                      || (resource.data.participantUids != null
+                          && request.auth.uid in resource.data.participantUids));
+
+      allow create: if request.auth != null
+                    && (isSuperAdmin()
+                        || (request.resource.data.clubId != null
+                            && belongsToClub(request.resource.data.clubId)));
+
+      allow update: if request.auth != null
+                    && (isSuperAdmin()
+                        || request.auth.uid == resource.data.fromUid
+                        || request.auth.uid == resource.data.toUid
+                        || (resource.data.participantUids != null
+                            && request.auth.uid in resource.data.participantUids));
+
+      allow delete: if request.auth != null
+                    && (isSuperAdmin()
+                        || request.auth.uid == resource.data.fromUid);
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  SLOT_REQUESTS — solicitudes de ampliación de cuota
+    // ═══════════════════════════════════════════════════════════════
+    match /slot_requests/{requestId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || (resource.data.clubId != null
+                          && belongsToClub(resource.data.clubId)
+                          && isClubAdmin()));
+
+      allow create: if request.auth != null
+                    && (isSuperAdmin()
+                        || (request.resource.data.clubId != null
+                            && belongsToClub(request.resource.data.clubId)
+                            && isClubAdmin()));
+
+      // Solo superadmin aprueba/rechaza
+      allow update: if request.auth != null && isSuperAdmin();
+
+      allow delete: if request.auth != null && isSuperAdmin();
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PLATFORM_REQUESTS — solicitudes usuario → SA
+    //  FIX: club_admin necesita también actualizar (caConfirmSAApproved)
+    // ═══════════════════════════════════════════════════════════════
+    match /platform_requests/{requestId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || (resource.data.clubId != null
+                          && belongsToClub(resource.data.clubId)
+                          && isClubAdmin()));
+
+      // Coach Y club_admin pueden crear solicitudes (enviar usuario al SA)
+      allow create: if request.auth != null
+                    && (isSuperAdmin()
+                        || (request.resource.data.clubId != null
+                            && belongsToClub(request.resource.data.clubId)));
+
+      // Superadmin aprueba/rechaza. Club_admin confirma alta final.
+      allow update: if request.auth != null
+                    && (isSuperAdmin()
+                        || (isClubAdmin()
+                            && resource.data.clubId == myClubId()));
+
+      allow delete: if request.auth != null && isSuperAdmin();
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  DELETION_REQUESTS — solicitudes de baja
+    //  FIX: request.data → request.resource.data (bug original)
+    // ═══════════════════════════════════════════════════════════════
+    match /deletion_requests/{requestId} {
+
+      allow read: if request.auth != null
+                  && (isSuperAdmin()
+                      || (resource.data.clubId != null
+                          && belongsToClub(resource.data.clubId)));
+
+      // FIX: era request.data.clubId → debe ser request.resource.data.clubId
+      allow create: if request.auth != null
+                    && (isSuperAdmin()
+                        || (request.resource.data.clubId != null
+                            && belongsToClub(request.resource.data.clubId)));
+
+      allow update: if request.auth != null
+                    && (isSuperAdmin()
+                        || (resource.data.clubId != null
+                            && belongsToClub(resource.data.clubId)
+                            && isClubAdmin()));
+
+      allow delete: if request.auth != null && isSuperAdmin();
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  APP_STATS — contadores (IA, uso, etc.)
+    // ═══════════════════════════════════════════════════════════════
+    match /app_stats/{statId} {
+      allow read:          if request.auth != null && isSuperAdmin();
+      allow create, update: if request.auth != null;
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  AUDIT_LOGS / ERROR_LOGS / NOTIFICATIONS — solo Admin SDK
+    // ═══════════════════════════════════════════════════════════════
+    match /audit_logs/{logId} {
+      allow read:  if request.auth != null && isSuperAdmin();
+      allow write: if false;
+    }
+
+    match /error_logs/{logId} {
+      allow read:  if request.auth != null && isSuperAdmin();
+      allow write: if false;
+    }
+
+    match /notifications/{notifId} {
+      allow read:  if request.auth != null && isSuperAdmin();
+      allow write: if false;
+    }
+
+  }
+}
