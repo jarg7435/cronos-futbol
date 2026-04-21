@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 16_superadmin.js  —  SuperAdmin Panel v9.0
  * Chronos Fútbol
  *
@@ -337,14 +337,16 @@ window.saRequests = async function saRequests() {
     body.innerHTML = `<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando solicitudes…</div>`;
     try {
         const { db, collection, query, where, getDocs, orderBy } = await saFS();
-        const [snapD, snapP, snapQ] = await Promise.all([
-            getDocs(query(collection(db,'users'),where('status','==','pending'),orderBy('createdAt','desc'))).catch(()=>({forEach:()=>{}})),
-            getDocs(query(collection(db,'platform_requests'),where('status','==','pending_sa'),orderBy('createdAt','desc'))).catch(()=>({forEach:()=>{}})),
-            getDocs(query(collection(db,'platform_requests'),where('type','==','quota_increase'),where('status','==','unread'),orderBy('createdAt','desc'))).catch(()=>({forEach:()=>{}})),
+        const [snapD, snapD2, snapP, snapQ] = await Promise.all([
+            getDocs(query(collection(db,'users'),where('status','==','pending'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'users'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'platform_requests'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'platform_requests'),where('type','==','quota_increase'),where('status','==','unread'))).catch(()=>({forEach:()=>{}})),
         ]);
 
         const directUsers=[], platformReqs=[], quotaReqs=[];
         snapD.forEach(d => directUsers.push({id:d.id,...d.data()}));
+        snapD2.forEach(d => { if (!directUsers.find(u => u.id === d.id)) directUsers.push({id:d.id,...d.data()}); });
         snapP.forEach(d => platformReqs.push({id:d.id,...d.data()}));
         snapQ.forEach(d => quotaReqs.push({id:d.id,...d.data()}));
 
