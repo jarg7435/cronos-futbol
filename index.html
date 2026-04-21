@@ -342,9 +342,9 @@
                 </div>
             </div>
 
-            <!-- Nombre y Apellidos (Solo para usuario individual) -->
+            <!-- Nombre y Apellidos (Para todos los roles excepto Admin de Club) -->
             <div id="individual-name-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#79c0ff; display:block; margin-bottom:5px;">Tu nombre completo</label>
+                <label style="font-size:0.78rem; color:#79c0ff; display:block; margin-bottom:5px;">👤 Nombre y Apellidos</label>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
                     <input type="text" id="auth-firstname" placeholder="Nombre"
                         style="padding:0.75rem; background:rgba(121,192,255,0.05);
@@ -355,25 +355,24 @@
                                border:1px solid rgba(121,192,255,0.25); border-radius:8px;
                                color:white; font-size:0.9rem; box-sizing:border-box; outline:none;">
                 </div>
-                <p style="font-size:0.72rem; color:#7d8590; margin:0.4rem 0 0;">
-                    Tu nombre se usará como nombre de tu equipo en la app.</p>
             </div>
 
-            <!-- Selector de Categoría (Solo para Entrenador de club) -->
+            <!-- Selector de Categoría + Equipo (Para Entrenador de club y Padre) -->
             <div id="category-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">⚽ Categoría que entrenas</label>
+                <!-- Se rellena dinámicamente desde auth.js (loadCategorySelectors) -->
+                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">⚽ Categoría y Equipo</label>
                 <select id="auth-category"
                     style="width:100%; padding:0.75rem; background:rgba(63,185,80,0.05);
                            border:1px solid rgba(63,185,80,0.25); border-radius:8px;
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
                     <option value="">-- Selecciona categoría --</option>
-                    <option value="Prebenjamín">🟢 Prebenjamín</option>
-                    <option value="Benjamín">🔵 Benjamín</option>
-                    <option value="Alevín">🟡 Alevín</option>
-                    <option value="Infantil">🟠 Infantil</option>
-                    <option value="Cadete">🔴 Cadete</option>
-                    <option value="Juvenil">🟣 Juvenil</option>
-                    <option value="Regional">⚪ Regional</option>
+                    <option value="prebenjamin">🟢 Prebenjamín</option>
+                    <option value="benjamin">🔵 Benjamín</option>
+                    <option value="alevin">🟡 Alevín</option>
+                    <option value="infantil">🟠 Infantil</option>
+                    <option value="cadete">🔴 Cadete</option>
+                    <option value="juvenil">🟣 Juvenil</option>
+                    <option value="regional">⚪ Regional</option>
                 </select>
             </div>
 
@@ -602,6 +601,17 @@
                 💬 COMUNICACIONES
             </button>
 
+            <!-- ═══ BOTÓN ADMIN — solo visible para rol "individual" ═══ -->
+            <button id="btn-individual-admin"
+                onclick="if(typeof openIndividualAdminPanel==='function') openIndividualAdminPanel();"
+                title="Panel de Administración — Padres / Categorías"
+                style="display:none; background:rgba(121,192,255,0.15); border:1px solid rgba(121,192,255,0.45);
+                       color:#79c0ff; font-size:0.74rem; padding:0.38rem 0.8rem;
+                       border-radius:8px; cursor:pointer; font-weight:700;
+                       align-items:center; gap:5px; white-space:nowrap;">
+                🛡️ ADMIN
+            </button>
+
             <button onclick="cerrarSesion()" title="Cerrar sesión"
                 style="background:none; border:1px solid rgba(255,255,255,0.12); color:#7d8590;
                        font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">⏻</button>
@@ -696,7 +706,7 @@
 
     <!-- ══ PANEL DE ADMINISTRACIÓN ══════════════════════════════════════ -->
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js"></script>
     <script type="module" src="auth.js"></script>
     <!-- User Management v8.0 -->
     <script src="js/01_security_state.js"></script>
@@ -722,6 +732,7 @@
     <script src="js/21_coach_comms.js"></script>
     <script src="js/22_club_reports.js"></script>
     <script src="js/23_staff_dashboard.js"></script>
+    <script src="js/24_individual_admin.js"></script>
 
     <!-- Informe imprimible -->
     <div id="print-report" style="display:none;">

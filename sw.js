@@ -5,83 +5,97 @@
 //  incrementa el número de VERSION (v31, v32, etc.)
 //  Los usuarios verán la nueva versión automáticamente.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v36';
-const CACHE_NAME = 'cronos-cache-v10.1';
->>>>>>> f6bb68e (feat: optimización seleccion Local/Visitante, gestión plantillas, RBAC y módulos Staff/Padres)
+const VERSION    = 'v44';
+const CACHE_NAME = 'cronos-cache-v11.1';
+
 const ASSETS = [
     './',
     './index.html',
-    './style.css',
-    './app.js',
-    './auth.js',
     './manifest.json',
-    'https://cdn-icons-png.flaticon.com/512/53/53283.png'
+    './img/logo_cronos.png',
+    './img/icon-192.png',
+    './img/icon-512.png',
+    // Módulos JS principales
+    './app.js',
+    './js/auth.js',
+    './js/rbac.js',
+    './js/01_state.js',
+    './js/02_utils.js',
+    './js/03_ui_components.js',
+    './js/04_formation_data.js',
+    './js/05_field_rendering.js',
+    './js/06_firestore_storage.js',
+    './js/07_staff.js',
+    './js/08_ai_import.js',
+    './js/09_reports.js',
+    './js/10_notifications.js',
+    './js/11_persistence.js',
+    './js/11_persistence_FIX.js',
+    './js/12_init.js',
+    './js/14_match_reports_parents.js',
+    './js/15_coordinated_comms.js',
+    './js/16_superadmin.js',
+    './js/17_club_admin.js'
 ];
-// ── INSTALL: precachear todos los assets ─────────────────────
-self.addEventListener('install', (e) => {
-    e.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-    );
-    // Activa el nuevo SW inmediatamente sin esperar a que
-    // el usuario cierre todas las pestañas
+
+self.addEventListener('install', event => {
     self.skipWaiting();
-});
-// ── ACTIVATE: borrar cachés antiguas ─────────────────────────
-self.addEventListener('activate', (e) => {
-    e.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(
-                keys
-                    .filter((key) => key !== CACHE_NAME)
-                    .map((key)  => caches.delete(key))
-            )
-        )
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => {
+            return cache.addAll(ASSETS).catch(err => {
+                console.warn('SW: Algunos recursos no se pudieron cachear (omitido)', err);
+            });
+        })
     );
-    // Toma el control de todas las pestañas abiertas de inmediato
-    self.clients.claim();
 });
-// ── FETCH: Red primero, caché como respaldo ───────────────────
-// Así los usuarios siempre reciben la versión más reciente
-// cuando tienen conexión. Si están offline, sirve la caché.
-self.addEventListener('fetch', (e) => {
-    // Ignorar URLs que no son http/https (chrome-extension://, etc.)
-    if (!e.request.url.startsWith('http')) return;
-    // Solo interceptar peticiones GET
-    if (e.request.method !== 'GET') return;
-    // No cachear peticiones de Firebase (auth, Firestore, Functions)
-    const _u = e.request.url;
-    if (_u.includes('firebaseapp.com') || _u.includes('googleapis.com') ||
-        _u.includes('identitytoolkit') || _u.includes('securetoken.google')) return;
-    // Para los archivos principales de la app → RED PRIMERO
-    const url = new URL(e.request.url);
-    const isAppFile =
-        url.pathname.endsWith('.html') ||
-        url.pathname.endsWith('.js')   ||
-        url.pathname.endsWith('.css')  ||
-        url.pathname === '/'           ||
-        url.pathname.endsWith('/');
-    if (isAppFile) {
-        e.respondWith(
-            fetch(e.request)
-                .then((networkRes) => {
-                    // Guardar copia fresca en caché
-                    const clone = networkRes.clone();
-                    caches.open(CACHE_NAME).then((cache) =>
-                        cache.put(e.request, clone)
-                    );
-                    return networkRes;
-                })
-                .catch(() =>
-                    // Sin conexión → servir desde caché
-                    caches.match(e.request)
-                )
-        );
-    } else {
-        // Para imágenes, fuentes, etc. → CACHÉ PRIMERO (más rápido)
-        e.respondWith(
-            caches.match(e.request).then(
-                (cached) => cached || fetch(e.request)
-            )
-        );
+
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys().then(keys => {
+            return Promise.all(
+                keys.filter(key => key !== CACHE_NAME)
+                    .map(key => caches.delete(key))
+            );
+        }).then(() => self.clients.claim())
+    );
+});
+
+self.addEventListener('fetch', event => {
+    // Solo cachear peticiones GET. No soportamos POST (Firebase), PUT, DELETE, etc. en cache.
+    if (event.request.method !== 'GET') return;
+
+    // Solo permitir esquemas http o https
+    if (!event.request.url.startsWith('http')) return;
+
+    // No cachear peticiones a Firebase o externas (Google Fonts, etc)
+    if (event.request.url.includes('firestore.googleapis.com') ||
+        event.request.url.includes('firebaseio.com') ||
+        event.request.url.includes('fonts.googleapis.com') ||
+        event.request.url.includes('fonts.gstatic.com')) {
+        return;
+    }
+
+    event.respondWith(
+        fetch(event.request)
+            .then(response => {
+                // Si la red responde, guardamos en cache y devolvemos
+                if (response.ok) {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+                }
+                return response;
+            })
+            .catch(() => {
+                // Si falla la red, intentamos cache
+                return caches.match(event.request);
+            })
+    );
+});
+
+// Listener para forzar actualización desde la UI
+self.addEventListener('message', event => {
+    if (event.data === 'force-update') {
+        self.skipWaiting();
+        console.log('SW: Forzando actualización v' + VERSION);
     }
 });

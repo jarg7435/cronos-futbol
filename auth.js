@@ -1,6 +1,6 @@
 /**
  * auth.js - Gestión de Autenticación y Autorización
- * Cronos Fútbol — v4 (individual + club_admin mejorado)
+ * Cronos Fútbol — v5.1 (multi-rol sin queries, compatible con firestore rules)
  */
 
 // ── Estado Local ──────────────────────────────────────────────
@@ -33,15 +33,14 @@ export async function switchTab(tab) {
     const registerPwdSec = document.getElementById('register-pwd-section');
     
     if (loginPwdSec)    loginPwdSec.style.display    = _isLoginMode ? 'block' : 'none';
-    if (registerPwdSec) registerPwdSec.style.display = _isLoginMode ? 'none'  : 'block';
+    if (registerPwdSec) registerPwdSec.style.display = _isLoginMode ? 'none' : 'block';
 
     if (!_isLoginMode) {
         loadClubOptions();
         handleRoleChange();
     } else {
         ['club-container', 'new-club-container',
-         'individual-name-container', 'invite-code-container',
-         'category-container'].forEach(id => {
+         'individual-name-container', 'invite-code-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
         });
@@ -55,7 +54,6 @@ export async function loadClubOptions() {
 
     select.innerHTML = '<option value="">⏳ Cargando clubes...</option>';
 
-    // Esperar hasta 4 segundos a que Firebase esté listo
     let fa = window._cronos_auth;
     if (!fa) {
         for (let i = 0; i < 8; i++) {
@@ -88,9 +86,7 @@ export async function loadClubOptions() {
         select.innerHTML = html;
     } catch(e) {
         console.error('[Cronos] Error cargando clubes:', e);
-        // Si es error de permisos, intentar sin autenticación con REST
         select.innerHTML = '<option value="">⚠️ Error al cargar clubes — actualiza la página</option>';
-        // Reintento automático en 2 segundos
         setTimeout(() => loadClubOptions(), 2000);
     }
 }
@@ -102,24 +98,16 @@ export function handleRoleChange() {
     const isParent     = (role === 'parent');
     const isClubAdmin  = (role === 'club_admin');
     const isIndividual = (role === 'individual');
-    const isCoach      = (role === 'user');
 
     const clubCont    = document.getElementById('club-container');
     const newClubCont = document.getElementById('new-club-container');
     const inviteCont  = document.getElementById('invite-code-container');
     const indivCont   = document.getElementById('individual-name-container');
-    const catCont     = document.getElementById('category-container');
 
-    // Selector de club: mostrar para todos los roles de club (no admin, no individual)
     if (clubCont)    clubCont.style.display    = (!isClubAdmin && !isIndividual) ? 'block' : 'none';
-    // Formulario de nuevo club: solo para quien va a ser administrador de club
     if (newClubCont) newClubCont.style.display  = isClubAdmin ? 'block' : 'none';
-    // Código de invitación: solo para padres/madres/tutores
     if (inviteCont)  inviteCont.style.display   = isParent ? 'block' : 'none';
-    // Nombre y apellidos: solo para usuario individual
     if (indivCont)   indivCont.style.display    = isIndividual ? 'block' : 'none';
-    // Selector de categoría: solo para entrenador de club
-    if (catCont)     catCont.style.display      = isCoach ? 'block' : 'none';
 }
 
 // ── Mostrar Error / Éxito ────────────────────────────────────
@@ -133,7 +121,6 @@ export function showAuthError(msg) {
 }
 
 // ── Verificación de Autorización ────────────────────────────
-// Emails con acceso automático de superadmin (sin necesidad de doc en Firestore)
 const SUPERADMIN_EMAILS = ['jarg7435@gmail.com'];
 
 export async function checkAuthorization(user) {
@@ -141,36 +128,42 @@ export async function checkAuthorization(user) {
     const fa = window._cronos_auth;
     if (!fa) return;
 
+    // Si se está añadiendo un rol, no interferir
+    if (window._addingRole) {
+        console.log('[Cronos] Autorización pospuesta (añadiendo rol)...');
+        return;
+    }
+
     try {
+        // ── Leer SOLO el documento principal (por uid) ─────────
+        // Esto siempre está permitido por la regla: request.auth.uid == userId
         const ref  = fa.doc(fa.db, 'users', user.uid);
         const snap = await fa.getDoc(ref);
 
-        // ── CASO 1: Documento NO existe ───────────────────────────
+        // ── CASO 1: Documento NO existe ─────────────────────────
         if (!snap.exists()) {
-            // Si es el superadmin, recrear documento automáticamente
             if (SUPERADMIN_EMAILS.includes(user.email)) {
                 await fa.setDoc(ref, {
                     email:        user.email,
                     role:         'superadmin',
-                    roles:        ['superadmin'],
                     isAuthorized: true,
                     status:       'active',
                     createdAt:    fa.serverTimestamp(),
                     lastLogin:    fa.serverTimestamp(),
                     autoRecovered: true,
+                    allRoles: [{ role: 'superadmin', clubId: null, clubName: null, isAuthorized: true }],
                 });
                 window._cronosCurrentUser = {
-                    uid:   user.uid,
-                    email: user.email,
-                    role:  'superadmin',
-                    roles: ['superadmin'],
-                    clubId: null, clubName: null,
+                    uid:     user.uid,
+                    email:   user.email,
+                    role:    'superadmin',
+                    clubId:  null,
+                    clubName: null,
                 };
                 enterApp();
                 return;
             }
 
-            // Para otros usuarios: cerrar sesión y explicar qué hacer
             await fa.signOut(fa.auth);
             showAuthError(
                 '⚠️ Tu cuenta no está registrada en el sistema. ' +
@@ -182,10 +175,8 @@ export async function checkAuthorization(user) {
 
         const data = snap.data();
 
-        // ── CASO 2: Cuenta eliminada (removed) ───────────────────
+        // ── CASO 2: Cuenta eliminada ───────────────────────────
         if (data.status === 'removed') {
-            // El trigger de Firestore ya borró Auth; si aún puede entrar
-            // es que Auth no se borró. Limpiar Firestore y dejar registrarse.
             await fa.signOut(fa.auth);
             showAuthError(
                 '🔄 Tu cuenta fue dada de baja. ' +
@@ -194,14 +185,207 @@ export async function checkAuthorization(user) {
             return;
         }
 
-        // ── CASO 3: Cuenta bloqueada ──────────────────────────────
+        // ── CASO 3: Cuenta bloqueada ───────────────────────────
         if (data.status === 'blocked') {
             await fa.signOut(fa.auth);
             showAuthError('🔒 Cuenta bloqueada. Contacta con tu administrador.');
             return;
         }
 
-        // ── CASO 4: Pendiente de aprobación ──────────────────────
+        // ── CASO 3b: Pendiente de que Club Admin reenvíe a SA ─────────
+        if (data.status === 'pending_club_admin') {
+            // Check if SA already approved (user might have been offline when approved)
+            try {
+                // Build list of possible platform_request IDs to check
+                const possibleIds3b = ['self_reg_' + user.uid];
+                const existingRoles3b = data.allRoles || [{ role: data.role, clubId: data.clubId }];
+                existingRoles3b.forEach(er => {
+                    const rid = 'self_reg_' + user.uid + '_' + (er.role || '') + '_' + (er.clubId || '');
+                    if (!possibleIds3b.includes(rid)) possibleIds3b.push(rid);
+                });
+
+                for (let i3b = 0; i3b < possibleIds3b.length; i3b++) {
+                    try {
+                        const prRef3b = fa.doc(fa.db, 'platform_requests', possibleIds3b[i3b]);
+                        const prSnap3b = await fa.getDoc(prRef3b);
+                        if (!prSnap3b.exists()) continue;
+                        const prData3b = prSnap3b.data();
+
+                        if (prData3b.status === 'sa_approved' || prData3b.status === 'approved') {
+                            // SA already approved — jump to activation
+                            console.log('[Cronos] SA approval found while in pending_club_admin. Activating...');
+                            const approvedAllRoles3b = prData3b.approvedAllRoles || data.allRoles || [];
+                            const activateUpdate3b = {
+                                status: 'active',
+                                isAuthorized: true,
+                                allRoles: approvedAllRoles3b,
+                                approvedBySA: true,
+                                approvedBySAAt: prData3b.approvedAt || new Date().toISOString(),
+                                authorizedAt: new Date().toISOString(),
+                                lastLogin: fa.serverTimestamp(),
+                            };
+                            if (prData3b.approvedRole) activateUpdate3b.role = prData3b.approvedRole;
+                            if (prData3b.approvedClubId) activateUpdate3b.clubId = prData3b.approvedClubId;
+                            if (prData3b.approvedClubName) activateUpdate3b.clubName = prData3b.approvedClubName;
+                            await fa.updateDoc(ref, activateUpdate3b);
+                            await fa.updateDoc(prRef3b, { status: 'active', appliedAt: new Date().toISOString() });
+                            showAuthError('✅ Solicitud aprobada. Activando...');
+                            setTimeout(() => location.reload(), 1500);
+                            return;
+                        }
+                    } catch (_) { /* skip this ID, try next */ }
+                }
+            } catch (_) { /* ignore check errors, proceed to show waiting message */ }
+
+            await fa.signOut(fa.auth);
+            showAuthError(
+                '⏳ Tu solicitud está pendiente. ' +
+                'El administrador de tu club debe reenviarla al SuperAdmin para su aprobación.'
+            );
+            return;
+        }
+
+        // ── CASO 3c: Pendiente de aprobación SA (reenviado por Club Admin) ─
+        if (data.status === 'pending_sa') {
+            // Check if SA already approved via platform_request
+            try {
+                const prId = 'self_reg_' + user.uid;
+                const prRef = fa.doc(fa.db, 'platform_requests', prId);
+                const prSnap = await fa.getDoc(prRef);
+
+                if (prSnap.exists()) {
+                    const prData = prSnap.data();
+
+                    if (prData.status === 'sa_approved') {
+                        // ═══════════════════════════════════════════════
+                        // AUTO-ACTIVATE: SA approved, user can write own doc
+                        // ═══════════════════════════════════════════════
+                        console.log('[Cronos] SA approval detected. Auto-activating...');
+
+                        const approvedAllRoles = prData.approvedAllRoles || data.allRoles || [];
+                        const alreadyHasActiveRole = (data.isAuthorized === true);
+
+                        // Build update for user doc
+                        const activateUpdate = {
+                            allRoles: approvedAllRoles,
+                            approvedBySA: true,
+                            approvedBySAAt: prData.approvedAt || new Date().toISOString(),
+                            authorizedAt: new Date().toISOString(),
+                        };
+
+                        if (!alreadyHasActiveRole && prData.approvedIsAuthorized) {
+                            activateUpdate.isAuthorized = true;
+                            activateUpdate.status = 'active';
+                            if (prData.approvedRole) activateUpdate.role = prData.approvedRole;
+                            if (prData.approvedClubId) activateUpdate.clubId = prData.approvedClubId;
+                            if (prData.approvedClubName) activateUpdate.clubName = prData.approvedClubName;
+                            activateUpdate.lastLogin = fa.serverTimestamp();
+                        }
+
+                        await fa.updateDoc(ref, activateUpdate);
+
+                        // Mark platform_request as applied
+                        await fa.updateDoc(prRef, { status: 'active', appliedAt: new Date().toISOString() });
+
+                        // Re-read user doc and continue normal flow
+                        const updatedSnap = await fa.getDoc(ref);
+                        if (updatedSnap.exists()) {
+                            const updatedData = updatedSnap.data();
+                            const finalAllRoles = updatedData.allRoles || approvedAllRoles;
+                            const authorizedRoles = finalAllRoles.filter(r =>
+                                r.isAuthorized || r.role === 'superadmin'
+                            );
+
+                            if (authorizedRoles.length === 1) {
+                                const ar = authorizedRoles[0];
+                                window._cronosCurrentUser = {
+                                    uid: user.uid, email: user.email,
+                                    role: ar.role,
+                                    clubId: ar.clubId || null,
+                                    clubName: ar.clubName || null,
+                                    firstName: ar.firstName || null,
+                                    lastName: ar.lastName || null,
+                                    displayName: ar.displayName || null,
+                                };
+                                enterApp();
+                                return;
+                            } else if (authorizedRoles.length > 1) {
+                                _showMultiRolePicker(user, authorizedRoles);
+                                return;
+                            }
+                        }
+
+                        // Fallback: reload
+                        showAuthError('✅ Solicitud aprobada. Activando...');
+                        setTimeout(() => location.reload(), 1500);
+                        return;
+                    }
+
+                    if (prData.status === 'approved') {
+                        // Already fully applied — reload to refresh
+                        showAuthError('✅ Solicitud aprobada. Cargando...');
+                        setTimeout(() => location.reload(), 1500);
+                        return;
+                    }
+                }
+
+                // Also check secondary platform_request IDs (for multi-role additions)
+                // Format: self_reg_{uid}_{role}_{clubId}
+                const allPossibleIds = [
+                    'self_reg_' + user.uid,
+                ];
+                // Try common role+club combos from existing allRoles
+                const existingRoles = data.allRoles || [{ role: data.role, clubId: data.clubId }];
+                existingRoles.forEach(er => {
+                    const rid = 'self_reg_' + user.uid + '_' + (er.role || '') + '_' + (er.clubId || '');
+                    if (!allPossibleIds.includes(rid)) allPossibleIds.push(rid);
+                });
+
+                for (let pi = 0; pi < allPossibleIds.length; pi++) {
+                    if (allPossibleIds[pi] === prId) continue; // already checked
+                    try {
+                        const altRef = fa.doc(fa.db, 'platform_requests', allPossibleIds[pi]);
+                        const altSnap = await fa.getDoc(altRef);
+                        if (altSnap.exists() && altSnap.data().status === 'sa_approved') {
+                            // Same auto-activation logic
+                            const altData = altSnap.data();
+                            const altAllRoles = altData.approvedAllRoles || data.allRoles || [];
+                            const altUpdate = {
+                                allRoles: altAllRoles,
+                                approvedBySA: true,
+                                approvedBySAAt: altData.approvedAt || new Date().toISOString(),
+                                authorizedAt: new Date().toISOString(),
+                            };
+                            if (!data.isAuthorized && altData.approvedIsAuthorized) {
+                                altUpdate.isAuthorized = true;
+                                altUpdate.status = 'active';
+                                if (altData.approvedRole) altUpdate.role = altData.approvedRole;
+                                if (altData.approvedClubId) altUpdate.clubId = altData.approvedClubId;
+                                if (altData.approvedClubName) altUpdate.clubName = altData.approvedClubName;
+                                altUpdate.lastLogin = fa.serverTimestamp();
+                            }
+                            await fa.updateDoc(ref, altUpdate);
+                            await fa.updateDoc(altRef, { status: 'active', appliedAt: new Date().toISOString() });
+                            showAuthError('✅ Solicitud aprobada. Activando...');
+                            setTimeout(() => location.reload(), 1500);
+                            return;
+                        }
+                    } catch (_) { /* skip */ }
+                }
+            } catch (prErr) {
+                console.warn('[Cronos] Error checking platform_request:', prErr.message);
+            }
+
+            // Not approved yet — show waiting message
+            await fa.signOut(fa.auth);
+            showAuthError(
+                '⏳ Tu solicitud fue reenviada al SuperAdmin. ' +
+                'Espera la confirmación de aprobación.'
+            );
+            return;
+        }
+
+        // ── CASO 4: Pendiente de aprobación ────────────────────
         if (!data.isAuthorized) {
             await fa.signOut(fa.auth);
             showAuthError(
@@ -211,44 +395,180 @@ export async function checkAuthorization(user) {
             return;
         }
 
-        // ── FORCE SUPERADMIN: si el email está en la lista, SIEMPRE es SA ──
-        if (SUPERADMIN_EMAILS.includes(user.email) && data.role !== 'superadmin') {
-            await fa.setDoc(ref, {
-                role: 'superadmin', roles: ['superadmin'],
-                isAuthorized: true, status: 'active',
-                lastLogin: fa.serverTimestamp(),
-            }, { merge: true });
+        // ── Obtener todos los roles desde allRoles ──────────────
+        // Compatibilidad: si no existe allRoles, construir desde el documento
+        const allRoles = data.allRoles || [{
+            role:        data.role,
+            clubId:      data.clubId      || null,
+            clubName:    data.clubName    || null,
+            isAuthorized: data.isAuthorized || (data.role === 'superadmin'),
+            firstName:   data.firstName   || null,
+            lastName:    data.lastName    || null,
+            displayName: data.displayName || null,
+        }];
+
+        // Filtrar solo roles autorizados
+        const authorizedRoles = allRoles.filter(r =>
+            r.isAuthorized || r.role === 'superadmin'
+        );
+
+        if (authorizedRoles.length === 0) {
+            await fa.signOut(fa.auth);
+            showAuthError('⚠️ Tu cuenta no tiene roles autorizados.');
+            return;
+        }
+
+        // ── Un solo rol → entrar directamente ───────────────────
+        if (authorizedRoles.length === 1) {
+            const r = authorizedRoles[0];
+            await fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true });
+
             window._cronosCurrentUser = {
-                uid: user.uid, email: user.email,
-                role: 'superadmin', roles: ['superadmin'],
-                clubId: null, clubName: null,
+                uid:         user.uid,
+                email:       user.email,
+                role:        r.role,
+                clubId:      r.clubId      || null,
+                clubName:    r.clubName    || null,
+                firstName:   r.firstName   || null,
+                lastName:    r.lastName    || null,
+                displayName: r.displayName || null,
             };
             enterApp();
             return;
         }
 
-        // ── CASO 5: Usuario activo y autorizado ───────────────────
-        await fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true });
-
-        window._cronosCurrentUser = {
-            uid:         user.uid,
-            email:       user.email,
-            role:        data.role,
-            roles:       data.roles || [data.role],
-            clubId:      data.clubId      || null,
-            clubName:    data.clubName    || null,
-            firstName:   data.firstName   || null,
-            lastName:    data.lastName    || null,
-            displayName: data.displayName || null,
-            category:    data.category    || null,
-        };
-
-        enterApp();
+        // ── Múltiples roles → mostrar selector ─────────────────
+        _showMultiRolePicker(user, authorizedRoles);
 
     } catch (err) {
         console.error('Auth verify error:', err);
         showAuthError('Error de verificación: ' + err.message);
     }
+}
+
+// ── Selector Multi-Rol (sin query, usa datos del documento) ──
+function _showMultiRolePicker(user, roles) {
+    const prev = document.getElementById('multi-role-picker');
+    if (prev) prev.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'multi-role-picker';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;' +
+        'display:flex;align-items:center;justify-content:center;padding:1rem;';
+
+    const roleLabels = {
+        superadmin:  '🛡️  Super Administrador',
+        club_admin:  '🏛️  Administrador de Club',
+        director:    '📋  Director Deportivo',
+        coordinator: '🎯  Coordinador',
+        user:        '⚽  Entrenador',
+        coach:       '⚽  Entrenador',
+        parent:      '👨‍👧  Padre / Madre / Tutor',
+        individual:  '👤  Usuario Individual',
+    };
+
+    const cards = roles.map(r => {
+        const label    = roleLabels[r.role] || r.role;
+        const clubInfo = r.clubName
+            ? '<div style="font-size:0.78rem;color:#7d8590;margin-top:4px;">🏟️ ' +
+              (r.clubName || 'Sin club') + '</div>'
+            : '';
+        const disabled = !r.isAuthorized && r.role !== 'superadmin';
+        const badge    = disabled
+            ? '<div style="font-size:0.72rem;color:#d29922;margin-top:3px;">⏳ Pendiente de aprobación</div>'
+            : '';
+        const opacity  = disabled ? 'opacity:0.45;cursor:not-allowed;' : 'cursor:pointer;';
+
+        return '<button class="mrp-btn" data-role="' + r.role + '" data-clubid="' + (r.clubId||'') + '" ' +
+            'data-clubname="' + (r.clubName||'') + '" ' +
+            'data-fn="' + (r.firstName||'') + '" data-ln="' + (r.lastName||'') + '" ' +
+            'data-dn="' + (r.displayName||'') + '" ' +
+            'style="width:100%;text-align:left;padding:1rem;margin-bottom:0.6rem;' +
+            'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);' +
+            'border-radius:12px;color:white;font-size:0.9rem;transition:all 0.2s;' +
+            opacity + '">' +
+            '<div style="font-weight:600;">' + label + '</div>' +
+            clubInfo + badge + '</button>';
+    }).join('');
+
+    overlay.innerHTML =
+        '<div style="background:#161b22;border:1px solid rgba(88,166,255,0.3);border-radius:16px;' +
+        'padding:1.5rem;width:min(96vw,460px);max-height:85vh;overflow-y:auto;">' +
+            '<div style="text-align:center;margin-bottom:1.2rem;">' +
+                '<div style="font-weight:700;font-size:1.1rem;color:white;">' +
+                    'Selecciona con qué rol deseas entrar</div>' +
+                '<div style="font-size:0.8rem;color:#7d8590;margin-top:6px;">' +
+                    user.email + '</div>' +
+            '</div>' +
+            cards +
+            '<button id="mrp-close" style="width:100%;padding:0.7rem;margin-top:0.5rem;' +
+                'background:rgba(255,70,70,0.1);border:1px solid rgba(255,70,70,0.25);' +
+                'border-radius:8px;color:#ff5858;font-size:0.82rem;cursor:pointer;">' +
+                'Cerrar sesión</button>' +
+        '</div>';
+    document.body.appendChild(overlay);
+
+    // Eventos
+    overlay.querySelectorAll('.mrp-btn').forEach(btn => {
+        btn.addEventListener('mouseenter', () => {
+            if (btn.style.cursor === 'not-allowed') return;
+            btn.style.background  = 'rgba(88,166,255,0.12)';
+            btn.style.borderColor = 'rgba(88,166,255,0.4)';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.background  = 'rgba(255,255,255,0.04)';
+            btn.style.borderColor = 'rgba(255,255,255,0.1)';
+        });
+        btn.addEventListener('click', () => {
+            const role = btn.dataset.role;
+            const isAuth = roles.find(r => r.role === role &&
+                (r.clubId || null) === (btn.dataset.clubid || null));
+
+            if (!isAuth) return;
+
+            if (!isAuth.isAuthorized && role !== 'superadmin') {
+                if (typeof showToast === 'function') {
+                    showToast('⏳ Este rol está pendiente de aprobación', 3000);
+                }
+                return;
+            }
+
+            overlay.remove();
+
+            window._cronosCurrentUser = {
+                uid:         user.uid,
+                email:       user.email,
+                role:        role,
+                clubId:      btn.dataset.clubid   || null,
+                clubName:    btn.dataset.clubname  || null,
+                firstName:   btn.dataset.fn        || null,
+                lastName:    btn.dataset.ln        || null,
+                displayName: btn.dataset.dn        || null,
+            };
+
+            // Actualizar lastLogin
+            const fa = window._cronos_auth;
+            fa.setDoc(
+                fa.doc(fa.db, 'users', user.uid),
+                { lastLogin: fa.serverTimestamp() },
+                { merge: true }
+            ).catch(() => {});
+
+            enterApp();
+        });
+    });
+
+    document.getElementById('mrp-close').addEventListener('click', () => {
+        overlay.remove();
+        if (window._cronos_auth?.auth) {
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js')
+                .then(({ signOut }) => signOut(window._cronos_auth.auth))
+                .then(() => location.reload())
+                .catch(() => location.reload());
+        } else {
+            location.reload();
+        }
+    });
 }
 
 // ── Login / Registro ─────────────────────────────────────────
@@ -274,14 +594,18 @@ export async function doAuth() {
     showAuthError('⏳ Conectando…');
 
     try {
-        // ══ LOGIN ══════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════════
+        // LOGIN
+        // ═══════════════════════════════════════════════════════
         if (_isLoginMode) {
             window._loginThisSession = true;
             await fa.signInWithEmailAndPassword(fa.auth, email, password);
-            return;
+            return; // onAuthStateChanged → checkAuthorization
         }
 
-        // ══ REGISTRO ═══════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════════
+        // REGISTRO
+        // ═══════════════════════════════════════════════════════
         const requestedRole   = document.getElementById('auth-role')?.value          || 'user';
         const selectedClubId  = document.getElementById('auth-club-select')?.value   || null;
         const newClubName     = document.getElementById('auth-new-club-name')?.value.trim() || '';
@@ -293,21 +617,15 @@ export async function doAuth() {
         const lastName        = document.getElementById('auth-lastname')?.value.trim()   || '';
         const inviteCode      = document.getElementById('auth-invite-code')?.value.trim().toUpperCase() || '';
 
-        // Categoría del entrenador (solo para entrenadores de club)
-        const coachCategory = document.getElementById('auth-category')?.value || '';
-
-        // ── Validaciones por rol ──────────────────────────────────
+        // ── Validaciones por rol ────────────────────────────────
         if (requestedRole === 'club_admin' && !newClubName) {
             showAuthError('⚠️ Indica el nombre de tu club.'); return;
         }
         if (requestedRole === 'individual' && (!firstName || !lastName)) {
             showAuthError('⚠️ Nombre y apellidos obligatorios.'); return;
         }
-        if (requestedRole === 'user' && !coachCategory) {
-            showAuthError('⚠️ Selecciona la categoría que entrenas.'); return;
-        }
 
-        // ── Validaciones de contraseña ────────────────────────────
+        // ── Validaciones de contraseña ──────────────────────────
         if (password !== passwordConfirm) {
             showAuthError('❌ Las contraseñas no coinciden');
             return;
@@ -321,35 +639,65 @@ export async function doAuth() {
             }
         }
 
-        // ── Buscar y limpiar si el usuario fue eliminado anteriormente ──
-        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const q = m.query(
-            m.collection(fa.db, 'users'),
-            m.where('email', '==', email),
-            m.where('status', 'in', ['removed', 'blocked'])
-        );
-        const snapshot = await m.getDocs(q);
+        // ── Crear cuenta Firebase Auth ──────────────────────────
+        let cred;
+        let isAddingRole = false;
 
-        if (!snapshot.empty) {
-            const oldDoc = snapshot.docs[0];
-            await m.deleteDoc(m.doc(fa.db, 'users', oldDoc.id));
-            console.log('✅ Registro anterior limpiado, permitiendo nuevo registro');
+        try {
+            cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
+        } catch (createErr) {
+            if (createErr.code === 'auth/email-already-in-use') {
+                // Email ya existe → verificar contraseña para añadir rol
+                window._addingRole = true;
+                try {
+                    cred = await fa.signInWithEmailAndPassword(fa.auth, email, password);
+                    isAddingRole = true;
+                } catch (signInErr) {
+                    window._addingRole = false;
+                    window._loginThisSession = false;
+
+                    // Distinguir entre errores de contraseña y otros
+                    if (signInErr.code === 'auth/wrong-password' || signInErr.code === 'auth/invalid-credential') {
+                        showAuthError(
+                            '⚠️ Este email ya está registrado, pero la contraseña no coincide. ' +
+                            'Para añadir el rol de "' + (requestedRole === 'user' ? 'entrenador' : requestedRole === 'parent' ? 'padre/madre/tutor' : requestedRole === 'director' ? 'director deportivo' : requestedRole === 'coordinator' ? 'coordinador' : requestedRole) +
+                            '" a tu cuenta, debes iniciar sesión con la contraseña original y ' +
+                            'luego usar la pestaña de Registro para añadir el nuevo rol.'
+                        );
+                    } else if (signInErr.code === 'auth/user-not-found') {
+                        showAuthError(
+                            '⚠️ Esta cuenta fue eliminada. ' +
+                            'Puedes registrarte de nuevo con el mismo email.'
+                        );
+                    } else if (signInErr.code === 'auth/too-many-requests') {
+                        showAuthError(
+                            '⚠️ Demasiados intentos fallidos. ' +
+                            'Espera unos minutos e inténtalo de nuevo.'
+                        );
+                    } else {
+                        showAuthError(
+                            '⚠️ Este email ya está registrado. ' +
+                            'Para añadir un nuevo rol, debes usar la misma contraseña con la que te registraste originalmente.'
+                        );
+                    }
+                    return;
+                }
+            } else {
+                throw createErr;
+            }
         }
 
-        // ── Crear cuenta Firebase Auth ────────────────────────────
-        const cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
-
+        // ── Determinar autorización y rol final ─────────────────
         let finalRole    = requestedRole;
         let isAuthorized = false;
         let clubId       = selectedClubId;
+        let clubName     = null;
 
-        // El SuperAdmin se autoriza automáticamente
-        if (email === 'jarg7435@gmail.com') {
-            finalRole    = 'superadmin';
+        if (SUPERADMIN_EMAILS.includes(email)) {
             isAuthorized = true;
         }
 
-        // Padre/madre con código de invitación válido
+        // Padre con código de invitación
         if (requestedRole === 'parent' && inviteCode) {
             const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
             const linksSnap = await m.getDocs(
@@ -359,9 +707,9 @@ export async function doAuth() {
                 )
             );
             if (!linksSnap.empty) {
-                const linkDoc    = linksSnap.docs[0];
-                isAuthorized     = true;
-                clubId           = linkDoc.data().clubId;
+                const linkDoc = linksSnap.docs[0];
+                isAuthorized  = true;
+                clubId        = linkDoc.data().clubId;
                 await m.updateDoc(m.doc(fa.db, 'cronos_player_links', linkDoc.id), {
                     parentUid:   cred.user.uid,
                     parentEmail: email
@@ -369,70 +717,426 @@ export async function doAuth() {
             }
         }
 
-        // ── Construir documento de usuario ────────────────────────
-        const userData = {
-            email,
-            isAuthorized,
-            role:          finalRole,
-            roles:         [finalRole],
-            requestedRole,
-            clubId,
-            status:        isAuthorized ? 'active' : 'pending',
-            requestedSlot: null,
-            createdAt:     fa.serverTimestamp(),
-            lastLogin:     fa.serverTimestamp(),
-        };
-
-        // Datos extra para el admin de club
-        if (requestedRole === 'club_admin') {
-            userData.requestedClubName = newClubName;
-            userData.requestedQuotas   = {
-                directors:    reqDirectors,
-                coordinators: reqCoordinators,
-                coaches:      reqCoaches,
-                parents:      reqParents,
-            };
+        // Obtener nombre del club
+        if (clubId) {
+            try {
+                const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const clubSnap = await m.getDoc(m.doc(fa.db, 'clubs', clubId));
+                if (clubSnap.exists()) {
+                    clubName = clubSnap.data().name || null;
+                }
+            } catch(e) { /* ignorar */ }
         }
 
-        // Datos extra para usuario individual
+        // ── Registrar displayName para individual ───────────────
+        let displayName = null;
         if (requestedRole === 'individual') {
-            userData.firstName    = firstName;
-            userData.lastName     = lastName;
-            userData.displayName  = firstName + ' ' + lastName;
-            userData.isIndividual = true;
+            displayName = firstName + ' ' + lastName;
         }
 
-        // Categoría del entrenador
-        if (requestedRole === 'user' && coachCategory) {
-            userData.category = coachCategory;
-            userData.displayName = coachCategory;
-        }
+        if (isAddingRole) {
+            // ═══════════════════════════════════════════════════
+            // AÑADIR ROL A CUENTA EXISTENTE (sin queries)
+            // ═══════════════════════════════════════════════════
 
-        await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), userData);
+            // 1. Leer documento principal (permitido: uid == userId)
+            const primarySnap = await fa.getDoc(fa.doc(fa.db, 'users', cred.user.uid));
 
-        // ── Post-registro ─────────────────────────────────────────
-        if (!isAuthorized) {
-            await fa.signOut(fa.auth);
-            const msgByRole = {
-                club_admin:  '✅ Solicitud de club enviada al SuperAdmin. Recibirás confirmación por correo.',
-                individual:  '✅ Solicitud enviada al SuperAdmin. Pendiente de aprobación.',
-            };
-            showAuthError(
-                msgByRole[requestedRole] ||
-                '✅ Solicitud enviada. El administrador de tu club confirmará tu acceso.'
+            if (!primarySnap.exists()) {
+                // El email existe en Firebase Auth pero no hay documento en Firestore
+                // (fue borrado o nunca se creó). Tratar como REGISTRO NUEVO.
+                window._addingRole = false;
+                console.log('[Cronos] Auth account exists but no user doc — creating new registration.');
+
+                const newAllRoles = [{
+                    role:        finalRole,
+                    clubId:      clubId,
+                    clubName:    clubName,
+                    isAuthorized: isAuthorized,
+                    firstName:   firstName || null,
+                    lastName:    lastName || null,
+                    displayName: displayName,
+                }];
+
+                const needsApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
+                const userStatus = isAuthorized
+                    ? 'active'
+                    : (needsApproval ? 'pending_club_admin' : 'pending');
+
+                const newUserData = {
+                    email,
+                    isAuthorized,
+                    role:          finalRole,
+                    clubId,
+                    clubName,
+                    allRoles:      newAllRoles,
+                    status:        userStatus,
+                    createdAt:     fa.serverTimestamp(),
+                    lastLogin:     fa.serverTimestamp(),
+                };
+
+                await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), newUserData);
+
+                // Create platform_request for Club Admin
+                if (needsApproval && clubId) {
+                    const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const reqId = 'self_reg_' + cred.user.uid;
+                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
+                        type: 'self_registration',
+                        clubId: clubId,
+                        clubName: clubName || '',
+                        requestedEmail: email,
+                        requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
+                        requestedRole: finalRole,
+                        requestedRoleLabel: ROLE_LABELS[finalRole] || finalRole,
+                        userUid: cred.user.uid,
+                        status: 'pending_club_admin',
+                        createdAt: new Date().toISOString(),
+                    }).catch(e => console.warn('[Cronos] Error creating platform_request:', e));
+                }
+
+                // Show result message
+                if (!isAuthorized) {
+                    await fa.signOut(fa.auth);
+                    const rl = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Padre/Madre/Tutor', club_admin:'Administrador de Club', individual:'Usuario Individual' };
+                    showAuthError(
+                        '✅ Solicitud de "' + (rl[requestedRole] || requestedRole) +
+                        '" enviada. ⏳ Esperar confirmación — el administrador de tu club debe reenviar la solicitud al SuperAdmin.'
+                    );
+                    switchTab('login');
+                } else {
+                    showAuthError('✅ Registro completado. Recargando...');
+                    setTimeout(() => location.reload(), 2000);
+                }
+                return;
+            }
+
+            const primaryData = primarySnap.data();
+
+            // ── CHECK: If user was removed, treat as NEW registration ──
+            if (primaryData.status === 'removed') {
+                console.log('[Cronos] Previous account was removed. Creating fresh registration.');
+                // Delete the stale doc completely
+                try { await fa.deleteDoc(fa.doc(fa.db, 'users', cred.user.uid)); } catch(_) {}
+                // Also delete any platform_requests for this user
+                try {
+                    const m2 = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                    const prRef2 = m2.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid);
+                    const prSnap2 = await m2.getDoc(prRef2);
+                    if (prSnap2.exists()) { await m2.deleteDoc(prRef2); }
+                } catch(_) {}
+                window._addingRole = false;
+
+                // Create fresh registration (same logic as new user section below)
+                const freshAllRoles = [{ role: finalRole, clubId, clubName, isAuthorized: isAuthorized, firstName: firstName || null, lastName: lastName || null, displayName }];
+                const freshNeedsApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
+                const freshStatus = isAuthorized ? 'active' : (freshNeedsApproval ? 'pending_club_admin' : 'pending');
+                const freshData = { email, isAuthorized, role: finalRole, clubId, clubName, allRoles: freshAllRoles, status: freshStatus, requestedSlot: null, createdAt: fa.serverTimestamp(), lastLogin: fa.serverTimestamp() };
+                if (requestedRole === 'club_admin') { freshData.requestedClubName = newClubName; freshData.requestedQuotas = { directors: reqDirectors, coordinators: reqCoordinators, coaches: reqCoaches, parents: reqParents }; }
+                if (requestedRole === 'individual') { freshData.firstName = firstName; freshData.lastName = lastName; freshData.displayName = displayName; freshData.isIndividual = true; }
+                await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), freshData);
+
+                // Create platform_request for Club Admin
+                if (freshNeedsApproval && clubId) {
+                    const RL2 = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid), {
+                        type: 'self_registration', clubId, clubName: clubName || '', requestedEmail: email,
+                        requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
+                        requestedRole: finalRole, requestedRoleLabel: RL2[finalRole] || finalRole,
+                        userUid: cred.user.uid, status: 'pending_club_admin', createdAt: new Date().toISOString(),
+                    }).catch(function(e) { console.warn('[Cronos] Error creating platform_request:', e); });
+                }
+
+                const rl3 = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Padre/Madre/Tutor', club_admin:'Administrador de Club', individual:'Usuario Individual' };
+                if (!isAuthorized) {
+                    await fa.signOut(fa.auth);
+                    showAuthError('✅ Registro de "' + (rl3[requestedRole] || requestedRole) + '" completado. ⏳ Espera confirmación del administrador del club.');
+                    switchTab('login');
+                } else {
+                    showAuthError('✅ Registro completado. Recargando...');
+                    setTimeout(function() { location.reload(); }, 2000);
+                }
+                return;
+            }
+
+            // 2. Verificar duplicado en allRoles (only if NOT removed)
+            const currentRoles = primaryData.allRoles || [{
+                role:        primaryData.role,
+                clubId:      primaryData.clubId      || null,
+                clubName:    primaryData.clubName    || null,
+                isAuthorized: primaryData.isAuthorized || false,
+            }];
+
+            const duplicate = currentRoles.find(r =>
+                r.role === requestedRole &&
+                (r.clubId || null) === (clubId || null)
             );
-            switchTab('login');
+
+            if (duplicate) {
+                window._addingRole = false;
+
+                const ROLE_LABELS = {
+                    user: 'entrenador', parent: 'padre/madre/tutor',
+                    coordinator: 'coordinador', director: 'director deportivo',
+                    club_admin: 'administrador de club', individual: 'usuario individual',
+                };
+                const roleLabel = ROLE_LABELS[requestedRole] || requestedRole;
+                const clubInfo = clubId ? ' en este club' : '';
+
+                if (duplicate.isAuthorized) {
+                    // Role is already active — user can just log in and select it
+                    showAuthError(
+                        '✅ Ya tienes el rol de "' + roleLabel + '"' + clubInfo +
+                        ' y está activado. Inicia sesión y selecciónalo.'
+                    );
+                } else {
+                    // Role exists but is pending approval
+                    // Check if there's a platform_request for this role
+                    let prStatus = null;
+                    try {
+                        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                        const prId = 'self_reg_' + cred.user.uid + '_' + requestedRole + '_' + (clubId || '');
+                        const prSnap = await m.getDoc(m.doc(fa.db, 'platform_requests', prId));
+                        if (prSnap.exists()) {
+                            prStatus = prSnap.data().status;
+                        }
+                    } catch (_) { /* ignore */ }
+
+                    let statusMsg = '';
+                    if (prStatus === 'pending_club_admin') {
+                        statusMsg = ' ⏳ Tu solicitud está pendiente de que el administrador del club la reenvíe al SuperAdmin.';
+                    } else if (prStatus === 'pending_sa') {
+                        statusMsg = ' ⏳ Tu solicitud fue reenviada al SuperAdmin. Espera la confirmación.';
+                    } else if (prStatus === 'sa_approved') {
+                        statusMsg = ' ✅ El SuperAdmin aprobó tu solicitud. Inicia sesión para activarla automáticamente.';
+                    } else if (prStatus === 'rejected') {
+                        statusMsg = ' ❌ Tu solicitud fue rechazada. Contacta con tu administrador de club.';
+                    } else {
+                        statusMsg = ' ⏳ Este rol está pendiente de aprobación. Inicia sesión para comprobar el estado.';
+                    }
+
+                    showAuthError(
+                        'ℹ️ Ya tienes una solicitud de "' + roleLabel + '"' + clubInfo +
+                        ' registrada.' + statusMsg
+                    );
+                }
+
+                // Sign out since we signed in during the isAddingRole flow
+                await fa.signOut(fa.auth).catch(() => {});
+                switchTab('login');
+                return;
+            }
+
+            // 3. Añadir nuevo rol al array allRoles
+            const needsApprovalFlag = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
+            const newRoleEntry = {
+                role:        finalRole,
+                clubId:      clubId,
+                clubName:    clubName,
+                isAuthorized: isAuthorized,
+                status:      isAuthorized ? 'active' : (needsApprovalFlag && clubId ? 'pending_club_admin' : 'pending'),
+                firstName:   firstName || null,
+                lastName:    lastName || null,
+                displayName: displayName,
+            };
+
+            currentRoles.push(newRoleEntry);
+
+            // 4. Actualizar documento principal (always works — user writes own doc)
+            await fa.setDoc(
+                fa.doc(fa.db, 'users', cred.user.uid),
+                { allRoles: currentRoles },
+                { merge: true }
+            );
+
+            // 5. Crear documento secundario (para queries del club admin)
+            // This may fail due to Firestore rules (doc ID != uid), so wrap in try-catch
+            const needsApprovalSecondary = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
+            const secondaryStatus = isAuthorized ? 'active' : (needsApprovalSecondary && clubId ? 'pending_club_admin' : 'pending');
+            try {
+                const secondaryId = cred.user.uid + '_' + requestedRole + '_' + (clubId || 'global');
+                const secondaryData = {
+                    email,
+                    uid:       cred.user.uid,
+                    isAuthorized,
+                    role:      finalRole,
+                    clubId,
+                    clubName,
+                    status:    secondaryStatus,
+                    createdAt: fa.serverTimestamp(),
+                    lastLogin: fa.serverTimestamp(),
+                };
+                if (requestedRole === 'club_admin') {
+                    secondaryData.requestedClubName = newClubName;
+                    secondaryData.requestedQuotas   = {
+                        directors:    reqDirectors,
+                        coordinators: reqCoordinators,
+                        coaches:      reqCoaches,
+                        parents:      reqParents,
+                    };
+                }
+                if (requestedRole === 'individual') {
+                    secondaryData.firstName    = firstName;
+                    secondaryData.lastName     = lastName;
+                    secondaryData.displayName  = displayName;
+                    secondaryData.isIndividual = true;
+                }
+                await fa.setDoc(fa.doc(fa.db, 'users', secondaryId), secondaryData);
+            } catch (secErr) {
+                console.warn('[Cronos] Secondary doc creation failed (permissions). Non-critical — allRoles is the source of truth.', secErr.message);
+            }
+
+            // 6. If role needs club approval, create platform_request for Club Admin
+            const needsApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
+            if (needsApproval && clubId) {
+                try {
+                    const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const reqId = 'self_reg_' + cred.user.uid + '_' + requestedRole + '_' + (clubId || '');
+                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
+                        type: 'self_registration',
+                        clubId: clubId,
+                        clubName: clubName || '',
+                        requestedEmail: email,
+                        requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
+                        requestedRole: finalRole,
+                        requestedRoleLabel: ROLE_LABELS[finalRole] || finalRole,
+                        userUid: cred.user.uid,
+                        status: 'pending_club_admin',
+                        createdAt: new Date().toISOString(),
+                    });
+                } catch (prErr) {
+                    console.warn('[Cronos] platform_request creation failed (permissions). allRoles is the source of truth.', prErr.message);
+                }
+            }
+
+            window._addingRole = false;
+
+            // Mostrar resultado
+            const roleLabel = {
+                club_admin: 'Administrador de Club',
+                director: 'Director Deportivo',
+                coordinator: 'Coordinador',
+                user: 'Entrenador',
+                parent: 'Padre/Madre/Tutor',
+                individual: 'Usuario Individual',
+            };
+
+            if (isAuthorized) {
+                showAuthError(
+                    '✅ Rol "' + (roleLabel[requestedRole] || requestedRole) +
+                    '" registrado correctamente. Recargando...'
+                );
+            } else if (needsApproval) {
+                await fa.signOut(fa.auth);
+                showAuthError(
+                    '✅ Rol "' + (roleLabel[requestedRole] || requestedRole) +
+                    '" solicitado. ⏳ Esperar confirmación — el administrador de tu club debe reenviar la solicitud al SuperAdmin.'
+                );
+                switchTab('login');
+            } else {
+                showAuthError(
+                    '✅ Rol solicitado. Pendiente de aprobación. Recargando...'
+                );
+            }
+            if (isAuthorized || !needsApproval) {
+                setTimeout(() => location.reload(), 2000);
+            }
+
         } else {
-            showAuthError('✅ Registro completado. Entrando…');
+            // ═══════════════════════════════════════════════════
+            // NUEVO USUARIO (primer registro)
+            // ═══════════════════════════════════════════════════
+
+            const allRoles = [{
+                role:        finalRole,
+                clubId:      clubId,
+                clubName:    clubName,
+                isAuthorized: isAuthorized,
+                firstName:   firstName || null,
+                lastName:    lastName || null,
+                displayName: displayName,
+            }];
+
+            // Determine status: pending_club_admin for roles needing club+SA approval
+            const needsClubApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
+            const userStatus = isAuthorized
+                ? 'active'
+                : (needsClubApproval ? 'pending_club_admin' : 'pending');
+
+            const userData = {
+                email,
+                isAuthorized,
+                role:          finalRole,
+                clubId,
+                clubName,
+                allRoles,
+                status:        userStatus,
+                requestedSlot: null,
+                createdAt:     fa.serverTimestamp(),
+                lastLogin:     fa.serverTimestamp(),
+            };
+
+            if (requestedRole === 'club_admin') {
+                userData.requestedClubName = newClubName;
+                userData.requestedQuotas   = {
+                    directors:    reqDirectors,
+                    coordinators: reqCoordinators,
+                    coaches:      reqCoaches,
+                    parents:      reqParents,
+                };
+            }
+
+            if (requestedRole === 'individual') {
+                userData.firstName    = firstName;
+                userData.lastName     = lastName;
+                userData.displayName  = displayName;
+                userData.isIndividual = true;
+            }
+
+            await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), userData);
+
+            // Also create a platform_request so Club Admin sees it
+            if (needsClubApproval && clubId) {
+                const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                const reqId = 'self_reg_' + cred.user.uid;
+                await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
+                    type: 'self_registration',
+                    clubId: clubId,
+                    clubName: clubName || '',
+                    requestedEmail: email,
+                    requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
+                    requestedRole: finalRole,
+                    requestedRoleLabel: ROLE_LABELS[finalRole] || finalRole,
+                    userUid: cred.user.uid,
+                    status: 'pending_club_admin',
+                    createdAt: new Date().toISOString(),
+                });
+            }
+
+            // Post-registro
+            if (!isAuthorized) {
+                await fa.signOut(fa.auth);
+                const msgByRole = {
+                    club_admin:  '✅ Solicitud de club enviada al SuperAdmin. Recibirás confirmación por correo.',
+                    individual:  '✅ Solicitud enviada al SuperAdmin. Pendiente de aprobación.',
+                };
+                showAuthError(
+                    msgByRole[requestedRole] ||
+                    '✅ Solicitud enviada. ⏳ Esperar confirmación — el administrador de tu club debe reenviarla al SuperAdmin. Recibirás confirmación cuando sea aprobada.'
+                );
+                switchTab('login');
+            } else {
+                showAuthError('✅ Registro completado. Entrando…');
+            }
         }
 
     } catch(e) {
+        window._addingRole = false;
         const msgs = {
             'auth/invalid-email':        'Email no válido.',
             'auth/user-not-found':        'Usuario no encontrado.',
             'auth/wrong-password':        'Contraseña incorrecta.',
             'auth/invalid-credential':    'Email o contraseña incorrectos.',
-            'auth/email-already-in-use':  'Este email ya está registrado.',
             'auth/weak-password':         'Contraseña demasiado corta (mínimo 6 caracteres).',
         };
         showAuthError(msgs[e.code] || ('Error: ' + e.message));
@@ -462,7 +1166,6 @@ export function showRoleSelection() {
         'card-opt-individual',
     ];
 
-    // Ocultar todas primero
     allCards.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -473,37 +1176,14 @@ export function showRoleSelection() {
         if (el) el.style.display = 'block';
     };
 
-    // Soporte multi-rol: mostrar tarjetas según los roles asignados al usuario
-    const roles = window._cronosCurrentUser?.roles || [role];
-
     if (['superadmin', 'admin'].includes(role)) {
-        // El SuperAdmin ve todas para poder gestionarlas (rol exclusivo)
         allCards.forEach(id => show(id));
-    } else {
-        // Usuario con uno o varios roles: mostrar solo las tarjetas correspondientes
-        const roleCardMap = {
-            'club_admin':  'card-opt-clubadmin',
-            'director':    'card-opt-director',
-            'coordinator': 'card-opt-coordinator',
-            'user':        'card-opt-coach',
-            'coach':       'card-opt-coach',
-            'parent':      'card-opt-parent',
-            'individual':  'card-opt-individual',
-        };
-        const shown = new Set();
-        roles.forEach(r => {
-            const cardId = roleCardMap[r];
-            if (cardId && !shown.has(cardId)) {
-                show(cardId);
-                shown.add(cardId);
-            }
-        });
-        // Fallback: si no se mostró ninguna tarjeta, usar el rol principal
-        if (shown.size === 0 && roleCardMap[role]) {
-            show(roleCardMap[role]);
-        }
-    }
-
+    } else if (role === 'club_admin')  { show('card-opt-clubadmin');   }
+    else if (role === 'director')      { show('card-opt-director');    }
+    else if (role === 'coordinator')   { show('card-opt-coordinator'); }
+    else if (['coach','user'].includes(role)) { show('card-opt-coach'); }
+    else if (role === 'parent')        { show('card-opt-parent');      }
+    else if (role === 'individual')    { show('card-opt-individual');  }
 }
 
 // ── Lanzar App con la opción seleccionada ─────────────────────
@@ -523,13 +1203,11 @@ export function selectOption(option) {
 
     me._activeRole = map[option] || me.role;
 
-    // ── MODO PRUEBA multi-rol: el SuperAdmin necesita un club para roles no-SA ──
     const isSA         = ['superadmin','admin'].includes(me.role);
     const needsClub    = ['club_admin','director','coordinator','user','parent','individual'].includes(me._activeRole);
     const alreadyHasClub = !!me.clubId;
 
     if (isSA && needsClub && !alreadyHasClub) {
-        // Mostrar selector de club antes de entrar al rol
         _saPickTestClub(me._activeRole);
         return;
     }
@@ -537,7 +1215,7 @@ export function selectOption(option) {
     _launchWithRole(me._activeRole);
 }
 
-// ── Selector de club para pruebas del SuperAdmin ─────────────────────
+// ── Selector de club para pruebas del SuperAdmin ──────────────
 async function _saPickTestClub(targetRole) {
     const me = window._cronosCurrentUser;
     try {
@@ -547,7 +1225,6 @@ async function _saPickTestClub(targetRole) {
         const clubs = [];
         snap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
 
-        // Crear overlay de selección
         const overlay = document.createElement('div');
         overlay.id = 'sa-club-picker';
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:99999;' +
@@ -588,7 +1265,6 @@ async function _saPickTestClub(targetRole) {
         </div>`;
         document.body.appendChild(overlay);
 
-        // Hover effects
         overlay.querySelectorAll('.sa-club-btn').forEach(btn => {
             btn.addEventListener('mouseenter', () => {
                 btn.style.background    = 'rgba(88,166,255,0.1)';
@@ -626,7 +1302,6 @@ function _launchWithRole(role) {
     const activeRole = window._cronosCurrentUser?._activeRole || role;
     document.getElementById('role-selection-screen').style.display = 'none';
 
-    // Roles que usan la interfaz de campo (entrenador / usuario / individual)
     const isFieldRole = ['user', 'coach', 'individual'].includes(activeRole);
     const isParent    = (activeRole === 'parent');
     const isSA        = (activeRole === 'superadmin');
@@ -655,6 +1330,17 @@ function _launchWithRole(role) {
             (window._cronosCurrentUser.role === 'club_admin') ? 'inline-block' : 'none';
     }
 
+    // ── Botón ADMIN solo para rol "individual" ────────────────────
+    const btnIndAdmin = document.getElementById('btn-individual-admin');
+    if (btnIndAdmin) {
+        if (activeRole === 'individual') {
+            btnIndAdmin.style.display    = 'inline-flex';
+            btnIndAdmin.style.visibility = 'visible';
+        } else {
+            btnIndAdmin.style.display = 'none';
+        }
+    }
+
     sessionStorage.setItem('cronos_session_uid',   window._cronosCurrentUser.uid);
     sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email);
     sessionStorage.setItem('cronos_session_role',  activeRole);
@@ -668,8 +1354,10 @@ function _launchWithRole(role) {
     } else if (['director', 'coordinator'].includes(activeRole)) {
         if (typeof init === 'function') init(activeRole);
         if (typeof openStaffDashboard === 'function') openStaffDashboard();
+    } else if (activeRole === 'individual') {
+        // Individual: lanzar el campo de juego normal
+        if (typeof init === 'function') init(activeRole);
     } else {
-        // user / coach / individual → interfaz de campo
         if (typeof init === 'function') init(activeRole);
     }
 }
