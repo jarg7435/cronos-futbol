@@ -152,16 +152,18 @@ function spawnInitialPlayers() {
     const homeConvocation = window.activeConvocation;
     const loadedHome = window.loadedTeamPlayers?.['home'];
 
-    if (homeConvocation) {
+    const userRole = window._userTeamRole || 'home';
+    const loadedAway = window.loadedTeamPlayers?.['away'];
+
+    if (userRole === 'home' && homeConvocation) {
         homeConvocation.forEach((pData, index) => {
             const playerObj = {
                 id: (index + 1),
-                playerId: pData.id || null, // Vínculo permanente
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: 'home',
-                // 'field' = Titular (orange), 'bench' = Suplente (blue)
                 status: pData.initialStatus === 'field' ? 'field' : 'bench',
+                titularOrder: pData.titularOrder,
                 time: 0,
                 color: homeColors.primary,
                 shortsColor: homeColors.shorts,
@@ -169,8 +171,6 @@ function spawnInitialPlayers() {
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             };
 
-            // Si hay equipo guardado, solo restauramos posiciones x,y en campo.
-            // La convocatoria (initialStatus Titular/Suplente) SIEMPRE tiene prioridad.
             if (loadedHome) {
                 const saved = loadedHome.find(lp => lp.number == pData.number);
                 if (saved) {
@@ -183,7 +183,7 @@ function spawnInitialPlayers() {
     } else {
         for (let i = 1; i <= defaultTotalCount; i++) {
             players.push({
-                id: i, number: i, name: `Jugador ${i}`, team: 'home',
+                id: i, number: i, name: `Local ${i}`, team: 'home',
                 status: i <= defaultStartersLimit ? 'field' : 'bench',
                 time: 0, color: homeColors.primary, shortsColor: homeColors.shorts,
                 textColor: homeColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
@@ -191,15 +191,43 @@ function spawnInitialPlayers() {
         }
     }
 
-    if (analyzeAway) {
+    if (analyzeAway || userRole === 'away') {
         const awayColors = COLORS.away;
-        for (let i = 1; i <= defaultTotalCount; i++) {
-            players.push({
-                id: 100 + i, number: i, name: `Rival ${i}`, team: 'away',
-                status: i <= defaultStartersLimit ? 'field' : 'bench',
-                time: 0, color: awayColors.primary, shortsColor: awayColors.shorts,
-                textColor: awayColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+        
+        if (userRole === 'away' && homeConvocation) {
+            homeConvocation.forEach((pData, index) => {
+                const playerObj = {
+                    id: 100 + (index + 1),
+                    number: pData.number,
+                    name: pData.alias || pData.name || `J${pData.number}`,
+                    team: 'away',
+                    status: pData.initialStatus === 'field' ? 'field' : 'bench',
+                    titularOrder: pData.titularOrder,
+                    time: 0,
+                    color: awayColors.primary,
+                    shortsColor: awayColors.shorts,
+                    textColor: awayColors.text,
+                    history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+                };
+
+                if (loadedAway) {
+                    const saved = loadedAway.find(lp => lp.number == pData.number);
+                    if (saved) {
+                        playerObj.x = saved.x !== undefined ? saved.x : 0;
+                        playerObj.y = saved.y !== undefined ? saved.y : 0;
+                    }
+                }
+                players.push(playerObj);
             });
+        } else {
+            for (let i = 1; i <= defaultTotalCount; i++) {
+                players.push({
+                    id: 100 + i, number: i, name: `Visitante ${i}`, team: 'away',
+                    status: i <= defaultStartersLimit ? 'field' : 'bench',
+                    time: 0, color: awayColors.primary, shortsColor: awayColors.shorts,
+                    textColor: awayColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+                });
+            }
         }
     }
 

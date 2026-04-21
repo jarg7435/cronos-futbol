@@ -217,10 +217,21 @@ function openRosterManager() {
             </div>
 
             <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+                <button class="btn" onclick="clearMasterRoster('${mode}')" style="background:rgba(255,88,88,0.15);color:#ff5858;border:1px solid rgba(255,88,88,0.5);margin-right:auto;">🗑️ BORRAR PLANTILLA</button>
                 <button class="btn" onclick="openSetupModal()">CANCELAR</button>
                 <button class="btn primary" onclick="saveMasterRoster('${mode}')">GUARDAR PLANTILLA</button>
             </div>
         </div>
     `;
 }
+
+window.clearMasterRoster = function(mode) {
+    if (!confirm('¿Seguro que quieres borrar a TODOS los jugadores de la plantilla actual (' + (mode==='f7'?'F7':'F11') + ')?')) return;
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    roster[mode] = [];
+    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+    if (typeof cloudSet === 'function') cloudSet('cronos_master_roster', JSON.stringify(roster));
+    if (typeof showToast === 'function') showToast('🗑️ Plantilla borrada');
+    if (typeof openRosterManager === 'function') openRosterManager();
+};
 

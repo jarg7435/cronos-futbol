@@ -3,10 +3,10 @@
 // ══════════════════════════════════════════════
 //  ESTADO DEL CAMBIO GRUPAL (con aislamiento por equipo)
 // ══════════════════════════════════════════════
-let groupSubMode = false;
-let groupSubTeam = null;  // 'home' o 'away' — equipo activo en modo grupal
-let groupSelectedOut = new Set();   // IDs de titulares seleccionados (salen)
-let groupSelectedIn  = new Set();   // IDs de suplentes seleccionados (entran)
+var groupSubMode = false;
+var groupSubTeam = null;  // 'home' o 'away' — equipo activo en modo grupal
+var groupSelectedOut = new Set();   // IDs de titulares seleccionados (salen)
+var groupSelectedIn  = new Set();   // IDs de suplentes seleccionados (entran)
 
 // ── TOGGLE MODO GRUPAL (acepta 'home' o 'away') ────────────────────
 function toggleGroupSubMode(team) {

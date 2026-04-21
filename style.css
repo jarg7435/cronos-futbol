@@ -583,18 +583,14 @@ header {
 
     .score-area {
         bottom: 3px;
-        gap: 3px;
-        /* Desplazar ligeramente a la derecha para evitar solapamiento con timers en móvil */
-        transform: translateX(-42%);
+        gap: 5px;
     }
     .score-board {
-        padding: 2px 4px;
+        padding: 2px 6px;
     }
-    #btn-group-sub,
-    #btn-group-sub-away {
-        font-size: 0.55rem;
-        padding: 3px 6px;
-        border-radius: 6px;
+    #btn-group-sub {
+        font-size: 0.6rem;
+        padding: 4px 8px;
     }
 
     .logo-header img {

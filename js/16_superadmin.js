@@ -239,12 +239,7 @@ window.saTab = function saTab(tab) {
 window.saClubs = async function saClubs() {
     const body = document.getElementById('sa-body');
     if (!body) return;
-    body.innerHTML = `
-    <div style="display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap;">
-        <button onclick="saCreateClub()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">🏟️ Alta Nuevo Club</button>
-        <button onclick="saCreateIndividual()" class="sa-btn" style="color:#79c0ff;border-color:rgba(121,192,255,0.4);background:rgba(121,192,255,0.1);font-size:0.82rem;padding:0.45rem 0.9rem;">👤 Alta Entrenador Individual</button>
-    </div>
-    <div id="sa-clubs-list"><div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando clubes…</div></div>`;
+    body.innerHTML = `<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando clubes…</div>`;
     try {
         const { db, collection, getDocs } = await saFS();
         const [clubsSnap, usersSnap] = await Promise.all([
@@ -308,8 +303,7 @@ window.saClubs = async function saClubs() {
             html += `<div style="margin-bottom:1rem;border:1px solid rgba(255,215,0,0.2);border-radius:10px;overflow:hidden;"><div style="background:rgba(255,215,0,0.07);padding:0.6rem 0.9rem;"><span style="font-weight:700;color:#ffd700;font-size:0.9rem;">⚠️ Sin club asignado (${orphans.length})</span></div><div>${orphans.map(u=>renderRow(u,'')).join('')}</div></div>`;
         }
         if (!html) html = `<p style="color:#8b949e;text-align:center;padding:2rem;">Sin clubes creados aún.</p>`;
-        const listEl = document.getElementById('sa-clubs-list');
-        if (listEl) listEl.innerHTML = html; else body.innerHTML = html;
+        body.innerHTML = html;
     } catch (e) {
         body.innerHTML = `<p style="color:#ff5858;text-align:center;padding:2rem;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</p>`;
         console.error('[saClubs]', e);
@@ -381,10 +375,6 @@ window.saRequests = async function saRequests() {
                     q.parents      ? `${q.parents} Padres`    : '',
                 ].filter(Boolean).join(' · ');
                 extraRows += `<div style="grid-column:1/-1;"><div style="color:#8b949e;font-size:0.67rem;">Cuotas pedidas</div><div style="color:white;font-size:0.8rem;">${parts||'–'}</div></div>`;
-            }
-            if (item.category || item.requestedCategory) {
-                const cat = item.category || item.requestedCategory || '';
-                extraRows += `<div><div style="color:#8b949e;font-size:0.67rem;">Categoría</div><div style="color:white;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(cat):cat}</div></div>`;
             }
             if (item.playerNumber) {
                 extraRows += `<div><div style="color:#8b949e;font-size:0.67rem;">Dorsal jugador</div><div style="color:white;">#${item.playerNumber}${item.playerAlias?' · '+(typeof escapeHtml==='function'?escapeHtml(item.playerAlias):item.playerAlias):''}</div></div>`;
@@ -607,43 +597,119 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
 // ═══════════════════════════════════════════════════════════════════
 
 window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newStatus, clubId) {
-    if (!confirm(`¿${({active:'activar',blocked:'bloquear',removed:'dar de baja'})[newStatus]||newStatus} a ${email}?`)) return;
-    _saShowSpinner('Procesando…');
+    var stLabels = {active:'activar',blocked:'bloquear',removed:'dar de baja'};
+    if (!confirm('\u00bf' + (stLabels[newStatus]||newStatus) + ' a ' + email + '?')) return;
+    _saShowSpinner('Procesando\u2026');
     try {
-        const { db, fa, doc, getDoc, updateDoc, httpsCallable } = await saFS();
+        const { db, fa, doc, getDoc, updateDoc, deleteDoc, collection, getDocs, query, where, httpsCallable } = await saFS();
         const uSnap = await getDoc(doc(db,'users',uid));
-        const role  = uSnap.exists() ? (uSnap.data().role||'user') : 'user';
-        const sk    = ({director:'usedSlots.directors',coordinator:'usedSlots.coordinators',parent:'usedSlots.parents'})[role]||'usedSlots.users';
+        const uData = uSnap.exists() ? uSnap.data() : {};
+        const realUid = uData.uid || uid;
+        const realEmail = uData.email || email;
 
         if (newStatus === 'removed') {
+            // ═══════════════════════════════════════════════════════════
+            // BAJA DEFINITIVA — Eliminar TODOS los rastros
+            // ═══════════════════════════════════════════════════════════
+
+            // 1. Leer documento primario para obtener todos los roles
+            var primarySnap = (realUid !== uid)
+                ? await getDoc(doc(db, 'users', realUid)).catch(function() { return null; })
+                : uSnap;
+            var allRoles = [];
+            if (primarySnap && primarySnap.exists()) {
+                allRoles = primarySnap.data().allRoles || [];
+            } else if (uData.allRoles) {
+                allRoles = uData.allRoles;
+            }
+
+            // 2. Actualizar slots del club para CADA rol
+            var _sk = function(role) {
+                if (role === 'director') return 'usedSlots.directors';
+                if (role === 'coordinator') return 'usedSlots.coordinators';
+                if (role === 'parent') return 'usedSlots.parents';
+                return 'usedSlots.users';
+            };
+            for (var ri = 0; ri < allRoles.length; ri++) {
+                var rcid = allRoles[ri].clubId || clubId;
+                if (rcid) {
+                    var rk = _sk(allRoles[ri].role);
+                    try {
+                        var cs = await getDoc(doc(db, 'clubs', rcid));
+                        if (cs.exists()) {
+                            var sub = rk.split('.')[1];
+                            var cur = ((cs.data().usedSlots || {})[sub]) || 1;
+                            var upd = {}; upd[rk] = Math.max(0, cur - 1);
+                            await updateDoc(doc(db, 'clubs', rcid), upd);
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            // 3. Eliminar documentos secundarios
+            for (var si2 = 0; si2 < allRoles.length; si2++) {
+                var secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
+                if (secId !== realUid) {
+                    try { await deleteDoc(doc(db, 'users', secId)); } catch (_) {}
+                }
+            }
+
+            // 4. Eliminar documento primario
+            try { await deleteDoc(doc(db, 'users', realUid)); } catch (_) {}
+            if (uid !== realUid) {
+                try { await deleteDoc(doc(db, 'users', uid)); } catch (_) {}
+            }
+
+            // 5. Eliminar enlaces de jugador
+            try {
+                var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
+                var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
+                for (var li = 0; li < linksArr.length; li++) {
+                    try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
+                }
+            } catch (_) {}
+            try {
+                var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
+                var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
+                for (var li2 = 0; li2 < linksArr2.length; li2++) {
+                    try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
+                }
+            } catch (_) {}
+
+            // 6. Eliminar cuenta de Firebase Auth
             if (httpsCallable && fa.functions) {
-                try { await httpsCallable(fa.functions,'deleteAuthUser')({uid,email}); } catch(_) {}
+                try { await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail}); } catch(_) {}
             }
-            await updateDoc(doc(db,'users',uid),{status:'removed',isAuthorized:false,removedAt:new Date().toISOString(),removedBy:window._cronosCurrentUser?.email||'superadmin'}).catch(()=>{});
-            if (clubId) {
-                const cs = await getDoc(doc(db,'clubs',clubId)).catch(()=>null);
-                if (cs?.exists()) {
-                    const sub = sk.split('.')[1];
-                    const cur = (cs.data().usedSlots||{})[sub]||1;
-                    await updateDoc(doc(db,'clubs',clubId),{[sk]:Math.max(0,cur-1)}).catch(()=>{});
-                }
-            }
-            _saHideSpinner(); _saToast(`🗑️ ${email} dado de baja.`,4000);
+
+            _saHideSpinner();
+            _saToast('\uD83D\uDDD1\uFE0F ' + email + ' dado de baja. Todos los rastros eliminados.', 4000);
         } else {
-            const isActive = newStatus==='active';
-            await updateDoc(doc(db,'users',uid),{isAuthorized:isActive,status:newStatus,...(isActive?{authorizedAt:new Date().toISOString()}:{blockedAt:new Date().toISOString()})});
+            // ═══════════════════════════════════════════════════════════
+            // ACTIVAR / BLOQUEAR
+            // ═══════════════════════════════════════════════════════════
+            var role = uData.role || 'user';
+            var sk = _sk(role);
+            var isActive = (newStatus === 'active');
+            await updateDoc(doc(db,'users',uid),{isAuthorized:isActive,status:newStatus});
+            if (isActive) {
+                await updateDoc(doc(db,'users',uid),{authorizedAt:new Date().toISOString()});
+            } else {
+                await updateDoc(doc(db,'users',uid),{blockedAt:new Date().toISOString()});
+            }
             if (clubId) {
-                const cs = await getDoc(doc(db,'clubs',clubId)).catch(()=>null);
-                if (cs?.exists()) {
-                    const sub = sk.split('.')[1];
-                    const cur = (cs.data().usedSlots||{})[sub]||0;
-                    await updateDoc(doc(db,'clubs',clubId),{[sk]:Math.max(0,cur+(isActive?1:-1))}).catch(()=>{});
+                var cs2 = await getDoc(doc(db,'clubs',clubId)).catch(function() { return null; });
+                if (cs2 && cs2.exists()) {
+                    var sub2 = sk.split('.')[1];
+                    var cur2 = ((cs2.data().usedSlots||{})[sub2])||0;
+                    var upd2 = {}; upd2[sk] = Math.max(0, cur2 + (isActive ? 1 : -1));
+                    await updateDoc(doc(db,'clubs',clubId), upd2).catch(function() {});
                 }
             }
-            _saHideSpinner(); _saToast(isActive?`✅ ${email} activado`:`🔒 ${email} bloqueado`,3000);
+            _saHideSpinner();
+            _saToast(isActive ? ('\u2705 ' + email + ' activado') : ('\uD83D\uDD12 ' + email + ' bloqueado'), 3000);
         }
         saClubs();
-    } catch (e) { _saHideSpinner(); _saToast('⚠️ '+e.message,5000); console.error(e); }
+    } catch (e) { _saHideSpinner(); _saToast('\u26A0\uFE0F '+e.message,5000); console.error(e); }
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -686,13 +752,66 @@ window.saTrash = async function saTrash() {
 };
 
 window.saPurgeUser = async function saPurgeUser(uid, email) {
-    if (!confirm(`🗑️ LIMPIAR RASTRO: ${email}\n\nIRREVERSIBLE. ¿Confirmar?`)) return;
-    _saShowSpinner('Limpiando…');
+    if (!confirm('\uD83D\uDDD1\uFE0F LIMPIAR RASTRO: ' + email + '\n\nIRREVERSIBLE. \u00bfConfirmar?')) return;
+    _saShowSpinner('Limpiando\u2026');
     try {
-        const { db, doc, deleteDoc } = await saFS();
-        await deleteDoc(doc(db,'users',uid));
-        _saHideSpinner(); _saToast(`✅ Rastro de ${email} eliminado.`,3000); saTrash();
-    } catch (e) { _saHideSpinner(); _saToast('⚠️ '+e.message,4000); }
+        const { db, fa, doc, getDoc, deleteDoc, collection, getDocs, query, where, httpsCallable } = await saFS();
+
+        // 1. Leer documento para obtener uid real y todos los roles
+        var uSnap = await getDoc(doc(db, 'users', uid));
+        var uData = uSnap.exists() ? uSnap.data() : {};
+        var realUid = uData.uid || uid;
+        var realEmail = uData.email || email;
+
+        var primarySnap = (realUid !== uid)
+            ? await getDoc(doc(db, 'users', realUid)).catch(function() { return null; })
+            : uSnap;
+        var allRoles = [];
+        if (primarySnap && primarySnap.exists()) {
+            allRoles = primarySnap.data().allRoles || [];
+        } else if (uData.allRoles) {
+            allRoles = uData.allRoles;
+        }
+
+        // 2. Eliminar documentos secundarios
+        for (var si2 = 0; si2 < allRoles.length; si2++) {
+            var secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
+            if (secId !== realUid) {
+                try { await deleteDoc(doc(db, 'users', secId)); } catch (_) {}
+            }
+        }
+
+        // 3. Eliminar documento primario
+        try { await deleteDoc(doc(db, 'users', realUid)); } catch (_) {}
+        if (uid !== realUid) {
+            try { await deleteDoc(doc(db, 'users', uid)); } catch (_) {}
+        }
+
+        // 4. Eliminar enlaces de jugador
+        try {
+            var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
+            var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
+            for (var li = 0; li < linksArr.length; li++) {
+                try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
+            }
+        } catch (_) {}
+        try {
+            var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
+            var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
+            for (var li2 = 0; li2 < linksArr2.length; li2++) {
+                try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
+            }
+        } catch (_) {}
+
+        // 5. Eliminar cuenta de Firebase Auth
+        if (httpsCallable && fa.functions) {
+            try { await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail}); } catch(_) {}
+        }
+
+        _saHideSpinner();
+        _saToast('\u2705 Rastro de ' + email + ' eliminado completamente.', 3000);
+        saTrash();
+    } catch (e) { _saHideSpinner(); _saToast('\u26A0\uFE0F '+e.message,4000); }
 };
 
 // ═══════════════════════════════════════════════════════════════════

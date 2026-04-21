@@ -97,41 +97,32 @@ function saveCurrentTeam() {
 }
 
 // ── GUARDAR EQUIPO DESDE EL PANEL DE CREACIÓN ──────────────────────
-// Lee nombre, colores y modalidad directamente del formulario del setup.
-// No requiere que el partido esté en marcha.
 function saveTeamSetup(teamKey) {
-    const nameEl = document.getElementById('setup-' + teamKey + '-name');
-    const colorEl = document.getElementById('setup-' + teamKey + '-color');
-    const shortsEl = document.getElementById('setup-' + teamKey + '-shorts');
-    const textEl = document.getElementById('setup-' + teamKey + '-text');
-    const modeEl = document.getElementById('setup-mode');
-    const formEl = document.getElementById('setup-formation');
+    var nameEl = document.getElementById('setup-' + teamKey + '-name');
+    var colorEl = document.getElementById('setup-' + teamKey + '-color');
+    var shortsEl = document.getElementById('setup-' + teamKey + '-shorts');
+    var textEl = document.getElementById('setup-' + teamKey + '-text');
+    var modeEl = document.getElementById('setup-mode');
+    var formEl = document.getElementById('setup-formation');
 
-    const teamName = (nameEl ? nameEl.value : '').trim().toUpperCase();
+    var teamName = (nameEl ? nameEl.value : '').trim().toUpperCase();
     if (!teamName) {
-        showToast('⚠️ Escribe un nombre para el equipo', 2500);
+        showToast('Escribe un nombre para el equipo', 2500);
         return;
     }
 
-    // Si hay jugadores creados, incluirlos; si no, guardar sin jugadores
-    let currentPlayers = [];
+    var currentPlayers = [];
     if (typeof players !== 'undefined' && players.length > 0) {
-        currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
-            id: p.id,
-            number: p.number,
-            name: p.name,
-            status: p.status,
-            x: p.x,
-            y: p.y
-        }));
+        currentPlayers = players.filter(function(p) { return p.team === teamKey; }).map(function(p) {
+            return { id: p.id, number: p.number, name: p.name, status: p.status, x: p.x, y: p.y };
+        });
     }
 
-    // Cargar jugadores de la plantilla (cronos_master_roster) para guardarlos con el equipo
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
-    const mode = modeEl ? modeEl.value : 'f7';
-    const rosterPlayers = roster[mode] || [];
+    var roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+    var mode = modeEl ? modeEl.value : 'f7';
+    var rosterPlayers = roster[mode] || [];
 
-    const newTeam = {
+    var newTeam = {
         name: teamName,
         color: colorEl ? colorEl.value : '#ffffff',
         shortsColor: shortsEl ? shortsEl.value : '#ffffff',
@@ -142,62 +133,83 @@ function saveTeamSetup(teamKey) {
         formation: formEl ? formEl.value : ''
     };
 
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const existingIndex = teams.findIndex(t => t.name === teamName);
+    var teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    var existingIndex = teams.findIndex(function(t) { return t.name === teamName; });
     if (existingIndex >= 0) {
-        if (!confirm('¿Sobrescribir equipo "' + teamName + '"?')) return;
+        if (!confirm('Sobrescribir equipo "' + teamName + '"?')) return;
         teams[existingIndex] = newTeam;
     } else {
-        if (teams.length >= 20) { showToast('⚠️ Memoria llena (20 equipos)', 2500); return; }
+        if (teams.length >= 20) { showToast('Memoria llena (20 equipos)', 2500); return; }
         teams.push(newTeam);
     }
 
-    showSpinner('Guardando equipo…');
-    setTimeout(() => {
-        cloudSet('cronos_teams', JSON.stringify(teams));
+    showSpinner('Guardando equipo...');
+    setTimeout(function() {
+        localStorage.setItem('cronos_teams', JSON.stringify(teams));
+        if (typeof cloudSet === 'function') cloudSet('cronos_teams', JSON.stringify(teams));
         populateSavedTeams(teamKey);
-        // Seleccionar el equipo recién guardado en el dropdown
-        const dropdown = document.getElementById('saved-teams-' + teamKey);
+        var dropdown = document.getElementById('saved-teams-' + teamKey);
         if (dropdown) {
-            const newIndex = teams.findIndex(t => t.name === teamName);
+            var newIndex = teams.findIndex(function(t) { return t.name === teamName; });
             if (newIndex >= 0) dropdown.value = newIndex;
         }
         hideSpinner();
-        const formationDisplay = newTeam.formation ? '1-' + newTeam.formation : 'sin definir';
-        showToast('✅ ' + teamName + ' guardado · ' + (mode === 'f7' ? 'F7' : 'F11') + ' · ' + formationDisplay, 3000);
+        showToast(teamName + ' guardado correctamente', 3000);
     }, 300);
 }
 
 // ── BORRAR EQUIPO GUARDADO ──────────────────────────────────────────
-// Elimina el equipo seleccionado en el dropdown de ese equipo.
 function deleteTeamSetup(teamKey) {
-    const dropdown = document.getElementById('saved-teams-' + teamKey);
+    var dropdown = document.getElementById('saved-teams-' + teamKey);
     if (!dropdown) return;
-    const index = dropdown.value;
-    if (index === "") {
-        showToast('⚠️ Selecciona un equipo en "Cargar Guardado" para borrarlo', 2500);
+    var index = dropdown.value;
+    if (index === '') {
+        showToast('Selecciona un equipo en Cargar Guardado para borrarlo', 2500);
         return;
     }
-
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const teamName = teams[index] ? teams[index].name : '';
+    var teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    var teamName = teams[index] ? teams[index].name : '';
     if (!teamName) return;
-
-    if (!confirm('¿Borrar equipo "' + teamName + '"?\nEsta acción no se puede deshacer.')) return;
+    if (!confirm('Borrar equipo "' + teamName + '"?')) return;
 
     teams.splice(index, 1);
-    showSpinner('Borrando equipo…');
-    setTimeout(() => {
-        cloudSet('cronos_teams', JSON.stringify(teams));
-        // Limpiar formulario de ese equipo
+    showSpinner('Borrando equipo...');
+    setTimeout(function() {
+        localStorage.setItem('cronos_teams', JSON.stringify(teams));
+        if (typeof cloudSet === 'function') cloudSet('cronos_teams', JSON.stringify(teams));
         document.getElementById('setup-' + teamKey + '-name').value = teamKey === 'home' ? 'LOCAL' : 'VISITANTE';
         document.getElementById('setup-' + teamKey + '-color').value = teamKey === 'home' ? '#58a6ff' : '#ff5858';
         document.getElementById('setup-' + teamKey + '-shorts').value = teamKey === 'home' ? '#ffffff' : '#000000';
         document.getElementById('setup-' + teamKey + '-text').value = '#ffffff';
-        // Refrescar dropdown
         populateSavedTeams(teamKey);
         hideSpinner();
-        showToast('🗑️ ' + teamName + ' borrado', 2500);
+        showToast(teamName + ' borrado', 2500);
+    }, 300);
+}
+
+// ── BORRAR EQUIPO DESDE EL DROPDOWN (boton X) ──────────────────────
+function deleteTeamFromDropdown(teamKey) {
+    var dropdown = document.getElementById('saved-teams-' + teamKey);
+    if (!dropdown) return;
+    var index = dropdown.value;
+    if (index === '') {
+        showToast('Selecciona un equipo primero para borrarlo', 2500);
+        return;
+    }
+    var teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    var teamName = teams[index] ? teams[index].name : '';
+    if (!teamName) return;
+    if (!confirm('Borrar equipo "' + teamName + '"?')) return;
+
+    teams.splice(index, 1);
+    showSpinner('Borrando equipo...');
+    setTimeout(function() {
+        localStorage.setItem('cronos_teams', JSON.stringify(teams));
+        if (typeof cloudSet === 'function') cloudSet('cronos_teams', JSON.stringify(teams));
+        populateSavedTeams('home');
+        populateSavedTeams('away');
+        hideSpinner();
+        showToast(teamName + ' borrado', 2500);
     }, 300);
 }
 
@@ -463,37 +475,34 @@ function formatTime(sec) {
 
 /**
  * endMatch() — Finaliza el partido, muestra pantalla post-partido.
- * Sobreescribe la versión simple de app.js con la versión completa:
- * registra salidas, detiene live sync, muestra modal post-partido.
+ * Si ya está definida en app.js este bloque no la sobreescribe.
  */
-window.endMatch = function endMatch() {
-    if (!confirm('¿Finalizar el partido?')) return;
+if (typeof window.endMatch !== 'function') {
+    window.endMatch = function endMatch() {
+        if (!confirm('¿Finalizar el partido?')) return;
 
-    // Detener cronómetro
-    isRunning = false;
-    clearInterval(timerInterval);
-    matchPhase = 'finished';
+        // Detener cronómetro
+        isRunning = false;
+        clearInterval(timerInterval);
+        matchPhase = 'finished';
 
-    // Registrar salida de todos los jugadores en campo
-    const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
-    (players || []).filter(p => p.status === 'field').forEach(p => {
-        p.history.push('Sale a las ' + finalTime + ' (FIN)');
-    });
+        // Registrar salida de todos los jugadores en campo
+        const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
+        (players || []).filter(p => p.status === 'field').forEach(p => {
+            p.history.push('Sale a las ' + finalTime + ' (FIN)');
+        });
 
-    updateMasterUI();
+        updateMasterUI();
 
-    // Detener sincronización en vivo
-    if (typeof stopLiveSync === 'function') {
-        stopLiveSync();
-    }
+        // Guardar informes automáticamente si la función existe
+        if (typeof saveAllMatchReportsInternal === 'function') {
+            saveAllMatchReportsInternal().catch(e =>
+                console.warn('[endMatch] saveAllMatchReportsInternal:', e));
+        }
 
-    // Guardar informes automáticamente si la función existe
-    if (typeof saveAllMatchReportsInternal === 'function') {
-        saveAllMatchReportsInternal().catch(() => {});
-    }
-
-    _showPostMatchOptions();
-};
+        _showPostMatchOptions();
+    };
+}
 
 /**
  * _showPostMatchOptions() — Modal post-partido sobre la vista del partido.

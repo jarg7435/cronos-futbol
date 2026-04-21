@@ -2060,16 +2060,16 @@ async function openUnifiedCommsMenu() {
                 <span class="icon">📲</span>
                 <div class="content">
                     <div class="title" style="color:#3fb950;">Enviar Convocatoria</div>
-                    <div class="desc">A padres + dirección deportiva + coordinación</div>
+                    <div class="desc">A padres + dirección deportiva</div>
                 </div>
             </button>
 
             <!-- ENTRENAMIENTO -->
-            <button onclick="openTrainingPanel()" class="btn-comms-card" style="--color:var(--secondary);--bg:rgba(240,136,62,0.1);">
+            <button onclick="openTrainingModal()" class="btn-comms-card" style="--color:var(--secondary);--bg:rgba(240,136,62,0.1);">
                 <span class="icon">📅</span>
                 <div class="content">
                     <div class="title" style="color:var(--secondary);">Info Entrenamiento</div>
-                    <div class="desc">A directores · coordinadores · padres</div>
+                    <div class="desc">Horarios y cambios a padres + dirección</div>
                 </div>
             </button>
 
@@ -2615,7 +2615,6 @@ window._sendCollectiveReportNow = async function() {
             // Notificación interna
             await setDoc(doc(db,'cronos_notifications',`coll_rpt_${s.uid}_${Date.now().toString(36)}`), {
                 type: 'informe_colectivo', clubId: me.clubId||null,
-                targetRole: 'staff',
                 staffUid: s.uid, parentUid: s.uid,
                 coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
                 createdAt: new Date().toISOString(),
@@ -2881,7 +2880,6 @@ window.publishConvocationToApp = async function() {
             await setDoc(doc(db,'cronos_notifications',`cv_staff_${s.uid}_${Date.now().toString(36)}`), {
                 type:       'convocatoria',
                 clubId:     me.clubId,
-                targetRole: 'staff',
                 parentUid:  s.uid,
                 staffUid:   s.uid,
                 coachEmail: me.email,
@@ -2910,7 +2908,6 @@ window.publishConvocationToApp = async function() {
             await setDoc(doc(db,'cronos_notifications',`cv_parent_${pUid}_${Date.now().toString(36)}`), {
                 type:       'convocatoria',
                 clubId:     me.clubId,
-                targetRole: 'parent',
                 parentUid:  pUid,
                 coachEmail: me.email,
                 matchDate:  dateStr,

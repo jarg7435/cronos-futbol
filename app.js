@@ -1,5 +1,5 @@
 // --- SECURITY & INITIALIZATION ---
-const ACCESS_CODE = '1234';
+var ACCESS_CODE = '1234';
 
 // ── Helper Global: Usuario efectivo con fallbacks para Superadmin ─────
 // Permite que el Superadmin pueda acceder a cualquier panel aunque no tenga
@@ -41,20 +41,20 @@ function unlockApp() {
 }
 
 // --- CONFIGURATION & STATE ---
-let players = [];
-let isRunning = false;
-let timerInterval = null;
-let lastTickTime = 0;
-let currentMode = 'f7';
-let matchPhase = '1st_half';
-let analyzeAway = false;
-let activeFormationKey = null;
-let selectedFormationOnStart = '';
+var players = [];
+var isRunning = false;
+var timerInterval = null;
+var lastTickTime = 0;
+var currentMode = 'f7';
+var matchPhase = '1st_half';
+var analyzeAway = false;
+var activeFormationKey = null;
+var selectedFormationOnStart = '';
 
-let half1MaxTime = 30 * 60;
-let half2MaxTime = 30 * 60;
-let masterTimeH1 = 0;
-let masterTimeH2 = 0;
+var half1MaxTime = 30 * 60;
+var half2MaxTime = 30 * 60;
+var masterTimeH1 = 0;
+var masterTimeH2 = 0;
 
 let pendingSubstitution = null;
 
@@ -81,12 +81,12 @@ let emailConfig = {
     whatsappNumber: ''     // número del director deportivo con prefijo país (ej: 34612345678)
 };
 
-const COLORS = {
+var COLORS = {
     home: { primary: '#58a6ff', secondary: '#f0883e', shorts: '#ffffff', text: '#ffffff' },
     away: { primary: '#ff5858', secondary: '#f0883e', shorts: '#000000', text: '#ffffff' }
 };
 
-const TEAM_NAMES = { home: 'LOCAL', away: 'VISITANTE' };
+var TEAM_NAMES = { home: 'LOCAL', away: 'VISITANTE' };
 
 // ══════════════════════════════════════════════════════════════════
 //  FORMACIONES PREDEFINIDAS
@@ -96,7 +96,7 @@ const TEAM_NAMES = { home: 'LOCAL', away: 'VISITANTE' };
 //  VISITANTE ocupa el LADO DERECHO (x: 54-95), espejo del local.
 //  FULL = local solo, ocupa campo completo (x: 5-92).
 // ══════════════════════════════════════════════════════════════════
-const FORMATION_PRESETS = {
+var FORMATION_PRESETS = {
     // ─── FÚTBOL 7 ───────────────────────────────────────────────────────────────
     // Campo horizontal. Local lado izquierdo (x≈9-47), Visitante lado derecho (x≈53-91).
     // Full = local solo, campo completo (x≈9-88).
@@ -1759,9 +1759,17 @@ function openSetupModal() {
                     <h3 style="margin:0 0 0.8rem; color:#58a6ff; text-align:center; border-bottom:2px solid #58a6ff; padding-bottom:6px;">Equipo Local</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
-                        <select id="saved-teams-home" onchange="loadTeamFromDropdown('home')">
-                            <option value="">-- Cargar --</option>
-                        </select>
+                        <div style="display:flex; gap:0.4rem; align-items:center;">
+                            <select id="saved-teams-home" onchange="loadTeamFromDropdown('home')" style="flex:1;">
+                                <option value="">-- Cargar --</option>
+                            </select>
+                            <button onclick="deleteTeamFromDropdown('home')" title="Borrar equipo seleccionado"
+                                style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.5);
+                                       color:#ff5858; font-size:1.1rem; font-weight:900; padding:0.3rem 0.5rem;
+                                       border-radius:8px; cursor:pointer; line-height:1; flex-shrink:0;">
+                                ✕
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Nombre</label>
@@ -1803,9 +1811,17 @@ function openSetupModal() {
                     <h3 style="margin:0 0 0.8rem; color:#ff5858; text-align:center; border-bottom:2px solid #ff5858; padding-bottom:6px;">Equipo Visitante</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
-                        <select id="saved-teams-away" onchange="loadTeamFromDropdown('away')">
-                            <option value="">-- Cargar --</option>
-                        </select>
+                        <div style="display:flex; gap:0.4rem; align-items:center;">
+                            <select id="saved-teams-away" onchange="loadTeamFromDropdown('away')" style="flex:1;">
+                                <option value="">-- Cargar --</option>
+                            </select>
+                            <button onclick="deleteTeamFromDropdown('away')" title="Borrar equipo seleccionado"
+                                style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.5);
+                                       color:#ff5858; font-size:1.1rem; font-weight:900; padding:0.3rem 0.5rem;
+                                       border-radius:8px; cursor:pointer; line-height:1; flex-shrink:0;">
+                                ✕
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Nombre</label>
@@ -3593,7 +3609,7 @@ function spawnInitialPlayers() {
         for (let i = 1; i <= defaultTotalCount; i++) {
             players.push({
                 id: i, number: i, name: `Local ${i}`, team: 'home',
-                status: i <= startersCount ? 'field' : 'bench',
+                status: i <= defaultStartersLimit ? 'field' : 'bench',
                 time: 0, color: homeColors.primary, shortsColor: homeColors.shorts,
                 textColor: homeColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
             });
@@ -3632,7 +3648,7 @@ function spawnInitialPlayers() {
             for (let i = 1; i <= defaultTotalCount; i++) {
                 players.push({
                     id: 100 + i, number: i, name: `Visitante ${i}`, team: 'away',
-                    status: i <= startersCount ? 'field' : 'bench',
+                    status: i <= defaultStartersLimit ? 'field' : 'bench',
                     time: 0, color: awayColors.primary, shortsColor: awayColors.shorts,
                     textColor: awayColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
                 });

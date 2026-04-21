@@ -577,11 +577,6 @@ function confirmSetup() {
     currentMode = document.getElementById('setup-mode').value;
     analyzeAway = document.getElementById('setup-analyze-away').checked;
     selectedFormationOnStart = document.getElementById('setup-formation')?.value || '';
-    // Si no se seleccionó formación, usar la predeterminada del modo
-    if (!selectedFormationOnStart) {
-        selectedFormationOnStart = currentMode === 'f7' ? '231' : '442';
-        document.getElementById('setup-formation').value = selectedFormationOnStart;
-    }
 
     document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
     document.getElementById('team-b-name').textContent = TEAM_NAMES.away;

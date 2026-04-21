@@ -30,6 +30,13 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
+    // Guard: ensure saFS is available (defined in 16_superadmin.js)
+    if (typeof saFS !== 'function') {
+        console.error('[ClubAdmin] saFS() not available. Make sure 16_superadmin.js is loaded.');
+        showToast('⚠️ Error: módulo de administración no cargado. Recarga la página.', 5000);
+        return;
+    }
+
     let _fsResult;
     try {
         _fsResult = await saFS();
@@ -49,10 +56,62 @@ async function openClubAdminPanel(preClubId = null) {
         }
         return;
     }
-    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc } = _fsResult;
+    const { db, fa, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc, deleteDoc, httpsCallable } = _fsResult;
 
-    // ── Si el SA no tiene clubId, mostrar selector de club ──────────
+    // Ensure setup-modal exists in DOM (needed for rendering)
+    let setupModal = document.getElementById('setup-modal');
+    if (!setupModal) {
+        setupModal = document.createElement('div');
+        setupModal.id = 'setup-modal';
+        setupModal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+        document.body.appendChild(setupModal);
+    }
+
+    // ── Determinar clubId ──────────────────────────────────────
     let clubId = preClubId || me.clubId;
+
+    // Si el Club Admin no tiene clubId, intentar buscarlo en Firestore
+    if (!clubId && !isSA) {
+        try {
+            const clubsSnap = await getDocs(collection(db, 'clubs'));
+            const clubs = [];
+            clubsSnap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
+
+            // Buscar club donde el usuario sea admin (por email o por uid)
+            const myClub = clubs.find(c =>
+                (c.adminEmail === me.email) ||
+                (c.adminUid === me.uid) ||
+                (c.createdBy === me.uid)
+            );
+            if (myClub) {
+                clubId = myClub.id;
+                console.log('[ClubAdmin] Club encontrado por email/uid:', clubId);
+                // Actualizar el documento del usuario con el clubId
+                try {
+                    await updateDoc(doc(db, 'users', me.uid), { clubId: myClub.id, clubName: myClub.name || '' });
+                    me.clubId = myClub.id;
+                    me.clubName = myClub.name || '';
+                } catch(updErr) {
+                    console.warn('[ClubAdmin] No se pudo actualizar clubId en user doc:', updErr.message);
+                }
+            } else if (clubs.length === 1) {
+                // Si solo hay un club, asumir que es el suyo
+                clubId = clubs[0].id;
+                console.log('[ClubAdmin] Un solo club encontrado, asignando:', clubId);
+                try {
+                    await updateDoc(doc(db, 'users', me.uid), { clubId: clubs[0].id, clubName: clubs[0].name || '' });
+                    me.clubId = clubs[0].id;
+                    me.clubName = clubs[0].name || '';
+                } catch(updErr2) {
+                    console.warn('[ClubAdmin] No se pudo actualizar clubId:', updErr2.message);
+                }
+            }
+        } catch(findErr) {
+            console.warn('[ClubAdmin] Error buscando club:', findErr.message);
+        }
+    }
+
+    // Si el SA no tiene clubId, mostrar selector de club ──────────
     if (!clubId && isSA) {
         const clubsSnap = await getDocs(collection(db, 'clubs'));
         const clubs = [];
@@ -61,6 +120,7 @@ async function openClubAdminPanel(preClubId = null) {
         window._sa_clubs_cache = clubs;
 
         const modal = document.getElementById('setup-modal');
+        if (!modal) { showToast('⚠️ Error: modal no encontrado en la página', 5000); return; }
         modal.style.display = 'flex';
         modal.innerHTML = SA_CSS + `
         <div class="modal-content sa-modal" style="max-width:480px;">
@@ -90,22 +150,82 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
-    if (!clubId) { showToast('⚠️ Sin club asignado', 3000); return; }
+    if (!clubId) {
+        const modal = document.getElementById('setup-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.innerHTML = SA_CSS + `
+            <div class="modal-content sa-modal" style="max-width:450px;">
+              <div class="sa-topbar">
+                <div style="font-weight:700; font-size:1rem;">⚠️ Sin club asignado</div>
+                <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+                    style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+              </div>
+              <div class="sa-body" style="padding:1.5rem;text-align:center;">
+                <div style="font-size:2rem;margin-bottom:1rem;">🏟️</div>
+                <p style="color:#ff5858;font-size:0.9rem;margin-bottom:0.5rem;">No se encontró un club asociado a tu cuenta.</p>
+                <p style="color:#8b949e;font-size:0.8rem;margin-bottom:1rem;">Contacta con el SuperAdmin para que asigne un club a tu cuenta de Administrador.</p>
+                <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+                    style="padding:0.6rem 1.5rem;background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);border-radius:8px;color:#58a6ff;cursor:pointer;font-size:0.85rem;">
+                    ⬅ Volver</button>
+              </div>
+            </div>`;
+        } else {
+            showToast('⚠️ Sin club asignado. Contacta con el SuperAdmin.', 5000);
+        }
+        return;
+    }
 
-    const [clubSnap, usersSnap] = await Promise.all([
-        getDoc(doc(db, 'clubs', clubId)),
-        getDocs(query(collection(db, 'users'), where('clubId', '==', clubId)))
-    ]);
-    if (!clubSnap.exists()) { showToast('⚠️ Club no encontrado', 3000); return; }
+    let clubSnap, usersSnap, users = [], features = {};
+    try {
+        [clubSnap, usersSnap] = await Promise.all([
+            getDoc(doc(db, 'clubs', clubId)),
+            getDocs(query(collection(db, 'users'), where('clubId', '==', clubId)))
+        ]);
+    } catch (queryErr) {
+        console.error('[ClubAdmin] Error loading data:', queryErr);
+        // Fallback: try loading club doc only
+        try {
+            clubSnap = await getDoc(doc(db, 'clubs', clubId));
+            users = [];
+        } catch (e2) {
+            const _modal = document.getElementById('setup-modal');
+            if (_modal) {
+                _modal.style.display = 'flex';
+                _modal.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;color:white;text-align:center;max-width:450px;margin:auto;">
+                    <div style="font-size:1.5rem;margin-bottom:1rem;">⚠️</div>
+                    <p style="color:#ff5858;font-size:0.88rem;">Error al cargar datos del club.</p>
+                    <p style="color:#8b949e;font-size:0.78rem;margin-top:0.5rem;">${typeof escapeHtml==='function'?escapeHtml(queryErr.message):queryErr.message}</p>
+                    <p style="color:#8b949e;font-size:0.75rem;margin-top:0.8rem;">Posible causa: permisos insuficientes en Firestore rules.<br>Verifica que las reglas permiten consultar la colección users por clubId.</p>
+                    <button onclick="document.getElementById('setup-modal').style.display='none'"
+                        style="margin-top:1rem;padding:0.5rem 1.2rem;background:rgba(88,166,255,0.15);
+                               border:1px solid rgba(88,166,255,0.4);border-radius:7px;color:#58a6ff;cursor:pointer;">
+                        Cerrar</button>
+                </div>`;
+            }
+            return;
+        }
+    }
+    if (!clubSnap || !clubSnap.exists()) { showToast('⚠️ Club no encontrado', 3000); return; }
     const club = clubSnap.data();
     if (club.status === 'blocked') {
         showToast('🔒 Club suspendido. Contacta con el administrador de la plataforma.', 6000);
         return;
     }
-
-    const users    = [];
-    usersSnap.forEach(d => users.push({ _id: d.id, ...d.data() }));
-    const features = club.features || {};
+    if (usersSnap) {
+        usersSnap.forEach(d => users.push({ _id: d.id, ...d.data() }));
+    }
+    // Deduplicate: keep only one entry per uid (prefer primary doc)
+    const seenUids = new Set();
+    users = users.filter(u => {
+        const realUid = u.uid || u._id;
+        // Keep primary docs (where _id == uid), and secondary docs only if no primary exists
+        if (u._id === realUid) { seenUids.add(realUid); return true; }
+        if (seenUids.has(realUid)) return false;
+        seenUids.add(realUid);
+        return true;
+    });
+    features = club.features || {};
 
     // ── Helper: info de slots de un rol ─────────────────────────────
     const slotOf = (role) => {
@@ -122,11 +242,45 @@ async function openClubAdminPanel(preClubId = null) {
     const pendingAutoReg = users.filter(u =>
         u.status === 'pending' && u.requestedRole !== 'club_admin'
     );
+    // Paso 1b: Self-registrations pending Club Admin forwarding to SA
+    const pendingClubAdmin = users.filter(u =>
+        u.status === 'pending_club_admin'
+    );
+    // Paso 1c: Multi-role users with pending roles in allRoles
+    // These are users whose main doc status is active, but have roles
+    // in allRoles with isAuthorized=false
+    const pendingRolesInAllRoles = [];
+    users.forEach(u => {
+        // Skip if already in pendingClubAdmin (avoid duplicates)
+        if (u.status === 'pending_club_admin' || u.status === 'pending' || u.status === 'pending_sa') return;
+        // Skip secondary docs (doc ID format: uid_role_clubId)
+        if (u.uid && u._id !== u.uid) return;
+        const ar = u.allRoles || [];
+        ar.forEach(roleEntry => {
+            if (!roleEntry.isAuthorized && roleEntry.role) {
+                // Accept both: explicit status='pending_club_admin' OR no status field at all
+                // (new role entries from multi-reg may not have status field)
+                const isPending = (roleEntry.status === 'pending_club_admin') || (!roleEntry.status && !roleEntry.isAuthorized);
+                if (isPending) {
+                    pendingRolesInAllRoles.push({
+                        _id: u._id,
+                        email: u.email,
+                        role: roleEntry.role,
+                        clubId: roleEntry.clubId || u.clubId,
+                        clubName: roleEntry.clubName || u.clubName,
+                        pendingRole: roleEntry.role,
+                        pendingRoleLabel: (ROLE_META[roleEntry.role] || {}).label || roleEntry.role,
+                        pendingRoleIcon: (ROLE_META[roleEntry.role] || {}).icon || '👤',
+                    });
+                }
+            }
+        });
+    });
     // Paso 2: Aprobados por SA, pendientes de confirmación por club admin (status='pending_club')
     const pendingClubApproval = users.filter(u =>
         u.status === 'pending_club' && u.approvedBySA === true
     );
-    // Compat: mantener pendingMembers para el resto del código
+    // Compat: mantener pendingMembers para el resto del código (direct pending only)
     const pendingMembers = [...pendingAutoReg];
 
     // ── Render de una fila de usuario ────────────────────────────────
@@ -213,9 +367,9 @@ async function openClubAdminPanel(preClubId = null) {
     }).join('');
 
     // ── Modal principal ─────────────────────────────────────────────
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = SA_CSS + `
+    let modalHTML;
+    try {
+    modalHTML = SA_CSS + `
     <div class="modal-content sa-modal">
       <div class="sa-topbar">
         <div>
@@ -266,6 +420,52 @@ async function openClubAdminPanel(preClubId = null) {
                 '<div style="display:flex;gap:0.4rem;">' +
                 '<button onclick="caConfirmClubAccess(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">✅ Confirmar acceso</button>' +
                 '<button onclick="caRejectRequest(\'' + escId + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
+                '</div></div>';
+          }).join('')}
+        </div>` : ''}
+
+        <!-- ── BLOQUE 0b: Solicitudes de registro pendientes de reenvío ── -->
+        ${pendingClubAdmin.length ? `
+        <div style="background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.25);\n                    border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
+          <h3 style="font-size:0.85rem;margin:0 0 0.8rem;color:#58a6ff;\n                     display:flex;align-items:center;gap:0.5rem;">
+            📨 Solicitudes de Registro (${pendingClubAdmin.length})
+          </h3>
+          <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.7rem;padding:0.4rem 0.6rem;\n                     background:rgba(88,166,255,0.05);border-radius:6px;border:1px solid rgba(88,166,255,0.15);">
+            ℹ️ Estos usuarios se han registrado y esperan que reenvíes su solicitud al SuperAdmin.
+          </p>
+          ${pendingClubAdmin.map(u => {
+              const roleLabel = ROLE_META[u.role || u.requestedRole || 'user']?.label || 'Usuario';
+              const roleIcon  = ROLE_META[u.role || u.requestedRole || 'user']?.icon || '👤';
+              const escEmail = (typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+              const escId    = (u._id).replace(/'/g,"\\'");
+              return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:center;">' +
+                '<div><div style="font-size:0.85rem;font-weight:600;">' + (typeof escapeHtml==='function'?escapeHtml(u.email):u.email) + '</div>' +
+                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + roleIcon + ' ' + roleLabel + '</div></div>' +
+                '<div style="display:flex;gap:0.4rem;">' +
+                '<button onclick="caForwardToSA(\'' + escId + '\',\'' + (u.role||u.requestedRole||'user') + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);">📤 Reenviar al SuperAdmin</button>' +
+                '<button onclick="caRejectRequest(\'' + escId + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
+                '</div></div>';
+          }).join('')}
+        </div>` : ''}
+
+        <!-- ── BLOQUE 0c: Roles pendientes de usuarios multi-rol ── -->
+        ${pendingRolesInAllRoles.length ? `
+        <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.25);\n                    border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
+          <h3 style="font-size:0.85rem;margin:0 0 0.8rem;color:#f0883e;\n                     display:flex;align-items:center;gap:0.5rem;">
+            📋 Nuevos Roles Solicitados (${pendingRolesInAllRoles.length})
+          </h3>
+          <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.7rem;padding:0.4rem 0.6rem;\n                     background:rgba(240,136,62,0.05);border-radius:6px;border:1px solid rgba(240,136,62,0.15);">
+            ℹ️ Usuarios activos que solicitan un rol adicional. Reenvía al SuperAdmin para aprobación.
+          </p>
+          ${pendingRolesInAllRoles.map(u => {
+              const escEmail = (typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+              const escId    = (u._id).replace(/'/g,"\\'");
+              return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:center;">' +
+                '<div><div style="font-size:0.85rem;font-weight:600;">' + (typeof escapeHtml==='function'?escapeHtml(u.email):u.email) + '</div>' +
+                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + u.pendingRoleIcon + ' Solicita: <strong>' + u.pendingRoleLabel + '</strong></div></div>' +
+                '<div style="display:flex;gap:0.4rem;">' +
+                '<button onclick="caForwardToSA(\'' + escId + '\',\'' + u.pendingRole + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);">📤 Reenviar al SuperAdmin</button>' +
+                '<button onclick="caRejectMultiRole(\'' + escId + '\',\'' + u.pendingRole + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
                 '</div></div>';
           }).join('')}
         </div>` : ''}
@@ -449,6 +649,37 @@ async function openClubAdminPanel(preClubId = null) {
 
       </div><!-- /sa-body -->
     </div>`;
+    } catch (renderErr) {
+        console.error('[ClubAdmin] Error rendering panel:', renderErr);
+        const _modal = document.getElementById('setup-modal');
+        if (_modal) {
+            _modal.style.display = 'flex';
+            _modal.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;color:white;text-align:center;max-width:450px;margin:auto;">
+                <div style="font-size:1.5rem;margin-bottom:1rem;">⚠️</div>
+                <p style="color:#ff5858;font-size:0.88rem;">Error al renderizar el panel del club.</p>
+                <p style="color:#8b949e;font-size:0.78rem;margin-top:0.5rem;">${typeof escapeHtml==='function'?escapeHtml(renderErr.message):renderErr.message}</p>
+                <button onclick="document.getElementById('setup-modal').style.display='none'"
+                    style="margin-top:1rem;padding:0.5rem 1.2rem;background:rgba(88,166,255,0.15);
+                           border:1px solid rgba(88,166,255,0.4);border-radius:7px;color:#58a6ff;cursor:pointer;">
+                    Cerrar</button>
+            </div>`;
+        }
+        return;
+    }
+
+    const modal = document.getElementById('setup-modal');
+    if (!modal) {
+        console.error('[ClubAdmin] setup-modal no encontrado. Creando modal temporal...');
+        // Crear modal temporal si no existe en el DOM
+        const tmpModal = document.createElement('div');
+        tmpModal.id = 'setup-modal';
+        tmpModal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+        document.body.appendChild(tmpModal);
+        tmpModal.innerHTML = modalHTML;
+    } else {
+        modal.style.display = 'flex';
+        modal.innerHTML = modalHTML;
+    }
 
     // ── Bindings ─────────────────────────────────────────────────────
     window.caRoleChanged = () => {
@@ -624,79 +855,271 @@ async function openClubAdminPanel(preClubId = null) {
 
     // ── Rechazar solicitud de acceso ─────────────────────────────────
     window.caRejectRequest = async (uid, email) => {
-        if (!confirm(`¿Rechazar solicitud de ${email}?`)) return;
+        if (!confirm('¿Rechazar solicitud de ' + email + '?')) return;
         try {
             await updateDoc(doc(db,'users',uid), {
                 isAuthorized: false, status: 'rejected',
                 rejectedAt: new Date().toISOString(), rejectedBy: me.uid
             });
-            showToast(`❌ Solicitud de ${email} rechazada.`, 3000);
+            showToast('❌ Solicitud de ' + email + ' rechazada.', 3000);
             openClubAdminPanel();
         } catch(e) { showToast('❌ Error al rechazar: ' + e.message, 3000); }
     };
 
-    // ── Solicitar baja al SuperAdmin ─────────────────────────────────
-    // ── Cambiar estado de un usuario (activo / bloqueado / baja) ──────────
-    window.caSetUserStatus = async (userId, userEmail, newStatus, cid) => {
-        const labels = { active:'activar', blocked:'bloquear', removed:'dar de baja definitivamente' };
-        if (!confirm(`¿Deseas ${labels[newStatus] || newStatus} a ${userEmail}?`)) return;
-
+    // ── Rechazar rol pendiente de un usuario multi-rol ─────────────
+    window.caRejectMultiRole = async (uid, role, email) => {
+        const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+        if (!confirm('¿Rechazar rol de ' + (ROLE_LABELS[role]||role) + ' para ' + email + '?')) return;
         try {
-            const isActive    = newStatus === 'active';
-            const isBlocked   = newStatus === 'blocked';
-            const isRemoved   = newStatus === 'removed';
-
-            // Si es baja definitiva, pedir motivo y registrar en deletion_requests
-            if (isRemoved) {
-                const reason = prompt(`Motivo de baja para ${userEmail} (se registra en el sistema):`);
-                if (reason === null) return; // canceló
-                await setDoc(doc(db,'deletion_requests',`${userId}_${Date.now()}`), {
-                    userId, userEmail, clubId: cid,
-                    requestedBy: me.uid, requestedByEmail: me.email,
-                    reason: reason.trim() || 'Sin motivo indicado',
-                    status: 'approved', // el club_admin puede dar de baja directamente
-                    resolvedAt: new Date().toISOString(),
-                    createdAt:  new Date().toISOString()
+            const { db: fDb, doc: fDoc, updateDoc: fUpdateDoc, getDoc: fGetDoc } = await saFS();
+            const userSnap = await fGetDoc(fDoc(fDb, 'users', uid));
+            if (!userSnap.exists()) { showToast('❌ Usuario no encontrado', 3000); return; }
+            const userData = userSnap.data();
+            const allRoles = userData.allRoles || [];
+            // Remove the pending role from allRoles
+            const filtered = allRoles.filter(ar => !(ar.role === role && !ar.isAuthorized));
+            // Update user doc (user writes own doc — should work)
+            // But if called from Club Admin context, it might fail. Use try-catch.
+            try {
+                await fUpdateDoc(fDoc(fDb, 'users', uid), {
+                    allRoles: filtered,
+                    rejectedAt: new Date().toISOString(),
+                    rejectedBy: window._cronosCurrentUser?.email || 'club_admin',
                 });
+            } catch (updErr) {
+                console.warn('[caRejectMultiRole] Could not update user doc:', updErr.message);
             }
+            showToast('❌ Rol ' + (ROLE_LABELS[role]||role) + ' rechazado para ' + email, 3000);
+            openClubAdminPanel();
+        } catch(e) { showToast('❌ Error al rechazar: ' + e.message, 3000); }
+    };
 
-            // Actualizar documento del usuario
-            await updateDoc(doc(db,'users',userId), {
-                isAuthorized: isActive,
-                status:       newStatus,
-                ...(isActive   ? { authorizedAt: new Date().toISOString(), authorizedBy: me.uid } : {}),
-                ...(isBlocked  ? { blockedAt:    new Date().toISOString(), blockedBy:    me.uid } : {}),
-                ...(isRemoved  ? { removedAt:    new Date().toISOString(), removedBy:    me.uid } : {}),
+    // ── Reenviar solicitud de registro al SuperAdmin ─────────────────
+    window.caForwardToSA = async (uid, role, email, cid) => {
+        const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+        if (!confirm(`¿Reenviar solicitud de ${email} como ${ROLE_LABELS[role]||role} al SuperAdmin?`)) return;
+        try {
+            const { db: fDb, doc: fDoc, updateDoc: fUpdateDoc, setDoc: fSetDoc, getDoc: fGetDoc } = await saFS();
+            
+            // 1. Read current user doc to check if user already has active roles
+            const userSnap = await fGetDoc(fDoc(fDb, 'users', uid));
+            const userData = userSnap.exists() ? userSnap.data() : {};
+            const hasOtherActiveRoles = (userData.isAuthorized === true) && userSnap.exists();
+            
+            // Try to update user doc status (might fail due to Firestore rules)
+            // Non-critical: platform_request is the reliable path
+            try {
+                if (hasOtherActiveRoles) {
+                    const allRoles = userData.allRoles || [];
+                    const roleIdx = allRoles.findIndex(r =>
+                        r.role === role && (r.clubId || null) === (cid || null)
+                    );
+                    if (roleIdx >= 0) {
+                        allRoles[roleIdx].status = 'pending_sa';
+                        allRoles[roleIdx].forwardedToSA = true;
+                        allRoles[roleIdx].forwardedToSAAt = new Date().toISOString();
+                    }
+                    await fUpdateDoc(fDoc(fDb, 'users', uid), {
+                        allRoles: allRoles,
+                        forwardedToSA: true,
+                        forwardedToSAAt: new Date().toISOString(),
+                        forwardedBy: window._cronosCurrentUser?.email || 'club_admin',
+                    });
+                } else {
+                    await fSetDoc(fDoc(fDb, 'users', uid), {
+                        status: 'pending_sa',
+                        forwardedToSA: true,
+                        forwardedToSAAt: new Date().toISOString(),
+                        forwardedBy: window._cronosCurrentUser?.email || 'club_admin',
+                    }, { merge: true });
+                }
+            } catch (userDocErr) {
+                console.warn('[caForwardToSA] Could not update user doc (permissions):', userDocErr.message);
+                // Non-critical — platform_request is the primary channel
+            }
+            
+            // 2. Create or update platform_request for SA (THIS IS CRITICAL — always succeeds)
+            const clubSnap = await fGetDoc(fDoc(fDb, 'clubs', cid));
+            const clubName = clubSnap.exists() ? (clubSnap.data().name || '') : '';
+            
+            // Use consistent reqId: try to find existing request first
+            const existingReqSnap = await fGetDoc(fDoc(fDb, 'platform_requests', 'self_reg_' + uid)).catch(() => null);
+            const finalReqId = existingReqSnap?.exists() ? 'self_reg_' + uid : ('self_reg_' + uid + '_' + role + '_' + (cid || ''));
+            
+            await fSetDoc(fDoc(fDb, 'platform_requests', finalReqId), {
+                type: 'self_registration',
+                clubId: cid,
+                clubName: clubName,
+                requestedEmail: email,
+                requestedRole: role,
+                requestedRoleLabel: ROLE_LABELS[role] || role,
+                userUid: uid,
+                status: 'pending_sa',
+                forwardedBy: window._cronosCurrentUser?.email || 'club_admin',
+                forwardedAt: new Date().toISOString(),
+                createdAt: existingReqSnap?.exists() ? (existingReqSnap.data().createdAt || new Date().toISOString()) : new Date().toISOString(),
             });
-
-            // Actualizar slots del club si se bloquea o da de baja
-            if (isBlocked || isRemoved) {
-                const userSnap = await getDoc(doc(db,'users',userId)).catch(()=>null);
-                const role = userSnap?.data()?.role || 'user';
-                const key  = role==='director'?'usedSlots.directors'
-                           : role==='coordinator'?'usedSlots.coordinators'
-                           : role==='parent'?'usedSlots.parents'
-                           : 'usedSlots.users';
-                const si = slotOf(role);
-                await updateDoc(doc(db,'clubs',cid), { [key]: Math.max(0, (si.used||1) - 1) });
-            }
-            // Si se reactiva, volver a sumar al slot
-            if (isActive) {
-                const userSnap = await getDoc(doc(db,'users',userId)).catch(()=>null);
-                const role = userSnap?.data()?.role || 'user';
-                const key  = role==='director'?'usedSlots.directors'
-                           : role==='coordinator'?'usedSlots.coordinators'
-                           : role==='parent'?'usedSlots.parents'
-                           : 'usedSlots.users';
-                const si = slotOf(role);
-                await updateDoc(doc(db,'clubs',cid), { [key]: (si.used||0) + 1 });
-            }
-
-            const toasts = { active:'✅ Usuario activado', blocked:'🔒 Usuario bloqueado', removed:'🗑️ Usuario dado de baja' };
-            showToast(toasts[newStatus] || '✅ Hecho', 3000);
+            
+            showToast('✅ Solicitud de ' + email + ' reenviada al SuperAdmin.', 4000);
             openClubAdminPanel();
         } catch(e) {
-            showToast('❌ Error: ' + e.message, 4000);
+            showToast('❌ Error al reenviar: ' + e.message, 3000);
+        }
+    };
+
+    // ── Cambiar estado de un usuario (activo / bloqueado / baja total) ──
+    window.caSetUserStatus = async (userId, userEmail, newStatus, cid) => {
+        const labels = { active:'activar', blocked:'bloquear', removed:'dar de baja definitivamente' };
+        if (!confirm('¿Deseas ' + (labels[newStatus] || newStatus) + ' a ' + userEmail + '?')) return;
+
+        try {
+            // ═══════════════════════════════════════════════════════════
+            // BAJA DEFINITIVA — Eliminar TODOS los rastros del correo
+            // ═══════════════════════════════════════════════════════════
+            if (newStatus === 'removed') {
+                var reason = prompt('Motivo de baja para ' + userEmail + ' (se registra en el sistema):');
+                if (reason === null) return;
+
+                // 1. Leer documento para obtener uid real
+                var docSnap = await getDoc(doc(db, 'users', userId));
+                var docData = docSnap.exists() ? docSnap.data() : {};
+                var realUid = docData.uid || userId;
+                var realEmail = docData.email || userEmail;
+
+                // 2. Leer documento primario para obtener todos los roles
+                var primarySnap = (realUid !== userId)
+                    ? await getDoc(doc(db, 'users', realUid)).catch(function() { return null; })
+                    : docSnap;
+                var allRoles = [];
+                if (primarySnap && primarySnap.exists()) {
+                    allRoles = primarySnap.data().allRoles || [];
+                } else if (docData.allRoles) {
+                    allRoles = docData.allRoles;
+                }
+
+                // 3. Actualizar slots del club para CADA rol del usuario
+                var _slotKey = function(role) {
+                    if (role === 'director') return 'usedSlots.directors';
+                    if (role === 'coordinator') return 'usedSlots.coordinators';
+                    if (role === 'parent') return 'usedSlots.parents';
+                    return 'usedSlots.users';
+                };
+                for (var ri = 0; ri < allRoles.length; ri++) {
+                    var rcid = allRoles[ri].clubId || cid;
+                    if (rcid) {
+                        var rk = _slotKey(allRoles[ri].role);
+                        try {
+                            var cs = await getDoc(doc(db, 'clubs', rcid));
+                            if (cs.exists()) {
+                                var sub = rk.split('.')[1];
+                                var cur = ((cs.data().usedSlots || {})[sub]) || 1;
+                                var upd = {}; upd[rk] = Math.max(0, cur - 1);
+                                await updateDoc(doc(db, 'clubs', rcid), upd);
+                            }
+                        } catch (_) {}
+                    }
+                }
+
+                // 4. Eliminar todos los documentos secundarios (roles adicionales)
+                for (var si2 = 0; si2 < allRoles.length; si2++) {
+                    var secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
+                    if (secId !== realUid) {
+                        try { await deleteDoc(doc(db, 'users', secId)); } catch (_) {}
+                    }
+                }
+
+                // 5. Eliminar documento primario
+                try { await deleteDoc(doc(db, 'users', realUid)); } catch (_) {}
+                // Si el documento clickeado era secundario, eliminarlo también
+                if (userId !== realUid) {
+                    try { await deleteDoc(doc(db, 'users', userId)); } catch (_) {}
+                }
+
+                // 6. Eliminar enlaces de jugador (cronos_player_links)
+                try {
+                    var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
+                    var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
+                    for (var li = 0; li < linksArr.length; li++) {
+                        try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
+                    }
+                } catch (_) {}
+                // También por email
+                try {
+                    var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
+                    var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
+                    for (var li2 = 0; li2 < linksArr2.length; li2++) {
+                        try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
+                    }
+                } catch (_) {}
+
+                // 7. Eliminar cuenta de Firebase Auth (vía Cloud Function)
+                try {
+                    if (fa && fa.functions) {
+                        var delFn = httpsCallable(fa.functions, 'deleteAuthUser');
+                        await delFn({ uid: realUid, email: realEmail });
+                    }
+                } catch (_) {}
+
+                // 8. Registrar la baja completa en deletion_requests
+                var delRoles = allRoles.map(function(r) { return r.role; });
+                await setDoc(doc(db, 'deletion_requests', realUid + '_del_' + Date.now()), {
+                    userId: realUid, userEmail: realEmail, clubId: cid,
+                    requestedBy: me.uid, requestedByEmail: me.email,
+                    reason: reason.trim() || 'Sin motivo indicado',
+                    allRolesDeleted: delRoles,
+                    status: 'completed',
+                    resolvedAt: new Date().toISOString(),
+                    createdAt: new Date().toISOString()
+                }).catch(function() {});
+
+                showToast('\uD83D\uDDD1\uFE0F ' + userEmail + ' dado de baja. Todos los rastros eliminados.', 4000);
+                openClubAdminPanel();
+                return;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // ACTIVAR / BLOQUEAR (sin cambios)
+            // ═══════════════════════════════════════════════════════════
+            var isActive  = (newStatus === 'active');
+            var isBlocked = (newStatus === 'blocked');
+
+            await updateDoc(doc(db,'users',userId), {
+                isAuthorized: isActive,
+                status: newStatus
+            });
+            if (isActive) {
+                var actUpd = {
+                    authorizedAt: new Date().toISOString(),
+                    authorizedBy: me.uid
+                };
+                await updateDoc(doc(db,'users',userId), actUpd);
+            }
+            if (isBlocked) {
+                var blkUpd = {
+                    blockedAt: new Date().toISOString(),
+                    blockedBy: me.uid
+                };
+                await updateDoc(doc(db,'users',userId), blkUpd);
+            }
+
+            // Actualizar slots del club
+            var userSnap = await getDoc(doc(db,'users',userId)).catch(function() { return null; });
+            var role = (userSnap && userSnap.data()) ? (userSnap.data().role || 'user') : 'user';
+            var key = _slotKey(role);
+            var si = slotOf(role);
+            if (isActive) {
+                var actSlot = {}; actSlot[key] = (si.used || 0) + 1;
+                await updateDoc(doc(db,'clubs',cid), actSlot);
+            }
+            if (isBlocked) {
+                var blkSlot = {}; blkSlot[key] = Math.max(0, (si.used || 1) - 1);
+                await updateDoc(doc(db,'clubs',cid), blkSlot);
+            }
+
+            showToast(isActive ? '\u2705 Usuario activado' : '\uD83D\uDD12 Usuario bloqueado', 3000);
+            openClubAdminPanel();
+        } catch(e) {
+            showToast('\u274C Error: ' + e.message, 4000);
             console.error(e);
         }
     };
