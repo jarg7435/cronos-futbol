@@ -641,6 +641,7 @@ function _saveMatchStateToStorage() {
             liveMatchId:  typeof liveMatchId !== 'undefined' ? liveMatchId : null,
             players:      JSON.parse(JSON.stringify(window.players || [])),
             COLORS:       typeof COLORS !== 'undefined' ? COLORS : {},
+            category:     document.getElementById('match-category')?.value || window._currentMatchCategory || '',
         };
         localStorage.setItem(_ACTIVE_MATCH_KEY, JSON.stringify(state));
     } catch(e) { /* silencioso */ }
@@ -796,8 +797,8 @@ window._restoreActiveMatch = function() {
         const state = JSON.parse(raw);
         document.getElementById('cronos-restore-banner')?.remove();
 
-        // Calcular tiempo transcurrido desde que se cerró la app
-        const elapsedSec = Math.floor((Date.now() - new Date(state.savedAt).getTime()) / 1000);
+        // No sumamos tiempo transcurrido porque en el fútbol se para el reloj
+        const elapsedSec = 0;
 
         // Restaurar variables globales
         if (typeof TEAM_NAMES !== 'undefined') {
@@ -809,21 +810,20 @@ window._restoreActiveMatch = function() {
 
         // Sumar el tiempo transcurrido al cronómetro correspondiente
         if (typeof masterTimeH1 !== 'undefined') {
-            if (state.matchPhase === '1st_half') {
-                masterTimeH1 = (state.masterTimeH1 || 0) + elapsedSec;
-                masterTimeH2 = state.masterTimeH2 || 0;
-            } else if (state.matchPhase === '2nd_half') {
-                masterTimeH1 = state.masterTimeH1 || 0;
-                masterTimeH2 = (state.masterTimeH2 || 0) + elapsedSec;
-            } else {
-                masterTimeH1 = state.masterTimeH1 || 0;
-                masterTimeH2 = state.masterTimeH2 || 0;
-            }
+            masterTimeH1 = state.masterTimeH1 || 0;
+            masterTimeH2 = state.masterTimeH2 || 0;
         }
         if (typeof half1MaxTime !== 'undefined') half1MaxTime = state.half1MaxTime || 1800;
         if (typeof half2MaxTime !== 'undefined') half2MaxTime = state.half2MaxTime || 1800;
         if (typeof liveMatchId  !== 'undefined') liveMatchId  = state.liveMatchId;
         if (typeof currentMode  !== 'undefined' && state.currentMode) currentMode = state.currentMode;
+
+        // Restaurar categoría
+        if (state.category) {
+            window._currentMatchCategory = state.category;
+            const catSelect = document.getElementById('match-category');
+            if (catSelect) catSelect.value = state.category;
+        }
 
         // Restaurar marcador
         const sh = document.getElementById('score-home');
@@ -848,9 +848,8 @@ window._restoreActiveMatch = function() {
             setTimeout(() => startTimer(), 300);
         }
 
-        const elapsedMins = Math.floor(elapsedSec / 60);
         if (typeof showToast === 'function')
-            showToast(`✅ Partido retomado (+${elapsedMins} min sumados al cronómetro)`, 4000);
+            showToast(`✅ Partido retomado exactamente en el minuto en que quedó`, 4000);
 
     } catch(e) {
         if (typeof showToast === 'function') showToast('⚠️ No se pudo retomar: ' + e.message, 4000);
