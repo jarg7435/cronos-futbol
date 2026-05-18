@@ -1,84 +1,63 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FÚTBOL — Service Worker
-//  INSTRUCCIÓN PARA EL DESARROLLADOR:
-//  Cada vez que subas una versión nueva a GitHub,
-//  incrementa el número de VERSION (v31, v32, etc.)
-//  Los usuarios verán la nueva versión automáticamente.
+//  CRONOS FUTBOL — Service Worker v114
+//  Incrementa VERSION en cada deploy para forzar actualización.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v45';
-const CACHE_NAME = 'cronos-cache-v11.2';
+const VERSION    = 'v114';
+const CACHE_NAME = 'cronos-cache-v114';
 
 const ASSETS = [
     './',
     './index.html',
     './manifest.json',
-    './img/logo_cronos.png',
-    './img/icon-192.png',
-    './img/icon-512.png',
-    // Módulos JS principales
     './app.js',
-    './js/auth.js',
-    './js/rbac.js',
-    './js/01_state.js',
-    './js/02_utils.js',
-    './js/03_ui_components.js',
-    './js/04_formation_data.js',
-    './js/05_field_rendering.js',
-    './js/06_firestore_storage.js',
-    './js/07_staff.js',
-    './js/08_ai_import.js',
-    './js/09_reports.js',
-    './js/10_notifications.js',
-    './js/11_persistence.js',
-    './js/11_persistence_FIX.js',
-    './js/12_init.js',
-    './js/14_match_reports_parents.js',
-    './js/15_coordinated_comms.js',
+    './auth.js',
+    './js/cronos_patches.js',
+    './js/00_setup_modal.js',
     './js/16_superadmin.js',
-    './js/17_club_admin.js'
+    './js/17_club_admin.js',
 ];
 
 self.addEventListener('install', event => {
-    self.skipWaiting();
+    self.skipWaiting(); // Activar inmediatamente sin esperar a cerrar pestañas
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll(ASSETS).catch(err => {
-                console.warn('SW: Algunos recursos no se pudieron cachear (omitido)', err);
+                console.warn('[SW v114] Error al precargar recursos:', err);
             });
         })
     );
 });
 
 self.addEventListener('activate', event => {
+    console.log('[SW v114] Activado - eliminando cachés antiguas');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
-                    .map(key => caches.delete(key))
+                    .map(key => {
+                        console.log('[SW v114] Borrando caché antigua:', key);
+                        return caches.delete(key);
+                    })
             );
-        }).then(() => self.clients.claim())
+        }).then(() => {
+            console.log('[SW v114] Todas las cachés antiguas eliminadas ✅');
+            return self.clients.claim(); // Tomar control de todas las pestañas abiertas
+        })
     );
 });
 
 self.addEventListener('fetch', event => {
-    // Solo cachear peticiones GET. No soportamos POST (Firebase), PUT, DELETE, etc. en cache.
     if (event.request.method !== 'GET') return;
-
-    // Solo permitir esquemas http o https
     if (!event.request.url.startsWith('http')) return;
-
-    // No cachear peticiones a Firebase o externas (Google Fonts, etc)
-    if (event.request.url.includes('firestore.googleapis.com') ||
+    // No cachear peticiones a Firebase/Google
+    if (event.request.url.includes('googleapis.com') ||
         event.request.url.includes('firebaseio.com') ||
-        event.request.url.includes('fonts.googleapis.com') ||
-        event.request.url.includes('fonts.gstatic.com')) {
-        return;
-    }
+        event.request.url.includes('gstatic.com')) return;
 
+    // NETWORK FIRST: siempre intenta la red primero
     event.respondWith(
         fetch(event.request)
             .then(response => {
-                // Si la red responde, guardamos en cache y devolvemos
                 if (response.ok) {
                     const copy = response.clone();
                     caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
@@ -86,16 +65,14 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                // Si falla la red, intentamos cache
+                console.warn('[SW v114] Red no disponible, usando caché:', event.request.url);
                 return caches.match(event.request);
             })
     );
 });
 
-// Listener para forzar actualización desde la UI
 self.addEventListener('message', event => {
     if (event.data === 'force-update') {
         self.skipWaiting();
-        console.log('SW: Forzando actualización v' + VERSION);
     }
 });

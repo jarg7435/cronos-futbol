@@ -1,10 +1,40 @@
 // ════════════════════════════════════════════════════════════════════
-//  PANEL ENTRENADOR INDIVIDUAL (individual) — v1
-//  Gestión de padres/madres/tutores por categoría deportiva
-//  Balance de plazas · Solicitudes · Alta/Baja completa
+//  PANEL ADMINISTRADOR INDIVIDUAL (individual) — v4
+//  Modal tipo Club Admin · Botón Crear Partido · Secciones unificadas
+//  Flujo de registro: Entrenador/Padre → Admin Individual → SA → Confirmado
+//  El Admin Individual reenvía solicitudes al SuperAdmin para aprobación
 // ════════════════════════════════════════════════════════════════════
 
 // Guardia: SA_CSS puede no estar definido si 16_superadmin.js no cargó aún
+// ── saFS local fallback — independiente de 16_superadmin.js ─────
+if (typeof window.saFS !== 'function') {
+    window.saFS = async function saFS() {
+        const fa = window._cronos_auth;
+        if (!fa || !fa.db) throw new Error('Firebase no inicializado. Recarga la página.');
+        const [fs, fnMod, appMod] = await Promise.all([
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js'),
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+        ]);
+        if (!fa._functions) {
+            try { fa._functions = fnMod.getFunctions(appMod.getApp()); }
+            catch (e) { console.warn('[IndPanel saFS] Functions:', e.message); }
+        }
+        return {
+            db: fa.db, fa: Object.assign({}, fa, { functions: fa._functions }),
+            doc: fs.doc, getDoc: fs.getDoc, setDoc: fs.setDoc,
+            updateDoc: fs.updateDoc, deleteDoc: fs.deleteDoc,
+            collection: fs.collection, query: fs.query,
+            where: fs.where, getDocs: fs.getDocs,
+            orderBy: fs.orderBy, onSnapshot: fs.onSnapshot,
+            serverTimestamp: fs.serverTimestamp,
+            httpsCallable: fnMod.httpsCallable,
+        };
+    };
+    console.log('[IndPanel] saFS local fallback activado');
+}
+
+
 if (typeof window.SA_CSS === 'undefined') {
     window.SA_CSS = `<style>
 .sa-modal{background:#0d1117!important;border:1px solid rgba(255,255,255,0.1)!important;border-radius:16px!important;max-width:860px!important;width:98vw!important;max-height:92vh!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;font-family:Inter,sans-serif!important;}
@@ -38,7 +68,10 @@ if (typeof window.ROLE_META === 'undefined') {
         coordinator: { label:'Coordinador',            icon:'🎯', color:'#d2a8ff' },
         user:        { label:'Entrenador',             icon:'⚽', color:'#3fb950' },
         parent:      { label:'Padre / Madre / Tutor',  icon:'👨‍👩‍👧', color:'#79c0ff' },
-        individual:  { label:'Entrenador Individual',  icon:'👤', color:'#79c0ff' },
+        individual:  { label:'Administrador Individual',  icon:'⚙️', color:'#58a6ff' },
+        'admin_individual':  { label:'Administrador Individual',  icon:'⚙️', color:'#58a6ff' },
+        'entrenador_individual': { label:'Entrenador Individual', icon:'⚽', color:'#3fb950' },
+        'parent_individual': { label:'Padre/Madre/Tutor Individual', icon:'👨‍👩‍👧', color:'#79c0ff' },
     };
 }
 
@@ -61,22 +94,28 @@ const IND_SUB_CATS = ['A', 'B', 'C'];
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
-function _indEsc(s) { return typeof escapeHtml === 'function' ? escapeHtml(s || '') : (s || ''); }
-function _indEscA(s) { return typeof escapeAttr === 'function' ? escapeAttr(s || '') : (s || ''); }
+function _indEsc(s) { return escapeHtml(s || ''); }
+function _indEscA(s) { return escapeAttr(s || ''); }
 
-// Genera la key de categorySlots a partir de categoría + subcategoría
 function _indSlotKey(catId, subCat) {
     return `${catId}_${subCat.toLowerCase()}`;
 }
 
-// Obtiene la etiqueta legible de una categoría: "Alevín B"
 function _indCatLabel(catId, subCat) {
     const cat = IND_CATEGORIES.find(c => c.id === catId);
     return cat ? `${cat.label} ${subCat}` : `${catId} ${subCat}`;
 }
 
+function _catLabelInd(cat, sub) {
+    if (!cat) return '–';
+    const map = { prebenjamin:'Prebenjamín', benjamin:'Benjamín', alevin:'Alevín', infantil:'Infantil', cadete:'Cadete', juvenil:'Juvenil', regional:'Regional' };
+    let label = map[cat] || map[cat.replace(/_[abc]$/,'')] || cat;
+    if (sub) label += ' ' + sub;
+    return label;
+}
+
 // ═══════════════════════════════════════════════════════════════════
-// openIndividualAdminPanel()
+// openIndividualAdminPanel() — Modal tipo Club Admin
 // ═══════════════════════════════════════════════════════════════════
 
 async function openIndividualAdminPanel() {
@@ -89,7 +128,7 @@ async function openIndividualAdminPanel() {
     const isSA = me.role === 'superadmin' || me.role === 'admin';
 
     if (!isSA && activeRole !== 'individual') {
-        if (typeof _saToast === 'function') _saToast('⛔ Sin permisos de Entrenador Individual', 3000);
+        if (typeof _saToast === 'function') _saToast('⛔ Sin permisos de Administrador Individual', 3000);
         return;
     }
 
@@ -122,462 +161,416 @@ async function openIndividualAdminPanel() {
         return;
     }
     const userData = userSnap.data();
-    const categorySlots = userData.categorySlots || {};
 
-    // ── Load parents under this individual ────────────────────────
-    const parentsSnap = await getDocs(query(collection(db, 'users'), where('individualOwnerId', '==', uid)));
-    const parents = [];
-    parentsSnap.forEach(d => parents.push({ _id: d.id, ...d.data() }));
-
-    // ── Pending requests (parents approved by SA, pending individual confirmation) ─
-    const pendingParents = parents.filter(u =>
-        u.status === 'pending_club' && u.approvedBySA === true
-    );
-
-    // ── Incoming registrations (users registered under this individual, pending forward) ──
-    const pendingAutoReg = parents.filter(u =>
-        u.status === 'pending' && u.requestedRole !== 'club_admin'
-    );
-
-    const totalPending = pendingAutoReg.length + pendingParents.length;
-
-    // ── Helper: slot info for a category+sub ──────────────────────
-    const slotOf = (catId, subCat) => {
-        const key = _indSlotKey(catId, subCat);
-        const max = categorySlots[key] ?? 5;
-        const catFilter = catId + '_' + subCat.toLowerCase();
-        const used = parents.filter(u =>
-            u.role === 'parent' &&
-            u.isAuthorized !== false &&
-            u.status !== 'removed' &&
-            u.status !== 'rejected' &&
-            u.category === catFilter
-        ).length;
-        return { max, used, free: Math.max(0, max - used), full: used >= max };
-    };
-
-    // ── Helper: render a parent row ───────────────────────────────
-    const parentRow = (u) => {
-        const isBlocked = u.status === 'blocked';
-        const isRemoved = u.status === 'removed';
-        const isActive  = u.isAuthorized && !isBlocked && !isRemoved && u.status === 'active';
-
-        const statusBadge =
-            isRemoved ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ff585822;color:#ff5858;">🗑️ Baja</span>'
-          : isBlocked ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">🔒 Bloqueado</span>'
-          : isActive  ? '<span class="sa-badge" style="margin-left:0.4rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
-          : '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
-
-        const _eA  = (s) => _indEscA(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        const euid = _eA(u._id);
-        const email = _eA(u.email || u._id);
-
-        const catLabel = u.categoryLabel || _indCatLabel(u.category?.replace(/_[abc]$/, ''), u.category?.slice(-1).toUpperCase()) || '–';
-
-        return `
-        <div class="sa-urow" style="opacity:${isRemoved ? '0.45' : '1'};">
-            <div style="flex:1;min-width:0;">
-                <span style="font-size:0.83rem;font-weight:600;">${_indEsc(u.email || u._id)}</span>
-                ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${_indEsc(u.displayName)}</span>` : ''}
-                ${statusBadge}
-                <div style="font-size:0.68rem;color:#8b949e;margin-top:1px;">
-                    ${_indEsc(catLabel)}
-                    ${u.playerNumber ? ` · Dorsal #${_indEsc(String(u.playerNumber))}` : ''}
-                    ${u.playerAlias ? ` · ${_indEsc(u.playerAlias)}` : ''}
-                </div>
-            </div>
-            <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;">
-                ${isActive ? `<button class="sa-btn"
-                    onclick="indSetParentStatus('${euid}','${email}','blocked')"
-                    style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);">
-                    🔒 Bloquear</button>` : ''}
-                ${!isActive && !isRemoved ? `<button class="sa-btn"
-                    onclick="indSetParentStatus('${euid}','${email}','active')"
-                    style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);">
-                    ✅ Activar</button>` : ''}
-                ${!isRemoved ? `<button class="sa-btn"
-                    onclick="indDeleteParent('${euid}','${email}')"
-                    style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">
-                    🗑️ Dar de baja</button>` : ''}
-            </div>
-        </div>`;
-    };
-
-    // ── Build Balance de Plazas HTML ──────────────────────────────
-    const balanceHTML = IND_CATEGORIES.map(cat => {
-        const subRows = IND_SUB_CATS.map(sub => {
-            const si = slotOf(cat.id, sub);
-            const barPct = si.max > 0 ? Math.min(100, Math.round((si.used / si.max) * 100)) : 0;
-            const barColor = si.full ? '#ff5858' : '#3fb950';
-            const freeColor = si.free === 0 ? '#ff5858' : '#3fb950';
-            return `
-            <div style="display:grid;grid-template-columns:60px 1fr 50px 50px 50px;gap:0.3rem;align-items:center;padding:0.3rem 0.4rem;border-bottom:1px solid rgba(255,255,255,0.04);">
-                <span style="font-size:0.78rem;font-weight:700;color:white;">${sub}</span>
-                <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;">
-                    <div style="height:100%;width:${barPct}%;background:${barColor};border-radius:2px;transition:width 0.3s;"></div>
-                </div>
-                <span style="font-size:0.72rem;font-weight:700;color:#8b949e;text-align:right;">${si.max}</span>
-                <span style="font-size:0.72rem;font-weight:700;color:#58a6ff;text-align:right;">${si.used}</span>
-                <span style="font-size:0.72rem;font-weight:700;color:${freeColor};text-align:right;">${si.free}</span>
-            </div>`;
-        }).join('');
-        return `
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:0.6rem 0.7rem;margin-bottom:0.5rem;">
-            <div style="font-size:0.82rem;font-weight:700;color:#79c0ff;margin-bottom:0.4rem;">${cat.label}</div>
-            <div style="display:grid;grid-template-columns:60px 1fr 50px 50px 50px;gap:0.3rem;padding:0 0.4rem 0.2rem;font-size:0.62rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">
-                <span>Equipo</span><span></span><span style="text-align:right;">Total</span><span style="text-align:right;">Ocup.</span><span style="text-align:right;">Libres</span>
-            </div>
-            ${subRows}
-        </div>`;
-    }).join('');
-
-    // ── Build Miembros accordion by category ──────────────────────
-    const membersSections = IND_CATEGORIES.map(cat => {
-        const catParents = parents.filter(u => {
-            if (u.status === 'removed' || u.status === 'rejected') return false;
-            const uCat = u.category || '';
-            return uCat.startsWith(cat.id + '_');
-        });
-        const totalActive = catParents.filter(u => u.status === 'active' && u.isAuthorized !== false).length;
-        const sectionId = `ind-section-${cat.id}`;
-        return `
-        <div class="sa-card" id="${sectionId}" style="margin-bottom:0.6rem;border-color:rgba(121,192,255,0.2);">
-          <div class="sa-card-head" onclick="document.getElementById('${sectionId}').classList.toggle('expanded')">
-            <div class="sa-card-title">
-              <span class="sa-chevron">▼</span>
-              <span style="color:#79c0ff;">👨‍👩‍👧 ${cat.label}</span>
-              <span class="sa-badge" style="background:rgba(121,192,255,0.12);color:#79c0ff;">${totalActive}</span>
-            </div>
-          </div>
-          <div class="sa-card-body">
-            ${catParents.length
-                ? catParents.map(u => parentRow(u)).join('')
-                : `<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin padres registrados en ${cat.label}.</p>`
-            }
-          </div>
-        </div>`;
-    }).join('');
-
-    // ── Build category select options ─────────────────────────────
-    const catOptions = IND_CATEGORIES.flatMap(cat =>
-        IND_SUB_CATS.map(sub => {
-            const val = _indSlotKey(cat.id, sub);
-            return `<option value="${val}">${cat.label} ${sub}</option>`;
-        })
-    ).join('');
-
-    // ── Render pending count badge ────────────────────────────────
-    const pendingBadge = totalPending > 0
-        ? ` <span style="background:#ff5858;color:white;border-radius:10px;padding:1px 7px;font-size:0.65rem;font-weight:700;">${totalPending}</span>`
-        : '';
+    // ── Load individual entity ──────────────────────────────────
+    // FIX: Also check me.clubId (set by SA club picker when SA enters as individual)
+    const individualEntityId = userData.individualEntityId || userData.clubId || me.clubId || null;
+    let entityData = null;
+    if (individualEntityId) {
+        // Buscar en clubs (type=individual) primero, luego individuals
+        let entitySnap = await getDoc(doc(db, 'clubs', individualEntityId));
+        if (entitySnap.exists() && entitySnap.data().type === 'individual') {
+            entityData = entitySnap.data();
+        } else {
+            entitySnap = await getDoc(doc(db, 'individuals', individualEntityId));
+            if (entitySnap.exists()) entityData = entitySnap.data();
+        }
+    }
 
     // ── Display name ──────────────────────────────────────────────
     const displayName = userData.displayName
         || [userData.firstName, userData.lastName].filter(Boolean).join(' ')
         || me.email;
 
-    // ── PANEL: full-screen ────────────────────────────────────────
-    const oldPanel = document.getElementById('ind-panel');
-    if (oldPanel) oldPanel.remove();
+    // ── Load platform_requests ────────────────────────────────────
+    // FIX: Buscar platform_requests por individualOwnerId = entityId Y también por uid del admin
+    // para cubrir todos los casos posibles de registro
+    const _queryId = individualEntityId || uid;
+    let allPrSnap = await getDocs(
+        query(collection(db, 'platform_requests'),
+            where('individualOwnerId', '==', _queryId)
+        )
+    ).catch(e => { console.warn('[IndPanel] Error cargando platform_requests por entityId:', e.message); return null; });
 
-    const panel = document.createElement('div');
-    panel.id = 'ind-panel';
-    panel.style.cssText = 'position:fixed;inset:0;background:#0d1117;z-index:9500;display:flex;flex-direction:column;overflow:hidden;font-family:Inter,sans-serif;';
-    panel.innerHTML = `
-<div style="background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.1);padding:0.85rem 1.2rem;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;flex-wrap:wrap;gap:0.4rem;">
-    <div style="display:flex;align-items:center;gap:0.7rem;">
-        <span style="font-size:1.4rem;">👤</span>
-        <div>
-            <div style="font-family:'Outfit',sans-serif;font-size:1rem;color:white;font-weight:700;">Entrenador Individual</div>
-            <div style="font-size:0.68rem;color:#8b949e;">${_indEsc(displayName)} · Chronos Fútbol</div>
-        </div>
-    </div>
-    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-        <button onclick="saGoBackToRoles()"
-            style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);color:#ffd700;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⇄ Cambiar rol</button>
-        <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
-            style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">🚪 SALIR</button>
-    </div>
-</div>
-<div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;">
-    <button id="ind-tab-overview" onclick="indTab('overview')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid #79c0ff;color:#79c0ff;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">📊 Panel</button>
-    <button id="ind-tab-pending" onclick="indTab('pending')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🔔 Pendientes${pendingBadge}</button>
-    <button id="ind-tab-request" onclick="indTab('request')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">📩 Solicitar</button>
-    <button id="ind-tab-members" onclick="indTab('members')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">👥 Miembros</button>
-</div>
-<div id="ind-body" style="flex:1;overflow-y:auto;padding:1.1rem;-webkit-overflow-scrolling:touch;"></div>`;
+    // FIX: Si el _queryId es el entityId, buscar también por uid del admin como fallback
+    // (algunos registros antiguos pueden tener individualOwnerId = uid del admin)
+    if (_queryId !== uid) {
+        const adminPrSnap = await getDocs(
+            query(collection(db, 'platform_requests'),
+                where('individualOwnerId', '==', uid)
+            )
+        ).catch(e => { console.warn('[IndPanel] Error cargando platform_requests por uid:', e.message); return null; });
+        // Combinar resultados sin duplicar
+        if (adminPrSnap && allPrSnap) {
+            const existingIds = new Set();
+            allPrSnap.forEach(d => existingIds.add(d.id));
+            const mergedDocs = [...allPrSnap.docs];
+            adminPrSnap.forEach(d => {
+                if (!existingIds.has(d.id)) mergedDocs.push(d);
+            });
+            allPrSnap = { docs: mergedDocs, forEach: (fn) => mergedDocs.forEach(fn) };
+        } else if (adminPrSnap && !allPrSnap) {
+            allPrSnap = adminPrSnap;
+        }
+    }
 
-    document.body.appendChild(panel);
+    // FIX: También buscar platform_requests donde el userUid coincida con usuarios del ente
+    // y el status sea pending_individual (para capturar solicitudes huérfanas)
+    const userPrSnap = await getDocs(
+        query(collection(db, 'platform_requests'),
+            where('type', '==', 'ind_sub_registration'),
+            where('status', '==', 'pending_individual')
+        )
+    ).catch(e => { console.warn('[IndPanel] Error cargando platform_requests por tipo:', e.message); return null; });
+    if (userPrSnap && allPrSnap) {
+        const existingIds = new Set();
+        allPrSnap.forEach(d => existingIds.add(d.id));
+        const mergedDocs = [...allPrSnap.docs];
+        userPrSnap.forEach(d => {
+            const data = d.data();
+            // Solo incluir si el individualOwnerId coincide con nuestra entidad o con nuestro uid
+            if (!existingIds.has(d.id) && (data.individualOwnerId === _queryId || data.individualOwnerId === uid)) {
+                mergedDocs.push(d);
+            }
+        });
+        allPrSnap = { docs: mergedDocs, forEach: (fn) => mergedDocs.forEach(fn) };
+    }
 
-    // ── Store data globally for tab functions ─────────────────────
-    window._indData = {
-        uid, userData, categorySlots, parents, pendingParents,
-        pendingAutoReg, displayName, me
-    };
+    const pendingAutoReg = [];
+    const pendingSAForward = [];
 
-    indTab('overview');
-}
+    if (allPrSnap) {
+        allPrSnap.forEach(d => {
+            const data = { _prId: d.id, ...d.data() };
+            if (data.status === 'pending_individual') {
+                pendingAutoReg.push(data);
+            } else if (data.status === 'pending_sa') {
+                pendingSAForward.push(data);
+            }
+            // NOTA: Ya NO hay estado 'ind_sa_approved' — el SA aprueba y activa directamente
+        });
+    }
 
-// ═══════════════════════════════════════════════════════════════════
-// indTab() — Tab switching
-// ═══════════════════════════════════════════════════════════════════
+    // ── Load users under this individual ──────────────────────────
+    // CRITICAL: Buscar usuarios que pertenezcan a esta entidad individual
+    // Debemos buscar por TODOS los campos posibles: individualOwnerId, individualEntityId, clubId
+    // porque tras la aprobación del SA, los usuarios confirmados tienen estos campos seteados
+    console.log('[IndPanel] Buscando usuarios para entityId:', _queryId, 'uid:', uid);
+    const parentsSnap1 = await getDocs(query(collection(db, 'users'),
+        where('individualOwnerId', '==', _queryId)
+    )).catch(() => null);
+    const parentsSnap2 = await getDocs(query(collection(db, 'users'),
+        where('individualEntityId', '==', _queryId)
+    )).catch(() => null);
+    const parentsMap = new Map();
+    if (parentsSnap1) parentsSnap1.forEach(d => { if (!parentsMap.has(d.id)) parentsMap.set(d.id, { _id: d.id, ...d.data() }); });
+    if (parentsSnap2) parentsSnap2.forEach(d => { if (!parentsMap.has(d.id)) parentsMap.set(d.id, { _id: d.id, ...d.data() }); });
+    // FIX: También buscar por clubId = entityId (auth.js sets clubId = entityId for SA panel compatibility)
+    // Solo incluir usuarios que tengan rol individual o estén bajo esta entidad
+    if (_queryId !== uid) {
+        const parentsSnap3 = await getDocs(query(collection(db, 'users'),
+            where('clubId', '==', _queryId)
+        )).catch(() => null);
+        if (parentsSnap3) parentsSnap3.forEach(d => {
+            const data = d.data();
+            // Solo incluir si tiene algún campo individual o rol que corresponda a esta entidad
+            // FIX: No incluir usuarios de club normales — verificar que sea una entidad individual
+            if (!parentsMap.has(d.id) && (data.individualEntityId || data.individualOwnerId || data.isIndividual
+                || data.role === 'individual' || data.role === 'admin_individual'
+                || (data.allRoles||[]).some(r => ['individual','admin_individual','entrenador_individual','padre_individual'].includes(r.role)
+                    || r.individualEntityId))) {
+                parentsMap.set(d.id, { _id: d.id, ...data });
+            }
+        });
+    }
+    // CRITICAL FIX: También buscar por el UID del admin como individualOwnerId
+    // (algunas platform_requests y usuarios antiguos usan el UID del admin en vez del entityId)
+    if (uid !== _queryId) {
+        const parentsSnap4 = await getDocs(query(collection(db, 'users'),
+            where('individualOwnerId', '==', uid)
+        )).catch(() => null);
+        if (parentsSnap4) parentsSnap4.forEach(d => {
+            if (!parentsMap.has(d.id)) {
+                parentsMap.set(d.id, { _id: d.id, ...d.data() });
+            }
+        });
+        const parentsSnap5 = await getDocs(query(collection(db, 'users'),
+            where('individualEntityId', '==', uid)
+        )).catch(() => null);
+        if (parentsSnap5) parentsSnap5.forEach(d => {
+            if (!parentsMap.has(d.id)) {
+                parentsMap.set(d.id, { _id: d.id, ...d.data() });
+            }
+        });
+    }
+    // FIX: Si el admin individual está en la lista, asegurarse de que tiene el rol correcto
+    const adminInMap = parentsMap.get(uid);
+    if (adminInMap && adminInMap.role !== 'individual' && adminInMap.role !== 'admin_individual') {
+        // El admin individual está en la lista pero su rol principal no es 'individual'
+        // Esto puede pasar si se registró con otro rol primero. Actualizar el allRoles
+        // para asegurar que tiene el rol de individual.
+        console.log('[IndPanel] Admin individual encontrado con rol:', adminInMap.role, '— corrigiendo allRoles');
+    }
+    const parents = Array.from(parentsMap.values());
+    console.log('[IndPanel] Usuarios encontrados:', parents.length,
+        '| Entrenadores activos:', parents.filter(u => u.status === 'active' && (u.role === 'user' || (u.allRoles||[]).some(r=>r.role==='user' && r.isAuthorized))).length,
+        '| Padres activos:', parents.filter(u => u.status === 'active' && (u.role === 'parent' || (u.allRoles||[]).some(r=>r.role==='parent' && r.isAuthorized))).length);
 
-window.indTab = function indTab(tab) {
-    ['overview', 'pending', 'request', 'members'].forEach(t => {
-        const b = document.getElementById('ind-tab-' + t);
-        if (!b) return;
-        b.style.borderBottomColor = (t === tab) ? '#79c0ff' : 'transparent';
-        b.style.color = (t === tab) ? '#79c0ff' : '#8b949e';
-    });
+    const totalPending = pendingAutoReg.length + parents.filter(u => u.status === 'pending_individual' && u.isAuthorized === false).length;
 
-    if (tab === 'overview') indRenderOverview();
-    else if (tab === 'pending') indRenderPending();
-    else if (tab === 'request') indRenderRequestForm();
-    else if (tab === 'members') indRenderMembers();
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// indRenderOverview() — Balance de Plazas + resumen
-// ═══════════════════════════════════════════════════════════════════
-
-window.indRenderOverview = function indRenderOverview() {
-    const body = document.getElementById('ind-body');
-    if (!body || !window._indData) return;
-
-    const { categorySlots, parents, pendingParents, pendingAutoReg } = window._indData;
-    const _eH = _indEsc;
-
-    // ── Summary stats ─────────────────────────────────────────────
-    const activeParents = parents.filter(u => u.status === 'active' && u.isAuthorized !== false);
+    // ── Counters ──────────────────────────────────────────────────
+    // Contar usuarios que hayan sido CONFIRMADOS por el SuperAdmin
+    // Un usuario está confirmado cuando su estado principal es 'active' y está autorizado,
+    // o bien cuando al menos uno de sus roles en allRoles está activo y autorizado.
+    const activeParents = parents.filter(u =>
+        (u.status === 'active' && u.isAuthorized === true) ||
+        (u.allRoles||[]).some(r => r.isAuthorized && r.status === 'active')
+    );
     const blockedParents = parents.filter(u => u.status === 'blocked');
+    // FIX: No contar los roles propios del admin (uid === me.uid) como usuarios separados
+    const _isAdmin = (u) => (u.uid || u._id) === me.uid;
+    // Contar entrenadores basándose en su rol principal o allRoles y su estado de autorización
+    // Contar entrenadores basándose en su rol principal o allRoles y su estado de autorización
+    const coachCount = activeParents.filter(u =>
+        (u.role === 'user' || u.role === 'entrenador_individual'
+         || (u.allRoles||[]).some(r => (r.role === 'user' || r.role === 'entrenador_individual') && (r.isAuthorized || u.isAuthorized)))
+    ).length;
+    // Contar padres basándose en su rol principal o allRoles y su estado de autorización
+    const parentCount = activeParents.filter(u =>
+        (u.role === 'parent' || u.role === 'parent_individual'
+         || (u.allRoles||[]).some(r => (r.role === 'parent' || r.role === 'parent_individual') && (r.isAuthorized || u.isAuthorized)))
+    ).length;
 
-    // Count total slots
-    let totalSlots = 0, totalUsed = 0;
-    IND_CATEGORIES.forEach(cat => {
-        IND_SUB_CATS.forEach(sub => {
-            const key = _indSlotKey(cat.id, sub);
-            const max = categorySlots[key] ?? 5;
-            const catFilter = cat.id + '_' + sub.toLowerCase();
-            const used = parents.filter(u =>
-                u.role === 'parent' && u.isAuthorized !== false &&
-                u.status !== 'removed' && u.status !== 'rejected' &&
-                u.category === catFilter
-            ).length;
-            totalSlots += max;
-            totalUsed += used;
+    // ── Deduplicate and expand users ──────────────────────────────
+    const userMap = new Map();
+    parents.forEach(u => {
+        const realUid = u.uid || u._id;
+        if (!userMap.has(realUid)) {
+            userMap.set(realUid, { ...u });
+        } else {
+            const existing = userMap.get(realUid);
+            const merged = [...(existing.allRoles || [])];
+            const incoming = u.allRoles || [];
+            incoming.forEach(r => {
+                if (!merged.some(m => m.role === r.role)) merged.push(r);
+            });
+            existing.allRoles = merged;
+            if (u._id === realUid) {
+                const preservedRoles = existing.allRoles;
+                Object.assign(existing, u);
+                existing.allRoles = preservedRoles;
+            }
+        }
+    });
+    const finalUsers = Array.from(userMap.values());
+
+    const expandedUsers = [];
+    finalUsers.filter(u => u.status !== 'removed').forEach(u => {
+        let roles = u.allRoles || [];
+        if (roles.length === 0) {
+            roles = [{ role: u.role, isAuthorized: u.isAuthorized, status: u.status,
+                category: u.category || u.categoryLabel, subcategory: u.subcategory || u.subCategory }];
+        }
+
+        // FIX: Deduplicar roles (mismo role + category + subcategory)
+        const _seenRoleKey = new Set();
+        const uniqueRoles = roles.filter(r => {
+            if (r.status === 'rejected' || r.status === 'removed') return false;
+            const key = (r.role || '') + '|' + (r.category || '') + '|' + (r.subcategory || r.subCategory || '');
+            if (_seenRoleKey.has(key)) return false;
+            _seenRoleKey.add(key);
+            return true;
+        });
+
+        // Expand all unique roles for display in the table, including the admin's secondary roles
+        const rolesToExpand = uniqueRoles;
+
+        rolesToExpand.forEach(r => {
+            expandedUsers.push({ ...u, _activeRoleData: r });
         });
     });
-    const totalFree = Math.max(0, totalSlots - totalUsed);
 
-    // ── Balance de Plazas table ───────────────────────────────────
-    const balanceHTML = IND_CATEGORIES.map(cat => {
-        const subRows = IND_SUB_CATS.map(sub => {
-            const key = _indSlotKey(cat.id, sub);
-            const max = categorySlots[key] ?? 5;
-            const catFilter = cat.id + '_' + sub.toLowerCase();
-            const used = parents.filter(u =>
-                u.role === 'parent' && u.isAuthorized !== false &&
-                u.status !== 'removed' && u.status !== 'rejected' &&
-                u.category === catFilter
-            ).length;
-            const free = Math.max(0, max - used);
-            const barPct = max > 0 ? Math.min(100, Math.round((used / max) * 100)) : 0;
-            const barColor = used >= max ? '#ff5858' : '#3fb950';
-            const freeColor = free === 0 ? '#ff5858' : '#3fb950';
-            return `
-            <div style="display:grid;grid-template-columns:55px 1fr 45px 45px 45px;gap:0.3rem;align-items:center;padding:0.3rem 0.4rem;border-bottom:1px solid rgba(255,255,255,0.04);">
-                <span style="font-size:0.78rem;font-weight:700;color:white;">${sub}</span>
-                <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;">
-                    <div style="height:100%;width:${barPct}%;background:${barColor};border-radius:2px;transition:width 0.3s;"></div>
-                </div>
-                <span style="font-size:0.72rem;font-weight:700;color:#8b949e;text-align:right;">${max}</span>
-                <span style="font-size:0.72rem;font-weight:700;color:#58a6ff;text-align:right;">${used}</span>
-                <span style="font-size:0.72rem;font-weight:700;color:${freeColor};text-align:right;">${free}</span>
-            </div>`;
-        }).join('');
-        return `
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:0.6rem 0.7rem;margin-bottom:0.5rem;">
-            <div style="font-size:0.82rem;font-weight:700;color:#79c0ff;margin-bottom:0.4rem;">${cat.label}</div>
-            <div style="display:grid;grid-template-columns:55px 1fr 45px 45px 45px;gap:0.3rem;padding:0 0.4rem 0.2rem;font-size:0.6rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">
-                <span>Eq.</span><span></span><span style="text-align:right;">Total</span><span style="text-align:right;">Ocup.</span><span style="text-align:right;">Libres</span>
-            </div>
-            ${subRows}
-        </div>`;
-    }).join('');
+    const sortedUsers = expandedUsers.sort((a, b) => {
+        const dateA = a.createdAt?.seconds || a.authorizedAt || 0;
+        const dateB = b.createdAt?.seconds || b.authorizedAt || 0;
+        return dateA - dateB;
+    });
 
-    body.innerHTML = `
-    <!-- Summary cards -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.6rem;margin-bottom:1.2rem;">
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#58a6ff;">${activeParents.length}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">Padres activos</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#ffa500;">${pendingParents.length}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">Pendientes</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#ff5858;">${blockedParents.length}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">Bloqueados</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#3fb950;">${totalFree}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">Plazas libres / ${totalSlots}</div>
-        </div>
-    </div>
+    // ── Render modal ──────────────────────────────────────────────
+    let setupModal = document.getElementById('setup-modal');
+    if (!setupModal) {
+        setupModal = document.createElement('div');
+        setupModal.id = 'setup-modal';
+        setupModal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+        document.body.appendChild(setupModal);
+    }
+    setupModal.style.display = 'flex';
 
-    <!-- Balance de Plazas -->
-    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:1rem;margin-bottom:1.2rem;">
-        <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.5rem;">
-            📊 Balance de Plazas — Padres / Madres / Tutores
-        </div>
-        ${balanceHTML}
-    </div>
-
-    <!-- Info box -->
-    <div style="background:rgba(121,192,255,0.05);border:1px solid rgba(121,192,255,0.15);border-radius:8px;padding:0.7rem;font-size:0.75rem;color:#8b949e;line-height:1.5;">
-        ℹ️ <strong style="color:#79c0ff;">Flujo de registro:</strong><br>
-        1️⃣ Un usuario se registra → llega aquí como <strong>"Pendiente"</strong><br>
-        2️⃣ Tú solicitas plaza al SuperAdmin → 3️⃣ SA confirma → vuelve aquí como <strong>"Aprobada"</strong><br>
-        4️⃣ Tú confirmas el acceso → el usuario queda <strong>registrado automáticamente</strong>.<br>
-        También puedes usar <strong>"📩 Solicitar"</strong> para crear solicitudes directas al SuperAdmin.
-    </div>`;
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// indRenderPending() — Parents pending confirmation
-// ═══════════════════════════════════════════════════════════════════
-
-window.indRenderPending = function indRenderPending() {
-    const body = document.getElementById('ind-body');
-    if (!body || !window._indData) return;
-
-    const { pendingParents, pendingAutoReg } = window._indData;
     const _eH = _indEsc;
     const _eA = (s) => _indEscA(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-    if (!pendingAutoReg.length && !pendingParents.length) {
-        body.innerHTML = `<div style="text-align:center;padding:3rem;color:#8b949e;">
-            <div style="font-size:2.5rem;margin-bottom:0.5rem;">✅</div>
-            Sin solicitudes pendientes.
+    // ── Build unified user table ──────────────────────────────────
+    const userTableRows = sortedUsers.map(u => {
+        const r = u._activeRoleData;
+        const roleMeta = window.ROLE_META[r.role] || { label: r.role, icon: '👤', color: '#8b949e' };
+        let name = u.firstName || u.displayName || u.email.split('@')[0];
+        name = name.split(' ')[0];
+        let regDate = '–';
+        if (u.createdAt) {
+            let d;
+            if (u.createdAt.toDate) d = u.createdAt.toDate();
+            else if (typeof u.createdAt === 'number') d = new Date(u.createdAt);
+            else if (u.createdAt.seconds) d = new Date(u.createdAt.seconds * 1000);
+            else d = new Date(u.createdAt); // Fallback para strings ISO
+            
+            if (d instanceof Date && !isNaN(d)) regDate = d.toLocaleDateString();
+        } else if (u.authorizedAt) {
+            const d = new Date(u.authorizedAt);
+            if (d instanceof Date && !isNaN(d)) regDate = d.toLocaleDateString();
+        }
+        const catLabel = r.category || '–';
+        const subLabel = r.subcategory || '–';
+        const euid = _eA(u._id);
+        const email = _eA(u.email || u._id);
+
+        return `
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+            <td style="padding:0.8rem 0.7rem;">
+                <div style="font-weight:600;color:white;">${_eH(name)}</div>
+                <div style="font-size:0.68rem;color:${roleMeta.color};">${roleMeta.icon} ${roleMeta.label}</div>
+                ${!r.isAuthorized || r.status === 'pending_individual' ? '<div style="font-size:0.62rem;color:#ffa500;">⏳ Pendiente</div>' : ''}
+            </td>
+            <td style="padding:0.8rem 0.7rem;font-size:0.8rem;color:#8b949e;">${_eH(u.email)}</td>
+            <td style="padding:0.8rem 0.7rem;font-size:0.8rem;color:#8b949e;">${regDate}</td>
+            <td style="padding:0.8rem 0.7rem;font-size:0.8rem;color:#79c0ff;font-weight:600;">${_eH(_catLabelInd(catLabel, ''))}</td>
+            <td style="padding:0.8rem 0.7rem;font-size:0.8rem;color:#d2a8ff;font-weight:600;">${_eH(subLabel)}</td>
+            <td style="padding:0.8rem 0.7rem;text-align:right;">
+                <div style="display:flex;gap:0.4rem;justify-content:flex-end;">
+                    <button class="sa-btn" onclick="indEditCategory('${euid}','${email}')" style="padding:0.25rem 0.5rem;color:#79c0ff;border-color:rgba(121,192,255,0.2);">✏️</button>
+                    <button class="sa-btn" onclick="indDeleteParent('${euid}','${email}')" style="padding:0.25rem 0.5rem;color:#ff5858;border-color:rgba(255,88,88,0.2);">✕</button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    const unifiedUserTable = `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;margin-bottom:1.5rem;">
+        <div style="padding:0.7rem 1rem;background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:0.85rem;font-weight:700;color:white;display:flex;align-items:center;gap:0.5rem;">
+                👥 Usuarios del Administrador Individual
+                <span class="sa-badge" style="background:rgba(121,192,255,0.12);color:#79c0ff;">${sortedUsers.length}</span>
+            </div>
+            <button class="sa-btn" onclick="openIndividualAdminPanel()" style="font-size:0.72rem;color:#79c0ff;border-color:rgba(121,192,255,0.3);background:rgba(121,192,255,0.07);">🔄</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;text-align:left;">
+            <thead>
+                <tr style="background:rgba(255,255,255,0.05);border-bottom:1px solid rgba(255,255,255,0.1);">
+                    <th style="padding:0.8rem 0.7rem;font-size:0.75rem;font-weight:700;color:#79c0ff;text-transform:uppercase;letter-spacing:1px;">Nombre</th>
+                    <th style="padding:0.8rem 0.7rem;font-size:0.75rem;font-weight:700;color:#79c0ff;text-transform:uppercase;letter-spacing:1px;">Email</th>
+                    <th style="padding:0.8rem 0.7rem;font-size:0.75rem;font-weight:700;color:#79c0ff;text-transform:uppercase;letter-spacing:1px;">Registro</th>
+                    <th style="padding:0.8rem 0.7rem;font-size:0.75rem;font-weight:700;color:#79c0ff;text-transform:uppercase;letter-spacing:1px;">Categoría</th>
+                    <th style="padding:0.8rem 0.7rem;font-size:0.75rem;font-weight:700;color:#79c0ff;text-transform:uppercase;letter-spacing:1px;">Subcat.</th>
+                    <th style="padding:0.8rem 0.7rem;text-align:right;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                ${userTableRows || '<tr><td colspan="6" style="padding:2rem;text-align:center;color:#8b949e;">No hay usuarios registrados.</td></tr>'}
+            </tbody>
+        </table>
+    </div>`;
+
+    // ── Stats cards ───────────────────────────────────────────────
+    const statsHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:0.6rem;margin-bottom:1.5rem;">
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#3fb950;">${coachCount}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">⚽ Entrenadores</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#79c0ff;">${parentCount}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">👨‍👩‍👧 Padres / Madres</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#ffa500;">${totalPending}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">⏳ Pendientes</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#ff5858;">${blockedParents.length}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">🔒 Bloqueados</div>
+        </div>
+    </div>`;
+
+    // ── Section: Solicitudes enviadas al SA (transparencia) ───────
+    let saForwardHTML = '';
+    if (pendingSAForward.length) {
+        saForwardHTML = `
+        <div style="background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);border-radius:12px;padding:1rem;margin-bottom:1.5rem;">
+            <h3 style="margin:0 0 0.8rem;font-size:0.85rem;color:#58a6ff;display:flex;align-items:center;gap:0.5rem;">
+                📤 Solicitudes enviadas al SuperAdmin
+                <span style="background:#58a6ff;color:white;padding:2px 8px;border-radius:10px;font-size:0.7rem;">${pendingSAForward.length}</span>
+            </h3>
+            ${pendingSAForward.map(u => {
+                const role = u.requestedRole || 'parent';
+                const roleLabel = (window.ROLE_META[role] || {}).label || (role === 'user' ? 'Entrenador' : 'Padre/Madre/Tutor');
+                return `<div style="font-size:0.8rem;color:white;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                    • <strong>${_eH(u.userEmail || u.requestedEmail || '')}</strong> solicitó ser <strong>${roleLabel}</strong>.
+                    <span style="color:#8b949e;font-size:0.72rem;display:block;margin-top:2px;">⏳ Esperando que el SuperAdmin apruebe la solicitud.</span>
+                </div>`;
+            }).join('')}
         </div>`;
-        return;
     }
 
-    let html = '';
-
-    // ── Section 1: Incoming registrations (status='pending') ──
+    // ── Section: Solicitudes de registro pendientes de reenvío ────
+    let pendingRegHTML = '';
     if (pendingAutoReg.length) {
-        html += `
-        <div style="background:rgba(255,165,0,0.06);border:1px solid rgba(255,165,0,0.25);border-radius:10px;padding:1rem;margin-bottom:1rem;">
-            <h3 style="font-size:0.88rem;color:#ffa500;margin:0 0 0.5rem;display:flex;align-items:center;gap:0.5rem;">
-                🔔 Solicitudes de registro recibidas
-                <span style="background:rgba(255,165,0,0.15);color:#ffa500;padding:1px 8px;border-radius:10px;font-size:0.7rem;">${pendingAutoReg.length}</span>
+        pendingRegHTML = `
+        <div style="background:rgba(255,165,0,0.06);border:1px solid rgba(255,165,0,0.25);border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
+            <h3 style="font-size:0.85rem;margin:0 0 0.8rem;color:#ffa500;display:flex;align-items:center;gap:0.5rem;">
+                📨 Solicitudes de Registro (${pendingAutoReg.length})
             </h3>
-            <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.8rem;padding:0.4rem 0.6rem;background:rgba(255,165,0,0.05);border-radius:6px;border:1px solid rgba(255,165,0,0.15);">
-                Usuarios que se han registrado bajo tu equipo. Debes solicitar una plaza al SuperAdmin para cada uno.
+            <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.7rem;padding:0.4rem 0.6rem;background:rgba(255,165,0,0.05);border-radius:6px;border:1px solid rgba(255,165,0,0.15);">
+                ℹ️ Estos usuarios se han registrado y esperan que reenvíes su solicitud al SuperAdmin.
             </p>
             ${pendingAutoReg.map(u => {
-                const role = u.requestedRole || u.role || 'parent';
-                const escId = _eA(u._id);
-                const escEmail = _eA(u.email || u._id);
-                const catBadge = u.category
-                    ? `<span style="font-size:0.68rem;color:#d2a8ff;background:rgba(210,168,255,0.1);border:1px solid rgba(210,168,255,0.2);border-radius:4px;padding:1px 6px;margin-left:0.3rem;">${_eH(u.categoryLabel || u.category)}</span>`
+                const role = u.requestedRole || 'parent';
+                // Use requestedRoleLabel if available (from auth.js ind_sub_registration), fallback to ROLE_META
+                const roleLabel = u.requestedRoleLabel || (window.ROLE_META[role] || {}).label || (role === 'user' ? 'Entrenador' : 'Padre/Madre/Tutor');
+                const roleIcon = role === 'user' ? '⚽' : '👨‍👩‍👧';
+                const catBadge = u.categoryLabel || u.requestedCategoryLabel
+                    ? `<span style="font-size:0.68rem;color:#d2a8ff;background:rgba(210,168,255,0.1);border:1px solid rgba(210,168,255,0.2);border-radius:4px;padding:1px 6px;margin-left:0.3rem;">${_eH(u.categoryLabel || u.requestedCategoryLabel || '')}</span>`
                     : '';
-                return `
-                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:9px;padding:0.85rem;margin-bottom:0.6rem;">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
-                        <div style="flex:1;min-width:0;">
-                            <div style="font-size:0.85rem;font-weight:600;color:white;">${_eH(u.email || u._id)}</div>
-                            ${u.displayName ? `<div style="font-size:0.76rem;color:#8b949e;margin-top:2px;">${_eH(u.displayName)}</div>` : ''}
-                            <div style="font-size:0.72rem;color:#79c0ff;margin-top:3px;">
-                                👨‍👩‍👧 ${_eH(role === 'parent' ? 'Padre/Madre/Tutor' : role)}${catBadge}
-                            </div>
-                        </div>
-                        <div style="display:flex;gap:0.4rem;flex-shrink:0;">
-                            <button onclick="indForwardToSA('${escId}','${role}','${escEmail}','${u.category || ''}')"
-                                class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);">
-                                📩 Solicitar plaza al SuperAdmin</button>
-                            <button onclick="indRejectRequest('${escId}','${escEmail}')"
-                                class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
-                                ✕ Rechazar</button>
-                        </div>
+                const prId = _eA(u._prId || '');
+                const escEmail = _eA(u.userEmail || '');
+                const escUid = _eA(u.userUid || '');
+                return `<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,165,0,0.15);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+                    <div style="min-width:0;flex:1;">
+                        <div style="font-size:0.85rem;font-weight:600;word-break:break-all;">${_eH(u.userEmail || u.userName || '')}</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${roleIcon} ${roleLabel}${catBadge}</div>
+                    </div>
+                    <div style="display:flex;gap:0.4rem;flex-shrink:0;">
+                        <button onclick="indForwardToSA('${prId}','${escUid}','${role}','${escEmail}','${_eA(u.categoryLabel||u.requestedCategoryLabel||'')}')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);font-size:0.75rem;">📤 Reenviar al SA</button>
+                        <button onclick="indRejectRequest('${prId}','${escUid}','${escEmail}')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);font-size:0.75rem;">✕</button>
                     </div>
                 </div>`;
             }).join('')}
         </div>`;
     }
 
-    // ── Section 2: SA-approved, pending individual confirmation ──
-    if (pendingParents.length) {
-        html += `
-        <div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.25);border-radius:10px;padding:1rem;margin-bottom:1rem;">
-            <h3 style="font-size:0.88rem;color:#3fb950;margin:0 0 0.5rem;display:flex;align-items:center;gap:0.5rem;">
-                ✅ Aprobadas por SuperAdmin — Pendientes de tu confirmación
-                <span style="background:rgba(63,185,80,0.15);color:#3fb950;padding:1px 8px;border-radius:10px;font-size:0.7rem;">${pendingParents.length}</span>
-            </h3>
-            <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.8rem;padding:0.4rem 0.6rem;background:rgba(63,185,80,0.05);border-radius:6px;border:1px solid rgba(63,185,80,0.15);">
-                El SuperAdmin ha aprobado la plaza. Confirma el acceso para que el usuario pueda entrar a la app.
-            </p>
-            ${pendingParents.map(u => {
-                const catLabel = u.categoryLabel || u.category || '–';
-                const escId = _eA(u._id);
-                const escEmail = _eA(u.email || u._id);
-                return `
-                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(63,185,80,0.25);border-radius:9px;padding:0.85rem;margin-bottom:0.6rem;">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
-                        <div style="flex:1;min-width:0;">
-                            <div style="font-size:0.85rem;font-weight:600;color:white;">${_eH(u.email || u._id)}</div>
-                            ${u.displayName ? `<div style="font-size:0.76rem;color:#8b949e;margin-top:2px;">${_eH(u.displayName)}</div>` : ''}
-                            <div style="font-size:0.72rem;color:#79c0ff;margin-top:3px;">
-                                👨‍👩‍👧 ${_eH(catLabel)}
-                                ${u.playerNumber ? ` · Dorsal #${_eH(String(u.playerNumber))}` : ''}
-                                ${u.playerAlias ? ` · ${_eH(u.playerAlias)}` : ''}
-                            </div>
-                        </div>
-                        <div style="display:flex;gap:0.4rem;flex-shrink:0;">
-                            <button onclick="indConfirmAccess('${escId}','${escEmail}')"
-                                class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
-                                ✅ Confirmar acceso</button>
-                            <button onclick="indRejectRequest('${escId}','${escEmail}')"
-                                class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
-                                ✕ Rechazar</button>
-                        </div>
-                    </div>
-                </div>`;
-            }).join('')}
-        </div>`;
-    }
-
-    body.innerHTML = html;
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// indRenderRequestForm() — Solicitar nuevo padre al SuperAdmin
-// ═══════════════════════════════════════════════════════════════════
-
-window.indRenderRequestForm = function indRenderRequestForm() {
-    const body = document.getElementById('ind-body');
-    if (!body) return;
-
+    // ── Section: Solicitar nuevo usuario ──────────────────────────
     const catOptions = IND_CATEGORIES.flatMap(cat =>
-        IND_SUB_CATS.map(sub => {
-            const val = _indSlotKey(cat.id, sub);
-            return `<option value="${val}">${cat.label} ${sub}</option>`;
-        })
+        IND_SUB_CATS.map(sub => `<option value="${_indSlotKey(cat.id, sub)}">${cat.label} ${sub}</option>`)
     ).join('');
 
-    body.innerHTML = `
-    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(88,166,255,0.25);border-radius:10px;padding:1rem;">
+    const requestFormHTML = `
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(88,166,255,0.25);border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
         <div style="font-weight:700;color:#58a6ff;margin-bottom:0.4rem;font-size:0.9rem;">
             📩 Solicitar nuevo usuario al SuperAdmin</div>
         <div style="font-size:0.75rem;color:#8b949e;margin-bottom:0.8rem;
                     padding:0.5rem 0.7rem;background:rgba(88,166,255,0.05);
                     border:1px solid rgba(88,166,255,0.15);border-radius:8px;line-height:1.5;">
-            <strong style="color:#58a6ff;">Flujo correcto:</strong>
-            1️⃣ Tú solicitas aquí → 2️⃣ SuperAdmin aprueba → 3️⃣ El usuario se registra → 4️⃣ Tú le das acceso
+            <strong style="color:#58a6ff;">Flujo de solicitud:</strong>
+            1️⃣ Tú solicitas aquí → 2️⃣ SuperAdmin aprueba → 3️⃣ El usuario se registra → 4️⃣ Queda activo automáticamente
         </div>
-
         <div class="sa-g4" style="margin-bottom:0.6rem;">
             <div><label class="sa-label">Email del padre / tutor *</label>
                 <input class="sa-input" id="ind-req-email" type="email" placeholder="padre@email.com"></div>
@@ -586,9 +579,7 @@ window.indRenderRequestForm = function indRenderRequestForm() {
         </div>
         <div class="sa-g4" style="margin-bottom:0.6rem;">
             <div><label class="sa-label">Categoría *</label>
-                <select class="sa-input" id="ind-req-category">
-                    ${catOptions}
-                </select></div>
+                <select class="sa-input" id="ind-req-category">${catOptions}</select></div>
             <div><label class="sa-label">Nº Dorsal del jugador *</label>
                 <input class="sa-input" id="ind-req-dorsal" type="number" placeholder="ej: 7" min="1" max="99"></div>
         </div>
@@ -598,148 +589,209 @@ window.indRenderRequestForm = function indRenderRequestForm() {
             <div><label class="sa-label">WhatsApp del padre (sin +)</label>
                 <input class="sa-input" id="ind-req-wa" type="tel" placeholder="ej: 34612345678"></div>
         </div>
-
         <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.8rem;">
             <button onclick="indSolicitarPadre()" class="sa-btn"
-                style="color:#58a6ff;border-color:rgba(88,166,255,0.4);
-                       background:rgba(88,166,255,0.1);font-weight:700;padding:0.45rem 1.2rem;">
+                style="color:#58a6ff;border-color:rgba(88,166,255,0.4);background:rgba(88,166,255,0.1);font-weight:700;padding:0.45rem 1.2rem;">
                 📩 Enviar solicitud</button>
         </div>
         <div id="ind-req-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1.2rem;color:#3fb950;"></div>
     </div>`;
-};
 
-// ═══════════════════════════════════════════════════════════════════
-// indRenderMembers() — Miembros grouped by category accordion
-// ═══════════════════════════════════════════════════════════════════
+    // ── Info box ──────────────────────────────────────────────────
+    const infoHTML = `
+    <div style="background:rgba(121,192,255,0.05);border:1px solid rgba(121,192,255,0.15);border-radius:8px;padding:0.7rem;font-size:0.75rem;color:#8b949e;line-height:1.5;margin-bottom:1rem;">
+        ℹ️ <strong style="color:#79c0ff;">Flujo de registro del Ente Individual:</strong><br>
+        1️⃣ El <strong>Administrador Individual</strong> se registra → solicitud va <strong>directamente al SuperAdmin</strong> → SA confirma → queda registrado.<br>
+        2️⃣ El <strong>Entrenador/Padre</strong> se registra eligiendo tu entidad individual del desplegable → su solicitud aparece aquí en <strong>📨 Solicitudes</strong>.<br>
+        3️⃣ Tú reenvías la solicitud al <strong>SuperAdmin</strong> → SA aprueba → el usuario queda <strong>registrado y activo</strong>.<br>
+        4️⃣ Los iconos de rol solo aparecen <strong>después de estar registrados y confirmados</strong>.
+    </div>`;
 
-window.indRenderMembers = function indRenderMembers() {
-    const body = document.getElementById('ind-body');
-    if (!body || !window._indData) return;
-
-    const { parents } = window._indData;
-    const _eH = _indEsc;
-    const _eA = (s) => _indEscA(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-    const membersHTML = IND_CATEGORIES.map(cat => {
-        const catParents = parents.filter(u => {
-            if (u.status === 'removed' || u.status === 'rejected') return false;
-            const uCat = u.category || '';
-            return uCat.startsWith(cat.id + '_');
-        });
-        const totalActive = catParents.filter(u => u.status === 'active' && u.isAuthorized !== false).length;
-        const sectionId = `ind-members-${cat.id}`;
-
-        const rows = catParents.map(u => {
-            const isBlocked = u.status === 'blocked';
-            const isActive = u.isAuthorized && !isBlocked && u.status === 'active';
-
-            const statusBadge =
-                isBlocked ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">🔒 Bloqueado</span>'
-              : isActive  ? '<span class="sa-badge" style="margin-left:0.4rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
-              : '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
-
-            const subLabel = u.category ? u.category.slice(-1).toUpperCase() : '?';
-            const catLabel = u.categoryLabel || `${cat.label} ${subLabel}`;
-
-            const euid = _eA(u._id);
-            const email = _eA(u.email || u._id);
-
-            return `
-            <div class="sa-urow">
-                <div style="flex:1;min-width:0;">
-                    <span style="font-size:0.83rem;font-weight:600;">${_eH(u.email || u._id)}</span>
-                    ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${_eH(u.displayName)}</span>` : ''}
-                    ${statusBadge}
-                    <div style="font-size:0.68rem;color:#8b949e;margin-top:1px;">
-                        ${_eH(catLabel)}
-                        ${u.playerNumber ? ` · Dorsal #${_eH(String(u.playerNumber))}` : ''}
-                        ${u.playerAlias ? ` · ${_eH(u.playerAlias)}` : ''}
-                    </div>
-                </div>
-                <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;">
-                    ${isActive ? `<button class="sa-btn"
-                        onclick="indSetParentStatus('${euid}','${email}','blocked')"
-                        style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);">
-                        🔒 Bloquear</button>` : ''}
-                    ${!isActive ? `<button class="sa-btn"
-                        onclick="indSetParentStatus('${euid}','${email}','active')"
-                        style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);">
-                        ✅ Activar</button>` : ''}
-                    <button class="sa-btn"
-                        onclick="indDeleteParent('${euid}','${email}')"
-                        style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">
-                        🗑️ Dar de baja</button>
-                </div>
-            </div>`;
-        }).join('');
-
-        return `
-        <div class="sa-card" id="${sectionId}" style="margin-bottom:0.6rem;border-color:rgba(121,192,255,0.2);">
-            <div class="sa-card-head" onclick="document.getElementById('${sectionId}').classList.toggle('expanded')">
-                <div class="sa-card-title">
-                    <span class="sa-chevron">▼</span>
-                    <span style="color:#79c0ff;">👨‍👩‍👧 ${cat.label}</span>
-                    <span class="sa-badge" style="background:rgba(121,192,255,0.12);color:#79c0ff;">${totalActive}</span>
-                </div>
-            </div>
-            <div class="sa-card-body">
-                ${catParents.length
-                    ? rows
-                    : `<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin padres registrados en ${cat.label}.</p>`
-                }
-            </div>
-        </div>`;
-    }).join('');
-
-    const totalParents = parents.filter(u => u.status !== 'removed' && u.status !== 'rejected').length;
-
-    body.innerHTML = `
-    <div style="margin-bottom:0.8rem;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:0.85rem;font-weight:700;color:white;display:flex;align-items:center;gap:0.5rem;">
-            👥 Miembros registrados
-            <span class="sa-badge" style="background:rgba(121,192,255,0.12);color:#79c0ff;">${totalParents}</span>
+    // ── Assemble full modal ───────────────────────────────────────
+    setupModal.innerHTML = SA_CSS + `
+    <div class="modal-content sa-modal">
+      <div class="sa-topbar">
+        <div>
+          <div style="font-size:1.15rem;font-weight:700;">👤 ${_eH(displayName)}</div>
+          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador Individual</div>
         </div>
-        <button class="sa-btn" onclick="openIndividualAdminPanel()" style="font-size:0.72rem;color:#79c0ff;border-color:rgba(121,192,255,0.3);background:rgba(121,192,255,0.07);">
-            🔄 Actualizar</button>
-    </div>
-    ${membersHTML}`;
+        <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+          <button onclick="(function(){ const m=document.getElementById('setup-modal'); if(m) m.style.display='none'; if(typeof openSetupModal==='function') openSetupModal(); })()"
+              style="padding:0.45rem 1rem;background:rgba(63,185,80,0.15);
+                     border:1px solid rgba(63,185,80,0.5);border-radius:10px;
+                     color:#3fb950;font-size:0.85rem;font-weight:700;cursor:pointer;">
+              ⚽ Crear Partido</button>
+          <button onclick="indNotifySuperAdmin()"
+              style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
+                     border:1px solid rgba(88,166,255,0.4);border-radius:10px;
+                     color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
+              📡 Transmitir al SuperAdmin</button>
+          <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+              style="padding:0.45rem 1rem;background:rgba(255,215,0,0.1);
+                     border:1px solid rgba(255,215,0,0.3);border-radius:10px;
+                     color:#ffd700;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              ⇄ Cambiar Rol</button>
+          <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
+              style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
+                     border:1px solid rgba(255,88,88,0.4);border-radius:10px;
+                     color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              🚪 SALIR</button>
+        </div>
+      </div>
+
+      <div class="sa-body">
+        ${statsHTML}
+        ${saForwardHTML}
+        ${pendingRegHTML}
+        ${unifiedUserTable}
+        ${requestFormHTML}
+        ${infoHTML}
+      </div>
+    </div>`;
+
+    // ── Store data globally for action functions ──────────────────
+    window._indData = {
+        uid, userData, parents,
+        pendingAutoReg, pendingSAForward, displayName, me
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
+// HELPERS DE MÓDULO — accesibles desde todas las funciones
+// ════════════════════════════════════════════════════════════════════
+
+function _matchCat(u, catId, subCat) {
+    if (!u.category && !u.categoryLabel) return false;
+    const catFilter = catId + '_' + subCat.toLowerCase();
+    if (u.category === catId && (u.subCategory||'').toUpperCase() === subCat.toUpperCase()) return true;
+    if (u.category === catFilter) return true;
+    const lbl = (u.categoryLabel || '').toLowerCase();
+    if (lbl.includes(catId) && lbl.includes(subCat.toLowerCase())) return true;
+    if ((u.allRoles||[]).some(r =>
+        (r.category === catId && (r.subCategory||'').toUpperCase() === subCat.toUpperCase()) ||
+        r.category === catFilter ||
+        ((r.categoryLabel||'').toLowerCase().includes(catId) && (r.categoryLabel||'').toLowerCase().includes(subCat.toLowerCase()))
+    )) return true;
+    return false;
+}
+
+function _isActiveParent(u) {
+    const isParent = u.role === 'parent' || u.role === 'parent_individual'
+        || (u.allRoles||[]).some(r => r.role === 'parent' || r.role === 'parent_individual');
+    const isCoach  = u.role === 'user' || u.role === 'entrenador_individual'
+        || (u.allRoles||[]).some(r => r.role === 'user' || r.role === 'entrenador_individual');
+    return (isParent || isCoach) &&
+        u.isAuthorized !== false &&
+        u.status !== 'removed' && u.status !== 'rejected';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// indNotifySuperAdmin() — Notificar al SuperAdmin
+// ═══════════════════════════════════════════════════════════════════
+
+window.indNotifySuperAdmin = async function indNotifySuperAdmin() {
+    const d = window._indData;
+    if (!d) return;
+    const { me, displayName, userData } = d;
+    const _entityId = userData?.individualEntityId || me.uid;
+    if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando notificación…');
+    try {
+        const { db, doc, setDoc } = await saFS();
+        await setDoc(doc(db, 'platform_requests', `ind_notify_${_entityId}_${Date.now()}`), {
+            type: 'individual_notification',
+            individualOwnerId: _entityId,
+            individualEmail: me.email,
+            individualName: displayName || me.email,
+            message: `El administrador individual ${displayName || me.email} solicita atención del SuperAdmin.`,
+            status: 'unread',
+            createdAt: new Date().toISOString(),
+        });
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        if (typeof _saToast === 'function') _saToast('✅ Notificación enviada al SuperAdmin', 4000);
+    } catch (e) {
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════
 // indForwardToSA() — Forward pending registration to SuperAdmin
 // ═══════════════════════════════════════════════════════════════════
 
-window.indForwardToSA = async function indForwardToSA(uid, role, email, category) {
+window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email, categoryLabel) {
     const d = window._indData;
     if (!d) return;
-    const { uid: indUid, userData, me } = d;
-    const displayName = userData.displayName || me.email;
+    const { me } = d;
 
-    if (!confirm(`¿Enviar solicitud de plaza al SuperAdmin para ${email}?\n\nRol: ${role}\n\nEl SuperAdmin deberá aprobarla antes de que el usuario pueda acceder.`)) return;
-    if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando solicitud al SuperAdmin…');
+    const isIndSub = role === 'user' || role === 'parent';
+    const roleLabel = isIndSub
+        ? (role === 'user' ? 'Entrenador Individual' : 'Padre/Madre/Tutor Individual')
+        : (window.ROLE_META[role] || {}).label || role;
+    if (!confirm('¿Enviar solicitud al SuperAdmin para ' + email + '?\n\nRol: ' + roleLabel + (categoryLabel ? ' · ' + categoryLabel : '') + '\n\nEl SuperAdmin deberá aprobarla.')) return;
+    if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando al SuperAdmin…');
     try {
-        const { db, doc, setDoc } = await saFS();
-        const reqId = 'ind_slot_req_' + indUid + '_' + uid + '_' + Date.now().toString(36);
-        await setDoc(doc(db, 'platform_requests', reqId), {
-            type: 'slot_request',
-            individualOwnerId: indUid,
-            individualName: displayName,
-            clubId: indUid,
-            clubName: displayName,
-            requestedRole: role,
-            requestedRoleLabel: role === 'parent' ? 'Padre/Madre/Tutor' : role,
-            requestedCategory: category || null,
-            requestedCategoryLabel: category || null,
-            userUid: uid,
-            userEmail: email,
-            requestedBy: me.uid,
-            requestedByEmail: me.email,
-            status: 'pending_sa',
-            createdAt: new Date().toISOString(),
-        });
+        const { db, doc, updateDoc, getDoc } = await saFS();
+        // Read the existing platform_request to preserve all data
+        const prSnap = await getDoc(doc(db, 'platform_requests', prId)).catch(() => null);
+        const existingData = prSnap && prSnap.exists() ? prSnap.data() : {};
+
+        const updateData = {
+            status:          'pending_sa',
+            forwardedAt:     new Date().toISOString(),
+            forwardedBy:     me.uid,
+            forwardedByEmail: me.email,
+        };
+        // CRITICAL: Ensure requestedRole and requestedRoleLabel are correct for sub-users
+        // This prevents the SA from seeing "Administrador Individual" instead of "Entrenador/Padre"
+        if (isIndSub && existingData.requestedRole !== role) {
+            updateData.requestedRole = role;
+            updateData.requestedRoleLabel = role === 'user' ? 'Entrenador Individual' : 'Padre/Madre/Tutor Individual';
+        }
+        // Ensure the type is preserved as ind_sub_registration
+        if (isIndSub && existingData.type !== 'ind_sub_registration') {
+            updateData.type = 'ind_sub_registration';
+        }
+        // Ensure individualOwnerId is set
+        if (!existingData.individualOwnerId && d.userData?.individualEntityId) {
+            updateData.individualOwnerId = d.userData.individualEntityId;
+        }
+        // CRITICAL FIX: Also ensure clubId is set on the platform_request
+        // so the SA approval code can properly link the user to the entity
+        if (!existingData.clubId && d.userData?.individualEntityId) {
+            updateData.clubId = d.userData.individualEntityId;
+        }
+        // CRITICAL FIX: Ensure individualEntityId is set on the platform_request
+        if (!existingData.individualEntityId && d.userData?.individualEntityId) {
+            updateData.individualEntityId = d.userData.individualEntityId;
+        }
+
+        await updateDoc(doc(db, 'platform_requests', prId), updateData);
+        // CRITICAL FIX: También actualizar el estado del usuario a 'pending_sa'
+        // para que si intenta iniciar sesión, vea el mensaje correcto:
+        // "Tu solicitud fue reenviada al SuperAdmin. Espera la confirmación."
+        // en vez de "El Administrador Individual debe revisarla"
+        if (userUid) {
+            try {
+                const _userUpdateData = { status: 'pending_sa' };
+                // También asegurarse de que allRoles refleje el estado correcto
+                const _userSnap = await getDoc(doc(db, 'users', userUid)).catch(() => null);
+                if (_userSnap && _userSnap.exists()) {
+                    const _userData = _userSnap.data();
+                    const _updatedAllRoles = (_userData.allRoles || []).map(r => {
+                        if (r.role === role && r.status === 'pending_individual') {
+                            return { ...r, status: 'pending_sa' };
+                        }
+                        return r;
+                    });
+                    _userUpdateData.allRoles = _updatedAllRoles;
+                }
+                await updateDoc(doc(db, 'users', userUid), _userUpdateData);
+            } catch (userUpdateErr) {
+                console.warn('[indForwardToSA] Error actualizando estado del usuario:', userUpdateErr.message);
+            }
+        }
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (typeof _saToast === 'function') _saToast(`✅ Solicitud enviada al SuperAdmin para ${email}.`, 4000);
+        if (typeof _saToast === 'function') _saToast('✅ Solicitud enviada al SuperAdmin para ' + email, 4000);
         openIndividualAdminPanel();
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
@@ -748,55 +800,68 @@ window.indForwardToSA = async function indForwardToSA(uid, role, email, category
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// indConfirmAccess() — Confirm parent access after SA approval
-// ═══════════════════════════════════════════════════════════════════
+window.indRejectRequest = async function indRejectRequest(prId, userUid, email) {
+    if (!confirm('¿Rechazar la solicitud de ' + (email || 'este usuario') + '?')) return;
+    try {
+        const { db, doc, updateDoc, deleteDoc } = await saFS();
+        if (prId) await deleteDoc(doc(db, 'platform_requests', prId)).catch(()=>{});
+        if (userUid) {
+            await updateDoc(doc(db, 'users', userUid), { status: 'rejected', isAuthorized: false }).catch(()=>{});
+        }
+        if (typeof _saToast === 'function') _saToast('✕ Solicitud rechazada', 3000);
+        openIndividualAdminPanel();
+    } catch(e) {
+        if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
+    }
+};
+
 
 window.indConfirmAccess = async function indConfirmAccess(parentUid, email) {
     if (!confirm(`¿Confirmar acceso definitivo a ${email}?`)) return;
     if (typeof _saShowSpinner === 'function') _saShowSpinner('Confirmando acceso…');
     try {
-        const { db, doc, updateDoc } = await saFS();
+        const { db, doc, updateDoc, getDoc } = await saFS();
         const me = window._cronosCurrentUser;
-        await updateDoc(doc(db, 'users', parentUid), {
+        const targetDocRef = doc(db, 'users', parentUid);
+        const targetSnap   = await getDoc(targetDocRef);
+        let updateData = {
             isAuthorized: true,
             status: 'active',
             authorizedAt: new Date().toISOString(),
             authorizedBy: me.uid,
-        });
+        };
+
+        if (targetSnap.exists()) {
+            const data = targetSnap.data();
+            const roleInAll = (data.allRoles || []).find(r => r.role === 'parent' || r.role === 'user');
+            const cat = (roleInAll && roleInAll.category) || data.requestedCategory || data.categoryLabel;
+            const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcat || data.subCategory;
+
+            if (cat) {
+                updateData.category      = cat;
+                updateData.categoryLabel = (roleInAll && roleInAll.categoryLabel) || (typeof _indCatLabel==='function' ? _indCatLabel(cat.split('_')[0], cat.split('_')[1]||'') : cat);
+                if (sub) {
+                    updateData.subcategory = sub;
+                    updateData.subCategory = sub;
+                }
+            }
+
+            if (data.allRoles) {
+                updateData.allRoles = data.allRoles.map(r => {
+                    if (r.role === 'parent' || r.role === 'user') return { ...r, isAuthorized: true, status: 'active' };
+                    return r;
+                });
+            }
+        }
+
+        await updateDoc(targetDocRef, updateData);
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast(`✅ ${email} tiene acceso completo a la app.`, 4000);
-        // Reload panel
         openIndividualAdminPanel();
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
         console.error('[indConfirmAccess]', e);
-    }
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// indRejectRequest() — Reject a pending parent
-// ═══════════════════════════════════════════════════════════════════
-
-window.indRejectRequest = async function indRejectRequest(parentUid, email) {
-    if (!confirm(`¿Rechazar la solicitud de ${email}?`)) return;
-    if (typeof _saShowSpinner === 'function') _saShowSpinner('Rechazando…');
-    try {
-        const { db, doc, updateDoc } = await saFS();
-        await updateDoc(doc(db, 'users', parentUid), {
-            isAuthorized: false,
-            status: 'rejected',
-            rejectedAt: new Date().toISOString(),
-            rejectedBy: window._cronosCurrentUser?.uid || 'individual',
-        });
-        if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (typeof _saToast === 'function') _saToast('❌ Solicitud rechazada.', 3000);
-        openIndividualAdminPanel();
-    } catch (e) {
-        if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
-        console.error('[indRejectRequest]', e);
     }
 };
 
@@ -843,15 +908,68 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
     if (!confirm(`⚠️ ¿ELIMINAR completamente a ${email}?\n\nEsta acción es irreversible.\nEl usuario será borrado de la base de datos y su email podrá reutilizarse.`)) return;
     if (typeof _saShowSpinner === 'function') _saShowSpinner('Eliminando usuario…');
     try {
-        const { db, fa, doc, deleteDoc, httpsCallable } = await saFS();
+        const { db, fa, doc, getDoc, deleteDoc, collection, getDocs, query, where, updateDoc, httpsCallable } = await saFS();
+
+        // FIX: Read user data before deletion to check if they're an admin and get entity info
+        const userSnap = await getDoc(doc(db, 'users', parentUid)).catch(() => null);
+        const uData = userSnap && userSnap.exists() ? userSnap.data() : {};
+        const _entityId = uData.individualEntityId || uData.clubId || null;
+        const _isAdminIndiv = uData.role === 'individual' || uData.role === 'admin_individual'
+            || (uData.allRoles||[]).some(r => (r.role === 'individual' || r.role === 'admin_individual') && r.isAuthorized);
 
         // Try to delete from Firebase Auth
         if (httpsCallable && fa && fa.functions) {
-            try { await httpsCallable(fa.functions, 'deleteAuthUser')({ uid: parentUid, email }); } catch (_) {}
+            try {
+                await httpsCallable(fa.functions, 'deleteAuthUser')({ uid: parentUid, email });
+            } catch(cfErr) {
+                console.warn('[indDeleteParent] deleteAuthUser falló (no bloqueante):', cfErr.message);
+            }
         }
+
+        // Delete platform_requests for this user
+        try {
+            const prSnaps = await getDocs(query(collection(db, 'platform_requests'), where('userUid', '==', parentUid)));
+            const prArr = []; prSnaps.forEach(d => prArr.push(d));
+            for (const pr of prArr) {
+                try { await deleteDoc(doc(db, 'platform_requests', pr.id)); } catch (_) {}
+            }
+        } catch (_) {}
+        try {
+            const prSnaps2 = await getDocs(query(collection(db, 'platform_requests'), where('requestedEmail', '==', email)));
+            const prArr2 = []; prSnaps2.forEach(d => prArr2.push(d));
+            for (const pr2 of prArr2) {
+                try { await deleteDoc(doc(db, 'platform_requests', pr2.id)); } catch (_) {}
+            }
+        } catch (_) {}
 
         // Delete from Firestore completely (allows email reuse)
         await deleteDoc(doc(db, 'users', parentUid));
+
+        // FIX: If the deleted user was an individual admin, update the entity document
+        if (_isAdminIndiv && _entityId) {
+            try {
+                const entSnap = await getDoc(doc(db, 'clubs', _entityId));
+                if (entSnap.exists() && entSnap.data().type === 'individual') {
+                    // Check if there are other individual admins remaining
+                    const remainingAdmins = await getDocs(query(collection(db, 'users'),
+                        where('individualEntityId', '==', _entityId),
+                        where('role', 'in', ['individual', 'admin_individual'])
+                    )).catch(() => ({forEach:()=>{}}));
+                    let _hasOtherAdmin = false;
+                    remainingAdmins.forEach(function(d) {
+                        if (d.id !== parentUid && d.data().status !== 'removed') _hasOtherAdmin = true;
+                    });
+                    if (!_hasOtherAdmin) {
+                        await updateDoc(doc(db, 'clubs', _entityId), {
+                            hasAdmin: false,
+                            adminUid: null,
+                            adminEmail: null,
+                            adminName: null,
+                        });
+                    }
+                }
+            } catch(entErr) { console.warn('[indDeleteParent] Error limpiando entidad individual:', entErr.message); }
+        }
 
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast(`🗑️ ${email} eliminado completamente de la base de datos.`, 5000);
@@ -864,84 +982,170 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// indSolicitarPadre() — Send request to SuperAdmin for new parent
+// indEliminarUsuario() — Eliminar usuario completamente (alias)
+// ═══════════════════════════════════════════════════════════════════
+
+window.indEliminarUsuario = async function indEliminarUsuario(parentUid, email) {
+    // Misma lógica que indDeleteParent — elimina completamente
+    return indDeleteParent(parentUid, email);
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// indEditCategory() — Edit user category
+// ═══════════════════════════════════════════════════════════════════
+
+window.indEditCategory = async function indEditCategory(parentUid, email) {
+    const catOptions = IND_CATEGORIES.flatMap(cat =>
+        IND_SUB_CATS.map(sub => {
+            const val = _indSlotKey(cat.id, sub);
+            return `<option value="${val}">${cat.label} ${sub}</option>`;
+        })
+    ).join('');
+
+    const modal = document.getElementById('setup-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    modal.innerHTML = SA_CSS + `
+    <div class="modal-content sa-modal" style="max-width:480px;">
+      <div class="sa-topbar">
+        <div style="font-weight:700;font-size:1rem;">✏️ Cambiar categoría de ${_indEsc(email)}</div>
+        <button onclick="openIndividualAdminPanel()"
+            style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+      </div>
+      <div class="sa-body" style="padding:1.5rem;">
+        <div style="margin-bottom:1rem;">
+            <label class="sa-label">Nueva categoría *</label>
+            <select class="sa-input" id="ind-edit-category">${catOptions}</select>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
+            <button onclick="openIndividualAdminPanel()" class="sa-btn"
+                style="color:#8b949e;border-color:rgba(139,148,158,0.3);background:rgba(139,148,158,0.07);">Cancelar</button>
+            <button onclick="indSaveCategory('${_indEscA(parentUid).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${_indEscA(email).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"
+                class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-weight:700;">💾 Guardar</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+window.indSaveCategory = async function indSaveCategory(parentUid, email) {
+    const catVal = document.getElementById('ind-edit-category')?.value;
+    if (!catVal) return;
+    const parts = catVal.split('_');
+    const catId = parts[0];
+    const subCat = parts[1] ? parts[1].toUpperCase() : 'A';
+    const catLabel = _indCatLabel(catId, subCat);
+
+    if (typeof _saShowSpinner === 'function') _saShowSpinner('Guardando…');
+    try {
+        const { db, doc, updateDoc, getDoc } = await saFS();
+        const userSnap = await getDoc(doc(db, 'users', parentUid));
+        let updateData = {
+            category: catVal,
+            categoryLabel: catLabel,
+            subCategory: subCat,
+            subcategory: subCat,
+        };
+
+        if (userSnap.exists()) {
+            const data = userSnap.data();
+            if (data.allRoles) {
+                updateData.allRoles = data.allRoles.map(r => {
+                    if (r.role === 'parent' || r.role === 'user') {
+                        return { ...r, category: catVal, categoryLabel: catLabel, subcategory: subCat, subCategory: subCat };
+                    }
+                    return r;
+                });
+            }
+        }
+
+        await updateDoc(doc(db, 'users', parentUid), updateData);
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        if (typeof _saToast === 'function') _saToast(`✅ Categoría actualizada a ${catLabel}`, 3000);
+        openIndividualAdminPanel();
+    } catch (e) {
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
+        console.error('[indSaveCategory]', e);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// indSolicitarPadre() — Solicitar nuevo usuario al SA
 // ═══════════════════════════════════════════════════════════════════
 
 window.indSolicitarPadre = async function indSolicitarPadre() {
-    const emailEl  = document.getElementById('ind-req-email');
-    const nameEl   = document.getElementById('ind-req-name');
-    const catEl    = document.getElementById('ind-req-category');
-    const dorsalEl = document.getElementById('ind-req-dorsal');
-    const aliasEl  = document.getElementById('ind-req-alias');
-    const waEl     = document.getElementById('ind-req-wa');
-    const msgEl    = document.getElementById('ind-req-msg');
+    const email = document.getElementById('ind-req-email')?.value?.trim();
+    const name  = document.getElementById('ind-req-name')?.value?.trim();
+    const cat   = document.getElementById('ind-req-category')?.value;
+    const dorsal = document.getElementById('ind-req-dorsal')?.value?.trim();
+    const alias = document.getElementById('ind-req-alias')?.value?.trim();
+    const wa    = document.getElementById('ind-req-wa')?.value?.trim();
+    const msgEl = document.getElementById('ind-req-msg');
 
-    if (!emailEl || !msgEl) return;
+    if (!email || !cat || !dorsal) {
+        if (msgEl) { msgEl.style.color = '#ff5858'; msgEl.textContent = '⚠️ Email, categoría y dorsal son obligatorios.'; }
+        return;
+    }
 
-    const email   = emailEl.value.trim();
-    const name    = nameEl ? nameEl.value.trim() : '';
-    const category = catEl ? catEl.value : '';
-    const dorsal  = dorsalEl ? dorsalEl.value.trim() : '';
-    const alias   = aliasEl ? aliasEl.value.trim() : '';
-    const wa      = waEl ? waEl.value.trim() : '';
+    const d = window._indData;
+    if (!d) return;
+    const { me, displayName, userData } = d;
+    const _entityId = userData?.individualEntityId || me.uid;
 
-    // Validation
-    if (!email) { msgEl.style.color = '#ff5858'; msgEl.textContent = '⚠️ Email obligatorio.'; return; }
-    if (!category) { msgEl.style.color = '#ff5858'; msgEl.textContent = '⚠️ Categoría obligatoria.'; return; }
-    if (!dorsal) { msgEl.style.color = '#ff5858'; msgEl.textContent = '⚠️ Nº Dorsal del jugador obligatorio.'; return; }
-
-    // Build category label
-    const catParts = category.split('_');
-    const catId = catParts[0];
-    const subCat = catParts[1] ? catParts[1].toUpperCase() : '';
-    const catObj = IND_CATEGORIES.find(c => c.id === catId);
-    const categoryLabel = catObj ? `${catObj.label} ${subCat}` : category;
-
-    msgEl.style.color = '#58a6ff';
-    msgEl.textContent = 'Enviando solicitud al SuperAdmin…';
-
+    if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando solicitud…');
     try {
         const { db, doc, setDoc } = await saFS();
-        const me = window._cronosCurrentUser;
+        const catParts = cat.split('_');
+        const catLabel = _indCatLabel(catParts[0], catParts[1] ? catParts[1].toUpperCase() : 'A');
 
-        const reqId = 'ind_req_' + me.uid + '_' + Date.now().toString(36);
-        await setDoc(doc(db, 'platform_requests', reqId), {
-            type: 'user_request',
-            ownerType: 'individual',
-            individualOwnerId: me.uid,
-            individualOwnerEmail: me.email,
-            individualOwnerName: window._indData?.displayName || me.email,
+        await setDoc(doc(db, 'platform_requests', `ind_req_${_entityId}_${Date.now()}`), {
+            type: 'individual_user_request',
+            individualOwnerId: _entityId,
+            individualEmail: me.email,
+            individualName: displayName || me.email,
             requestedEmail: email,
             requestedName: name,
             requestedRole: 'parent',
-            requestedRoleLabel: 'Padre / Madre / Tutor',
-            category: category,
-            categoryLabel: categoryLabel,
-            playerNumber: parseInt(dorsal, 10) || null,
-            playerAlias: alias || null,
-            parentWA: wa || null,
-            requestedBy: me.uid,
-            requestedByEmail: me.email,
+            requestedCategory: cat,
+            requestedCategoryLabel: catLabel,
+            requestedSubcat: catParts[1] ? catParts[1].toUpperCase() : 'A',
+            playerNumber: parseInt(dorsal) || 0,
+            playerAlias: alias || '',
+            whatsapp: wa || '',
             status: 'pending_sa',
             createdAt: new Date().toISOString(),
         });
 
-        msgEl.style.color = '#3fb950';
-        msgEl.textContent = '✅ Solicitud enviada al SuperAdmin. Cuando la apruebe, el padre podrá registrarse y tú deberás confirmar su acceso.';
-        // Clear form
-        emailEl.value = '';
-        if (nameEl) nameEl.value = '';
-        if (dorsalEl) dorsalEl.value = '';
-        if (aliasEl) aliasEl.value = '';
-        if (waEl) waEl.value = '';
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        if (msgEl) { msgEl.style.color = '#3fb950'; msgEl.textContent = '✅ Solicitud enviada al SuperAdmin para ' + email; }
+        // Limpiar formulario
+        const em = document.getElementById('ind-req-email'); if (em) em.value = '';
+        const nm = document.getElementById('ind-req-name'); if (nm) nm.value = '';
+        const dr = document.getElementById('ind-req-dorsal'); if (dr) dr.value = '';
+        const al = document.getElementById('ind-req-alias'); if (al) al.value = '';
+        const wh = document.getElementById('ind-req-wa'); if (wh) wh.value = '';
+        if (typeof _saToast === 'function') _saToast('✅ Solicitud enviada al SuperAdmin', 3000);
     } catch (e) {
-        msgEl.style.color = '#ff5858';
-        msgEl.textContent = '❌ Error: ' + e.message;
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        if (msgEl) { msgEl.style.color = '#ff5858'; msgEl.textContent = '❌ ' + e.message; }
         console.error('[indSolicitarPadre]', e);
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// EXPORT
+// NOTA: indAddOwnCoachRole e indAddOwnParentRole han sido ELIMINADOS.
+// Los roles de entrenador y padre dentro del ente individual SOLO se
+// obtienen a través del flujo de registro correcto:
+//   Entrenador/Padre se registra → Admin Individual reenvía → SA confirma
+// No se pueden auto-activar roles; deben venir del SuperAdmin.
 // ═══════════════════════════════════════════════════════════════════
-window.openIndividualAdminPanel = openIndividualAdminPanel;
+
+// ═══════════════════════════════════════════════════════════════════
+// Compatibilidad: funciones antiguas de tabs (no-ops para evitar errores)
+// ═══════════════════════════════════════════════════════════════════
+
+window.indTab = function indTab() { /* v3: sin tabs */ };
+window.indRenderOverview = function indRenderOverview() { openIndividualAdminPanel(); };
+window.indRenderPending = function indRenderPending() { openIndividualAdminPanel(); };
+window.indRenderRequestForm = function indRenderRequestForm() { openIndividualAdminPanel(); };
+window.indRenderMembers = function indRenderMembers() { openIndividualAdminPanel(); };

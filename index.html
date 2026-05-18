@@ -11,6 +11,7 @@
     <link rel="manifest" href="manifest.json?v=7.0">
     <meta name="theme-color" content="#0a0e14">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,6 +38,8 @@
             from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
             from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFunctions }
+            from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
         // ╔══════════════════════════════════════════╗
         // ║  PEGA AQUÍ TU firebaseConfig             ║
@@ -54,6 +57,7 @@
         const app  = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db   = getFirestore(app);
+        const functions = getFunctions(app);
 
         // Definimos primero la funcion con hoisting natural
         async function checkAuthorization(user) {
@@ -91,7 +95,7 @@
 
         // Exponer al scope global para los scripts clásicos
         window._cronos_auth = {
-            auth, db, signOut,
+            auth, db, functions, signOut,
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
             doc, getDoc, setDoc, serverTimestamp, checkAuthorization
         };
@@ -299,18 +303,43 @@
                     style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
                            border:1px solid rgba(255,255,255,0.15); border-radius:8px;
                            color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <option value="user">⚽ Entrenador (pertenezco a un club)</option>
-                    <option value="individual">👤 Entrenador Individual (sin club)</option>
+                    <option value="user">⚽ Entrenador</option>
                     <option value="parent">👨‍👩‍👧 Padre / Madre / Tutor</option>
                     <option value="director">📋 Director Deportivo</option>
                     <option value="coordinator">🎯 Coordinador</option>
                     <option value="club_admin">🏟️ Administrador de Club (Nuevo Club)</option>
+                    <option value="individual">👤 Administrador Individual (sin club)</option>
                 </select>
             </div>
 
-            <!-- Selector de Club (Solo registro para roles que no son admin) -->
+            <!-- Selector de Tipo de Entidad (Club o Individual) — Solo para Entrenador y Padre -->
+            <div id="entity-type-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#d2a8ff; display:block; margin-bottom:5px;">¿Para Club o Usuario Individual?</label>
+                <select id="auth-entity-type" onchange="handleEntityChange()"
+                    style="width:100%; padding:0.75rem; background:rgba(210,168,255,0.06);
+                           border:1px solid rgba(210,168,255,0.25); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                    <option value="club">🏟️ Pertenezco a un Club</option>
+                    <option value="individual">👤 Usuario Individual (sin club)</option>
+                </select>
+            </div>
+
+            <!-- Email del Administrador Individual (Solo si elige «Usuario Individual») -->
+            <div id="individual-owner-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#d2a8ff; display:block; margin-bottom:5px;">📧 Email del Usuario Individual</label>
+                <input type="email" id="individual-owner-email" placeholder="Ej: maria@email.com"
+                    style="width:100%; padding:0.75rem; background:rgba(210,168,255,0.05);
+                           border:1px solid rgba(210,168,255,0.25); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                <div style="font-size:0.72rem; color:rgba(255,255,255,0.45); margin-top:4px;">
+                    Opcional si seleccionaste un usuario del desplegable superior. Introduce el email si no aparece en la lista.
+                </div>
+            </div>
+
+            <!-- Selector de Club / Entidad Individual (Solo registro para roles que no son admin) -->
             <div id="club-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Selecciona tu Club</label>
+                <label id="auth-club-label" style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">🏟️ Selecciona tu Club</label>
+                <div style="font-size:0.72rem; color:rgba(255,255,255,0.4); margin-bottom:4px;" id="auth-club-hint"></div>
                 <select id="auth-club-select"
                     style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
                            border:1px solid rgba(255,255,255,0.15); border-radius:8px;
@@ -342,29 +371,23 @@
                 </div>
             </div>
 
-            <!-- Nombre y Apellidos (Para todos los roles excepto Admin de Club) -->
+            <!-- Nombre (solo nombre, sin apellidos — protección de datos) -->
             <div id="individual-name-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#79c0ff; display:block; margin-bottom:5px;">👤 Nombre y Apellidos</label>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
-                    <input type="text" id="auth-firstname" placeholder="Nombre"
-                        style="padding:0.75rem; background:rgba(121,192,255,0.05);
-                               border:1px solid rgba(121,192,255,0.25); border-radius:8px;
-                               color:white; font-size:0.9rem; box-sizing:border-box; outline:none;">
-                    <input type="text" id="auth-lastname" placeholder="Apellidos"
-                        style="padding:0.75rem; background:rgba(121,192,255,0.05);
-                               border:1px solid rgba(121,192,255,0.25); border-radius:8px;
-                               color:white; font-size:0.9rem; box-sizing:border-box; outline:none;">
-                </div>
+                <label id="individual-name-label" style="font-size:0.78rem; color:#79c0ff; display:block; margin-bottom:5px;">👤 Nombre</label>
+                <input type="text" id="auth-firstname" placeholder="Tu nombre"
+                    style="width:100%; padding:0.75rem; background:rgba(121,192,255,0.05);
+                           border:1px solid rgba(121,192,255,0.25); border-radius:8px;
+                           color:white; font-size:0.9rem; box-sizing:border-box; outline:none;">
+                <div id="individual-name-hint" style="display:none;font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:4px;"></div>
             </div>
 
-            <!-- Selector de Categoría + Equipo (Para Entrenador de club y Padre) -->
+            <!-- Selector de Categoría + Subcategoría (Para Entrenador de club y Padre) -->
             <div id="category-container" style="display:none; margin-bottom:1rem;">
-                <!-- Se rellena dinámicamente desde auth.js (loadCategorySelectors) -->
-                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">⚽ Categoría y Equipo</label>
+                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">⚽ Categoría</label>
                 <select id="auth-category"
                     style="width:100%; padding:0.75rem; background:rgba(63,185,80,0.05);
                            border:1px solid rgba(63,185,80,0.25); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none; margin-bottom:0.6rem;">
                     <option value="">-- Selecciona categoría --</option>
                     <option value="prebenjamin">🟢 Prebenjamín</option>
                     <option value="benjamin">🔵 Benjamín</option>
@@ -373,6 +396,16 @@
                     <option value="cadete">🔴 Cadete</option>
                     <option value="juvenil">🟣 Juvenil</option>
                     <option value="regional">⚪ Regional</option>
+                </select>
+                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">📋 Subcategoría / Grupo</label>
+                <select id="auth-subcat"
+                    style="width:100%; padding:0.75rem; background:rgba(63,185,80,0.05);
+                           border:1px solid rgba(63,185,80,0.25); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                    <option value="">-- Selecciona grupo --</option>
+                    <option value="A">Grupo A</option>
+                    <option value="B">Grupo B</option>
+                    <option value="C">Grupo C</option>
                 </select>
             </div>
 
@@ -462,12 +495,28 @@
                 <div class="role-card-badge" style="background:#d2a8ff;color:white;">FAMILIA</div>
             </div>
 
-            <!-- Opción Usuario Individual -->
+            <!-- Opción Administrador Individual -->
             <div id="card-opt-individual" class="role-card" onclick="selectOption('individual')" style="display:none;">
                 <div class="role-card-icon">👤</div>
-                <h3>Entrenador Individual</h3>
+                <h3>Administrador Individual</h3>
                 <p>Gestiona tu propio equipo de forma independiente, sin pertenecer a un club.</p>
                 <div class="role-card-badge" style="background:#79c0ff;color:#0d1117;">INDIVIDUAL</div>
+            </div>
+
+            <!-- Opción Entrenador Individual -->
+            <div id="card-opt-coach-individual" class="role-card" onclick="selectOption('coach_individual')" style="display:none;">
+                <div class="role-card-icon">⚽</div>
+                <h3>Entrenador Individual</h3>
+                <p>Gestiona partidos, convocatorias e informes como entrenador independiente.</p>
+                <div class="role-card-badge" style="background:#3fb950;color:white;">INDIVIDUAL</div>
+            </div>
+
+            <!-- Opción Padre/Madre/Tutor Individual -->
+            <div id="card-opt-parent-individual" class="role-card" onclick="selectOption('parent_individual')" style="display:none;">
+                <div class="role-card-icon">👨‍👩‍👧</div>
+                <h3>Padre / Madre / Tutor Individual</h3>
+                <p>Sigue a tu hijo y recibe convocatorias como parte de un ente individual.</p>
+                <div class="role-card-badge" style="background:#d2a8ff;color:white;">INDIVIDUAL</div>
             </div>
 
         </div>
@@ -706,33 +755,38 @@
 
     <!-- ══ PANEL DE ADMINISTRACIÓN ══════════════════════════════════════ -->
 
-    <script src="app.js"></script>
-    <script type="module" src="auth.js"></script>
+    <script src="app.js?v=67"></script>
+    <script src="js/00_setup_modal.js?v=70"></script>
+    <script src="js/cronos_patches.js?v=66"></script>
+    <script type="module" src="auth.js?v=66"></script>
+    <!-- Fase 0: Pseudonymizer para protección de datos de menores -->
+    <script src="js/14_pseudonymizer.js?v=67"></script>
     <!-- User Management v8.0 -->
-    <script src="js/01_security_state.js"></script>
-    <script src="js/02_player_actions.js"></script>
-    <script src="js/03_core_utils.js"></script>
-    <script src="js/04_tutorial_demo.js"></script>
-    <script src="js/05_firestore_sync.js"></script>
-    <script src="js/06_firestore_storage.js"></script>
-    <script src="js/07_staff.js"></script>
-    <script src="js/08_ai_import.js"></script>
-    <script src="js/09_preselection.js"></script>
-    <script src="js/10_bench_scroll.js"></script>
-    <script src="js/11_persistence.js"></script>
-    <script src="js/12_render.js"></script>
-    <script src="js/13_legacy_formations.js"></script>
-    <script src="js/14_drag_drop.js"></script>
-    <script src="js/15_csv_download.js"></script>
-    <script src="js/16_superadmin.js"></script>
-    <script src="js/17_club_admin.js"></script>
-    <script src="js/18_payments.js"></script>
-    <script src="js/19_whatsapp_email.js"></script>
-    <script src="js/20_parent_panel.js"></script>
-    <script src="js/21_coach_comms.js"></script>
-    <script src="js/22_club_reports.js"></script>
-    <script src="js/23_staff_dashboard.js"></script>
-    <script src="js/24_individual_admin.js"></script>
+    <script src="js/01_security_state.js?v=66"></script>
+    <script src="js/02_player_actions.js?v=66"></script>
+    <script src="js/03_core_utils.js?v=66"></script>
+    <script src="js/04_tutorial_demo.js?v=66"></script>
+    <script src="js/05_firestore_sync.js?v=67"></script>
+    <script src="js/06_firestore_storage.js?v=66"></script>
+    <script src="js/07_staff.js?v=66"></script>
+    <script src="js/08_ai_import.js?v=66"></script>
+    <script src="js/09_preselection.js?v=66"></script>
+    <script src="js/10_bench_scroll.js?v=66"></script>
+    <script src="js/11_persistence.js?v=67"></script>
+    <script src="js/12_render.js?v=66"></script>
+    <script src="js/13_legacy_formations.js?v=66"></script>
+    <script src="js/14_drag_drop.js?v=66"></script>
+    <script src="js/15_csv_download.js?v=66"></script>
+    <script src="js/16_superadmin.js?v=66"></script>
+    <script src="js/25_sa_extras.js?v=66"></script>
+    <script src="js/26_sa_billing.js?v=66"></script>
+    <script src="js/17_club_admin.js?v=66"></script>
+    <script src="js/18_payments.js?v=66"></script>
+    <script src="js/19_whatsapp_email.js?v=66"></script>
+    <script src="js/20_parent_panel.js?v=66"></script>
+    <script src="js/21_coach_comms.js?v=66"></script>
+    <script src="js/22_club_reports.js?v=66"></script>
+    <script src="js/24_individual_admin.js?v=66"></script>
 
     <!-- Informe imprimible -->
     <div id="print-report" style="display:none;">
@@ -769,6 +823,8 @@
     // ══════════════════════════════════════════════════════
     //  ONBOARDING — 9 PASOS
     // ══════════════════════════════════════════════════════
+    const VERSION    = 'v62';
+    const CACHE_NAME = 'cronos-cache-v22.0';
     let deferredInstallPrompt = null;
     let obCurrentStep = 0;
 
@@ -1050,14 +1106,38 @@
             window.matchMedia('(display-mode: standalone)').matches ||
             window.matchMedia('(display-mode: fullscreen)').matches;
 
+        const isInviteLink = window.location.search.includes('invite=');
+
         // Si ya está instalada o ya pasó el onboarding (30 días), ir directo al login
         const lastShown   = parseInt(localStorage.getItem('cronos_install_shown') || '0');
         const thirtyDays  = 30 * 24 * 60 * 60 * 1000;
         const alreadySeen = Date.now() - lastShown < thirtyDays;
 
-        if (isStandalone || alreadySeen) {
+        if (isStandalone || alreadySeen || isInviteLink) {
             document.getElementById('install-screen').style.display = 'none';
             document.getElementById('auth-screen').style.display    = 'flex';
+            if (isInviteLink) {
+                document.body.classList.add('immersive-mode');
+                // Intentar forzar pantalla completa en la primera interacción
+                document.body.addEventListener('click', function _fullscreen() {
+                    if (document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(()=>{});
+                    }
+                    document.body.removeEventListener('click', _fullscreen);
+                }, { once: true });
+                
+                const params = new URLSearchParams(window.location.search);
+                const emailParam = params.get('email');
+                if (emailParam) {
+                    setTimeout(() => {
+                        const authEmail = document.getElementById('auth-email');
+                        if (authEmail) authEmail.value = emailParam;
+                        const loginForm = document.getElementById('auth-form');
+                        // Se podría cambiar al modo de registro automáticamente si lo desean,
+                        // pero con pre-rellenar el email ayudamos a la UX.
+                    }, 100);
+                }
+            }
             return;
         }
 

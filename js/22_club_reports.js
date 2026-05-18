@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v2.0
-//  FIXED: Tab Informes lee cronos_player_reports en tiempo real
-//  ADDED: Modo Prueba multi-rol para SuperAdmin
+//  CRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v3.0
+//  ADDED: Motor de Informes Visual — Gantt + Panel de Rotaciones +
+//         Cabecera completa con logo, marcador, fecha, venue, tiempo
 // ════════════════════════════════════════════════════════════════════
 
 // ── Helper Firestore ─────────────────────────────────────────────────
@@ -12,9 +12,8 @@ async function _sdFS() {
 
 // ════════════════════════════════════════════════════════════════════
 //  MODO PRUEBA MULTI-ROL — Solo SuperAdmin
-//  Permite al SA actuar temporalmente con el clubId de cualquier club
 // ════════════════════════════════════════════════════════════════════
-window._testRoleClubId = null; // club seleccionado en modo prueba
+window._testRoleClubId = null;
 
 async function openTestRolePicker(targetRole) {
     const me = window._cronosCurrentUser;
@@ -49,9 +48,9 @@ async function openTestRolePicker(targetRole) {
                            color:white;font-size:0.88rem;cursor:pointer;transition:all 0.2s;"
                     onmouseover="this.style.background='rgba(88,166,255,0.1)';this.style.borderColor='rgba(88,166,255,0.3)';"
                     onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.borderColor='rgba(255,255,255,0.1)';">
-                    🏟️ <strong>${typeof escapeHtml==='function'?escapeHtml(c.name||c.id):c.name||c.id}</strong>
+                    🏟️ <strong>${escapeHtml(c.name||c.id)}</strong>
                     <span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:2px;">
-                        ${typeof escapeHtml==='function'?escapeHtml(c.adminEmail||'Sin admin'):c.adminEmail||'Sin admin'} · Plan: ${typeof escapeHtml==='function'?escapeHtml(c.plan||'free'):c.plan||'free'}
+                        ${escapeHtml(c.adminEmail||'Sin admin')} · Plan: ${escapeHtml(c.plan||'free')}
                     </span>
                 </button>`).join('')
             }
@@ -60,7 +59,6 @@ async function openTestRolePicker(targetRole) {
 
     window._applyTestRole = (clubId, clubName, role) => {
         window._testRoleClubId = clubId;
-        // Inyectar temporalmente el clubId en el usuario activo
         window._cronosCurrentUser.clubId   = clubId;
         window._cronosCurrentUser.clubName = clubName;
         window._cronosCurrentUser._activeRole = role === 'director' ? 'director' : 'coordinator';
@@ -89,7 +87,6 @@ async function openStaffDashboard() {
     const activeRole = me?._activeRole || me?.role;
     const isSA       = ['superadmin','admin'].includes(me?.role);
 
-    // Si el SA no tiene clubId, lanzar selector de prueba
     if (isSA && !me?.clubId) {
         await openTestRolePicker('director');
         return;
@@ -106,14 +103,13 @@ async function openStaffDashboard() {
     <div class="modal-content" style="width:min(96vw,960px);max-height:94vh;
          display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;">
 
-        <!-- Header -->
         <div style="display:flex;justify-content:space-between;align-items:center;
                     padding:1.2rem 1.5rem;background:linear-gradient(to right,#161b22,#0d1117);
                     border-bottom:1px solid var(--glass-border);flex-shrink:0;">
             <div>
                 <h2 style="margin:0;font-size:1.15rem;display:flex;align-items:center;gap:0.7rem;">
                     🏢 Panel de Dirección:
-                    <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||'Mi Club'):me.clubName||'Mi Club'}</span>
+                    <span style="color:var(--primary);">${escapeHtml(me.clubName||'Mi Club')}</span>
                     ${isSA ? `<span style="font-size:0.65rem;background:rgba(255,215,0,0.12);
                         border:1px solid rgba(255,215,0,0.3);color:#ffd700;
                         padding:2px 7px;border-radius:5px;font-weight:700;">🧪 PRUEBA</span>` : ''}
@@ -123,32 +119,31 @@ async function openStaffDashboard() {
                     ${isSA ? ' · SuperAdmin en modo prueba' : ''}
                 </div>
             </div>
-            <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;">
+            <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
                 ${isSA ? `
                 <button onclick="openTestRolePicker('director')"
-                    style="padding:0.4rem 0.8rem;background:rgba(255,215,0,0.08);
-                           border:1px solid rgba(255,215,0,0.3);border-radius:8px;
+                    style="padding:0.35rem 0.8rem;background:rgba(255,215,0,0.08);
+                           border:1px solid rgba(255,215,0,0.3);border-radius:6px;
                            color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
                     🔄 Cambiar Club</button>` : ''}
                 <button onclick="openStaffDashboard()"
                     style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
-                           color:var(--text-muted);padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    🔄</button>
+                           color:var(--text-muted);padding:0.35rem 0.7rem;border-radius:6px;
+                           cursor:pointer;font-size:0.74rem;font-weight:600;" title="Recargar panel">
+                    🔄 Recargar</button>
                 <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
                     style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
-                           color:#ffd700;padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    ⇄ Rol</button>
+                           color:#ffd700;padding:0.35rem 0.8rem;border-radius:6px;
+                           cursor:pointer;font-size:0.74rem;font-weight:700;">
+                    ⇄ Cambiar rol</button>
                 <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
                     style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
-                           color:#ff5858;padding:0.32rem 0.6rem;border-radius:6px;
-                           cursor:pointer;font-size:0.72rem;font-weight:600;">
-                    🚪</button>
+                           color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;
+                           cursor:pointer;font-size:0.74rem;font-weight:700;">
+                    ⏻ Salir</button>
             </div>
         </div>
 
-        <!-- Tabs -->
         <div style="display:flex;gap:0.2rem;padding:0.5rem 1.5rem;background:#161b22;
                     border-bottom:1px solid var(--glass-border);flex-shrink:0;overflow-x:auto;">
             <button onclick="switchStaffTab('convocatorias')" class="staff-tab active" id="tab-convocatorias">📋 Convoc.</button>
@@ -160,7 +155,6 @@ async function openStaffDashboard() {
                 🔴 En Vivo</button>
         </div>
 
-        <!-- Contenido -->
         <div id="staff-dashboard-content"
              style="flex:1;overflow-y:auto;padding:1.5rem;background:#0d1117;">
             <div style="text-align:center;padding:4rem;color:var(--text-muted);">
@@ -251,10 +245,10 @@ async function _sdLoadEvents(type) {
                         <span style="font-size:0.73rem;color:var(--text-muted);">${date}</span>
                     </div>
                     <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.15rem;">
-                        ${type==='convocatoria' ? `🆚 vs ${typeof escapeHtml==='function'?escapeHtml(d.rival||'Rival'):d.rival||'Rival'}` : `⚽ ${typeof escapeHtml==='function'?escapeHtml(d.category||'Entrenamiento'):d.category||'Entrenamiento'}`}
+                        ${type==='convocatoria' ? `🆚 vs ${escapeHtml(d.rival||'Rival')}` : `⚽ ${escapeHtml(d.category||'Entrenamiento')}`}
                     </div>
                     <div style="font-size:0.76rem;color:var(--text-muted);">
-                        Por: <strong>${typeof escapeHtml==='function'?escapeHtml(d.coachEmail||'Entrenador'):d.coachEmail||'Entrenador'}</strong>
+                        Por: <strong>${escapeHtml(d.coachEmail||'Entrenador')}</strong>
                         ${d.players ? ` · 👥 ${d.players.length} convocados` : ''}
                     </div>
                 </div>
@@ -275,17 +269,539 @@ async function _sdLoadEvents(type) {
             alert(txt);
         };
     } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${escapeHtml(e.message)}</div>`;
     }
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  TAB: INFORMES DE PARTIDO  ← NUEVO, FUNCIONAL
+//  MOTOR DE INFORMES VISUAL v1.0
+//  Genera Gantt + Panel de Rotaciones + Cabecera completa con logo
+// ════════════════════════════════════════════════════════════════════
+
+const _RP = (() => {
+
+    // ── Colores y etiquetas por posición ──────────────────────────────
+    const PC = { POR:'#BA7517', DEF:'#185FA5', MED:'#1D9E75', DEL:'#D85A30', SUP:'#7F77DD' };
+    
+    // Paleta de colores para cadenas de rotación (Gantt)
+    const CHAIN_COLORS = [
+        '#3fb950', '#58a6ff', '#f0883e', '#d2a8ff', '#ff5858', '#eab308', 
+        '#79c0ff', '#aff5b4', '#ff7b72', '#d29922', '#bc8cff', '#58d1ff'
+    ];
+
+    // ── Escape HTML seguro ────────────────────────────────────────────
+    const esc = s => (s || '').toString()
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+    // ── Detectar posición del jugador ─────────────────────────────────
+    const getPos = p => {
+        const v = p.position || p.pos || '';
+        if (PC[v]) return v;
+        return (String(p.playerNumber) === '1') ? 'POR' : 'MED';
+    };
+
+    // ── Reconstruir intervalos en campo desde el historial ────────────
+    // history contiene eventos {type:'sub_in'|'sub_out'|'goal'|..., minute:N}
+    const buildIvs = (player, totMin) => {
+        const hist = (player.history || [])
+            .filter(e => e.type === 'sub_in' || e.type === 'sub_out')
+            .sort((a, b) => (a.minute || 0) - (b.minute || 0));
+        if (!hist.length) return [[0, totMin]];
+        const ivs = [];
+        // Si el primer evento es sub_out → el jugador salió de inicio
+        let on = hist[0].type === 'sub_out', at = on ? 0 : null;
+        hist.forEach(ev => {
+            if (ev.type === 'sub_in')              { on = true;  at = ev.minute || 0; }
+            else if (ev.type === 'sub_out' && on)  { ivs.push([at, ev.minute || totMin]); on = false; at = null; }
+        });
+        if (on && at !== null) ivs.push([at, totMin]);
+        return ivs.length ? ivs : [[0, totMin]];
+    };
+
+    // ── Calcular minutos totales desde intervalos ─────────────────────
+    const calcTot = ivs => ivs.reduce((s, [a, b]) => s + (b - a), 0);
+
+    // ── Extraer pares de sustitución de todos los jugadores ───────────
+    // Empareja sub_out con sub_in al mismo minuto (±1 min de margen)
+    const buildSubs = players => {
+        const outs = [], ins = [];
+        players.forEach(p => {
+            (p.history || []).forEach(ev => {
+                if (ev.type === 'sub_out') outs.push({ min: ev.minute || 0, p });
+                if (ev.type === 'sub_in')  ins.push({ min: ev.minute || 0, p });
+            });
+        });
+        outs.sort((a, b) => a.min - b.min);
+        const used = new Set();
+        return outs.map(o => {
+            const found = ins.find(i => Math.abs(i.min - o.min) <= 1 && !used.has(i.p.playerAlias));
+            if (found) used.add(found.p.playerAlias);
+            return { min: o.min, out: o.p, inp: found ? found.p : null };
+        });
+    };
+
+    // ── Determinar duración según categoría ───────────────────────────
+    const getTotMin = m => {
+        if (m.duration) return parseInt(m.duration) || 60;
+        const cat = (m.category || '').toLowerCase();
+        if (cat.includes('cadete') || cat.includes('juvenil') || cat.includes('regional') || cat.includes('senior')) return 90;
+        if (cat.includes('infantil')) return 70;
+        if (cat.includes('benjamin') || cat.includes('benjamín')) return 50;
+        if (cat.includes('prebenjamin') || cat.includes('prebenjamín')) return 40;
+        return 60; // alevín y genérico
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  SECCIÓN 1: CABECERA DEL ENCUENTRO
+    // ════════════════════════════════════════════════════════════════
+    const buildHeader = (m, clubName, totMin, stopMin) => {
+        const home  = esc(clubName || 'CD Local');
+        const away  = esc(m.rival || 'Sin rival');
+        const sh = m.scoreHome, sa = m.scoreAway;
+        const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '— : —';
+        const res   = (sh != null && sa != null) ? (sh > sa ? 'VICTORIA' : sh < sa ? 'DERROTA' : 'EMPATE') : '';
+        const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
+        const dateStr = m.matchDate
+            ? new Date(m.matchDate).toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+            : 'Fecha no disponible';
+        const durStr = stopMin > 0
+            ? `${totMin}' <span style="color:#58a6ff;font-size:0.85em;">+${stopMin}'</span>`
+            : `${totMin}'`;
+
+        const logoSVG =
+            `<svg width="14" height="14" viewBox="0 0 20 20" fill="none">` +
+            `<circle cx="10" cy="10" r="8" stroke="#3fb950" stroke-width="1.5"/>` +
+            `<circle cx="10" cy="10" r="3" fill="#3fb950"/>` +
+            `<line x1="10" y1="2" x2="10" y2="7" stroke="#3fb950" stroke-width="1.2"/>` +
+            `<line x1="10" y1="13" x2="10" y2="18" stroke="#3fb950" stroke-width="1.2"/>` +
+            `<line x1="2" y1="10" x2="7" y2="10" stroke="#3fb950" stroke-width="1.2"/>` +
+            `<line x1="13" y1="10" x2="18" y2="10" stroke="#3fb950" stroke-width="1.2"/>` +
+            `</svg>`;
+
+        return (
+            `<div style="background:linear-gradient(135deg,#0d1117,#161b22);` +
+            `border:1px solid rgba(88,166,255,0.22);border-radius:14px;padding:1.1rem 1.3rem;margin-bottom:0.85rem;">` +
+
+            // Cronos header row
+            `<div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.85rem;` +
+            `padding-bottom:0.7rem;border-bottom:1px solid rgba(255,255,255,0.07);">` +
+            `<div style="width:30px;height:30px;border-radius:50%;background:#0d1117;border:2px solid #3fb950;` +
+            `display:flex;align-items:center;justify-content:center;flex-shrink:0;">${logoSVG}</div>` +
+            `<div style="flex:1;">` +
+            `<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.7px;color:#3fb950;">CRONOS FÚTBOL</div>` +
+            `<div style="font-size:0.64rem;color:var(--text-muted);">Informe oficial post-partido · Generado automáticamente · No editable</div>` +
+            `</div>` +
+            `<div style="text-align:right;font-size:0.67rem;">` +
+            (m.competition ? `<div style="color:#58a6ff;font-weight:600;margin-bottom:1px;">${esc(m.competition)}</div>` : '') +
+            (m.category    ? `<div style="color:rgba(255,255,255,0.45);">${esc(m.category)}</div>` : '') +
+            `</div></div>` +
+
+            // Score row
+            `<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;">` +
+            `<div style="flex:1;">` +
+            `<div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">LOCAL</div>` +
+            `<div style="font-size:1rem;font-weight:700;color:white;">${home}</div>` +
+            `</div>` +
+            `<div style="text-align:center;flex-shrink:0;">` +
+            `<div style="font-size:1.85rem;font-weight:700;letter-spacing:6px;color:${rCol};">${score}</div>` +
+            (res ? `<div style="font-size:0.62rem;font-weight:700;letter-spacing:1px;margin-top:1px;color:${rCol};">${res}</div>` : '') +
+            `</div>` +
+            `<div style="flex:1;text-align:right;">` +
+            `<div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">VISITANTE</div>` +
+            `<div style="font-size:1rem;font-weight:700;color:white;">${away}</div>` +
+            `</div></div>` +
+
+            // Metadata row
+            `<div style="display:flex;flex-wrap:wrap;gap:0.4rem 0.9rem;font-size:0.69rem;color:var(--text-muted);">` +
+            `<span>📅 ${dateStr}</span>` +
+            (m.matchTime ? `<span>🕐 ${esc(m.matchTime)}</span>` : '') +
+            `<span>⏱ <span style="color:rgba(255,255,255,0.7);">${durStr}</span></span>` +
+            (stopMin > 0 ? `<span>⌛ Descuento: <strong style="color:#58a6ff;">+${stopMin}'</strong></span>` : '') +
+            (m.venue ? `<span>📍 ${esc(m.venue)}</span>` : '') +
+            `<span>👤 ${esc(m.coachEmail || 'Entrenador')}</span>` +
+            `</div>` +
+            `</div>`
+        );
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  SECCIÓN 2: TARJETAS DE RESUMEN (4 métricas)
+    // ════════════════════════════════════════════════════════════════
+    const buildStats = m => {
+        const goals  = m.players.reduce((s, p) => s + (p.goals || 0), 0);
+        const ycards = m.players.filter(p => p.cards === 'yellow').length;
+        const rcards = m.players.filter(p => p.cards === 'red').length;
+        const inj    = m.players.filter(p => p.injured).length;
+        const cardTxt = ycards > 0
+            ? (rcards > 0
+                ? `<span style="color:#eab308;">${ycards}</span><span style="font-size:0.72rem;color:#ff5858;margin-left:2px;">+${rcards}R</span>`
+                : `<span style="color:#eab308;">${ycards}</span>`)
+            : `<span style="color:rgba(255,255,255,0.25);">0</span>`;
+        return (
+            `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);` +
+            `border-radius:10px;padding:0.5rem;text-align:center;">` +
+            `<div style="font-size:1.2rem;font-weight:700;color:white;">${m.participantsCount || m.players.length}</div>` +
+            `<div style="font-size:0.62rem;color:var(--text-muted);">convocados</div></div>` +
+
+            `<div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.15);` +
+            `border-radius:10px;padding:0.5rem;text-align:center;">` +
+            `<div style="font-size:1.2rem;font-weight:700;color:#3fb950;">${goals}</div>` +
+            `<div style="font-size:0.62rem;color:var(--text-muted);">goles</div></div>` +
+
+            `<div style="background:rgba(234,179,8,0.06);border:1px solid rgba(234,179,8,0.12);` +
+            `border-radius:10px;padding:0.5rem;text-align:center;">` +
+            `<div style="font-size:1.2rem;font-weight:700;">${cardTxt}</div>` +
+            `<div style="font-size:0.62rem;color:var(--text-muted);">tarjetas</div></div>` +
+
+            `<div style="background:rgba(249,115,22,0.06);border:1px solid rgba(249,115,22,0.12);` +
+            `border-radius:10px;padding:0.5rem;text-align:center;">` +
+            `<div style="font-size:1.2rem;font-weight:700;color:${inj > 0 ? '#f97316' : 'rgba(255,255,255,0.25)'};">${inj}</div>` +
+            `<div style="font-size:0.62rem;color:var(--text-muted);">lesiones</div></div>` +
+            `</div>`
+        );
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  SECCIÓN 3: GANTT DE PARTIDO (SVG con líneas de conexión)
+    // ════════════════════════════════════════════════════════════════
+    const buildGanttSVG = (players, subs, totMin) => {
+        const W = 660, nW = 146, tW = W - nW - 8, rH = 30, hH = 26;
+        const sc = tW / totMin;
+        const H  = hH + players.length * rH + 6;
+        let s    = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;">`;
+
+        // Grid lines y etiquetas de minutos
+        const step = totMin <= 70 ? 10 : 15;
+        for (let mn = 0; mn <= totMin; mn += step) {
+            const x = nW + mn * sc;
+            s += `<line x1="${x}" y1="${hH - 2}" x2="${x}" y2="${H - 3}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
+            s += `<text x="${x}" y="17" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.35)">${mn}'</text>`;
+        }
+        if (totMin % step !== 0) {
+            const xEnd = nW + totMin * sc;
+            s += `<text x="${xEnd}" y="17" text-anchor="end" font-size="9" fill="rgba(255,255,255,0.35)">${totMin}'</text>`;
+        }
+
+        players.forEach((p, i) => {
+            const y = hH + i * rH, c = PC[p._pos] || '#888';
+            if (i % 2 === 0)
+                s += `<rect x="0" y="${y}" width="${W}" height="${rH}" fill="rgba(255,255,255,0.013)"/>`;
+            s += `<rect x="0" y="${y + 7}" width="3" height="${rH - 14}" rx="1.5" fill="${c}"/>`;
+            const nm = esc((p.playerAlias || 'Jugador').substring(0, 17));
+            s += `<text x="8" y="${y + rH / 2 + 4}" font-size="10.5" fill="rgba(255,255,255,0.82)">${p.playerNumber || '?'}. ${nm}</text>`;
+            s += `<text x="${nW - 4}" y="${y + rH / 2 + 4}" text-anchor="end" font-size="9.5" fill="${c}" font-weight="600">${p._tot}'</text>`;
+        });
+
+        const subLinks = subs.sort((a,b) => a.min - b.min);
+        // ── CÁLCULO DE CADENAS DE ROTACIÓN PARA COLORES ──
+        const chains = [];
+        
+        // 1. Asignar cadena a titulares
+        players.forEach(p => {
+            if (p._ivs.length > 0 && p._ivs[0][0] === 0) {
+                p._chainIdx = chains.length;
+                chains.push({ current: p });
+            }
+        });
+
+        // 2. Propagar cadena a través de los cambios
+        subLinks.forEach(link => {
+            if (link.out && link.inp) {
+                const cIdx = players.find(x => x === link.out)?._chainIdx;
+                if (cIdx !== undefined) {
+                    link.chainIdx = cIdx;
+                    link.inp._chainIdx = cIdx;
+                } else {
+                    // Nuevo flujo si el que sale no tenía cadena (raro)
+                    link.chainIdx = chains.length;
+                    link.inp._chainIdx = chains.length;
+                    chains.push({ current: link.inp });
+                }
+            } else if (link.inp) {
+                // Entrada sin salida clara (nuevo "puesto")
+                link.chainIdx = chains.length;
+                link.inp._chainIdx = chains.length;
+                chains.push({ current: link.inp });
+            }
+        });
+
+        // ── Agrupar sustituciones por minuto para evitar solapamientos visuales ──
+        const subGroups = {};
+        subLinks.forEach(sub => {
+            if (!sub.inp) return;
+            if (!subGroups[sub.min]) subGroups[sub.min] = [];
+            subGroups[sub.min].push(sub);
+        });
+
+        // Pre-calcular X exacta (con offset) para cada sustitución
+        subLinks.forEach(sub => {
+            const group = subGroups[sub.min] || [];
+            const gIdx = group.indexOf(sub);
+            const offset = group.length > 1 ? (gIdx - (group.length - 1) / 2) * 6 : 0;
+            sub._x = nW + sub.min * sc + offset;
+        });
+
+        // ── Barras de tiempo en campo (ESTRICTAS Y ALINEADAS) ──────────────
+        players.forEach((p, i) => {
+            const y = hH + i * rH;
+            const posCol = PC[p._pos] || '#888';
+            
+            p._ivs.forEach(([a, b]) => {
+                const cIdx = p._chainIdx;
+                const fillCol = (cIdx !== undefined) ? CHAIN_COLORS[cIdx % CHAIN_COLORS.length] : posCol;
+                
+                // Encontrar sustitución de entrada y salida para este intervalo
+                const subIn  = subLinks.find(s => s.min === a && s.inp === p);
+                const subOut = subLinks.find(s => s.min === b && s.out === p);
+                
+                // Calcular X inicial y final usando el offset de la flecha
+                let x1 = (subIn) ? subIn._x : (nW + a * sc);
+                let x2 = (subOut) ? subOut._x : (nW + b * sc);
+
+                // Pequeño ajuste si no es un cambio (inicio o fin de partido) para no tocar los bordes
+                if (!subIn && a === 0) x1 += 2;
+                if (!subOut && b === totMin) x2 -= 2;
+                
+                const width = Math.max(1, x2 - x1);
+                
+                s += `<rect x="${x1}" y="${y + 9}" width="${width}" height="${rH - 18}" rx="${(subIn || subOut) ? 1.5 : 3}" fill="${fillCol}" fill-opacity="0.85"/>`;
+            });
+        });
+
+        // ── Líneas de conexión y Flechas (Sustituciones) ──
+        subLinks.forEach(sub => {
+            if (!sub.inp) return;
+            const oi = players.indexOf(sub.out), ii = players.indexOf(sub.inp);
+            if (oi < 0 || ii < 0) return;
+            
+            const x   = sub._x;
+            const yO  = hH + oi * rH + rH / 2;
+            const yI  = hH + ii * rH + rH / 2;
+            const col = CHAIN_COLORS[sub.chainIdx % CHAIN_COLORS.length] || '#888';
+            const dir = yI > yO ? 1 : -1;
+            
+            // Línea sólida vertical
+            s += `<line x1="${x}" y1="${yO}" x2="${x}" y2="${yI}" stroke="${col}" stroke-width="2.5" stroke-opacity="0.9"/>`;
+            
+            // Círculo pequeño en el origen (salida)
+            s += `<circle cx="${x}" cy="${yO}" r="3.5" fill="${col}" stroke="#fff" stroke-width="1"/>`;
+            
+            // Flecha grande y clara en el destino (entrada)
+            const arrowSize = 7;
+            s += `<polygon points="${x},${yI} ${x - arrowSize},${yI - dir * (arrowSize+2)} ${x + arrowSize},${yI - dir * (arrowSize+2)}" fill="${col}" stroke="#fff" stroke-width="1.2"/>`;
+        });
+
+        // ── Iconos de eventos sobre las barras ────────────────────────
+        players.forEach((p, i) => {
+            const y = hH + i * rH, c = PC[p._pos] || '#888', cy = y + rH / 2;
+            (p.history || []).filter(e => ['goal','yellow','red','injury'].includes(e.type)).forEach(ev => {
+                const ex = nW + (ev.minute || 0) * sc;
+                if (ev.type === 'goal') {
+                    s += `<circle cx="${ex}" cy="${cy}" r="5" fill="white" stroke="#3fb950" stroke-width="2"/>`;
+                    s += `<circle cx="${ex}" cy="${cy}" r="2" fill="#3fb950"/>`;
+                } else if (ev.type === 'yellow') {
+                    s += `<rect x="${ex - 4}" y="${y + 8}" width="8" height="11" rx="1.5" fill="#eab308" stroke="#000" stroke-width="0.5"/>`;
+                } else if (ev.type === 'red') {
+                    s += `<rect x="${ex - 4}" y="${y + 8}" width="8" height="11" rx="1.5" fill="#ef4444" stroke="#000" stroke-width="0.5"/>`;
+                } else if (ev.type === 'injury') {
+                    s += `<polygon points="${ex},${y + 7} ${ex - 6},${y + 21} ${ex + 6},${y + 21}" fill="#f97316" stroke="#fff" stroke-width="0.5"/>`;
+                }
+            });
+        });
+
+        // (Los marcadores de sustitución se han integrado en el bucle anterior para mayor claridad y control de offsets)
+
+        // Separadores de fila
+        for (let i = 0; i < players.length; i++) {
+            s += `<line x1="0" y1="${hH + (i + 1) * rH}" x2="${W}" y2="${hH + (i + 1) * rH}" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>`;
+        }
+
+        return s + '</svg>';
+    };
+
+    // ── Leyenda del Gantt ─────────────────────────────────────────────
+    const buildLegend = () =>
+        `<div style="display:flex;gap:7px 13px;flex-wrap:wrap;margin:5px 0 0.85rem;font-size:0.66rem;color:var(--text-muted);">` +
+        [{ c:'#BA7517',l:'Portero' }, { c:'#185FA5',l:'Defensa' }, { c:'#1D9E75',l:'Centrocampista' }, { c:'#D85A30',l:'Delantero' }, { c:'#7F77DD',l:'Suplente' }]
+            .map(i => `<span style="display:flex;align-items:center;gap:3px;"><span style="width:10px;height:8px;border-radius:1px;background:${i.c};display:inline-block;"></span>${i.l}</span>`).join('') +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:18px;border-top:2px dashed rgba(255,255,255,0.35);"></span>Rotación</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="width:9px;height:9px;border-radius:50%;background:#3fb950;border:2px solid #27500A;display:inline-block;"></span>Gol</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;"></span>Amarilla</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;"></span>Roja</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid #f97316;display:inline-block;"></span>Lesión</span>` +
+        `</div>`;
+
+    // ════════════════════════════════════════════════════════════════
+    //  SECCIÓN 4: PANEL DE ROTACIONES — Quién por quién
+    // ════════════════════════════════════════════════════════════════
+    const buildRotPanel = (subs) => {
+        if (!subs.length) return '';
+
+        const rows = subs.map((sub, idx) => {
+            const op = sub.out, ip = sub.inp;
+            const oc = PC[op._pos] || '#888', ic = ip ? (PC[ip._pos] || '#888') : null;
+
+            // ¿Es un regreso? (el jugador entrante tiene más de un intervalo y este no es el primero)
+            let retBadge = '';
+            if (ip && ip._ivs && ip._ivs.length > 1) {
+                const pi = ip._ivs.findIndex(([a]) => a === sub.min);
+                if (pi > 0) retBadge = `<span style="background:rgba(88,166,255,0.12);color:#58a6ff;padding:1px 6px;border-radius:100px;font-size:0.65rem;">Regresa · ${pi + 1}º per.</span>`;
+            }
+
+            // ¿Lesión asociada a esta sustitución?
+            const isInj = (op.history || []).some(e => e.type === 'injury' && Math.abs((e.minute || 0) - sub.min) <= 1);
+            const injBadge = isInj
+                ? `<span style="background:rgba(249,115,22,0.12);color:#f97316;padding:1px 6px;border-radius:100px;font-size:0.65rem;">Lesión</span>` : '';
+
+            // ¿En qué período sale el jugador saliente?
+            const opPeriods = op._ivs ? op._ivs.length : 1;
+            const opPeriodIdx = op._ivs ? op._ivs.findIndex(([, b]) => b === sub.min) : -1;
+            const outPerBadge = opPeriods > 1 && opPeriodIdx >= 0
+                ? ` <span style="font-size:0.62rem;opacity:0.6;">(${opPeriodIdx + 1}º per.)</span>` : '';
+
+            const outPill =
+                `<span style="background:${oc}1a;color:${oc};padding:2px 8px;border-radius:100px;` +
+                `font-size:0.77rem;display:inline-flex;align-items:center;gap:2px;white-space:nowrap;flex-shrink:0;">` +
+                `<span style="font-size:0.72rem;">↑</span> nº${op.playerNumber || '?'} ${esc((op.playerAlias || '').substring(0, 15))}${outPerBadge}</span>`;
+
+            const inPill = ip
+                ? `<span style="background:${ic}1a;color:${ic};padding:2px 8px;border-radius:100px;` +
+                  `font-size:0.77rem;display:inline-flex;align-items:center;gap:2px;white-space:nowrap;flex-shrink:0;">` +
+                  `<span style="font-size:0.72rem;">↓</span> nº${ip.playerNumber || '?'} ${esc((ip.playerAlias || '').substring(0, 15))}</span>`
+                : `<span style="font-size:0.77rem;color:var(--text-muted);font-style:italic;">banquillo</span>`;
+
+            return (
+                `<div style="display:flex;align-items:center;gap:7px;padding:6px 0;` +
+                `border-bottom:${idx < subs.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none'};flex-wrap:wrap;">` +
+                `<span style="min-width:26px;font-size:0.7rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${sub.min}'</span>` +
+                outPill +
+                `<span style="color:rgba(255,255,255,0.2);font-size:0.85rem;flex-shrink:0;">→</span>` +
+                inPill +
+                injBadge + retBadge +
+                `</div>`
+            );
+        }).join('');
+
+        return (
+            `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Panel de rotaciones · Quién por quién</div>` +
+            `<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.65rem 0.85rem;margin-bottom:0.85rem;">${rows}</div>`
+        );
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  SECCIÓN 5: REGISTRO CRONOLÓGICO DE INCIDENCIAS
+    // ════════════════════════════════════════════════════════════════
+    const buildEventsList = players => {
+        const all = [];
+        players.forEach(p => (p.history || []).forEach(ev => all.push({ ...ev, _p: p })));
+        all.sort((a, b) => (a.minute || 0) - (b.minute || 0));
+
+        const relevant = all.filter(ev => ['goal','yellow','red','injury','sub_in','sub_out'].includes(ev.type));
+        if (!relevant.length) return '';
+
+        const rows = relevant.map((ev, idx) => {
+            const name = esc((ev._p.playerAlias || `nº${ev._p.playerNumber || '?'}`).substring(0, 16));
+            let icon = '', col = 'var(--text-muted)', txt = '';
+
+            if (ev.type === 'goal') {
+                icon = `<span style="width:10px;height:10px;border-radius:50%;background:#3fb950;border:2px solid #27500A;display:inline-block;flex-shrink:0;"></span>`;
+                col = '#3fb950'; txt = `Gol &middot; ${name}`;
+            } else if (ev.type === 'yellow') {
+                icon = `<span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
+                col = '#eab308'; txt = `Tarjeta amarilla &middot; ${name}`;
+            } else if (ev.type === 'red') {
+                icon = `<span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
+                col = '#ff5858'; txt = `Tarjeta roja &middot; ${name}`;
+            } else if (ev.type === 'injury') {
+                icon = `<span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid #f97316;display:inline-block;flex-shrink:0;"></span>`;
+                col = '#f97316'; txt = `Lesión &middot; ${name}`;
+            } else if (ev.type === 'sub_in') {
+                icon = `<span style="color:#3fb950;font-size:11px;line-height:1;flex-shrink:0;">↑</span>`;
+                txt  = `Entra al campo &middot; ${name}`;
+            } else if (ev.type === 'sub_out') {
+                icon = `<span style="color:var(--text-muted);font-size:11px;line-height:1;flex-shrink:0;">↓</span>`;
+                txt  = `Sale al campo &middot; ${name}`;
+            }
+
+            return (
+                `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;` +
+                `border-bottom:${idx < relevant.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none'};font-size:0.76rem;">` +
+                `<span style="min-width:25px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${ev.minute || '?'}'</span>` +
+                icon +
+                `<span style="color:${col};">${txt}</span>` +
+                `</div>`
+            );
+        }).join('');
+
+        return (
+            `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Registro cronológico de incidencias</div>` +
+            `<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.65rem 0.85rem;">${rows}</div>`
+        );
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  ORQUESTADOR PRINCIPAL — build(matchData, currentUser)
+    // ════════════════════════════════════════════════════════════════
+    const build = (m, me) => {
+        const totMin  = getTotMin(m);
+        const stopMin = parseInt(m.stoppageTime) || 0;
+
+        // 1. Deduplicar jugadores por número (quedarnos con el informe más completo/reciente)
+        const uniquePlayers = {};
+        m.players.forEach(p => {
+            const num = p.playerNumber || '?';
+            if (!uniquePlayers[num] || (p.history && p.history.length > (uniquePlayers[num].history || []).length)) {
+                uniquePlayers[num] = p;
+            }
+        });
+
+        // 2. Enriquecer y filtrar: Solo los que han tenido minutos de juego (convocados/participantes)
+        const players = Object.values(uniquePlayers)
+            .map(p => ({ ...p, _pos: getPos(p), _ivs: buildIvs(p, totMin) }))
+            .filter(p => p.convocado || p._ivs.some(([a, b]) => b > a)) // Convocados o participantes
+            .sort((a, b) => (parseInt(a.playerNumber) || 99) - (parseInt(b.playerNumber) || 99));
+
+        players.forEach(p => { p._tot = calcTot(p._ivs); });
+        
+        // Guardar contador para las estadísticas
+        m.participantsCount = players.length;
+
+        const subs      = buildSubs(players);
+        const clubName  = me?.clubName || 'CD Local';
+
+        const ganttLabel =
+            `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">` +
+            `Gantt de partido · Las líneas de puntos conectan quién entra por quién</div>`;
+
+        return (
+            `<div style="padding:0.35rem 0 0.15rem;">` +
+            buildHeader(m, clubName, totMin, stopMin) +
+            buildStats(m) +
+            ganttLabel +
+            `<div style="border:1px solid rgba(255,255,255,0.07);border-radius:10px;overflow:hidden;margin-bottom:4px;">` +
+            buildGanttSVG(players, subs, totMin) +
+            `</div>` +
+            buildLegend() +
+            buildRotPanel(subs) +
+            buildEventsList(players) +
+            `</div>`
+        );
+    };
+
+    // Solo exponer build públicamente
+    return { build };
+
+})();
+
+// ════════════════════════════════════════════════════════════════════
+//  TAB: INFORMES DE PARTIDO (renderizado visual lazy)
 // ════════════════════════════════════════════════════════════════════
 async function _sdLoadReports() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
     const clubId    = me.clubId;
+
     if (!clubId) {
         container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
             ⚠️ Sin club asignado. Usa el modo prueba para seleccionar un club.</div>`;
@@ -293,9 +809,8 @@ async function _sdLoadReports() {
     }
 
     try {
-        const { db, collection, getDocs, query, where, orderBy, limit, doc, updateDoc } = await _sdFS();
+        const { db, collection, getDocs, query, where, limit } = await _sdFS();
 
-        // Cargar informes del club (los genera el entrenador via saveAllMatchReportsInternal)
         const snap = await getDocs(query(
             collection(db, 'cronos_player_reports'),
             where('clubId', '==', clubId),
@@ -306,162 +821,183 @@ async function _sdLoadReports() {
             container.innerHTML = `
             <div style="text-align:center;padding:4rem;color:var(--text-muted);">
                 <div style="font-size:2.5rem;margin-bottom:1rem;">📊</div>
-                <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">
-                    Sin informes de partido aún</div>
-                <div style="font-size:0.8rem;">
-                    Los informes aparecen aquí cuando un entrenador finaliza un partido
+                <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">Sin informes de partido aún</div>
+                <div style="font-size:0.8rem;">Los informes aparecen aquí cuando un entrenador finaliza un partido
                     y pulsa <strong>"Enviar Informe"</strong> en la app.</div>
             </div>`;
             return;
         }
 
-        // Agrupar por partido (matchDate + rival)
+        // ── Agrupar documentos por partido (fecha + rival + coach) ───
         const matches = {};
         snap.forEach(docSnap => {
             const r   = { _id: docSnap.id, ...docSnap.data() };
             const key = `${r.matchDate || 'sin-fecha'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
             if (!matches[key]) {
                 matches[key] = {
-                    key, matchDate: r.matchDate, rival: r.rival,
-                    scoreHome: r.scoreHome, scoreAway: r.scoreAway,
-                    coachEmail: r.coachEmail, createdAt: r.createdAt,
-                    players: [],
+                    key,
+                    matchDate:    r.matchDate,
+                    rival:        r.rival,
+                    scoreHome:    r.scoreHome,
+                    scoreAway:    r.scoreAway,
+                    coachEmail:   r.coachEmail,
+                    coachUid:     r.coachUid,
+                    createdAt:    r.createdAt,
+                    // Campos opcionales (enriquecen la cabecera)
+                    category:     r.category,
+                    venue:        r.venue,
+                    competition:  r.competition,
+                    matchTime:    r.matchTime,
+                    duration:     r.duration,
+                    stoppageTime: r.stoppageTime,
+                    players:      [],
                 };
             }
             matches[key].players.push(r);
         });
 
         // Ordenar por fecha descendente
-        const sortedMatches = Object.values(matches).sort((a, b) => {
-            return (b.createdAt || '').localeCompare(a.createdAt || '');
-        });
+        const sorted = Object.values(matches).sort((a, b) =>
+            (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+        // Mapa global de datos de partido para renderizado lazy
+        window._sdMatchData = {};
 
         let html = `
         <div style="margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
             <h3 style="margin:0;font-size:0.95rem;color:white;">
-                📊 Informes recibidos — ${sortedMatches.length} partido${sortedMatches.length !== 1 ? 's' : ''}
+                📊 Informes — ${sorted.length} encuentro${sorted.length !== 1 ? 's' : ''}
             </h3>
             <span style="font-size:0.73rem;color:var(--text-muted);">
-                Club: <strong style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(me.clubName||clubId):me.clubName||clubId}</strong>
+                Club: <strong style="color:var(--primary);">${escapeHtml(me.clubName||clubId)}</strong>
             </span>
         </div>`;
 
-        sortedMatches.forEach((m, idx) => {
+        sorted.forEach(m => {
             const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
             const injured = m.players.filter(p => p.injured).length;
             const dateStr = m.matchDate
-                ? new Date(m.matchDate).toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'})
+                ? new Date(m.matchDate).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' })
                 : '—';
-            const score   = (m.scoreHome != null && m.scoreAway != null)
-                ? `${m.scoreHome} – ${m.scoreAway}` : '—';
-            const key64   = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g,'');
+            const sh = m.scoreHome, sa = m.scoreAway;
+            const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
+            const res   = (sh != null && sa != null) ? (sh > sa ? 'VICTORIA' : sh < sa ? 'DERROTA' : 'EMPATE') : '';
+            const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
+            const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
+
+            // Guardar datos del partido para renderizado lazy en el toggle
+            window._sdMatchData[key64] = m;
 
             html += `
             <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
-                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.35rem;">
-                    <div>
-                        <div style="font-weight:700;font-size:1rem;">
-                            🆚 vs <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>
+                <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                            🆚 vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>
+                            ${res ? `<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.5px;color:${rCol};">${res}</span>` : ''}
                         </div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-                            📅 ${dateStr} ·
-                            ⚽ Marcador: <strong style="color:white;">${score}</strong> ·
-                            👤 ${typeof escapeHtml==='function'?escapeHtml(m.coachEmail||'Entrenador'):m.coachEmail||'Entrenador'}
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
+                            <span>📅 ${dateStr}</span>
+                            ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
+                            ${m.category ? `<span style="color:#58a6ff;">${escapeHtml(m.category)}</span>` : ''}
+                            <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
                         </div>
                     </div>
-                    <div style="text-align:right;flex-shrink:0;">
-                        <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">
-                            ${m.players.length} jugadores
-                        </span>
-                        ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;margin-left:4px;">
-                            ⚽ ${goals} goles</span>` : ''}
-                        ${injured > 0 ? `<span class="sd-badge" style="background:rgba(255,88,88,0.12);color:#ff5858;margin-left:4px;">
-                            🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
-                        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px;">
-                            ▼ Ver detalles
-                        </div>
+                    <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                        <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">${m.players.length} jugadores</span>
+                        ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">⚽ ${goals} gol${goals !== 1 ? 'es' : ''}</span>` : ''}
+                        ${injured > 0 ? `<span class="sd-badge" style="background:rgba(249,115,22,0.12);color:#f97316;">🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
+                        <div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;">▼ Ver informe completo</div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
+                        <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
+                                title="Eliminar este informe definitivamente"
+                                style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                                       color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
+                                       display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+                            🗑️
+                        </button>
                     </div>
                 </div>
-                <!-- Tabla de jugadores (oculta por defecto) -->
-                <div id="rdetail-${key64}" style="display:none;margin-top:0.8rem;
-                     border-top:1px solid var(--glass-border);padding-top:0.8rem;">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
-                        <thead>
-                            <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.08);">
-                                <th style="padding:0.35rem 0.5rem;text-align:left;">Nº</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:left;">Jugador</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">⏱ Minutos</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">⚽ Goles</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">🟨 Tarjetas</th>
-                                <th style="padding:0.35rem 0.5rem;text-align:center;">🩹 Lesión</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${m.players
-                                .sort((a, b) => (a.playerNumber || 0) - (b.playerNumber || 0))
-                                .map(p => `
-                                <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                                    <td style="padding:0.35rem 0.5rem;color:var(--primary);font-weight:700;">${p.playerNumber || '—'}</td>
-                                    <td style="padding:0.35rem 0.5rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(p.playerAlias||'Jugador'):p.playerAlias||'Jugador'}</td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">${p.minutesPlayed || '0:00'}</td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
-                                        ${p.goals > 0 ? `<strong style="color:#ffa500;">${p.goals}</strong>` : '—'}
-                                    </td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
-                                        ${p.cards && p.cards !== 'ninguna'
-                                            ? `<span style="background:${p.cards==='red'?'rgba(255,88,88,0.2)':'rgba(255,215,0,0.15)'};
-                                                           color:${p.cards==='red'?'#ff5858':'#ffd700'};
-                                                           padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:700;">
-                                                ${p.cards==='red'?'🟥 Roja':'🟨 Amarilla'}</span>`
-                                            : '—'}
-                                    </td>
-                                    <td style="padding:0.35rem 0.5rem;text-align:center;">
-                                        ${p.injured ? '🩹 Sí' : '—'}
-                                    </td>
-                                </tr>`).join('')}
-                        </tbody>
-                    </table>
-                    <!-- Historial de acciones si existe -->
-                    ${m.players.some(p => p.history?.length) ? `
-                    <div style="margin-top:0.7rem;padding:0.6rem 0.7rem;background:rgba(255,255,255,0.02);
-                                border-radius:8px;font-size:0.73rem;color:var(--text-muted);">
-                        <strong style="color:white;display:block;margin-bottom:0.3rem;">📋 Línea de tiempo</strong>
-                        ${m.players.flatMap(p =>
-                            (p.history || []).map(ev => ({
-                                ...ev,
-                                player: p.playerAlias || `#${p.playerNumber}`
-                            }))
-                        ).sort((a,b) => (a.minute||0) - (b.minute||0))
-                        .map(ev => `
-                            <span style="margin-right:0.8rem;white-space:nowrap;">
-                                <strong style="color:white;">${ev.minute || '?'}'</strong>
-                                ${ev.type === 'goal'    ? '⚽' :
-                                  ev.type === 'yellow'  ? '🟨' :
-                                  ev.type === 'red'     ? '🟥' :
-                                  ev.type === 'sub_in'  ? '▶️' :
-                                  ev.type === 'sub_out' ? '⏸️' : '•'}
-                                ${typeof escapeHtml==='function'?escapeHtml(ev.player):ev.player}
-                            </span>`).join('')}
-                    </div>` : ''}
+                <!-- Panel de detalle: vacío hasta el primer click (lazy render) -->
+                <div id="rdetail-${key64}"
+                     style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
                 </div>
             </div>`;
         });
 
         container.innerHTML = html;
 
+        // ── Toggle con renderizado lazy del informe visual ────────────
         window.sdToggleReport = (key64) => {
             const card   = document.getElementById(`rcard-${key64}`);
             const detail = document.getElementById(`rdetail-${key64}`);
             if (!detail) return;
             const isOpen = detail.style.display !== 'none';
+            // Renderizar el informe completo solo en el primer click
+            if (!isOpen && !detail.dataset.rendered) {
+                const matchData = window._sdMatchData && window._sdMatchData[key64];
+                if (matchData) {
+                    try {
+                        detail.innerHTML = _RP.build(matchData, window._cronosCurrentUser);
+                    } catch (err) {
+                        detail.innerHTML = `<div style="color:#ff5858;font-size:0.8rem;">⚠️ Error al generar informe: ${err.message}</div>`;
+                    }
+                    detail.dataset.rendered = '1';
+                }
+            }
             detail.style.display = isOpen ? 'none' : 'block';
-            card.style.borderColor = isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(88,166,255,0.5)';
+            if (card) card.style.borderColor = isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(88,166,255,0.55)';
+        };
+
+        // ── Función para eliminar informe definitivamente ──────────────
+        window.sdDeleteReport = async (key64) => {
+            if (!confirm('¿Estás seguro de que deseas eliminar este informe de partido definitivamente? Esta acción borrará todos los datos del encuentro para todos los roles y no se puede deshacer.')) return;
+            
+            const match = window._sdMatchData[key64];
+            if (!match) return;
+            
+            try {
+                const { db, doc, deleteDoc } = await _sdFS();
+                if (typeof showSpinner === 'function') showSpinner('Eliminando informe…');
+                
+                // Eliminar cada documento de jugador asociado
+                // Intentamos por el _id almacenado o por la clave compuesta estándar
+                const deletePromises = match.players.map(p => {
+                    const docId = p._id || p.id || `${match.matchId}_coach_p${p.playerNumber}` || `${match.matchId}_p${p.playerNumber}`;
+                    return deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
+                        console.warn(`[StaffDashboard] No se pudo borrar el sub-informe ${docId}:`, err.message);
+                        // No relanzamos el error para que Promise.all no se detenga
+                    });
+                });
+                
+                await Promise.all(deletePromises);
+                
+                if (typeof hideSpinner === 'function') hideSpinner();
+                if (typeof showToast === 'function') showToast('✅ Informe eliminado correctamente', 3000);
+                
+                // Quitar de la UI
+                const card = document.getElementById(`rcard-${key64}`);
+                if (card) card.remove();
+                
+                // Actualizar contador
+                const currentCount = Object.keys(window._sdMatchData).length - 1;
+                const title = container.querySelector('h3');
+                if (title) title.innerHTML = `📊 Informes — ${currentCount} encuentro${currentCount !== 1 ? 's' : ''}`;
+                
+                delete window._sdMatchData[key64];
+                
+            } catch (err) {
+                if (typeof hideSpinner === 'function') hideSpinner();
+                console.error('[StaffDashboard] Error al eliminar:', err);
+                if (typeof showToast === 'function') showToast('⚠️ Error al eliminar: ' + err.message, 4000);
+            }
         };
 
     } catch(e) {
         console.error('[StaffDashboard] Error cargando informes:', e);
         container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">
-            ⚠️ Error al cargar informes: ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+            ⚠️ Error al cargar informes: ${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -482,8 +1018,6 @@ async function _sdLoadMessages() {
     try {
         const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
-        // Buscar threads donde este staff es destinatario (campo staffUid)
-        // y threads donde es parentUid (compatibilidad retroactiva)
         const [snapStaff, snapParent] = await Promise.all([
             getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
             getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
@@ -492,6 +1026,7 @@ async function _sdLoadMessages() {
         const threadsMap = {};
         snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+
         const threads = Object.values(threadsMap)
             .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
 
@@ -523,7 +1058,7 @@ async function _sdLoadMessages() {
                  style="cursor:pointer;">
                 <div style="flex:1;min-width:0;">
                     <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                        ${isCollective?'📊':'✉️'} ${typeof escapeHtml==='function'?escapeHtml(t.coachEmail||'Entrenador'):t.coachEmail||'Entrenador'}
+                        ${isCollective?'📊':'✉️'} ${escapeHtml(t.coachEmail||'Entrenador')}
                         ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
                             border-radius:10px;padding:1px 7px;font-size:0.62rem;
                             font-weight:700;margin-left:6px;">
@@ -532,7 +1067,7 @@ async function _sdLoadMessages() {
                     <div style="font-size:0.76rem;
                                 color:${unread?'#58a6ff':'var(--text-muted)'};
                                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${unread?`<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>`:typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}
+                        ${unread?`<strong>🔵 ${escapeHtml(lastMsg)}</strong>`:escapeHtml(lastMsg)}
                     </div>
                 </div>
                 <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
@@ -553,14 +1088,13 @@ async function _sdLoadMessages() {
                                    color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
                             ← Volver
                         </button>
-                        <div style="font-weight:700;font-size:0.88rem;">💬 ${typeof escapeHtml==='function'?escapeHtml(coachEmail):coachEmail}</div>
+                        <div style="font-weight:700;font-size:0.88rem;">💬 ${escapeHtml(coachEmail)}</div>
                     </div>
                     <div id="thread-messages"
                          style="flex:1;overflow-y:auto;display:flex;
                                 flex-direction:column;gap:0.5rem;min-height:200px;">
                         <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
                     </div>
-                    <!-- Staff puede responder al entrenador -->
                     <div style="margin-top:0.7rem;border-top:1px solid var(--glass-border);
                                 padding-top:0.7rem;flex-shrink:0;">
                         <div style="display:flex;gap:0.5rem;align-items:flex-end;">
@@ -584,7 +1118,7 @@ async function _sdLoadMessages() {
                     </div>
                 </div>`;
 
-                await _loadThreadMessages(threadId, 'parent');  // 'parent' perspective: staff on right
+                await _loadThreadMessages(threadId, 'parent');
                 try {
                     const data = {};
                     data['unreadByStaff']  = 0;
@@ -596,7 +1130,6 @@ async function _sdLoadMessages() {
             }
         };
 
-        // Staff replies to coach
         window.sdSendReplyToCoach = async (threadId, coachUid, coachEmail) => {
             const input = document.getElementById('staff-reply-input');
             const text  = (input?.value||'').trim();
@@ -623,7 +1156,7 @@ async function _sdLoadMessages() {
         };
 
     } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${escapeHtml(e.message)}</div>`;
     }
 }
 

@@ -16,7 +16,7 @@ if (typeof window.ROLE_META === 'undefined') {
         coordinator: { label:'Coordinador',         icon:'🎯', color:'#d2a8ff' },
         user:        { label:'Entrenador',          icon:'⚽', color:'#3fb950' },
         parent:      { label:'Padre / Madre / Tutor', icon:'👨‍👩‍👧', color:'#79c0ff' },
-        individual:  { label:'Entrenador Individual', icon:'👤', color:'#79c0ff' },
+        individual:  { label:'Administrador Individual', icon:'👤', color:'#79c0ff' },
     };
 }
 
@@ -25,7 +25,7 @@ async function openClubAdminPanel(preClubId = null) {
     const activeRole = me._activeRole || me.role;
     const isSA       = me.role === 'superadmin' || me.role === 'admin';
 
-    if (!me || (!isSA && activeRole !== 'club_admin')) {
+    if (!me || (!isSA && activeRole !== 'club_admin' && activeRole !== 'individual')) {
         showToast('⛔ Sin permisos', 3000);
         return;
     }
@@ -46,7 +46,7 @@ async function openClubAdminPanel(preClubId = null) {
             _modal.style.display = 'flex';
             _modal.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;color:white;text-align:center;max-width:400px;margin:auto;">
                 <div style="font-size:1.5rem;margin-bottom:1rem;">⚠️</div>
-                <p style="color:#ff5858;">Error de conexión: ${typeof escapeHtml==='function'?escapeHtml(err.message):err.message}</p>
+                <p style="color:#ff5858;">Error de conexión: ${escapeHtml(err.message)}</p>
                 <button onclick="document.getElementById('setup-modal').style.display='none'"
                     style="margin-top:1rem;padding:0.5rem 1.2rem;background:rgba(255,88,88,0.15);
                            border:1px solid rgba(255,88,88,0.4);border-radius:7px;color:#ff5858;cursor:pointer;">
@@ -140,9 +140,9 @@ async function openClubAdminPanel(preClubId = null) {
                   onmouseover="this.style.background='rgba(88,166,255,0.1)';this.style.borderColor='rgba(88,166,255,0.3)';"
                   onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.borderColor='rgba(255,255,255,0.1)';"
                   onclick="openClubAdminPanel(window._sa_clubs_cache[this.dataset.clubIdx].id)">
-                🏟️ <strong>${typeof escapeHtml==='function'?escapeHtml(c.name):c.name}</strong>
+                🏟️ <strong>${escapeHtml(c.name)}</strong>
                 <span style="font-size:0.72rem;color:var(--text-muted);display:block;margin-top:0.2rem;">
-                  ${typeof escapeHtml==='function'?escapeHtml(c.adminEmail||'Sin admin'):(c.adminEmail||'Sin admin')} · Plan: ${typeof escapeHtml==='function'?escapeHtml(c.plan||'free'):(c.plan||'free')}
+                  ${escapeHtml(c.adminEmail||'Sin admin')} · Plan: ${escapeHtml(c.plan||'free')}
                 </span>
               </button>`).join('')}
           </div>
@@ -176,12 +176,21 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
-    let clubSnap, usersSnap, users = [], features = {};
+    let clubSnap, usersSnap, platformReqsSnap, users = [], features = [];
     try {
         [clubSnap, usersSnap] = await Promise.all([
             getDoc(doc(db, 'clubs', clubId)),
-            getDocs(query(collection(db, 'users'), where('clubId', '==', clubId)))
+            getDocs(query(collection(db, 'users'), where('clubId', '==', clubId))),
         ]);
+        // platform_requests separado para que un fallo no cancele todo
+        platformReqsSnap = await getDocs(query(
+            collection(db, 'platform_requests'),
+            where('clubId', '==', clubId)
+        )).catch(e => {
+            // Error de permisos es esperado si las reglas son estrictas, usamos users como respaldo
+            console.log('[CA] Usando respaldo de usuarios para solicitudes (platform_requests restringido).');
+            return { forEach: () => {} }; // Simular snap vacío
+        });
     } catch (queryErr) {
         console.error('[ClubAdmin] Error loading data:', queryErr);
         // Fallback: try loading club doc only
@@ -195,7 +204,7 @@ async function openClubAdminPanel(preClubId = null) {
                 _modal.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;color:white;text-align:center;max-width:450px;margin:auto;">
                     <div style="font-size:1.5rem;margin-bottom:1rem;">⚠️</div>
                     <p style="color:#ff5858;font-size:0.88rem;">Error al cargar datos del club.</p>
-                    <p style="color:#8b949e;font-size:0.78rem;margin-top:0.5rem;">${typeof escapeHtml==='function'?escapeHtml(queryErr.message):queryErr.message}</p>
+                    <p style="color:#8b949e;font-size:0.78rem;margin-top:0.5rem;">${escapeHtml(queryErr.message)}</p>
                     <p style="color:#8b949e;font-size:0.75rem;margin-top:0.8rem;">Posible causa: permisos insuficientes en Firestore rules.<br>Verifica que las reglas permiten consultar la colección users por clubId.</p>
                     <button onclick="document.getElementById('setup-modal').style.display='none'"
                         style="margin-top:1rem;padding:0.5rem 1.2rem;background:rgba(88,166,255,0.15);
@@ -215,73 +224,136 @@ async function openClubAdminPanel(preClubId = null) {
     if (usersSnap) {
         usersSnap.forEach(d => users.push({ _id: d.id, ...d.data() }));
     }
-    // Deduplicate: keep only one entry per uid (prefer primary doc)
-    const seenUids = new Set();
-    users = users.filter(u => {
+    // Deduplicate: keep only one entry per uid (prefer primary doc) and merge roles
+    const userMap = new Map();
+    users.forEach(u => {
         const realUid = u.uid || u._id;
-        // Keep primary docs (where _id == uid), and secondary docs only if no primary exists
-        if (u._id === realUid) { seenUids.add(realUid); return true; }
-        if (seenUids.has(realUid)) return false;
-        seenUids.add(realUid);
-        return true;
+        if (!userMap.has(realUid)) {
+            userMap.set(realUid, { ...u });
+        } else {
+            const existing = userMap.get(realUid);
+            // Merge allRoles
+            const merged = [...(existing.allRoles || [])];
+            const incoming = u.allRoles || [];
+            incoming.forEach(r => {
+                const match = merged.find(m => m.role === r.role && (String(m.clubId||'') === String(r.clubId||'')));
+                if (!match) {
+                    merged.push(r);
+                } else {
+                    // Update if incoming is more authoritative (authorized)
+                    if (r.isAuthorized && !match.isAuthorized) {
+                        Object.assign(match, r);
+                    }
+                }
+            });
+            existing.allRoles = merged;
+
+            // If this is the primary doc, prefer its root attributes
+            if (u._id === realUid) {
+                const preservedRoles = existing.allRoles;
+                Object.assign(existing, u);
+                existing.allRoles = preservedRoles;
+            }
+        }
     });
+    users = Array.from(userMap.values());
     features = club.features || {};
 
-    // ── Helper: info de slots de un rol ─────────────────────────────
     const slotOf = (role) => {
-        const max  = role === 'director'     ? (club.slots?.directors    ?? -1)
-                   : role === 'coordinator'  ? (club.slots?.coordinators ?? -1)
-                   : role === 'parent'       ? (club.slots?.parents      ?? -1)
-                   :                           (club.slots?.users        ?? -1);
-        const used = users.filter(u => u.role === role && u.isAuthorized !== false && u.status !== 'removed').length;
+        const max = (club.slots || {})[role === 'director' ? 'directors' : role === 'coordinator' ? 'coordinators' : role === 'parent' ? 'parents' : 'users'] ?? -1;
+        const usedSet = new Set();
+        users.forEach(u => {
+            if (u.status === 'removed') return;
+            if (u.role === role && u.isAuthorized === true) {
+                usedSet.add(u._id);
+            } else if (u.allRoles) {
+                const hasRole = u.allRoles.some(r => r.role === role && r.isAuthorized === true && (r.clubId === clubId || !r.clubId));
+                if (hasRole) usedSet.add(u._id);
+            }
+        });
+        const used = usedSet.size;
         return { max, used, full: max !== -1 && used >= max, unlimited: max === -1 };
     };
 
-    // ── Pendientes de aprobación (auto-registro) ─────────────────────
-    // Paso 1: Solicitudes de auto-registro pendientes de aprobación SA (status='pending')
-    const pendingAutoReg = users.filter(u =>
-        u.status === 'pending' && u.requestedRole !== 'club_admin'
-    );
-    // Paso 1b: Self-registrations pending Club Admin forwarding to SA
-    const pendingClubAdmin = users.filter(u =>
-        u.status === 'pending_club_admin'
-    );
-    // Paso 1c: Multi-role users with pending roles in allRoles
-    // These are users whose main doc status is active, but have roles
-    // in allRoles with isAuthorized=false
+    const pendingFromPlatformReqs = [];
+    if (platformReqsSnap) {
+        platformReqsSnap.forEach(d => {
+            const pr = { _id: d.id, _isPlatformReq: true, ...d.data() };
+            if (pr.status !== 'pending_club_admin') return;
+            const alreadyAuthorized = users.some(u => {
+                const isSameUser = (u._id === pr.userUid || u.email === (pr.requestedEmail || pr.email));
+                if (!isSameUser) return false;
+                if (u.role === pr.requestedRole && u.isAuthorized) return true;
+                return (u.allRoles || []).some(r => r.role === pr.requestedRole && r.isAuthorized && (r.clubId === clubId || !r.clubId));
+            });
+            if (alreadyAuthorized) return;
+            const alreadyInPendingUsers = users.some(u => (u._id === pr.userUid || u.email === pr.requestedEmail) && (u.status === 'pending_club_admin' || (u.allRoles || []).some(r => r.status === 'pending_club_admin')));
+            if (!alreadyInPendingUsers) pendingFromPlatformReqs.push(pr);
+        });
+    }
+
+    const pendingFromUserDocs = [];
+    users.forEach(u => {
+        if (u.status === 'removed') return;
+        if (u.status === 'pending_club_admin') pendingFromUserDocs.push({ ...u, _pendingRole: u.role || u.requestedRole });
+        if (u.allRoles) {
+            u.allRoles.forEach(r => {
+                if (!r.isAuthorized && r.status === 'pending_club_admin' && (r.clubId === clubId || !r.clubId)) {
+                    pendingFromUserDocs.push({ ...u, _pendingRole: r.role, _pendingCategory: r.category || u.requestedCategory, _pendingSubcat: r.subcategory || u.requestedSubcat });
+                }
+            });
+        }
+    });
+
+    const pendingClubAdmin = [];
+    const seenPendingKeys = new Set();
+    pendingFromPlatformReqs.forEach(pr => {
+        const key = (pr.userUid || pr.requestedEmail) + '_' + pr.requestedRole;
+        pendingClubAdmin.push(pr);
+        seenPendingKeys.add(key);
+    });
+    pendingFromUserDocs.forEach(u => {
+        const key = (u._id || u.email) + '_' + u._pendingRole;
+        if (!seenPendingKeys.has(key)) {
+            pendingClubAdmin.push(u);
+            seenPendingKeys.add(key);
+        }
+    });
+
+    // Roles adicionales pendientes de usuarios que ya están activos en el club
+    // (ej: un entrenador que solicita ser coordinador — su primer rol ya está aprobado)
     const pendingRolesInAllRoles = [];
     users.forEach(u => {
-        // Skip if already in pendingClubAdmin (avoid duplicates)
-        if (u.status === 'pending_club_admin' || u.status === 'pending' || u.status === 'pending_sa') return;
-        // Skip secondary docs (doc ID format: uid_role_clubId)
-        if (u.uid && u._id !== u.uid) return;
-        const ar = u.allRoles || [];
-        ar.forEach(roleEntry => {
-            if (!roleEntry.isAuthorized && roleEntry.role) {
-                // Accept both: explicit status='pending_club_admin' OR no status field at all
-                // (new role entries from multi-reg may not have status field)
-                const isPending = (roleEntry.status === 'pending_club_admin') || (!roleEntry.status && !roleEntry.isAuthorized);
-                if (isPending) {
+        if (u.status === 'removed' || u.status === 'blocked') return;
+        // Solo incluir usuarios que ya tienen AL MENOS un rol autorizado en este club
+        const hasActiveRole = (u.allRoles || []).some(r =>
+            r.isAuthorized && (r.clubId === clubId || !r.clubId)
+        );
+        if (!hasActiveRole) return;
+        // Buscar roles pendientes en allRoles que NO sean el rol principal ya aprobado
+        (u.allRoles || []).forEach(r => {
+            if (r.isAuthorized) return; // ya está autorizado, no es pendiente
+            if (r.status === 'pending_club_admin' || r.status === 'pending_sa' || r.status === 'pending') {
+                if (r.clubId === clubId || !r.clubId) {
                     pendingRolesInAllRoles.push({
-                        _id: u._id,
-                        email: u.email,
-                        role: roleEntry.role,
-                        clubId: roleEntry.clubId || u.clubId,
-                        clubName: roleEntry.clubName || u.clubName,
-                        pendingRole: roleEntry.role,
-                        pendingRoleLabel: (ROLE_META[roleEntry.role] || {}).label || roleEntry.role,
-                        pendingRoleIcon: (ROLE_META[roleEntry.role] || {}).icon || '👤',
+                        ...u,
+                        _pendingRole: r.role,
+                        role: r.role, // sobreescribir para que el template use el rol pendiente
+                        _pendingCategory: r.category || u.requestedCategory,
+                        _pendingSubcat: r.subcategory || u.requestedSubcat,
                     });
                 }
             }
         });
     });
-    // Paso 2: Aprobados por SA, pendientes de confirmación por club admin (status='pending_club')
-    const pendingClubApproval = users.filter(u =>
-        u.status === 'pending_club' && u.approvedBySA === true
-    );
-    // Compat: mantener pendingMembers para el resto del código (direct pending only)
+    const pendingAutoReg = users.filter(u => u.status === 'pending' && u.requestedRole !== 'club_admin');
+    const pendingClubApproval = users.filter(u => u.status === 'pending_club' && u.approvedBySA === true);
     const pendingMembers = [...pendingAutoReg];
+
+    console.group('%c[CA-DIAG] Club Admin Panel', 'color:#58a6ff;font-weight:bold');
+    console.log('clubId:', clubId, '| users:', users.length, '| pending:', pendingClubAdmin.length);
+    console.groupEnd();
+    // ─────────────────────────────────────────────────────────────────
 
     // ── Render de una fila de usuario ────────────────────────────────
     const userRow = (u) => {
@@ -297,8 +369,8 @@ async function openClubAdminPanel(preClubId = null) {
           : isActive  ? '<span class="sa-badge" style="margin-left:0.4rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
           : '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
 
-        const _escA = typeof escapeAttr==='function'?escapeAttr:function(s){return s;};
-        const _escH = typeof escapeHtml==='function'?escapeHtml:function(s){return s;};
+        const _escA = escapeAttr;
+        const _escH = escapeHtml;
         const uid   = u._id;
         const email = _escA(u.email||u._id).replace(/\\/g,'\\\\').replace(/'/g, "\'");
         const euid  = _escA(u._id).replace(/\\/g,'\\\\').replace(/'/g, "\'");
@@ -310,8 +382,27 @@ async function openClubAdminPanel(preClubId = null) {
                 <span style="font-size:0.83rem;font-weight:600;">${_escH(u.email||u._id)}</span>
                 ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${_escH(u.displayName)}</span>` : ''}
                 ${statusBadge}
+                ${(function(){
+                    // Buscar categoría en el perfil o en allRoles
+                    let cat = u.category || u.categoryLabel;
+                    let sub = u.subcategory || u.subCategory;
+                    if (!cat && u.allRoles) {
+                        let roleEntry = u.allRoles.find(r => r.role === u.role);
+                        if (roleEntry) { cat = roleEntry.category; sub = roleEntry.subcategory; }
+                    }
+                    if (!cat) return '';
+                    return `
+                    <div style="margin-top:4px; display:flex; align-items:center; gap:0.5rem;">
+                        <span style="font-size:0.68rem;background:rgba(63,185,80,0.1);color:#3fb950;border:1px solid rgba(63,185,80,0.2);padding:2px 8px;border-radius:100px;font-weight:600;">
+                            ⚽ ${_escH(cat)}${sub ? ' · ' + _escH(sub) : ''}
+                        </span>
+                        <button onclick="caEditUserCategory('${euid}','${email}','${_escA(cat)}','${_escA(sub||'')}')" 
+                                style="background:none;border:none;color:#58a6ff;font-size:0.65rem;cursor:pointer;text-decoration:underline;padding:0;">
+                            Cambiar equipo</button>
+                    </div>`;
+                })()}
             </div>
-            <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;">
+            <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;flex-wrap:wrap;">
                 ${!isActive && !isRemoved ? `<button class="sa-btn"
                     onclick="caSetUserStatus('${euid}','${email}','active','${ecid}')"
                     style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);">
@@ -324,47 +415,117 @@ async function openClubAdminPanel(preClubId = null) {
                     onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}')"
                     style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">
                     🗑️ Baja</button>` : ''}
+                <button class="sa-btn"
+                    onclick="caDeleteUserComplete('${euid}','${email}','${ecid}')"
+                    style="font-size:0.7rem;color:white;border-color:rgba(255,88,88,0.6);background:rgba(255,88,88,0.2);font-weight:700;">
+                    🗑️ Eliminar</button>
             </div>
         </div>`;
     };
 
     // ── Render de sección acordeón por rol ───────────────────────────
-    const roleSections = [
-        { role: 'director',    label: '📋 Directores Deportivos', color: '#f0883e',  slotKey: 'directors'    },
-        { role: 'coordinator', label: '🎯 Coordinadores',         color: '#d2a8ff',  slotKey: 'coordinators' },
-        { role: 'user',        label: '⚽ Entrenadores',           color: '#3fb950',  slotKey: 'users'        },
-        { role: 'parent',      label: '👨‍👩‍👧 Padres / Madres / Tutores', color: '#79c0ff', slotKey: 'parents' },
-    ];
+    // ── Render de TABLA UNIFICADA DE USUARIOS ────────────────────────
+    const unifiedUserTable = () => {
+        const expandedUsers = [];
+        const cidStr = String(clubId || '');
 
-    const accordionSections = roleSections.map(({ role, label, color, slotKey }) => {
-        const si          = slotOf(role);
-        const roleUsers   = users.filter(u => u.role === role && u.status !== 'removed');
-        const slotsLabel  = si.unlimited ? `${si.used} · ∞` : `${si.used}/${si.max}`;
-        const slotsColor  = si.full ? '#ff5858' : '#3fb950';
-        const sectionId   = `ca-section-${role}-${clubId}`;
+        // 1. Filtrar y expandir usuarios por rol (para el club actual)
+        users.filter(u => u.status !== 'removed').forEach(u => {
+            let roles = u.allRoles || [];
+            
+            // Fallback: Si no tiene allRoles, considerar el rol raíz si pertenece al club
+            if (roles.length === 0) {
+                const rootRoleKey = u.role || u.requestedRole;
+                const rootClubId = String(u.clubId || u.requestedClubId || '');
+                const isAuth = u.isAuthorized === true || u.authorized === true;
+                
+                if (rootClubId === cidStr) {
+                    roles = [{
+                        role: rootRoleKey,
+                        clubId: u.clubId || null,
+                        isAuthorized: isAuth,
+                        status: u.status,
+                        category: u.category || u.categoryLabel,
+                        subcategory: u.subcategory || u.subCategory
+                    }];
+                }
+            }
+
+            roles.forEach(r => {
+                const rCid = String(r.clubId || '');
+                const isAuth = r.isAuthorized === true || r.authorized === true || (u.role === 'superadmin');
+                
+                if (rCid === cidStr && isAuth && r.status !== 'rejected') {
+                    expandedUsers.push({
+                        ...u,
+                        _activeRoleData: r
+                    });
+                }
+            });
+        });
+            
+        // 2. Generar las filas de la tabla
+        const rows = expandedUsers.map(u => {
+            const r = u._activeRoleData || {};
+            const roleMeta = (window.ROLE_META || {})[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' };
+            
+            // Nombre visible
+            let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
+            name = name.split(' ')[0];
+
+            // Fecha de registro
+            let regDate = '–';
+            if (u.createdAt) {
+                const d = u.createdAt.toDate ? u.createdAt.toDate() : new Date(u.createdAt.seconds ? u.createdAt.seconds * 1000 : u.createdAt);
+                regDate = isNaN(d.getTime()) ? '–' : d.toLocaleDateString();
+            } else if (u.authorizedAt) {
+                regDate = new Date(u.authorizedAt).toLocaleDateString();
+            }
+
+            const catLabel = r.category || '–';
+            const subLabel = r.subcategory || '–';
+            const euid = (u._id || '').replace(/'/g, "\\'");
+            const email = (u.email || '').replace(/'/g, "\\'");
+            const ecid = (clubId || '').replace(/'/g, "\\'");
+
+            return `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                <td style="padding:0.8rem 0.7rem;">
+                    <div style="font-weight:600; color:white;">${name}</div>
+                    <div style="font-size:0.68rem; color:${roleMeta.color};">${roleMeta.icon} ${roleMeta.label}</div>
+                </td>
+                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#8b949e;">${u.email}</td>
+                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#8b949e;">${regDate}</td>
+                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#3fb950; font-weight:600;">${catLabel}</td>
+                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#d2a8ff; font-weight:600;">${subLabel}</td>
+                <td style="padding:0.8rem 0.7rem; text-align:right;">
+                    <div style="display:flex; gap:0.4rem; justify-content:flex-end;">
+                        <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}')" 
+                            class="sa-btn" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.2);">✕</button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
 
         return `
-        <div class="sa-card" id="${sectionId}" style="margin-bottom:0.6rem; border-color:${color}33;">
-          <div class="sa-card-head" onclick="document.getElementById('${sectionId}').classList.toggle('expanded')">
-            <div class="sa-card-title">
-              <span class="sa-chevron">▼</span>
-              <span style="color:${color};">${label}</span>
-              <span class="sa-badge" style="background:${color}22;color:${color};">${slotsLabel}</span>
-              ${si.full ? '<span class="sa-badge" style="background:#ff585822;color:#ff5858;">Cuota llena</span>' : ''}
-            </div>
-            <button class="sa-btn"
-                onclick="event.stopPropagation(); caRequestQuota('${clubId}','${role}','${label.replace(/'/g,"\\'")}','${slotKey}')"
-                style="font-size:0.71rem;color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
-                📩 Solicitar ampliación</button>
-          </div>
-          <div class="sa-card-body">
-            ${roleUsers.length
-                ? roleUsers.map(u => userRow(u)).join('')
-                : `<p style="color:var(--text-muted);font-size:0.78rem;margin:0.3rem 0;">Sin ${label.split(' ')[1]?.toLowerCase() || 'usuarios'} registrados.</p>`
-            }
-          </div>
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; overflow:hidden; margin-bottom:1.5rem;">
+            <table style="width:100%; border-collapse:collapse; text-align:left;">
+                <thead>
+                    <tr style="background:rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.1);">
+                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Nombre</th>
+                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Email</th>
+                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Registro</th>
+                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Categoría</th>
+                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Subcat.</th>
+                        <th style="padding:0.8rem 0.7rem; text-align:right;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows || '<tr><td colspan="6" style="padding:2rem; text-align:center; color:#8b949e;">No hay usuarios registrados.</td></tr>'}
+                </tbody>
+            </table>
         </div>`;
-    }).join('');
+    };
 
     // ── Modal principal ─────────────────────────────────────────────
     let modalHTML;
@@ -373,7 +534,7 @@ async function openClubAdminPanel(preClubId = null) {
     <div class="modal-content sa-modal">
       <div class="sa-topbar">
         <div>
-          <div style="font-size:1.15rem;font-weight:700;">🏟️ ${typeof escapeHtml==='function'?escapeHtml(club.name):club.name}</div>
+          <div style="font-size:1.15rem;font-weight:700;">🏟️ ${escapeHtml(club.name)}</div>
           <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador del Club</div>
         </div>
         <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
@@ -387,7 +548,7 @@ async function openClubAdminPanel(preClubId = null) {
                      border:1px solid rgba(255,215,0,0.3);border-radius:10px;
                      color:#ffd700;font-size:0.75rem;font-weight:700;cursor:pointer;">
               ⇄ Cambiar Rol</button>
-          <button onclick="logoutUser()"
+          <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
               style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
                      border:1px solid rgba(255,88,88,0.4);border-radius:10px;
                      color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
@@ -396,6 +557,28 @@ async function openClubAdminPanel(preClubId = null) {
       </div>
 
       <div class="sa-body">
+
+        <!-- ── BLOQUE DE TRANSPARENCIA: Enviadas al SuperAdmin ── -->
+        ${(function(){
+            const fw = users.filter(u => (u.allRoles || []).some(r => r.status === 'pending_sa' && (r.clubId === clubId || !r.clubId)));
+            if (!fw.length) return '';
+            const meta = window.ROLE_META || {};
+            return `
+            <div style="background:rgba(88,166,255,0.08); border:1px solid rgba(88,166,255,0.3); border-radius:12px; padding:1rem; margin-bottom:1.5rem;">
+                <h3 style="margin:0 0 0.8rem; font-size:0.85rem; color:#58a6ff; display:flex; align-items:center; gap:0.5rem;">
+                    📤 Solicitudes enviadas al SuperAdmin
+                    <span style="background:#58a6ff; color:white; padding:2px 8px; border-radius:10px; font-size:0.7rem;">${fw.length}</span>
+                </h3>
+                ${fw.map(u => {
+                    const pr = (u.allRoles || []).find(r => r.status === 'pending_sa');
+                    const label = (meta[pr?.role] || {}).label || pr?.role || 'Usuario';
+                    return `<div style="font-size:0.8rem; color:white; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+                        • <strong>${u.email}</strong> solicitó ser <strong>${label}</strong>. 
+                        <span style="color:#8b949e; font-size:0.72rem; display:block; margin-top:2px;">⏳ Esperando que el SuperAdmin apruebe la solicitud.</span>
+                    </div>`;
+                }).join('')}
+            </div>`;
+        })()}
 
         <!-- ── BLOQUE 0: Aprobados por SA, pendientes de confirmación club ── -->
         ${pendingClubApproval.length ? `
@@ -412,10 +595,10 @@ async function openClubAdminPanel(preClubId = null) {
           ${pendingClubApproval.map(u => {
               const roleLabel = ROLE_META[u.role]?.label || u.role || 'Usuario';
               const roleIcon  = ROLE_META[u.role]?.icon  || '👤';
-              const escEmail = (typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+              const escEmail = (escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
               const escId    = u._id.replace(/'/g,"\\'");
               return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">' +
-                '<div><div style="font-size:0.85rem;font-weight:600;">' + (typeof escapeHtml==='function'?escapeHtml(u.email):u.email) + '</div>' +
+                '<div><div style="font-size:0.85rem;font-weight:600;">' + (escapeHtml(u.email)) + '</div>' +
                 '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + roleIcon + ' ' + roleLabel + ' · Aprobado por SA ✅</div></div>' +
                 '<div style="display:flex;gap:0.4rem;">' +
                 '<button onclick="caConfirmClubAccess(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">✅ Confirmar acceso</button>' +
@@ -434,17 +617,28 @@ async function openClubAdminPanel(preClubId = null) {
             ℹ️ Estos usuarios se han registrado y esperan que reenvíes su solicitud al SuperAdmin.
           </p>
           ${pendingClubAdmin.map(u => {
-              const roleLabel = ROLE_META[u.role || u.requestedRole || 'user']?.label || 'Usuario';
-              const roleIcon  = ROLE_META[u.role || u.requestedRole || 'user']?.icon || '👤';
-              const escEmail = (typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-              const escId    = (u._id).replace(/'/g,"\\'");
-              return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:center;">' +
-                '<div><div style="font-size:0.85rem;font-weight:600;">' + (typeof escapeHtml==='function'?escapeHtml(u.email):u.email) + '</div>' +
-                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + roleIcon + ' ' + roleLabel + '</div></div>' +
-                '<div style="display:flex;gap:0.4rem;">' +
-                '<button onclick="caForwardToSA(\'' + escId + '\',\'' + (u.role||u.requestedRole||'user') + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);">📤 Reenviar al SuperAdmin</button>' +
-                '<button onclick="caRejectRequest(\'' + escId + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
-                '</div></div>';
+              // Usar _pendingRole (allRoles expandido) o requestedRole (platform_req)
+              const roleKey   = u._pendingRole || u.requestedRole || u.role || 'user';
+              const roleLabel = (ROLE_META[roleKey] || {}).label || roleKey;
+              const roleIcon  = (ROLE_META[roleKey] || {}).icon  || '👤';
+              const cat       = u._pendingCategory || u.requestedCategory;
+              const sub       = u._pendingSubcat   || u.requestedSubcat;
+              const catInfo   = cat ? ' · <strong style="color:#3fb950">' + _catLabel(cat, sub) + '</strong>' : '';
+              const nameInfo  = u.requestedName || [u.firstName, u.lastName].filter(Boolean).join(' ') || '';
+              const emailShow = u.email || u.requestedEmail || '–';
+              const escEmail  = (escapeAttr(emailShow)).replace(/\\/g,'\\\\').replace(/'/g,"\\'" );
+              const escId     = (u._id||'').replace(/'/g,"\\'" );
+              const fwdId     = u._isPlatformReq ? (u.userUid || escId) : escId;
+              return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(88,166,255,0.15);">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">' +
+                '<div style="min-width:0;flex:1;">' +
+                '<div style="font-size:0.85rem;font-weight:600;word-break:break-all;">' + (escapeHtml(emailShow)) +
+                (nameInfo ? ' · <span style="font-weight:400;color:#8b949e;font-size:0.78rem;">' + (escapeHtml(nameInfo)) + '</span>' : '') + '</div>' +
+                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + roleIcon + ' ' + roleLabel + catInfo + '</div></div>' +
+                '<div style="display:flex;gap:0.4rem;flex-shrink:0;">' +
+                '<button onclick="caForwardToSA(\'' + fwdId + '\',\'' + roleKey + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);font-size:0.75rem;">📤 Reenviar al SA</button>' +
+                '<button onclick="caRejectRequest(\'' + escId + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);font-size:0.75rem;">✕</button>' +
+                '</div></div></div>';
           }).join('')}
         </div>` : ''}
 
@@ -455,22 +649,50 @@ async function openClubAdminPanel(preClubId = null) {
             📋 Nuevos Roles Solicitados (${pendingRolesInAllRoles.length})
           </h3>
           <p style="font-size:0.73rem;color:#8b949e;margin:0 0 0.7rem;padding:0.4rem 0.6rem;\n                     background:rgba(240,136,62,0.05);border-radius:6px;border:1px solid rgba(240,136,62,0.15);">
-            ℹ️ Usuarios activos que solicitan un rol adicional. Reenvía al SuperAdmin para aprobación.
+            ℹ️ Usuarios activos que solicitan un rol adicional en el club. Reenvía al SuperAdmin para aprobación.
           </p>
           ${pendingRolesInAllRoles.map(u => {
-              const escEmail = (typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-              const escId    = (u._id).replace(/'/g,"\\'");
-              return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:center;">' +
-                '<div><div style="font-size:0.85rem;font-weight:600;">' + (typeof escapeHtml==='function'?escapeHtml(u.email):u.email) + '</div>' +
-                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + u.pendingRoleIcon + ' Solicita: <strong>' + u.pendingRoleLabel + '</strong></div></div>' +
+              const _meta = window.ROLE_META || {};
+              const roleLabel = (_meta[u.role] || {}).label || u.role;
+              const roleIcon  = (_meta[u.role] || {}).icon  || '👤';
+              const escEmail  = (escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'" );
+              const escId     = u._id.replace(/'/g,"\\'");
+              return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(240,136,62,0.15);display:flex;justify-content:space-between;align-items:center;">' +
+                '<div><div style="font-size:0.85rem;font-weight:600;">' + (escapeHtml(u.email)) + '</div>' +
+                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Solicita: ' + roleIcon + ' ' + roleLabel + '</div></div>' +
                 '<div style="display:flex;gap:0.4rem;">' +
-                '<button onclick="caForwardToSA(\'' + escId + '\',\'' + u.pendingRole + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);">📤 Reenviar al SuperAdmin</button>' +
-                '<button onclick="caRejectMultiRole(\'' + escId + '\',\'' + u.pendingRole + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
+                '<button onclick="caForwardToSA(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#f0883e;border-color:rgba(240,136,62,0.3);background:rgba(240,136,62,0.08);">📤 Reenviar al SuperAdmin</button>' +
+                '<button onclick="caRejectMultiRole(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
                 '</div></div>';
           }).join('')}
         </div>` : ''}
 
-        <!-- ── BLOQUE A: Solicitudes de acceso automático ── -->
+        <!-- ── BLOQUE 0d: Solicitudes YA reenviadas (Transparencia) ── -->
+        ${(function(){
+            const forwarded = users.filter(u => {
+                const ar = u.allRoles || [];
+                return ar.some(r => r.status === 'pending_sa' && r.clubId === clubId);
+            });
+            if (!forwarded.length) return '';
+            return `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);
+                        border-radius:10px;padding:1rem;margin-bottom:1.5rem; opacity:0.8;">
+              <h3 style="font-size:0.8rem;margin:0 0 0.8rem;color:var(--text-muted);
+                         display:flex;align-items:center;gap:0.5rem;">
+                📦 Enviadas al SuperAdmin (Pendientes de aprobación final)
+                <span style="background:rgba(255,255,255,0.05);color:var(--text-muted);padding:1px 8px;border-radius:10px;font-size:0.65rem;">${forwarded.length}</span>
+              </h3>
+              ${forwarded.map(u => {
+                  const ar = u.allRoles || [];
+                  const pr = ar.find(r => r.status === 'pending_sa' && r.clubId === clubId);
+                  const meta = window.ROLE_META || {};
+                  const label = (meta[pr?.role] || {}).label || pr?.role || 'Usuario';
+                  return '<div style="font-size:0.75rem; color:#8b949e; padding:4px 0;">' +
+                         '• <b>' + (escapeHtml(u.email)) + '</b> (' + label + ')</div>';
+              }).join('')}
+            </div>`;
+        })()}
+
         ${pendingMembers.length ? `
         <div style="background:rgba(255,165,0,0.06);border:1px solid rgba(255,165,0,0.25);
                     border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
@@ -486,24 +708,31 @@ async function openClubAdminPanel(preClubId = null) {
                           margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.05);
                           display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                  <div style="font-size:0.85rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(u.email):u.email}</div>
+                  <div style="font-size:0.85rem;font-weight:600;">${escapeHtml(u.email)}</div>
                   <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
-                    Rol solicitado: <strong>${typeof escapeHtml==='function'?escapeHtml(roleLabel):roleLabel}</strong> ·
+                    Rol solicitado: <strong>${escapeHtml(roleLabel)}</strong> ·
                     <span style="color:${si.full ? '#ff5858' : '#31d0aa'};">
                       ${si.used}/${si.max === -1 ? '∞' : si.max} slots</span>
                   </div>
                 </div>
                 <div style="display:flex;gap:0.4rem;">
-                  <button onclick="caApproveRequest('${(typeof escapeAttr==='function'?escapeAttr(u._id):u._id).replace(/'/g,"\\'")}','${u.requestedRole||'user'}','${(typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}' )"
+                  <button onclick="caApproveRequest('${(escapeAttr(u._id)).replace(/'/g,"\\'")}','${u.requestedRole||'user'}','${(escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}' )"
                       class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
                       ✅ Aceptar</button>
-                  <button onclick="caRejectRequest('${(typeof escapeAttr==='function'?escapeAttr(u._id):u._id).replace(/'/g,"\\'")}','${(typeof escapeAttr==='function'?escapeAttr(u.email||''):u.email||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}' )"
+                  <button onclick="caRejectRequest('${(escapeAttr(u._id)).replace(/'/g,"\\'")}','${(escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}' )"
                       class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
                       ✕ Rechazar</button>
                 </div>
               </div>`;
           }).join('')}
         </div>` : ''}
+
+        <!-- ── TABLA DE USUARIOS UNIFICADA ── -->
+        <h3 style="font-size:0.85rem; margin:1.5rem 0 0.8rem; color:#58a6ff; display:flex; align-items:center; gap:0.5rem;">
+            👥 Usuarios del Club
+            <span style="background:rgba(88,166,255,0.15); color:#58a6ff; padding:2px 8px; border-radius:10px; font-size:0.7rem;">${users.filter(u => u.status !== 'removed').length}</span>
+        </h3>
+        ${unifiedUserTable()}
 
         <!-- ── BLOQUE B: Resumen de cuotas ── -->
         <div class="sa-stats" style="margin-bottom:1.2rem;">
@@ -565,10 +794,7 @@ async function openClubAdminPanel(preClubId = null) {
           <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;color:#3fb950;"></div>
         </div>
 
-        <!-- ── BLOQUE D: Miembros por rol (acordeón) ── -->
-        <div style="margin-bottom:0.5rem;font-size:0.73rem;color:var(--text-muted);
-                    padding:0 0.2rem;font-weight:600;">👥 MIEMBROS DEL CLUB</div>
-        ${accordionSections}
+
 
         <!-- ── BLOQUE E: Toggle envío informes individualizados a padres ── -->
         <div class="sa-card" style="border-color:rgba(210,168,255,0.3);margin-top:1rem;">
@@ -632,8 +858,8 @@ async function openClubAdminPanel(preClubId = null) {
                   '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">' +
                   '<span>' + meta.icon + '</span>' +
                   '<div style="flex:1;min-width:0;">' +
-                  '<div style="font-weight:700;font-size:0.82rem;color:white;">' + (typeof escapeHtml==='function'?escapeHtml(u.email||u._id):u.email||u._id) +
-                  (u.displayName ? ' <span style="color:#7d8590;font-weight:400;font-size:0.75rem;"> · ' + (typeof escapeHtml==='function'?escapeHtml(u.displayName):u.displayName) + '</span>' : '') +
+                  '<div style="font-weight:700;font-size:0.82rem;color:white;">' + (escapeHtml(u.email||u._id)) +
+                  (u.displayName ? ' <span style="color:#7d8590;font-weight:400;font-size:0.75rem;"> · ' + (escapeHtml(u.displayName)) + '</span>' : '') +
                   '</div><div style="font-size:0.68rem;color:' + meta.color + ';">' + meta.label + '</div></div></div>' +
                   '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' +
                   permToggle('receiveConvocatorias','📋','Convocatorias','#3fb950') +
@@ -657,7 +883,7 @@ async function openClubAdminPanel(preClubId = null) {
             _modal.innerHTML = `<div style="background:#0d1117;border-radius:12px;padding:2rem;color:white;text-align:center;max-width:450px;margin:auto;">
                 <div style="font-size:1.5rem;margin-bottom:1rem;">⚠️</div>
                 <p style="color:#ff5858;font-size:0.88rem;">Error al renderizar el panel del club.</p>
-                <p style="color:#8b949e;font-size:0.78rem;margin-top:0.5rem;">${typeof escapeHtml==='function'?escapeHtml(renderErr.message):renderErr.message}</p>
+                <p style="color:#8b949e;font-size:0.78rem;margin-top:0.5rem;">${escapeHtml(renderErr.message)}</p>
                 <button onclick="document.getElementById('setup-modal').style.display='none'"
                     style="margin-top:1rem;padding:0.5rem 1.2rem;background:rgba(88,166,255,0.15);
                            border:1px solid rgba(88,166,255,0.4);border-radius:7px;color:#58a6ff;cursor:pointer;">
@@ -818,13 +1044,62 @@ async function openClubAdminPanel(preClubId = null) {
         }
         if (!confirm(`¿Confirmar acceso definitivo a ${email} como ${role}?`)) return;
         try {
-            await updateDoc(doc(db,'users',uid), {
-                isAuthorized: true, status: 'active',
-                authorizedAt: new Date().toISOString(), authorizedBy: me.uid,
-            });
+            const targetDocRef = doc(db, 'users', uid);
+            const targetSnap   = await getDoc(targetDocRef);
+            let updateData = {
+                isAuthorized: true,
+                status: 'active',
+                authorizedAt: new Date().toISOString(),
+                authorizedBy: me.email
+            };
+
+            if (targetSnap.exists()) {
+                const data = targetSnap.data();
+                
+                // Buscar metadata en platform_requests si no está en el doc
+                let cat = data.requestedCategory || data.category || data.categoryLabel;
+                let sub = data.requestedSubcat   || data.subcategory || data.subCategory;
+
+                const roleInAll = (data.allRoles || []).find(r => r.role === role);
+                if (roleInAll) {
+                    cat = roleInAll.category || cat;
+                    sub = roleInAll.subcategory || sub;
+                }
+
+                if (cat) {
+                    updateData.category      = cat;
+                    updateData.categoryLabel = cat;
+                    if (sub) {
+                        updateData.subcategory = sub;
+                        updateData.subCategory = sub;
+                    }
+                }
+                if (data.allRoles) {
+                    updateData.allRoles = data.allRoles.map(r => {
+                        if (r.role === role && (String(r.clubId||'') === String(clubId||''))) {
+                            return { ...r, isAuthorized: true, status: 'active', category: cat, subcategory: sub };
+                        }
+                        return r;
+                    });
+                } else {
+                    // Crear allRoles si no existe
+                    updateData.allRoles = [{
+                        role: role, clubId: clubId, isAuthorized: true, status: 'active',
+                        category: cat, subcategory: sub
+                    }];
+                }
+            }
+            await updateDoc(targetDocRef, updateData);
             const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
             await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used||0) + 1 });
             showToast(`✅ ${email} tiene acceso completo a la app.`, 4000);
+            
+            // Limpiar platform_request si existe
+            try {
+                const prRef = doc(db, 'platform_requests', 'fwd_' + clubId + '_' + uid + '_' + role);
+                await updateDoc(prRef, { status: 'approved', approvedAt: new Date().toISOString() }).catch(()=>{});
+            } catch(prErr) {}
+
             openClubAdminPanel();
         } catch(e) {
             showToast('❌ Error: ' + e.message, 3000);
@@ -840,10 +1115,44 @@ async function openClubAdminPanel(preClubId = null) {
         }
         if (!confirm(`¿Autorizar acceso a ${email} como ${role}?`)) return;
         try {
-            await updateDoc(doc(db,'users',uid), {
-                isAuthorized: true, role, status: 'active',
-                authorizedAt: new Date().toISOString(), authorizedBy: me.uid
-            });
+            const targetDocRef = doc(db, 'users', uid);
+            const targetSnap   = await getDoc(targetDocRef);
+            let updateData = {
+                isAuthorized: true,
+                status: 'active',
+                authorizedAt: new Date().toISOString(),
+                authorizedBy: me.email
+            };
+
+            // Si el usuario tiene metadatos de categoría en la solicitud, migrarlos a la raíz del perfil
+            if (targetSnap.exists()) {
+                const data = targetSnap.data();
+                const roleInAll = (data.allRoles || []).find(r => r.role === role);
+                
+                // Prioridad: 1. Datos en allRoles, 2. Datos en raíz, 3. Datos de la solicitud
+                const cat = (roleInAll && roleInAll.category) || data.requestedCategory || data.categoryLabel;
+                const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcat || data.subCategory;
+
+                if (cat) {
+                    updateData.category      = cat;
+                    updateData.categoryLabel = cat;
+                    if (sub) {
+                        updateData.subcategory = sub;
+                        updateData.subCategory = sub;
+                    }
+                }
+
+                // También activar el rol dentro del array allRoles
+                if (data.allRoles) {
+                    const newAllRoles = data.allRoles.map(r => {
+                        if (r.role === role) return { ...r, isAuthorized: true, status: 'active' };
+                        return r;
+                    });
+                    updateData.allRoles = newAllRoles;
+                }
+            }
+
+            await updateDoc(targetDocRef, updateData);
             const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
             await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used || 0) + 1 });
             showToast(`✅ ${email} autorizado correctamente.`, 3000);
@@ -895,6 +1204,14 @@ async function openClubAdminPanel(preClubId = null) {
     };
 
     // ── Reenviar solicitud de registro al SuperAdmin ─────────────────
+    // Helper: etiqueta legible de categoría
+    function _catLabel(cat, sub) {
+        if (!cat) return '';
+        const labels = { prebenjamin:'Prebenjamín', benjamin:'Benjamín', alevin:'Alevín',
+                         infantil:'Infantil', cadete:'Cadete', juvenil:'Juvenil', regional:'Regional' };
+        return (labels[cat] || cat) + (sub ? ' ' + sub : '');
+    }
+
     window.caForwardToSA = async (uid, role, email, cid) => {
         const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
         if (!confirm(`¿Reenviar solicitud de ${email} como ${ROLE_LABELS[role]||role} al SuperAdmin?`)) return;
@@ -906,58 +1223,67 @@ async function openClubAdminPanel(preClubId = null) {
             const userData = userSnap.exists() ? userSnap.data() : {};
             const hasOtherActiveRoles = (userData.isAuthorized === true) && userSnap.exists();
             
-            // Try to update user doc status (might fail due to Firestore rules)
-            // Non-critical: platform_request is the reliable path
+            // 1. Intentar actualizar el doc del usuario (informativo, puede fallar por reglas)
             try {
                 if (hasOtherActiveRoles) {
                     const allRoles = userData.allRoles || [];
-                    const roleIdx = allRoles.findIndex(r =>
+                    const roleIdx = allRoles.findIndex(r => 
                         r.role === role && (r.clubId || null) === (cid || null)
                     );
                     if (roleIdx >= 0) {
                         allRoles[roleIdx].status = 'pending_sa';
                         allRoles[roleIdx].forwardedToSA = true;
-                        allRoles[roleIdx].forwardedToSAAt = new Date().toISOString();
                     }
-                    await fUpdateDoc(fDoc(fDb, 'users', uid), {
-                        allRoles: allRoles,
-                        forwardedToSA: true,
-                        forwardedToSAAt: new Date().toISOString(),
-                        forwardedBy: window._cronosCurrentUser?.email || 'club_admin',
-                    });
+                    await fUpdateDoc(fDoc(fDb, 'users', uid), { allRoles });
                 } else {
-                    await fSetDoc(fDoc(fDb, 'users', uid), {
-                        status: 'pending_sa',
-                        forwardedToSA: true,
-                        forwardedToSAAt: new Date().toISOString(),
-                        forwardedBy: window._cronosCurrentUser?.email || 'club_admin',
-                    }, { merge: true });
+                    await fUpdateDoc(fDoc(fDb, 'users', uid), { status: 'pending_sa' });
                 }
-            } catch (userDocErr) {
-                console.warn('[caForwardToSA] Could not update user doc (permissions):', userDocErr.message);
-                // Non-critical — platform_request is the primary channel
+            } catch (updErr) {
+                console.warn('[caForwardToSA] No se pudo actualizar el perfil del usuario (falta de permisos), procediendo con platform_request...');
             }
-            
-            // 2. Create or update platform_request for SA (THIS IS CRITICAL — always succeeds)
+
+            // 2. Crear solicitud oficial de reenvío (ID único para el admin para evitar errores de permisos)
             const clubSnap = await fGetDoc(fDoc(fDb, 'clubs', cid));
             const clubName = clubSnap.exists() ? (clubSnap.data().name || '') : '';
             
-            // Use consistent reqId: try to find existing request first
-            const existingReqSnap = await fGetDoc(fDoc(fDb, 'platform_requests', 'self_reg_' + uid)).catch(() => null);
-            const finalReqId = existingReqSnap?.exists() ? 'self_reg_' + uid : ('self_reg_' + uid + '_' + role + '_' + (cid || ''));
+            // Usar un ID que el Club Admin "posea" para evitar el error de permisos al sobrescribir la del usuario
+            const fwdReqId = 'fwd_' + cid + '_' + uid + '_' + role;
             
-            await fSetDoc(fDoc(fDb, 'platform_requests', finalReqId), {
+            const realEmail = (email && email !== '–' && email !== '-') ? email 
+                            : (userData.email || userData.requestedEmail || '');
+            const realName  = userData.displayName || 
+                             [userData.firstName, userData.lastName].filter(Boolean).join(' ') || 
+                             userData.requestedName || '';
+
+            // Obtener categorías si existen (del doc del usuario, allRoles, o de la solicitud original)
+            let userCatFwd    = userData.requestedCategory || userData.category || null;
+            let userSubcatFwd = userData.requestedSubcat   || userData.subcategory || null;
+            const userSlotFwd = userData.requestedSlot     || null;
+            // Buscar también en allRoles si no se encontró en el doc raíz
+            if (!userCatFwd && userData.allRoles) {
+                const roleEntry = userData.allRoles.find(r => r.role === role && (r.clubId || null) === (cid || null));
+                if (roleEntry) {
+                    userCatFwd    = roleEntry.category || roleEntry.categoryLabel || null;
+                    userSubcatFwd = roleEntry.subcategory || roleEntry.subCategory || null;
+                }
+            }
+
+            await fSetDoc(fDoc(fDb, 'platform_requests', fwdReqId), {
                 type: 'self_registration',
                 clubId: cid,
                 clubName: clubName,
-                requestedEmail: email,
-                requestedRole: role,
+                requestedEmail:    realEmail,
+                requestedName:     realName,
+                requestedRole:     role,
                 requestedRoleLabel: ROLE_LABELS[role] || role,
+                requestedCategory: userCatFwd,
+                requestedSubcat:   userSubcatFwd,
+                requestedSlot:     userSlotFwd,
                 userUid: uid,
                 status: 'pending_sa',
                 forwardedBy: window._cronosCurrentUser?.email || 'club_admin',
                 forwardedAt: new Date().toISOString(),
-                createdAt: existingReqSnap?.exists() ? (existingReqSnap.data().createdAt || new Date().toISOString()) : new Date().toISOString(),
+                createdAt: new Date().toISOString()
             });
             
             showToast('✅ Solicitud de ' + email + ' reenviada al SuperAdmin.', 4000);
@@ -968,9 +1294,81 @@ async function openClubAdminPanel(preClubId = null) {
     };
 
     // ── Cambiar estado de un usuario (activo / bloqueado / baja total) ──
+
+    // ── Eliminar usuario completo (sin preguntar motivo, borrado total) ──
+    window.caDeleteUserComplete = async (userId, userEmail, cid) => {
+        if (!confirm(
+            '🗑️ ELIMINAR USUARIO COMPLETAMENTE\n\n' +
+            'Email: ' + userEmail + '\n\n' +
+            'Esto eliminará PERMANENTEMENTE:\n' +
+            '• Su cuenta y documento de Firestore\n' +
+            '• Todas sus solicitudes y platform_requests\n' +
+            '• Sus enlaces con jugadores (cronos_player_links)\n' +
+            '• Sus registros de baja\n\n' +
+            'El correo quedará libre para re-registrarse.\n\n' +
+            '¿Confirmar BORRADO TOTAL?'
+        )) return;
+        // Reutilizar caSetUserStatus con 'removed' que ya hace el borrado completo
+        await window.caSetUserStatus(userId, userEmail, 'removed', cid);
+    };
+
+    // ── GESTIONAR EQUIPO (Categoría/Subcategoría) ────────────────────
+    window.caEditUserCategory = async function(uid, email, currentCat, currentSub) {
+        let newCat = prompt('Categoría (ej: Infantil, Cadete, Senior...):', currentCat);
+        if (newCat === null) return;
+        let newSub = prompt('Subcategoría / Grupo (ej: A, B, Segunda...):', currentSub);
+        if (newSub === null) return;
+
+        try {
+            const { db, doc, updateDoc, getDoc } = await saFS();
+            const userRef = doc(db, 'users', uid);
+            const snap = await getDoc(userRef);
+            if (!snap.exists()) {
+                // Si es un documento secundario (uid_role_clubId), buscar el primario
+                alert('No se puede editar directamente. Prueba a refrescar o contacta con el SuperAdmin.');
+                return;
+            }
+            const data = snap.data();
+            
+            // Actualizar en el perfil general
+            let updates = {
+                category: newCat,
+                subcategory: newSub
+            };
+
+            // Actualizar en allRoles
+            if (data.allRoles) {
+                updates.allRoles = data.allRoles.map(function(r) {
+                    if (r.role === data.role || r.clubId === clubId) {
+                        return Object.assign({}, r, { category: newCat, subcategory: newSub });
+                    }
+                    return r;
+                });
+            }
+
+            await updateDoc(userRef, updates);
+            if (typeof showToast === 'function') showToast('✅ Equipo actualizado correctamente', 3000);
+            
+            // Refrescar panel tras 1 segundo
+            setTimeout(() => openClubAdminPanel(), 1000);
+        } catch(e) {
+            console.error('[caEditUserCategory] Error:', e);
+            alert('Error: ' + e.message);
+        }
+    };
+
     window.caSetUserStatus = async (userId, userEmail, newStatus, cid) => {
         const labels = { active:'activar', blocked:'bloquear', removed:'dar de baja definitivamente' };
         if (!confirm('¿Deseas ' + (labels[newStatus] || newStatus) + ' a ' + userEmail + '?')) return;
+
+        // Función auxiliar para obtener la clave de slot del club según el rol
+        // Definida aquí para estar disponible en TODOS los caminos (removed, active, blocked)
+        function _slotKey(role) {
+            if (role === 'director') return 'usedSlots.directors';
+            if (role === 'coordinator') return 'usedSlots.coordinators';
+            if (role === 'parent') return 'usedSlots.parents';
+            return 'usedSlots.users';
+        }
 
         try {
             // ═══════════════════════════════════════════════════════════
@@ -998,12 +1396,7 @@ async function openClubAdminPanel(preClubId = null) {
                 }
 
                 // 3. Actualizar slots del club para CADA rol del usuario
-                var _slotKey = function(role) {
-                    if (role === 'director') return 'usedSlots.directors';
-                    if (role === 'coordinator') return 'usedSlots.coordinators';
-                    if (role === 'parent') return 'usedSlots.parents';
-                    return 'usedSlots.users';
-                };
+                // (_slotKey ya definido al inicio de caSetUserStatus)
                 for (var ri = 0; ri < allRoles.length; ri++) {
                     var rcid = allRoles[ri].clubId || cid;
                     if (rcid) {
@@ -1193,7 +1586,7 @@ window.openClubAdminPanel = openClubAdminPanel;
 // ════════════════════════════════════════════════════════════════════
 window.caToggleFeature = async function caToggleFeature(clubId, featureKey, value) {
     try {
-        const { db, doc, updateDoc } = await saFS();
+        const { db, doc, updateDoc, getDoc } = await saFS();
         await updateDoc(doc(db, 'clubs', clubId), {
             [`features.${featureKey}`]: value
         });

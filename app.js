@@ -1,5 +1,48 @@
+// --- XSS PREVENTION (global) ---
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const s = String(str);
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;', '/': '&#x2F;' };
+    return s.replace(/[&<>"'/]/g, c => map[c]);
+}
+function escapeAttr(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#039;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // --- SECURITY & INITIALIZATION ---
-var ACCESS_CODE = '1234';
+var ACCESS_CODE = ''; // Cargado dinámicamente desde Firestore (cronos_config/access)
+
+// ── Cargar ACCESS_CODE desde Firestore ──
+let _accessCodeLoaded = false;
+async function loadAccessCode() {
+    try {
+        const fa = window._cronos_auth;
+        if (!fa || !fa.db) { setTimeout(loadAccessCode, 1000); return; }
+        const snap = await fa.getDoc(fa.doc(fa.db, 'cronos_config', 'access'));
+        if (snap.exists()) {
+            const data = snap.data();
+            ACCESS_CODE = data.code || '';
+            _accessCodeLoaded = true;
+            console.log('[Cronos] ACCESS_CODE cargado desde Firestore');
+        } else {
+            console.warn('[Cronos] No se encontró cronos_config/access en Firestore — usando código vacío');
+            _accessCodeLoaded = true;
+        }
+    } catch(e) {
+        if (e.code === 'permission-denied' || (e.message && e.message.includes('permission'))) {
+            console.warn('[Cronos] loadAccessCode: permisos insuficientes, se reintentará tras login');
+        } else {
+            console.error('[Cronos] Error cargando ACCESS_CODE:', e);
+        }
+    }
+}
+loadAccessCode();
+
+// ── Reintentar carga de ACCESS_CODE tras autenticación ──
+window._retryAccessCodeLoad = function() {
+    if (!_accessCodeLoaded) loadAccessCode();
+};
 
 // ── Helper Global: Usuario efectivo con fallbacks para Superadmin ─────
 // Permite que el Superadmin pueda acceder a cualquier panel aunque no tenga
@@ -286,11 +329,13 @@ function clampToField(x, y) {
 }
 
 // Actualiza el <select> de formación según la modalidad elegida
-function updateFormationOptions() {
-    const mode = document.getElementById('setup-mode')?.value || 'f7';
+function updateFormationOptions(forcedMode) {
+    const mode = (forcedMode !== undefined && forcedMode) ? forcedMode
+                : (document.getElementById('setup-mode')?.value || 'f7');
     const sel  = document.getElementById('setup-formation');
     if (!sel) return;
     const presets = FORMATION_PRESETS[mode];
+    if (!presets) return;
     sel.innerHTML = '<option value="">-- Sin formación predefinida --</option>';
     Object.entries(presets).forEach(([key, val]) => {
         const opt = document.createElement('option');
@@ -298,6 +343,33 @@ function updateFormationOptions() {
         opt.textContent = val.label;
         sel.appendChild(opt);
     });
+    // Pasar el modo EXPLÍCITAMENTE para evitar cualquier lectura stale del DOM
+    updateCategoryOptions(mode);
+}
+
+function updateCategoryOptions(forcedMode) {
+    // Siempre usar forcedMode si se proporciona; si no, leer del DOM
+    const mode = (forcedMode !== undefined && forcedMode) ? forcedMode
+                : (document.getElementById('setup-mode')?.value || 'f7');
+    const sel = document.getElementById('match-category');
+    if (!sel) return; // El select existe solo en ciertos modales — no es un error
+
+    sel.innerHTML = '';
+    if (mode === 'f7') {
+        sel.innerHTML = `
+            <option value="f7_prebenjamin">Prebenjamín (2T x 30')</option>
+            <option value="f7_benjamin">Benjamín (2T x 30')</option>
+            <option value="f7_alevin">Alevín (2T x 30')</option>
+        `;
+    } else {
+        sel.innerHTML = `
+            <option value="f11_infantil">Infantil (2T x 40')</option>
+            <option value="f11_cadete">Cadete (2T x 40')</option>
+            <option value="f11_juvenil">Juvenil (2T x 45')</option>
+            <option value="f11_regional">Regional (2T x 45')</option>
+        `;
+    }
+    // NO dispatchEvent — elimina bucles y efectos secundarios indeseados
 }
 
 // --- APLICAR FORMACIÓN ---
@@ -378,9 +450,26 @@ function openPlayerActionModal(player) {
     // Resaltar botón de tarjeta activa
     const btnAmarilla = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
     const btnRoja     = document.querySelector('#player-action-modal .btn[onclick*="roja"]');
+
     if (btnAmarilla) {
-        btnAmarilla.style.outline   = player.cards === 'amarilla' ? '3px solid #fff' : '';
-        btnAmarilla.style.boxShadow = player.cards === 'amarilla' ? '0 0 8px rgba(241,196,15,0.8)' : '';
+        // Limpiar badges previos
+        const oldBadge = btnAmarilla.querySelector('.cronos-ynum');
+        if (oldBadge) oldBadge.remove();
+        btnAmarilla.style.outline   = '';
+        btnAmarilla.style.boxShadow = '';
+
+        if (player.cards === 'amarilla' && (player.yellowCards || 0) >= 1) {
+            // Tiene 1ª amarilla → avisar que la siguiente expulsa
+            btnAmarilla.style.outline   = '3px solid #f39c12';
+            btnAmarilla.style.boxShadow = '0 0 10px rgba(243,156,18,0.9)';
+            const badge = document.createElement('span');
+            badge.className   = 'cronos-ynum';
+            badge.textContent = '1ª ⚠️';
+            badge.style.cssText = 'font-size:0.6rem;font-weight:900;margin-left:5px;' +
+                'background:#e67e22;color:#fff;padding:1px 4px;border-radius:3px;vertical-align:middle;';
+            badge.title = 'Ya tiene 1ª amarilla — la siguiente = EXPULSIÓN';
+            btnAmarilla.appendChild(badge);
+        }
     }
     if (btnRoja) {
         btnRoja.style.outline   = player.cards === 'roja' ? '3px solid #fff' : '';
@@ -409,28 +498,20 @@ function toggleInjury() {
     if (!p) return;
     p.injured = !p.injured;
     if (p.injured) logEvent(p, 'LESIÓN');
-    // Actualizar botón en el modal para reflejar estado
-    const btn = document.getElementById('btn-injury');
-    if (btn) {
-        btn.style.background = p.injured ? 'rgba(231,76,60,0.3)' : 'rgba(255,255,255,0.08)';
-        btn.style.border     = p.injured ? '1px solid #e74c3c' : '';
-        btn.textContent      = p.injured ? '🚑 Lesionado ✓' : '🚑 Lesión';
-    }
-    renderPlayers();
-    liveSyncOnAction();
-}
 
-function toggleInjury() {
-    if (!activeActionPlayerId) return;
-    const p = players.find(x => x.id === activeActionPlayerId);
-    if (!p) return;
-    p.injured = !p.injured;
-    // Actualizar aspecto del botón en el modal
+    // Actualizar botón del modal — compatible con ambos estilos de markup
     const btn = document.getElementById('btn-injury');
     if (btn) {
-        btn.style.borderColor  = p.injured ? '#e74c3c' : 'transparent';
-        btn.style.background   = p.injured ? 'rgba(231,76,60,0.15)' : 'var(--glass)';
-        btn.querySelector('span').style.color = p.injured ? '#e74c3c' : 'var(--text-muted)';
+        btn.style.background  = p.injured ? 'rgba(231,76,60,0.3)'  : 'rgba(255,255,255,0.08)';
+        btn.style.border      = p.injured ? '1px solid #e74c3c'    : '';
+        btn.style.borderColor = p.injured ? '#e74c3c'              : 'transparent';
+        // Soporte para botón con <span> interior o texto directo
+        const span = btn.querySelector('span');
+        if (span) {
+            span.style.color = p.injured ? '#e74c3c' : 'var(--text-muted)';
+        } else {
+            btn.textContent = p.injured ? '🚑 Lesionado ✓' : '🚑 Lesión';
+        }
     }
     renderPlayers();
     liveSyncOnAction();
@@ -439,38 +520,90 @@ function toggleInjury() {
 function assignCard(type) {
     if (!activeActionPlayerId) return;
     const p = players.find(x => x.id === activeActionPlayerId);
-    if (p) {
-        // Toggle: si ya tiene esa tarjeta, la quita
-        if (p.cards === type) {
-            p.cards = 'ninguna';
-            // Actualizar visualmente el botón
-            document.querySelectorAll('#player-action-modal .btn').forEach(b => {
-                b.style.outline = '';
-                b.style.boxShadow = '';
-            });
-            renderPlayers();
-            liveSyncOnAction();
-            return;
-        }
-        p.cards = type;
-        logEvent(p, type === 'amarilla' ? 'TARJETA AMARILLA' : 'TARJETA ROJA');
+    if (!p) return;
+
+    // Inicializar contador de amarillas (retrocompatibilidad)
+    if (typeof p.yellowCards !== 'number') p.yellowCards = 0;
+
+    // ── Jugador ya expulsado ──────────────────────────────────────────
+    if (p.cards === 'roja') {
+        alert(`⛔ ${p.name} ya está expulsado.`);
+        closePlayerActionModal();
+        return;
+    }
+
+    // ── TARJETA ROJA DIRECTA ─────────────────────────────────────────
+    if (type === 'roja') {
+        p.cards = 'roja';
+        p.yellowCards = 0;
+        logEvent(p, 'TARJETA ROJA');
         liveSyncOnAction();
-        if (type === 'roja') {
-            const teamRedCards = players.filter(x => x.team === p.team && x.cards === 'roja').length;
-            const limit = currentMode === 'f7' ? 3 : 5;
+        const limit = currentMode === 'f7' ? 3 : 5;
+        if (p.status === 'field') {
+            p.status = 'bench'; p.x = 0; p.y = 0;
+            if (isRunning) logMovement(p);
+        }
+        const teamReds = players.filter(x => x.team === p.team && x.cards === 'roja').length;
+        if (teamReds >= limit) {
+            terminateMatch(`LÍMITE DE EXPULSIONES ALCANZADO (${limit} en ${p.team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away})`);
+        } else {
+            alert(`🟥 TARJETA ROJA: ${p.name} ha sido expulsado y retirado al banquillo automáticamente.`);
+        }
+        closePlayerActionModal();
+        renderPlayers();
+        return;
+    }
+
+    // ── TARJETA AMARILLA ─────────────────────────────────────────────
+    if (type === 'amarilla') {
+
+        // Toggle: quitar amarilla si ya la tiene Y no tiene segunda
+        // (solo si yellowCards = 0, es decir se puso por error)
+        if (p.cards === 'amarilla' && p.yellowCards <= 1) {
+            // Segunda pulsación = SEGUNDA AMARILLA → EXPULSIÓN
+            p.cards       = 'roja';
+            p.yellowCards = 2;
+            logEvent(p, 'DOBLE AMARILLA → EXPULSADO');
+            liveSyncOnAction();
             if (p.status === 'field') {
                 p.status = 'bench'; p.x = 0; p.y = 0;
                 if (isRunning) logMovement(p);
             }
-            if (teamRedCards >= limit) {
-                terminateMatch(`LÍMITE DE EXPULSIONES ALCANZADO (${limit} en ${p.team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away})`);
-            } else {
-                alert(`🟥 TARJETA ROJA: ${p.name} ha sido expulsado y retirado al banquillo automáticamente.`);
-            }
+            alert(`🟨🟨 DOBLE AMARILLA: ${p.name} queda EXPULSADO automáticamente.`);
+            closePlayerActionModal();
+            renderPlayers();
+            return;
         }
-        closePlayerActionModal();
+
+        // Primera amarilla → mantener modal abierto con aviso
+        p.cards       = 'amarilla';
+        p.yellowCards = 1;
+        logEvent(p, 'TARJETA AMARILLA');
+        liveSyncOnAction();
         renderPlayers();
+        // NO cerrar modal - mostrar aviso de que la siguiente = expulsión
+        const btnAm = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
+        if (btnAm) {
+            const old2 = btnAm.querySelector('.cronos-ynum');
+            if (old2) old2.remove();
+            const badge = document.createElement('span');
+            badge.className = 'cronos-ynum';
+            badge.textContent = '1ª 🟨 → pulsa de nuevo para EXPULSAR';
+            badge.style.cssText = 'display:block;margin-top:4px;font-size:0.65rem;font-weight:800;' +
+                'background:#e67e22;color:#fff;padding:3px 6px;border-radius:4px;text-align:center;';
+            btnAm.parentNode.insertBefore(badge, btnAm.nextSibling);
+            btnAm.style.outline = '3px solid #f39c12';
+            btnAm.style.boxShadow = '0 0 12px rgba(243,156,18,0.9)';
+        }
+        return;
     }
+
+    // Cualquier otro tipo: flujo original
+    p.cards = type;
+    logEvent(p, type);
+    liveSyncOnAction();
+    closePlayerActionModal();
+    renderPlayers();
 }
 
 function terminateMatch(reason) {
@@ -483,6 +616,248 @@ function terminateMatch(reason) {
     alert(`🏁 PARTIDO FINALIZADO: ${reason}\nResultado final: ${TEAM_NAMES.home} ${document.getElementById('score-home').textContent} - ${document.getElementById('score-away').textContent} ${TEAM_NAMES.away}`);
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  PERSISTENCIA DE PARTIDO EN CURSO
+//  Guarda el estado completo cada 15 segundos y al abandonar la app.
+//  Al reabrir, si hay un partido en curso, ofrece retomarlo.
+// ════════════════════════════════════════════════════════════════════
+const _ACTIVE_MATCH_KEY = 'cronos_active_match_v2';
+
+function _saveMatchStateToStorage() {
+    if (matchPhase === 'finished' || matchPhase === 'idle') return;
+    try {
+        const state = {
+            savedAt:      new Date().toISOString(),
+            matchPhase,
+            isRunning,
+            masterTimeH1: typeof masterTimeH1 !== 'undefined' ? masterTimeH1 : 0,
+            masterTimeH2: typeof masterTimeH2 !== 'undefined' ? masterTimeH2 : 0,
+            half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
+            half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
+            scoreHome:    document.getElementById('score-home')?.textContent || '0',
+            scoreAway:    document.getElementById('score-away')?.textContent || '0',
+            teamNames:    typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES : {},
+            currentMode:  typeof currentMode !== 'undefined' ? currentMode : 'f7',
+            liveMatchId:  typeof liveMatchId !== 'undefined' ? liveMatchId : null,
+            players:      JSON.parse(JSON.stringify(window.players || [])),
+            COLORS:       typeof COLORS !== 'undefined' ? COLORS : {},
+        };
+        localStorage.setItem(_ACTIVE_MATCH_KEY, JSON.stringify(state));
+    } catch(e) { /* silencioso */ }
+}
+window._saveMatchStateToStorage = _saveMatchStateToStorage;
+
+// Auto-guardar cada 15 segundos
+setInterval(() => {
+    if (matchPhase !== 'finished' && matchPhase !== 'idle' && typeof players !== 'undefined' && players.length > 0) {
+        _saveMatchStateToStorage();
+    }
+}, 15000);
+
+function _checkActiveMatch() {
+    try {
+        const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
+        if (!raw) return false;
+        const state = JSON.parse(raw);
+        if (!state || !state.savedAt) return false;
+        if (state.matchPhase === 'finished') {
+            localStorage.removeItem(_ACTIVE_MATCH_KEY);
+            return false;
+        }
+
+        const elapsedSec = (Date.now() - new Date(state.savedAt).getTime()) / 1000;
+        const LIMIT_SEC  = 15 * 60; // 15 minutos
+
+        if (elapsedSec > LIMIT_SEC) {
+            // Han pasado más de 15 minutos → cancelar automáticamente
+            _cancelInterruptedMatch(state);
+            localStorage.removeItem(_ACTIVE_MATCH_KEY);
+            return false;
+        }
+
+        // Hay partido recuperable — mostrar banner
+        _showRestoreMatchBanner(state, elapsedSec);
+        return true; // indica que se encontró partido activo
+
+    } catch(e) { return false; }
+}
+
+function _cancelInterruptedMatch(state) {
+    // Cortar retransmisión en vivo en Firestore
+    try {
+        const fa = window._cronos_auth;
+        if (fa && fa.db && state.liveMatchId) {
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
+                .then(({ doc, updateDoc }) => {
+                    updateDoc(doc(fa.db, 'live_matches', state.liveMatchId), {
+                        status:      'cancelled',
+                        cancelledAt: new Date().toISOString(),
+                        cancelReason: 'timeout_15min',
+                    }).catch(() => {});
+                });
+        }
+    } catch(e) { /* silencioso */ }
+}
+
+function _showRestoreMatchBanner(state, elapsedSec) {
+    // Quitar banner anterior si existe
+    document.getElementById('cronos-restore-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'cronos-restore-banner';
+    const mins    = Math.floor((state.masterTimeH1 + (state.masterTimeH2 || 0)) / 60);
+    const secs    = (state.masterTimeH1 + (state.masterTimeH2 || 0)) % 60;
+    const home    = state.teamNames?.home || 'Local';
+    const away    = state.teamNames?.away || 'Visitante';
+    const phase   = state.matchPhase === '1st_half' ? '1ª Parte' :
+                    state.matchPhase === 'break'    ? 'Descanso' :
+                    state.matchPhase === '2nd_half' ? '2ª Parte' : state.matchPhase;
+    const remainSec = Math.max(0, 15 * 60 - Math.floor(elapsedSec));
+    const remMins   = Math.floor(remainSec / 60);
+    const remSecs   = remainSec % 60;
+    const elapsed   = Math.floor(elapsedSec / 60);
+
+    banner.innerHTML = `
+    <div style="position:fixed;top:0;left:0;right:0;z-index:99999;
+                background:linear-gradient(135deg,#1a1200,#0d1117);
+                border-bottom:3px solid #f0883e;
+                padding:1rem 1.4rem;box-shadow:0 4px 24px rgba(240,136,62,0.3);">
+        <div style="max-width:700px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+            <div style="display:flex;align-items:center;gap:0.8rem;">
+                <span style="font-size:2rem;">🔄</span>
+                <div>
+                    <div style="font-size:1rem;font-weight:800;color:#f0883e;">
+                        Partido interrumpido
+                    </div>
+                    <div style="font-size:0.82rem;color:white;font-weight:600;margin:1px 0;">
+                        ${home} vs ${away} · ${state.scoreHome||0}–${state.scoreAway||0} · ${phase}
+                    </div>
+                    <div style="font-size:0.72rem;color:rgba(255,255,255,0.6);">
+                        ⏱ ${mins}:${String(secs).padStart(2,'0')} jugados · cerrado hace ${elapsed} min
+                        · <span id="cronos-restore-countdown" style="color:#f0883e;font-weight:700;">
+                            ${remMins}:${String(remSecs).padStart(2,'0')} para cancelar
+                          </span>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button onclick="window._restoreActiveMatch()"
+                    style="background:#f0883e;color:#000;border:none;border-radius:8px;
+                           padding:0.6rem 1.4rem;font-weight:800;font-size:0.9rem;cursor:pointer;
+                           box-shadow:0 2px 8px rgba(240,136,62,0.4);">
+                    ▶ Retomar partido
+                </button>
+                <button onclick="window._discardActiveMatch()"
+                    style="background:rgba(255,88,88,0.15);color:#ff5858;border:1px solid rgba(255,88,88,0.4);
+                           border-radius:8px;padding:0.6rem 1.2rem;font-size:0.85rem;cursor:pointer;font-weight:700;">
+                    ✕ Cancelar partido
+                </button>
+            </div>
+        </div>
+    </div>`;
+
+    document.body.appendChild(banner);
+
+    // Contador regresivo hasta los 15 minutos
+    const endTime = new Date(state.savedAt).getTime() + 15 * 60 * 1000;
+    const countdownEl = () => document.getElementById('cronos-restore-countdown');
+    const tick = setInterval(() => {
+        const rem = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+        const el = countdownEl();
+        if (!el) { clearInterval(tick); return; }
+        if (rem <= 0) {
+            clearInterval(tick);
+            _cancelInterruptedMatch(state);
+            localStorage.removeItem(_ACTIVE_MATCH_KEY);
+            document.getElementById('cronos-restore-banner')?.remove();
+            openSetupModal();
+            if (typeof showToast === 'function')
+                showToast('⏱ Partido cancelado automáticamente (15 min)', 4000);
+            return;
+        }
+        el.textContent = `${Math.floor(rem/60)}:${String(rem%60).padStart(2,'0')} para cancelar`;
+    }, 1000);
+}
+
+window._discardActiveMatch = function() {
+    const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
+    if (raw) {
+        try { _cancelInterruptedMatch(JSON.parse(raw)); } catch(e) {}
+    }
+    localStorage.removeItem(_ACTIVE_MATCH_KEY);
+    document.getElementById('cronos-restore-banner')?.remove();
+    openSetupModal();
+};
+
+window._restoreActiveMatch = function() {
+    try {
+        const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
+        if (!raw) return;
+        const state = JSON.parse(raw);
+        document.getElementById('cronos-restore-banner')?.remove();
+
+        // Calcular tiempo transcurrido desde que se cerró la app
+        const elapsedSec = Math.floor((Date.now() - new Date(state.savedAt).getTime()) / 1000);
+
+        // Restaurar variables globales
+        if (typeof TEAM_NAMES !== 'undefined') {
+            TEAM_NAMES.home = state.teamNames?.home;
+            TEAM_NAMES.away = state.teamNames?.away;
+        }
+        window.players = state.players || [];
+        matchPhase = state.matchPhase || '1st_half';
+
+        // Sumar el tiempo transcurrido al cronómetro correspondiente
+        if (typeof masterTimeH1 !== 'undefined') {
+            if (state.matchPhase === '1st_half') {
+                masterTimeH1 = (state.masterTimeH1 || 0) + elapsedSec;
+                masterTimeH2 = state.masterTimeH2 || 0;
+            } else if (state.matchPhase === '2nd_half') {
+                masterTimeH1 = state.masterTimeH1 || 0;
+                masterTimeH2 = (state.masterTimeH2 || 0) + elapsedSec;
+            } else {
+                masterTimeH1 = state.masterTimeH1 || 0;
+                masterTimeH2 = state.masterTimeH2 || 0;
+            }
+        }
+        if (typeof half1MaxTime !== 'undefined') half1MaxTime = state.half1MaxTime || 1800;
+        if (typeof half2MaxTime !== 'undefined') half2MaxTime = state.half2MaxTime || 1800;
+        if (typeof liveMatchId  !== 'undefined') liveMatchId  = state.liveMatchId;
+        if (typeof currentMode  !== 'undefined' && state.currentMode) currentMode = state.currentMode;
+
+        // Restaurar marcador
+        const sh = document.getElementById('score-home');
+        const sa = document.getElementById('score-away');
+        if (sh) sh.textContent = state.scoreHome || '0';
+        if (sa) sa.textContent = state.scoreAway || '0';
+
+        // Mostrar el campo de partido (ocultar setup si estuviera abierto)
+        const setupModal = document.getElementById('setup-modal');
+        if (setupModal) setupModal.style.display = 'none';
+        const mainContainer = document.getElementById('main-container');
+        const mainHeader    = document.getElementById('main-header');
+        if (mainContainer) mainContainer.style.display = 'flex';
+        if (mainHeader)    mainHeader.style.display    = 'flex';
+
+        // Re-renderizar jugadores
+        if (typeof renderPlayers === 'function') renderPlayers();
+        if (typeof updateTimerDisplay === 'function') updateTimerDisplay();
+
+        // Reanudar el reloj
+        if (state.isRunning && typeof startTimer === 'function') {
+            setTimeout(() => startTimer(), 300);
+        }
+
+        const elapsedMins = Math.floor(elapsedSec / 60);
+        if (typeof showToast === 'function')
+            showToast(`✅ Partido retomado (+${elapsedMins} min sumados al cronómetro)`, 4000);
+
+    } catch(e) {
+        if (typeof showToast === 'function') showToast('⚠️ No se pudo retomar: ' + e.message, 4000);
+        openSetupModal();
+    }
+};
+
 function endMatch() {
     if (!confirm('¿Finalizar el partido? Esta acción detiene el reloj y cierra el encuentro.')) return;
     isRunning = false;
@@ -493,8 +868,11 @@ function endMatch() {
     document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
     const scoreHome = document.getElementById('score-home').textContent;
     const scoreAway = document.getElementById('score-away').textContent;
-    
+
     stopLiveSync(); // marcar partido como finalizado en Firestore
+
+    // Limpiar estado guardado — el partido terminó correctamente
+    localStorage.removeItem(_ACTIVE_MATCH_KEY);
     
     // ── Guardar datos del partido terminado para poder volver ──
     try {
@@ -532,32 +910,50 @@ function showPostMatchOptions(scoreHome, scoreAway) {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-    <div class="modal-content" style="width:min(95vw,440px);padding:1.5rem;text-align:center;">
+    <div class="modal-content" style="width:min(95vw,460px);padding:1.2rem;text-align:center;">
         <div style="font-size:2.5rem;margin-bottom:0.5rem;">🏁</div>
-        <h2 style="margin:0 0 0.3rem;color:white;">PARTIDO FINALIZADO</h2>
+        <h2 style="margin:0 0 0.2rem;color:white;font-size:1.1rem;">PARTIDO FINALIZADO</h2>
         <p style="font-size:1.2rem;color:#f0883e;font-weight:800;margin:0.5rem 0;">
             ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}
         </p>
-        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1.2rem;">
+        <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.9rem;">
             ${new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
         </p>
-        <div style="display:flex;flex-direction:column;gap:0.6rem;">
-            <button onclick="document.getElementById('setup-modal').style.display='none';"
-                style="padding:0.7rem;background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);
-                       border-radius:10px;color:var(--primary);font-weight:700;cursor:pointer;font-size:0.9rem;">
-                ⚽ VOLVER AL PARTIDO
-            </button>
+        <!-- Fila 1: Enviar informes + Informes colectivos -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">
             <button onclick="document.getElementById('setup-modal').style.display='none'; if(typeof openUnifiedCommsMenu==='function') openUnifiedCommsMenu();"
-                style="padding:0.7rem;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.3);
-                       border-radius:10px;color:#d2a8ff;font-weight:700;cursor:pointer;font-size:0.9rem;">
-                📊 ENVIAR INFORMES
+                style="padding:0.65rem 0.4rem;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.3);
+                       border-radius:10px;color:#d2a8ff;font-weight:700;cursor:pointer;font-size:0.75rem;line-height:1.4;">
+                📊 ENVIAR<br>INFORMES
             </button>
-            <button onclick="document.getElementById('setup-modal').style.display='none'; openSetupModal();"
-                style="padding:0.7rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
-                       border-radius:10px;color:var(--text-muted);font-weight:600;cursor:pointer;font-size:0.85rem;">
-                🏠 INICIO
+            <button onclick="document.getElementById('setup-modal').style.display='none'; if(typeof openMisInformesColectivos==='function') openMisInformesColectivos();"
+                style="padding:0.65rem 0.4rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.3);
+                       border-radius:10px;color:#58a6ff;font-weight:700;cursor:pointer;font-size:0.75rem;line-height:1.4;">
+                📋 INFORMES<br>COLECTIVOS
             </button>
         </div>
+
+        <!-- Fila 2: Informes individuales + Inicio -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">
+            <button onclick="document.getElementById('setup-modal').style.display='none'; if(typeof openMisInformes==='function') openMisInformes();"
+                style="padding:0.65rem 0.4rem;background:rgba(255,165,0,0.12);border:1px solid rgba(255,165,0,0.35);
+                       border-radius:10px;color:#ffa500;font-weight:700;cursor:pointer;font-size:0.75rem;line-height:1.4;">
+                📋 INFORMES<br>INDIVIDUALES
+            </button>
+            <button onclick="document.getElementById('setup-modal').style.display='none'; openSetupModal();"
+                style="padding:0.65rem 0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                       border-radius:10px;color:var(--text-muted);font-weight:600;cursor:pointer;font-size:0.75rem;line-height:1.4;">
+                🏠<br>INICIO
+            </button>
+        </div>
+
+        <!-- Fila 3: Continuar partido — ancho completo -->
+        <button onclick="document.getElementById('setup-modal').style.display='none';"
+            style="width:100%;padding:0.75rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);
+                   border-radius:10px;color:#3fb950;font-weight:700;cursor:pointer;font-size:0.9rem;">
+            ⚽ CONTINUAR PARTIDO
+        </button>
+
     </div>`;
 }
 
@@ -573,7 +969,7 @@ function showFinishedMatches() {
             <div style="display:flex;justify-content:space-between;align-items:center;padding:0.7rem 0.8rem;
                         background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-bottom:0.5rem;">
                 <div style="text-align:left;">
-                    <div style="font-weight:700;color:white;font-size:0.9rem;">${typeof escapeHtml==='function'?escapeHtml(m.home):m.home} ${m.scoreHome} - ${m.scoreAway} ${typeof escapeHtml==='function'?escapeHtml(m.away):m.away}</div>
+                    <div style="font-weight:700;color:white;font-size:0.9rem;">${escapeHtml(m.home)} ${m.scoreHome} - ${m.scoreAway} ${escapeHtml(m.away)}</div>
                     <div style="font-size:0.72rem;color:var(--text-muted);">${new Date(m.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})} · ${m.mode.toUpperCase()}</div>
                 </div>
                 <button onclick="loadFinishedMatch(${i});"
@@ -1041,7 +1437,6 @@ async function cleanupStaleMatches() {
                 );
             }
         });
-
         await Promise.all(promises);
 
         if (closed > 0)   console.log('Partidos zombis cerrados:', closed);
@@ -1159,38 +1554,50 @@ async function stopLiveSync() {
 }
 
 function updateLiveButton(active) {
-    let btn = document.getElementById('btn-live-share');
-    if (!btn) {
-        // Crear el botón si no existe e insertarlo en header-actions
-        btn = document.createElement('button');
-        btn.id = 'btn-live-share';
-        btn.title = 'Compartir partido en vivo';
-        btn.style.cssText =
-            'font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;';
-        btn.onclick = showLiveShareModal;
+    let indicator = document.getElementById('live-status-indicator');
+    if (!indicator) {
+        // Crear el contenedor del indicador si no existe
+        indicator = document.createElement('div');
+        indicator.id = 'live-status-indicator';
+        indicator.style.cssText =
+            'display:none; align-items:center; gap:8px; padding:0.4rem 0.8rem; ' +
+            'background:rgba(255,88,88,0.1); border:1px solid rgba(255,88,88,0.3); ' +
+            'border-radius:20px; color:#ff5858; font-size:0.7rem; font-weight:800; ' +
+            'letter-spacing:0.5px; transition:all 0.3s; margin-right: 8px;';
+        
+        // Insertar en la zona de acciones del header
         const headerActions = document.querySelector('.header-actions');
-        if (headerActions) headerActions.insertBefore(btn, headerActions.firstChild);
-    }
-    if (active) {
-        btn.textContent   = '🔴 EN VIVO';
-        btn.style.background = 'rgba(255,88,88,0.2)';
-        btn.style.border     = '1px solid rgba(255,88,88,0.6)';
-        btn.style.color      = '#ff5858';
-        btn.style.animation  = 'livePulse 1.5s ease-in-out infinite';
-        // Añadir keyframe si no existe
+        if (headerActions) headerActions.insertBefore(indicator, headerActions.firstChild);
+        
+        // Añadir estilos de animación si no existen
         if (!document.getElementById('live-pulse-style')) {
             const s = document.createElement('style');
             s.id = 'live-pulse-style';
-            s.textContent = '@keyframes livePulse{0%,100%{opacity:1}50%{opacity:0.5}}';
+            s.textContent = `
+                @keyframes liveDotPulse {
+                    0% { transform: scale(1); opacity: 1; }
+                    50% { transform: scale(1.3); opacity: 0.5; }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+            `;
             document.head.appendChild(s);
         }
-    } else {
-        btn.textContent      = '📡 INICIAR VIVO';
-        btn.style.background = 'rgba(88,166,255,0.1)';
-        btn.style.border     = '1px solid rgba(88,166,255,0.3)';
-        btn.style.color      = '#58a6ff';
-        btn.style.animation  = 'none';
     }
+
+    if (active) {
+        indicator.style.display = 'inline-flex';
+        indicator.innerHTML = `
+            <span style="width:8px; height:8px; background:#ff5858; border-radius:50%; 
+                         box-shadow:0 0 8px #ff5858; animation: liveDotPulse 1.5s ease-in-out infinite;"></span>
+            EN VIVO
+        `;
+    } else {
+        indicator.style.display = 'none';
+    }
+
+    // ELIMINAR el antiguo botón de compartir si existiera para no duplicar
+    const oldBtn = document.getElementById('btn-live-share');
+    if (oldBtn) oldBtn.remove();
 }
 
 function openLiveView() {
@@ -1284,7 +1691,7 @@ function showLiveShareModal() {
             <!-- Contactos EN VIVO -->
             ${liveContactsHtml}
 
-            <!-- Botones de compartir manual -->
+            <!-- Botones de compartir -->
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:1rem;">
                 <button onclick="shareLiveWhatsApp('${liveUrl}')"
                     style="padding:0.7rem; background:rgba(37,211,102,0.12);
@@ -1659,13 +2066,17 @@ async function sendReportByEmail(matchInfo, reportHtml) {
 }
 
 function init(role) {
-    loadEmailConfig();    // carga correos (desde localStorage/caché)
-    loadStaffConfig();    // carga cuerpo técnico (desde localStorage/cacché)
+    loadEmailConfig();
+    loadStaffConfig();
     setupEventListeners();
-    
-    // Solo abrir configuración de partido si es entrenador/usuario
+
     if (!['director', 'coordinator', 'club_admin'].includes(role)) {
-        openSetupModal();
+        // Primero comprobar si hay partido interrumpido
+        // Si lo hay, mostramos el banner y NO abrimos el setup modal todavía
+        const hasActiveMatch = _checkActiveMatch();
+        if (!hasActiveMatch) {
+            openSetupModal();
+        }
     }
     registerServiceWorker();
     // Sincronizar con Firestore en segundo plano
@@ -1759,16 +2170,14 @@ function openSetupModal() {
                     <h3 style="margin:0 0 0.8rem; color:#58a6ff; text-align:center; border-bottom:2px solid #58a6ff; padding-bottom:6px;">Equipo Local</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
-                        <div style="display:flex; gap:0.4rem; align-items:center;">
-                            <select id="saved-teams-home" onchange="loadTeamFromDropdown('home')" style="flex:1;">
-                                <option value="">-- Cargar --</option>
-                            </select>
-                            <button onclick="deleteTeamFromDropdown('home')" title="Borrar equipo seleccionado"
-                                style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.5);
-                                       color:#ff5858; font-size:1.1rem; font-weight:900; padding:0.3rem 0.5rem;
-                                       border-radius:8px; cursor:pointer; line-height:1; flex-shrink:0;">
-                                ✕
-                            </button>
+                        <!-- select oculto para compatibilidad con código legado -->
+                        <select id="saved-teams-home" style="display:none;"></select>
+                        <!-- Lista visual con botón 🗑️ por plantilla -->
+                        <div id="saved-teams-list-home"
+                             style="border:1px solid var(--glass-border); border-radius:8px;
+                                    max-height:116px; overflow-y:auto; background:rgba(255,255,255,0.02);">
+                            <p style="color:#8b949e;font-size:0.75rem;text-align:center;
+                                      padding:0.55rem 0.5rem;margin:0;">Sin plantillas guardadas</p>
                         </div>
                     </div>
                     <div class="form-group">
@@ -1811,37 +2220,17 @@ function openSetupModal() {
                     <h3 style="margin:0 0 0.8rem; color:#ff5858; text-align:center; border-bottom:2px solid #ff5858; padding-bottom:6px;">Equipo Visitante</h3>
                     <div class="form-group">
                         <label>Cargar Guardado</label>
-                        <div style="display:flex; gap:0.4rem; align-items:center;">
-                            <select id="saved-teams-away" onchange="loadTeamFromDropdown('away')" style="flex:1;">
-                                <option value="">-- Cargar --</option>
-                            </select>
-                            <button onclick="deleteTeamFromDropdown('away')" title="Borrar equipo seleccionado"
-                                style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.5);
-                                       color:#ff5858; font-size:1.1rem; font-weight:900; padding:0.3rem 0.5rem;
-                                       border-radius:8px; cursor:pointer; line-height:1; flex-shrink:0;">
-                                ✕
-                            </button>
+                        <!-- select oculto para compatibilidad con código legado -->
+                        <select id="saved-teams-away" style="display:none;"></select>
+                        <!-- Lista visual con botón 🗑️ por plantilla -->
+                        <div id="saved-teams-list-away"
+                             style="border:1px solid var(--glass-border); border-radius:8px;
+                                    max-height:116px; overflow-y:auto; background:rgba(255,255,255,0.02);">
+                            <p style="color:#8b949e;font-size:0.75rem;text-align:center;
+                                      padding:0.55rem 0.5rem;margin:0;">Sin plantillas guardadas</p>
                         </div>
                     </div>
                     <div class="form-group">
-                        <label>Nombre</label>
-                        <input type="text" id="setup-away-name" value="VISITANTE">
-                    </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.6rem; margin-top:0.4rem;">
-                        <div class="form-group">
-                            <label>Camiseta</label>
-                            <input type="color" id="setup-away-color" value="#ff5858"
-                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
-                        </div>
-                        <div class="form-group">
-                            <label>Pantalón</label>
-                            <input type="color" id="setup-away-shorts" value="#000000"
-                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
-                        </div>
-                        <div class="form-group">
-                            <label>Dorsal</label>
-                            <input type="color" id="setup-away-text" value="#ffffff"
-                                style="width:100%;height:42px;border-radius:8px;border:2px solid var(--glass-border);cursor:pointer;padding:3px;background:none;">
                         </div>
                     </div>
                     <div style="display:flex; gap:0.5rem; margin-top:0.7rem;">
@@ -1873,7 +2262,7 @@ function openSetupModal() {
                         background:var(--glass); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem;">
                 <div class="form-group" style="margin:0;">
                     <label>Modalidad</label>
-                    <select id="setup-mode" onchange="updateFormationOptions()">
+                    <select id="setup-mode" onchange="syncSetupMode(this.value)">
                         <option value="f7">Fútbol 7 (2T x 30')</option>
                         <option value="f11">Fútbol 11 (2T x 40')</option>
                     </select>
@@ -1886,54 +2275,62 @@ function openSetupModal() {
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; padding-bottom:2px;">
                     <input type="checkbox" id="setup-analyze-away" style="width:18px;height:18px;flex-shrink:0;">
-                    <label for="setup-analyze-away" style="margin:0;cursor:pointer;white-space:nowrap;">Analizar Visitante</label>
+                    <label for="setup-analyze-away" style="margin:0;cursor:pointer;white-space:nowrap;" title="Actívalo para registrar también los datos del equipo contrario">Analizar Contrario</label>
                 </div>
             </div>
 
-            <!-- BOTONES -->
-            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:0.5rem;">
-                <div style="display:flex; gap:0.6rem; align-items:center;">
-                    <button class="btn" onclick="openRosterManager()"
-                        style="background:var(--glass);color:var(--primary);font-size:0.82rem;">
-                        GESTIONAR PLANTILLA
-                    </button>
-                    <button class="btn" onclick="openContactManager()"
-                        title="Configurar teléfonos de padres y emails del club"
-                        style="background:var(--glass);color:var(--secondary);font-size:0.82rem;border:1px solid var(--secondary);">
-                        📱 CONTACTOS
-                    </button>
-                    <button class="btn" onclick="openConvocationModal()"
-                        title="Gestionar convocatoria del partido"
-                        style="background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.82rem;border:1px solid rgba(88,166,255,0.4);">
-                        📋 CONVOCATORIA
-                    </button>
-                    <button class="btn" onclick="openTrainingPanel()"
-                        title="Gestionar entrenamientos"
-                        style="background:rgba(63,185,80,0.12);color:#3fb950;font-size:0.82rem;border:1px solid rgba(63,185,80,0.4);">
-                        🏃 ENTRENAMIENTO
-                    </button>
-                    ${(['admin','superadmin'].includes(window._cronosCurrentUser?.role) && !['user','coach','individual'].includes(window._cronosCurrentUser?._activeRole)) ? `
-                    <button onclick="openAdminPanel()"
-                        style="background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.5);
-                               color:#ffa500; font-size:0.82rem; padding:0.45rem 0.9rem;
-                               border-radius:8px; cursor:pointer; font-weight:700;">
-                        ⚙ ADMIN
-                    </button>` : ''}
-                    
-                    
-                    ${window._cronosCurrentUser?.role === 'club_admin' ? `
-                    <button onclick="openClubAdminPanel()"
-                        style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
-                               color:var(--primary); font-size:0.82rem; padding:0.45rem 0.9rem;
-                               border-radius:8px; cursor:pointer; font-weight:700;">
-                        🏟️ MI CLUB
-                    </button>` : ''}
-
-                </div>
-                <button class="btn primary" onclick="confirmSetup()" style="padding:0.65rem 1.8rem;">
-                    CONTINUAR AL PARTIDO
+            <!-- BOTONES — filas de acciones en paralelo -->
+            <div style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:stretch; justify-content:center; margin-bottom:0.75rem;">
+                <button class="btn" onclick="openRosterManager()"
+                    style="flex:1 1 auto; min-width:130px; background:var(--glass);color:var(--primary);font-size:0.72rem;white-space:nowrap;padding:0.55rem 0.6rem;text-align:center;border-radius:8px;cursor:pointer;font-weight:700;">
+                    GESTIONAR PLANTILLA
                 </button>
+                <button class="btn" onclick="openContactManager()"
+                    title="Configurar teléfonos de padres y emails del club"
+                    style="flex:1 1 auto; min-width:110px; background:var(--glass);color:var(--secondary);font-size:0.72rem;border:1px solid var(--secondary);white-space:nowrap;padding:0.55rem 0.6rem;text-align:center;border-radius:8px;cursor:pointer;font-weight:700;">
+                    📱 CONTACTOS
+                </button>
+                <button class="btn" onclick="openConvocationModal()"
+                    title="Gestionar convocatoria del partido"
+                    style="flex:1 1 auto; min-width:120px; background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.72rem;border:1px solid rgba(88,166,255,0.4);white-space:nowrap;padding:0.55rem 0.6rem;text-align:center;border-radius:8px;cursor:pointer;font-weight:700;">
+                    📋 CONVOCATORIA
+                </button>
+                <button class="btn" onclick="openTrainingPanel()"
+                    title="Gestionar entrenamientos"
+                    style="flex:1 1 auto; min-width:140px; background:rgba(63,185,80,0.12);color:#3fb950;font-size:0.72rem;border:1px solid rgba(63,185,80,0.4);white-space:nowrap;padding:0.55rem 0.6rem;text-align:center;border-radius:8px;cursor:pointer;font-weight:700;">
+                    🏃 ENTRENAMIENTO
+                </button>
+                <button class="btn" onclick="if(typeof openMisInformes==='function')openMisInformes();"
+                    title="Ver tus informes de partido guardados automáticamente"
+                    style="flex:1 1 auto; min-width:120px; background:rgba(255,165,0,0.12);color:#ffa500;font-size:0.72rem;border:1px solid rgba(255,165,0,0.4);white-space:nowrap;padding:0.55rem 0.6rem;text-align:center;border-radius:8px;cursor:pointer;font-weight:700;">
+                    📋 MIS INFORMES
+                </button>
+                <button class="btn" onclick="if(typeof openMisInformesColectivos==='function')openMisInformesColectivos();"
+                    title="Ver informes colectivos recibidos automáticamente al finalizar cada partido"
+                    style="flex:1 1 auto; min-width:150px; background:rgba(88,166,255,0.12);color:#58a6ff;font-size:0.72rem;border:1px solid rgba(88,166,255,0.4);white-space:nowrap;padding:0.55rem 0.6rem;text-align:center;border-radius:8px;cursor:pointer;font-weight:700;">
+                    📊 INFORMES COLECTIVOS
+                </button>
+                ${(['admin','superadmin'].includes(window._cronosCurrentUser?.role) && !['user','coach','individual'].includes(window._cronosCurrentUser?._activeRole)) ? `
+                <button onclick="openAdminPanel()"
+                    style="flex:1 1 auto; min-width:100px; background:rgba(255,165,0,0.15); border:1px solid rgba(255,165,0,0.5);
+                           color:#ffa500; font-size:0.72rem; padding:0.55rem 0.6rem;
+                           border-radius:8px; cursor:pointer; font-weight:700;white-space:nowrap;text-align:center;">
+                    ⚙ ADMIN
+                </button>` : ''}
+
+
+                ${window._cronosCurrentUser?.role === 'club_admin' ? `
+                <button onclick="openClubAdminPanel()"
+                    style="flex:1 1 auto; min-width:110px; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                           color:var(--primary); font-size:0.72rem; padding:0.55rem 0.6rem;
+                           border-radius:8px; cursor:pointer; font-weight:700;white-space:nowrap;text-align:center;">
+                    🏟️ MI CLUB
+                </button>` : ''}
             </div>
+            <!-- CONTINUAR AL PARTIDO — ancho completo abajo -->
+            <button class="btn primary" onclick="confirmSetup()" style="width:100%;padding:0.75rem;font-weight:900;letter-spacing:1px;margin-top:0.25rem;">
+                ⚽ CONTINUAR AL PARTIDO
+            </button>
         </div>
     `;
     populateSavedTeams('home');
@@ -1941,46 +2338,7 @@ function openSetupModal() {
     updateFormationOptions();
 }
 
-function confirmSetup() {
-    TEAM_NAMES.home = document.getElementById('setup-home-name').value.toUpperCase() || 'LOCAL';
-    COLORS.home.primary = document.getElementById('setup-home-color').value;
-    COLORS.home.shorts = document.getElementById('setup-home-shorts').value;
-    COLORS.home.text = document.getElementById('setup-home-text').value;
 
-    TEAM_NAMES.away = document.getElementById('setup-away-name').value.toUpperCase() || 'VISITANTE';
-    COLORS.away.primary = document.getElementById('setup-away-color').value;
-    COLORS.away.shorts = document.getElementById('setup-away-shorts').value;
-    COLORS.away.text = document.getElementById('setup-away-text').value;
-
-    currentMode = document.getElementById('setup-mode').value;
-    analyzeAway = document.getElementById('setup-analyze-away').checked;
-    window._userTeamRole = document.getElementById('user-team-role')?.value || 'home';
-    selectedFormationOnStart = document.getElementById('setup-formation')?.value || '';
-    // Si no se seleccionó formación, usar la predeterminada del modo
-    if (!selectedFormationOnStart) {
-        selectedFormationOnStart = currentMode === 'f7' ? '231' : '442';
-        document.getElementById('setup-formation').value = selectedFormationOnStart;
-    }
-    console.log('[FORMACIÓN] confirmSetup → selectedFormationOnStart:', selectedFormationOnStart,
-        '| currentMode:', currentMode, '| analyzeAway:', analyzeAway);
-
-    document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
-    document.getElementById('team-b-name').textContent = TEAM_NAMES.away;
-
-    if (!analyzeAway) {
-        document.body.classList.add('hide-visitor');
-    } else {
-        document.body.classList.remove('hide-visitor');
-    }
-
-    document.body.classList.toggle('mode-f11', currentMode === 'f11');
-
-    const defaultTime = currentMode === 'f7' ? 30 : 40;
-    half1MaxTime = defaultTime * 60;
-    half2MaxTime = defaultTime * 60;
-
-    openConvocationModal();
-}
 
 // ══════════════════════════════════════════════════════════════════
 //  PANEL DE ENTRENAMIENTO — Planificación Semanal
@@ -2941,10 +3299,15 @@ function clearMasterRoster(mode) {
 }
 
 function openConvocationModal() {
+    // Sincronizar currentMode desde el DOM por si se cambió en el setup sin confirmar
+    const modeEl = document.getElementById('setup-mode');
+    if (modeEl) currentMode = modeEl.value;
+
     document.body.classList.add('setup-mode');
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const maxConvoked = currentMode === 'f7' ? 14 : 18;
+    const maxTitulares = currentMode === 'f7' ? 7 : 11;
     const minForMatch = currentMode === 'f7' ? 5 : 7;
 
     const isMobile = window.innerWidth < 640;
@@ -2985,13 +3348,13 @@ function openConvocationModal() {
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F3DF}\uFE0F Lugar / Campo</label>
                         <input type="text" id="conv-venue" class="conv-input"
                             placeholder="Nombre del campo o direcci\u00f3n"
-                            value="${typeof escapeHtml==='function'? escapeHtml(savedConv.venue||''): savedConv.venue||''}">
+                            value="${escapeHtml(savedConv.venue||'')}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F19A} Rival</label>
                         <input type="text" id="conv-rival" class="conv-input"
                             placeholder="Equipo rival"
-                            value="${typeof escapeHtml==='function'? escapeHtml(savedConv.rival||TEAM_NAMES.away||''): savedConv.rival||TEAM_NAMES.away||''}">
+                            value="${escapeHtml(savedConv.rival||TEAM_NAMES.away||'')}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F3C6} Tipo de partido</label>
@@ -3039,7 +3402,7 @@ function openConvocationModal() {
                               font-size:0.55rem;flex-shrink:0;color:transparent;">\u2713</span>
                         <span style="font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                             <span style="color:var(--primary);font-weight:bold;">${p.number}</span>
-                            ${typeof escapeHtml==='function'? escapeHtml(p.alias||p.name||'J'+(i+1)): (p.alias||p.name||'J'+(i+1))}
+                            ${escapeHtml(p.alias||p.name||'J'+(i+1))}
                         </span>
                         <span class="conv-status-badge" style="font-size:0.5rem;font-weight:bold;padding:2px 5px;
                             border-radius:3px;display:none;margin-left:auto;flex-shrink:0;"></span>
@@ -3053,7 +3416,13 @@ function openConvocationModal() {
 
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div id="conv-count" style="font-size:0.95rem; font-weight:bold; color:var(--primary);">0 convocados · 0 titulares</div>
-                    <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">\u2190 VOLVER</button>
+                    <div style="display:flex; gap:0.4rem;">
+                        <button class="btn" onclick="resetConvocationToZero()" title="Vacía la selección y borra el guardado. La próxima vez empieza desde cero."
+                            style="padding:0.4rem 0.8rem; font-size:0.7rem; background:rgba(255,88,88,0.15); color:#ff5858; border:1px solid rgba(255,88,88,0.5); font-weight:700;">
+                            ↺ PONER A CERO
+                        </button>
+                        <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">\u2190 VOLVER</button>
+                    </div>
                 </div>
 
                 <div style="display:flex; gap:0.4rem;">
@@ -3088,11 +3457,61 @@ function openConvocationModal() {
     const numTitEl  = document.getElementById('conv-num-tit');
     const counterConvBox = document.getElementById('conv-counter-conv');
     const counterTitBox  = document.getElementById('conv-counter-tit');
-    const maxTitulares = currentMode === 'f7' ? 7 : 11;
-    const minTitulares = currentMode === 'f7' ? 5 : 7;
+    const minTitulares = minForMatch; // Usar el valor definido arriba
     let convocados = 0;
     let titulares = 0;
     window._titularSelectionOrder = [];
+
+    window.clearConvocation = () => {
+        if (!confirm('¿Vaciar toda la selección de la convocatoria?')) return;
+        convocados = 0;
+        titulares = 0;
+        window._titularSelectionOrder = [];
+        document.querySelectorAll('.conv-row').forEach(row => {
+            row.dataset.state = 'none';
+            row.classList.remove('conv-selected');
+            row.style.borderColor = 'transparent';
+            row.style.background  = 'var(--glass)';
+            row.style.boxShadow = 'none';
+            const dot = row.querySelector('.conv-dot');
+            if (dot) {
+                dot.style.background  = 'rgba(255,255,255,0.1)';
+                dot.style.borderColor = 'rgba(255,255,255,0.25)';
+                dot.style.color = 'transparent';
+                dot.textContent = '✓';
+            }
+            const badge = row.querySelector('.conv-status-badge');
+            if (badge) badge.style.display = 'none';
+        });
+        updateConvCounters();
+    };
+
+    // ── Resetear convocatoria a cero + borrar el guardado ─────────────────────────
+    window.resetConvocationToZero = () => {
+        if (!confirm('\u00bfBorrar toda la convocatoria y empezar desde cero?\nEsto tambi\u00e9n eliminar\u00e1 la convocatoria guardada del \u00faltimo partido.')) return;
+        localStorage.removeItem('cronos_last_conv');
+        convocados = 0;
+        titulares = 0;
+        window._titularSelectionOrder = [];
+        document.querySelectorAll('.conv-row').forEach(row => {
+            row.dataset.state = 'none';
+            row.classList.remove('conv-selected');
+            row.style.borderColor = 'transparent';
+            row.style.background  = 'var(--glass)';
+            row.style.boxShadow   = 'none';
+            const dot = row.querySelector('.conv-dot');
+            if (dot) {
+                dot.style.background  = 'rgba(255,255,255,0.1)';
+                dot.style.borderColor = 'rgba(255,255,255,0.25)';
+                dot.style.color       = 'transparent';
+                dot.textContent       = '\u2713';
+            }
+            const badge = row.querySelector('.conv-status-badge');
+            if (badge) badge.style.display = 'none';
+        });
+        updateConvCounters();
+        if (typeof showToast === 'function') showToast('\u21ba Convocatoria puesta a cero', 2000);
+    };
 
     // Función auxiliar para actualizar los contadores visuales
     function updateConvCounters() {
@@ -3114,49 +3533,59 @@ function openConvocationModal() {
         goBtn.disabled = titulares < minTitulares;
     }
 
-    // \u2500\u2500 Pre-restaurar desde equipo cargado \u2500\u2500
-    const loadedTeam = window.loadedTeamPlayers?.['home'];
-    if (loadedTeam) {
+    // ── Restaurar desde ÚLTIMA CONVOCATORIA GUARDADA (cronos_last_conv) ──────────────
+    // Primera vez (sin datos): 0 convocados / 0 titulares — el entrenador empieza desde cero.
+    // Después de IR AL PARTIDO o enviar mensajes: restaura la última selección guardada.
+    // El botón "PONER A CERO" borra cronos_last_conv para empezar desde cero la próxima vez.
+    const lastConv = JSON.parse(localStorage.getItem('cronos_last_conv') || 'null');
+    if (lastConv && lastConv.mode === currentMode && Array.isArray(lastConv.players) && lastConv.players.length > 0) {
         myPlayers.forEach((p, i) => {
-            const savedPlayer = loadedTeam.find(lp => lp.number == p.number);
+            const saved = lastConv.players.find(lp => lp.number == p.number);
+            if (!saved || saved.convState === 'none') return;
             const row = document.querySelector(`.conv-row[data-index="${i}"]`);
-            if (row && savedPlayer) {
-                const isField = savedPlayer.status === 'field';
-                row.dataset.state = isField ? 'titular' : 'convocado';
-                row.classList.add('conv-selected');
-                if (isField) {
-                    row.style.borderColor = '#f0883e';
-                    row.style.background  = 'rgba(240,136,62,0.25)';
-                    row.style.boxShadow = '0 0 12px rgba(240,136,62,0.3)';
-                    const dot = row.querySelector('.conv-dot');
-                    dot.style.background  = '#f0883e';
-                    dot.style.borderColor = '#f0883e';
-                    dot.style.color = '#0a0e14';
-                    dot.textContent = 'T';
-                    dot.style.fontWeight = '900';
-                    const badge = row.querySelector('.conv-status-badge');
-                    badge.textContent = 'TITULAR';
-                    badge.style.background = '#f0883e';
-                    badge.style.color = '#0a0e14';
-                    badge.style.display = 'inline';
-                    badge.style.fontWeight = '900';
-                    titulares++;
-                    window._titularSelectionOrder.push(i);
-                } else {
-                    row.style.borderColor = 'var(--primary)';
-                    row.style.background  = 'rgba(88,166,255,0.12)';
-                    const dot = row.querySelector('.conv-dot');
-                    dot.style.background  = 'var(--primary)';
-                    dot.style.borderColor = 'var(--primary)';
-                    dot.style.color = '#0a0e14';
-                    const badge = row.querySelector('.conv-status-badge');
-                    badge.textContent = 'CONV';
-                    badge.style.background = 'var(--primary)';
-                    badge.style.color = '#0a0e14';
-                    badge.style.display = 'inline';
-                }
-                convocados++;
+            if (!row) return;
+
+            let targetState = 'none';
+            if (saved.convState === 'titular' && titulares < maxTitulares) {
+                targetState = 'titular';
+            } else if (saved.convState !== 'none' && convocados < maxConvoked) {
+                targetState = 'convocado';
             }
+            if (targetState === 'none') return;
+
+            row.dataset.state = targetState;
+            row.classList.add('conv-selected');
+            const dot = row.querySelector('.conv-dot');
+            const badge = row.querySelector('.conv-status-badge');
+
+            if (targetState === 'titular') {
+                row.style.borderColor = '#f0883e';
+                row.style.background  = 'rgba(240,136,62,0.25)';
+                row.style.boxShadow   = '0 0 12px rgba(240,136,62,0.3)';
+                dot.style.background  = '#f0883e';
+                dot.style.borderColor = '#f0883e';
+                dot.style.color       = '#0a0e14';
+                dot.textContent       = 'T';
+                dot.style.fontWeight  = '900';
+                badge.textContent     = 'TITULAR';
+                badge.style.background = '#f0883e';
+                badge.style.color     = '#0a0e14';
+                badge.style.display   = 'inline';
+                badge.style.fontWeight = '900';
+                titulares++;
+                window._titularSelectionOrder.push(i);
+            } else {
+                row.style.borderColor = 'var(--primary)';
+                row.style.background  = 'rgba(88,166,255,0.12)';
+                dot.style.background  = 'var(--primary)';
+                dot.style.borderColor = 'var(--primary)';
+                dot.style.color       = '#0a0e14';
+                badge.textContent     = 'CONV';
+                badge.style.background = 'var(--primary)';
+                badge.style.color     = '#0a0e14';
+                badge.style.display   = 'inline';
+            }
+            convocados++;
         });
         updateConvCounters();
     }
@@ -3170,6 +3599,10 @@ function openConvocationModal() {
 
             if (state === 'none') {
                 // Estado 1: Seleccionar como CONVOCADO (azul)
+                if (convocados >= maxConvoked) {
+                    showToast('⚠️ Máximo ' + maxConvoked + ' convocados para Fútbol ' + (currentMode === 'f7' ? '7' : '11'), 2500);
+                    return;
+                }
                 row.dataset.state = 'convocado';
                 row.classList.add('conv-selected');
                 row.style.borderColor = 'var(--primary)';
@@ -3250,12 +3683,34 @@ function saveConvPlayers() {
         const p = myPlayers[parseInt(r.dataset.index)];
         return p ? { ...p, initialStatus: r.dataset.state === 'titular' ? 'field' : 'bench' } : null;
     }).filter(Boolean);
+
+    // Guardar snapshot completo de la convocatoria para restaurar en la próxima apertura
+    const allRows = document.querySelectorAll('#conv-grid-container .conv-row');
+    if (allRows.length > 0) {
+        const convSnapshot = Array.from(allRows).map(row => {
+            const p = myPlayers[parseInt(row.dataset.index)];
+            return p ? { number: p.number, convState: row.dataset.state || 'none' } : null;
+        }).filter(Boolean);
+        localStorage.setItem('cronos_last_conv', JSON.stringify({
+            mode: currentMode,
+            players: convSnapshot,
+            savedAt: Date.now()
+        }));
+    }
 }
 
 // ── IR AL PARTIDO (desde convocatoria con 3 estados: convocado/titular) ──
 function goToTitularSelection() {
-    saveConvData();
-    saveConvPlayers();
+    // ══ CRÍTICO: Quitar setup-mode PRIMERO que todo ══
+    // Esto garantiza que aunque algo falle después, la pantalla no sea negra.
+    document.body.classList.remove('setup-mode');
+
+    try {
+        saveConvData();
+        saveConvPlayers();
+    } catch(e) {
+        console.warn('[goToTitularSelection] Error guardando datos de convocatoria:', e);
+    }
 
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
@@ -3277,50 +3732,132 @@ function goToTitularSelection() {
 
     const minTitulares = currentMode === 'f7' ? 5 : 7;
     const maxConvocados = currentMode === 'f7' ? 14 : 18;
+    const minConvocados = currentMode === 'f7' ? 5 : 7;
+
+    if (matchPlayers.length < minConvocados) {
+        alert('Necesitas al menos ' + minConvocados + ' jugadores convocados para Fútbol ' + (currentMode === 'f7' ? '7' : '11') + '.\nActualmente tienes ' + matchPlayers.length + '.');
+        return;
+    }
     if (titularCount < minTitulares) {
-        alert('Necesitas al menos ' + minTitulares + ' titulares (naranja) para iniciar el partido.\nActualmente tienes ' + titularCount + ' titulares de ' + matchPlayers.length + ' convocados.');
+        alert('Necesitas al menos ' + minTitulares + ' titulares (naranja) para iniciar el partido.\nActualmente tienes ' + titularCount + ' titulares.');
         return;
     }
     if (matchPlayers.length > maxConvocados) {
-        alert('Máximo ' + maxConvocados + ' convocados para Fútbol ' + (currentMode === 'f7' ? '7' : '11') + '.\nActualmente tienes ' + matchPlayers.length + ' convocados.\nElimina jugadores de la convocatoria antes de iniciar.');
+        alert('Máximo ' + maxConvocados + ' convocados para Fútbol ' + (currentMode === 'f7' ? '7' : '11') + '.\nActualmente tienes ' + matchPlayers.length + '.');
         return;
     }
 
     window.activeConvocation = matchPlayers;
     window._convokedPlayers = matchPlayers;
 
+    // Guardar snapshot de la convocatoria para restaurarla en el próximo partido
+    try {
+        const rosterSnap = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+        const playersSnap = rosterSnap[currentMode] || [];
+        const allConvRowsSnap = document.querySelectorAll('#conv-grid-container .conv-row');
+        if (allConvRowsSnap.length > 0) {
+            const convSnapshot = Array.from(allConvRowsSnap).map(row => {
+                const p = playersSnap[parseInt(row.dataset.index)];
+                return p ? { number: p.number, convState: row.dataset.state || 'none' } : null;
+            }).filter(Boolean);
+            localStorage.setItem('cronos_last_conv', JSON.stringify({
+                mode: currentMode,
+                players: convSnapshot,
+                savedAt: Date.now()
+            }));
+        }
+    } catch(e) {
+        console.warn('[goToTitularSelection] Error guardando snapshot:', e);
+    }
+
+    // Asegurar que setup-mode está quitado (doble check)
     document.body.classList.remove('setup-mode');
-    spawnInitialPlayers();
 
-    document.getElementById('main-header').style.display = 'flex';
-    document.getElementById('main-container').style.display = 'flex';
+    try {
+        spawnInitialPlayers();
+    } catch(e) {
+        console.error('[goToTitularSelection] Error en spawnInitialPlayers:', e);
+    }
 
-    // CRÍTICO: Aplicar formación ANTES de renderizar, para que los jugadores
-    // tengan posiciones correctas desde el primer render.
-    // Si el usuario eligió formación en setup, respetarla aunque el equipo tenga posiciones guardadas.
-    if (selectedFormationOnStart) {
-        applyFormationPreset(selectedFormationOnStart);
-    } else {
-        console.warn('[FORMACIÓN] selectedFormationOnStart está vacío — no se aplica formación');
+    // Asegurar que la UI de partido es visible
+    const mainHeader    = document.getElementById('main-header');
+    const mainContainer = document.getElementById('main-container');
+    const setupModal    = document.getElementById('setup-modal');
+    if (mainHeader)    mainHeader.style.display    = 'flex';
+    if (mainContainer) mainContainer.style.display = 'flex';
+    if (setupModal)    setupModal.style.display    = 'none';
+
+    // CRÍTICO: Aplicar formación ANTES de renderizar
+    try {
+        if (selectedFormationOnStart) {
+            applyFormationPreset(selectedFormationOnStart);
+        } else {
+            console.warn('[FORMACIÓN] selectedFormationOnStart está vacío — no se aplica formación');
+        }
+    } catch(e) {
+        console.error('[goToTitularSelection] Error aplicando formación:', e);
     }
     window.loadedTeamPlayers = {};
 
-    // Renderizar jugadores (las posiciones ya están asignadas por applyFormationPreset)
-    renderPlayers();
+    // Renderizar jugadores
+    try {
+        renderPlayers();
+    } catch(e) {
+        console.error('[goToTitularSelection] Error en renderPlayers:', e);
+    }
+    
+    // SINCRONIZAR UI DE TIEMPOS
+    try {
+        if (typeof updateMasterUI === 'function') {
+            updateMasterUI();
+        }
+    } catch(e) {
+        console.warn('[goToTitularSelection] Error en updateMasterUI:', e);
+    }
 
-    // Iniciar transmisi\u00f3n en vivo
-    setTimeout(() => startLiveSync(), 800);
-
-    document.getElementById('setup-modal').style.display = 'none';
+    // Iniciar transmisión en vivo
+    setTimeout(() => { try { startLiveSync(); } catch(e) { console.warn('[goToTitularSelection] Error en startLiveSync:', e); } }, 800);
 
     // Inyectar botones de scroll en banquillos
-    injectBenchScrollButtons('bench-list');
-    if (analyzeAway) injectBenchScrollButtons('bench-list-away');
-    renderStaffInBench();
+    try {
+        injectBenchScrollButtons('bench-list');
+        if (analyzeAway) injectBenchScrollButtons('bench-list-away');
+    } catch(e) {
+        console.warn('[goToTitularSelection] Error inyectando botones de scroll:', e);
+    }
+    
+    try {
+        renderStaffInBench();
+    } catch(e) {
+        console.warn('[goToTitularSelection] Error en renderStaffInBench:', e);
+    }
 
     const pitch = document.getElementById('football-pitch');
-    pitch.addEventListener('click', () => closeDrawers());
-    pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+    if (pitch) {
+        pitch.addEventListener('click', () => closeDrawers());
+        pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+    }
+
+    // ── Verificación final: si no hay jugadores, crear fallback ──
+    if (!players || players.length === 0) {
+        console.error('[goToTitularSelection] No se crearon jugadores — intentando fallback');
+        const defaultCount = currentMode === 'f7' ? 7 : 11;
+        const homeColors = typeof COLORS !== 'undefined' ? COLORS.home : { primary: '#58a6ff', shorts: '#ffffff', text: '#000000' };
+        for (let i = 1; i <= defaultCount; i++) {
+            players.push({
+                id: i, number: i, name: 'Jugador ' + i,
+                team: 'home', status: 'field',
+                time: 0, color: homeColors.primary,
+                shortsColor: homeColors.shorts,
+                textColor: homeColors.text,
+                history: [], goals: 0, cards: 'ninguna', x: 0, y: 0
+            });
+        }
+        try { renderPlayers(); } catch(e2) { console.error('[goToTitularSelection] Error en renderPlayers fallback:', e2); }
+    }
+
+    // Triple check: setup-mode DEBE estar quitado
+    document.body.classList.remove('setup-mode');
 }
 
 // ── INICIAR PARTIDO desde selecci\u00f3n de titulares (compatibilidad) ──
@@ -3348,8 +3885,10 @@ function startMatchWithConvocation() {
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();
 
-    document.getElementById('main-header').style.display = 'flex';
-    document.getElementById('main-container').style.display = 'flex';
+    const mainHeader = document.getElementById('main-header');
+    const mainContainer = document.getElementById('main-container');
+    if (mainHeader) mainHeader.style.display = 'flex';
+    if (mainContainer) mainContainer.style.display = 'flex';
 
     // CRÍTICO: Aplicar formación ANTES de renderizar
     if (selectedFormationOnStart) {
@@ -3364,7 +3903,8 @@ function startMatchWithConvocation() {
     // Iniciar transmisión en vivo automáticamente (el director puede conectarse cuando quiera)
     setTimeout(() => startLiveSync(), 800);
 
-    document.getElementById('setup-modal').style.display = 'none';
+    const setupModal = document.getElementById('setup-modal');
+    if (setupModal) setupModal.style.display = 'none';
 
     // Inyectar botones de scroll en ambos banquillos
     injectBenchScrollButtons('bench-list');
@@ -3373,8 +3913,10 @@ function startMatchWithConvocation() {
     renderStaffInBench();
 
     const pitch = document.getElementById('football-pitch');
-    pitch.addEventListener('click', () => closeDrawers());
-    pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+    if (pitch) {
+        pitch.addEventListener('click', () => closeDrawers());
+        pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+    }
 }
 
 // --- BOTONES DE SCROLL EN BANQUILLO ---
@@ -3458,18 +4000,32 @@ function loadTeamFromDropdown(teamKey) {
             if (COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
         }
 
-        // Cargar modalidad y formación si están guardadas
-        if (team.mode) {
-            document.getElementById('setup-mode').value = team.mode;
-            updateFormationOptions();
+        // Cargar modalidad y actualizar formaciones/categorías con el modo correcto
+        const teamMode = team.mode || 'f7';
+        const modeEl = document.getElementById('setup-mode');
+        if (modeEl) {
+            modeEl.value = teamMode;
+            currentMode = teamMode;
         }
+        // Actualizar formaciones Y categorías con el modo del equipo guardado
+        updateFormationOptions(teamMode);
+        if (typeof updateCategoryOptions === 'function') updateCategoryOptions(teamMode);
+
+        // Restaurar categoría guardada con el equipo
+        if (team.category) {
+            const catEl = document.getElementById('match-category');
+            if (catEl) catEl.value = team.category;
+        }
+
         if (team.formation) {
-            document.getElementById('setup-formation').value = team.formation;
+            const formEl = document.getElementById('setup-formation');
+            if (formEl) formEl.value = team.formation;
         }
 
         // Guardar los jugadores de este equipo para restaurar convocatoria, titulares y suplentes
+        // Guardar el objeto equipo completo (con flag hasMatchData)
         if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
-        window.loadedTeamPlayers[teamKey] = team.players;
+        window.loadedTeamPlayers[teamKey] = team;
     }
 }
 
@@ -3499,7 +4055,8 @@ function saveCurrentTeam() {
         textColor: COLORS[teamKey].text,
         players: currentPlayers,          // convocatoria completa con titulares y suplentes
         mode: currentMode,                // 'f7' o 'f11'
-        formation: activeFormationKey     // sistema de juego activo
+        formation: activeFormationKey,    // sistema de juego activo
+        hasMatchData: true                // Indica que esta es una convocatoria guardada
     };
     const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const existingIndex = teams.findIndex(t => t.name === teamName);
@@ -3521,14 +4078,109 @@ function saveCurrentTeam() {
     }, 300);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// saveTeamSetup(teamKey) — Guardar equipo desde el panel de configuración
+// ═══════════════════════════════════════════════════════════════════
+function saveTeamSetup(teamKey) {
+    const nameEl = document.getElementById('setup-' + teamKey + '-name');
+    const colorEl = document.getElementById('setup-' + teamKey + '-color');
+    const shortsEl = document.getElementById('setup-' + teamKey + '-shorts');
+    const textEl = document.getElementById('setup-' + teamKey + '-text');
+    if (!nameEl) return;
+
+    const teamName = (nameEl.value || '').trim();
+    if (!teamName || teamName === 'LOCAL' || teamName === 'VISITANTE') {
+        showToast('⚠️ Escribe un nombre para el equipo antes de guardar.', 3000);
+        nameEl.focus();
+        return;
+    }
+
+    const newTeam = {
+        name:         teamName,
+        color:        colorEl ? colorEl.value : '#58a6ff',
+        shortsColor:  shortsEl ? shortsEl.value : '#ffffff',
+        textColor:    textEl ? textEl.value : '#ffffff',
+        mode:         (typeof currentMode !== 'undefined') ? currentMode : 'f7',
+        category:     document.getElementById('match-category')?.value || '',
+        players:      [],
+        savedAt:      new Date().toISOString(),
+    };
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const existingIdx = teams.findIndex(t => t.name === teamName);
+
+    if (existingIdx >= 0) {
+        if (!confirm('Ya existe el equipo «' + teamName + '». ¿Sobrescribir?')) return;
+        teams[existingIdx] = { ...teams[existingIdx], ...newTeam };
+    } else {
+        if (teams.length >= 20) { showToast('⚠️ Límite de 20 equipos guardados.', 3000); return; }
+        teams.push(newTeam);
+    }
+
+    cloudSet('cronos_teams', JSON.stringify(teams));
+    populateSavedTeams('home');
+    populateSavedTeams('away');
+    showToast('✅ Equipo «' + teamName + '» guardado correctamente.', 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// deleteTeamSetup(teamKey) — Eliminar el equipo actualmente cargado
+// ═══════════════════════════════════════════════════════════════════
+function deleteTeamSetup(teamKey) {
+    const nameEl = document.getElementById('setup-' + teamKey + '-name');
+    const teamName = (nameEl ? nameEl.value : '').trim();
+    if (!teamName || teamName === 'LOCAL' || teamName === 'VISITANTE') {
+        showToast('⚠️ Primero carga un equipo guardado para poder eliminarlo.', 3000);
+        return;
+    }
+    if (!confirm('¿Eliminar el equipo «' + teamName + '» de los equipos guardados?')) return;
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const idx = teams.findIndex(t => t.name === teamName);
+    if (idx < 0) { showToast('⚠️ Equipo no encontrado en los guardados.', 3000); return; }
+
+    teams.splice(idx, 1);
+    cloudSet('cronos_teams', JSON.stringify(teams));
+    populateSavedTeams('home');
+    populateSavedTeams('away');
+
+    // Limpiar el campo nombre
+    if (nameEl) nameEl.value = teamKey === 'home' ? 'LOCAL' : 'VISITANTE';
+    showToast('🗑️ Equipo «' + teamName + '» eliminado.', 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// deleteTeamFromDropdown(teamKey) — Eliminar el equipo seleccionado
+//   en el desplegable "Cargar Guardado" (botón ✕ junto al select)
+// ═══════════════════════════════════════════════════════════════════
+function deleteTeamFromDropdown(teamKey) {
+    const dropdown = document.getElementById('saved-teams-' + teamKey);
+    if (!dropdown || dropdown.value === '') {
+        showToast('⚠️ Selecciona un equipo del desplegable para eliminarlo.', 3000);
+        return;
+    }
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const idx = parseInt(dropdown.value);
+    if (isNaN(idx) || !teams[idx]) { showToast('⚠️ Equipo no encontrado.', 3000); return; }
+
+    const teamName = teams[idx].name;
+    if (!confirm('¿Eliminar el equipo «' + teamName + '»?')) return;
+
+    teams.splice(idx, 1);
+    cloudSet('cronos_teams', JSON.stringify(teams));
+    populateSavedTeams('home');
+    populateSavedTeams('away');
+    showToast('🗑️ Equipo «' + teamName + '» eliminado.', 3000);
+}
+
 function setupEventListeners() {
     document.getElementById('btn-play-pause').addEventListener('click', toggleGame);
     document.getElementById('btn-reset').addEventListener('click', resetMatch);
     document.getElementById('btn-save-team').addEventListener('click', saveCurrentTeam);
     document.getElementById('btn-export').addEventListener('click', exportData);
 
-    window.endFirstHalf = () => {
-        if (!confirm("¿Finalizar 1ª Parte?")) return;
+    window.endFirstHalf = (skipConfirm = false) => {
+        if (!skipConfirm && !confirm("¿Finalizar 1ª Parte?")) return;
         isRunning = false;
         clearInterval(timerInterval);
         const timestamp1 = formatTime(masterTimeH1);
@@ -3539,7 +4191,7 @@ function setupEventListeners() {
         document.getElementById('btn-play-pause').textContent = 'REANUDAR';
         document.getElementById('btn-play-pause').classList.remove('danger');
         updateMasterUI();
-        alert("1ª Parte finalizada. Realice los cambios necesarios durante el descanso.");
+        if (!skipConfirm) alert("1ª Parte finalizada. Realice los cambios necesarios durante el descanso.");
     };
 
     window.startSecondHalf = () => {
@@ -3566,6 +4218,32 @@ function setupEventListeners() {
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && isRunning) tick();
+        // Guardar estado cuando la app pasa a segundo plano
+        if (document.visibilityState === 'hidden') {
+            _saveMatchStateToStorage();
+        }
+    });
+
+    // Guardar estado cuando el usuario cierra/abandona la app
+    window.addEventListener('pagehide', () => {
+        _saveMatchStateToStorage();
+        // Marcar live match como interrupted (no finished) para poder retomarlo
+        if (liveMatchId && matchPhase !== 'finished') {
+            try {
+                const { doc, updateDoc } = window._firebaseModules || {};
+                const fa = window._cronos_auth;
+                if (fa && fa.db && updateDoc && doc) {
+                    updateDoc(doc(fa.db, 'live_matches', liveMatchId), {
+                        status: 'interrupted',
+                        interruptedAt: new Date().toISOString(),
+                    });
+                }
+            } catch(e) { /* silencioso */ }
+        }
+    });
+
+    window.addEventListener('beforeunload', () => {
+        _saveMatchStateToStorage();
     });
 }
 
@@ -3680,8 +4358,25 @@ function tick() {
     const deltaSec = Math.floor(deltaMs / 1000);
     if (deltaSec >= 1) {
         lastTickTime += deltaSec * 1000;
-        if (matchPhase === '1st_half') masterTimeH1 += deltaSec;
-        else if (matchPhase === '2nd_half') masterTimeH2 += deltaSec;
+        if (matchPhase === '1st_half') {
+            masterTimeH1 += deltaSec;
+            // Auto-paro 1ª Parte (Reglamentario + 15 min)
+            if (masterTimeH1 >= (half1MaxTime + 900)) {
+                if (typeof endFirstHalf === 'function') {
+                    endFirstHalf(true);
+                    if (typeof showToast === 'function') showToast("⚠️ 1ª Parte finalizada automáticamente (+15 min)", 5000);
+                }
+            }
+        } else if (matchPhase === '2nd_half') {
+            masterTimeH2 += deltaSec;
+            // Auto-paro Partido (Reglamentario + 15 min)
+            if (masterTimeH2 >= (half2MaxTime + 900)) {
+                if (typeof endMatch === 'function') {
+                    endMatch(true);
+                    if (typeof showToast === 'function') showToast("🏁 Partido finalizado automáticamente (+15 min)", 6000);
+                }
+            }
+        }
         updateMasterUI();
         players.forEach(p => {
             if (p.status === 'field') { p.time += deltaSec; updatePlayerUI(p); }
@@ -3812,9 +4507,11 @@ function renderPlayers() {
     const benchHome = document.getElementById('bench-list');
     const benchAway = document.getElementById('bench-list-away');
 
+    if (!pitch || !benchHome) return;
+
     pitch.querySelectorAll('.player-chip').forEach(c => c.remove());
     benchHome.innerHTML = '';
-    benchAway.innerHTML = '';
+    if (benchAway) benchAway.innerHTML = '';
 
     players.forEach(p => {
         const chip = createPlayerChip(p);
@@ -3823,7 +4520,7 @@ function renderPlayers() {
             placeOnField(chip, p);
         } else {
             if (p.team === 'home') benchHome.appendChild(chip);
-            else benchAway.appendChild(chip);
+            else if (benchAway) benchAway.appendChild(chip);
         }
     });
 
@@ -3856,8 +4553,19 @@ function createPlayerChip(player) {
 
     let indicatorsHTML = '';
     if (player.goals > 0)           indicatorsHTML += `<div class="player-goal-indicator">${player.goals} ⚽</div>`;
-    if (player.cards === 'amarilla') indicatorsHTML += `<div class="player-card-indicator amarilla"></div>`;
-    else if (player.cards === 'roja') indicatorsHTML += `<div class="player-card-indicator roja"></div>`;
+    if (player.cards === 'amarilla') {
+        const yNum = (player.yellowCards || 1);
+        indicatorsHTML += `<div class="player-card-indicator amarilla" style="position:relative;">` +
+            `<span style="position:absolute;top:-5px;right:-5px;background:#e67e22;color:#fff;` +
+            `border-radius:50%;font-size:0.5rem;font-weight:900;width:13px;height:13px;` +
+            `line-height:13px;text-align:center;border:1px solid #fff;">${yNum}</span></div>`;
+    } else if (player.cards === 'roja') {
+        const expReason = (player.yellowCards === 2) ? '2🟨' : '🟥';
+        indicatorsHTML += `<div class="player-card-indicator roja" style="position:relative;">` +
+            `<span style="position:absolute;top:-5px;right:-5px;background:#c0392b;color:#fff;` +
+            `border-radius:50%;font-size:0.45rem;font-weight:900;width:13px;height:13px;` +
+            `line-height:13px;text-align:center;border:1px solid #fff;">${expReason}</span></div>`;
+    }
 
     // Lesión: borde rojo en chip + ✚ en la etiqueta del nombre (siempre visible)
     if (player.injured) {
@@ -3878,6 +4586,19 @@ function createPlayerChip(player) {
         <div class="player-name" style="pointer-events: none;">${player.name}${injuredLabel}</div>
         ${indicatorsHTML}
     `;
+
+    // Aplicar color semáforo al cronómetro desde el primer render
+    const _timerEl = div.querySelector('.player-timer');
+    if (_timerEl && typeof getTimerColor === 'function') {
+        const _col = getTimerColor(player.time || 0);
+        _timerEl.style.background = _col.bg;
+        _timerEl.style.color      = _col.text;
+        _timerEl.style.fontWeight = '800';
+        _timerEl.style.fontSize   = _col.fontSize || '0.8rem';
+        _timerEl.style.minWidth   = '46px';
+        _timerEl.style.padding    = '1px 4px';
+        _timerEl.style.borderRadius = '4px';
+    }
 
     div.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('playerId', player.id);
@@ -4068,7 +4789,40 @@ function updatePlayerUI(player) {
     const chip = document.getElementById(`player-${player.id}`);
     if (chip) {
         const timerDiv = chip.querySelector('.player-timer');
-        if (timerDiv) timerDiv.textContent = formatTime(player.time);
+        if (timerDiv) {
+            timerDiv.textContent = formatTime(player.time);
+            // Aplicar color semáforo al cronómetro
+            const col = getTimerColor(player.time);
+            timerDiv.style.background    = col.bg;
+            timerDiv.style.color         = col.text;
+            timerDiv.style.fontWeight    = '800';
+            timerDiv.style.fontSize      = col.fontSize || '0.8rem';
+            timerDiv.style.minWidth      = '46px';
+            timerDiv.style.padding       = '1px 4px';
+            timerDiv.style.borderRadius  = '4px';
+            timerDiv.style.textAlign     = 'center';
+        }
+    }
+}
+
+// ── Semáforo de tiempo jugado ─────────────────────────────────────────
+// Verde  → jugador ha superado la mitad del partido
+// Amarillo → ha superado 1/3 pero no la mitad
+// Rojo   → no ha llegado al tercio mínimo
+// Los umbrales se calculan desde half1MaxTime + half2MaxTime (segundos)
+function getTimerColor(timeSec) {
+    const totalSec  = (half1MaxTime || 1800) + (half2MaxTime || 1800);
+    const third     = totalSec / 3;   // mínimo = 1/3 del partido
+    const half      = totalSec / 2;   // objetivo = mitad del partido
+    if (timeSec >= half) {
+        // Verde — superó la mitad
+        return { bg: '#2ea043', text: '#000000', fontSize: '0.8rem' };
+    } else if (timeSec >= third) {
+        // Amarillo — entre 1/3 y 1/2
+        return { bg: '#e3b341', text: '#000000', fontSize: '0.8rem' };
+    } else {
+        // Rojo — no ha llegado al tercio mínimo
+        return { bg: '#da3633', text: '#ffffff', fontSize: '0.8rem' };
     }
 }
 
@@ -4316,6 +5070,10 @@ function logEvent(player, eventType) {
 
 function resetMatch() {
     if (!confirm("¿Reiniciar partido? Se perderá el tiempo y las estadísticas, pero se mantendrán los jugadores.")) return;
+    
+    // Detener sincronización en vivo si está activa
+    if (typeof stopLiveSync === 'function') stopLiveSync();
+    
     isRunning = false;
     clearInterval(timerInterval);
     masterTimeH1 = 0; masterTimeH2 = 0;
@@ -4870,6 +5628,7 @@ async function openSuperAdminPanel() {
         <button class="sa-tab" onclick="saTab('payments')">💳 Pagos</button>
         <button class="sa-tab" onclick="saTab('requests')">📋 Solicitudes</button>
         <button class="sa-tab" onclick="saTab('newclub')">➕ Nuevo Club</button>
+        <button class="sa-tab" onclick="openBillingPanel()" style="color:#3fb950;background:rgba(63,185,80,0.08);border-color:rgba(63,185,80,0.3);">💰 Facturación</button>
       </div>
       <div class="sa-body" id="sa-body">
         <p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando…</p>
@@ -5311,7 +6070,7 @@ async function saIndividual() {
         <div style="margin-top:0.7rem;display:flex;gap:0.5rem;">
             <button class="sa-btn" onclick="saAddIndividual()"
                 style="color:#79c0ff;border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.08);">
-                ➕ Añadir usuario individual</button>
+                ➕ Añadir administrador individual</button>
         </div>
     </div>`;
 
@@ -5330,8 +6089,8 @@ async function saIndividual() {
           <div class="sa-card-head" onclick="saToggleICard('${u._id}')">
             <div class="sa-card-title">
                 <span class="sa-chevron">▼</span>
-                ${u.email||u._id}
-                ${u.displayName?`<span style="font-weight:400;color:var(--text-muted);font-size:0.83rem;"> · ${u.displayName}</span>`:''}
+                ${(u.displayName||((u.firstName||'')+(u.lastName?' '+u.lastName:'')).trim())||u.email||u._id}
+                <span style="font-weight:400;color:var(--text-muted);font-size:0.8rem;margin-left:0.3rem;">${u.email||''}</span>
                 ${saBadge(pl.label, pl.color)}
                 ${saBadge(st.label, st.color)}
             </div>
@@ -5403,7 +6162,7 @@ async function saOpenIndividualEditor(uid) {
             <button onclick="saTab('individual')" class="sa-btn"
                 style="color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
                 ← Volver</button>
-            <h3 style="margin:0;font-size:1rem;">${uid ? '✏️ Editar usuario individual' : '➕ Nuevo usuario individual'}</h3>
+            <h3 style="margin:0;font-size:1rem;">${uid ? '✏️ Editar administrador individual' : '➕ Nuevo administrador individual'}</h3>
           </div>
           <div style="display:flex;flex-direction:column;gap:0.7rem;">
             <div><label class="sa-label">Email *</label>

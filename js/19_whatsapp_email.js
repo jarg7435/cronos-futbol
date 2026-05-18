@@ -307,6 +307,8 @@ window.sharedGetSelectedRecipients = function(prefix = 'cv') {
         phone: chk.dataset.phone,
         email: chk.dataset.email,
         label: chk.dataset.label,
+        playerId: chk.dataset.playerid,
+        playerNumber: chk.dataset.playernumber,
     }));
 };
 

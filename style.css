@@ -69,6 +69,23 @@ body {
     padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* --- FIX VISIBILIDAD DESPLEGABLES --- */
+select {
+    color-scheme: light !important; /* Fuerza al sistema a usar menú claro */
+    cursor: pointer;
+}
+select option {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-size: 0.95rem;
+    padding: 12px !important;
+}
+select:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3) !important;
+}
+
+
 body.setup-mode .sidebar,
 body.setup-mode .sidebar-right,
 body.setup-mode .mobile-toggle,
@@ -544,6 +561,7 @@ header {
     align-items: center;
     padding: 4px 0;
     z-index: 5;
+    pointer-events: none;
 }
 
 .logo-header img {

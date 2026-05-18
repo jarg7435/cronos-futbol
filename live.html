@@ -1024,6 +1024,34 @@ function setMatchListContext(matches, currentId) {
     updateNavButtons();
 }
 
+window.toggleKeepMatch = async function(matchId, e) {
+    if (e) e.stopPropagation();
+    try {
+        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const matchData = window._allFetchedMatches?.find(m => m.id === matchId);
+        const newKeep = matchData ? !matchData.keep : true;
+        await updateDoc(doc(db, 'live_matches', matchId), { keep: newKeep });
+        if (matchData) matchData.keep = newKeep;
+        showHistory(); // Refrescar vista
+    } catch(err) {
+        console.error(err);
+        alert('Error al guardar: ' + err.message);
+    }
+};
+
+window.deleteMatch = async function(matchId, e) {
+    if (e) e.stopPropagation();
+    if (!confirm('¿Eliminar definitivamente este partido del historial?')) return;
+    try {
+        const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        await deleteDoc(doc(db, 'live_matches', matchId));
+        showHistory(); // Refrescar vista
+    } catch(err) {
+        console.error(err);
+        alert('Error al eliminar: ' + err.message);
+    }
+};
+
 window.showHistory = async function() {
     clearInterval(timerInterval); timerInterval = null;
     window._prevPhase = null; // reset para resinc al volver
@@ -1067,18 +1095,29 @@ window.showHistory = async function() {
 
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        // Separar: en vivo vs últimas 24h (finalizados)
+        // Separar: en vivo vs finalizados (y auto-borrar caducados)
         const liveMatches = [], finishedMatches = [];
         const allDocs2 = [];
         snap.forEach(d => { allDocs2.push({ id: d.id, ...d.data() }); });
+        
+        window._allFetchedMatches = allDocs2;
+        
         // Ordenar cliente (sin índice Firestore)
         allDocs2.sort((a,b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+        
+        const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        
         allDocs2.forEach(m => {
             const updated = m.updatedAt?.toDate?.() || new Date(0);
             if (m.status === 'active') {
                 liveMatches.push(m);
-            } else if (updated > twentyFourHoursAgo) {
-                finishedMatches.push(m);
+            } else {
+                if (updated <= twentyFourHoursAgo && !m.keep) {
+                    // Auto-borrar si tiene más de 24h y no está marcado como guardado
+                    deleteDoc(doc(db, 'live_matches', m.id)).catch(err => console.warn('Error auto-borrado:', err));
+                } else {
+                    finishedMatches.push(m);
+                }
             }
         });
 
@@ -1139,7 +1178,7 @@ window.showHistory = async function() {
         if (finishedMatches.length > 0) {
             const hh = document.createElement('div');
             hh.style.cssText = 'margin:1rem 0 0.6rem;';
-            hh.innerHTML = '<span style="font-size:0.7rem;font-weight:700;letter-spacing:1px;color:var(--muted);">PARTIDOS ÚLTIMAS 24 HORAS</span>';
+            hh.innerHTML = '<span style="font-size:0.7rem;font-weight:700;letter-spacing:1px;color:var(--muted);">PARTIDOS FINALIZADOS</span>';
             listEl.appendChild(hh);
             finishedMatches.forEach(m => {
                 const date = m.updatedAt?.toDate
@@ -1162,7 +1201,20 @@ window.showHistory = async function() {
                             ${m.mode==='f7'?'Fútbol 7':'Fútbol 11'} · ${date}
                             ${m.coachEmail?'<br>Entrenador: '+m.coachEmail:''}
                         </div>
-                        <span class="history-status-finish">✅ Finalizado</span>
+                        <div style="display:flex;gap:0.4rem;align-items:center;">
+                            <button onclick="toggleKeepMatch('${m.id}', event)" title="${m.keep ? 'Dejar de guardar' : 'Guardar permanentemente'}"
+                                style="padding:0.3rem 0.6rem;background:${m.keep ? 'rgba(63,185,80,0.15)' : 'rgba(255,255,255,0.05)'};
+                                       border:1px solid ${m.keep ? 'rgba(63,185,80,0.4)' : 'var(--border)'};border-radius:6px;
+                                       color:${m.keep ? '#3fb950' : 'var(--muted)'};font-size:0.75rem;cursor:pointer;font-weight:600;">
+                                ${m.keep ? '★ Guardado' : '☆ Guardar'}
+                            </button>
+                            <button onclick="deleteMatch('${m.id}', event)"
+                                style="padding:0.3rem 0.6rem;background:rgba(255,88,88,0.1);
+                                       border:1px solid rgba(255,88,88,0.3);border-radius:6px;
+                                       color:#ff5858;font-size:0.75rem;cursor:pointer;">
+                                🗑️ Eliminar
+                            </button>
+                        </div>
                     </div>`;
                 card.onclick = () => { history.pushState({},'','?match='+m.id); setMatchListContext(finishedMatches.length ? [...liveMatches,...finishedMatches] : [m], m.id); loadMatch(m.id); };
                 listEl.appendChild(card);

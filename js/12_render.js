@@ -1,8 +1,16 @@
 // --- RENDER ---
+// v3 — Con badges "1" y "2" para tarjetas amarillas y distinción
+//       entre doble amarilla y roja directa en el chip del jugador.
+//
+//  Visualización en el chip del jugador:
+//    • 1ª amarilla:  indicador amarillo con badge "1" naranja
+//    • 2ª amarilla:  indicador rojo con badge "2" dorado oscuro
+//                    (doble amarilla — se distingue de la roja directa)
+//    • Roja directa: indicador rojo sin badge numérico
 
-// ══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
 //  ESTADO DEL CAMBIO GRUPAL (con aislamiento por equipo)
-// ══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
 var groupSubMode = false;
 var groupSubTeam = null;  // 'home' o 'away' — equipo activo en modo grupal
 var groupSelectedOut = new Set();   // IDs de titulares seleccionados (salen)
@@ -169,6 +177,13 @@ function renderPlayers() {
 
     players.forEach(p => {
         const chip = createPlayerChip(p);
+
+        // ── FIX: Restaurar estado visual si hay un drag táctil activo ──
+        if (touchData && touchData.draggedPlayerId != null &&
+            String(touchData.draggedPlayerId) === String(p.id)) {
+            chip.style.opacity = '0.3';
+        }
+
         if (p.status === 'field') {
             pitch.appendChild(chip);
             placeOnField(chip, p);
@@ -206,6 +221,19 @@ function sortBenchUI(team) {
     chips.forEach(chip => list.appendChild(chip));
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  createPlayerChip v3 — Con indicadores numéricos de tarjetas
+//
+//  Visualización en el chip del jugador:
+//    • 1ª amarilla:  indicador amarillo con badge "1" naranja
+//    • 2ª amarilla:  indicador rojo con badge "2" dorado oscuro
+//                    (doble amarilla — se distingue de la roja directa)
+//    • Roja directa: indicador rojo sin badge numérico
+//
+//  Así al final del partido se distingue claramente si un jugador
+//  expulsado lo fue por doble amarilla (badge "2") o por roja directa
+//  (sin badge numérico en el indicador rojo).
+// ════════════════════════════════════════════════════════════════════
 function createPlayerChip(player) {
     const div = document.createElement('div');
     div.className = 'player-chip' + (player.cards === 'roja' ? ' expelled' : '');
@@ -214,9 +242,38 @@ function createPlayerChip(player) {
     div.style.background = `linear-gradient(to bottom, ${player.color} 50%, ${player.shortsColor} 50%)`;
 
     let indicatorsHTML = '';
-    if (player.goals > 0)           indicatorsHTML += `<div class="player-goal-indicator">${player.goals} \u26BD</div>`;
-    if (player.cards === 'amarilla') indicatorsHTML += `<div class="player-card-indicator amarilla"></div>`;
-    else if (player.cards === 'roja') indicatorsHTML += `<div class="player-card-indicator roja"></div>`;
+
+    // ── Indicador de goles ──
+    if (player.goals > 0) {
+        indicatorsHTML += `<div class="player-goal-indicator">${player.goals} \u26BD</div>`;
+    }
+
+    // ── Indicadores de tarjetas con badges numéricos ──
+    if (player.cards === 'amarilla') {
+        // 1ª amarilla → badge "1" naranja sobre indicador amarillo
+        indicatorsHTML +=
+            `<div class="player-card-indicator amarilla" style="position:relative;">` +
+            `<span class="cronos-ycard-num" style="position:absolute;top:-5px;right:-5px;` +
+            `background:#e67e22;color:#fff;border-radius:50%;font-size:0.55rem;font-weight:900;` +
+            `width:14px;height:14px;line-height:14px;text-align:center;border:1.5px solid #fff;">` +
+            `1</span></div>`;
+    } else if (player.cards === 'roja') {
+        // Expulsado → distinguir doble amarilla de roja directa
+        const isDoubleYellow = (player.yellowCards === 2);
+        if (isDoubleYellow) {
+            // Doble amarilla → badge "2" dorado oscuro sobre indicador rojo
+            indicatorsHTML +=
+                `<div class="player-card-indicator roja" style="position:relative;">` +
+                `<span class="cronos-ycard-num" style="position:absolute;top:-5px;right:-5px;` +
+                `background:#b8860b;color:#fff;border-radius:50%;font-size:0.55rem;font-weight:900;` +
+                `width:14px;height:14px;line-height:14px;text-align:center;border:1.5px solid #fff;">` +
+                `2</span></div>`;
+        } else {
+            // Roja directa → indicador rojo sin badge numérico
+            indicatorsHTML +=
+                `<div class="player-card-indicator roja" style="position:relative;"></div>`;
+        }
+    }
 
     // Lesión: borde rojo en chip + ✚ en la etiqueta del nombre
     if (player.injured) {
@@ -232,8 +289,8 @@ function createPlayerChip(player) {
         : '';
 
     // Sanitizar nombre del jugador para prevenir XSS
-    const safeName = typeof escapeHtml === 'function' ? escapeHtml(player.name) : player.name;
-    const safeNumber = typeof escapeHtml === 'function' ? escapeHtml(String(player.number)) : player.number;
+        const safeName = escapeHtml(player.name);
+    const safeNumber = escapeHtml(String(player.number));
 
     div.innerHTML = `
         <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
@@ -251,6 +308,9 @@ function createPlayerChip(player) {
     div.addEventListener('touchstart', (e) => handleTouchStart(e, player), { passive: false });
     div.addEventListener('touchmove',  (e) => handleTouchMove(e, player),  { passive: false });
     div.addEventListener('touchend',   (e) => handleTouchEnd(e, player),   { passive: false });
+    div.addEventListener('touchcancel',(e) => handleTouchCancel(e, player),{ passive: false });
+    // Bloquear menú contextual del sistema en longpress (evita duplicación visual en iOS/Android)
+    div.addEventListener('contextmenu', (e) => e.preventDefault());
     div.style.touchAction = 'manipulation';
 
     let lastTap = 0;
@@ -309,6 +369,11 @@ function handleTouchStart(e, player) {
         return;
     }
     lastTouchTime = now;
+
+    // ── FIX: Desactivar drag nativo del browser durante el toque ──
+    const el = document.getElementById(`player-${player.id}`);
+    if (el) el.draggable = false;
+
     touchData.draggedPlayerId = player.id;
     touchData.hasMoved = false;
 
@@ -352,13 +417,18 @@ function handleTouchEnd(e, player) {
         touchData.clone = null;
     }
     const original = document.getElementById(`player-${player.id}`);
-    if (original) original.style.opacity = '';
+    if (original) {
+        original.style.opacity = '';
+        original.draggable = (player.cards !== 'roja' || player.status === 'field');
+    }
+    // También limpiar cualquier clon huérfano con el mismo id
+    const orphan = document.getElementById(`drag-clone-${player.id}`);
+    if (orphan) orphan.remove();
 
     // ── Si NO se movió → es un toque, NO arrastre ──
     if (!touchData.hasMoved) {
         touchData.draggedPlayerId = null;
         touchData.hasMoved = false;
-        // El click (o handleGroupSubClick) se encargará
         return;
     }
 
@@ -387,9 +457,24 @@ function handleTouchEnd(e, player) {
     touchData.hasMoved = false;
 }
 
-// ══════════════════════════════════════════════
-//  ATTACH LISTENERS A LOS BOTONES GRUPAL (touch + click)
-// ══════════════════════════════════════════════
+// ── FIX: Manejar touchcancel (iOS/Android interrumpen el toque) ──
+function handleTouchCancel(e, player) {
+    if (touchData.clone) {
+        touchData.clone.remove();
+        touchData.clone = null;
+    }
+    const original = document.getElementById(`player-${player.id}`);
+    if (original) {
+        original.style.opacity = '';
+        original.draggable = (player.cards !== 'roja' || player.status === 'field');
+    }
+    const orphan = document.getElementById(`drag-clone-${player.id}`);
+    if (orphan) orphan.remove();
+    touchData.draggedPlayerId = null;
+    touchData.hasMoved = false;
+}
+
+// ════════════════════════════════════════════════
 function attachGroupSubBtnEvents(btnId, team) {
     function tryAttach() {
         var btn = document.getElementById(btnId);
@@ -404,7 +489,7 @@ function attachGroupSubBtnEvents(btnId, team) {
 
         btn.addEventListener('touchend', function(e) {
             if (touchFired) {
-                e.preventDefault(); // bloquear click sintético
+                e.preventDefault();
                 touchFired = false;
                 toggleGroupSubMode(team);
             }

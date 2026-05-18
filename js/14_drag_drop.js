@@ -1,5 +1,23 @@
 // --- DRAG & DROP ---
 
+// ── Guard anti-duplicación táctil ─────────────────────────────────────────
+// En móvil, un longpress dispara TANTO el evento táctil personalizado COMO
+// el evento HTML5 drag nativo del navegador, procesando al jugador dos veces.
+// Este flag bloquea la segunda llamada dentro de una ventana de 400ms.
+let _dropGuardTs  = 0;       // timestamp del último drop procesado
+let _dropGuardId  = null;    // playerId del último drop procesado
+const _DROP_GUARD_MS = 400;  // ventana de bloqueo en milisegundos
+
+function _dropAllowed(playerId) {
+    const now = Date.now();
+    if (now - _dropGuardTs < _DROP_GUARD_MS && _dropGuardId == playerId) {
+        return false; // segunda llamada dentro de la ventana → ignorar
+    }
+    _dropGuardTs = now;
+    _dropGuardId = playerId;
+    return true;
+}
+
 function allowDrop(e) { e.preventDefault(); }
 
 function resolveOverlaps(ox, oy, excludeId) {
@@ -37,6 +55,7 @@ function closeDrawers() {
 function dropToField(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId') || touchData.draggedPlayerId;
+    if (!_dropAllowed(playerId)) return; // anti-duplicación táctil
     const player = players.find(p => p.id == playerId);
     if (!player) return;
 
@@ -99,6 +118,7 @@ function dropToBench(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId');
     const actualId = playerId || touchData.draggedPlayerId;
+    if (!_dropAllowed(actualId)) return; // anti-duplicación táctil
     const player = players.find(p => p.id == actualId);
     if (!player || player.team !== 'home') return;
     handleBenchDrop(e, player);
@@ -108,6 +128,7 @@ function dropToAwayBench(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId');
     const actualId = playerId || touchData.draggedPlayerId;
+    if (!_dropAllowed(actualId)) return; // anti-duplicación táctil
     const player = players.find(p => p.id == actualId);
     if (!player || player.team !== 'away') return;
     handleBenchDrop(e, player);

@@ -101,12 +101,16 @@ async function openParentPanel() {
                 ${typeof escapeHtml==='function'?escapeHtml(me.email||''):me.email||''}
             </div>
         </div>
-        <button onclick="logoutUser()"
-            style="background:none;border:1px solid rgba(255,88,88,0.35);
-                   color:rgba(255,88,88,0.75);font-size:0.74rem;
-                   padding:0.35rem 0.85rem;border-radius:6px;cursor:pointer;">
-            ⏻ Salir
-        </button>
+        <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+            <button onclick="typeof showRoleSelector==='function'?showRoleSelector():typeof showRoleSelection==='function'&&showRoleSelection()"
+                style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
+                       color:#ffd700;padding:0.35rem 0.8rem;border-radius:6px;cursor:pointer;
+                       font-size:0.74rem;font-weight:700;">⇄ Cambiar rol</button>
+            <button onclick="typeof logoutUser==='function'?logoutUser():typeof cerrarSesion==='function'&&cerrarSesion()"
+                style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                       color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;cursor:pointer;
+                       font-size:0.74rem;font-weight:700;">⏻ Salir</button>
+        </div>
     </div>
 
     <!-- TABS -->
@@ -115,7 +119,7 @@ async function openParentPanel() {
                 flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;">
         <button class="pp-tab active" onclick="ppTab('live',this)">🔴 En Vivo</button>
         <button class="pp-tab"        onclick="ppTab('msgs',this)">📬 Mensajes</button>
-        <button class="pp-tab"        onclick="ppTab('player',this)">👤 Mi Jugador</button>
+        <button class="pp-tab"        onclick="ppTab('player',this)">📊 Informe Jugador</button>
         <button class="pp-tab"        onclick="ppTab('chat',this)">💬 Chat</button>
     </div>
 
@@ -398,7 +402,8 @@ async function openParentPanel() {
     window.ppPlayer = async () => {
         const body = document.getElementById('pp-body');
         try {
-            const { collection, getDocs, query, where } = await import(
+            const { collection, getDocs, query, where,
+                    doc, getDoc, setDoc, updateDoc } = await import(
                 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
             // Vínculo padre → jugador
@@ -408,6 +413,119 @@ async function openParentPanel() {
             ));
             const links = [];
             linkSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+
+            // ── AUTO-VINCULACIÓN ──────────────────────────────────────────
+            // Si no hay link todavía, intentar crearlo automáticamente usando
+            // los datos del documento del usuario (playerNumber almacenado al
+            // aprobar la solicitud de registro del padre).
+            if (!links.length && clubId) {
+                try {
+                    // Buscar playerNumber en el documento del usuario primero
+                    const myDoc  = await getDoc(doc(fa.db, 'users', me.uid));
+                    const myData = myDoc.exists() ? myDoc.data() : {};
+                    let pNum  = myData.playerNumber || myData.dorsalJugador || null;
+                    let pAlias = myData.playerAlias || myData.playerName || myData.displayName || '';
+
+                    // Si no está en users, buscar en platform_requests
+                    if (!pNum || !myData.inviteCode) {
+                        try {
+                            const prSnap = await getDocs(query(
+                                collection(fa.db, 'platform_requests'),
+                                where('requestedEmail',  '==', me.email || ''),
+                                where('clubId', '==', clubId)
+                            ));
+                            prSnap.forEach(d => {
+                                const pr = d.data();
+                                if (!pNum && (pr.playerNumber || pr.requestedPlayerNumber)) {
+                                    pNum   = pr.playerNumber || pr.requestedPlayerNumber;
+                                    pAlias = pr.playerAlias || pr.playerName || pAlias;
+                                }
+                                if (!myData.inviteCode && pr.inviteCode) {
+                                    myData.inviteCode = pr.inviteCode;
+                                }
+                            });
+                        } catch(_) {}
+                    }
+
+                    // También buscar en cronos_player_links por email del padre o por inviteCode
+                    if (!pNum && (me.email || myData.inviteCode)) {
+                        try {
+                            const queries = [];
+                            if (me.email) queries.push(query(
+                                collection(fa.db, 'cronos_player_links'),
+                                where('parentEmail', '==', me.email),
+                                where('clubId',      '==', clubId)
+                            ));
+                            if (myData.inviteCode) queries.push(query(
+                                collection(fa.db, 'cronos_player_links'),
+                                where('inviteCode', '==', myData.inviteCode),
+                                where('clubId',     '==', clubId)
+                            ));
+
+                            for (const q of queries) {
+                                const qSnap = await getDocs(q);
+                                qSnap.forEach(d => {
+                                    const ld = d.data();
+                                    if (!pNum && (ld.playerNumber || ld.inviteCode)) {
+                                        pNum   = ld.playerNumber || (ld.inviteCode ? ld.inviteCode.replace(/^J/, '') : null);
+                                        pAlias = ld.playerAlias || ld.playerName || pAlias;
+                                        // Si el link ya existe pero sin parentUid, actualizarlo
+                                        if (!ld.parentUid) {
+                                            updateDoc(doc(fa.db, 'cronos_player_links', d.id), {
+                                                parentUid:   me.uid,
+                                                parentEmail: me.email || ld.parentEmail || '',
+                                                parentName:  myData.displayName || me.email || ld.parentName || '',
+                                            }).catch(()=>{});
+                                            links.push({ _id: d.id, ...ld, parentUid: me.uid });
+                                        }
+                                    }
+                                });
+                                if (links.length) break;
+                            }
+                        } catch(_) {}
+                    }
+
+                    if (pNum && !links.length) {
+                        const pTeam  = myData.teamName || myData.category || '';
+                        const linkId = `${clubId}_${pNum}`;
+                        const existingLink = await getDoc(doc(fa.db, 'cronos_player_links', linkId));
+
+                        if (existingLink.exists()) {
+                            await updateDoc(doc(fa.db, 'cronos_player_links', linkId), {
+                                parentUid:   me.uid,
+                                parentEmail: me.email || '',
+                                parentPhone: myData.whatsapp || myData.phone || '',
+                                parentName:  myData.displayName || me.email || '',
+                            });
+                        } else {
+                            await setDoc(doc(fa.db, 'cronos_player_links', linkId), {
+                                clubId,
+                                playerNumber:      String(pNum),
+                                playerAlias:       pAlias,
+                                teamName:          pTeam,
+                                parentUid:         me.uid,
+                                parentEmail:       me.email || '',
+                                parentPhone:       myData.whatsapp || myData.phone || '',
+                                parentName:        myData.displayName || me.email || '',
+                                canReceiveReports: true,
+                                canReceiveConv:    true,
+                                canReceiveTr:      true,
+                                canReceiveMsg:     true,
+                                inviteCode:        `J${pNum}`,
+                                createdAt:         new Date().toISOString(),
+                            });
+                        }
+                        // Recargar tras la vinculación
+                        const refreshSnap = await getDocs(query(
+                            collection(fa.db, 'cronos_player_links'),
+                            where('parentUid', '==', me.uid)
+                        ));
+                        refreshSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+                    }
+                } catch(autoErr) {
+                    console.warn('[ppPlayer] Auto-vinculación fallida:', autoErr.message);
+                }
+            }
 
             if (!links.length) {
                 body.innerHTML = `<div class="pp-empty">
@@ -495,10 +613,10 @@ async function openParentPanel() {
                     </div>`).join('')}
             </div>
 
-            <!-- Historial partido a partido -->
+            <!-- Historial partido a partido — con línea de vida por partido -->
             <div style="font-size:0.74rem;font-weight:700;color:#7d8590;
                         letter-spacing:0.5px;margin-bottom:0.55rem;">
-                HISTORIAL DE PARTIDOS (${totalGames})
+                INFORMES INDIVIDUALES POR PARTIDO (${totalGames})
             </div>
 
             ${reports.length ? reports.map((r, idx) => {
@@ -511,41 +629,125 @@ async function openParentPanel() {
                     ? '<span style="font-size:0.68rem;background:rgba(255,165,0,0.2);color:#ffa500;border-radius:4px;padding:1px 7px;">🚑 Lesión</span>'
                     : '';
 
+                // ── Línea de Vida del jugador (Mini-Gantt Premium) ────────────────────────
+                const parseMin = (mp) => {
+                    if (!mp) return 0;
+                    if (String(mp).includes(':')) {
+                        const p = String(mp).split(':');
+                        return parseInt(p[0]||0) + (parseInt(p[1]||0) >= 30 ? 1 : 0);
+                    }
+                    return parseInt(mp)||0;
+                };
+                const mDur = 60; // Duración estándar para visualización
+                const mPlayed = parseMin(r.minutesPlayed);
+                const pct = Math.round((mPlayed / mDur) * 100);
+                const barColor = '#58a6ff';
+
+                // SVG de línea de vida mejorada
+                const W2=400, H2=40, sc2=W2/mDur;
+                let miniSvg = `<svg viewBox="0 0 ${W2} ${H2}" width="100%" style="display:block;max-width:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2));">`;
+                
+                // Fondo con gradiente sutil
+                miniSvg += `<defs><linearGradient id="ganttGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(255,255,255,0.1)"/><stop offset="100%" stop-color="rgba(255,255,255,0.05)"/></linearGradient></defs>`;
+                miniSvg += `<rect x="0" y="5" width="${W2}" height="${H2-20}" rx="4" fill="url(#ganttGrad)"/>`;
+                
+                // Renderizar franjas de tiempo en el campo (basado en history)
+                const history = r.history || [];
+                let inField = false;
+                let lastTime = 0;
+                
+                history.sort((a,b) => (a.minute||0)-(b.minute||0)).forEach(ev => {
+                    const x = (ev.minute||0) * sc2;
+                    if (ev.type === 'sub_in' || ev.type === 'starter') {
+                        inField = true;
+                        lastTime = ev.minute || 0;
+                    } else if (ev.type === 'sub_out' || ev.type === 'end') {
+                        if (inField) {
+                            const width = Math.max(2, (ev.minute - lastTime) * sc2);
+                            miniSvg += `<rect x="${lastTime*sc2}" y="5" width="${width}" height="${H2-20}" rx="4" fill="${barColor}" fill-opacity="0.8"/>`;
+                        }
+                        inField = false;
+                    }
+                });
+                
+                // Si terminó el partido y seguía en el campo
+                if (inField) {
+                    const width = (mDur - lastTime) * sc2;
+                    miniSvg += `<rect x="${lastTime*sc2}" y="5" width="${width}" height="${H2-20}" rx="4" fill="${barColor}" fill-opacity="0.8"/>`;
+                }
+
+                // Marcas de minutos y eventos
+                [0, 15, 30, 45, 60].forEach(mn => {
+                    const x = mn * sc2;
+                    miniSvg += `<line x1="${x}" y1="5" x2="${x}" y2="${H2-15}" stroke="rgba(255,255,255,0.15)" stroke-width="1" stroke-dasharray="2,2"/>`;
+                    miniSvg += `<text x="${x}" y="${H2-2}" font-size="9" fill="rgba(255,255,255,0.4)" text-anchor="${mn===0?'start':mn===60?'end':'middle'}">${mn}'</text>`;
+                });
+
+                // Iconos de eventos sobre la barra
+                history.forEach(ev => {
+                    const ex = (ev.minute || 0) * sc2;
+                    if (ev.type === 'goal') {
+                        miniSvg += `<circle cx="${ex}" cy="${H2/2-5}" r="6" fill="#fff" stroke="#3fb950" stroke-width="2"/>`;
+                        miniSvg += `<text x="${ex}" y="${H2/2-2}" font-size="8" text-anchor="middle" fill="#000" font-weight="bold">⚽</text>`;
+                    } else if (ev.type === 'yellow') {
+                        miniSvg += `<rect x="${ex-3}" y="${H2/2-10}" width="7" height="10" rx="1" fill="#eab308"/>`;
+                    } else if (ev.type === 'red') {
+                        miniSvg += `<rect x="${ex-3}" y="${H2/2-10}" width="7" height="10" rx="1" fill="#ef4444"/>`;
+                    }
+                });
+                miniSvg += '</svg>';
+
+                // Listado de eventos cronológico
+                const histEvents = history
+                    .filter(ev => ['goal','yellow','red','injury','sub_in','sub_out','starter'].includes(ev.type))
+                    .sort((a,b) => (a.minute||0)-(b.minute||0));
+
+                const evIcons = {
+                    starter: {icon:'🏁', col:'#58a6ff', txt:'Titular'},
+                    goal:    {icon:'⚽', col:'#3fb950', txt:'Gol'},
+                    yellow:  {icon:'🟨', col:'#eab308', txt:'Amarilla'},
+                    red:     {icon:'🟥', col:'#ef4444', txt:'Roja'},
+                    injury:  {icon:'🩹', col:'#f97316', txt:'Lesión'},
+                    sub_in:  {icon:'↑',  col:'#3fb950', txt:'Entra al campo'},
+                    sub_out: {icon:'↓',  col:'rgba(255,255,255,0.5)', txt:'Sale al banquillo'},
+                };
+
+                const evRows = histEvents.map(ev => {
+                    const info = evIcons[ev.type] || {icon:'•', col:'#7d8590', txt:ev.type};
+                    return `<div style="display:flex;align-items:center;gap:8px;font-size:0.75rem;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.03);">
+                        <span style="min-width:28px;color:rgba(255,255,255,0.4);font-weight:700;">${ev.minute||'0'}'</span>
+                        <span style="font-size:0.9rem;">${info.icon}</span>
+                        <span style="color:${info.col};font-weight:600;">${info.txt}</span>
+                        ${ev.playerOutName ? `<span style="color:rgba(255,255,255,0.3);font-size:0.7rem;"> (por ${ev.playerOutName})</span>` : ''}
+                    </div>`;
+                }).join('');
+
                 return `
-                <div class="pp-card">
-                    <div style="display:flex;justify-content:space-between;
-                                align-items:flex-start;flex-wrap:wrap;gap:0.4rem;">
-                        <div style="flex:1;min-width:0;">
-                            <div style="font-weight:700;font-size:0.86rem;margin-bottom:0.18rem;">
-                                Partido ${idx+1}
-                                ${r.rival
-                                    ? ` · <span style="color:#7d8590;font-weight:400;">
-                                          🆚 ${typeof escapeHtml==='function'?escapeHtml(r.rival):r.rival}</span>`
-                                    : ''}
+                <div class="pp-card" style="margin-bottom:1rem; border-left:4px solid ${barColor};">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;margin-bottom:0.8rem;">
+                        <div style="flex:1;">
+                            <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.2rem;">
+                                vs ${typeof escapeHtml==='function'?escapeHtml(r.rival||'Rival'):r.rival||'Rival'}
+                                <span style="color:${barColor};margin-left:0.5rem;">${r.scoreHome}-${r.scoreAway}</span>
                             </div>
-                            <div style="font-size:0.73rem;color:#7d8590;">
+                            <div style="font-size:0.75rem;color:#7d8590;">
                                 📅 ${typeof escapeHtml==='function'?escapeHtml(r.matchDate||'—'):r.matchDate||'—'}
-                                ${r.scoreHome !== undefined
-                                    ? ` · <strong style="color:white;">
-                                          ${typeof escapeHtml==='function'?escapeHtml(r.scoreHome):r.scoreHome}-${typeof escapeHtml==='function'?escapeHtml(r.scoreAway):r.scoreAway}</strong>`
-                                    : ''}
                             </div>
                         </div>
-                        <div style="display:flex;flex-direction:column;
-                                    align-items:flex-end;gap:0.2rem;flex-shrink:0;">
-                            <div style="font-size:0.82rem;">
-                                ⏱️ <strong>${typeof escapeHtml==='function'?escapeHtml(r.minutesPlayed||'—'):r.minutesPlayed||'—'}</strong>
-                            </div>
-                            <div style="font-size:0.82rem;">
-                                ⚽ <strong>${typeof escapeHtml==='function'?escapeHtml(r.goals||0):r.goals||0}</strong>
-                                ${(r.goals||0)===1 ? 'gol' : 'goles'}
-                            </div>
-                            ${cardBadge || injBadge ? `
-                            <div style="display:flex;gap:0.3rem;flex-wrap:wrap;
-                                        justify-content:flex-end;margin-top:0.1rem;">
-                                ${cardBadge}${injBadge}
-                            </div>` : ''}
+                        <div style="text-align:right;">
+                            <div style="font-size:1.1rem;font-weight:800;color:${barColor};">${mPlayed}'</div>
+                            <div style="font-size:0.65rem;color:#7d8590;text-transform:uppercase;">Minutos jugados</div>
                         </div>
+                    </div>
+
+                    <div style="margin:0.8rem 0;">
+                        <div style="font-size:0.65rem;color:rgba(255,255,255,0.4);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">Línea de tiempo</div>
+                        ${miniSvg}
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:0.6rem;margin-top:0.5rem;">
+                        <div style="font-size:0.65rem;color:rgba(255,255,255,0.4);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">Eventos clave</div>
+                        ${evRows || '<div style="font-size:0.7rem;color:#555;">Sin eventos registrados</div>'}
                     </div>
                 </div>`;
             }).join('') : `
@@ -553,7 +755,7 @@ async function openParentPanel() {
                 📊 Aún no hay informes de partido para este jugador.<br>
                 <span style="font-size:0.8rem;color:#555;">
                     Cuando el entrenador envíe el informe tras cada partido,
-                    los datos aparecerán aquí.
+                    los datos aparecerán aquí automáticamente.
                 </span>
             </div>`}`;
 

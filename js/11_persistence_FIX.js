@@ -1,16 +1,144 @@
 // --- PERSISTENCE ---
 
+// ═══════════════════════════════════════════════════════════════════
+// populateSavedTeams — Rellena el select oculto Y la lista visual
+//   con botón 🗑️ individual por plantilla.
+// ═══════════════════════════════════════════════════════════════════
 function populateSavedTeams(teamKey) {
+    // 1. Actualizar el <select> oculto (compatibilidad con código legado)
     const dropdown = document.getElementById(`saved-teams-${teamKey}`);
-    if (!dropdown) return;
+    if (dropdown) {
+        dropdown.innerHTML = '<option value="">-- Cargar --</option>';
+        const teamsForSelect = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+        teamsForSelect.forEach((team, index) => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            opt.textContent = team.name;
+            dropdown.appendChild(opt);
+        });
+    }
+
+    // 2. Actualizar la lista visual con botones de borrado individuales
+    const listEl = document.getElementById(`saved-teams-list-${teamKey}`);
+    if (!listEl) return;
+
     const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    dropdown.innerHTML = '<option value="">-- Cargar --</option>';
+
+    if (teams.length === 0) {
+        listEl.innerHTML = `<p style="color:#8b949e;font-size:0.75rem;text-align:center;
+                            padding:0.55rem 0.5rem;margin:0;">
+                            Sin plantillas guardadas</p>`;
+        return;
+    }
+
+    listEl.innerHTML = '';
     teams.forEach((team, index) => {
-        const opt = document.createElement('option');
-        opt.value = index;
-        opt.textContent = team.name;
-        dropdown.appendChild(opt);
+        const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const row = document.createElement('div');
+        row.style.cssText = [
+            'display:flex', 'align-items:center', 'justify-content:space-between',
+            'padding:0.38rem 0.55rem',
+            'border-bottom:1px solid rgba(255,255,255,0.05)',
+            'transition:background 0.15s'
+        ].join(';');
+
+        // Nombre clicable — carga la plantilla
+        const nameSpan = document.createElement('span');
+        nameSpan.title = `Cargar "${esc(team.name)}"`;
+        nameSpan.style.cssText = [
+            'flex:1', 'font-size:0.82rem', 'color:#e6edf3', 'font-weight:600',
+            'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis',
+            'padding-right:0.5rem', 'cursor:pointer'
+        ].join(';');
+        nameSpan.textContent = '⚽ ' + team.name;
+        nameSpan.addEventListener('mouseenter', () => row.style.background = 'rgba(88,166,255,0.1)');
+        nameSpan.addEventListener('mouseleave', () => row.style.background = '');
+        nameSpan.addEventListener('click', () => loadTeamByIndex(teamKey, index));
+
+        // Botón eliminar individual
+        const delBtn = document.createElement('button');
+        delBtn.title = `Eliminar "${esc(team.name)}"`;
+        delBtn.style.cssText = [
+            'background:rgba(255,88,88,0.15)', 'border:1px solid rgba(255,88,88,0.45)',
+            'color:#ff5858', 'font-size:0.75rem', 'padding:0.22rem 0.45rem',
+            'border-radius:5px', 'cursor:pointer', 'flex-shrink:0',
+            'white-space:nowrap', 'line-height:1.2', 'font-weight:700'
+        ].join(';');
+        delBtn.textContent = '🗑️';
+        delBtn.addEventListener('mouseenter', () => delBtn.style.background = 'rgba(255,88,88,0.3)');
+        delBtn.addEventListener('mouseleave', () => delBtn.style.background = 'rgba(255,88,88,0.15)');
+        delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteTeamByIndex(teamKey, index, team.name);
+        });
+
+        row.appendChild(nameSpan);
+        row.appendChild(delBtn);
+        listEl.appendChild(row);
     });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// loadTeamByIndex — Carga una plantilla por su índice en el array
+// ═══════════════════════════════════════════════════════════════════
+function loadTeamByIndex(teamKey, idx) {
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const team = teams[idx];
+    if (!team) return;
+
+    // Sincronizar el select oculto
+    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
+    if (dropdown) dropdown.value = idx;
+
+    document.getElementById(`setup-${teamKey}-name`).value = team.name;
+    document.getElementById(`setup-${teamKey}-color`).value = team.color;
+    document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
+    document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
+
+    if (team.secondaryColor) {
+        const secEl = document.getElementById(`setup-${teamKey}-secondary`);
+        if (secEl) secEl.value = team.secondaryColor;
+        if (typeof COLORS !== 'undefined' && COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
+    }
+    if (team.mode) {
+        const modeEl = document.getElementById('setup-mode');
+        if (modeEl) { modeEl.value = team.mode; if (typeof updateFormationOptions === 'function') updateFormationOptions(); }
+    }
+    if (team.formation) {
+        const formEl = document.getElementById('setup-formation');
+        if (formEl) formEl.value = team.formation;
+    }
+    if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
+    window.loadedTeamPlayers[teamKey] = team.players;
+
+    // Resaltar fila seleccionada
+    const listEl = document.getElementById(`saved-teams-list-${teamKey}`);
+    if (listEl) {
+        Array.from(listEl.children).forEach((row, i) => {
+            row.style.background = i === idx ? 'rgba(63,185,80,0.12)' : '';
+        });
+    }
+
+    if (typeof showToast === 'function') showToast(`✅ Plantilla "${team.name}" cargada.`, 2500);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// deleteTeamByIndex — Elimina una plantilla por su índice con confirm
+// ═══════════════════════════════════════════════════════════════════
+function deleteTeamByIndex(teamKey, idx, name) {
+    if (!confirm(`¿Eliminar la plantilla «${name}»?\nEsta acción no se puede deshacer.`)) return;
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    if (idx < 0 || idx >= teams.length) return;
+    teams.splice(idx, 1);
+
+    localStorage.setItem('cronos_teams', JSON.stringify(teams));
+    if (typeof cloudSet === 'function') cloudSet('cronos_teams', JSON.stringify(teams));
+
+    populateSavedTeams('home');
+    populateSavedTeams('away');
+
+    if (typeof showToast === 'function') showToast(`🗑️ Plantilla «${name}» eliminada.`, 3000);
 }
 
 function loadTeamFromDropdown(teamKey) {

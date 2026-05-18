@@ -13,6 +13,121 @@ async function _cFS() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  HELPER: Convertir historial de player a formato estándar para Firestore
+//  La app guarda history como strings: "Entra a las 03:52 (1ªP) #C1"
+//  El Gantt necesita objetos: {type:'sub_in', minute:3}
+//  Esta función convierte ambos formatos al formato objeto estándar
+// ════════════════════════════════════════════════════════════════════
+function _parseHistoryForFirestore(raw) {
+    if (!Array.isArray(raw)) return [];
+    const result = [];
+    raw.forEach(e => {
+        if (typeof e === 'object' && e !== null && e.type) {
+            // Ya es objeto — solo limpiar
+            result.push({ type: e.type, minute: e.minute || 0, note: e.note || '' });
+            return;
+        }
+        if (typeof e !== 'string') return;
+        // Parsear string "Entra a las 03:52 (1ªP) #C1"
+        const tMatch = e.match(/(\d{1,2}):(\d{2})/);
+        const minute = tMatch ? parseInt(tMatch[1]) : 0;
+        const low = e.toLowerCase();
+        let type = '';
+        if (low.startsWith('entra'))                              type = 'sub_in';
+        else if (low.startsWith('sale'))                          type = 'sub_out';
+        else if (low.includes('gol'))                             type = 'goal';
+        else if (low.includes('amarilla'))                        type = 'yellow';
+        else if (low.includes('roja'))                            type = 'red';
+        else if (low.includes('lesión') || low.includes('lesion')) type = 'injury';
+        if (type) result.push({ type, minute, note: e });
+    });
+    return result;
+}
+//
+//  ESTRATEGIA (en orden de fiabilidad):
+//  1. emailConfig.contacts guardado por el entrenador (FUENTE PRINCIPAL)
+//     — ya tiene UIDs, emails y teléfonos confirmados por el coach
+//  2. Consulta Firestore por role === 'director'/'coordinator' (fallback)
+//  3. Consulta Firestore por allRoles array-contains para multi-rol (fallback)
+//
+//  Esto resuelve el caso donde arinagazone@gmail.com tiene múltiples roles
+//  (director + coordinador + entrenador + padre) almacenados en allRoles[]
+//  y el campo `role` de nivel raíz puede ser cualquier rol activo actual.
+// ════════════════════════════════════════════════════════════════════
+async function _cGetStaff(db, clubId, fns, roles) {
+    if (!clubId) return [];
+    roles = roles || ['director', 'coordinator'];
+    const byUid = new Map(); // deduplicar por uid
+
+    const upsert = (uid, role, data) => {
+        if (!byUid.has(uid)) byUid.set(uid, { uid, role, ...data });
+    };
+
+    // ── 1. emailConfig.contacts — FUENTE MÁS FIABLE ──────────────
+    // El entrenador ya configuró quién recibe qué en Gestión de Contactos.
+    // Los contactos de tipo 'staff' tienen uid (UID App) y tags como 'rpt'.
+    try {
+        const contacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts))
+            ? emailConfig.contacts
+            : JSON.parse(
+                (typeof cloudGet === 'function'
+                    ? await cloudGet('cronos_email_config').catch(()=>null)
+                    : null) || '{"contacts":[]}'
+              ).contacts || [];
+
+        contacts.filter(c => c.type !== 'parent' && c.uid && (c.tags||[]).includes('rpt'))
+            .forEach(c => upsert(c.uid, c.role || 'staff', {
+                email: c.email || '', phone: c.phone || '', displayName: c.name || '',
+            }));
+
+        // Si ninguno tiene tag 'rpt', tomar TODOS los staff con uid
+        if (!byUid.size) {
+            contacts.filter(c => c.type !== 'parent' && c.uid)
+                .forEach(c => upsert(c.uid, c.role || 'staff', {
+                    email: c.email || '', phone: c.phone || '', displayName: c.name || '',
+                }));
+        }
+    } catch(_) {}
+
+    // ── 2. Firestore: role === rol específico (usuarios mono-rol) ──
+    const { collection, getDocs, query, where } = fns;
+    for (const role of roles) {
+        try {
+            const snap = await getDocs(query(
+                collection(db, 'users'),
+                where('clubId', '==', clubId),
+                where('role',   '==', role)
+            ));
+            snap.forEach(d => upsert(d.id, role, d.data()));
+        } catch(_) {}
+    }
+
+    // ── 3. Firestore: buscar por clubId y filtrar allRoles en cliente ──
+    // Solo si aún no encontramos nadie (evita la query amplia cuando no es necesaria)
+    if (byUid.size === 0) {
+        try {
+            const allSnap = await getDocs(query(
+                collection(db, 'users'),
+                where('clubId', '==', clubId)
+            ));
+            allSnap.forEach(d => {
+                const data = d.data();
+                (data.allRoles || []).forEach(r => {
+                    if (roles.includes(r.role) &&
+                        r.isAuthorized !== false &&
+                        r.status !== 'rejected' &&
+                        r.status !== 'removed') {
+                        upsert(d.id, r.role, data);
+                    }
+                });
+            });
+        } catch(_) {}
+    }
+
+    return Array.from(byUid.values());
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  PANEL PRINCIPAL DE MENSAJES (vista entrenador)
 // ════════════════════════════════════════════════════════════════════
 async function openCoachMessaging(tab) {
@@ -116,17 +231,12 @@ async function _loadStaffList() {
     body.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando dirección…</p>';
 
     try {
-        const { db, collection, getDocs, query, where } = await _cFS();
+        const fns = await _cFS();
+        const { db, collection, getDocs, query, where } = fns;
 
         // Buscar directores y coordinadores del mismo club
-        const [dirSnap, coordSnap] = await Promise.all([
-            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','director'))),
-            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','coordinator'))),
-        ]);
-
-        const staffList = [];
-        dirSnap.forEach(d   => staffList.push({ uid: d.id, role:'director',    ...d.data() }));
-        coordSnap.forEach(d => staffList.push({ uid: d.id, role:'coordinator', ...d.data() }));
+        // _cGetStaff es compatible con usuarios mono-rol Y multi-rol (allRoles[])
+        const staffList = await _cGetStaff(db, me.clubId || '', fns);
 
         if (!staffList.length) {
             body.innerHTML = `
@@ -353,6 +463,8 @@ async function _loadParentList() {
 
             const typeIcon = link.type === 'staff' ? '🏢' : '👨‍👩‍👧';
             const displayNum = link.playerNumber && link.playerNumber !== '—' ? `#${link.playerNumber}` : '';
+            // Código de invitación para que el padre se registre en la app
+            const invCode = link.inviteCode || (link.playerNumber ? `J${link.playerNumber}` : null);
             const isUnread = unread > 0;
 
             return `
@@ -384,6 +496,7 @@ async function _loadParentList() {
                             ${typeof escapeHtml==='function'?escapeHtml(link.parentEmail || 'Sin email'):link.parentEmail || 'Sin email'}
                             ${link.parentPhone || link.parentWA ? ` · 📱 ${typeof escapeHtml==='function'?escapeHtml(link.parentPhone || link.parentWA):link.parentPhone || link.parentWA}` : ''}
                         </div>
+                        ${invCode ? `<div style="font-size:0.68rem;background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.3);border-radius:5px;padding:1px 6px;display:inline-block;color:#f0883e;font-weight:700;margin-bottom:0.15rem;">🔑 Código registro: <strong>${typeof escapeHtml==='function'?escapeHtml(invCode):invCode}</strong></div>` : ''}
                         <div style="font-size:0.76rem;
                                     color:${unread ? '#58a6ff' : 'var(--text-muted)'};
                                     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
@@ -896,7 +1009,15 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
                       border:1px solid ${checked ? accent : 'rgba(255,255,255,0.08)'};
                       border-radius:12px;padding:0.8rem 1rem;cursor:pointer;transition:all 0.2s;
                       ${checked ? `box-shadow:inset 0 0 10px ${accent}1a;` : ''}">
-            <input type="checkbox" class="${prefix}-recipient-chk" data-id="${c.id}" ${checked ? 'checked' : ''}
+            <input type="checkbox" class="${prefix}-recipient-chk" 
+                data-id="${typeof escapeAttr==='function'?escapeAttr(c.id):c.id}"
+                data-type="${typeof escapeAttr==='function'?escapeAttr(c.type):c.type}"
+                data-phone="${typeof escapeAttr==='function'?escapeAttr(c.phone||''):c.phone||''}"
+                data-email="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}"
+                data-label="${typeof escapeAttr==='function'?escapeAttr(c.name||''):c.name||''}"
+                data-playerid="${typeof escapeAttr==='function'?escapeAttr(c.playerId||''):c.playerId||''}"
+                data-playernumber="${typeof escapeAttr==='function'?escapeAttr(c.playerNumber||''):c.playerNumber||''}"
+                ${checked ? 'checked' : ''}
                 style="width:20px;height:20px;accent-color:${accent};">
             
             <div style="flex:1;min-width:0;">
@@ -984,10 +1105,34 @@ window._executeReportsSend = async function(method) {
 
     const { db, collection, getDocs, query, where, doc, getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
     
-    // Obtener vínculos (solo sirve para saber qué padre es de qué jugador para Internal Envío)
-    const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId)));
+    // Obtener vínculos con timeout de seguridad y soporte para Admin Individual
     const links = [];
-    linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+    try {
+        const _linksTimeout = new Promise(r => setTimeout(() => r(null), 6000));
+        
+        // Query base: por clubId
+        let linksQuery = query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId || '---'));
+        
+        // Si es admin individual o no hay clubId, buscar por individualOwnerId o coachUid
+        if (!me.clubId) {
+            linksQuery = query(collection(db, 'cronos_player_links'), where('individualOwnerId', '==', me.uid));
+        }
+
+        const linksSnapRaw = await Promise.race([
+            getDocs(linksQuery),
+            _linksTimeout
+        ]);
+
+        if (linksSnapRaw) linksSnapRaw.forEach(d => links.push({ _id: d.id, ...d.data() }));
+
+        // Fallback: si sigue vacío y no hay clubId, probar por coachUid
+        if (links.length === 0 && !me.clubId) {
+            const fbSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('coachUid', '==', me.uid)));
+            fbSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+        }
+    } catch(errLinks) {
+        console.warn('[Cronos] Error recuperando vínculos:', errLinks);
+    }
 
     const scoreHome = document.getElementById('score-home')?.textContent || '0';
     const scoreAway = document.getElementById('score-away')?.textContent || '0';
@@ -1059,101 +1204,161 @@ window._executeReportsSend = async function(method) {
 
     // ----- MODO INTERNO -----
     showSpinner('Enviando informes internamente...');
-    for (const r of recipients) {
-        if (r.type === 'staff') {
-            // Enviar notificación global al UID del staff si lo tiene
-            // Recipient ID for staff might be custom ID or UID... actually emailConfig staff .uid is what we want.
-            // Let's check if there's a matching contact in emailConfig with .uid
-            let uidToNotify = null;
-            if (typeof emailConfig !== 'undefined' && emailConfig.contacts) {
-                const c = emailConfig.contacts.find(x => x.id === r.id || x.phone === r.phone || x.email === r.email);
-                if (c && c.uid) uidToNotify = c.uid;
-            }
-            if (uidToNotify) {
-                await setDoc(doc(db, 'cronos_notifications', `notif_matchsglobe_${uidToNotify}_${Date.now().toString(36)}`), {
-                    type:           'aviso_partido_finalizado',
+    try {
+        for (const r of recipients) {
+            if (r.type === 'staff') {
+                // Enviar notificación global al UID del staff si lo tiene
+                let uidToNotify = null;
+                if (typeof emailConfig !== 'undefined' && emailConfig.contacts) {
+                    const c = emailConfig.contacts.find(x => x.id === r.id || x.phone === r.phone || x.email === r.email);
+                    if (c && c.uid) uidToNotify = c.uid;
+                }
+                if (uidToNotify) {
+                    // 1. Notificación push/UI
+                    await setDoc(doc(db, 'cronos_notifications', `notif_matchsglobe_${uidToNotify}_${Date.now().toString(36)}`), {
+                        type:           'aviso_partido_finalizado',
+                        clubId:         me.clubId || null,
+                        parentUid:      uidToNotify, // Se usa parentUid como campo genérico para el destinatario
+                        matchDate:      matchDate,
+                        rival:          rivalName,
+                        scoreHome, scoreAway,
+                        message:        globalText.replace(/[*_]/g,''),
+                        createdAt:      new Date().toISOString()
+                    });
+
+                    // 2. Mensaje en el hilo de staff (para que aparezca en "Mensajes")
+                    const threadId = `staff_${uidToNotify}_from_${me.uid}`;
+                    const msgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
+                    try {
+                        const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
+                        if (threadSnap.exists()) {
+                            await updateDoc(doc(db, 'cronos_messages', threadId), {
+                                messages: arrayUnion(msgEntry),
+                                lastMessage: '📊 Informe colectivo de partido',
+                                lastMessageAt: msgEntry.timestamp,
+                                unreadByStaff: (threadSnap.data().unreadByStaff || 0) + 1
+                            });
+                        } else {
+                            await setDoc(doc(db, 'cronos_messages', threadId), {
+                                threadId, coachUid: me.uid, coachEmail: me.email,
+                                staffUid: uidToNotify, recipientType: 'staff',
+                                messages: [msgEntry], lastMessage: '📊 Informe colectivo de partido',
+                                lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByStaff: 1
+                            });
+                        }
+                    } catch(thErr) { console.warn('[Cronos] Error creando hilo staff:', thErr); }
+                    
+                    sentCount++;
+                }
+            } 
+            else if (r.type === 'parent') {
+                // Find matched link
+                let link = links.find(l => (r.id && r.id.includes('p_') === false ? l.parentUid === r.id : false)
+                                          || (r.email && l.parentEmail === r.email) 
+                                          || (r.phone && l.parentPhone === r.phone));
+                
+                // Fallback: si no hay link en Firestore pero el recipient tiene info de jugador (manual)
+                const fallbackPlayerId = r.playerId;
+                const fallbackPlayerNum = r.playerNumber;
+
+                const player = homePlayers.find(p => 
+                    (p.playerId && p.playerId === fallbackPlayerId) ||
+                    (p.number != null && String(p.number) === String(fallbackPlayerNum)) ||
+                    (link && p.number != null && String(p.number) === String(link.playerNumber)) ||
+                    (link && p.playerId && p.playerId === link.playerId) ||
+                    (link && p.name && p.name === link.playerAlias) ||
+                    (link && p.alias && p.alias === link.playerAlias)
+                );
+                
+                if (!player) {
+                    console.warn(`[Cronos] No se encontró al jugador para el destinatario ${r.label}.`, {r, link, homePlayers});
+                    continue;
+                }
+
+                const reportText = _buildIndividualReportText(player, scoreHome, scoreAway, matchDate);
+
+                // Save in cronos_player_reports (for UI queries)
+                const reportId = `rpt_${player.number}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_player_reports', reportId), {
+                    reportId,
+                    playerNumber:   player.number,
+                    playerAlias:    player.name || player.alias || 'Jugador',
+                    parentUid:      (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id)),
+                    coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
-                    parentUid:      uidToNotify,
-                    matchDate:      matchDate,
-                    rival:          TEAM_NAMES.away || 'Rival',
+                    matchDate, rival: rivalName,
                     scoreHome, scoreAway,
-                    message:        globalText.replace(/[*_]/g,''),
-                    createdAt:      new Date().toISOString()
+                    minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
+                    goals: player.goals || 0,
+                    cards: player.cards || 'ninguna',
+                    injured: player.injured || false,
+                    history: player.history || [],
+                    createdAt: new Date().toISOString(),
                 });
+
+                const targetParentUid = (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id));
+                if (targetParentUid) {
+                    // Send via Thread Message
+                    const threadId = `${me.uid}_${targetParentUid}`;
+                    try {
+                        const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
+                        const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
+                        if (threadSnap.exists()) {
+                            await updateDoc(doc(db, 'cronos_messages', threadId), {
+                                messages: arrayUnion(msgEntry),
+                                lastMessage: '📊 Informe de partido enviado',
+                                lastMessageAt: msgEntry.timestamp,
+                                unreadByParent: (threadSnap.data().unreadByParent||0) + 1
+                            });
+                        } else {
+                            await setDoc(doc(db, 'cronos_messages', threadId), {
+                                threadId, coachUid: me.uid, coachEmail: me.email,
+                                parentUid: targetParentUid, parentEmail: (link ? link.parentEmail : r.email) || '',
+                                messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
+                                lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
+                            });
+                        }
+
+                        // Also a notification for the parent
+                        await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${player.number}_${Date.now().toString(36)}`), {
+                            type: 'informe_partido', clubId: me.clubId || null,
+                            parentUid: targetParentUid, playerNumber: player.number,
+                            rival: rivalName, scoreHome, scoreAway,
+                            minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
+                            goals: player.goals || 0, cards: player.cards || 'ninguna',
+                            injured: player.injured || false, createdAt: new Date().toISOString()
+                        });
+                    } catch(threadErr) {
+                        console.warn('[Cronos] Error enviando mensaje/notificación a parentUid:', targetParentUid, threadErr);
+                    }
+                } else {
+                    console.warn('[Cronos] El destinatario no tiene parentUid vinculado, el informe solo se guardó en la colección de informes.', r);
+                }
+
                 sentCount++;
             }
-        } 
-        else if (r.type === 'parent') {
-            // Find matched link
-            const link = links.find(l => (r.id && r.id.includes('p_') === false ? l.parentUid === r.id : false)
-                                     || l.parentEmail === r.email 
-                                     || l.parentPhone === r.phone);
-            if (!link) continue;
-            
-            const player = homePlayers.find(p => String(p.number) === String(link.playerNumber));
-            if (!player) continue;
-
-            const reportText = _buildIndividualReportText(player, scoreHome, scoreAway, matchDate);
-
-            // Save in cronos_player_reports (for UI queries)
-            const reportId = `rpt_${link.playerNumber}_${Date.now().toString(36)}`;
-            await setDoc(doc(db, 'cronos_player_reports', reportId), {
-                reportId,
-                playerNumber:   link.playerNumber,
-                playerAlias:    link.playerAlias || player.name,
-                parentUid:      link.parentUid,
-                coachUid:       me.uid, coachEmail: me.email,
-                clubId:         me.clubId || null,
-                matchDate, rival: TEAM_NAMES.away,
-                scoreHome, scoreAway,
-                minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
-                goals: player.goals || 0,
-                cards: player.cards || 'ninguna',
-                injured: player.injured || false,
-                history: player.history || [],
-                createdAt: new Date().toISOString(),
-            });
-
-            // Send via Thread Message
-            const threadId = `${me.uid}_${link.parentUid}`;
-            const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
-            const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
-            if (threadSnap.exists()) {
-                await updateDoc(doc(db, 'cronos_messages', threadId), {
-                    messages: arrayUnion(msgEntry),
-                    lastMessage: '📊 Informe de partido enviado',
-                    lastMessageAt: msgEntry.timestamp, unreadByParent: (threadSnap.data().unreadByParent||0) + 1
-                });
-            } else {
-                await setDoc(doc(db, 'cronos_messages', threadId), {
-                    threadId, coachUid: me.uid, coachEmail: me.email,
-                    parentUid: link.parentUid, parentEmail: link.parentEmail,
-                    messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
-                    lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
-                });
-            }
-
-            // Also a notification for the parent
-            await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${link.playerNumber}_${Date.now().toString(36)}`), {
-                type: 'informe_partido', clubId: me.clubId || null,
-                parentUid: link.parentUid, playerNumber: link.playerNumber,
-                rival: TEAM_NAMES.away, scoreHome, scoreAway,
-                minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
-                goals: player.goals || 0, cards: player.cards || 'ninguna',
-                injured: player.injured || false, createdAt: new Date().toISOString()
-            });
-
-            sentCount++;
         }
+    } catch (sendErr) {
+        console.error('[Cronos] Error enviando informes internos:', sendErr);
+        if (msgEl) {
+            msgEl.style.color = '#da3633';
+            msgEl.textContent = '⚠️ Error al enviar. Comprueba la conexión e inténtalo de nuevo.';
+        }
+        showToast('⚠️ Error al enviar informes. Revisa la consola.', 5000);
+    } finally {
+        hideSpinner();
     }
-    hideSpinner();
 
-    if (msgEl) {
+    if (sentCount > 0 && msgEl && msgEl.style.color !== '#da3633') {
         msgEl.style.color = '#3fb950';
         msgEl.textContent = `✅ Enviado con éxito a ${sentCount} destinatario(s).`;
+        showToast(`✅ Informes enviados (${sentCount})`, 4000);
+        setTimeout(() => { document.getElementById('setup-modal').style.display='none'; }, 2000);
+    } else if (sentCount === 0 && msgEl && msgEl.style.color !== '#da3633') {
+        msgEl.style.color = '#ffa500';
+        msgEl.textContent = '⚠️ No se encontraron jugadores vinculados para los destinatarios seleccionados.';
+        showToast('⚠️ No se pudo enviar ningún informe. Revisa las vinculaciones.', 5000);
     }
-    showToast(`✅ Informes enviados (${sentCount})`, 4000);
-    setTimeout(() => { document.getElementById('setup-modal').style.display='none'; }, 2000);
 }
 
 // ── Despacho automático de informes (Interno) ──────────────────────────
@@ -1215,15 +1420,11 @@ async function autoDispatchMatchReports() {
             });
         }
 
-        // RESpaldo: Notificar a directores/coordinadores desde colección users
+        // Respaldo: Notificar a directores/coordinadores desde colección users
         try {
-            const [ds, cs] = await Promise.all([
-                getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','director'))),
-                getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','coordinator'))),
-            ]);
-            const staffFromUsers = [];
-            ds.forEach(d => { if (!notifiedUids.has(d.id)) staffFromUsers.push({uid:d.id,...d.data()}); });
-            cs.forEach(d => { if (!notifiedUids.has(d.id)) staffFromUsers.push({uid:d.id,...d.data()}); });
+            const _fns2 = { collection, getDocs, query, where };
+            const staffFromUsers = (await _cGetStaff(db, me.clubId||'', _fns2))
+                .filter(s => !notifiedUids.has(s.uid));
 
             for (const s of staffFromUsers) {
                 const notifId = `notif_global_rpt_${s.uid}_${Date.now().toString(36)}`;
@@ -1288,19 +1489,85 @@ async function autoDispatchMatchReports() {
                     });
                 }
 
-                // Notificación de nuevo informe
-                await setDoc(doc(db, 'cronos_notifications', `notif_indiv_rpt_${pUid}_${Date.now().toString(36)}`), {
-                    type: 'informe_partido',
-                    clubId: me.clubId || null,
-                    parentUid: pUid,
+                // Notificación de nuevo informe individualizado
+                const notifId = `notif_indiv_rpt_${pUid}_${Date.now().toString(36)}`;
+                await setDoc(doc(db, 'cronos_notifications', notifId), {
+                    type:         'informe_partido',
+                    clubId:       me.clubId || null,
+                    parentUid:    pUid,
                     playerNumber: player.number,
-                    rival: rivalName, scoreHome, scoreAway,
-                    createdAt: new Date().toISOString()
+                    playerAlias:  player.alias || player.name,
+                    rival:        rivalName, 
+                    scoreHome, 
+                    scoreAway,
+                    minutes:      typeof formatTime==='function' ? formatTime(player.time||0) : String(player.time||0),
+                    goals:        player.goals || 0,
+                    cards:        player.cards || 'ninguna',
+                    history:      _parseHistoryForFirestore(player.history || []), // Crucial para el mini-gantt
+                    matchId:      `match_indiv_${pUid}_${Date.now().toString(36)}`,
+                    createdAt:    new Date().toISOString()
                 });
             }
         }
 
         localStorage.removeItem('cronos_match_rpt_selection');
+
+        // ── FASE C: INFORME COLECTIVO AL PROPIO ENTRENADOR ───────────────
+        // El entrenador siempre recibe su propio informe colectivo como registro,
+        // tanto en rol de Club como en rol de Usuario Individual.
+        try {
+            const matchId = `match_${me.uid}_${Date.now().toString(36)}`;
+
+            // Guardar copia del informe en cronos_player_reports con coachUid = uid
+            // (el mismo formato que usa el Gantt del coordinador)
+            for (const p of homePlayers) {
+                const rptId = `${matchId}_coach_p${p.number}`;
+                await setDoc(doc(db, 'cronos_player_reports', rptId), {
+                    matchId,
+                    type:          'collective_match_report',
+                    clubId:        me.clubId || null,
+                    coachUid:      me.uid,
+                    coachEmail:    me.email,
+                    matchDate:     new Date().toISOString().split('T')[0],
+                    rival:         rivalName,
+                    scoreHome,
+                    scoreAway,
+                    category:      (typeof currentCategory!=='undefined'?currentCategory:'') ||
+                                   (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
+                    createdAt:     new Date().toISOString(),
+                    playerNumber:  String(p.number||''),
+                    playerAlias:   p.alias || p.name || '',
+                    position:      p.position || p.pos || '',
+                    goals:         p.goals  || 0,
+                    cards:         p.cards  || null,
+                    injured:       p.injured || false,
+                    minutesPlayed: typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
+                    history:       _parseHistoryForFirestore(p.history||[]),
+                    _forCoach:     true, // marca para diferenciar del informe del coordinador
+                });
+            }
+
+            // Notificación in-app para el propio entrenador (formato estándar)
+            const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
+            await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
+                type:      'informe_colectivo', // Usamos el tipo estándar para que aparezca en el feed
+                clubId:    me.clubId || null,
+                coachUid:  me.uid,
+                parentUid: me.uid, // necesario para que el filtro de lectura lo encuentre
+                staffUid:  me.uid,
+                coachEmail: me.email,
+                matchDate: new Date().toISOString().split('T')[0],
+                rival: rivalName, 
+                scoreHome, 
+                scoreAway,
+                matchId,
+                message:   'Has generado un nuevo informe colectivo de partido.',
+                createdAt: new Date().toISOString(),
+            });
+        } catch(autoSelfErr) {
+            console.warn('[AutoDispatch] Auto-informe al entrenador falló silenciosamente:', autoSelfErr.message);
+        }
+
         showToast('✅ Informes enviados automáticamente (Interno)', 4000);
 
     } catch(e) {
@@ -1580,6 +1847,11 @@ async function openContactManager() {
                                     </td>
                                     <td style="padding:0.45rem;font-weight:700;color:var(--primary);">#${typeof escapeAttr==='function'?escapeAttr(link.playerNumber):link.playerNumber}</td>
                                     <td style="padding:0.45rem;">
+                                        <span style="background:rgba(240,136,62,0.12);color:#f0883e;font-size:0.7rem;font-weight:700;padding:1px 6px;border-radius:4px;cursor:help;" title="Código que el padre introduce al registrarse">
+                                            🔑 ${typeof escapeHtml==='function'?escapeHtml(link.inviteCode || ('J'+link.playerNumber)):link.inviteCode || ('J'+link.playerNumber)}
+                                        </span>
+                                    </td>
+                                    <td style="padding:0.45rem;">
                                         <input type="text" class="contact-phone" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
                                             value="${typeof escapeAttr==='function'?escapeAttr(link.parentPhone||''):link.parentPhone||''}" placeholder="34600112233"
                                             style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);
@@ -1652,6 +1924,8 @@ async function saveContactManagerData() {
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
         // 1. Guardar datos completos de Padres (en cronos_player_links)
+        // También genera el inviteCode (J{número}) si no existe todavía,
+        // para que el padre pueda auto-registrarse con ese código.
         for (const input of parentInputs) {
             const linkId      = input.dataset.linkid;
             const phone       = input.value.trim().replace(/\s/g, '');
@@ -1661,7 +1935,13 @@ async function saveContactManagerData() {
             const msgEl       = document.querySelector(`.contact-msg[data-linkid="${linkId}"]`);
             const rptEl       = document.querySelector(`.contact-rpt[data-linkid="${linkId}"]`);
             const liveEl      = document.querySelector(`.contact-live[data-linkid="${linkId}"]`);
-            await updateDoc(doc(db, 'cronos_player_links', linkId), {
+
+            // Extraer playerNumber del linkId ({clubId}_{playerNumber})
+            const playerNum = linkId.includes('_') ? linkId.split('_').pop() : null;
+            // inviteCode = 'J' + playerNumber (ej: J10, J7, J1)
+            const inviteCode = playerNum ? `J${playerNum}` : null;
+
+            const updateData = {
                 parentPhone:        phone,
                 parentEmail:        emailEl   ? emailEl.value.trim()   : undefined,
                 canWatchLive:       liveEl    ? liveEl.checked          : false,
@@ -1669,7 +1949,11 @@ async function saveContactManagerData() {
                 canReceiveConv:     cvEl      ? cvEl.checked            : true,
                 canReceiveTr:       trEl      ? trEl.checked            : true,
                 canReceiveMsg:      msgEl     ? msgEl.checked           : true,
-            });
+            };
+            // Solo añadir inviteCode si no existía ya (para no sobreescribir)
+            if (inviteCode) updateData.inviteCode = inviteCode;
+
+            await updateDoc(doc(db, 'cronos_player_links', linkId), updateData);
         }
 
         // 2. Guardar Lista Unificada de Contactos (en emailConfig)
@@ -1982,6 +2266,10 @@ window._sendTrainingNotification = async function() {
         const staff = [];
         dirSnap.forEach(d   => staff.push({ uid:d.id, ...d.data() }));
         coordSnap.forEach(d => staff.push({ uid:d.id, ...d.data() }));
+        // También buscar en allRoles[] para usuarios multi-rol
+        const _fns3 = { collection, getDocs, query, where };
+        const staffExtra = await _cGetStaff(db, me.clubId||'', _fns3);
+        staffExtra.forEach(s => { if (!staff.find(x => x.uid===s.uid)) staff.push(s); });
 
         const dtFmt = datetime
             ? new Date(datetime).toLocaleString('es-ES', {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
@@ -2040,8 +2328,18 @@ async function openUnifiedCommsMenu() {
                 <div style="width:38px;height:38px;background:rgba(88,166,255,0.1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;">💬</div>
                 <h2 style="margin:0;font-size:1.3rem;font-family:'Outfit',sans-serif;color:white;">Comunicaciones</h2>
             </div>
-            <button onclick="document.getElementById('setup-modal').style.display='none';" 
-                style="background:none;border:none;color:var(--text-muted);font-size:1.7rem;cursor:pointer;line-height:1;">✕</button>
+            <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+                <button onclick="typeof showRoleSelector==='function'?showRoleSelector():typeof showRoleSelection==='function'&&showRoleSelection()"
+                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
+                           color:#ffd700;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;
+                           font-size:0.72rem;font-weight:700;">⇄ Cambiar rol</button>
+                <button onclick="typeof logoutUser==='function'?logoutUser():typeof cerrarSesion==='function'&&cerrarSesion()"
+                    style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                           color:#ff5858;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;
+                           font-size:0.72rem;font-weight:700;">⏻ Salir</button>
+                <button onclick="document.getElementById('setup-modal').style.display='none';" 
+                    style="background:none;border:none;color:var(--text-muted);font-size:1.7rem;cursor:pointer;line-height:1;padding:0 0.2rem;">✕</button>
+            </div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr;gap:0.75rem;flex:1;overflow-y:auto;padding-right:4px;">
@@ -2082,6 +2380,15 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
+            <!-- MIS INFORMES — copia del entrenador -->
+            <button onclick="openMisInformes()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.08);">
+                <span class="icon">📋</span>
+                <div class="content">
+                    <div class="title" style="color:#3fb950;">Mis Informes</div>
+                    <div class="desc">Tus informes de partido · guardados automáticamente</div>
+                </div>
+            </button>
+
             <!-- INFORMES INDIVIDUALES → PADRES -->
             <button onclick="openIndividualReports()" class="btn-comms-card" style="--color:#ffa500;--bg:rgba(255,165,0,0.1);">
                 <span class="icon">👤</span>
@@ -2106,6 +2413,15 @@ async function openUnifiedCommsMenu() {
                 <div class="content">
                     <div class="title" style="color:#ff5858;">Partidos Terminados</div>
                     <div class="desc">Ver y volver a partidos finalizados</div>
+                </div>
+            </button>
+
+            <!-- RETRANSMISIÓN EN VIVO (SHARE URL) -->
+            <button onclick="if(typeof showLiveShareModal==='function') showLiveShareModal(); else alert('Transmisión no iniciada');" class="btn-comms-card" style="--color:#ff5858;--bg:rgba(255,88,88,0.12);">
+                <span class="icon">🔴</span>
+                <div class="content">
+                    <div class="title" style="color:#ff5858;">Retransmisión en Vivo</div>
+                    <div class="desc">Copiar enlace para padres y directores</div>
                 </div>
             </button>
 
@@ -2535,33 +2851,59 @@ window.openCollectiveReport = async function openCollectiveReport() {
         </div>
     </div>`;
 
-    // Cargar directores/coordinadores
+    // Cargar directores/coordinadores destinatarios del informe
+    // FUENTE 1: emailConfig.contacts (configurado por el entrenador en Gestión de Contactos)
+    // FUENTE 2: _cGetStaff como fallback (Firestore)
     try {
-        const { db, collection, getDocs, query, where } = await _cFS();
-        const [ds, cs] = await Promise.all([
-            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','director'))),
-            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId||''), where('role','==','coordinator'))),
-        ]);
-        const staffList = [];
-        ds.forEach(d => staffList.push({ uid:d.id, role:'director',    ...d.data() }));
-        cs.forEach(d => staffList.push({ uid:d.id, role:'coordinator', ...d.data() }));
+        // Intentar emailConfig primero — más fiable para usuarios multi-rol
+        let staffList = [];
+
+        const emailCfgContacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts))
+            ? emailConfig.contacts
+            : [];
+
+        // Staff con tag 'rpt' (reciben informes) O cualquier staff si no hay tag
+        const staffWithRpt = emailCfgContacts.filter(c => c.type !== 'parent' && (c.tags||[]).includes('rpt'));
+        const allStaff     = emailCfgContacts.filter(c => c.type !== 'parent');
+        const fromConfig   = staffWithRpt.length ? staffWithRpt : allStaff;
+
+        fromConfig.forEach(c => {
+            staffList.push({
+                uid:         c.uid   || '',
+                email:       c.email || '',
+                phone:       c.phone || '',
+                displayName: c.name  || c.email || '',
+                role:        c.uid ? 'staff' : 'contact',
+                _fromConfig: true,
+            });
+        });
+
+        // Si emailConfig no tiene nada, usar Firestore
+        if (!staffList.length) {
+            const fns4 = await _cFS();
+            staffList = await _cGetStaff(fns4.db, me.clubId || '', fns4);
+        }
 
         const listEl = document.getElementById('coll-rpt-staff-list');
         if (listEl) {
             if (!staffList.length) {
-                listEl.textContent = 'No hay directores ni coordinadores asignados al club.';
+                listEl.innerHTML = `<div style="color:#f0883e;font-size:0.75rem;">
+                    ⚠️ No hay directores ni coordinadores configurados.<br>
+                    <span style="font-size:0.68rem;">Ve a Comunicaciones → Gestión de Contactos y añade al staff con el tag <strong>INF</strong> activado.</span>
+                </div>`;
             } else {
                 listEl.innerHTML = staffList.map(s => `
                 <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;">
-                    <span>${s.role==='director'?'📋':'🎯'}</span>
+                    <span>${s.role==='director'?'📋':s.role==='coordinator'?'🎯':'🏢'}</span>
                     <span style="color:white;">${typeof escapeHtml==='function'?escapeHtml(s.displayName||s.email):s.displayName||s.email}</span>
                     <span style="font-size:0.65rem;color:var(--text-muted);">
-                        (${s.role==='director'?'Director Deportivo':'Coordinador'})
+                        (${s.role==='director'?'Director Deportivo':s.role==='coordinator'?'Coordinador':'Staff'})
                     </span>
+                    ${s.uid ? `<span style="font-size:0.6rem;background:rgba(63,185,80,0.12);color:#3fb950;padding:1px 5px;border-radius:4px;">✅ App</span>` :
+                               `<span style="font-size:0.6rem;background:rgba(240,136,62,0.12);color:#f0883e;padding:1px 5px;border-radius:4px;">📧 Email</span>`}
                 </div>`).join('');
             }
         }
-        // Guardar para el envío
         window._collectiveReportStaff = staffList;
         window._collectiveReportText  = buildCollectiveText();
 
@@ -2582,58 +2924,420 @@ window._sendCollectiveReportNow = async function() {
     if (typeof showSpinner==='function') showSpinner('Enviando informe colectivo…');
     try {
         const { db, doc, setDoc, updateDoc, getDoc, arrayUnion } = await _cFS();
-        const matchDate = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+        const now       = new Date();
+        const matchDate = now.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+        const matchDateISO = now.toISOString().split('T')[0];
         const rival     = (typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES.away)||'Rival';
-        const scoreHome = document.getElementById('score-home')?.textContent||'?';
-        const scoreAway = document.getElementById('score-away')?.textContent||'?';
+        const scoreHome = document.getElementById('score-home')?.textContent||'0';
+        const scoreAway = document.getElementById('score-away')?.textContent||'0';
+        const createdAt = now.toISOString();
 
-        for (const s of staff) {
-            const threadId = `${me.uid}_${s.uid}`;
-            const msgEntry = {
-                sender: 'coach', type: 'collective_report',
-                text,
-                timestamp: new Date().toISOString(),
-            };
-            const snap = await getDoc(doc(db,'cronos_messages',threadId));
-            if (snap.exists()) {
-                await updateDoc(doc(db,'cronos_messages',threadId), {
-                    messages:      arrayUnion(msgEntry),
-                    lastMessage:   '📊 Informe colectivo de partido',
-                    lastMessageAt: msgEntry.timestamp,
-                    unreadByStaff: (snap.data().unreadByStaff||0) + 1,
-                });
-            } else {
-                await setDoc(doc(db,'cronos_messages',threadId), {
-                    threadId, coachUid: me.uid, coachEmail: me.email,
-                    staffUid: s.uid, staffEmail: s.email||'', recipientType:'staff',
-                    messages: [msgEntry],
-                    lastMessage:   '📊 Informe colectivo de partido',
-                    lastMessageAt: msgEntry.timestamp,
-                    unreadByCoach: 0, unreadByStaff: 1,
-                });
-            }
-            // Notificación interna
-            await setDoc(doc(db,'cronos_notifications',`coll_rpt_${s.uid}_${Date.now().toString(36)}`), {
-                type: 'informe_colectivo', clubId: me.clubId||null,
-                staffUid: s.uid, parentUid: s.uid,
-                coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
-                createdAt: new Date().toISOString(),
+        // ── 1. Guardar datos estructurados del partido en Firestore ──────
+        // Esto alimenta el Gantt visual en el panel de Dirección/Coordinación.
+        // Se guarda UN documento por jugador con su historial completo.
+        const homePlayers = window.players
+            ? window.players.filter(p => p.team === 'home')
+            : [];
+
+        const matchId = `match_${me.uid}_${now.getTime().toString(36)}`;
+
+        for (const p of homePlayers) {
+            const rptId = `${matchId}_p${p.number}`;
+            await setDoc(doc(db, 'cronos_player_reports', rptId), {
+                // Identificadores del partido
+                matchId,
+                type:           'collective_match_report',
+                clubId:         me.clubId || null,
+                coachUid:       me.uid,
+                coachEmail:     me.email,
+                matchDate:      matchDateISO,
+                rival,
+                scoreHome,
+                scoreAway,
+                category:       (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                 (typeof window.currentCategory !== 'undefined' ? window.currentCategory : ''),
+                venue:          (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
+                competition:    (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
+                matchTime:      (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
+                duration:       (typeof window.matchDuration !== 'undefined' ? window.matchDuration : ''),
+                stoppageTime:   (typeof window.stoppageTime !== 'undefined' ? window.stoppageTime : 0),
+                createdAt,
+                // Datos del jugador con historial COMPLETO para el Gantt
+                playerNumber:   String(p.number || ''),
+                playerAlias:    p.alias || p.name || '',
+                position:       p.position || p.pos || '',
+                goals:          p.goals  || 0,
+                cards:          p.cards  || null,
+                injured:        p.injured || false,
+                minutesPlayed:  typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
+                // history: array de eventos {type, minute} — clave para el Gantt
+                // p.history puede contener strings "Entra a las MM:SS (1ªP)" O objetos {type,minute}
+                history: _parseHistoryForFirestore(p.history || []),
             });
         }
+
+        // ── 2. Enviar mensaje de hilo a cada miembro del staff ───────────
+        for (const s of staff) {
+            // Solo envío in-app si tiene uid real
+            if (s.uid) {
+                const threadId = `${me.uid}_${s.uid}`;
+                const msgEntry = {
+                    sender: 'coach', type: 'collective_report',
+                    text,
+                    matchId,
+                    timestamp: createdAt,
+                };
+                const snap = await getDoc(doc(db,'cronos_messages',threadId));
+                if (snap.exists()) {
+                    await updateDoc(doc(db,'cronos_messages',threadId), {
+                        messages:      arrayUnion(msgEntry),
+                        lastMessage:   '📊 Informe colectivo de partido',
+                        lastMessageAt: createdAt,
+                        unreadByStaff: (snap.data().unreadByStaff||0) + 1,
+                    });
+                } else {
+                    await setDoc(doc(db,'cronos_messages',threadId), {
+                        threadId, coachUid: me.uid, coachEmail: me.email,
+                        staffUid: s.uid, staffEmail: s.email||'', recipientType:'staff',
+                        messages: [msgEntry],
+                        lastMessage:   '📊 Informe colectivo de partido',
+                        lastMessageAt: createdAt,
+                        unreadByCoach: 0, unreadByStaff: 1,
+                    });
+                }
+                await setDoc(doc(db,'cronos_notifications',`coll_rpt_${s.uid}_${Date.now().toString(36)}`), {
+                    type: 'informe_colectivo', clubId: me.clubId||null,
+                    staffUid: s.uid, parentUid: s.uid,
+                    coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
+                    matchId,
+                    createdAt,
+                });
+            }
+
+            // Envío por email si tiene email (cubre casos sin uid, p.ej. mismo correo multi-rol)
+            if (s.email && s.email !== me.email) {
+                const subj = encodeURIComponent(`📊 Informe colectivo: vs ${rival} — ${matchDate}`);
+                const body = encodeURIComponent(text.replace(/[*_]/g,''));
+                setTimeout(() => {
+                    window.open(`mailto:${s.email}?subject=${subj}&body=${body}`, '_blank');
+                }, staff.indexOf(s) * 800);
+            }
+
+            // Envío por WhatsApp si tiene teléfono
+            if (s.phone) {
+                const waNum = s.phone.replace(/\s/g,'');
+                setTimeout(() => {
+                    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(text)}`, '_blank');
+                }, staff.indexOf(s) * 800 + 400);
+            }
+        }
+
+        // ── 3. Auto-notificación para el entrenador (para que "le llegue" también) ──
+        const selfNotifId = `coll_rpt_self_${me.uid}_${Date.now().toString(36)}`;
+        await setDoc(doc(db,'cronos_notifications', selfNotifId), {
+            type: 'informe_colectivo', clubId: me.clubId||null,
+            staffUid: me.uid, parentUid: me.uid,
+            coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
+            matchId,
+            createdAt,
+        });
 
         if (typeof hideSpinner==='function') hideSpinner();
         if (typeof showToast==='function')
             showToast(`✅ Informe colectivo enviado a ${staff.length} persona(s) de la dirección`, 5000);
+
+        // ── Guardar copia para el entrenador (registro propio) ──────────
+        // Esto alimenta la pestaña "Mis Informes" del menú de Comunicaciones.
+        try {
+            const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
+            await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
+                type:      'informe_colectivo_entrenador',
+                clubId:    me.clubId || null,
+                coachUid:  me.uid,
+                parentUid: me.uid,
+                matchDate, rival, scoreHome, scoreAway,
+                matchId,
+                createdAt,
+                _forCoach: true,
+            });
+        } catch(selfErr) {
+            console.warn('[ColReport] Auto-copia al entrenador falló:', selfErr.message);
+        }
+
         openUnifiedCommsMenu();
     } catch(e) {
         if (typeof hideSpinner==='function') hideSpinner();
         if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 4000);
+        console.error('[_sendCollectiveReportNow]', e);
     }
 };
 
 // ════════════════════════════════════════════════════════════════════
 //  INFORMES INDIVIDUALES → PADRES VINCULADOS
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+//  MIS INFORMES — Panel del entrenador con sus propios informes de partido
+//  (se auto-guardan al finalizar cada encuentro en ambos roles)
+// ════════════════════════════════════════════════════════════════════
+window.openMisInformes = async function openMisInformes() {
+    const me = window._cronosCurrentUser;
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(96vw,900px);max-height:94vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;">
+
+        <div style="display:flex;justify-content:space-between;align-items:center;
+                    padding:1rem 1.4rem;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;">
+            <div style="display:flex;align-items:center;gap:0.7rem;">
+                <span style="font-size:1.4rem;">📋</span>
+                <div>
+                    <div style="font-size:1rem;font-weight:700;color:white;">Mis Informes de Partido</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);">
+                        Guardados automáticamente al finalizar cada encuentro
+                    </div>
+                </div>
+            </div>
+            <button onclick="openUnifiedCommsMenu()"
+                style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                       color:var(--text-muted);padding:0.35rem 0.8rem;border-radius:6px;
+                       cursor:pointer;font-size:0.74rem;font-weight:600;">← Volver</button>
+        </div>
+
+        <div id="mis-informes-body" style="flex:1;overflow-y:auto;padding:1.2rem;">
+            <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+                <div class="spinner" style="margin:0 auto 1rem;"></div>Cargando…
+            </div>
+        </div>
+    </div>`;
+
+    try {
+        const { db, collection, getDocs, query, where } = await _cFS();
+        const snap = await getDocs(query(
+            collection(db, 'cronos_player_reports'),
+            where('coachUid', '==', me.uid)
+        ));
+
+        const reports = [];
+        snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
+
+        // Filtrar informes eliminados localmente
+        const miDismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
+
+        if (!reports.length) {
+            document.getElementById('mis-informes-body').innerHTML = `
+            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
+                <div style="font-size:2rem;margin-bottom:1rem;">📋</div>
+                <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">Sin informes aún</div>
+                <div style="font-size:0.8rem;">
+                    Los informes se guardan automáticamente al finalizar un partido
+                    y al enviar el Informe Colectivo.
+                </div>
+            </div>`;
+            return;
+        }
+
+        // Agrupar por matchId → fecha+rival+coach (mismo algoritmo que 23_staff_dashboard)
+        const matches = {};
+        reports.forEach(r => {
+            const key = r.matchId ||
+                `${r.matchDate||r.createdAt?.slice(0,10)||'?'}_${r.rival||'sin-rival'}_${r.coachUid||''}`;
+            if (!matches[key]) {
+                matches[key] = {
+                    key, matchId: r.matchId||key,
+                    matchDate: r.matchDate||r.createdAt?.slice(0,10),
+                    rival: r.rival, scoreHome: r.scoreHome, scoreAway: r.scoreAway,
+                    category: r.category||'', venue: r.venue||'',
+                    competition: r.competition||'', matchTime: r.matchTime||'',
+                    duration: r.duration||'', stoppageTime: r.stoppageTime||0,
+                    createdAt: r.createdAt, coachEmail: r.coachEmail,
+                    _playerMap: {}, players: [],
+                };
+            }
+            const pNum = String(r.playerNumber||'');
+            const existing = matches[key]._playerMap[pNum];
+            if (!existing || (r.createdAt||'') > (existing.createdAt||''))
+                matches[key]._playerMap[pNum] = r;
+        });
+        Object.values(matches).forEach(m => {
+            m.players = Object.values(m._playerMap)
+                .sort((a,b)=>(parseInt(a.playerNumber)||99)-(parseInt(b.playerNumber)||99));
+            delete m._playerMap;
+        });
+        const sorted = Object.values(matches)
+            .filter(m=>m.players.length>0)
+            .sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+
+        window._misInformesData = matches;
+
+        const body = document.getElementById('mis-informes-body');
+        body.innerHTML = `<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.8rem;">
+            ${sorted.length} partido${sorted.length!==1?'s':''} · ${reports.length} informes de jugadores
+        </div>` + sorted.map(m => {
+            const sh=m.scoreHome, sa=m.scoreAway;
+            const score=(sh!=null&&sa!=null)?`${sh}–${sa}`:'—';
+            const res=(sh!=null&&sa!=null)?(sh>sa?'VICTORIA':sh<sa?'DERROTA':'EMPATE'):'';
+            const rCol=res==='VICTORIA'?'#3fb950':res==='DERROTA'?'#ff5858':'#eab308';
+            const dateStr=m.matchDate
+                ?new Date(m.matchDate+'T12:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}):'—';
+            const key64=btoa(unescape(encodeURIComponent(m.key))).replace(/=/g,'');
+            const goals=m.players.reduce((s,p)=>s+(p.goals||0),0);
+            return `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(63,185,80,0.15);
+                        border-radius:12px;padding:0.9rem 1.1rem;margin-bottom:0.7rem;cursor:pointer;transition:all 0.2s;"
+                 id="mi-rp-${key64}"
+                 onmouseover="this.style.borderColor='rgba(63,185,80,0.4)'"
+                 onmouseout="this.style.borderColor='rgba(63,185,80,0.15)'"
+                 onclick="miToggleInforme('${key64}')">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:0.95rem;display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
+                            🆚 vs <span style="color:#3fb950;">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>
+                            ${res?`<span style="font-size:0.62rem;font-weight:700;color:${rCol};">${res}</span>`:''}
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;display:flex;gap:0.5rem 0.9rem;flex-wrap:wrap;">
+                            <span>📅 ${dateStr}</span>
+                            ${score!=='—'?`<span>⚽ <strong style="color:${rCol};">${score}</strong></span>`:''}
+                            ${m.category?`<span style="color:#58a6ff;">${typeof escapeHtml==='function'?escapeHtml(m.category):m.category}</span>`:''}
+                        </div>
+                        ${goals>0?`<div style="font-size:0.7rem;color:#3fb950;margin-top:2px;">⚽ ${goals} goles</div>`:''}
+                    </div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);text-align:right;flex-shrink:0;">
+                        ${m.players.length} jugadores<br>▼ Ver Gantt
+                    </div>
+                    <div style="display:flex;align-items:center;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
+                        <button onclick="event.stopPropagation(); miEliminarInforme('${key64}', true)" 
+                                title="Eliminar informe definitivamente"
+                                style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                                       color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
+                                       display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+                <div id="mi-rp-detail-${key64}"
+                     style="display:none;margin-top:0.75rem;border-top:1px solid rgba(255,255,255,0.07);padding-top:0.75rem;">
+                </div>
+            </div>`;
+        }).join('');
+
+        // Toggle con Gantt completo (usa window._sdBuildGantt de 23_staff_dashboard.js)
+        window.miToggleInforme = (key64) => {
+            const card   = document.getElementById(`mi-rp-${key64}`);
+            const detail = document.getElementById(`mi-rp-detail-${key64}`);
+            if (!detail) return;
+            const isOpen = detail.style.display !== 'none';
+            if (!isOpen && !detail.dataset.rendered) {
+                const key = decodeURIComponent(escape(atob(key64)));
+                const m   = window._misInformesData?.[key];
+                if (m) {
+                    try {
+                        // Usar el motor de reportes unificado (_RP) de 22_club_reports.js
+                        if (typeof _RP !== 'undefined' && typeof _RP.build === 'function') {
+                            const fullReportHtml = _RP.build(m, window._cronosCurrentUser);
+                            
+                            // Añadir botones de acción al final del informe visual
+                            const btns = `
+                            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1.5rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.08);">
+                                <button onclick="miDescargarInforme('${key64}')"
+                                    style="padding:0.5rem 1rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;color:#58a6ff;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                                    📥 Descargar TXT</button>
+                                <button onclick="miEliminarInforme('${key64}', true)"
+                                    style="padding:0.5rem 1rem;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);border-radius:8px;color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                                    🗑️ Borrar Permanente</button>
+                            </div>`;
+                            
+                            detail.innerHTML = fullReportHtml + btns;
+                        } else {
+                            throw new Error('Motor de informes no disponible. Reintenta en unos segundos.');
+                        }
+                    } catch(err) {
+                        detail.innerHTML = `<div style="color:#ff5858;font-size:0.8rem;padding:1rem;background:rgba(255,88,88,0.05);border-radius:8px;border:1px solid rgba(255,88,88,0.2);">
+                            ⚠️ Error al generar visualización: ${err.message}</div>`;
+                    }
+                    detail.dataset.rendered = '1';
+                }
+            }
+            detail.style.display = isOpen ? 'none' : 'block';
+            if (card) card.style.borderColor = isOpen ? 'rgba(63,185,80,0.15)' : 'rgba(63,185,80,0.55)';
+        };
+
+        // Exportar informe del entrenador como TXT
+        window.miDescargarInforme = (key64) => {
+            const key = decodeURIComponent(escape(atob(key64)));
+            const m   = window._misInformesData?.[key];
+            if (!m || typeof window.sdDownloadInforme !== 'function') {
+                if (typeof showToast==='function') showToast('⚠️ Función de descarga no disponible', 2000);
+                return;
+            }
+            // Reutilizar sdDownloadInforme de 23_staff_dashboard.js
+            if (!window._sdMatches) window._sdMatches = {};
+            window._sdMatches[key64] = m;
+            window.sdDownloadInforme(key64);
+        };
+
+        // Eliminar informe del entrenador (soporta borrado local y real en Firestore)
+        window.miEliminarInforme = async (key64, realDelete = false) => {
+            const promptMsg = realDelete 
+                ? '¿Deseas eliminar este informe DEFINITIVAMENTE de la base de datos? Esta acción no se puede deshacer.' 
+                : '¿Deseas ocultar este informe de tu lista?';
+            
+            if (!confirm(promptMsg)) return;
+            
+            const key = decodeURIComponent(escape(atob(key64)));
+            
+            if (realDelete) {
+                const m = window._misInformesData?.[key];
+                if (m) {
+                    try {
+                        const { db, doc, deleteDoc } = await _cFS();
+                        if (typeof showSpinner === 'function') showSpinner('Eliminando de la base de datos…');
+                        
+                        // Eliminar cada documento de jugador asociado
+                        const deletePromises = m.players.map(p => {
+                            const docId = p._id || `${m.matchId}_p${p.playerNumber}`;
+                            return deleteDoc(doc(db, 'cronos_player_reports', docId));
+                        });
+                        await Promise.all(deletePromises);
+                        
+                        if (typeof hideSpinner === 'function') hideSpinner();
+                        if (typeof showToast === 'function') showToast('✅ Informe eliminado de la nube', 3000);
+                    } catch (err) {
+                        if (typeof hideSpinner === 'function') hideSpinner();
+                        console.error('[MisInformes] Error al borrar:', err);
+                        if (typeof showToast === 'function') showToast('⚠️ Error al eliminar: ' + err.message, 3000);
+                        return; // No quitar de la UI si falló
+                    }
+                }
+            } else {
+                // Borrado "suave" (local storage)
+                const dismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
+                if (!dismissed.includes(key)) dismissed.push(key);
+                localStorage.setItem('cronos_mi_dismissed_info', JSON.stringify(dismissed));
+                if (typeof showToast === 'function') showToast('🗑️ Informe ocultado localmente', 2000);
+            }
+
+            // Quitar de la UI
+            const card = document.getElementById(`mi-rp-${key64}`);
+            if (card) card.remove();
+            
+            // Actualizar contador
+            const currentCount = Object.keys(window._misInformesData).length - 1;
+            const body = document.getElementById('mis-informes-body');
+            if (body) {
+                const title = body.querySelector('div'); // el primer div tiene el contador
+                if (title) title.innerHTML = `${currentCount} partido${currentCount!==1?'s':''} · Informes actualizados`;
+            }
+            
+            delete window._misInformesData[key];
+        };
+
+    } catch(e) {
+        const body = document.getElementById('mis-informes-body');
+        if (body) body.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${e.message}</div>`;
+    }
+};
+
 window.openIndividualReports = async function openIndividualReports() {
     const me    = window._cronosCurrentUser;
     const modal = document.getElementById('setup-modal');
@@ -2671,13 +3375,46 @@ window.openIndividualReports = async function openIndividualReports() {
     try {
         const { db, collection, getDocs, query, where } = await _cFS();
 
-        // Obtener links jugador↔padre
+        // ── Obtener links jugador↔padre de Firestore ──────────────
         const linksSnap = await getDocs(query(
             collection(db,'cronos_player_links'),
             where('clubId','==',me.clubId||'')
         ));
         const links = {};
         linksSnap.forEach(d => { const v=d.data(); links[v.playerNumber]=v; });
+
+        // ── TAMBIÉN: enriquecer con padres de emailConfig.contacts ──
+        // Los padres añadidos en "Gestión de Contactos" están en localStorage
+        // (emailConfig.contacts con type:'parent' y playerId), no necesariamente
+        // en cronos_player_links de Firestore. Los combinamos aquí.
+        if (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts)) {
+            const squad = window._cronos_squad_cache ||
+                JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}')[
+                    (typeof currentMode !== 'undefined' ? currentMode : 'f11')] || [];
+
+            emailConfig.contacts.filter(c => c.type === 'parent' && c.playerId).forEach(c => {
+                // Buscar el número de dorsal a partir del playerId (ej: "10" o "j-10" → 10)
+                const numFromId = parseInt((c.playerId||'').replace(/[^0-9]/g,'')) || null;
+                const squadPlayer = squad.find(sp =>
+                    sp.id === c.playerId ||
+                    String(sp.number) === String(numFromId));
+                const playerNum = squadPlayer
+                    ? String(squadPlayer.number)
+                    : (numFromId ? String(numFromId) : null);
+                if (playerNum && !links[playerNum]) {
+                    links[playerNum] = {
+                        playerNumber: playerNum,
+                        playerAlias:  squadPlayer ? (squadPlayer.alias || squadPlayer.name || '') : '',
+                        parentUid:    c.uid   || null,
+                        parentEmail:  c.email || '',
+                        parentPhone:  c.phone || '',
+                        parentName:   c.name  || '',
+                        clubId:       me.clubId || null,
+                        _fromEmailConfig: true,
+                    };
+                }
+            });
+        }
 
         // Jugadores del partido actual
         const players = window.players
@@ -2698,8 +3435,15 @@ window.openIndividualReports = async function openIndividualReports() {
 
         body.innerHTML = players.map(p => {
             const link    = links[p.number];
-            const linked  = !!(link && link.parentUid);
+            // Vinculado si tiene uid en app O al menos email/teléfono de contacto
+            const linked  = !!(link && (link.parentUid || link.parentEmail || link.parentPhone));
             const mins    = typeof formatTime==='function' ? formatTime(p.time||0) : (p.minutesPlayed||'—');
+            const parentLabel = link
+                ? (link.parentName  ? link.parentName
+                  : link.parentEmail ? link.parentEmail
+                  : link.parentPhone  ? link.parentPhone : '')
+                : '';
+            const inApp = !!(link && link.parentUid);
 
             // Eventos del jugador
             const events = [];
@@ -2725,8 +3469,11 @@ window.openIndividualReports = async function openIndividualReports() {
                     </div>
                     <div style="text-align:right;font-size:0.7rem;">
                         ${linked
-                            ? `<span style="color:#3fb950;font-weight:700;">✅ Vinculado</span><br>
-                               <span style="color:var(--text-muted);">${typeof escapeHtml==='function'?escapeHtml(link.parentEmail||''):link.parentEmail||''}</span>`
+                            ? (inApp
+                                ? `<span style="color:#3fb950;font-weight:700;">✅ App</span><br>
+                                   <span style="color:var(--text-muted);">${typeof escapeHtml==='function'?escapeHtml(parentLabel):parentLabel}</span>`
+                                : `<span style="color:#f0883e;font-weight:700;">📋 Contacto</span><br>
+                                   <span style="color:var(--text-muted);">${typeof escapeHtml==='function'?escapeHtml(parentLabel):parentLabel}</span>`)
                             : `<span style="color:#ff5858;">⚠️ Sin vincular</span>`}
                     </div>
                 </div>
@@ -2777,9 +3524,15 @@ window._sendAllIndividualReports = async function() {
                             sub_in:'▶️ Entra', sub_out:'⏸️ Sale', injury:'🩹 Lesión' };
 
         let sent = 0;
+        const noLinkList = [];
+
         for (const p of players) {
             const link = links[p.number];
-            if (!link || !link.parentUid) continue;
+            // Saltar solo si no hay NINGÚN dato de contacto
+            if (!link || (!link.parentUid && !link.parentEmail && !link.parentPhone)) {
+                noLinkList.push(p.name || `#${p.number}`);
+                continue;
+            }
 
             const mins   = typeof formatTime==='function' ? formatTime(p.time||0) : (p.minutesPlayed||'—');
             const events = [];
@@ -2789,55 +3542,72 @@ window._sendAllIndividualReports = async function() {
             if (p.injuryMinute) events.push({ minute:p.injuryMinute, type:'injury'  });
             events.sort((a,b)=>(a.minute||0)-(b.minute||0));
 
-            let text = `📊 *INFORME INDIVIDUAL: ${p.name} #${p.number}*\n`;
-            text += `━━━━━━━━━━━━━━━━\n`;
-            text += `📅 ${matchDate} · 🆚 vs ${rival} (${scoreHome}-${scoreAway})\n\n`;
-            text += `⏱ Minutos: *${mins}*\n`;
-            text += `⚽ Goles: *${p.goals||0}*\n`;
-            text += `🎴 Tarjeta: *${p.cards&&p.cards!=='ninguna'?p.cards:'Ninguna'}*\n`;
-            text += `🚑 Lesión: *${p.injured?'SÍ':'NO'}*\n`;
-            if (events.length) {
-                text += `\n📋 *Acciones:*\n`;
-                events.forEach(ev => { text += `• ${ev.minute||'?'}' ${evIcon[ev.type]||ev.type}\n`; });
-            }
-            text += `\n_Cronos Fútbol_ ⚽`;
+            const text = `📊 *INFORME INDIVIDUAL: ${p.name} #${p.number}*\n` +
+                `━━━━━━━━━━━━━━━━\n` +
+                `📅 ${matchDate} · 🆚 vs ${rival} (${scoreHome}-${scoreAway})\n\n` +
+                `⏱ Minutos: *${mins}*\n` +
+                `⚽ Goles: *${p.goals||0}*\n` +
+                `🎴 Tarjeta: *${p.cards&&p.cards!=='ninguna'?p.cards:'Ninguna'}*\n` +
+                `🚑 Lesión: *${p.injured?'SÍ':'NO'}*\n` +
+                (events.length
+                    ? `\n📋 *Acciones:*\n` + events.map(ev => `• ${ev.minute||'?'}' ${evIcon[ev.type]||ev.type}`).join('\n') + '\n'
+                    : '') +
+                `\n_Cronos Fútbol_ ⚽`;
 
-            const threadId = `${me.uid}_${link.parentUid}`;
-            const msgEntry = { sender:'coach', type:'individual_report', text, timestamp:new Date().toISOString() };
-            const snap     = await getDoc(doc(db,'cronos_messages',threadId));
-
-            if (snap.exists()) {
-                await updateDoc(doc(db,'cronos_messages',threadId), {
-                    messages: arrayUnion(msgEntry),
-                    lastMessage: `📊 Informe de ${p.name}`,
-                    lastMessageAt: msgEntry.timestamp,
-                    unreadByParent: (snap.data().unreadByParent||0) + 1,
-                });
-            } else {
-                await setDoc(doc(db,'cronos_messages',threadId), {
-                    threadId, coachUid:me.uid, coachEmail:me.email,
-                    parentUid:link.parentUid, parentEmail:link.parentEmail||'',
-                    recipientType:'parent',
-                    messages:[msgEntry],
-                    lastMessage:`📊 Informe de ${p.name}`,
-                    lastMessageAt:msgEntry.timestamp,
-                    unreadByCoach:0, unreadByParent:1,
+            // ── Envío in-app (solo si tiene uid registrado en la app) ──
+            if (link.parentUid) {
+                const threadId = `${me.uid}_${link.parentUid}`;
+                const msgEntry = { sender:'coach', type:'individual_report', text, timestamp:new Date().toISOString() };
+                const snap     = await getDoc(doc(db,'cronos_messages',threadId));
+                if (snap.exists()) {
+                    await updateDoc(doc(db,'cronos_messages',threadId), {
+                        messages: arrayUnion(msgEntry),
+                        lastMessage: `📊 Informe de ${p.name}`,
+                        lastMessageAt: msgEntry.timestamp,
+                        unreadByParent: (snap.data().unreadByParent||0) + 1,
+                    });
+                } else {
+                    await setDoc(doc(db,'cronos_messages',threadId), {
+                        threadId, coachUid:me.uid, coachEmail:me.email,
+                        parentUid:link.parentUid, parentEmail:link.parentEmail||'',
+                        recipientType:'parent',
+                        messages:[msgEntry],
+                        lastMessage:`📊 Informe de ${p.name}`,
+                        lastMessageAt:msgEntry.timestamp,
+                        unreadByCoach:0, unreadByParent:1,
+                    });
+                }
+                await setDoc(doc(db,'cronos_notifications',`indiv_rpt_${link.parentUid}_${p.number}_${Date.now().toString(36)}`), {
+                    type:'informe_partido', clubId:me.clubId||null,
+                    parentUid:link.parentUid, playerNumber:p.number, playerAlias:p.name,
+                    rival, scoreHome, scoreAway, matchDate, coachEmail:me.email,
+                    createdAt:new Date().toISOString(),
                 });
             }
-            // Notificación en app
-            await setDoc(doc(db,'cronos_notifications',`indiv_rpt_${link.parentUid}_${p.number}_${Date.now().toString(36)}`), {
-                type:'informe_partido', clubId:me.clubId||null,
-                parentUid:link.parentUid, playerNumber:p.number, playerAlias:p.name,
-                rival, scoreHome, scoreAway, matchDate, coachEmail:me.email,
-                createdAt:new Date().toISOString(),
-            });
+
+            // ── Envío por WhatsApp si tiene teléfono (con/sin uid en app) ──
+            if (link.parentPhone) {
+                const waNum = link.parentPhone.replace(/\s/g,'');
+                setTimeout(() => {
+                    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(text)}`, '_blank');
+                }, sent * 800);
+            }
+
+            // ── Envío por Email si tiene email y NO tiene uid (si tiene uid, ya llegó in-app) ──
+            if (link.parentEmail && !link.parentUid) {
+                const subj = encodeURIComponent(`📊 Informe de ${p.name} — ${matchDate}`);
+                const body2 = encodeURIComponent(text.replace(/[*_]/g,''));
+                setTimeout(() => {
+                    window.open(`mailto:${link.parentEmail}?subject=${subj}&body=${body2}`, '_blank');
+                }, sent * 800 + 200);
+            }
+
             sent++;
         }
 
         if (typeof hideSpinner==='function') hideSpinner();
-        const noLink = players.filter(p => !links[p.number]?.parentUid).length;
         let msg = `✅ Informes enviados a ${sent} padre(s).`;
-        if (noLink > 0) msg += ` · ${noLink} jugador(es) sin vincular.`;
+        if (noLinkList.length > 0) msg += ` · Sin contacto: ${noLinkList.join(', ')}.`;
         if (typeof showToast==='function') showToast(msg, 6000);
         openUnifiedCommsMenu();
     } catch(e) {
@@ -2858,15 +3628,18 @@ window.publishConvocationToApp = async function() {
     if (!fa || !me?.clubId) return;
 
     try {
-        const { db, collection, getDocs, query, where, setDoc, doc } = await _cFS();
-        const [ds, cs, ps] = await Promise.all([
-            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId), where('role','==','director'))),
-            getDocs(query(collection(db,'users'), where('clubId','==',me.clubId), where('role','==','coordinator'))),
+        const fns5 = await _cFS();
+        const { db, collection, getDocs, query, where, setDoc, doc } = fns5;
+        // Incluye directores y coordinadores en campo role top-level Y en allRoles[]
+        const [staffList, ps] = await Promise.all([
+            _cGetStaff(db, me.clubId, fns5, ['director','coordinator']),
             getDocs(query(collection(db,'users'), where('clubId','==',me.clubId), where('role','==','parent'))),
         ]);
-        const staff = [];
-        ds.forEach(d => staff.push({ uid:d.id, ...d.data() }));
-        cs.forEach(d => staff.push({ uid:d.id, ...d.data() }));
+        const staff = staffList;
+        // Padres con rol en allRoles también
+        const extraParents = await _cGetStaff(db, me.clubId, fns5, ['parent']);
+        ps.forEach(d => { if (!staff.find(s=>s.uid===d.id)) staff.push({uid:d.id,...d.data()}); });
+        extraParents.forEach(s => { if (!staff.find(x=>x.uid===s.uid&&x.role==='parent')) staff.push(s); });
 
         const dateVal = document.getElementById('cv-date')?.value || '';
         const rival   = document.getElementById('cv-rival')?.value.trim() || '';
@@ -2932,3 +3705,4 @@ window.openContactManager      = openContactManager;
 window.saveContactManagerData  = saveContactManagerData;
 window.saveAllMatchReportsInternal = saveAllMatchReportsInternal;
 window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
+
