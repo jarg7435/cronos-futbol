@@ -377,6 +377,7 @@ function confirmSetup() {
 
     const catEl = document.getElementById('match-category');
     const category = catEl ? catEl.value : 'f7_prebenjamin';
+    window._currentMatchCategory = category;
     let defaultTime = 30;
 
     if (category.includes('infantil') || category.includes('cadete')) {
@@ -622,15 +623,8 @@ async function _doResumeMatch(matchId) {
 
         const m = snap.data();
 
-        // ── Calcular tiempo transcurrido con la app cerrada ──
-        let deltaSecs = 0;
-        if (m.isRunning && m.updatedAt) {
-            const updatedAtMs = m.updatedAt.toMillis ? m.updatedAt.toMillis() : 0;
-            if (updatedAtMs > 0) {
-                deltaSecs = Math.floor((Date.now() - updatedAtMs) / 1000);
-                if (deltaSecs < 0) deltaSecs = 0;
-            }
-        }
+        // ── No sumamos tiempo transcurrido real porque el tiempo del fútbol se para ──
+        const deltaSecs = 0;
 
         // ── Restaurar configuración global del partido ──
         if (m.mode)  { currentMode = m.mode; }
@@ -638,8 +632,31 @@ async function _doResumeMatch(matchId) {
         liveMatchId  = matchId;
         liveIsActive = true;
         
-        masterTimeH1 = (m.timeH1 || 0) + (matchPhase === '1st_half' ? deltaSecs : 0);
-        masterTimeH2 = (m.timeH2 || 0) + (matchPhase === '2nd_half' ? deltaSecs : 0);
+        masterTimeH1 = (m.timeH1 || 0);
+        masterTimeH2 = (m.timeH2 || 0);
+
+        // Restaurar categoría y tiempos límites correspondientes
+        if (m.category) {
+            window._currentMatchCategory = m.category;
+            const catSelect = document.getElementById('match-category');
+            if (catSelect) catSelect.value = m.category;
+
+            let defaultTime = 30;
+            if (m.category.includes('infantil') || m.category.includes('cadete')) {
+                defaultTime = 40;
+            } else if (m.category.includes('juvenil') || m.category.includes('regional')) {
+                defaultTime = 45;
+            } else if (currentMode === 'f11') {
+                defaultTime = 40;
+            } else {
+                defaultTime = 30;
+            }
+            half1MaxTime = defaultTime * 60;
+            half2MaxTime = defaultTime * 60;
+        } else {
+            half1MaxTime = m.half1MaxTime || 1800;
+            half2MaxTime = m.half2MaxTime || 1800;
+        }
 
         // Equipos
         if (m.homeTeam) {

@@ -185,7 +185,13 @@
             currentMode = mode;
         }
 
-        console.log('[Cronos v8] syncSetupMode:', mode, '| categoría actualizada');
+        // Re-poblar y filtrar los equipos guardados según la nueva modalidad
+        if (typeof populateSavedTeams === 'function') {
+            populateSavedTeams('home');
+            populateSavedTeams('away');
+        }
+
+        console.log('[Cronos v8] syncSetupMode:', mode, '| categoría y equipos filtrados');
     };
 
     // ── 5. Observer para parchear el select #setup-mode si se recrea ──

@@ -72,13 +72,13 @@ async function pushLiveSnapshot(status = 'active') {
             coachEmail:  window._cronosCurrentUser?.email || '',
             clubId:      window._cronosCurrentUser?.clubId || null,
 
-            // Partido
             mode:        currentMode,
             phase:       matchPhase,
             isRunning:   typeof isRunning !== 'undefined' ? isRunning : true,
             timeH1:      masterTimeH1,
             timeH2:      masterTimeH2,
             formation:   activeFormationKey || '',
+            category:    (document.getElementById('match-category')?.value || window._currentMatchCategory || ''),
 
             // Equipos
             homeTeam: {

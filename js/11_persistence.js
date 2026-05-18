@@ -1,141 +1,81 @@
 // --- PERSISTENCE ---
 
-// ═══════════════════════════════════════════════════════════════════
-// populateSavedTeams — Rellena el select oculto Y la lista visual
-//   con botón 🗑️ individual por plantilla.
-// ═══════════════════════════════════════════════════════════════════
-function populateSavedTeams(teamKey) {
-    // 1. Actualizar el <select> oculto (compatibilidad con código legado)
-    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
-    if (dropdown) {
-        dropdown.innerHTML = '<option value="">-- Cargar --</option>';
-        const teamsForSelect = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-        teamsForSelect.forEach((team, index) => {
-            const opt = document.createElement('option');
-            opt.value = index;
-            opt.textContent = team.name;
-            dropdown.appendChild(opt);
-        });
-    }
-
-    // 2. Actualizar la lista visual con botones de borrado individuales
-    const listEl = document.getElementById(`saved-teams-list-${teamKey}`);
-    if (!listEl) return;
-
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-
-    if (teams.length === 0) {
-        listEl.innerHTML = `<p style="color:#8b949e;font-size:0.75rem;text-align:center;
-                            padding:0.55rem 0.5rem;margin:0;">
-                            Sin plantillas guardadas</p>`;
-        return;
-    }
-
-    listEl.innerHTML = '';
-    teams.forEach((team, index) => {
-        const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-        const row = document.createElement('div');
-        row.style.cssText = [
-            'display:flex', 'align-items:center', 'justify-content:space-between',
-            'padding:0.38rem 0.55rem',
-            'border-bottom:1px solid rgba(255,255,255,0.05)',
-            'transition:background 0.15s'
-        ].join(';');
-
-        // Nombre clicable — carga la plantilla
-        const nameSpan = document.createElement('span');
-        nameSpan.title = `Cargar "${esc(team.name)}"`;
-        nameSpan.style.cssText = [
-            'flex:1', 'font-size:0.82rem', 'color:#e6edf3', 'font-weight:600',
-            'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis',
-            'padding-right:0.5rem', 'cursor:pointer'
-        ].join(';');
-        nameSpan.textContent = '⚽ ' + team.name;
-        nameSpan.addEventListener('mouseenter', () => row.style.background = 'rgba(88,166,255,0.1)');
-        nameSpan.addEventListener('mouseleave', () => row.style.background = '');
-        nameSpan.addEventListener('click', () => loadTeamByIndex(teamKey, index));
-
-        // Botón eliminar individual
-        const delBtn = document.createElement('button');
-        delBtn.title = `Eliminar "${esc(team.name)}"`;
-        delBtn.style.cssText = [
-            'background:rgba(255,88,88,0.15)', 'border:1px solid rgba(255,88,88,0.45)',
-            'color:#ff5858', 'font-size:0.75rem', 'padding:0.22rem 0.45rem',
-            'border-radius:5px', 'cursor:pointer', 'flex-shrink:0',
-            'white-space:nowrap', 'line-height:1.2', 'font-weight:700'
-        ].join(';');
-        delBtn.textContent = '🗑️';
-        delBtn.addEventListener('mouseenter', () => delBtn.style.background = 'rgba(255,88,88,0.3)');
-        delBtn.addEventListener('mouseleave', () => delBtn.style.background = 'rgba(255,88,88,0.15)');
-        delBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteTeamByIndex(teamKey, index, team.name);
-        });
-
-        row.appendChild(nameSpan);
-        row.appendChild(delBtn);
-        listEl.appendChild(row);
-    });
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// loadTeamByIndex — Carga una plantilla por su índice en el array
-// ═══════════════════════════════════════════════════════════════════
-function loadTeamByIndex(teamKey, idx) {
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const team = teams[idx];
+// Helper centralizado para cargar datos de una plantilla
+window.loadTeamData = function(teamKey, team, idx) {
     if (!team) return;
 
     // Sincronizar el select oculto
     const dropdown = document.getElementById(`saved-teams-${teamKey}`);
     if (dropdown) dropdown.value = idx;
 
-    document.getElementById(`setup-${teamKey}-name`).value = team.name;
-    document.getElementById(`setup-${teamKey}-color`).value = team.color;
-    document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
-    document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
+    // Cargar datos básicos en los campos de texto y colores
+    const nameInput = document.getElementById(`setup-${teamKey}-name`);
+    if (nameInput) nameInput.value = team.name;
+    
+    const colorInput = document.getElementById(`setup-${teamKey}-color`);
+    if (colorInput) colorInput.value = team.color;
+    
+    const shortsInput = document.getElementById(`setup-${teamKey}-shorts`);
+    if (shortsInput) shortsInput.value = team.shortsColor || '#ffffff';
+    
+    const textInput = document.getElementById(`setup-${teamKey}-text`);
+    if (textInput) textInput.value = team.textColor || '#ffffff';
 
     if (team.secondaryColor) {
         const secEl = document.getElementById(`setup-${teamKey}-secondary`);
         if (secEl) secEl.value = team.secondaryColor;
         if (typeof COLORS !== 'undefined' && COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
     }
-    // Actualizar modo si está guardado
-    if (team.mode) {
-        const modeEl = document.getElementById('setup-mode');
-        if (modeEl) { 
-            modeEl.value = team.mode;
-            // Sincronizar modalidad (categorías y formaciones)
-            if (typeof syncSetupMode === 'function') {
-                syncSetupMode(team.mode);
-            } else {
-                if (typeof updateCategoryOptions === 'function') updateCategoryOptions(team.mode);
-                if (typeof updateFormationOptions === 'function') updateFormationOptions(team.mode);
-            }
-        }
-    } else {
-        // Fallback: SIEMPRE actualizar formaciones y categorías con el modo actual si no hay modo guardado
-        const currentModeVal = document.getElementById('setup-mode')?.value || 'f7';
-        if (typeof updateFormationOptions === 'function') updateFormationOptions(currentModeVal);
-        if (typeof updateCategoryOptions === 'function') updateCategoryOptions(currentModeVal);
+
+    // Sincronizar modalidad (Fútbol 7 o Fútbol 11)
+    const teamMode = team.mode || 'f7';
+    const modeEl = document.getElementById('setup-mode');
+    if (modeEl) {
+        modeEl.value = teamMode;
+        if (typeof currentMode !== 'undefined') currentMode = teamMode;
     }
 
-    if (team.formation) {
-        const formEl = document.getElementById('setup-formation');
-        if (formEl) formEl.value = team.formation;
+    // Sincronizar centralizadamente categorías, formaciones y filtrado de equipos
+    if (typeof syncSetupMode === 'function') {
+        syncSetupMode(teamMode);
+    } else {
+        if (typeof updateCategoryOptions === 'function') updateCategoryOptions(teamMode);
+        if (typeof updateFormationOptions === 'function') updateFormationOptions(teamMode);
     }
+
+    // Sincronizar la categoría del equipo con delay para asegurar que el select se haya regenerado
+    if (team.category) {
+        setTimeout(() => {
+            const catEl = document.getElementById('match-category');
+            if (catEl) {
+                catEl.value = team.category;
+                catEl.dispatchEvent(new Event('change'));
+            }
+        }, 100);
+    }
+
+    // Sincronizar el sistema táctico (formación)
+    if (team.formation) {
+        setTimeout(() => {
+            const formEl = document.getElementById('setup-formation');
+            if (formEl) formEl.value = team.formation;
+        }, 120);
+    }
+
+    // Registrar los jugadores en el estado global
     if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
     window.loadedTeamPlayers[teamKey] = team.players;
 
-    // Resaltar fila seleccionada
+    // Resaltar visualmente la fila seleccionada en la lista
     const listEl = document.getElementById(`saved-teams-list-${teamKey}`);
     if (listEl) {
-        Array.from(listEl.children).forEach((row, i) => {
-            row.style.background = i === idx ? 'rgba(63,185,80,0.12)' : '';
+        Array.from(listEl.children).forEach((row) => {
+            const isSelected = row.dataset.originalIndex == idx;
+            row.style.background = isSelected ? 'rgba(63,185,80,0.12)' : '';
         });
     }
 
-    // ── Invalidar _pendingSetupState para que restoreSetupState no sobreescriba el nombre ──
+    // Sincronizar _pendingSetupState para evitar sobreescritura accidental
     if (window._pendingSetupState) {
         if (teamKey === 'home') {
             window._pendingSetupState.homeName   = team.name;
@@ -148,11 +88,109 @@ function loadTeamByIndex(teamKey, idx) {
             window._pendingSetupState.awayShorts = team.shortsColor || '#ffffff';
             window._pendingSetupState.awayText   = team.textColor   || '#ffffff';
         }
-        if (team.mode)     window._pendingSetupState.mode     = team.mode;
+        window._pendingSetupState.mode = teamMode;
         if (team.category) window._pendingSetupState.category = team.category;
+        if (team.formation) window._pendingSetupState.formation = team.formation;
     }
 
     if (typeof showToast === 'function') showToast(`✅ Plantilla "${team.name}" cargada.`, 2500);
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// populateSavedTeams — Rellena el select oculto Y la lista visual
+//   filtrada por la modalidad activa, con botón 🗑️ individual.
+// ═══════════════════════════════════════════════════════════════════
+function populateSavedTeams(teamKey) {
+    const activeMode = document.getElementById('setup-mode')?.value || 'f7';
+
+    // 1. Actualizar el <select> oculto (compatibilidad con código legado)
+    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
+    if (dropdown) {
+        dropdown.innerHTML = '<option value="">-- Cargar --</option>';
+        const teamsForSelect = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+        teamsForSelect.forEach((team, index) => {
+            if ((team.mode || 'f7') === activeMode) {
+                const opt = document.createElement('option');
+                opt.value = index;
+                opt.textContent = team.name;
+                dropdown.appendChild(opt);
+            }
+        });
+    }
+
+    // 2. Actualizar la lista visual con botones de borrado individuales
+    const listEl = document.getElementById(`saved-teams-list-${teamKey}`);
+    if (!listEl) return;
+
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    listEl.innerHTML = '';
+
+    let hasFilteredTeams = false;
+    teams.forEach((team, index) => {
+        if ((team.mode || 'f7') === activeMode) {
+            hasFilteredTeams = true;
+            const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            const row = document.createElement('div');
+            row.dataset.originalIndex = index; // Guardar el índice original para el resaltado
+            row.style.cssText = [
+                'display:flex', 'align-items:center', 'justify-content:space-between',
+                'padding:0.38rem 0.55rem',
+                'border-bottom:1px solid rgba(255,255,255,0.05)',
+                'transition:background 0.15s'
+            ].join(';');
+
+            // Nombre clicable — carga la plantilla
+            const nameSpan = document.createElement('span');
+            nameSpan.title = `Cargar "${esc(team.name)}"`;
+            nameSpan.style.cssText = [
+                'flex:1', 'font-size:0.82rem', 'color:#e6edf3', 'font-weight:600',
+                'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis',
+                'padding-right:0.5rem', 'cursor:pointer'
+            ].join(';');
+            nameSpan.textContent = '⚽ ' + team.name;
+            nameSpan.addEventListener('mouseenter', () => row.style.background = 'rgba(88,166,255,0.1)');
+            nameSpan.addEventListener('mouseleave', () => row.style.background = row.style.background.includes('rgba(63,185,80') ? 'rgba(63,185,80,0.12)' : '');
+            nameSpan.addEventListener('click', () => loadTeamByIndex(teamKey, index));
+
+            // Botón eliminar individual
+            const delBtn = document.createElement('button');
+            delBtn.title = `Eliminar "${esc(team.name)}"`;
+            delBtn.style.cssText = [
+                'background:rgba(255,88,88,0.15)', 'border:1px solid rgba(255,88,88,0.45)',
+                'color:#ff5858', 'font-size:0.75rem', 'padding:0.22rem 0.45rem',
+                'border-radius:5px', 'cursor:pointer', 'flex-shrink:0',
+                'white-space:nowrap', 'line-height:1.2', 'font-weight:700'
+            ].join(';');
+            delBtn.textContent = '🗑️';
+            delBtn.addEventListener('mouseenter', () => delBtn.style.background = 'rgba(255,88,88,0.3)');
+            delBtn.addEventListener('mouseleave', () => delBtn.style.background = 'rgba(255,88,88,0.15)');
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteTeamByIndex(teamKey, index, team.name);
+            });
+
+            row.appendChild(nameSpan);
+            row.appendChild(delBtn);
+            listEl.appendChild(row);
+        }
+    });
+
+    if (!hasFilteredTeams) {
+        listEl.innerHTML = `<p style="color:#8b949e;font-size:0.75rem;text-align:center;
+                            padding:0.55rem 0.5rem;margin:0;">
+                            Sin plantillas en esta modalidad</p>`;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// loadTeamByIndex — Carga una plantilla por su índice en el array
+// ═══════════════════════════════════════════════════════════════════
+function loadTeamByIndex(teamKey, idx) {
+    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+    const team = teams[idx];
+    if (team) {
+        window.loadTeamData(teamKey, team, idx);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -229,78 +267,7 @@ function loadTeamFromDropdown(teamKey) {
     const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
     const team = teams[index];
     if (team) {
-        document.getElementById(`setup-${teamKey}-name`).value = team.name;
-        document.getElementById(`setup-${teamKey}-color`).value = team.color;
-        document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
-        document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
-
-        // Restaurar color secundario si existe
-        if (team.secondaryColor) {
-            const secEl = document.getElementById(`setup-${teamKey}-secondary`);
-            if (secEl) secEl.value = team.secondaryColor;
-            if (typeof COLORS !== 'undefined' && COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
-        }
-
-        // Cargar modalidad y formación si están guardadas
-        if (team.mode) {
-            const modeEl = document.getElementById('setup-mode');
-            if (modeEl) {
-                modeEl.value = team.mode;
-                // Forzar sincronización completa de la modalidad
-                if (typeof syncSetupMode === 'function') {
-                    syncSetupMode(team.mode);
-                } else if (typeof updateFormationOptions === 'function') {
-                    updateFormationOptions(team.mode);
-                }
-            }
-        }
-
-        // Restaurar categoría si existe
-        if (team.category) {
-            const catEl = document.getElementById('match-category');
-            if (catEl) {
-                // Pequeño delay para asegurar que las opciones de categoría se hayan regenerado tras el cambio de modalidad
-                setTimeout(() => {
-                    catEl.value = team.category;
-                    // Disparar evento de cambio por si otros scripts lo escuchan
-                    catEl.dispatchEvent(new Event('change'));
-                }, 100);
-            }
-        }
-
-        if (team.formation) {
-            const formEl = document.getElementById('setup-formation');
-            if (formEl) formEl.value = team.formation;
-        }
-
-        // Guardar los jugadores de este equipo
-        if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
-        window.loadedTeamPlayers[teamKey] = team.players;
-        
-        // Sincronizar visualmente la lista si existe
-        const listEl = document.getElementById(`saved-teams-list-${teamKey}`);
-        if (listEl) {
-            Array.from(listEl.children).forEach((row, i) => {
-                row.style.background = i == index ? 'rgba(63,185,80,0.12)' : '';
-            });
-        }
-
-        // ── Invalidar _pendingSetupState para que restoreSetupState no sobreescriba ──
-        if (window._pendingSetupState) {
-            if (teamKey === 'home') {
-                window._pendingSetupState.homeName   = team.name;
-                window._pendingSetupState.homeColor  = team.color;
-                window._pendingSetupState.homeShorts = team.shortsColor || '#ffffff';
-                window._pendingSetupState.homeText   = team.textColor   || '#ffffff';
-            } else {
-                window._pendingSetupState.awayName   = team.name;
-                window._pendingSetupState.awayColor  = team.color;
-                window._pendingSetupState.awayShorts = team.shortsColor || '#ffffff';
-                window._pendingSetupState.awayText   = team.textColor   || '#ffffff';
-            }
-            if (team.mode)    window._pendingSetupState.mode    = team.mode;
-            if (team.category)window._pendingSetupState.category = team.category;
-        }
+        window.loadTeamData(teamKey, team, parseInt(index));
     }
 }
 
