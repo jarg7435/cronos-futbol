@@ -841,4 +841,3 @@ window._postMatchNewSetup = function() {
         if (modal) modal.style.display = 'none';
     }
 };
-
