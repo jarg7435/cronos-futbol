@@ -1,47 +1,88 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v114
-//  Incrementa VERSION en cada deploy para forzar actualización.
+//  CRONOS FUTBOL — Service Worker v121
+//  v121: Eliminados 4 scripts stub vacíos del ASSETS (end-and-reports,
+//  substitutions, cloud-data, team-management). Sin cambio funcional.
+//  v120: Fix campo verde — openSetupModal() siempre se llama en init()
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v114';
-const CACHE_NAME = 'cronos-cache-v114';
+const VERSION    = 'v121';
+const CACHE_NAME = 'cronos-cache-v121';
 
 const ASSETS = [
     './',
     './index.html',
     './manifest.json',
-    './app.js',
-    './auth.js',
-    './js/cronos_patches.js',
-    './js/00_setup_modal.js',
-    './js/16_superadmin.js',
-    './js/17_club_admin.js',
+    './style.css',
+    './js/core/app-init.js',
+    './js/core/setup-modal.js',
+    './js/core/patches.js',
+    './js/core/security-and-state.js',
+    './js/core/utils.js',
+    './js/core/pseudonymizer.js',
+    './js/core/staff-and-comms.js',
+    './js/core/event-listeners.js',
+    './js/services/firebase-init.js',
+    './js/services/auth.js',
+    './js/services/auth-improvements.js',
+    './js/services/firestore-sync.js',
+    './js/services/firestore-storage.js',
+    './js/services/offline-manager.js',
+    './js/services/user-management.js',
+    './js/services/email-whatsapp.js',
+    './js/match/events/player-actions.js',
+    './js/match/demo-tutorial.js',
+    './js/match/persistence/active-match.js',
+    './js/match/timer/core.js',
+    './js/match/events/movement-log.js',
+    './js/match/persistence/team-persistence.js',
+    './js/match/live/sync.js',
+    './js/roster/formations.js',
+    './js/roster/legacy-formations.js',
+    './js/ui/bench-scroll.js',
+    './js/ui/render.js',
+    './js/ui/drag-drop.js',
+    './js/shared/whatsapp-email.js',
+    './js/shared/admin-shared.js',
+    './js/ai/import.js',
+    './js/admin/superadmin/panel.js',
+    './js/admin/superadmin/extras.js',
+    './js/admin/superadmin/billing.js',
+    './js/admin/club/panel.js',
+    './js/admin/individual/panel.js',
+    './js/admin/billing/payments.js',
+    './js/admin/billing/ui.js',
+    './js/coach/comms/panel.js',
+    './js/coach/convocation.js',
+    './js/coach/reports/club-reports.js',
+    './js/coach/reports/generator.js',
+    './js/coach/training/panel.js',
+    './js/parent/panel.js',
 ];
 
 self.addEventListener('install', event => {
-    self.skipWaiting(); // Activar inmediatamente sin esperar a cerrar pestañas
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll(ASSETS).catch(err => {
-                console.warn('[SW v114] Error al precargar recursos:', err);
+                console.warn('[SW v120] Error al precargar recursos:', err);
             });
         })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[SW v114] Activado - eliminando cachés antiguas');
+    console.log('[SW v120] Activado - eliminando cachés antiguas');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => {
-                        console.log('[SW v114] Borrando caché antigua:', key);
+                        console.log('[SW v120] Borrando caché antigua:', key);
                         return caches.delete(key);
                     })
             );
         }).then(() => {
-            console.log('[SW v114] Todas las cachés antiguas eliminadas ✅');
-            return self.clients.claim(); // Tomar control de todas las pestañas abiertas
+            console.log('[SW v120] Todas las cachés antiguas eliminadas');
+            return self.clients.claim();
         })
     );
 });
@@ -65,7 +106,7 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                console.warn('[SW v114] Red no disponible, usando caché:', event.request.url);
+                console.warn('[SW v120] Red no disponible, usando caché:', event.request.url);
                 return caches.match(event.request);
             })
     );

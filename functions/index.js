@@ -242,29 +242,22 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
   const callerUid = context.auth.uid;
   const callerDoc = await admin.firestore().collection('users').doc(callerUid).get();
 
-  if (!callerDoc.exists() || !['superadmin', 'admin', 'individual', 'admin_individual'].includes(callerDoc.data().role)) {
+  if (!callerDoc.exists || !['superadmin', 'admin', 'individual', 'admin_individual'].includes(callerDoc.data().role)) {
     throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin o Administrador Individual puede eliminar usuarios');
   }
 
-  /* ******************************************************************* */
-  /* ---- CORRECCIÓN PRINCIPAL: definir uid antes de usarlo ------------ */
-  /* ******************************************************************* */
-  const { uid, email } = data;   // <─ ¡Ahora uid está definido!
+  const { uid, email } = data;
 
   if (!uid || !email) {
     throw new functions.https.HttpsError('invalid-argument', 'uid y email son requeridos');
   }
 
-  /* ------------------------------------------------------------------- */
-  /* La verificación de que el usuario a eliminar está dentro del mismo */
-  /* ente del administrador (individual) se conserva y se copia tal cual   */
-  /* ------------------------------------------------------------------- */
   const callerRole = callerDoc.data().role;
   if (['individual', 'admin_individual'].includes(callerRole)) {
     const callerEntityId = callerDoc.data().individualEntityId || callerDoc.data().clubId;
     try {
       const targetDoc = await admin.firestore().collection('users').doc(uid).get();
-      if (targetDoc.exists()) {
+      if (targetDoc.exists) {
         const targetEntityId = targetDoc.data().individualEntityId || targetDoc.data().clubId;
         if (targetEntityId !== callerEntityId) {
           throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu propio ente individual');
@@ -338,7 +331,7 @@ exports.syncUserChanges = functions.firestore
         const clubRef = admin.firestore().collection('clubs').doc(after.clubId);
         const clubDoc = await clubRef.get();
 
-        if (clubDoc.exists()) {
+        if (clubDoc.exists) {
           const club = clubDoc.data();
           const usedSlots = club.usedSlots || {};
           const roleKey = after.role === 'director' ? 'directors'
@@ -446,29 +439,154 @@ exports.auditUserStatusChange = functions.firestore
   });
 
 /* ==================================================================== */
-/* 9️⃣ Cloud Function: sendInviteEmail – Enviar email de invitación */
+/* 9️⃣ Cloud Function: sendInviteEmail – Enviar email de invitación       */
+/*                                                                     */
+/* v2 CORRECCIONES:                                                    */
+/*   - Reemplaza functions.config() (deprecado en v5) por process.env  */
+/*   - Si no hay credenciales, devuelve inviteUrl en lugar de error    */
+/*     para que el cliente pueda usar el fallback mailto               */
+/*   - Logging detallado para diagnóstico                              */
 /* ==================================================================== */
-exports.sendInviteEmail = functions.https.onCall(async (data, context) => {
+exports.sendInviteEmail = functions
+  .runWith({ secrets: ['EMAIL_USER', 'EMAIL_PASS'] })
+  .https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
 
   const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-  if (!callerDoc.exists() || !['superadmin', 'admin'].includes(callerDoc.data().role)) {
+  if (!callerDoc.exists || !['superadmin', 'admin'].includes(callerDoc.data().role)) {
     throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin puede enviar invitaciones');
   }
 
-  const { to, subject, body, role, clubName } = data;
+  const { to, subject, body, role, clubName, inviterName } = data;
   if (!to) {
     throw new functions.https.HttpsError('invalid-argument', 'Se requiere el email de destino');
   }
 
-  const emailUser = functions.config().email?.user;
-  const emailPass = functions.config().email?.pass;
+  /* ---- Leer credenciales: process.env (nuevo sistema Firebase v5) ---- */
+  /* Para configurarlas: firebase functions:secrets:set EMAIL_USER        */
+  /*                     firebase functions:secrets:set EMAIL_PASS        */
+  /* O con variables de entorno: firebase functions:config deprecado.     */
+  /* Fallback compatible: también lee las variables de entorno de proceso */
+  const emailUser = process.env.EMAIL_USER
+    || (typeof functions.config === 'function' && functions.config().email && functions.config().email.user)
+    || null;
+  const emailPass = process.env.EMAIL_PASS
+    || (typeof functions.config === 'function' && functions.config().email && functions.config().email.pass)
+    || null;
 
+  console.log('[sendInviteEmail] Iniciando. Destino:', to, '| emailUser configurado:', !!emailUser);
+
+  /* ---- Etiquetas legibles para roles ---- */
+  const roleLabels = {
+    club_admin: 'Administrador de Club',
+    individual_admin: 'Administrador Individual',
+    individual: 'Entrenador Individual',
+    director: 'Director Deportivo',
+    coordinator: 'Coordinador',
+    user: 'Entrenador',
+    parent: 'Padre/Madre/Tutor',
+    spectator: 'Espectador',
+  };
+  const roleLabel = roleLabels[role] || role || 'Usuario';
+
+  /* ---- Construir URL de invitación con todos los parámetros ---- */
+  const APP_URL = 'https://cronos-futbol-app.web.app';
+  const inviteParams = new URLSearchParams();
+  inviteParams.set('register', 'true');
+  inviteParams.set('email', to);
+  if (role) inviteParams.set('role', role);
+  if (clubName) inviteParams.set('clubName', clubName);
+  const inviteUrl = APP_URL + '/?' + inviteParams.toString();
+
+  /* ---- Nombre del invitante ---- */
+  const senderName = inviterName || callerDoc.data().displayName || callerDoc.data().firstName || 'SuperAdmin';
+
+  /* ---- Asunto del correo ---- */
+  const emailSubject = subject || ('Invitacion a Chronos Futbol - ' + roleLabel + (clubName ? ' (' + clubName + ')' : ''));
+
+  /* ---- URL del logo (alojado en Firebase Hosting) ---- */
+  const LOGO_URL = APP_URL + '/public/assets/img_0f3942d4.png';
+
+  /* ---- Cuerpo en texto plano (fallback para clientes que no soportan HTML) ---- */
+  const textBody = body || (
+    'Hola,\n\n' +
+    'Has sido invitado a unirte a Chronos Futbol como ' + roleLabel +
+    (clubName ? ' del club ' + clubName : '') + '.\n\n' +
+    'Para completar tu registro, haz clic en el siguiente enlace:\n' +
+    inviteUrl + '\n\n' +
+    'Si no puedes hacer clic, copia y pega la URL en tu navegador.\n\n' +
+    'Si no esperabas este correo, puedes ignorarlo.\n\n' +
+    'Saludos,\n' +
+    senderName + ' - Equipo Chronos Futbol'
+  );
+
+  /* ---- Cuerpo principal del mensaje (por defecto o personalizado) ---- */
+  const customBodyHtml = body
+    ? body.replace(/\n/g, '<br/>')
+          .replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
+    : `<strong>${senderName}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
+
+  /* ---- Cuerpo en HTML con logo y diseño profesional ---- */
+  const htmlBody = (
+    '<div style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;">' +
+
+      /* -- Cabecera con logo y color de marca -- */
+      '<div style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); padding: 30px 20px; text-align: center;">' +
+        '<img src="' + LOGO_URL + '" alt="Chronos Futbol" style="max-width: 180px; height: auto; display: block; margin: 0 auto 12px auto;" />' +
+        '<h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600;">Invitacion a Chronos Futbol</h1>' +
+      '</div>' +
+
+      /* -- Cuerpo del mensaje -- */
+      '<div style="padding: 30px 25px;">' +
+        (body ? '' : '<p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">Hola,</p>') +
+        '<p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">' +
+          customBodyHtml +
+        '</p>' +
+
+        /* -- Tarjeta de rol y club (solo si no es body personalizado, para evitar duplicar info) -- */
+        (body ? '' : 
+        '<div style="background-color: #f5f7ff; border-left: 4px solid #3949ab; border-radius: 4px; padding: 16px 20px; margin: 0 0 25px 0;">' +
+          '<p style="margin: 0 0 8px 0; font-size: 15px; color: #555555;">Rol: <strong style="color: #1a237e;">' + roleLabel + '</strong></p>' +
+          (clubName ? '<p style="margin: 0; font-size: 15px; color: #555555;">Club: <strong style="color: #1a237e;">' + clubName + '</strong></p>' : '') +
+        '</div>'
+        ) +
+
+        /* -- Botón de registro -- */
+        '<div style="text-align: center; margin: 30px 0;">' +
+          '<a href="' + inviteUrl + '" style="display: inline-block; background: linear-gradient(135deg, #1a237e, #3949ab); color: #ffffff; text-decoration: none; padding: 14px 36px; border-radius: 6px; font-size: 16px; font-weight: 600; letter-spacing: 0.5px;">' +
+            'Completar Registro / Acceder' +
+          '</a>' +
+        '</div>' +
+
+        '<p style="font-size: 14px; color: #888888; line-height: 1.5; margin: 15px 0 0 0; text-align: center;">' +
+          'Si el boton no funciona, copia y pega este enlace en tu navegador:<br/>' +
+          '<a href="' + inviteUrl + '" style="color: #3949ab; word-break: break-all;">' + inviteUrl + '</a>' +
+        '</p>' +
+      '</div>' +
+
+      /* -- Pie del correo -- */
+      '<div style="background-color: #f5f5f5; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">' +
+        '<p style="margin: 0 0 6px 0; font-size: 13px; color: #999999;">Enviado por ' + senderName + ' desde Chronos Futbol</p>' +
+        '<p style="margin: 0; font-size: 12px; color: #bbbbbb;">Si no esperabas este correo, puedes ignorarlo de forma segura.</p>' +
+      '</div>' +
+
+    '</div>'
+  );
+
+  /* ---- Si no hay credenciales → devolver inviteUrl para fallback mailto ---- */
   if (!emailUser || !emailPass) {
-    console.warn('[sendInviteEmail] Credenciales de email no configuradas. Usa: firebase functions:config:set email.user="..." email.pass="..."');
-    throw new functions.https.HttpsError('failed-precondition', 'Credenciales de email no configuradas en Firebase');
+    console.warn('[sendInviteEmail] Credenciales EMAIL_USER/EMAIL_PASS no configuradas.');
+    console.warn('[sendInviteEmail] Configura con: firebase functions:secrets:set EMAIL_USER');
+    /* NO lanzamos error: devolvemos la URL para que el cliente use mailto */
+    return {
+      success: false,
+      noCredentials: true,
+      inviteUrl: inviteUrl,
+      sentTo: to,
+      message: 'Credenciales no configuradas. Usa el fallback mailto con la URL adjunta.',
+    };
   }
 
   const transporter = nodemailer.createTransport({
@@ -476,53 +594,36 @@ exports.sendInviteEmail = functions.https.onCall(async (data, context) => {
     auth: { user: emailUser, pass: emailPass },
   });
 
-  const defaultSubject = subject || 'Invitación a Chronos Fútbol';
-  const roleLabels = {
-    club_admin: 'Administrador de Club',
-    individual: 'Entrenador Individual',
-    director: 'Director Deportivo',
-    coordinator: 'Coordinador',
-    user: 'Entrenador',
-    parent: 'Padre/Madre/Tutor',
-  };
-  const roleLabel = roleLabels[role] || role || 'Usuario';
-
-  const defaultBody = body || `
-Hola,
-
-Has sido invitado a unirte a Chronos Fútbol como ${roleLabel}${clubName ? ' del club ' + clubName : ''}.
-
-Para completar tu registro, accede a la aplicación con este email y crea tu cuenta:
-https://cronos-futbol.web.app
-
-Si no esperabas este correo, puedes ignorarlo.
-
-Saludos,
-Equipo Chronos Fútbol
-`;
-
   try {
     const info = await transporter.sendMail({
-      from: `"Chronos Fútbol" <${emailUser}>`,
+      from: '"Chronos Fútbol" <' + emailUser + '>',
       to,
-      subject: defaultSubject,
-      text: defaultBody,
+      subject: emailSubject,
+      text: textBody,
+      html: htmlBody,
     });
 
-    console.log('[sendInviteEmail] Email enviado a:', to, 'MessageId:', info.messageId);
+    console.log('[sendInviteEmail] ✅ Email enviado a:', to, '| MessageId:', info.messageId, '| URL:', inviteUrl);
 
     return {
       success: true,
       messageId: info.messageId,
       sentTo: to,
+      inviteUrl: inviteUrl,
     };
   } catch (error) {
-    console.error('[sendInviteEmail] Error:', error);
-    throw new functions.https.HttpsError('internal', `Error al enviar email: ${error.message}`);
+    console.error('[sendInviteEmail] ❌ Error Nodemailer:', error.message);
+    /* Devolver inviteUrl para que el cliente use mailto como fallback */
+    return {
+      success: false,
+      error: error.message,
+      inviteUrl: inviteUrl,
+      sentTo: to,
+    };
   }
 });
 
-console.log('Cloud Functions v8.2 cargadas (Fase 0 + originales + sendInviteEmail)');
+console.log('Cloud Functions v8.3 cargadas (Fase 0 + originales + sendInviteEmail con HTML/Logo/URL corregida)');
 
 /* ==================================================================== */
 /* 0️⃣0️⃣ Cloud Function: approveIndividualAdmin – Aprobar admin individual */
@@ -533,7 +634,7 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
   }
 
   const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-  if (!callerDoc.exists() || callerDoc.data().role !== 'superadmin') {
+  if (!callerDoc.exists || callerDoc.data().role !== 'superadmin') {
     throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin puede aprobar administradores individuales');
   }
 
@@ -545,7 +646,7 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
   try {
     /* 1️⃣ Obtener el usuario a aprobar --------------------------------- */
     const userDoc = await admin.firestore().collection('users').doc(uid).get();
-    if (!userDoc.exists()) {
+    if (!userDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Usuario no encontrado');
     }
     const userData = userDoc.data();
@@ -581,7 +682,7 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
 
     /* 3️⃣ Marcar entidad individual como con administrador ----------------- */
     const entityDoc = await admin.firestore().collection('clubs').doc(entityId).get();
-    if (entityDoc.exists() && entityDoc.data().type === 'individual') {
+    if (entityDoc.exists && entityDoc.data().type === 'individual') {
       await admin.firestore().collection('clubs').doc(entityId).update({
         hasAdmin: true,
         adminUid: uid,

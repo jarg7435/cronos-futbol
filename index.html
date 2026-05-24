@@ -19,8 +19,7 @@
         rel="stylesheet">
 
     <!-- EmailJS SDK para envío automático de informes -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script type="text/javascript">
+<script type="text/javascript">
         // Se inicializa en app.js cuando el usuario configura su cuenta EmailJS
         window._emailjsReady = false;
     </script>
@@ -212,14 +211,16 @@
     </div>
 
 <!-- ══ PANTALLA DE LOGIN / REGISTRO ══════════════════════════════════ -->
-    <div id="auth-screen" style="display:flex; align-items:center; justify-content:center;
-         min-height:100vh; background:#0a0e14; padding:1rem;">
+    <div id="auth-screen" style="display:flex; flex-direction:column; align-items:center;
+         min-height:100vh; height:100vh; background:#0a0e14;
+         overflow-y:auto; -webkit-overflow-scrolling:touch; padding:1rem; box-sizing:border-box;">
         <div style="width:100%; max-width:380px; background:rgba(255,255,255,0.04);
-                    border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:2rem;">
+                    border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:2rem;
+                    margin:auto 0; flex-shrink:0;">
 
-            <div style="display:flex;justify-content:center;margin-bottom:0.5rem;padding:0.5rem;">
+            <div style="display:flex;justify-content:center;margin-bottom:0.3rem;padding:0.3rem;">
                 <img src="public/assets/img_7a937812.png" alt="Chronos Fútbol" 
-                     style="width:240px;height:auto;max-height:200px;object-fit:contain;display:block;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5));">
+                     style="width:160px;height:auto;max-height:130px;object-fit:contain;display:block;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5));">
             </div>
             <p style="color:#7d8590; font-size:0.82rem; text-align:center; margin:0 0 1.5rem; letter-spacing:1px;">
                 Coach Assistant · v7.0
@@ -433,7 +434,6 @@
 
         </div>
     </div>
-
 
     <!-- ══ PANTALLA DE SELECCIÓN DE ROL (Landing) ══════════════════════ -->
     <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:9000; 
@@ -677,7 +677,6 @@
             <div class="bench-section">
                 <div id="bench-list" class="bench-container"
                     ondrop="dropToBench(event)" ondragover="allowDrop(event)">
-                    <!-- Staff card se inyecta aquí por JS al iniciar partido -->
                 </div>
             </div>
         </aside>
@@ -753,42 +752,38 @@
         </div>
     </div>
 
-    <!-- ══ PANEL DE ADMINISTRACIÓN ══════════════════════════════════════ -->
+    <!-- ══════════════════════════════════════════════════════════════════
+         CHRONOS FÚTBOL — SCRIPTS REORGANIZADOS v2.0
+         Orden de carga basado en dependencias:
+         1. Core (estado global, seguridad, utilidades)
+         2. Services (Firebase, Firestore, auth, cloud data)
+         3. Roster (formaciones, plantilla, IA import)
+         4. Match (timer, eventos, persistencia, sustituciones, live)
+         5. UI (render, drag-drop, bench scroll)
+         6. Shared (WhatsApp/email, admin constants)
+         7. Admin (superadmin, club, individual, billing)
+         8. Coach (comms, informes, entrenamientos, convocatoria)
+         9. Parent (portal de padres)
+         ══════════════════════════════════════════════════════════════════ -->
 
-    <script src="app.js?v=67"></script>
-    <script src="js/00_setup_modal.js?v=70"></script>
-    <script src="js/cronos_patches.js?v=66"></script>
-    <script type="module" src="auth.js?v=66"></script>
-    <!-- Fase 0: Pseudonymizer para protección de datos de menores -->
-    <script src="js/14_pseudonymizer.js?v=67"></script>
-    <!-- User Management v8.0 -->
-    <script src="js/01_security_state.js?v=66"></script>
-    <script src="js/02_player_actions.js?v=66"></script>
-    <script src="js/03_core_utils.js?v=66"></script>
-    <script src="js/04_tutorial_demo.js?v=66"></script>
-    <script src="js/05_firestore_sync.js?v=67"></script>
-    <script src="js/06_firestore_storage.js?v=66"></script>
-    <script src="js/07_staff.js?v=66"></script>
-    <script src="js/08_ai_import.js?v=66"></script>
-    <script src="js/09_preselection.js?v=66"></script>
-    <script src="js/10_bench_scroll.js?v=66"></script>
-    <script src="js/11_persistence.js?v=67"></script>
-    <script src="js/12_render.js?v=66"></script>
-    <script src="js/13_legacy_formations.js?v=66"></script>
-    <script src="js/14_drag_drop.js?v=66"></script>
-    <script src="js/15_csv_download.js?v=66"></script>
-    <script src="js/16_superadmin.js?v=66"></script>
-    <script src="js/25_sa_extras.js?v=66"></script>
-    <script src="js/26_sa_billing.js?v=66"></script>
-    <script src="js/17_club_admin.js?v=66"></script>
-    <script src="js/18_payments.js?v=66"></script>
-    <script src="js/19_whatsapp_email.js?v=66"></script>
-    <script src="js/20_parent_panel.js?v=66"></script>
-    <script src="js/21_coach_comms.js?v=66"></script>
-    <script src="js/22_club_reports.js?v=66"></script>
-    <script src="js/24_individual_admin.js?v=66"></script>
+    <!-- ══ 1. CORE ════════════════════════════════════════════════════ -->
 
-    <!-- Informe imprimible -->
+<!-- ══ 2. SERVICES ════════════════════════════════════════════════ -->
+
+<!-- ══ 3. ROSTER ══════════════════════════════════════════════════ -->
+
+<!-- ══ 4. MATCH ═══════════════════════════════════════════════════ -->
+
+<!-- ══ 5. UI ══════════════════════════════════════════════════════ -->
+
+<!-- ══ 6. SHARED ══════════════════════════════════════════════════ -->
+
+<!-- ══ 7. ADMIN ═══════════════════════════════════════════════════ -->
+
+<!-- ══ 8. COACH ═══════════════════════════════════════════════════ -->
+
+<!-- ══ 9. PARENT ══════════════════════════════════════════════════ -->
+<!-- Informe imprimible -->
     <div id="print-report" style="display:none;">
         <div class="report-header">
             <h1 style="color:#000;border-bottom:2px solid #000;padding-bottom:10px;">
@@ -1044,35 +1039,27 @@
         const total = OB_STEPS.length;
         const pct   = Math.round(((obCurrentStep + 1) / total) * 100);
 
-        // Scroll al inicio del contenido en cada paso
         const obContent = document.getElementById('ob-content');
         if (obContent) obContent.scrollTop = 0;
 
-        // Barra de progreso y contador
         document.getElementById('ob-progress-fill').style.width = pct + '%';
         document.getElementById('ob-counter').textContent = (obCurrentStep + 1) + ' / ' + total;
 
-        // Hero
         document.getElementById('ob-hero-icon').textContent  = step.icon;
         document.getElementById('ob-hero-title').textContent = step.heroTitle;
         document.getElementById('ob-hero-sub').textContent   = step.heroSub;
 
-        // Tarjeta
         document.getElementById('ob-card-title').innerHTML = step.cardTitle();
         document.getElementById('ob-card-body').innerHTML  = step.cardBody();
 
-        // Descripción
         document.getElementById('ob-step-desc-box').textContent = step.stepDesc;
 
-        // Botón siguiente
         const btnNext = document.getElementById('ob-btn-next');
         btnNext.textContent = (obCurrentStep === total - 1) ? '✅ ¡Empezar!' : 'Siguiente →';
 
-        // Botón anterior — ocultar en paso 1
         const btnPrev = document.getElementById('ob-btn-prev');
         if (btnPrev) btnPrev.style.display = obCurrentStep === 0 ? 'none' : 'block';
 
-        // Sidebar (solo visible en desktop)
         const list = document.getElementById('ob-sidebar-list');
         if (list) {
             list.innerHTML = OB_STEPS.map((s, i) => `
@@ -1100,13 +1087,31 @@
         obRender();
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // CORRECCIÓN: detectDeviceAndShowInstall()
+    //
+    // POR QUÉ estaba mal:
+    // 1. Solo detectaba invite=true (nadie lo procesaba) → NO detectaba register=true
+    // 2. Solo leía el parámetro email → NO leía role ni clubName
+    // 3. NO cambiaba a la pestaña de registro → el usuario veía el form de login
+    // 4. NO pre-rellenaba el selector de rol ni el club
+    //
+    // AHORA:
+    // 1. Detecta register=true para saltar onboarding e ir a auth
+    // 2. Lee email, role y clubName de la URL
+    // 3. Cambia automáticamente a la pestaña REGISTRARSE
+    // 4. Pre-rellena el campo de email, el selector de rol y busca el club
+    // ═══════════════════════════════════════════════════════════════════
+
     function detectDeviceAndShowInstall() {
         const isStandalone =
             window.navigator.standalone === true ||
             window.matchMedia('(display-mode: standalone)').matches ||
             window.matchMedia('(display-mode: fullscreen)').matches;
 
-        const isInviteLink = window.location.search.includes('invite=');
+        /* CORRECCIÓN: Detectar tanto invite= como register= en la URL */
+        const urlParams = new URLSearchParams(window.location.search);
+        const isInviteLink = urlParams.has('invite') || urlParams.has('register');
 
         // Si ya está instalada o ya pasó el onboarding (30 días), ir directo al login
         const lastShown   = parseInt(localStorage.getItem('cronos_install_shown') || '0');
@@ -1116,26 +1121,96 @@
         if (isStandalone || alreadySeen || isInviteLink) {
             document.getElementById('install-screen').style.display = 'none';
             document.getElementById('auth-screen').style.display    = 'flex';
+
+            /* ── Procesar parámetros de invitación ── */
             if (isInviteLink) {
                 document.body.classList.add('immersive-mode');
-                // Intentar forzar pantalla completa en la primera interacción
                 document.body.addEventListener('click', function _fullscreen() {
                     if (document.documentElement.requestFullscreen) {
                         document.documentElement.requestFullscreen().catch(()=>{});
                     }
                     document.body.removeEventListener('click', _fullscreen);
                 }, { once: true });
-                
-                const params = new URLSearchParams(window.location.search);
-                const emailParam = params.get('email');
+
+                const emailParam  = urlParams.get('email');
+                const roleParam   = urlParams.get('role');
+                const clubParam   = urlParams.get('clubName');
+                const registerParam = urlParams.get('register');
+
+                /* CORRECCIÓN: Si viene de invitación con register=true, cambiar a REGISTRARSE */
+                if (registerParam === 'true') {
+                    setTimeout(() => {
+                        if (typeof switchTab === 'function') {
+                            switchTab('register');
+                        } else {
+                            /* Fallback: cambiar tabs manualmente si switchTab no existe aún */
+                            var tabLogin = document.getElementById('tab-login');
+                            var tabRegister = document.getElementById('tab-register');
+                            var roleContainer = document.getElementById('role-container');
+                            var registerPwd = document.getElementById('register-pwd-section');
+                            var loginPwd = document.getElementById('login-pwd-section');
+
+                            if (tabLogin) {
+                                tabLogin.style.color = '#7d8590';
+                                tabLogin.style.borderBottom = '2px solid transparent';
+                            }
+                            if (tabRegister) {
+                                tabRegister.style.color = '#58a6ff';
+                                tabRegister.style.borderBottom = '2px solid #58a6ff';
+                            }
+                            if (roleContainer) roleContainer.style.display = 'block';
+                            if (registerPwd) registerPwd.style.display = 'block';
+                            if (loginPwd) loginPwd.style.display = 'none';
+                        }
+                    }, 150);
+                }
+
+                /* Pre-rellenar el email */
                 if (emailParam) {
                     setTimeout(() => {
-                        const authEmail = document.getElementById('auth-email');
+                        var authEmail = document.getElementById('auth-email');
                         if (authEmail) authEmail.value = emailParam;
-                        const loginForm = document.getElementById('auth-form');
-                        // Se podría cambiar al modo de registro automáticamente si lo desean,
-                        // pero con pre-rellenar el email ayudamos a la UX.
-                    }, 100);
+                    }, 150);
+                }
+
+                /* CORRECCIÓN: Pre-rellenar el selector de rol */
+                if (roleParam) {
+                    setTimeout(() => {
+                        var roleSelect = document.getElementById('auth-role');
+                        if (roleSelect) {
+                            /* Intentar seleccionar el rol que viene de la URL */
+                            roleSelect.value = roleParam;
+                            /* Disparar onchange para que se muestren los campos adicionales */
+                            if (typeof handleRoleChange === 'function') {
+                                handleRoleChange();
+                            }
+                        }
+                    }, 200);
+                }
+
+                /* CORRECCIÓN: Pre-rellenar el selector de club con el nombre */
+                if (clubParam) {
+                    setTimeout(() => {
+                        var clubSelect = document.getElementById('auth-club-select');
+                        if (clubSelect) {
+                            /* Buscar si el club ya existe en el selector */
+                            var found = false;
+                            for (var i = 0; i < clubSelect.options.length; i++) {
+                                if (clubSelect.options[i].text === clubParam ||
+                                    clubSelect.options[i].value === clubParam) {
+                                    clubSelect.selectedIndex = i;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            /* Si no se encuentra, el club se cargará dinámicamente.
+                               Guardar el nombre en un atributo data para que auth.js lo use
+                               cuando cargue los clubes desde Firestore. */
+                            if (!found) {
+                                clubSelect.setAttribute('data-prefill-club', clubParam);
+                            }
+                        }
+                    }, 300);
                 }
             }
             return;
@@ -1148,8 +1223,6 @@
 
     window.addEventListener('load', detectDeviceAndShowInstall);
     </script>
-
-
 
     <script>
     // ══ STUBS DE SEGURIDAD Y EYE TOGGLES ══════════════════════════════════════
@@ -1165,7 +1238,6 @@
         if (typeof openClubReports === 'function') openClubReports();
     };
 
-    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
     // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
     if (!window._roleSelectStubSet) {
         window._roleSelectStubSet = true;
@@ -1194,7 +1266,6 @@
                 btn.textContent = show ? '🙈' : '👁️';
             });
         }
-        // Puede que el DOM no esté listo aún si el script está en <body>
         function tryWire() {
             wireToggle('auth-password',             'toggle-pwd-login');
             wireToggle('register-password',         'toggle-pwd-register');
@@ -1207,5 +1278,82 @@
         }
     })();
     </script>
+
+    <!-- ══ CDN ════════════════════════════════════════════════════════════════ -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
+    <!-- ══ CORE: app.js (lógica principal, carga primero) ══════════════════════ -->
+    <script src="js/core/app-init.js?v=77"></script>
+
+    <!-- ══ CORE: configuración y parches ══════════════════════════════════════ -->
+    <script src="js/core/setup-modal.js?v=77"></script>
+    <script src="js/core/patches.js?v=77"></script>
+
+    <!-- ══ SERVICES: Firebase + Auth ══════════════════════════════════════════ -->
+    <script type="module" src="js/services/firebase-init.js?v=77"></script>
+    <script type="module" src="js/services/auth.js?v=77"></script>
+    <script src="js/services/auth-improvements.js?v=77"></script>
+
+    <!-- ══ CORE: seguridad, utilidades, seudonimizador ═══════════════════════ -->
+    <script src="js/core/security-and-state.js?v=77"></script>
+    <script src="js/core/utils.js?v=77"></script>
+    <script src="js/core/pseudonymizer.js?v=77"></script>
+
+    <!-- ══ MATCH: eventos del partido ═════════════════════════════════════════ -->
+    <script src="js/match/events/player-actions.js?v=77"></script>
+    <script src="js/match/demo-tutorial.js?v=77"></script>
+    <script src="js/match/persistence/active-match.js?v=77"></script>
+    <script src="js/match/timer/core.js?v=77"></script>
+    <script src="js/match/events/movement-log.js?v=77"></script>
+    <script src="js/match/persistence/team-persistence.js?v=77"></script>
+    <script src="js/match/live/sync.js?v=77"></script>
+
+    <!-- ══ SERVICES: Firestore, cloud, offline ════════════════════════════════ -->
+    <script src="js/services/firestore-sync.js?v=77"></script>
+    <script src="js/services/firestore-storage.js?v=77"></script>
+    <script src="js/services/offline-manager.js?v=77"></script>
+    <script src="js/services/user-management.js?v=77"></script>
+
+    <!-- ══ STAFF & COMMS ══════════════════════════════════════════════════════ -->
+    <script src="js/core/staff-and-comms.js?v=77"></script>
+
+    <!-- ══ AI: importación de jugadores ════════════════════════════════════════ -->
+    <script src="js/ai/import.js?v=77"></script>
+
+    <!-- ══ ROSTER: plantilla y formaciones ═════════════════════════════════════ -->
+    <script src="js/roster/formations.js?v=77"></script>
+    <script src="js/roster/legacy-formations.js?v=77"></script>
+
+    <!-- ══ UI: render, drag-drop, scroll ══════════════════════════════════════ -->
+    <script src="js/ui/bench-scroll.js?v=77"></script>
+    <script src="js/ui/render.js?v=77"></script>
+    <script src="js/ui/drag-drop.js?v=77"></script>
+
+    <!-- ══ SHARED: WhatsApp, email, admin constants ═══════════════════════════ -->
+    <script src="js/shared/whatsapp-email.js?v=77"></script>
+        <script src="js/shared/admin-shared.js?v=77"></script>
+
+    <!-- ══ ADMIN: SuperAdmin, Club, Individual, Billing ═══════════════════════ -->
+    <script src="js/admin/superadmin/panel.js?v=77"></script>
+    <script src="js/admin/superadmin/extras.js?v=77"></script>
+    <script src="js/admin/superadmin/billing.js?v=77"></script>
+    <script src="js/admin/club/panel.js?v=77"></script>
+    <script src="js/admin/individual/panel.js?v=77"></script>
+    <script src="js/admin/billing/payments.js?v=77"></script>
+    <script src="js/admin/billing/ui.js?v=77"></script>
+
+    <!-- ══ COACH: comunicaciones, reportes, entrenamiento ════════════════════ -->
+    <script src="js/coach/comms/panel.js?v=77"></script>
+    <script src="js/coach/reports/club-reports.js?v=77"></script>
+    <script src="js/coach/reports/generator.js?v=77"></script>
+    <script src="js/coach/training/panel.js?v=77"></script>
+    <script src="js/coach/convocation.js?v=77"></script>
+
+    <!-- ══ PARENT: portal de padres ═══════════════════════════════════════════ -->
+    <script src="js/parent/panel.js?v=77"></script>
+
+    <!-- ══ CORE: event listeners (debe ir al final) ══════════════════════════ -->
+    <script src="js/core/event-listeners.js?v=77"></script>
+
 </body>
 </html>

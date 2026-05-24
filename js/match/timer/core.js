@@ -1,0 +1,179 @@
+// ══════════════════════════════════════════════════════════════════
+// CHRONOS FÚTBOL — MATCH/TIMER/CORE
+// toggleGame, tick, updateMasterUI, editTimer, spinners, toasts
+// Extraído de app.js (líneas 4509-4674)
+// ══════════════════════════════════════════════════════════════════
+
+function toggleGame() {
+    isRunning = !isRunning;
+    const btn = document.getElementById('btn-play-pause');
+    if (isRunning) {
+        btn.textContent = 'PAUSAR';
+        btn.classList.add('danger');
+        lastTickTime = Date.now();
+        timerInterval = setInterval(tick, 1000);
+    } else {
+        btn.textContent = 'REANUDAR';
+        btn.classList.remove('danger');
+        clearInterval(timerInterval);
+    }
+    // Push inmediato → live.html recibe pausa/reanuda en <1s
+    if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
+}
+
+function tick() {
+    const now = Date.now();
+    const deltaMs = now - lastTickTime;
+    const deltaSec = Math.floor(deltaMs / 1000);
+    if (deltaSec >= 1) {
+        lastTickTime += deltaSec * 1000;
+
+        // Límite de añadido por modalidad: F11=15 min, F7=10 min
+        const maxAddedSecs = (typeof currentMode !== 'undefined' && currentMode === 'f11') ? 900 : 600;
+        let shouldAutoEnd1 = false;
+        let shouldAutoEnd2 = false;
+
+        if (matchPhase === '1st_half') {
+            masterTimeH1 += deltaSec;
+            if (masterTimeH1 >= (half1MaxTime + maxAddedSecs)) {
+                masterTimeH1 = half1MaxTime + maxAddedSecs;
+                shouldAutoEnd1 = true;
+            }
+        } else if (matchPhase === '2nd_half') {
+            masterTimeH2 += deltaSec;
+            if (masterTimeH2 >= (half2MaxTime + maxAddedSecs)) {
+                masterTimeH2 = half2MaxTime + maxAddedSecs;
+                shouldAutoEnd2 = true;
+            }
+        }
+
+        updateMasterUI();
+        players.forEach(p => {
+            if (p.status === 'field') { p.time += deltaSec; updatePlayerUI(p); }
+        });
+
+        if (shouldAutoEnd1) {
+            if (typeof window.endFirstHalf === 'function') window.endFirstHalf(true);
+        } else if (shouldAutoEnd2) {
+            if (typeof window.endMatch === 'function') window.endMatch(true);
+        }
+    }
+}
+
+function updateMasterUI() {
+    const timerH1El = document.getElementById('timer-h1');
+    const timerH2El = document.getElementById('timer-h2');
+    const containerH1 = document.getElementById('timer-h1-container');
+    const containerH2 = document.getElementById('timer-h2-container');
+    const phaseLabel = document.getElementById('match-phase-label');
+    const actionsEl = document.getElementById('phase-actions');
+
+    const h1Display = masterTimeH1 <= half1MaxTime ? (half1MaxTime - masterTimeH1) : (masterTimeH1 - half1MaxTime);
+    timerH1El.textContent = formatTime(h1Display);
+    containerH1.classList.toggle('added', masterTimeH1 > half1MaxTime && matchPhase === '1st_half');
+    containerH1.classList.toggle('active', matchPhase === '1st_half');
+
+    const h2Display = masterTimeH2 <= half2MaxTime ? (half2MaxTime - masterTimeH2) : (masterTimeH2 - half2MaxTime);
+    timerH2El.textContent = formatTime(h2Display);
+    containerH2.classList.toggle('added', masterTimeH2 > half2MaxTime);
+    containerH2.classList.toggle('active', matchPhase === '2nd_half');
+
+    if (matchPhase === '1st_half') phaseLabel.textContent = masterTimeH1 > half1MaxTime ? '1ª PARTE (AÑADIDO)' : '1ª PARTE';
+    else if (matchPhase === 'break') phaseLabel.textContent = 'DESCANSO';
+    else if (matchPhase === '2nd_half') phaseLabel.textContent = masterTimeH2 > half2MaxTime ? '2ª PARTE (AÑADIDO)' : '2ª PARTE';
+    else if (matchPhase === 'finished') phaseLabel.textContent = 'FIN DEL PARTIDO';
+
+    const prev = document.getElementById('btn-inline-phase');
+    if (prev) prev.remove();
+
+    if (matchPhase !== 'finished') {
+        const btn = document.createElement('button');
+        btn.id = 'btn-inline-phase';
+        btn.style.cssText = 'font-size:1.1rem;padding:3px 6px;border-radius:6px;border:none;cursor:pointer;line-height:1;flex-shrink:0;';
+        if (matchPhase === '1st_half') {
+            btn.textContent = '🏁'; btn.title = 'Finalizar 1ª Parte';
+            btn.style.background = '#b8860b';
+            btn.onclick = (e) => { e.stopPropagation(); endFirstHalf(); };
+            containerH1.insertAdjacentElement('afterend', btn);
+        } else if (matchPhase === 'break') {
+            btn.textContent = '▶️'; btn.title = 'Iniciar 2ª Parte';
+            btn.style.background = '#1a5e8a';
+            btn.onclick = (e) => { e.stopPropagation(); startSecondHalf(); };
+            containerH2.insertAdjacentElement('beforebegin', btn);
+        } else if (matchPhase === '2nd_half') {
+            btn.textContent = '🏁'; btn.title = 'Finalizar Partido';
+            btn.style.background = '#8b0000';
+            btn.onclick = (e) => { e.stopPropagation(); endMatch(); };
+            containerH2.insertAdjacentElement('afterend', btn);
+        }
+    }
+
+    const cancelSubBtn = document.getElementById('btn-cancel-sub');
+    actionsEl.innerHTML = '';
+    if (cancelSubBtn) actionsEl.appendChild(cancelSubBtn);
+}
+
+function editTimer(half) {
+    const currentMin = Math.floor((half === 1 ? half1MaxTime : half2MaxTime) / 60);
+    const newMin = prompt(`Minutos para la ${half}ª parte:`, currentMin);
+    if (newMin !== null && !isNaN(newMin) && newMin > 0) {
+        if (half === 1) half1MaxTime = parseInt(newMin) * 60;
+        else half2MaxTime = parseInt(newMin) * 60;
+        updateMasterUI();
+    }
+}
+
+// ── SPINNER DE CARGA ──────────────────────────────────────────────
+function showSpinner(msg) {
+    msg = msg || 'Guardando…';
+    let overlay = document.getElementById('cronos-spinner');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'cronos-spinner';
+        overlay.style.cssText =
+            'position:fixed;inset:0;background:rgba(10,14,20,0.75);z-index:99999;' +
+            'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;' +
+            'backdrop-filter:blur(3px);';
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML =
+        '<div style="width:44px;height:44px;border-radius:50%;' +
+        'border:4px solid rgba(88,166,255,0.2);border-top-color:#58a6ff;' +
+        'animation:spinnerRotate 0.8s linear infinite;"></div>' +
+        '<p style="color:#cdd9e5;font-size:0.9rem;font-weight:700;margin:0;">' + msg + '</p>' +
+        '<style>@keyframes spinnerRotate{to{transform:rotate(360deg)}}</style>';
+    overlay.style.display = 'flex';
+}
+
+function hideSpinner() {
+    const overlay = document.getElementById('cronos-spinner');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function showToast(msg, duration) {
+    duration = duration || 3000;
+    const existing = document.getElementById('cronos-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'cronos-toast';
+    toast.textContent = msg;
+    toast.style.cssText =
+        'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+        'background:#1a7a3e;color:#fff;padding:10px 22px;border-radius:8px;' +
+        'font-size:0.85rem;font-weight:700;z-index:99998;' +
+        'box-shadow:0 4px 12px rgba(0,0,0,0.4);white-space:nowrap;' +
+        'animation:toastIn 0.2s ease;';
+    const style = document.createElement('style');
+    style.textContent = '@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
+    document.head.appendChild(style);
+    document.body.appendChild(toast);
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, duration);
+}
+
+function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+// --- RENDER ---

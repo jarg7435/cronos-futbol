@@ -615,18 +615,49 @@ function renderMatch(data) {
     document.getElementById('live-phase').textContent = phaseLabel;
     window._livePhase = data.phase || '1st_half';
 
-    // ── TIMER — Sistema de timestamps (sin saltos, sin desfase) ─
-    // Cada snapshot actualiza la base: {serverSecs, wallClock}.
-    // El intervalo calcula: display = serverSecs + (now - wallClock)
-    // Como serverSecs avanza ~5s y wallClock se resetea, elapsed
-    // empieza en 0 y cuenta suavemente hasta el siguiente snapshot.
-    // Resultado: cuenta 1,2,3,4 de forma continua y sin saltos.
+    // ── TIMER — Sincronización con el servidor ─────────────────────
+    // Cada snapshot de Firestore (cada ~5s) llega como un onSnapshot.
+    // Guardamos la base {serverSecs, wallClock} y el intervalo de 250ms
+    // añade (now - wallClock) para una cuenta continua sin saltos.
+    // Cuando isRunning=false el display queda fijo en el tiempo del snapshot.
 
-    const maxTime = data.mode === 'f7' ? 30 * 60 : 40 * 60;
+    const phase   = data.phase  || '1st_half';
+    // Usar siempre las duraciones reales del snapshot (NO hardcoded)
+    const defaultMaxTime = data.mode === 'f7' ? 30 * 60 : 40 * 60;
+    const maxTime = phase === '2nd_half'
+        ? (data.half2MaxTime || defaultMaxTime)
+        : (data.half1MaxTime || defaultMaxTime);
     const timeH1  = data.timeH1 || 0;
     const timeH2  = data.timeH2 || 0;
-    const phase   = data.phase  || '1st_half';
-    const serverSecs = (phase === '2nd_half') ? timeH2 : timeH1;
+    let serverSecs = (phase === '2nd_half') ? timeH2 : timeH1;
+
+    // Si el partido está corriendo, compensar el tiempo transcurrido
+    // desde que el servidor guardó el snapshot hasta ahora
+    if (data.isRunning && data.updatedAt && (phase === '1st_half' || phase === '2nd_half')) {
+        let serverTimeMs = 0;
+        if (typeof data.updatedAt.toMillis === 'function') {
+            serverTimeMs = data.updatedAt.toMillis();
+        } else if (typeof data.updatedAt.toDate === 'function') {
+            serverTimeMs = data.updatedAt.toDate().getTime();
+        } else {
+            serverTimeMs = new Date(data.updatedAt).getTime();
+        }
+        if (serverTimeMs > 0) {
+            const maxAddedSecs = 900; // máximo 15 min de tiempo añadido
+            const elapsed = Math.max(0, Math.floor((Date.now() - serverTimeMs) / 1000));
+            const limit = maxTime + maxAddedSecs;
+            const remaining = Math.max(0, limit - serverSecs);
+            const delta = Math.min(elapsed, remaining);
+            serverSecs += delta;
+            // Actualizar tiempos de jugadores con el delta
+            if (delta > 0 && Array.isArray(data.players)) {
+                data.players = data.players.map(p => ({
+                    ...p,
+                    time: p.status === 'field' ? (p.time || 0) + delta : (p.time || 0)
+                }));
+            }
+        }
+    }
 
     // Actualizar base con datos del servidor
     window._timerBase = {
@@ -635,26 +666,28 @@ function renderMatch(data) {
         maxTime:   maxTime,
         phase:     phase,
         isLive:    isLive,
-        isRunning: data.isRunning ?? true // Sincronización real
+        isRunning: !!(data.isRunning)
     };
 
-    // Mostrar tiempo inmediatamente (sin esperar al intervalo)
+    // Mostrar tiempo inmediatamente
     updateTimerDisplay(serverSecs, maxTime, phase);
 
-    // Arrancar el intervalo UNA SOLA VEZ — nunca se borra mientras hay partido
+    // Arrancar el intervalo UNA SOLA VEZ
     if (!timerInterval) {
         timerInterval = setInterval(() => {
             const b = window._timerBase;
-            if (!b || !b.isLive || !b.isRunning) return; // NO contar si no está en marcha
-            if (b.phase === 'break' || b.phase === 'halftime' || b.phase === 'finished') return;
-            
+            if (!b) return;
+            if (!b.isRunning || !b.isLive ||
+                b.phase === 'break' || b.phase === 'halftime' || b.phase === 'finished') {
+                // Partido pausado o en descanso: mostrar el tiempo fijo del snapshot
+                updateTimerDisplay(b.secs, b.maxTime, b.phase);
+                return;
+            }
             const elapsed = (Date.now() - b.wallClock) / 1000;
             const current = Math.floor(b.secs + elapsed);
             updateTimerDisplay(current, b.maxTime, b.phase);
-
-            // --- MEJORA: Actualizar tiempos de jugadores 1-a-1 ---
             tickPlayerTimes(elapsed);
-        }, 250); 
+        }, 250);
     }
 
     // Field & bench
@@ -711,10 +744,9 @@ function renderField(data) {
 
     pitch.innerHTML = players.map(p => {
         const isHome = p.team === 'home';
-        const color  = isHome ? (data.homeTeam?.color || '#58a6ff')
-                              : (data.awayTeam?.color || '#ff5858');
-        const text   = isHome ? (data.homeTeam?.textColor || '#fff')
-                              : (data.awayTeam?.textColor || '#fff');
+        // FIX: usar color individual del jugador (incluido en snapshot) con fallback al color del equipo
+        const color  = p.color      || (isHome ? (data.homeTeam?.color     || '#58a6ff') : (data.awayTeam?.color     || '#ff5858'));
+        const text   = p.textColor  || (isHome ? (data.homeTeam?.textColor || '#fff')    : (data.awayTeam?.textColor || '#fff'));
 
         const goals     = p.goals  || 0;
         const hasGoal   = goals > 0;
@@ -748,7 +780,7 @@ function renderBench(data) {
         const containerId = team === 'home' ? 'bench-home' : 'bench-away';
         const container   = document.getElementById(containerId);
         const teamData    = team === 'home' ? data.homeTeam : data.awayTeam;
-        const color       = teamData?.color || (team === 'home' ? '#58a6ff' : '#ff5858');
+        const teamColor   = teamData?.color || (team === 'home' ? '#58a6ff' : '#ff5858');
 
         const benchPlayers = players
             .filter(p => p.team === team && p.status === 'bench')
@@ -760,6 +792,8 @@ function renderBench(data) {
         }
 
         container.innerHTML = benchPlayers.map(p => {
+            // FIX: usar color individual del jugador con fallback al color del equipo
+            const color = p.color || teamColor;
             const cardIcon = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
             const goalIcon = (p.goals || 0) > 0 ? ` ⚽×${p.goals}` : '';
             return `<div class="bench-player-row">
