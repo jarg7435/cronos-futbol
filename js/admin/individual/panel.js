@@ -31,7 +31,6 @@ if (typeof window.saFS !== 'function') {
             httpsCallable: fnMod.httpsCallable,
         };
     };
-    console.log('[IndPanel] saFS local fallback activado');
 }
 
 
@@ -241,68 +240,20 @@ async function openIndividualAdminPanel() {
 
     // ── Load users under this individual ──────────────────────────
     // CRITICAL: Buscar usuarios que pertenezcan a esta entidad individual
-    // Debemos buscar por TODOS los campos posibles: individualOwnerId, individualEntityId, clubId
-    // porque tras la aprobación del SA, los usuarios confirmados tienen estos campos seteados
-    console.log('[IndPanel] Buscando usuarios para entityId:', _queryId, 'uid:', uid);
-    const parentsSnap1 = await getDocs(query(collection(db, 'users'),
-        where('individualOwnerId', '==', _queryId)
-    )).catch(() => null);
-    const parentsSnap2 = await getDocs(query(collection(db, 'users'),
-        where('individualEntityId', '==', _queryId)
-    )).catch(() => null);
+    // El SA siempre escribe individualEntityId + individualOwnerId al aprobar.
+    // Dos queries en paralelo cubren campo canónico y campo legacy.
+    const [parentsSnap1, parentsSnap2] = await Promise.all([
+        getDocs(query(collection(db, 'users'),
+            where('individualEntityId', '==', _queryId)
+        )).catch(() => null),
+        getDocs(query(collection(db, 'users'),
+            where('individualOwnerId', '==', _queryId)
+        )).catch(() => null),
+    ]);
     const parentsMap = new Map();
     if (parentsSnap1) parentsSnap1.forEach(d => { if (!parentsMap.has(d.id)) parentsMap.set(d.id, { _id: d.id, ...d.data() }); });
     if (parentsSnap2) parentsSnap2.forEach(d => { if (!parentsMap.has(d.id)) parentsMap.set(d.id, { _id: d.id, ...d.data() }); });
-    // FIX: También buscar por clubId = entityId (auth.js sets clubId = entityId for SA panel compatibility)
-    // Solo incluir usuarios que tengan rol individual o estén bajo esta entidad
-    if (_queryId !== uid) {
-        const parentsSnap3 = await getDocs(query(collection(db, 'users'),
-            where('clubId', '==', _queryId)
-        )).catch(() => null);
-        if (parentsSnap3) parentsSnap3.forEach(d => {
-            const data = d.data();
-            // Solo incluir si tiene algún campo individual o rol que corresponda a esta entidad
-            // FIX: No incluir usuarios de club normales — verificar que sea una entidad individual
-            if (!parentsMap.has(d.id) && (data.individualEntityId || data.individualOwnerId || data.isIndividual
-                || data.role === 'individual' || data.role === 'admin_individual'
-                || (data.allRoles||[]).some(r => ['individual','admin_individual','entrenador_individual','padre_individual'].includes(r.role)
-                    || r.individualEntityId))) {
-                parentsMap.set(d.id, { _id: d.id, ...data });
-            }
-        });
-    }
-    // CRITICAL FIX: También buscar por el UID del admin como individualOwnerId
-    // (algunas platform_requests y usuarios antiguos usan el UID del admin en vez del entityId)
-    if (uid !== _queryId) {
-        const parentsSnap4 = await getDocs(query(collection(db, 'users'),
-            where('individualOwnerId', '==', uid)
-        )).catch(() => null);
-        if (parentsSnap4) parentsSnap4.forEach(d => {
-            if (!parentsMap.has(d.id)) {
-                parentsMap.set(d.id, { _id: d.id, ...d.data() });
-            }
-        });
-        const parentsSnap5 = await getDocs(query(collection(db, 'users'),
-            where('individualEntityId', '==', uid)
-        )).catch(() => null);
-        if (parentsSnap5) parentsSnap5.forEach(d => {
-            if (!parentsMap.has(d.id)) {
-                parentsMap.set(d.id, { _id: d.id, ...d.data() });
-            }
-        });
-    }
-    // FIX: Si el admin individual está en la lista, asegurarse de que tiene el rol correcto
-    const adminInMap = parentsMap.get(uid);
-    if (adminInMap && adminInMap.role !== 'individual' && adminInMap.role !== 'admin_individual') {
-        // El admin individual está en la lista pero su rol principal no es 'individual'
-        // Esto puede pasar si se registró con otro rol primero. Actualizar el allRoles
-        // para asegurar que tiene el rol de individual.
-        console.log('[IndPanel] Admin individual encontrado con rol:', adminInMap.role, '— corrigiendo allRoles');
-    }
     const parents = Array.from(parentsMap.values());
-    console.log('[IndPanel] Usuarios encontrados:', parents.length,
-        '| Entrenadores activos:', parents.filter(u => u.status === 'active' && (u.role === 'user' || (u.allRoles||[]).some(r=>r.role==='user' && r.isAuthorized))).length,
-        '| Padres activos:', parents.filter(u => u.status === 'active' && (u.role === 'parent' || (u.allRoles||[]).some(r=>r.role==='parent' && r.isAuthorized))).length);
 
     const totalPending = pendingAutoReg.length + parents.filter(u => u.status === 'pending_individual' && u.isAuthorized === false).length;
 
@@ -641,7 +592,7 @@ async function openIndividualAdminPanel() {
     window._indData = {
         uid, userData, parents,
         pendingAutoReg, pendingSAForward, displayName, me,
-        _sessionId: Date.now()   // Evita que doble apertura ejecute acciones sobre contexto obsoleto
+        _sessionId: Date.now()
     };
 }
 
@@ -681,7 +632,7 @@ function _isActiveParent(u) {
 window.indNotifySuperAdmin = async function indNotifySuperAdmin() {
     const d = window._indData;
     if (!d) return;
-    if (d._sessionId !== window._indData._sessionId) return; // Sesión obsoleta
+    if (d._sessionId !== window._indData._sessionId) return;
     const { me, displayName, userData } = d;
     const _entityId = userData?.individualEntityId || me.uid;
     if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando notificación…');
@@ -711,7 +662,7 @@ window.indNotifySuperAdmin = async function indNotifySuperAdmin() {
 window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email, categoryLabel) {
     const d = window._indData;
     if (!d) return;
-    if (d._sessionId !== window._indData._sessionId) return; // Sesión obsoleta
+    if (d._sessionId !== window._indData._sessionId) return;
     const { me } = d;
 
     const isIndSub = role === 'user' || role === 'parent';
@@ -1080,7 +1031,7 @@ window.indSolicitarPadre = async function indSolicitarPadre() {
 
     const d = window._indData;
     if (!d) return;
-    if (d._sessionId !== window._indData._sessionId) return; // Sesión obsoleta
+    if (d._sessionId !== window._indData._sessionId) return;
     const { me, displayName, userData } = d;
     const _entityId = userData?.individualEntityId || me.uid;
 
