@@ -439,9 +439,8 @@ async function loadSuperAdminEmails() {
         }
     } catch(e) {
         // Si falla por permisos (usuario no autenticado aún), reintentar tras auth
-        if (e.code === 'permission-denied' || (e.message && e.message.includes('permission'))) {
-            console.warn('[Cronos] loadSuperAdminEmails: permisos insuficientes, se reintentará tras login');
-        } else {
+        // Permisos insuficientes = comportamiento esperado antes del login. Silencioso.
+        if (e.code !== 'permission-denied' && !(e.message && e.message.includes('permission'))) {
             console.error('[Cronos] Error cargando superadmin emails:', e);
         }
     }
@@ -2815,8 +2814,11 @@ function _launchWithRole(role) {
                 '| clubId:', me.clubId,
                 (role === 'parent') ? '| inviteCode:' + (me.inviteCode || 'null') : '');
         } else {
-            console.warn('[RoleLaunch] No se encontró entrada en allRoles para rol:', role,
-                '| allRoles disponibles:', (me.allRoles || []).map(r => r.role).join(', '));
+            // El SA entra a todos los paneles por diseño — no tiene entradas en allRoles para roles que no son suyos.
+            if (!['superadmin','admin'].includes(me.role)) {
+                console.warn('[RoleLaunch] No se encontró entrada en allRoles para rol:', role,
+                    '| allRoles disponibles:', (me.allRoles || []).map(r => r.role).join(', '));
+            }
         }
     }
 
