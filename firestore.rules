@@ -6,26 +6,22 @@ service cloud.firestore {
     // FUNCIONES HELPER
     // ============================================================
 
-    // ¿Está autenticado?
     function isAuth() {
       return request.auth != null;
     }
 
-    // ¿Es SuperAdmin? (soporta claims Y email para transición)
     function isSuperAdmin() {
       return isAuth() &&
              (request.auth.token.role == 'superadmin' ||
               request.auth.token.email == 'jarg7435@gmail.com');
     }
 
-    // ¿Es ClubAdmin de este club?
     function isClubAdmin(clubId) {
       return isAuth() &&
              request.auth.token.role == 'club_admin' &&
              request.auth.token.clubId == clubId;
     }
 
-    // ¿Es IndividualAdmin de este club/ente?
     function isIndividualAdmin(clubId) {
       return isAuth() &&
              (request.auth.token.role == 'individual_admin' ||
@@ -34,7 +30,6 @@ service cloud.firestore {
              request.auth.token.clubId == clubId;
     }
 
-    // ¿Es Administrador Individual? (cualquier variante del rol)
     function isIndividualRole() {
       return isAuth() &&
              (request.auth.token.role == 'individual' ||
@@ -42,30 +37,30 @@ service cloud.firestore {
               request.auth.token.role == 'admin_individual');
     }
 
-    // ¿Pertenece al mismo club? (ClubAdmin o IndividualAdmin)
     function sameClub(clubId) {
       return isClubAdmin(clubId) || isIndividualAdmin(clubId);
     }
 
-    // ¿Tiene custom claims asignados? (para periodo transicional)
     function hasClaims() {
       return isAuth() &&
              request.auth.token.role != null &&
              request.auth.token.clubId != null;
     }
 
-    // Acceso de lectura transicional: usuarios autenticados SIN claims
-    // pueden leer si el recurso pertenece a su club (según campo clubId del documento)
+    // Acceso transicional: usuarios autenticados sin claims aún asignados
     function transitionalRead(clubId) {
       return isAuth() && !hasClaims() && clubId != null;
     }
 
-    // ¿El documento pertenece a un ente individual? (campo type == 'individual')
     function isIndividualEntity(resourceData) {
       return resourceData.type == 'individual';
     }
 
-    // Datos entrantes válidos para jugadores (sin inyección de campos)
+    // Mismo club por campo del documento (para usuarios sin custom claims)
+    function sameClubAsDoc(docClubId) {
+      return isAuth() && request.auth.token.clubId == docClubId;
+    }
+
     function isValidPlayerData(data) {
       return data.keys().hasOnly([
         'pseudonym', 'number', 'position', 'isStarting',
@@ -76,61 +71,71 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: users
+    // Cada usuario solo lee su propio documento o el de su mismo club.
     // ============================================================
     match /users/{userId} {
-      // Cualquier autenticado puede leer (necesario para listados de club)
-      allow read: if isAuth();
-      // El propio usuario puede crear su documento al registrarse
-      // SuperAdmin también puede crear pre-usuarios (IDs tipo individual_pre_xxx)
-      allow create: if isAuth() && (request.auth.uid == userId || isSuperAdmin());
-      // SuperAdmin o el propio usuario pueden actualizar
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == userId ||
+        sameClubAsDoc(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
+      );
+      allow create: if isAuth() && (
+        request.auth.uid == userId ||
+        isSuperAdmin()
+      );
       allow update: if isSuperAdmin() ||
                        (isAuth() && request.auth.uid == userId);
-      // Solo SuperAdmin puede eliminar usuarios
       allow delete: if isSuperAdmin();
     }
 
     // ============================================================
     // COLECCIÓN: clubs
-    // Nota: Los entes individuales también se guardan aquí con type='individual'
     // ============================================================
     match /clubs/{clubId} {
-      // Cualquiera puede leer (necesario para el registro)
       allow read: if true;
-      // Solo SuperAdmin puede crear clubes y entes individuales
       allow create: if isSuperAdmin();
-      // SuperAdmin puede actualizar cualquier club/ente
-      // ClubAdmin del club puede actualizar su club
-      // IndividualAdmin puede actualizar su ente individual
       allow update: if isSuperAdmin() ||
                        isClubAdmin(clubId) ||
                        (isIndividualAdmin(clubId) &&
                         isIndividualEntity(resource.data));
-      // Solo SuperAdmin puede eliminar clubes y entes individuales
       allow delete: if isSuperAdmin();
     }
 
     // ============================================================
     // COLECCIÓN: individuals
-    // Entidades individuales (uso alternativo/paralelo a clubs con type=individual)
-    // auth.js y 24_individual_admin.js leen de esta colección
     // ============================================================
     match /individuals/{entityId} {
-      // Cualquier autenticado puede leer (necesario para registro y panel individual)
       allow read: if isAuth();
-      // Solo SuperAdmin puede crear entidades individuales
       allow create: if isSuperAdmin();
-      // SuperAdmin puede actualizar cualquier entidad
-      // El admin individual asignado puede actualizar su propia entidad
       allow update: if isSuperAdmin() ||
                        (isAuth() &&
                         resource.data.email == request.auth.token.email);
-      // Solo SuperAdmin puede eliminar entidades individuales
       allow delete: if isSuperAdmin();
     }
 
     // ============================================================
-    // COLECCIÓN: matches (partidos en vivo)
+    // COLECCIÓN: platform_requests
+    // Solo SA y el admin del club/entidad implicada pueden leer.
+    // Cualquier autenticado puede crear (para registros).
+    // Solo SA puede actualizar (aprobar/rechazar) o eliminar.
+    // ============================================================
+    match /platform_requests/{reqId} {
+      allow read: if isSuperAdmin() ||
+                     (isAuth() && (
+                       sameClubAsDoc(resource.data.clubId) ||
+                       request.auth.uid == resource.data.requestedBy ||
+                       request.auth.uid == resource.data.userId ||
+                       request.auth.token.clubId == resource.data.individualOwnerId
+                     ));
+      allow create: if isAuth();
+      allow update: if isSuperAdmin() ||
+                       (isAuth() && sameClubAsDoc(resource.data.clubId));
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================
+    // COLECCIÓN: matches
     // ============================================================
     match /matches/{matchId} {
       allow read: if isAuth();
@@ -148,12 +153,14 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: players (jugadores - MENORES)
+    // COLECCIÓN: players (jugadores — pueden ser MENORES)
+    // Solo el club propietario puede leer.
     // ============================================================
     match /players/{playerId} {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
+        sameClubAsDoc(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
@@ -224,7 +231,7 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: events (goles, tarjetas, etc.)
+    // COLECCIÓN: events
     // ============================================================
     match /events/{eventId} {
       allow read: if isAuth();
@@ -242,17 +249,68 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: platform_requests (solicitudes entre club admin y SA)
+    // COLECCIÓN: cronos_messages
+    // Solo participantes del hilo o SA pueden leer y escribir.
     // ============================================================
-    match /platform_requests/{reqId} {
-      allow read: if isAuth();
+    match /cronos_messages/{threadId} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(resource.data.clubId) ||
+        request.auth.uid in resource.data.participants ||
+        transitionalRead(resource.data.clubId)
+      );
       allow create: if isAuth();
-      allow update: if isAuth();
+      allow update: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(resource.data.clubId) ||
+        request.auth.uid in resource.data.participants
+      );
+      allow delete: if isAuth() &&
+                    (request.auth.uid in threadId.split('_') || isSuperAdmin());
+    }
+
+    // ============================================================
+    // COLECCIÓN: cronos_notifications
+    // Solo el destinatario o SA pueden leer.
+    // ============================================================
+    match /cronos_notifications/{notifId} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.userId ||
+        sameClubAsDoc(resource.data.clubId)
+      );
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.userId
+      );
+      allow delete: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.userId
+      );
+    }
+
+    // ============================================================
+    // COLECCIÓN: cronos_player_reports
+    // Solo el club del jugador o SA pueden leer.
+    // ============================================================
+    match /cronos_player_reports/{reportId} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(resource.data.clubId) ||
+        request.auth.uid == resource.data.coachId ||
+        transitionalRead(resource.data.clubId)
+      );
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(resource.data.clubId)
+      );
       allow delete: if isSuperAdmin();
     }
 
     // ============================================================
-    // COLECCIÓN: cronos_player_links (códigos de invitación padres)
+    // COLECCIÓN: cronos_player_links (códigos invitación padres)
     // ============================================================
     match /cronos_player_links/{linkId} {
       allow read: if isAuth();
@@ -262,48 +320,20 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: cronos_messages (hilos de mensajes)
-    // ============================================================
-    match /cronos_messages/{threadId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth() &&
-                    (request.auth.uid in threadId.split('_') || isSuperAdmin());
-    }
-
-    // ============================================================
-    // COLECCIÓN: cronos_notifications (notificaciones internas)
-    // ============================================================
-    match /cronos_notifications/{notifId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth();
-    }
-
-    // ============================================================
-    // COLECCIÓN: cronos_player_reports (informes individuales)
-    // ============================================================
-    match /cronos_player_reports/{reportId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth();
-    }
-
-    // ============================================================
-    // COLECCIÓN: deletion_requests (solicitudes de baja)
+    // COLECCIÓN: deletion_requests
     // ============================================================
     match /deletion_requests/{reqId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.userId
+      );
       allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth();
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
     }
 
     // ============================================================
-    // COLECCIÓN: live_matches (partidos en vivo)
+    // COLECCIÓN: live_matches (seguimiento en vivo — padres sin login)
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if true;
@@ -312,42 +342,36 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: users/{uid}/cronos_data (datos cloudSet/cloudGet)
+    // COLECCIÓN: users/{uid}/cronos_data
     // ============================================================
     match /users/{userId}/cronos_data/{docId} {
       allow read, write: if isAuth() && request.auth.uid == userId;
     }
 
     // ============================================================
-    // COLECCIÓN: offline_events (eventos sin conexión)
+    // COLECCIÓN: offline_events
     // ============================================================
     match /offline_events/{eventId} {
-      allow read: if isAuth() &&
-                  resource.data.userUid == request.auth.uid;
+      allow read: if isAuth() && resource.data.userUid == request.auth.uid;
       allow create: if isAuth();
-      allow update, delete: if isAuth() &&
-                            resource.data.userUid == request.auth.uid;
+      allow update, delete: if isAuth() && resource.data.userUid == request.auth.uid;
     }
 
     // ============================================================
-    // COLECCIÓN: config (configuración global)
+    // COLECCIÓN: config / cronos_config
     // ============================================================
     match /config/{configId} {
       allow read: if isAuth();
       allow write: if isSuperAdmin();
     }
 
-    // ============================================================
-    // COLECCIÓN: cronos_config (configuración del sistema)
-    // Incluye cronos_config/superadmins (lista de emails SA)
-    // ============================================================
     match /cronos_config/{configId} {
       allow read: if isAuth();
       allow write: if isSuperAdmin();
     }
 
     // ============================================================
-    // COLECCIÓN: pseudonym_map (mapa de pseudónimos)
+    // COLECCIÓN: pseudonym_map
     // ============================================================
     match /pseudonym_map/{mapId} {
       allow read: if isAuth() && (
@@ -355,12 +379,11 @@ service cloud.firestore {
         sameClub(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
-      // Solo el sistema (via Cloud Functions) puede escribir
       allow write: if false;
     }
 
     // ============================================================
-    // COLECCIÓN: audit_logs / error_logs (solo escritura, sistema)
+    // COLECCIÓN: audit_logs / error_logs
     // ============================================================
     match /audit_logs/{logId} {
       allow read: if isSuperAdmin();
@@ -373,12 +396,19 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: notifications (sistema)
+    // COLECCIÓN: notifications
     // ============================================================
     match /notifications/{notifId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.userId ||
+        sameClubAsDoc(resource.data.clubId)
+      );
       allow create: if isAuth();
-      allow update: if isAuth();
+      allow update: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.userId
+      );
       allow delete: if isSuperAdmin();
     }
 
@@ -386,14 +416,21 @@ service cloud.firestore {
     // COLECCIÓN: slot_requests
     // ============================================================
     match /slot_requests/{reqId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.userId ||
+        sameClubAsDoc(resource.data.clubId)
+      );
       allow create: if isAuth();
-      allow update: if isAuth();
+      allow update: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(resource.data.clubId)
+      );
       allow delete: if isSuperAdmin();
     }
 
     // ============================================================
-    // CATCH-ALL: Colecciones no definidas — solo lectura para autenticados
+    // CATCH-ALL: bloquear todo lo no definido
     // ============================================================
     match /{document=**} {
       allow read: if isAuth();
