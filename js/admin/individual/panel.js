@@ -239,63 +239,19 @@ async function openIndividualAdminPanel() {
     }
 
     // ── Load users under this individual ──────────────────────────
-    // CRITICAL: Buscar usuarios que pertenezcan a esta entidad individual
-    // Debemos buscar por TODOS los campos posibles: individualOwnerId, individualEntityId, clubId
-    // porque tras la aprobación del SA, los usuarios confirmados tienen estos campos seteados
-    const parentsSnap1 = await getDocs(query(collection(db, 'users'),
-        where('individualOwnerId', '==', _queryId)
-    )).catch(() => null);
-    const parentsSnap2 = await getDocs(query(collection(db, 'users'),
-        where('individualEntityId', '==', _queryId)
-    )).catch(() => null);
+    // El SA siempre escribe individualEntityId + individualOwnerId al aprobar.
+    // Dos queries en paralelo cubren campo canónico y campo legacy.
+    const [parentsSnap1, parentsSnap2] = await Promise.all([
+        getDocs(query(collection(db, 'users'),
+            where('individualEntityId', '==', _queryId)
+        )).catch(() => null),
+        getDocs(query(collection(db, 'users'),
+            where('individualOwnerId', '==', _queryId)
+        )).catch(() => null),
+    ]);
     const parentsMap = new Map();
     if (parentsSnap1) parentsSnap1.forEach(d => { if (!parentsMap.has(d.id)) parentsMap.set(d.id, { _id: d.id, ...d.data() }); });
     if (parentsSnap2) parentsSnap2.forEach(d => { if (!parentsMap.has(d.id)) parentsMap.set(d.id, { _id: d.id, ...d.data() }); });
-    // FIX: También buscar por clubId = entityId (auth.js sets clubId = entityId for SA panel compatibility)
-    // Solo incluir usuarios que tengan rol individual o estén bajo esta entidad
-    if (_queryId !== uid) {
-        const parentsSnap3 = await getDocs(query(collection(db, 'users'),
-            where('clubId', '==', _queryId)
-        )).catch(() => null);
-        if (parentsSnap3) parentsSnap3.forEach(d => {
-            const data = d.data();
-            // Solo incluir si tiene algún campo individual o rol que corresponda a esta entidad
-            // FIX: No incluir usuarios de club normales — verificar que sea una entidad individual
-            if (!parentsMap.has(d.id) && (data.individualEntityId || data.individualOwnerId || data.isIndividual
-                || data.role === 'individual' || data.role === 'admin_individual'
-                || (data.allRoles||[]).some(r => ['individual','admin_individual','entrenador_individual','padre_individual'].includes(r.role)
-                    || r.individualEntityId))) {
-                parentsMap.set(d.id, { _id: d.id, ...data });
-            }
-        });
-    }
-    // CRITICAL FIX: También buscar por el UID del admin como individualOwnerId
-    // (algunas platform_requests y usuarios antiguos usan el UID del admin en vez del entityId)
-    if (uid !== _queryId) {
-        const parentsSnap4 = await getDocs(query(collection(db, 'users'),
-            where('individualOwnerId', '==', uid)
-        )).catch(() => null);
-        if (parentsSnap4) parentsSnap4.forEach(d => {
-            if (!parentsMap.has(d.id)) {
-                parentsMap.set(d.id, { _id: d.id, ...d.data() });
-            }
-        });
-        const parentsSnap5 = await getDocs(query(collection(db, 'users'),
-            where('individualEntityId', '==', uid)
-        )).catch(() => null);
-        if (parentsSnap5) parentsSnap5.forEach(d => {
-            if (!parentsMap.has(d.id)) {
-                parentsMap.set(d.id, { _id: d.id, ...d.data() });
-            }
-        });
-    }
-    // FIX: Si el admin individual está en la lista, asegurarse de que tiene el rol correcto
-    const adminInMap = parentsMap.get(uid);
-    if (adminInMap && adminInMap.role !== 'individual' && adminInMap.role !== 'admin_individual') {
-        // El admin individual está en la lista pero su rol principal no es 'individual'
-        // Esto puede pasar si se registró con otro rol primero. Actualizar el allRoles
-        // para asegurar que tiene el rol de individual.
-    }
     const parents = Array.from(parentsMap.values());
     const totalPending = pendingAutoReg.length + parents.filter(u => u.status === 'pending_individual' && u.isAuthorized === false).length;
 

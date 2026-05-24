@@ -793,7 +793,13 @@ window._discardActiveMatch = function() {
     }
     localStorage.removeItem(_ACTIVE_MATCH_KEY);
     document.getElementById('cronos-restore-banner')?.remove();
-    openSetupModal();
+    // Solo abrir el panel de entrenador si no hay otro panel/modal ya abierto.
+    // Evita cerrar el panel de Admin Individual, Club Admin o SA al cancelar un partido.
+    const modal = document.getElementById('setup-modal');
+    const modalVisible = modal && modal.style.display !== 'none' && modal.style.display !== '';
+    if (!modalVisible) {
+        openSetupModal();
+    }
 };
 
 window._restoreActiveMatch = function() {
