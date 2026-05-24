@@ -438,9 +438,10 @@ async function loadSuperAdminEmails() {
             _superAdminLoaded = true; // Doc no existe pero ya lo intentamos
         }
     } catch(e) {
-        // Si falla por permisos es comportamiento esperado (usuario no autenticado aún).
-        // El reintento se produce automáticamente tras login vía _retryConfigLoadAfterAuth().
-        if (e.code !== 'permission-denied' && !(e.message && e.message.includes('permission'))) {
+        // Si falla por permisos (usuario no autenticado aún), reintentar tras auth
+        if (e.code === 'permission-denied' || (e.message && e.message.includes('permission'))) {
+            console.warn('[Cronos] loadSuperAdminEmails: permisos insuficientes, se reintentará tras login');
+        } else {
             console.error('[Cronos] Error cargando superadmin emails:', e);
         }
     }
@@ -2573,13 +2574,23 @@ export function showRoleSelection() {
     }
 
     // 2. Multi-rol y roles específicos
-    // CRITICAL FIX: Solo mostrar paneles de roles que estén ACTIVOS (isAuthorized=true AND status='active')
-    // Roles con status='pending_individual', 'pending_sa', 'pending', etc. NO deben ser accesibles
+    // Solo mostrar paneles de roles ACTIVOS (isAuthorized=true AND status='active')
     const activeRoles = (me.allRoles || [])
         .filter(r => r.isAuthorized === true && r.status === 'active');
 
-    console.log('[RoleSelection] Rendering roles for:', me.email, '| Active (authorized+active) count:', activeRoles.length,
-        '| All roles:', (me.allRoles || []).map(r => `${r.role}(${r.isAuthorized}/${r.status})`).join(', '));
+    // Si solo hay un rol activo, entrar directamente sin mostrar la pantalla de selección
+    if (activeRoles.length === 1) {
+        screen.style.display = 'none';
+        const r = activeRoles[0];
+        const isUnderIndividual = !!(r.individualEntityId || r.isIndividual);
+        let option = r.role;
+        if (r.role === 'club_admin')       option = 'clubadmin';
+        else if (['coach','user'].includes(r.role)) option = isUnderIndividual ? 'coach_individual' : 'coach';
+        else if (['parent','parent_individual','padre_individual'].includes(r.role)) option = isUnderIndividual ? 'parent_individual' : 'parent';
+        else if (['individual','admin_individual'].includes(r.role)) option = 'individual';
+        selectOption(option);
+        return;
+    }
 
     if (activeRoles.length > 0) {
         activeRoles.forEach(r => {
@@ -2804,12 +2815,8 @@ function _launchWithRole(role) {
                 '| clubId:', me.clubId,
                 (role === 'parent') ? '| inviteCode:' + (me.inviteCode || 'null') : '');
         } else {
-            // El SA entra a todos los paneles por diseño sin tener entrada en allRoles.
-            // Solo registrar si NO es superadmin para no generar ruido en desarrollo.
-            if (me.role !== 'superadmin' && me.role !== 'admin') {
-                console.warn('[RoleLaunch] No se encontró entrada en allRoles para rol:', role,
-                    '| allRoles disponibles:', (me.allRoles || []).map(r => r.role).join(', '));
-            }
+            console.warn('[RoleLaunch] No se encontró entrada en allRoles para rol:', role,
+                '| allRoles disponibles:', (me.allRoles || []).map(r => r.role).join(', '));
         }
     }
 
