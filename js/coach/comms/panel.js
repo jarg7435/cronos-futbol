@@ -2397,10 +2397,28 @@ window._sendTrainingNotification = async function() {
             ? new Date(datetime).toLocaleString('es-ES', {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
             : '—';
 
+        // Leer la planificación semanal completa del localStorage del entrenador
+        // para incluirla en el payload (no solo fecha/lugar sino todos los días)
+        const _allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+        const _weekOffset = window._trWeekOffset || 0;
+        const _now = new Date();
+        const _dow = _now.getDay();
+        const _mon = new Date(_now);
+        _mon.setDate(_now.getDate() - (_dow === 0 ? 6 : _dow - 1) + _weekOffset * 7);
+        _mon.setHours(0,0,0,0);
+        const _weekKey = _mon.toISOString().substring(0, 10);
+        const _weekData = _allWeeks[_weekKey] || {};
+        const _weekDays = Object.keys(_weekData).sort().map(ds => ({
+            date: ds,
+            ...(_weekData[ds] || {})
+        })).filter(d => d.tipo || d.hora || d.lugar || d.equipaciones || d.duracion);
+
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             datetime, location, notes,
+            weekKey: _weekKey,
+            weekDays: _weekDays,
             createdAt: new Date().toISOString(),
         });
 

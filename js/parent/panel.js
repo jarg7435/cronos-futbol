@@ -314,35 +314,47 @@ async function openParentPanel() {
                             color:#7d8590;font-style:italic;">💬 ${typeof escapeHtml==='function'?escapeHtml(n.extra):n.extra}</div>` : ''}
                     `;
                 } else if (n.type === 'planificacion_semanal') {
-                    const d = new Date(n.weekStartDate + 'T12:00:00');
-                    const weekStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long' });
+                    // Usar weekDays del nuevo payload (array completo) o fallback a legacy days
+                    const _days = n.weekDays || n.days || [];
+                    const _weekLabel = n.weekKey
+                        ? (() => { const d = new Date(n.weekKey + 'T12:00:00'); return d.toLocaleDateString('es-ES', {day:'numeric', month:'long'}); })()
+                        : (n.weekStartDate ? (() => { const d = new Date(n.weekStartDate + 'T12:00:00'); return d.toLocaleDateString('es-ES', {day:'numeric', month:'long'}); })() : '');
+                    const _location = n.location || n.venue || '';
+                    const _datetime = n.datetime
+                        ? new Date(n.datetime).toLocaleString('es-ES', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'})
+                        : '';
+                    const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v||'') : (v||'');
                     inner = `
-                        <div style="font-size:0.85rem;font-weight:700;margin-bottom:0.6rem;color:#58a6ff;">
-                            🗓️ Semana del ${weekStr}
-                        </div>
-                        <div style="overflow-x:auto;">
-                            <table style="width:100%;font-size:0.78rem;border-collapse:collapse;border:1px solid rgba(255,255,255,0.08);">
+                        ${_weekLabel ? `<div style="font-size:0.85rem;font-weight:700;margin-bottom:0.5rem;color:#f0883e;">🗓️ Semana del ${_weekLabel}</div>` : ''}
+                        ${_datetime && !_weekLabel ? `<div style="font-size:0.85rem;font-weight:700;margin-bottom:0.5rem;color:#f0883e;">📅 ${_datetime}</div>` : ''}
+                        ${_location ? `<div style="font-size:0.8rem;margin-bottom:0.5rem;color:#c9d1d9;">📍 ${esc(_location)}</div>` : ''}
+                        ${_days.length > 0 ? `
+                        <div style="overflow-x:auto;margin-top:0.4rem;">
+                            <table style="width:100%;font-size:0.75rem;border-collapse:collapse;">
                                 <thead>
-                                    <tr style="background:rgba(88,166,255,0.08);color:#7d8590;">
-                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">DÍA</th>
-                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">HORA</th>
-                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">NOTA</th>
+                                    <tr style="background:rgba(240,136,62,0.08);border-bottom:1px solid rgba(240,136,62,0.2);">
+                                        <th style="padding:4px 6px;text-align:left;color:#f0883e;font-weight:700;">DÍA</th>
+                                        <th style="padding:4px 6px;text-align:left;color:#f0883e;font-weight:700;">TIPO</th>
+                                        <th style="padding:4px 6px;text-align:left;color:#f0883e;font-weight:700;">HORA</th>
+                                        <th style="padding:4px 6px;text-align:left;color:#f0883e;font-weight:700;">LUGAR</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${n.days.map(day => `
-                                        <tr>
-                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);font-weight:700;color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(day.day):day.day}</td>
-                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);">${typeof escapeHtml==='function'?escapeHtml(day.time||'—'):day.time||'—'}</td>
-                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);color:#7d8590;">
-                                                ${typeof escapeHtml==='function'?escapeHtml(day.note||(day.time?'':'Descanso')):day.note||(day.time?'':'Descanso')}
-                                                ${day.venue ? `<br><small>📍 ${typeof escapeHtml==='function'?escapeHtml(day.venue):day.venue}</small>` : ''}
-                                            </td>
-                                        </tr>
-                                    `).join('')}
+                                    ${_days.map(day => {
+                                        const _dayDate = day.date
+                                            ? new Date(day.date + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'numeric', month:'short'})
+                                            : esc(day.day || '');
+                                        return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+                                            '<td style="padding:4px 6px;font-weight:600;color:white;white-space:nowrap;">' + esc(_dayDate) + '</td>' +
+                                            '<td style="padding:4px 6px;color:#c9d1d9;text-transform:capitalize;">' + esc(day.tipo || day.note || '') + '</td>' +
+                                            '<td style="padding:4px 6px;color:#c9d1d9;white-space:nowrap;">' + esc(day.hora || day.time || '—') + '</td>' +
+                                            '<td style="padding:4px 6px;color:#c9d1d9;">' + esc(day.lugar || day.venue || '') + '</td>' +
+                                        '</tr>';
+                                    }).join('')}
                                 </tbody>
                             </table>
-                        </div>
+                        </div>` : `<div style="font-size:0.82rem;color:#8b949e;font-style:italic;">Sin detalle de días disponible</div>`}
+                        ${n.notes ? `<div style="font-size:0.8rem;margin-top:0.5rem;padding:0.4rem 0.6rem;background:rgba(255,255,255,0.03);border-radius:6px;color:#8b949e;font-style:italic;">📝 ${esc(n.notes)}</div>` : ''}
                     `;
                 } else {
                     inner = `
@@ -1362,7 +1374,7 @@ window.openParentPanel = openParentPanel;
 // ════════════════════════════════════════════════════════════════════
 //  ENVIAR INFO DE ENTRENAMIENTO (entrenador → Firestore)
 // ════════════════════════════════════════════════════════════════════
-function openWeeklyPlanView() {
+function openTrainingNotification() {
     const modal = document.getElementById('setup-modal');
     const today = new Date();
     // Obtener el lunes de la semana actual
@@ -1467,7 +1479,7 @@ function openWeeklyPlanView() {
         </div>
     </div>`;
 }
-window.openWeeklyPlanView = openWeeklyPlanView;
+window.openTrainingNotification = openTrainingNotification;
 
 async function sendWeeklyPlan() {
     const recipients = sharedGetSelectedRecipients('tr');
@@ -1623,7 +1635,7 @@ function sendWeeklyPlanEmail() {
     showToast(`📧 Email abierto para ${recipients.length} contacto(s)`, 3000);
 }
 
-window.openWeeklyPlanView = openWeeklyPlanView;
+window.openTrainingNotification = openTrainingNotification;
 window.sendWeeklyPlan          = sendWeeklyPlan;
 window.sendWeeklyPlanWA         = sendWeeklyPlanWA;
 window.sendWeeklyPlanEmail      = sendWeeklyPlanEmail;
@@ -1780,6 +1792,37 @@ window.ppNotifsByType = async function(type) {
                     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.25rem;">
                         ${d.players.map((p,i)=>`<div style="font-size:0.8rem;padding:0.2rem 0.4rem;background:rgba(255,255,255,0.04);border-radius:4px;">${i+1}. ${typeof escapeHtml==='function'?escapeHtml(p):p}</div>`).join('')}
                     </div>
+                </div>` : ''}
+
+                ${!isC && d.weekDays && d.weekDays.length > 0 ? `
+                <div style="background:rgba(240,136,62,0.04);border:1px solid rgba(240,136,62,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
+                    <div style="font-size:0.72rem;font-weight:700;color:#f0883e;margin-bottom:0.7rem;letter-spacing:0.5px;">📅 PLANIFICACIÓN SEMANAL</div>
+                    <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(240,136,62,0.2);">
+                                <th style="text-align:left;padding:0.3rem 0.4rem;color:#f0883e;font-size:0.7rem;font-weight:700;">DÍA</th>
+                                <th style="text-align:left;padding:0.3rem 0.4rem;color:#f0883e;font-size:0.7rem;font-weight:700;">TIPO</th>
+                                <th style="text-align:left;padding:0.3rem 0.4rem;color:#f0883e;font-size:0.7rem;font-weight:700;">HORA</th>
+                                <th style="text-align:left;padding:0.3rem 0.4rem;color:#f0883e;font-size:0.7rem;font-weight:700;">LUGAR</th>
+                                <th style="text-align:left;padding:0.3rem 0.4rem;color:#f0883e;font-size:0.7rem;font-weight:700;">DURACIÓN</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        ${d.weekDays.map(day => {
+                            const dayDate = new Date(day.date + 'T12:00:00');
+                            const dayName = dayDate.toLocaleDateString('es-ES', {weekday:'long', day:'numeric', month:'short'});
+                            const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v||'—') : (v||'—');
+                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+                                '<td style="padding:0.35rem 0.4rem;color:white;font-weight:600;white-space:nowrap;font-size:0.78rem;">' + esc(dayName) + '</td>' +
+                                '<td style="padding:0.35rem 0.4rem;color:#c9d1d9;text-transform:capitalize;">' + esc(day.tipo) + '</td>' +
+                                '<td style="padding:0.35rem 0.4rem;color:#c9d1d9;white-space:nowrap;">' + esc(day.hora) + '</td>' +
+                                '<td style="padding:0.35rem 0.4rem;color:#c9d1d9;">' + esc(day.lugar) + '</td>' +
+                                '<td style="padding:0.35rem 0.4rem;color:#c9d1d9;white-space:nowrap;">' + esc(day.duracion) + '</td>' +
+                            '</tr>';
+                        }).join('')}
+                        </tbody>
+                    </table>
+                    ${d.weekDays.some(day => day.equipaciones) ? '<div style="margin-top:0.6rem;padding:0.5rem 0.6rem;background:rgba(255,255,255,0.04);border-radius:6px;font-size:0.78rem;color:#c9d1d9;">👕 <strong>Equipaciones:</strong> ' + (d.weekDays.find(day => day.equipaciones)?.equipaciones || '') + '</div>' : ''}
                 </div>` : ''}
 
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.15);border-radius:8px;margin-bottom:0.8rem;font-style:italic;">💬 ${typeof escapeHtml==='function'?escapeHtml(d.extra):d.extra}</div>`:''}
