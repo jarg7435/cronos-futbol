@@ -2274,6 +2274,24 @@ async function openTrainingNotification() {
     // Restaurar último entrenamiento enviado
     const saved = JSON.parse(localStorage.getItem('cronos_last_training') || '{}');
 
+    // Auto-rellenar fecha/lugar desde la planificación semanal actual
+    const _trOffset = window._trWeekOffset || 0;
+    const _trMon = (function() {
+        const now = new Date(); const dow = now.getDay();
+        const m = new Date(now); m.setDate(now.getDate() - (dow===0?6:dow-1) + _trOffset*7);
+        m.setHours(0,0,0,0); return m;
+    })();
+    const _trWeekKey = _trMon.toISOString().substring(0,10);
+    const _trWeekAll = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    const _trWeekData = _trWeekAll[_trWeekKey] || {};
+    const _trFirstDs = Object.keys(_trWeekData).sort()[0];
+    const _trFirst = _trFirstDs ? (_trWeekData[_trFirstDs] || {}) : {};
+    const _autoLoc = _trFirst.lugar || saved.location || '';
+    const _autoDt = (_trFirstDs && _trFirst.hora)
+        ? (new Date(_trFirstDs + 'T' + _trFirst.hora + ':00').toISOString().slice(0,16))
+        : (saved.datetime || '');
+    const _autoNotes = saved.notes || '';
+
     // HTML de destinatarios (igual que convocatoria)
     const recipientsHTML = (typeof window.sharedBuildRecipientsHTML === 'function')
         ? window.sharedBuildRecipientsHTML(saved.recipients, 'tr')
@@ -2300,7 +2318,7 @@ async function openTrainingNotification() {
                 <div>
                     <label style="font-size:0.76rem;color:var(--text-muted);display:block;margin-bottom:0.3rem;">📅 Fecha y hora</label>
                     <input type="datetime-local" id="tr-datetime"
-                        value="${saved.datetime || ''}"
+                        value="${_autoDt}"
                         style="width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);
                                border:1px solid rgba(255,255,255,0.1);border-radius:8px;
                                color:white;font-size:0.85rem;box-sizing:border-box;">
@@ -2310,7 +2328,7 @@ async function openTrainingNotification() {
                 <div>
                     <label style="font-size:0.76rem;color:var(--text-muted);display:block;margin-bottom:0.3rem;">📍 Lugar / Campo</label>
                     <input type="text" id="tr-location"
-                        value="${typeof escapeAttr==='function'?escapeAttr(saved.location||''):saved.location||''}"
+                        value="${typeof escapeAttr==='function'?escapeAttr(_autoLoc):_autoLoc}"
                         placeholder="Campo de fútbol…"
                         style="width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);
                                border:1px solid rgba(255,255,255,0.1);border-radius:8px;
@@ -2324,7 +2342,7 @@ async function openTrainingNotification() {
                         placeholder="Cambio de horario, ropa especial, material necesario…"
                         style="width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.06);
                                border:1px solid rgba(255,255,255,0.1);border-radius:8px;
-                               color:white;font-size:0.85rem;box-sizing:border-box;resize:none;">${typeof escapeHtml==='function'?escapeHtml(saved.notes||''):saved.notes||''}</textarea>
+                               color:white;font-size:0.85rem;box-sizing:border-box;resize:none;">${typeof escapeHtml==='function'?escapeHtml(_autoNotes):_autoNotes}</textarea>
                 </div>
 
                 <!-- DESTINATARIOS — mismo diseño que convocatoria -->
@@ -2397,28 +2415,10 @@ window._sendTrainingNotification = async function() {
             ? new Date(datetime).toLocaleString('es-ES', {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
             : '—';
 
-        // Leer la planificación semanal completa del localStorage del entrenador
-        // para incluirla en el payload (no solo fecha/lugar sino todos los días)
-        const _allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-        const _weekOffset = window._trWeekOffset || 0;
-        const _now = new Date();
-        const _dow = _now.getDay();
-        const _mon = new Date(_now);
-        _mon.setDate(_now.getDate() - (_dow === 0 ? 6 : _dow - 1) + _weekOffset * 7);
-        _mon.setHours(0,0,0,0);
-        const _weekKey = _mon.toISOString().substring(0, 10);
-        const _weekData = _allWeeks[_weekKey] || {};
-        const _weekDays = Object.keys(_weekData).sort().map(ds => ({
-            date: ds,
-            ...(_weekData[ds] || {})
-        })).filter(d => d.tipo || d.hora || d.lugar || d.equipaciones || d.duracion);
-
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             datetime, location, notes,
-            weekKey: _weekKey,
-            weekDays: _weekDays,
             createdAt: new Date().toISOString(),
         });
 

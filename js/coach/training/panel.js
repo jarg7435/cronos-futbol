@@ -95,7 +95,8 @@ function renderTrainingWeek() {
             </div>
 
             <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
-                <button class="btn" onclick="typeof openTrainingNotification==='function'?openTrainingNotification():null" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
+                <button class="btn" onclick="saveAndSendTraining()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
+                <button class="btn" onclick="copyTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(210,168,255,0.1); border:1px solid rgba(210,168,255,0.3); color:#d2a8ff; font-weight:700;">📋 COPIAR SEMANA</button>
                 <button class="btn" onclick="clearTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(255,88,88,0.08); border:1px solid rgba(255,88,88,0.25); color:#ff5858;">🗑️ LIMPIAR</button>
                 <button class="btn" onclick="saveTrainingWeek()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700;">💾 GUARDAR</button>
             </div>
@@ -118,6 +119,91 @@ function saveTrainingWeek() {
     allWeeks[weekKey] = weekData;
     localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
     if (typeof showToast === 'function') showToast('✅ Semana guardada correctamente', 3000);
+}
+
+// saveAndSendTraining — guarda el formulario Y abre el panel de envío
+function saveAndSendTraining() {
+    // Paso 1: guardar el formulario en localStorage igual que saveTrainingWeek()
+    const offset = window._trWeekOffset || 0;
+    const monday = _getWeekMonday(offset);
+    const weekKey = monday.toISOString().substring(0, 10);
+    const inputs = document.querySelectorAll('[data-day][data-field]');
+    const weekData = {};
+    inputs.forEach(inp => {
+        const day = inp.dataset.day;
+        const field = inp.dataset.field;
+        const val = inp.value.trim();
+        if (val) { if (!weekData[day]) weekData[day] = {}; weekData[day][field] = val; }
+    });
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    allWeeks[weekKey] = weekData;
+    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+
+    // Paso 2: comprobar que hay datos para enviar
+    if (Object.keys(weekData).length === 0) {
+        if (typeof showToast === 'function') showToast('⚠️ No hay entrenamientos para enviar esta semana', 3000);
+        return;
+    }
+
+    // Paso 3: abrir panel de envío (ahora sí lee localStorage con datos actualizados)
+    if (typeof openTrainingNotification === 'function') {
+        openTrainingNotification();
+    } else if (typeof openTrainingSendPanel === 'function') {
+        openTrainingSendPanel('parents');
+    } else {
+        if (typeof showToast === 'function') showToast('⚠️ Función de envío no disponible', 3000);
+    }
+}
+
+// copyTrainingWeek — copia la semana actual a la siguiente
+function copyTrainingWeek() {
+    const offset = window._trWeekOffset || 0;
+    const monday = _getWeekMonday(offset);
+    const weekKey = monday.toISOString().substring(0, 10);
+
+    // Primero guardar el estado actual del formulario
+    const inputs = document.querySelectorAll('[data-day][data-field]');
+    const weekData = {};
+    inputs.forEach(inp => {
+        const day = inp.dataset.day;
+        const field = inp.dataset.field;
+        const val = inp.value.trim();
+        if (val) { if (!weekData[day]) weekData[day] = {}; weekData[day][field] = val; }
+    });
+
+    if (Object.keys(weekData).length === 0) {
+        if (typeof showToast === 'function') showToast('⚠️ No hay datos en esta semana para copiar', 3000);
+        return;
+    }
+
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    allWeeks[weekKey] = weekData; // guardar semana actual
+
+    // Calcular la semana siguiente y trasladar los datos cambiando las fechas
+    const nextMonday = _getWeekMonday(offset + 1);
+    const nextWeekKey = nextMonday.toISOString().substring(0, 10);
+
+    // Verificar si ya tiene datos la semana siguiente
+    if (allWeeks[nextWeekKey] && Object.keys(allWeeks[nextWeekKey]).length > 0) {
+        if (!confirm('La semana siguiente ya tiene datos. ¿Sobreescribirla con la actual?')) return;
+    }
+
+    // Copiar los datos cambiando las fechas al día correspondiente de la semana siguiente
+    const nextWeekData = {};
+    Object.keys(weekData).sort().forEach((ds, idx) => {
+        const nextDate = new Date(nextMonday);
+        nextDate.setDate(nextMonday.getDate() + idx);
+        const nextDs = nextDate.toISOString().substring(0, 10);
+        nextWeekData[nextDs] = { ...weekData[ds] };
+    });
+
+    allWeeks[nextWeekKey] = nextWeekData;
+    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+
+    // Navegar a la semana siguiente
+    window._trWeekOffset = (window._trWeekOffset || 0) + 1;
+    if (typeof showToast === 'function') showToast('✅ Semana copiada — revisa y ajusta lo que cambie', 3000);
+    renderTrainingWeek();
 }
 
 function clearTrainingWeek() {
@@ -181,6 +267,19 @@ function openTrainingSendPanel(target) {
 
     const hour = new Date().getHours();
     const greeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
+
+    // Auto-extraer fecha/hora y lugar del primer día activo de la semana
+    const _offset2 = window._trWeekOffset || 0;
+    const _monday2 = _getWeekMonday(_offset2);
+    const _weekKey2 = _monday2.toISOString().substring(0, 10);
+    const _allWeeks2 = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    const _weekData2 = _allWeeks2[_weekKey2] || {};
+    const _firstDay2 = Object.keys(_weekData2).sort()[0];
+    const _firstEntry2 = _firstDay2 ? (_weekData2[_firstDay2] || {}) : {};
+    const _autoLocation = _firstEntry2.lugar || '';
+    const _autoDatetime = (_firstDay2 && _firstEntry2.hora)
+        ? (new Date(_firstDay2 + 'T' + _firstEntry2.hora + ':00').toISOString().slice(0, 16))
+        : '';
 
     let title;
     if (isParents) title = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Enviar Entrenamiento a Padres';
