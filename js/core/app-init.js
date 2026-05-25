@@ -4962,7 +4962,7 @@ async function openSuperAdminPanel() {
         <button class="sa-tab" onclick="saTab('payments')">💳 Pagos</button>
         <button class="sa-tab" onclick="saTab('requests')">📋 Solicitudes</button>
         <button class="sa-tab" onclick="saTab('newclub')">➕ Nuevo Club</button>
-        <button class="sa-tab" onclick="openBillingPanel()" style="color:#3fb950;background:rgba(63,185,80,0.08);border-color:rgba(63,185,80,0.3);">💰 Facturación</button>
+        <button class="sa-tab" onclick="saBilling()" style="color:#3fb950;background:rgba(63,185,80,0.08);border-color:rgba(63,185,80,0.3);">💰 Facturación</button>
       </div>
       <div class="sa-body" id="sa-body">
         <p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando…</p>
