@@ -1,11 +1,15 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v121
-//  v121: Eliminados 4 scripts stub vacíos del ASSETS (end-and-reports,
-//  substitutions, cloud-data, team-management). Sin cambio funcional.
-//  v120: Fix campo verde — openSetupModal() siempre se llama en init()
+//  CRONOS FUTBOL — Service Worker v123
+//  v123: Eliminados 4 scripts stub del index.html
+//         (end-and-reports.js, substitutions.js, cloud-data.js, team-management.js).
+//         Corregidos strings de log (v120→v123). Assets bumpeados a ?v=78.
+//  v122: Fix training panel: COPIAR/PEGAR semana (localStorage clipboard),
+//  pre-populate send modal from localStorage, planificacion_semanal
+//  detail view renderiza tabla de días correctamente.
+//  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v121';
-const CACHE_NAME = 'cronos-cache-v121';
+const VERSION    = 'v123';
+const CACHE_NAME = 'cronos-cache-v123';
 
 const ASSETS = [
     './',
@@ -63,25 +67,25 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll(ASSETS).catch(err => {
-                console.warn('[SW v120] Error al precargar recursos:', err);
+                console.warn('[SW v123] Error al precargar recursos:', err);
             });
         })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[SW v120] Activado - eliminando cachés antiguas');
+    console.log('[SW v123] Activado - eliminando cachés antiguas');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => {
-                        console.log('[SW v120] Borrando caché antigua:', key);
+                        console.log('[SW v123] Borrando caché antigua:', key);
                         return caches.delete(key);
                     })
             );
         }).then(() => {
-            console.log('[SW v120] Todas las cachés antiguas eliminadas');
+            console.log('[SW v123] Todas las cachés antiguas eliminadas');
             return self.clients.claim();
         })
     );
@@ -106,7 +110,7 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                console.warn('[SW v120] Red no disponible, usando caché:', event.request.url);
+                console.warn('[SW v123] Red no disponible, usando caché:', event.request.url);
                 return caches.match(event.request);
             })
     );
