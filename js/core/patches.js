@@ -1,7 +1,14 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — cronos_patches.js  v9
+//  CRONOS FÚTBOL — cronos_patches.js  v10
 //  Mejoras que se cargan siempre frescos (nunca cacheados)
 //
+//  Cambios v10 (desde v9):
+//  [FIX] ensureMatchViewVisible: isSetupModalActive usa children.length > 0
+//        en lugar de querySelector('.modal-content') — evita el warning
+//        espurio al abrir modales que reutilizan #setup-modal (p.ej. aviso
+//        de entrenamiento, convocatoria) mientras body tiene setup-mode.
+//  [FIX] Se añade document.body.classList.remove('setup-mode') como
+//        defensa adicional al detectar cualquier modal activo.
 //  Cambios v9 (desde v8):
 //  [CRITICAL FIX] ensureMatchViewVisible() ya NO quita setup-mode
 //        cuando el setup-modal está visible (display:flex con contenido).
@@ -237,12 +244,15 @@
         var setupModal    = document.getElementById('setup-modal');
 
         // ── NUEVO v9: Si el modal está visible con contenido, setup-mode es legítimo ──
+        // v10 FIX: usar children.length > 0 en vez de querySelector('.modal-content')
+        // Cualquier contenido en #setup-modal (setup, entrenamiento, convocatoria…)
+        // es señal de que el modal está en uso legítimo.
         var isSetupModalActive = setupModal &&
             setupModal.style.display === 'flex' &&
-            setupModal.querySelector('.modal-content');
+            setupModal.children.length > 0;
 
         if (isSetupModalActive) {
-            // El modal de configuración está activo — NO quitar setup-mode
+            // El modal está activo con contenido — NO quitar setup-mode
             return;
         }
 

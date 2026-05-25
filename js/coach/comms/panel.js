@@ -2266,6 +2266,10 @@ async function openTrainingNotification() {
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
 
+    // Quitar setup-mode del body al abrir esta modal — evita el warning
+    // de patches.js que detecta setup-mode + partido visible sin modal de setup
+    document.body.classList.remove('setup-mode');
+
     // Pre-cargar caché de contactos con flag 'tr'
     if (typeof window._cronos_getContactsByFlag === 'function' && !window._cronosContactsCache) {
         window._cronos_getContactsByFlag('tr').catch(() => {});
