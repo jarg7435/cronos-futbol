@@ -9,6 +9,13 @@ function openTrainingPanel() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     renderTrainingWeek();
+    // Mostrar PEGAR si hay portapapeles
+    setTimeout(() => {
+        const pasteBtn = document.getElementById('btn-paste-week');
+        if (pasteBtn) {
+            pasteBtn.style.display = localStorage.getItem('cronos_training_clipboard') ? '' : 'none';
+        }
+    }, 50);
 }
 
 function _getWeekMonday(offset) {
@@ -96,7 +103,8 @@ function renderTrainingWeek() {
 
             <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
                 <button class="btn" onclick="saveAndSendTraining()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
-                <button class="btn" onclick="copyTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(210,168,255,0.1); border:1px solid rgba(210,168,255,0.3); color:#d2a8ff; font-weight:700;">📋 COPIAR SEMANA</button>
+                <button class="btn" onclick="copyTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(210,168,255,0.1); border:1px solid rgba(210,168,255,0.3); color:#d2a8ff; font-weight:700;">📋 COPIAR</button>
+                <button class="btn" id="btn-paste-week" onclick="pasteTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3); color:#f0883e; font-weight:700; display:none;">📌 PEGAR</button>
                 <button class="btn" onclick="clearTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(255,88,88,0.08); border:1px solid rgba(255,88,88,0.25); color:#ff5858;">🗑️ LIMPIAR</button>
                 <button class="btn" onclick="saveTrainingWeek()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700;">💾 GUARDAR</button>
             </div>
@@ -155,13 +163,12 @@ function saveAndSendTraining() {
     }
 }
 
-// copyTrainingWeek — copia la semana actual a la siguiente
+// copyTrainingWeek — guarda los datos de la semana actual en el portapapeles interno
 function copyTrainingWeek() {
+    // Guardar primero el formulario actual
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
     const weekKey = monday.toISOString().substring(0, 10);
-
-    // Primero guardar el estado actual del formulario
     const inputs = document.querySelectorAll('[data-day][data-field]');
     const weekData = {};
     inputs.forEach(inp => {
@@ -176,33 +183,66 @@ function copyTrainingWeek() {
         return;
     }
 
-    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-    allWeeks[weekKey] = weekData; // guardar semana actual
-
-    // Calcular la semana siguiente y trasladar los datos cambiando las fechas
-    const nextMonday = _getWeekMonday(offset + 1);
-    const nextWeekKey = nextMonday.toISOString().substring(0, 10);
-
-    // Verificar si ya tiene datos la semana siguiente
-    if (allWeeks[nextWeekKey] && Object.keys(allWeeks[nextWeekKey]).length > 0) {
-        if (!confirm('La semana siguiente ya tiene datos. ¿Sobreescribirla con la actual?')) return;
-    }
-
-    // Copiar los datos cambiando las fechas al día correspondiente de la semana siguiente
-    const nextWeekData = {};
+    // Guardar en localStorage como plantilla (solo los valores, sin fechas)
+    const template = {};
     Object.keys(weekData).sort().forEach((ds, idx) => {
-        const nextDate = new Date(nextMonday);
-        nextDate.setDate(nextMonday.getDate() + idx);
-        const nextDs = nextDate.toISOString().substring(0, 10);
-        nextWeekData[nextDs] = { ...weekData[ds] };
+        template['day_' + idx] = { ...weekData[ds] };
     });
+    localStorage.setItem('cronos_training_clipboard', JSON.stringify({
+        template,
+        copiedFrom: weekKey,
+        copiedAt: new Date().toISOString()
+    }));
 
-    allWeeks[nextWeekKey] = nextWeekData;
+    // Guardar también la semana actual
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    allWeeks[weekKey] = weekData;
     localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
 
-    // Navegar a la semana siguiente
-    window._trWeekOffset = (window._trWeekOffset || 0) + 1;
-    if (typeof showToast === 'function') showToast('✅ Semana copiada — revisa y ajusta lo que cambie', 3000);
+    // Mostrar boton PEGAR
+    const pasteBtn = document.getElementById('btn-paste-week');
+    if (pasteBtn) pasteBtn.style.display = '';
+
+    if (typeof showToast === 'function') showToast('✅ Semana copiada al portapapeles — navega a la semana destino y pega', 3500);
+}
+
+// pasteTrainingWeek — pega la semana copiada en la semana actualmente visible
+function pasteTrainingWeek() {
+    const clipRaw = localStorage.getItem('cronos_training_clipboard');
+    if (!clipRaw) {
+        if (typeof showToast === 'function') showToast('⚠️ No hay ninguna semana copiada', 3000);
+        return;
+    }
+    const clip = JSON.parse(clipRaw);
+    const template = clip.template || {};
+    if (Object.keys(template).length === 0) {
+        if (typeof showToast === 'function') showToast('⚠️ El portapapeles está vacío', 3000);
+        return;
+    }
+
+    const offset = window._trWeekOffset || 0;
+    const monday = _getWeekMonday(offset);
+    const weekKey = monday.toISOString().substring(0, 10);
+
+    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+    if (allWeeks[weekKey] && Object.keys(allWeeks[weekKey]).length > 0) {
+        if (!confirm('Esta semana ya tiene datos. ¿Sobreescribirla con la semana copiada?')) return;
+    }
+
+    // Trasladar los datos del template a las fechas de la semana actual
+    const newWeekData = {};
+    const days = Object.keys(template).sort(); // day_0, day_1, ...
+    days.forEach((key, idx) => {
+        const targetDate = new Date(monday);
+        targetDate.setDate(monday.getDate() + idx);
+        const targetDs = targetDate.toISOString().substring(0, 10);
+        newWeekData[targetDs] = { ...template[key] };
+    });
+
+    allWeeks[weekKey] = newWeekData;
+    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+
+    if (typeof showToast === 'function') showToast('✅ Semana pegada — revisa y ajusta lo que cambie', 3000);
     renderTrainingWeek();
 }
 
