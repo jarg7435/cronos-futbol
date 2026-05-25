@@ -430,6 +430,34 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCIONES DE FACTURACIÓN
+    // Solo SA puede gestionar planes y facturas.
+    // Club admin e individual pueden leer sus propias facturas.
+    // ============================================================
+    match /billing_plans/{planId} {
+      allow read: if isAuth();
+      allow write: if isSuperAdmin();
+    }
+
+    match /billing_subscriptions/{subId} {
+      allow read: if isSuperAdmin() ||
+                     (isAuth() && resource.data.entityId == request.auth.token.clubId) ||
+                     (isAuth() && resource.data.entityId == request.auth.uid);
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /billing_invoices/{invId} {
+      allow read: if isSuperAdmin() ||
+                     (isAuth() && resource.data.entityId == request.auth.token.clubId) ||
+                     (isAuth() && resource.data.entityId == request.auth.uid);
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================
     // CATCH-ALL: bloquear todo lo no definido
     // ============================================================
     match /{document=**} {

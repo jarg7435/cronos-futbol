@@ -211,6 +211,7 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     <button id="sa-tab-requests"    onclick="saTab('requests')"    style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">📋 Solicitudes${badge}</button>
     <button id="sa-tab-secretary"   onclick="saTab('secretary')"   style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">✉️ Secretaría</button>
     <button id="sa-tab-trash"       onclick="saTab('trash')"       style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🗑️ Rastros</button>
+    <button id="sa-tab-billing"     onclick="saTab('billing')"     style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">💳 Facturación</button>
 </div>
 <div id="sa-body" style="flex:1;overflow-y:auto;padding:1.1rem;-webkit-overflow-scrolling:touch;"></div>`;
     document.body.appendChild(panel);
@@ -223,7 +224,7 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
 // ═══════════════════════════════════════════════════════════════════
 
 window.saTab = function saTab(tab) {
-    ['clubs','individuals','requests','secretary','trash'].forEach(t => {
+    ['clubs','individuals','requests','secretary','trash','billing'].forEach(t => {
         const b = document.getElementById('sa-tab-'+t);
         if (!b) return;
         b.style.borderBottomColor = (t===tab)?'#58a6ff':'transparent';
@@ -234,6 +235,7 @@ window.saTab = function saTab(tab) {
     else if (tab==='requests')    saRequests();
     else if (tab==='secretary')   saSecretary();
     else if (tab==='trash')       saTrash();
+    else if (tab==='billing')     saBilling();
 };
 
 // ═══════════════════════════════════════════════════════════════════

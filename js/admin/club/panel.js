@@ -866,6 +866,29 @@ async function openClubAdminPanel(preClubId = null) {
           </div>
         </div>
 
+        <!-- ── SECCIÓN FACTURACIÓN ── -->
+        <div style="margin-top:1.5rem;border-top:1px solid rgba(255,255,255,0.08);padding-top:1.2rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.5rem;">
+            <div style="font-size:0.88rem;font-weight:700;color:white;display:flex;align-items:center;gap:0.4rem;">
+              💳 Mi suscripción
+            </div>
+            <button onclick="billClubView('club-billing-container')"
+                style="padding:0.3rem 0.75rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);
+                       border-radius:7px;color:#58a6ff;font-size:0.75rem;font-weight:600;cursor:pointer;">
+                🔄 Actualizar
+            </button>
+          </div>
+          <div id="club-billing-container" style="min-height:60px;">
+            <div style="text-align:center;color:#8b949e;font-size:0.82rem;padding:1rem;">
+              <button onclick="if(typeof billClubView==='function')billClubView('club-billing-container')"
+                  style="padding:0.4rem 1rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);
+                         border-radius:7px;color:#58a6ff;font-size:0.78rem;cursor:pointer;">
+                  📊 Ver mi plan y facturas
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div><!-- /sa-body -->
     </div>`;
     } catch (renderErr) {

@@ -1,709 +1,1162 @@
-// ═══════════════════════════════════════════════════════════════════
-//  26_sa_billing.js  —  Facturación por tipo de rol (SuperAdmin)
-// ═══════════════════════════════════════════════════════════════════
-(function () {
+/**
+ * billing.js — Sistema de Facturación Cronos Fútbol v1.0
+ * SuperAdmin: gestión de planes, suscripciones, facturas y resumen mensual
+ * Club Admin: vista de suscripción y facturas del club
+ * Administrador Individual: vista de suscripción personal
+ */
+
 'use strict';
 
-const ROLE_ROWS = [
-    { id:'director',    label:'Directores Deportivos', icon:'📋', color:'#d2a8ff' },
-    { id:'coordinator', label:'Coordinadores',          icon:'🎯', color:'#79c0ff' },
-    { id:'user',        label:'Entrenadores',           icon:'⚽', color:'#3fb950' },
-    { id:'parent',      label:'Padres / Madres / Tutores', icon:'👨‍👩‍👧', color:'#58a6ff' },
-];
-const IND_ROLE_ROWS = [
-    { id:'user',   label:'Entrenadores',              icon:'⚽', color:'#3fb950' },
-    { id:'parent', label:'Padres / Madres / Tutores', icon:'👨‍👩‍👧', color:'#58a6ff' },
+// ═══════════════════════════════════════════════════════════════════
+// CONSTANTES DE PLANES POR DEFECTO
+// El SA puede editarlas desde el panel — estos son los valores iniciales
+// ═══════════════════════════════════════════════════════════════════
+
+window.BILLING_PLAN_DEFAULTS = [
+    {
+        code: 'free',
+        name: 'Gratuito',
+        icon: '🆓',
+        color: '#8b949e',
+        description: 'Acceso básico sin coste',
+        monthlyPrice: 0,
+        annualPrice: 0,
+        trialDays: 0,
+        maxUsers: 5,
+        maxPlayers: 15,
+        features: ['Cronómetros individuales', 'Seguimiento en vivo (1 partido)', 'Panel básico'],
+        targetType: 'both',
+        status: 'active',
+    },
+    {
+        code: 'trial',
+        name: 'Prueba',
+        icon: '🎯',
+        color: '#f0883e',
+        description: 'Período de prueba gratuito',
+        monthlyPrice: 0,
+        annualPrice: 0,
+        trialDays: 30,
+        maxUsers: 20,
+        maxPlayers: 50,
+        features: ['Todo incluido durante el período de prueba', 'Sin tarjeta de crédito'],
+        targetType: 'both',
+        status: 'active',
+    },
+    {
+        code: 'basic',
+        name: 'Básico',
+        icon: '⭐',
+        color: '#58a6ff',
+        description: 'Para equipos pequeños o individuales',
+        monthlyPrice: null,
+        annualPrice: null,
+        trialDays: 14,
+        maxUsers: 30,
+        maxPlayers: 100,
+        features: ['Cronómetros individuales', 'Informes post-partido', 'Seguimiento en vivo', 'Convocatorias'],
+        targetType: 'both',
+        status: 'active',
+    },
+    {
+        code: 'pro',
+        name: 'Profesional',
+        icon: '🚀',
+        color: '#d2a8ff',
+        description: 'Para clubs con múltiples equipos',
+        monthlyPrice: null,
+        annualPrice: null,
+        trialDays: 14,
+        maxUsers: 100,
+        maxPlayers: 500,
+        features: ['Todo lo de Básico', 'Múltiples equipos', 'Informes avanzados', 'Exportación CSV', 'Soporte prioritario'],
+        targetType: 'club',
+        status: 'active',
+    },
+    {
+        code: 'premium',
+        name: 'Premium',
+        icon: '👑',
+        color: '#ffd700',
+        description: 'Para clubs de alto rendimiento',
+        monthlyPrice: null,
+        annualPrice: null,
+        trialDays: 14,
+        maxUsers: null,
+        maxPlayers: null,
+        features: ['Todo ilimitado', 'API acceso', 'Informes personalizados', 'Gestor de cuenta dedicado', 'SLA garantizado'],
+        targetType: 'club',
+        status: 'active',
+    },
 ];
 
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function eA(s)  { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS INTERNOS
+// ═══════════════════════════════════════════════════════════════════
 
-// ── CSS ──────────────────────────────────────────────────────────
-function injectCSS() {
+function _billingFS() { return saFS(); }
+
+function _fmtPrice(p) {
+    if (p === null || p === undefined) return '<span style="color:#8b949e">Por definir</span>';
+    if (p === 0) return '<span style="color:#3fb950">Gratis</span>';
+    return `<strong>${Number(p).toFixed(2)} €</strong>`;
+}
+
+function _fmtDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleDateString('es-ES'); } catch { return iso; }
+}
+
+function _statusBadge(status) {
+    const map = {
+        active:    { color: '#3fb950', label: 'Activo' },
+        trial:     { color: '#f0883e', label: 'Prueba' },
+        expired:   { color: '#f85149', label: 'Expirado' },
+        cancelled: { color: '#8b949e', label: 'Cancelado' },
+        pending:   { color: '#ffd700', label: 'Pendiente' },
+        paid:      { color: '#3fb950', label: 'Pagada' },
+        free:      { color: '#8b949e', label: 'Gratuito' },
+    };
+    const s = map[status] || { color: '#8b949e', label: status };
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.7rem;font-weight:700;background:${s.color}22;color:${s.color}">${s.label}</span>`;
+}
+
+function _planBadge(planCode) {
+    const plan = (window.BILLING_PLAN_DEFAULTS || []).find(p => p.code === planCode)
+        || { icon: '❓', name: planCode || 'Sin plan', color: '#8b949e' };
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:0.7rem;font-weight:700;background:${plan.color}22;color:${plan.color}">${plan.icon} ${plan.name}</span>`;
+}
+
+function _nextInvoiceNumber() {
+    const year = new Date().getFullYear();
+    const rnd = Math.floor(Math.random() * 9000) + 1000;
+    return `CF-${year}-${rnd}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSS ADICIONAL DE FACTURACIÓN
+// ═══════════════════════════════════════════════════════════════════
+
+(function injectBillingCSS() {
     if (document.getElementById('billing-css')) return;
     const s = document.createElement('style');
     s.id = 'billing-css';
     s.textContent = `
-    .bt{width:100%;border-collapse:collapse;font-size:0.8rem;}
-    .bt th{padding:0.4rem 0.9rem;background:rgba(255,255,255,0.04);color:#8b949e;
-           font-size:0.67rem;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;
-           text-align:left;border-bottom:1px solid rgba(255,255,255,0.07);}
-    .bt th.r{text-align:right;}
-    .bt td{padding:0.48rem 0.9rem;border-bottom:1px solid rgba(255,255,255,0.04);vertical-align:middle;}
-    .bt td.r{text-align:right;}
-    .bt tfoot td{background:rgba(255,255,255,0.04);font-weight:700;
-                 border-top:2px solid rgba(255,255,255,0.1)!important;}
-    .fee-in{width:85px;padding:0.28rem 0.5rem;background:rgba(255,255,255,0.07);
-            border:1px solid rgba(255,255,255,0.14);border-radius:5px;
-            color:white;font-size:0.8rem;text-align:right;}
-    .fee-in:focus{outline:none;border-color:#58a6ff;}
-    .rtag{display:inline-flex;align-items:center;gap:3px;font-size:0.7rem;
-          padding:2px 8px;border-radius:4px;white-space:nowrap;}
-    .bsec{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);
-          border-radius:10px;margin-bottom:1rem;overflow:hidden;}
-    .bsec-head{padding:0.75rem 1rem;background:rgba(255,255,255,0.04);
-               display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;}
-    .bsec-contact{padding:0.5rem 1rem;background:rgba(255,255,255,0.02);
-                  border-bottom:1px solid rgba(255,255,255,0.05);
-                  font-size:0.75rem;color:#8b949e;display:flex;gap:1.5rem;flex-wrap:wrap;}
-    `;
+.bill-tabs{display:flex;gap:0;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:1rem;overflow-x:auto;}
+.bill-tab{padding:0.6rem 1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-size:0.8rem;font-weight:700;cursor:pointer;white-space:nowrap;transition:all 0.15s;}
+.bill-tab.active{border-bottom-color:#58a6ff;color:#58a6ff;}
+.bill-tab:hover:not(.active){color:#c9d1d9;}
+.bill-plan-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1rem;position:relative;transition:border-color 0.2s;}
+.bill-plan-card:hover{border-color:rgba(255,255,255,0.25);}
+.bill-input{width:100%;padding:0.5rem 0.7rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:white;font-size:0.85rem;box-sizing:border-box;font-family:Inter,sans-serif;}
+.bill-input:focus{outline:none;border-color:#58a6ff;}
+.bill-label{display:block;font-size:0.72rem;color:#8b949e;margin-bottom:0.3rem;font-weight:600;}
+.bill-table{width:100%;border-collapse:collapse;font-size:0.82rem;}
+.bill-table th{text-align:left;padding:0.5rem 0.7rem;color:#8b949e;font-size:0.72rem;font-weight:700;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;}
+.bill-table td{padding:0.55rem 0.7rem;border-bottom:1px solid rgba(255,255,255,0.04);color:#c9d1d9;vertical-align:middle;}
+.bill-table tr:hover td{background:rgba(255,255,255,0.02);}
+.bill-summary-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1rem 1.2rem;text-align:center;}
+.bill-summary-val{font-size:1.8rem;font-weight:800;color:#3fb950;}
+.bill-summary-label{font-size:0.72rem;color:#8b949e;margin-top:0.2rem;}
+.bill-action-btn{padding:0.3rem 0.65rem;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:white;font-size:0.75rem;font-weight:600;cursor:pointer;}
+.bill-action-btn:hover{filter:brightness(1.3);}
+.bill-section-title{font-size:0.88rem;font-weight:700;color:white;margin:1rem 0 0.6rem;display:flex;align-items:center;gap:0.5rem;}
+`;
     document.head.appendChild(s);
-}
+})();
 
-// ══════════════════════════════════════════════════════════════════
-window.openBillingPanel = async function() {
-    injectCSS();
+// ═══════════════════════════════════════════════════════════════════
+// FUNCIÓN PRINCIPAL SA — saBilling()
+// Se llama desde saTab('billing')
+// ═══════════════════════════════════════════════════════════════════
+
+window.saBilling = async function saBilling(subTab) {
     const body = document.getElementById('sa-body');
     if (!body) return;
+    subTab = subTab || 'overview';
+
     body.innerHTML = `
-    <div id="billing-panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.9rem;">
-        <div>
-          <span style="font-size:0.95rem;font-weight:700;color:white;">💰 Facturación y Cuotas</span>
-          <span style="display:block;font-size:0.71rem;color:#8b949e;margin-top:0.1rem;">
-            Recuento por tipo · Cuota unitaria × nº usuarios = Total mensual</span>
+        <div class="bill-tabs">
+            <button class="bill-tab ${subTab==='overview'?'active':''}" onclick="saBilling('overview')">📊 Resumen</button>
+            <button class="bill-tab ${subTab==='plans'?'active':''}"    onclick="saBilling('plans')">📋 Planes</button>
+            <button class="bill-tab ${subTab==='subs'?'active':''}"     onclick="saBilling('subs')">🔄 Suscripciones</button>
+            <button class="bill-tab ${subTab==='invoices'?'active':''}" onclick="saBilling('invoices')">🧾 Facturas</button>
         </div>
-        <button onclick="exportBillingCSV()"
-          style="padding:0.35rem 0.8rem;background:rgba(63,185,80,0.1);
-                 border:1px solid rgba(63,185,80,0.35);border-radius:7px;
-                 color:#3fb950;font-size:0.75rem;cursor:pointer;font-weight:600;">
-          📥 Exportar CSV</button>
-      </div>
-      <div style="display:flex;gap:0.35rem;margin-bottom:1rem;
-                  border-bottom:1px solid rgba(255,255,255,0.07);padding-bottom:0.55rem;">
-        <button id="btab-clubs" onclick="billingTab('clubs')"
-          style="padding:0.35rem 0.9rem;border-radius:7px;border:none;cursor:pointer;
-                 font-size:0.79rem;font-weight:600;background:rgba(88,166,255,0.15);color:#58a6ff;">
-          🏟️ Clubes</button>
-        <button id="btab-individuals" onclick="billingTab('individuals')"
-          style="padding:0.35rem 0.9rem;border-radius:7px;border:none;cursor:pointer;
-                 font-size:0.79rem;font-weight:600;background:rgba(255,255,255,0.04);color:#8b949e;">
-          👤 Individuales</button>
-        <button id="btab-summary" onclick="billingTab('summary')"
-          style="padding:0.35rem 0.9rem;border-radius:7px;border:none;cursor:pointer;
-                 font-size:0.79rem;font-weight:600;background:rgba(255,255,255,0.04);color:#8b949e;">
-          📊 Resumen</button>
-      </div>
-      <div id="billing-body">
-        <div style="text-align:center;padding:2rem;color:#8b949e;">⏳ Cargando...</div>
-      </div>
-    </div>`;
-    billingTab('clubs');
+        <div id="bill-content"><div style="text-align:center;padding:2rem;color:#8b949e;">⏳ Cargando…</div></div>
+    `;
+
+    if      (subTab === 'overview')  await _billOverview();
+    else if (subTab === 'plans')     await _billPlans();
+    else if (subTab === 'subs')      await _billSubs();
+    else if (subTab === 'invoices')  await _billInvoices();
 };
 
-window.billingTab = async function(tab) {
-    ['clubs','individuals','summary'].forEach(t => {
-        const b = document.getElementById('btab-' + t);
-        if (!b) return;
-        b.style.background = t===tab ? 'rgba(88,166,255,0.15)' : 'rgba(255,255,255,0.04)';
-        b.style.color      = t===tab ? '#58a6ff' : '#8b949e';
-    });
-    const body = document.getElementById('billing-body');
-    if (!body) return;
-    body.innerHTML = '<div style="text-align:center;padding:2rem;color:#8b949e;">⏳ Cargando...</div>';
-    if (tab==='clubs')       await renderClubs(body);
-    if (tab==='individuals') await renderIndividuals(body);
-    if (tab==='summary')     await renderSummary(body);
-};
+// ═══════════════════════════════════════════════════════════════════
+// TAB 1 — RESUMEN MENSUAL
+// ═══════════════════════════════════════════════════════════════════
 
-// ── Leer / guardar cuotas por rol ─────────────────────────────────
-async function getRoleFees(entityId) {
+async function _billOverview() {
+    const cont = document.getElementById('bill-content');
     try {
-        const { db, doc, getDoc } = await saFS();
-        const snap = await getDoc(doc(db,'billing_config',entityId));
-        return snap.exists() ? (snap.data().roleFees||{}) : {};
-    } catch(_) { return {}; }
-}
+        const { db, collection, getDocs, query, where } = await _billingFS();
 
-window.saveRoleFee = async function(entityId, roleId, val, recalcFnName) {
-    try {
-        const { db, doc, setDoc, getDoc } = await saFS();
-        const snap = await getDoc(doc(db,'billing_config',entityId));
-        const fees = snap.exists() ? (snap.data().roleFees||{}) : {};
-        fees[roleId] = parseFloat(val)||0;
-        await setDoc(doc(db,'billing_config',entityId),
-            {roleFees:fees, updatedAt:new Date().toISOString()},{merge:true});
-        window[recalcFnName] && window[recalcFnName]();
-    } catch(e) { if(typeof showToast==='function') showToast('❌ '+e.message,3000); }
-};
+        // Cargar suscripciones activas
+        const subsSnap = await getDocs(collection(db, 'billing_subscriptions')).catch(() => null);
+        const subs = subsSnap ? subsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
 
-// ── Helper: construir sección de club ─────────────────────────────
-function buildClubSection(club, members, fees) {
-    const admin = members.find(u => u.role==='club_admin' || (u.allRoles||[]).some(r=>r.role==='club_admin'));
-    const cid   = eA(club._id);
-    const safId = club._id.replace(/[^a-zA-Z0-9]/g,'_');
+        // Cargar facturas
+        const invSnap = await getDocs(collection(db, 'billing_invoices')).catch(() => null);
+        const invoices = invSnap ? invSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
 
-    // Contar por rol — solo usuarios del club (no del sistema individual)
-    const counts = {};
-    ROLE_ROWS.forEach(row => {
-        counts[row.id] = members.filter(u => {
-            if (u.status === 'removed') return false;
-            if (u.individualOwnerId) return false; // excluir sistema individual
-            // Rol principal
-            if (u.role === row.id && u.isAuthorized !== false) return true;
-            // Rol en allRoles específico del club
-            return (u.allRoles||[]).some(r =>
-                r.role === row.id &&
-                r.isAuthorized === true &&
-                (r.clubId === club._id || r.clubId === null)
-            );
-        }).length;
-    });
+        // Métricas
+        const activeSubs   = subs.filter(s => s.status === 'active');
+        const trialSubs    = subs.filter(s => s.status === 'trial');
+        const expiredSubs  = subs.filter(s => s.status === 'expired');
+        const clubSubs     = activeSubs.filter(s => s.entityType === 'club');
+        const indSubs      = activeSubs.filter(s => s.entityType === 'individual');
 
-    let total = 0;
-    ROLE_ROWS.forEach(r => { total += (parseFloat(fees[r.id])||0) * (counts[r.id]||0); });
-
-    return `
-    <div class="bsec">
-      <div class="bsec-head">
-        <div>
-          <span style="font-weight:700;font-size:0.93rem;color:white;">🏟️ ${esc(club.name||club._id)}</span>
-        </div>
-        <span id="ch-${safId}" style="font-size:0.88rem;font-weight:800;color:#3fb950;">
-          ${total.toFixed(2)}€/mes</span>
-      </div>
-      <div class="bsec-contact">
-        <span>📧 Admin: <strong style="color:white;">${esc(admin?.email||admin?.displayName||club.adminEmail||'—')}</strong></span>
-        <span>📞 ${esc(club.phone||admin?.phone||'Sin teléfono')}</span>
-        <span>👥 Usuarios activos: <strong style="color:white;">${members.filter(u=>(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed').length}</strong></span>
-      </div>
-      <table class="bt">
-        <thead>
-          <tr>
-            <th>Tipo de usuario</th>
-            <th class="r">Nº confirmados</th>
-            <th class="r">Cuota unitaria €/mes</th>
-            <th class="r">Subtotal €/mes</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${ROLE_ROWS.map(r => {
-              const count  = counts[r.id] || 0;
-              const fee    = parseFloat(fees[r.id]) || 0;
-              const sub    = fee * count;
-              const subId  = `cs-${safId}-${r.id}`;
-              return `
-              <tr>
-                <td>
-                  <span class="rtag"
-                    style="background:${r.color}1a;border:1px solid ${r.color}33;color:${r.color};">
-                    ${r.icon} ${esc(r.label)}
-                  </span>
-                </td>
-                <td class="r" style="font-weight:700;color:white;">${count}</td>
-                <td class="r">
-                  <input class="fee-in" type="number" min="0" step="0.50"
-                    value="${fee>0?fee:''}" placeholder="0.00"
-                    onchange="saveRoleFee('${cid}','${r.id}',this.value,'recalc_${safId}')">
-                </td>
-                <td class="r" id="${subId}"
-                  style="font-weight:600;color:${sub>0?'#3fb950':'#8b949e'};">
-                  ${sub.toFixed(2)}€
-                </td>
-              </tr>`;
-          }).join('')}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="3" style="color:#8b949e;">Total mensual — ${esc(club.name||club._id)}</td>
-            <td class="r" id="cf-${safId}" style="color:#3fb950;font-size:0.88rem;">${total.toFixed(2)}€</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>`;
-}
-
-// ── Helper: construir sección de individual ───────────────────────
-function buildIndSection(ind, subUsers, fees) {
-    const iid   = eA(ind._id);
-    const safId = ind._id.replace(/[^a-zA-Z0-9]/g,'_');
-
-    const counts = {};
-    IND_ROLE_ROWS.forEach(r => {
-        counts[r.id] = subUsers.filter(u =>
-            (u.role===r.id || u._billingRole===r.id) &&
-            u.status !== 'removed' && u.status !== 'rejected'
-        ).length;
-    });
-
-    let total = 0;
-    IND_ROLE_ROWS.forEach(r => { total += (parseFloat(fees[r.id])||0) * (counts[r.id]||0); });
-    // Sumar cuota del propio individual
-    total += parseFloat(fees['individual'])||0;
-
-    const indFee = parseFloat(fees['individual'])||0;
-
-    return `
-    <div class="bsec">
-      <div class="bsec-head">
-        <div>
-          <span style="font-weight:700;font-size:0.93rem;color:white;">👤 ${esc(ind.displayName||((ind.firstName||'')+(ind.lastName?' '+ind.lastName:'')).trim()||ind.email||ind._id)}</span>
-        </div>
-        <span id="ih-${safId}" style="font-size:0.88rem;font-weight:800;color:#ffd700;">
-          ${total.toFixed(2)}€/mes</span>
-      </div>
-      <div class="bsec-contact">
-        <span>📧 <strong style="color:white;">${esc(ind.email||'—')}</strong></span>
-        <span>📞 ${esc(ind.phone||'Sin teléfono')}</span>
-        <span>👥 Sub-usuarios activos: <strong style="color:white;">${subUsers.filter(u=>(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed').length}</strong></span>
-      </div>
-      <table class="bt">
-        <thead>
-          <tr>
-            <th>Tipo de usuario</th>
-            <th class="r">Nº confirmados</th>
-            <th class="r">Cuota unitaria €/mes</th>
-            <th class="r">Subtotal €/mes</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Fila del propio usuario individual -->
-          <tr>
-            <td>
-              <span class="rtag" style="background:#ffd7001a;border:1px solid #ffd70033;color:#ffd700;">
-                👤 Usuario Individual (Admin)
-              </span>
-            </td>
-            <td class="r" style="font-weight:700;color:white;">1</td>
-            <td class="r">
-              <input class="fee-in" type="number" min="0" step="0.50"
-                value="${indFee>0?indFee:''}" placeholder="0.00"
-                onchange="saveRoleFee('${iid}','individual',this.value,'recalc_ind_${safId}')">
-            </td>
-            <td class="r" id="is-${safId}-individual"
-              style="font-weight:600;color:${indFee>0?'#ffd700':'#8b949e'};">
-              ${indFee.toFixed(2)}€
-            </td>
-          </tr>
-          <!-- Sub-usuarios por tipo -->
-          ${IND_ROLE_ROWS.map(r => {
-              const count = counts[r.id] || 0;
-              const fee   = parseFloat(fees[r.id]) || 0;
-              const sub   = fee * count;
-              return `
-              <tr>
-                <td>
-                  <span class="rtag"
-                    style="background:${r.color}1a;border:1px solid ${r.color}33;color:${r.color};">
-                    ${r.icon} ${esc(r.label)}
-                  </span>
-                </td>
-                <td class="r" style="font-weight:700;color:white;">${count}</td>
-                <td class="r">
-                  <input class="fee-in" type="number" min="0" step="0.50"
-                    value="${fee>0?fee:''}" placeholder="0.00"
-                    onchange="saveRoleFee('${iid}','${r.id}',this.value,'recalc_ind_${safId}')">
-                </td>
-                <td class="r" id="is-${safId}-${r.id}"
-                  style="font-weight:600;color:${sub>0?r.color:'#8b949e'};">
-                  ${sub.toFixed(2)}€
-                </td>
-              </tr>`;
-          }).join('')}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="3" style="color:#8b949e;">Total mensual</td>
-            <td class="r" id="if-${safId}" style="color:#ffd700;font-size:0.88rem;">${total.toFixed(2)}€</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>`;
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  TAB CLUBES
-// ══════════════════════════════════════════════════════════════════
-async function renderClubs(body) {
-    try {
-        const { db, collection, getDocs, query, where } = await saFS();
-        const cSnap = await getDocs(collection(db,'clubs'));
-        const clubs=[]; cSnap.forEach(d=>clubs.push({_id:d.id,...d.data()}));
-        clubs.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-
-        if (!clubs.length) { body.innerHTML='<p style="text-align:center;padding:2rem;color:#8b949e;">No hay clubes.</p>'; return; }
-
-        // Cargar TODOS los usuarios una sola vez
-        const allUsersSnap = await getDocs(collection(db,'users'));
-        const allUsers = [];
-        allUsersSnap.forEach(d => allUsers.push({_id:d.id,...d.data()}));
-        console.log('[Billing] Total usuarios en Firestore:', allUsers.length);
-        let html=''; let grandTotal=0;
-        for (const club of clubs) {
-            // Filtrar miembros del club:
-            // - Excluir usuarios del sistema individual (tienen individualOwnerId)
-            // - Solo contar usuarios vinculados específicamente a este club
-            const members = allUsers.filter(u => {
-                if (u.role === 'superadmin') return false;
-                if (u.status === 'removed' || u.status === 'rejected') return false;
-                // Excluir sub-usuarios del sistema individual
-                if (u.individualOwnerId) return false;
-                // Opción 1: clubId en campo raíz
-                if (u.clubId === club._id) return true;
-                // Opción 2: en allRoles con clubId específico de este club
-                if ((u.allRoles||[]).some(r =>
-                    r.isAuthorized === true &&
-                    r.clubId === club._id
-                )) return true;
-                // Opción 3: rol principal aprobado Y sin clubId en raíz (aprobado vía SA para este club)
-                // Solo si el único club al que pertenece es este (evitar doble conteo)
-                if (!u.individualOwnerId && !u.clubId &&
-                    (u.allRoles||[]).some(r =>
-                        r.isAuthorized === true &&
-                        r.clubId === null &&
-                        r.role !== 'individual'
-                    )
-                ) {
-                    // Verificar que no pertenezca a otro club
-                    const hasOtherClub = allUsers.some(c => c._id !== club._id && (u.clubId === c._id));
-                    if (!hasOtherClub) return true;
-                }
-                return false;
-            });
-            const fees = await getRoleFees(club._id);
-            ROLE_ROWS.forEach(r=>{
-                const cnt = members.filter(u=>{
-                    const role=u.allRoles?.find(ar=>ar.clubId===club._id)?.role||u.role;
-                    return role===r.id && (u.isAuthorized===true||u.status==='active'||u.status==='authorized') && u.status!=='removed';
-                }).length;
-                grandTotal += (parseFloat(fees[r.id])||0) * cnt;
-            });
-
-            const safId = club._id.replace(/[^a-zA-Z0-9]/g,'_');
-            // Register recalc function for this club
-            window['recalc_'+safId] = async function() {
-                const newFees = await getRoleFees(club._id);
-                let tot=0;
-                ROLE_ROWS.forEach(r=>{
-                    const cnt=members.filter(u=>{
-                        if(u.status==='removed'||u.individualOwnerId) return false;
-                        if(u.role===r.id && u.isAuthorized!==false) return true;
-                        return (u.allRoles||[]).some(ar=>ar.role===r.id&&ar.isAuthorized===true&&(ar.clubId===club._id||ar.clubId===null));
-                    }).length;
-                    const sub=(parseFloat(newFees[r.id])||0)*cnt;
-                    tot+=sub;
-                    const el=document.getElementById('cs-'+safId+'-'+r.id);
-                    if(el){el.textContent=sub.toFixed(2)+'€';el.style.color=sub>0?'#3fb950':'#8b949e';}
-                });
-                const ft=document.getElementById('cf-'+safId);
-                const ht=document.getElementById('ch-'+safId);
-                if(ft) ft.textContent=tot.toFixed(2)+'€';
-                if(ht) ht.textContent=tot.toFixed(2)+'€/mes';
-                // Grand total
-                let grand=0;
-                document.querySelectorAll('[id^="cf-"]').forEach(e=>grand+=parseFloat(e.textContent)||0);
-                const ge=document.getElementById('bill-grand-clubs');
-                if(ge) ge.textContent=grand.toFixed(2)+' €';
-            };
-            html += buildClubSection(club, members, fees);
-        }
-
-        html += `
-        <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.35);
-                    border-radius:10px;padding:0.85rem 1.1rem;
-                    display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:0.9rem;font-weight:700;color:white;">💰 Total facturación todos los clubes / mes</span>
-          <span id="bill-grand-clubs" style="font-size:1.3rem;font-weight:900;color:#3fb950;">${grandTotal.toFixed(2)} €</span>
-        </div>`;
-        body.innerHTML = html;
-
-    } catch(e) { body.innerHTML=`<p style="color:#ff5858;padding:1rem;">❌ ${esc(e.message)}</p>`; console.error(e); }
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  TAB INDIVIDUALES
-// ══════════════════════════════════════════════════════════════════
-async function renderIndividuals(body) {
-    try {
-        const { db, collection, getDocs, query, where } = await saFS();
-        const uSnap = await getDocs(collection(db,'users'));
-        const users=[]; uSnap.forEach(d=>users.push({_id:d.id,...d.data()}));
-
-        // Deduplicar por EMAIL y preferir el documento con role==='individual'
-        const indByEmail = {};
-        users.forEach(u => {
-            if (u.role==='individual' || (u.allRoles||[]).some(r=>r.role==='individual'&&r.isAuthorized===true)) {
-                const email = (u.email||u._id).toLowerCase();
-                const existing = indByEmail[email];
-                // Preferir el doc cuyo role principal ES 'individual'
-                if (!existing || u.role==='individual') {
-                    indByEmail[email] = u;
-                }
-            }
+        // Ingresos del mes actual
+        const now = new Date();
+        const thisMonth = invoices.filter(inv => {
+            const d = new Date(inv.issueDate || inv.createdAt);
+            return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && inv.status === 'paid';
         });
-        const individuals = Object.values(indByEmail);
-        console.log('[Billing] Individuales únicos:', individuals.length);
-        if (!individuals.length) { body.innerHTML='<p style="text-align:center;padding:2rem;color:#8b949e;">No hay usuarios individuales registrados.</p>'; return; }
+        const monthlyRevenue = thisMonth.reduce((sum, inv) => sum + (Number(inv.finalAmount) || 0), 0);
 
-        let html=''; let grandTotal=0;
-        for (const ind of individuals) {
-            // 1. Sub-usuarios con documento propio
-            // Matching robusto: buscar por individualOwnerId = UID del admin O = entity ID
-            const _entityId = ind.individualEntityId || null;
-            const queries = [where('individualOwnerId','==',ind._id)];
-            if (_entityId && _entityId !== ind._id) queries.push(where('individualOwnerId','==',_entityId));
-            const subSnaps = await Promise.all(queries.map(q => getDocs(query(collection(db,'users'), q)).catch(()=>({forEach:()=>{}}))));
-            const subUsersMap = new Map();
-            subSnaps.forEach(snap => { snap.forEach(d => { const u={_id:d.id,...d.data()}; if(u.status!=='removed'&&u.status!=='rejected') subUsersMap.set(d.id, u); }); });
-            const subUsers = Array.from(subUsersMap.values());
+        // Ingresos totales
+        const totalRevenue = invoices.filter(i => i.status === 'paid')
+            .reduce((sum, inv) => sum + (Number(inv.finalAmount) || 0), 0);
 
-            // 2. Roles propios del individual en allRoles (isSelf) — solo activos y únicos
-            //    Verificar que no haya ya un doc separado para ese rol
-            const selfExtraRoles = (ind.allRoles||[]).filter(r=>
-                (r.role==='user'||r.role==='parent') &&
-                r.isAuthorized===true &&
-                r.status==='active' &&
-                // Solo si NO existe ya un documento separado con ese rol
-                !subUsers.some(u => u.role===r.role && u._id!==ind._id && u.status!=='removed')
-            );
-            // Deduplicar selfExtraRoles por role
-            const seenRoles = new Set();
-            const selfExtraRolesUniq = selfExtraRoles.filter(r => {
-                if (seenRoles.has(r.role)) return false;
-                seenRoles.add(r.role);
-                return true;
-            });
-            selfExtraRolesUniq.forEach(r => {
-                subUsers.push({
-                    ...ind,
-                    _id: ind._id + '_self_' + r.role,
-                    _billingRole: r.role,
-                    role: r.role,
-                    category: r.category||null,
-                    categoryLabel: r.categoryLabel||null,
-                    status: 'active',
-                    isAuthorized: true,
-                });
-            });
-            // Deduplicar subUsers por role (evitar dobles)
-            const subUsersDedup = [];
-            const seenSubRoles = new Set();
-            subUsers.forEach(u => {
-                const roleKey = u._billingRole || u.role;
-                if (!seenSubRoles.has(roleKey)) {
-                    seenSubRoles.add(roleKey);
-                    subUsersDedup.push(u);
-                }
-            });
-            subUsers.length = 0;
-            subUsersDedup.forEach(u => subUsers.push(u));
-            console.log('[Billing] Individual:', ind.email, '| sub-usuarios finales:', subUsers.length);
-            const fees = await getRoleFees(ind._id);
-            const safId = ind._id.replace(/[^a-zA-Z0-9]/g,'_');
-            let tot = parseFloat(fees['individual'])||0;
-            IND_ROLE_ROWS.forEach(r=>{
-                const cnt=subUsers.filter(u=>u.role===r.id&&(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed').length;
-                tot += (parseFloat(fees[r.id])||0)*cnt;
-            });
-            grandTotal += tot;
+        cont.innerHTML = `
+            <div class="bill-section-title">📊 Resumen de facturación</div>
 
-            window['recalc_ind_'+safId] = async function() {
-                const newFees = await getRoleFees(ind._id);
-                let t = parseFloat(newFees['individual'])||0;
-                const el0=document.getElementById('is-'+safId+'-individual');
-                if(el0){el0.textContent=t.toFixed(2)+'€';el0.style.color=t>0?'#ffd700':'#8b949e';}
-                IND_ROLE_ROWS.forEach(r=>{
-                    const cnt=subUsers.filter(u=>u.role===r.id&&(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed').length;
-                    const sub=(parseFloat(newFees[r.id])||0)*cnt;
-                    t+=sub;
-                    const el=document.getElementById('is-'+safId+'-'+r.id);
-                    if(el){el.textContent=sub.toFixed(2)+'€';el.style.color=sub>0?r.color:'#8b949e';}
-                });
-                const ft=document.getElementById('if-'+safId);
-                const ht=document.getElementById('ih-'+safId);
-                if(ft) ft.textContent=t.toFixed(2)+'€';
-                if(ht) ht.textContent=t.toFixed(2)+'€/mes';
-                let grand=0;
-                document.querySelectorAll('[id^="if-"]').forEach(e=>grand+=parseFloat(e.textContent)||0);
-                const ge=document.getElementById('bill-grand-ind');
-                if(ge) ge.textContent=grand.toFixed(2)+' €';
-            };
-            html += buildIndSection(ind, subUsers, fees);
-        }
+            <!-- Métricas principales -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:0.7rem;margin-bottom:1.5rem;">
+                <div class="bill-summary-card">
+                    <div class="bill-summary-val" style="color:#3fb950">${activeSubs.length}</div>
+                    <div class="bill-summary-label">Suscripciones activas</div>
+                </div>
+                <div class="bill-summary-card">
+                    <div class="bill-summary-val" style="color:#58a6ff">${clubSubs.length}</div>
+                    <div class="bill-summary-label">Clubs activos</div>
+                </div>
+                <div class="bill-summary-card">
+                    <div class="bill-summary-val" style="color:#79c0ff">${indSubs.length}</div>
+                    <div class="bill-summary-label">Individuales activos</div>
+                </div>
+                <div class="bill-summary-card">
+                    <div class="bill-summary-val" style="color:#f0883e">${trialSubs.length}</div>
+                    <div class="bill-summary-label">En período de prueba</div>
+                </div>
+                <div class="bill-summary-card">
+                    <div class="bill-summary-val" style="color:#ffd700">${monthlyRevenue.toFixed(2)} €</div>
+                    <div class="bill-summary-label">Ingresos este mes</div>
+                </div>
+                <div class="bill-summary-card">
+                    <div class="bill-summary-val" style="color:#3fb950">${totalRevenue.toFixed(2)} €</div>
+                    <div class="bill-summary-label">Ingresos totales</div>
+                </div>
+            </div>
 
-        html += `
-        <div style="background:rgba(255,215,0,0.07);border:1px solid rgba(255,215,0,0.35);
-                    border-radius:10px;padding:0.85rem 1.1rem;
-                    display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:0.9rem;font-weight:700;color:white;">💰 Total facturación todos los individuales / mes</span>
-          <span id="bill-grand-ind" style="font-size:1.3rem;font-weight:900;color:#ffd700;">${grandTotal.toFixed(2)} €</span>
-        </div>`;
-        body.innerHTML = html;
+            <!-- Últimas facturas -->
+            <div class="bill-section-title">🧾 Últimas facturas</div>
+            ${invoices.length === 0 ? `<div style="text-align:center;padding:1.5rem;color:#8b949e;font-size:0.85rem;">No hay facturas generadas aún</div>` : `
+            <div style="overflow-x:auto;">
+            <table class="bill-table">
+                <thead><tr>
+                    <th>Nº Factura</th><th>Cliente</th><th>Plan</th>
+                    <th>Importe</th><th>Fecha</th><th>Estado</th><th></th>
+                </tr></thead>
+                <tbody>
+                ${invoices.slice(0,8).map(inv => `
+                    <tr>
+                        <td style="font-family:monospace;font-size:0.78rem">${inv.invoiceNumber||'—'}</td>
+                        <td><div style="font-weight:600">${inv.entityName||'—'}</div>
+                            <div style="font-size:0.7rem;color:#8b949e">${inv.entityType==='club'?'Club':'Individual'}</div></td>
+                        <td>${_planBadge(inv.planCode)}</td>
+                        <td style="font-weight:700">${(inv.finalAmount||0).toFixed(2)} €</td>
+                        <td style="font-size:0.78rem">${_fmtDate(inv.issueDate||inv.createdAt)}</td>
+                        <td>${_statusBadge(inv.status)}</td>
+                        <td>
+                            <button class="bill-action-btn" onclick="billMarkPaid('${inv.id}')" title="Marcar pagada" style="color:#3fb950;border-color:rgba(63,185,80,0.3)">✓</button>
+                            <button class="bill-action-btn" onclick="billDownloadInvoice('${inv.id}')" title="Descargar PDF" style="margin-left:4px">📄</button>
+                        </td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+            </div>`}
 
-    } catch(e) { body.innerHTML=`<p style="color:#ff5858;padding:1rem;">❌ ${esc(e.message)}</p>`; console.error(e); }
+            <!-- Accesos rápidos -->
+            <div class="bill-section-title" style="margin-top:1.5rem">⚡ Acciones rápidas</div>
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+                <button onclick="saBilling('subs')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3)">🔄 Ver suscripciones</button>
+                <button onclick="saBilling('invoices')" class="sa-btn" style="color:#ffd700;border-color:rgba(255,215,0,0.3)">🧾 Ver todas las facturas</button>
+                <button onclick="saBilling('plans')" class="sa-btn" style="color:#d2a8ff;border-color:rgba(210,168,255,0.3)">📋 Gestionar planes</button>
+                <button onclick="billExportCSV()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3)">📥 Exportar CSV</button>
+            </div>
+        `;
+    } catch(e) {
+        cont.innerHTML = `<div style="color:#f85149;padding:1rem">Error cargando resumen: ${e.message}</div>`;
+    }
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  TAB RESUMEN
-// ══════════════════════════════════════════════════════════════════
-async function renderSummary(body) {
+// ═══════════════════════════════════════════════════════════════════
+// TAB 2 — GESTIÓN DE PLANES
+// ═══════════════════════════════════════════════════════════════════
+
+async function _billPlans() {
+    const cont = document.getElementById('bill-content');
     try {
-        const { db, collection, getDocs } = await saFS();
-        const [cSnap, uSnap] = await Promise.all([
-            getDocs(collection(db,'clubs')),
-            getDocs(collection(db,'users')),
-        ]);
-        const clubs=[]; cSnap.forEach(d=>clubs.push({_id:d.id,...d.data()}));
-        const users=[]; uSnap.forEach(d=>users.push({_id:d.id,...d.data()}));
+        const { db, collection, getDocs, doc, setDoc } = await _billingFS();
 
-        const individuals = users.filter(u=>u.role==='individual'||(u.allRoles||[]).some(r=>r.role==='individual'&&r.isAuthorized));
-        let clubsTotal=0, indsTotal=0;
+        // Cargar planes guardados en Firestore, o usar defaults
+        const plansSnap = await getDocs(collection(db, 'billing_plans')).catch(() => null);
+        let plans = plansSnap && !plansSnap.empty
+            ? plansSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            : window.BILLING_PLAN_DEFAULTS.map(p => ({ ...p, id: p.code }));
 
-        // Calcular totales de clubes
-        const clubSummary = [];
-        for (const club of clubs) {
-            const fees=await getRoleFees(club._id);
-            const mSnap2=await getDocs(query(collection(db,'users'),where('clubId','==',club._id)));
-            const members=[]; mSnap2.forEach(d=>{const u={_id:d.id,...d.data()};if(u.role!=='superadmin')members.push(u);});
-            let tot=0;
-            const rows=ROLE_ROWS.map(r=>{
-                const cnt=members.filter(u=>{
-                    const role=u.allRoles?.find(ar=>ar.clubId===club._id)?.role||u.role;
-                    return role===r.id&&(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed'&&u.status!=='rejected';
-                }).length;
-                const sub=(parseFloat(fees[r.id])||0)*cnt;
-                tot+=sub;
-                return {r,cnt,sub};
-            });
-            clubsTotal+=tot;
-            const admin=members.find(u=>u.role==='club_admin'||(u.allRoles||[]).some(r=>r.role==='club_admin'));
-            clubSummary.push({club,rows,tot,admin});
-        }
+        cont.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+                <div class="bill-section-title" style="margin:0">📋 Planes disponibles</div>
+                <div style="display:flex;gap:0.5rem;">
+                    <button onclick="billSaveAllPlans()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3)">💾 Guardar cambios</button>
+                    <button onclick="billAddCustomPlan()" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3)">+ Nuevo plan</button>
+                </div>
+            </div>
+            <div style="font-size:0.78rem;color:#8b949e;margin-bottom:1rem;">
+                Edita los precios y características de cada plan. Los cambios solo afectan a nuevas suscripciones.
+            </div>
 
-        // Calcular totales de individuales
-        const indSummary = [];
-        for (const ind of individuals) {
-            const fees=await getRoleFees(ind._id);
-            // Matching robusto: buscar por individualOwnerId = UID del admin O = entity ID
-            const _eId = ind.individualEntityId || null;
-            const subs=users.filter(u=>{
-                if(u.status==='removed') return false;
-                return u.individualOwnerId===ind._id || (_eId && u.individualOwnerId===_eId);
-            });
-            let tot=parseFloat(fees['individual'])||0;
-            const rows=IND_ROLE_ROWS.map(r=>{
-                const cnt=subs.filter(u=>u.role===r.id&&(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed').length;
-                const sub=(parseFloat(fees[r.id])||0)*cnt;
-                tot+=sub;
-                return {r,cnt,sub};
-            });
-            indsTotal+=tot;
-            indSummary.push({ind,rows,tot,subs});
-        }
+            <div id="bill-plans-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.8rem;">
+            ${plans.map(plan => _renderPlanCard(plan)).join('')}
+            </div>
 
-        const grandTotal=clubsTotal+indsTotal;
+            <div style="margin-top:1.5rem;padding:0.8rem;background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.2);border-radius:8px;font-size:0.78rem;color:#8b949e;">
+                💡 Los precios en blanco aparecerán como "Por definir" a los usuarios. Los precios a 0 aparecen como "Gratis".
+            </div>
+        `;
 
-        body.innerHTML = `
-        <!-- Tarjetas resumen -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:0.65rem;margin-bottom:1.1rem;">
-          ${[
-            {icon:'🏟️',label:'Clubes',val:clubs.length,col:'#58a6ff'},
-            {icon:'👤',label:'Individuales',val:individuals.length,col:'#ffd700'},
-            {icon:'👥',label:'Usuarios activos',val:users.filter(u=>u.status==='active'&&u.role!=='superadmin').length,col:'#3fb950'},
-            {icon:'💳',label:'Facturación clubes',val:clubsTotal.toFixed(2)+'€/mes',col:'#3fb950'},
-            {icon:'💳',label:'Fact. individuales',val:indsTotal.toFixed(2)+'€/mes',col:'#ffd700'},
-          ].map(c=>`
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                      border-radius:10px;padding:0.85rem;text-align:center;">
-            <div style="font-size:1.25rem;">${c.icon}</div>
-            <div style="font-size:1.05rem;font-weight:800;color:${c.col};margin:0.2rem 0;">${c.val}</div>
-            <div style="font-size:0.67rem;color:#8b949e;">${c.label}</div>
-          </div>`).join('')}
-        </div>
+        // Guardar planes en window para poder guardar desde billSaveAllPlans
+        window._billingPlans = plans;
 
-        <!-- Detalle clubes -->
-        <div class="bsec" style="margin-bottom:1rem;">
-          <div class="bsec-head">
-            <span style="font-weight:700;font-size:0.85rem;color:white;">🏟️ Desglose por club</span>
-            <span style="font-size:0.82rem;font-weight:700;color:#3fb950;">${clubsTotal.toFixed(2)}€/mes</span>
-          </div>
-          <table class="bt">
-            <thead><tr><th>Club</th><th>Contacto admin</th><th class="r">Usuarios</th><th class="r">€/mes</th></tr></thead>
-            <tbody>
-              ${clubSummary.map(({club,tot,admin})=>`
-              <tr>
-                <td style="font-weight:600;color:white;">${esc(club.name||club._id)}</td>
-                <td style="color:#8b949e;font-size:0.73rem;">${esc(admin?.email||club.adminEmail||'—')}</td>
-                <td class="r" style="color:white;">${users.filter(u=>(u.clubId===club._id||(u.allRoles||[]).some(r=>r.clubId===club._id))&&(u.isAuthorized===true||u.status==='active')&&u.status!=='removed').length}</td>
-                <td class="r" style="font-weight:700;color:#3fb950;">${tot.toFixed(2)}€</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Detalle individuales -->
-        ${indSummary.length?`
-        <div class="bsec" style="margin-bottom:1rem;">
-          <div class="bsec-head">
-            <span style="font-weight:700;font-size:0.85rem;color:white;">👤 Desglose por usuario individual</span>
-            <span style="font-size:0.82rem;font-weight:700;color:#ffd700;">${indsTotal.toFixed(2)}€/mes</span>
-          </div>
-          <table class="bt">
-            <thead><tr><th>Usuario Individual</th><th>Email</th><th class="r">Sub-usuarios</th><th class="r">€/mes</th></tr></thead>
-            <tbody>
-              ${indSummary.map(({ind,tot,subs})=>`
-              <tr>
-                <td style="font-weight:600;color:white;">${esc(ind.displayName||ind.firstName||ind.email||'—')}</td>
-                <td style="color:#8b949e;font-size:0.73rem;">${esc(ind.email||'—')}</td>
-                <td class="r" style="color:white;">${subs.filter(u=>(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed').length}</td>
-                <td class="r" style="font-weight:700;color:#ffd700;">${tot.toFixed(2)}€</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>`:''}
-
-        <!-- Grand total -->
-        <div style="background:linear-gradient(135deg,rgba(63,185,80,0.09),rgba(88,166,255,0.09));
-                    border:1px solid rgba(63,185,80,0.4);border-radius:12px;
-                    padding:1.1rem 1.2rem;display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-size:0.95rem;font-weight:700;color:white;">💰 TOTAL FACTURACIÓN MENSUAL</div>
-            <div style="font-size:0.7rem;color:#8b949e;margin-top:0.1rem;">Clubes + Usuarios individuales</div>
-          </div>
-          <div style="font-size:1.8rem;font-weight:900;color:#3fb950;">${grandTotal.toFixed(2)} €</div>
-        </div>`;
-
-    } catch(e) { body.innerHTML=`<p style="color:#ff5858;padding:1rem;">❌ ${esc(e.message)}</p>`; console.error(e); }
+    } catch(e) {
+        cont.innerHTML = `<div style="color:#f85149;padding:1rem">Error cargando planes: ${e.message}</div>`;
+    }
 }
 
-// ── Exportar CSV ──────────────────────────────────────────────────
-window.exportBillingCSV = async function() {
+function _renderPlanCard(plan) {
+    const featuresStr = (plan.features || []).join('\n');
+    return `
+    <div class="bill-plan-card" id="plan-card-${plan.code}" data-plan-code="${plan.code}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.7rem;">
+            <div style="display:flex;align-items:center;gap:0.4rem;">
+                <span style="font-size:1.2rem">${plan.icon||'📋'}</span>
+                <input class="bill-input" id="plan-name-${plan.code}" value="${plan.name}" 
+                    style="width:130px;font-weight:700;font-size:0.9rem;padding:0.3rem 0.5rem;">
+            </div>
+            <select id="plan-status-${plan.code}" class="bill-input" style="width:110px;padding:0.3rem 0.5rem;font-size:0.75rem;">
+                <option value="active" ${plan.status==='active'?'selected':''}>✅ Activo</option>
+                <option value="inactive" ${plan.status==='inactive'?'selected':''}>⏸️ Inactivo</option>
+            </select>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.7rem;">
+            <div>
+                <label class="bill-label">Precio mensual (€)</label>
+                <input class="bill-input" id="plan-monthly-${plan.code}" type="number" min="0" step="0.01"
+                    value="${plan.monthlyPrice !== null ? plan.monthlyPrice : ''}"
+                    placeholder="Por definir">
+            </div>
+            <div>
+                <label class="bill-label">Precio anual (€)</label>
+                <input class="bill-input" id="plan-annual-${plan.code}" type="number" min="0" step="0.01"
+                    value="${plan.annualPrice !== null ? plan.annualPrice : ''}"
+                    placeholder="Por definir">
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.7rem;">
+            <div>
+                <label class="bill-label">Días prueba</label>
+                <input class="bill-input" id="plan-trial-${plan.code}" type="number" min="0"
+                    value="${plan.trialDays||0}">
+            </div>
+            <div>
+                <label class="bill-label">Máx. usuarios</label>
+                <input class="bill-input" id="plan-maxusers-${plan.code}" type="number" min="0"
+                    value="${plan.maxUsers||''}" placeholder="Ilimitado">
+            </div>
+            <div>
+                <label class="bill-label">Máx. jugadores</label>
+                <input class="bill-input" id="plan-maxplayers-${plan.code}" type="number" min="0"
+                    value="${plan.maxPlayers||''}" placeholder="Ilimitado">
+            </div>
+        </div>
+
+        <div>
+            <label class="bill-label">Para (tipo cliente)</label>
+            <select id="plan-target-${plan.code}" class="bill-input" style="padding:0.35rem 0.5rem;font-size:0.8rem;">
+                <option value="both"       ${plan.targetType==='both'?'selected':''}>Club e Individual</option>
+                <option value="club"       ${plan.targetType==='club'?'selected':''}>Solo Clubs</option>
+                <option value="individual" ${plan.targetType==='individual'?'selected':''}>Solo Individuales</option>
+            </select>
+        </div>
+
+        <div style="margin-top:0.6rem;">
+            <label class="bill-label">Características (una por línea)</label>
+            <textarea class="bill-input" id="plan-features-${plan.code}"
+                rows="4" style="resize:vertical;font-size:0.78rem;">${(plan.features||[]).join('\n')}</textarea>
+        </div>
+    </div>`;
+}
+
+window.billSaveAllPlans = async function() {
     try {
-        const { db, collection, getDocs } = await saFS();
-        const [cSnap, uSnap] = await Promise.all([getDocs(collection(db,'clubs')),getDocs(collection(db,'users'))]);
-        const clubs=[]; cSnap.forEach(d=>clubs.push({_id:d.id,...d.data()}));
-        const users=[]; uSnap.forEach(d=>users.push({_id:d.id,...d.data()}));
-        const rows=[['Tipo','Entidad','Admin/Contacto','Tipo usuario','Nº usuarios','Cuota unitaria€','Subtotal€']];
-        for (const club of clubs) {
-            const fees=await getRoleFees(club._id);
-            const mSnap2=await getDocs(query(collection(db,'users'),where('clubId','==',club._id)));
-            const members=[]; mSnap2.forEach(d=>{const u={_id:d.id,...d.data()};if(u.role!=='superadmin')members.push(u);});
-            const admin=members.find(u=>u.role==='club_admin');
-            ROLE_ROWS.forEach(r=>{
-                const cnt=members.filter(u=>{const role=u.allRoles?.find(ar=>ar.clubId===club._id)?.role||u.role;return role===r.id&&(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed'&&u.status!=='rejected';}).length;
-                const fee=parseFloat(fees[r.id])||0;
-                rows.push(['CLUB',club.name||club._id,admin?.email||club.adminEmail||'',r.label,cnt,fee,(fee*cnt).toFixed(2)]);
-            });
+        const { db, doc, setDoc } = await _billingFS();
+        _saShowSpinner('Guardando planes…');
+
+        const codes = Array.from(document.querySelectorAll('[data-plan-code]'))
+            .map(el => el.dataset.planCode);
+
+        for (const code of codes) {
+            const name      = document.getElementById(`plan-name-${code}`)?.value.trim() || code;
+            const monthly   = document.getElementById(`plan-monthly-${code}`)?.value;
+            const annual    = document.getElementById(`plan-annual-${code}`)?.value;
+            const trial     = document.getElementById(`plan-trial-${code}`)?.value;
+            const maxUsers  = document.getElementById(`plan-maxusers-${code}`)?.value;
+            const maxPlay   = document.getElementById(`plan-maxplayers-${code}`)?.value;
+            const status    = document.getElementById(`plan-status-${code}`)?.value || 'active';
+            const target    = document.getElementById(`plan-target-${code}`)?.value || 'both';
+            const featText  = document.getElementById(`plan-features-${code}`)?.value || '';
+            const features  = featText.split('\n').map(f => f.trim()).filter(Boolean);
+
+            const existing = (window.BILLING_PLAN_DEFAULTS||[]).find(p => p.code === code) || {};
+
+            await setDoc(doc(db, 'billing_plans', code), {
+                code,
+                name,
+                icon:         existing.icon || '📋',
+                color:        existing.color || '#8b949e',
+                description:  existing.description || '',
+                monthlyPrice: monthly !== '' ? Number(monthly) : null,
+                annualPrice:  annual  !== '' ? Number(annual)  : null,
+                trialDays:    Number(trial) || 0,
+                maxUsers:     maxUsers !== '' ? Number(maxUsers) : null,
+                maxPlayers:   maxPlay  !== '' ? Number(maxPlay)  : null,
+                targetType:   target,
+                features,
+                status,
+                updatedAt: new Date().toISOString(),
+            }, { merge: true });
         }
-        const inds=users.filter(u=>u.role==='individual'||(u.allRoles||[]).some(r=>r.role==='individual'&&r.isAuthorized));
-        for (const ind of inds) {
-            const fees=await getRoleFees(ind._id);
-            const subs=users.filter(u=>u.individualOwnerId===ind._id&&u.status!=='removed');
-            const iF=parseFloat(fees['individual'])||0;
-            rows.push(['INDIVIDUAL',ind.email||ind._id,ind.email||'','Usuario Individual',1,iF,iF.toFixed(2)]);
-            IND_ROLE_ROWS.forEach(r=>{
-                const cnt=subs.filter(u=>u.role===r.id&&(u.isAuthorized===true||u.status==='active'||u.status==='authorized')&&u.status!=='removed').length;
-                const fee=parseFloat(fees[r.id])||0;
-                rows.push(['INDIVIDUAL',ind.email||ind._id,ind.email||'',r.label,cnt,fee,(fee*cnt).toFixed(2)]);
-            });
-        }
-        const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
-        const a=document.createElement('a');
-        a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
-        a.download='cronos_facturacion_'+new Date().toISOString().slice(0,10)+'.csv';
-        a.click();
-        if(typeof showToast==='function') showToast('✅ CSV exportado',2000);
-    } catch(e){ if(typeof showToast==='function') showToast('❌ '+e.message,3000); }
+
+        _saHideSpinner();
+        _saToast('✅ Planes guardados correctamente', 3000);
+    } catch(e) {
+        _saHideSpinner();
+        _saToast('❌ Error: ' + e.message, 4000);
+    }
 };
 
-})();
+window.billAddCustomPlan = function() {
+    const grid = document.getElementById('bill-plans-grid');
+    if (!grid) return;
+    const code = 'custom_' + Date.now().toString(36);
+    const newPlan = {
+        code, name: 'Nuevo Plan', icon: '📋', color: '#8b949e',
+        monthlyPrice: null, annualPrice: null, trialDays: 0,
+        maxUsers: null, maxPlayers: null, targetType: 'both',
+        features: [], status: 'active',
+    };
+    const div = document.createElement('div');
+    div.innerHTML = _renderPlanCard(newPlan);
+    grid.appendChild(div.firstElementChild);
+    _saToast('Plan añadido — recuerda guardar cambios', 3000);
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB 3 — SUSCRIPCIONES
+// ═══════════════════════════════════════════════════════════════════
+
+async function _billSubs() {
+    const cont = document.getElementById('bill-content');
+    try {
+        const { db, collection, getDocs } = await _billingFS();
+
+        const [subsSnap, clubsSnap, plansSnap] = await Promise.all([
+            getDocs(collection(db, 'billing_subscriptions')).catch(() => null),
+            getDocs(collection(db, 'clubs')).catch(() => null),
+            getDocs(collection(db, 'billing_plans')).catch(() => null),
+        ]);
+
+        const subs   = subsSnap   ? subsSnap.docs.map(d => ({ id: d.id, ...d.data() }))   : [];
+        const clubs  = clubsSnap  ? clubsSnap.docs.map(d => ({ id: d.id, ...d.data() }))  : [];
+        const plans  = plansSnap && !plansSnap.empty
+            ? plansSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            : window.BILLING_PLAN_DEFAULTS;
+
+        // Crear mapa de suscripciones por entityId
+        const subMap = {};
+        subs.forEach(s => { subMap[s.entityId] = s; });
+
+        // Lista de entidades sin suscripción explícita
+        const withoutSub = clubs.filter(c => !subMap[c.id]);
+
+        cont.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+                <div class="bill-section-title" style="margin:0">🔄 Suscripciones activas</div>
+                <button onclick="billNewSubscription()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3)">+ Nueva suscripción</button>
+            </div>
+
+            ${subs.length === 0 ? `<div style="text-align:center;padding:2rem;color:#8b949e;font-size:0.85rem;">
+                No hay suscripciones registradas.<br>
+                <span style="font-size:0.78rem">Los clubes y entidades se crean inicialmente en plan Free.</span>
+            </div>` : `
+            <div style="overflow-x:auto;">
+            <table class="bill-table">
+                <thead><tr>
+                    <th>Cliente</th><th>Tipo</th><th>Plan</th><th>Período</th>
+                    <th>Precio</th><th>Próxima factura</th><th>Estado</th><th>Acciones</th>
+                </tr></thead>
+                <tbody>
+                ${subs.map(sub => `
+                    <tr>
+                        <td>
+                            <div style="font-weight:600;font-size:0.85rem">${sub.entityName||sub.entityId}</div>
+                            <div style="font-size:0.7rem;color:#8b949e">${sub.entityEmail||''}</div>
+                        </td>
+                        <td style="font-size:0.78rem">${sub.entityType==='club'?'🏟️ Club':'👤 Individual'}</td>
+                        <td>${_planBadge(sub.planCode)}</td>
+                        <td style="font-size:0.78rem">${sub.period==='annual'?'Anual':sub.period==='trial'?'Prueba':'Mensual'}</td>
+                        <td style="font-weight:700">${sub.price !== null && sub.price !== undefined ? sub.price.toFixed(2)+' €' : '—'}</td>
+                        <td style="font-size:0.78rem">${_fmtDate(sub.nextBillingDate)}</td>
+                        <td>${_statusBadge(sub.status)}</td>
+                        <td>
+                            <button class="bill-action-btn" onclick="billEditSub('${sub.id}')" title="Editar">✏️</button>
+                            <button class="bill-action-btn" onclick="billGenerateInvoice('${sub.id}')" title="Generar factura" style="margin-left:3px;color:#ffd700;border-color:rgba(255,215,0,0.3)">🧾</button>
+                        </td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+            </div>`}
+
+            <!-- Clubes sin suscripción explícita (plan Free por defecto) -->
+            ${withoutSub.length > 0 ? `
+            <div class="bill-section-title" style="margin-top:1.5rem">🆓 En plan Free (sin suscripción registrada)</div>
+            <div style="overflow-x:auto;">
+            <table class="bill-table">
+                <thead><tr><th>Club/Entidad</th><th>Plan actual</th><th>Creado</th><th>Acción</th></tr></thead>
+                <tbody>
+                ${withoutSub.slice(0,20).map(c => `
+                    <tr>
+                        <td>
+                            <div style="font-weight:600;font-size:0.85rem">${c.name||c.id}</div>
+                            <div style="font-size:0.7rem;color:#8b949e">${c.adminEmail||''}</div>
+                        </td>
+                        <td>${_planBadge(c.plan||'free')}</td>
+                        <td style="font-size:0.78rem">${_fmtDate(c.createdAt)}</td>
+                        <td>
+                            <button class="bill-action-btn" onclick="billAssignPlan('${c.id}','${c.name||c.id}','${c.adminEmail||''}','club')"
+                                style="color:#58a6ff;border-color:rgba(88,166,255,0.3)">Asignar plan</button>
+                        </td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+            </div>` : ''}
+        `;
+    } catch(e) {
+        cont.innerHTML = `<div style="color:#f85149;padding:1rem">Error: ${e.message}</div>`;
+    }
+}
+
+// Modal — Asignar / Nueva suscripción
+window.billAssignPlan = async function(entityId, entityName, entityEmail, entityType) {
+    const { db, collection, getDocs } = await _billingFS();
+    const plansSnap = await getDocs(collection(db, 'billing_plans')).catch(() => null);
+    const plans = plansSnap && !plansSnap.empty
+        ? plansSnap.docs.map(d => ({ ...d.data() }))
+        : window.BILLING_PLAN_DEFAULTS;
+
+    const modal = document.createElement('div');
+    modal.id = 'bill-assign-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;';
+    modal.innerHTML = `
+        <div style="background:#161b22;border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:1.5rem;width:100%;max-width:440px;color:white;font-family:Inter,sans-serif;">
+            <div style="font-size:1rem;font-weight:700;margin-bottom:0.3rem">🔄 Asignar plan a suscripción</div>
+            <div style="font-size:0.82rem;color:#8b949e;margin-bottom:1.2rem">${entityName}</div>
+
+            <label class="bill-label">Plan</label>
+            <select id="bam-plan" class="bill-input" style="margin-bottom:0.8rem;">
+                ${plans.map(p => `<option value="${p.code}">${p.icon||''} ${p.name}</option>`).join('')}
+            </select>
+
+            <label class="bill-label">Período de facturación</label>
+            <select id="bam-period" class="bill-input" style="margin-bottom:0.8rem;">
+                <option value="monthly">Mensual</option>
+                <option value="annual">Anual</option>
+                <option value="trial">Período de prueba</option>
+                <option value="seasonal">Temporada deportiva (sept–junio)</option>
+            </select>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-bottom:0.8rem;">
+                <div>
+                    <label class="bill-label">Precio acordado (€)</label>
+                    <input id="bam-price" class="bill-input" type="number" min="0" step="0.01" placeholder="0.00">
+                </div>
+                <div>
+                    <label class="bill-label">Descuento (%)</label>
+                    <input id="bam-discount" class="bill-input" type="number" min="0" max="100" step="1" placeholder="0">
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-bottom:0.8rem;">
+                <div>
+                    <label class="bill-label">Fecha inicio</label>
+                    <input id="bam-start" class="bill-input" type="date" value="${new Date().toISOString().split('T')[0]}">
+                </div>
+                <div>
+                    <label class="bill-label">Próxima factura</label>
+                    <input id="bam-next" class="bill-input" type="date">
+                </div>
+            </div>
+
+            <label class="bill-label">Notas internas</label>
+            <textarea id="bam-notes" class="bill-input" rows="2" style="resize:none;margin-bottom:1rem;" placeholder="Oferta especial, negociación…"></textarea>
+
+            <div style="display:flex;gap:0.6rem;justify-content:flex-end;">
+                <button onclick="document.getElementById('bill-assign-modal').remove()"
+                    class="bill-action-btn">Cancelar</button>
+                <button onclick="billSaveSubscription('${entityId}','${entityName}','${entityEmail}','${entityType}')"
+                    class="bill-action-btn" style="background:rgba(63,185,80,0.15);color:#3fb950;border-color:rgba(63,185,80,0.4)">
+                    💾 Guardar suscripción
+                </button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+};
+
+window.billNewSubscription = function() {
+    billAssignPlan('', 'Nueva suscripción manual', '', 'club');
+};
+
+window.billSaveSubscription = async function(entityId, entityName, entityEmail, entityType) {
+    try {
+        const { db, doc, setDoc, collection } = await _billingFS();
+        _saShowSpinner('Guardando suscripción…');
+
+        const planCode   = document.getElementById('bam-plan')?.value || 'free';
+        const period     = document.getElementById('bam-period')?.value || 'monthly';
+        const price      = Number(document.getElementById('bam-price')?.value) || 0;
+        const discount   = Number(document.getElementById('bam-discount')?.value) || 0;
+        const startDate  = document.getElementById('bam-start')?.value || new Date().toISOString().split('T')[0];
+        const nextBill   = document.getElementById('bam-next')?.value || '';
+        const notes      = document.getElementById('bam-notes')?.value.trim() || '';
+
+        const subId = 'sub_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2,4);
+
+        await setDoc(doc(db, 'billing_subscriptions', subId), {
+            entityId, entityName, entityEmail, entityType,
+            planCode, period, price, discount,
+            finalPrice: price * (1 - discount / 100),
+            status: planCode === 'trial' ? 'trial' : price === 0 ? 'active' : 'active',
+            startDate: new Date(startDate).toISOString(),
+            nextBillingDate: nextBill ? new Date(nextBill).toISOString() : null,
+            notes,
+            createdBy: window._cronosCurrentUser?.email || 'superadmin',
+            createdAt: new Date().toISOString(),
+        });
+
+        // Actualizar plan en el documento del club/entidad
+        if (entityId) {
+            const entityRef = entityType === 'club'
+                ? doc(db, 'clubs', entityId)
+                : doc(db, 'individuals', entityId);
+            await setDoc(entityRef, { plan: planCode }, { merge: true }).catch(() => {});
+        }
+
+        _saHideSpinner();
+        document.getElementById('bill-assign-modal')?.remove();
+        _saToast('✅ Suscripción guardada', 3000);
+        saBilling('subs');
+    } catch(e) {
+        _saHideSpinner();
+        _saToast('❌ Error: ' + e.message, 4000);
+    }
+};
+
+window.billEditSub = async function(subId) {
+    try {
+        const { db, doc, getDoc } = await _billingFS();
+        const snap = await getDoc(doc(db, 'billing_subscriptions', subId));
+        if (!snap.exists()) { _saToast('Suscripción no encontrada', 3000); return; }
+        const sub = snap.data();
+        billAssignPlan(sub.entityId, sub.entityName, sub.entityEmail, sub.entityType);
+    } catch(e) {
+        _saToast('❌ Error: ' + e.message, 4000);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB 4 — FACTURAS
+// ═══════════════════════════════════════════════════════════════════
+
+async function _billInvoices() {
+    const cont = document.getElementById('bill-content');
+    try {
+        const { db, collection, getDocs } = await _billingFS();
+        const invSnap = await getDocs(collection(db, 'billing_invoices')).catch(() => null);
+        const invoices = invSnap ? invSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)) : [];
+
+        // Filtros básicos
+        cont.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+                <div class="bill-section-title" style="margin:0">🧾 Facturas</div>
+                <div style="display:flex;gap:0.5rem;">
+                    <select id="bill-filter-status" class="bill-input" style="width:130px;padding:0.35rem 0.5rem;font-size:0.78rem;" onchange="billFilterInvoices()">
+                        <option value="">Todos los estados</option>
+                        <option value="pending">Pendiente</option>
+                        <option value="paid">Pagada</option>
+                        <option value="cancelled">Cancelada</option>
+                    </select>
+                    <button onclick="billExportCSV()" class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3)">📥 CSV</button>
+                </div>
+            </div>
+
+            ${invoices.length === 0 ? `<div style="text-align:center;padding:2.5rem;color:#8b949e;font-size:0.85rem;">
+                No hay facturas generadas.<br>
+                <span style="font-size:0.78rem;">Genera facturas desde la pestaña Suscripciones.</span>
+            </div>` : `
+            <div style="overflow-x:auto;">
+            <table class="bill-table" id="bill-invoices-table">
+                <thead><tr>
+                    <th>Nº Factura</th><th>Cliente</th><th>Plan</th><th>Período</th>
+                    <th>Importe</th><th>Emisión</th><th>Vencimiento</th><th>Estado</th><th>Acciones</th>
+                </tr></thead>
+                <tbody>
+                ${invoices.map(inv => `
+                    <tr data-status="${inv.status}">
+                        <td style="font-family:monospace;font-size:0.78rem;color:#79c0ff">${inv.invoiceNumber||'—'}</td>
+                        <td>
+                            <div style="font-weight:600;font-size:0.83rem">${inv.entityName||'—'}</div>
+                            <div style="font-size:0.7rem;color:#8b949e">${inv.entityEmail||''}</div>
+                        </td>
+                        <td>${_planBadge(inv.planCode)}</td>
+                        <td style="font-size:0.78rem">${inv.period==='annual'?'Anual':inv.period==='trial'?'Prueba':'Mensual'}</td>
+                        <td>
+                            <div style="font-weight:700">${(inv.finalAmount||0).toFixed(2)} €</div>
+                            ${inv.discount>0?`<div style="font-size:0.7rem;color:#3fb950">-${inv.discount}%</div>`:''}
+                        </td>
+                        <td style="font-size:0.78rem">${_fmtDate(inv.issueDate||inv.createdAt)}</td>
+                        <td style="font-size:0.78rem">${_fmtDate(inv.dueDate)}</td>
+                        <td>${_statusBadge(inv.status)}</td>
+                        <td>
+                            <div style="display:flex;gap:3px;">
+                                <button class="bill-action-btn" onclick="billDownloadInvoice('${inv.id}')" title="Descargar PDF">📄</button>
+                                <button class="bill-action-btn" onclick="billMarkPaid('${inv.id}')" title="Marcar pagada" style="color:#3fb950;border-color:rgba(63,185,80,0.3)">✓</button>
+                                <button class="bill-action-btn" onclick="billCancelInvoice('${inv.id}')" title="Cancelar" style="color:#f85149;border-color:rgba(248,81,73,0.3)">✕</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+            </div>`}
+        `;
+
+        window._billingInvoices = invoices;
+    } catch(e) {
+        cont.innerHTML = `<div style="color:#f85149;padding:1rem">Error: ${e.message}</div>`;
+    }
+}
+
+window.billFilterInvoices = function() {
+    const status = document.getElementById('bill-filter-status')?.value;
+    const rows = document.querySelectorAll('#bill-invoices-table tbody tr');
+    rows.forEach(row => {
+        row.style.display = (!status || row.dataset.status === status) ? '' : 'none';
+    });
+};
+
+// Generar factura desde suscripción
+window.billGenerateInvoice = async function(subId) {
+    try {
+        const { db, doc, getDoc, setDoc, collection } = await _billingFS();
+        _saShowSpinner('Generando factura…');
+
+        const snap = await getDoc(doc(db, 'billing_subscriptions', subId));
+        if (!snap.exists()) { _saHideSpinner(); _saToast('Suscripción no encontrada', 3000); return; }
+        const sub = snap.data();
+
+        const invId     = 'inv_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2,4);
+        const invNumber = _nextInvoiceNumber();
+        const now       = new Date();
+        const dueDate   = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 días
+
+        const invoice = {
+            invoiceNumber: invNumber,
+            entityId:      sub.entityId,
+            entityType:    sub.entityType,
+            entityName:    sub.entityName,
+            entityEmail:   sub.entityEmail || '',
+            subscriptionId: subId,
+            planCode:      sub.planCode,
+            planName:      (window.BILLING_PLAN_DEFAULTS||[]).find(p=>p.code===sub.planCode)?.name || sub.planCode,
+            period:        sub.period,
+            amount:        sub.price || 0,
+            discount:      sub.discount || 0,
+            finalAmount:   sub.finalPrice || sub.price || 0,
+            status:        sub.price === 0 ? 'paid' : 'pending',
+            issueDate:     now.toISOString(),
+            dueDate:       dueDate.toISOString(),
+            paidDate:      null,
+            notes:         sub.notes || '',
+            createdBy:     window._cronosCurrentUser?.email || 'superadmin',
+            createdAt:     now.toISOString(),
+        };
+
+        await setDoc(doc(db, 'billing_invoices', invId), invoice);
+
+        _saHideSpinner();
+        _saToast(`✅ Factura ${invNumber} generada`, 4000);
+        saBilling('invoices');
+    } catch(e) {
+        _saHideSpinner();
+        _saToast('❌ Error: ' + e.message, 4000);
+    }
+};
+
+window.billMarkPaid = async function(invId) {
+    try {
+        const { db, doc, setDoc } = await _billingFS();
+        await setDoc(doc(db, 'billing_invoices', invId), {
+            status: 'paid',
+            paidDate: new Date().toISOString(),
+        }, { merge: true });
+        _saToast('✅ Factura marcada como pagada', 3000);
+        saBilling('invoices');
+    } catch(e) {
+        _saToast('❌ Error: ' + e.message, 3000);
+    }
+};
+
+window.billCancelInvoice = async function(invId) {
+    if (!confirm('¿Cancelar esta factura? No se puede deshacer.')) return;
+    try {
+        const { db, doc, setDoc } = await _billingFS();
+        await setDoc(doc(db, 'billing_invoices', invId), { status: 'cancelled' }, { merge: true });
+        _saToast('Factura cancelada', 3000);
+        saBilling('invoices');
+    } catch(e) {
+        _saToast('❌ Error: ' + e.message, 3000);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// GENERACIÓN DE PDF — usando window.print() con estilos de impresión
+// Compatible sin dependencias externas
+// ═══════════════════════════════════════════════════════════════════
+
+window.billDownloadInvoice = async function(invId) {
+    try {
+        const { db, doc, getDoc } = await _billingFS();
+        _saShowSpinner('Preparando factura PDF…');
+        const snap = await getDoc(doc(db, 'billing_invoices', invId));
+        if (!snap.exists()) { _saHideSpinner(); _saToast('Factura no encontrada', 3000); return; }
+        const inv = snap.data();
+        _saHideSpinner();
+        _billPrintInvoice(inv);
+    } catch(e) {
+        _saHideSpinner();
+        _saToast('❌ Error: ' + e.message, 4000);
+    }
+};
+
+function _billPrintInvoice(inv) {
+    const discountLine = inv.discount > 0
+        ? `<tr><td style="padding:8px 0;border-bottom:1px solid #eee;">Descuento (${inv.discount}%)</td><td style="text-align:right;color:#e53e3e">-${((inv.amount||0) * (inv.discount/100)).toFixed(2)} €</td></tr>`
+        : '';
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Factura ${inv.invoiceNumber}</title>
+<style>
+  @page { size: A4; margin: 20mm 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: white; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 3px solid #2563eb; }
+  .brand { font-size: 22px; font-weight: 900; color: #2563eb; letter-spacing: -0.5px; }
+  .brand-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .inv-box { text-align: right; }
+  .inv-num { font-size: 18px; font-weight: 700; color: #1a1a2e; }
+  .inv-date { font-size: 11px; color: #6b7280; margin-top: 4px; }
+  .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; margin-bottom: 6px; }
+  .client-box { background: #f8fafc; border-radius: 8px; padding: 14px 16px; margin-bottom: 24px; }
+  table.items { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  table.items th { background: #2563eb; color: white; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; }
+  table.items td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+  .total-row { font-weight: 900; font-size: 15px; color: #2563eb; }
+  .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+  .status-paid { background: #dcfce7; color: #16a34a; }
+  .status-pending { background: #fef9c3; color: #ca8a04; }
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; text-align: center; }
+  @media print { button { display: none !important; } }
+</style>
+</head>
+<body>
+<div style="max-width:680px;margin:0 auto;padding:16px;">
+
+  <div class="header">
+    <div>
+      <div class="brand">⚽ CRONOS FÚTBOL</div>
+      <div class="brand-sub">Sistema de Gestión Deportiva</div>
+    </div>
+    <div class="inv-box">
+      <div class="inv-num">FACTURA ${inv.invoiceNumber}</div>
+      <div class="inv-date">Emisión: ${_fmtDate(inv.issueDate||inv.createdAt)}</div>
+      <div class="inv-date">Vencimiento: ${_fmtDate(inv.dueDate)}</div>
+      <div style="margin-top:8px;">
+        <span class="status-badge ${inv.status==='paid'?'status-paid':'status-pending'}">
+          ${inv.status==='paid'?'✓ PAGADA':'PENDIENTE DE PAGO'}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="client-box">
+    <div class="section-title">Facturado a</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px;">${inv.entityName||'—'}</div>
+    <div style="color:#4b5563;font-size:12px;">${inv.entityEmail||''}</div>
+    <div style="color:#4b5563;font-size:12px;">${inv.entityType==='club'?'Club deportivo':'Usuario individual'}</div>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr><th>Descripción</th><th style="text-align:right">Importe</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <strong>Plan ${inv.planName||inv.planCode} — ${inv.period==='annual'?'Anual':inv.period==='trial'?'Período de prueba':'Mensual'}</strong><br>
+          <span style="color:#6b7280;font-size:11px;">Suscripción Cronos Fútbol · ${_fmtDate(inv.issueDate)} – ${_fmtDate(inv.dueDate)}</span>
+          ${inv.notes?`<br><span style="color:#9ca3af;font-size:11px;font-style:italic;">${inv.notes}</span>`:''}
+        </td>
+        <td style="text-align:right;font-weight:600">${(inv.amount||0).toFixed(2)} €</td>
+      </tr>
+      ${discountLine}
+      <tr class="total-row">
+        <td style="padding:12px 12px;text-transform:uppercase;font-size:12px;">Total a pagar</td>
+        <td style="text-align:right;padding:12px 12px;font-size:18px;">${(inv.finalAmount||0).toFixed(2)} €</td>
+      </tr>
+    </tbody>
+  </table>
+
+  ${inv.status==='paid'&&inv.paidDate?`<div style="background:#dcfce7;border-radius:8px;padding:10px 14px;font-size:12px;color:#16a34a;margin-bottom:16px;">✓ Pagada el ${_fmtDate(inv.paidDate)}</div>`:''}
+
+  <div style="text-align:center;margin:24px 0;">
+    <button onclick="window.print()" style="padding:10px 28px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">
+      🖨️ Imprimir / Guardar como PDF
+    </button>
+  </div>
+
+  <div class="footer">
+    <p>Cronos Fútbol · Sistema de Gestión Deportiva</p>
+    <p style="margin-top:4px;">Esta factura ha sido generada electrónicamente y es válida sin firma.</p>
+  </div>
+</div>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank', 'width=750,height=900');
+    if (w) {
+        w.document.write(html);
+        w.document.close();
+    } else {
+        _saToast('⚠️ Permite las ventanas emergentes para ver la factura', 4000);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EXPORTAR CSV
+// ═══════════════════════════════════════════════════════════════════
+
+window.billExportCSV = async function() {
+    try {
+        const { db, collection, getDocs } = await _billingFS();
+        _saShowSpinner('Generando CSV…');
+        const invSnap = await getDocs(collection(db, 'billing_invoices')).catch(() => null);
+        const invoices = invSnap ? invSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+        _saHideSpinner();
+
+        if (invoices.length === 0) { _saToast('No hay facturas para exportar', 3000); return; }
+
+        const headers = ['Nº Factura','Cliente','Email','Tipo','Plan','Período','Importe base','Descuento%','Importe final','Estado','Fecha emisión','Fecha vencimiento','Fecha pago'];
+        const rows = invoices.map(inv => [
+            inv.invoiceNumber||'',
+            inv.entityName||'',
+            inv.entityEmail||'',
+            inv.entityType==='club'?'Club':'Individual',
+            inv.planCode||'',
+            inv.period||'',
+            (inv.amount||0).toFixed(2),
+            (inv.discount||0),
+            (inv.finalAmount||0).toFixed(2),
+            inv.status||'',
+            _fmtDate(inv.issueDate||inv.createdAt),
+            _fmtDate(inv.dueDate),
+            _fmtDate(inv.paidDate),
+        ]);
+
+        const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cronos-facturas-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        _saToast('✅ CSV descargado', 3000);
+    } catch(e) {
+        _saHideSpinner();
+        _saToast('❌ Error: ' + e.message, 4000);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// VISTA PARA CLUB ADMIN — billClubView()
+// Se llama desde el panel del Club Admin
+// ═══════════════════════════════════════════════════════════════════
+
+window.billClubView = async function(containerId) {
+    const cont = document.getElementById(containerId);
+    if (!cont) return;
+    cont.innerHTML = `<div style="text-align:center;padding:1.5rem;color:#8b949e;">⏳ Cargando información de suscripción…</div>`;
+
+    try {
+        const { db, collection, getDocs, query, where } = await _billingFS();
+        const me = window._cronosCurrentUser;
+        const clubId = me?.clubId;
+        if (!clubId) { cont.innerHTML = `<div style="color:#8b949e;padding:1rem;font-size:0.85rem;">No se encontró información del club.</div>`; return; }
+
+        // Suscripción del club
+        const subSnap = await getDocs(query(collection(db, 'billing_subscriptions'),
+            where('entityId', '==', clubId))).catch(() => null);
+        const sub = subSnap && !subSnap.empty ? { id: subSnap.docs[0].id, ...subSnap.docs[0].data() } : null;
+
+        // Facturas del club
+        const invSnap = await getDocs(query(collection(db, 'billing_invoices'),
+            where('entityId', '==', clubId))).catch(() => null);
+        const invoices = invSnap ? invSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)) : [];
+
+        const planCode = sub?.planCode || me?.plan || 'free';
+        const planInfo = (window.BILLING_PLAN_DEFAULTS||[]).find(p => p.code === planCode) || { name: planCode, icon: '📋' };
+
+        cont.innerHTML = `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1.2rem;margin-bottom:1rem;">
+                <div style="font-size:0.75rem;color:#8b949e;font-weight:700;margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.5px;">Tu suscripción actual</div>
+                <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;">
+                    <span style="font-size:1.6rem">${planInfo.icon||'📋'}</span>
+                    <div>
+                        <div style="font-size:1.1rem;font-weight:700;color:white">${planInfo.name}</div>
+                        <div style="font-size:0.78rem;color:#8b949e">${sub ? `${sub.period==='annual'?'Anual':sub.period==='trial'?'Período de prueba':'Mensual'} · Próxima factura: ${_fmtDate(sub.nextBillingDate)}` : 'Plan gratuito'}</div>
+                    </div>
+                    <div style="margin-left:auto">${_statusBadge(sub?.status || 'active')}</div>
+                </div>
+                ${sub?.price > 0 ? `<div style="margin-top:0.8rem;font-size:0.85rem;color:#c9d1d9">Precio: <strong>${sub.finalPrice?.toFixed(2)||sub.price?.toFixed(2)} € / ${sub.period==='annual'?'año':'mes'}</strong>${sub.discount>0?` <span style="color:#3fb950">(${sub.discount}% dto.)</span>`:''}</div>` : ''}
+            </div>
+
+            <div style="font-size:0.82rem;font-weight:700;color:white;margin-bottom:0.6rem">🧾 Historial de facturas</div>
+            ${invoices.length === 0
+                ? `<div style="text-align:center;padding:1.5rem;color:#8b949e;font-size:0.82rem;">No hay facturas registradas.</div>`
+                : `<div style="overflow-x:auto;"><table class="bill-table">
+                <thead><tr><th>Nº Factura</th><th>Período</th><th>Importe</th><th>Estado</th><th></th></tr></thead>
+                <tbody>
+                ${invoices.map(inv => `
+                    <tr>
+                        <td style="font-family:monospace;font-size:0.78rem;color:#79c0ff">${inv.invoiceNumber||'—'}</td>
+                        <td style="font-size:0.78rem">${_fmtDate(inv.issueDate||inv.createdAt)}</td>
+                        <td style="font-weight:700">${(inv.finalAmount||0).toFixed(2)} €</td>
+                        <td>${_statusBadge(inv.status)}</td>
+                        <td><button class="bill-action-btn" onclick="billDownloadInvoice('${inv.id}')" title="Descargar PDF">📄 PDF</button></td>
+                    </tr>
+                `).join('')}
+                </tbody></table></div>`}
+        `;
+    } catch(e) {
+        cont.innerHTML = `<div style="color:#f85149;font-size:0.82rem;padding:0.5rem">Error: ${e.message}</div>`;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// VISTA PARA ADMIN INDIVIDUAL — billIndividualView()
+// Se llama desde el panel del Admin Individual
+// ═══════════════════════════════════════════════════════════════════
+
+window.billIndividualView = async function(containerId) {
+    const cont = document.getElementById(containerId);
+    if (!cont) return;
+    cont.innerHTML = `<div style="text-align:center;padding:1.5rem;color:#8b949e;">⏳ Cargando suscripción…</div>`;
+
+    try {
+        const { db, collection, getDocs, query, where } = await _billingFS();
+        const me = window._cronosCurrentUser;
+        const uid = me?.uid;
+        if (!uid) return;
+
+        const entityId = me?.individualEntityId || me?.clubId || uid;
+
+        const subSnap = await getDocs(query(collection(db, 'billing_subscriptions'),
+            where('entityId', '==', entityId))).catch(() => null);
+        const sub = subSnap && !subSnap.empty ? { id: subSnap.docs[0].id, ...subSnap.docs[0].data() } : null;
+
+        const invSnap = await getDocs(query(collection(db, 'billing_invoices'),
+            where('entityId', '==', entityId))).catch(() => null);
+        const invoices = invSnap ? invSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)) : [];
+
+        const planCode = sub?.planCode || 'free';
+        const planInfo = (window.BILLING_PLAN_DEFAULTS||[]).find(p => p.code === planCode) || { name: planCode, icon: '📋' };
+
+        cont.innerHTML = `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1.2rem;margin-bottom:1rem;">
+                <div style="font-size:0.75rem;color:#8b949e;font-weight:700;margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.5px;">Mi suscripción</div>
+                <div style="display:flex;align-items:center;gap:0.8rem;">
+                    <span style="font-size:1.6rem">${planInfo.icon||'📋'}</span>
+                    <div>
+                        <div style="font-size:1.1rem;font-weight:700;color:white">${planInfo.name}</div>
+                        <div style="font-size:0.78rem;color:#8b949e">${sub ? `${sub.period==='annual'?'Anual':'Mensual'} · Próxima factura: ${_fmtDate(sub.nextBillingDate)}` : 'Plan gratuito'}</div>
+                    </div>
+                    <div style="margin-left:auto">${_statusBadge(sub?.status||'active')}</div>
+                </div>
+                ${sub?.price > 0 ? `<div style="margin-top:0.8rem;font-size:0.85rem;color:#c9d1d9">Precio: <strong>${(sub.finalPrice||sub.price||0).toFixed(2)} € / ${sub.period==='annual'?'año':'mes'}</strong></div>` : ''}
+            </div>
+
+            <div style="font-size:0.82rem;font-weight:700;color:white;margin-bottom:0.6rem">🧾 Mis facturas</div>
+            ${invoices.length === 0
+                ? `<div style="text-align:center;padding:1.5rem;color:#8b949e;font-size:0.82rem;">No hay facturas disponibles.</div>`
+                : `<div style="overflow-x:auto;"><table class="bill-table">
+                <thead><tr><th>Nº Factura</th><th>Fecha</th><th>Importe</th><th>Estado</th><th></th></tr></thead>
+                <tbody>
+                ${invoices.map(inv => `
+                    <tr>
+                        <td style="font-family:monospace;font-size:0.78rem;color:#79c0ff">${inv.invoiceNumber||'—'}</td>
+                        <td style="font-size:0.78rem">${_fmtDate(inv.issueDate||inv.createdAt)}</td>
+                        <td style="font-weight:700">${(inv.finalAmount||0).toFixed(2)} €</td>
+                        <td>${_statusBadge(inv.status)}</td>
+                        <td><button class="bill-action-btn" onclick="billDownloadInvoice('${inv.id}')" title="PDF">📄</button></td>
+                    </tr>
+                `).join('')}
+                </tbody></table></div>`}
+        `;
+    } catch(e) {
+        cont.innerHTML = `<div style="color:#f85149;font-size:0.82rem;padding:0.5rem">Error: ${e.message}</div>`;
+    }
+};
+
+console.log('[Cronos] billing.js v1.0 cargado — Sistema de facturación iniciado');
