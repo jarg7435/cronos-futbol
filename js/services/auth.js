@@ -571,7 +571,7 @@ export async function checkAuthorization(user) {
                 let indCollection = null;
 
                 try {
-                    const clubsSnap = await getDocs(m.collection(fa.db, 'clubs'));
+                    const clubsSnap = await getDocs(collection(fa.db, 'clubs'));
                     clubsSnap.forEach(d => {
                         const c = d.data();
                         if (c.type === 'individual' && (c.adminEmail === user.email || c.email === user.email)) {
@@ -1801,7 +1801,7 @@ export async function doAuth() {
                         userUid: cred.user.uid,
                         status: 'pending_individual',
                         createdAt: new Date().toISOString(),
-                    }).catch(e => console.warn('[Cronos] Error creating platform_request:', e));
+                    });
                 } else if (needsApproval && clubId) {
                     const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
                     const reqId = 'self_reg_' + cred.user.uid;
@@ -1817,7 +1817,7 @@ export async function doAuth() {
                         userUid: cred.user.uid,
                         status: 'pending_club_admin',
                         createdAt: new Date().toISOString(),
-                    }).catch(e => console.warn('[Cronos] Error creating platform_request:', e));
+                    });
                 } else if (['club_admin','individual'].includes(requestedRole) && !isAuthorized) {
                     const saReqId = 'self_reg_' + cred.user.uid + '_' + requestedRole;
                     const _saReqData = {
@@ -1836,7 +1836,7 @@ export async function doAuth() {
                         _saReqData.individualOwnerId = selectedIndivId;
                         _saReqData.clubId = selectedIndivId;
                     }
-                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', saReqId), _saReqData).catch(e => console.warn('[Cronos] Error creating platform_request:', e));
+                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', saReqId), _saReqData);
                 }
 
                 // Show result message
@@ -2338,6 +2338,7 @@ export async function doAuth() {
                 lastLogin:     fa.serverTimestamp(),
             };
 
+            let _isFirstIndividualAdmin = false;
             if (requestedRole === 'club_admin' || (finalRole === 'individual' && !_isFirstIndividualAdmin)) {
                 userData.requestedClubName = newClubName || clubName || '';
                 userData.requestedQuotas   = {
@@ -2446,7 +2447,7 @@ export async function doAuth() {
                     userUid:           cred.user.uid,
                     status:            'pending_individual',
                     createdAt:         new Date().toISOString(),
-                }).catch(e => console.warn('[Cronos] Error creating individual request:', e));
+                });
             } else if (needsClubApproval && clubId) {
                 // Entrenador, coordinador, director, padre → Admin Club primero
                 const reqId = 'self_reg_' + cred.user.uid;
@@ -2465,7 +2466,7 @@ export async function doAuth() {
                     userUid:           cred.user.uid,
                     status:            'pending_club_admin',
                     createdAt:         new Date().toISOString(),
-                }).catch(e => console.warn('[Cronos] Error creating club request:', e));
+                });
             }
 
             // Post-registro
