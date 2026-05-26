@@ -1,15 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v123
+//  CRONOS FUTBOL — Service Worker v124
+//  v124: Fix nombre superadmin.panel.js en ASSETS, eliminar
+//         email-whatsapp.js del precache, quitar ?v= de index.html.
 //  v123: Eliminados 4 scripts stub del index.html
-//         (end-and-reports.js, substitutions.js, cloud-data.js, team-management.js).
-//         Corregidos strings de log (v120→v123). Assets bumpeados a ?v=78.
-//  v122: Fix training panel: COPIAR/PEGAR semana (localStorage clipboard),
 //  pre-populate send modal from localStorage, planificacion_semanal
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v123';
-const CACHE_NAME = 'cronos-cache-v123';
+const VERSION    = 'v124';
+const CACHE_NAME = 'cronos-cache-v124';
 
 const ASSETS = [
     './',
@@ -31,7 +30,6 @@ const ASSETS = [
     './js/services/firestore-storage.js',
     './js/services/offline-manager.js',
     './js/services/user-management.js',
-    './js/services/email-whatsapp.js',
     './js/match/events/player-actions.js',
     './js/match/demo-tutorial.js',
     './js/match/persistence/active-match.js',
@@ -47,7 +45,7 @@ const ASSETS = [
     './js/shared/whatsapp-email.js',
     './js/shared/admin-shared.js',
     './js/ai/import.js',
-    './js/admin/superadmin/panel.js',
+    './js/admin/superadmin/superadmin.panel.js',
     './js/admin/superadmin/extras.js',
     './js/admin/superadmin/billing.js',
     './js/admin/club/panel.js',
@@ -67,25 +65,25 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll(ASSETS).catch(err => {
-                console.warn('[SW v123] Error al precargar recursos:', err);
+                console.warn('[SW v124] Error al precargar recursos:', err);
             });
         })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[SW v123] Activado - eliminando cachés antiguas');
+    console.log('[SW v124] Activado - eliminando cachés antiguas');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => {
-                        console.log('[SW v123] Borrando caché antigua:', key);
+                        console.log('[SW v124] Borrando caché antigua:', key);
                         return caches.delete(key);
                     })
             );
         }).then(() => {
-            console.log('[SW v123] Todas las cachés antiguas eliminadas');
+            console.log('[SW v124] Todas las cachés antiguas eliminadas');
             return self.clients.claim();
         })
     );
@@ -110,7 +108,7 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                console.warn('[SW v123] Red no disponible, usando caché:', event.request.url);
+                console.warn('[SW v124] Red no disponible, usando caché:', event.request.url);
                 return caches.match(event.request);
             })
     );
