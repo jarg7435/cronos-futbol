@@ -114,7 +114,8 @@ export async function loadClubOptions() {
         }
 
         // Cargar entidades individuales (colección 'individuals' — compatibilidad)
-        try {
+        // FIX: Solo ejecutar si hay usuario autenticado (las rules requieren isAuth())
+        try { if (fa.auth && fa.auth.currentUser) {
             const indivSnap = await m.getDocs(m.collection(fa.db, 'individuals'));
             if (!indivSnap.empty) {
                 indivSnap.forEach(doc => {
@@ -131,7 +132,7 @@ export async function loadClubOptions() {
                 });
                 indivLoaded = true;
             }
-        } catch(e) {
+        } } catch(e) {
             console.warn('[Cronos] Error cargando entidades individuales:', e.message);
         }
 

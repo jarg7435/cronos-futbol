@@ -80,6 +80,22 @@
     onAuthStateChanged(auth, async (user) => {
         if (window._cronosCurrentUser) return;
         if (user) {
+            // ── Validar token antes de continuar ──
+            // Si el token está corrupto o el usuario fue eliminado en
+            // Firebase Auth, getIdToken() falla con 400. En ese caso,
+            // limpiar la sesión de indexedDB para evitar bucles de error.
+            try {
+                await user.getIdToken(true);
+            } catch (tokenErr) {
+                console.warn('[Cronos] Token inválido — limpiando sesión:', tokenErr.code || tokenErr.message);
+                await signOut(auth).catch(() => {});
+                const el = document.getElementById('auth-screen');
+                if (el) {
+                    document.body.classList.remove('locked');
+                    el.style.display = 'flex';
+                }
+                return;
+            }
             // Verificar autorización
             await checkAuthorization(user);
         } else {
