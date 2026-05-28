@@ -1177,15 +1177,16 @@ window.saRequests = async function saRequests() {
         // FIX: Buscar TAMBIÉN users con status 'pending_individual' (sub-usuarios de ente individual
         // que aún no han sido reenviados) y 'pending_club_admin' (usuarios que necesitan club admin)
         // para dar visibilidad completa al SA.
-        const [snapD, snapD2, snapD3, snapP, snapQ] = await Promise.all([
+        const [snapD, snapD2, snapD3, snapP, snapQ, snapSucc] = await Promise.all([
             getDocs(query(collection(db,'users'),where('status','==','pending'))).catch(()=>({forEach:()=>{}})),
             getDocs(query(collection(db,'users'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
             getDocs(query(collection(db,'users'),where('status','==','pending_individual'))).catch(()=>({forEach:()=>{}})),
             getDocs(query(collection(db,'platform_requests'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
             getDocs(query(collection(db,'platform_requests'),where('type','==','quota_increase'),where('status','==','unread'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'succession_requests'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
         ]);
 
-        const directUsers=[], platformReqs=[], quotaReqs=[];
+        const directUsers=[], platformReqs=[], quotaReqs=[], successionReqs=[];
         const _seenIds = new Set();
         const _addDirect = (d) => {
             if (!_seenIds.has(d.id)) { _seenIds.add(d.id); directUsers.push({id:d.id,...d.data()}); }
@@ -1213,8 +1214,9 @@ window.saRequests = async function saRequests() {
             platformReqs.push({id:d.id,...r});
         });
         snapQ.forEach(d => quotaReqs.push({id:d.id,...d.data()}));
+        snapSucc.forEach(d => successionReqs.push({id:d.id,...d.data()}));
 
-        if (!directUsers.length && !platformReqs.length && !quotaReqs.length) {
+        if (!directUsers.length && !platformReqs.length && !quotaReqs.length && !successionReqs.length) {
             body.innerHTML = `<div style="text-align:center;padding:3rem;color:#8b949e;"><div style="font-size:2.5rem;margin-bottom:0.5rem;">✅</div>Sin solicitudes pendientes.</div>`;
             return;
         }
@@ -1338,6 +1340,40 @@ window.saRequests = async function saRequests() {
                     <div style="display:flex;gap:0.5rem;">
                         <button onclick="saApproveRequest('${r.id}','quota_increase',true)" style="flex:1;padding:0.42rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:6px;color:#3fb950;font-weight:700;cursor:pointer;font-size:0.8rem;">✅ APROBAR</button>
                         <button onclick="saApproveRequest('${r.id}','quota_increase',false)" style="flex:1;padding:0.42rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:6px;color:#ff5858;font-weight:700;cursor:pointer;font-size:0.8rem;">❌ RECHAZAR</button>
+                    </div>
+                </div>`;
+            }).join('')}`;
+        }
+
+        if (successionReqs.length) {
+            const _esc = typeof escapeHtml === 'function' ? escapeHtml : (s => s);
+            html += `
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+                <h3 style="margin:0;font-size:0.88rem;color:#d2a8ff;">🔄 Sucesiones de Admin de Club</h3>
+                <span style="background:rgba(210,168,255,0.15);color:#d2a8ff;padding:1px 8px;border-radius:10px;font-size:0.72rem;font-weight:700;">${successionReqs.length}</span>
+            </div>
+            <p style="font-size:0.72rem;color:#8b949e;margin:0 0 0.8rem;background:rgba(210,168,255,0.05);padding:0.5rem 0.7rem;border-radius:7px;border:1px solid rgba(210,168,255,0.15);">
+                ⚠️ Al aprobar: el nuevo admin toma el control del club, el admin saliente se elimina (Firestore + Auth). Los usuarios del club no se ven afectados.
+            </p>
+            ${successionReqs.map(sr => {
+                const typeLabel = sr.successorType === 'existing' ? '👥 Miembro existente' : '✉️ Persona nueva';
+                return `
+                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(210,168,255,0.25);border-radius:9px;padding:0.85rem;margin-bottom:0.6rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
+                        <div>
+                            <div style="font-weight:700;font-size:0.88rem;color:#d2a8ff;">🏟️ ${_esc(sr.clubName||sr.clubId||'Club')}</div>
+                            <div style="font-size:0.7rem;color:#8b949e;">${typeLabel}</div>
+                        </div>
+                        <span style="font-size:0.68rem;color:#8b949e;background:rgba(255,255,255,0.06);padding:2px 7px;border-radius:5px;">${sr.createdAt?.toDate ? sr.createdAt.toDate().toLocaleDateString('es-ES') : (sr.createdAt ? new Date(sr.createdAt).toLocaleDateString('es-ES') : '–')}</span>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.03);padding:0.55rem 0.65rem;border-radius:7px;margin-bottom:0.6rem;display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;font-size:0.82rem;">
+                        <div><div style="color:#8b949e;font-size:0.67rem;">Admin saliente</div><div style="color:#ff5858;font-weight:600;word-break:break-all;">${_esc(sr.outgoingAdminEmail||'–')}</div></div>
+                        <div><div style="color:#8b949e;font-size:0.67rem;">Nuevo admin</div><div style="color:#3fb950;font-weight:600;word-break:break-all;">${_esc(sr.successorEmail||'–')}</div></div>
+                        ${sr.successorName ? `<div style="grid-column:1/-1;"><div style="color:#8b949e;font-size:0.67rem;">Nombre sucesor</div><div style="color:white;">${_esc(sr.successorName)}</div></div>` : ''}
+                    </div>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button onclick="saApproveRequest('${sr.id}','club_admin_succession',true)" style="flex:1;padding:0.45rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:6px;color:#3fb950;font-weight:700;cursor:pointer;font-size:0.81rem;">✅ APROBAR SUCESIÓN</button>
+                        <button onclick="saApproveRequest('${sr.id}','club_admin_succession',false)" style="flex:1;padding:0.45rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:6px;color:#ff5858;font-weight:700;cursor:pointer;font-size:0.81rem;">❌ RECHAZAR</button>
                     </div>
                 </div>`;
             }).join('')}`;
@@ -1732,6 +1768,123 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                 _saHideSpinner();
                 _saToast('❌ Solicitud rechazada.', 3000);
             }
+        } else if (type === 'club_admin_succession') {
+            const { collection, getDocs, query, where, deleteDoc, httpsCallable: _httpsCallable } = await saFS();
+            const srSnap = await getDoc(doc(db,'succession_requests',id));
+            if (!srSnap.exists()) throw new Error('Solicitud de sucesión no encontrada');
+            const sr = srSnap.data();
+
+            if (approve) {
+                // ── 1. Preparar nuevo admin ──
+                let newAdminUid = sr.successorUid || null;
+                let newAdminEmail = sr.successorEmail;
+                let newAdminName = sr.successorName || sr.successorEmail;
+
+                if (sr.successorType === 'existing' && sr.successorUid) {
+                    // Camino A: miembro existente - añadir club_admin a allRoles
+                    const uSnap = await getDoc(doc(db,'users',sr.successorUid));
+                    if (!uSnap.exists()) throw new Error('Usuario sucesor no encontrado en Firestore');
+                    const uData = uSnap.data();
+                    newAdminEmail = uData.email || sr.successorEmail;
+                    newAdminName = uData.displayName || uData.firstName || newAdminEmail;
+
+                    // Añadir club_admin a allRoles (mantener roles existentes)
+                    const updRoles = (uData.allRoles || []).filter(r =>
+                        !(r.role === 'club_admin' && (r.clubId === sr.clubId || !r.clubId))
+                    );
+                    updRoles.push({
+                        role: 'club_admin',
+                        isAuthorized: true,
+                        status: 'active',
+                        clubId: sr.clubId,
+                        clubName: sr.clubName || '',
+                    });
+
+                    await updateDoc(doc(db,'users',sr.successorUid), {
+                        role: 'club_admin',
+                        isAuthorized: true,
+                        status: 'active',
+                        clubId: sr.clubId,
+                        clubName: sr.clubName || '',
+                        allRoles: updRoles,
+                        authorizedAt: new Date().toISOString(),
+                        authorizedBy: me,
+                    });
+
+                } else {
+                    // Camino B: persona nueva - crear doc pre-aprobado
+                    newAdminUid = 'pre_' + Date.now().toString(36);
+                    await setDoc(doc(db,'users',newAdminUid), {
+                        email: sr.successorEmail,
+                        displayName: sr.successorName || '',
+                        role: 'club_admin',
+                        clubId: sr.clubId,
+                        clubName: sr.clubName || '',
+                        isAuthorized: true,
+                        status: 'active',
+                        allRoles: [{
+                            role: 'club_admin',
+                            isAuthorized: true,
+                            status: 'active',
+                            clubId: sr.clubId,
+                            clubName: sr.clubName || '',
+                        }],
+                        createdAt: new Date().toISOString(),
+                        approvedBySA: true,
+                        approvedBySAAt: new Date().toISOString(),
+                        approvedBySABy: me,
+                    });
+                }
+
+                // ── 2. Actualizar clubs doc ──
+                await updateDoc(doc(db,'clubs',sr.clubId), {
+                    adminEmail: newAdminEmail,
+                    adminUid: newAdminUid,
+                    adminName: newAdminName,
+                });
+
+                // ── 3. Borrar admin saliente de Firestore ──
+                if (sr.outgoingAdminUid) {
+                    try { await deleteDoc(doc(db,'users',sr.outgoingAdminUid)); } catch(_) {}
+                    // Borrar docs secundarios del admin saliente
+                    try {
+                        const secSnap = await getDocs(query(collection(db,'users'), where('uid','==',sr.outgoingAdminUid)));
+                        secSnap.forEach(d => { if (d.id !== sr.outgoingAdminUid) deleteDoc(doc(db,'users',d.id)).catch(()=>{}); });
+                    } catch(_) {}
+                }
+
+                // ── 4. Borrar Firebase Auth del admin saliente ──
+                const _fa = (await saFS()).fa;
+                const _htCall = (await saFS()).httpsCallable;
+                if (_htCall && _fa.functions && sr.outgoingAdminUid) {
+                    try {
+                        await _htCall(_fa.functions, 'deleteAuthUser')({ uid: sr.outgoingAdminUid, email: sr.outgoingAdminEmail });
+                    } catch (cfErr) {
+                        console.warn('[saApproveRequest:succession] deleteAuthUser falló:', cfErr.message);
+                    }
+                }
+
+                // ── 5. Marcar sucesión como completada ──
+                await updateDoc(doc(db,'succession_requests',id), {
+                    status: 'completed',
+                    completedAt: new Date().toISOString(),
+                    completedBy: me,
+                });
+
+                _saHideSpinner();
+                _saToast(`✅ Sucesión completada. ${newAdminEmail} es el nuevo admin de "${sr.clubName}".`, 7000);
+
+            } else {
+                // Rechazar sucesión
+                await updateDoc(doc(db,'succession_requests',id), {
+                    status: 'rejected',
+                    rejectedAt: new Date().toISOString(),
+                    rejectedBy: me,
+                });
+                _saHideSpinner();
+                _saToast('❌ Solicitud de sucesión rechazada.', 3000);
+            }
+
         }
         saRequests();
     } catch (e) {
