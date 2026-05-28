@@ -2106,7 +2106,7 @@ window.saPurgeUser = async function saPurgeUser(uid, email) {
 
 window.setupClubsSyncListener = async function setupClubsSyncListener() {
     try {
-        const { db, collection, onSnapshot } = await saFS();
+        const { db, collection, onSnapshot, query, where } = await saFS();
         if (window._clubsSyncUnsubscribe) window._clubsSyncUnsubscribe();
         window._clubsSyncUnsubscribe = onSnapshot(collection(db,'users'), snap => {
             const panel = document.getElementById('sa-panel');
@@ -2121,6 +2121,54 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
                 }, 700);
             }
         });
+
+        // ── Listener de solicitudes nuevas (notificación en tiempo real al SA) ──
+        if (window._requestsSyncUnsubscribe) window._requestsSyncUnsubscribe();
+        let _initialRequestLoad = true;
+        window._requestsSyncUnsubscribe = onSnapshot(
+            query(collection(db, 'platform_requests'), where('status', '==', 'pending_sa')),
+            snap => {
+                const panel = document.getElementById('sa-panel');
+                if (!panel) return;
+                const count = snap.size || 0;
+
+                // Actualizar badge del tab Solicitudes
+                const reqTab = document.getElementById('sa-tab-requests');
+                if (reqTab) {
+                    const oldBadge = reqTab.querySelector('span');
+                    if (oldBadge) oldBadge.remove();
+                    if (count > 0) {
+                        const badge = document.createElement('span');
+                        badge.style.cssText = 'background:#ff5858;color:white;border-radius:10px;padding:1px 7px;font-size:0.65rem;font-weight:700;margin-left:4px;';
+                        badge.textContent = count;
+                        reqTab.appendChild(badge);
+                    }
+                }
+
+                // Toast solo para solicitudes NUEVAS (no en la carga inicial)
+                if (_initialRequestLoad) {
+                    _initialRequestLoad = false;
+                    return;
+                }
+                const newDocs = snap.docChanges().filter(c => c.type === 'added');
+                if (newDocs.length > 0) {
+                    const latest = newDocs[0].doc.data();
+                    const name = latest.requestedName || latest.requestedEmail || latest.userEmail || 'Nuevo usuario';
+                    const roleLabel = latest.requestedRoleLabel || latest.requestedRole || '';
+                    _saToast('🔔 Nueva solicitud: ' + name + (roleLabel ? ' (' + roleLabel + ')' : ''), 6000);
+
+                    // Vibrar si es posible (dispositivos móviles)
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
+                    // Si está en la pestaña Solicitudes, refrescar automáticamente
+                    const reqTabBtn = document.getElementById('sa-tab-requests');
+                    if (reqTabBtn && reqTabBtn.style.borderBottomColor === 'rgb(88, 166, 255)') {
+                        clearTimeout(window._saReqRefreshTimeout);
+                        window._saReqRefreshTimeout = setTimeout(() => saRequests(), 500);
+                    }
+                }
+            }
+        );
     } catch (e) { console.error('[setupClubsSyncListener]', e); }
 };
 

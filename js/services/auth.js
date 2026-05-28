@@ -5,6 +5,8 @@
 
 // ── Estado Local ──────────────────────────────────────────────
 let _isLoginMode = true;
+let _addingRoleTimestamp = 0;
+const _ADDING_ROLE_TIMEOUT_MS = 30000; // 30s safety net contra _addingRole estancado
 
 // ── Cambiar entre Login y Registro ──────────────────────────
 export async function switchTab(tab) {
@@ -501,9 +503,17 @@ export async function checkAuthorization(user) {
     }
 
     // Si se está añadiendo un rol, no interferir (solo si hay un usuario activo)
+    // Race condition safety: si _addingRole lleva más de 30s, resetearlo
     if (window._addingRole && user) {
-        console.log('[Cronos] Autorización pospuesta (añadiendo rol)...');
-        return;
+        const elapsed = Date.now() - _addingRoleTimestamp;
+        if (elapsed > _ADDING_ROLE_TIMEOUT_MS) {
+            console.warn('[Cronos] _addingRole estancado (' + Math.round(elapsed/1000) + 's). Reseteando...');
+            window._addingRole = false;
+            _addingRoleTimestamp = 0;
+        } else {
+            console.log('[Cronos] Autorización pospuesta (añadiendo rol, ' + Math.round(elapsed/1000) + 's)...');
+            return;
+        }
     }
 
     try {
@@ -683,8 +693,8 @@ export async function checkAuthorization(user) {
                 const { collection, getDocs, query, where } =
                     await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-                // Consulta simple por userUid con timeout de 5s (evita bloqueo por QUIC)
-                const _t1 = new Promise(r => setTimeout(() => r(null), 3000));
+                // Consulta simple por userUid con timeout de 8s (redes móviles lentas / QUIC)
+                const _t1 = new Promise(r => setTimeout(() => r(null), 8000));
                 const allUserReqs = await Promise.race([
                     getDocs(query(collection(fa.db, 'platform_requests'),
                                   where('userUid', '==', user.uid))),
@@ -889,8 +899,8 @@ export async function checkAuthorization(user) {
             const { collection, getDocs, query, where, updateDoc, setDoc } =
                 await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-            // Consulta simple con timeout de 5s (evita bloqueo por conexión QUIC inestable)
-            const _t2 = new Promise(r => setTimeout(() => r(null), 3000));
+            // Consulta simple con timeout de 8s (redes móviles lentas / QUIC)
+            const _t2 = new Promise(r => setTimeout(() => r(null), 8000));
             const allReqsSnap = await Promise.race([
                 getDocs(query(collection(fa.db, 'platform_requests'),
                               where('userUid', '==', user.uid))),
@@ -990,7 +1000,7 @@ export async function checkAuthorization(user) {
                 const { collection, getDocs } = await import(
                     'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
                 );
-                const _t3 = new Promise(r => setTimeout(() => r(null), 3000));
+                const _t3 = new Promise(r => setTimeout(() => r(null), 8000));
                 const clubsSnap = await Promise.race([
                     getDocs(collection(fa.db, 'clubs')),
                     _t3
@@ -1292,6 +1302,7 @@ export async function doAuth() {
         // ═══════════════════════════════════════════════════════
         if (_isLoginMode) {
             window._addingRole = false; // Desbloquear por si acaso
+            _addingRoleTimestamp = 0;
             window._loginThisSession = true;
             // Timeout de 6s: si Firebase Auth no responde, mostrar error claro
             const _signInTimer = setTimeout(() => {
@@ -1381,6 +1392,7 @@ export async function doAuth() {
 
         // ── Crear cuenta Firebase Auth ──────────────────────────
         window._addingRole = true;
+        _addingRoleTimestamp = Date.now();
         let cred;
         let isAddingRole = false;
 

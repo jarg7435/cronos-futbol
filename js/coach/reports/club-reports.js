@@ -274,9 +274,19 @@ async function _sdLoadEvents(type) {
             const date = d.createdAt
                 ? new Date(d.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})
                 : '—';
+            const isPlan = d.type === 'planificacion_semanal';
             const title = isConv
                 ? (d.rival ? 'vs ' + escapeHtml(d.rival) : 'Partido')
-                : (d.datetime ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Entrenamiento');
+                : isPlan
+                    ? (d.weekStartDate
+                        ? 'Semana del ' + new Date(d.weekStartDate + 'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})
+                        : (d.datetime ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Planificación Semanal'))
+                    : (d.datetime ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Entrenamiento');
+            const subLine = isConv
+                ? (isConv && d.venue ? ' · 📍 ' + escapeHtml(d.venue) : '')
+                : isPlan
+                    ? (Array.isArray(d.days) ? d.days.filter(dy=>dy.time||dy.venue).map(dy=>dy.day+': '+[dy.time,dy.venue].filter(Boolean).join(' ')).slice(0,2).join(' | ') : (d.location ? '📍 ' + escapeHtml(d.location) : ''))
+                    : (d.location ? ' · 📍 ' + escapeHtml(d.location) : '');
 
             html += `
             <div class="sd-card" style="position:relative;border-left:3px solid ${accent};">
@@ -298,8 +308,7 @@ async function _sdLoadEvents(type) {
                     <div style="font-size:0.75rem;color:var(--text-muted);">
                         ${isConv && d.players ? `👥 ${d.players.length} convocados · ` : ''}
                         ${d.coachEmail ? 'Enviado por ' + escapeHtml(d.coachEmail) : ''}
-                        ${isConv && d.venue ? ' · 📍 ' + escapeHtml(d.venue) : ''}
-                        ${!isConv && d.location ? ' · 📍 ' + escapeHtml(d.location) : ''}
+                        ${subLine}
                     </div>
                 </div>
                 <button onclick="sdViewEventDetail('${escapeAttr(d._id)}')" class="btn"
@@ -317,6 +326,7 @@ async function _sdLoadEvents(type) {
             if (!snap) return;
             const d = snap;
             const isC = d.type === 'convocatoria';
+            const isPlan = d.type === 'planificacion_semanal';
 
             // Mostrar en modal in-app (no alert)
             const overlay = document.createElement('div');
@@ -327,7 +337,7 @@ async function _sdLoadEvents(type) {
                 <span style="font-size:1.8rem;">${isC?'📋':'📅'}</span>
                 <div>
                     <div style="font-size:1.1rem;font-weight:900;color:${isC?'var(--primary)':'#f0883e'};">CRONOS FÚTBOL</div>
-                    <div style="font-size:0.75rem;color:var(--text-muted);">${isC?'CONVOCATORIA':'AVISO DE ENTRENAMIENTO'}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);">${isC?'CONVOCATORIA':isPlan?'PLANIFICACIÓN SEMANAL':'AVISO DE ENTRENAMIENTO'}</div>
                 </div>
             </div>`;
 
@@ -349,6 +359,27 @@ async function _sdLoadEvents(type) {
                     </div>
                 </div>`:''}
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:8px;font-style:italic;">💬 ${escapeHtml(d.extra)}</div>`:''}`;
+            } else if (isPlan && (Array.isArray(d.days) || d.weekStartDate)) {
+                // Planificación Semanal con tabla de días
+                const weekDaysHTML = Array.isArray(d.days)
+                    ? d.days.map(dy => {
+                        const hasData = dy.time || dy.venue || dy.note;
+                        return '<div style="display:flex;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+                            + '<div style="font-weight:700;color:#f0883e;min-width:80px;font-size:0.82rem;">' + escapeHtml(dy.day||'') + '</div>'
+                            + '<div style="font-size:0.8rem;color:' + (hasData?'var(--text)':'#555') + ';">'
+                            + (hasData
+                                ? [dy.time?'🕐 '+dy.time:'', dy.venue?'📍 '+escapeHtml(dy.venue):'', dy.note?'📝 '+escapeHtml(dy.note):''].filter(Boolean).join(' &nbsp;·&nbsp; ')
+                                : '_Descanso_')
+                            + '</div></div>';
+                    }).join('')
+                    : '';
+                body = `
+                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
+                    ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
+                    <div style="display:flex;flex-direction:column;gap:0;">${weekDaysHTML}</div>
+                    ${d.location?`<div style="font-size:0.85rem;margin-top:0.5rem;">📍 ${escapeHtml(d.location)}</div>`:''}
+                    ${d.notes?`<div style="font-size:0.82rem;margin-top:0.4rem;padding:0.5rem;background:rgba(255,255,255,0.04);border-radius:6px;">📝 ${escapeHtml(d.notes)}</div>`:''}
+                </div>`;
             } else {
                 const dtFmt = d.datetime
                     ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
