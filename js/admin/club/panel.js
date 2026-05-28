@@ -534,6 +534,11 @@ async function openClubAdminPanel(preClubId = null) {
                      border:1px solid rgba(88,166,255,0.4);border-radius:10px;
                      color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
               📡 Transmitir al SuperAdmin</button>
+          <button onclick="caShowSuccession('${escapeAttr(clubId)}')"
+              style="padding:0.45rem 1rem;background:rgba(210,168,255,0.12);
+                     border:1px solid rgba(210,168,255,0.4);border-radius:10px;
+                     color:#d2a8ff;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              🔄 Ceder Administración</button>
           <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
               style="padding:0.45rem 1rem;background:rgba(255,215,0,0.1);
                      border:1px solid rgba(255,215,0,0.3);border-radius:10px;
@@ -1635,6 +1640,170 @@ async function openClubAdminPanel(preClubId = null) {
     };
 }
 window.openClubAdminPanel = openClubAdminPanel;
+
+// ════════════════════════════════════════════════════════════════════
+//  SUCESIÓN DE ADMIN DE CLUB
+// ════════════════════════════════════════════════════════════════════
+window.caShowSuccession = async function caShowSuccession(clubId) {
+    const me = window._cronosCurrentUser;
+    try {
+        const { db, doc, getDoc, collection, getDocs, query, where, setDoc, serverTimestamp } = await saFS();
+        const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+        if (!clubSnap.exists()) { showToast('⚠️ Club no encontrado', 3000); return; }
+        const club = clubSnap.data();
+
+        // Cargar miembros activos del club (excluir al admin actual y superadmins)
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('clubId', '==', clubId)));
+        const members = [];
+        usersSnap.forEach(d => {
+            const u = { id: d.id, ...d.data() };
+            if (u.status === 'removed' || u.status === 'blocked') return;
+            if (['superadmin', 'admin'].includes(u.role)) return;
+            if (u.role === 'club_admin' && u.email === me.email) return;
+            if (u.isAuthorized) members.push(u);
+        });
+
+        // Verificar si ya hay una sucesión pendiente
+        const existingSnap = await getDocs(query(
+            collection(db, 'succession_requests'),
+            where('clubId', '==', clubId),
+            where('status', '==', 'pending_sa')
+        )).catch(() => ({ empty: true }));
+        if (!existingSnap.empty) {
+            showToast('⚠️ Ya hay una solicitud de sucesión pendiente para este club.', 5000);
+            return;
+        }
+
+        // Construir opciones del selector
+        let memberOptions = '<option value="">-- Selecciona un miembro --</option>';
+        members.forEach(m => {
+            const name = m.displayName || m.firstName || m.email;
+            const roleMeta = (window.ROLE_META || {})[m.role] || { icon: '👤', label: m.role };
+            memberOptions += `<option value="${m.id}">${roleMeta.icon} ${name} (${m.email}) - ${roleMeta.label}</option>`;
+        });
+
+        // Modal de sucesión
+        const overlay = document.createElement('div');
+        overlay.id = 'succession-modal';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;';
+        overlay.innerHTML = `
+        <div style="background:#161b22;border:1px solid rgba(210,168,255,0.3);border-radius:16px;
+                    padding:1.5rem;width:min(96vw,500px);max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;">
+                <div>
+                    <div style="font-weight:700;font-size:1.05rem;color:white;">🔄 Ceder Administración</div>
+                    <div style="font-size:0.75rem;color:#8b949e;margin-top:4px;">Club: ${typeof escapeHtml === 'function' ? escapeHtml(club.name) : club.name}</div>
+                </div>
+                <button id="succession-close" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;">✕</button>
+            </div>
+
+            <p style="font-size:0.8rem;color:#8b949e;margin:0 0 1.2rem;padding:0.6rem;background:rgba(210,168,255,0.06);border:1px solid rgba(210,168,255,0.15);border-radius:8px;">
+                ⚠️ Al completarse la sucesión, tu cuenta de administrador será eliminada
+                y el nuevo admin tomará el control del club. Los usuarios del club no se verán afectados.
+                <strong>Requiere aprobación del SuperAdmin.</strong>
+            </p>
+
+            <!-- Selector de tipo -->
+            <div style="display:flex;gap:0.6rem;margin-bottom:1rem;">
+                <button id="succ-tab-existing" onclick="document.getElementById('succ-existing').style.display='block';document.getElementById('succ-new').style.display='none';this.style.borderColor='rgba(210,168,255,0.5)';this.style.color='#d2a8ff';document.getElementById('succ-tab-new').style.borderColor='rgba(255,255,255,0.1)';document.getElementById('succ-tab-new').style.color='#8b949e';"
+                    style="flex:1;padding:0.6rem;background:rgba(255,255,255,0.04);border:2px solid rgba(210,168,255,0.5);border-radius:8px;color:#d2a8ff;font-size:0.82rem;font-weight:600;cursor:pointer;">
+                    👥 Miembro existente
+                </button>
+                <button id="succ-tab-new" onclick="document.getElementById('succ-new').style.display='block';document.getElementById('succ-existing').style.display='none';this.style.borderColor='rgba(210,168,255,0.5)';this.style.color='#d2a8ff';document.getElementById('succ-tab-existing').style.borderColor='rgba(255,255,255,0.1)';document.getElementById('succ-tab-existing').style.color='#8b949e';"
+                    style="flex:1;padding:0.6rem;background:rgba(255,255,255,0.04);border:2px solid rgba(255,255,255,0.1);border-radius:8px;color:#8b949e;font-size:0.82rem;font-weight:600;cursor:pointer;">
+                    ✉️ Persona nueva
+                </button>
+            </div>
+
+            <!-- Camino A: Miembro existente -->
+            <div id="succ-existing" style="display:block;">
+                <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Selecciona al nuevo administrador</label>
+                <select id="succ-member"
+                    style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:white;font-size:0.85rem;box-sizing:border-box;">
+                    ${memberOptions}
+                </select>
+                ${members.length === 0 ? '<p style="font-size:0.75rem;color:#ffa500;margin-top:0.5rem;">No hay miembros activos. Usa la opción "Persona nueva".</p>' : ''}
+            </div>
+
+            <!-- Camino B: Persona nueva -->
+            <div id="succ-new" style="display:none;">
+                <div style="margin-bottom:0.8rem;">
+                    <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Email del nuevo administrador *</label>
+                    <input id="succ-email" type="email" placeholder="nuevo.admin@email.com"
+                        style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:white;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Nombre del nuevo administrador</label>
+                    <input id="succ-name" type="text" placeholder="Nombre completo"
+                        style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:white;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+            </div>
+
+            <!-- Botón confirmar -->
+            <button id="succ-confirm"
+                style="margin-top:1.2rem;width:100%;padding:0.8rem;background:rgba(210,168,255,0.15);border:1px solid rgba(210,168,255,0.4);border-radius:8px;color:#d2a8ff;font-weight:700;font-size:0.9rem;cursor:pointer;">
+                📤 Enviar solicitud al SuperAdmin
+            </button>
+        </div>`;
+
+        document.body.appendChild(overlay);
+
+        // Cerrar modal
+        document.getElementById('succession-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+        // Confirmar sucesión
+        document.getElementById('succ-confirm').addEventListener('click', async () => {
+            const isExistingTab = document.getElementById('succ-existing').style.display !== 'none';
+
+            let successorType, successorUid, successorEmail, successorName;
+
+            if (isExistingTab) {
+                successorUid = document.getElementById('succ-member').value;
+                if (!successorUid) { showToast('⚠️ Selecciona un miembro del club', 3000); return; }
+                const chosen = members.find(m => m.id === successorUid);
+                successorEmail = chosen?.email || '';
+                successorName = chosen?.displayName || chosen?.firstName || successorEmail;
+                successorType = 'existing';
+            } else {
+                successorEmail = document.getElementById('succ-email').value.trim();
+                successorName = document.getElementById('succ-name').value.trim();
+                if (!successorEmail) { showToast('⚠️ Introduce el email del nuevo administrador', 3000); return; }
+                successorType = 'new';
+                successorUid = null;
+            }
+
+            if (!confirm('¿Confirmas la solicitud de sucesión?\n\nNuevo admin: ' + successorEmail + '\n\nRequiere aprobación del SuperAdmin.')) return;
+
+            try {
+                showSpinner('Enviando solicitud...');
+                const reqId = 'succession_' + clubId + '_' + Date.now().toString(36);
+                await setDoc(doc(db, 'succession_requests', reqId), {
+                    clubId:              clubId,
+                    clubName:            club.name || '',
+                    outgoingAdminUid:    me.uid,
+                    outgoingAdminEmail:  me.email,
+                    successorType:       successorType,
+                    successorUid:        successorUid || null,
+                    successorEmail:      successorEmail,
+                    successorName:       successorName || null,
+                    status:              'pending_sa',
+                    createdAt:           serverTimestamp(),
+                });
+                hideSpinner();
+                overlay.remove();
+                showToast('✅ Solicitud enviada al SuperAdmin. Tu acceso se mantiene hasta que confirme.', 6000);
+            } catch (e) {
+                hideSpinner();
+                showToast('❌ Error: ' + e.message, 5000);
+                console.error('[caShowSuccession]', e);
+            }
+        });
+    } catch (e) {
+        showToast('❌ Error: ' + e.message, 5000);
+        console.error('[caShowSuccession]', e);
+    }
+};
 
 // ════════════════════════════════════════════════════════════════════
 //  TOGGLE DE FEATURES DEL CLUB (ej: informes individualizados)
