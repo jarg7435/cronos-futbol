@@ -521,6 +521,20 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCIÓN: succession_requests
+    // Admin de Club crea solicitud (solo si es el admin saliente).
+    // SuperAdmin lee, aprueba/rechaza (update). Nadie más accede.
+    // ============================================================
+    match /succession_requests/{reqId} {
+      allow read: if isSuperAdmin();
+      allow create: if isAuth() &&
+                       request.auth.token.role == 'club_admin' &&
+                       request.resource.data.outgoingAdminUid == request.auth.uid;
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================
     // COLECCIONES DE FACTURACIÓN
     // Solo SA puede gestionar planes y facturas.
     // Club admin e individual pueden leer sus propias facturas.
