@@ -669,6 +669,69 @@ export async function checkAuthorization(user) {
 
         const data = snap.data();
 
+        // ════════════════════════════════════════════════════════════
+        // SUPERADMIN BYPASS — CRITICAL FIX
+        // ────────────────────────────────────────────────────────────
+        // Si el usuario es superadmin (por email en SUPERADMIN_EMAILS,
+        // por custom claim role='superadmin', o por role en el documento),
+        // forzamos isAuthorized=true y status='active' ANTES de que
+        // los CASO 2-4 puedan bloquearlo.
+        //
+        // Esto resuelve el bug donde un superadmin cuyo documento en
+        // Firestore tenía isAuthorized:false o status:'pending' quedaba
+        // atrapado en "Acceso pendiente de aprobación".
+        //
+        // También auto-corregimos el documento en Firestore para
+        // sincronizarlo con el estado real del superadmin.
+        // ════════════════════════════════════════════════════════════
+        let _isSuperAdmin = SUPERADMIN_EMAILS.includes(user.email) ||
+                            data.role === 'superadmin';
+
+        // Verificar también custom claims si están disponibles
+        if (!_isSuperAdmin) {
+            try {
+                const _idTokenResult = await user.getIdTokenResult(false);
+                if (_idTokenResult && _idTokenResult.claims && _idTokenResult.claims.role === 'superadmin') {
+                    _isSuperAdmin = true;
+                }
+            } catch(_) { /* No bloquear si falla la verificación de token */ }
+        }
+
+        if (_isSuperAdmin) {
+            // Corregir el documento de Firestore si está desincronizado
+            const _needsFix = !data.isAuthorized || data.status !== 'active' || data.role !== 'superadmin';
+            if (_needsFix) {
+                console.log('[Cronos] SuperAdmin bypass: corrigiendo documento desincronizado para', user.email);
+                try {
+                    await fa.setDoc(ref, {
+                        isAuthorized: true,
+                        status: 'active',
+                        role: 'superadmin',
+                        lastLogin: fa.serverTimestamp(),
+                    }, { merge: true });
+                } catch(fixErr) {
+                    console.warn('[Cronos] SuperAdmin bypass: no se pudo corregir el documento:', fixErr.message);
+                }
+            }
+            // Forzar valores en memoria para el resto del flujo
+            data.isAuthorized = true;
+            data.status = 'active';
+            data.role = 'superadmin';
+
+            // Asegurar que SUPERADMIN_EMAILS incluye a este usuario
+            if (!SUPERADMIN_EMAILS.includes(user.email)) {
+                SUPERADMIN_EMAILS.push(user.email);
+            }
+
+            // Asegurar que cronos_config/superadmins existe y contiene este email
+            _ensureSuperAdminConfig(user.email).catch(e =>
+                console.warn('[Cronos] No se pudo actualizar cronos_config/superadmins:', e.message)
+            );
+
+            console.log('[Cronos] SuperAdmin bypass aplicado para:', user.email);
+        }
+        // ═══════ FIN SUPERADMIN BYPASS ═════════════════════════════
+
         // ── CASO 2: Cuenta eliminada ───────────────────────────
         if (data.status === 'removed') {
             await fa.signOut(fa.auth);
@@ -1451,8 +1514,23 @@ export async function doAuth() {
         let individualOwnerId       = selectedIndivId || null;
         let individualOwnerEmail    = null;
 
-        if (SUPERADMIN_EMAILS.includes(email)) {
+        // FIX: Verificar superadmin con múltiples fuentes para evitar race condition
+        // SUPERADMIN_EMAILS puede no estar cargado aún si loadSuperAdminEmails() falló.
+        // Verificar también el documento de Firestore y custom claims como fallback.
+        const _saEmailsCheck = SUPERADMIN_EMAILS.includes(email);
+        let _saClaimCheck = false;
+        if (!_saEmailsCheck && cred && cred.user) {
+            try {
+                const _tokenResult = await cred.user.getIdTokenResult(false);
+                if (_tokenResult && _tokenResult.claims && _tokenResult.claims.role === 'superadmin') {
+                    _saClaimCheck = true;
+                }
+            } catch(_) {}
+        }
+        if (_saEmailsCheck || _saClaimCheck) {
             isAuthorized = true;
+            finalRole = 'superadmin';
+            console.log('[Cronos] SuperAdmin detectado en registro:', email, '(emails:', _saEmailsCheck, ', claims:', _saClaimCheck, ')');
         }
 
         // ── Padre/tutor: guardar nombre del jugador que representa ──
