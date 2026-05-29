@@ -66,8 +66,21 @@ function toggleInjury() {
     if (!activeActionPlayerId) return;
     const p = players.find(x => x.id === activeActionPlayerId);
     if (!p) return;
+    const wasInjured = p.injured;
     p.injured = !p.injured;
     if (p.injured) logEvent(p, 'LESIÓN');
+
+    // 📊 SOLUCIÓN #7: Auditar cambio de lesión
+    if (window.auditLogger && liveMatchId) {
+        window.auditLogger.logPlayerAction(
+            p.id,
+            p.name,
+            p.number,
+            'injury',
+            p.injured ? 'marcado' : 'desmarcado',
+            { injured: { before: wasInjured, after: p.injured } }
+        );
+    }
 
     // Actualizar botón del modal — compatible con ambos estilos de markup
     const btn = document.getElementById('btn-injury');
@@ -115,10 +128,23 @@ function assignCard(type) {
 
     // ── TARJETA ROJA DIRECTA ──────────────────────────────────────
     if (type === 'roja') {
+        const wasCards = p.cards;
         p.cards       = 'roja';
         p.yellowCards = 0; // Roja directa → NO es doble amarilla
         logEvent(p, 'TARJETA ROJA');
         liveSyncOnAction();
+
+        // 📊 SOLUCIÓN #7: Auditar tarjeta roja
+        if (window.auditLogger && liveMatchId) {
+            window.auditLogger.logPlayerAction(
+                p.id,
+                p.name,
+                p.number,
+                'card',
+                'roja_directa',
+                { card: { before: wasCards, after: 'roja' }, yellowCards: { before: 0, after: 0 } }
+            );
+        }
 
         const limit = currentMode === 'f7' ? 3 : 5;
         if (p.status === 'field') {
@@ -143,10 +169,24 @@ function assignCard(type) {
 
         // ── Si ya tiene 1ª amarilla → SEGUNDA AMARILLA = EXPULSIÓN ──
         if (p.cards === 'amarilla' && p.yellowCards >= 1) {
+            const wasCards = p.cards;
+            const wasYellow = p.yellowCards;
             p.cards       = 'roja';
             p.yellowCards = 2; // Doble amarilla → queda registrado
             logEvent(p, 'DOBLE AMARILLA → EXPULSADO');
             liveSyncOnAction();
+
+            // 📊 SOLUCIÓN #7: Auditar doble amarilla
+            if (window.auditLogger && liveMatchId) {
+                window.auditLogger.logPlayerAction(
+                    p.id,
+                    p.name,
+                    p.number,
+                    'card',
+                    'doble_amarilla',
+                    { card: { before: wasCards, after: 'roja' }, yellowCards: { before: wasYellow, after: 2 } }
+                );
+            }
 
             if (p.status === 'field') {
                 p.status = 'bench'; p.x = 0; p.y = 0;
@@ -167,10 +207,24 @@ function assignCard(type) {
         }
 
         // ── Primera amarilla → mantener modal abierto con aviso ──
+        const wasCards2 = p.cards;
         p.cards       = 'amarilla';
         p.yellowCards = 1;
         logEvent(p, 'TARJETA AMARILLA');
         liveSyncOnAction();
+
+        // 📊 SOLUCIÓN #7: Auditar primera amarilla
+        if (window.auditLogger && liveMatchId) {
+            window.auditLogger.logPlayerAction(
+                p.id,
+                p.name,
+                p.number,
+                'card',
+                'amarilla_1',
+                { card: { before: wasCards2, after: 'amarilla' }, yellowCards: { before: 0, after: 1 } }
+            );
+        }
+
         renderPlayers();
 
         // NO cerrar modal — mostrar aviso de que la siguiente = expulsión
@@ -259,8 +313,32 @@ function changeGoals(amount) {
         p.goals = Math.max(0, prevGoals + amount);
         if (amount > 0 && p.goals > prevGoals) {
             logEvent(p, `GOL (${p.goals}º)`);
+            
+            // 📊 SOLUCIÓN #7: Auditar gol
+            if (window.auditLogger && liveMatchId) {
+                window.auditLogger.logPlayerAction(
+                    p.id,
+                    p.name,
+                    p.number,
+                    'goal',
+                    `gol_${p.goals}`,
+                    { goals: { before: prevGoals, after: p.goals } }
+                );
+            }
         } else if (amount < 0 && p.goals < prevGoals) {
             logEvent(p, `GOL ANULADO (Quedan: ${p.goals})`);
+            
+            // 📊 SOLUCIÓN #7: Auditar gol anulado
+            if (window.auditLogger && liveMatchId) {
+                window.auditLogger.logPlayerAction(
+                    p.id,
+                    p.name,
+                    p.number,
+                    'goal_cancelled',
+                    `gol_anulado_${p.goals}`,
+                    { goals: { before: prevGoals, after: p.goals } }
+                );
+            }
         }
         document.getElementById('action-player-goals').textContent = `${p.goals} ⚽`;
         syncScoreFromPlayers(p.team);
@@ -282,7 +360,30 @@ function clearPlayerActions() {
             alert("⚠️ No se pueden modificar las acciones del jugador con el cronómetro del partido detenido. Debe iniciar o reanudar el partido.");
             return;
         }
+        const prevGoals = p.goals || 0;
+        const prevCards = p.cards;
+        const prevInjured = p.injured;
+        const prevYellow = p.yellowCards || 0;
+        
         p.goals = 0; p.cards = 'ninguna'; p.injured = false; p.yellowCards = 0;
+        
+        // 📊 SOLUCIÓN #7: Auditar limpieza de acciones
+        if (window.auditLogger && liveMatchId) {
+            window.auditLogger.logPlayerAction(
+                p.id,
+                p.name,
+                p.number,
+                'actions_cleared',
+                'todas_las_acciones',
+                {
+                    goals: { before: prevGoals, after: 0 },
+                    cards: { before: prevCards, after: 'ninguna' },
+                    injured: { before: prevInjured, after: false },
+                    yellowCards: { before: prevYellow, after: 0 }
+                }
+            );
+        }
+        
         document.getElementById('action-player-goals').textContent = `${p.goals} ⚽`;
         syncScoreFromPlayers(p.team);
         closePlayerActionModal();

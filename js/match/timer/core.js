@@ -53,9 +53,23 @@ function tick() {
             }
         }
 
-        updateMasterUI();
+        // ⚡ SOLUCIÓN #2: Usar RenderOptimizer para batching de updates
+        if (window.renderOptimizer) {
+            window.renderOptimizer.scheduleRender(updateMasterUI, 'high');
+        } else {
+            updateMasterUI();
+        }
+
+        // Actualizar timers de jugadores con render optimization
         players.forEach(p => {
-            if (p.status === 'field') { p.time += deltaSec; updatePlayerUI(p); }
+            if (p.status === 'field') { 
+                p.time += deltaSec;
+                if (window.renderOptimizer) {
+                    window.renderOptimizer.scheduleRender(() => updatePlayerUI(p), 'normal');
+                } else {
+                    updatePlayerUI(p);
+                }
+            }
         });
 
         // ── SOLUCIÓN #1: Sincronizar con servidor cada 5 segundos para corregir drift
@@ -94,14 +108,22 @@ async function syncTimerWithServer() {
             const correction = serverData.timeH1 - masterTimeH1;
             masterTimeH1 = serverData.timeH1;
             console.warn(`⚠️ Timer H1 ajustado: ${correction > 0 ? '+' : ''}${correction}ms (drift corregido)`);
-            updateMasterUI();
+            if (window.renderOptimizer) {
+                window.renderOptimizer.scheduleRender(updateMasterUI, 'high');
+            } else {
+                updateMasterUI();
+            }
         }
 
         if (diffH2 > _maxDriftAllowed && matchPhase === '2nd_half') {
             const correction = serverData.timeH2 - masterTimeH2;
             masterTimeH2 = serverData.timeH2;
             console.warn(`⚠️ Timer H2 ajustado: ${correction > 0 ? '+' : ''}${correction}ms (drift corregido)`);
-            updateMasterUI();
+            if (window.renderOptimizer) {
+                window.renderOptimizer.scheduleRender(updateMasterUI, 'high');
+            } else {
+                updateMasterUI();
+            }
         }
     } catch (e) {
         // Offline o error de Firebase: continuar sin sync (no crítico)
