@@ -4,6 +4,12 @@
 // Extraído de app.js (líneas 4509-4674)
 // ══════════════════════════════════════════════════════════════════
 
+// ── SOLUCIÓN #1: Timer Sync Point (corregir drift)
+// Variables para sincronización con servidor cada 5 segundos
+let _lastServerSync = 0;
+const _SERVER_SYNC_INTERVAL_MS = 5000;  // Sincronizar cada 5 segundos
+let _maxDriftAllowed = 1500; // Si la diferencia es > 1.5s, corregir
+
 function toggleGame() {
     isRunning = !isRunning;
     const btn = document.getElementById('btn-play-pause');
@@ -52,11 +58,54 @@ function tick() {
             if (p.status === 'field') { p.time += deltaSec; updatePlayerUI(p); }
         });
 
+        // ── SOLUCIÓN #1: Sincronizar con servidor cada 5 segundos para corregir drift
+        if (now - _lastServerSync > _SERVER_SYNC_INTERVAL_MS) {
+            _lastServerSync = now;
+            syncTimerWithServer();  // Llamada asíncrona (no esperar)
+        }
+
         if (shouldAutoEnd1) {
             if (typeof window.endFirstHalf === 'function') window.endFirstHalf(true);
         } else if (shouldAutoEnd2) {
             if (typeof window.endMatch === 'function') window.endMatch(true);
         }
+    }
+}
+
+// ── SOLUCIÓN #1: Función para sincronizar timer con servidor
+async function syncTimerWithServer() {
+    const fa = window._cronos_auth;
+    if (!fa || !fa.db || !liveMatchId) return;
+
+    try {
+        const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const snap = await getDoc(doc(fa.db, 'live_matches', liveMatchId));
+        
+        if (!snap.exists()) return;
+
+        const serverData = snap.data();
+        
+        // Calcular la diferencia entre cliente y servidor
+        const diffH1 = Math.abs(serverData.timeH1 - masterTimeH1);
+        const diffH2 = Math.abs(serverData.timeH2 - masterTimeH2);
+        
+        // Si la diferencia es significativa (> 1.5s), corregir
+        if (diffH1 > _maxDriftAllowed && matchPhase === '1st_half') {
+            const correction = serverData.timeH1 - masterTimeH1;
+            masterTimeH1 = serverData.timeH1;
+            console.warn(`⚠️ Timer H1 ajustado: ${correction > 0 ? '+' : ''}${correction}ms (drift corregido)`);
+            updateMasterUI();
+        }
+
+        if (diffH2 > _maxDriftAllowed && matchPhase === '2nd_half') {
+            const correction = serverData.timeH2 - masterTimeH2;
+            masterTimeH2 = serverData.timeH2;
+            console.warn(`⚠️ Timer H2 ajustado: ${correction > 0 ? '+' : ''}${correction}ms (drift corregido)`);
+            updateMasterUI();
+        }
+    } catch (e) {
+        // Offline o error de Firebase: continuar sin sync (no crítico)
+        // El próximo sync reintenará
     }
 }
 
