@@ -37,6 +37,7 @@
     const functions = getFunctions(app);
 
     // ── Función checkAuthorization (fallback si auth.js no cargó) ──
+    // FIX: Añadido SuperAdmin bypass para que el fallback no bloquee al SA
     async function checkAuthorization(user) {
         // Si auth.js ya cargó su versión, usar esa
         if (typeof window._checkAuthorization === 'function') {
@@ -52,6 +53,39 @@
                 return;
             }
             const d = snap.data();
+
+            // ═══ SUPERADMIN BYPASS (fallback) ═════════════════════════
+            // Si el usuario tiene role='superadmin' o custom claim de superadmin,
+            // forzar isAuthorized=true y status='active' para evitar bloqueo.
+            let _isSA = d.role === 'superadmin';
+            if (!_isSA) {
+                try {
+                    const _token = await user.getIdTokenResult(false);
+                    if (_token && _token.claims && _token.claims.role === 'superadmin') {
+                        _isSA = true;
+                    }
+                } catch(_) {}
+            }
+            if (_isSA) {
+                // Corregir documento si está desincronizado
+                if (!d.isAuthorized || d.status !== 'active') {
+                    console.log('[Cronos-fallback] SuperAdmin bypass: corrigiendo documento');
+                    try {
+                        await setDoc(ref, {
+                            isAuthorized: true,
+                            status: 'active',
+                            role: 'superadmin',
+                            lastLogin: serverTimestamp(),
+                        }, { merge: true });
+                    } catch(_) {}
+                }
+                d.isAuthorized = true;
+                d.status = 'active';
+                d.role = 'superadmin';
+                console.log('[Cronos-fallback] SuperAdmin bypass aplicado para:', user.email);
+            }
+            // ═══ FIN SUPERADMIN BYPASS ════════════════════════════════
+
             if (!d.isAuthorized) {
                 if (typeof showAuthError === 'function')
                     showAuthError('⏳ Acceso pendiente de aprobación.');
@@ -112,7 +146,7 @@
         }
     });
 
-    // Firebase init completado
+    console.log('[Cronos] firebase-init.js cargado correctamente');
 })();
 
 // ══════════════════════════════════════════════════════════════════
@@ -149,4 +183,4 @@ window.saFS = async function saFS() {
     };
 };
 
-// Firebase functions inicializadas
+console.log('[Cronos] saFS() definido globalmente en firebase-init.js');
