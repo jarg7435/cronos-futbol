@@ -1961,7 +1961,18 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                 }
             }
 
-            // 3. Eliminar documentos secundarios
+            // 3. Eliminar cuenta de Firebase Auth ANTES de borrar docs
+            // (la Cloud Function necesita leer el doc del caller para verificar permisos)
+            if (httpsCallable && fa.functions) {
+                try {
+                    await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
+                    console.log('[saSetClubUserStatus] deleteAuthUser OK:', realEmail);
+                } catch(cfErr) {
+                    console.error('[saSetClubUserStatus] deleteAuthUser FALLÓ:', cfErr.code, cfErr.message);
+                }
+            }
+
+            // 4. Eliminar documentos secundarios
             for (var si2 = 0; si2 < allRoles.length; si2++) {
                 var secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
                 if (secId !== realUid) {
@@ -2006,15 +2017,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                     try { await deleteDoc(doc(db, 'platform_requests', prArr2[pi2].id)); } catch (_) {}
                 }
             } catch (_) {}
-
-            // 7. Eliminar cuenta de Firebase Auth
-            if (httpsCallable && fa.functions) {
-                try {
-                    await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
-                } catch(cfErr) {
-                    console.warn('[saSetClubUserStatus] deleteAuthUser fall\u00f3 (no bloqueante):', cfErr.message);
-                }
-            }
 
             // 8. FIX: Si era admin individual, actualizar la entidad individual
             if (_isIndividualAdmin && _entityId) {
@@ -2212,7 +2214,17 @@ window.saPurgeUser = async function saPurgeUser(uid, email) {
             allRoles = uData.allRoles;
         }
 
-        // 2. Eliminar documentos secundarios
+        // 2. Eliminar cuenta de Firebase Auth ANTES de borrar docs
+        if (httpsCallable && fa.functions) {
+            try {
+                await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
+                console.log('[saPurgeUser] deleteAuthUser OK:', realEmail);
+            } catch(cfErr) {
+                console.error('[saPurgeUser] deleteAuthUser FALLÓ:', cfErr.code, cfErr.message);
+            }
+        }
+
+        // 3. Eliminar documentos secundarios
         for (var si2 = 0; si2 < allRoles.length; si2++) {
             var secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
             if (secId !== realUid) {
@@ -2241,11 +2253,6 @@ window.saPurgeUser = async function saPurgeUser(uid, email) {
                 try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
             }
         } catch (_) {}
-
-        // 5. Eliminar cuenta de Firebase Auth
-        if (httpsCallable && fa.functions) {
-            try { await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail}); } catch(_) {}
-        }
 
         _saHideSpinner();
         _saToast('\u2705 Rastro de ' + email + ' eliminado completamente.', 3000);
