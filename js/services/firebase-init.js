@@ -112,7 +112,7 @@
         }
     });
 
-    console.log('[Cronos] firebase-init.js cargado correctamente');
+    // Firebase init completado
 })();
 
 // ══════════════════════════════════════════════════════════════════
@@ -149,4 +149,4 @@ window.saFS = async function saFS() {
     };
 };
 
-console.log('[Cronos] saFS() definido globalmente en firebase-init.js');
+// Firebase functions inicializadas

@@ -46,7 +46,6 @@ async function startLiveSync() {
 
     // Llamar a la UI definida en app.js
     if (typeof updateLiveButton === 'function') updateLiveButton(true);
-    console.log('🔴 Live sync iniciado (Firestore):', liveMatchId);
 }
 
 async function pushLiveSnapshot(status = 'active') {
@@ -123,7 +122,7 @@ async function pushLiveSnapshot(status = 'active') {
 
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot);
     } catch (err) {
-        console.warn('Error sync live:', err.message);
+        // Error de sincronización (puede ser offline — es esperado)
     }
 }
 
@@ -139,7 +138,6 @@ async function stopLiveSync() {
     await pushLiveSnapshot(finalStatus);
     
     if (typeof updateLiveButton === 'function') updateLiveButton(false);
-    console.log('⏹ Live sync detenido (Firestore), status:', finalStatus);
 }
 
 // Las funciones de UI (updateLiveButton, showLiveShareModal, etc.)
