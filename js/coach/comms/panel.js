@@ -21,10 +21,24 @@ async function _cFS() {
 function _parseHistoryForFirestore(raw) {
     if (!Array.isArray(raw)) return [];
     const result = [];
+    // E5 (punto C): saneo defensivo para informes ya guardados antes del guard de
+    // idempotencia. Las cadenas "Sale (DESCANSO)" / "Entra (2ªP)" / "Sale (FIN)"
+    // podían quedar duplicadas en history; aquí se descartan las entradas/salidas
+    // repetidas (mismo tipo + mismo timeStr) para que la línea de tiempo muestre
+    // cada entrada/salida exactamente una vez. No afecta a goles/tarjetas/lesiones.
+    const seenSubKeys = new Set();
+    const pushEvent = (ev) => {
+        if (ev.type === 'sub_in' || ev.type === 'sub_out') {
+            const key = ev.type + '|' + (ev.timeStr || (ev.minute + ':' + ev.second));
+            if (seenSubKeys.has(key)) return; // duplicado → omitir
+            seenSubKeys.add(key);
+        }
+        result.push(ev);
+    };
     raw.forEach(e => {
         if (typeof e === 'object' && e !== null && e.type) {
             // Ya es objeto — solo limpiar
-            result.push({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', note: e.note || '' });
+            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', note: e.note || '' });
             return;
         }
         if (typeof e !== 'string') return;
@@ -41,7 +55,7 @@ function _parseHistoryForFirestore(raw) {
         else if (low.includes('amarilla'))                        type = 'yellow';
         else if (low.includes('roja'))                            type = 'red';
         else if (low.includes('lesión') || low.includes('lesion')) type = 'injury';
-        if (type) result.push({ type, minute, second, timeStr, note: e });
+        if (type) pushEvent({ type, minute, second, timeStr, note: e });
     });
     return result;
 }

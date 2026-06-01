@@ -140,6 +140,16 @@ async function exportData() {
     const processedPlayers = allPlayers.map(p => {
         const shiftsH1 = [], shiftsH2 = [];
         let descanso = "", currentEntry = null, currentHalf = "";
+        // E5 (punto D): saneo defensivo para informes ya guardados antes del guard
+        // de idempotencia. Si history trae pares Entra/Sale duplicados (mismo
+        // minuto), el emparejador generaba columnas de entrada/salida repetidas.
+        // pushShift descarta un turno idéntico (mismo in+out) al último ya añadido,
+        // de modo que cada entrada/salida aparece exactamente una vez.
+        const pushShift = (arr, shift) => {
+            const last = arr[arr.length - 1];
+            if (last && last.in === shift.in && last.out === shift.out) return; // duplicado → omitir
+            arr.push(shift);
+        };
         const hasImplicitStart = (p.history.length > 0 && p.history[0].includes('Sale')) ||
             (p.history.length === 0 && (p.time > 0 || p.status === 'field'));
         if (hasImplicitStart) { currentEntry = "00:00"; currentHalf = "1ªP"; }
@@ -152,18 +162,18 @@ async function exportData() {
             else if (h.includes('Sale')) {
                 if (halfLabel === 'DESCANSO') {
                     descanso = timestamp;
-                    shiftsH1.push({ in: currentEntry || "00:00", out: timestamp });
+                    pushShift(shiftsH1, { in: currentEntry || "00:00", out: timestamp });
                     currentEntry = null; currentHalf = "";
                 } else if (currentHalf === '2ªP' || halfLabel === '2ªP') {
-                    if (currentEntry) { shiftsH2.push({ in: currentEntry, out: timestamp }); currentEntry = null; currentHalf = ""; }
+                    if (currentEntry) { pushShift(shiftsH2, { in: currentEntry, out: timestamp }); currentEntry = null; currentHalf = ""; }
                 } else {
-                    if (currentEntry) { shiftsH1.push({ in: currentEntry, out: timestamp }); currentEntry = null; currentHalf = ""; }
+                    if (currentEntry) { pushShift(shiftsH1, { in: currentEntry, out: timestamp }); currentEntry = null; currentHalf = ""; }
                 }
             }
         });
         if (currentEntry) {
-            if (currentHalf === '2ªP') shiftsH2.push({ in: currentEntry, out: "" });
-            else shiftsH1.push({ in: currentEntry, out: "" });
+            if (currentHalf === '2ªP') pushShift(shiftsH2, { in: currentEntry, out: "" });
+            else pushShift(shiftsH1, { in: currentEntry, out: "" });
         }
         // Extraer eventos del historial (goles, tarjetas, lesión) con minuto
         const events = [];
