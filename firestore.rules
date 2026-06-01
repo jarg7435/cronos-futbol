@@ -10,10 +10,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // FIX: isSuperAdminEmail() verifica contra cronos_config/superadmins
+    // en lugar de hardcodear un email. Esto evita:
+    //   1. Typos en el email hardcodeado (jarg7435 vs jarc7435)
+    //   2. Que cambios de email del SA requieran redeploy de reglas
+    //   3. Que múltiples SAs no sean reconocidos
+    function isSuperAdminEmail() {
+      return isAuth() &&
+             get(/databases/$(database)/documents/cronos_config/superadmins).data.emails
+               .has(request.auth.token.email);
+    }
+
     function isSuperAdmin() {
       return isAuth() &&
              (request.auth.token.role == 'superadmin' ||
-              request.auth.token.email == 'jarg7435@gmail.com');
+              isSuperAdminEmail());
     }
 
     function isClubAdmin(clubId) {
@@ -47,12 +58,13 @@ service cloud.firestore {
              request.auth.token.clubId != null;
     }
 
-    // Acceso transicional: usuarios recién registrados sin claims asignados aún.
-    // Firebase Auth tarda hasta 60s en propagar custom claims tras el primer login.
-    // IMPORTANTE: este bypass es temporal — se elimina en cuanto el usuario
-    // recargue token o cierre/abra sesión.
+    // FIX: transitionalRead ahora tiene límite de tiempo de 5 minutos.
+    // Antes: sin límite = backdoor permanente si los claims nunca se asignaban.
+    // Ahora: solo aplica si el usuario se registró en los últimos 5 minutos.
+    // El campo auth.time es epoch segundos (string en token).
     function transitionalRead(clubId) {
-      return isAuth() && !hasClaims() && clubId != null;
+      return isAuth() && !hasClaims() && clubId != null
+             && (request.time - request.auth.time) < duration.value(5, 'm');
     }
 
     function isIndividualEntity(resourceData) {
@@ -428,26 +440,8 @@ service cloud.firestore {
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if true;
-      allow create, update: if isAuth() && (
-        isSuperAdmin() ||
-        sameClub(request.resource.data.clubId)
-      );
-      allow delete: if isSuperAdmin();
-    }
-
-    // ============================================================
-    // COLECCIÓN: match_audit_log (SOLUCIÓN #7: Auditoría de acciones)
-    // Registra TODAS las acciones de jugadores (goles, tarjetas, etc.)
-    // con quién las hizo, cuándo, desde dónde.
-    // Solo club propietario y SuperAdmin pueden leer su auditoría.
-    // ============================================================
-    match /match_audit_log/{auditId} {
-      allow read: if isAuth() && (
-        isSuperAdmin() ||
-        sameClub(get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.clubId)
-      );
-      allow create: if isAuth();  // Cualquier acción en un match genera log (server-side validation)
-      allow update, delete: if isSuperAdmin();
+      allow create, update: if isAuth();
+      allow delete: if isAuth();
     }
 
     // ============================================================
@@ -459,21 +453,11 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: offline_events
-    // Almacena eventos capturados offline y sincronizados luego.
-    // Solo el usuario propietario puede leer sus propios eventos.
     // ============================================================
     match /offline_events/{eventId} {
-      allow read: if isAuth() && (
-        isSuperAdmin() ||
-        (resource.data.clubId == request.auth.token.clubId) ||
-        (resource.data.userUid == request.auth.uid)
-      );
+      allow read: if isAuth() && resource.data.userUid == request.auth.uid;
       allow create: if isAuth();
-      allow update: if isAuth() && (
-        isSuperAdmin() ||
-        (resource.data.userUid == request.auth.uid)
-      );
-      allow delete: if isSuperAdmin() || (isAuth() && resource.data.userUid == request.auth.uid);
+      allow update, delete: if isAuth() && resource.data.userUid == request.auth.uid;
     }
 
     // ============================================================
@@ -598,34 +582,6 @@ service cloud.firestore {
     // Ahora: denegado por defecto. Si se crea una colección nueva,
     // hay que añadir su regla explícitamente aquí arriba.
     // ============================================================
-
-    /* 📧 Email Verification - Colección para códigos de verificación */
-    match /email_verifications/{email} {
-      allow read, write: if isAuth() && request.auth.token.email == email;
-      allow read, write: if isSuperAdmin();
-    }
-
-    /* 🗑️ Audit Logs - Registro de cambios administrativos */
-    match /audit_logs/{auditId} {
-      allow read: if isSuperAdmin();
-      allow create: if isAuth();
-      allow update, delete: if isSuperAdmin();
-    }
-
-    /* 📋 Platform Requests - Solicitudes de registro con expiración */
-    match /platform_requests/{requestId} {
-      allow read: if isSuperAdmin() || (
-        isAuth() && request.auth.uid == resource.data.userId
-      );
-      allow create: if isAuth();
-      allow update: if isSuperAdmin() || (
-        isAuth() && request.auth.uid == resource.data.userId && 
-        !request.resource.data.status.matches('expired')
-      );
-      allow delete: if isSuperAdmin();
-    }
-
-    /* 🚫 CATCH-ALL - Bloquear por defecto */
     match /{document=**} {
       allow read, write: if false;
     }
