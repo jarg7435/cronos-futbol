@@ -6,6 +6,21 @@
 
 // activeActionPlayerId ya declarado en app.js
 
+// ════════════════════════════════════════════════════════════════════
+//  E1: Guard para acciones permitidas SOLO a jugadores EN EL CAMPO.
+//  Se aplica únicamente a GOLES. Las TARJETAS y la LESIÓN se permiten
+//  también en banquillo (un suplente puede recibir tarjeta o lesionarse
+//  calentando).
+// ====================================================================
+function _requireOnField(p, accionLabel) {
+    if (!p || p.status !== 'field') {
+        alert(`⛔ ${p ? p.name : 'El jugador'} está en el banquillo. ` +
+              `Solo se pueden registrar ${accionLabel} a jugadores EN EL CAMPO.`);
+        return false;
+    }
+    return true;
+}
+
 function openPlayerActionModal(player) {
     activeActionPlayerId = player.id;
     document.getElementById('action-player-name').innerHTML =
@@ -52,6 +67,20 @@ function openPlayerActionModal(player) {
         injBtn.style.border     = player.injured ? '1px solid #e74c3c' : '';
         injBtn.textContent      = player.injured ? '🚑 Lesionado ✓' : '🚑 Lesión';
     }
+    // ── E1: Deshabilitar SOLO los botones de GOL (+1/-1) si el jugador
+    //    NO está en el campo. Tarjetas (🟨/🟥) y lesión (🚑) permanecen
+    //    SIEMPRE activas: un suplente puede recibir tarjeta o lesionarse
+    //    calentando. Se actúa sobre cada botón changeGoals de forma
+    //    individual (NO sobre el contenedor padre, que comparte fila con
+    //    la lesión) para no afectar a otras acciones.
+    const onField = player.status === 'field';
+    document.querySelectorAll('#player-action-modal .btn[onclick*="changeGoals"]').forEach(btn => {
+        btn.disabled = !onField;
+        btn.style.opacity = onField ? '' : '0.35';
+        btn.style.pointerEvents = onField ? '' : 'none';
+        btn.title = onField ? '' : 'Solo se registran goles a jugadores EN EL CAMPO';
+    });
+
     document.getElementById('player-action-modal').style.display = 'flex';
 }
 
@@ -305,6 +334,8 @@ function changeGoals(amount) {
     if (!activeActionPlayerId) return;
     const p = players.find(x => x.id === activeActionPlayerId);
     if (p) {
+        // ── E1: Goles SOLO a jugadores en el campo ──
+        if (!_requireOnField(p, 'goles')) { closePlayerActionModal(); return; }
         if (!isRunning) {
             alert("⚠️ No se pueden sumar o quitar goles con el cronómetro del partido detenido. Debe iniciar o reanudar el partido.");
             return;
