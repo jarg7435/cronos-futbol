@@ -1,6 +1,6 @@
 # Cronos Fútbol — Estado de correcciones
 
-_Última actualización: 2026-06-01 (sesión E3)_
+_Última actualización: 2026-06-01 (sesión E3 — cerrada). Próxima sesión: empezar por E4._
 
 ## COMPLETADO
 
@@ -20,6 +20,7 @@ _Última actualización: 2026-06-01 (sesión E3)_
     - P2: guard/aviso en consola si `me.clubId` es nulo (sin él, las reglas Firestore impiden la lectura del staff).
     - P3 `openCollectiveReport`: `_cGetStaff` pasa a ser fuente PRIMARIA (antes solo fallback); `emailConfig` solo añade contactos no duplicados.
     - Verificado con test: directores/coordinadores del club incluidos aunque no estén en `emailConfig` ni tengan tag `rpt`; sin duplicados; padres excluidos.
+  - Commits E3: `cfcea5e` (staffReport=true) + `8bdfebc` (puntos 1-3 staff sin tag rpt) en `main`.
 
 ## PENDIENTE (empezar por E4)
 
