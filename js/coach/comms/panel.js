@@ -23,16 +23,13 @@ function _parseHistoryForFirestore(raw) {
     const result = [];
     // E5 (punto C): saneo defensivo para informes ya guardados antes del guard de
     // idempotencia. Las cadenas "Sale (DESCANSO)" / "Entra (2ªP)" / "Sale (FIN)"
-    // podían quedar duplicadas en history; aquí se descartan las entradas/salidas
-    // repetidas (mismo tipo + mismo timeStr) para que la línea de tiempo muestre
-    // cada entrada/salida exactamente una vez. No afecta a goles/tarjetas/lesiones.
-    const seenSubKeys = new Set();
+    // podían quedar duplicadas y consecutivas en history; si el evento entrante
+    // coincide con el último insertado (mismo type + mismo timeStr) se omite, de
+    // modo que cada entrada/salida aparece una sola vez en la línea de tiempo.
+    // No afecta a goles/tarjetas/lesiones ni a entradas/salidas en minutos distintos.
     const pushEvent = (ev) => {
-        if (ev.type === 'sub_in' || ev.type === 'sub_out') {
-            const key = ev.type + '|' + (ev.timeStr || (ev.minute + ':' + ev.second));
-            if (seenSubKeys.has(key)) return; // duplicado → omitir
-            seenSubKeys.add(key);
-        }
+        const last = result[result.length - 1];
+        if (last && last.type === ev.type && (last.timeStr || '') === (ev.timeStr || '')) return; // duplicado consecutivo → omitir
         result.push(ev);
     };
     raw.forEach(e => {
