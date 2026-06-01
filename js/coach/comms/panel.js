@@ -3101,6 +3101,10 @@ window._sendCollectiveReportNow = async function() {
                 // Identificadores del partido
                 matchId,
                 type:           'collective_match_report',
+                // E3 FIX: el panel de Dirección/Coordinación filtra exclusivamente
+                // por staffReport===true. Sin esta marca el informe colectivo no
+                // llegaba nunca a coordinadores/directores.
+                staffReport:    true,
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,
