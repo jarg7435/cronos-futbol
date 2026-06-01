@@ -37,6 +37,7 @@
     const functions = getFunctions(app);
 
     // ── Función checkAuthorization (fallback si auth.js no cargó) ──
+    // FIX: Añadido SuperAdmin bypass para que el fallback no bloquee al SA
     async function checkAuthorization(user) {
         // Si auth.js ya cargó su versión, usar esa
         if (typeof window._checkAuthorization === 'function') {
@@ -52,6 +53,39 @@
                 return;
             }
             const d = snap.data();
+
+            // ═══ SUPERADMIN BYPASS (fallback) ═════════════════════════
+            // Si el usuario tiene role='superadmin' o custom claim de superadmin,
+            // forzar isAuthorized=true y status='active' para evitar bloqueo.
+            let _isSA = d.role === 'superadmin';
+            if (!_isSA) {
+                try {
+                    const _token = await user.getIdTokenResult(false);
+                    if (_token && _token.claims && _token.claims.role === 'superadmin') {
+                        _isSA = true;
+                    }
+                } catch(_) {}
+            }
+            if (_isSA) {
+                // Corregir documento si está desincronizado
+                if (!d.isAuthorized || d.status !== 'active') {
+                    console.log('[Cronos-fallback] SuperAdmin bypass: corrigiendo documento');
+                    try {
+                        await setDoc(ref, {
+                            isAuthorized: true,
+                            status: 'active',
+                            role: 'superadmin',
+                            lastLogin: serverTimestamp(),
+                        }, { merge: true });
+                    } catch(_) {}
+                }
+                d.isAuthorized = true;
+                d.status = 'active';
+                d.role = 'superadmin';
+                console.log('[Cronos-fallback] SuperAdmin bypass aplicado para:', user.email);
+            }
+            // ═══ FIN SUPERADMIN BYPASS ════════════════════════════════
+
             if (!d.isAuthorized) {
                 if (typeof showAuthError === 'function')
                     showAuthError('⏳ Acceso pendiente de aprobación.');
@@ -72,6 +106,44 @@
         doc, getDoc, setDoc, serverTimestamp,
         checkAuthorization
     };
+
+    // ── Restaurar sesión tras recarga por actualización ────────────────
+    // (Movido desde el bloque inline de index.html — C1: eliminación de
+    //  doble inicialización de Firebase.)
+    const _restoredUid   = sessionStorage.getItem('cronos_session_uid');
+    const _restoredEmail = sessionStorage.getItem('cronos_session_email');
+    const _restoredRole  = sessionStorage.getItem('cronos_session_role');
+    const _updateFlag    = sessionStorage.getItem('cronos_post_update');
+
+    if (_restoredUid && _updateFlag === '1') {
+        sessionStorage.removeItem('cronos_post_update');
+        window._cronosCurrentUser = {
+            uid:   _restoredUid,
+            email: _restoredEmail,
+            role:  _restoredRole
+        };
+        window.addEventListener('load', () => {
+            const toast = document.createElement('div');
+            toast.textContent = '✅ App actualizada correctamente';
+            toast.style.cssText =
+                'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
+                'background:#1a7a3e;color:#fff;padding:10px 24px;border-radius:8px;' +
+                'font-size:0.88rem;font-weight:bold;z-index:99999;' +
+                'box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        });
+        const _installScreen = document.getElementById('install-screen');
+        if (_installScreen) _installScreen.style.display = 'none';
+        const _authScreen = document.getElementById('auth-screen');
+        if (_authScreen) _authScreen.style.display = 'none';
+        // enterApp() vive en auth.js, que puede no haberse cargado aún.
+        if (typeof enterApp === 'function') {
+            enterApp();
+        } else {
+            setTimeout(() => { if (typeof enterApp === 'function') enterApp(); }, 100);
+        }
+    }
 
     // ── Sesión persistente ────────────────────────────────────────
     setPersistence(auth, browserLocalPersistence).catch(() => {});
@@ -112,7 +184,7 @@
         }
     });
 
-    // Firebase init completado
+    console.log('[Cronos] firebase-init.js cargado correctamente');
 })();
 
 // ══════════════════════════════════════════════════════════════════
@@ -149,4 +221,4 @@ window.saFS = async function saFS() {
     };
 };
 
-// Firebase functions inicializadas
+console.log('[Cronos] saFS() definido globalmente en firebase-init.js');
