@@ -1408,6 +1408,16 @@ async function autoDispatchMatchReports() {
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const db = window._cronos_auth.db;
 
+        // E3 (punto 2): sin clubId válido, las reglas Firestore
+        // (sameClubAsDoc) impiden que el panel de Dirección lea los
+        // cronos_player_reports, así que los informes nunca se verían.
+        // Avisamos en consola para diagnóstico; el envío continúa porque
+        // el entrenador igualmente recibe su copia, pero el staff no podrá leer.
+        if (!me.clubId) {
+            console.warn('[autoDispatch] me.clubId ausente: los informes de staff ' +
+                'no serán legibles por coordinadores/directores (reglas Firestore por club).');
+        }
+
         const scoreHome = document.getElementById('score-home')?.textContent || '0';
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
         const rivalName = TEAM_NAMES.away || 'Rival';
@@ -1473,40 +1483,46 @@ async function autoDispatchMatchReports() {
         }
 
         // ── Notificar al staff (coordinador + director) ──────────────────
-        const staffToNotify = contacts.filter(c => c.type !== 'parent' && isRecipientAuthorized(c) && c.uid);
-        const notifiedUids = new Set(staffToNotify.map(s => s.uid));
-        
+        // E3 (punto 1): resolver SIEMPRE los destinatarios desde _cGetStaff,
+        // que combina emailConfig.contacts + colección users por clubId y
+        // roles ['director','coordinator']. Antes solo se notificaba a los
+        // contactos con tag 'rpt' y uid, por lo que los directores/coordinadores
+        // del club que no estuvieran configurados manualmente nunca recibían
+        // el informe. El tag 'rpt' deja de ser requisito.
+        const notifiedUids = new Set();
+
+        // Fuente primaria: staff real del club (users) + config unificada.
+        let staffToNotify = [];
+        try {
+            const _fns2 = { collection, getDocs, query, where };
+            staffToNotify = (await _cGetStaff(db, me.clubId || '', _fns2)) || [];
+        } catch (e) {
+            console.warn('[autoDispatch] _cGetStaff falló, usando emailConfig:', e.message);
+        }
+
+        // Fuente complementaria: contactos de tipo staff con uid (por si el
+        // entrenador añadió a alguien manualmente que no está en users).
+        contacts.filter(c => c.type !== 'parent' && c.uid)
+            .forEach(c => {
+                if (!staffToNotify.some(s => s.uid === c.uid)) {
+                    staffToNotify.push({ uid: c.uid, role: c.role || 'staff', email: c.email || '' });
+                }
+            });
+
         for (const staff of staffToNotify) {
+            if (!staff.uid || notifiedUids.has(staff.uid)) continue;
+            notifiedUids.add(staff.uid);
             const notifId = `notif_global_rpt_${staff.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', notifId), {
                 type: 'aviso_partido_finalizado',
                 clubId: me.clubId || null,
                 parentUid: staff.uid,
+                staffUid: staff.uid,
                 matchDate, rival: rivalName, scoreHome, scoreAway,
                 message: globalText.replace(/[*_]/g, ''),
                 createdAt: new Date().toISOString()
             });
         }
-
-        // Respaldo: Notificar a directores/coordinadores desde colección users
-        try {
-            const _fns2 = { collection, getDocs, query, where };
-            const staffFromUsers = (await _cGetStaff(db, me.clubId||'', _fns2))
-                .filter(s => !notifiedUids.has(s.uid));
-
-            for (const s of staffFromUsers) {
-                const notifId = `notif_global_rpt_${s.uid}_${Date.now().toString(36)}`;
-                await setDoc(doc(db, 'cronos_notifications', notifId), {
-                    type: 'aviso_partido_finalizado',
-                    clubId: me.clubId || null,
-                    parentUid: s.uid,
-                    staffUid: s.uid,
-                    matchDate, rival: rivalName, scoreHome, scoreAway,
-                    message: globalText.replace(/[*_]/g, ''),
-                    createdAt: new Date().toISOString()
-                });
-            }
-        } catch(e) { /* fallo silencioso del respaldo */ }
 
         // --- FASE B: INFORMES INDIVIDUALES (PADRES) ---
         for (const player of homePlayers) {
@@ -3006,37 +3022,44 @@ window.openCollectiveReport = async function openCollectiveReport() {
     </div>`;
 
     // Cargar directores/coordinadores destinatarios del informe
-    // FUENTE 1: emailConfig.contacts (configurado por el entrenador en Gestión de Contactos)
-    // FUENTE 2: _cGetStaff como fallback (Firestore)
+    // E3 (punto 3): FUENTE PRIMARIA = _cGetStaff (staff real del club por
+    // clubId + roles director/coordinator, combinado internamente con
+    // emailConfig). FUENTE COMPLEMENTARIA = contactos de emailConfig que no
+    // estén ya incluidos. Antes emailConfig era primario y _cGetStaff solo
+    // fallback, así que si el entrenador no tenía a los directores en sus
+    // contactos con tag 'rpt', el informe colectivo nunca les llegaba.
     try {
-        // Intentar emailConfig primero — más fiable para usuarios multi-rol
         let staffList = [];
 
+        // 1. Fuente primaria: staff real del club.
+        try {
+            const fns4 = await _cFS();
+            staffList = (await _cGetStaff(fns4.db, me.clubId || '', fns4)) || [];
+        } catch (e) {
+            console.warn('[collectiveReport] _cGetStaff falló:', e.message);
+        }
+
+        // 2. Complemento: contactos de emailConfig (incluye contactos solo-email
+        //    sin uid) que no estén ya en la lista. El tag 'rpt' ya no es requisito.
         const emailCfgContacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts))
             ? emailConfig.contacts
             : [];
 
-        // Staff con tag 'rpt' (reciben informes) O cualquier staff si no hay tag
-        const staffWithRpt = emailCfgContacts.filter(c => c.type !== 'parent' && (c.tags||[]).includes('rpt'));
-        const allStaff     = emailCfgContacts.filter(c => c.type !== 'parent');
-        const fromConfig   = staffWithRpt.length ? staffWithRpt : allStaff;
-
-        fromConfig.forEach(c => {
-            staffList.push({
-                uid:         c.uid   || '',
-                email:       c.email || '',
-                phone:       c.phone || '',
-                displayName: c.name  || c.email || '',
-                role:        c.uid ? 'staff' : 'contact',
-                _fromConfig: true,
-            });
+        emailCfgContacts.filter(c => c.type !== 'parent').forEach(c => {
+            const already = staffList.some(s =>
+                (c.uid && s.uid === c.uid) ||
+                (c.email && s.email && s.email.toLowerCase() === c.email.toLowerCase()));
+            if (!already) {
+                staffList.push({
+                    uid:         c.uid   || '',
+                    email:       c.email || '',
+                    phone:       c.phone || '',
+                    displayName: c.name  || c.email || '',
+                    role:        c.role  || (c.uid ? 'staff' : 'contact'),
+                    _fromConfig: true,
+                });
+            }
         });
-
-        // Si emailConfig no tiene nada, usar Firestore
-        if (!staffList.length) {
-            const fns4 = await _cFS();
-            staffList = await _cGetStaff(fns4.db, me.clubId || '', fns4);
-        }
 
         const listEl = document.getElementById('coll-rpt-staff-list');
         if (listEl) {
