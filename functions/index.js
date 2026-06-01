@@ -279,38 +279,82 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     }
   }
 
+  // Determina el UID real de Firebase Auth. El uid recibido del cliente puede
+  // estar desalineado (p.ej. ID de doc secundario); ante user-not-found
+  // resolvemos por email antes de dar el borrado por fallido.
+  let resolvedUid = uid;
+  let deletedFromAuth = false;
+  let alreadyAbsent = false;
+
   try {
-    await admin.auth().deleteUser(uid);
+    await admin.auth().deleteUser(resolvedUid);
+    deletedFromAuth = true;
+  } catch (firstErr) {
+    if (firstErr.code !== 'auth/user-not-found') {
+      // Error real (no es "no existe"): registrar y propagar; NO continuar.
+      console.error('Error al eliminar usuario por uid:', firstErr);
+      await admin.firestore().collection('error_logs').add({
+        action: 'delete_user_failed',
+        targetUid: uid,
+        targetEmail: email,
+        error: firstErr.message,
+        errorCode: firstErr.code || null,
+        performedBy: context.auth.token.email,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      throw new functions.https.HttpsError('internal', `Error al eliminar usuario: ${firstErr.message}`, { code: firstErr.code });
+    }
 
-    await admin.firestore().collection('audit_logs').add({
-      action: 'delete_user',
-      targetUid: uid,
-      targetEmail: email,
-      performedBy: context.auth.token.email,
-      performedByUid: callerUid,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      ipAddress: context.rawRequest.ip,
-    });
-
-    return {
-      success: true,
-      message: `${email} eliminado de Firebase Auth`,
-      deletedAt: new Date().toISOString(),
-    };
-  } catch (error) {
-    console.error('Error al eliminar usuario:', error);
-
-    await admin.firestore().collection('error_logs').add({
-      action: 'delete_user_failed',
-      targetUid: uid,
-      targetEmail: email,
-      error: error.message,
-      performedBy: context.auth.token.email,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    throw new functions.https.HttpsError('internal', `Error al eliminar usuario: ${error.message}`);
+    // El uid recibido no existe en Auth: intentar localizar por email.
+    try {
+      const userRecord = await admin.auth().getUserByEmail(email);
+      resolvedUid = userRecord.uid;
+      await admin.auth().deleteUser(resolvedUid);
+      deletedFromAuth = true;
+      console.log('[deleteAuthUser] Borrado por UID real resuelto por email:', resolvedUid);
+    } catch (secondErr) {
+      if (secondErr.code === 'auth/user-not-found') {
+        // Ni por uid ni por email existe: ya no esta en Auth, el email queda libre.
+        alreadyAbsent = true;
+        console.log('[deleteAuthUser] Usuario ya ausente en Auth:', email);
+      } else {
+        console.error('Error al eliminar usuario por email:', secondErr);
+        await admin.firestore().collection('error_logs').add({
+          action: 'delete_user_failed',
+          targetUid: uid,
+          targetEmail: email,
+          error: secondErr.message,
+          errorCode: secondErr.code || null,
+          performedBy: context.auth.token.email,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        throw new functions.https.HttpsError('internal', `Error al eliminar usuario: ${secondErr.message}`, { code: secondErr.code });
+      }
+    }
   }
+
+  await admin.firestore().collection('audit_logs').add({
+    action: 'delete_user',
+    targetUid: resolvedUid,
+    requestedUid: uid,
+    targetEmail: email,
+    deletedFromAuth: deletedFromAuth,
+    alreadyAbsent: alreadyAbsent,
+    performedBy: context.auth.token.email,
+    performedByUid: callerUid,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    ipAddress: context.rawRequest.ip,
+  });
+
+  return {
+    success: true,
+    alreadyAbsent: alreadyAbsent,
+    uid: resolvedUid,
+    message: alreadyAbsent
+      ? `${email} ya no existia en Firebase Auth (email liberado)`
+      : `${email} eliminado de Firebase Auth`,
+    deletedAt: new Date().toISOString(),
+  };
 });
 
 /* ==================================================================== */
