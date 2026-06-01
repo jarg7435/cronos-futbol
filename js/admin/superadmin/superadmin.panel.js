@@ -1968,13 +1968,10 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                     var resB = await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
                     console.log('[saSetClubUserStatus] deleteAuthUser OK:', realEmail, resB && resB.data);
                 } catch(cfErr) {
+                    console.error('[saSetClubUserStatus] deleteAuthUser FALLÓ:', cfErr.code, cfErr.message);
                     var codeB = (cfErr.details && cfErr.details.code) || cfErr.code || '';
-                    console.error('[saSetClubUserStatus] deleteAuthUser FALLÓ:', codeB, cfErr.message);
-                    // Solo continuamos si el usuario ya no estaba en Auth; cualquier otro
-                    // error aborta para no dejar el email bloqueado en Firebase Auth.
                     if (codeB !== 'auth/user-not-found') {
-                        _saHideSpinner();
-                        _saToast('❌ No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeB) + '). Borrado cancelado.', 6000);
+                        _saToast('🚫 No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeB) + '). Borrado cancelado.', 6000);
                         return;
                     }
                 }
@@ -2228,13 +2225,10 @@ window.saPurgeUser = async function saPurgeUser(uid, email) {
                 var resP = await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
                 console.log('[saPurgeUser] deleteAuthUser OK:', realEmail, resP && resP.data);
             } catch(cfErr) {
+                console.error('[saPurgeUser] deleteAuthUser FALLÓ:', cfErr.code, cfErr.message);
                 var codeP = (cfErr.details && cfErr.details.code) || cfErr.code || '';
-                console.error('[saPurgeUser] deleteAuthUser FALLÓ:', codeP, cfErr.message);
-                // Solo continuamos si el usuario ya no estaba en Auth; cualquier otro
-                // error aborta para no dejar el email bloqueado en Firebase Auth.
                 if (codeP !== 'auth/user-not-found') {
-                    _saHideSpinner();
-                    _saToast('❌ No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeP) + '). Purga cancelada.', 6000);
+                    _saToast('🚫 No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeP) + '). Purga cancelada.', 6000);
                     return;
                 }
             }

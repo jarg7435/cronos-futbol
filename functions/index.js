@@ -285,50 +285,31 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
   let resolvedUid = uid;
   let deletedFromAuth = false;
   let alreadyAbsent = false;
-
   try {
     await admin.auth().deleteUser(resolvedUid);
     deletedFromAuth = true;
   } catch (firstErr) {
     if (firstErr.code !== 'auth/user-not-found') {
-      // Error real (no es "no existe"): registrar y propagar; NO continuar.
-      console.error('Error al eliminar usuario por uid:', firstErr);
       await admin.firestore().collection('error_logs').add({
-        action: 'delete_user_failed',
-        targetUid: uid,
-        targetEmail: email,
-        error: firstErr.message,
-        errorCode: firstErr.code || null,
-        performedBy: context.auth.token.email,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        action:'delete_user_failed', targetUid:uid, targetEmail:email,
+        error:firstErr.message, errorCode:firstErr.code||null,
+        performedBy:context.auth.token.email,
+        timestamp:admin.firestore.FieldValue.serverTimestamp()
       });
-      throw new functions.https.HttpsError('internal', `Error al eliminar usuario: ${firstErr.message}`, { code: firstErr.code });
+      throw new functions.https.HttpsError('internal',
+        `Error al eliminar usuario: ${firstErr.message}`, {code:firstErr.code});
     }
-
-    // El uid recibido no existe en Auth: intentar localizar por email.
     try {
       const userRecord = await admin.auth().getUserByEmail(email);
       resolvedUid = userRecord.uid;
       await admin.auth().deleteUser(resolvedUid);
       deletedFromAuth = true;
-      console.log('[deleteAuthUser] Borrado por UID real resuelto por email:', resolvedUid);
     } catch (secondErr) {
       if (secondErr.code === 'auth/user-not-found') {
-        // Ni por uid ni por email existe: ya no esta en Auth, el email queda libre.
         alreadyAbsent = true;
-        console.log('[deleteAuthUser] Usuario ya ausente en Auth:', email);
       } else {
-        console.error('Error al eliminar usuario por email:', secondErr);
-        await admin.firestore().collection('error_logs').add({
-          action: 'delete_user_failed',
-          targetUid: uid,
-          targetEmail: email,
-          error: secondErr.message,
-          errorCode: secondErr.code || null,
-          performedBy: context.auth.token.email,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        throw new functions.https.HttpsError('internal', `Error al eliminar usuario: ${secondErr.message}`, { code: secondErr.code });
+        throw new functions.https.HttpsError('internal',
+          `Error al eliminar usuario: ${secondErr.message}`, {code:secondErr.code});
       }
     }
   }
