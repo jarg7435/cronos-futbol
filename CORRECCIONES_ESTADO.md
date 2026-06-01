@@ -1,6 +1,6 @@
 # Cronos Fútbol — Estado de correcciones
 
-_Última actualización: 2026-06-01 (sesión E3 — cerrada). Próxima sesión: empezar por E4._
+_Última actualización: 2026-06-01 (sesión E4 — cerrada). Próxima sesión: empezar por E5._
 
 ## COMPLETADO
 
@@ -22,9 +22,18 @@ _Última actualización: 2026-06-01 (sesión E3 — cerrada). Próxima sesión: 
     - Verificado con test: directores/coordinadores del club incluidos aunque no estén en `emailConfig` ni tengan tag `rpt`; sin duplicados; padres excluidos.
   - Commits E3: `cfcea5e` (staffReport=true) + `8bdfebc` (puntos 1-3 staff sin tag rpt) en `main`.
 
-## PENDIENTE (empezar por E4)
+## COMPLETADO E4
 
-- [ ] **E4**: Informe individual triplicado a padres
+- [x] **E4**: Informe individual ya NO se triplica a padres
+  - Causa: el fin de partido se dispara desde 3 rutas (`endMatch` manual en `active-match.js`, `terminateMatch` por expulsiones en `player-actions.js`/`app-init.js`, y fin automático del crono). Cada ruta llamaba a `saveAllMatchReportsInternal()` sin guard, y **además** esa función escribía un doc `rpt_*` por jugador (con `parentUid`) Y llamaba a `autoDispatchMatchReports()`, que escribe un `parent_player_report`. El panel del padre (`js/parent/panel.js` → filtra por `parentUid` y por `playerNumber+clubId`) mostraba ambos → 2 copias por llamada × varios disparos = informe duplicado/triplicado.
+  - Fix (`js/coach/comms/panel.js` → `saveAllMatchReportsInternal`):
+    1. **Guard de idempotencia**: huella por partido (`live:<liveMatchId>` o `local:<uid>:<fecha>:<marcador>`). Se reserva la huella antes del primer `await` para cerrar la ventana de carrera entre disparos casi simultáneos; si vuelve a llamarse con la misma huella, se omite. En error se libera la huella para permitir reintento manual.
+    2. **Eliminada la escritura redundante** del doc `rpt_*` por jugador: la función queda como orquestador único; `autoDispatchMatchReports()` genera la copia canónica (`parent_player_report`) → una sola copia al padre.
+  - Reset del guard al empezar partido nuevo: `resetMatch` (`js/match/events/movement-log.js`) y al generar nuevo `liveMatchId` (`js/match/live/sync.js`, `js/services/firestore-sync.js`).
+  - Verificado con test del guard: 3 disparos del mismo partido → 1 despacho; partido nuevo → vuelve a despachar; modo local sin live-sync funciona.
+
+## PENDIENTE (empezar por E5)
+
 - [ ] **E5**: Entradas/salidas duplicadas en línea de tiempo
 - [ ] **E6**: Crono live sin progreso segundo a segundo
 - [ ] **E7**: Tiempos con redondeo en informes

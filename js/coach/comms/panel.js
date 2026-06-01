@@ -1688,62 +1688,47 @@ async function saveAllMatchReportsInternal() {
     const me = window._cronosCurrentUser;
     if (!me || !window.players) return;
 
+    // ── E4: GUARD DE IDEMPOTENCIA ────────────────────────────────────────
+    // El fin de partido se dispara desde varias rutas (endMatch manual,
+    // terminateMatch por expulsiones, fin automático del crono). Cada una
+    // llamaba a esta función, y cada llamada generaba informes a padres, por
+    // lo que el padre recibía el informe individual 2-3 veces (E4: "informe
+    // individual triplicado a padres").
+    //
+    // Solución: despachar como MÁXIMO una vez por partido finalizado.
+    // La huella usa liveMatchId si existe; si no (modo sin sync en vivo),
+    // se compone con uid + fecha + marcador para distinguir partidos reales
+    // del mismo entrenador y evitar bloquear un partido legítimamente nuevo.
+    const _scoreHomeNow = document.getElementById('score-home')?.textContent || '0';
+    const _scoreAwayNow = document.getElementById('score-away')?.textContent || '0';
+    const _matchFingerprint =
+        (typeof liveMatchId !== 'undefined' && liveMatchId)
+            ? `live:${liveMatchId}`
+            : `local:${me.uid}:${new Date().toISOString().split('T')[0]}:` +
+              `${TEAM_NAMES.home}-${_scoreHomeNow}-${_scoreAwayNow}-${TEAM_NAMES.away}`;
+
+    if (window._cronosLastDispatchedMatch === _matchFingerprint) {
+        console.log('[AutoReport] Informes ya despachados para este partido; se omite duplicado.', _matchFingerprint);
+        return;
+    }
+    // Reservar la huella ANTES del await para cerrar la ventana de carrera
+    // entre disparos casi simultáneos (p. ej. crono + botón manual).
+    window._cronosLastDispatchedMatch = _matchFingerprint;
+
     try {
-        const { setDoc, doc } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const db = window._cronos_auth.db;
-
-        const scoreHome = document.getElementById('score-home')?.textContent || '0';
-        const scoreAway = document.getElementById('score-away')?.textContent || '0';
-        const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
-        const homePlayers = window.players.filter(p => p.team === 'home');
-
-        // Obtener links actuales para vincular playerNumber → parentUid
-        const { collection, getDocs, query, where } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const linksSnap = await getDocs(query(
-            collection(db, 'cronos_player_links'),
-            where('clubId', '==', me.clubId || '')
-        ));
-
-        const linksMap = {};
-        linksSnap.forEach(d => {
-            const data = d.data();
-            linksMap[data.playerNumber] = data;
-        });
-
-        let saved = 0;
-        for (const player of homePlayers) {
-            const link = linksMap[player.number] || {};
-            const reportId = `rpt_${player.number}_${Date.now().toString(36)}`;
-            
-            await setDoc(doc(db, 'cronos_player_reports', reportId), {
-                reportId,
-                playerNumber:   player.number,
-                playerAlias:    player.name,
-                parentUid:      link.parentUid || null,
-                coachUid:       me.uid,
-                coachEmail:     me.email,
-                clubId:         me.clubId || null,
-                matchDate,
-                rival:          TEAM_NAMES.away,
-                scoreHome,
-                scoreAway,
-                minutesPlayed:  formatTime(player.time || 0),
-                goals:          player.goals   || 0,
-                cards:          player.cards   || 'ninguna',
-                injured:        player.injured || false,
-                history:        player.history || [],
-                createdAt:      new Date().toISOString(),
-            });
-            saved++;
-        }
-
-        // --- DISPARAR DESPACHO AUTOMÁTICO ---
+        // Orquestador único: toda la generación de documentos (staff, padres y
+        // copia del entrenador) vive en autoDispatchMatchReports(). Antes esta
+        // función escribía además un doc `rpt_*` por jugador con parentUid, que
+        // el panel del padre mostraba junto al `parent_player_report` generado
+        // por autoDispatch → informe duplicado. Eliminado para una sola copia.
         await autoDispatchMatchReports();
 
     } catch(e) {
         console.error('[AutoReport] Error:', e.message);
+        // Si falló, liberar la huella para permitir reintento manual.
+        if (window._cronosLastDispatchedMatch === _matchFingerprint) {
+            window._cronosLastDispatchedMatch = null;
+        }
     }
 }
 

@@ -74,6 +74,8 @@ async function startLiveSync() {
     const randSlug = Math.random().toString(36).substr(2,4);
     liveMatchId    = `${teamSlug}-${dateSlug}-${randSlug}`;
     liveIsActive = true;
+    // E4: nuevo partido en vivo → liberar el guard de despacho de informes.
+    window._cronosLastDispatchedMatch = null;
 
     // Guardar el snapshot inicial
     await pushLiveSnapshot('active');

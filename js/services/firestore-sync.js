@@ -35,6 +35,8 @@ async function startLiveSync() {
     liveMatchId        = `${teamSlug}-${dateSlug}-${randSlug}`;
     liveIsActive       = true;
     liveMatchStartTime = new Date().toISOString(); // ← fijar hora de inicio (no cambia)
+    // E4: nuevo partido en vivo → liberar el guard de despacho de informes.
+    window._cronosLastDispatchedMatch = null;
 
     // Guardar el snapshot inicial
     await pushLiveSnapshot('active');

@@ -22,6 +22,9 @@ function resetMatch() {
     clearInterval(timerInterval);
     masterTimeH1 = 0; masterTimeH2 = 0;
     lastTickTime = 0; matchPhase = '1st_half';
+    // E4: nuevo partido → liberar el guard de despacho de informes para que
+    // los informes del próximo partido vuelvan a enviarse una vez.
+    window._cronosLastDispatchedMatch = null;
     updateMasterUI();
     const btn = document.getElementById('btn-play-pause');
     btn.textContent = 'EMPEZAR'; btn.classList.remove('danger');
