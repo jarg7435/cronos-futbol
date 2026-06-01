@@ -10,6 +10,11 @@ function setupEventListeners() {
     document.getElementById('btn-save-team').addEventListener('click', saveCurrentTeam);
     document.getElementById('btn-export').addEventListener('click', exportData);
     window.endFirstHalf = function endFirstHalf(skipConfirm) {
+        // E5: guard de idempotencia. La 1ª parte solo se cierra una vez.
+        // Cierra la carrera entre el auto-fin del crono (tick → endFirstHalf(true))
+        // y el botón manual: el segundo en llegar ve matchPhase!=='1st_half' y aborta,
+        // evitando el "Sale (DESCANSO)" duplicado por jugador en la línea de tiempo.
+        if (matchPhase !== '1st_half') return;
         if (!skipConfirm && !confirm("¿Finalizar 1ª Parte?")) return;
         isRunning = false;
         clearInterval(timerInterval);
@@ -26,6 +31,10 @@ function setupEventListeners() {
         if (!skipConfirm) alert("1ª Parte finalizada. Realice los cambios necesarios durante el descanso.");
     };
     window.startSecondHalf = function startSecondHalf() {
+        // E5: guard de idempotencia. La 2ª parte solo arranca desde el descanso;
+        // una doble llamada/pulsación encuentra matchPhase!=='break' y aborta,
+        // evitando el "Entra (2ªP)" duplicado por jugador.
+        if (matchPhase !== 'break') return;
         matchPhase = '2nd_half';
         const timestamp2 = formatTime(masterTimeH1);
         players.filter(p => p.status === 'field').forEach(p => {

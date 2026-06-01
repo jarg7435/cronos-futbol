@@ -1015,6 +1015,7 @@ function setupEventListeners() {
     document.getElementById('btn-export').addEventListener('click', exportData);
 
     window.endFirstHalf = () => {
+        if (matchPhase !== '1st_half') return; // E5: guard idempotencia (evita Sale DESCANSO duplicado)
         if (!confirm("¿Finalizar 1ª Parte?")) return;
         isRunning = false;
         clearInterval(timerInterval);
@@ -1030,6 +1031,7 @@ function setupEventListeners() {
     };
 
     window.startSecondHalf = () => {
+        if (matchPhase !== 'break') return; // E5: guard idempotencia (evita Entra 2ªP duplicado)
         matchPhase = '2nd_half';
         const timestamp2 = formatTime(masterTimeH1);
         players.filter(p => p.status === 'field').forEach(p => {

@@ -1,6 +1,6 @@
 # Cronos Fútbol — Estado de correcciones
 
-_Última actualización: 2026-06-01 (sesión E4 — cerrada). Próxima sesión: empezar por E5._
+_Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: empezar por E6._
 
 ## COMPLETADO
 
@@ -32,9 +32,23 @@ _Última actualización: 2026-06-01 (sesión E4 — cerrada). Próxima sesión: 
   - Reset del guard al empezar partido nuevo: `resetMatch` (`js/match/events/movement-log.js`) y al generar nuevo `liveMatchId` (`js/match/live/sync.js`, `js/services/firestore-sync.js`).
   - Verificado con test del guard: 3 disparos del mismo partido → 1 despacho; partido nuevo → vuelve a despachar; modo local sin live-sync funciona.
 
-## PENDIENTE (empezar por E5)
+## COMPLETADO E5
 
-- [ ] **E5**: Entradas/salidas duplicadas en línea de tiempo
+- [x] **E5**: Entradas/salidas duplicadas en línea de tiempo
+  - Causa: las transiciones de fase (`endFirstHalf` → `Sale (DESCANSO)`, `startSecondHalf` → `Entra (2ªP)`, `endMatch` → `Sale (FIN)`) empujaban un registro al `history` de cada jugador en campo **sin guard de idempotencia**. Se podían disparar más de una vez:
+    - `endFirstHalf`: carrera entre el auto-fin del crono (`tick` -> `endFirstHalf(true)` en `js/match/timer/core.js`) y el botón manual.
+    - `startSecondHalf` / `endMatch`: doble pulsación o varias rutas de fin (manual, expulsión, fin automático).
+  - Cada llamada extra añadía un par entrada/salida que `exportData` (`js/match/events/movement-log.js`) renderizaba como columnas duplicadas en la línea de tiempo del informe.
+  - Fix: guard por `matchPhase` (la fase cambia de forma síncrona antes de cualquier llamada duplicada, cerrando la carrera):
+    - `endFirstHalf`: `if (matchPhase !== '1st_half') return;`
+    - `startSecondHalf`: `if (matchPhase !== 'break') return;`
+    - `endMatch`: `if (matchPhase === 'finished') return;` (colocado antes del confirm, evita además el diálogo redundante).
+  - Aplicado a **todas las copias** de cada función (herencia del split de `app.js`), ya que el orden de carga decide cuál gana: `js/core/event-listeners.js` (la activa, cargada al final), `js/core/app-init.js`, `js/match/persistence/active-match.js`, `js/ai/import.js` y `js/match/events/player-actions.js` (`endMatch`).
+  - Verificado con test de integración que extrae los cuerpos reales de las funciones ganadoras y los ejecuta en sandbox: doble llamada / carrera → exactamente 1 `DESCANSO` + 1 `2ªP` + 1 `FIN` por jugador; flujo normal intacto. Sintaxis (`node --check`) y EOL por archivo verificados.
+  - Deuda técnica anotada: existen 4-5 definiciones globales redundantes de `setupEventListeners`/`endFirstHalf`/`startSecondHalf`/`endMatch`; conviene unificarlas en un único módulo en una limpieza posterior (la activa depende del orden de `<script>`, frágil).
+
+## PENDIENTE (empezar por E6)
+
 - [ ] **E6**: Crono live sin progreso segundo a segundo
 - [ ] **E7**: Tiempos con redondeo en informes
 - [ ] **E8**: Zoom deshabilitado

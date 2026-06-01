@@ -326,6 +326,7 @@ function setupEventListeners() {
     document.getElementById('btn-export').addEventListener('click', exportData);
 
     window.endFirstHalf = (skipConfirm = false) => {
+        if (matchPhase !== '1st_half') return; // E5: guard idempotencia (evita Sale DESCANSO duplicado)
         if (!skipConfirm && !confirm("¿Finalizar 1ª Parte?")) return;
         isRunning = false;
         clearInterval(timerInterval);
@@ -341,6 +342,7 @@ function setupEventListeners() {
     };
 
     window.startSecondHalf = () => {
+        if (matchPhase !== 'break') return; // E5: guard idempotencia (evita Entra 2ªP duplicado)
         matchPhase = '2nd_half';
         const timestamp2 = formatTime(masterTimeH1);
         players.filter(p => p.status === 'field').forEach(p => {
@@ -641,6 +643,7 @@ function formatTime(sec) {
  * registra salidas, detiene live sync, muestra modal post-partido.
  */
 window.endMatch = function endMatch(skipConfirm = false) {
+    if (matchPhase === 'finished') return; // E5: guard idempotencia (evita Sale FIN duplicado por rutas multiples de fin)
     if (!skipConfirm && !confirm('¿Finalizar el partido?')) return;
 
     // Detener cronómetro

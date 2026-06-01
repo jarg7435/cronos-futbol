@@ -302,6 +302,7 @@ function terminateMatch(reason) {
 }
 
 window.endMatch = function endMatch(skipConfirm = false) {
+    if (matchPhase === 'finished') return; // E5: guard idempotencia (evita Sale FIN duplicado por rutas multiples de fin)
     if (!skipConfirm && !confirm('¿Finalizar el partido?')) return;
 
     // Detener cronómetro
