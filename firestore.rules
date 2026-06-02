@@ -361,21 +361,39 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: cronos_player_reports
-    // Solo el club del jugador o SA pueden leer.
+    // Lectura permitida a:
+    //   - SuperAdmin
+    //   - Miembro del mismo club (sameClubAsDoc por claims de token)
+    //   - El entrenador que generó el informe (coachUid — campo correcto)
+    //   - El padre destinatario del informe individual (parentUid)
+    //   - transitional (primeros 5 min post-registro)
+    // FIX: antes comparaba resource.data.coachId (campo inexistente);
+    //      el campo real guardado es resource.data.coachUid.
+    // FIX 2: añadido parentUid para que padres lean sus informes.
     // ============================================================
     match /cronos_player_reports/{reportId} {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid == resource.data.coachId ||
+        (request.auth.token.get('clubId', null) != null &&
+         request.auth.token.get('clubId', null) == resource.data.clubId) ||
+        (request.auth.token.get('role', '') in ['director', 'coordinator', 'coach'] &&
+         request.auth.token.get('clubId', null) == resource.data.clubId) ||
+        request.auth.uid == resource.data.coachUid ||
+        request.auth.uid == resource.data.parentUid ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth();
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        request.auth.uid == resource.data.coachUid
       );
-      allow delete: if isSuperAdmin();
+      allow delete: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(resource.data.clubId) ||
+        request.auth.uid == resource.data.coachUid
+      );
     }
 
     // ============================================================
