@@ -636,13 +636,18 @@ function _saveMatchStateToStorage() {
 window._saveMatchStateToStorage = _saveMatchStateToStorage;
 
 // Auto-guardar cada 5 segundos cuando hay partido activo
-setInterval(() => {
+let autoSaveInterval = setInterval(() => {
     if (matchPhase !== 'finished' && matchPhase !== 'idle' && typeof players !== 'undefined' && players.length > 0) {
         _saveMatchStateToStorage();
     }
 }, 5000);
 
 function _checkActiveMatch() {
+    if (localStorage.getItem('cronos_active_match_v2_finished')) {
+        localStorage.removeItem(_ACTIVE_MATCH_KEY);
+        localStorage.removeItem('cronos_active_match_v2_finished');
+        return false;
+    }
     try {
         const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
         if (!raw) return false;
@@ -974,6 +979,7 @@ function endMatch() {
     if (!confirm('¿Finalizar el partido? Esta acción detiene el reloj y cierra el encuentro.')) return;
     isRunning = false;
     clearInterval(timerInterval);
+    if (typeof autoSaveInterval !== 'undefined') clearInterval(autoSaveInterval);
     matchPhase = 'finished';
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
@@ -983,8 +989,11 @@ function endMatch() {
 
     stopLiveSync(); // marcar partido como finalizado en Firestore
 
+    matchPhase = 'finished'; // garantizar antes de cualquier callback asíncrono
     // Limpiar estado guardado — el partido terminó correctamente
     localStorage.removeItem(_ACTIVE_MATCH_KEY);
+    // Blindaje adicional: sobrescribir con estado finalizado para que _checkActiveMatch lo ignore
+    localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
     
     // ── Guardar datos del partido terminado para poder volver ──
     try {
@@ -3974,6 +3983,7 @@ function setupEventListeners() {
             if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
         }
         if (document.visibilityState === 'hidden') {
+            if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return;
             _saveMatchStateToStorage();
             if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
         }
@@ -3981,6 +3991,7 @@ function setupEventListeners() {
 
     // Guardar estado cuando el usuario cierra/abandona la app
     window.addEventListener('pagehide', () => {
+        if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return;
         _saveMatchStateToStorage();
         // Asegurar que el estado en la nube tenga los datos más recientes antes de cerrar
         if (liveMatchId && matchPhase !== 'finished') {
@@ -3991,6 +4002,7 @@ function setupEventListeners() {
     });
 
     window.addEventListener('beforeunload', () => {
+        if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return;
         _saveMatchStateToStorage();
     });
 }

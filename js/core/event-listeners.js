@@ -85,6 +85,7 @@ function setupEventListeners() {
             if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
         }
         if (document.visibilityState === 'hidden') {
+            if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return;
             _saveMatchStateToStorage();
             if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
         }
@@ -92,6 +93,7 @@ function setupEventListeners() {
 
     // Guardar estado cuando el usuario cierra/abandona la app
     window.addEventListener('pagehide', () => {
+        if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return;
         _saveMatchStateToStorage();
         // Asegurar que el estado en la nube tenga los datos más recientes antes de cerrar
         if (liveMatchId && matchPhase !== 'finished') {
@@ -102,6 +104,7 @@ function setupEventListeners() {
     });
 
     window.addEventListener('beforeunload', () => {
+        if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return;
         _saveMatchStateToStorage();
     });
 }
