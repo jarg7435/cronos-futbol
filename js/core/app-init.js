@@ -587,6 +587,12 @@ function terminateMatch(reason) {
     isRunning = false;
     clearInterval(timerInterval);
     matchPhase = 'finished';
+    // Punto 2: limpiar el estado persistido para que el partido no quede
+    // recuperable tras finalizar por expulsiones (misma corrección que endMatch).
+    try {
+        localStorage.removeItem('cronos_active_match_v2');
+        localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
+    } catch (e) {}
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
     stopLiveSync(); // marcar partido como finalizado en Firestore
@@ -3613,6 +3619,9 @@ function startMatchWithConvocation() {
     }
     // Clean lingering active match if it got stuck
     localStorage.removeItem('cronos_active_match_v2');
+    // Limpiar la marca de finalización del partido anterior; si no, al recargar
+    // _checkActiveMatch() borraría el snapshot de este partido nuevo (regresión).
+    localStorage.removeItem('cronos_active_match_v2_finished');
     // Limpiar guards de informes de partidos anteriores
     Object.keys(localStorage)
         .filter(k => k.startsWith('cronos_reports_sent_'))

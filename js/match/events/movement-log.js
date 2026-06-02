@@ -25,6 +25,9 @@ function resetMatch() {
     // E4: nuevo partido → liberar el guard de despacho de informes para que
     // los informes del próximo partido vuelvan a enviarse una vez.
     window._cronosLastDispatchedMatch = null;
+    // Punto 2: limpiar la marca de finalización para que el autoguardado del
+    // partido reiniciado persista y no sea descartado al recargar la app.
+    try { localStorage.removeItem('cronos_active_match_v2_finished'); } catch (e) {}
     updateMasterUI();
     const btn = document.getElementById('btn-play-pause');
     btn.textContent = 'EMPEZAR'; btn.classList.remove('danger');

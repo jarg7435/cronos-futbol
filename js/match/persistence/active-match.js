@@ -651,6 +651,21 @@ window.endMatch = function endMatch(skipConfirm = false) {
     clearInterval(timerInterval);
     matchPhase = 'finished';
 
+    // ── FIX (punto 2): limpiar el estado persistido del partido activo ──
+    // Esta es la ruta de fin de partido que realmente gana (se carga después
+    // de la versión de app-init.js). Antes NO tocaba localStorage, por lo que
+    // el último snapshot con fase 1ª/2ª parte quedaba guardado y
+    // _checkActiveMatch() mostraba el banner "Retomar partido" tras finalizar.
+    try {
+        // No detenemos autoSaveInterval (destruirlo rompería el autoguardado de
+        // un partido nuevo iniciado en la misma sesión). Su guard interno ya
+        // evita reescribir el snapshot cuando matchPhase === 'finished'.
+        localStorage.removeItem('cronos_active_match_v2');
+        // Blindaje: marca de finalización que _checkActiveMatch() respeta para
+        // ignorar cualquier snapshot residual escrito por una carrera de 5s.
+        localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
+    } catch (e) { /* silencioso: el fin de partido nunca debe romperse por storage */ }
+
     // Registrar salida de todos los jugadores en campo
     const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
     (players || []).filter(p => p.status === 'field').forEach(p => {

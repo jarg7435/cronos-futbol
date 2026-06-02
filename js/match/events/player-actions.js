@@ -289,6 +289,12 @@ function terminateMatch(reason) {
     isRunning = false;
     clearInterval(timerInterval);
     matchPhase = 'finished';
+    // Punto 2: limpiar el estado persistido para que el partido no quede
+    // recuperable tras finalizar por expulsiones (misma corrección que endMatch).
+    try {
+        localStorage.removeItem('cronos_active_match_v2');
+        localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
+    } catch (e) {}
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
     stopLiveSync();
