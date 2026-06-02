@@ -1531,6 +1531,7 @@ async function autoDispatchMatchReports() {
         // ── Guardar documentos cronos_player_reports para el Gantt del staff ──
         // Un documento por jugador con type='staff_match_report' y staffReport=true.
         // Así el panel de coordinador/director filtra solo estos y no mezcla con padres.
+        console.log('[StaffReport] Intentando enviar informe staff. clubId:', me?.clubId, 'players:', (homePlayers || []).length);
         for (const p of homePlayers) {
             const srId = `${sharedMatchId}_staff_p${p.number}`;
             await setDoc(doc(db, 'cronos_player_reports', srId), {
@@ -1555,6 +1556,7 @@ async function autoDispatchMatchReports() {
                 minutesPlayed: typeof formatTime === 'function' ? formatTime(p.time || 0) : String(p.time || 0),
                 history:       _parseHistoryForFirestore(p.history || []),
             });
+            console.log('[StaffReport] Documento staff escrito:', srId);
         }
 
         // ── Notificar al staff (coordinador + director) ──────────────────
@@ -1767,7 +1769,9 @@ async function saveAllMatchReportsInternal() {
     // Refuerza el guard en memoria (E4) para que sobreviva a recargas de
     // pagina y recuperaciones de partido. Se limpia al iniciar partido nuevo
     // (ver startMatchWithConvocation -> limpieza de 'cronos_reports_sent_').
-    const _matchId = window.liveMatchId || ('local_' + (window.TEAM_NAMES?.home || 'match'));
+    const _scoreHomeNow = document.getElementById('score-home')?.textContent || '0';
+    const _scoreAwayNow = document.getElementById('score-away')?.textContent || '0';
+    const _matchId = window.liveMatchId || ('local_' + (window._cronosCurrentUser?.uid || 'u') + '_' + new Date().toISOString().split('T')[0] + '_' + (window.TEAM_NAMES?.home || '') + '-' + _scoreHomeNow + '-' + _scoreAwayNow);
     const _guardKey = 'cronos_reports_sent_' + _matchId;
     if (localStorage.getItem(_guardKey)) {
         console.log('[AutoReport] Informes ya despachados para este partido; se omite duplicado. live:' + _matchId);
@@ -1786,8 +1790,7 @@ async function saveAllMatchReportsInternal() {
     // La huella usa liveMatchId si existe; si no (modo sin sync en vivo),
     // se compone con uid + fecha + marcador para distinguir partidos reales
     // del mismo entrenador y evitar bloquear un partido legítimamente nuevo.
-    const _scoreHomeNow = document.getElementById('score-home')?.textContent || '0';
-    const _scoreAwayNow = document.getElementById('score-away')?.textContent || '0';
+    // (_scoreHomeNow / _scoreAwayNow ya estan declarados arriba en el guard persistente)
     const _matchFingerprint =
         (typeof liveMatchId !== 'undefined' && liveMatchId)
             ? `live:${liveMatchId}`
