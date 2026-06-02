@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v124
+//  CRONOS FUTBOL — Service Worker v125
+//  v125: Fix informes duplicados (dedupe rutas endMatch muertas +
+//         guard idempotencia persistente en localStorage).
 //  v124: Fix nombre superadmin.panel.js en ASSETS, eliminar
 //         email-whatsapp.js del precache, quitar ?v= de index.html.
 //  v123: Eliminados 4 scripts stub del index.html
@@ -7,8 +9,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v124';
-const CACHE_NAME = 'cronos-cache-v124';
+const VERSION    = 'v125';
+const CACHE_NAME = 'cronos-cache-v125';
 
 const ASSETS = [
     './',
