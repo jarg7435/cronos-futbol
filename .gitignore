@@ -66,8 +66,9 @@ node_modules/
 .env
 
 # dataconnect generated files
-.dataconnectfirestore.rules.BACKUP 
-firestore.rules.REVIEW 
-functions/fix-sa-claim.js 
-usuarios_temp.json 
-functions/check-sa-doc.js 
+.dataconnect
+firestore.rules.BACKUP
+firestore.rules.REVIEW
+functions/fix-sa-claim.js
+usuarios_temp.json
+functions/check-sa-doc.js
