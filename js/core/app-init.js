@@ -1018,10 +1018,12 @@ function endMatch() {
         window._lastFinishedMatch = matchData;
     } catch(e) { /* silencioso */ }
 
-    // Generar informes técnicos automáticamente para el Staff (Director/Coordinador)
-    if (typeof saveAllMatchReportsInternal === 'function') {
-        saveAllMatchReportsInternal();
-    }
+    // NOTA: el envío de informes lo dispara la ruta activa de fin de partido
+    // (window.endMatch de active-match.js, o terminateMatch por expulsiones).
+    // Esta funcion endMatch() de app-init queda eclipsada por window.endMatch,
+    // por lo que aqui NO se llama a saveAllMatchReportsInternal() (era codigo
+    // muerto que solo anadia rutas redundantes). El guard de idempotencia en
+    // saveAllMatchReportsInternal evita duplicados entre las rutas activas.
 
     // Mostrar opciones post-partido
     showPostMatchOptions(scoreHome, scoreAway);
@@ -3611,6 +3613,10 @@ function startMatchWithConvocation() {
     }
     // Clean lingering active match if it got stuck
     localStorage.removeItem('cronos_active_match_v2');
+    // Limpiar guards de informes de partidos anteriores
+    Object.keys(localStorage)
+        .filter(k => k.startsWith('cronos_reports_sent_'))
+        .forEach(k => localStorage.removeItem(k));
     if (typeof liveMatchId !== 'undefined') liveMatchId = null;
     if (typeof liveIsActive !== 'undefined') liveIsActive = false;
     window._cronosLastDispatchedMatch = null;

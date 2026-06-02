@@ -323,10 +323,8 @@ window.endMatch = function endMatch(skipConfirm = false) {
         stopLiveSync();
     }
 
-    // Guardar informes automáticamente si la función existe
-    if (typeof saveAllMatchReportsInternal === 'function') {
-        saveAllMatchReportsInternal().catch(() => {});
-    }
+    // NOTA: este endMatch queda eclipsado por window.endMatch de active-match.js
+    // (cargado despues). El envio de informes se dispara desde la ruta activa.
 
     _showPostMatchOptions();
 };

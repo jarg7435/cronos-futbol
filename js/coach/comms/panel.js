@@ -1218,6 +1218,11 @@ window._executeReportsSend = async function(method) {
 
     // ----- MODO INTERNO -----
     showSpinner('Enviando informes internamente...');
+    // Generar matchId compartido para todos los destinatarios de staff de este envío.
+    // Así todos comparten el mismo conjunto de cronos_player_reports en lugar de
+    // generar partidos duplicados en el panel de Dirección.
+    const _sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
+    let _staffReportsWritten = false; // guard: escribir docs de staff solo una vez por envío
     try {
         for (const r of recipients) {
             if (r.type === 'staff') {
@@ -1227,21 +1232,27 @@ window._executeReportsSend = async function(method) {
                     const c = emailConfig.contacts.find(x => x.id === r.id || x.phone === r.phone || x.email === r.email);
                     if (c && c.uid) uidToNotify = c.uid;
                 }
+                // También intentar resolver por r.id directamente (uid del destinatario)
+                if (!uidToNotify && r.id && !r.id.startsWith('p_')) uidToNotify = r.id;
+
                 if (uidToNotify) {
-                    // 1. Notificación push/UI
+                    // ── 1. Notificación push/UI ──────────────────────────────────────
                     await setDoc(doc(db, 'cronos_notifications', `notif_matchsglobe_${uidToNotify}_${Date.now().toString(36)}`), {
-                        type:           'aviso_partido_finalizado',
-                        clubId:         me.clubId || null,
-                        parentUid:      uidToNotify, // Se usa parentUid como campo genérico para el destinatario
-                        matchDate:      matchDate,
-                        rival:          rivalName,
+                        type:      'aviso_partido_finalizado',
+                        clubId:    me.clubId || null,
+                        parentUid: uidToNotify,
+                        staffUid:  uidToNotify,
+                        matchDate,
+                        rival:     rivalName,
                         scoreHome, scoreAway,
-                        message:        globalText.replace(/[*_]/g,''),
-                        createdAt:      new Date().toISOString()
+                        message:   globalText.replace(/[*_]/g,''),
+                        createdAt: new Date().toISOString()
                     });
 
-                    // 2. Mensaje en el hilo de staff (para que aparezca en "Mensajes")
-                    const threadId = `staff_${uidToNotify}_from_${me.uid}`;
+                    // ── 2. Hilo de mensajes unificado (mismo formato que auto-despacho) ──
+                    // Usamos {coachUid}_{staffUid} para que coincida con el hilo que
+                    // crea autoDispatchMatchReports, evitando hilos duplicados.
+                    const threadId = `${me.uid}_${uidToNotify}`;
                     const msgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
                     try {
                         const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
@@ -1254,14 +1265,67 @@ window._executeReportsSend = async function(method) {
                             });
                         } else {
                             await setDoc(doc(db, 'cronos_messages', threadId), {
-                                threadId, coachUid: me.uid, coachEmail: me.email,
-                                staffUid: uidToNotify, recipientType: 'staff',
-                                messages: [msgEntry], lastMessage: '📊 Informe colectivo de partido',
-                                lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByStaff: 1
+                                threadId,
+                                coachUid:      me.uid,
+                                coachEmail:    me.email,
+                                staffUid:      uidToNotify,
+                                recipientType: 'staff',
+                                messages:      [msgEntry],
+                                lastMessage:   '📊 Informe colectivo de partido',
+                                lastMessageAt: msgEntry.timestamp,
+                                unreadByCoach: 0,
+                                unreadByStaff: 1
                             });
                         }
                     } catch(thErr) { console.warn('[Cronos] Error creando hilo staff:', thErr); }
-                    
+
+                    // ── 3. CORRECCIÓN PRINCIPAL: escribir cronos_player_reports ────
+                    // El panel de Dirección/Coordinación (_sdLoadReports) SOLO lee
+                    // documentos de cronos_player_reports con staffReport===true.
+                    // El despacho manual nunca los escribía → panel de Informes vacío.
+                    // Se escriben UNA SOLA VEZ (guard _staffReportsWritten) con el
+                    // matchId compartido para que todos los staff vean el mismo partido.
+                    if (!_staffReportsWritten) {
+                        _staffReportsWritten = true;
+                        try {
+                            for (const p of homePlayers) {
+                                const srId = `${_sharedMatchId}_staff_p${p.number}`;
+                                await setDoc(doc(db, 'cronos_player_reports', srId), {
+                                    matchId:       _sharedMatchId,
+                                    type:          'staff_match_report',
+                                    staffReport:   true,
+                                    clubId:        me.clubId || null,
+                                    coachUid:      me.uid,
+                                    coachEmail:    me.email,
+                                    matchDate:     new Date().toISOString().split('T')[0],
+                                    rival:         rivalName,
+                                    scoreHome,
+                                    scoreAway,
+                                    category:      (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                                   (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || '',
+                                    venue:         (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
+                                    competition:   (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
+                                    matchTime:     (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
+                                    duration:      (typeof window.matchDuration !== 'undefined' ? window.matchDuration : ''),
+                                    stoppageTime:  (typeof window.stoppageTime !== 'undefined' ? window.stoppageTime : 0),
+                                    createdAt:     new Date().toISOString(),
+                                    playerNumber:  String(p.number || ''),
+                                    playerAlias:   p.alias || p.name || '',
+                                    position:      p.position || p.pos || '',
+                                    goals:         p.goals  || 0,
+                                    cards:         p.cards  || null,
+                                    injured:       p.injured || false,
+                                    minutesPlayed: window.formatTime ? window.formatTime(p.time || 0) : String(p.time || 0),
+                                    history:       typeof _parseHistoryForFirestore === 'function'
+                                                       ? _parseHistoryForFirestore(p.history || [])
+                                                       : (p.history || []),
+                                });
+                            }
+                        } catch(srErr) {
+                            console.warn('[Cronos] Error escribiendo cronos_player_reports para staff:', srErr);
+                        }
+                    }
+
                     sentCount++;
                 }
             } 
@@ -1698,6 +1762,18 @@ async function autoDispatchMatchReports() {
 async function saveAllMatchReportsInternal() {
     const me = window._cronosCurrentUser;
     if (!me || !window.players) return;
+
+    // ── GUARD DE IDEMPOTENCIA PERSISTENTE (localStorage) ─────────────────
+    // Refuerza el guard en memoria (E4) para que sobreviva a recargas de
+    // pagina y recuperaciones de partido. Se limpia al iniciar partido nuevo
+    // (ver startMatchWithConvocation -> limpieza de 'cronos_reports_sent_').
+    const _matchId = window.liveMatchId || ('local_' + (window.TEAM_NAMES?.home || 'match'));
+    const _guardKey = 'cronos_reports_sent_' + _matchId;
+    if (localStorage.getItem(_guardKey)) {
+        console.log('[AutoReport] Informes ya despachados para este partido; se omite duplicado. live:' + _matchId);
+        return;
+    }
+    localStorage.setItem(_guardKey, Date.now().toString());
 
     // ── E4: GUARD DE IDEMPOTENCIA ────────────────────────────────────────
     // El fin de partido se dispara desde varias rutas (endMatch manual,
