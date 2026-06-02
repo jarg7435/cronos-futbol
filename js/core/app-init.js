@@ -3579,6 +3579,34 @@ function startMatchWithConvocation() {
     
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
+    // --- RESET GLOBAL MATCH STATE ---
+    const scoreHomeEl = document.getElementById('score-home');
+    const scoreAwayEl = document.getElementById('score-away');
+    if (scoreHomeEl) scoreHomeEl.textContent = '0';
+    if (scoreAwayEl) scoreAwayEl.textContent = '0';
+    masterTimeH1 = 0;
+    masterTimeH2 = 0;
+    lastTickTime = 0;
+    matchPhase = '1st_half';
+    if (typeof window.matchEvents !== 'undefined') window.matchEvents = [];
+    isRunning = false;
+    if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
+    const btnPlayPause = document.getElementById('btn-play-pause');
+    if (btnPlayPause) {
+        btnPlayPause.textContent = 'EMPEZAR';
+        btnPlayPause.classList.remove('danger');
+    }
+    const phaseLabel = document.getElementById('match-phase-label');
+    if (phaseLabel) {
+        phaseLabel.textContent = '1ª PARTE';
+    }
+    // Clean lingering active match if it got stuck
+    localStorage.removeItem('cronos_active_match_v2');
+    if (typeof liveMatchId !== 'undefined') liveMatchId = null;
+    if (typeof liveIsActive !== 'undefined') liveIsActive = false;
+    window._cronosLastDispatchedMatch = null;
+    // --- END RESET ---
+
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();
 

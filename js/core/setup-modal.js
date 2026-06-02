@@ -1023,6 +1023,9 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         await deleteDoc(doc(fa.db, 'live_matches', matchId));
 
+        // ALSO clean local storage so it doesn't try to recover it locally!
+        localStorage.removeItem('cronos_active_match_v2');
+
         if (isSilent) return; // No UI updates if silent
 
         // Quitar tarjeta de la UI

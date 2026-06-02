@@ -762,9 +762,9 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
                 onmouseout="this.style.background='rgba(63,185,80,0.12)'">
                 <span style="font-size:1.4rem;">📊</span>
                 <div style="text-align:left;">
-                    <div style="color:#3fb950;">Enviar Informes a Padres</div>
+                    <div style="color:#3fb950;">Descargar / Exportar Datos</div>
                     <div style="font-size:0.72rem;color:var(--text-muted);
-                                font-weight:400;">WhatsApp · Email · App interna</div>
+                                font-weight:400;">(Los informes a la app ya se enviaron solos)</div>
                 </div>
             </button>
 
@@ -829,10 +829,10 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
     </div>`;
 };
 
-/** Desde la pantalla post-partido → abre el módulo de envío de informes */
+/** Desde la pantalla post-partido → abre opciones de exportación porque los internos ya se enviaron auto */
 window._postMatchSendReports = function() {
-    if (typeof sendMatchReportsToParents === 'function') {
-        sendMatchReportsToParents(false);
+    if (typeof exportData === 'function') {
+        exportData(); // Exporta CSV y envía WhatsApps manuales si están configurados
     } else if (typeof openUnifiedCommsMenu === 'function') {
         openUnifiedCommsMenu();
     } else {
