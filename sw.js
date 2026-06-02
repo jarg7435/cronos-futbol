@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v125
+//  CRONOS FUTBOL — Service Worker v126
+//  v126: Guard idempotencia con huella granular (uid+fecha+marcador)
+//         + logs diagnostico staffReport en autoDispatchMatchReports.
 //  v125: Fix informes duplicados (dedupe rutas endMatch muertas +
 //         guard idempotencia persistente en localStorage).
 //  v124: Fix nombre superadmin.panel.js en ASSETS, eliminar
@@ -9,8 +11,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v125';
-const CACHE_NAME = 'cronos-cache-v125';
+const VERSION    = 'v126';
+const CACHE_NAME = 'cronos-cache-v126';
 
 const ASSETS = [
     './',
