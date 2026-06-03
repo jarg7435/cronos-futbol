@@ -61,7 +61,6 @@ service cloud.firestore {
     // FIX: transitionalRead ahora tiene límite de tiempo de 5 minutos.
     // Antes: sin límite = backdoor permanente si los claims nunca se asignaban.
     // Ahora: solo aplica si el usuario se registró en los últimos 5 minutos.
-    // El campo auth.time es epoch segundos (string en token).
     function transitionalRead(clubId) {
       return isAuth() && !hasClaims() && clubId != null
              && (request.time - request.auth.time) < duration.value(5, 'm');
@@ -71,7 +70,7 @@ service cloud.firestore {
       return resourceData.type == 'individual';
     }
 
-    // Mismo club por campo del documento (para usuarios sin custom claims propagados)
+    // Mismo club por campo del documento
     function sameClubAsDoc(docClubId) {
       return isAuth() && request.auth.token.clubId == docClubId;
     }
@@ -81,7 +80,7 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == resource.data.parentUid;
     }
 
-    // El usuario tiene acceso al club de este enlace (coach/admin del mismo club)
+    // El usuario tiene acceso al club de este enlace
     function isLinkClubMember() {
       return isAuth() && (
         sameClub(resource.data.clubId) ||
@@ -99,7 +98,7 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: users
-    // Cada usuario solo lee su propio documento o el de su mismo club.
+    // SEC-011: Prevent self-role escalation
     // ============================================================
     match /users/{userId} {
       allow read: if isAuth() && (
@@ -113,16 +112,18 @@ service cloud.firestore {
         isSuperAdmin()
       );
       allow update: if isSuperAdmin() ||
-                       (isAuth() && request.auth.uid == userId);
+        (isAuth() && request.auth.uid == userId
+          && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['role', 'isAuthorized', 'status', 'allRoles', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt']));
       allow delete: if isSuperAdmin();
     }
 
     // ============================================================
     // COLECCIÓN: clubs
-    // Lectura pública necesaria para el formulario de registro.
+    // SEC-008: Require authentication for read
     // ============================================================
     match /clubs/{clubId} {
-      allow read: if true;
+      allow read: if isAuth();
       allow create: if isSuperAdmin();
       allow update: if isSuperAdmin() ||
                        isClubAdmin(clubId) ||
@@ -135,7 +136,6 @@ service cloud.firestore {
     // COLECCIÓN: individuals
     // FIX: antes era "if isAuth()" — cualquier usuario autenticado
     // podía leer los entes individuales de otros clubs.
-    // Ahora: solo SA, miembros del mismo ente o transitional.
     // ============================================================
     match /individuals/{entityId} {
       allow read: if isAuth() && (
@@ -152,9 +152,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: platform_requests
-    // Solo SA y el admin del club/entidad implicada pueden leer.
-    // Cualquier autenticado puede crear (para registros).
-    // Solo SA puede actualizar (aprobar/rechazar) o eliminar.
     // ============================================================
     match /platform_requests/{reqId} {
       allow read: if isSuperAdmin() ||
@@ -172,9 +169,7 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: matches
-    // FIX: antes era "allow read: if isAuth()" — cualquier usuario
-    // autenticado veía los partidos de cualquier club.
-    // Ahora: restringido al club propietario.
+    // FIX: antes era "allow read: if isAuth()"
     // ============================================================
     match /matches/{matchId} {
       allow read: if isAuth() && (
@@ -198,7 +193,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: players (jugadores — pueden ser MENORES)
-    // Solo el club propietario puede leer.
     // ============================================================
     match /players/{playerId} {
       allow read: if isAuth() && (
@@ -222,8 +216,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: teams
-    // FIX: antes era "allow read: if isAuth()" — cualquier usuario
-    // autenticado veía los equipos de cualquier club.
     // ============================================================
     match /teams/{teamId} {
       allow read: if isAuth() && (
@@ -247,7 +239,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: formations
-    // FIX: antes era "allow read: if isAuth()"
     // ============================================================
     match /formations/{formationId} {
       allow read: if isAuth() && (
@@ -271,7 +262,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: substitutions
-    // FIX: antes era "allow read: if isAuth()"
     // ============================================================
     match /substitutions/{subId} {
       allow read: if isAuth() && (
@@ -295,7 +285,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: events
-    // FIX: antes era "allow read: if isAuth()"
     // ============================================================
     match /events/{eventId} {
       allow read: if isAuth() && (
@@ -319,7 +308,7 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: cronos_messages
-    // Solo participantes del hilo o SA pueden leer y escribir.
+    // SEC-005: Restrict create
     // ============================================================
     match /cronos_messages/{threadId} {
       allow read: if isAuth() && (
@@ -328,7 +317,11 @@ service cloud.firestore {
         request.auth.uid in resource.data.participants ||
         transitionalRead(resource.data.clubId)
       );
-      allow create: if isAuth();
+      allow create: if isAuth() && (
+        isSuperAdmin() ||
+        sameClub(request.resource.data.clubId) ||
+        request.auth.uid in request.resource.data.participants
+      );
       allow update: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
@@ -340,7 +333,7 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: cronos_notifications
-    // Solo el destinatario o SA pueden leer.
+    // SEC-004/SEC-015: Restrict create
     // ============================================================
     match /cronos_notifications/{notifId} {
       allow read: if isAuth() && (
@@ -348,7 +341,12 @@ service cloud.firestore {
         request.auth.uid == resource.data.userId ||
         sameClubAsDoc(resource.data.clubId)
       );
-      allow create: if isAuth();
+      allow create: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(request.resource.data.clubId) ||
+        request.auth.uid == request.resource.data.coachUid ||
+        request.auth.uid == request.resource.data.userId
+      );
       allow update: if isAuth() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.userId
@@ -361,29 +359,21 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: cronos_player_reports
-    // Lectura permitida a:
-    //   - SuperAdmin
-    //   - Miembro del mismo club (sameClubAsDoc por claims de token)
-    //   - El entrenador que generó el informe (coachUid — campo correcto)
-    //   - El padre destinatario del informe individual (parentUid)
-    //   - transitional (primeros 5 min post-registro)
-    // FIX: antes comparaba resource.data.coachId (campo inexistente);
-    //      el campo real guardado es resource.data.coachUid.
-    // FIX 2: añadido parentUid para que padres lean sus informes.
+    // SEC-013: Validate club on create
     // ============================================================
     match /cronos_player_reports/{reportId} {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
-        (request.auth.token.get('clubId', null) != null &&
-         request.auth.token.get('clubId', null) == resource.data.clubId) ||
-        (request.auth.token.get('role', '') in ['director', 'coordinator', 'coach'] &&
-         request.auth.token.get('clubId', null) == resource.data.clubId) ||
         request.auth.uid == resource.data.coachUid ||
         request.auth.uid == resource.data.parentUid ||
         transitionalRead(resource.data.clubId)
       );
-      allow create: if isAuth();
+      allow create: if isAuth() && (
+        isSuperAdmin() ||
+        sameClub(request.resource.data.clubId) ||
+        request.auth.uid == request.resource.data.coachUid
+      );
       allow update: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
@@ -397,24 +387,8 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: cronos_player_links (códigos invitación padres)
-    //
-    // Estructura del documento: { clubId, playerNumber, playerAlias,
-    //   playerName, teamName, parentUid, parentEmail, parentWA,
-    //   inviteCode, coachUid, coachEmail, linkedAt }
-    // ID del documento: {clubId}_{playerNumber}
-    //
+    // COLECCIÓN: cronos_player_links
     // FIX CRÍTICO: antes era "allow read, write: if isAuth()"
-    // — cualquier usuario autenticado podía leer/escribir los
-    // códigos de invitación de cualquier club.
-    //
-    // Ahora:
-    //   read   → SA | miembro del mismo club | padre propietario |
-    //            transitional (para el flujo de alta del padre con código)
-    //   create → SA | miembro del mismo club (el entrenador crea el enlace)
-    //   update → SA | miembro del mismo club | el padre que se vincula
-    //            (auth.js actualiza parentUid/email al usar el inviteCode)
-    //   delete → SA | miembro del mismo club
     // ============================================================
     match /cronos_player_links/{linkId} {
       allow read: if isAuth() && (
@@ -453,13 +427,14 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // COLECCIÓN: live_matches (seguimiento en vivo — padres sin login)
-    // Lectura pública necesaria para el portal live.html sin autenticación.
+    // COLECCIÓN: live_matches
+    // SEC-014: Restrict writes to same-club
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if true;
-      allow create, update: if isAuth();
-      allow delete: if isAuth();
+      allow create: if isAuth() && (isSuperAdmin() || sameClub(request.resource.data.clubId));
+      allow update: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
+      allow delete: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
     }
 
     // ============================================================
@@ -471,10 +446,11 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: offline_events
+    // SEC-007: Validate userUid on create
     // ============================================================
     match /offline_events/{eventId} {
       allow read: if isAuth() && resource.data.userUid == request.auth.uid;
-      allow create: if isAuth();
+      allow create: if isAuth() && request.resource.data.userUid == request.auth.uid;
       allow update, delete: if isAuth() && resource.data.userUid == request.auth.uid;
     }
 
@@ -488,6 +464,12 @@ service cloud.firestore {
 
     match /cronos_config/{configId} {
       allow read: if isAuth();
+      allow write: if isSuperAdmin();
+    }
+
+    // SEC-012: Restrict superadmins doc to superadmin-only
+    match /cronos_config/superadmins {
+      allow read: if isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 
@@ -552,8 +534,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIÓN: succession_requests
-    // Admin de Club crea solicitud (solo si es el admin saliente).
-    // SuperAdmin lee, aprueba/rechaza (update). Nadie más accede.
     // ============================================================
     match /succession_requests/{reqId} {
       allow read: if isSuperAdmin();
@@ -566,8 +546,6 @@ service cloud.firestore {
 
     // ============================================================
     // COLECCIONES DE FACTURACIÓN
-    // Solo SA puede gestionar planes y facturas.
-    // Club admin e individual pueden leer sus propias facturas.
     // ============================================================
     match /billing_plans/{planId} {
       allow read: if isAuth();
@@ -593,12 +571,8 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // CATCH-ALL — bloquear TODO lo no definido explícitamente.
-    //
-    // FIX CRÍTICO: antes era "allow read: if isAuth()" — cualquier
-    // colección nueva sin regla propia era legible por todos.
-    // Ahora: denegado por defecto. Si se crea una colección nueva,
-    // hay que añadir su regla explícitamente aquí arriba.
+    // CATCH-ALL — bloquear TODO lo no definido explícitamente
+    // FIX CRÍTICO: antes era "allow read: if isAuth()"
     // ============================================================
     match /{document=**} {
       allow read, write: if false;

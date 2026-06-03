@@ -90,10 +90,8 @@ exports.setCustomClaims = functions.https.onCall(async (data, context) => {
 
   const validRoles = ['superadmin', 'club_admin', 'individual_admin', 'individual', 'director', 'coordinator', 'user', 'parent', 'spectator'];
   if (!validRoles.includes(role)) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Rol inválido. Roles permitidos: ' + validRoles.join(', ')
-    );
+    // SEC-H02: Do not expose valid roles in error response
+    throw new functions.https.HttpsError('invalid-argument', 'Rol invalido');
   }
 
   const claims = {
@@ -129,10 +127,11 @@ exports.setCustomClaims = functions.https.onCall(async (data, context) => {
 
     return { success: true, uid, role, clubId };
   } catch (error) {
+    // SEC-H01: Generic error message; full detail stays in server log
     console.error('[setCustomClaims] Error:', error);
     throw new functions.https.HttpsError(
       'internal',
-      'Error al asignar claims: ' + error.message
+      'Error interno. Contacte al administrador.'
     );
   }
 });
@@ -156,11 +155,10 @@ exports.getMatchForSpectator = functions.https.onCall(async (data, context) => {
   }
 
   const matchData = matchDoc.data();
-  const viewerClubId = context.auth.token.clubId || null;
   const viewerRole = context.auth.token.role || null;
 
+  // SEC-020: Only superadmin gets raw data; all other roles (including same-club) are pseudonymized
   if (viewerRole === 'superadmin') return matchData;
-  if (matchData.clubId && matchData.clubId === viewerClubId) return matchData;
 
   const playersSnapshot = await admin.firestore()
     .collection('players')
@@ -199,11 +197,11 @@ exports.onPlayerCreate = functions.firestore
     const pseudonym = _serverPseudonym(playerData.name, playerData.clubId);
 
     try {
+      // SEC-H05: Do NOT store realName — only pseudonym and clubId
       await admin.firestore()
         .collection('pseudonym_map')
         .doc(key)
         .set({
-          realName: playerData.name,
           clubId: playerData.clubId,
           pseudonym: pseudonym,
           createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -253,21 +251,23 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
   const callerUid = context.auth.uid;
   const callerDoc = await admin.firestore().collection('users').doc(callerUid).get();
 
-  if (!callerDoc.exists || !['superadmin', 'admin', 'individual', 'admin_individual'].includes(callerDoc.data().role)) {
-    throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin o Administrador Individual puede eliminar usuarios');
-  }
-
-  const { uid, email } = data;
-
-  if (!uid || !email) {
-    throw new functions.https.HttpsError('invalid-argument', 'uid y email son requeridos');
+  // SEC-003: Correct role check — only superadmin, club_admin, individual_admin
+  if (!callerDoc.exists || !['superadmin', 'club_admin', 'individual_admin'].includes(callerDoc.data().role)) {
+    throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
   }
 
   const callerRole = callerDoc.data().role;
-  if (['individual', 'admin_individual'].includes(callerRole)) {
+
+  // SEC-003: club_admin can only delete users in their own club
+  if (callerRole === 'club_admin' && data.clubId !== callerDoc.data().clubId) {
+    throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
+  }
+
+  // individual_admin can only delete users in their own entity
+  if (callerRole === 'individual_admin') {
     const callerEntityId = callerDoc.data().individualEntityId || callerDoc.data().clubId;
     try {
-      const targetDoc = await admin.firestore().collection('users').doc(uid).get();
+      const targetDoc = await admin.firestore().collection('users').doc(data.uid).get();
       if (targetDoc.exists) {
         const targetEntityId = targetDoc.data().individualEntityId || targetDoc.data().clubId;
         if (targetEntityId !== callerEntityId) {
@@ -277,6 +277,12 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     } catch(e) {
       if (e.code === 'permission-denied') throw e;
     }
+  }
+
+  const { uid, email } = data;
+
+  if (!uid || !email) {
+    throw new functions.https.HttpsError('invalid-argument', 'uid y email son requeridos');
   }
 
   // Determina el UID real de Firebase Auth. El uid recibido del cliente puede
@@ -290,14 +296,15 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     deletedFromAuth = true;
   } catch (firstErr) {
     if (firstErr.code !== 'auth/user-not-found') {
+      console.error('[deleteAuthUser] Error al eliminar usuario:', firstErr);
       await admin.firestore().collection('error_logs').add({
         action:'delete_user_failed', targetUid:uid, targetEmail:email,
         error:firstErr.message, errorCode:firstErr.code||null,
         performedBy:context.auth.token.email,
         timestamp:admin.firestore.FieldValue.serverTimestamp()
       });
-      throw new functions.https.HttpsError('internal',
-        `Error al eliminar usuario: ${firstErr.message}`, {code:firstErr.code});
+      // SEC-H01: Generic error message; full detail stays in server log
+      throw new functions.https.HttpsError('internal', 'Error interno. Contacte al administrador.');
     }
     try {
       const userRecord = await admin.auth().getUserByEmail(email);
@@ -308,8 +315,9 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
       if (secondErr.code === 'auth/user-not-found') {
         alreadyAbsent = true;
       } else {
-        throw new functions.https.HttpsError('internal',
-          `Error al eliminar usuario: ${secondErr.message}`, {code:secondErr.code});
+        console.error('[deleteAuthUser] Error al eliminar usuario (retry):', secondErr);
+        // SEC-H01: Generic error message; full detail stays in server log
+        throw new functions.https.HttpsError('internal', 'Error interno. Contacte al administrador.');
       }
     }
   }
@@ -365,21 +373,17 @@ exports.syncUserChanges = functions.firestore
 
       if (after.clubId) {
         const clubRef = admin.firestore().collection('clubs').doc(after.clubId);
-        const clubDoc = await clubRef.get();
 
-        if (clubDoc.exists) {
-          const club = clubDoc.data();
-          const usedSlots = club.usedSlots || {};
-          const roleKey = after.role === 'director' ? 'directors'
-                      : after.role === 'coordinator' ? 'coordinators'
-                      : after.role === 'parent' ? 'parents'
-                      : 'users';
+        // SEC-H04: Use atomic FieldValue.increment instead of read-modify-write to avoid race condition
+        const roleKey = after.role === 'director' ? 'directors'
+                    : after.role === 'coordinator' ? 'coordinators'
+                    : after.role === 'parent' ? 'parents'
+                    : 'users';
 
-          if (after.status === 'removed' || after.status === 'blocked') {
-            usedSlots[roleKey] = Math.max(0, (usedSlots[roleKey] || 0) - 1);
-          }
-
-          await clubRef.update({ usedSlots });
+        if (after.status === 'removed' || after.status === 'blocked') {
+          await clubRef.update({
+            [`usedSlots.${roleKey}`]: admin.firestore.FieldValue.increment(-1)
+          });
         }
       }
     }
