@@ -214,6 +214,47 @@ exports.onPlayerCreate = functions.firestore
   });
 
 /* ==================================================================== */
+/* 2️⃣b Cloud Function: syncClubPublic - Espejo publico de clubs */
+/* ==================================================================== */
+/* Mantiene la coleccion clubs_public (lectura publica, solo name/type/  */
+/* status) sincronizada con clubs. Permite que el formulario de registro */
+/* liste los clubes disponibles SIN autenticacion, sin exponer el resto  */
+/* de campos sensibles de clubs (slots, adminEmail, plan, etc.).         */
+exports.syncClubPublic = functions.firestore
+  .document('clubs/{clubId}')
+  .onWrite(async (change, context) => {
+    const clubId = context.params.clubId;
+    const publicRef = admin.firestore().collection('clubs_public').doc(clubId);
+
+    // Documento eliminado -> borrar el espejo
+    if (!change.after.exists) {
+      try {
+        await publicRef.delete();
+      } catch (error) {
+        console.error('[syncClubPublic] Error eliminando espejo:', error);
+      }
+      return null;
+    }
+
+    const data = change.after.data() || {};
+
+    // Solo se exponen 3 campos publicos.
+    const publicData = {
+      name: data.name || null,
+      type: data.type || 'club',
+      status: data.status || 'active'
+    };
+
+    try {
+      await publicRef.set(publicData);
+    } catch (error) {
+      console.error('[syncClubPublic] Error escribiendo espejo:', error);
+    }
+
+    return null;
+  });
+
+/* ==================================================================== */
 /* 3️⃣ Cloud Function: deleteUserData – Limpiar datos en Firestore al eliminar usuario Auth */
 /* ==================================================================== */
 exports.deleteUserData = functions.auth.user().onDelete(async (user) => {
@@ -258,9 +299,22 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
 
   const callerRole = callerDoc.data().role;
 
-  // SEC-003: club_admin can only delete users in their own club
-  if (callerRole === 'club_admin' && data.clubId !== callerDoc.data().clubId) {
-    throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
+  // SEC-003: club_admin solo puede eliminar usuarios de SU PROPIO club.
+  // El clubId se lee del documento del caller en Firestore (fuente fiable),
+  // NO de data.clubId enviado por el cliente. Ademas se valida que el
+  // usuario objetivo realmente pertenece a ese club.
+  if (callerRole === 'club_admin') {
+    const callerClubId = callerDoc.data().clubId;
+    try {
+      const targetDoc = await admin.firestore().collection('users').doc(data.uid).get();
+      if (targetDoc.exists) {
+        if (targetDoc.data().clubId !== callerClubId) {
+          throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
+        }
+      }
+    } catch(e) {
+      if (e.code === 'permission-denied') throw e;
+    }
   }
 
   // individual_admin can only delete users in their own entity

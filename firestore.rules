@@ -133,6 +133,19 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCIÓN: clubs_public
+    // Espejo PÚBLICO de clubs con solo 3 campos: name, type, status.
+    // Permite que el formulario de registro liste los clubes/entes
+    // disponibles SIN autenticación, manteniendo 'clubs' protegida.
+    // La escritura SOLO la realiza la Cloud Function syncClubPublic
+    // (Admin SDK), por eso aquí no se permite write desde el cliente.
+    // ============================================================
+    match /clubs_public/{clubId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ============================================================
     // COLECCIÓN: individuals
     // FIX: antes era "if isAuth()" — cualquier usuario autenticado
     // podía leer los entes individuales de otros clubs.

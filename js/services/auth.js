@@ -90,16 +90,20 @@ export async function loadClubOptions() {
         let clubsLoaded = false;
         let indivLoaded = false;
         try {
-            const clubsSnap = await m.getDocs(m.collection(fa.db, 'clubs'));
+            // FIX (SEC-008): leer desde clubs_public (lectura publica, sin
+            // autenticacion) en vez de clubs. clubs_public es el espejo que
+            // mantiene la Cloud Function syncClubPublic con solo name/type/status,
+            // por lo que el formulario de registro funciona para usuarios no
+            // autenticados sin exponer los campos sensibles de clubs.
+            const clubsSnap = await m.getDocs(m.collection(fa.db, 'clubs_public'));
             if (!clubsSnap.empty) {
                 clubsSnap.forEach(doc => {
                     const club = doc.data();
                     if (club.status !== 'blocked') {
                         if (club.type === 'individual') {
-                            // Ente individual (creado por SuperAdmin en clubs con type=individual)
+                            // Ente individual (clubs con type=individual)
                             const name = club.name || doc.id;
-                            const adminTag = club.hasAdmin ? '' : ' ⏳';
-                            indivHtml += '<option value="individual:' + doc.id + '">👤 ' + name + adminTag + '</option>';
+                            indivHtml += '<option value="individual:' + doc.id + '">👤 ' + name + '</option>';
                         } else {
                             // Club normal
                             clubsHtml += '<option value="club:' + doc.id + '">🏟️ ' + (club.name || doc.id) + '</option>';
@@ -110,7 +114,7 @@ export async function loadClubOptions() {
                 if (indivHtml) indivLoaded = true;
             }
         } catch(e) {
-            console.warn('[Cronos] Error cargando clubs:', e.message);
+            console.warn('[Cronos] Error cargando clubs_public:', e.message);
         }
 
         // Cargar entidades individuales (colección 'individuals' — compatibilidad)
@@ -607,7 +611,6 @@ export async function checkAuthorization(user) {
                 }
 
                 if (indDoc && indData) {
-                    console.log('[Cronos] Entidad individual encontrada para', user.email, 'en', indCollection);
 
                     // Crear documento de usuario como admin individual
                     const fullName = indData.displayName || indData.name || user.email.split('@')[0];
