@@ -1048,11 +1048,52 @@ async function _sdLoadReports() {
     try {
         const { db, collection, getDocs, query, where, limit } = await _sdFS();
 
-        const rawSnap = await getDocs(query(
+        // FIX: Query dual para acceder a informes de staff.
+        // Query 1: por clubId (requiere custom claims con clubId en el token)
+        // Query 2: por staffUids array-contains (funciona sin custom claims,
+        //          ya que las reglas de Firestore verifican request.auth.uid
+        //          in resource.data.staffUids)
+        let rawSnap = await getDocs(query(
             collection(db, 'cronos_player_reports'),
             where('clubId', '==', clubId),
             limit(500)
         ));
+
+        // Si la query por clubId no devuelve docs de staff, intentar por staffUids
+        let _hasStaffDocs = false;
+        rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
+
+        if (!_hasStaffDocs && me.uid) {
+            try {
+                const altSnap = await getDocs(query(
+                    collection(db, 'cronos_player_reports'),
+                    where('staffUids', 'array-contains', me.uid),
+                    limit(500)
+                ));
+                // Fusionar resultados alternativos con los originales
+                const existingIds = new Set();
+                rawSnap.forEach(d => existingIds.add(d.id));
+                altSnap.forEach(d => {
+                    if (!existingIds.has(d.id) && d.data().staffReport === true) {
+                        // Añadir docs que no estaban en el snap original
+                        _hasStaffDocs = true;
+                    }
+                });
+                // Usar el snap alternativo si tiene resultados de staff
+                if (_hasStaffDocs) {
+                    // Combinar ambos snaps
+                    const combinedDocs = [];
+                    rawSnap.forEach(d => combinedDocs.push(d));
+                    const existingIds2 = new Set(combinedDocs.map(d => d.id));
+                    altSnap.forEach(d => {
+                        if (!existingIds2.has(d.id)) combinedDocs.push(d);
+                    });
+                    rawSnap = { forEach: fn => combinedDocs.forEach(fn) };
+                }
+            } catch(altErr) {
+                console.warn('[StaffDashboard] Query alternativa por staffUids falló:', altErr.message);
+            }
+        }
 
         // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
         // Esto evita requerir un índice compuesto en Firestore.

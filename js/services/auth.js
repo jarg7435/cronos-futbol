@@ -435,7 +435,8 @@ async function loadSuperAdminEmails() {
             const data = snap.data();
             SUPERADMIN_EMAILS = data.emails || [];
             _superAdminLoaded = true;
-            console.log('[Cronos] Superadmin emails cargados desde Firestore:', SUPERADMIN_EMAILS.length);
+            // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email count
+            // console.log('[Cronos] Superadmin emails cargados desde Firestore:', SUPERADMIN_EMAILS.length);
         } else {
             console.warn('[Cronos] No se encontró cronos_config/superadmins en Firestore');
             _superAdminLoaded = true; // Doc no existe pero ya lo intentamos
@@ -466,7 +467,8 @@ async function _ensureSuperAdminConfig(email) {
             if (!emails.includes(email)) {
                 // Añadir el email del SA actual a la lista existente
                 await fa.setDoc(configRef, { emails: [...emails, email] }, { merge: true });
-                console.log('[Cronos] Email superadmin añadido a cronos_config/superadmins:', email);
+                // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email
+                // console.log('[Cronos] Email superadmin añadido a cronos_config/superadmins:', email);
             }
             // Actualizar la lista local también
             SUPERADMIN_EMAILS = [...(data.emails || []), email];
@@ -476,7 +478,8 @@ async function _ensureSuperAdminConfig(email) {
             await fa.setDoc(configRef, { emails: [email] });
             SUPERADMIN_EMAILS = [email];
             _superAdminLoaded = true;
-            console.log('[Cronos] Documento cronos_config/superadmins creado con:', email);
+            // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email
+            // console.log('[Cronos] Documento cronos_config/superadmins creado con:', email);
         }
     } catch (e) {
         console.warn('[Cronos] _ensureSuperAdminConfig error:', e.message);
@@ -690,7 +693,7 @@ export async function checkAuthorization(user) {
         // Verificar también custom claims si están disponibles
         if (!_isSuperAdmin) {
             try {
-                const _idTokenResult = await user.getIdTokenResult(false);
+                const _idTokenResult = await user.getIdTokenResult(true); // SECURITY FIX (SEC-M01): Force token refresh
                 if (_idTokenResult && _idTokenResult.claims && _idTokenResult.claims.role === 'superadmin') {
                     _isSuperAdmin = true;
                 }
@@ -701,7 +704,8 @@ export async function checkAuthorization(user) {
             // Corregir el documento de Firestore si está desincronizado
             const _needsFix = !data.isAuthorized || data.status !== 'active' || data.role !== 'superadmin';
             if (_needsFix) {
-                console.log('[Cronos] SuperAdmin bypass: corrigiendo documento desincronizado para', user.email);
+                // SECURITY FIX (SEC-M02): Removed log that exposed user email in SA context
+                // console.log('[Cronos] SuperAdmin bypass: corrigiendo documento desincronizado para', user.email);
                 try {
                     await fa.setDoc(ref, {
                         isAuthorized: true,
@@ -728,7 +732,8 @@ export async function checkAuthorization(user) {
                 console.warn('[Cronos] No se pudo actualizar cronos_config/superadmins:', e.message)
             );
 
-            console.log('[Cronos] SuperAdmin bypass aplicado para:', user.email);
+            // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email
+            // console.log('[Cronos] SuperAdmin bypass aplicado para:', user.email);
         }
         // ═══════ FIN SUPERADMIN BYPASS ═════════════════════════════
 
@@ -1160,9 +1165,15 @@ export async function checkAuthorization(user) {
             const r = authorizedRoles[0];
             await fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true });
 
-            window._cronosCurrentUser.role   = r.role;
-            window._cronosCurrentUser.clubId = r.clubId || null;
-            window._cronosCurrentUser.clubName = r.clubName || null;
+            // SECURITY FIX (SEC-002): Use full reassignment instead of property mutation
+            // because _cronosCurrentUser is now wrapped in a protective Proxy
+            const _curUser = window._cronosCurrentUser;
+            window._cronosCurrentUser = {
+                ..._curUser,
+                role: r.role,
+                clubId: r.clubId || null,
+                clubName: r.clubName || null,
+            };
             
             console.log('[Cronos] Un solo rol detectado:', r.role, 'entrando...');
             enterApp();
@@ -1176,16 +1187,15 @@ export async function checkAuthorization(user) {
     } catch (err) {
         console.error('[Cronos] Auth verify error:', err);
         
-        // ── INTENTO DE RECUPERACIÓN ──
-        // Si tenemos datos mínimos del usuario (uid, email), intentar entrar
-        // en lugar de quedarse colgado en "Conectando..."
-        if (user && window._cronosCurrentUser) {
-            console.warn('[Cronos] Recuperando sesión con datos parciales...');
+        // SECURITY FIX (SEC-M08): Removed error recovery that called enterApp().
+        // If authorization fails, the user must NOT be let into the app with
+        // partial/stale data. Sign out instead so they must re-authenticate.
+        if (user) {
             try {
-                enterApp();
-                return; // Éxito — no mostrar error
-            } catch(enterErr) {
-                console.error('[Cronos] Error al intentar entrar:', enterErr);
+                const fa = window._cronos_auth;
+                if (fa) await fa.signOut(fa.auth);
+            } catch(signOutErr) {
+                console.error('[Cronos] Error signing out after auth failure:', signOutErr);
             }
         }
         
@@ -1521,7 +1531,7 @@ export async function doAuth() {
         let _saClaimCheck = false;
         if (!_saEmailsCheck && cred && cred.user) {
             try {
-                const _tokenResult = await cred.user.getIdTokenResult(false);
+                const _tokenResult = await cred.user.getIdTokenResult(true); // SECURITY FIX (SEC-M01): Force token refresh
                 if (_tokenResult && _tokenResult.claims && _tokenResult.claims.role === 'superadmin') {
                     _saClaimCheck = true;
                 }
@@ -1530,7 +1540,8 @@ export async function doAuth() {
         if (_saEmailsCheck || _saClaimCheck) {
             isAuthorized = true;
             finalRole = 'superadmin';
-            console.log('[Cronos] SuperAdmin detectado en registro:', email, '(emails:', _saEmailsCheck, ', claims:', _saClaimCheck, ')');
+            // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email and claim status
+            // console.log('[Cronos] SuperAdmin detectado en registro:', email, '(emails:', _saEmailsCheck, ', claims:', _saClaimCheck, ')');
         }
 
         // ── Padre/tutor: guardar nombre del jugador que representa ──
@@ -2815,8 +2826,8 @@ async function _saPickTestClub(targetRole) {
                 btn.style.borderColor   = 'rgba(255,255,255,0.1)';
             });
             btn.addEventListener('click', () => {
-                me.clubId   = btn.dataset.id;
-                me.clubName = btn.dataset.name;
+                // SECURITY FIX (SEC-002): Use full reassignment for protected props
+                window._cronosCurrentUser = { ...me, clubId: btn.dataset.id, clubName: btn.dataset.name };
                 overlay.remove();
                 showToast(`🧪 Actuando en "${btn.dataset.name}" como ${targetRole}`, 3000);
                 _launchWithRole(me._activeRole);
@@ -2881,8 +2892,14 @@ function _launchWithRole(role) {
 
         if (roleEntry) {
             // ── Campos comunes: clubId y clubName del rol activo ──
-            if (roleEntry.clubId)   me.clubId   = roleEntry.clubId;
-            if (roleEntry.clubName) me.clubName = roleEntry.clubName;
+            // SECURITY FIX (SEC-002): Use full reassignment for protected props
+            if (roleEntry.clubId || roleEntry.clubName) {
+                window._cronosCurrentUser = {
+                    ...me,
+                    ...(roleEntry.clubId   ? { clubId: roleEntry.clubId } : {}),
+                    ...(roleEntry.clubName ? { clubName: roleEntry.clubName } : {}),
+                };
+            }
 
             // ── Campos exclusivos del rol 'parent' ──
             // inviteCode (ej: 'J10') vincula al jugador hijo

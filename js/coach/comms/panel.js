@@ -1217,6 +1217,13 @@ window._executeReportsSend = async function(method) {
     }
 
     // ----- MODO INTERNO -----
+    // FIX: Guard anti-duplicados — si autoDispatchMatchReports ya envió los informes
+    // para este partido, el envío manual solo debe procesar destinatarios adicionales
+    // que no fueron cubiertos por el auto-despacho.
+    const _autoAlreadyRan = !!window._cronosLastDispatchedMatch;
+    if (_autoAlreadyRan) {
+        console.log('[ManualDispatch] Auto-despacho ya ejecutó el envío. Solo se procesarán destinatarios adicionales.');
+    }
     showSpinner('Enviando informes internamente...');
     // Generar matchId compartido para todos los destinatarios de staff de este envío.
     // Así todos comparten el mismo conjunto de cronos_player_reports en lugar de
@@ -1237,9 +1244,12 @@ window._executeReportsSend = async function(method) {
 
                 if (uidToNotify) {
                     // ── 1. Notificación push/UI ──────────────────────────────────────
+                    // FIX: añadido userId para que las reglas de Firestore funcionen
+                    if (!_autoAlreadyRan) {
                     await setDoc(doc(db, 'cronos_notifications', `notif_matchsglobe_${uidToNotify}_${Date.now().toString(36)}`), {
                         type:      'aviso_partido_finalizado',
                         clubId:    me.clubId || null,
+                        userId:    uidToNotify,            // ← FIX: campo que las reglas verifican
                         parentUid: uidToNotify,
                         staffUid:  uidToNotify,
                         matchDate,
@@ -1248,6 +1258,7 @@ window._executeReportsSend = async function(method) {
                         message:   globalText.replace(/[*_]/g,''),
                         createdAt: new Date().toISOString()
                     });
+                    } // fin guard anti-duplicado
 
                     // ── 2. Hilo de mensajes unificado (mismo formato que auto-despacho) ──
                     // Usamos {coachUid}_{staffUid} para que coincida con el hilo que
@@ -1268,6 +1279,8 @@ window._executeReportsSend = async function(method) {
                                 threadId,
                                 coachUid:      me.uid,
                                 coachEmail:    me.email,
+                                clubId:        me.clubId || null,     // ← FIX: para reglas Firestore
+                                participants:  [me.uid, uidToNotify], // ← FIX: para reglas Firestore
                                 staffUid:      uidToNotify,
                                 recipientType: 'staff',
                                 messages:      [msgEntry],
@@ -1285,8 +1298,18 @@ window._executeReportsSend = async function(method) {
                     // El despacho manual nunca los escribía → panel de Informes vacío.
                     // Se escriben UNA SOLA VEZ (guard _staffReportsWritten) con el
                     // matchId compartido para que todos los staff vean el mismo partido.
-                    if (!_staffReportsWritten) {
+                    // FIX: solo escribir si auto-despacho no lo hizo ya.
+                    if (!_staffReportsWritten && !_autoAlreadyRan) {
                         _staffReportsWritten = true;
+                        // Recopilar UIDs de todos los destinatarios staff
+                        const _manualStaffUids = recipients.filter(rx => rx.type === 'staff').map(rx => {
+                            if (typeof emailConfig !== 'undefined' && emailConfig.contacts) {
+                                const cx = emailConfig.contacts.find(x => x.id === rx.id);
+                                if (cx && cx.uid) return cx.uid;
+                            }
+                            return (rx.id && !rx.id.startsWith('p_')) ? rx.id : null;
+                        }).filter(Boolean);
+
                         try {
                             for (const p of homePlayers) {
                                 const srId = `${_sharedMatchId}_staff_p${p.number}`;
@@ -1294,6 +1317,7 @@ window._executeReportsSend = async function(method) {
                                     matchId:       _sharedMatchId,
                                     type:          'staff_match_report',
                                     staffReport:   true,
+                                    staffUids:     _manualStaffUids, // ← FIX: UIDs para reglas Firestore
                                     clubId:        me.clubId || null,
                                     coachUid:      me.uid,
                                     coachEmail:    me.email,
@@ -1355,7 +1379,19 @@ window._executeReportsSend = async function(method) {
 
                 const reportText = _buildIndividualReportText(player, scoreHome, scoreAway, matchDate);
 
+                const targetParentUid = (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id));
+                // FIX: Si auto-despacho ya envió a este padre, saltar ANTES de escribir
+                // en cronos_player_reports para evitar informes duplicados.
+                // Antes, la escritura a cronos_player_reports estaba ARRIBA de este chequeo,
+                // lo que generaba un documento duplicado que el padre veía dos veces.
+                if (_autoAlreadyRan && targetParentUid) {
+                    console.log('[ManualDispatch] Saltando padre (auto-despacho ya ejecutado):', targetParentUid);
+                    sentCount++;
+                    continue;
+                }
+
                 // Save in cronos_player_reports (for UI queries)
+                // FIX: solo se ejecuta si auto-despacho NO lo hizo ya
                 const reportId = `rpt_${player.number}_${Date.now().toString(36)}`;
                 await setDoc(doc(db, 'cronos_player_reports', reportId), {
                     reportId,
@@ -1374,7 +1410,6 @@ window._executeReportsSend = async function(method) {
                     createdAt: new Date().toISOString(),
                 });
 
-                const targetParentUid = (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id));
                 if (targetParentUid) {
                     // Send via Thread Message
                     const threadId = `${me.uid}_${targetParentUid}`;
@@ -1391,6 +1426,8 @@ window._executeReportsSend = async function(method) {
                         } else {
                             await setDoc(doc(db, 'cronos_messages', threadId), {
                                 threadId, coachUid: me.uid, coachEmail: me.email,
+                                clubId: me.clubId || null,                           // ← FIX: para reglas Firestore
+                                participants: [me.uid, targetParentUid],              // ← FIX: para reglas Firestore
                                 parentUid: targetParentUid, parentEmail: (link ? link.parentEmail : r.email) || '',
                                 messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
                                 lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
@@ -1400,6 +1437,7 @@ window._executeReportsSend = async function(method) {
                         // Also a notification for the parent
                         await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${player.number}_${Date.now().toString(36)}`), {
                             type: 'informe_partido', clubId: me.clubId || null,
+                            userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
                             parentUid: targetParentUid, playerNumber: player.number,
                             rival: rivalName, scoreHome, scoreAway,
                             minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
@@ -1418,6 +1456,8 @@ window._executeReportsSend = async function(method) {
         }
         
         // ── INFORME COLECTIVO AL PROPIO ENTRENADOR ───────────────
+        // FIX: Solo generar si auto-despacho no lo hizo ya (evita duplicados)
+        if (!_autoAlreadyRan) {
         try {
             const matchId = `match_${me.uid}_${Date.now().toString(36)}`;
             for (const p of homePlayers) {
@@ -1449,6 +1489,7 @@ window._executeReportsSend = async function(method) {
         } catch(autoSelfErr) {
             console.warn('[ManualDispatch] Auto-informe al entrenador falló silenciosamente:', autoSelfErr.message);
         }
+        } // fin guard !_autoAlreadyRan
 
     } catch (sendErr) {
         console.error('[Cronos] Error enviando informes internos:', sendErr);
@@ -1528,9 +1569,31 @@ async function autoDispatchMatchReports() {
         // ── Generar un matchId compartido para este partido ──────────────
         const sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
 
+        // ── Resolver destinatarios staff ANTES de escribir reports ──────────
+        // FIX: antes los staff reports se escribían sin staffUids, así que los
+        // directores/coordinadores no podían leerlos por las reglas de Firestore.
+        // Ahora resolvemos el staff primero para incluir sus UIDs en cada doc.
+        const notifiedUids = new Set();
+        let staffToNotify = [];
+        try {
+            const _fns2 = { collection, getDocs, query, where };
+            staffToNotify = (await _cGetStaff(db, me.clubId || '', _fns2)) || [];
+        } catch (e) {
+            console.warn('[autoDispatch] _cGetStaff falló, usando emailConfig:', e.message);
+        }
+        // Fuente complementaria: contactos de tipo staff con uid
+        contacts.filter(c => c.type !== 'parent' && c.uid)
+            .forEach(c => {
+                if (!staffToNotify.some(s => s.uid === c.uid)) {
+                    staffToNotify.push({ uid: c.uid, role: c.role || 'staff', email: c.email || '' });
+                }
+            });
+        const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+
         // ── Guardar documentos cronos_player_reports para el Gantt del staff ──
         // Un documento por jugador con type='staff_match_report' y staffReport=true.
-        // Así el panel de coordinador/director filtra solo estos y no mezcla con padres.
+        // FIX: incluye staffUids para que las reglas de Firestore permitan leer
+        // a directores y coordinadores (request.auth.uid in resource.data.staffUids).
         console.log('[StaffReport] Intentando enviar informe staff. clubId:', me?.clubId, 'players:', (homePlayers || []).length);
         for (const p of homePlayers) {
             const srId = `${sharedMatchId}_staff_p${p.number}`;
@@ -1538,6 +1601,7 @@ async function autoDispatchMatchReports() {
                 matchId:       sharedMatchId,
                 type:          'staff_match_report',
                 staffReport:   true,          // ← filtro exclusivo del panel staff
+                staffUids:     _allStaffUids, // ← FIX: UIDs de staff para reglas Firestore
                 clubId:        me.clubId || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
@@ -1560,39 +1624,19 @@ async function autoDispatchMatchReports() {
         }
 
         // ── Notificar al staff (coordinador + director) ──────────────────
-        // E3 (punto 1): resolver SIEMPRE los destinatarios desde _cGetStaff,
-        // que combina emailConfig.contacts + colección users por clubId y
-        // roles ['director','coordinator']. Antes solo se notificaba a los
-        // contactos con tag 'rpt' y uid, por lo que los directores/coordinadores
-        // del club que no estuvieran configurados manualmente nunca recibían
-        // el informe. El tag 'rpt' deja de ser requisito.
-        const notifiedUids = new Set();
-
-        // Fuente primaria: staff real del club (users) + config unificada.
-        let staffToNotify = [];
-        try {
-            const _fns2 = { collection, getDocs, query, where };
-            staffToNotify = (await _cGetStaff(db, me.clubId || '', _fns2)) || [];
-        } catch (e) {
-            console.warn('[autoDispatch] _cGetStaff falló, usando emailConfig:', e.message);
-        }
-
-        // Fuente complementaria: contactos de tipo staff con uid (por si el
-        // entrenador añadió a alguien manualmente que no está en users).
-        contacts.filter(c => c.type !== 'parent' && c.uid)
-            .forEach(c => {
-                if (!staffToNotify.some(s => s.uid === c.uid)) {
-                    staffToNotify.push({ uid: c.uid, role: c.role || 'staff', email: c.email || '' });
-                }
-            });
+        // Los destinatarios ya fueron resueltos arriba (antes de los reports).
+        // Aquí solo enviamos las notificaciones y creamos los hilos de mensajes.
 
         for (const staff of staffToNotify) {
             if (!staff.uid || notifiedUids.has(staff.uid)) continue;
             notifiedUids.add(staff.uid);
+
+            // ── 1. Notificación push/UI ───────────────────────────────
             const notifId = `notif_global_rpt_${staff.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', notifId), {
                 type: 'aviso_partido_finalizado',
                 clubId: me.clubId || null,
+                userId: staff.uid,           // ← FIX: campo que las reglas verifican
                 parentUid: staff.uid,
                 staffUid: staff.uid,
                 matchDate, rival: rivalName, scoreHome, scoreAway,
@@ -1671,6 +1715,8 @@ async function autoDispatchMatchReports() {
                 } catch(e) {
                     await setDoc(doc(db, 'cronos_messages', threadId), {
                         threadId, coachUid: me.uid, coachEmail: me.email,
+                        clubId: me.clubId || null,                        // ← FIX: para reglas Firestore
+                        participants: [me.uid, pUid],                     // ← FIX: para reglas Firestore
                         parentUid: pUid, messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
                         lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
                     });
@@ -1681,6 +1727,7 @@ async function autoDispatchMatchReports() {
                 await setDoc(doc(db, 'cronos_notifications', notifId), {
                     type:         'informe_partido',
                     clubId:       me.clubId || null,
+                    userId:       pUid,                                // ← FIX: campo que las reglas verifican
                     parentUid:    pUid,
                     playerNumber: player.number,
                     playerAlias:  player.alias || player.name,

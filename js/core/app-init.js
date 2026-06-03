@@ -1,14 +1,32 @@
+// SECURITY: Guaranteed escapeHtml & escapeAttr — prevents XSS if script load order fails
+// These polyfills MUST be at the very top of this file so they execute before anything else.
+// They only activate if the full implementations below haven't loaded yet.
+if (typeof window.escapeHtml !== 'function') {
+    window.escapeHtml = function(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;').replace(/\//g,'&#x2F;');
+    };
+}
+if (typeof window.escapeAttr !== 'function') {
+    window.escapeAttr = function(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#039;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    };
+}
+
 // --- XSS PREVENTION (global) ---
-function escapeHtml(str) {
+// NOTE: Assigned to window so it overwrites the polyfill above
+//       and is guaranteed available to all modules.
+window.escapeHtml = function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     const s = String(str);
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;', '/': '&#x2F;' };
     return s.replace(/[&<>"'/]/g, c => map[c]);
-}
-function escapeAttr(str) {
+};
+window.escapeAttr = function escapeAttr(str) {
     if (str === null || str === undefined) return '';
     return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#039;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+};
 
 // --- SECURITY & INITIALIZATION ---
 var ACCESS_CODE = ''; // Cargado dinámicamente desde Firestore (cronos_config/access)
