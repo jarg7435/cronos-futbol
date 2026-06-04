@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v127
+//  CRONOS FUTBOL — Service Worker v128
+//  v128: Bump cache — fuerza recarga de utils.js (fix export roto
+//         que rompia el <script> clasico con SyntaxError).
 //  v127: Fix todas las rutas fin partido limpian localStorage +
 //         dedup padres por email + clubId staff docs.
 //  v126: Guard idempotencia con huella granular (uid+fecha+marcador)
@@ -13,8 +15,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v127';
-const CACHE_NAME = 'cronos-cache-v127';
+const VERSION    = 'v128';
+const CACHE_NAME = 'cronos-cache-v128';
 
 const ASSETS = [
     './',
@@ -71,25 +73,25 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll(ASSETS).catch(err => {
-                console.warn('[SW v127] Error al precargar recursos:', err);
+                console.warn('[SW v128] Error al precargar recursos:', err);
             });
         })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[SW v127] Activado - eliminando cachés antiguas');
+    console.log('[SW v128] Activado - eliminando cachés antiguas');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => {
-                        console.log('[SW v127] Borrando caché antigua:', key);
+                        console.log('[SW v128] Borrando caché antigua:', key);
                         return caches.delete(key);
                     })
             );
         }).then(() => {
-            console.log('[SW v127] Todas las cachés antiguas eliminadas');
+            console.log('[SW v128] Todas las cachés antiguas eliminadas');
             return self.clients.claim();
         })
     );
@@ -114,7 +116,7 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                console.warn('[SW v127] Red no disponible, usando caché:', event.request.url);
+                console.warn('[SW v128] Red no disponible, usando caché:', event.request.url);
                 return caches.match(event.request);
             })
     );
