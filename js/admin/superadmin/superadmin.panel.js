@@ -1907,7 +1907,7 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
     var _indTabBtn = document.getElementById('sa-tab-individuals');
     if (_indTabBtn && _indTabBtn.style.borderBottomColor === 'rgb(88, 166, 255)') _activeTab = 'individuals';
     try {
-        const { db, fa, doc, getDoc, updateDoc, deleteDoc, collection, getDocs, query, where, httpsCallable } = await saFS();
+        const { db, fa, doc, getDoc, updateDoc, deleteDoc, collection, getDocs, query, where, setDoc, httpsCallable } = await saFS();
         const uSnap = await getDoc(doc(db,'users',uid));
         const uData = uSnap.exists() ? uSnap.data() : {};
         const realUid = uData.uid || uid;
@@ -1938,6 +1938,17 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                 allRoles = uData.allRoles;
             }
 
+            // ── Multi-rol: solo eliminar la cuenta Auth si el usuario NO conserva
+            //    roles activos en OTRO club/entidad distinto al que se está dando
+            //    de baja. Si los tiene, se borra de este ámbito pero la cuenta
+            //    de Firebase Auth se preserva.
+            var _otherActiveRoles = allRoles.filter(function(r) {
+                var sameScope = String(r.clubId || r.individualEntityId || '') === String(clubId || '');
+                var isActive = r.isAuthorized === true && r.status !== 'removed' && r.status !== 'rejected';
+                return !sameScope && isActive;
+            });
+            var _shouldDeleteAuth = _otherActiveRoles.length === 0;
+
             // 2. Actualizar slots del club para CADA rol
             var _sk = function(role) {
                 if (role === 'director') return 'usedSlots.directors';
@@ -1963,15 +1974,27 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
 
             // 3. Eliminar cuenta de Firebase Auth ANTES de borrar docs
             // (la Cloud Function necesita leer el doc del caller para verificar permisos)
-            if (httpsCallable && fa.functions) {
+            // Multi-rol: solo si no quedan roles activos en otro club/entidad.
+            if (_shouldDeleteAuth && httpsCallable && fa.functions) {
                 try {
                     var resB = await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
                     console.log('[saSetClubUserStatus] deleteAuthUser OK:', realEmail, resB && resB.data);
                 } catch(cfErr) {
-                    console.error('[saSetClubUserStatus] deleteAuthUser FALLÓ:', cfErr.code, cfErr.message);
+                    console.error('[saSetClubUserStatus] deleteAuthUser FALLÓ:', cfErr && cfErr.code, cfErr && cfErr.message);
                     var codeB = (cfErr.details && cfErr.details.code) || cfErr.code || '';
                     if (codeB !== 'auth/user-not-found') {
-                        _saToast('🚫 No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeB) + '). Borrado cancelado.', 6000);
+                        // Registrar el fallo de forma persistente para revisión manual
+                        try {
+                            var _meSA = window._cronosCurrentUser || {};
+                            await setDoc(doc(db, 'auth_deletion_failures', realUid + '_' + Date.now()), {
+                                uid: realUid, email: realEmail, clubId: clubId || null,
+                                errorCode: codeB || null,
+                                errorMessage: (cfErr && cfErr.message) || String(cfErr),
+                                requestedBy: _meSA.uid || null, requestedByEmail: _meSA.email || null,
+                                createdAt: new Date().toISOString()
+                            });
+                        } catch(_) {}
+                        _saToast('🚫 No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeB) + '). Borrado cancelado. Registrado para revisión.', 6000);
                         return;
                     }
                 }
@@ -2201,7 +2224,7 @@ window.saPurgeUser = async function saPurgeUser(uid, email) {
     if (!confirm('\uD83D\uDDD1\uFE0F LIMPIAR RASTRO: ' + email + '\n\nIRREVERSIBLE. \u00bfConfirmar?')) return;
     _saShowSpinner('Limpiando\u2026');
     try {
-        const { db, fa, doc, getDoc, deleteDoc, collection, getDocs, query, where, httpsCallable } = await saFS();
+        const { db, fa, doc, getDoc, deleteDoc, collection, getDocs, query, where, setDoc, httpsCallable } = await saFS();
 
         // 1. Leer documento para obtener uid real y todos los roles
         var uSnap = await getDoc(doc(db, 'users', uid));
@@ -2219,16 +2242,29 @@ window.saPurgeUser = async function saPurgeUser(uid, email) {
             allRoles = uData.allRoles;
         }
 
-        // 2. Eliminar cuenta de Firebase Auth ANTES de borrar docs
+        // 2. Eliminar cuenta de Firebase Auth ANTES de borrar docs.
+        //    saPurgeUser es la limpieza FINAL de la papelera: borra la cuenta
+        //    Auth completa. El fallo NO se ignora: se registra para revisión.
         if (httpsCallable && fa.functions) {
             try {
                 var resP = await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
                 console.log('[saPurgeUser] deleteAuthUser OK:', realEmail, resP && resP.data);
             } catch(cfErr) {
-                console.error('[saPurgeUser] deleteAuthUser FALLÓ:', cfErr.code, cfErr.message);
+                console.error('[saPurgeUser] deleteAuthUser FALLÓ:', cfErr && cfErr.code, cfErr && cfErr.message);
                 var codeP = (cfErr.details && cfErr.details.code) || cfErr.code || '';
                 if (codeP !== 'auth/user-not-found') {
-                    _saToast('🚫 No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeP) + '). Purga cancelada.', 6000);
+                    // Registrar el fallo de forma persistente para revisión manual
+                    try {
+                        var _meP = window._cronosCurrentUser || {};
+                        await setDoc(doc(db, 'auth_deletion_failures', realUid + '_' + Date.now()), {
+                            uid: realUid, email: realEmail, clubId: uData.clubId || null,
+                            errorCode: codeP || null,
+                            errorMessage: (cfErr && cfErr.message) || String(cfErr),
+                            requestedBy: _meP.uid || null, requestedByEmail: _meP.email || null,
+                            createdAt: new Date().toISOString()
+                        });
+                    } catch(_) {}
+                    _saToast('🚫 No se pudo eliminar la cuenta de acceso (' + (cfErr.message || codeP) + '). Purga cancelada. Registrado para revisión.', 6000);
                     return;
                 }
             }

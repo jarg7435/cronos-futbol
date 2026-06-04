@@ -920,7 +920,7 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
     if (!confirm(`⚠️ ¿ELIMINAR completamente a ${email}?\n\nEsta acción es irreversible.\nEl usuario será borrado de la base de datos y su email podrá reutilizarse.`)) return;
     if (typeof _saShowSpinner === 'function') _saShowSpinner('Eliminando usuario…');
     try {
-        const { db, fa, doc, getDoc, deleteDoc, collection, getDocs, query, where, updateDoc, httpsCallable } = await saFS();
+        const { db, fa, doc, getDoc, deleteDoc, collection, getDocs, query, where, updateDoc, setDoc, httpsCallable } = await saFS();
 
         // FIX: Read user data before deletion to check if they're an admin and get entity info
         const userSnap = await getDoc(doc(db, 'users', parentUid)).catch(() => null);
@@ -929,14 +929,16 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
         const _isAdminIndiv = uData.role === 'individual' || uData.role === 'admin_individual'
             || (uData.allRoles||[]).some(r => (r.role === 'individual' || r.role === 'admin_individual') && r.isAuthorized);
 
-        // Try to delete from Firebase Auth
-        if (httpsCallable && fa && fa.functions) {
-            try {
-                await httpsCallable(fa.functions, 'deleteAuthUser')({ uid: parentUid, email });
-            } catch(cfErr) {
-                console.warn('[indDeleteParent] deleteAuthUser falló (no bloqueante):', cfErr.message);
-            }
-        }
+        // ── Multi-rol: solo eliminar la cuenta Auth si el usuario NO conserva
+        //    roles activos en OTRA entidad. Si los tiene, se borra de esta
+        //    base de datos pero la cuenta de Firebase Auth se preserva.
+        const _allRoles = uData.allRoles || [];
+        const _otherActiveRoles = _allRoles.filter(r => {
+            const sameEntity = String(r.clubId || r.individualEntityId || '') === String(_entityId || '');
+            const isActive = r.isAuthorized === true && r.status !== 'removed' && r.status !== 'rejected';
+            return !sameEntity && isActive;
+        });
+        const _shouldDeleteAuth = _otherActiveRoles.length === 0;
 
         // Delete platform_requests for this user
         try {
@@ -981,6 +983,32 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
                     }
                 }
             } catch(entErr) { console.warn('[indDeleteParent] Error limpiando entidad individual:', entErr.message); }
+        }
+
+        // ── Eliminar cuenta de Firebase Auth (vía Cloud Function) — ÚLTIMA operación.
+        //    Solo si no quedan roles activos en otra entidad. El fallo NO se ignora:
+        //    se registra en auth_deletion_failures y se avisa al admin.
+        if (_shouldDeleteAuth && httpsCallable && fa && fa.functions) {
+            try {
+                const _authRes = await httpsCallable(fa.functions, 'deleteAuthUser')({ uid: parentUid, email });
+                console.log('[indDeleteParent] deleteAuthUser OK:', email, _authRes && _authRes.data);
+            } catch(cfErr) {
+                console.error('[indDeleteParent] deleteAuthUser FALLÓ:', cfErr && cfErr.code, cfErr && cfErr.message);
+                try {
+                    const _me = window._cronosCurrentUser || {};
+                    await setDoc(doc(db, 'auth_deletion_failures', parentUid + '_' + Date.now()), {
+                        uid: parentUid, email, entityId: _entityId || null,
+                        errorCode: (cfErr && cfErr.code) || null,
+                        errorMessage: (cfErr && cfErr.message) || String(cfErr),
+                        requestedBy: _me.uid || null, requestedByEmail: _me.email || null,
+                        createdAt: new Date().toISOString()
+                    });
+                } catch(_) {}
+                if (typeof _saToast === 'function') {
+                    _saToast('⚠️ Datos borrados, pero la cuenta de Auth de ' + email +
+                             ' NO se pudo eliminar. Registrado para revisión.', 6000);
+                }
+            }
         }
 
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
