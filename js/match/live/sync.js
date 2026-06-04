@@ -401,9 +401,18 @@ function confirmStopLive() {
     }
 }
 
-// Llamar a pushLiveSnapshot en cada acción relevante del partido
+// Llamar a pushLiveSnapshot en cada acción relevante del partido.
+// Throttle de 2 s: agrupa ráfagas de acciones rápidas (gol, tarjeta,
+// sustitución, lesión…) en una sola escritura a Firestore. La primera
+// acción programa el push y las siguientes dentro de la ventana se ignoran.
+let _liveSyncThrottleTimer = null;
 function liveSyncOnAction() {
-    if (liveIsActive) pushLiveSnapshot('active');
+    if (!liveIsActive) return;
+    if (_liveSyncThrottleTimer) return;
+    _liveSyncThrottleTimer = setTimeout(() => {
+        _liveSyncThrottleTimer = null;
+        if (liveIsActive) pushLiveSnapshot('active');
+    }, 2000);
 }
 
 // ══════════════════════════════════════════════════════════════════
