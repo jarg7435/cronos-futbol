@@ -111,10 +111,19 @@ service cloud.firestore {
         request.auth.uid == userId ||
         isSuperAdmin()
       );
+      // FIX (multi-rol): se permite que el usuario actualice su propio
+      // 'allRoles' para AÑADIR roles PENDIENTES (necesario para el flujo
+      // "añadir rol a cuenta existente"). La escalada real se sigue
+      // bloqueando porque los campos de RAÍZ que controlan el acceso
+      // efectivo ('role', 'isAuthorized', 'status', 'clubId', 'clubName',
+      // 'authorizedAt', 'authorizedBy', 'blockedAt') permanecen prohibidos
+      // para el propio usuario. El gate de entrada (auth.js) NO confía en
+      // 'allRoles[].isAuthorized' del cliente: solo activa un rol cuando la
+      // RAÍZ 'isAuthorized' es true (escrita por el SA vía Admin SDK).
       allow update: if isSuperAdmin() ||
         (isAuth() && request.auth.uid == userId
           && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['role', 'isAuthorized', 'status', 'allRoles', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt']));
+              .hasAny(['role', 'isAuthorized', 'status', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt']));
       allow delete: if isSuperAdmin();
     }
 

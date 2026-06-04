@@ -939,6 +939,25 @@ export async function checkAuthorization(user) {
 
         // CRÍTICO: Sincronizar roles autorizados entre raíz y allRoles
         // Si el usuario tiene un rol autorizado en la raíz, debe estarlo en allRoles
+        // SEGURIDAD (anti-escalada multi-rol): desde el fix de reglas que
+        // permite al usuario añadir roles a su propio 'allRoles', NO podemos
+        // confiar en el flag 'isAuthorized' de cada entrada de 'allRoles'
+        // (un atacante podría ponerlo a true por consola). Solo se considera
+        // un rol REALMENTE autorizado si su clave está en _verifiedRoleKeys,
+        // sembrado desde fuentes que el usuario NO puede falsificar:
+        //   1. RAÍZ del doc (data.isAuthorized/role/clubId) — protegida por reglas.
+        //   2. platform_requests aprobadas (status solo escribible por el SA).
+        const _roleKey = (role, clubId, indivId) =>
+            (role || '') + '|' + (clubId || indivId || '');
+        const _verifiedRoleKeys = new Set();
+        // Se pone a true solo si la consulta de verificación (platform_requests)
+        // se completó. Si falla/timeout, el filtro hace FAIL-OPEN para no
+        // bloquear roles legítimos ya activados en sesiones anteriores.
+        let _verificationLoaded = false;
+        if (data.isAuthorized && data.role) {
+            _verifiedRoleKeys.add(_roleKey(data.role, data.clubId, data.individualEntityId));
+        }
+
         if (data.isAuthorized && data.role) {
             let needsRoleSync = false;
             const existingRole = allRoles.find(r => r.role === data.role && (r.clubId || null) === (data.clubId || null));
@@ -980,6 +999,7 @@ export async function checkAuthorization(user) {
             ]);
             if (!allReqsSnap) throw new Error('[Cronos] Timeout platform_requests (auto-activar)');
             const approvedReqDocs = [];
+            _verificationLoaded = true; // verificación disponible
             allReqsSnap.forEach(d => {
                 const s = d.data().status;
                 if (s === 'sa_approved' || s === 'approved' || s === 'active') approvedReqDocs.push(d);
@@ -1000,6 +1020,8 @@ export async function checkAuthorization(user) {
                     const clubId = req.clubId || null;
                     const clubName = req.clubName || req.requestedClubName || null;
                     const indivEntityId = req.individualOwnerId || null;
+                    // Rol respaldado por platform_request aprobada por el SA → verificado.
+                    _verifiedRoleKeys.add(_roleKey(role, clubId, indivEntityId));
 
                     // Buscar si el rol ya está activo
                     const existingIdx = updatedAllRoles.findIndex(r =>
@@ -1107,7 +1129,18 @@ export async function checkAuthorization(user) {
 
         // Filtrar solo roles autorizados y ELIMINAR DUPLICADOS
         // (mismo role + clubId/individualEntityId puede aparecer múltiple veces por intentos de registro anteriores)
-        const allAuthorized = allRoles.filter(r => r.isAuthorized || r.role === 'superadmin');
+        // SEGURIDAD: un rol cuenta como autorizado si (a) es superadmin, o
+        // (b) su clave está verificada (RAÍZ del doc o platform_request
+        // aprobada por el SA). Esto neutraliza la auto-escalada vía edición
+        // de 'allRoles[].isAuthorized' por consola, ahora que las reglas
+        // permiten al usuario escribir su propio 'allRoles'.
+        // FAIL-OPEN: si la verificación no pudo cargarse (timeout/red), se
+        // confía en 'allRoles' para no bloquear roles legítimos.
+        const allAuthorized = allRoles.filter(r =>
+            r.role === 'superadmin' ||
+            (r.isAuthorized && (!_verificationLoaded ||
+                _verifiedRoleKeys.has(_roleKey(r.role, r.clubId, r.individualEntityId))))
+        );
         const seenRoles = new Set();
         const authorizedRoles = allAuthorized.filter(r => {
             const key = (r.role || '') + '|' + (r.clubId || r.individualEntityId || '');
