@@ -43,6 +43,32 @@ class OfflineManager {
         if (this.isOnline) this.sync();
     }
 
+    // ── Commit SÍNCRONO/durable: guarda el evento en IndexedDB y NO resuelve
+    //    hasta que la transacción se ha confirmado en disco (tx.oncomplete).
+    //    Pensado para eventos críticos del partido (gol, tarjeta, lesión,
+    //    cambio, cambio de fase) donde no podemos esperar al autoguardado de
+    //    5 s: si la app se cierra justo después, el evento ya está persistido.
+    saveEventSync(event) {
+        return new Promise((resolve) => {
+            if (!this.db) { resolve(false); return; }
+            try {
+                const data = { ...event, timestamp: Date.now(), synced: false };
+                const tx   = this.db.transaction('events', 'readwrite');
+                tx.objectStore('events').add(data);
+                tx.oncomplete = () => {
+                    // Solo intentamos sincronizar con la nube tras confirmar el
+                    // commit local, para no bloquear la durabilidad por la red.
+                    if (this.isOnline) this.sync();
+                    resolve(true);
+                };
+                tx.onerror = () => resolve(false);
+                tx.onabort = () => resolve(false);
+            } catch (e) {
+                resolve(false);
+            }
+        });
+    }
+
     // ── Obtener todos los eventos no sincronizados ───────────────────
     async _getPending() {
         return new Promise((resolve, reject) => {
@@ -131,3 +157,45 @@ window._cronosOffline = new OfflineManager();
 window._cronosOffline.init().catch(e =>
     console.warn('[OfflineManager] init error:', e)
 );
+
+// ════════════════════════════════════════════════════════════════════
+//  commitCriticalEvent(type, detail)
+//  Punto único de "commit síncrono" para eventos críticos del partido
+//  (gol, tarjeta, lesión, cambio, cambio de fase, fin de partido).
+//
+//  Hace dos cosas, sin esperar al autoguardado periódico de 5 s:
+//    1. Snapshot inmediato del estado del partido en localStorage
+//       (_saveMatchStateToStorage), para poder retomar el partido exacto.
+//    2. Registro durable del evento en IndexedDB (saveEventSync), que solo
+//       resuelve tras confirmarse la transacción. Así, si la app se cierra
+//       justo después de un gol/tarjeta, el evento NO se pierde.
+//
+//  Es tolerante a fallos: nunca lanza (un fallo de persistencia jamás debe
+//  romper el flujo del partido) y funciona aunque OfflineManager aún no se
+//  haya inicializado.
+// ════════════════════════════════════════════════════════════════════
+window.commitCriticalEvent = function commitCriticalEvent(type, detail) {
+    // 1. Snapshot inmediato del partido en localStorage (síncrono).
+    try {
+        if (typeof window._saveMatchStateToStorage === 'function') {
+            window._saveMatchStateToStorage();
+        }
+    } catch (e) { /* silencioso: la persistencia nunca rompe el partido */ }
+
+    // 2. Registro durable del evento en IndexedDB.
+    try {
+        const mgr = window._cronosOffline;
+        if (mgr && typeof mgr.saveEventSync === 'function') {
+            return mgr.saveEventSync({
+                kind:     'match_critical',
+                type:     type || 'unknown',
+                detail:   detail || null,
+                phase:    (typeof matchPhase !== 'undefined') ? matchPhase : null,
+                matchId:  (typeof liveMatchId !== 'undefined') ? liveMatchId : null,
+                clientTs: Date.now(),
+            }).catch(() => false);
+        }
+    } catch (e) { /* silencioso */ }
+
+    return Promise.resolve(false);
+};

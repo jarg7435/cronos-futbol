@@ -126,6 +126,12 @@ function toggleInjury() {
         }
     }
     renderPlayers();
+    // Commit síncrono del evento crítico (snapshot localStorage + IndexedDB
+    // durable) antes de sincronizar con Firestore. Mecanismo único en
+    // commitCriticalEvent() para no perder el evento si el navegador se cierra.
+    if (typeof commitCriticalEvent === 'function') {
+        commitCriticalEvent('injury', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: p.injured });
+    }
     liveSyncOnAction();
 }
 
@@ -161,6 +167,10 @@ function assignCard(type) {
         p.cards       = 'roja';
         p.yellowCards = 0; // Roja directa → NO es doble amarilla
         logEvent(p, 'TARJETA ROJA');
+        // Commit síncrono del evento crítico antes de sincronizar con Firestore.
+        if (typeof commitCriticalEvent === 'function') {
+            commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'roja_directa' });
+        }
         liveSyncOnAction();
 
         // 📊 SOLUCIÓN #7: Auditar tarjeta roja
@@ -203,6 +213,10 @@ function assignCard(type) {
             p.cards       = 'roja';
             p.yellowCards = 2; // Doble amarilla → queda registrado
             logEvent(p, 'DOBLE AMARILLA → EXPULSADO');
+            // Commit síncrono del evento crítico antes de sincronizar con Firestore.
+            if (typeof commitCriticalEvent === 'function') {
+                commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'doble_amarilla' });
+            }
             liveSyncOnAction();
 
             // 📊 SOLUCIÓN #7: Auditar doble amarilla
@@ -240,6 +254,10 @@ function assignCard(type) {
         p.cards       = 'amarilla';
         p.yellowCards = 1;
         logEvent(p, 'TARJETA AMARILLA');
+        // Commit síncrono del evento crítico antes de sincronizar con Firestore.
+        if (typeof commitCriticalEvent === 'function') {
+            commitCriticalEvent('card_yellow', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 1 });
+        }
         liveSyncOnAction();
 
         // 📊 SOLUCIÓN #7: Auditar primera amarilla
@@ -295,6 +313,18 @@ function terminateMatch(reason) {
         localStorage.removeItem('cronos_active_match_v2');
         localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
     } catch (e) {}
+    // Commit sincrono del FIN (por expulsiones) como evento critico durable.
+    try {
+        const _mgr = window._cronosOffline;
+        if (_mgr && typeof _mgr.saveEventSync === 'function') {
+            _mgr.saveEventSync({
+                kind: 'match_critical', type: 'phase', detail: { phase: 'finished', reason: reason },
+                phase: 'finished',
+                matchId: (typeof liveMatchId !== 'undefined') ? liveMatchId : null,
+                clientTs: Date.now(),
+            }).catch(() => {});
+        }
+    } catch (e) { /* silencioso */ }
     document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
     document.getElementById('btn-play-pause').classList.remove('danger');
     stopLiveSync();
@@ -379,6 +409,12 @@ function changeGoals(amount) {
         document.getElementById('action-player-goals').textContent = `${p.goals} ⚽`;
         syncScoreFromPlayers(p.team);
         renderPlayers();
+        // Commit síncrono del evento crítico antes de sincronizar con Firestore.
+        // Solo cuando el gol AUMENTA (amount > 0): los goles anulados no
+        // necesitan registrarse como evento crítico de gol.
+        if (amount > 0 && typeof commitCriticalEvent === 'function') {
+            commitCriticalEvent('goal', { playerId: p.id, playerName: p.name, playerNumber: p.number, team: p.team, value: p.goals });
+        }
         liveSyncOnAction();
     }
 }
@@ -473,9 +509,19 @@ function selectForSubstitution(benchPlayer) {
 
 function confirmSubstitutionWith(fieldPlayer) {
     if (!pendingSubstitution) return;
+    const inPlayer = pendingSubstitution.player;
     handleSmartSwap(pendingSubstitution.player, fieldPlayer);
     cancelPendingSubstitution();
     renderPlayers();
+    // Commit síncrono del evento crítico antes de sincronizar con Firestore.
+    if (typeof commitCriticalEvent === 'function') {
+        commitCriticalEvent('substitution', {
+            playerId: inPlayer ? inPlayer.id : null,
+            playerName: inPlayer ? inPlayer.name : null,
+            playerNumber: inPlayer ? inPlayer.number : null,
+            value: { inId: inPlayer ? inPlayer.id : null, outId: fieldPlayer ? fieldPlayer.id : null },
+        });
+    }
     liveSyncOnAction();
 }
 
