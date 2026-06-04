@@ -11,6 +11,13 @@ class OfflineManager {
         this.version = version || 1;
         this.db      = null;
         this.isOnline = navigator.onLine;
+        // ── Dead Letter Queue ──────────────────────────────────────────
+        // Numero maximo de intentos de sincronizacion por evento. Tras
+        // superarlo, el evento se marca como "dead" (dead-lettered) y deja de
+        // reintentarse en cada sync(), evitando bucles infinitos por eventos
+        // "poison" (malformados, sin permisos, etc.). Quedan persistidos en
+        // IndexedDB para inspeccion / reintento manual via getDeadLetters().
+        this.maxRetries = 5;
     }
 
     async init() {
@@ -70,14 +77,82 @@ class OfflineManager {
     }
 
     // ── Obtener todos los eventos no sincronizados ───────────────────
+    //    Excluye los ya sincronizados (synced) y los dead-lettered (dead):
+    //    estos ultimos superaron maxRetries y no deben reintentarse.
     async _getPending() {
         return new Promise((resolve, reject) => {
             const tx    = this.db.transaction('events', 'readonly');
             const store = tx.objectStore('events');
             const req   = store.getAll();
-            req.onsuccess = () => resolve((req.result || []).filter(e => !e.synced));
+            req.onsuccess = () => resolve((req.result || []).filter(e => !e.synced && !e.dead));
             req.onerror   = () => reject(req.error);
         });
+    }
+
+    // ── Registrar un intento fallido de sincronizacion ────────────────
+    //    Incrementa el contador de reintentos del evento. Si alcanza
+    //    maxRetries, lo marca como dead-lettered (dead:true) para que
+    //    _getPending() deje de devolverlo y no se reintente indefinidamente.
+    async _markFailed(id, errorMessage) {
+        return new Promise((resolve) => {
+            const tx    = this.db.transaction('events', 'readwrite');
+            const store = tx.objectStore('events');
+            const req   = store.get(id);
+            req.onsuccess = () => {
+                const ev = req.result;
+                if (ev) {
+                    const attempts = (ev.attempts || 0) + 1;
+                    const updated  = {
+                        ...ev,
+                        attempts,
+                        lastAttemptAt: Date.now(),
+                        lastError:     errorMessage || null,
+                    };
+                    if (attempts >= this.maxRetries) {
+                        updated.dead     = true;
+                        updated.deadAt   = Date.now();
+                        console.warn(`[OfflineManager] ☠️ Evento ${id} movido a Dead Letter queue ` +
+                                     `tras ${attempts} intento(s). Ultimo error: ${errorMessage || 'desconocido'}`);
+                    }
+                    store.put(updated);
+                }
+                resolve(ev ? (ev.attempts || 0) + 1 : 0);
+            };
+            req.onerror = () => resolve(0); // no bloquear si falla
+        });
+    }
+
+    // ── Listar los eventos dead-lettered (para inspeccion / diagnostico) ─
+    async getDeadLetters() {
+        if (!this.db) return [];
+        return new Promise((resolve) => {
+            const tx    = this.db.transaction('events', 'readonly');
+            const store = tx.objectStore('events');
+            const req   = store.getAll();
+            req.onsuccess = () => resolve((req.result || []).filter(e => e.dead));
+            req.onerror   = () => resolve([]);
+        });
+    }
+
+    // ── Reintentar manualmente los eventos dead-lettered ─────────────────
+    //    Resetea su contador y la marca dead, y vuelve a intentar sync().
+    //    Util si el fallo era transitorio (p.ej. reglas/permisos corregidos).
+    async retryDeadLetters() {
+        if (!this.db) return 0;
+        const dead = await this.getDeadLetters();
+        if (!dead.length) return 0;
+        await Promise.all(dead.map(ev => new Promise((resolve) => {
+            const tx    = this.db.transaction('events', 'readwrite');
+            const store = tx.objectStore('events');
+            const updated = { ...ev, dead: false, attempts: 0, lastError: null };
+            delete updated.deadAt;
+            const putReq = store.put(updated);
+            putReq.onsuccess = () => resolve();
+            putReq.onerror   = () => resolve();
+        })));
+        console.log(`[OfflineManager] ♻️ ${dead.length} evento(s) dead-lettered re-encolado(s) para reintento.`);
+        this.sync();
+        return dead.length;
     }
 
     // ── Marcar un evento como sincronizado en IndexedDB ───────────────
@@ -131,10 +206,15 @@ class OfflineManager {
                     await this._markSynced(event.id);
                     synced++;
                 } catch (itemErr) {
-                    // Si un evento falla individualmente, continuar con los demás
                     console.warn('[OfflineManager] Error sincronizando evento', event.id, itemErr.message);
-                    // Detener si es un error de red (no tiene sentido seguir)
+                    // Si se ha caido la conexion, NO contamos el intento contra
+                    // el limite (es un fallo transitorio de red, no un evento
+                    // "poison"): paramos y reintentaremos todo mas tarde.
                     if (!this.isOnline) break;
+                    // Fallo individual real del evento: registramos el intento.
+                    // Tras maxRetries pasa a la Dead Letter queue y deja de
+                    // reintentarse, evitando bucles infinitos.
+                    await this._markFailed(event.id, itemErr.message);
                 }
             }
 

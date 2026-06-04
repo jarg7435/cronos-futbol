@@ -335,6 +335,7 @@ function setupEventListeners() {
             p.history.push(`Sale a las ${timestamp1} (DESCANSO)`);
         });
         matchPhase = 'break';
+        if (typeof commitCriticalEvent === 'function') commitCriticalEvent('phase', { phase: 'break' });
         document.getElementById('btn-play-pause').textContent = 'REANUDAR';
         document.getElementById('btn-play-pause').classList.remove('danger');
         updateMasterUI();
@@ -350,6 +351,7 @@ function setupEventListeners() {
         });
         lastTickTime = Date.now();
         if (!isRunning) toggleGame();
+        if (typeof commitCriticalEvent === 'function') commitCriticalEvent('phase', { phase: '2nd_half' });
         updateMasterUI();
     };
 
@@ -664,6 +666,20 @@ window.endMatch = function endMatch(skipConfirm = false) {
         // Blindaje: marca de finalización que _checkActiveMatch() respeta para
         // ignorar cualquier snapshot residual escrito por una carrera de 5s.
         localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
+        // Commit sincrono del FIN como evento critico durable en IndexedDB.
+        // No usamos commitCriticalEvent() aqui porque reescribiria el snapshot
+        // que acabamos de borrar; registramos solo el evento de forma durable.
+        try {
+            const _mgr = window._cronosOffline;
+            if (_mgr && typeof _mgr.saveEventSync === 'function') {
+                _mgr.saveEventSync({
+                    kind: 'match_critical', type: 'phase', detail: { phase: 'finished' },
+                    phase: 'finished',
+                    matchId: (typeof liveMatchId !== 'undefined') ? liveMatchId : null,
+                    clientTs: Date.now(),
+                }).catch(() => {});
+            }
+        } catch (e) { /* silencioso */ }
     } catch (e) { /* silencioso: el fin de partido nunca debe romperse por storage */ }
 
     // Registrar salida de todos los jugadores en campo
