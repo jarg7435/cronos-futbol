@@ -72,3 +72,9 @@ firestore.rules.REVIEW
 functions/fix-sa-claim.js
 usuarios_temp.json
 functions/check-sa-doc.js
+
+# Scripts de utilidad de un solo uso (suelen contener UIDs/credenciales hardcodeadas).
+# No deben subirse al repositorio.
+fix-*.js
+check-*.js
+*-sa-*.js
