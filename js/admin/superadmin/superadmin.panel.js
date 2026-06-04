@@ -168,16 +168,9 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     const setupModal = document.getElementById('setup-modal');
     if (setupModal) setupModal.style.display = 'none';
 
-    // Contar pendientes para badge
+    // Contar pendientes para badge (mismas fuentes que el panel Solicitudes)
     let pendingCount = 0;
-    try {
-        const { db, collection, query, where, getDocs } = await saFS();
-        const [s1, s2] = await Promise.all([
-            getDocs(query(collection(db,'platform_requests'), where('status','==','pending_sa'))).catch(()=>({size:0})),
-            getDocs(query(collection(db,'users'), where('status','==','pending'))).catch(()=>({size:0})),
-        ]);
-        pendingCount = (s1.size||0) + (s2.size||0);
-    } catch (_) {}
+    try { pendingCount = await window.saCountPendingRequests(); } catch (_) {}
 
     const badge = pendingCount > 0
         ? ` <span style="background:#ff5858;color:white;border-radius:10px;padding:1px 7px;font-size:0.65rem;font-weight:700;">${pendingCount}</span>`
@@ -1167,6 +1160,46 @@ window.saQuickApprove = async function(uid, email, clubId) {
 // ═══════════════════════════════════════════════════════════════════
 // saRequests() — tres fuentes unificadas
 // ═══════════════════════════════════════════════════════════════════
+
+// ── Helper compartido: cuenta las solicitudes pendientes que ve el SA ──
+// Usa EXACTAMENTE las mismas 6 fuentes y la misma deduplicación que
+// saRequests(), para que el badge del tab nunca se desincronice del panel.
+window.saCountPendingRequests = async function saCountPendingRequests() {
+    try {
+        const { db, collection, query, where, getDocs } = await saFS();
+        const [snapD, snapD2, snapD3, snapP, snapQ, snapSucc] = await Promise.all([
+            getDocs(query(collection(db,'users'),where('status','==','pending'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'users'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'users'),where('status','==','pending_individual'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'platform_requests'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'platform_requests'),where('type','==','quota_increase'),where('status','==','unread'))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'succession_requests'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
+        ]);
+        const _seen = new Set();
+        let count = 0;
+        const _addDirect = (d) => { if (!_seen.has(d.id)) { _seen.add(d.id); count++; } };
+        snapD.forEach(_addDirect);
+        snapD2.forEach(_addDirect);
+        snapD3.forEach(d => {
+            const u = d.data();
+            if (u.individualEntityId || u.individualOwnerId || u.isIndividual
+                || u.role === 'individual' || u.role === 'admin_individual') {
+                _addDirect(d);
+            }
+        });
+        snapP.forEach(d => {
+            const r = d.data();
+            if ((r.type === 'self_registration' || r.type === 'ind_admin_registration')
+                && (r.requestedRole === 'club_admin' || r.requestedRole === 'individual')) {
+                return; // ya contado como direct_user
+            }
+            count++;
+        });
+        snapQ.forEach(() => count++);
+        snapSucc.forEach(() => count++);
+        return count;
+    } catch (_) { return 0; }
+};
 
 window.saRequests = async function saRequests() {
     const body = document.getElementById('sa-body');
@@ -2333,10 +2366,14 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
         let _initialRequestLoad = true;
         window._requestsSyncUnsubscribe = onSnapshot(
             query(collection(db, 'platform_requests'), where('status', '==', 'pending_sa')),
-            snap => {
+            async snap => {
                 const panel = document.getElementById('sa-panel');
                 if (!panel) return;
-                const count = snap.size || 0;
+                // Recalcular el conteo COMPLETO (las 6 fuentes), no solo este snapshot,
+                // para que el badge refleje exactamente lo que muestra el panel.
+                let count = 0;
+                try { count = await window.saCountPendingRequests(); }
+                catch (_) { count = snap.size || 0; }
 
                 // Actualizar badge del tab Solicitudes
                 const reqTab = document.getElementById('sa-tab-requests');
