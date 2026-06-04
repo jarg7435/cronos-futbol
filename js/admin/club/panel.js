@@ -478,6 +478,7 @@ async function openClubAdminPanel(preClubId = null) {
             const euid = (u._id || '').replace(/'/g, "\\'");
             const email = (u.email || '').replace(/'/g, "\\'");
             const ecid = (clubId || '').replace(/'/g, "\\'");
+            const erole = (r.role || u.role || '').replace(/'/g, "\\'");
 
             return `
             <tr style="border-bottom:1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
@@ -491,8 +492,12 @@ async function openClubAdminPanel(preClubId = null) {
                 <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#d2a8ff; font-weight:600;">${subLabel}</td>
                 <td style="padding:0.8rem 0.7rem; text-align:right;">
                     <div style="display:flex; gap:0.4rem; justify-content:flex-end;">
-                        <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}')" 
-                            class="sa-btn" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.2);">✕</button>
+                        <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${erole}')"
+                            title="Quitar este rol (conserva la cuenta y los demás roles)"
+                            class="sa-btn" style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Rol</button>
+                        <button onclick="caDeleteUserComplete('${euid}','${email}','${ecid}')"
+                            title="Eliminar usuario completamente (borra la cuenta Auth y todos sus roles)"
+                            class="sa-btn" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.3); font-weight:700;">🗑️ Usuario</button>
                     </div>
                 </td>
             </tr>`;
@@ -1417,9 +1422,15 @@ async function openClubAdminPanel(preClubId = null) {
         }
     };
 
-    window.caSetUserStatus = async (userId, userEmail, newStatus, cid) => {
+    window.caSetUserStatus = async (userId, userEmail, newStatus, cid, targetRole) => {
         const labels = { active:'activar', blocked:'bloquear', removed:'dar de baja definitivamente' };
-        if (!confirm('¿Deseas ' + (labels[newStatus] || newStatus) + ' a ' + userEmail + '?')) return;
+        // Si se especifica targetRole, la "baja" es de UN solo rol (no del usuario entero).
+        if (newStatus === 'removed' && targetRole) {
+            if (!confirm('¿Quitar el rol "' + targetRole + '" a ' + userEmail + '?\n\n' +
+                         'Se conservará su cuenta y los demás roles activos.')) return;
+        } else {
+            if (!confirm('¿Deseas ' + (labels[newStatus] || newStatus) + ' a ' + userEmail + '?')) return;
+        }
 
         // Función auxiliar para obtener la clave de slot del club según el rol
         // Definida aquí para estar disponible en TODOS los caminos (removed, active, blocked)
@@ -1455,6 +1466,61 @@ async function openClubAdminPanel(preClubId = null) {
                     allRoles = docData.allRoles;
                 }
 
+                // ── Determinar alcance del borrado (multi-rol) ──────────────
+                // Si se especifica targetRole y el usuario tiene OTROS roles
+                // activos, solo se elimina ESE rol; la cuenta Auth y los demás
+                // roles se conservan. Sin targetRole = borrado total del usuario.
+                var rolesRestantes = allRoles.filter(function(r) {
+                    var sameRole = r.role === targetRole;
+                    var sameClub = String(r.clubId || '') === String(cid || '');
+                    return !(sameRole && sameClub);
+                });
+                var deleteAllRoles  = !targetRole || allRoles.length <= 1 || rolesRestantes.length === 0;
+                var shouldDeleteAuth = deleteAllRoles;
+
+                // ── CAMINO A: quitar SOLO un rol (conservar cuenta + otros roles)
+                if (!deleteAllRoles) {
+                    // A1. Liberar el slot de ese rol en el club
+                    if (cid) {
+                        try {
+                            var csR = await getDoc(doc(db, 'clubs', cid));
+                            if (csR.exists()) {
+                                var rkR  = _slotKey(targetRole);
+                                var subR = rkR.split('.')[1];
+                                var curR = ((csR.data().usedSlots || {})[subR]) || 1;
+                                var updR = {}; updR[rkR] = Math.max(0, curR - 1);
+                                await updateDoc(doc(db, 'clubs', cid), updR);
+                            }
+                        } catch (_) {}
+                    }
+                    // A2. Quitar el rol de allRoles del doc primario (NO borrar el doc)
+                    try {
+                        await updateDoc(doc(db, 'users', realUid), { allRoles: rolesRestantes });
+                    } catch (_) {}
+                    // A3. Eliminar SOLO el doc secundario de ese rol (si existe)
+                    var secOne = realUid + '_' + targetRole + '_' + (cid || 'global');
+                    if (secOne !== realUid) {
+                        try { await deleteDoc(doc(db, 'users', secOne)); } catch (_) {}
+                    }
+                    // A4. Registrar la baja de rol (sin tocar Firebase Auth)
+                    await setDoc(doc(db, 'deletion_requests', realUid + '_role_' + Date.now()), {
+                        userId: realUid, userEmail: realEmail, clubId: cid,
+                        requestedBy: me.uid, requestedByEmail: me.email,
+                        reason: (reason || '').trim() || 'Baja de rol',
+                        roleDeleted: targetRole,
+                        remainingRoles: rolesRestantes.map(function(r) { return r.role; }),
+                        status: 'completed',
+                        resolvedAt: new Date().toISOString(),
+                        createdAt: new Date().toISOString()
+                    }).catch(function() {});
+
+                    showToast('➖ Rol "' + targetRole + '" de ' + userEmail +
+                              ' eliminado. El usuario conserva sus otros roles.', 4000);
+                    openClubAdminPanel();
+                    return; // NO continúa al borrado total ni llama a deleteAuthUser
+                }
+
+                // ── CAMINO B: borrado TOTAL del usuario (incluye Auth) ──────
                 // 3. Actualizar slots del club para CADA rol del usuario
                 // (_slotKey ya definido al inicio de caSetUserStatus)
                 for (var ri = 0; ri < allRoles.length; ri++) {
@@ -1505,13 +1571,32 @@ async function openClubAdminPanel(preClubId = null) {
                     }
                 } catch (_) {}
 
-                // 7. Eliminar cuenta de Firebase Auth (vía Cloud Function)
-                try {
-                    if (fa && fa.functions) {
+                // 7. Eliminar cuenta de Firebase Auth (vía Cloud Function) — ÚLTIMA operación.
+                //    Solo se ejecuta en borrado TOTAL (shouldDeleteAuth). El fallo NO se
+                //    ignora: se registra en auth_deletion_failures y se avisa al admin.
+                if (shouldDeleteAuth) {
+                    try {
+                        if (!fa || !fa.functions) throw new Error('Functions SDK no disponible');
                         var delFn = httpsCallable(fa.functions, 'deleteAuthUser');
-                        await delFn({ uid: realUid, email: realEmail });
+                        var authRes = await delFn({ uid: realUid, email: realEmail });
+                        console.log('[caSetUserStatus] deleteAuthUser OK:', realEmail, authRes && authRes.data);
+                    } catch (authErr) {
+                        console.error('[caSetUserStatus] deleteAuthUser FALLÓ:',
+                            authErr && authErr.code, authErr && authErr.message);
+                        // Registrar el fallo de forma persistente para revisión manual
+                        try {
+                            await setDoc(doc(db, 'auth_deletion_failures', realUid + '_' + Date.now()), {
+                                uid: realUid, email: realEmail, clubId: cid,
+                                errorCode: (authErr && authErr.code) || null,
+                                errorMessage: (authErr && authErr.message) || String(authErr),
+                                requestedBy: me.uid, requestedByEmail: me.email,
+                                createdAt: new Date().toISOString()
+                            });
+                        } catch (_) {}
+                        showToast('⚠️ Datos borrados, pero la cuenta de Auth de ' + realEmail +
+                                  ' NO se pudo eliminar. Registrado para revisión.', 6000);
                     }
-                } catch (_) {}
+                }
 
                 // 8. Registrar la baja completa en deletion_requests
                 var delRoles = allRoles.map(function(r) { return r.role; });
