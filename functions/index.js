@@ -554,6 +554,8 @@ exports.sendInviteEmail = functions
   }
 
   const { to, subject, body, role, clubName, inviterName } = data;
+  /* SECURITY: escapar toda entrada de usuario que se interpole en HTML */
+  const _esc = (v) => { if (v === null || v === undefined) return ''; return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
   if (!to) {
     throw new functions.https.HttpsError('invalid-argument', 'Se requiere el email de destino');
   }
@@ -618,9 +620,9 @@ exports.sendInviteEmail = functions
 
   /* ---- Cuerpo principal del mensaje (por defecto o personalizado) ---- */
   const customBodyHtml = body
-    ? body.replace(/\n/g, '<br/>')
-          .replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
-    : `<strong>${senderName}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
+    ? _esc(body).replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
+          .replace(/\n/g, '<br/>')
+    : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
 
   /* ---- Cuerpo en HTML con logo y diseño profesional ---- */
   const htmlBody = (
@@ -642,8 +644,8 @@ exports.sendInviteEmail = functions
         /* -- Tarjeta de rol y club (solo si no es body personalizado, para evitar duplicar info) -- */
         (body ? '' : 
         '<div style="background-color: #f5f7ff; border-left: 4px solid #3949ab; border-radius: 4px; padding: 16px 20px; margin: 0 0 25px 0;">' +
-          '<p style="margin: 0 0 8px 0; font-size: 15px; color: #555555;">Rol: <strong style="color: #1a237e;">' + roleLabel + '</strong></p>' +
-          (clubName ? '<p style="margin: 0; font-size: 15px; color: #555555;">Club: <strong style="color: #1a237e;">' + clubName + '</strong></p>' : '') +
+          '<p style="margin: 0 0 8px 0; font-size: 15px; color: #555555;">Rol: <strong style="color: #1a237e;">' + _esc(roleLabel) + '</strong></p>' +
+          (clubName ? '<p style="margin: 0; font-size: 15px; color: #555555;">Club: <strong style="color: #1a237e;">' + _esc(clubName) + '</strong></p>' : '') +
         '</div>'
         ) +
 
@@ -662,7 +664,7 @@ exports.sendInviteEmail = functions
 
       /* -- Pie del correo -- */
       '<div style="background-color: #f5f5f5; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">' +
-        '<p style="margin: 0 0 6px 0; font-size: 13px; color: #999999;">Enviado por ' + senderName + ' desde Chronos Futbol</p>' +
+        '<p style="margin: 0 0 6px 0; font-size: 13px; color: #999999;">Enviado por ' + _esc(senderName) + ' desde Chronos Futbol</p>' +
         '<p style="margin: 0; font-size: 12px; color: #bbbbbb;">Si no esperabas este correo, puedes ignorarlo de forma segura.</p>' +
       '</div>' +
 
