@@ -390,7 +390,7 @@ async function openClubAdminPanel(preClubId = null) {
                 ${(function(){
                     // Buscar categoría en el perfil o en allRoles
                     let cat = u.category || u.categoryLabel;
-                    let sub = u.subcategory || u.subCategory;
+                    let sub = u.subcategory;
                     if (!cat && u.allRoles) {
                         let roleEntry = u.allRoles.find(r => r.role === u.role);
                         if (roleEntry) { cat = roleEntry.category; sub = roleEntry.subcategory; }
@@ -451,7 +451,7 @@ async function openClubAdminPanel(preClubId = null) {
                         isAuthorized: isAuth,
                         status: u.status,
                         category: u.category || u.categoryLabel,
-                        subcategory: u.subcategory || u.subCategory
+                        subcategory: u.subcategory
                     }];
                 }
             }
@@ -1105,7 +1105,7 @@ async function openClubAdminPanel(preClubId = null) {
                 
                 // Buscar metadata en platform_requests si no está en el doc
                 let cat = data.requestedCategory || data.category || data.categoryLabel;
-                let sub = data.requestedSubcategory   || data.subcategory || data.subCategory;
+                let sub = data.requestedSubcategory   || data.subcategory;
 
                 const roleInAll = (data.allRoles || []).find(r => r.role === role);
                 if (roleInAll) {
@@ -1177,7 +1177,7 @@ async function openClubAdminPanel(preClubId = null) {
                 
                 // Prioridad: 1. Datos en allRoles, 2. Datos en raíz, 3. Datos de la solicitud
                 const cat = (roleInAll && roleInAll.category) || data.requestedCategory || data.categoryLabel;
-                const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcategory || data.subCategory;
+                const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcategory;
 
                 if (cat) {
                     updateData.category      = cat;
@@ -1336,7 +1336,7 @@ async function openClubAdminPanel(preClubId = null) {
                 const roleEntry = userData.allRoles.find(r => r.role === role && (r.clubId || null) === (cid || null));
                 if (roleEntry) {
                     userCatFwd    = roleEntry.category || roleEntry.categoryLabel || null;
-                    userSubcatFwd = roleEntry.subcategory || roleEntry.subCategory || null;
+                    userSubcatFwd = roleEntry.subcategory || null;
                 }
             }
 
