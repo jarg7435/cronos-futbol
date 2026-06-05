@@ -284,12 +284,26 @@ async function openClubAdminPanel(preClubId = null) {
     }
 
     const pendingFromUserDocs = [];
+    // Estados pendientes que el Club Admin debe poder GESTIONAR (reenviar/rechazar).
+    // 'pending_sa' NO se incluye aquí: ya fue reenviado al SA y se muestra en el
+    // bloque de solo-lectura "Enviadas al SuperAdmin".
+    const _CA_ACTIONABLE = ['pending', 'pending_club_admin'];
     users.forEach(u => {
-        if (u.status === 'removed') return;
-        if (u.status === 'pending_club_admin') pendingFromUserDocs.push({ ...u, _pendingRole: u.role || u.requestedRole });
+        if (u.status === 'removed' || u.status === 'blocked') return;
+        // ¿Ya tiene algún rol ACTIVO en este club? Si lo tiene, sus roles pendientes
+        // los gestiona el bloque "Nuevos Roles Solicitados" (pendingRolesInAllRoles).
+        const hasActiveRole = u.isAuthorized === true ||
+            (u.allRoles || []).some(r => r.isAuthorized && (r.clubId === clubId || !r.clubId));
+
+        // (a) Usuario NUEVO (sin rol activo) cuyo rol principal está pendiente.
+        if (!hasActiveRole && _CA_ACTIONABLE.includes(u.status) && u.role !== 'club_admin') {
+            pendingFromUserDocs.push({ ...u, _pendingRole: u.role || u.requestedRole });
+        }
+
+        // (b) Rol pendiente dentro de allRoles (para este club) sin estar autorizado.
         if (u.allRoles) {
             u.allRoles.forEach(r => {
-                if (!r.isAuthorized && r.status === 'pending_club_admin' && (r.clubId === clubId || !r.clubId)) {
+                if (!r.isAuthorized && _CA_ACTIONABLE.includes(r.status) && (r.clubId === clubId || !r.clubId)) {
                     pendingFromUserDocs.push({ ...u, _pendingRole: r.role, _pendingCategory: r.category || u.requestedCategory, _pendingSubcat: r.subcategory || u.requestedSubcat });
                 }
             });
@@ -673,8 +687,14 @@ async function openClubAdminPanel(preClubId = null) {
         <!-- ── BLOQUE 0d: Solicitudes YA reenviadas (Transparencia) ── -->
         ${(function(){
             const forwarded = users.filter(u => {
+                if (u.status === 'removed' || u.status === 'blocked') return false;
+                // (a) Rol reenviado al SA dentro de allRoles (clubId de este club o vacío).
                 const ar = u.allRoles || [];
-                return ar.some(r => r.status === 'pending_sa' && r.clubId === clubId);
+                if (ar.some(r => r.status === 'pending_sa' && (r.clubId === clubId || !r.clubId))) return true;
+                // (b) Usuario nuevo cuyo rol principal fue reenviado al SA (root status).
+                if (u.status === 'pending_sa' && !u.isAuthorized && u.role !== 'club_admin'
+                    && (u.clubId === clubId || !u.clubId)) return true;
+                return false;
             });
             if (!forwarded.length) return '';
             return `
@@ -687,9 +707,10 @@ async function openClubAdminPanel(preClubId = null) {
               </h3>
               ${forwarded.map(u => {
                   const ar = u.allRoles || [];
-                  const pr = ar.find(r => r.status === 'pending_sa' && r.clubId === clubId);
+                  const pr = ar.find(r => r.status === 'pending_sa' && (r.clubId === clubId || !r.clubId));
                   const meta = window.ROLE_META || {};
-                  const label = (meta[pr?.role] || {}).label || pr?.role || 'Usuario';
+                  const _role = pr?.role || u.role || u.requestedRole;
+                  const label = (meta[_role] || {}).label || _role || 'Usuario';
                   return '<div style="font-size:0.75rem; color:#8b949e; padding:4px 0;">' +
                          '• <b>' + (escapeHtml(u.email)) + '</b> (' + label + ')</div>';
               }).join('')}
