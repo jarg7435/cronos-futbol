@@ -1427,7 +1427,7 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
     if (!confirm(`¿${approve?'Aprobar':'Rechazar'} esta solicitud?`)) return;
     _saShowSpinner(approve?'Aprobando…':'Rechazando…');
     try {
-        const { db, doc, getDoc, setDoc, updateDoc } = await saFS();
+        const { db, fa, doc, getDoc, setDoc, updateDoc, httpsCallable } = await saFS();
         const me = window._cronosCurrentUser?.email || 'superadmin';
 
         if (type === 'direct_user') {
@@ -1461,6 +1461,22 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                         allRoles: finalRoles,
                         authorizedAt:new Date().toISOString(), authorizedBy:me,
                     });
+                    // FIX (claims): asignar el custom claim 'clubId' + role al
+                    // token del nuevo club_admin para que las reglas de Firestore
+                    // (sameClubAsDoc) le concedan acceso sin depender del fallback.
+                    // No bloquea la aprobación si falla (la Opción B lo cubre).
+                    try {
+                        if (httpsCallable && fa.functions) {
+                            await httpsCallable(fa.functions, 'setCustomClaims')({
+                                uid: id, role: 'club_admin', clubId,
+                            });
+                            console.log('[saApprove] Custom claims asignados a club_admin', id, clubId);
+                        } else {
+                            console.warn('[saApprove] Functions no disponible; claims no asignados (fallback de reglas activo).');
+                        }
+                    } catch (claimErr) {
+                        console.warn('[saApprove] setCustomClaims falló (continúa con fallback de reglas):', claimErr.message);
+                    }
                     _saHideSpinner();
                     _saToast(`✅ Club "${u.requestedClubName}" creado y ${u.email} activado como Administrador.`, 6000);
                 } else if (u.role === 'individual' || u.role === 'admin_individual') {
