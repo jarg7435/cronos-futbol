@@ -3089,6 +3089,7 @@ window.saCreateClubConfirm = async function() {
         await setDoc(doc(db, 'clubs', clubId), {
             name,
             adminEmail:    email,
+            adminUid:      null, // se rellena cuando el admin se registra/aprueba (regla isClubAdminOf usa adminEmail como fallback hasta entonces)
             plan,
             status:        'active',
             slots:         { directors: dirS, coordinators: coS, users: coachS, parents: parS },
