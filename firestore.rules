@@ -85,7 +85,10 @@ service cloud.firestore {
     function isClubAdminOf(docClubId) {
       return isAuth() && docClubId != null
              && exists(/databases/$(database)/documents/clubs/$(docClubId))
-             && get(/databases/$(database)/documents/clubs/$(docClubId)).data.adminUid == request.auth.uid;
+             && (
+                  get(/databases/$(database)/documents/clubs/$(docClubId)).data.adminUid == request.auth.uid
+                  || get(/databases/$(database)/documents/clubs/$(docClubId)).data.adminEmail == request.auth.token.email
+                );
     }
 
     // El usuario es el propietario del enlace padre→jugador
