@@ -304,7 +304,7 @@ async function openClubAdminPanel(preClubId = null) {
         if (u.allRoles) {
             u.allRoles.forEach(r => {
                 if (!r.isAuthorized && _CA_ACTIONABLE.includes(r.status) && (r.clubId === clubId || !r.clubId)) {
-                    pendingFromUserDocs.push({ ...u, _pendingRole: r.role, _pendingCategory: r.category || u.requestedCategory, _pendingSubcat: r.subcategory || u.requestedSubcat });
+                    pendingFromUserDocs.push({ ...u, _pendingRole: r.role, _pendingCategory: r.category || u.requestedCategory, _pendingSubcat: r.subcategory || u.requestedSubcategory });
                 }
             });
         }
@@ -345,7 +345,7 @@ async function openClubAdminPanel(preClubId = null) {
                         _pendingRole: r.role,
                         role: r.role, // sobreescribir para que el template use el rol pendiente
                         _pendingCategory: r.category || u.requestedCategory,
-                        _pendingSubcat: r.subcategory || u.requestedSubcat,
+                        _pendingSubcat: r.subcategory || u.requestedSubcategory,
                     });
                 }
             }
@@ -637,7 +637,7 @@ async function openClubAdminPanel(preClubId = null) {
               const roleLabel = (ROLE_META[roleKey] || {}).label || roleKey;
               const roleIcon  = (ROLE_META[roleKey] || {}).icon  || '👤';
               const cat       = u._pendingCategory || u.requestedCategory;
-              const sub       = u._pendingSubcat   || u.requestedSubcat;
+              const sub       = u._pendingSubcat   || u.requestedSubcategory;
               const catInfo   = cat ? ' · <strong style="color:#3fb950">' + _catLabel(cat, sub) + '</strong>' : '';
               const nameInfo  = u.requestedName || [u.firstName, u.lastName].filter(Boolean).join(' ') || '';
               const emailShow = u.email || u.requestedEmail || '–';
@@ -1105,7 +1105,7 @@ async function openClubAdminPanel(preClubId = null) {
                 
                 // Buscar metadata en platform_requests si no está en el doc
                 let cat = data.requestedCategory || data.category || data.categoryLabel;
-                let sub = data.requestedSubcat   || data.subcategory || data.subCategory;
+                let sub = data.requestedSubcategory   || data.subcategory || data.subCategory;
 
                 const roleInAll = (data.allRoles || []).find(r => r.role === role);
                 if (roleInAll) {
@@ -1178,7 +1178,7 @@ async function openClubAdminPanel(preClubId = null) {
                 
                 // Prioridad: 1. Datos en allRoles, 2. Datos en raíz, 3. Datos de la solicitud
                 const cat = (roleInAll && roleInAll.category) || data.requestedCategory || data.categoryLabel;
-                const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcat || data.subCategory;
+                const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcategory || data.subCategory;
 
                 if (cat) {
                     updateData.category      = cat;
@@ -1331,7 +1331,7 @@ async function openClubAdminPanel(preClubId = null) {
 
             // Obtener categorías si existen (del doc del usuario, allRoles, o de la solicitud original)
             let userCatFwd    = userData.requestedCategory || userData.category || null;
-            let userSubcatFwd = userData.requestedSubcat   || userData.subcategory || null;
+            let userSubcatFwd = userData.requestedSubcategory   || userData.subcategory || null;
             const userSlotFwd = userData.requestedSlot     || null;
             // Buscar también en allRoles si no se encontró en el doc raíz
             if (!userCatFwd && userData.allRoles) {
@@ -1351,7 +1351,7 @@ async function openClubAdminPanel(preClubId = null) {
                 requestedRole:     role,
                 requestedRoleLabel: ROLE_LABELS[role] || role,
                 requestedCategory: userCatFwd,
-                requestedSubcat:   userSubcatFwd,
+                requestedSubcategory:   userSubcatFwd,
                 requestedSlot:     userSlotFwd,
                 userUid: uid,
                 status: 'pending_sa',

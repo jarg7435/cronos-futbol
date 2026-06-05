@@ -1780,7 +1780,7 @@ export async function doAuth() {
                 // Si isAddingRole → añadir rol a allRoles sin sobrescribir existentes
                 // CRITICAL: clubId = _entityId so the user is linked to the entity in SuperAdmin
                 const _newIndivRole = { role: _finalSubRole, clubId: _entityId, isAuthorized: false, status: 'pending_individual',
-                             category: _cat, subCategory: _sub, categoryLabel: _catLabel, playerAlias: playerName || null,
+                             category: _cat, subcategory: _sub, categoryLabel: _catLabel, playerAlias: playerName || null,
                              individualEntityId: _entityId };
 
                 if (isAddingRole) {
@@ -1809,7 +1809,7 @@ export async function doAuth() {
                         individualOwnerId: _entityId, individualOwnerEmail: _ownerEmail,
                         individualEntityId: _entityId,
                         requestedRole: _finalSubRole, firstName: firstName||null, lastName: lastName||null,
-                        displayName: _disp, category: _cat, subCategory: _sub, categoryLabel: _catLabel,
+                        displayName: _disp, category: _cat, subcategory: _sub, categoryLabel: _catLabel,
                         playerAlias: playerName || null,
                         clubId: _entityId, clubName: null,
                         allRoles: [_newIndivRole],
@@ -1826,7 +1826,7 @@ export async function doAuth() {
                     userUid: cred.user.uid, userEmail: email, userName: _disp,
                     requestedRole: _finalSubRole,
                     requestedRoleLabel: _finalSubRole === 'user' ? 'Entrenador Individual' : 'Padre/Madre/Tutor Individual',
-                    category: _cat, subCategory: _sub, categoryLabel: _catLabel,
+                    category: _cat, subcategory: _sub, categoryLabel: _catLabel,
                     playerAlias: playerName || null,
                     createdAt: new Date().toISOString(),
                 });
@@ -2307,7 +2307,7 @@ export async function doAuth() {
                         requestedRole: finalRole,
                         requestedRoleLabel: ROLE_LABELS[finalRole] || finalRole,
                         requestedCategory: selectedCategory || null,
-                        requestedSubcat:   selectedSubcat   || null,
+                        requestedSubcategory:   selectedSubcat   || null,
                         userUid: cred.user.uid,
                         status: 'pending_individual',
                         createdAt: new Date().toISOString(),
@@ -2363,7 +2363,7 @@ export async function doAuth() {
                         requestedRole: finalRole,
                         requestedRoleLabel: ROLE_LABELS[finalRole] || finalRole,
                         requestedCategory: selectedCategory || null,
-                        requestedSubcat:   selectedSubcat   || null,
+                        requestedSubcategory:   selectedSubcat   || null,
                         requestedSlot:     requestedSlot    || null,
                         userUid: cred.user.uid,
                         status: 'pending_club_admin',
@@ -2581,7 +2581,7 @@ export async function doAuth() {
                     requestedRole:     finalRole,
                     requestedRoleLabel: RLABELS_IND[finalRole] || finalRole,
                     requestedCategory: selectedCategory || null,
-                    requestedSubcat:   selectedSubcat   || null,
+                    requestedSubcategory:   selectedSubcat   || null,
                     userUid:           cred.user.uid,
                     status:            'pending_individual',
                     createdAt:         new Date().toISOString(),
@@ -2599,7 +2599,7 @@ export async function doAuth() {
                     requestedRole:     finalRole,
                     requestedRoleLabel: RLABELS[finalRole] || finalRole,
                     requestedCategory: selectedCategory || null,
-                    requestedSubcat:   selectedSubcat   || null,
+                    requestedSubcategory:   selectedSubcat   || null,
                     requestedSlot:     requestedSlot    || null,
                     userUid:           cred.user.uid,
                     status:            'pending_club_admin',
