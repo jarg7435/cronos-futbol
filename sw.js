@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v132
-//  v132: Bump cache — Club Admin ve usuarios con roles pendientes
+//  CRONOS FUTBOL — Service Worker v133
+//  v133: Club Admin lee usuarios de su club sin claim (regla isClubAdminOf) + setCustomClaims al aprobar club_admin
 //         (pending/pending_club_admin accionables + pending_sa solo lectura).
 //  v131: Bump cache — fix multi-rol (anadir rol a cuenta existente sin
 //         escalada) + badge de Solicitudes del SuperAdmin con conteo real.
@@ -23,8 +23,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v132';
-const CACHE_NAME = 'cronos-cache-v132';
+const VERSION    = 'v133';
+const CACHE_NAME = 'cronos-cache-v133';
 
 const ASSETS = [
     './',
@@ -81,25 +81,25 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll(ASSETS).catch(err => {
-                console.warn('[SW v132] Error al precargar recursos:', err);
+                console.warn('[SW v133] Error al precargar recursos:', err);
             });
         })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[SW v132] Activado - eliminando cachés antiguas');
+    console.log('[SW v133] Activado - eliminando cachés antiguas');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => {
-                        console.log('[SW v132] Borrando caché antigua:', key);
+                        console.log('[SW v133] Borrando caché antigua:', key);
                         return caches.delete(key);
                     })
             );
         }).then(() => {
-            console.log('[SW v132] Todas las cachés antiguas eliminadas');
+            console.log('[SW v133] Todas las cachés antiguas eliminadas');
             return self.clients.claim();
         })
     );
@@ -124,7 +124,7 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                console.warn('[SW v132] Red no disponible, usando caché:', event.request.url);
+                console.warn('[SW v133] Red no disponible, usando caché:', event.request.url);
                 return caches.match(event.request);
             })
     );
