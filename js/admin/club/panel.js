@@ -1118,7 +1118,6 @@ async function openClubAdminPanel(preClubId = null) {
                     updateData.categoryLabel = cat;
                     if (sub) {
                         updateData.subcategory = sub;
-                        updateData.subCategory = sub;
                     }
                 }
                 if (data.allRoles) {
@@ -1185,7 +1184,6 @@ async function openClubAdminPanel(preClubId = null) {
                     updateData.categoryLabel = cat;
                     if (sub) {
                         updateData.subcategory = sub;
-                        updateData.subCategory = sub;
                     }
                 }
 
