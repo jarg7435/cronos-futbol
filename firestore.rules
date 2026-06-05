@@ -75,6 +75,19 @@ service cloud.firestore {
       return isAuth() && request.auth.token.clubId == docClubId;
     }
 
+    // FIX (club_admin sin claim): permite que el administrador real de un club
+    // —según el documento del club (clubs/{clubId}.adminUid)— lea los docs de
+    // 'users' de su club aunque su TOKEN aún no tenga el custom claim 'clubId'
+    // (los claims se asignan vía setCustomClaims; este fallback cubre a los
+    // club_admin ya aprobados antes de que se asignaran claims). Solo concede
+    // acceso si el uid coincide con el adminUid registrado en el club, así que
+    // no amplía la superficie de seguridad más allá del verdadero admin.
+    function isClubAdminOf(docClubId) {
+      return isAuth() && docClubId != null
+             && exists(/databases/$(database)/documents/clubs/$(docClubId))
+             && get(/databases/$(database)/documents/clubs/$(docClubId)).data.adminUid == request.auth.uid;
+    }
+
     // El usuario es el propietario del enlace padre→jugador
     function isLinkOwner() {
       return isAuth() && request.auth.uid == resource.data.parentUid;
@@ -105,6 +118,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         request.auth.uid == userId ||
         sameClubAsDoc(resource.data.clubId) ||
+        isClubAdminOf(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
