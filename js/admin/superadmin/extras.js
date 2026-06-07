@@ -424,9 +424,8 @@
                                     indUpdateData.category = r.requestedCategory || r.category;
                                     indUpdateData.categoryLabel = r.requestedCategoryLabel || r.categoryLabel || null;
                                 }
-                                if (r.requestedSubcat || r.subCategory) {
-                                    indUpdateData.subcategory = r.requestedSubcat || r.subCategory;
-                                    indUpdateData.subCategory = r.requestedSubcat || r.subCategory;
+                                if (r.requestedSubcat) {
+                                    indUpdateData.subcategory = r.requestedSubcat;
                                 }
                                 await updateDoc(doc(db,'users',r.userUid), indUpdateData);
                             }
