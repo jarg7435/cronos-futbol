@@ -854,7 +854,6 @@ window.indConfirmAccess = async function indConfirmAccess(parentUid, email) {
                 updateData.categoryLabel = (roleInAll && roleInAll.categoryLabel) || (typeof _indCatLabel==='function' ? _indCatLabel(cat.split('_')[0], cat.split('_')[1]||'') : cat);
                 if (sub) {
                     updateData.subcategory = sub;
-                    updateData.subCategory = sub;
                 }
             }
 
@@ -1082,7 +1081,6 @@ window.indSaveCategory = async function indSaveCategory(parentUid, email) {
         let updateData = {
             category: catVal,
             categoryLabel: catLabel,
-            subCategory: subCat,
             subcategory: subCat,
         };
 
@@ -1091,7 +1089,7 @@ window.indSaveCategory = async function indSaveCategory(parentUid, email) {
             if (data.allRoles) {
                 updateData.allRoles = data.allRoles.map(r => {
                     if (r.role === 'parent' || r.role === 'user') {
-                        return { ...r, category: catVal, categoryLabel: catLabel, subcategory: subCat, subCategory: subCat };
+                        return { ...r, category: catVal, categoryLabel: catLabel, subcategory: subCat };
                     }
                     return r;
                 });
