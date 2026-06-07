@@ -357,14 +357,14 @@ async function openIndividualAdminPanel() {
         let roles = u.allRoles || [];
         if (roles.length === 0) {
             roles = [{ role: u.role, isAuthorized: u.isAuthorized, status: u.status,
-                category: u.category || u.categoryLabel, subcategory: u.subcategory || u.subCategory }];
+                category: u.category || u.categoryLabel, subcategory: u.subcategory }];
         }
 
         // FIX: Deduplicar roles (mismo role + category + subcategory)
         const _seenRoleKey = new Set();
         const uniqueRoles = roles.filter(r => {
             if (r.status === 'rejected' || r.status === 'removed') return false;
-            const key = (r.role || '') + '|' + (r.category || '') + '|' + (r.subcategory || r.subCategory || '');
+            const key = (r.role || '') + '|' + (r.category || '') + '|' + (r.subcategory || '');
             if (_seenRoleKey.has(key)) return false;
             _seenRoleKey.add(key);
             return true;
@@ -675,12 +675,12 @@ async function openIndividualAdminPanel() {
 function _matchCat(u, catId, subCat) {
     if (!u.category && !u.categoryLabel) return false;
     const catFilter = catId + '_' + subCat.toLowerCase();
-    if (u.category === catId && (u.subCategory||'').toUpperCase() === subCat.toUpperCase()) return true;
+    if (u.category === catId && (u.subcategory||'').toUpperCase() === subCat.toUpperCase()) return true;
     if (u.category === catFilter) return true;
     const lbl = (u.categoryLabel || '').toLowerCase();
     if (lbl.includes(catId) && lbl.includes(subCat.toLowerCase())) return true;
     if ((u.allRoles||[]).some(r =>
-        (r.category === catId && (r.subCategory||'').toUpperCase() === subCat.toUpperCase()) ||
+        (r.category === catId && (r.subcategory||'').toUpperCase() === subCat.toUpperCase()) ||
         r.category === catFilter ||
         ((r.categoryLabel||'').toLowerCase().includes(catId) && (r.categoryLabel||'').toLowerCase().includes(subCat.toLowerCase()))
     )) return true;
@@ -847,7 +847,7 @@ window.indConfirmAccess = async function indConfirmAccess(parentUid, email) {
             const data = targetSnap.data();
             const roleInAll = (data.allRoles || []).find(r => r.role === 'parent' || r.role === 'user');
             const cat = (roleInAll && roleInAll.category) || data.requestedCategory || data.categoryLabel;
-            const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcat || data.subCategory;
+            const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcat;
 
             if (cat) {
                 updateData.category      = cat;
