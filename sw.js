@@ -23,8 +23,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v134';
-const CACHE_NAME = 'cronos-cache-v134';
+const VERSION    = 'v135';
+const CACHE_NAME = 'cronos-cache-v135';
 
 const ASSETS = [
     './',
