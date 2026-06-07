@@ -528,15 +528,27 @@ async function openParentPanel() {
 
                     if (pNum && !links.length) {
                         const pTeam  = myData.teamName || myData.category || '';
+                        // Fase 4: la categoría del jugador permite al entrenador
+                        // filtrar sus contactos por categoría. Se toma del doc del
+                        // padre (category/categoryLabel) o, si no, del rol parent.
+                        const _roleCat = (Array.isArray(myData.allRoles)
+                            ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
+                            : {});
+                        const pCat = myData.category || myData.categoryLabel
+                            || _roleCat.category || _roleCat.categoryLabel
+                            || (me && me.category) || '';
                         const linkId = `${clubId}_${pNum}`;
                         const existingLink = await getDoc(doc(fa.db, 'cronos_player_links', linkId));
 
                         if (existingLink.exists()) {
+                            const _exCat = existingLink.data().category;
                             await updateDoc(doc(fa.db, 'cronos_player_links', linkId), {
                                 parentUid:   me.uid,
                                 parentEmail: me.email || '',
                                 parentPhone: myData.whatsapp || myData.phone || '',
                                 parentName:  myData.displayName || me.email || '',
+                                // Solo establecer categoría si el link no la tenía aún.
+                                ...(!_exCat && pCat ? { category: pCat } : {}),
                             });
                         } else {
                             await setDoc(doc(fa.db, 'cronos_player_links', linkId), {
@@ -544,6 +556,7 @@ async function openParentPanel() {
                                 playerNumber:      String(pNum),
                                 playerAlias:       pAlias,
                                 teamName:          pTeam,
+                                category:          pCat || pTeam || '',
                                 parentUid:         me.uid,
                                 parentEmail:       me.email || '',
                                 parentPhone:       myData.whatsapp || myData.phone || '',

@@ -386,6 +386,48 @@ async function openThreadWithStaff(staffUid, staffEmail, staffRole) {
     } catch(_) {}
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  CATEGORÍA — helpers para filtrar contactos por categoría del entrenador
+//  (Fase 4). Un entrenador con categoría asignada (me.category) solo debe
+//  ver/contactar a los padres de su misma categoría.
+// ════════════════════════════════════════════════════════════════════
+// Normaliza una categoría para comparar: minúsculas, sin tildes, sin
+// espacios/guiones redundantes. "Alevín A" ≈ "alevin-a" ≈ "ALEVÍN  A".
+function _normCat(raw) {
+    if (raw == null) return '';
+    return String(raw)
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
+        .toLowerCase()
+        .replace(/[\s_-]+/g, ' ')                          // colapsar separadores
+        .trim();
+}
+
+// Devuelve la categoría efectiva de un link/contacto, mirando varios campos
+// por compatibilidad con datos antiguos (category, categoryLabel, teamName).
+function _linkCategory(link) {
+    if (!link) return '';
+    return link.category || link.categoryLabel || link.teamName || '';
+}
+
+// ¿Coincide la categoría del coach con la del link? Tolerante a datos
+// incompletos: si el coach no tiene categoría, ve todo; si el link no tiene
+// categoría (datos legacy sin backfill), también se muestra para no ocultar
+// contactos durante la migración. El staff nunca se filtra por categoría.
+function _catMatches(coachCat, link) {
+    const cc = _normCat(coachCat);
+    if (!cc) return true;                       // coach sin categoría → ve todo
+    if (link && link.type === 'staff') return true; // staff siempre visible
+    const lc = _normCat(_linkCategory(link));
+    if (!lc) return true;                        // link legacy sin categoría → mostrar
+    return lc === cc;
+}
+
+// Categoría activa del entrenador (o '' si no aplica filtro).
+function _coachCategory() {
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
+    return (me && me.category) ? me.category : '';
+}
+
 async function _loadParentList() {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     const fa = window._cronos_auth;
@@ -458,14 +500,48 @@ async function _loadParentList() {
         const threadsMap = {};
         threadsSnap.forEach(d => { threadsMap[d.id] = { _id: d.id, ...d.data() }; });
 
+        // ── FASE 4: filtrar contactos por categoría del entrenador ──────────
+        // Si el entrenador tiene una categoría asignada, solo ve a los padres
+        // de su misma categoría. El staff y los links legacy sin categoría se
+        // conservan (ver _catMatches). Guardamos el total para informar al coach.
+        const coachCat   = _coachCategory();
+        const totalLinks = links.length;
+        let filteredLinks = links;
+        if (_normCat(coachCat)) {
+            filteredLinks = links.filter(l => _catMatches(coachCat, l));
+        }
+        const hiddenCount = totalLinks - filteredLinks.length;
+
         // Ordenar por último mensaje
-        links.sort((a, b) => {
+        filteredLinks.sort((a, b) => {
             const ta = threadsMap[`${me.uid}_${a.parentUid}`]?.lastMessageAt || '';
             const tb = threadsMap[`${me.uid}_${b.parentUid}`]?.lastMessageAt || '';
             return tb.localeCompare(ta);
         });
 
-        body.innerHTML = links.map(link => {
+        // Aviso de filtro activo por categoría
+        const filterNotice = _normCat(coachCat) ? `
+            <div style="font-size:0.72rem;color:var(--text-muted);background:rgba(88,166,255,0.08);
+                        border:1px solid rgba(88,166,255,0.25);border-radius:8px;
+                        padding:0.5rem 0.75rem;margin-bottom:0.7rem;display:flex;
+                        align-items:center;gap:0.4rem;">
+                🏷️ Mostrando solo tu categoría:
+                <strong style="color:#58a6ff;">${typeof escapeHtml==='function'?escapeHtml(coachCat):coachCat}</strong>
+                ${hiddenCount > 0 ? `<span style="margin-left:auto;opacity:0.8;">(${hiddenCount} de otras categorías oculto${hiddenCount>1?'s':''})</span>` : ''}
+            </div>` : '';
+
+        if (!filteredLinks.length) {
+            body.innerHTML = filterNotice + `
+            <div style="text-align:center;color:var(--text-muted);padding:2.5rem 1rem;">
+                👥 No hay padres de tu categoría
+                ${_normCat(coachCat) ? `(<strong style="color:#58a6ff;">${typeof escapeHtml==='function'?escapeHtml(coachCat):coachCat}</strong>)` : ''}.
+            </div>`;
+            const barEmpty = document.getElementById('bulk-msg-bar');
+            if (barEmpty) barEmpty.style.display = 'flex';
+            return;
+        }
+
+        body.innerHTML = filterNotice + filteredLinks.map(link => {
             const threadId = `${me.uid}_${link.parentUid}`;
             const thread   = threadsMap[threadId] || {};
             const unread   = thread.unreadByCoach || 0;
@@ -476,6 +552,14 @@ async function _loadParentList() {
 
             const typeIcon = link.type === 'staff' ? '🏢' : '👨‍👩‍👧';
             const displayNum = link.playerNumber && link.playerNumber !== '—' ? `#${link.playerNumber}` : '';
+            // Categoría del jugador (badge informativo). Solo se muestra cuando
+            // el coach NO filtra por categoría (si filtra, todos son la misma).
+            const linkCat = _linkCategory(link);
+            const catBadge = (!_normCat(coachCat) && link.type !== 'staff' && _normCat(linkCat)) ? `
+                <span style="font-size:0.65rem;background:rgba(88,166,255,0.12);color:#58a6ff;
+                             border:1px solid rgba(88,166,255,0.3);border-radius:5px;
+                             padding:1px 6px;margin-left:0.3rem;white-space:nowrap;">
+                    🏷️ ${typeof escapeHtml==='function'?escapeHtml(linkCat):linkCat}</span>` : '';
             // Código de invitación para que el padre se registre en la app
             const invCode = link.inviteCode || (link.playerNumber ? `J${link.playerNumber}` : null);
             const isUnread = unread > 0;
@@ -503,7 +587,7 @@ async function _loadParentList() {
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
                             ${typeIcon} ${typeof escapeHtml==='function'?escapeHtml(link.playerAlias || link.playerName || 'Contacto'):link.playerAlias || link.playerName || 'Contacto'}
-                            <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(displayNum):displayNum}</span>
+                            <span style="color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(displayNum):displayNum}</span>${catBadge}
                         </div>
                         <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.2rem;">
                             ${typeof escapeHtml==='function'?escapeHtml(link.parentEmail || 'Sin email'):link.parentEmail || 'Sin email'}
