@@ -1858,7 +1858,11 @@ function confirmStopLive() {
     }
 }
 
-// Llamar a pushLiveSnapshot en cada acción relevante del partido
+// Llamar a pushLiveSnapshot en cada acción relevante del partido.
+// NOTA: la versión con throttle (leading + trailing) vive en
+// js/match/live/sync.js, que se carga DESPUÉS y sobrescribe esta.
+// Esta copia conserva el comportamiento básico por si el orden de carga
+// cambia, pero la activa en producción es la de sync.js.
 function liveSyncOnAction() {
     if (liveIsActive) pushLiveSnapshot('active');
 }
