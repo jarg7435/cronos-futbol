@@ -565,12 +565,8 @@ exports.sendInviteEmail = functions
   /*                     firebase functions:secrets:set EMAIL_PASS        */
   /* O con variables de entorno: firebase functions:config deprecado.     */
   /* Fallback compatible: también lee las variables de entorno de proceso */
-  const emailUser = process.env.EMAIL_USER
-    || (typeof functions.config === 'function' && functions.config().email && functions.config().email.user)
-    || null;
-  const emailPass = process.env.EMAIL_PASS
-    || (typeof functions.config === 'function' && functions.config().email && functions.config().email.pass)
-    || null;
+  const emailUser = process.env.EMAIL_USER || null;
+  const emailPass = process.env.EMAIL_PASS || null;
 
   console.log('[sendInviteEmail] Iniciando. Destino:', to, '| emailUser configurado:', !!emailUser);
 
