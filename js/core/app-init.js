@@ -462,8 +462,8 @@ let activeActionPlayerId = null;
 
 function openPlayerActionModal(player) {
     activeActionPlayerId = player.id;
-    document.getElementById('action-player-name').innerHTML = `${player.name} <span style="font-size:0.8rem">✏️</span>`;
-    document.getElementById('action-player-number').innerHTML = `Dorsal ${player.number} <span style="font-size:0.8rem">✏️</span>`;
+    document.getElementById('action-player-name').innerHTML = `${escapeHtml(player.name)} <span style="font-size:0.8rem">✏️</span>`;
+    document.getElementById('action-player-number').innerHTML = `Dorsal ${escapeHtml(player.number)} <span style="font-size:0.8rem">✏️</span>`;
     document.getElementById('action-player-goals').textContent = `${player.goals || 0} ⚽`;
     // Resaltar botón de tarjeta activa
     const btnAmarilla = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
@@ -765,7 +765,7 @@ function _showRestoreMatchBanner(state, elapsedSec, limitSec) {
                         Partido interrumpido
                     </div>
                     <div style="font-size:0.82rem;color:white;font-weight:600;margin:1px 0;">
-                        ${home} vs ${away} · ${state.scoreHome||0}–${state.scoreAway||0} · ${phase}
+                        ${escapeHtml(home)} vs ${escapeHtml(away)} · ${escapeHtml(state.scoreHome||0)}–${escapeHtml(state.scoreAway||0)} · ${escapeHtml(phase)}
                     </div>
                     <div style="font-size:0.72rem;color:rgba(255,255,255,0.6);">
                         ⏱ ${mins}:${String(secs).padStart(2,'0')} jugados · cerrado hace ${elapsed} min
@@ -1061,7 +1061,7 @@ function showPostMatchOptions(scoreHome, scoreAway) {
         <div style="font-size:2.5rem;margin-bottom:0.5rem;">🏁</div>
         <h2 style="margin:0 0 0.2rem;color:white;font-size:1.1rem;">PARTIDO FINALIZADO</h2>
         <p style="font-size:1.2rem;color:#f0883e;font-weight:800;margin:0.5rem 0;">
-            ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}
+            ${escapeHtml(TEAM_NAMES.home)} ${escapeHtml(scoreHome)} - ${escapeHtml(scoreAway)} ${escapeHtml(TEAM_NAMES.away)}
         </p>
         <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.9rem;">
             ${new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
@@ -1133,8 +1133,8 @@ function showFinishedMatches() {
             <div style="display:flex;justify-content:space-between;align-items:center;padding:0.7rem 0.8rem;
                         background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-bottom:0.5rem;">
                 <div style="text-align:left;">
-                    <div style="font-weight:700;color:white;font-size:0.9rem;">${escapeHtml(m.home)} ${m.scoreHome} - ${m.scoreAway} ${escapeHtml(m.away)}</div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);">${new Date(m.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})} · ${m.mode.toUpperCase()}</div>
+                    <div style="font-weight:700;color:white;font-size:0.9rem;">${escapeHtml(m.home)} ${escapeHtml(m.scoreHome)} - ${escapeHtml(m.scoreAway)} ${escapeHtml(m.away)}</div>
+                    <div style="font-size:0.72rem;color:var(--text-muted);">${new Date(m.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})} · ${escapeHtml(String(m.mode||'').toUpperCase())}</div>
                 </div>
                 <div style="display:flex; gap:0.4rem;">
                     <button onclick="loadFinishedMatch(${i});"
@@ -1231,7 +1231,7 @@ function editNameFromModal() {
     const newName = prompt(`Editar nombre para dorsal ${player.number}:`, player.name);
     if (newName !== null && newName.trim() !== "") {
         player.name = newName.trim();
-        document.getElementById('action-player-name').innerHTML = `${player.name} <span style="font-size:0.8rem">✏️</span>`;
+        document.getElementById('action-player-name').innerHTML = `${escapeHtml(player.name)} <span style="font-size:0.8rem">✏️</span>`;
         renderPlayers();
     }
 }
@@ -1242,7 +1242,7 @@ function editNumberFromModal() {
     const newNum = prompt(`Editar dorsal para ${player.name}:`, player.number);
     if (newNum !== null && !isNaN(newNum)) {
         player.number = newNum;
-        document.getElementById('action-player-number').innerHTML = `Dorsal ${player.number} <span style="font-size:0.8rem">✏️</span>`;
+        document.getElementById('action-player-number').innerHTML = `Dorsal ${escapeHtml(player.number)} <span style="font-size:0.8rem">✏️</span>`;
         renderPlayers();
     }
 }
@@ -1538,6 +1538,7 @@ async function startLiveSync() {
     await pushLiveSnapshot('active');
 
     // Sincronizar estado cada 5 segundos — siempre, incluso en pausa
+    if (liveSyncTimer) clearInterval(liveSyncTimer); // evita intervalos duplicados si startLiveSync se llama 2x
     liveSyncTimer = setInterval(() => {
         if (liveIsActive) pushLiveSnapshot('active');
     }, 5000);
@@ -1705,13 +1706,13 @@ function showLiveShareModal() {
                    ${liveContacts.map(c => `
                    <div style="display:flex;align-items:center;justify-content:space-between;
                                font-size:0.75rem;color:var(--text-muted);">
-                       <span>✅ ${c.name || c.email}</span>
+                       <span>✅ ${escapeHtml(c.name || c.email)}</span>
                        <span style="display:flex;gap:0.3rem;">
-                           ${c.phone ? `<a href="https://wa.me/${c.phone}?text=${encodeURIComponent('⚽ Partido en vivo: ' + liveUrl)}" target="_blank"
+                           ${c.phone ? `<a href="https://wa.me/${encodeURIComponent(c.phone)}?text=${encodeURIComponent('⚽ Partido en vivo: ' + liveUrl)}" target="_blank"
                                style="padding:2px 8px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.4);
                                       border-radius:5px;color:#25d366;text-decoration:none;font-size:0.68rem;font-weight:700;">
                                📱 WA</a>` : ''}
-                           ${c.email ? `<a href="mailto:${c.email}?subject=${encodeURIComponent('⚽ Partido en Vivo — ' + TEAM_NAMES.home + ' vs ' + TEAM_NAMES.away)}&body=${encodeURIComponent('Sigue el partido en tiempo real:\n' + liveUrl)}" target="_blank"
+                           ${c.email ? `<a href="mailto:${escapeAttr(c.email)}?subject=${encodeURIComponent('⚽ Partido en Vivo — ' + TEAM_NAMES.home + ' vs ' + TEAM_NAMES.away)}&body=${encodeURIComponent('Sigue el partido en tiempo real:\n' + liveUrl)}" target="_blank"
                                style="padding:2px 8px;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);
                                       border-radius:5px;color:#58a6ff;text-decoration:none;font-size:0.68rem;font-weight:700;">
                                📧</a>` : ''}
@@ -2462,7 +2463,7 @@ function renderStaffInBench() {
             <span style="font-size:0.6rem;background:rgba(88,166,255,0.25);color:#58a6ff;
                          border-radius:3px;padding:1px 5px;flex-shrink:0;font-weight:700;">1ER</span>
             <span style="font-size:0.73rem;font-weight:700;color:#cdd9e5;
-                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${staff.coach1}</span>
+                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(staff.coach1)}</span>
         </div>`;
     }
 
@@ -2479,7 +2480,7 @@ function renderStaffInBench() {
                         <span style="font-size:0.6rem;background:${e.bg};color:${e.color};
                                      border-radius:3px;padding:1px 5px;flex-shrink:0;font-weight:700;">${e.tag}</span>
                         <span style="font-size:0.72rem;color:#cdd9e5;white-space:nowrap;
-                                     overflow:hidden;text-overflow:ellipsis;">${e.name}</span>
+                                     overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
                     </div>`
                 ).join('')}
             </div>
@@ -2545,10 +2546,10 @@ function openRosterManager() {
                     <tbody id="roster-tbody">
                         ${roster[mode].map((p, i) => `
                             <tr>
-                                <td><input type="number" class="r-num" value="${p.number}" style="width: 40px;"></td>
-                                <td><input type="text" class="r-name" value="${p.name}"></td>
-                                <td><input type="text" class="r-surname" value="${p.surname}"></td>
-                                <td><input type="text" class="r-alias" value="${p.alias}"></td>
+                                <td><input type="number" class="r-num" value="${escapeAttr(p.number)}" style="width: 40px;"></td>
+                                <td><input type="text" class="r-name" value="${escapeAttr(p.name)}"></td>
+                                <td><input type="text" class="r-surname" value="${escapeAttr(p.surname)}"></td>
+                                <td><input type="text" class="r-alias" value="${escapeAttr(p.alias)}"></td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -2567,7 +2568,7 @@ function openRosterManager() {
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem;">
                     <div class="form-group" style="margin:0;">
                         <label style="font-size:0.75rem;">1er Entrenador</label>
-                        <input type="text" id="staff-coach1" value="${staffConfig.coach1}"
+                        <input type="text" id="staff-coach1" value="${escapeAttr(staffConfig.coach1)}"
                                placeholder="Nombre del entrenador"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
@@ -2575,7 +2576,7 @@ function openRosterManager() {
                     </div>
                     <div class="form-group" style="margin:0;">
                         <label style="font-size:0.75rem;">2º Entrenador</label>
-                        <input type="text" id="staff-coach2" value="${staffConfig.coach2}"
+                        <input type="text" id="staff-coach2" value="${escapeAttr(staffConfig.coach2)}"
                                placeholder="Nombre del 2º entrenador"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
@@ -2583,7 +2584,7 @@ function openRosterManager() {
                     </div>
                     <div class="form-group" style="margin:0;">
                         <label style="font-size:0.75rem;">Delegado de Equipo</label>
-                        <input type="text" id="staff-delegate" value="${staffConfig.delegate}"
+                        <input type="text" id="staff-delegate" value="${escapeAttr(staffConfig.delegate)}"
                                placeholder="Nombre del delegado"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
@@ -2594,7 +2595,7 @@ function openRosterManager() {
                             Delegado de Campo
                             <span style="color:var(--text-muted);font-size:0.68rem;">(solo en casa, opcional)</span>
                         </label>
-                        <input type="text" id="staff-field-delegate" value="${staffConfig.fieldDelegate}"
+                        <input type="text" id="staff-field-delegate" value="${escapeAttr(staffConfig.fieldDelegate)}"
                                placeholder="Dejar vacío si se juega fuera"
                                style="width:100%;padding:0.45rem 0.6rem;border-radius:6px;
                                       border:1px solid var(--glass-border);background:var(--bg);
@@ -2930,11 +2931,11 @@ function showRosterPreview(players) {
                     <tbody id="preview-tbody">
                         ${players.map((p, i) => `
                             <tr id="preview-row-${i}">
-                                <td><input type="number" class="p-num" value="${p.number || i+1}"
+                                <td><input type="number" class="p-num" value="${escapeAttr(p.number || i+1)}"
                                     style="width:44px;"></td>
-                                <td><input type="text" class="p-name" value="${p.name || ''}"></td>
-                                <td><input type="text" class="p-surname" value="${p.surname || ''}"></td>
-                                <td><input type="text" class="p-alias" value="${p.alias || ''}"></td>
+                                <td><input type="text" class="p-name" value="${escapeAttr(p.name || '')}"></td>
+                                <td><input type="text" class="p-surname" value="${escapeAttr(p.surname || '')}"></td>
+                                <td><input type="text" class="p-alias" value="${escapeAttr(p.alias || '')}"></td>
                                 <td>
                                     <button onclick="document.getElementById('preview-row-${i}').remove()"
                                         style="background:none; border:none; color:#ff5858;
@@ -3072,7 +3073,7 @@ function openConvocationModal() {
         <div class="modal-content" style="width:min(96vw,860px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '1rem 0.8rem' : '1.5rem'};">
 
             <div style="flex-shrink:0;">
-                <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">\u{1F4CB} Convocatoria \u2014 ${TEAM_NAMES.home}</h2>
+                <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">\u{1F4CB} Convocatoria \u2014 ${escapeHtml(TEAM_NAMES.home)}</h2>
                 <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.6rem;">
                     1\u00ba click: <span style="color:var(--primary);font-weight:700;">Convocado</span> \u00b7 2\u00ba click: <span style="color:#f0883e;font-weight:900;background:rgba(240,136,62,0.15);padding:2px 8px;border-radius:4px;">TITULAR</span> \u00b7 3\u00ba click: Quitar \u00b7 M&iacute;n <span style="color:#f0883e;font-weight:700;">${minForMatch}</span> titulares para partido
                 </p>
@@ -4141,6 +4142,7 @@ function toggleGame() {
         btn.textContent = 'PAUSAR';
         btn.classList.add('danger');
         lastTickTime = Date.now();
+        clearInterval(timerInterval); // evita timer huérfano si toggleGame se llama 2x en estado running
         timerInterval = setInterval(tick, 1000);
     } else {
         btn.textContent = 'REANUDAR';
@@ -4373,8 +4375,8 @@ function createPlayerChip(player) {
 
     div.innerHTML = `
         <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
-        <div class="player-number" style="color: ${player.textColor || '#ffffff'}; pointer-events: none;">${player.number}</div>
-        <div class="player-name" style="pointer-events: none;">${player.name}${injuredLabel}</div>
+        <div class="player-number" style="color: ${escapeAttr(player.textColor || '#ffffff')}; pointer-events: none;">${escapeHtml(player.number)}</div>
+        <div class="player-name" style="pointer-events: none;">${escapeHtml(player.name)}${injuredLabel}</div>
         ${indicatorsHTML}
     `;
 
