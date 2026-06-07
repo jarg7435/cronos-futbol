@@ -14,8 +14,13 @@ firebase-debug.*.log*
 
 # Credencial de cuenta de servicio (SECRETA - nunca subir al repo)
 sa-key.json
+sa_key.json
+sa_key.txt
+sa-key.txt
 *-sa-key.json
 serviceAccountKey*.json
+*serviceaccount*.json
+firebase-adminsdk*.json
 
 # Uncomment this if you'd like others to create their own Firebase project.
 # For a team working on the same Firebase project(s), it is recommended to leave
