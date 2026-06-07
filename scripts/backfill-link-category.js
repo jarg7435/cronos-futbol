@@ -32,7 +32,18 @@ const path = require('path');
 const fs = require('fs');
 
 const WRITE = process.argv.includes('--write');
-const KEY_PATH = process.env.SA_KEY_PATH || path.resolve(process.cwd(), 'sa-key.json');
+// Credencial: SA_KEY_PATH si se define; si no, se busca sa-key.json y, como
+// fallback, sa_key.txt (nombre usado en este repo, ya en .gitignore).
+function resolveKeyPath() {
+  if (process.env.SA_KEY_PATH) return path.resolve(process.env.SA_KEY_PATH.trim());
+  const candidates = ['sa-key.json', 'sa_key.json', 'sa-key.txt', 'sa_key.txt'];
+  for (const c of candidates) {
+    const p = path.resolve(process.cwd(), c);
+    if (fs.existsSync(p)) return p;
+  }
+  return path.resolve(process.cwd(), 'sa-key.json');
+}
+const KEY_PATH = resolveKeyPath();
 
 function fail(msg) {
   console.error('\n[BACKFILL][ERROR] ' + msg + '\n');
@@ -51,7 +62,13 @@ try {
   fail('firebase-admin no esta instalado. Ejecuta: npm install firebase-admin');
 }
 
-const serviceAccount = require(KEY_PATH);
+// Cargar la credencial leyendo el fichero (soporta .json y .txt con JSON).
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(fs.readFileSync(KEY_PATH, 'utf8'));
+} catch (e) {
+  fail('No se pudo leer/parsear la credencial en ' + KEY_PATH + ': ' + e.message);
+}
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
