@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v137
+//  CRONOS FUTBOL — Service Worker v138
+//  v138: Anadida pagina privacy.html (Politica de Privacidad RGPD) al
+//         precache + enlace en el pie de la pantalla de login (index.html).
 //  v137: Bump cache — revertir tarjeta roja (rectificacion arbitral) en
 //         player-actions.js: boton en el modal que deshace la expulsion
 //         sin mover al jugador, con registro en auditLogger/matchEvents.
@@ -29,12 +31,13 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v137';
-const CACHE_NAME = 'cronos-cache-v137';
+const VERSION    = 'v138';
+const CACHE_NAME = 'cronos-cache-v138';
 
 const ASSETS = [
     './',
     './index.html',
+    './privacy.html',
     './manifest.json',
     './style.css',
     './js/core/app-init.js',
