@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v139
+//  CRONOS FUTBOL — Service Worker v140
+//  v140: Bump cache — purga el manifest.json cacheado con la antigua URL
+//         de Flaticon (CDN externo). Ahora el icono PWA usa el logo local
+//         /public/assets/logo.png. Sin el bump, CACHE_NAME no cambia y el
+//         activate no borra cronos-cache-v139, que servia el manifest viejo.
 //  v139: Rediseno de privacy.html con tema oscuro CHRONOS FUTBOL: hero con
 //         logo a 120px, header sticky con logo a 64px y marca actualizada.
 //  v138: Anadida pagina privacy.html (Politica de Privacidad RGPD) al
@@ -33,8 +37,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v139';
-const CACHE_NAME = 'cronos-cache-v139';
+const VERSION    = 'v140';
+const CACHE_NAME = 'cronos-cache-v140';
 
 const ASSETS = [
     './',
