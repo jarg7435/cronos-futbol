@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v134
+//  CRONOS FUTBOL — Service Worker v136
+//  v136: Eliminado js/coach/convocation.js (duplicado obsoleto que
+//         sobrescribia las funciones canonicas de shared/whatsapp-email.js).
+//         Quitado del precache + index.html. Sin perdida de funciones.
 //  v134: isClubAdminOf con fallback adminEmail (club_admin sin adminUid lee su club) + saCreateClubConfirm escribe adminUid:null
 //         (pending/pending_club_admin accionables + pending_sa solo lectura).
 //  v131: Bump cache — fix multi-rol (anadir rol a cuenta existente sin
@@ -23,8 +26,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v135';
-const CACHE_NAME = 'cronos-cache-v135';
+const VERSION    = 'v136';
+const CACHE_NAME = 'cronos-cache-v136';
 
 const ASSETS = [
     './',
@@ -69,7 +72,6 @@ const ASSETS = [
     './js/admin/billing/payments.js',
     './js/admin/billing/ui.js',
     './js/coach/comms/panel.js',
-    './js/coach/convocation.js',
     './js/coach/reports/club-reports.js',
     './js/coach/reports/generator.js',
     './js/coach/training/panel.js',
