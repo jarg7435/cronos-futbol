@@ -653,6 +653,7 @@ function _saveMatchStateToStorage() {
             players:      JSON.parse(JSON.stringify(window.players || [])),
             COLORS:       typeof COLORS !== 'undefined' ? COLORS : {},
             category:     document.getElementById('match-category')?.value || window._currentMatchCategory || '',
+            extraGoals:   window._cronosExtraGoals || { home: 0, away: 0 },
         };
         localStorage.setItem(_ACTIVE_MATCH_KEY, JSON.stringify(state));
     } catch(e) { /* silencioso */ }
@@ -909,6 +910,9 @@ window._restoreActiveMatch = function() {
             if (catSelect) catSelect.value = state.category;
         }
 
+        // Restaurar goles extra (No asignados)
+        if (state.extraGoals) window._cronosExtraGoals = state.extraGoals;
+
         // Restaurar marcador
         const sh = document.getElementById('score-home');
         const sa = document.getElementById('score-away');
@@ -999,59 +1003,6 @@ window._restoreActiveMatch = function() {
     }
 };
 
-function endMatch() {
-    if (!confirm('¿Finalizar el partido? Esta acción detiene el reloj y cierra el encuentro.')) return;
-    isRunning = false;
-    clearInterval(timerInterval);
-    if (typeof autoSaveInterval !== 'undefined') clearInterval(autoSaveInterval);
-    matchPhase = 'finished';
-    document.getElementById('btn-play-pause').textContent = 'P. FINALIZADO';
-    document.getElementById('btn-play-pause').classList.remove('danger');
-    document.getElementById('match-phase-label').textContent = 'FIN DEL PARTIDO';
-    const scoreHome = document.getElementById('score-home').textContent;
-    const scoreAway = document.getElementById('score-away').textContent;
-
-    stopLiveSync(); // marcar partido como finalizado en Firestore
-
-    matchPhase = 'finished'; // garantizar antes de cualquier callback asíncrono
-    // Limpiar estado guardado — el partido terminó correctamente
-    localStorage.removeItem(_ACTIVE_MATCH_KEY);
-    // Blindaje adicional: sobrescribir con estado finalizado para que _checkActiveMatch lo ignore
-    localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
-    
-    // ── Guardar datos del partido terminado para poder volver ──
-    try {
-        const matchData = {
-            id: 'match_' + Date.now(),
-            date: new Date().toISOString(),
-            home: TEAM_NAMES.home,
-            away: TEAM_NAMES.away,
-            scoreHome,
-            scoreAway,
-            mode: currentMode,
-            players: JSON.parse(JSON.stringify(window.players || [])),
-            events: JSON.parse(JSON.stringify(window.matchEvents || [])),
-            half1Time: typeof half1Time !== 'undefined' ? half1Time : 0,
-            half2Time: typeof half2Time !== 'undefined' ? half2Time : 0,
-        };
-        const saved = JSON.parse(localStorage.getItem('cronos_finished_matches') || '[]');
-        saved.unshift(matchData);
-        // Guardar máximo 20 partidos
-        if (saved.length > 20) saved.length = 20;
-        localStorage.setItem('cronos_finished_matches', JSON.stringify(saved));
-        window._lastFinishedMatch = matchData;
-    } catch(e) { /* silencioso */ }
-
-    // NOTA: el envío de informes lo dispara la ruta activa de fin de partido
-    // (window.endMatch de active-match.js, o terminateMatch por expulsiones).
-    // Esta funcion endMatch() de app-init queda eclipsada por window.endMatch,
-    // por lo que aqui NO se llama a saveAllMatchReportsInternal() (era codigo
-    // muerto que solo anadia rutas redundantes). El guard de idempotencia en
-    // saveAllMatchReportsInternal evita duplicados entre las rutas activas.
-
-    // Mostrar opciones post-partido
-    showPostMatchOptions(scoreHome, scoreAway);
-}
 
 function showPostMatchOptions(scoreHome, scoreAway) {
     const modal = document.getElementById('setup-modal');
@@ -1210,7 +1161,8 @@ function changeGoals(amount) {
 
 function syncScoreFromPlayers(team) {
     const total = players.filter(x => x.team === team).reduce((sum, x) => sum + (x.goals || 0), 0);
-    document.getElementById(`score-${team}`).textContent = total;
+    const extra = window._cronosExtraGoals ? (window._cronosExtraGoals[team] || 0) : 0;
+    document.getElementById(`score-${team}`).textContent = total + extra;
 }
 
 function clearPlayerActions() {
@@ -4135,55 +4087,6 @@ function spawnInitialPlayers() {
     window.activeConvocation = null;
 }
 
-function toggleGame() {
-    isRunning = !isRunning;
-    const btn = document.getElementById('btn-play-pause');
-    if (isRunning) {
-        btn.textContent = 'PAUSAR';
-        btn.classList.add('danger');
-        lastTickTime = Date.now();
-        clearInterval(timerInterval); // evita timer huérfano si toggleGame se llama 2x en estado running
-        timerInterval = setInterval(tick, 1000);
-    } else {
-        btn.textContent = 'REANUDAR';
-        btn.classList.remove('danger');
-        clearInterval(timerInterval);
-    }
-    // Push inmediato → live.html recibe pausa/reanuda en <1s
-    if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
-}
-
-function tick() {
-    const now = Date.now();
-    const deltaMs = now - lastTickTime;
-    const deltaSec = Math.floor(deltaMs / 1000);
-    if (deltaSec >= 1) {
-        lastTickTime += deltaSec * 1000;
-        if (matchPhase === '1st_half') {
-            masterTimeH1 += deltaSec;
-            // Auto-paro 1ª Parte (Reglamentario + 15 min)
-            if (masterTimeH1 >= (half1MaxTime + 900)) {
-                if (typeof endFirstHalf === 'function') {
-                    endFirstHalf(true);
-                    if (typeof showToast === 'function') showToast("⚠️ 1ª Parte finalizada automáticamente (+15 min)", 5000);
-                }
-            }
-        } else if (matchPhase === '2nd_half') {
-            masterTimeH2 += deltaSec;
-            // Auto-paro Partido (Reglamentario + 15 min)
-            if (masterTimeH2 >= (half2MaxTime + 900)) {
-                if (typeof endMatch === 'function') {
-                    endMatch(true);
-                    if (typeof showToast === 'function') showToast("🏁 Partido finalizado automáticamente (+15 min)", 6000);
-                }
-            }
-        }
-        updateMasterUI();
-        players.forEach(p => {
-            if (p.status === 'field') { p.time += deltaSec; updatePlayerUI(p); }
-        });
-    }
-}
 
 function updateMasterUI() {
     const timerH1El = document.getElementById('timer-h1');

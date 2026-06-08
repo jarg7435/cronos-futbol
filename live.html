@@ -695,6 +695,15 @@ function renderMatch(data) {
     renderBench(data);
 }
 
+function getTimerColor(timeSec) {
+    const h1 = window._liveHalf1MaxTime || 1800;
+    const h2 = window._liveHalf2MaxTime || 1800;
+    const total = h1 + h2;
+    if (timeSec >= total / 2) return '#2ea043';
+    if (timeSec >= total / 3) return '#e3b341';
+    return '#da3633';
+}
+
 function updateTimerDisplay(secs, maxTime, phase) {
     // Misma lógica que la app: cuenta atrás hasta 0, luego tiempo añadido
     maxTime = maxTime || window._liveMaxTime || (30 * 60);
@@ -720,7 +729,7 @@ function updateTimerDisplay(secs, maxTime, phase) {
     const m = Math.floor(display / 60).toString().padStart(2, '0');
     const s = (display % 60).toString().padStart(2, '0');
     timerEl.textContent = (added ? '+' : '') + m + ':' + s;
-    timerEl.style.color = added ? '#f0883e' : 'var(--primary)';  // naranja en añadido
+    timerEl.style.color = added ? '#f0883e' : getTimerColor(secs);
 }
 
 function formatTime(secs) {

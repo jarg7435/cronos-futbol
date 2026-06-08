@@ -813,3 +813,17 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
     throw new functions.https.HttpsError('internal', 'Error al aprobar admin individual: ' + error.message);
   }
 });
+
+exports.logAuditEntry = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'No autenticado');
+  const { action, details } = data;
+  await admin.firestore().collection('audit_logs').add({
+      action: action || 'unknown',
+      details: details || {},
+      performedBy: context.auth.token.email || 'unknown',
+      performedByUid: context.auth.uid,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      ipAddress: context.rawRequest ? context.rawRequest.ip : 'unknown',
+  });
+  return { success: true };
+});

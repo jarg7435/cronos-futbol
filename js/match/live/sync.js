@@ -150,7 +150,7 @@ async function pushLiveSnapshot(status = 'active') {
             }))
         };
 
-        await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot);
+        await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
     } catch (err) {
         console.warn('Error sync live:', err.message);
     }

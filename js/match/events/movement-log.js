@@ -81,55 +81,85 @@ function changeScore(team, delta) {
                 `${i + 1}. [${p.status === 'field' ? 'CAMPO' : 'BAN'}] ${p.number} - ${p.name}`
             ).join('\n');
             const answer = prompt(
-                `⚽ GOL de ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}\n¿Quién ha marcado? (escribe el número de la lista)\n\n${listLines}`, ''
+                `⚽ GOL de ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}\n¿Quién ha marcado? (escribe el número de la lista)\n\n0. Gol No Asignado / Propia Puerta\n${listLines}`, ''
             );
-            const idx = parseInt(answer) - 1;
-            if (!isNaN(idx) && idx >= 0 && idx < teamPlayers.length) {
-                const scorer = teamPlayers[idx];
-                scorer.goals = (scorer.goals || 0) + 1;
-                if (typeof logEvent === 'function') {
-                    logEvent(scorer, `GOL (${scorer.goals}º)`);
+            if (answer !== null && answer.trim() !== '') {
+                const idx = parseInt(answer) - 1;
+                if (!isNaN(idx) && idx >= 0 && idx < teamPlayers.length) {
+                    const scorer = teamPlayers[idx];
+                    scorer.goals = (scorer.goals || 0) + 1;
+                    if (typeof logEvent === 'function') {
+                        logEvent(scorer, `GOL (${scorer.goals}º)`);
+                    }
+                    renderPlayers();
+                } else if (answer.trim() === '0' || idx === -1) {
+                    if (!window._cronosExtraGoals) window._cronosExtraGoals = { home: 0, away: 0 };
+                    window._cronosExtraGoals[team]++;
+                    if (typeof showToast === 'function') showToast(`⚽ Gol no asignado sumado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
                 }
-                renderPlayers();
+                syncScoreFromPlayers(team);
             }
-            syncScoreFromPlayers(team);
         } else {
-            el.textContent = next;
+            if (!window._cronosExtraGoals) window._cronosExtraGoals = { home: 0, away: 0 };
+            window._cronosExtraGoals[team]++;
+            syncScoreFromPlayers(team);
         }
     } else {
         // Quitar gol (delta < 0)
         const teamPlayers = players.filter(p => p.team === team);
         if (teamPlayers.length > 0) {
             const scorers = teamPlayers.filter(p => (p.goals || 0) > 0);
-            if (scorers.length === 1) {
+            const extraGoals = window._cronosExtraGoals && window._cronosExtraGoals[team] ? window._cronosExtraGoals[team] : 0;
+            
+            if (scorers.length === 1 && extraGoals === 0) {
                 scorers[0].goals--;
                 if (typeof logEvent === 'function') {
                     logEvent(scorers[0], `GOL ANULADO (Quedan: ${scorers[0].goals})`);
                 }
                 renderPlayers();
                 syncScoreFromPlayers(team);
-            } else if (scorers.length > 1) {
+            } else if (scorers.length === 0 && extraGoals > 0) {
+                window._cronosExtraGoals[team]--;
+                if (typeof showToast === 'function') showToast(`⚽ Gol no asignado anulado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                syncScoreFromPlayers(team);
+            } else if (scorers.length > 0 || extraGoals > 0) {
                 const listLines = scorers.map((p, i) =>
                     `${i + 1}. Dorsal ${p.number} - ${p.name} (Goles: ${p.goals})`
                 ).join('\n');
-                const answer = prompt(
-                    `⚽ QUITAR GOL de ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}\n¿A quién le quitamos el gol? (escribe el número de la lista)\n\n${listLines}`, ''
-                );
-                const idx = parseInt(answer) - 1;
-                if (!isNaN(idx) && idx >= 0 && idx < scorers.length) {
-                    const scorer = scorers[idx];
-                    scorer.goals--;
-                    if (typeof logEvent === 'function') {
-                        logEvent(scorer, `GOL ANULADO (Quedan: ${scorer.goals})`);
-                    }
-                    renderPlayers();
+                let promptMsg = `⚽ QUITAR GOL de ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}\n¿A quién le quitamos el gol? (escribe el número de la lista`;
+                if (extraGoals > 0) {
+                    promptMsg += `, o '0' para quitar Gol No Asignado)\n\n0. Gol No Asignado / Propia Puerta (${extraGoals} goles)\n`;
+                } else {
+                    promptMsg += `)\n\n`;
                 }
-                syncScoreFromPlayers(team);
+                promptMsg += listLines;
+                
+                const answer = prompt(promptMsg, '');
+                if (answer !== null && answer.trim() !== '') {
+                    const idx = parseInt(answer) - 1;
+                    if (!isNaN(idx) && idx >= 0 && idx < scorers.length) {
+                        const scorer = scorers[idx];
+                        scorer.goals--;
+                        if (typeof logEvent === 'function') {
+                            logEvent(scorer, `GOL ANULADO (Quedan: ${scorer.goals})`);
+                        }
+                        renderPlayers();
+                    } else if ((answer.trim() === '0' || idx === -1) && extraGoals > 0) {
+                        window._cronosExtraGoals[team]--;
+                        if (typeof showToast === 'function') showToast(`⚽ Gol no asignado anulado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                    }
+                    syncScoreFromPlayers(team);
+                }
             } else {
                 el.textContent = next;
             }
         } else {
-            el.textContent = next;
+            if (window._cronosExtraGoals && window._cronosExtraGoals[team] > 0) {
+                window._cronosExtraGoals[team]--;
+                syncScoreFromPlayers(team);
+            } else {
+                el.textContent = next;
+            }
         }
     }
 

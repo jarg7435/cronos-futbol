@@ -524,7 +524,8 @@ function changeGoals(amount) {
 
 function syncScoreFromPlayers(team) {
     const total = players.filter(x => x.team === team).reduce((sum, x) => sum + (x.goals || 0), 0);
-    document.getElementById(`score-${team}`).textContent = total;
+    const extra = window._cronosExtraGoals ? (window._cronosExtraGoals[team] || 0) : 0;
+    document.getElementById(`score-${team}`).textContent = total + extra;
 }
 
 function clearPlayerActions() {
