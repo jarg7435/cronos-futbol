@@ -81,7 +81,43 @@ function openPlayerActionModal(player) {
         btn.title = onField ? '' : 'Solo se registran goles a jugadores EN EL CAMPO';
     });
 
+    // ── Botón de rectificación arbitral (revertir tarjeta roja) ──
+    // Solo visible cuando el jugador está expulsado. Se inyecta/retira
+    // dinámicamente para no alterar el HTML estático del modal.
+    _syncRevertRedCardButton(player);
+
     document.getElementById('player-action-modal').style.display = 'flex';
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Inserta o elimina el botón "Revertir tarjeta roja (rectificación
+//  arbitral)" dentro del modal según el estado del jugador.
+// ════════════════════════════════════════════════════════════════════
+function _syncRevertRedCardButton(player) {
+    const modal = document.getElementById('player-action-modal');
+    if (!modal) return;
+    const content = modal.querySelector('.modal-content');
+    if (!content) return;
+
+    const existing = document.getElementById('btn-revert-red');
+
+    if (player.cards !== 'roja') {
+        if (existing) existing.remove();
+        return;
+    }
+
+    if (existing) return; // ya presente
+
+    const btn = document.createElement('button');
+    btn.id = 'btn-revert-red';
+    btn.className = 'btn';
+    btn.type = 'button';
+    btn.textContent = '↩️ Revertir tarjeta roja (rectificación arbitral)';
+    btn.style.cssText =
+        'width:100%;margin-top:0.6rem;background:#5a3a1a;color:#ffd9a3;' +
+        'border:1px solid #e67e22;font-size:0.78rem;font-weight:700;';
+    btn.setAttribute('onclick', 'revertRedCard()');
+    content.appendChild(btn);
 }
 
 function closePlayerActionModal() {
@@ -155,9 +191,11 @@ function assignCard(type) {
     if (typeof p.yellowCards !== 'number') p.yellowCards = 0;
 
     // ── Jugador ya expulsado ──────────────────────────────────────
+    // No se permite reasignar tarjetas sobre un expulsado, pero el modal
+    // muestra el botón "Revertir tarjeta roja (rectificación arbitral)"
+    // (ver openPlayerActionModal → revertRedCard) para deshacer la roja.
     if (p.cards === 'roja') {
-        alert(`⛔ ${p.name} ya está expulsado.`);
-        closePlayerActionModal();
+        alert(`⛔ ${p.name} ya está expulsado.\n\nSi se trata de un error, usa "Revertir tarjeta roja (rectificación arbitral)".`);
         return;
     }
 
@@ -302,6 +340,71 @@ function assignCard(type) {
     closePlayerActionModal();
     renderPlayers();
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  revertRedCard — Rectificación arbitral de una tarjeta roja.
+//
+//  Deshace una expulsión asignada por error. A diferencia de assignCard,
+//  el jugador NO cambia de posición: se queda donde está (campo o
+//  banquillo). Queda registrado en el historial del jugador, en el
+//  auditLogger ('red_card_reversed') y como evento crítico durable.
+// ════════════════════════════════════════════════════════════════════
+function revertRedCard() {
+    if (!activeActionPlayerId) return;
+    const p = players.find(x => x.id === activeActionPlayerId);
+    if (!p) return;
+
+    // Solo aplica a jugadores realmente expulsados.
+    if (p.cards !== 'roja') return;
+
+    if (!confirm('¿Confirmar rectificación arbitral? Esta acción quedará registrada en el informe.')) {
+        return;
+    }
+
+    const wasCards   = p.cards;
+    const wasYellow  = (typeof p.yellowCards === 'number') ? p.yellowCards : 0;
+
+    // Revertir: el jugador deja de estar expulsado. NO se mueve de su
+    // posición actual (campo o banquillo se mantiene tal cual).
+    p.cards       = 'ninguna';
+    p.yellowCards = 0;
+
+    // Historial del jugador / matchEvents
+    logEvent(p, 'ROJA REVERTIDA (rectificación arbitral)');
+
+    // Evento crítico durable (mismo patrón que assignCard).
+    if (typeof commitCriticalEvent === 'function') {
+        commitCriticalEvent('red_card_reversed', {
+            playerId: p.id,
+            playerName: p.name,
+            playerNumber: p.number,
+            value: 'rectificacion_arbitral'
+        });
+    }
+
+    liveSyncOnAction();
+
+    // Auditoría (antes → después).
+    if (window.auditLogger && liveMatchId) {
+        window.auditLogger.logPlayerAction(
+            p.id,
+            p.name,
+            p.number,
+            'red_card_reversed',
+            'rectificacion_arbitral',
+            {
+                card: { before: wasCards, after: 'ninguna' },
+                yellowCards: { before: wasYellow, after: 0 },
+                position: p.status, // queda en su posición actual (sin mover)
+                timestamp: new Date().toISOString()
+            }
+        );
+    }
+
+    closePlayerActionModal();
+    renderPlayers();
+}
+window.revertRedCard = revertRedCard;
 
 function terminateMatch(reason) {
     isRunning = false;
