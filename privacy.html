@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Política de Privacidad — Cronos Fútbol</title>
+  <title>Política de Privacidad — CHRONOS FÚTBOL</title>
   <style>
     :root {
       --bg-dark: #0a0e14;
@@ -20,20 +20,59 @@
       color: var(--text-main);
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       line-height: 1.7;
-      padding: 2rem 1rem 4rem;
+      padding-bottom: 4rem;
     }
-    .container { max-width: 780px; margin: 0 auto; }
-    header {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin-bottom: 2.5rem;
-      padding-bottom: 1.5rem;
+
+    /* HERO */
+    .hero {
+      background: radial-gradient(circle at 50% 0%, rgba(88,166,255,0.12), transparent 60%), var(--bg-dark);
+      text-align: center;
+      padding: 3.5rem 1rem 3rem;
       border-bottom: 1px solid var(--glass-border);
     }
-    header img { height: 48px; width: auto; }
-    header h1 { font-size: 1.4rem; font-weight: 600; color: #fff; }
-    header p  { font-size: 0.85rem; color: var(--text-muted); }
+    .hero img {
+      height: 120px;
+      width: auto;
+      margin-bottom: 1.25rem;
+      filter: drop-shadow(0 8px 24px rgba(88,166,255,0.25));
+    }
+    .hero h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+    .hero p {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    /* HEADER STICKY */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.75rem 1.5rem;
+      background: rgba(10,14,20,0.85);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .topbar img { height: 64px; width: auto; }
+    .topbar h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      margin: 0;
+      padding: 0;
+      border: none;
+    }
+
+    .container { max-width: 780px; margin: 0 auto; padding: 2.5rem 1rem 0; }
+
     h2 {
       font-size: 1.05rem;
       font-weight: 600;
@@ -85,29 +124,35 @@
       color: var(--text-muted);
     }
     @media (max-width: 600px) {
-      header { flex-direction: column; align-items: flex-start; }
+      .hero img { height: 96px; }
+      .hero h1 { font-size: 1.6rem; }
+      .topbar img { height: 48px; }
     }
   </style>
 </head>
 <body>
+
+  <div class="topbar">
+    <img src="public/assets/logo.png" alt="CHRONOS FÚTBOL">
+    <h2>CHRONOS FÚTBOL</h2>
+  </div>
+
+  <section class="hero">
+    <img src="public/assets/logo.png" alt="CHRONOS FÚTBOL">
+    <h1>CHRONOS FÚTBOL</h1>
+    <p>Política de Privacidad · Última actualización: 25 de mayo de 2026</p>
+  </section>
+
 <div class="container">
 
-  <header>
-    <img src="public/assets/img_0f3942d4.png" alt="Cronos Fútbol">
-    <div>
-      <h1>Política de Privacidad</h1>
-      <p>Cronos Fútbol · Última actualización: 25 de mayo de 2026</p>
-    </div>
-  </header>
-
   <div class="highlight">
-    En Cronos Fútbol la privacidad de los usuarios, y especialmente la de los menores, es nuestra prioridad. Esta política explica qué datos recogemos, para qué los usamos y cómo los protegemos, en cumplimiento del Reglamento General de Protección de Datos (RGPD / GDPR) y la Ley Orgánica 3/2018 de Protección de Datos Personales (LOPDGDD).
+    En CHRONOS FÚTBOL la privacidad de los usuarios, y especialmente la de los menores, es nuestra prioridad. Esta política explica qué datos recogemos, para qué los usamos y cómo los protegemos, en cumplimiento del Reglamento General de Protección de Datos (RGPD / GDPR) y la Ley Orgánica 3/2018 de Protección de Datos Personales (LOPDGDD).
   </div>
 
   <!-- 1 -->
   <h2>1. Responsable del tratamiento</h2>
-  <p>El responsable del tratamiento de los datos recogidos a través de Cronos Fútbol es el propietario y operador de la plataforma (en adelante, <strong>SuperAdministrador</strong>). Los datos de contacto se facilitarán a solicitud de cualquier interesado a través del correo electrónico de la aplicación.</p>
-  <p>Cada club o entidad individual que utilice Cronos Fútbol actúa como <strong>encargado del tratamiento</strong> de los datos de sus propios usuarios (entrenadores, padres, directores deportivos y coordinadores).</p>
+  <p>El responsable del tratamiento de los datos recogidos a través de CHRONOS FÚTBOL es el propietario y operador de la plataforma (en adelante, <strong>SuperAdministrador</strong>). Los datos de contacto se facilitarán a solicitud de cualquier interesado a través del correo electrónico de la aplicación.</p>
+  <p>Cada club o entidad individual que utilice CHRONOS FÚTBOL actúa como <strong>encargado del tratamiento</strong> de los datos de sus propios usuarios (entrenadores, padres, directores deportivos y coordinadores).</p>
 
   <!-- 2 -->
   <h2>2. Datos que recogemos</h2>
@@ -198,7 +243,7 @@
 
   <!-- 9 -->
   <h2>9. Cookies y almacenamiento local</h2>
-  <p>Cronos Fútbol no utiliza cookies de seguimiento ni publicidad. Únicamente utiliza:</p>
+  <p>CHRONOS FÚTBOL no utiliza cookies de seguimiento ni publicidad. Únicamente utiliza:</p>
   <ul>
     <li><strong>localStorage</strong>: para guardar el estado del partido en curso (recuperación ante cierres accidentales). Estos datos permanecen en su dispositivo y se eliminan al finalizar el partido.</li>
     <li><strong>Cookies de sesión de Firebase Auth</strong>: necesarias para mantener la sesión del usuario autenticado.</li>
@@ -206,7 +251,7 @@
 
   <!-- 10 -->
   <h2>10. Menores de edad</h2>
-  <p>Cronos Fútbol está diseñado para la gestión de equipos de fútbol base, por lo que los jugadores registrados pueden ser menores de edad. La plataforma minimiza intencionadamente los datos de menores: solo se registra un nombre o alias y datos deportivos, sin ningún dato identificativo adicional.</p>
+  <p>CHRONOS FÚTBOL está diseñado para la gestión de equipos de fútbol base, por lo que los jugadores registrados pueden ser menores de edad. La plataforma minimiza intencionadamente los datos de menores: solo se registra un nombre o alias y datos deportivos, sin ningún dato identificativo adicional.</p>
   <p>El registro de menores en la plataforma es responsabilidad del club o entidad, que debe contar con el consentimiento del padre, madre o tutor legal antes de introducir cualquier dato del menor.</p>
 
   <!-- 11 -->
@@ -216,7 +261,7 @@
   <a href="index.html" class="back-btn">← Volver a la aplicación</a>
 
   <footer>
-    <p>Cronos Fútbol · Política de Privacidad · Versión 1.0 · 25 de mayo de 2026</p>
+    <p>CHRONOS FÚTBOL · Política de Privacidad · Versión 1.0 · 25 de mayo de 2026</p>
     <p style="margin-top:0.4rem">Cumplimiento: RGPD (UE) 2016/679 · LOPDGDD 3/2018 · LSSI-CE 34/2002</p>
   </footer>
 
