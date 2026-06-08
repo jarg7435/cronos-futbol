@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v136
+//  CRONOS FUTBOL — Service Worker v137
+//  v137: Bump cache — revertir tarjeta roja (rectificacion arbitral) en
+//         player-actions.js: boton en el modal que deshace la expulsion
+//         sin mover al jugador, con registro en auditLogger/matchEvents.
 //  v136: Eliminado js/coach/convocation.js (duplicado obsoleto que
 //         sobrescribia las funciones canonicas de shared/whatsapp-email.js).
 //         Quitado del precache + index.html. Sin perdida de funciones.
@@ -26,8 +29,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v136';
-const CACHE_NAME = 'cronos-cache-v136';
+const VERSION    = 'v137';
+const CACHE_NAME = 'cronos-cache-v137';
 
 const ASSETS = [
     './',
