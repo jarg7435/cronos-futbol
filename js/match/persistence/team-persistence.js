@@ -323,8 +323,9 @@ function saveCurrentTeam() {
 //  POST-MATCH OPTIONS
 //  (setupEventListeners, spawnInitialPlayers, toggleGame, tick,
 //   updateMasterUI, editTimer, showSpinner, hideSpinner, showToast,
-//   formatTime, endMatch — are defined in their respective owner
-//   modules: js/core/event-listeners.js and js/match/timer/core.js)
+//   formatTime — are defined in their respective owner modules:
+//   js/core/event-listeners.js and js/match/timer/core.js.
+//   endMatch se define en active-match.js)
 // ════════════════════════════════════════════════════════════════════
 
 /**
