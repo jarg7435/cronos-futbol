@@ -129,7 +129,9 @@ function _planBadge(planCode) {
 
 function _nextInvoiceNumber() {
     const year = new Date().getFullYear();
-    const rnd = Math.floor(Math.random() * 9000) + 1000;
+    const rndArray = new Uint32Array(1);
+    crypto.getRandomValues(rndArray);
+    const rnd = (rndArray[0] % 900000) + 100000;
     return `CF-${year}-${rnd}`;
 }
 
