@@ -466,6 +466,30 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCIÓN: auth_deletion_failures
+    // Cola de revisión: se escribe cuando deleteAuthUser (Cloud
+    // Function) falla durante un borrado total. El documento incluye
+    // 'requestedBy' = uid del admin que solicitó el borrado, así que
+    // el create exige que coincida con el solicitante autenticado:
+    // un usuario solo puede registrar fallos de SUS PROPIAS acciones
+    // (no puede falsificar la identidad del solicitante ni inundar la
+    // cola en nombre de otro). Contiene PII (email del usuario
+    // borrado), por eso SOLO el SuperAdmin puede leer la cola.
+    // Documentos inmutables: sin update; el SA puede purgar (delete)
+    // tras resolver el fallo.
+    // FIX: antes NO existía regla → caía en el catch-all (deny) y los
+    // registros de fallo se perdían silenciosamente (el write quedaba
+    // tragado por el try/catch del cliente).
+    // ============================================================
+    match /auth_deletion_failures/{failId} {
+      allow read: if isSuperAdmin();
+      allow create: if isAuth() &&
+                       request.resource.data.requestedBy == request.auth.uid;
+      allow update: if false;
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================
     // COLECCIÓN: live_matches
     // SEC-014: Restrict writes to same-club
     // ============================================================
