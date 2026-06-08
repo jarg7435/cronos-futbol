@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v138
+//  CRONOS FUTBOL — Service Worker v139
+//  v139: Rediseno de privacy.html con tema oscuro CHRONOS FUTBOL: hero con
+//         logo a 120px, header sticky con logo a 64px y marca actualizada.
 //  v138: Anadida pagina privacy.html (Politica de Privacidad RGPD) al
 //         precache + enlace en el pie de la pantalla de login (index.html).
 //  v137: Bump cache — revertir tarjeta roja (rectificacion arbitral) en
@@ -31,8 +33,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v138';
-const CACHE_NAME = 'cronos-cache-v138';
+const VERSION    = 'v139';
+const CACHE_NAME = 'cronos-cache-v139';
 
 const ASSETS = [
     './',
