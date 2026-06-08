@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v140
+//  CRONOS FUTBOL — Service Worker v141
+//  v141: Logs del SW usan `${VERSION}` (antes hardcodeado '[SW v134]',
+//         desincronizado desde v135). Bump fuerza a clientes con SW
+//         antiguo (<=v139) a migrar al SW con el CSP que permite
+//         cdn.jsdelivr.net en connect-src, eliminando el error real de
+//         consola al hacer fetch del bundle de EmailJS/Tesseract.
 //  v140: Bump cache — purga el manifest.json cacheado con la antigua URL
 //         de Flaticon (CDN externo). Ahora el icono PWA usa el logo local
 //         /public/assets/logo.png. Sin el bump, CACHE_NAME no cambia y el
@@ -37,8 +42,8 @@
 //  detail view renderiza tabla de días correctamente.
 //  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v140';
-const CACHE_NAME = 'cronos-cache-v140';
+const VERSION    = 'v141';
+const CACHE_NAME = 'cronos-cache-v141';
 
 const ASSETS = [
     './',
@@ -95,25 +100,25 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll(ASSETS).catch(err => {
-                console.warn('[SW v134] Error al precargar recursos:', err);
+                console.warn(`[SW ${VERSION}] Error al precargar recursos:`, err);
             });
         })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[SW v134] Activado - eliminando cachés antiguas');
+    console.log(`[SW ${VERSION}] Activado - eliminando cachés antiguas`);
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => {
-                        console.log('[SW v134] Borrando caché antigua:', key);
+                        console.log(`[SW ${VERSION}] Borrando caché antigua:`, key);
                         return caches.delete(key);
                     })
             );
         }).then(() => {
-            console.log('[SW v134] Todas las cachés antiguas eliminadas');
+            console.log(`[SW ${VERSION}] Todas las cachés antiguas eliminadas`);
             return self.clients.claim();
         })
     );
@@ -138,7 +143,7 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                console.warn('[SW v134] Red no disponible, usando caché:', event.request.url);
+                console.warn(`[SW ${VERSION}] Red no disponible, usando caché:`, event.request.url);
                 return caches.match(event.request);
             })
     );
