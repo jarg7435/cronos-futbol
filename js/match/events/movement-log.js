@@ -22,6 +22,9 @@ function resetMatch() {
     clearInterval(timerInterval);
     masterTimeH1 = 0; masterTimeH2 = 0;
     lastTickTime = 0; matchPhase = '1st_half';
+    // Bloque B: limpiar goles no asignados (propia puerta) del partido anterior
+    // para que no se arrastren al marcador del partido reiniciado.
+    window._cronosExtraGoals = { home: 0, away: 0 };
     // E4: nuevo partido → liberar el guard de despacho de informes para que
     // los informes del próximo partido vuelvan a enviarse una vez.
     window._cronosLastDispatchedMatch = null;

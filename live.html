@@ -695,13 +695,15 @@ function renderMatch(data) {
     renderBench(data);
 }
 
-function getTimerColor(timeSec) {
-    const h1 = window._liveHalf1MaxTime || 1800;
-    const h2 = window._liveHalf2MaxTime || 1800;
-    const total = h1 + h2;
-    if (timeSec >= total / 2) return '#2ea043';
-    if (timeSec >= total / 3) return '#e3b341';
-    return '#da3633';
+function getTimerColor(timeSec, halfMaxTime) {
+    // timeSec es el tiempo transcurrido en la parte actual; halfMaxTime es la
+    // duración reglamentaria de esa parte. Color por tiempo RESTANTE de la parte:
+    // verde al principio, ámbar a mitad, rojo cuando queda poco.
+    const maxSec = halfMaxTime || window._liveMaxTime || 1800;
+    const remaining = Math.max(0, maxSec - timeSec);
+    if (remaining > maxSec / 2) return '#2ea043'; // > 50% restante → verde
+    if (remaining > maxSec / 4) return '#e3b341'; // 25-50% restante → ámbar
+    return '#da3633';                              // < 25% restante → rojo
 }
 
 function updateTimerDisplay(secs, maxTime, phase) {
@@ -729,7 +731,7 @@ function updateTimerDisplay(secs, maxTime, phase) {
     const m = Math.floor(display / 60).toString().padStart(2, '0');
     const s = (display % 60).toString().padStart(2, '0');
     timerEl.textContent = (added ? '+' : '') + m + ':' + s;
-    timerEl.style.color = added ? '#f0883e' : getTimerColor(secs);
+    timerEl.style.color = added ? '#f0883e' : getTimerColor(secs, maxTime);
 }
 
 function formatTime(secs) {

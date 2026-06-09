@@ -111,6 +111,8 @@ function setupEventListeners() {
 
 function spawnInitialPlayers() {
     players = [];
+    // Bloque B: arrancar siempre el marcador de goles no asignados a cero.
+    window._cronosExtraGoals = { home: 0, away: 0 };
     const defaultStartersLimit = currentMode === 'f7' ? 7 : 11;
     const defaultTotalCount = currentMode === 'f7' ? 14 : 18;
     const homeColors = COLORS.home;
