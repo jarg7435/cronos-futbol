@@ -43,6 +43,13 @@ export async function switchTab(tab) {
     const roleCont = document.getElementById('role-container');
     if (roleCont) roleCont.style.display = _isLoginMode ? 'none' : 'block';
 
+    // GDPR: mostrar/ocultar consentimiento (solo visible en modo registro)
+    const gdprCont = document.getElementById('gdpr-consent-container');
+    if (gdprCont) gdprCont.style.display = _isLoginMode ? 'none' : 'block';
+    // Resetear el checkbox al volver a login para que el consentimiento sea explicito
+    const gdprChk = document.getElementById('gdpr-consent');
+    if (gdprChk && _isLoginMode) gdprChk.checked = false;
+
     // ── Actualizar texto del botón ENTRAR ────────────────────
     const authBtn = document.getElementById('auth-btn');
     if (authBtn) authBtn.textContent = _isLoginMode ? 'ENTRAR' : 'REGISTRARSE';
@@ -1438,6 +1445,14 @@ export async function doAuth() {
         // REGISTRO
         // ═══════════════════════════════════════════════════════
         const requestedRole   = document.getElementById('auth-role')?.value          || 'user';
+
+        // ── RGPD: el consentimiento es obligatorio para registrarse ──
+        const gdprConsent = document.getElementById('gdpr-consent');
+        if (!gdprConsent || !gdprConsent.checked) {
+            showAuthError('Debes aceptar la Política de Privacidad para registrarte.');
+            return;
+        }
+
         const _rawClubValue   = document.getElementById('auth-club-select')?.value   || null;
         // Parsear nuevo formato: "club:xxx" o "individual:xxx"
         let selectedClubId    = null;

@@ -294,6 +294,23 @@
                            color:#ffd700; font-size:0.95rem; box-sizing:border-box; outline:none; text-transform:uppercase;">
             </div>
 
+            <!-- Consentimiento RGPD (Solo visible en modo REGISTRARSE) -->
+            <div id="gdpr-consent-container" style="display:none; margin-bottom:1.2rem;">
+                <label for="gdpr-consent"
+                    style="display:flex; align-items:flex-start; gap:0.6rem; cursor:pointer;
+                           background:#0a0e14; border:1px solid rgba(125,133,144,0.25);
+                           border-radius:8px; padding:0.75rem; color:#7d8590; font-size:0.8rem;
+                           line-height:1.4;">
+                    <input type="checkbox" id="gdpr-consent"
+                        style="margin-top:0.15rem; width:1.05rem; height:1.05rem;
+                               accent-color:#58a6ff; flex-shrink:0; cursor:pointer;">
+                    <span>He leído y acepto la
+                        <a href="privacy.html" target="_blank" rel="noopener"
+                           style="color:#58a6ff; text-decoration:underline;">Política de Privacidad</a>.
+                    </span>
+                </label>
+            </div>
+
             <!-- Botón -->
             <button id="auth-btn" type="submit" form="auth-form"
                 style="width:100%; padding:0.9rem; background:#58a6ff; border:none;
