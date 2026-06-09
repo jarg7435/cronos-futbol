@@ -116,9 +116,17 @@ function saveTrainingWeek() {
         const val = inp.value.trim();
         if (val) { if (!weekData[day]) weekData[day] = {}; weekData[day][field] = val; }
     });
-    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-    allWeeks[weekKey] = weekData;
-    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+    
+    // SPRINT 4: Usar TrainingSync para guardar en localStorage + Firestore
+    if (window.TrainingSync && window.currentUser) {
+        TrainingSync.saveWeek(weekKey, weekData);
+    } else {
+        // Fallback: guardar solo en localStorage
+        const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+        allWeeks[weekKey] = weekData;
+        localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+    }
+    
     if (typeof showToast === 'function') showToast('✅ Semana guardada correctamente', 3000);
 }
 
@@ -127,9 +135,16 @@ function clearTrainingWeek() {
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
     const weekKey = monday.toISOString().substring(0, 10);
-    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-    delete allWeeks[weekKey];
-    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+    
+    // SPRINT 4: Usar TrainingSync para eliminar de localStorage + Firestore
+    if (window.TrainingSync) {
+        TrainingSync.deleteWeek(weekKey);
+    } else {
+        const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+        delete allWeeks[weekKey];
+        localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+    }
+    
     renderTrainingWeek();
     if (typeof showToast === 'function') showToast('🗑️ Semana limpiada', 3000);
 }

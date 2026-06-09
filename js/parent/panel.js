@@ -239,11 +239,20 @@ async function openParentPanel() {
                 snap = await getDocs(collection(fa.db,'cronos_notifications'));
             }
 
-            const dismissed = JSON.parse(localStorage.getItem('cronos_dismissed_notifs') || '[]');
+            // SPRINT 4: Usar NotificationDismiss para check de descarte
+            let dismissed = [];
+            if (window.NotificationDismiss) {
+                dismissed = NotificationDismiss.getDismissedList();
+            } else {
+                dismissed = JSON.parse(localStorage.getItem('cronos_dismissed_notifs') || '[]');
+            }
+            
             const items = [];
             snap.forEach(d => {
                 const dat = d.data();
-                if (dismissed.includes(d.id)) return; // Saltar borrados locales
+                if (dismissed.includes(d.id)) return; // Saltar borrados
+                // También saltar si está en dismissedBy de Firestore
+                if (dat.dismissedBy && dat.dismissedBy.includes(me?.uid || '')) return;
 
                 if (dat.type === 'convocatoria' || dat.type === 'entrenamiento' || dat.type === 'planificacion_semanal' || dat.type === 'informe_partido') {
                     items.push({ _id: d.id, ...dat });
@@ -390,9 +399,17 @@ async function openParentPanel() {
 
     window.dismissNotification = (id) => {
         if (!confirm('¿Deseas quitar este mensaje de tu bandeja de entrada?')) return;
-        const dismissed = JSON.parse(localStorage.getItem('cronos_dismissed_notifs') || '[]');
-        if (!dismissed.includes(id)) dismissed.push(id);
-        localStorage.setItem('cronos_dismissed_notifs', JSON.stringify(dismissed));
+        
+        // SPRINT 4: Usar NotificationDismiss para sincronizar en Firestore
+        if (window.NotificationDismiss && window.currentUser) {
+            NotificationDismiss.dismiss(id);
+        } else {
+            // Fallback: guardar solo en localStorage
+            const dismissed = JSON.parse(localStorage.getItem('cronos_dismissed_notifs') || '[]');
+            if (!dismissed.includes(id)) dismissed.push(id);
+            localStorage.setItem('cronos_dismissed_notifs', JSON.stringify(dismissed));
+        }
+        
         // Refrescar la pestaña de mensajes inmediatamente
         if (typeof window.ppMsgs === 'function') {
             window.ppMsgs();

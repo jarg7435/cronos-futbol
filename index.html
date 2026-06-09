@@ -1178,6 +1178,8 @@
     <script src="js/core/security-and-state.js"></script>
     <script src="js/core/utils.js"></script>
     <script src="js/core/pseudonymizer.js"></script>
+    <!-- SPRINT 4: Accesibilidad WCAG 2.1 básica (debe cargar temprano) -->
+    <script src="js/core/accessibility-wcag.js"></script>
 
     <!-- ══ SPRINT 3: Auditoría y Optimización de Renders ════════════════════ -->
     <script src="js/services/audit-logger.js"></script>
@@ -1198,6 +1200,9 @@
     <script src="js/services/firestore-sync.js"></script>
     <script src="js/services/firestore-storage.js"></script>
     <script src="js/services/offline-manager.js"></script>
+    <!-- SPRINT 4: Notificaciones y Training Plans sincronizados -->
+    <script src="js/services/notification-dismiss-sync.js"></script>
+    <script src="js/services/training-firestore-sync.js"></script>
     <script src="js/services/user-management.js"></script>
 
     <!-- ══ STAFF & COMMS ══════════════════════════════════════════════════════ -->
@@ -1232,6 +1237,8 @@
     <script src="js/coach/comms/panel.js"></script>
     <script src="js/coach/reports/club-reports.js"></script>
     <script src="js/coach/reports/generator.js"></script>
+    <!-- SPRINT 4: Training Plans sync con Firestore (debe ir ANTES de panel.js) -->
+    <script src="js/services/training-firestore-sync.js"></script>
     <script src="js/coach/training/panel.js"></script>
 
     <!-- ══ PARENT: portal de padres ═══════════════════════════════════════════ -->

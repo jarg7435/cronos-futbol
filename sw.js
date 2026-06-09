@@ -37,17 +37,17 @@
 //         guard idempotencia persistente en localStorage).
 //  v124: Fix nombre superadmin.panel.js en ASSETS, eliminar
 //         email-whatsapp.js del precache, quitar ?v= de index.html.
-//  v123: Eliminados 4 scripts stub del index.html
-//  pre-populate send modal from localStorage, planificacion_semanal
-//  detail view renderiza tabla de días correctamente.
-//  v121: Eliminados 4 scripts stub vacíos del ASSETS.
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v141';
-const CACHE_NAME = 'cronos-cache-v141';
+// CHRONOS FÚTBOL — SERVICE WORKER
+// v142: SPRINT 4 — Offline Fallback + Local Icons
+// ─────────────────────────────────────────────────────────────
+const VERSION    = 'v142';
+const CACHE_NAME = 'cronos-cache-v142';
 
 const ASSETS = [
     './',
     './index.html',
+    './offline.html',
     './privacy.html',
     './manifest.json',
     './style.css',
@@ -57,6 +57,7 @@ const ASSETS = [
     './js/core/security-and-state.js',
     './js/core/utils.js',
     './js/core/pseudonymizer.js',
+    './js/core/accessibility-wcag.js',
     './js/core/staff-and-comms.js',
     './js/core/event-listeners.js',
     './js/services/firebase-init.js',
@@ -65,6 +66,8 @@ const ASSETS = [
     './js/services/firestore-sync.js',
     './js/services/firestore-storage.js',
     './js/services/offline-manager.js',
+    './js/services/notification-dismiss-sync.js',
+    './js/services/training-firestore-sync.js',
     './js/services/user-management.js',
     './js/match/events/player-actions.js',
     './js/match/demo-tutorial.js',
@@ -91,8 +94,13 @@ const ASSETS = [
     './js/coach/comms/panel.js',
     './js/coach/reports/club-reports.js',
     './js/coach/reports/generator.js',
+    './js/services/training-firestore-sync.js',
     './js/coach/training/panel.js',
     './js/parent/panel.js',
+    // SPRINT 4: Iconos locales para PWA
+    './public/assets/icons/chronos-192.svg',
+    './public/assets/icons/chronos-512.svg',
+    './manifest.json',
 ];
 
 self.addEventListener('install', event => {
@@ -127,12 +135,40 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
     if (!event.request.url.startsWith('http')) return;
+
     // No cachear peticiones a Firebase/Google
     if (event.request.url.includes('googleapis.com') ||
         event.request.url.includes('firebaseio.com') ||
         event.request.url.includes('gstatic.com')) return;
 
-    // NETWORK FIRST: siempre intenta la red primero
+    // CACHE FIRST para iconos, fonts, y assets estáticos
+    if (event.request.url.includes('/public/assets/icons/') ||
+        event.request.url.includes('.svg') ||
+        event.request.url.includes('.woff') ||
+        event.request.url.includes('.woff2') ||
+        event.request.url.includes('manifest.json')) {
+        
+        event.respondWith(
+            caches.match(event.request)
+                .then(response => {
+                    return response || fetch(event.request)
+                        .then(response => {
+                            if (response.ok) {
+                                const copy = response.clone();
+                                caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+                            }
+                            return response;
+                        });
+                })
+                .catch(() => {
+                    console.warn(`[SW ${VERSION}] Asset no disponible:`, event.request.url);
+                    return caches.match(event.request);
+                })
+        );
+        return;
+    }
+
+    // NETWORK FIRST para todo lo demás
     event.respondWith(
         fetch(event.request)
             .then(response => {
@@ -143,8 +179,26 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                console.warn(`[SW ${VERSION}] Red no disponible, usando caché:`, event.request.url);
-                return caches.match(event.request);
+                // Intentar caché
+                return caches.match(event.request)
+                    .then(cached => {
+                        if (cached) return cached;
+                        
+                        // Fallback a offline.html para navegación
+                        if (event.request.destination === 'document') {
+                            return caches.match('./offline.html')
+                                .then(offlinePage => offlinePage || new Response(
+                                    '⚠️ Sin conexión y página no disponible en caché',
+                                    { status: 503, statusText: 'Service Unavailable' }
+                                ));
+                        }
+                        
+                        // Para otros recursos, retornar error
+                        return new Response(
+                            'Recurso no disponible',
+                            { status: 404, statusText: 'Not Found' }
+                        );
+                    });
             })
     );
 });

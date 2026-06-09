@@ -10,15 +10,45 @@
   "theme_color": "#58a6ff",
   "icons": [
     {
-      "src": "/public/assets/logo.png",
+      "src": "./public/assets/icons/chronos-192.svg",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/svg+xml",
+      "purpose": "any"
     },
     {
-      "src": "/public/assets/logo.png",
+      "src": "./public/assets/icons/chronos-512.svg",
       "sizes": "512x512",
-      "type": "image/png",
+      "type": "image/svg+xml",
       "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "./public/assets/logo.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "./public/assets/logo.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nuevo Partido",
+      "short_name": "Partido",
+      "description": "Crear un nuevo partido",
+      "url": "./index.html?mode=match",
+      "icons": [
+        {
+          "src": "./public/assets/icons/chronos-192.svg",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
     }
   ]
 }

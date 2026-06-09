@@ -1,14 +1,23 @@
 /**
  * 14_pseudonymizer.js — Servicio de Pseudonimización de Menores
- * ECOSISTEMA 4.0 — Fase 0: Emergencia Crítica
+ * SPRINT 4 — BLOQUE C: GDPR por Categoría de Rol
  *
  * Genera pseudónimos determinísticos para jugadores menores.
- * Los nombres reales SOLO se muestran al entrenador del mismo club.
+ * Visibilidad granular según role del usuario.
+ * Soporta: name, email, phone, birthDate
+ *
+ * Roles soportados:
+ *   - 'superadmin': Ve TODO sin filtrar
+ *   - 'admin_club': Ve datos de su club completos
+ *   - 'admin_individual': Ve datos de su federación
+ *   - 'dir_deportivo': Ve casi todo excepto DNI
+ *   - 'coordinador': Ve solo nombre/pseudónimo, NO emails/phones
+ *   - 'entrenador': Ve name, phone, email, birthDate
+ *   - 'padre': Ve solo nombre + datos contacto entrenador
  *
  * Uso:
- *   Pseudonymizer.maskPlayer(player, viewerClubId)
- *   Pseudonymizer.maskPlayers(playersArray, viewerClubId)
- *   Pseudonymizer.getPseudonym(realName, clubId)
+ *   Pseudonymizer.maskPlayer(player, { role, clubId })
+ *   Pseudonymizer.maskUser(user, { role, clubId })
  */
 
 const Pseudonymizer = (() => {
@@ -24,6 +33,28 @@ const Pseudonymizer = (() => {
     'Avalancha', 'Bolido', 'Cometa', 'Estela', 'Volcan'
   ];
 
+  // ── Matriz de Visibilidad: ¿qué campos puede ver cada rol? ──
+  const VISIBILITY_MATRIX = {
+    player: {
+      superadmin: ['name', 'email', 'phone', 'birthDate'],
+      admin_club: ['name', 'email', 'phone', 'birthDate'],
+      admin_individual: ['name', 'email', 'phone', 'birthDate'],
+      dir_deportivo: ['name', 'email', 'phone', 'birthDate'],
+      coordinador: ['pseudonym'], // SOLO pseudónimo, no nombre real
+      entrenador: ['name', 'email', 'phone', 'birthDate'],
+      padre: ['name', 'birthDate'] // padre ve nombre e edad, no email/phone del jugador
+    },
+    user: {
+      superadmin: ['name', 'email', 'phone'],
+      admin_club: ['name', 'email', 'phone'],
+      admin_individual: ['name', 'email', 'phone'],
+      dir_deportivo: ['name', 'email', 'phone'],
+      coordinador: ['name'], // SOLO nombre, NO email/phone
+      entrenador: ['name', 'email', 'phone'],
+      padre: ['name', 'email', 'phone'] // padre puede ver contactos
+    }
+  };
+
   // Mapa persistente: clave → pseudonym (almacenado en localStorage)
   let _map = {};
 
@@ -38,6 +69,29 @@ const Pseudonymizer = (() => {
       h |= 0; // Convertir a 32-bit signed int
     }
     return Math.abs(h);
+  }
+
+  /**
+   * Valida el contexto del viewer (role + clubId)
+   */
+  function _validateContext(context) {
+    if (!context) return { role: 'public', clubId: null };
+    return {
+      role: context.role || 'public',
+      clubId: context.clubId || null
+    };
+  }
+
+  /**
+   * ¿Puede este viewer ver este campo para este tipo de entidad?
+   */
+  function _canViewField(entityType, fieldName, viewerRole) {
+    if (!entityType || !fieldName || !viewerRole) return false;
+
+    const matrix = VISIBILITY_MATRIX[entityType] || {};
+    const allowedFields = matrix[viewerRole] || [];
+
+    return allowedFields.includes(fieldName);
   }
 
   /**
@@ -69,71 +123,124 @@ const Pseudonymizer = (() => {
   }
 
   /**
-   * Revela nombre real SOLO si el usuario pertenece al mismo club del jugador.
+   * Enmascara un jugador según rol + contexto
+   * context = { role: 'entrenador', clubId: 'club-123' }
    */
-  function maskPlayer(player, viewerClubId) {
+  function maskPlayer(player, context) {
     if (!player) return player;
 
-    // Mismo club → nombre real visible
-    if (player.clubId && player.clubId === viewerClubId) {
+    const ctx = _validateContext(context);
+
+    // Superadmin ve todo sin mascara
+    if (ctx.role === 'superadmin') {
       return player;
     }
 
-    // SuperAdmin ve nombres reales (viewerClubId = 'superadmin')
-    if (viewerClubId === 'superadmin') {
-      return player;
+    // Coordinador ve solo pseudónimo
+    if (ctx.role === 'coordinador') {
+      const masked = { name: getPseudonym(player.name || '', player.clubId || '') };
+      if (player.plantilla) masked.plantilla = player.plantilla;
+      if (player.dorsal) masked.dorsal = player.dorsal;
+      return masked;
     }
 
-    // Otro club o espectador sin club → pseudonimizar
-    const pseudonym = getPseudonym(player.name || '', player.clubId || '');
+    // Resto de roles: aplicar matriz de visibilidad
+    const masked = {};
 
-    const masked = Object.assign({}, player);
-    masked.name = pseudonym;
-    masked.pseudonym = pseudonym;
+    // Copiar solo campos permitidos
+    ['name', 'email', 'phone', 'birthDate', 'plantilla', 'dorsal', 'posicion'].forEach(field => {
+      if (player.hasOwnProperty(field)) {
+        if (field === 'email' || field === 'phone' || field === 'birthDate') {
+          // Campos sensibles: verificar matriz
+          if (_canViewField('player', field, ctx.role)) {
+            masked[field] = player[field];
+          }
+        } else {
+          // Campos no sensibles: copiar siempre
+          masked[field] = player[field];
+        }
+      }
+    });
 
-    // Eliminar campos sensibles
-    delete masked.realName;
-    delete masked.surname;
-    delete masked.lastName;
-    delete masked.firstName;
-    delete masked.fullName;
-    delete masked.dni;
-    delete masked.email;
-    delete masked.phone;
-    delete masked.address;
-    delete masked.birthDate;
-    delete masked.parentName;
-    delete masked.parentPhone;
+    // Si padre, no mostrar email/phone del jugador
+    if (ctx.role === 'padre') {
+      delete masked.email;
+      delete masked.phone;
+    }
 
     return masked;
   }
 
   /**
-   * Procesa un array de jugadores para vista de espectador
+   * Enmascara un usuario (entrenador, padre, etc) según rol
    */
-  function maskPlayers(players, viewerClubId) {
-    if (!Array.isArray(players)) return players;
-    return players.map(function(p) { return maskPlayer(p, viewerClubId); });
-  }
+  function maskUser(user, context) {
+    if (!user) return user;
 
-  /**
-   * Verifica si un jugador debe ser pseudonimizado
-   */
-  function shouldMask(player, viewerClubId) {
-    if (!player || !player.clubId) return true;
-    if (viewerClubId === 'superadmin') return false;
-    return player.clubId !== viewerClubId;
-  }
+    const ctx = _validateContext(context);
 
-  /**
-   * Obtiene el nombre a mostrar (versión ligera)
-   */
-  function getDisplayName(player, viewerClubId) {
-    if (!player) return '';
-    if (!shouldMask(player, viewerClubId)) {
-      return player.name || '';
+    // Superadmin ve todo
+    if (ctx.role === 'superadmin') {
+      return user;
     }
-    return getPseudonym(player.name || '', player.clubId || '');
+
+    const masked = {};
+
+    ['name', 'email', 'phone'].forEach(field => {
+      if (user.hasOwnProperty(field)) {
+        if (_canViewField('user', field, ctx.role)) {
+          masked[field] = user[field];
+        }
+      }
+    });
+
+    // Campos siempre visibles
+    if (user.role) masked.role = user.role;
+    if (user.clubId) masked.clubId = user.clubId;
+
+    return masked;
+  }
+
+  /**
+   * Procesa un array de jugadores para vista con contexto
+   */
+  function maskPlayers(players, context) {
+    if (!Array.isArray(players)) return players;
+    return players.map(function(p) { return maskPlayer(p, context); });
+  }
+
+  /**
+   * Procesa un array de usuarios
+   */
+  function maskUsers(users, context) {
+    if (!Array.isArray(users)) return users;
+    return users.map(function(u) { return maskUser(u, context); });
+  }
+
+  /**
+   * ¿Debe pseudonimizarse este jugador?
+   * (Legacy: compatibilidad con código anterior)
+   */
+  function shouldMask(player, context) {
+    const ctx = _validateContext(context);
+    if (ctx.role === 'superadmin') return false;
+    if (ctx.role === 'coordinador') return true; // Coordinador siempre ve pseudónimo
+    return false;
+  }
+
+  /**
+   * Obtiene el nombre a mostrar para un jugador
+   */
+  function getDisplayName(player, context) {
+    if (!player) return '';
+
+    const ctx = _validateContext(context);
+
+    if (ctx.role === 'coordinador' || ctx.role === 'public') {
+      return getPseudonym(player.name || '', player.clubId || '');
+    }
+
+    return player.name || '';
   }
 
   /**
@@ -184,10 +291,15 @@ const Pseudonymizer = (() => {
     getPseudonym: getPseudonym,
     maskPlayer: maskPlayer,
     maskPlayers: maskPlayers,
+    maskUser: maskUser,
+    maskUsers: maskUsers,
     shouldMask: shouldMask,
     getDisplayName: getDisplayName,
     clearMap: clearMap,
-    init: init
+    init: init,
+    // Métodos helper para debugging
+    getVisibilityMatrix: function() { return VISIBILITY_MATRIX; },
+    canViewField: _canViewField
   };
 })();
 

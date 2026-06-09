@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chronos Fútbol - Sin Conexión</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0a0e14 0%, #1a1f2e 100%);
+            color: #e6edf3;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .offline-container {
+            text-align: center;
+            max-width: 500px;
+            background: rgba(22, 27, 34, 0.8);
+            border: 1px solid rgba(88, 166, 255, 0.2);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(0.95); }
+        }
+
+        h1 {
+            color: #58a6ff;
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: #8b949e;
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .status {
+            background: rgba(63, 185, 80, 0.1);
+            border-left: 4px solid #3fb950;
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 8px;
+            text-align: left;
+        }
+
+        .status-title {
+            font-weight: 600;
+            color: #3fb950;
+            margin-bottom: 0.5rem;
+        }
+
+        .status-message {
+            color: #8b949e;
+            font-size: 0.9rem;
+        }
+
+        .retry-section {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(88, 166, 255, 0.1);
+        }
+
+        .retry-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #58a6ff 0%, #3fb950 100%);
+            color: #0a0e14;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1rem;
+        }
+
+        .retry-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(88, 166, 255, 0.4);
+        }
+
+        .retry-button:active {
+            transform: translateY(0);
+        }
+
+        .features {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(88, 166, 255, 0.1);
+            text-align: left;
+        }
+
+        .features-title {
+            color: #58a6ff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 1rem;
+        }
+
+        .feature-list {
+            list-style: none;
+        }
+
+        .feature-list li {
+            padding: 0.5rem 0;
+            color: #8b949e;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .feature-list li:before {
+            content: "✓";
+            color: #3fb950;
+            font-weight: bold;
+            margin-right: 0.75rem;
+            font-size: 1.1rem;
+        }
+
+        .connection-status {
+            font-size: 0.8rem;
+            color: #8b949e;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(88, 166, 255, 0.1);
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff5858;
+            margin-right: 0.5rem;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 49%, 100% { opacity: 1; }
+            50%, 99% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="icon">📡</div>
+        
+        <h1>Sin Conexión a Internet</h1>
+        
+        <p class="subtitle">
+            Parece que no tienes conexión en este momento. 
+            La aplicación seguirá funcionando con los datos locales que tenemos guardados.
+        </p>
+
+        <div class="status">
+            <div class="status-title">✓ Funcionalidades Disponibles</div>
+            <div class="status-message">
+                Puedes ver partidos guardados, consultar entrenamientos y acceder a datos locales
+            </div>
+        </div>
+
+        <div class="retry-section">
+            <button class="retry-button" onclick="window.location.reload()">
+                🔄 Reintentar Conexión
+            </button>
+        </div>
+
+        <div class="features">
+            <div class="features-title">Modo Offline</div>
+            <ul class="feature-list">
+                <li>Ver partidos locales</li>
+                <li>Consultar entrenamientos guardados</li>
+                <li>Revisar historial de convocatorias</li>
+                <li>Acceder a datos sincronizados</li>
+            </ul>
+        </div>
+
+        <div class="connection-status">
+            <span class="status-indicator"></span>
+            Intentando reconectar automáticamente...
+            <script>
+                // Auto-retry cada 5 segundos
+                setInterval(() => {
+                    fetch('/', { method: 'HEAD' }).then(() => {
+                        window.location.reload();
+                    }).catch(() => {});
+                }, 5000);
+            </script>
+        </div>
+    </div>
+</body>
+</html>
