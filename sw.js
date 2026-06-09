@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v141
+//  CRONOS FUTBOL — Service Worker v145
+//  v145: Bump cache — fuerza recarga de js/parent/panel.js con el fix
+//         que evita crear IDs basura 'null_N' en cronos_player_links
+//         (guarda && clubId en auto-vinculacion + guard if(!clubId) en
+//         vinculacion manual). Sin el bump los clientes seguirian con el
+//         panel.js antiguo que generaba docs como null_10.
 //  v141: Logs del SW usan `${VERSION}` (antes hardcodeado '[SW v134]',
 //         desincronizado desde v135). Bump fuerza a clientes con SW
 //         antiguo (<=v139) a migrar al SW con el CSP que permite
@@ -41,8 +46,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v144';
-const CACHE_NAME = 'cronos-cache-v144';
+const VERSION    = 'v145';
+const CACHE_NAME = 'cronos-cache-v145';
 
 const ASSETS = [
     './',
