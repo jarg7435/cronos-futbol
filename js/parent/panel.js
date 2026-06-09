@@ -543,7 +543,7 @@ async function openParentPanel() {
                         } catch(_) {}
                     }
 
-                    if (pNum && !links.length) {
+                    if (pNum && clubId && !links.length) {
                         const pTeam  = myData.teamName || myData.category || '';
                         // Fase 4: la categoría del jugador permite al entrenador
                         // filtrar sus contactos por categoría. Se toma del doc del
@@ -687,6 +687,10 @@ async function openParentPanel() {
                             });
                         } else {
                             // Link no existe: crear uno nuevo
+                            if (!clubId) {
+                                console.warn('[ppPlayer] Vinculación manual cancelada: clubId ausente, no se crea link para evitar ID basura "null_' + manualPNum + '" en cronos_player_links.');
+                                return;
+                            }
                             const newLinkId = clubId + '_' + manualPNum;
                             linkRef = doc(fa.db, 'cronos_player_links', newLinkId);
                             await setDoc(linkRef, {
