@@ -178,7 +178,7 @@ class AuditLogger {
             const { query, collection, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
             
             const q = query(
-                collection(fa.db, 'match_audit_log'),
+                collection(fa.db, 'audit_logs'),
                 where('matchId', '==', this.matchId),
                 where('playerId', '==', playerId)
             );
@@ -202,7 +202,7 @@ class AuditLogger {
                 await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
             
             const q = query(
-                collection(fa.db, 'match_audit_log'),
+                collection(fa.db, 'audit_logs'),
                 where('matchId', '==', this.matchId),
                 orderBy('timestamp', 'desc'),
                 fbLimit(limit)

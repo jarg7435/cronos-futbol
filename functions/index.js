@@ -715,7 +715,7 @@ exports.sendInviteEmail = functions
   }
 });
 
-console.log('Cloud Functions v8.3 cargadas (Fase 0 + originales + sendInviteEmail con HTML/Logo/URL corregida)');
+console.log('Cloud Functions v8.4 cargadas (Fase 0 + originales + sendInviteEmail + logAuditEntry auditoria completa)');
 
 /* ==================================================================== */
 /* 0️⃣0️⃣ Cloud Function: approveIndividualAdmin – Aprobar admin individual */
@@ -815,15 +815,54 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
 });
 
 exports.logAuditEntry = functions.https.onCall(async (data, context) => {
-  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'No autenticado');
-  const { action, details } = data;
-  await admin.firestore().collection('audit_logs').add({
-      action: action || 'unknown',
-      details: details || {},
-      performedBy: context.auth.token.email || 'unknown',
-      performedByUid: context.auth.uid,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      ipAddress: context.rawRequest ? context.rawRequest.ip : 'unknown',
-  });
-  return { success: true };
+  // 1) Requiere autenticación
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'No autenticado');
+  }
+
+  data = data || {};
+
+  // 2) Validar campos obligatorios: matchId y action
+  const matchId = typeof data.matchId === 'string' ? data.matchId.trim() : '';
+  const action  = typeof data.action === 'string' ? data.action.trim() : '';
+  if (!matchId || !action) {
+    throw new functions.https.HttpsError('invalid-argument', 'matchId y action son obligatorios');
+  }
+
+  // 3) Identidad desde el token (no confiar en el cliente)
+  const trustedUid   = context.auth.uid;
+  const trustedEmail = context.auth.token.email || data.userEmail || 'unknown';
+
+  // 4) Documento a persistir (campos que envía audit-logger.js)
+  const entry = {
+    matchId:         matchId,
+    action:          action,
+    value:           data.value !== undefined ? data.value : null,
+
+    playerId:        data.playerId !== undefined ? data.playerId : null,
+    playerName:      typeof data.playerName === 'string' ? data.playerName : null,
+    playerNumber:    data.playerNumber !== undefined ? data.playerNumber : null,
+
+    role:            typeof data.role === 'string' ? data.role : 'unknown',
+    userId:          trustedUid,
+    userEmail:       trustedEmail,
+
+    changes:         (data.changes && typeof data.changes === 'object') ? data.changes : {},
+
+    timestamp:       typeof data.timestamp === 'string' ? data.timestamp : new Date().toISOString(),
+    clientTimestamp: typeof data.clientTimestamp === 'number' ? data.clientTimestamp : null,
+    deviceInfo:      (data.deviceInfo && typeof data.deviceInfo === 'object') ? data.deviceInfo : {},
+
+    ipAddress:       context.rawRequest ? context.rawRequest.ip : 'unknown',
+    serverTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  // 5) Persistir en la colección audit_logs con manejo de errores genérico
+  try {
+    await admin.firestore().collection('audit_logs').add(entry);
+    return { success: true };
+  } catch (error) {
+    console.error('[logAuditEntry] Error:', error);
+    throw new functions.https.HttpsError('internal', 'No se pudo registrar la auditoria');
+  }
 });
