@@ -94,13 +94,11 @@ const ASSETS = [
     './js/coach/comms/panel.js',
     './js/coach/reports/club-reports.js',
     './js/coach/reports/generator.js',
-    './js/services/training-firestore-sync.js',
     './js/coach/training/panel.js',
     './js/parent/panel.js',
     // SPRINT 4: Iconos locales para PWA
     './public/assets/icons/chronos-192.svg',
     './public/assets/icons/chronos-512.svg',
-    './manifest.json',
 ];
 
 self.addEventListener('install', event => {

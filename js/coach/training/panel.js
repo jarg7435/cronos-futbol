@@ -118,7 +118,7 @@ function saveTrainingWeek() {
     });
     
     // SPRINT 4: Usar TrainingSync para guardar en localStorage + Firestore
-    if (window.TrainingSync && window.currentUser) {
+    if (window.TrainingSync && window._cronosCurrentUser?.clubId) {
         TrainingSync.saveWeek(weekKey, weekData);
     } else {
         // Fallback: guardar solo en localStorage

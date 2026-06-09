@@ -1,24 +1,26 @@
 /**
- * notification-dismiss-sync.js — Sincronización de Descarte de Notificaciones
- * SPRINT 4 — BLOQUE C: Notificaciones dismissed sincronizadas en Firestore
+ * notification-dismiss-sync.js — Descarte de Notificaciones (capa localStorage)
+ * SPRINT 4 — BLOQUE C
  *
- * Permite que el descarte de notificaciones sea multi-dispositivo
- * Se guarda en Firestore campo 'dismissedBy' + fallback en localStorage
+ * NOTA (corrección post-Bloque C): la sincronización multi-dispositivo del
+ * descarte de notificaciones la realiza el flujo nativo `ppDeleteNotif`
+ * (js/parent/panel.js) usando `dismissedBy: arrayUnion(me.uid)` con la API
+ * Firebase v9 modular. Este módulo queda como capa de descarte LOCAL
+ * (localStorage) para respuesta inmediata en UI y como fuente de verdad local.
  *
  * Uso:
  *   NotificationDismiss.init(userId)
- *   NotificationDismiss.dismiss(notificationId)     // Descarta en Firestore + localStorage
+ *   NotificationDismiss.dismiss(notificationId)     // Descarta en localStorage
  *   NotificationDismiss.isDismissed(notificationId) // Verifica si está descartado
  *   NotificationDismiss.getDismissedList()          // Lista de IDs descartados locales
- *   NotificationDismiss.sync()                      // Sincroniza desde Firestore
+ *   NotificationDismiss.restore(notificationId)     // Restaura (vuelve a mostrar)
  */
 
 const NotificationDismiss = (() => {
   'use strict';
 
-  const FIRESTORE_COLLECTION = 'cronos_notifications';
   const LOCAL_STORAGE_KEY = 'cronos_dismissed_notifs';
-  
+
   let _isInitialized = false;
   let _currentUserId = null;
   let _dismissedCache = []; // Cache local de IDs descartados
@@ -38,30 +40,19 @@ const NotificationDismiss = (() => {
     // Cargar estado actual de localStorage
     _loadLocalDismissed();
 
-    // Sincronizar con Firestore al inicializar
-    if (window.db) {
-      syncFromFirestore();
-    }
-
     console.log('[NotificationDismiss] Inicializado para usuario:', userId);
     return true;
   }
 
   /**
-   * Descarta una notificación (en Firestore + localStorage)
+   * Descarta una notificación (en localStorage)
    */
   function dismiss(notificationId) {
     if (!notificationId) return false;
 
-    // 1. Actualizar localStorage
     if (!_dismissedCache.includes(notificationId)) {
       _dismissedCache.push(notificationId);
       _saveLocalDismissed();
-    }
-
-    // 2. Actualizar en Firestore (async, sin esperar)
-    if (_isInitialized && window.db && _currentUserId) {
-      dismissInFirestore(notificationId);
     }
 
     console.log('[NotificationDismiss] Notificación descartada:', notificationId);
@@ -94,83 +85,8 @@ const NotificationDismiss = (() => {
       _saveLocalDismissed();
     }
 
-    // Actualizar en Firestore (async)
-    if (_isInitialized && window.db && _currentUserId) {
-      restoreInFirestore(notificationId);
-    }
-
     console.log('[NotificationDismiss] Notificación restaurada:', notificationId);
     return true;
-  }
-
-  /**
-   * Sincroniza descarte desde Firestore (descarga lista de otros dispositivos)
-   */
-  function syncFromFirestore() {
-    if (!_isInitialized || !window.db || !_currentUserId) {
-      return Promise.resolve('Firestore no disponible');
-    }
-
-    return window.db.collection(FIRESTORE_COLLECTION)
-      .where('dismissedBy', 'array-contains', _currentUserId)
-      .get()
-      .then(snapshot => {
-        let syncedCount = 0;
-
-        snapshot.forEach(doc => {
-          const dismissedBy = doc.data().dismissedBy || [];
-          if (dismissedBy.includes(_currentUserId)) {
-            if (!_dismissedCache.includes(doc.id)) {
-              _dismissedCache.push(doc.id);
-              syncedCount++;
-            }
-          }
-        });
-
-        _saveLocalDismissed();
-
-        if (syncedCount > 0) {
-          console.log('[NotificationDismiss] Sincronizadas', syncedCount, 'notificaciones descartadas');
-        }
-
-        return syncedCount;
-      })
-      .catch(err => {
-        console.warn('[NotificationDismiss] Error sincronizando desde Firestore:', err);
-        return 0;
-      });
-  }
-
-  /**
-   * Actualiza el campo dismissedBy en Firestore (función interna)
-   */
-  function dismissInFirestore(notificationId) {
-    if (!window.db || !_currentUserId) return;
-
-    window.db.collection(FIRESTORE_COLLECTION).doc(notificationId)
-      .update({
-        dismissedBy: window.firebase.firestore.FieldValue.arrayUnion(_currentUserId)
-      })
-      .catch(err => {
-        // Puede fallar si el documento no existe o sin permisos
-        // Es OK - fallback a localStorage
-        console.warn('[NotificationDismiss] No se pudo actualizar en Firestore:', err.message);
-      });
-  }
-
-  /**
-   * Restaura el campo dismissedBy en Firestore (función interna)
-   */
-  function restoreInFirestore(notificationId) {
-    if (!window.db || !_currentUserId) return;
-
-    window.db.collection(FIRESTORE_COLLECTION).doc(notificationId)
-      .update({
-        dismissedBy: window.firebase.firestore.FieldValue.arrayRemove(_currentUserId)
-      })
-      .catch(err => {
-        console.warn('[NotificationDismiss] No se pudo restaurar en Firestore:', err.message);
-      });
   }
 
   /**
@@ -231,7 +147,6 @@ const NotificationDismiss = (() => {
     isDismissed: isDismissed,
     getDismissedList: getDismissedList,
     restore: restore,
-    syncFromFirestore: syncFromFirestore,
     getStats: getStats,
     clear: clear
   };

@@ -2,8 +2,8 @@
  * training-firestore-sync.js — Sincronización de Planes de Entrenamiento
  * SPRINT 4 — BLOQUE C: Planes de entrenamiento persistentes en Firestore
  *
- * Sincroniza bidireccional: localStorage ↔ Firestore
- * Permite acceso multi-dispositivo a los planes semanales
+ * Sincroniza bidireccional: localStorage ↔ Firestore (API Firebase v9 modular
+ * vía window.saFS()). Permite acceso multi-dispositivo a los planes semanales.
  *
  * Uso:
  *   TrainingSync.saveWeek(weekKey, weekData)  // Guarda en local + Firestore
@@ -16,12 +16,22 @@
 const TrainingSync = (() => {
   'use strict';
 
-  const FIREBASE_COLLECTION = 'trainingPlans';
   const LOCAL_STORAGE_KEY = 'cronos_training_weeks';
   const SYNC_TIMESTAMP_KEY = 'cronos_training_sync_ts';
 
   let _isInitialized = false;
   let _currentClubId = null;
+
+  /**
+   * Convierte serverTimestamp (Firestore) / Date / string a milisegundos
+   * para poder comparar versiones local vs remota.
+   */
+  function _toMillis(ts) {
+    if (!ts) return 0;
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    const ms = new Date(ts).getTime();
+    return isNaN(ms) ? 0 : ms;
+  }
 
   /**
    * Inicializa el módulo con clubId del usuario
@@ -56,7 +66,7 @@ const TrainingSync = (() => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
 
     // 2. Guardar en Firestore si está disponible
-    if (_isInitialized && window.db && _currentClubId) {
+    if (_isInitialized && _currentClubId && window.saFS) {
       saveWeekToFirestore(weekKey, weekData);
     }
 
@@ -65,40 +75,30 @@ const TrainingSync = (() => {
   }
 
   /**
-   * Carga una semana desde Firestore
+   * Carga una semana desde Firestore (con fallback a localStorage)
    */
-  function loadWeek(weekKey) {
-    return new Promise((resolve, reject) => {
-      if (!_isInitialized || !window.db || !_currentClubId) {
-        // Fallback a localStorage
-        const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
-        resolve(allWeeks[weekKey] || null);
-        return;
-      }
+  async function loadWeek(weekKey) {
+    const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
 
-      const docPath = `${FIREBASE_COLLECTION}/${_currentClubId}/weeks/${weekKey}`;
-      window.db.collection('trainingPlans').doc(_currentClubId)
-        .collection('weeks').doc(weekKey)
-        .get()
-        .then(doc => {
-          if (doc.exists) {
-            const data = doc.data();
-            // Actualizar localStorage con datos de Firestore
-            const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
-            allWeeks[weekKey] = data;
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
-            resolve(data);
-          } else {
-            const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
-            resolve(allWeeks[weekKey] || null);
-          }
-        })
-        .catch(err => {
-          console.warn('[TrainingSync] Error cargando desde Firestore:', err);
-          const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
-          resolve(allWeeks[weekKey] || null);
-        });
-    });
+    if (!_isInitialized || !_currentClubId || !window.saFS) {
+      return allWeeks[weekKey] || null;
+    }
+
+    try {
+      const { db, doc, getDoc } = await window.saFS();
+      const snap = await getDoc(doc(db, 'trainingPlans', _currentClubId, 'weeks', weekKey));
+      if (snap.exists()) {
+        const data = snap.data();
+        // Actualizar localStorage con datos de Firestore
+        allWeeks[weekKey] = data;
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
+        return data;
+      }
+      return allWeeks[weekKey] || null;
+    } catch (err) {
+      console.warn('[TrainingSync] Error cargando desde Firestore:', err);
+      return allWeeks[weekKey] || null;
+    }
   }
 
   /**
@@ -118,11 +118,15 @@ const TrainingSync = (() => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
 
     // 2. Eliminar de Firestore si está disponible
-    if (_isInitialized && window.db && _currentClubId) {
-      window.db.collection('trainingPlans').doc(_currentClubId)
-        .collection('weeks').doc(weekKey)
-        .delete()
-        .catch(err => console.warn('[TrainingSync] Error eliminando en Firestore:', err));
+    if (_isInitialized && _currentClubId && window.saFS) {
+      (async () => {
+        try {
+          const { db, doc, deleteDoc } = await window.saFS();
+          await deleteDoc(doc(db, 'trainingPlans', _currentClubId, 'weeks', weekKey));
+        } catch (err) {
+          console.warn('[TrainingSync] Error eliminando en Firestore:', err);
+        }
+      })();
     }
 
     console.log('[TrainingSync] Semana eliminada:', weekKey);
@@ -133,98 +137,98 @@ const TrainingSync = (() => {
    * Sincroniza TODO localStorage → Firestore (operación de fondo)
    * Útil para backfill inicial o recuperación
    */
-  function syncToFirestore() {
-    if (!_isInitialized || !window.db || !_currentClubId) {
+  async function syncToFirestore() {
+    if (!_isInitialized || !_currentClubId || !window.saFS) {
       console.warn('[TrainingSync] No se puede sincronizar sin Firestore');
       return Promise.reject('Firestore no disponible');
     }
 
     const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
-    const batch = window.db.batch();
-    let count = 0;
+    const entries = Object.entries(allWeeks);
 
-    Object.entries(allWeeks).forEach(([weekKey, weekData]) => {
-      const docRef = window.db.collection('trainingPlans').doc(_currentClubId)
-        .collection('weeks').doc(weekKey);
-      batch.set(docRef, {
-        ...weekData,
-        lastModified: new Date(),
-        createdBy: window.currentUser?.uid || 'unknown'
-      }, { merge: true });
-      count++;
-    });
-
-    if (count === 0) {
-      return Promise.resolve('No hay semanas para sincronizar');
+    if (entries.length === 0) {
+      return 'No hay semanas para sincronizar';
     }
 
-    return batch.commit()
-      .then(() => {
-        localStorage.setItem(SYNC_TIMESTAMP_KEY, Date.now().toString());
-        console.log('[TrainingSync] Sincronizadas', count, 'semanas a Firestore');
-        return `✅ ${count} semanas sincronizadas`;
-      })
-      .catch(err => {
-        console.error('[TrainingSync] Error en sincronización:', err);
-        return `❌ Error al sincronizar: ${err.message}`;
-      });
+    try {
+      const { db, doc, setDoc, serverTimestamp } = await window.saFS();
+      const uid = window._cronosCurrentUser?.uid || 'unknown';
+
+      await Promise.all(entries.map(([weekKey, weekData]) =>
+        setDoc(doc(db, 'trainingPlans', _currentClubId, 'weeks', weekKey), {
+          ...weekData,
+          lastModified: serverTimestamp(),
+          createdBy: uid
+        }, { merge: true })
+      ));
+
+      localStorage.setItem(SYNC_TIMESTAMP_KEY, Date.now().toString());
+      console.log('[TrainingSync] Sincronizadas', entries.length, 'semanas a Firestore');
+      return `✅ ${entries.length} semanas sincronizadas`;
+    } catch (err) {
+      console.error('[TrainingSync] Error en sincronización:', err);
+      return `❌ Error al sincronizar: ${err.message}`;
+    }
   }
 
   /**
    * Sincroniza FROM Firestore → localStorage (descarga cambios remotos)
    */
-  function syncFromFirestore() {
-    if (!_isInitialized || !window.db || !_currentClubId) {
+  async function syncFromFirestore() {
+    if (!_isInitialized || !_currentClubId || !window.saFS) {
       return Promise.reject('Firestore no disponible');
     }
 
-    return window.db.collection('trainingPlans').doc(_currentClubId)
-      .collection('weeks')
-      .get()
-      .then(snapshot => {
-        let count = 0;
-        const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
+    try {
+      const { db, collection, getDocs } = await window.saFS();
+      const snapshot = await getDocs(collection(db, 'trainingPlans', _currentClubId, 'weeks'));
 
-        snapshot.forEach(doc => {
-          const weekKey = doc.id;
-          const weekData = doc.data();
+      let count = 0;
+      const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
 
-          // Merge: Firestore data sobreescribe localStorage si es más reciente
-          if (!allWeeks[weekKey] || 
-              (weekData.lastModified && new Date(weekData.lastModified) > new Date(allWeeks[weekKey].lastModified || 0))) {
-            allWeeks[weekKey] = weekData;
-            count++;
-          }
-        });
+      snapshot.forEach(d => {
+        const weekKey = d.id;
+        const weekData = d.data();
 
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
+        // Merge: Firestore data sobreescribe localStorage si es más reciente
+        const remoteMs = _toMillis(weekData.lastModified);
+        const localMs = _toMillis(allWeeks[weekKey]?.lastModified);
 
-        if (count > 0) {
-          console.log('[TrainingSync] Descargadas', count, 'semanas desde Firestore');
+        if (!allWeeks[weekKey] || remoteMs > localMs) {
+          allWeeks[weekKey] = weekData;
+          count++;
         }
-
-        return count;
-      })
-      .catch(err => {
-        console.warn('[TrainingSync] Error descargando de Firestore:', err);
-        return 0;
       });
+
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
+
+      if (count > 0) {
+        console.log('[TrainingSync] Descargadas', count, 'semanas desde Firestore');
+      }
+
+      return count;
+    } catch (err) {
+      console.warn('[TrainingSync] Error descargando de Firestore:', err);
+      return 0;
+    }
   }
 
   /**
    * Guarda una semana en Firestore (función interna)
    */
-  function saveWeekToFirestore(weekKey, weekData) {
-    if (!window.db || !_currentClubId) return;
+  async function saveWeekToFirestore(weekKey, weekData) {
+    if (!_currentClubId || !window.saFS) return;
 
-    window.db.collection('trainingPlans').doc(_currentClubId)
-      .collection('weeks').doc(weekKey)
-      .set({
+    try {
+      const { db, doc, setDoc, serverTimestamp } = await window.saFS();
+      await setDoc(doc(db, 'trainingPlans', _currentClubId, 'weeks', weekKey), {
         ...weekData,
-        lastModified: new Date(),
-        createdBy: window.currentUser?.uid || 'unknown'
-      }, { merge: true })
-      .catch(err => console.warn('[TrainingSync] Error guardando en Firestore:', err));
+        lastModified: serverTimestamp(),
+        createdBy: window._cronosCurrentUser?.uid || 'unknown'
+      }, { merge: true });
+    } catch (err) {
+      console.warn('[TrainingSync] Error guardando en Firestore:', err);
+    }
   }
 
   /**
@@ -238,7 +242,7 @@ const TrainingSync = (() => {
       totalWeeks: Object.keys(allWeeks).length,
       lastSyncTimestamp: lastSync ? parseInt(lastSync) : null,
       lastSyncDate: lastSync ? new Date(parseInt(lastSync)).toLocaleString('es-ES') : 'Nunca',
-      firestoreAvailable: !!(_isInitialized && window.db && _currentClubId)
+      firestoreAvailable: !!(_isInitialized && _currentClubId && window.saFS)
     };
   }
 
@@ -257,3 +261,12 @@ const TrainingSync = (() => {
 
 // Exportar globalmente
 window.TrainingSync = TrainingSync;
+
+// SPRINT 4: Hook central de inicialización de sync (llamado desde auth.js
+// tras fijar window._cronosCurrentUser). Idempotente.
+window._initSprint4Sync = function () {
+  const me = window._cronosCurrentUser;
+  if (!me || !me.uid) return;
+  if (window.NotificationDismiss) window.NotificationDismiss.init(me.uid);
+  if (window.TrainingSync && me.clubId) window.TrainingSync.init(me.clubId);
+};

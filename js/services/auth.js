@@ -3011,6 +3011,9 @@ function _launchWithRole(role) {
     sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email);
     sessionStorage.setItem('cronos_session_role',  activeRole);
 
+    // SPRINT 4: Inicializar sync de Training Plans (+ NotificationDismiss localStorage)
+    if (typeof window._initSprint4Sync === 'function') window._initSprint4Sync();
+
     if (activeRole === 'parent' || activeRole === 'parent_individual') {
         if (typeof openParentPanel === 'function') openParentPanel();
     } else if (activeRole === 'superadmin') {

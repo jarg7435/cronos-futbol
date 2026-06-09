@@ -145,7 +145,7 @@ const AccessibilityWCAG = (() => {
 
       // Buscar en emoji o contenido
       if (!label) {
-        const emoji = button.innerHTML.match(/[😀-🙏]/)?.[0] || '';
+        const emoji = button.innerHTML.match(/[\u{1F600}-\u{1F64F}]/u)?.[0] || '';
         if (emoji) label = `Botón ${emoji}`;
       }
 
@@ -329,7 +329,7 @@ const AccessibilityWCAG = (() => {
    * Obtiene estadísticas de mejoras aplicadas
    */
   function getStats() {
-    return { ..._ stats };
+    return { ..._stats };
   }
 
   // ── API Pública ──

@@ -401,7 +401,7 @@ async function openParentPanel() {
         if (!confirm('¿Deseas quitar este mensaje de tu bandeja de entrada?')) return;
         
         // SPRINT 4: Usar NotificationDismiss para sincronizar en Firestore
-        if (window.NotificationDismiss && window.currentUser) {
+        if (window.NotificationDismiss && window._cronosCurrentUser?.uid) {
             NotificationDismiss.dismiss(id);
         } else {
             // Fallback: guardar solo en localStorage
