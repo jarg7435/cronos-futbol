@@ -100,13 +100,13 @@
 
             <!-- Tabs -->
             <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:1.5rem;">
-                <button id="tab-login" onclick="document.getElementById('role-container').style.display='none'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.setProperty('display','none','important'); if(typeof switchTab==='function')switchTab('login');"
+                <button id="tab-login" onclick="document.getElementById('role-container').style.display='none'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.setProperty('display','none','important'); var pf=document.getElementById('privacy-link-footer'); if(pf)pf.style.setProperty('display','block','important'); if(typeof switchTab==='function')switchTab('login');"
                     style="flex:1; padding:0.6rem; background:none; border:none;
                            color:#58a6ff; font-weight:700; font-size:0.9rem;
                            border-bottom:2px solid #58a6ff; cursor:pointer;">
                     ENTRAR
                 </button>
-                <button id="tab-register" onclick="document.getElementById('role-container').style.display='block'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.setProperty('display','block','important'); if(typeof switchTab==='function')switchTab('register');"
+                <button id="tab-register" onclick="document.getElementById('role-container').style.display='block'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.setProperty('display','block','important'); var pf=document.getElementById('privacy-link-footer'); if(pf)pf.style.setProperty('display','none','important'); if(typeof switchTab==='function')switchTab('register');"
                     style="flex:1; padding:0.6rem; background:none; border:none;
                            color:#7d8590; font-weight:700; font-size:0.9rem;
                            border-bottom:2px solid transparent; cursor:pointer;">
@@ -324,8 +324,10 @@
             <p id="auth-error"
                style="font-size:0.8rem; margin:0.8rem 0 0; text-align:center; min-height:1.2rem; color:#ff5858;"></p>
 
-            <!-- Pie: Política de Privacidad (RGPD) -->
-            <p style="text-align:center; margin:1rem 0 0;">
+            <!-- Pie: Política de Privacidad (RGPD) — solo visible en modo LOGIN -->
+            <!-- Por defecto visible: la app arranca en modo login. En registro
+                 se oculta (onclick tab-register + switchTab). -->
+            <p id="privacy-link-footer" style="text-align:center; margin:1rem 0 0;">
                 <a href="privacy.html" target="_blank" style="color:var(--text-muted);font-size:0.75rem;">Política de Privacidad</a>
             </p>
 

@@ -50,6 +50,11 @@ export async function switchTab(tab) {
     const gdprChk = document.getElementById('gdpr-consent');
     if (gdprChk && _isLoginMode) gdprChk.checked = false;
 
+    // Pie de Política de Privacidad: solo visible en modo login (el modo
+    // registro ya tiene el enlace dentro del checkbox de consentimiento).
+    const privacyFooter = document.getElementById('privacy-link-footer');
+    if (privacyFooter) privacyFooter.style.setProperty('display', _isLoginMode ? 'block' : 'none', 'important');
+
     // ── Actualizar texto del botón ENTRAR ────────────────────
     const authBtn = document.getElementById('auth-btn');
     if (authBtn) authBtn.textContent = _isLoginMode ? 'ENTRAR' : 'REGISTRARSE';

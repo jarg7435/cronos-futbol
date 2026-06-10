@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v158
+//  CRONOS FUTBOL — Service Worker v159
+//  v159: RGPD (P1) — el enlace «Política de Privacidad» del pie ahora solo
+//         se muestra en modo login (en registro queda el del checkbox). Se
+//         gestiona en los onclick de las pestañas y en switchTab (auth.js).
 //  v158: RGPD (P1, fix definitivo) — una regla CSS ofuscada con
 //         display:none !important sobreescribia el display:block inline del
 //         checkbox. Ahora se usa setProperty('display', ..., 'important') en
@@ -103,8 +106,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v158';
-const CACHE_NAME = 'cronos-cache-v158';
+const VERSION    = 'v159';
+const CACHE_NAME = 'cronos-cache-v159';
 
 const ASSETS = [
     './',
