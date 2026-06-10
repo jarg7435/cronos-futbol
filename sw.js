@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v147
+//  CRONOS FUTBOL — Service Worker v148
+//  v148: Limpieza — elimina el log de debug temporal de v147 y baja a
+//         console.debug el permission-denied transitorio de syncFromFirestore
+//         (esperado para coach/club_admin con claims aun no propagados; el SA
+//         no inicializa TrainingSync). Menos ruido en consola.
 //  v147: Log de debug TEMPORAL en training-firestore-sync.js para
 //         inspeccionar en produccion el estado de _cronos_auth.auth.currentUser
 //         y los claims reales (role/clubId) del ID token vs el clubId que se
@@ -55,8 +59,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v147';
-const CACHE_NAME = 'cronos-cache-v147';
+const VERSION    = 'v148';
+const CACHE_NAME = 'cronos-cache-v148';
 
 const ASSETS = [
     './',

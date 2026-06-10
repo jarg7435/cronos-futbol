@@ -198,29 +198,6 @@ const TrainingSync = (() => {
       return Promise.reject('Firestore no disponible');
     }
 
-    // [DEBUG TEMPORAL] estado de auth + claims reales del token
-    console.log('TrainingSync debug',
-      !!window._cronos_auth,
-      !!window._cronos_auth?.auth,
-      !!window._cronos_auth?.auth?.currentUser
-    );
-    try {
-      const _u = window._cronos_auth?.auth?.currentUser;
-      if (_u) {
-        const _r = await _u.getIdTokenResult(true);
-        console.log('TrainingSync debug claims', {
-          clubIdConsulta: _currentClubId,
-          tokenRole: _r.claims.role,
-          tokenClubId: _r.claims.clubId,
-          email: _r.claims.email
-        });
-      } else {
-        console.log('TrainingSync debug: currentUser es null en el momento del sync');
-      }
-    } catch (e) {
-      console.log('TrainingSync debug: getIdTokenResult FALLO', e.code || e.message);
-    }
-
     await _whenTokenReady();
 
     try {
@@ -252,7 +229,16 @@ const TrainingSync = (() => {
 
       return count;
     } catch (err) {
-      console.warn('[TrainingSync] Error descargando de Firestore:', err);
+      // permission-denied es ESPERADO de forma transitoria para coach/club_admin
+      // cuyo ID token aun no tiene propagado el custom claim 'clubId' (ventana
+      // tras la aprobacion). No es un fallo real: el sync se reintenta en el
+      // siguiente arranque con el token ya refrescado. Se baja a console.debug
+      // para no generar ruido de error en consola.
+      if (err && err.code === 'permission-denied') {
+        console.debug('[TrainingSync] Sync omitido (claims aun no propagados):', err.code);
+      } else {
+        console.warn('[TrainingSync] Error descargando de Firestore:', err);
+      }
       return 0;
     }
   }
