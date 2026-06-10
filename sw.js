@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v153
+//  CRONOS FUTBOL — Service Worker v154
+//  v154: CSP (hotfix) — bump para forzar descarte de cache en clientes y
+//         recoger la cabecera CSP nueva (cdn.jsdelivr.net en connect-src).
 //  v153: RGPD (P1) — #auth-btn se deshabilita en registro hasta aceptar el
 //         consentimiento (switchTab + syncAuthBtnConsent). Bump fuerza
 //         recarga de auth.js parcheado.
@@ -88,8 +90,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v153';
-const CACHE_NAME = 'cronos-cache-v153';
+const VERSION    = 'v154';
+const CACHE_NAME = 'cronos-cache-v154';
 
 const ASSETS = [
     './',
