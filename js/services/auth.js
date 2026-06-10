@@ -1452,6 +1452,14 @@ export async function doAuth() {
             showAuthError('Debes aceptar la Política de Privacidad para registrarte.');
             return;
         }
+        // Campos de consentimiento RGPD a persistir en el documento del usuario.
+        // Se inyectan en cada ruta de creación de usuario (club, individual, padre, etc.)
+        // como evidencia de consentimiento explícito (Art. 7 RGPD).
+        const _gdprConsentFields = {
+            gdprConsent:        true,
+            gdprConsentDate:    fa.serverTimestamp(),
+            gdprConsentVersion: '2024-01',
+        };
 
         const _rawClubValue   = document.getElementById('auth-club-select')?.value   || null;
         // Parsear nuevo formato: "club:xxx" o "individual:xxx"
@@ -1829,6 +1837,7 @@ export async function doAuth() {
                         clubId: _entityId, clubName: null,
                         allRoles: [_newIndivRole],
                         createdAt: new Date().toISOString(),
+                        ..._gdprConsentFields,
                     }, { merge: false });
                 }
 
@@ -1905,6 +1914,7 @@ export async function doAuth() {
                     firstName:     firstName || null,
                     createdAt:     fa.serverTimestamp(),
                     lastLogin:     fa.serverTimestamp(),
+                    ..._gdprConsentFields,
                 };
                 if (isUnderIndiv) {
                     newUserData.individualEntityId = selectedIndivId;
@@ -2050,7 +2060,7 @@ export async function doAuth() {
                     : (freshIsUnderIndiv && freshNeedsApproval ? 'pending_individual'
                     : (freshNeedsApproval && clubId ? 'pending_club_admin'
                     : (['club_admin','individual'].includes(requestedRole) ? 'pending_sa' : 'pending')));
-                const freshData = { email, isAuthorized, role: finalRole, clubId, clubName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, allRoles: freshAllRoles, status: freshStatus, requestedSlot: null, firstName: firstName || null, createdAt: fa.serverTimestamp(), lastLogin: fa.serverTimestamp() };
+                const freshData = { email, isAuthorized, role: finalRole, clubId, clubName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, allRoles: freshAllRoles, status: freshStatus, requestedSlot: null, firstName: firstName || null, createdAt: fa.serverTimestamp(), lastLogin: fa.serverTimestamp(), ..._gdprConsentFields };
                 if (requestedRole === 'club_admin') { freshData.requestedClubName = newClubName; freshData.requestedQuotas = { directors: reqDirectors, coordinators: reqCoordinators, coaches: reqCoaches, parents: reqParents }; }
                 if (requestedRole === 'individual') { freshData.firstName = firstName; freshData.lastName = lastName; freshData.displayName = displayName; freshData.isIndividual = true; freshData.individualEntityId = selectedIndivId || null; freshData.individualOwnerId = selectedIndivId || null; freshData.individualOwnerEmail = individualOwnerEmail || null; freshAllRoles[0].individualEntityId = selectedIndivId || null; }
                 if (freshIsUnderIndiv) { freshData.individualEntityId = selectedIndivId; freshData.individualOwnerId = selectedIndivId; freshData.individualOwnerEmail = individualOwnerEmail || null; freshAllRoles[0].individualEntityId = selectedIndivId; freshAllRoles[0].status = isAuthorized ? 'active' : 'pending_individual'; }
@@ -2489,6 +2499,7 @@ export async function doAuth() {
                 requestedSlot: null,
                 createdAt:     fa.serverTimestamp(),
                 lastLogin:     fa.serverTimestamp(),
+                ..._gdprConsentFields,
             };
 
             let _isFirstIndividualAdmin = false;

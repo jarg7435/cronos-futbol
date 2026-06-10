@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v151
+//  CRONOS FUTBOL — Service Worker v152
+//  v152: RGPD (P1) — el registro persiste el consentimiento explicito en el
+//         documento del usuario (gdprConsent / gdprConsentDate /
+//         gdprConsentVersion) en las 4 rutas de creacion de usuario.
+//         Bump fuerza recarga de auth.js parcheado.
 //  v151: Privacidad (P9, 2/2) — refuerza el cierre de la fuga:
 //         (1) firestore.rules: live_matches read pasa de isAuth() a
 //         isRegisteredUser() (exige users/{uid}.isAuthorized==true, no
@@ -81,8 +85,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v151';
-const CACHE_NAME = 'cronos-cache-v151';
+const VERSION    = 'v152';
+const CACHE_NAME = 'cronos-cache-v152';
 
 const ASSETS = [
     './',
