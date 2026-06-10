@@ -45,13 +45,32 @@ const TrainingSync = (() => {
     _currentClubId = clubId;
     _isInitialized = true;
 
-    // Auto-sync al cargar
-    setTimeout(() => {
-      syncFromFirestore();
-    }, 2000);
+    // Auto-sync al cargar: esperar a que el ID token tenga claims FRESCOS
+    // (Race B: el setTimeout fijo disparaba getDocs antes de que Firebase
+    //  propagara los custom claims role/clubId → permission-denied espurio
+    //  en el primer login tras asignarse claims).
+    _whenTokenReady().then(() => syncFromFirestore());
 
     console.log('[TrainingSync] Inicializado para club:', clubId);
     return true;
+  }
+
+  /**
+   * Fuerza el refresco del ID token (custom claims role/clubId) antes de
+   * consultar Firestore. Usa la MISMA vía que el resto del proyecto:
+   * window._cronos_auth.auth.currentUser (SDK modular v10). Idempotente y
+   * tolerante a fallos: si no hay user/token, no bloquea el flujo.
+   */
+  async function _whenTokenReady() {
+    try {
+      const fa = window._cronos_auth;
+      const user = fa && fa.auth && fa.auth.currentUser;
+      if (user && typeof user.getIdToken === 'function') {
+        await user.getIdToken(true);   // force refresh → claims frescos
+      }
+    } catch (err) {
+      console.warn('[TrainingSync] No se pudo refrescar el token:', err);
+    }
   }
 
   /**
@@ -178,6 +197,8 @@ const TrainingSync = (() => {
     if (!_isInitialized || !_currentClubId || !window.saFS) {
       return Promise.reject('Firestore no disponible');
     }
+
+    await _whenTokenReady();
 
     try {
       const { db, collection, getDocs } = await window.saFS();

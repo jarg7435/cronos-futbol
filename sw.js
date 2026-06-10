@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v145
+//  CRONOS FUTBOL — Service Worker v146
+//  v146: Bump cache — fuerza recarga de js/services/training-firestore-sync.js
+//         con el fix de Race B: se reemplaza el setTimeout(2000ms) fijo por
+//         _whenTokenReady() (getIdToken(true)) antes de syncFromFirestore,
+//         evitando el permission-denied espurio cuando el ID token aun no
+//         tiene los custom claims role/clubId propagados.
 //  v145: Bump cache — fuerza recarga de js/parent/panel.js con el fix
 //         que evita crear IDs basura 'null_N' en cronos_player_links
 //         (guarda && clubId en auto-vinculacion + guard if(!clubId) en
@@ -46,8 +51,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v145';
-const CACHE_NAME = 'cronos-cache-v145';
+const VERSION    = 'v146';
+const CACHE_NAME = 'cronos-cache-v146';
 
 const ASSETS = [
     './',
