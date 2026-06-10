@@ -198,6 +198,29 @@ const TrainingSync = (() => {
       return Promise.reject('Firestore no disponible');
     }
 
+    // [DEBUG TEMPORAL] estado de auth + claims reales del token
+    console.log('TrainingSync debug',
+      !!window._cronos_auth,
+      !!window._cronos_auth?.auth,
+      !!window._cronos_auth?.auth?.currentUser
+    );
+    try {
+      const _u = window._cronos_auth?.auth?.currentUser;
+      if (_u) {
+        const _r = await _u.getIdTokenResult(true);
+        console.log('TrainingSync debug claims', {
+          clubIdConsulta: _currentClubId,
+          tokenRole: _r.claims.role,
+          tokenClubId: _r.claims.clubId,
+          email: _r.claims.email
+        });
+      } else {
+        console.log('TrainingSync debug: currentUser es null en el momento del sync');
+      }
+    } catch (e) {
+      console.log('TrainingSync debug: getIdTokenResult FALLO', e.code || e.message);
+    }
+
     await _whenTokenReady();
 
     try {

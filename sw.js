@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v146
+//  CRONOS FUTBOL — Service Worker v147
+//  v147: Log de debug TEMPORAL en training-firestore-sync.js para
+//         inspeccionar en produccion el estado de _cronos_auth.auth.currentUser
+//         y los claims reales (role/clubId) del ID token vs el clubId que se
+//         consulta. Diagnostico del permission-denied persistente.
 //  v146: Bump cache — fuerza recarga de js/services/training-firestore-sync.js
 //         con el fix de Race B: se reemplaza el setTimeout(2000ms) fijo por
 //         _whenTokenReady() (getIdToken(true)) antes de syncFromFirestore,
@@ -51,8 +55,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v146';
-const CACHE_NAME = 'cronos-cache-v146';
+const VERSION    = 'v147';
+const CACHE_NAME = 'cronos-cache-v147';
 
 const ASSETS = [
     './',
