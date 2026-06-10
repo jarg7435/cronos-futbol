@@ -634,6 +634,41 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCIÓN: trainingPlans/{clubId}  (documento raíz)
+    // SPRINT 4 — BLOQUE C: Planes de entrenamiento.
+    // El documento raíz puede no existir; las semanas viven en la
+    // subcolección 'weeks'. Se permite read defensivamente; el write
+    // del raíz se bloquea (los datos viven en la subcolección).
+    // ============================================================
+    match /trainingPlans/{clubId} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        sameClub(clubId)
+      );
+      allow write: if false;
+    }
+
+    // ============================================================
+    // COLECCIÓN: trainingPlans/{clubId}/weeks/{weekKey}
+    // Documentos: { ...weekData, lastModified, createdBy }
+    // (NO contienen campo clubId propio → se valida contra la RUTA)
+    // ============================================================
+    match /trainingPlans/{clubId}/weeks/{weekKey} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        sameClub(clubId) ||
+        sameClubAsDoc(clubId) ||
+        transitionalRead(clubId)
+      );
+      allow create, update: if isAuth() && (
+        isSuperAdmin() ||
+        sameClub(clubId) ||
+        transitionalRead(clubId)
+      );
+      allow delete: if isAuth() && (isSuperAdmin() || sameClub(clubId));
+    }
+
+    // ============================================================
     // CATCH-ALL — bloquear TODO lo no definido explícitamente
     // FIX CRÍTICO: antes era "allow read: if isAuth()"
     // ============================================================
