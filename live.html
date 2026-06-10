@@ -748,6 +748,28 @@ function tickPlayerTimes(elapsed) {
     });
 }
 
+// ── Sanitización XSS ────────────────────────────────────────────────
+// Escapa texto para inserción segura en innerHTML (datos de Firestore
+// controlables por el entrenador: nombres de equipo/jugador, email...).
+function escapeHtml(value) {
+    if (value == null) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+// Valida un color CSS (hex #rgb/#rrggbb, rgb()/rgba(), o nombre simple).
+// Si no es válido devuelve el fallback (evita CSS/atributo injection).
+function safeColor(value, fallback) {
+    if (typeof value === 'string' &&
+        /^(#[0-9a-fA-F]{3,8}|rgb\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*\)|rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*\)|[a-zA-Z]{1,20})$/.test(value.trim())) {
+        return value.trim();
+    }
+    return fallback;
+}
+
 // ── Render field ───────────────────────────────────────────────────
 function renderField(data) {
     const pitch   = document.getElementById('live-pitch');
@@ -756,8 +778,8 @@ function renderField(data) {
     pitch.innerHTML = players.map(p => {
         const isHome = p.team === 'home';
         // FIX: usar color individual del jugador (incluido en snapshot) con fallback al color del equipo
-        const color  = p.color      || (isHome ? (data.homeTeam?.color     || '#58a6ff') : (data.awayTeam?.color     || '#ff5858'));
-        const text   = p.textColor  || (isHome ? (data.homeTeam?.textColor || '#fff')    : (data.awayTeam?.textColor || '#fff'));
+        const color  = safeColor(p.color,     safeColor(isHome ? data.homeTeam?.color     : data.awayTeam?.color,     isHome ? '#58a6ff' : '#ff5858'));
+        const text   = safeColor(p.textColor, safeColor(isHome ? data.homeTeam?.textColor : data.awayTeam?.textColor, '#fff'));
 
         const goals     = p.goals  || 0;
         const hasGoal   = goals > 0;
@@ -775,9 +797,9 @@ function renderField(data) {
             <div class="live-player-chip ${chipClass}"
                  data-goal-label="${goalLabel}"
                  style="background:${color};color:${text};">
-                ${p.number}
+                ${escapeHtml(p.number)}
             </div>
-            <div class="live-player-label">${p.name}</div>
+            <div class="live-player-label">${escapeHtml(p.name)}</div>
             <div class="live-player-time" data-base-time="${p.time || 0}">${formatTime(p.time || 0)}</div>
         </div>`;
     }).join('');
@@ -804,13 +826,13 @@ function renderBench(data) {
 
         container.innerHTML = benchPlayers.map(p => {
             // FIX: usar color individual del jugador con fallback al color del equipo
-            const color = p.color || teamColor;
+            const color = safeColor(p.color, safeColor(teamColor, team === 'home' ? '#58a6ff' : '#ff5858'));
             const cardIcon = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
             const goalIcon = (p.goals || 0) > 0 ? ` ⚽×${p.goals}` : '';
             return `<div class="bench-player-row">
-                <div class="bench-dot" style="background:${color};color:#0a0e14;">${p.number}</div>
+                <div class="bench-dot" style="background:${color};color:#0a0e14;">${escapeHtml(p.number)}</div>
                 <div class="bench-info">
-                    <div class="bench-name">${p.name}${cardIcon}${goalIcon}${p.injured ? ' <span style="color:#e74c3c;font-size:0.7rem;">✚</span>' : ''}</div>
+                    <div class="bench-name">${escapeHtml(p.name)}${cardIcon}${goalIcon}${p.injured ? ' <span style="color:#e74c3c;font-size:0.7rem;">✚</span>' : ''}</div>
                 </div>
                 <div class="bench-time">${formatTime(p.time || 0)}</div>
             </div>`;
@@ -864,7 +886,7 @@ window.showLiveNow = async function() {
             <select onchange="window._saClubFilter = this.value; showLiveNow();" 
                     style="flex:1; background:rgba(0,0,0,0.2); border:1px solid var(--border); color:white; padding:0.3rem; border-radius:6px; font-size:0.8rem; outline:none;">
                 <option value="">Vista Global (Todos + Test)</option>
-                ${clubs.map(c => `<option value="${c.id}" ${window._saClubFilter === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                ${clubs.map(c => `<option value="${escapeHtml(c.id)}" ${window._saClubFilter === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
             </select>
         `;
         document.getElementById('history-header').parentElement.insertBefore(filterDiv, document.getElementById('history-list'));
@@ -977,7 +999,7 @@ window.showLiveNow = async function() {
                         <div style="font-size:0.8rem;font-weight:700;
                                     color:var(--primary);letter-spacing:0.5px;
                                     margin-bottom:0.3rem;">
-                            ${m.homeTeam?.name||'LOCAL'}
+                            ${escapeHtml(m.homeTeam?.name||'LOCAL')}
                         </div>
                         <div style="font-family:'Outfit',sans-serif;
                                     font-size:2.2rem;font-weight:700;
@@ -1000,7 +1022,7 @@ window.showLiveNow = async function() {
                         <div style="font-size:0.8rem;font-weight:700;
                                     color:var(--danger);letter-spacing:0.5px;
                                     margin-bottom:0.3rem;">
-                            ${m.awayTeam?.name||'VISITANTE'}
+                            ${escapeHtml(m.awayTeam?.name||'VISITANTE')}
                         </div>
                         <div style="font-family:'Outfit',sans-serif;
                                     font-size:2.2rem;font-weight:700;
@@ -1018,7 +1040,7 @@ window.showLiveNow = async function() {
                             align-items:center;border-top:1px solid rgba(255,255,255,0.07);
                             padding-top:0.7rem;">
                     <div style="font-size:0.72rem;color:var(--muted);">
-                        ${m.coachEmail ? '👨‍💼 ' + m.coachEmail : ''}
+                        ${m.coachEmail ? '👨‍💼 ' + escapeHtml(m.coachEmail) : ''}
                     </div>
                     <button style="padding:0.55rem 1.2rem;background:#ff5858;
                                    border:none;border-radius:8px;color:#fff;
@@ -1188,7 +1210,7 @@ window.showHistory = async function() {
                 card.innerHTML = `
                     <div class="history-card-top">
                         <div class="history-match" style="font-size:1rem;">
-                            ${m.homeTeam?.name||'LOCAL'} vs ${m.awayTeam?.name||'VISITANTE'}
+                            ${escapeHtml(m.homeTeam?.name||'LOCAL')} vs ${escapeHtml(m.awayTeam?.name||'VISITANTE')}
                         </div>
                         <div class="history-score" style="font-size:1.4rem;">
                             ${m.homeTeam?.score??0} – ${m.awayTeam?.score??0}
@@ -1197,7 +1219,7 @@ window.showHistory = async function() {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.4rem;">
                         <div class="history-meta">
                             ${m.mode==='f7'?'Fútbol 7':'Fútbol 11'} · Actualizado: ${time}
-                            ${m.coachEmail?'<br>Entrenador: '+m.coachEmail:''}
+                            ${m.coachEmail?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
                         </div>
                         <button style="padding:0.5rem 1rem;background:#ff5858;border:none;
                                        border-radius:8px;color:#fff;font-weight:700;
@@ -1235,7 +1257,7 @@ window.showHistory = async function() {
                 card.innerHTML = `
                     <div class="history-card-top">
                         <div class="history-match">
-                            ${m.homeTeam?.name||'LOCAL'} vs ${m.awayTeam?.name||'VISITANTE'}
+                            ${escapeHtml(m.homeTeam?.name||'LOCAL')} vs ${escapeHtml(m.awayTeam?.name||'VISITANTE')}
                         </div>
                         <div class="history-score">
                             ${m.homeTeam?.score??0} – ${m.awayTeam?.score??0}
@@ -1244,7 +1266,7 @@ window.showHistory = async function() {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.3rem;">
                         <div class="history-meta">
                             ${m.mode==='f7'?'Fútbol 7':'Fútbol 11'} · ${date}
-                            ${m.coachEmail?'<br>Entrenador: '+m.coachEmail:''}
+                            ${m.coachEmail?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
                         </div>
                         <div style="display:flex;gap:0.4rem;align-items:center;">
                             <button onclick="toggleKeepMatch('${m.id}', event)" title="${m.keep ? 'Dejar de guardar' : 'Guardar permanentemente'}"

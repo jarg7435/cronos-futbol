@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v148
+//  CRONOS FUTBOL — Service Worker v149
+//  v149: Seguridad — fix XSS almacenado en live.html. Se anaden
+//         escapeHtml() (nombres de equipo/jugador, email del entrenador,
+//         dorsales, nombre de club) y safeColor() (validacion de color
+//         CSS contra regex) en los ~20 puntos de innerHTML que inyectaban
+//         datos de Firestore controlables por el entrenador. live_matches
+//         se lee sin auth, asi que el payload era explotable por visitantes
+//         anonimos. Bump fuerza recarga del live.html parcheado.
 //  v148: Limpieza — elimina el log de debug temporal de v147 y baja a
 //         console.debug el permission-denied transitorio de syncFromFirestore
 //         (esperado para coach/club_admin con claims aun no propagados; el SA
@@ -59,8 +66,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v148';
-const CACHE_NAME = 'cronos-cache-v148';
+const VERSION    = 'v149';
+const CACHE_NAME = 'cronos-cache-v149';
 
 const ASSETS = [
     './',
