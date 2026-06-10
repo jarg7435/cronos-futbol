@@ -54,6 +54,17 @@ export async function switchTab(tab) {
     const authBtn = document.getElementById('auth-btn');
     if (authBtn) authBtn.textContent = _isLoginMode ? 'ENTRAR' : 'REGISTRARSE';
 
+    // ── RGPD: en modo registro el botón se deshabilita hasta aceptar ──
+    // Se conecta el listener una sola vez (idempotente) y se sincroniza
+    // el estado del botón con el estado actual del checkbox.
+    if (gdprChk && authBtn) {
+        if (!gdprChk._gdprWired) {
+            gdprChk.addEventListener('change', syncAuthBtnConsent);
+            gdprChk._gdprWired = true;
+        }
+        syncAuthBtnConsent();
+    }
+
     if (!_isLoginMode) {
         // Modo registro: cargar clubes y mostrar campos según rol
         loadClubOptions();
@@ -66,6 +77,18 @@ export async function switchTab(tab) {
             if (el) el.style.display = 'none';
         });
     }
+}
+
+// ── RGPD: habilita/inhabilita #auth-btn según el consentimiento ─────
+// En login el botón siempre está activo; en registro requiere el check.
+function syncAuthBtnConsent() {
+    const authBtn = document.getElementById('auth-btn');
+    const gdprChk = document.getElementById('gdpr-consent');
+    if (!authBtn) return;
+    const disabled = !_isLoginMode && !(gdprChk && gdprChk.checked);
+    authBtn.disabled = disabled;
+    authBtn.style.opacity = disabled ? '0.5' : '1';
+    authBtn.style.cursor  = disabled ? 'not-allowed' : 'pointer';
 }
 
 // ── Cargar Clubes y Administradores Individuales en el selector ──────

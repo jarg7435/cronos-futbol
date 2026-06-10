@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v152
+//  CRONOS FUTBOL — Service Worker v153
+//  v153: RGPD (P1) — #auth-btn se deshabilita en registro hasta aceptar el
+//         consentimiento (switchTab + syncAuthBtnConsent). Bump fuerza
+//         recarga de auth.js parcheado.
 //  v152: RGPD (P1) — el registro persiste el consentimiento explicito en el
 //         documento del usuario (gdprConsent / gdprConsentDate /
 //         gdprConsentVersion) en las 4 rutas de creacion de usuario.
@@ -85,8 +88,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v152';
-const CACHE_NAME = 'cronos-cache-v152';
+const VERSION    = 'v153';
+const CACHE_NAME = 'cronos-cache-v153';
 
 const ASSETS = [
     './',
