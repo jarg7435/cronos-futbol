@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v149
+//  CRONOS FUTBOL — Service Worker v150
+//  v150: Privacidad (P9) — firestore.rules: live_matches pasa de
+//         `allow read: if true` (PII publica: coachEmail, nombres de
+//         jugadores menores, dorsales, club, colores) a `allow read:
+//         if isAuth()`. live.html y parent/panel.js ya gatean por login
+//         antes de consultar, asi que no rompe ningun flujo. Cierra la
+//         fuga de datos que v149 solo mitigaba a nivel de XSS. (El
+//         comentario "se lee sin auth" de v149 queda obsoleto tras este
+//         deploy de reglas.)
 //  v149: Seguridad — fix XSS almacenado en live.html. Se anaden
 //         escapeHtml() (nombres de equipo/jugador, email del entrenador,
 //         dorsales, nombre de club) y safeColor() (validacion de color
@@ -66,8 +74,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v149';
-const CACHE_NAME = 'cronos-cache-v149';
+const VERSION    = 'v150';
+const CACHE_NAME = 'cronos-cache-v150';
 
 const ASSETS = [
     './',

@@ -492,9 +492,18 @@ service cloud.firestore {
     // ============================================================
     // COLECCIÓN: live_matches
     // SEC-014: Restrict writes to same-club
+    // P9 (Privacidad): los documentos de live_matches contienen datos
+    // personales (coachEmail, nombres de jugadores —menores de edad—,
+    // dorsales, nombre y colores de club). El rule anterior
+    // `allow read: if true` exponía toda esa PII a cualquier persona en
+    // Internet que conociera/adivinara un matchId, sin autenticación.
+    // live.html y parent/panel.js solo consultan estos docs DESPUÉS de
+    // iniciar sesión (checkUserAccess gatea por login + rol), por lo que
+    // restringir la lectura a usuarios autenticados no rompe ningún flujo
+    // legítimo y elimina la fuga de datos.
     // ============================================================
     match /live_matches/{matchId} {
-      allow read: if true;
+      allow read: if isAuth();
       allow create: if isAuth() && (isSuperAdmin() || sameClub(request.resource.data.clubId));
       allow update: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
       allow delete: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
