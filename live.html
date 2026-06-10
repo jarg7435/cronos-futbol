@@ -1040,7 +1040,7 @@ window.showLiveNow = async function() {
                             align-items:center;border-top:1px solid rgba(255,255,255,0.07);
                             padding-top:0.7rem;">
                     <div style="font-size:0.72rem;color:var(--muted);">
-                        ${m.coachEmail ? '👨‍💼 ' + escapeHtml(m.coachEmail) : ''}
+                        ${(m.coachEmail && (userData.role === 'superadmin' || userData.role === 'admin')) ? '👨‍💼 ' + escapeHtml(m.coachEmail) : ''}
                     </div>
                     <button style="padding:0.55rem 1.2rem;background:#ff5858;
                                    border:none;border-radius:8px;color:#fff;
@@ -1219,7 +1219,7 @@ window.showHistory = async function() {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.4rem;">
                         <div class="history-meta">
                             ${m.mode==='f7'?'Fútbol 7':'Fútbol 11'} · Actualizado: ${time}
-                            ${m.coachEmail?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
+                            ${(m.coachEmail && (userData.role==='superadmin' || userData.role==='admin'))?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
                         </div>
                         <button style="padding:0.5rem 1rem;background:#ff5858;border:none;
                                        border-radius:8px;color:#fff;font-weight:700;
@@ -1266,7 +1266,7 @@ window.showHistory = async function() {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.3rem;">
                         <div class="history-meta">
                             ${m.mode==='f7'?'Fútbol 7':'Fútbol 11'} · ${date}
-                            ${m.coachEmail?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
+                            ${(m.coachEmail && (userData.role==='superadmin' || userData.role==='admin'))?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
                         </div>
                         <div style="display:flex;gap:0.4rem;align-items:center;">
                             <button onclick="toggleKeepMatch('${m.id}', event)" title="${m.keep ? 'Dejar de guardar' : 'Guardar permanentemente'}"

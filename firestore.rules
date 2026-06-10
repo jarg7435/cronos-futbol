@@ -10,6 +10,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // P9: lectura de datos con PII (p.ej. live_matches) exige usuario
+    // REGISTRADO Y AUTORIZADO, no solo autenticado. Verifica que exista
+    // users/{uid} con isAuthorized == true. Asi un usuario con cuenta
+    // creada pero pendiente de aprobacion tampoco puede leer la PII.
+    function isRegisteredUser() {
+      return request.auth != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAuthorized == true;
+    }
+
     // FIX: isSuperAdminEmail() verifica contra cronos_config/superadmins
     // en lugar de hardcodear un email. Esto evita:
     //   1. Typos en el email hardcodeado (jarg7435 vs jarc7435)
@@ -503,7 +513,7 @@ service cloud.firestore {
     // legítimo y elimina la fuga de datos.
     // ============================================================
     match /live_matches/{matchId} {
-      allow read: if isAuth();
+      allow read: if isRegisteredUser();
       allow create: if isAuth() && (isSuperAdmin() || sameClub(request.resource.data.clubId));
       allow update: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
       allow delete: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));

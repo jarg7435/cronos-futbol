@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v150
+//  CRONOS FUTBOL — Service Worker v151
+//  v151: Privacidad (P9, 2/2) — refuerza el cierre de la fuga:
+//         (1) firestore.rules: live_matches read pasa de isAuth() a
+//         isRegisteredUser() (exige users/{uid}.isAuthorized==true, no
+//         solo autenticado). (2) live.html: el coachEmail en las tarjetas
+//         de showLiveNow()/showHistory() solo se muestra a role
+//         superadmin/admin; el resto de usuarios ya no ve el correo del
+//         entrenador. Bump fuerza recarga de live.html parcheado.
 //  v150: Privacidad (P9) — firestore.rules: live_matches pasa de
 //         `allow read: if true` (PII publica: coachEmail, nombres de
 //         jugadores menores, dorsales, club, colores) a `allow read:
@@ -74,8 +81,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v150';
-const CACHE_NAME = 'cronos-cache-v150';
+const VERSION    = 'v151';
+const CACHE_NAME = 'cronos-cache-v151';
 
 const ASSETS = [
     './',
