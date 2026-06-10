@@ -100,13 +100,13 @@
 
             <!-- Tabs -->
             <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:1.5rem;">
-                <button id="tab-login" onclick="switchTab('login'); document.getElementById('role-container').style.display='none';"
+                <button id="tab-login" onclick="switchTab('login'); document.getElementById('role-container').style.display='none'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.display='none';"
                     style="flex:1; padding:0.6rem; background:none; border:none;
                            color:#58a6ff; font-weight:700; font-size:0.9rem;
                            border-bottom:2px solid #58a6ff; cursor:pointer;">
                     ENTRAR
                 </button>
-                <button id="tab-register" onclick="switchTab('register'); document.getElementById('role-container').style.display='block';"
+                <button id="tab-register" onclick="switchTab('register'); document.getElementById('role-container').style.display='block'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.display='block';"
                     style="flex:1; padding:0.6rem; background:none; border:none;
                            color:#7d8590; font-weight:700; font-size:0.9rem;
                            border-bottom:2px solid transparent; cursor:pointer;">

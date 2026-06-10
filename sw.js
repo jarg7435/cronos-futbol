@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v154
+//  CRONOS FUTBOL — Service Worker v155
+//  v155: RGPD (P1, hotfix) — el onclick de las pestañas muestra/oculta
+//         #gdpr-consent-container inline (independiente de switchTab/cache),
+//         para que el checkbox aparezca en registro. Bump invalida cache.
 //  v154: CSP (hotfix) — bump para forzar descarte de cache en clientes y
 //         recoger la cabecera CSP nueva (cdn.jsdelivr.net en connect-src).
 //  v153: RGPD (P1) — #auth-btn se deshabilita en registro hasta aceptar el
@@ -90,8 +93,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v154';
-const CACHE_NAME = 'cronos-cache-v154';
+const VERSION    = 'v155';
+const CACHE_NAME = 'cronos-cache-v155';
 
 const ASSETS = [
     './',
