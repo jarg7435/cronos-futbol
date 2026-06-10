@@ -45,7 +45,7 @@ export async function switchTab(tab) {
 
     // GDPR: mostrar/ocultar consentimiento (solo visible en modo registro)
     const gdprCont = document.getElementById('gdpr-consent-container');
-    if (gdprCont) gdprCont.style.display = _isLoginMode ? 'none' : 'block';
+    if (gdprCont) gdprCont.style.setProperty('display', _isLoginMode ? 'none' : 'block', 'important');
     // Resetear el checkbox al volver a login para que el consentimiento sea explicito
     const gdprChk = document.getElementById('gdpr-consent');
     if (gdprChk && _isLoginMode) gdprChk.checked = false;

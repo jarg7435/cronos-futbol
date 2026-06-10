@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v157
+//  CRONOS FUTBOL — Service Worker v158
+//  v158: RGPD (P1, fix definitivo) — una regla CSS ofuscada con
+//         display:none !important sobreescribia el display:block inline del
+//         checkbox. Ahora se usa setProperty('display', ..., 'important') en
+//         los onclick de las pestañas y en switchTab (auth.js). Bump cache.
 //  v157: Fix ojo de contraseña — se desactiva initPasswordToggles() en
 //         auth-improvements.js (duplicaba el listener de wireToggle() de
 //         index.html y alternaba el tipo dos veces por clic). Bump cache.
@@ -99,8 +103,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v157';
-const CACHE_NAME = 'cronos-cache-v157';
+const VERSION    = 'v158';
+const CACHE_NAME = 'cronos-cache-v158';
 
 const ASSETS = [
     './',
