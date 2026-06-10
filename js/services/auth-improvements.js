@@ -56,7 +56,12 @@ function initPasswordToggles() {
 }
 
 // Llamar después de que el DOM esté listo
-document.addEventListener('DOMContentLoaded', initPasswordToggles);
+// NOTA: los toggles del ojo de contraseña los gestiona wireToggle() en
+// index.html (IDs correctos: auth-password / register-password /
+// register-password-confirm). NO conectamos aquí initPasswordToggles()
+// para evitar un doble listener que alternaba el tipo dos veces por clic
+// (el icono parecia no funcionar). Se conserva la funcion por compatibilidad.
+// document.addEventListener('DOMContentLoaded', initPasswordToggles);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MEJORA 2: Validación de Contraseña en Tiempo Real

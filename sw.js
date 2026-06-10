@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v156
+//  CRONOS FUTBOL — Service Worker v157
+//  v157: Fix ojo de contraseña — se desactiva initPasswordToggles() en
+//         auth-improvements.js (duplicaba el listener de wireToggle() de
+//         index.html y alternaba el tipo dos veces por clic). Bump cache.
 //  v156: RGPD (P1, hotfix 2) — el onclick de las pestañas muestra el GDPR
 //         ANTES de switchTab y solo llama a switchTab si existe (evita que
 //         un ReferenceError rompa la cadena y oculte el checkbox). Bump cache.
@@ -96,8 +99,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v156';
-const CACHE_NAME = 'cronos-cache-v156';
+const VERSION    = 'v157';
+const CACHE_NAME = 'cronos-cache-v157';
 
 const ASSETS = [
     './',
