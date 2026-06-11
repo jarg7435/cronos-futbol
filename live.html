@@ -910,10 +910,10 @@ window.showLiveNow = async function() {
         
         allDocs.forEach(m => { 
             if (m.status !== 'active') return;
-            
+
             // Filtrado por jerarquía
             const isSA = (userData.role === 'superadmin' || userData.role === 'admin');
-            
+
             if (isSA) {
                 // Si hay filtro activo de club
                 if (window._saClubFilter) {
@@ -923,15 +923,20 @@ window.showLiveNow = async function() {
                     liveMatches.push(m);
                 }
             } else if (userData.clubId && m.clubId === userData.clubId) {
-                // Miembros del club ven solo partidos de su club
+                // Miembros del club (director/coordinador/padre/entrenador) ven
+                // los partidos en vivo de su club.
                 liveMatches.push(m);
-            } else if (userData.role === 'entrenador' && m.coachEmail === userData.email) {
-                // Backup para entrenadores sin clubid asignado formalmente
+            } else if (m.createdBy && m.createdBy === userData.uid) {
+                // El propio entrenador que inició el partido siempre lo ve,
+                // aunque el clubId aún no esté propagado.
                 liveMatches.push(m);
-            } else if (!m.clubId && (userData.role === 'entrenador' || userData.role === 'director' || userData.role === 'coordinator')) {
-                // Opcional: permitir ver partidos "test" (sin clubId) si se desea
-                // De momento lo dejamos restrictivo al club asignado
+            } else if (m.coachEmail && userData.email &&
+                       m.coachEmail.toLowerCase() === userData.email.toLowerCase()) {
+                // Backup para entrenadores sin clubId asignado formalmente.
+                liveMatches.push(m);
             }
+            // Partidos sin clubId (datos legacy/test) solo los ve superadmin/admin
+            // arriba; no se exponen al resto por privacidad.
         });
 
         listEl.innerHTML = '';

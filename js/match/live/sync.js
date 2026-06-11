@@ -107,6 +107,12 @@ async function pushLiveSnapshot(status = 'active') {
             updatedAt:   serverTimestamp(),
             createdBy:   window._cronosCurrentUser?.uid   || '',
             coachEmail:  window._cronosCurrentUser?.email || '',
+            // clubId/clubName son IMPRESCINDIBLES: live.html filtra los partidos
+            // visibles para director/coordinador/padre comparando m.clubId con
+            // userData.clubId. Sin este campo, ningún miembro del club (salvo
+            // superadmin/admin) podía ver el partido en vivo.
+            clubId:      window._cronosCurrentUser?.clubId   || null,
+            clubName:    window._cronosCurrentUser?.clubName || null,
 
             // Partido
             mode:        currentMode,

@@ -106,11 +106,26 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == resource.data.parentUid;
     }
 
+    // FIX (entrenador sin custom claim): el token del entrenador (rol 'user')
+    // suele NO llevar el claim 'clubId' (los claims solo se asignaban al
+    // club_admin). Las reglas que dependen de request.auth.token.clubId
+    // (sameClubAsDoc/sameClub) le negaban escribir/leer informes, vínculos y
+    // mensajes de su propio club. Este helper verifica la pertenencia al club
+    // leyendo el DOCUMENTO de Firestore del propio usuario (users/{uid}.clubId),
+    // no el token. No amplía la superficie: solo concede acceso a documentos del
+    // mismo club en el que el usuario está realmente registrado y autorizado.
+    function userDocClubId(docClubId) {
+      return isAuth() && docClubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clubId == docClubId;
+    }
+
     // El usuario tiene acceso al club de este enlace
     function isLinkClubMember() {
       return isAuth() && (
         sameClub(resource.data.clubId) ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        userDocClubId(resource.data.clubId)
       );
     }
 
@@ -364,20 +379,29 @@ service cloud.firestore {
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid in resource.data.participants ||
+        request.auth.uid == resource.data.coachUid ||
+        userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
         sameClub(request.resource.data.clubId) ||
-        request.auth.uid in request.resource.data.participants
+        request.auth.uid in request.resource.data.participants ||
+        // FIX (entrenador sin claim): el entrenador es autor del hilo
+        // (coachUid) y debe poder crearlo aunque su token no tenga clubId.
+        request.auth.uid == request.resource.data.coachUid
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid in resource.data.participants
+        request.auth.uid in resource.data.participants ||
+        request.auth.uid == resource.data.coachUid ||
+        userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() &&
-                    (request.auth.uid in resource.data.participants || isSuperAdmin());
+                    (request.auth.uid in resource.data.participants ||
+                     request.auth.uid == resource.data.coachUid ||
+                     isSuperAdmin());
     }
 
     // ============================================================
@@ -388,13 +412,19 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.userId ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        // FIX (C2): fallback para usuarios sin custom claim clubId.
+        // Permite que directores/coordinadores/padres lean sus notificaciones
+        // aunque su token aún no tenga el claim propagado.
+        userDocClubId(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(request.resource.data.clubId) ||
         request.auth.uid == request.resource.data.coachUid ||
-        request.auth.uid == request.resource.data.userId
+        request.auth.uid == request.resource.data.userId ||
+        // FIX (C2): fallback para entrenador sin custom claim clubId
+        userDocClubId(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
@@ -424,22 +454,30 @@ service cloud.firestore {
         // solo accede el staff destinatario del propio documento.
         (resource.data.staffUids != null &&
          request.auth.uid in resource.data.staffUids) ||
+        // FIX (entrenador sin claim): miembros del club según users/{uid}.clubId.
+        userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
         sameClub(request.resource.data.clubId) ||
-        request.auth.uid == request.resource.data.coachUid
+        request.auth.uid == request.resource.data.coachUid ||
+        // FIX (entrenador sin claim): autor miembro del club por users/{uid}.
+        userDocClubId(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid == resource.data.coachUid
+        request.auth.uid == resource.data.coachUid ||
+        // FIX (entrenador sin claim): el autor reescribe su propio informe.
+        request.auth.uid == request.resource.data.coachUid ||
+        userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid == resource.data.coachUid
+        request.auth.uid == resource.data.coachUid ||
+        userDocClubId(resource.data.clubId)
       );
     }
 
@@ -452,12 +490,16 @@ service cloud.firestore {
         isSuperAdmin() ||
         isLinkOwner() ||
         isLinkClubMember() ||
-        transitionalRead(resource.data.clubId)
+        transitionalRead(resource.data.clubId) ||
+        // FIX (C2): fallback para entrenador sin custom claim clubId
+        userDocClubId(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
         sameClub(request.resource.data.clubId) ||
-        sameClubAsDoc(request.resource.data.clubId)
+        sameClubAsDoc(request.resource.data.clubId) ||
+        // FIX (C2): fallback para entrenador sin custom claim clubId
+        userDocClubId(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
@@ -522,9 +564,30 @@ service cloud.firestore {
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if isRegisteredUser();
-      allow create: if isAuth() && (isSuperAdmin() || sameClub(request.resource.data.clubId));
-      allow update: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
-      allow delete: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
+      // El entrenador (rol 'user') normalmente NO lleva el claim 'clubId' en su
+      // token, así que sameClub() le denegaba escribir su propio partido en vivo
+      // una vez que el snapshot empezó a incluir clubId. userDocClubId() valida la
+      // pertenencia al club leyendo users/{uid}.clubId (mismo patrón ya usado para
+      // informes/mensajes). Se acepta también clubId == null para no romper
+      // partidos de prueba sin club asignado.
+      allow create: if isAuth() && (
+                       isSuperAdmin() ||
+                       request.resource.data.clubId == null ||
+                       sameClub(request.resource.data.clubId) ||
+                       userDocClubId(request.resource.data.clubId)
+                    );
+      allow update: if isAuth() && (
+                       isSuperAdmin() ||
+                       resource.data.clubId == null ||
+                       sameClub(resource.data.clubId) ||
+                       userDocClubId(resource.data.clubId)
+                    );
+      allow delete: if isAuth() && (
+                       isSuperAdmin() ||
+                       resource.data.clubId == null ||
+                       sameClub(resource.data.clubId) ||
+                       userDocClubId(resource.data.clubId)
+                    );
     }
 
     // ============================================================
@@ -693,6 +756,67 @@ service cloud.firestore {
         transitionalRead(clubId)
       );
       allow delete: if isAuth() && (isSuperAdmin() || sameClub(clubId));
+    }
+
+    // ============================================================
+    // COLECCIÓN: cronos_email_config
+    // Configuración de contactos/envíos por entrenador. Cada doc tiene
+    // coachUid como identificador del propietario. Los miembros del
+    // mismo club pueden leer (para resolver destinatarios de informes).
+    // ============================================================
+    match /cronos_email_config/{configId} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        sameClubAsDoc(resource.data.clubId) ||
+        request.auth.uid == resource.data.coachUid ||
+        userDocClubId(resource.data.clubId)
+      );
+      allow create: if isAuth() && (
+        isSuperAdmin() ||
+        sameClub(request.resource.data.clubId) ||
+        request.auth.uid == request.resource.data.coachUid ||
+        userDocClubId(request.resource.data.clubId)
+      );
+      allow update: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.coachUid ||
+        sameClubAsDoc(resource.data.clubId) ||
+        userDocClubId(resource.data.clubId)
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================
+    // COLECCIÓN: cronos_staff_threads
+    // Hilos de comunicación entre entrenador y staff (director/coordinador).
+    // Mismo esquema de acceso que cronos_messages (participants + coachUid).
+    // ============================================================
+    match /cronos_staff_threads/{threadId} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid in resource.data.participants ||
+        request.auth.uid == resource.data.coachUid ||
+        sameClubAsDoc(resource.data.clubId) ||
+        userDocClubId(resource.data.clubId)
+      );
+      allow create: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid in request.resource.data.participants ||
+        request.auth.uid == request.resource.data.coachUid ||
+        sameClub(request.resource.data.clubId) ||
+        userDocClubId(request.resource.data.clubId)
+      );
+      allow update: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid in resource.data.participants ||
+        request.auth.uid == resource.data.coachUid ||
+        sameClubAsDoc(resource.data.clubId) ||
+        userDocClubId(resource.data.clubId)
+      );
+      allow delete: if isAuth() &&
+        (isSuperAdmin() ||
+         request.auth.uid in resource.data.participants ||
+         request.auth.uid == resource.data.coachUid);
     }
 
     // ============================================================
