@@ -800,6 +800,22 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
     });
     if (reqSnap.size > 0) await batch.commit();
 
+    /* 5️⃣ FIX (C2): Asignar custom claims al admin individual ------------- */
+    // Sin estos claims, las reglas de Firestore (sameClubAsDoc) deniegan
+    // acceso a cronos_player_reports, cronos_notifications y cronos_player_links,
+    // lo que impide que los informes lleguen al staff y a los padres.
+    try {
+      await admin.auth().setCustomUserClaims(uid, {
+        role: 'individual',
+        clubId: entityId,
+        claimsSetAt: Date.now(),
+      });
+      console.log('[approveIndividualAdmin] Custom claims asignados:', { uid, role: 'individual', clubId: entityId });
+    } catch (claimErr) {
+      // No bloquear la aprobación si los claims fallan (el fallback de reglas lo cubre)
+      console.error('[approveIndividualAdmin] Error asignando custom claims:', claimErr.message);
+    }
+
     console.log('[approveIndividualAdmin] Admin individual aprobado:', uid, 'entidad:', entityId);
 
     return {
