@@ -1,1267 +1,884 @@
-<!DOCTYPE html>
-<html lang="es">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Chronos Fútbol - Coach Assistant</title>
-    <link rel="stylesheet" href="style.css">
-    
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0a0e14">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Outfit:wght@600&display=swap"
-        rel="stylesheet">
-
-    <!-- EmailJS SDK para envío automático de informes -->
-<script type="text/javascript">
-        // Se inicializa en app.js cuando el usuario configura su cuenta EmailJS
-        window._emailjsReady = false;
-    </script>
-
-    <!-- ══════════════════════════════════════════════
-         FIREBASE SDK
-         (Inicialización única en js/services/firebase-init.js — C1)
-    ══════════════════════════════════════════════ -->
-
-</head>
-
-<body class="locked">
-
-    <!-- ══ PANTALLA DE ONBOARDING — diseño móvil compacto ══════════════ -->
-    <div id="install-screen" style="display:none;">
-    
-
-    <div id="ob-wrap">
-
-        <!-- Sidebar solo en pantallas anchas -->
-        <nav id="ob-sidebar-steps">
-            <div style="padding:12px 16px;font-size:0.6rem;letter-spacing:2px;color:#7d8590;font-weight:700;">PASOS</div>
-            <div id="ob-sidebar-list"></div>
-        </nav>
-
-        <!-- Columna principal -->
-        <div id="ob-main-col" style="flex:1;display:flex;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;">
-
-            <!-- Cabecera sticky -->
-            <div id="ob-header">
-                <div id="ob-logo-text" style="padding:0;"><img src="public/assets/img_8cb8ccdc.png" alt="Chronos Fútbol" style="height:38px;width:auto;object-fit:contain;display:block;"></div>
-                <div id="ob-progress-wrap">
-                    <div id="ob-progress-bar"><div id="ob-progress-fill" style="width:11%"></div></div>
-                    <div id="ob-counter">1 / 9</div>
-                </div>
-                <button id="ob-skip-btn" onclick="goToAuth()">Saltar</button>
-            </div>
-
-            <!-- Contenido scrollable -->
-            <div id="ob-content">
-                <div id="ob-hero">
-                    <div id="ob-hero-icon" style="display:flex;justify-content:center;"><img src="public/assets/img_9fb78c0a.png" alt="Chronos Fútbol" style="width:160px;height:136px;object-fit:contain;display:block;"></div>
-                    <h2 id="ob-hero-title" style="display:none;"></h2>
-                    <p id="ob-hero-sub">Coach Assistant · v7.0</p>
-                </div>
-                <div id="ob-card">
-                    <div id="ob-card-title"></div>
-                    <div id="ob-card-body"></div>
-                </div>
-                <div id="ob-step-desc-box"></div>
-            </div>
-
-            <!-- Botones navegación sticky abajo -->
-            <div id="ob-nav">
-                <button id="ob-btn-prev" onclick="obPrev()">← Ant.</button>
-                <button id="ob-btn-next" onclick="obNext()">Siguiente →</button>
-            </div>
-
-        </div>
-    </div>
-    </div>
-
-<!-- ══ PANTALLA DE LOGIN / REGISTRO ══════════════════════════════════ -->
-    <div id="auth-screen" style="display:flex; flex-direction:column; align-items:center;
-         min-height:100vh; height:100vh; background:#0a0e14;
-         overflow-y:auto; -webkit-overflow-scrolling:touch; padding:1rem; box-sizing:border-box;">
-        <div style="width:100%; max-width:380px; background:rgba(255,255,255,0.04);
-                    border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:2rem;
-                    margin:auto 0; flex-shrink:0;">
-
-            <div style="display:flex;justify-content:center;margin-bottom:0.3rem;padding:0.3rem;">
-                <img src="public/assets/img_7a937812.png" alt="Chronos Fútbol" 
-                     style="width:160px;height:auto;max-height:130px;object-fit:contain;display:block;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5));">
-            </div>
-            <p style="color:#7d8590; font-size:0.82rem; text-align:center; margin:0 0 1.5rem; letter-spacing:1px;">
-                Coach Assistant · v7.0
-            </p>
-
-            <!-- Tabs -->
-            <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:1.5rem;">
-                <button id="tab-login" onclick="document.getElementById('role-container').style.display='none'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.setProperty('display','none','important'); var pf=document.getElementById('privacy-link-footer'); if(pf)pf.style.setProperty('display','block','important'); if(typeof switchTab==='function')switchTab('login');"
-                    style="flex:1; padding:0.6rem; background:none; border:none;
-                           color:#58a6ff; font-weight:700; font-size:0.9rem;
-                           border-bottom:2px solid #58a6ff; cursor:pointer;">
-                    ENTRAR
-                </button>
-                <button id="tab-register" onclick="document.getElementById('role-container').style.display='block'; var g=document.getElementById('gdpr-consent-container'); if(g)g.style.setProperty('display','block','important'); var pf=document.getElementById('privacy-link-footer'); if(pf)pf.style.setProperty('display','none','important'); if(typeof switchTab==='function')switchTab('register');"
-                    style="flex:1; padding:0.6rem; background:none; border:none;
-                           color:#7d8590; font-weight:700; font-size:0.9rem;
-                           border-bottom:2px solid transparent; cursor:pointer;">
-                    REGISTRARSE
-                </button>
-            </div>
-
-            <!-- Email -->
-            <form id="auth-form" onsubmit="event.preventDefault(); doAuth();" autocomplete="on">
-            <div style="margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Email</label>
-                <input type="email" id="auth-email" placeholder="tu@email.com"
-                    autocomplete="email" name="email"
-                    style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
-                           border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-            </div>
-
-            <!-- Contraseña (Login) -->
-            <div id="login-pwd-section" style="margin-bottom:1.5rem;">
-                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Contraseña</label>
-                <div style="position:relative;display:flex;align-items:center;">
-                    <input type="password" id="auth-password" placeholder="••••••••"
-                        autocomplete="current-password" name="password"
-                        style="width:100%; padding:0.75rem; padding-right:2.5rem; background:rgba(255,255,255,0.06);
-                               border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-                               color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <button type="button" id="toggle-pwd-login" 
-                            style="position:absolute;right:0.5rem;background:none;border:none;
-                                   cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;
-                                   z-index:2;color:#7d8590;">👁️</button>
-                </div>
-            </div>
-
-            <!-- Contraseña (Registro) -->
-            <div id="register-pwd-section" style="display:none; margin-bottom:1.5rem;">
-                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">Contraseña (mín. 8 caracteres)</label>
-                <div style="position:relative;display:flex;align-items:center;">
-                    <input type="password" id="register-password" placeholder="Mínimo 8 caracteres"
-                        autocomplete="new-password"
-                        style="width:100%; padding:0.75rem; padding-right:2.5rem; background:rgba(255,255,255,0.06);
-                               border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-                               color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <button type="button" id="toggle-pwd-register" 
-                            style="position:absolute;right:0.5rem;background:none;border:none;
-                                   cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;
-                                   z-index:2;color:#7d8590;">👁️</button>
-                </div>
-                <div id="password-feedback"></div>
-
-                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px; margin-top:10px;">Confirmar Contraseña</label>
-                <div style="position:relative;display:flex;align-items:center;">
-                    <input type="password" id="register-password-confirm" placeholder="Repite tu contraseña"
-                        autocomplete="new-password"
-                        style="width:100%; padding:0.75rem; padding-right:2.5rem; background:rgba(255,255,255,0.06);
-                               border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-                               color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <button type="button" id="toggle-pwd-confirm" 
-                            style="position:absolute;right:0.5rem;background:none;border:none;
-                                   cursor:pointer;font-size:1.2rem;padding:0.3rem 0.5rem;
-                                   z-index:2;color:#7d8590;">👁️</button>
-                </div>
-                <div id="password-match-feedback"></div>
-            </div>
-
-            <!-- Selector de Rol (Solo registro) -->
-            <div id="role-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">¿Quién eres?</label>
-                <select id="auth-role" onchange="handleRoleChange()"
-                    style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
-                           border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <option value="user">⚽ Entrenador</option>
-                    <option value="parent">👨‍👩‍👧 Padre / Madre / Tutor</option>
-                    <option value="director">📋 Director Deportivo</option>
-                    <option value="coordinator">🎯 Coordinador</option>
-                    <option value="club_admin">🏟️ Administrador de Club (Nuevo Club)</option>
-                    <option value="individual">👤 Administrador Individual (sin club)</option>
-                </select>
-            </div>
-
-            <!-- Selector de Tipo de Entidad (Club o Individual) — Solo para Entrenador y Padre -->
-            <div id="entity-type-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#d2a8ff; display:block; margin-bottom:5px;">¿Para Club o Usuario Individual?</label>
-                <select id="auth-entity-type" onchange="handleEntityChange()"
-                    style="width:100%; padding:0.75rem; background:rgba(210,168,255,0.06);
-                           border:1px solid rgba(210,168,255,0.25); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <option value="club">🏟️ Pertenezco a un Club</option>
-                    <option value="individual">👤 Usuario Individual (sin club)</option>
-                </select>
-            </div>
-
-            <!-- Email del Administrador Individual (Solo si elige «Usuario Individual») -->
-            <div id="individual-owner-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#d2a8ff; display:block; margin-bottom:5px;">📧 Email del Usuario Individual</label>
-                <input type="email" id="individual-owner-email" placeholder="Ej: maria@email.com"
-                    style="width:100%; padding:0.75rem; background:rgba(210,168,255,0.05);
-                           border:1px solid rgba(210,168,255,0.25); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                <div style="font-size:0.72rem; color:rgba(255,255,255,0.45); margin-top:4px;">
-                    Opcional si seleccionaste un usuario del desplegable superior. Introduce el email si no aparece en la lista.
-                </div>
-            </div>
-
-            <!-- Selector de Club / Entidad Individual (Solo registro para roles que no son admin) -->
-            <div id="club-container" style="display:none; margin-bottom:1rem;">
-                <label id="auth-club-label" style="font-size:0.78rem; color:#7d8590; display:block; margin-bottom:5px;">🏟️ Selecciona tu Club</label>
-                <div style="font-size:0.72rem; color:rgba(255,255,255,0.4); margin-bottom:4px;" id="auth-club-hint"></div>
-                <select id="auth-club-select"
-                    style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.06);
-                           border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <option value="">Cargando clubes...</option>
-                </select>
-            </div>
-
-            <!-- Datos de Nuevo Club (Solo para Admin de Club en registro) -->
-            <div id="new-club-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#58a6ff; display:block; margin-bottom:5px;">Nombre de tu Club</label>
-                <input type="text" id="auth-new-club-name" placeholder="Ej: Real Madrid C.F."
-                    style="width:100%; padding:0.75rem; background:rgba(88,166,255,0.05);
-                           border:1px solid rgba(88,166,255,0.25); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none; margin-bottom:0.5rem;">
-                
-                <label style="font-size:0.72rem; color:#7d8590; display:block; margin-bottom:5px;">Cuotas solicitadas (Opcional)</label>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.4rem;">
-                    <input type="number" id="auth-req-directors" placeholder="Nº Directores" title="Directores Deportivos"
-                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem; box-sizing:border-box; max-width:100%; min-width:0;">
-                    <input type="number" id="auth-req-coordinators" placeholder="Nº Coordinadores" title="Coordinadores"
-                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem; box-sizing:border-box; max-width:100%; min-width:0;">
-                </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
-                    <input type="number" id="auth-req-coaches" placeholder="Nº Entrenadores" title="Entrenadores"
-                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem; box-sizing:border-box; max-width:100%; min-width:0;">
-                    <input type="number" id="auth-req-parents" placeholder="Nº Padres" title="Padres"
-                        style="padding:0.5rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:white; font-size:0.8rem; box-sizing:border-box; max-width:100%; min-width:0;">
-                </div>
-            </div>
-
-            <!-- Nombre (solo nombre, sin apellidos — protección de datos) -->
-            <div id="individual-name-container" style="display:none; margin-bottom:1rem;">
-                <label id="individual-name-label" style="font-size:0.78rem; color:#79c0ff; display:block; margin-bottom:5px;">👤 Nombre</label>
-                <input type="text" id="auth-firstname" placeholder="Tu nombre"
-                    style="width:100%; padding:0.75rem; background:rgba(121,192,255,0.05);
-                           border:1px solid rgba(121,192,255,0.25); border-radius:8px;
-                           color:white; font-size:0.9rem; box-sizing:border-box; outline:none;">
-                <div id="individual-name-hint" style="display:none;font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:4px;"></div>
-            </div>
-
-            <!-- Selector de Categoría + Subcategoría (Para Entrenador de club y Padre) -->
-            <div id="category-container" style="display:none; margin-bottom:1rem;">
-                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">⚽ Categoría</label>
-                <select id="auth-category"
-                    style="width:100%; padding:0.75rem; background:rgba(63,185,80,0.05);
-                           border:1px solid rgba(63,185,80,0.25); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none; margin-bottom:0.6rem;">
-                    <option value="">-- Selecciona categoría --</option>
-                    <option value="prebenjamin">🟢 Prebenjamín</option>
-                    <option value="benjamin">🔵 Benjamín</option>
-                    <option value="alevin">🟡 Alevín</option>
-                    <option value="infantil">🟠 Infantil</option>
-                    <option value="cadete">🔴 Cadete</option>
-                    <option value="juvenil">🟣 Juvenil</option>
-                    <option value="regional">⚪ Regional</option>
-                </select>
-                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">📋 Subcategoría / Grupo</label>
-                <select id="auth-subcat"
-                    style="width:100%; padding:0.75rem; background:rgba(63,185,80,0.05);
-                           border:1px solid rgba(63,185,80,0.25); border-radius:8px;
-                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
-                    <option value="">-- Selecciona grupo --</option>
-                    <option value="A">Grupo A</option>
-                    <option value="B">Grupo B</option>
-                    <option value="C">Grupo C</option>
-                </select>
-            </div>
-
-            <!-- Código de Invitación (Opcional para registro de padres) -->
-            <div id="invite-code-container" style="display:none; margin-bottom:1.5rem;">
-                <label style="font-size:0.78rem; color:#ffd700; display:block; margin-bottom:5px;">¿Tienes un código de invitación?</label>
-                <input type="text" id="auth-invite-code" placeholder="EJ: 3A7B9X"
-                    style="width:100%; padding:0.75rem; background:rgba(255,215,0,0.05);
-                           border:1px solid rgba(255,215,0,0.25); border-radius:8px;
-                           color:#ffd700; font-size:0.95rem; box-sizing:border-box; outline:none; text-transform:uppercase;">
-            </div>
-
-            <!-- Consentimiento RGPD (Solo visible en modo REGISTRARSE) -->
-            <div id="gdpr-consent-container" style="display:none; margin-bottom:1.2rem;">
-                <label for="gdpr-consent"
-                    style="display:flex; align-items:flex-start; gap:0.6rem; cursor:pointer;
-                           background:#0a0e14; border:1px solid rgba(125,133,144,0.25);
-                           border-radius:8px; padding:0.75rem; color:#7d8590; font-size:0.8rem;
-                           line-height:1.4;">
-                    <input type="checkbox" id="gdpr-consent"
-                        style="margin-top:0.15rem; width:1.05rem; height:1.05rem;
-                               accent-color:#58a6ff; flex-shrink:0; cursor:pointer;">
-                    <span>He leído y acepto la
-                        <a href="privacy.html" target="_blank" rel="noopener"
-                           style="color:#58a6ff; text-decoration:underline;">Política de Privacidad</a>.
-                    </span>
-                </label>
-            </div>
-
-            <!-- Botón -->
-            <button id="auth-btn" type="submit" form="auth-form"
-                style="width:100%; padding:0.9rem; background:#58a6ff; border:none;
-                       border-radius:8px; color:#0a0e14; font-weight:700;
-                       font-size:1rem; cursor:pointer; letter-spacing:1px; transition:opacity 0.2s;">
-                ENTRAR
-            </button>
-
-            </form>
-            <!-- Mensaje de estado -->
-            <p id="auth-error"
-               style="font-size:0.8rem; margin:0.8rem 0 0; text-align:center; min-height:1.2rem; color:#ff5858;"></p>
-
-            <!-- Pie: Política de Privacidad (RGPD) — solo visible en modo LOGIN -->
-            <!-- Por defecto visible: la app arranca en modo login. En registro
-                 se oculta (onclick tab-register + switchTab). -->
-            <p id="privacy-link-footer" style="text-align:center; margin:1rem 0 0;">
-                <a href="privacy.html" target="_blank" style="color:var(--text-muted);font-size:0.75rem;">Política de Privacidad</a>
-            </p>
-
-        </div>
-    </div>
-
-    <!-- ══ PANTALLA DE SELECCIÓN DE ROL (Landing) ══════════════════════ -->
-    <div id="role-selection-screen" style="display:none; position:fixed; inset:0; background:var(--bg-dark); z-index:9000; 
-         flex-direction:column; align-items:center; justify-content:center; padding:2rem; overflow-y:auto;">
-        
-        <div style="text-align:center; margin-bottom:3rem; animation: fadeIn 0.8s ease-out;">
-            <img src="public/assets/img_0f3942d4.png" alt="Chronos Fútbol" style="height:120px; width:auto; margin-bottom:1rem; filter:drop-shadow(0 8px 16px rgba(0,0,0,0.6));">
-            <h1 style="font-family:'Outfit',sans-serif; color:white; font-size:1.8rem; margin:0;">Bienvenido a Chronos</h1>
-            <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.5rem;">Selecciona una opción para continuar</p>
-        </div>
-
-        <div class="role-cards-container" style="display:flex; gap:1.5rem; width:100%; max-width:1000px; justify-content:center; flex-wrap:wrap;">
-            
-            <!-- Opción Superadmin -->
-            <div id="card-opt-superadmin" class="role-card" onclick="selectOption('superadmin')" style="display:none;">
-                <div class="role-card-icon">👑</div>
-                <h3>Superadministrador</h3>
-                <p>Control total de clubes, usuarios y sistema.</p>
-                <div class="role-card-badge">PLATAFORMA</div>
-            </div>
-
-            <!-- Opción Administrador de Club -->
-            <div id="card-opt-clubadmin" class="role-card" onclick="selectOption('clubadmin')" style="display:none;">
-                <div class="role-card-icon">🏟️</div>
-                <h3>Administrador Club</h3>
-                <p>Gestiona el personal, cuotas e informes deportivos de tu club.</p>
-                <div class="role-card-badge" style="background:var(--primary);color:white;">CLUB</div>
-            </div>
-
-            <!-- Opción Director Deportivo -->
-            <div id="card-opt-director" class="role-card" onclick="selectOption('director')" style="display:none;">
-                <div class="role-card-icon">📋</div>
-                <h3>Director Deportivo</h3>
-                <p>Supervisión técnica, plantillas e informes de rendimiento.</p>
-                <div class="role-card-badge" style="background:#f0883e;color:white;">DIRECCIÓN</div>
-            </div>
-
-            <!-- Opción Coordinador -->
-            <div id="card-opt-coordinator" class="role-card" onclick="selectOption('coordinator')" style="display:none;">
-                <div class="role-card-icon">🎯</div>
-                <h3>Coordinador</h3>
-                <p>Gestión de equipos, horarios y seguimiento de entrenamientos.</p>
-                <div class="role-card-badge" style="background:#d2a8ff;color:white;">GESTIÓN</div>
-            </div>
-
-            <!-- Opción Entrenador -->
-            <div id="card-opt-coach" class="role-card" onclick="selectOption('coach')" style="display:none;">
-                <div class="role-card-icon">⚽</div>
-                <h3>Entrenador</h3>
-                <p>Gestiona partidos, convocatorias e informes en tiempo real.</p>
-                <div class="role-card-badge" style="background:#3fb950;color:white;">CAMPO</div>
-            </div>
-
-            <!-- Opción Padre/Madre -->
-            <div id="card-opt-parent" class="role-card" onclick="selectOption('parent')" style="display:none;">
-                <div class="role-card-icon">👨‍👩‍👧</div>
-                <h3>Padre / Madre</h3>
-                <p>Sigue a tu hijo, recibe convocatorias y mira partidos en vivo.</p>
-                <div class="role-card-badge" style="background:#d2a8ff;color:white;">FAMILIA</div>
-            </div>
-
-            <!-- Opción Administrador Individual -->
-            <div id="card-opt-individual" class="role-card" onclick="selectOption('individual')" style="display:none;">
-                <div class="role-card-icon">👤</div>
-                <h3>Administrador Individual</h3>
-                <p>Gestiona tu propio equipo de forma independiente, sin pertenecer a un club.</p>
-                <div class="role-card-badge" style="background:#79c0ff;color:#0d1117;">INDIVIDUAL</div>
-            </div>
-
-            <!-- Opción Entrenador Individual -->
-            <div id="card-opt-coach-individual" class="role-card" onclick="selectOption('coach_individual')" style="display:none;">
-                <div class="role-card-icon">⚽</div>
-                <h3>Entrenador Individual</h3>
-                <p>Gestiona partidos, convocatorias e informes como entrenador independiente.</p>
-                <div class="role-card-badge" style="background:#3fb950;color:white;">INDIVIDUAL</div>
-            </div>
-
-            <!-- Opción Padre/Madre/Tutor Individual -->
-            <div id="card-opt-parent-individual" class="role-card" onclick="selectOption('parent_individual')" style="display:none;">
-                <div class="role-card-icon">👨‍👩‍👧</div>
-                <h3>Padre / Madre / Tutor Individual</h3>
-                <p>Sigue a tu hijo y recibe convocatorias como parte de un ente individual.</p>
-                <div class="role-card-badge" style="background:#d2a8ff;color:white;">INDIVIDUAL</div>
-            </div>
-
-        </div>
-
-        <style>
-            .role-card {
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 20px;
-                padding: 2rem 1.5rem;
-                width: 280px;
-                text-align: center;
-                cursor: pointer;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                position: relative;
-                overflow: hidden;
-                backdrop-filter: blur(10px);
-            }
-            .role-card:hover {
-                background: rgba(88, 166, 255, 0.08);
-                border-color: rgba(88, 166, 255, 0.4);
-                transform: translateY(-8px);
-                box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
-            }
-            .role-card-icon {
-                font-size: 3rem;
-                margin-bottom: 1.2rem;
-                filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
-            }
-            .role-card h3 {
-                color: white;
-                font-family: 'Outfit', sans-serif;
-                margin-bottom: 0.8rem;
-                font-size: 1.2rem;
-            }
-            .role-card p {
-                color: var(--text-muted);
-                font-size: 0.85rem;
-                line-height: 1.5;
-            }
-            .role-card-badge {
-                position: absolute;
-                top: 12px;
-                right: 12px;
-                font-size: 0.6rem;
-                font-weight: 800;
-                color: #ffd700;
-                background: rgba(255, 215, 0, 0.1);
-                padding: 2px 8px;
-                border-radius: 10px;
-                border: 1px solid rgba(255, 215, 0, 0.3);
-            }
-        </style>
-
-        <button onclick="cerrarSesion()" style="margin-top:4rem; background:none; border:1px solid rgba(255,255,255,0.1); 
-                color:var(--text-muted); padding:0.6rem 1.5rem; border-radius:30px; cursor:pointer; font-size:0.8rem;">
-            ⏻ Cerrar Sesión
-        </button>
-    </div>
-
-    <!-- ══ ORIENTATION WARNING ═══════════════════════════════════════════ -->
-    <div id="orientation-warning">
-        <h2 style="color: var(--primary); margin-bottom: 1rem;">Gire su dispositivo</h2>
-        <p style="color: var(--text-muted);">Esta aplicación está optimizada para uso en modo horizontal.</p>
-        <div style="margin-top: 2rem; font-size: 3rem;">📱🔄</div>
-    </div>
-
-    <!-- ══ APP PRINCIPAL (oculta hasta autorización) ══════════════════════ -->
-    <header id="main-header" style="display: none;">
-        <div class="master-clock-container">
-            <div class="dual-timers">
-                <div class="timer-block active" id="timer-h1-container" onclick="editTimer(1)">
-                    <span class="timer-label">1ª P</span>
-                    <span id="timer-h1" class="timer-val">30:00</span>
-                </div>
-                <div class="timer-block" id="timer-h2-container" onclick="editTimer(2)">
-                    <span class="timer-label">2ª P</span>
-                    <span id="timer-h2" class="timer-val">30:00</span>
-                </div>
-            </div>
-            <div id="match-phase-label"
-                style="font-size: 0.6rem; color: white; text-align: center; margin-top: 2px;">1ª PARTE</div>
-        </div>
-        
-        <div id="phase-actions" style="display: flex; gap: 0.5rem;"></div>
-
-        <div class="score-area">
-            <button id="btn-group-sub" type="button" onclick="toggleGroupSubMode('home')" title="Cambio grupal local">GRUPAL</button>
-            <div class="score-board">
-                <div class="team-score">
-                <button onclick="changeScore('home',-1)" class="score-btn danger">−</button>
-                <div class="score-info">
-                    <span id="team-a-name" class="team-name">LOCAL</span>
-                    <span id="score-home" class="score-num">0</span>
-                </div>
-                <button onclick="changeScore('home',+1)" class="score-btn success">+</button>
-            </div>
-            <span class="score-divider">-</span>
-            <div class="team-score">
-                <button onclick="changeScore('away',-1)" class="score-btn danger">−</button>
-                <div class="score-info">
-                    <span id="team-b-name" class="team-name">VISITANTE</span>
-                    <span id="score-away" class="score-num">0</span>
-                </div>
-                <button onclick="changeScore('away',+1)" class="score-btn success">+</button>
-            </div>
-        </div>
-        <button id="btn-group-sub-away" type="button" onclick="toggleGroupSubMode('away')" title="Cambio grupal visitante">GRUPAL</button>
-
-        </div><!-- /score-area -->
-
-        <!-- Logo independiente — lado derecho del eje del campo -->
-        <div class="logo-header">
-            <img src="public/assets/img_0f3942d4.png" alt="Chronos">
-        </div>
-
-        <div class="header-actions">
-            <button onclick="goBackToSetup()" title="Volver a configuración"
-                style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15);
-                       color:#8b949e; font-size:0.6rem; padding:0.35rem 0.5rem;
-                       border-radius:6px; cursor:pointer; white-space:nowrap;">← INICIO</button>
-            <button id="btn-play-pause" class="btn primary">EMPEZAR</button>
-            <button id="btn-reset" class="btn danger">REINICIAR</button>
-            <button id="btn-save-team" class="btn">GUARDAR</button>
-            <button id="btn-export" class="btn">DESCARGAR</button>
-            
-            <button id="btn-unified-comms" onclick="openUnifiedCommsMenu()" title="Comunicaciones y Reportes"
-                style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
-                       color:var(--primary); font-size:0.75rem; padding:0.4rem 0.8rem;
-                       border-radius:8px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px;">
-                💬 COMUNICACIONES
-            </button>
-
-            <!-- ═══ BOTÓN ADMIN — solo visible para rol "individual" ═══ -->
-            <button id="btn-individual-admin"
-                onclick="if(typeof openIndividualAdminPanel==='function') openIndividualAdminPanel();"
-                title="Panel de Administración — Padres / Categorías"
-                style="display:none; background:rgba(121,192,255,0.15); border:1px solid rgba(121,192,255,0.45);
-                       color:#79c0ff; font-size:0.74rem; padding:0.38rem 0.8rem;
-                       border-radius:8px; cursor:pointer; font-weight:700;
-                       align-items:center; gap:5px; white-space:nowrap;">
-                🛡️ ADMIN
-            </button>
-
-            <button onclick="cerrarSesion()" title="Cerrar sesión"
-                style="background:none; border:1px solid rgba(255,255,255,0.12); color:#7d8590;
-                       font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer;">⏻</button>
-        </div>
-    </header>
-    </header>
-
-    <main class="main-container" id="main-container" style="display: none;">
-        <aside class="sidebar" ondrop="dropToBench(event)" ondragover="allowDrop(event)">
-            <div class="bench-header-compact">
-                <span class="bench-team-label" id="bench-label-home">LOCAL</span>
-                <span class="bench-sub-label">· BANQUILLO</span>
-            </div>
-            <div class="bench-section">
-                <div id="bench-list" class="bench-container"
-                    ondrop="dropToBench(event)" ondragover="allowDrop(event)">
-                </div>
-            </div>
-        </aside>
-
-        <main class="field-area" id="field-dropzone"
-            ondrop="dropToField(event)" ondragover="allowDrop(event)">
-            <div class="pitch" id="football-pitch">
-                <div class="center-circle"></div>
-                <div class="penalty-area left"></div>
-                <div class="penalty-area right"></div>
-                <div class="goal-area left"></div>
-                <div class="goal-area right"></div>
-            </div>
-        </main>
-
-        <aside class="sidebar-right" ondrop="dropToAwayBench(event)" ondragover="allowDrop(event)">
-            <div class="bench-header-compact">
-                <span class="bench-team-label" id="bench-label-away">VISITANTE</span>
-                <span class="bench-sub-label">· BANQUILLO</span>
-            </div>
-            <div class="bench-section">
-                <div id="bench-list-away" class="bench-container"
-                    ondrop="dropToAwayBench(event)" ondragover="allowDrop(event)"></div>
-            </div>
-        </aside>
-
-        <button id="toggle-bench-home" class="mobile-toggle home" onclick="toggleBench('home')">LOCAL</button>
-        <button id="toggle-bench-away" class="mobile-toggle away" onclick="toggleBench('away')">VISIT.</button>
-    </main>
-
-    <!-- Modales -->
-    <div id="setup-modal" class="modal"></div>
-
-    <div id="player-action-modal" class="modal">
-        <div class="modal-content" style="width: 320px; text-align: center;">
-            <h2 id="action-player-name" style="color:var(--primary);margin-bottom:0;cursor:pointer;"
-                onclick="editNameFromModal()">Jugador</h2>
-            <p id="action-player-number"
-               style="font-size:0.9rem;color:var(--text-muted);margin-top:-10px;cursor:pointer;"
-               onclick="editNumberFromModal()">Dorsal</p>
-            <div style="display:flex;justify-content:space-around;gap:8px;margin-bottom:8px;">
-                <button class="btn" style="background:#f1c40f;color:#000;flex:1;"
-                    onclick="assignCard('amarilla')">🟨 Amarilla</button>
-                <button class="btn" style="background:#e74c3c;color:#fff;flex:1;"
-                    onclick="assignCard('roja')">🟥 Roja</button>
-            </div>
-            <!-- Goles (izquierda) + Lesión (derecha) -->
-            <div style="display:flex;gap:8px;align-items:stretch;">
-                <div style="flex:2;display:flex;justify-content:space-between;align-items:center;
-                            background:var(--glass);padding:10px;border-radius:8px;">
-                    <button class="btn danger" style="padding:0.5rem 1rem;" onclick="changeGoals(-1)">-1</button>
-                    <div style="display:flex;flex-direction:column;align-items:center;">
-                        <span style="font-size:0.7rem;color:var(--text-muted);">GOLES</span>
-                        <span id="action-player-goals" style="font-size:1.5rem;font-weight:bold;">0 ⚽</span>
-                    </div>
-                    <button class="btn success" style="padding:0.5rem 1rem;" onclick="changeGoals(1)">+1</button>
-                </div>
-                <button id="btn-injury" onclick="toggleInjury()"
-                    style="flex:1;display:flex;flex-direction:column;align-items:center;
-                           justify-content:center;gap:4px;padding:8px;border-radius:8px;
-                           background:var(--glass);border:2px solid transparent;
-                           cursor:pointer;transition:all 0.2s;">
-                    <span style="font-size:1.4rem;">🚑</span>
-                    <span style="font-size:0.65rem;color:var(--text-muted);font-weight:700;">LESIÓN</span>
-                </button>
-            </div>
-            <div style="display:flex;gap:10px;margin-top:0.5rem;">
-                <button class="btn"
-                    style="flex:1;background:var(--bg-dark);color:var(--text-muted);border:1px solid var(--glass-border);"
-                    onclick="clearPlayerActions()">LIMPIAR</button>
-                <button class="btn primary" style="flex:2;" onclick="closePlayerActionModal()">HECHO</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ══════════════════════════════════════════════════════════════════
-         CHRONOS FÚTBOL — SCRIPTS REORGANIZADOS v2.0
-         Orden de carga basado en dependencias:
-         1. Core (estado global, seguridad, utilidades)
-         2. Services (Firebase, Firestore, auth, cloud data)
-         3. Roster (formaciones, plantilla, IA import)
-         4. Match (timer, eventos, persistencia, sustituciones, live)
-         5. UI (render, drag-drop, bench scroll)
-         6. Shared (WhatsApp/email, admin constants)
-         7. Admin (superadmin, club, individual, billing)
-         8. Coach (comms, informes, entrenamientos, convocatoria)
-         9. Parent (portal de padres)
-         ══════════════════════════════════════════════════════════════════ -->
-
-    <!-- ══ 1. CORE ════════════════════════════════════════════════════ -->
-
-<!-- ══ 2. SERVICES ════════════════════════════════════════════════ -->
-
-<!-- ══ 3. ROSTER ══════════════════════════════════════════════════ -->
-
-<!-- ══ 4. MATCH ═══════════════════════════════════════════════════ -->
-
-<!-- ══ 5. UI ══════════════════════════════════════════════════════ -->
-
-<!-- ══ 6. SHARED ══════════════════════════════════════════════════ -->
-
-<!-- ══ 7. ADMIN ═══════════════════════════════════════════════════ -->
-
-<!-- ══ 8. COACH ═══════════════════════════════════════════════════ -->
-
-<!-- ══ 9. PARENT ══════════════════════════════════════════════════ -->
-<!-- Informe imprimible -->
-    <div id="print-report" style="display:none;">
-        <div class="report-header">
-            <h1 style="color:#000;border-bottom:2px solid #000;padding-bottom:10px;">
-                INFORME DE PARTIDO - CRONOS FÚTBOL</h1>
-            <div id="report-metadata"
-                style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0;"></div>
-        </div>
-        <table class="report-table" style="width:100%;border-collapse:collapse;margin-top:20px;">
-            <thead>
-                <tr style="background:#f2f2f2;">
-                    <th style="border:1px solid #ddd;padding:10px;text-align:left;">EQUIPO</th>
-                    <th style="border:1px solid #ddd;padding:10px;text-align:center;">DORSAL</th>
-                    <th style="border:1px solid #ddd;padding:10px;text-align:left;">JUGADOR</th>
-                    <th style="border:1px solid #ddd;padding:10px;text-align:center;">GOLES</th>
-                    <th style="border:1px solid #ddd;padding:10px;text-align:center;">TARJETAS</th>
-                    <th style="border:1px solid #ddd;padding:10px;text-align:right;">TIEMPO TOTAL</th>
-                </tr>
-            </thead>
-            <tbody id="report-players-body"></tbody>
-        </table>
-        <div id="report-sub-legend" style="margin-top:12px;padding:8px 0;"></div>
-        <div style="margin-top:50px;border-top:1px solid #eee;padding-top:20px;
-                    font-size:0.8rem;color:#777;text-align:center;">
-            Informe generado automáticamente por Cronos Fútbol - Asistente de Entrenadores.
-        </div>
-    </div>
-
-    <!-- ══ LÓGICA DE AUTH (scope clásico) ════════════════════════════════ -->
-    
-
-    <script>
-    // ══════════════════════════════════════════════════════
-    //  ONBOARDING — 9 PASOS
-    // ══════════════════════════════════════════════════════
-    let deferredInstallPrompt = null;
-    let obCurrentStep = 0;
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredInstallPrompt = e;
+const functions = require('firebase-functions/v1');
+const admin = require('firebase-admin');
+const nodemailer = require('nodemailer');
+
+admin.initializeApp();
+
+/* ----------------------------------------------------------- */
+/* Diccionario de pseudónimos (server-side — coincidir con cliente) */
+/* ----------------------------------------------------------- */
+const PSEUDONYM_DICT = [
+  'Rayo', 'Turbo', 'Titan', 'Flecha', 'Aguila',
+  'Trueno', 'Meteoro', 'Condor', 'Centella', 'Pantera',
+  'Fenix', 'Bufalo', 'Cobra', 'Dragon', 'Halcon',
+  'Jabali', 'Lince', 'Oso', 'Puma', 'Tigre',
+  'Ventisca', 'Ciclon', 'Eclipse', 'Glaciar', 'Tornado',
+  'Avalancha', 'Bolido', 'Cometa', 'Estela', 'Volcan'
+];
+
+/* ----------------------------------------------------------- */
+/* Hash determinístico server-side (debe coincidir con el cliente) */
+/* ----------------------------------------------------------- */
+function _serverHash(key) {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) {
+    h = ((h << 5) - h) + key.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
+
+/* ----------------------------------------------------------- */
+/* Genera pseudónimo server-side */
+/* ----------------------------------------------------------- */
+function _serverPseudonym(name, clubId) {
+  if (!name || !clubId) return 'Jugador';
+  const key = clubId + '_' + name;
+  const idx = _serverHash(key) % PSEUDONYM_DICT.length;
+  return PSEUDONYM_DICT[idx];
+}
+
+/* ----------------------------------------------------------- */
+/* Lista de campos sensibles que nunca deben salir del servidor */
+/* ----------------------------------------------------------- */
+const SENSITIVE_FIELDS = [
+  'realName', 'surname', 'lastName', 'firstName', 'fullName',
+  'dni', 'email', 'phone', 'address', 'birthDate',
+  'parentName', 'parentPhone', 'parentId'
+];
+
+function _stripSensitiveFields(player) {
+  const safe = Object.assign({}, player);
+  SENSITIVE_FIELDS.forEach(function(field) { delete safe[field]; });
+  return safe;
+}
+
+/* ==================================================================== */
+/* 0️⃣ Cloud Function: setCustomClaims – Asignar Custom Claims (roles) a un usuario  */
+/* ==================================================================== */
+exports.setCustomClaims = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'Debes estar autenticado para realizar esta acción'
+    );
+  }
+
+  const callerDoc = await admin.firestore()
+    .collection('users')
+    .doc(context.auth.uid)
+    .get();
+
+  const callerData = callerDoc.data();
+  const callerRole = callerData?.role || context.auth.token.role;
+
+  if (callerRole !== 'superadmin') {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Solo SuperAdmin puede asignar roles'
+    );
+  }
+
+  const { uid, role, clubId } = data;
+
+  if (!uid || !role) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Se requieren uid y role'
+    );
+  }
+
+  const validRoles = ['superadmin', 'club_admin', 'individual_admin', 'individual', 'director', 'coordinator', 'user', 'parent', 'spectator'];
+  if (!validRoles.includes(role)) {
+    // SEC-H02: Do not expose valid roles in error response
+    throw new functions.https.HttpsError('invalid-argument', 'Rol invalido');
+  }
+
+  const claims = {
+    role: role,
+    clubId: clubId || null,
+    claimsSetAt: Date.now()
+  };
+
+  try {
+    await admin.auth().setCustomUserClaims(uid, claims);
+
+    // FIX: Actualizar Firestore con isAuthorized y status para superadmin
+    // Antes solo se actualizaba role y clubId, dejando isAuthorized:false
+    // lo que causaba que el superadmin quedara bloqueado en checkAuthorization()
+    const updateData = {
+      role: role,
+      clubId: clubId || null,
+      claimsUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (role === 'superadmin') {
+      updateData.isAuthorized = true;
+      updateData.status = 'active';
+      console.log('[setCustomClaims] SuperAdmin detectado — forzando isAuthorized=true, status=active');
+    }
+
+    await admin.firestore()
+      .collection('users')
+      .doc(uid)
+      .update(updateData);
+
+    console.log('[setCustomClaims] Claims asignados:', { uid, role, clubId });
+
+    return { success: true, uid, role, clubId };
+  } catch (error) {
+    // SEC-H01: Generic error message; full detail stays in server log
+    console.error('[setCustomClaims] Error:', error);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Error interno. Contacte al administrador.'
+    );
+  }
+});
+
+/* ==================================================================== */
+/* 1️⃣ Cloud Function: getMatchForSpectator – Pseudonimización para espectadores */
+/* ==================================================================== */
+exports.getMatchForSpectator = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
+  }
+
+  const { matchId } = data;
+  if (!matchId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Se requiere matchId');
+  }
+
+  const matchDoc = await admin.firestore().collection('matches').doc(matchId).get();
+  if (!matchDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'Partido no encontrado');
+  }
+
+  const matchData = matchDoc.data();
+  const viewerRole = context.auth.token.role || null;
+
+  // SEC-020: Only superadmin gets raw data; all other roles (including same-club) are pseudonymized
+  if (viewerRole === 'superadmin') return matchData;
+
+  const playersSnapshot = await admin.firestore()
+    .collection('players')
+    .where('matchId', '==', matchId)
+    .get();
+
+  const pseudonymizedPlayers = [];
+  playersSnapshot.forEach(doc => {
+    const p = doc.data();
+    const pseudonym = _serverPseudonym(p.name || '', p.clubId || '');
+    const safe = _stripSensitiveFields(p);
+    safe.name = pseudonym;
+    safe.pseudonym = pseudonym;
+    pseudonymizedPlayers.push(safe);
+  });
+
+  const result = Object.assign({}, matchData);
+  result.players = pseudonymizedPlayers;
+  delete result.homeTeamRoster;
+  delete result.awayTeamRoster;
+
+  return result;
+});
+
+/* ==================================================================== */
+/* 2️⃣ Cloud Function: onPlayerCreate – Guardar pseudónimo en mapa */
+/* ==================================================================== */
+exports.onPlayerCreate = functions.firestore
+  .document('players/{playerId}')
+  .onCreate(async (snap, context) => {
+    const playerData = snap.data();
+
+    if (!playerData.name || !playerData.clubId) return null;
+
+    const key = playerData.clubId + '_' + playerData.name;
+    const pseudonym = _serverPseudonym(playerData.name, playerData.clubId);
+
+    try {
+      // SEC-H05: Do NOT store realName — only pseudonym and clubId
+      await admin.firestore()
+        .collection('pseudonym_map')
+        .doc(key)
+        .set({
+          clubId: playerData.clubId,
+          pseudonym: pseudonym,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (error) {
+      console.error('[onPlayerCreate] Error guardando pseudonym_map:', error);
+    }
+
+    return null;
+  });
+
+/* ==================================================================== */
+/* 2️⃣b Cloud Function: syncClubPublic - Espejo publico de clubs */
+/* ==================================================================== */
+/* Mantiene la coleccion clubs_public (lectura publica, solo name/type/  */
+/* status) sincronizada con clubs. Permite que el formulario de registro */
+/* liste los clubes disponibles SIN autenticacion, sin exponer el resto  */
+/* de campos sensibles de clubs (slots, adminEmail, plan, etc.).         */
+exports.syncClubPublic = functions.firestore
+  .document('clubs/{clubId}')
+  .onWrite(async (change, context) => {
+    const clubId = context.params.clubId;
+    const publicRef = admin.firestore().collection('clubs_public').doc(clubId);
+
+    // Documento eliminado -> borrar el espejo
+    if (!change.after.exists) {
+      try {
+        await publicRef.delete();
+      } catch (error) {
+        console.error('[syncClubPublic] Error eliminando espejo:', error);
+      }
+      return null;
+    }
+
+    const data = change.after.data() || {};
+
+    // Solo se exponen 3 campos publicos.
+    const publicData = {
+      name: data.name || null,
+      type: data.type || 'club',
+      status: data.status || 'active'
+    };
+
+    try {
+      await publicRef.set(publicData);
+    } catch (error) {
+      console.error('[syncClubPublic] Error escribiendo espejo:', error);
+    }
+
+    return null;
+  });
+
+/* ==================================================================== */
+/* 3️⃣ Cloud Function: deleteUserData – Limpiar datos en Firestore al eliminar usuario Auth */
+/* ==================================================================== */
+exports.deleteUserData = functions.auth.user().onDelete(async (user) => {
+  const uid = user.uid;
+
+  try {
+    await admin.firestore().collection('users').doc(uid).delete();
+
+    const requests = await admin.firestore()
+      .collection('platform_requests')
+      .where('uid', '==', uid)
+      .get();
+
+    const batch = admin.firestore().batch();
+    requests.forEach(doc => { batch.delete(doc.ref); });
+
+    if (!requests.empty) await batch.commit();
+
+    console.log('[deleteUserData] Datos eliminados para uid:', uid);
+  } catch (error) {
+    console.error('[deleteUserData] Error:', error);
+  }
+
+  return null;
+});
+
+/* ==================================================================== */
+/* 4️⃣ Cloud Function: deleteAuthUser – Eliminar usuario de Firebase Auth  */
+/* ==================================================================== */
+exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Usuario no autenticado');
+  }
+
+  const callerUid = context.auth.uid;
+  const callerDoc = await admin.firestore().collection('users').doc(callerUid).get();
+
+  // SEC-003: Correct role check — only superadmin, club_admin, individual_admin
+  if (!callerDoc.exists || !['superadmin', 'club_admin', 'individual_admin'].includes(callerDoc.data().role)) {
+    throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
+  }
+
+  const callerRole = callerDoc.data().role;
+
+  // SEC-003: club_admin solo puede eliminar usuarios de SU PROPIO club.
+  // El clubId se lee del documento del caller en Firestore (fuente fiable),
+  // NO de data.clubId enviado por el cliente. Ademas se valida que el
+  // usuario objetivo realmente pertenece a ese club.
+  if (callerRole === 'club_admin') {
+    const callerClubId = callerDoc.data().clubId;
+    try {
+      const targetDoc = await admin.firestore().collection('users').doc(data.uid).get();
+      if (targetDoc.exists) {
+        if (targetDoc.data().clubId !== callerClubId) {
+          throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
+        }
+      }
+    } catch(e) {
+      if (e.code === 'permission-denied') throw e;
+    }
+  }
+
+  // individual_admin can only delete users in their own entity
+  if (callerRole === 'individual_admin') {
+    const callerEntityId = callerDoc.data().individualEntityId || callerDoc.data().clubId;
+    try {
+      const targetDoc = await admin.firestore().collection('users').doc(data.uid).get();
+      if (targetDoc.exists) {
+        const targetEntityId = targetDoc.data().individualEntityId || targetDoc.data().clubId;
+        if (targetEntityId !== callerEntityId) {
+          throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu propio ente individual');
+        }
+      }
+    } catch(e) {
+      if (e.code === 'permission-denied') throw e;
+    }
+  }
+
+  const { uid, email } = data;
+
+  if (!uid || !email) {
+    throw new functions.https.HttpsError('invalid-argument', 'uid y email son requeridos');
+  }
+
+  // Determina el UID real de Firebase Auth. El uid recibido del cliente puede
+  // estar desalineado (p.ej. ID de doc secundario); ante user-not-found
+  // resolvemos por email antes de dar el borrado por fallido.
+  let resolvedUid = uid;
+  let deletedFromAuth = false;
+  let alreadyAbsent = false;
+  try {
+    await admin.auth().deleteUser(resolvedUid);
+    deletedFromAuth = true;
+  } catch (firstErr) {
+    if (firstErr.code !== 'auth/user-not-found') {
+      console.error('[deleteAuthUser] Error al eliminar usuario:', firstErr);
+      await admin.firestore().collection('error_logs').add({
+        action:'delete_user_failed', targetUid:uid, targetEmail:email,
+        error:firstErr.message, errorCode:firstErr.code||null,
+        performedBy:context.auth.token.email,
+        timestamp:admin.firestore.FieldValue.serverTimestamp()
+      });
+      // SEC-H01: Generic error message; full detail stays in server log
+      throw new functions.https.HttpsError('internal', 'Error interno. Contacte al administrador.');
+    }
+    try {
+      const userRecord = await admin.auth().getUserByEmail(email);
+      resolvedUid = userRecord.uid;
+      await admin.auth().deleteUser(resolvedUid);
+      deletedFromAuth = true;
+    } catch (secondErr) {
+      if (secondErr.code === 'auth/user-not-found') {
+        alreadyAbsent = true;
+      } else {
+        console.error('[deleteAuthUser] Error al eliminar usuario (retry):', secondErr);
+        // SEC-H01: Generic error message; full detail stays in server log
+        throw new functions.https.HttpsError('internal', 'Error interno. Contacte al administrador.');
+      }
+    }
+  }
+
+  await admin.firestore().collection('audit_logs').add({
+    action: 'delete_user',
+    targetUid: resolvedUid,
+    requestedUid: uid,
+    targetEmail: email,
+    deletedFromAuth: deletedFromAuth,
+    alreadyAbsent: alreadyAbsent,
+    performedBy: context.auth.token.email,
+    performedByUid: callerUid,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    ipAddress: context.rawRequest.ip,
+  });
+
+  return {
+    success: true,
+    alreadyAbsent: alreadyAbsent,
+    uid: resolvedUid,
+    message: alreadyAbsent
+      ? `${email} ya no existia en Firebase Auth (email liberado)`
+      : `${email} eliminado de Firebase Auth`,
+    deletedAt: new Date().toISOString(),
+  };
+});
+
+/* ==================================================================== */
+/* 5️⃣ Cloud Function: syncUserChanges – Sincronizar cambios de usuarios entre clubes */
+/* ==================================================================== */
+exports.syncUserChanges = functions.firestore
+  .document('users/{userId}')
+  .onWrite(async (change, context) => {
+    const userId = context.params.userId;
+    const before = change.before.data();
+    const after = change.after.data();
+
+    if (!after) {
+      console.log(`Usuario ${userId} eliminado`);
+      await admin.firestore().collection('notifications').add({
+        type: 'user_deleted',
+        userId,
+        email: before?.email,
+        deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+        read: false,
+      });
+      return;
+    }
+
+    if (before?.status !== after?.status && ['removed', 'blocked'].includes(after.status)) {
+      console.log(`Usuario ${userId} cambió a estado: ${after.status}`);
+
+      if (after.clubId) {
+        const clubRef = admin.firestore().collection('clubs').doc(after.clubId);
+
+        // SEC-H04: Use atomic FieldValue.increment instead of read-modify-write to avoid race condition
+        const roleKey = after.role === 'director' ? 'directors'
+                    : after.role === 'coordinator' ? 'coordinators'
+                    : after.role === 'parent' ? 'parents'
+                    : 'users';
+
+        if (after.status === 'removed' || after.status === 'blocked') {
+          await clubRef.update({
+            [`usedSlots.${roleKey}`]: admin.firestore.FieldValue.increment(-1)
+          });
+        }
+      }
+    }
+  });
+
+/* ==================================================================== */
+/* 6️⃣ Cloud Function: cleanupExpiredRequests – Limpiar solicitudes de plazas expiradas */
+/* ==================================================================== */
+exports.cleanupExpiredRequests = functions.pubsub
+  .schedule('every 24 hours')
+  .onRun(async (context) => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const snapshot = await admin.firestore()
+      .collection('slot_requests')
+      .where('status', '==', 'pending')
+      .where('createdAt', '<', thirtyDaysAgo)
+      .get();
+
+    const batch = admin.firestore().batch();
+    let count = 0;
+
+    snapshot.forEach(doc => {
+      batch.update(doc.ref, {
+        status: 'expired',
+        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      count++;
     });
 
-    function triggerNativeInstall() {
-        if (deferredInstallPrompt) {
-            deferredInstallPrompt.prompt();
-            deferredInstallPrompt.userChoice.then(() => {
-                deferredInstallPrompt = null;
-                obNext();
-            });
-        } else {
-            obNext();
-        }
+    if (count > 0) {
+      await batch.commit();
+      console.log(`${count} solicitudes marcadas como expiradas`);
     }
 
-    function goToAuth() {
-        document.getElementById('install-screen').style.display = 'none';
-        document.getElementById('auth-screen').style.display    = 'flex';
-        localStorage.setItem('cronos_install_shown', Date.now());
+    return null;
+  });
+
+/* ==================================================================== */
+/* 7️⃣ Cloud Function: notifySlotRequest – Notificar solicitud de plaza */
+/* ==================================================================== */
+exports.notifySlotRequest = functions.firestore
+  .document('slot_requests/{requestId}')
+  .onCreate(async (snap, context) => {
+    const request = snap.data();
+
+    await admin.firestore().collection('notifications').add({
+      type: 'slot_request',
+      clubId: request.clubId,
+      clubName: request.clubName,
+      requestedRole: request.requestedRole,
+      quantity: request.quantity,
+      adminEmail: request.adminEmail,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      read: false,
+      targetRole: 'superadmin',
+    });
+
+    console.log(`Nueva solicitud de plaza: ${request.clubName} - ${request.requestedRole}`);
+  });
+
+/* ==================================================================== */
+/* 8️⃣ Cloud Function: auditUserStatusChange – Audit Log para cambios de estado de usuario */
+/* ==================================================================== */
+exports.auditUserStatusChange = functions.firestore
+  .document('users/{userId}')
+  .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+
+    if (before.status !== after.status) {
+      await admin.firestore().collection('audit_logs').add({
+        action: 'user_status_changed',
+        userId: context.params.userId,
+        email: after.email,
+        statusBefore: before.status,
+        statusAfter: after.status,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
     }
 
-    // ── Definición de los 9 pasos ──────────────────────────
-    const OB_STEPS = [
-        {
-            icon: '📲', heroTitle: 'CRONOS FÚTBOL', heroSub: 'Coach Assistant · v7.0',
-            sideLabel: '📲 Instalación',
-            stepTitle: 'Instala la app en tu dispositivo',
-            stepDesc:  'Al abrir el enlace por primera vez, la app te guía automáticamente para añadirla a la pantalla de inicio. En Android verás el botón "Instalar ahora" y en iPhone los pasos de Safari.',
-            cardTitle: () => {
-                const ua = navigator.userAgent.toLowerCase();
-                if (/iphone|ipad|ipod/.test(ua)) return '📱 Instala la app en tu iPhone / iPad';
-                if (/android/.test(ua))           return '📱 Instala la app en tu Android';
-                return '💻 Instala la app en tu ordenador';
-            },
-            cardBody: () => {
-                const ua        = navigator.userAgent.toLowerCase();
-                const isIOS     = /iphone|ipad|ipod/.test(ua);
-                const isAndroid = /android/.test(ua);
-
-                if (isIOS) return `
-                    <div style="background:rgba(240,136,62,0.08);border:1px solid rgba(240,136,62,0.25);
-                                border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:0.78rem;color:#f0883e;">
-                        🍎 <strong>iPhone / iPad</strong> — Usa Safari (no Chrome)
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num">1</span>
-                        <span class="ob-step-text">
-                            Toca el botón <strong>Compartir ⬆</strong> en la barra inferior de Safari
-                            <br><span style="font-size:0.72rem;color:var(--text-muted);">(Icono de cuadrado con flecha hacia arriba)</span>
-                        </span>
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num">2</span>
-                        <span class="ob-step-text">
-                            Desplázate y toca <strong>"Añadir a pantalla de inicio" ＋</strong>
-                        </span>
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num">3</span>
-                        <span class="ob-step-text">
-                            Pulsa <strong>"Añadir"</strong> arriba a la derecha
-                        </span>
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num done">✓</span>
-                        <span class="ob-step-text">
-                            El icono ⚽ aparece en tu pantalla de inicio — ábrelo como cualquier app
-                        </span>
-                    </div>`;
-
-                if (isAndroid) return `
-                    <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);
-                                border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:0.78rem;color:#3fb950;">
-                        🤖 <strong>Android</strong> — Usa Chrome
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num">1</span>
-                        <span class="ob-step-text">
-                            Chrome mostrará automáticamente un banner <strong>"Instalar Cronos Fútbol"</strong>
-                            <br><span style="font-size:0.72rem;color:var(--text-muted);">Si no aparece: toca ⋮ → "Añadir a pantalla de inicio"</span>
-                        </span>
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num">2</span>
-                        <span class="ob-step-text">Toca <strong>"Instalar"</strong> en el diálogo</span>
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num done">✓</span>
-                        <span class="ob-step-text">
-                            El icono ⚽ aparece en tu escritorio — pantalla completa automática
-                        </span>
-                    </div>`;
-
-                // Desktop
-                return `
-                    <div style="background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2);
-                                border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:0.78rem;color:#58a6ff;">
-                        💻 <strong>Ordenador</strong> — Usa Chrome
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num">1</span>
-                        <span class="ob-step-text">
-                            Busca el icono <strong>⊕</strong> en la barra de direcciones de Chrome
-                        </span>
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num">2</span>
-                        <span class="ob-step-text">Haz clic en <strong>"Instalar Cronos Fútbol"</strong></span>
-                    </div>
-                    <div class="ob-step-row">
-                        <span class="ob-num done">✓</span>
-                        <span class="ob-step-text">
-                            La app se abre en su propia ventana, sin barras del navegador
-                        </span>
-                    </div>`;
-            },
-                        stepDesc:  'Introduce tu correo electrónico y una contraseña. Una vez registrado, el administrador recibirá tu solicitud y activará tu acceso. Recibirás confirmación cuando esté listo.',
-            cardTitle: () => '📝 Cómo registrarse',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">En la pantalla de inicio pulsa <strong>"REGISTRARSE"</strong></span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Introduce tu <strong>correo electrónico</strong> y una <strong>contraseña</strong> (mín. 6 caracteres)</span></div>
-                <div class="ob-step-row"><span class="ob-num">3</span><span class="ob-step-text">Pulsa <strong>"REGISTRARSE"</strong> — tu solicitud queda pendiente de aprobación</span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">Una vez aprobado, ya puedes entrar con tu correo y contraseña</span></div>`
-        },
-        {
-            icon: '🔑', heroTitle: 'Iniciar sesión', heroSub: 'Accede a tu cuenta',
-            sideLabel: '🔑 Iniciar sesión',
-            stepTitle: 'Entra en la aplicación',
-            stepDesc:  'Con tu correo y contraseña ya aprobados, pulsa "ENTRAR". La sesión solo dura mientras tienes la app abierta, por seguridad se cierra al salir.',
-            cardTitle: () => '🔑 Acceso seguro',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">Introduce tu <strong>correo</strong> y <strong>contraseña</strong></span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Pulsa <strong>"ENTRAR"</strong></span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">Accederás a la pantalla de configuración del partido</span></div>`
-        },
-        {
-            icon: '👥', heroTitle: 'Gestionar Plantilla', heroSub: 'Registra a tus jugadores',
-            sideLabel: '👥 Gestionar plantilla',
-            stepTitle: 'Introduce a tus jugadores',
-            stepDesc:  'Desde el botón "Gestionar Plantilla" en la configuración, rellena el nombre, apellido, alias y dorsal de cada jugador. Solo tienes que hacerlo una vez — se guardan automáticamente.',
-            cardTitle: () => '👥 Plantilla de jugadores',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">Pulsa <strong>"GESTIONAR PLANTILLA"</strong> en la pantalla de configuración</span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Rellena <strong>dorsal, nombre y alias</strong> de cada jugador (el alias aparece en el campo)</span></div>
-                <div class="ob-step-row"><span class="ob-num">3</span><span class="ob-step-text">Pulsa <strong>"GUARDAR PLANTILLA"</strong> — quedan guardados en tu dispositivo</span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">Fútbol 7: hasta 18 jugadores · Fútbol 11: hasta 25 jugadores</span></div>`
-        },
-        {
-            icon: '⚙️', heroTitle: 'Configurar partido', heroSub: 'Prepara el encuentro',
-            sideLabel: '⚙️ Configurar partido',
-            stepTitle: 'Configura el encuentro',
-            stepDesc:  'Nombre del equipo, colores de la equipación (camiseta, pantalón y dorsal), modalidad (F7 o F11) y sistema táctico inicial. Puedes guardar el equipo y cargarlo en el siguiente partido.',
-            cardTitle: () => '⚙️ Opciones de configuración',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">Escribe el <strong>nombre del equipo</strong> local</span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Elige los <strong>colores</strong> de camiseta, pantalón y dorsal</span></div>
-                <div class="ob-step-row"><span class="ob-num">3</span><span class="ob-step-text">Selecciona <strong>Fútbol 7 o Fútbol 11</strong> y el <strong>sistema táctico</strong></span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">Pulsa <strong>"CONTINUAR AL PARTIDO"</strong> para ir a la convocatoria</span></div>`
-        },
-        {
-            icon: '📋', heroTitle: 'Convocatoria', heroSub: 'Selecciona los jugadores',
-            sideLabel: '📋 Convocatoria',
-            stepTitle: 'Selecciona la convocatoria',
-            stepDesc:  'Elige los jugadores convocados para este partido (mín. 7, máx. 18 en F7 / mín. 7, máx. 18 en F11). Los primeros titulares se colocan automáticamente según el sistema elegido.',
-            cardTitle: () => '📋 Convocatoria del partido',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">Toca los jugadores para <strong>seleccionarlos</strong> — se resaltan en azul</span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Los <strong>primeros titulares</strong> se ordenan automáticamente por su posición habitual</span></div>
-                <div class="ob-step-row"><span class="ob-num">3</span><span class="ob-step-text">El contador inferior muestra cuántos llevas seleccionados</span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">Pulsa <strong>"INICIAR PARTIDO"</strong> cuando tengas la convocatoria lista</span></div>`
-        },
-        {
-            icon: '▶️', heroTitle: 'Control del partido', heroSub: 'Cronómetros en tiempo real',
-            sideLabel: '▶️ Control del partido',
-            stepTitle: 'Controla el partido',
-            stepDesc:  'Pulsa EMPEZAR para iniciar el tiempo. Cada jugador tiene su cronómetro individual. Los puedes arrastrar entre el campo y el banquillo para gestionar los cambios.',
-            cardTitle: () => '▶️ Durante el partido',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">Pulsa <strong>"EMPEZAR"</strong> para iniciar el cronómetro del partido</span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Arrastra jugadores entre el <strong>campo y el banquillo</strong> para hacer cambios</span></div>
-                <div class="ob-step-row"><span class="ob-num">3</span><span class="ob-step-text">Toca un jugador para ver su <strong>menú de acciones</strong></span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">El tiempo de cada jugador se registra <strong>automáticamente</strong></span></div>`
-        },
-        {
-            icon: '⚡', heroTitle: 'Goles, tarjetas y cambios', heroSub: 'Acciones del partido',
-            sideLabel: '⚡ Goles, tarjetas y cambios',
-            stepTitle: 'Registra las acciones del partido',
-            stepDesc:  'Toca cualquier jugador para asignarle un gol, tarjeta amarilla o roja, o para hacer una sustitución. Todo queda registrado con el minuto exacto.',
-            cardTitle: () => '⚡ Acciones disponibles',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">Toca un jugador → aparece el <strong>menú de acciones</strong></span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Asigna <strong>⚽ gol</strong>, <strong>🟨 tarjeta amarilla</strong> o <strong>🟥 tarjeta roja</strong></span></div>
-                <div class="ob-step-row"><span class="ob-num">3</span><span class="ob-step-text">Para <strong>sustituciones</strong>, arrastra al banquillo o usa el botón de cambio</span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">Todo queda guardado con el <strong>minuto exacto</strong> de la acción</span></div>`
-        },
-        {
-            icon: '📊', heroTitle: 'Informe y guardado', heroSub: 'Exporta y guarda',
-            sideLabel: '📊 Informe y guardado',
-            stepTitle: 'Exporta el informe y guarda el equipo',
-            stepDesc:  'Al terminar el partido, descarga el informe completo con tiempos, goles y tarjetas. Se envía automáticamente al Director Deportivo si tienes configurado el email o WhatsApp.',
-            cardTitle: () => '📊 Finalizar partido',
-            cardBody:  () => `
-                <div class="ob-step-row"><span class="ob-num">1</span><span class="ob-step-text">Pulsa <strong>"GUARDAR"</strong> para salvar el equipo con su convocatoria y formación</span></div>
-                <div class="ob-step-row"><span class="ob-num">2</span><span class="ob-step-text">Pulsa <strong>"DESCARGAR"</strong> para exportar el informe en CSV</span></div>
-                <div class="ob-step-row"><span class="ob-num">3</span><span class="ob-step-text">El informe se envía <strong>automáticamente</strong> al Director Deportivo por email y WhatsApp</span></div>
-                <div class="ob-step-row"><span class="ob-num done">✓</span><span class="ob-step-text">El próximo partido carga el equipo guardado con <strong>un solo toque</strong></span></div>`
-        }
-    ];
-
-    function obRender() {
-        const step  = OB_STEPS[obCurrentStep];
-        const total = OB_STEPS.length;
-        const pct   = Math.round(((obCurrentStep + 1) / total) * 100);
-
-        const obContent = document.getElementById('ob-content');
-        if (obContent) obContent.scrollTop = 0;
-
-        document.getElementById('ob-progress-fill').style.width = pct + '%';
-        document.getElementById('ob-counter').textContent = (obCurrentStep + 1) + ' / ' + total;
-
-        document.getElementById('ob-hero-icon').textContent  = step.icon;
-        document.getElementById('ob-hero-title').textContent = step.heroTitle;
-        document.getElementById('ob-hero-sub').textContent   = step.heroSub;
-
-        document.getElementById('ob-card-title').innerHTML = step.cardTitle();
-        document.getElementById('ob-card-body').innerHTML  = step.cardBody();
-
-        document.getElementById('ob-step-desc-box').textContent = step.stepDesc;
-
-        const btnNext = document.getElementById('ob-btn-next');
-        btnNext.textContent = (obCurrentStep === total - 1) ? '✅ ¡Empezar!' : 'Siguiente →';
-
-        const btnPrev = document.getElementById('ob-btn-prev');
-        if (btnPrev) btnPrev.style.display = obCurrentStep === 0 ? 'none' : 'block';
-
-        const list = document.getElementById('ob-sidebar-list');
-        if (list) {
-            list.innerHTML = OB_STEPS.map((s, i) => `
-                <div class="ob-sidebar-item ${i === obCurrentStep ? 'active' : i < obCurrentStep ? 'done' : ''}"
-                     onclick="obGoTo(${i})">
-                    <span class="ob-sidebar-num">${i < obCurrentStep ? '✓' : i + 1}</span>
-                    ${s.sideLabel}
-                </div>`).join('');
-        }
+    if (before.isAuthorized !== after.isAuthorized) {
+      await admin.firestore().collection('audit_logs').add({
+        action: 'user_authorization_changed',
+        userId: context.params.userId,
+        email: after.email,
+        authorizedBefore: before.isAuthorized,
+        authorizedAfter: after.isAuthorized,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
     }
+  });
 
-    
-    function obNext() {
-        if (obCurrentStep >= OB_STEPS.length - 1) { goToAuth(); return; }
-        obCurrentStep++;
-        obRender();
-    }
+/* ==================================================================== */
+/* 9️⃣ Cloud Function: sendInviteEmail – Enviar email de invitación       */
+/*                                                                     */
+/* v2 CORRECCIONES:                                                    */
+/*   - Reemplaza functions.config() (deprecado en v5) por process.env  */
+/*   - Si no hay credenciales, devuelve inviteUrl en lugar de error    */
+/*     para que el cliente pueda usar el fallback mailto               */
+/*   - Logging detallado para diagnóstico                              */
+/* ==================================================================== */
+exports.sendInviteEmail = functions
+  .runWith({ secrets: ['EMAIL_USER', 'EMAIL_PASS'] })
+  .https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
+  }
 
-    function obPrev() {
-        if (obCurrentStep > 0) { obCurrentStep--; obRender(); }
-    }
+  const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
+  if (!callerDoc.exists || !['superadmin', 'admin'].includes(callerDoc.data().role)) {
+    throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin puede enviar invitaciones');
+  }
 
-    function obGoTo(i) {
-        obCurrentStep = i;
-        obRender();
-    }
+  const { to, subject, body, role, clubName, inviterName } = data;
+  /* SECURITY: escapar toda entrada de usuario que se interpole en HTML */
+  const _esc = (v) => { if (v === null || v === undefined) return ''; return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+  if (!to) {
+    throw new functions.https.HttpsError('invalid-argument', 'Se requiere el email de destino');
+  }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // CORRECCIÓN: detectDeviceAndShowInstall()
-    //
-    // POR QUÉ estaba mal:
-    // 1. Solo detectaba invite=true (nadie lo procesaba) → NO detectaba register=true
-    // 2. Solo leía el parámetro email → NO leía role ni clubName
-    // 3. NO cambiaba a la pestaña de registro → el usuario veía el form de login
-    // 4. NO pre-rellenaba el selector de rol ni el club
-    //
-    // AHORA:
-    // 1. Detecta register=true para saltar onboarding e ir a auth
-    // 2. Lee email, role y clubName de la URL
-    // 3. Cambia automáticamente a la pestaña REGISTRARSE
-    // 4. Pre-rellena el campo de email, el selector de rol y busca el club
-    // ═══════════════════════════════════════════════════════════════════
+  /* ---- Leer credenciales: process.env (nuevo sistema Firebase v5) ---- */
+  /* Para configurarlas: firebase functions:secrets:set EMAIL_USER        */
+  /*                     firebase functions:secrets:set EMAIL_PASS        */
+  /* O con variables de entorno: firebase functions:config deprecado.     */
+  /* Fallback compatible: también lee las variables de entorno de proceso */
+  const emailUser = process.env.EMAIL_USER || null;
+  const emailPass = process.env.EMAIL_PASS || null;
 
-    function detectDeviceAndShowInstall() {
-        const isStandalone =
-            window.navigator.standalone === true ||
-            window.matchMedia('(display-mode: standalone)').matches ||
-            window.matchMedia('(display-mode: fullscreen)').matches;
+  console.log('[sendInviteEmail] Iniciando. Destino:', to, '| emailUser configurado:', !!emailUser);
 
-        /* CORRECCIÓN: Detectar tanto invite= como register= en la URL */
-        const urlParams = new URLSearchParams(window.location.search);
-        const isInviteLink = urlParams.has('invite') || urlParams.has('register');
+  /* ---- Etiquetas legibles para roles ---- */
+  const roleLabels = {
+    club_admin: 'Administrador de Club',
+    individual_admin: 'Administrador Individual',
+    individual: 'Entrenador Individual',
+    director: 'Director Deportivo',
+    coordinator: 'Coordinador',
+    user: 'Entrenador',
+    parent: 'Padre/Madre/Tutor',
+    spectator: 'Espectador',
+  };
+  const roleLabel = roleLabels[role] || role || 'Usuario';
 
-        // Si ya está instalada o ya pasó el onboarding (30 días), ir directo al login
-        const lastShown   = parseInt(localStorage.getItem('cronos_install_shown') || '0');
-        const thirtyDays  = 30 * 24 * 60 * 60 * 1000;
-        const alreadySeen = Date.now() - lastShown < thirtyDays;
+  /* ---- Construir URL de invitación con todos los parámetros ---- */
+  const APP_URL = 'https://cronos-futbol-app.web.app';
+  const inviteParams = new URLSearchParams();
+  inviteParams.set('register', 'true');
+  inviteParams.set('email', to);
+  if (role) inviteParams.set('role', role);
+  if (clubName) inviteParams.set('clubName', clubName);
+  const inviteUrl = APP_URL + '/?' + inviteParams.toString();
 
-        if (isStandalone || alreadySeen || isInviteLink) {
-            document.getElementById('install-screen').style.display = 'none';
-            document.getElementById('auth-screen').style.display    = 'flex';
+  /* ---- Nombre del invitante ---- */
+  const senderName = inviterName || callerDoc.data().displayName || callerDoc.data().firstName || 'SuperAdmin';
 
-            /* ── Procesar parámetros de invitación ── */
-            if (isInviteLink) {
-                document.body.classList.add('immersive-mode');
-                document.body.addEventListener('click', function _fullscreen() {
-                    if (document.documentElement.requestFullscreen) {
-                        document.documentElement.requestFullscreen().catch(()=>{});
-                    }
-                    document.body.removeEventListener('click', _fullscreen);
-                }, { once: true });
+  /* ---- Asunto del correo ---- */
+  const emailSubject = subject || ('Invitacion a Chronos Futbol - ' + roleLabel + (clubName ? ' (' + clubName + ')' : ''));
 
-                const emailParam  = urlParams.get('email');
-                const roleParam   = urlParams.get('role');
-                const clubParam   = urlParams.get('clubName');
-                const registerParam = urlParams.get('register');
+  /* ---- URL del logo (alojado en Firebase Hosting) ---- */
+  const LOGO_URL = APP_URL + '/public/assets/img_0f3942d4.png';
 
-                /* CORRECCIÓN: Si viene de invitación con register=true, cambiar a REGISTRARSE */
-                if (registerParam === 'true') {
-                    setTimeout(() => {
-                        if (typeof switchTab === 'function') {
-                            switchTab('register');
-                        } else {
-                            /* Fallback: cambiar tabs manualmente si switchTab no existe aún */
-                            var tabLogin = document.getElementById('tab-login');
-                            var tabRegister = document.getElementById('tab-register');
-                            var roleContainer = document.getElementById('role-container');
-                            var registerPwd = document.getElementById('register-pwd-section');
-                            var loginPwd = document.getElementById('login-pwd-section');
+  /* ---- Cuerpo en texto plano (fallback para clientes que no soportan HTML) ---- */
+  const textBody = body || (
+    'Hola,\n\n' +
+    'Has sido invitado a unirte a Chronos Futbol como ' + roleLabel +
+    (clubName ? ' del club ' + clubName : '') + '.\n\n' +
+    'Para completar tu registro, haz clic en el siguiente enlace:\n' +
+    inviteUrl + '\n\n' +
+    'Si no puedes hacer clic, copia y pega la URL en tu navegador.\n\n' +
+    'Si no esperabas este correo, puedes ignorarlo.\n\n' +
+    'Saludos,\n' +
+    senderName + ' - Equipo Chronos Futbol'
+  );
 
-                            if (tabLogin) {
-                                tabLogin.style.color = '#7d8590';
-                                tabLogin.style.borderBottom = '2px solid transparent';
-                            }
-                            if (tabRegister) {
-                                tabRegister.style.color = '#58a6ff';
-                                tabRegister.style.borderBottom = '2px solid #58a6ff';
-                            }
-                            if (roleContainer) roleContainer.style.display = 'block';
-                            if (registerPwd) registerPwd.style.display = 'block';
-                            if (loginPwd) loginPwd.style.display = 'none';
-                        }
-                    }, 150);
-                }
+  /* ---- Cuerpo principal del mensaje (por defecto o personalizado) ---- */
+  const customBodyHtml = body
+    ? _esc(body).replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
+          .replace(/\n/g, '<br/>')
+    : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
 
-                /* Pre-rellenar el email */
-                if (emailParam) {
-                    setTimeout(() => {
-                        var authEmail = document.getElementById('auth-email');
-                        if (authEmail) authEmail.value = emailParam;
-                    }, 150);
-                }
+  /* ---- Cuerpo en HTML con logo y diseño profesional ---- */
+  const htmlBody = (
+    '<div style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;">' +
 
-                /* CORRECCIÓN: Pre-rellenar el selector de rol */
-                if (roleParam) {
-                    setTimeout(() => {
-                        var roleSelect = document.getElementById('auth-role');
-                        if (roleSelect) {
-                            /* Intentar seleccionar el rol que viene de la URL */
-                            roleSelect.value = roleParam;
-                            /* Disparar onchange para que se muestren los campos adicionales */
-                            if (typeof handleRoleChange === 'function') {
-                                handleRoleChange();
-                            }
-                        }
-                    }, 200);
-                }
+      /* -- Cabecera con logo y color de marca -- */
+      '<div style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); padding: 30px 20px; text-align: center;">' +
+        '<img src="' + LOGO_URL + '" alt="Chronos Futbol" style="max-width: 180px; height: auto; display: block; margin: 0 auto 12px auto;" />' +
+        '<h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600;">Invitacion a Chronos Futbol</h1>' +
+      '</div>' +
 
-                /* CORRECCIÓN: Pre-rellenar el selector de club con el nombre */
-                if (clubParam) {
-                    setTimeout(() => {
-                        var clubSelect = document.getElementById('auth-club-select');
-                        if (clubSelect) {
-                            /* Buscar si el club ya existe en el selector */
-                            var found = false;
-                            for (var i = 0; i < clubSelect.options.length; i++) {
-                                if (clubSelect.options[i].text === clubParam ||
-                                    clubSelect.options[i].value === clubParam) {
-                                    clubSelect.selectedIndex = i;
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            /* Si no se encuentra, el club se cargará dinámicamente.
-                               Guardar el nombre en un atributo data para que auth.js lo use
-                               cuando cargue los clubes desde Firestore. */
-                            if (!found) {
-                                clubSelect.setAttribute('data-prefill-club', clubParam);
-                            }
-                        }
-                    }, 300);
-                }
-            }
-            return;
-        }
+      /* -- Cuerpo del mensaje -- */
+      '<div style="padding: 30px 25px;">' +
+        (body ? '' : '<p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">Hola,</p>') +
+        '<p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">' +
+          customBodyHtml +
+        '</p>' +
 
-        document.getElementById('install-screen').style.display = 'flex';
-        document.getElementById('auth-screen').style.display    = 'none';
-        obRender();
-    }
+        /* -- Tarjeta de rol y club (solo si no es body personalizado, para evitar duplicar info) -- */
+        (body ? '' : 
+        '<div style="background-color: #f5f7ff; border-left: 4px solid #3949ab; border-radius: 4px; padding: 16px 20px; margin: 0 0 25px 0;">' +
+          '<p style="margin: 0 0 8px 0; font-size: 15px; color: #555555;">Rol: <strong style="color: #1a237e;">' + _esc(roleLabel) + '</strong></p>' +
+          (clubName ? '<p style="margin: 0; font-size: 15px; color: #555555;">Club: <strong style="color: #1a237e;">' + _esc(clubName) + '</strong></p>' : '') +
+        '</div>'
+        ) +
 
-    window.addEventListener('load', detectDeviceAndShowInstall);
-    </script>
+        /* -- Botón de registro -- */
+        '<div style="text-align: center; margin: 30px 0;">' +
+          '<a href="' + inviteUrl + '" style="display: inline-block; background: linear-gradient(135deg, #1a237e, #3949ab); color: #ffffff; text-decoration: none; padding: 14px 36px; border-radius: 6px; font-size: 16px; font-weight: 600; letter-spacing: 0.5px;">' +
+            'Completar Registro / Acceder' +
+          '</a>' +
+        '</div>' +
 
-    <script>
-    // ══ STUBS DE SEGURIDAD Y EYE TOGGLES ══════════════════════════════════════
+        '<p style="font-size: 14px; color: #888888; line-height: 1.5; margin: 15px 0 0 0; text-align: center;">' +
+          'Si el boton no funciona, copia y pega este enlace en tu navegador:<br/>' +
+          '<a href="' + inviteUrl + '" style="color: #3949ab; word-break: break-all;">' + inviteUrl + '</a>' +
+        '</p>' +
+      '</div>' +
 
-    // 1. cerrarSesion
-    window.cerrarSesion = window.cerrarSesion || function() {
-        if (typeof window.logoutUser === 'function') window.logoutUser();
-        else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
+      /* -- Pie del correo -- */
+      '<div style="background-color: #f5f5f5; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">' +
+        '<p style="margin: 0 0 6px 0; font-size: 13px; color: #999999;">Enviado por ' + _esc(senderName) + ' desde Chronos Futbol</p>' +
+        '<p style="margin: 0; font-size: 12px; color: #bbbbbb;">Si no esperabas este correo, puedes ignorarlo de forma segura.</p>' +
+      '</div>' +
+
+    '</div>'
+  );
+
+  /* ---- Si no hay credenciales → devolver inviteUrl para fallback mailto ---- */
+  if (!emailUser || !emailPass) {
+    console.warn('[sendInviteEmail] Credenciales EMAIL_USER/EMAIL_PASS no configuradas.');
+    console.warn('[sendInviteEmail] Configura con: firebase functions:secrets:set EMAIL_USER');
+    /* NO lanzamos error: devolvemos la URL para que el cliente use mailto */
+    return {
+      success: false,
+      noCredentials: true,
+      inviteUrl: inviteUrl,
+      sentTo: to,
+      message: 'Credenciales no configuradas. Usa el fallback mailto con la URL adjunta.',
     };
+  }
 
-    // 2. openUnifiedCommsMenu — se sobreescribe cuando cargue 21_coach_comms.js
-    window.openUnifiedCommsMenu = window.openUnifiedCommsMenu || function() {
-        if (typeof openClubReports === 'function') openClubReports();
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: emailUser, pass: emailPass },
+  });
+
+  try {
+    const info = await transporter.sendMail({
+      from: '"Chronos Fútbol" <' + emailUser + '>',
+      to,
+      subject: emailSubject,
+      text: textBody,
+      html: htmlBody,
+    });
+
+    console.log('[sendInviteEmail] ✅ Email enviado a:', to, '| MessageId:', info.messageId, '| URL:', inviteUrl);
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      sentTo: to,
+      inviteUrl: inviteUrl,
     };
+  } catch (error) {
+    console.error('[sendInviteEmail] ❌ Error Nodemailer:', error.message);
+    /* Devolver inviteUrl para que el cliente use mailto como fallback */
+    return {
+      success: false,
+      error: error.message,
+      inviteUrl: inviteUrl,
+      sentTo: to,
+    };
+  }
+});
 
-    // 3. showRoleSelector — puente hacia showRoleSelection (definida en auth.js)
-    if (!window._roleSelectStubSet) {
-        window._roleSelectStubSet = true;
-        var _origShowRoleSelector = window.showRoleSelector;
-        window.showRoleSelector = function() {
-            if (typeof window.showRoleSelection === 'function') {
-                window.showRoleSelection();
-            } else if (_origShowRoleSelector && _origShowRoleSelector !== window.showRoleSelector) {
-                _origShowRoleSelector();
-            } else {
-                var rs = document.getElementById('role-selection-screen');
-                if (rs) { rs.style.display = 'flex'; }
-            }
-        };
+console.log('Cloud Functions v8.4 cargadas (Fase 0 + originales + sendInviteEmail + logAuditEntry auditoria completa)');
+
+/* ==================================================================== */
+/* 0️⃣0️⃣ Cloud Function: approveIndividualAdmin – Aprobar admin individual */
+/* ==================================================================== */
+exports.approveIndividualAdmin = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
+  }
+
+  const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
+  if (!callerDoc.exists || callerDoc.data().role !== 'superadmin') {
+    throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin puede aprobar administradores individuales');
+  }
+
+  const { uid, entityId } = data;
+  if (!uid || !entityId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Se requieren uid y entityId');
+  }
+
+  try {
+    /* 1️⃣ Obtener el usuario a aprobar --------------------------------- */
+    const userDoc = await admin.firestore().collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Usuario no encontrado');
+    }
+    const userData = userDoc.data();
+
+    /* 2️⃣ Actualizar roles ------------------------------------------------ */
+    const updatedRoles = (userData.allRoles || []).map(r => {
+      if (r.role === 'individual' || r.role === 'admin_individual') {
+        return { ...r, isAuthorized: true, status: 'active' };
+      }
+      return r;
+    });
+
+    if (!updatedRoles.some(r => r.role === 'individual' || r.role === 'admin_individual')) {
+      updatedRoles.push({
+        role: 'individual',
+        isAuthorized: true,
+        status: 'active',
+        clubId: entityId,
+        individualEntityId: entityId,
+      });
     }
 
-    // 4. EYE TOGGLES para contraseña — los botones existen pero no tienen handler
-    (function () {
-        function wireToggle(inputId, btnId) {
-            var btn = document.getElementById(btnId);
-            var inp = document.getElementById(inputId);
-            if (!btn || !inp) return;
-            btn.addEventListener('click', function () {
-                var show = (inp.type === 'password');
-                inp.type  = show ? 'text'     : 'password';
-                btn.textContent = show ? '🙈' : '👁️';
-            });
-        }
-        function tryWire() {
-            wireToggle('auth-password',             'toggle-pwd-login');
-            wireToggle('register-password',         'toggle-pwd-register');
-            wireToggle('register-password-confirm', 'toggle-pwd-confirm');
-        }
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', tryWire);
-        } else {
-            tryWire();
-        }
-    })();
-    </script>
+    await admin.firestore().collection('users').doc(uid).update({
+      isAuthorized: true,
+      status: 'active',
+      clubId: entityId,
+      individualEntityId: entityId,
+      individualOwnerId: entityId,
+      allRoles: updatedRoles,
+      authorizedAt: admin.firestore.FieldValue.serverTimestamp(),
+      authorizedBy: context.auth.token.email || 'superadmin',
+    });
 
-    <!-- ══ CDN ════════════════════════════════════════════════════════════════ -->
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    /* 3️⃣ Marcar entidad individual como con administrador ----------------- */
+    const entityDoc = await admin.firestore().collection('clubs').doc(entityId).get();
+    if (entityDoc.exists && entityDoc.data().type === 'individual') {
+      await admin.firestore().collection('clubs').doc(entityId).update({
+        hasAdmin: true,
+        adminUid: uid,
+        adminEmail: userData.email,
+        adminName: userData.displayName || userData.firstName || userData.email,
+      });
+    }
 
-    <!-- ══ CORE: app.js (lógica principal, carga primero) ══════════════════════ -->
-    <script src="js/core/app-init.js"></script>
+    /* 4️⃣ Marcar la solicitud como aprobada ------------------------------- */
+    const reqSnap = await admin.firestore().collection('platform_requests')
+      .where('userUid', '==', uid)
+      .where('requestedRole', '==', 'individual')
+      .where('status', '==', 'pending_sa')
+      .get();
 
-    <!-- ══ CORE: configuración y parches ══════════════════════════════════════ -->
-    <script src="js/core/setup-modal.js"></script>
-    <script src="js/core/patches.js"></script>
+    const batch = admin.firestore().batch();
+    reqSnap.forEach(doc => {
+      batch.update(doc.ref, {
+        status: 'sa_approved',
+        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        approvedBy: context.auth.token.email || 'superadmin',
+      });
+    });
+    if (reqSnap.size > 0) await batch.commit();
 
-    <!-- ══ SERVICES: Firebase + Auth ══════════════════════════════════════════ -->
-    <script type="module" src="js/services/firebase-init.js"></script>
-    <script type="module" src="js/services/auth.js"></script>
-    <script src="js/services/auth-improvements.js"></script>
+    /* 5️⃣ FIX (C2): Asignar custom claims al admin individual ------------- */
+    // Sin estos claims, las reglas de Firestore (sameClubAsDoc) deniegan
+    // acceso a cronos_player_reports, cronos_notifications y cronos_player_links,
+    // lo que impide que los informes lleguen al staff y a los padres.
+    try {
+      await admin.auth().setCustomUserClaims(uid, {
+        role: 'individual',
+        clubId: entityId,
+        claimsSetAt: Date.now(),
+      });
+      console.log('[approveIndividualAdmin] Custom claims asignados:', { uid, role: 'individual', clubId: entityId });
+    } catch (claimErr) {
+      // No bloquear la aprobación si los claims fallan (el fallback de reglas lo cubre)
+      console.error('[approveIndividualAdmin] Error asignando custom claims:', claimErr.message);
+    }
 
-    <!-- ══ CORE: seguridad, utilidades, seudonimizador ═══════════════════════ -->
-    <script src="js/core/security-and-state.js"></script>
-    <script src="js/core/utils.js"></script>
-    <script src="js/core/pseudonymizer.js"></script>
-    <!-- SPRINT 4: Accesibilidad WCAG 2.1 básica (debe cargar temprano) -->
-    <script src="js/core/accessibility-wcag.js"></script>
+    console.log('[approveIndividualAdmin] Admin individual aprobado:', uid, 'entidad:', entityId);
 
-    <!-- ══ SPRINT 3: Auditoría y Optimización de Renders ════════════════════ -->
-    <script src="js/services/audit-logger.js"></script>
-    <script src="js/core/render-optimizer.js"></script>
-    <script src="js/core/sprint3-init.js"></script>
-    <script src="js/core/sprint3-tests.js"></script>
+    return {
+      success: true,
+      uid,
+      entityId,
+      message: 'Administrador Individual aprobado correctamente',
+    };
+  } catch (error) {
+    console.error('[approveIndividualAdmin] Error:', error);
+    throw new functions.https.HttpsError('internal', 'Error al aprobar admin individual: ' + error.message);
+  }
+});
 
-    <!-- ══ MATCH: eventos del partido ═════════════════════════════════════════ -->
-    <script src="js/match/events/player-actions.js"></script>
-    <script src="js/match/demo-tutorial.js"></script>
-    <script src="js/match/persistence/active-match.js"></script>
-    <script src="js/match/timer/core.js"></script>
-    <script src="js/match/events/movement-log.js"></script>
-    <script src="js/match/persistence/team-persistence.js"></script>
-    <script src="js/match/live/sync.js"></script>
+exports.logAuditEntry = functions.https.onCall(async (data, context) => {
+  // 1) Requiere autenticación
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'No autenticado');
+  }
 
-    <!-- ══ SERVICES: Firestore, cloud, offline ════════════════════════════════ -->
-    <script src="js/services/firestore-sync.js"></script>
-    <script src="js/services/firestore-storage.js"></script>
-    <script src="js/services/offline-manager.js"></script>
-    <!-- SPRINT 4: Notificaciones y Training Plans sincronizados -->
-    <script src="js/services/notification-dismiss-sync.js"></script>
-    <script src="js/services/user-management.js"></script>
+  data = data || {};
 
-    <!-- ══ STAFF & COMMS ══════════════════════════════════════════════════════ -->
-    <script src="js/core/staff-and-comms.js"></script>
+  // 2) Validar campos obligatorios: matchId y action
+  const matchId = typeof data.matchId === 'string' ? data.matchId.trim() : '';
+  const action  = typeof data.action === 'string' ? data.action.trim() : '';
+  if (!matchId || !action) {
+    throw new functions.https.HttpsError('invalid-argument', 'matchId y action son obligatorios');
+  }
 
-    <!-- ══ AI: importación de jugadores ════════════════════════════════════════ -->
-    <script src="js/ai/import.js"></script>
+  // 3) Identidad desde el token (no confiar en el cliente)
+  const trustedUid   = context.auth.uid;
+  const trustedEmail = context.auth.token.email || data.userEmail || 'unknown';
 
-    <!-- ══ ROSTER: plantilla y formaciones ═════════════════════════════════════ -->
-    <script src="js/roster/formations.js"></script>
-    <script src="js/roster/legacy-formations.js"></script>
+  // 4) Documento a persistir (campos que envía audit-logger.js)
+  const entry = {
+    matchId:         matchId,
+    action:          action,
+    value:           data.value !== undefined ? data.value : null,
 
-    <!-- ══ UI: render, drag-drop, scroll ══════════════════════════════════════ -->
-    <script src="js/ui/bench-scroll.js"></script>
-    <script src="js/ui/render.js"></script>
-    <script src="js/ui/drag-drop.js"></script>
+    playerId:        data.playerId !== undefined ? data.playerId : null,
+    playerName:      typeof data.playerName === 'string' ? data.playerName : null,
+    playerNumber:    data.playerNumber !== undefined ? data.playerNumber : null,
 
-    <!-- ══ SHARED: WhatsApp, email, admin constants ═══════════════════════════ -->
-    <script src="js/shared/whatsapp-email.js"></script>
-        <script src="js/shared/admin-shared.js"></script>
+    role:            typeof data.role === 'string' ? data.role : 'unknown',
+    userId:          trustedUid,
+    userEmail:       trustedEmail,
 
-    <!-- ══ ADMIN: SuperAdmin, Club, Individual, Billing ═══════════════════════ -->
-    <script src="js/admin/superadmin/superadmin.panel.js"></script>
-    <script src="js/admin/superadmin/extras.js"></script>
-    <script src="js/admin/superadmin/billing.js"></script>
-    <script src="js/admin/club/panel.js"></script>
-    <script src="js/admin/individual/panel.js"></script>
-    <script src="js/admin/billing/payments.js"></script>
-    <script src="js/admin/billing/ui.js"></script>
+    changes:         (data.changes && typeof data.changes === 'object') ? data.changes : {},
 
-    <!-- ══ COACH: comunicaciones, reportes, entrenamiento ════════════════════ -->
-    <script src="js/coach/comms/panel.js"></script>
-    <script src="js/coach/reports/club-reports.js"></script>
-    <script src="js/coach/reports/generator.js"></script>
-    <!-- SPRINT 4: Training Plans sync con Firestore (debe ir ANTES de panel.js) -->
-    <script src="js/services/training-firestore-sync.js"></script>
-    <script src="js/coach/training/panel.js"></script>
+    timestamp:       typeof data.timestamp === 'string' ? data.timestamp : new Date().toISOString(),
+    clientTimestamp: typeof data.clientTimestamp === 'number' ? data.clientTimestamp : null,
+    deviceInfo:      (data.deviceInfo && typeof data.deviceInfo === 'object') ? data.deviceInfo : {},
 
-    <!-- ══ PARENT: portal de padres ═══════════════════════════════════════════ -->
-    <script src="js/parent/panel.js"></script>
+    ipAddress:       context.rawRequest ? context.rawRequest.ip : 'unknown',
+    serverTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+  };
 
-    <!-- ══ CORE: event listeners (debe ir al final) ══════════════════════════ -->
-    <script src="js/core/event-listeners.js"></script>
-
-</body>
-</html>
+  // 5) Persistir en la colección audit_logs con manejo de errores genérico
+  try {
+    await admin.firestore().collection('audit_logs').add(entry);
+    return { success: true };
+  } catch (error) {
+    console.error('[logAuditEntry] Error:', error);
+    throw new functions.https.HttpsError('internal', 'No se pudo registrar la auditoria');
+  }
+});
