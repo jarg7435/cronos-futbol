@@ -1049,21 +1049,34 @@ async function _sdLoadReports() {
         const { db, collection, getDocs, query, where, limit } = await _sdFS();
 
         // FIX: Query dual para acceder a informes de staff.
-        // Query 1: por clubId (requiere custom claims con clubId en el token)
+        // Query 1: por clubId (requiere que el token tenga el custom claim
+        //          clubId; las reglas exigen request.auth.token.clubId == clubId
+        //          sobre TODOS los docs candidatos, así que si el director/
+        //          coordinador aún no tiene el claim propagado, la query ENTERA
+        //          es rechazada con "Missing or insufficient permissions").
         // Query 2: por staffUids array-contains (funciona sin custom claims,
-        //          ya que las reglas de Firestore verifican request.auth.uid
-        //          in resource.data.staffUids)
-        let rawSnap = await getDocs(query(
-            collection(db, 'cronos_player_reports'),
-            where('clubId', '==', clubId),
-            limit(500)
-        ));
+        //          ya que las reglas de Firestore permiten leer a quien esté
+        //          en resource.data.staffUids).
+        // Por eso la Query 1 va en su propio try/catch: si falla por permisos
+        // NO debe abortar el flujo; caemos a la Query 2.
+        let rawSnap = { forEach: () => {} };
+        let _clubQueryOk = false;
+        try {
+            rawSnap = await getDocs(query(
+                collection(db, 'cronos_player_reports'),
+                where('clubId', '==', clubId),
+                limit(500)
+            ));
+            _clubQueryOk = true;
+        } catch (clubErr) {
+            console.warn('[StaffDashboard] Query por clubId falló (probable claim clubId no propagado), usando fallback staffUids:', clubErr.message);
+        }
 
-        // Si la query por clubId no devuelve docs de staff, intentar por staffUids
+        // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
         let _hasStaffDocs = false;
         rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
 
-        if (!_hasStaffDocs && me.uid) {
+        if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
             try {
                 const altSnap = await getDocs(query(
                     collection(db, 'cronos_player_reports'),

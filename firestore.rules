@@ -416,6 +416,14 @@ service cloud.firestore {
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid == resource.data.coachUid ||
         request.auth.uid == resource.data.parentUid ||
+        // FIX: directores/coordinadores reciben informes de staff aunque su
+        // token aún NO tenga el custom claim 'clubId' (claims sin propagar o
+        // token caducado). El informe incluye staffUids con los UIDs de los
+        // destinatarios de staff (ver panel.js), así que permitimos leer a
+        // quien esté listado explícitamente. Esto NO amplía la superficie:
+        // solo accede el staff destinatario del propio documento.
+        (resource.data.staffUids != null &&
+         request.auth.uid in resource.data.staffUids) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
