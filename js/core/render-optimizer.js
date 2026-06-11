@@ -18,37 +18,52 @@ class RenderOptimizer {
      * Evita múltiples renders en el mismo frame
      */
     scheduleRender(renderFn, priority = 'normal') {
+        if (typeof renderFn !== 'function') return;
+        // Encolar TODAS las funciones pendientes (antes solo se ejecutaba la
+        // primera del frame, descartando el resto → los cronómetros de
+        // jugadores nunca se repintaban y quedaban en 00:00).
+        this.pendingUpdates.add({ fn: renderFn, priority });
+
         if (!this.updateScheduled) {
             this.updateScheduled = true;
             this.rafId = requestAnimationFrame((timestamp) => {
-                this._executeRender(renderFn, timestamp);
+                this._flushRenders(timestamp);
             });
         }
     }
 
     /**
-     * Ejecutar render con medición de performance
+     * Ejecutar TODOS los renders pendientes con medición de performance.
+     * Las de prioridad 'high' se ejecutan primero.
      */
-    _executeRender(renderFn, timestamp) {
+    _flushRenders(timestamp) {
         const startTime = performance.now();
-        
-        try {
-            renderFn();
-            
-            const duration = performance.now() - startTime;
-            this.lastRenderTime = duration;
-            this.renderStats.count++;
-            this.renderStats.totalMs += duration;
-            
-            // Log de perf si excede 16ms (causa lag en 60fps)
-            if (duration > 16) {
-                console.warn(`⚠️ Render lento: ${duration.toFixed(2)}ms (target: <16ms)`);
+
+        // Snapshot + limpiar antes de ejecutar (un render puede reprogramar otro)
+        const queue = Array.from(this.pendingUpdates);
+        this.pendingUpdates.clear();
+        this.updateScheduled = false;
+        this.rafId = null;
+
+        queue.sort((a, b) => (b.priority === 'high' ? 1 : 0) - (a.priority === 'high' ? 1 : 0));
+
+        for (const item of queue) {
+            try {
+                item.fn();
+            } catch (e) {
+                console.error('Error en renderizado:', e);
             }
-        } catch (e) {
-            console.error('Error en renderizado:', e);
         }
 
-        this.updateScheduled = false;
+        const duration = performance.now() - startTime;
+        this.lastRenderTime = duration;
+        this.renderStats.count++;
+        this.renderStats.totalMs += duration;
+
+        // Log de perf si excede 16ms (causa lag en 60fps)
+        if (duration > 16) {
+            console.warn(`⚠️ Render lento: ${duration.toFixed(2)}ms (target: <16ms)`);
+        }
     }
 
     /**
