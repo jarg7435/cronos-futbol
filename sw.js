@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v159
+//  CRONOS FUTBOL — Service Worker v161
+//  v161: FIX CRÍTICO — informes de partido no se enviaban a nadie a partir
+//         del 2º partido. La versión ACTIVA de startMatchWithConvocation
+//         (js/ai/import.js, carga DESPUÉS de app-init.js y la eclipsa) no
+//         limpiaba los guards de idempotencia de informes (cronos_reports_sent_*
+//         + _cronosLastDispatchedMatch + liveMatchId), por lo que
+//         saveAllMatchReportsInternal() omitía el despacho del 2º partido en
+//         adelante. Bump fuerza recarga de import.js parcheado.
 //  v159: RGPD (P1) — el enlace «Política de Privacidad» del pie ahora solo
 //         se muestra en modo login (en registro queda el del checkbox). Se
 //         gestiona en los onclick de las pestañas y en switchTab (auth.js).
@@ -106,8 +113,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v160';
-const CACHE_NAME = 'cronos-cache-v160';
+const VERSION    = 'v161';
+const CACHE_NAME = 'cronos-cache-v161';
 
 const ASSETS = [
     './',

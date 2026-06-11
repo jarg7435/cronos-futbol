@@ -32,6 +32,31 @@ _Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: 
   - Reset del guard al empezar partido nuevo: `resetMatch` (`js/match/events/movement-log.js`) y al generar nuevo `liveMatchId` (`js/match/live/sync.js`, `js/services/firestore-sync.js`).
   - Verificado con test del guard: 3 disparos del mismo partido → 1 despacho; partido nuevo → vuelve a despachar; modo local sin live-sync funciona.
 
+## COMPLETADO (HOTFIX informes)
+
+- [x] **BUG-CRÍTICO**: «Informes de partido no se envían a nadie» (a partir del 2º partido)
+  - Causa raíz: hay DOS definiciones globales de `startMatchWithConvocation`:
+    - `js/core/app-init.js` (~línea 3558): limpia los guards de idempotencia de
+      informes al empezar un partido nuevo (`cronos_reports_sent_*` en
+      localStorage, `window._cronosLastDispatchedMatch`, `liveMatchId`,
+      `liveIsActive`).
+    - `js/ai/import.js` (~línea 819): **NO** limpiaba nada.
+  - `js/ai/import.js` se carga DESPUÉS de `js/core/app-init.js` en `index.html`
+    (1183 vs 1228), así que su versión **eclipsa** a la de app-init.js y es la
+    ACTIVA. Resultado: tras finalizar el 1er partido, los guards quedaban puestos
+    y `saveAllMatchReportsInternal()` (`js/coach/comms/panel.js`) omitía el
+    despacho de TODOS los partidos siguientes → ni staff, ni padres, ni la copia
+    del propio entrenador recibían informe. Con `liveMatchId` obsoleto (sin red /
+    sync fallido) el bloqueo era inmediato en el 2º partido.
+  - Fix (`js/ai/import.js` → `startMatchWithConvocation`): replicada la limpieza
+    de guards de la versión de app-init.js justo tras fijar `activeConvocation`.
+  - Verificado con repro E2E que extrae el bloque de limpieza real y simula 2
+    partidos consecutivos (incl. `liveMatchId` obsoleto/offline): pre-fix el 2º
+    partido se omitía; post-fix ambos despachan. `node --check` OK.
+  - Bump SW a `cronos-cache-v161` para forzar recarga de `import.js` parcheado.
+  - Deuda técnica: unificar las múltiples copias de `startMatchWithConvocation`
+    en un único módulo (mismo problema de orden de carga frágil ya anotado en E5).
+
 ## COMPLETADO E5
 
 - [x] **E5**: Entradas/salidas duplicadas en línea de tiempo

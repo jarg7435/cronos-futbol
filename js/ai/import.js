@@ -832,6 +832,23 @@ function startMatchWithConvocation() {
     
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
+    // ── FIX (bug: "informes no se envían a nadie") ───────────────────
+    // Esta es la versión ACTIVA de startMatchWithConvocation (js/ai/import.js
+    // se carga DESPUÉS de js/core/app-init.js, así que eclipsa a su versión).
+    // La versión de app-init.js limpiaba los guards de idempotencia de informes
+    // al empezar un partido nuevo; ésta NO lo hacía, por lo que tras el 1er
+    // partido los guards persistían y saveAllMatchReportsInternal() omitía el
+    // despacho de TODOS los partidos siguientes ("no se envían a nadie").
+    // Replicamos aquí la limpieza para liberar el despacho en cada partido nuevo.
+    try {
+        Object.keys(localStorage)
+            .filter(k => k.startsWith('cronos_reports_sent_'))
+            .forEach(k => localStorage.removeItem(k));
+    } catch (_) { /* localStorage no disponible: no bloquea el arranque */ }
+    if (typeof liveMatchId !== 'undefined') liveMatchId = null;
+    if (typeof liveIsActive !== 'undefined') liveIsActive = false;
+    window._cronosLastDispatchedMatch = null;
+
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();
 
