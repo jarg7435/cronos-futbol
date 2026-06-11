@@ -1983,7 +1983,12 @@ async function openContactManager() {
 
     // Asegurar que tenemos la config de email cargada y que emailConfig existe
     if (typeof window.emailConfig === 'undefined') window.emailConfig = { contacts: [] };
-    if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+    // FIX: loadEmailConfig estaba FUERA del try/catch. Si su versión activa
+    // (hay 3 definiciones) es async y rechaza, la promesa de esta función
+    // async se rechazaba silenciosamente (onclick sin .catch) → "clic sin
+    // efecto, sin error". Lo protegemos para que el modal abra igualmente.
+    try { if (typeof loadEmailConfig === 'function') await loadEmailConfig(); }
+    catch (e) { console.warn('[Contactos] loadEmailConfig falló, continúo igualmente:', e?.message); }
     if (!window.emailConfig) window.emailConfig = { contacts: [] };
 
     try {
