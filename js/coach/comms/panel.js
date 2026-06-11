@@ -4052,3 +4052,4 @@ window.openContactManager      = openContactManager;
 window.saveContactManagerData  = saveContactManagerData;
 window.saveAllMatchReportsInternal = saveAllMatchReportsInternal;
 window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
+
