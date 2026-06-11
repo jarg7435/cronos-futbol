@@ -1,5 +1,25 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v159
+//  CRONOS FUTBOL — Service Worker v163
+//  v163: FIX (C3) — Notificaciones sin coachUid/userId: varias llamadas
+//         setDoc en cronos_notifications omitían coachUid y/o userId,
+//         lo que hacía que las reglas de Firestore rechazaran la escritura.
+//         Añadidos coachUid + userId en: notif_matchsglobe, notif_rpt,
+//         coll_rpt, coll_rpt_self, indiv_rpt y notifPayload (entrenamiento).
+//         Bump fuerza recarga.
+//  v162: FIX (C2) — Custom claims no se establecían al aprobar usuarios
+//         (solo se llamaba a setCustomClaims para club_admin). Sin claims,
+//         las reglas Firestore (sameClubAsDoc) denegaban acceso a informes,
+//         notificaciones y vínculos. Ahora se llama a setCustomClaims para
+//         TODOS los roles al aprobar. También: coachUid en notificaciones,
+//         userDocClubId fallback en rules para cronos_notifications y
+//         cronos_player_links. Bump fuerza recarga.
+//  v161: FIX CRÍTICO — informes de partido no se enviaban a nadie a partir
+//         del 2º partido. La versión ACTIVA de startMatchWithConvocation
+//         (js/ai/import.js, carga DESPUÉS de app-init.js y la eclipsa) no
+//         limpiaba los guards de idempotencia de informes (cronos_reports_sent_*
+//         + _cronosLastDispatchedMatch + liveMatchId), por lo que
+//         saveAllMatchReportsInternal() omitía el despacho del 2º partido en
+//         adelante. Bump fuerza recarga de import.js parcheado.
 //  v159: RGPD (P1) — el enlace «Política de Privacidad» del pie ahora solo
 //         se muestra en modo login (en registro queda el del checkbox). Se
 //         gestiona en los onclick de las pestañas y en switchTab (auth.js).
@@ -106,8 +126,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v159';
-const CACHE_NAME = 'cronos-cache-v159';
+const VERSION    = 'v163';
+const CACHE_NAME = 'cronos-cache-v163';
 
 const ASSETS = [
     './',
