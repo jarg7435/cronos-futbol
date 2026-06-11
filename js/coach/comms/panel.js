@@ -1836,9 +1836,17 @@ async function autoDispatchMatchReports() {
         try {
             const matchId = sharedMatchId; // mismo ID que staff
 
+            // [DIAG TEMP] Confirmar que la FASE C se ejecuta y con qué datos.
+            console.log('[FaseC][DIAG] Iniciando auto-informe entrenador.',
+                'coachUid:', me.uid, 'clubId:', me.clubId || null,
+                'players:', (homePlayers || []).length, 'matchId:', matchId);
+
+            console.log('FASE C Iniciando escritura coach. homePlayers:', homePlayers.length, 'me.uid:', me.uid);
+
             // Guardar copia del informe en cronos_player_reports con coachUid = uid
             for (const p of homePlayers) {
                 const rptId = `${matchId}_coach_p${p.number}`;
+                try {
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
                     matchId,
                     type:          'collective_match_report',
@@ -1862,6 +1870,14 @@ async function autoDispatchMatchReports() {
                     minutesPlayed: typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
                     history:       _parseHistoryForFirestore(p.history||[]),
                 });
+                // [DIAG TEMP] setDoc del coach OK para este jugador.
+                console.log('[FaseC][DIAG] Doc coach escrito OK:', rptId);
+                } catch (setErr) {
+                    // [DIAG TEMP] Capturar el fallo concreto del setDoc por jugador
+                    // (típicamente permission-denied de las reglas Firestore).
+                    console.error('[FaseC][DIAG] setDoc coach FALLÓ:', rptId,
+                        '| code:', setErr.code, '| msg:', setErr.message);
+                }
             }
 
             // Notificación in-app para el propio entrenador (formato estándar)
@@ -1881,8 +1897,11 @@ async function autoDispatchMatchReports() {
                 message:   'Has generado un nuevo informe colectivo de partido.',
                 createdAt: new Date().toISOString(),
             });
-        } catch(autoSelfErr) {
-            console.warn('[AutoDispatch] Auto-informe al entrenador falló silenciosamente:', autoSelfErr.message);
+            // [DIAG TEMP] FASE C completada sin lanzar excepción al nivel superior.
+            console.log('[FaseC][DIAG] FASE C completada. Notificación coach:', coachNotifId);
+        } catch(e) {
+            // [DIAG TEMP] mostrar mensaje + objeto de error completo.
+            console.error('FASE C ERROR setDoc coach:', e.message, e);
         }
 
         showToast('✅ Informes enviados automáticamente (Interno)', 4000);
