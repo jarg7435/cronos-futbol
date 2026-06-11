@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v161
+//  CRONOS FUTBOL — Service Worker v162
+//  v162: Bump cache — fuerza recarga de los fixes de partido en vivo (clubId en
+//         live_matches), del filtro del visor (live.html) y de setCustomClaims al
+//         activar miembros (panel.js). Sin el bump no se purga la cache v161.
 //  v161: FIX CRÍTICO — informes de partido no se enviaban a nadie a partir
 //         del 2º partido. La versión ACTIVA de startMatchWithConvocation
 //         (js/ai/import.js, carga DESPUÉS de app-init.js y la eclipsa) no
@@ -113,8 +116,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v161';
-const CACHE_NAME = 'cronos-cache-v161';
+const VERSION    = 'v162';
+const CACHE_NAME = 'cronos-cache-v162';
 
 const ASSETS = [
     './',
