@@ -1509,6 +1509,20 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                             });
                         } catch(entErr) { console.warn('[saApproveRequest] Error setting hasAdmin:', entErr.message); }
                     }
+                    // FIX (C2): Asignar custom claims al admin individual para que
+                    // las reglas de Firestore (sameClubAsDoc) le concedan acceso.
+                    try {
+                        if (httpsCallable && fa.functions) {
+                            await httpsCallable(fa.functions, 'setCustomClaims')({
+                                uid: id, role: 'individual', clubId: _indEntityId || null,
+                            });
+                            console.log('[saApprove] Custom claims asignados a individual_admin', id, _indEntityId);
+                        } else {
+                            console.warn('[saApprove] Functions no disponible; claims no asignados (fallback de reglas activo).');
+                        }
+                    } catch (claimErr) {
+                        console.warn('[saApprove] setCustomClaims falló para individual (continúa con fallback de reglas):', claimErr.message);
+                    }
                     // FIX: Marcar platform_requests del admin individual como aprobadas
                     try {
                         const { collection, getDocs, query, where, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -1551,6 +1565,17 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                             if (!u.clubId) _updateObj.clubId = _indEntityIdOther;
                         }
                         await updateDoc(doc(db,'users',id), _updateObj);
+                        // FIX (C2): Asignar custom claims a usuarios bajo entidad individual
+                        try {
+                            if (httpsCallable && fa.functions && _indEntityIdOther) {
+                                await httpsCallable(fa.functions, 'setCustomClaims')({
+                                    uid: id, role: u.role || 'user', clubId: _indEntityIdOther,
+                                });
+                                console.log('[saApprove] Custom claims asignados a usuario individual', id, u.role, _indEntityIdOther);
+                            }
+                        } catch (claimErr2) {
+                            console.warn('[saApprove] setCustomClaims falló para usuario individual (continúa con fallback):', claimErr2.message);
+                        }
                         _saHideSpinner();
                         _saToast(`✅ ${u.email} activado directamente (usuario individual).`, 5000);
                     } else {
@@ -1610,6 +1635,17 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                         });
                     }
                     await updateDoc(doc(db,'platform_requests',id), { status:'sa_approved', approvedAt:new Date().toISOString(), approvedBy:me });
+                    // FIX (C2): Asignar custom claims al club_admin (vía user_request)
+                    try {
+                        if (httpsCallable && fa.functions) {
+                            await httpsCallable(fa.functions, 'setCustomClaims')({
+                                uid: r.userUid, role: 'club_admin', clubId: newClubId,
+                            });
+                            console.log('[saApprove] Custom claims asignados a club_admin (user_request)', r.userUid, newClubId);
+                        }
+                    } catch (claimErrCA) {
+                        console.warn('[saApprove] setCustomClaims falló para club_admin (user_request):', claimErrCA.message);
+                    }
                     _saHideSpinner();
                     _saToast(`✅ Club "${r.requestedClubName}" creado y ${r.requestedEmail} activado como Administrador.`, 6000);
 
@@ -1647,6 +1683,17 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                                 });
                             } catch(entErr3) { console.warn('[saApproveRequest] Error setting hasAdmin:', entErr3.message); }
                         }
+                    }
+                    // FIX (C2): Asignar custom claims al admin individual (vía user_request)
+                    try {
+                        if (httpsCallable && fa.functions) {
+                            await httpsCallable(fa.functions, 'setCustomClaims')({
+                                uid: r.userUid, role: 'individual', clubId: _indEntityId3 || null,
+                            });
+                            console.log('[saApprove] Custom claims asignados a individual_admin (user_request)', r.userUid, _indEntityId3);
+                        }
+                    } catch (claimErr3) {
+                        console.warn('[saApprove] setCustomClaims falló para individual (user_request):', claimErr3.message);
                     }
                     await updateDoc(doc(db,'platform_requests',id), { status:'sa_approved', approvedAt:new Date().toISOString(), approvedBy:me });
                     _saHideSpinner();
@@ -1774,6 +1821,23 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                         approvedAt: new Date().toISOString(),
                         approvedBy: me
                     }).catch(()=>{});
+                    // FIX (C2): Asignar custom claims a todos los roles aprobados
+                    // (entrenador, director, coordinador, padre) para que las reglas
+                    // de Firestore (sameClubAsDoc) les concedan acceso a informes,
+                    // notificaciones y vínculos padre-jugador.
+                    try {
+                        if (httpsCallable && fa.functions) {
+                            const _claimClubId = r.clubId || r.individualOwnerId || null;
+                            await httpsCallable(fa.functions, 'setCustomClaims')({
+                                uid: r.userUid,
+                                role: r.requestedRole || 'user',
+                                clubId: _claimClubId,
+                            });
+                            console.log('[saApprove] Custom claims asignados a', r.requestedRole, r.userUid, _claimClubId);
+                        }
+                    } catch (claimErr4) {
+                        console.warn('[saApprove] setCustomClaims falló para', r.requestedRole, '(continúa con fallback):', claimErr4.message);
+                    }
                     _saHideSpinner();
                     const roleLabels = {
                         user:'Entrenador', coordinator:'Coordinador',
