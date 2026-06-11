@@ -1673,6 +1673,30 @@ async function openClubAdminPanel(preClubId = null) {
                 await updateDoc(doc(db,'clubs',cid), blkSlot);
             }
 
+            // ── PROBLEMA 2: propagar custom claim clubId al activar ──────────
+            // El entrenador (rol 'user') y demás miembros tienen clubId en su
+            // documento Firestore, pero su token JWT no lo lleva, así que las
+            // reglas basadas en sameClub()/sameClubAsDoc() (informes, vínculos,
+            // hilos de staff, partidos en vivo) fallaban con permission-denied.
+            // Al activarlo, el club_admin invoca setCustomClaims para grabar
+            // {role, clubId} en el token. La Cloud Function valida que el admin
+            // solo afecte a miembros NO privilegiados de SU propio club.
+            // El token del usuario activado se refrescará en su próximo login o
+            // ciclo de refresco (claimsSetAt fuerza la regeneración del ID token).
+            if (isActive && fa && fa.functions && cid) {
+                try {
+                    var setClaimsFn = httpsCallable(fa.functions, 'setCustomClaims');
+                    await setClaimsFn({ uid: userId, role: role, clubId: cid });
+                    console.log('[caSetUserStatus] Custom claims propagados:', { uid: userId, role: role, clubId: cid });
+                } catch (claimErr) {
+                    // No bloquea la activación: las reglas tienen fallback
+                    // userDocClubId() que lee users/{uid}.clubId aunque el claim
+                    // no llegue a propagarse.
+                    console.warn('[caSetUserStatus] setCustomClaims falló (continúa con fallback de reglas):',
+                        claimErr && claimErr.message);
+                }
+            }
+
             showToast(isActive ? '\u2705 Usuario activado' : '\uD83D\uDD12 Usuario bloqueado', 3000);
             openClubAdminPanel();
         } catch(e) {

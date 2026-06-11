@@ -73,10 +73,32 @@ exports.setCustomClaims = functions.https.onCall(async (data, context) => {
   const callerRole = callerData?.role || context.auth.token.role;
 
   if (callerRole !== 'superadmin') {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'Solo SuperAdmin puede asignar roles'
-    );
+    // club_admin: puede propagar claims SOLO a miembros NO privilegiados de SU
+    // propio club (director/coordinator/user/parent/spectator). Esto resuelve el
+    // PROBLEMA 2: al activar a un entrenador, el club_admin propaga su clubId al
+    // token JWT para que sameClub()/sameClubAsDoc() funcionen. NO puede crear
+    // superadmins ni club_admins, ni tocar usuarios de otros clubes.
+    const callerClubId = callerData?.clubId || context.auth.token.clubId || null;
+    const PRIVILEGED_ROLES = ['superadmin', 'admin', 'club_admin', 'individual_admin', 'individual', 'admin_individual'];
+    const isClubAdmin = callerRole === 'club_admin';
+    const targetIsSafeRole = !PRIVILEGED_ROLES.includes(data.role);
+    const sameClub = data.clubId && callerClubId && String(data.clubId) === String(callerClubId);
+    if (!(isClubAdmin && targetIsSafeRole && sameClub)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'No tienes permiso para asignar este rol/club.'
+      );
+    }
+    // Defensa adicional: el usuario objetivo debe pertenecer realmente al club
+    // del club_admin (segun su documento Firestore), no solo segun el payload.
+    const targetDocCheck = await admin.firestore().collection('users').doc(data.uid).get();
+    const targetClubId = targetDocCheck.exists ? (targetDocCheck.data().clubId || null) : null;
+    if (!targetClubId || String(targetClubId) !== String(callerClubId)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'El usuario no pertenece a tu club.'
+      );
+    }
   }
 
   const { uid, role, clubId } = data;
@@ -799,6 +821,22 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
       });
     });
     if (reqSnap.size > 0) await batch.commit();
+
+    /* 5️⃣ FIX (C2): Asignar custom claims al admin individual ------------- */
+    // Sin estos claims, las reglas de Firestore (sameClubAsDoc) deniegan
+    // acceso a cronos_player_reports, cronos_notifications y cronos_player_links,
+    // lo que impide que los informes lleguen al staff y a los padres.
+    try {
+      await admin.auth().setCustomUserClaims(uid, {
+        role: 'individual',
+        clubId: entityId,
+        claimsSetAt: Date.now(),
+      });
+      console.log('[approveIndividualAdmin] Custom claims asignados:', { uid, role: 'individual', clubId: entityId });
+    } catch (claimErr) {
+      // No bloquear la aprobación si los claims fallan (el fallback de reglas lo cubre)
+      console.error('[approveIndividualAdmin] Error asignando custom claims:', claimErr.message);
+    }
 
     console.log('[approveIndividualAdmin] Admin individual aprobado:', uid, 'entidad:', entityId);
 
