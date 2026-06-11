@@ -1334,6 +1334,7 @@ window._executeReportsSend = async function(method) {
                         type:      'aviso_partido_finalizado',
                         clubId:    me.clubId || null,
                         userId:    uidToNotify,            // ← FIX: campo que las reglas verifican
+                        coachUid:  me.uid,                // ← FIX (C3): coachUid para reglas Firestore
                         parentUid: uidToNotify,
                         staffUid:  uidToNotify,
                         matchDate,
@@ -1522,6 +1523,7 @@ window._executeReportsSend = async function(method) {
                         await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${player.number}_${Date.now().toString(36)}`), {
                             type: 'informe_partido', clubId: me.clubId || null,
                             userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
+                            coachUid: me.uid,                                   // ← FIX (C3): coachUid para reglas Firestore
                             parentUid: targetParentUid, playerNumber: player.number,
                             rival: rivalName, scoreHome, scoreAway,
                             minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
@@ -1721,6 +1723,7 @@ async function autoDispatchMatchReports() {
                 type: 'aviso_partido_finalizado',
                 clubId: me.clubId || null,
                 userId: staff.uid,           // ← FIX: campo que las reglas verifican
+                coachUid: me.uid,            // ← FIX (C2): coachUid para reglas Firestore
                 parentUid: staff.uid,
                 staffUid: staff.uid,
                 matchDate, rival: rivalName, scoreHome, scoreAway,
@@ -1812,6 +1815,7 @@ async function autoDispatchMatchReports() {
                     type:         'informe_partido',
                     clubId:       me.clubId || null,
                     userId:       pUid,                                // ← FIX: campo que las reglas verifican
+                    coachUid:     me.uid,                              // ← FIX (C2): coachUid para reglas Firestore
                     parentUid:    pUid,
                     playerNumber: player.number,
                     playerAlias:  player.alias || player.name,
@@ -1836,9 +1840,17 @@ async function autoDispatchMatchReports() {
         try {
             const matchId = sharedMatchId; // mismo ID que staff
 
+            // [DIAG TEMP] Confirmar que la FASE C se ejecuta y con qué datos.
+            console.log('[FaseC][DIAG] Iniciando auto-informe entrenador.',
+                'coachUid:', me.uid, 'clubId:', me.clubId || null,
+                'players:', (homePlayers || []).length, 'matchId:', matchId);
+
+            console.log('FASE C Iniciando escritura coach. homePlayers:', homePlayers.length, 'me.uid:', me.uid);
+
             // Guardar copia del informe en cronos_player_reports con coachUid = uid
             for (const p of homePlayers) {
                 const rptId = `${matchId}_coach_p${p.number}`;
+                try {
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
                     matchId,
                     type:          'collective_match_report',
@@ -1862,6 +1874,14 @@ async function autoDispatchMatchReports() {
                     minutesPlayed: typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
                     history:       _parseHistoryForFirestore(p.history||[]),
                 });
+                // [DIAG TEMP] setDoc del coach OK para este jugador.
+                console.log('[FaseC][DIAG] Doc coach escrito OK:', rptId);
+                } catch (setErr) {
+                    // [DIAG TEMP] Capturar el fallo concreto del setDoc por jugador
+                    // (típicamente permission-denied de las reglas Firestore).
+                    console.error('[FaseC][DIAG] setDoc coach FALLÓ:', rptId,
+                        '| code:', setErr.code, '| msg:', setErr.message);
+                }
             }
 
             // Notificación in-app para el propio entrenador (formato estándar)
@@ -1881,8 +1901,11 @@ async function autoDispatchMatchReports() {
                 message:   'Has generado un nuevo informe colectivo de partido.',
                 createdAt: new Date().toISOString(),
             });
-        } catch(autoSelfErr) {
-            console.warn('[AutoDispatch] Auto-informe al entrenador falló silenciosamente:', autoSelfErr.message);
+            // [DIAG TEMP] FASE C completada sin lanzar excepción al nivel superior.
+            console.log('[FaseC][DIAG] FASE C completada. Notificación coach:', coachNotifId);
+        } catch(e) {
+            // [DIAG TEMP] mostrar mensaje + objeto de error completo.
+            console.error('FASE C ERROR setDoc coach:', e.message, e);
         }
 
         showToast('✅ Informes enviados automáticamente (Interno)', 4000);
@@ -1964,7 +1987,12 @@ async function openContactManager() {
 
     // Asegurar que tenemos la config de email cargada y que emailConfig existe
     if (typeof window.emailConfig === 'undefined') window.emailConfig = { contacts: [] };
-    if (typeof loadEmailConfig === 'function') await loadEmailConfig();
+    // FIX: loadEmailConfig estaba FUERA del try/catch. Si su versión activa
+    // (hay 3 definiciones) es async y rechaza, la promesa de esta función
+    // async se rechazaba silenciosamente (onclick sin .catch) → "clic sin
+    // efecto, sin error". Lo protegemos para que el modal abra igualmente.
+    try { if (typeof loadEmailConfig === 'function') await loadEmailConfig(); }
+    catch (e) { console.warn('[Contactos] loadEmailConfig falló, continúo igualmente:', e?.message); }
     if (!window.emailConfig) window.emailConfig = { contacts: [] };
 
     try {
@@ -2643,6 +2671,7 @@ window._sendTrainingNotification = async function() {
 
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
+            userId: uid,                                  // ← FIX (C3): campo que las reglas verifican
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             datetime, location, notes,
             createdAt: new Date().toISOString(),
@@ -3394,6 +3423,8 @@ window._sendCollectiveReportNow = async function() {
                 }
                 await setDoc(doc(db,'cronos_notifications',`coll_rpt_${s.uid}_${Date.now().toString(36)}`), {
                     type: 'informe_colectivo', clubId: me.clubId||null,
+                    userId: s.uid,                                // ← FIX (C3): campo que las reglas verifican
+                    coachUid: me.uid,                             // ← FIX (C3): coachUid para reglas Firestore
                     staffUid: s.uid, parentUid: s.uid,
                     coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
                     matchId,
@@ -3423,6 +3454,8 @@ window._sendCollectiveReportNow = async function() {
         const selfNotifId = `coll_rpt_self_${me.uid}_${Date.now().toString(36)}`;
         await setDoc(doc(db,'cronos_notifications', selfNotifId), {
             type: 'informe_colectivo', clubId: me.clubId||null,
+            userId: me.uid,                                // ← FIX (C3): campo que las reglas verifican
+            coachUid: me.uid,                              // ← FIX (C3): coachUid para reglas Firestore
             staffUid: me.uid, parentUid: me.uid,
             coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
             matchId,
@@ -3968,6 +4001,8 @@ window._sendAllIndividualReports = async function() {
                 }
                 await setDoc(doc(db,'cronos_notifications',`indiv_rpt_${link.parentUid}_${p.number}_${Date.now().toString(36)}`), {
                     type:'informe_partido', clubId:me.clubId||null,
+                    userId: link.parentUid,                       // ← FIX (C3): campo que las reglas verifican
+                    coachUid: me.uid,                             // ← FIX (C3): coachUid para reglas Firestore
                     parentUid:link.parentUid, playerNumber:p.number, playerAlias:p.name,
                     rival, scoreHome, scoreAway, matchDate, coachEmail:me.email,
                     createdAt:new Date().toISOString(),
@@ -4017,4 +4052,3 @@ window.openContactManager      = openContactManager;
 window.saveContactManagerData  = saveContactManagerData;
 window.saveAllMatchReportsInternal = saveAllMatchReportsInternal;
 window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
-
