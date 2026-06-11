@@ -197,17 +197,6 @@ function openSetupModal() {
                     </button>
                 </div>
 
-                <!-- Botones Administrativos (si aplican) -->
-                ${window._cronosCurrentUser?.role === 'club_admin' ? `
-                <div style="display:flex; justify-content:center; gap:0.6rem;">
-                    <button onclick="openClubAdminPanel()"
-                        style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
-                               color:var(--primary); font-size:0.85rem; padding:0.6rem 1rem;
-                               border-radius:10px; cursor:pointer; font-weight:800;">
-                        🏟️ MI CLUB
-                    </button>
-                </div>` : ''}
-
                 <!-- BOTONES PRINCIPALES: CONTINUAR + RECUPERAR PARTIDO -->
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem;">
                     <button class="btn primary" onclick="confirmSetup()"
