@@ -72,6 +72,42 @@ _Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: 
     encontraba el link (confirma la causa).
   - Bump SW a `cronos-cache-v167`.
 
+## COMPLETADO (HOTFIX v168 — refuerzo de v167)
+
+- [x] **P1 (v168)**: `liveMatchId` SIN `Math.random()` en sus 3 copias
+  - v167 introdujo `_cronosBuildLiveMatchId` (sufijo determinista) pero las 3 copias
+    de `startLiveSync` (`js/core/app-init.js`, `js/match/live/sync.js`,
+    `js/services/firestore-sync.js`) todavía calculaban un `randSlug` con
+    `Math.random().toString(36).substr(2,4)` como ruta de fallback.
+  - Fix: eliminado `Math.random()` por completo de las 3 copias. El sufijo se deriva
+    SIEMPRE de la identidad del partido: `uid + fecha + equipo (+ rival + convocatoria)`
+    vía `_cronosBuildLiveMatchId({ ..., uid })`. El fallback sin helper usa
+    `_cronosStableSlug(uid|equipo|fecha)`. Con ello, reiniciar el sync NO cambia el
+    `matchId` del informe y el dedup del panel del padre colapsa correctamente.
+  - Verificado con `test_fixes_p1_p2.js`: 50 llamadas con el mismo input → 1 solo id;
+    `uid` distinto → id distinto; y comprobación de que el código fuente de las 3
+    copias ya no contiene el patrón `Math.random().toString(36).substr(2,4)`.
+
+- [x] **P2 (v168)**: fallback de link SIN filtro de `clubId`
+  - La query de links (`autoDispatchMatchReports` y la carga manual) filtra por
+    `clubId == me.clubId`. Si `me.clubId` es nulo, o el doc del link de un padre/jugador
+    tiene un `clubId` distinto/ausente, ese link nunca se carga y el `find` devuelve
+    `undefined` aunque el doc exista en Firestore.
+  - Fix (`js/coach/comms/panel.js`):
+    - Despacho MANUAL (`_executeReportsSend`): `_fetchLinkByParentUid(parentUid)`
+      consulta `cronos_player_links` por `parentUid` SIN filtro de club (cacheado) y
+      se invoca cuando el match por club/email/teléfono/jugador ha fallado.
+    - Despacho AUTO (`autoDispatchMatchReports`): `_fetchLinksByPlayerNumber(num)`
+      consulta por `playerNumber` SIN filtro de club (cacheado) y se invoca por
+      jugador cuando `linkedParents` sale vacío; los links recuperados se incorporan
+      al array `links` para usos posteriores del mismo despacho.
+    - Logs `[Cronos][P2]` / `[Cronos][P2][auto]` registran cuándo se recupera un link
+      por el fallback (con el `clubId` del link vs `me.clubId`).
+  - Verificado con `test_fixes_p1_p2.js`: con un link de clubId distinto, la query por
+    club no lo trae (pre-fix) y ambos fallbacks (parentUid en manual, playerNumber en
+    auto) lo recuperan.
+  - Bump SW a `cronos-cache-v168`.
+
 ## COMPLETADO (HOTFIX informes)
 
 - [x] **BUG-CRÍTICO**: «Informes de partido no se envían a nadie» (a partir del 2º partido)

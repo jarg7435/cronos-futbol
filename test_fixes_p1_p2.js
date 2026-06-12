@@ -25,7 +25,7 @@ const id1 = W._cronosBuildLiveMatchId({ ...opts, forceNew: true });
 W.liveMatchId = ''; // simular pérdida del id (re-init)
 const id2 = W._cronosBuildLiveMatchId({ ...opts, forceNew: true });
 assert(id1 === id2, `mismo partido → mismo id sin reuse (${id1} === ${id2})`);
-assert(/^futbol-7-12062026-[a-z0-9]{4}$/.test(id1), `formato esperado (${id1})`);
+assert(/^futbol-7-\d{8}-[a-z0-9]{4}$/.test(id1), `formato esperado (${id1})`);
 
 // 1b. Reuse: si liveMatchId ya existe, lo devuelve tal cual.
 const prev = 'futbol-7-12062026-zzzz';
@@ -42,7 +42,22 @@ const set = new Set();
 for (let i=0;i<50;i++) set.add(W._cronosBuildLiveMatchId({ ...opts, forceNew:true }));
 assert(set.size === 1, `50 llamadas mismo input → 1 id único (size=${set.size})`);
 
-// 1e. _stableMatchId (lógica del panel) sobre id determinista.
+// 1d-bis. El codigo fuente de las 3 copias de startLiveSync ya NO usa Math.random().
+const fs2 = require('fs');
+['js/core/app-init.js','js/match/live/sync.js','js/services/firestore-sync.js'].forEach(f => {
+    const src = fs2.readFileSync(f, 'utf8');
+    const i = src.indexOf('startLiveSync');
+    const body = src.slice(i, i + 1400); // cuerpo aproximado de la funcion
+    assert(!/Math\.random\(\)\.toString\(36\)\.substr\(2,4\)/.test(body),
+        `${f}: startLiveSync ya no usa Math.random() para el sufijo`);
+});
+
+// 1e. uid distinto → id distinto (el seed incluye uid).
+const idUserA = W._cronosBuildLiveMatchId({ ...opts, uid:'coachA', forceNew:true });
+const idUserB = W._cronosBuildLiveMatchId({ ...opts, uid:'coachB', forceNew:true });
+assert(idUserA !== idUserB, `uid distinto → id distinto (${idUserA} !== ${idUserB})`);
+
+// 1f. _stableMatchId (lógica del panel) sobre id determinista.
 function stableMatchId(liveMatchId, me, rivalName) {
     if (liveMatchId) return `match_${liveMatchId}`;
     return `match_${me.uid}_x`;
@@ -88,5 +103,61 @@ const strictFail = links.find(l => l.parentEmail === 'familia.bruno@gmail.com'
                                  || l.parentPhone === '600112233');
 assert(strictFail == null, 'pre-fix (comparación estricta) NO encontraba el link (confirma la causa)');
 
-console.log(`\n=== RESULTADO: ${pass} OK, ${fail} fallos ===`);
-process.exit(fail ? 1 : 0);
+console.log('\n=== PROBLEMA 2-bis: fallback de link por parentUid SIN filtro de club ===');
+
+// El link de BRUNO existe en Firestore pero con un clubId distinto al de me,
+// por lo que la query por clubId NO lo trae (array de club vacío para él).
+const allLinksInDb = [
+    { _id:'lB', parentUid:'uidBruno', clubId:'OTRO_CLUB', parentEmail:'x@y.z',
+      playerNumber:'9', playerAlias:'BRUNO' },
+];
+const clubFilteredLinks = allLinksInDb.filter(l => l.clubId === 'CLUB_ME'); // → []
+
+// Simula _fetchLinkByParentUid: busca en TODA la coleccion por parentUid.
+async function fetchLinkByParentUid(parentUid) {
+    return allLinksInDb.find(l => l.parentUid === parentUid) || null;
+}
+async function resolveLinkWithFallback(r, loadedLinks) {
+    let link = loadedLinks.find(l => l.parentUid === r.id);
+    if (!link && r.id && !String(r.id).startsWith('p_')) {
+        link = await fetchLinkByParentUid(r.id);
+    }
+    return link;
+}
+
+(async () => {
+    // (a) Despacho MANUAL (_executeReportsSend): fallback por parentUid.
+    const before = clubFilteredLinks.find(l => l.parentUid === 'uidBruno');
+    assert(before == null, 'pre-fix: query por clubId NO trae el link de BRUNO (clubId distinto)');
+    const after = await resolveLinkWithFallback({ id:'uidBruno' }, clubFilteredLinks);
+    assert(after != null && after.playerNumber === '9',
+        'manual: fallback por parentUid (sin filtro de club) recupera el link de BRUNO');
+
+    // (b) Despacho AUTO (autoDispatchMatchReports): fallback por playerNumber.
+    // El array `links` arranca filtrado por clubId (vacío para BRUNO); al no
+    // hallar padres para el dorsal 9 se reconsulta SIN filtro de club.
+    const linksAuto = [...clubFilteredLinks]; // [] (mutable, como en el código real)
+    async function fetchLinksByPlayerNumber(num) {
+        const found = allLinksInDb.filter(l => String(l.playerNumber) === String(num));
+        found.forEach(f => { if (!linksAuto.some(l => l._id === f._id)) linksAuto.push(f); });
+        return found;
+    }
+    async function resolveLinkedParents(player) {
+        let linkedParents = linksAuto.filter(l =>
+            String(l.playerNumber) === String(player.number) && l.parentUid);
+        if (!linkedParents.length) {
+            await fetchLinksByPlayerNumber(player.number);
+            linkedParents = linksAuto.filter(l =>
+                String(l.playerNumber) === String(player.number) && l.parentUid);
+        }
+        return linkedParents;
+    }
+    const beforeAuto = linksAuto.filter(l => String(l.playerNumber) === '9' && l.parentUid);
+    assert(beforeAuto.length === 0, 'pre-fix (auto): sin padres para el dorsal 9 (filtro clubId)');
+    const lp = await resolveLinkedParents({ number: 9 });
+    assert(lp.length === 1 && lp[0].parentUid === 'uidBruno',
+        'auto: fallback por playerNumber (sin filtro de club) recupera el padre del dorsal 9');
+
+    console.log(`\n=== RESULTADO: ${pass} OK, ${fail} fallos ===`);
+    process.exit(fail ? 1 : 0);
+})();

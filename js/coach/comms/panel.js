@@ -1239,6 +1239,34 @@ window._executeReportsSend = async function(method) {
         console.warn('[Cronos] Error recuperando vínculos:', errLinks);
     }
 
+    // FIX (Problema 2): fallback de link por parentUid SIN filtro de club.
+    // La query anterior trae links por clubId/individualOwnerId/coachUid, pero si
+    // el doc del link de un padre concreto tiene un clubId distinto/ausente,
+    // queda fuera del array y el match devuelve undefined aunque exista en
+    // Firestore. Este helper lo recupera puntualmente (cacheado).
+    const _linkFallbackCache = {};
+    async function _fetchLinkByParentUid(parentUid) {
+        if (!parentUid) return null;
+        if (Object.prototype.hasOwnProperty.call(_linkFallbackCache, parentUid)) {
+            return _linkFallbackCache[parentUid];
+        }
+        let found = null;
+        try {
+            const snap = await getDocs(query(collection(db, 'cronos_player_links'),
+                                             where('parentUid', '==', parentUid)));
+            snap.forEach(d => { if (!found) found = { _id: d.id, ...d.data() }; });
+            if (found) {
+                console.log('[Cronos][P2] link recuperado sin filtro de club por parentUid', parentUid,
+                    '(clubId del link:', found.clubId, 'vs me.clubId:', me.clubId, ')');
+                if (!links.some(l => l._id === found._id)) links.push(found);
+            }
+        } catch (e) {
+            console.warn('[Cronos][P2] fallback de link por parentUid falló:', e && e.message);
+        }
+        _linkFallbackCache[parentUid] = found;
+        return found;
+    }
+
     const scoreHome = document.getElementById('score-home')?.textContent || '0';
     const scoreAway = document.getElementById('score-away')?.textContent || '0';
     const rivalName = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES && TEAM_NAMES.away) ? TEAM_NAMES.away : 'Rival';
@@ -1473,6 +1501,13 @@ window._executeReportsSend = async function(method) {
                     ) || link;
                 }
 
+                // Fallback (Problema 2): si el recipient es un parentUid real y
+                // aún no hay link, consultarlo SIN filtro de club (cubre el caso
+                // de link con clubId distinto/ausente o me.clubId nulo).
+                if (!link && r.id && !String(r.id).startsWith('p_')) {
+                    link = await _fetchLinkByParentUid(r.id);
+                }
+
                 // Diagnóstico (Problema 2): si no hay link, distinguir entre "el
                 // link no se cargó por clubId" (filtro de la query) y "no casó".
                 if (!link) {
@@ -1695,6 +1730,37 @@ async function autoDispatchMatchReports() {
         const links = [];
         linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
 
+        // FIX (Problema 2): fallback de links SIN filtro de club. La query de
+        // arriba solo trae links con clubId == me.clubId; si me.clubId es null o
+        // el doc del link de un jugador tiene un clubId distinto/ausente, ese
+        // padre queda fuera de `links` y nunca recibe su informe. Este helper
+        // recupera los links de un dorsal concreto consultando por playerNumber
+        // (cacheado) y los incorpora a `links`. Se invoca por jugador solo cuando
+        // el match por club no encontró ningún padre vinculado.
+        const _linkFallbackCache = {};
+        async function _fetchLinksByPlayerNumber(playerNumber) {
+            const key = String(playerNumber || '');
+            if (!key) return [];
+            if (Object.prototype.hasOwnProperty.call(_linkFallbackCache, key)) {
+                return _linkFallbackCache[key];
+            }
+            let found = [];
+            try {
+                const snap = await getDocs(query(collection(db, 'cronos_player_links'),
+                                                 where('playerNumber', '==', key)));
+                snap.forEach(d => found.push({ _id: d.id, ...d.data() }));
+                if (found.length) {
+                    console.log('[Cronos][P2][auto] links recuperados sin filtro de club por playerNumber', key,
+                        '→', found.length, '(me.clubId:', me.clubId, ')');
+                    found.forEach(f => { if (!links.some(l => l._id === f._id)) links.push(f); });
+                }
+            } catch (e) {
+                console.warn('[Cronos][P2][auto] fallback de links por playerNumber falló:', e && e.message);
+            }
+            _linkFallbackCache[key] = found;
+            return found;
+        }
+
         if (typeof loadEmailConfig === 'function') await loadEmailConfig();
         const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
 
@@ -1816,9 +1882,18 @@ async function autoDispatchMatchReports() {
                              `_Cronos Fútbol_`;
 
             // Buscar padres vinculados (por Firestore links)
-            const linkedParents = links.filter(l =>
+            let linkedParents = links.filter(l =>
                 (l.playerId === player.playerId || String(l.playerNumber) === String(player.number))
                 && l.parentUid);
+
+            // Fallback (Problema 2): si por el filtro de clubId no salió ningún
+            // padre vinculado para este dorsal, reintentar SIN filtro de club.
+            if (!linkedParents.length) {
+                await _fetchLinksByPlayerNumber(player.number);
+                linkedParents = links.filter(l =>
+                    (l.playerId === player.playerId || String(l.playerNumber) === String(player.number))
+                    && l.parentUid);
+            }
             
             // Buscar padres desde contactos manuales autorizados
             const manualParents = contacts.filter(c => {

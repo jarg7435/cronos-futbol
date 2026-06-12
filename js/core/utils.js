@@ -98,10 +98,9 @@ if (typeof window._cronosBuildLiveMatchId !== 'function') {
         const dateSlug = String(now.getDate()).padStart(2, '0') +
                          String(now.getMonth() + 1).padStart(2, '0') +
                          now.getFullYear();
-        // Identidad estable del partido: equipo + fecha + rival + huella de la
-        // convocatoria (nº de jugadores + sus números/ids). Si dos partidos del
-        // mismo equipo ocurren el mismo día contra el mismo rival, la huella de
-        // la convocatoria + la hora los diferencia.
+        // Identidad estable del partido: uid + equipo + fecha + rival + huella de
+        // la convocatoria (nº de jugadores + sus números/ids). SIN componente
+        // aleatorio: el mismo partido produce SIEMPRE el mismo id.
         let convoFingerprint = '';
         try {
             const convo = opts.convocation || window.activeConvocation;
@@ -111,7 +110,8 @@ if (typeof window._cronosBuildLiveMatchId !== 'function') {
                     .join(',');
             }
         } catch (_) { /* sin convocatoria → huella vacía */ }
-        const seed = [teamSlug, dateSlug, slugify(opts.rivalName || ''),
+        const uid = opts.uid || (window._cronosCurrentUser && window._cronosCurrentUser.uid) || 'u';
+        const seed = [uid, teamSlug, dateSlug, slugify(opts.rivalName || ''),
                       convoFingerprint, opts.extraSeed || ''].join('|');
         const randSlug = window._cronosStableSlug(seed, 4);
         return `${teamSlug}-${dateSlug}-${randSlug}`;

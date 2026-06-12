@@ -1482,11 +1482,12 @@ async function startLiveSync() {
     const dateSlug = String(now.getDate()).padStart(2,'0') +
                      String(now.getMonth()+1).padStart(2,'0') +
                      now.getFullYear();
-    // FIX (Problema 1): ID DETERMINISTA (reutiliza el existente o deriva el
-    // sufijo de la identidad del partido; ya NO usa Math.random()).
+    // FIX (Problema 1): ID DETERMINISTA — SIN Math.random(). Reutiliza el id
+    // existente o deriva el sufijo de uid+fecha+equipo (+rival+convocatoria).
+    const _uidSlug = (window._cronosCurrentUser && window._cronosCurrentUser.uid) || 'u';
     liveMatchId    = (typeof window._cronosBuildLiveMatchId === 'function')
-        ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: liveMatchId })
-        : `${teamSlug}-${dateSlug}-${window._cronosStableSlug ? window._cronosStableSlug(teamSlug+dateSlug,4) : '0000'}`;
+        ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: liveMatchId, uid: _uidSlug })
+        : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}`;
     liveIsActive = true;
 
     // Guardar el snapshot inicial

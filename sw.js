@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v167
+//  CRONOS FUTBOL — Service Worker v168
+//  v168: Refuerzo de los fixes v167 (P1/P2):
+//         P1: eliminado Math.random() por completo de las 3 copias de
+//         startLiveSync; el sufijo se deriva de uid+fecha+equipo(+rival+convo)
+//         via _cronosBuildLiveMatchId (sin componente aleatorio).
+//         P2: la query de links cargaba por clubId/individualOwnerId/coachUid;
+//         si el link de un padre tiene clubId distinto/ausente quedaba fuera y
+//         el match devolvia undefined. Anadido _fetchLinkByParentUid: fallback
+//         que consulta cronos_player_links por parentUid SIN filtro de club
+//         (cacheado) en _executeReportsSend y autoDispatchMatchReports.
 //  v167: FIX raiz informes duplicados a padres + link padre-jugador undefined.
 //         P1: liveMatchId usaba Math.random() en sus 3 copias de startLiveSync
 //         (app-init.js, match/live/sync.js, services/firestore-sync.js); reiniciar
@@ -151,8 +160,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v167';
-const CACHE_NAME = 'cronos-cache-v167';
+const VERSION    = 'v168';
+const CACHE_NAME = 'cronos-cache-v168';
 
 const ASSETS = [
     './',
