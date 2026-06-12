@@ -433,8 +433,13 @@ function terminateMatch(reason) {
     stopLiveSync();
 
     // Disparar informes automáticos e internos
+    // FIX (C4): log de errores en vez de silenciarlos. Antes una promesa
+    // rechazada (p.ej. permisos Firestore) no se reportaba y los informes de
+    // staff no se escribían sin rastro en consola.
     if (typeof saveAllMatchReportsInternal === 'function') {
-        saveAllMatchReportsInternal();
+        Promise.resolve(saveAllMatchReportsInternal()).catch(e => {
+            console.error('[C4 terminateMatch] Error al guardar informes automáticamente:', e && e.message);
+        });
     }
 
     alert(`🏁 PARTIDO FINALIZADO: ${reason}\nResultado final: ${TEAM_NAMES.home} ${document.getElementById('score-home').textContent} - ${document.getElementById('score-away').textContent} ${TEAM_NAMES.away}`);
