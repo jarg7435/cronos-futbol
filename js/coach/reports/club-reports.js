@@ -1046,24 +1046,60 @@ async function _sdLoadReports() {
     }
 
     try {
-        const { db, collection, getDocs, query, where, limit } = await _sdFS();
+        const { db, collection, getDocs, query, where, limit, doc, getDoc } = await _sdFS();
+
+        // FIX (C4): resolver clubId real desde el documento del usuario.
+        // Si el director/coordinador no tiene el custom claim clubId propagado,
+        // la query por clubId falla. Obtenemos el clubId correcto del documento.
+        let effectiveClubId = clubId;
+        try {
+            const mySnap = await getDoc(doc(db, 'users', me.uid));
+            if (mySnap.exists() && mySnap.data().clubId) {
+                effectiveClubId = mySnap.data().clubId;
+                if (effectiveClubId !== clubId) {
+                    console.warn('[C4 StaffDashboard] clubId del token (' + clubId +
+                        ') no coincide con users/{uid}.clubId (' + effectiveClubId + '). Usando del documento.');
+                }
+            }
+        } catch(e) {
+            console.warn('[C4 StaffDashboard] No se pudo leer clubId del documento:', e.message);
+        }
 
         // FIX: Query dual para acceder a informes de staff.
-        // Query 1: por clubId (requiere custom claims con clubId en el token)
+        // Query 1: por clubId (requiere que el token tenga el custom claim
+        //          clubId; las reglas exigen request.auth.token.clubId == clubId
+        //          sobre TODOS los docs candidatos, así que si el director/
+        //          coordinador aún no tiene el claim propagado, la query ENTERA
+        //          es rechazada con "Missing or insufficient permissions").
         // Query 2: por staffUids array-contains (funciona sin custom claims,
-        //          ya que las reglas de Firestore verifican request.auth.uid
-        //          in resource.data.staffUids)
-        let rawSnap = await getDocs(query(
-            collection(db, 'cronos_player_reports'),
-            where('clubId', '==', clubId),
-            limit(500)
-        ));
+        //          ya que las reglas de Firestore permiten leer a quien esté
+        //          en resource.data.staffUids).
+        // Query 3 (C4): por coachUid — busca informes escritos por entrenadores
+        //          del mismo club, incluso si staffUids quedó vacío.
+        // Por eso la Query 1 va en su propio try/catch: si falla por permisos
+        // NO debe abortar el flujo; caemos a la Query 2 y 3.
+        let rawSnap = { forEach: () => {} };
+        let _clubQueryOk = false;
+        // FIX (C4): intentar con ambos clubIds
+        for (const cid of [clubId, effectiveClubId]) {
+            try {
+                rawSnap = await getDocs(query(
+                    collection(db, 'cronos_player_reports'),
+                    where('clubId', '==', cid),
+                    limit(500)
+                ));
+                _clubQueryOk = true;
+                break; // éxito, no seguir
+            } catch (clubErr) {
+                console.warn('[StaffDashboard] Query por clubId=' + cid + ' falló:', clubErr.message);
+            }
+        }
 
-        // Si la query por clubId no devuelve docs de staff, intentar por staffUids
+        // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
         let _hasStaffDocs = false;
         rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
 
-        if (!_hasStaffDocs && me.uid) {
+        if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
             try {
                 const altSnap = await getDocs(query(
                     collection(db, 'cronos_player_reports'),
@@ -1092,6 +1128,59 @@ async function _sdLoadReports() {
                 }
             } catch(altErr) {
                 console.warn('[StaffDashboard] Query alternativa por staffUids falló:', altErr.message);
+            }
+        }
+
+        // FIX (C4): Query 3 — buscar informes por coachUid del mismo club.
+        // Si _cGetStaff falló al escribir los reports (porque la query de users
+        // fue rechazada por permisos), staffUids quedó vacío y la query por
+        // array-contains no encuentra nada. Pero los reports SÍ tienen coachUid
+        // del entrenador. Buscamos los coachUid del club y leemos sus informes.
+        if (!_hasStaffDocs && me.uid) {
+            try {
+                console.log('[C4 StaffDashboard] Intentando Query 3: buscar por coachUid del club');
+                // Leer los miembros del club para obtener sus UIDs
+                const clubMembersSnap = await getDocs(query(
+                    collection(db, 'users'),
+                    where('clubId', '==', effectiveClubId),
+                    limit(100)
+                ));
+                const coachUids = [];
+                clubMembersSnap.forEach(d => {
+                    const data = d.data();
+                    // Cualquier usuario del club puede ser entrenador
+                    if (data.isAuthorized !== false) coachUids.push(d.id);
+                });
+                // Buscar informes de cada coachUid (máximo 10 para no saturar)
+                const combinedDocs3 = [];
+                rawSnap.forEach(d => combinedDocs3.push(d));
+                const existingIds3 = new Set(combinedDocs3.map(d => d.id));
+
+                for (const cuid of coachUids.slice(0, 10)) {
+                    try {
+                        const coachSnap = await getDocs(query(
+                            collection(db, 'cronos_player_reports'),
+                            where('coachUid', '==', cuid),
+                            where('staffReport', '==', true),
+                            limit(100)
+                        ));
+                        coachSnap.forEach(d => {
+                            if (!existingIds3.has(d.id) && d.data().staffReport === true) {
+                                combinedDocs3.push(d);
+                                existingIds3.add(d.id);
+                                _hasStaffDocs = true;
+                            }
+                        });
+                    } catch(e) {
+                        // Silencioso — si un coachUid no es legible, seguir con el siguiente
+                    }
+                }
+                if (_hasStaffDocs) {
+                    rawSnap = { forEach: fn => combinedDocs3.forEach(fn) };
+                    console.log('[C4 StaffDashboard] Query 3 encontró', combinedDocs3.length, 'documentos');
+                }
+            } catch(e3) {
+                console.warn('[C4 StaffDashboard] Query 3 (coachUid) falló:', e3.message);
             }
         }
 
