@@ -1048,94 +1048,85 @@ async function _sdLoadReports() {
     try {
         const { db, collection, getDocs, query, where, limit } = await _sdFS();
 
-        // FIX: Sistema de consultas múltiples para acceder a informes de staff.
-        // El Director/Coordinador puede no tener el custom claim clubId propagado
-        // en su token, y puede no estar en staffUids de todos los partidos
-        // (si _cGetStaff falló al resolver su UID cuando se creó el informe).
-        // Estrategia:
-        //   Query 1: por clubId (requiere custom claim en token)
-        //   Query 2: por staffUids array-contains (para docs que sí incluyen su UID)
-        //   Query 3: por coachUid de entrenadores del mismo club (resolve coaches first)
-        // Cada query va en su propio try/catch y los resultados se fusionan.
-        const allDocs = new Map(); // deduplicar por doc.id
-        const addDoc = (d) => { if (!allDocs.has(d.id)) allDocs.set(d.id, d); };
+        // ══════════════════════════════════════════════════════════════
+        // FIX: Sistema de 3 queries fusionadas para cubrir TODOS los
+        // informes del club, independientemente de claims y staffUids.
+        //
+        // Query 1: por clubId — funciona si el token tiene custom claim.
+        // Query 2: por staffUids array-contains — funciona sin claims.
+        // Query 3: por coachUid in [batch] — resuelve todos los coachUIDs
+        //          del club y busca sus informes; cubre partidos donde
+        //          el director NO está en staffUids.
+        // ══════════════════════════════════════════════════════════════
+        const docMap = new Map(); // deduplicar por doc ID
 
-        // ── Query 1: por clubId (requiere custom claim) ──
+        // ── Query 1: por clubId (custom claim) ──────────────────────
         try {
-            const q1Snap = await getDocs(query(
+            const snap1 = await getDocs(query(
                 collection(db, 'cronos_player_reports'),
                 where('clubId', '==', clubId),
                 limit(500)
             ));
-            q1Snap.forEach(d => addDoc(d));
-            console.log('[StaffDashboard] Query 1 (clubId):', allDocs.size, 'docs');
+            snap1.forEach(d => docMap.set(d.id, d));
+            console.log('[StaffDashboard] Query 1 (clubId):', snap1.size, 'docs');
         } catch (clubErr) {
-            console.warn('[StaffDashboard] Query 1 por clubId falló:', clubErr.message);
+            console.warn('[StaffDashboard] Query por clubId falló:', clubErr.message);
         }
 
-        // ── Query 2: por staffUids array-contains ──
+        // ── Query 2: por staffUids (sin custom claims) ──────────────
         if (me.uid) {
             try {
-                const q2Snap = await getDocs(query(
+                const snap2 = await getDocs(query(
                     collection(db, 'cronos_player_reports'),
                     where('staffUids', 'array-contains', me.uid),
                     limit(500)
                 ));
-                q2Snap.forEach(d => addDoc(d));
-                console.log('[StaffDashboard] Query 2 (staffUids): acumulado', allDocs.size, 'docs');
+                snap2.forEach(d => { if (!docMap.has(d.id)) docMap.set(d.id, d); });
+                console.log('[StaffDashboard] Query 2 (staffUids):', snap2.size, 'docs (nuevos:', snap2.docs.filter(d => !docMap.has(d.id)).length + ' ya estaban)');
             } catch(altErr) {
-                console.warn('[StaffDashboard] Query 2 por staffUids falló:', altErr.message);
+                console.warn('[StaffDashboard] Query por staffUids falló:', altErr.message);
             }
         }
 
-        // ── Query 3: resolver entrenadores del club y buscar por coachUid ──
-        // FIX: Esta query resuelve el caso donde el Director/Coordinador no está
-        // en staffUids de algunos partidos (porque _cGetStaff falló o los contactos
-        // no tenían UID cuando se creó el informe). Buscamos todos los entrenadores
-        // del club y consultamos sus informes directamente.
-        // NOTA: No usamos where('staffReport','==',true) en la query porque
-        // requeriría un índice compuesto. Filtramos en cliente como las demás.
+        // ── Query 3: por coachUid in [batch] ────────────────────────
+        // Resuelve todos los coachUIDs del club desde la colección users,
+        // luego busca informes de esos entrenadores. Esto cubre partidos
+        // donde el director NO está en staffUids y Query 1 falló.
         try {
-            const coachSnap = await getDocs(query(
-                collection(db, 'users'),
-                where('clubId', '==', clubId),
-                where('role', '==', 'user')
-            ));
-            const coachUids = [];
-            coachSnap.forEach(d => coachUids.push(d.id));
-            // También buscar entrenadores multi-rol (allRoles contiene 'user')
-            const allUsersSnap = await getDocs(query(
+            const usersSnap = await getDocs(query(
                 collection(db, 'users'),
                 where('clubId', '==', clubId)
             ));
-            allUsersSnap.forEach(d => {
+            const coachUids = [];
+            usersSnap.forEach(d => {
                 const data = d.data();
-                const isCoach = (data.allRoles || []).some(r =>
-                    r.role === 'user' && r.isAuthorized !== false &&
-                    r.status !== 'rejected' && r.status !== 'removed'
-                );
-                if (isCoach && !coachUids.includes(d.id)) {
+                // Usuarios con rol de entrenador o que son coach en informes
+                if (data.role === 'user' || (data.allRoles && data.allRoles.some(r => r.role === 'user'))) {
                     coachUids.push(d.id);
                 }
             });
-            // Firestore permite hasta 30 valores en 'in'
-            for (let i = 0; i < coachUids.length; i += 30) {
-                const batch = coachUids.slice(i, i + 30);
-                const q3Snap = await getDocs(query(
-                    collection(db, 'cronos_player_reports'),
-                    where('coachUid', 'in', batch),
-                    limit(500)
-                ));
-                q3Snap.forEach(d => addDoc(d));
+            // Firestore 'in' admite máximo 30 valores por batch
+            const BATCH = 30;
+            for (let i = 0; i < coachUids.length; i += BATCH) {
+                const batch = coachUids.slice(i, i + BATCH);
+                try {
+                    const snap3 = await getDocs(query(
+                        collection(db, 'cronos_player_reports'),
+                        where('coachUid', 'in', batch),
+                        limit(500)
+                    ));
+                    snap3.forEach(d => { if (!docMap.has(d.id)) docMap.set(d.id, d); });
+                } catch(batchErr) {
+                    console.warn('[StaffDashboard] Query 3 batch falló:', batchErr.message);
+                }
             }
-            console.log('[StaffDashboard] Query 3 (coachUid): acumulado', allDocs.size, 'docs');
+            console.log('[StaffDashboard] Query 3 (coachUid):', coachUids.length, 'coaches buscados, total docs ahora:', docMap.size);
         } catch(q3Err) {
-            console.warn('[StaffDashboard] Query 3 por coachUid falló:', q3Err.message);
+            console.warn('[StaffDashboard] Query 3 (users/coachUid) falló:', q3Err.message);
         }
 
-        // Construir rawSnap fusionado
-        const combinedDocs = Array.from(allDocs.values());
-        const rawSnap = { forEach: fn => combinedDocs.forEach(fn) };
+        // ── Construir rawSnap a partir del Map fusionado ────────────
+        const rawSnap = { forEach: fn => docMap.forEach(d => fn(d)) };
 
         // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
         // Esto evita requerir un índice compuesto en Firestore.
@@ -1284,10 +1275,6 @@ async function _sdLoadReports() {
         };
 
         // ── Función para eliminar informe definitivamente ──────────────
-        // FIX: Al igual que miEliminarInforme en panel.js, se intentan TODAS
-        // las variantes de ID para cada jugador (_staff_p, _coach_p, _p),
-        // ya que el panel de staff puede estar mostrando documentos creados
-        // con cualquier prefijo. Esto evita que queden documentos huérfanos.
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Estás seguro de que deseas eliminar este informe de partido definitivamente? Esta acción borrará todos los datos del encuentro para todos los roles y no se puede deshacer.')) return;
             
@@ -1298,21 +1285,18 @@ async function _sdLoadReports() {
                 const { db, doc, deleteDoc } = await _sdFS();
                 if (typeof showSpinner === 'function') showSpinner('Eliminando informe…');
                 
-                // Eliminar cada documento de jugador asociado
-                // FIX: generar TODAS las variantes de ID para cubrir
-                // documentos de entrenador (_coach_p) y de staff (_staff_p)
+                // FIX: Eliminar cada documento de jugador asociado probando TODAS
+                // las variantes de ID (_staff_p, _coach_p, _p, id original).
+                // Antes solo intentaba un ID, y si no coincidía (p.ej. doc
+                // real era _staff_p pero se intentaba _p) fallaba con
+                // "Missing or insufficient permissions".
                 const deletePromises = match.players.flatMap(p => {
                     const pNum = p.playerNumber || p.number || '';
                     const ids = [];
-                    // 1. ID almacenado en el propio documento (más fiable)
                     if (p._id || p.id) ids.push(p._id || p.id);
-                    // 2. Documentos del panel de staff
-                    ids.push(`${match.matchId}_staff_p${pNum}`);
-                    // 3. Documentos del entrenador (FASE C)
                     ids.push(`${match.matchId}_coach_p${pNum}`);
-                    // 4. Variante antigua (sin prefijo)
+                    ids.push(`${match.matchId}_staff_p${pNum}`);
                     ids.push(`${match.matchId}_p${pNum}`);
-                    // Deduplicar
                     const uniqueIds = [...new Set(ids)];
                     return uniqueIds.map(docId =>
                         deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
