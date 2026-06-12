@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v162
+//  CRONOS FUTBOL — Service Worker v163
+//  v163: FIX CRÍTICO — al reanudar la 2ª parte tras el descanso el partido se
+//         reiniciaba (marcador 0-0, cronómetro a cero, vuelta a 1ª parte). Causa:
+//         el técnico volvía a «Configuración» durante el descanso para hacer
+//         cambios y, al re-confirmar la convocatoria, goToTitularSelection() /
+//         startMatchWithConvocation() (versión ACTIVA en js/ai/import.js)
+//         ejecutaban el RESET GLOBAL del partido. Fix: nuevo guard
+//         _guardAgainstMatchReset() (app-init.js) detecta un partido EN CURSO
+//         (1ª/descanso/2ª con marcador o tiempo) y ofrece REANUDAR (conserva
+//         marcador y cronómetro vía _restoreActiveMatch) o empezar de cero.
 //  v162: Bump cache — fuerza recarga de los fixes de partido en vivo (clubId en
 //         live_matches), del filtro del visor (live.html) y de setCustomClaims al
 //         activar miembros (panel.js). Sin el bump no se purga la cache v161.
@@ -116,8 +125,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v162';
-const CACHE_NAME = 'cronos-cache-v162';
+const VERSION    = 'v163';
+const CACHE_NAME = 'cronos-cache-v163';
 
 const ASSETS = [
     './',

@@ -741,6 +741,7 @@ function saveConvPlayers() {
 
 // ── IR AL PARTIDO (desde convocatoria con 3 estados: convocado/titular) ──
 function goToTitularSelection() {
+    if (typeof window._guardAgainstMatchReset === 'function' && window._guardAgainstMatchReset()) return;
     saveConvData();
     saveConvPlayers();
 
@@ -817,6 +818,7 @@ function startMatchFromTitularSelection() {
 
 
 function startMatchWithConvocation() {
+    if (typeof window._guardAgainstMatchReset === 'function' && window._guardAgainstMatchReset()) return;
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');

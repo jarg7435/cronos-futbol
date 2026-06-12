@@ -3393,7 +3393,46 @@ function saveConvPlayers() {
 }
 
 // ── IR AL PARTIDO (desde convocatoria con 3 estados: convocado/titular) ──
+// ── Guard anti-reinicio: si hay un partido EN CURSO (descanso o parte
+//    activa) guardado, evita que el flujo de "iniciar partido" lo borre
+//    (marcador a 0-0, cronómetro a cero). Devuelve true si se debe ABORTAR
+//    el inicio de un partido nuevo (porque el usuario eligió reanudar el
+//    que ya estaba en marcha). Causa raíz del bug de "2ª parte se reinicia":
+//    el técnico volvía a Configuración durante el descanso para hacer cambios
+//    y al re-confirmar la convocatoria se ejecutaba el RESET GLOBAL.
+function _guardAgainstMatchReset() {
+    try {
+        const raw = localStorage.getItem('cronos_active_match_v2');
+        if (!raw) return false;
+        const st = JSON.parse(raw);
+        if (!st || !st.matchPhase) return false;
+        const inProgress = (st.matchPhase === '1st_half' || st.matchPhase === 'break' || st.matchPhase === '2nd_half');
+        if (!inProgress) return false;
+        const hasProgress = (st.masterTimeH1 > 0) || (st.masterTimeH2 > 0) ||
+                            (parseInt(st.scoreHome) > 0) || (parseInt(st.scoreAway) > 0) ||
+                            (st.matchPhase === 'break') || (st.matchPhase === '2nd_half');
+        if (!hasProgress) return false;
+        const phaseTxt = st.matchPhase === 'break' ? 'DESCANSO' :
+                         st.matchPhase === '2nd_half' ? '2ª PARTE' : '1ª PARTE';
+        const sH = parseInt(st.scoreHome) || 0, sA = parseInt(st.scoreAway) || 0;
+        const resume = confirm(
+            '⚠️ Hay un PARTIDO EN CURSO sin finalizar (' + phaseTxt + ', ' + sH + '-' + sA + ').\n\n' +
+            'Pulsa ACEPTAR para REANUDARLO conservando el marcador y el cronómetro.\n' +
+            'Pulsa CANCELAR para EMPEZAR UN PARTIDO NUEVO (se perderá el marcador y el tiempo actuales).'
+        );
+        if (resume) {
+            if (typeof window._restoreActiveMatch === 'function') window._restoreActiveMatch();
+            return true; // abortar inicio de partido nuevo
+        }
+        return false; // el usuario aceptó empezar de cero
+    } catch (e) {
+        return false;
+    }
+}
+window._guardAgainstMatchReset = _guardAgainstMatchReset;
+
 function goToTitularSelection() {
+    if (_guardAgainstMatchReset()) return;
     // ══ CRÍTICO: Quitar setup-mode PRIMERO que todo ══
     // Esto garantiza que aunque algo falle después, la pantalla no sea negra.
     document.body.classList.remove('setup-mode');
@@ -3556,6 +3595,7 @@ function goToTitularSelection() {
 
 
 function startMatchWithConvocation() {
+    if (_guardAgainstMatchReset()) return;
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');
