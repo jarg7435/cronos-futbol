@@ -1046,143 +1046,96 @@ async function _sdLoadReports() {
     }
 
     try {
-        const { db, collection, getDocs, query, where, limit, doc, getDoc } = await _sdFS();
+        const { db, collection, getDocs, query, where, limit } = await _sdFS();
 
-        // FIX (C4): resolver clubId real desde el documento del usuario.
-        // Si el director/coordinador no tiene el custom claim clubId propagado,
-        // la query por clubId falla. Obtenemos el clubId correcto del documento.
-        let effectiveClubId = clubId;
+        // FIX: Sistema de consultas múltiples para acceder a informes de staff.
+        // El Director/Coordinador puede no tener el custom claim clubId propagado
+        // en su token, y puede no estar en staffUids de todos los partidos
+        // (si _cGetStaff falló al resolver su UID cuando se creó el informe).
+        // Estrategia:
+        //   Query 1: por clubId (requiere custom claim en token)
+        //   Query 2: por staffUids array-contains (para docs que sí incluyen su UID)
+        //   Query 3: por coachUid de entrenadores del mismo club (resolve coaches first)
+        // Cada query va en su propio try/catch y los resultados se fusionan.
+        const allDocs = new Map(); // deduplicar por doc.id
+        const addDoc = (d) => { if (!allDocs.has(d.id)) allDocs.set(d.id, d); };
+
+        // ── Query 1: por clubId (requiere custom claim) ──
         try {
-            const mySnap = await getDoc(doc(db, 'users', me.uid));
-            if (mySnap.exists() && mySnap.data().clubId) {
-                effectiveClubId = mySnap.data().clubId;
-                if (effectiveClubId !== clubId) {
-                    console.warn('[C4 StaffDashboard] clubId del token (' + clubId +
-                        ') no coincide con users/{uid}.clubId (' + effectiveClubId + '). Usando del documento.');
-                }
-            }
-        } catch(e) {
-            console.warn('[C4 StaffDashboard] No se pudo leer clubId del documento:', e.message);
+            const q1Snap = await getDocs(query(
+                collection(db, 'cronos_player_reports'),
+                where('clubId', '==', clubId),
+                limit(500)
+            ));
+            q1Snap.forEach(d => addDoc(d));
+            console.log('[StaffDashboard] Query 1 (clubId):', allDocs.size, 'docs');
+        } catch (clubErr) {
+            console.warn('[StaffDashboard] Query 1 por clubId falló:', clubErr.message);
         }
 
-        // FIX: Query dual para acceder a informes de staff.
-        // Query 1: por clubId (requiere que el token tenga el custom claim
-        //          clubId; las reglas exigen request.auth.token.clubId == clubId
-        //          sobre TODOS los docs candidatos, así que si el director/
-        //          coordinador aún no tiene el claim propagado, la query ENTERA
-        //          es rechazada con "Missing or insufficient permissions").
-        // Query 2: por staffUids array-contains (funciona sin custom claims,
-        //          ya que las reglas de Firestore permiten leer a quien esté
-        //          en resource.data.staffUids).
-        // Query 3 (C4): por coachUid — busca informes escritos por entrenadores
-        //          del mismo club, incluso si staffUids quedó vacío.
-        // Por eso la Query 1 va en su propio try/catch: si falla por permisos
-        // NO debe abortar el flujo; caemos a la Query 2 y 3.
-        let rawSnap = { forEach: () => {} };
-        let _clubQueryOk = false;
-        // FIX (C4): intentar con ambos clubIds
-        for (const cid of [clubId, effectiveClubId]) {
+        // ── Query 2: por staffUids array-contains ──
+        if (me.uid) {
             try {
-                rawSnap = await getDocs(query(
-                    collection(db, 'cronos_player_reports'),
-                    where('clubId', '==', cid),
-                    limit(500)
-                ));
-                _clubQueryOk = true;
-                break; // éxito, no seguir
-            } catch (clubErr) {
-                console.warn('[StaffDashboard] Query por clubId=' + cid + ' falló:', clubErr.message);
-            }
-        }
-
-        // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
-        let _hasStaffDocs = false;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
-
-        if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
-            try {
-                const altSnap = await getDocs(query(
+                const q2Snap = await getDocs(query(
                     collection(db, 'cronos_player_reports'),
                     where('staffUids', 'array-contains', me.uid),
                     limit(500)
                 ));
-                // Fusionar resultados alternativos con los originales
-                const existingIds = new Set();
-                rawSnap.forEach(d => existingIds.add(d.id));
-                altSnap.forEach(d => {
-                    if (!existingIds.has(d.id) && d.data().staffReport === true) {
-                        // Añadir docs que no estaban en el snap original
-                        _hasStaffDocs = true;
-                    }
-                });
-                // Usar el snap alternativo si tiene resultados de staff
-                if (_hasStaffDocs) {
-                    // Combinar ambos snaps
-                    const combinedDocs = [];
-                    rawSnap.forEach(d => combinedDocs.push(d));
-                    const existingIds2 = new Set(combinedDocs.map(d => d.id));
-                    altSnap.forEach(d => {
-                        if (!existingIds2.has(d.id)) combinedDocs.push(d);
-                    });
-                    rawSnap = { forEach: fn => combinedDocs.forEach(fn) };
-                }
+                q2Snap.forEach(d => addDoc(d));
+                console.log('[StaffDashboard] Query 2 (staffUids): acumulado', allDocs.size, 'docs');
             } catch(altErr) {
-                console.warn('[StaffDashboard] Query alternativa por staffUids falló:', altErr.message);
+                console.warn('[StaffDashboard] Query 2 por staffUids falló:', altErr.message);
             }
         }
 
-        // FIX (C4): Query 3 — buscar informes por coachUid del mismo club.
-        // Si _cGetStaff falló al escribir los reports (porque la query de users
-        // fue rechazada por permisos), staffUids quedó vacío y la query por
-        // array-contains no encuentra nada. Pero los reports SÍ tienen coachUid
-        // del entrenador. Buscamos los coachUid del club y leemos sus informes.
-        if (!_hasStaffDocs && me.uid) {
-            try {
-                console.log('[C4 StaffDashboard] Intentando Query 3: buscar por coachUid del club');
-                // Leer los miembros del club para obtener sus UIDs
-                const clubMembersSnap = await getDocs(query(
-                    collection(db, 'users'),
-                    where('clubId', '==', effectiveClubId),
-                    limit(100)
+        // ── Query 3: resolver entrenadores del club y buscar por coachUid ──
+        // FIX: Esta query resuelve el caso donde el Director/Coordinador no está
+        // en staffUids de algunos partidos (porque _cGetStaff falló o los contactos
+        // no tenían UID cuando se creó el informe). Buscamos todos los entrenadores
+        // del club y consultamos sus informes directamente.
+        // NOTA: No usamos where('staffReport','==',true) en la query porque
+        // requeriría un índice compuesto. Filtramos en cliente como las demás.
+        try {
+            const coachSnap = await getDocs(query(
+                collection(db, 'users'),
+                where('clubId', '==', clubId),
+                where('role', '==', 'user')
+            ));
+            const coachUids = [];
+            coachSnap.forEach(d => coachUids.push(d.id));
+            // También buscar entrenadores multi-rol (allRoles contiene 'user')
+            const allUsersSnap = await getDocs(query(
+                collection(db, 'users'),
+                where('clubId', '==', clubId)
+            ));
+            allUsersSnap.forEach(d => {
+                const data = d.data();
+                const isCoach = (data.allRoles || []).some(r =>
+                    r.role === 'user' && r.isAuthorized !== false &&
+                    r.status !== 'rejected' && r.status !== 'removed'
+                );
+                if (isCoach && !coachUids.includes(d.id)) {
+                    coachUids.push(d.id);
+                }
+            });
+            // Firestore permite hasta 30 valores en 'in'
+            for (let i = 0; i < coachUids.length; i += 30) {
+                const batch = coachUids.slice(i, i + 30);
+                const q3Snap = await getDocs(query(
+                    collection(db, 'cronos_player_reports'),
+                    where('coachUid', 'in', batch),
+                    limit(500)
                 ));
-                const coachUids = [];
-                clubMembersSnap.forEach(d => {
-                    const data = d.data();
-                    // Cualquier usuario del club puede ser entrenador
-                    if (data.isAuthorized !== false) coachUids.push(d.id);
-                });
-                // Buscar informes de cada coachUid (máximo 10 para no saturar)
-                const combinedDocs3 = [];
-                rawSnap.forEach(d => combinedDocs3.push(d));
-                const existingIds3 = new Set(combinedDocs3.map(d => d.id));
-
-                for (const cuid of coachUids.slice(0, 10)) {
-                    try {
-                        const coachSnap = await getDocs(query(
-                            collection(db, 'cronos_player_reports'),
-                            where('coachUid', '==', cuid),
-                            where('staffReport', '==', true),
-                            limit(100)
-                        ));
-                        coachSnap.forEach(d => {
-                            if (!existingIds3.has(d.id) && d.data().staffReport === true) {
-                                combinedDocs3.push(d);
-                                existingIds3.add(d.id);
-                                _hasStaffDocs = true;
-                            }
-                        });
-                    } catch(e) {
-                        // Silencioso — si un coachUid no es legible, seguir con el siguiente
-                    }
-                }
-                if (_hasStaffDocs) {
-                    rawSnap = { forEach: fn => combinedDocs3.forEach(fn) };
-                    console.log('[C4 StaffDashboard] Query 3 encontró', combinedDocs3.length, 'documentos');
-                }
-            } catch(e3) {
-                console.warn('[C4 StaffDashboard] Query 3 (coachUid) falló:', e3.message);
+                q3Snap.forEach(d => addDoc(d));
             }
+            console.log('[StaffDashboard] Query 3 (coachUid): acumulado', allDocs.size, 'docs');
+        } catch(q3Err) {
+            console.warn('[StaffDashboard] Query 3 por coachUid falló:', q3Err.message);
         }
+
+        // Construir rawSnap fusionado
+        const combinedDocs = Array.from(allDocs.values());
+        const rawSnap = { forEach: fn => combinedDocs.forEach(fn) };
 
         // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
         // Esto evita requerir un índice compuesto en Firestore.
@@ -1331,6 +1284,10 @@ async function _sdLoadReports() {
         };
 
         // ── Función para eliminar informe definitivamente ──────────────
+        // FIX: Al igual que miEliminarInforme en panel.js, se intentan TODAS
+        // las variantes de ID para cada jugador (_staff_p, _coach_p, _p),
+        // ya que el panel de staff puede estar mostrando documentos creados
+        // con cualquier prefijo. Esto evita que queden documentos huérfanos.
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Estás seguro de que deseas eliminar este informe de partido definitivamente? Esta acción borrará todos los datos del encuentro para todos los roles y no se puede deshacer.')) return;
             
@@ -1342,13 +1299,26 @@ async function _sdLoadReports() {
                 if (typeof showSpinner === 'function') showSpinner('Eliminando informe…');
                 
                 // Eliminar cada documento de jugador asociado
-                // Intentamos por el _id almacenado o por la clave compuesta estándar
-                const deletePromises = match.players.map(p => {
-                    const docId = p._id || p.id || `${match.matchId}_coach_p${p.playerNumber}` || `${match.matchId}_p${p.playerNumber}`;
-                    return deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
-                        console.warn(`[StaffDashboard] No se pudo borrar el sub-informe ${docId}:`, err.message);
-                        // No relanzamos el error para que Promise.all no se detenga
-                    });
+                // FIX: generar TODAS las variantes de ID para cubrir
+                // documentos de entrenador (_coach_p) y de staff (_staff_p)
+                const deletePromises = match.players.flatMap(p => {
+                    const pNum = p.playerNumber || p.number || '';
+                    const ids = [];
+                    // 1. ID almacenado en el propio documento (más fiable)
+                    if (p._id || p.id) ids.push(p._id || p.id);
+                    // 2. Documentos del panel de staff
+                    ids.push(`${match.matchId}_staff_p${pNum}`);
+                    // 3. Documentos del entrenador (FASE C)
+                    ids.push(`${match.matchId}_coach_p${pNum}`);
+                    // 4. Variante antigua (sin prefijo)
+                    ids.push(`${match.matchId}_p${pNum}`);
+                    // Deduplicar
+                    const uniqueIds = [...new Set(ids)];
+                    return uniqueIds.map(docId =>
+                        deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
+                            console.warn(`[StaffDashboard] No se pudo borrar ${docId}:`, err.message);
+                        })
+                    );
                 });
                 
                 await Promise.all(deletePromises);
