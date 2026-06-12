@@ -32,7 +32,11 @@ async function startLiveSync() {
                      String(now.getMonth()+1).padStart(2,'0') +
                      now.getFullYear();
     const randSlug = Math.random().toString(36).substr(2,4);
-    liveMatchId        = `${teamSlug}-${dateSlug}-${randSlug}`;
+    // FIX (Problema 1): ID DETERMINISTA (reutiliza el existente o deriva el
+    // sufijo de la identidad del partido; ya NO usa Math.random()).
+    liveMatchId        = (typeof window._cronosBuildLiveMatchId === 'function')
+        ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: liveMatchId })
+        : `${teamSlug}-${dateSlug}-${randSlug}`;
     liveIsActive       = true;
     liveMatchStartTime = new Date().toISOString(); // ← fijar hora de inicio (no cambia)
     // E4: nuevo partido en vivo → liberar el guard de despacho de informes.

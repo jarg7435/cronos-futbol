@@ -32,6 +32,46 @@ _Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: 
   - Reset del guard al empezar partido nuevo: `resetMatch` (`js/match/events/movement-log.js`) y al generar nuevo `liveMatchId` (`js/match/live/sync.js`, `js/services/firestore-sync.js`).
   - Verificado con test del guard: 3 disparos del mismo partido → 1 despacho; partido nuevo → vuelve a despachar; modo local sin live-sync funciona.
 
+## COMPLETADO (HOTFIX v167 — persistían tras v166)
+
+- [x] **P1 (v167)**: Informes individuales aún duplicados a padres (10+ veces)
+  - v166 corrigió el `Date.now()` dentro de `_stableMatchId`, pero la aleatoriedad
+    real estaba **aguas arriba**: las 3 copias de `startLiveSync`
+    (`js/core/app-init.js`, `js/match/live/sync.js`, `js/services/firestore-sync.js`)
+    generaban el sufijo de `liveMatchId` con `Math.random().toString(36).substr(2,4)`
+    (ej. `futbol-7-12062026-eq1u`). Al re-iniciar el sync el sufijo cambiaba, y como
+    `_stableMatchId` devuelve `match_${liveMatchId}`, el `matchId` del informe dejaba
+    de ser estable → `setDoc` creaba docs nuevos y el dedup del panel del padre
+    (`matchId+playerNumber`) no los colapsaba.
+  - Fix: helpers deterministas en `js/core/utils.js`:
+    - `window._cronosStableSlug(input,len)`: hash FNV-1a 32-bit → 4 chars base36.
+    - `window._cronosBuildLiveMatchId(opts)`: reutiliza el `liveMatchId` existente
+      (`existing`) o deriva el sufijo de la identidad estable del partido
+      (equipo+fecha+rival+huella de la convocatoria). Las 3 copias de `startLiveSync`
+      llaman a este helper pasando `existing: liveMatchId`.
+  - Verificado con `test_fixes_p1_p2.js`: 50 llamadas con el mismo input → 1 id;
+    reuse del id existente; partido distinto → id distinto; matchId del informe
+    estable entre disparos.
+
+- [x] **P2 (v167)**: `link: undefined` al buscar al jugador del padre (FaseC)
+  - `No se encontró al jugador para el destinatario … con link: undefined`. El
+    `link` venía `undefined` porque el emparejado en `autoDispatchMatchReports`
+    (`js/coach/comms/panel.js`) comparaba `l.parentEmail === r.email` y
+    `l.parentPhone === r.phone` **sin normalizar** (case/espacios o prefijo `+34`),
+    así que el doc existía en Firestore pero el `find` no casaba; las 4 condiciones
+    siguientes del `find` del jugador exigen `link && …` → `undefined`.
+  - Fix (`js/core/utils.js` + `panel.js`):
+    - `window._cronosNormEmail` (trim+lowercase) y `window._cronosNormPhone`
+      (solo dígitos; quita prefijo `34`/`0034` español) aplicados al matching del
+      link y a los dedup-merge de contactos (líneas ~470 y ~948).
+    - Fallback de link por `playerNumber`/`playerAlias` cuando no casa por padre.
+    - Log diagnóstico `[Cronos][P2]` que distingue "link no cargado por `clubId`"
+      (filtro de la query) de "no casó".
+  - Verificado con `test_fixes_p1_p2.js`: email/teléfono normalizados casan;
+    fallback por número/alias recupera el link; comparación estricta (pre-fix) no
+    encontraba el link (confirma la causa).
+  - Bump SW a `cronos-cache-v167`.
+
 ## COMPLETADO (HOTFIX informes)
 
 - [x] **BUG-CRÍTICO**: «Informes de partido no se envían a nadie» (a partir del 2º partido)

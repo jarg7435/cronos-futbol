@@ -467,9 +467,13 @@ async function _loadParentList() {
 
         contacts.forEach(c => {
             // Buscamos si ya existe en los links de Firestore para no duplicar
+            // FIX (Problema 2): comparar email/teléfono normalizados.
+            const _ne = window._cronosNormEmail || (v => (v == null ? '' : String(v).trim().toLowerCase()));
+            const _np = window._cronosNormPhone || (v => (v == null ? '' : String(v)).replace(/\D/g, ''));
+            const _cEmail = _ne(c.email), _cPhone = _np(c.phone);
             const exists = links.find(l => 
-                (c.email && l.parentEmail === c.email) || 
-                (c.phone && (l.parentPhone === c.phone || l.parentWA === c.phone || l.phone === c.phone)) ||
+                (_cEmail && _ne(l.parentEmail) === _cEmail) || 
+                (_cPhone && (_np(l.parentPhone) === _cPhone || _np(l.parentWA) === _cPhone || _np(l.phone) === _cPhone)) ||
                 (c.uid && (l.parentUid === c.uid || l.uid === c.uid))
             );
             
@@ -945,10 +949,14 @@ async function sendMatchReportsToParents() {
 
                 mergedContacts = [...contacts];
                 links.forEach(l => {
+                    // FIX (Problema 2): comparar email/teléfono normalizados.
+                    const _ne2 = window._cronosNormEmail || (v => (v == null ? '' : String(v).trim().toLowerCase()));
+                    const _np2 = window._cronosNormPhone || (v => (v == null ? '' : String(v)).replace(/\D/g, ''));
+                    const _lEmail = _ne2(l.parentEmail), _lPhone = _np2(l.parentPhone);
                     const exists = mergedContacts.find(c => 
                         (l.parentUid && c.uid === l.parentUid) || 
-                        (l.parentEmail && c.email === l.parentEmail) ||
-                        (l.parentPhone && c.phone === l.parentPhone)
+                        (_lEmail && _ne2(c.email) === _lEmail) ||
+                        (_lPhone && _np2(c.phone) === _lPhone)
                     );
                     if (!exists) {
                         mergedContacts.push({
@@ -1442,10 +1450,37 @@ window._executeReportsSend = async function(method) {
             } 
             else if (r.type === 'parent') {
                 // Find matched link
+                // FIX (Problema 2): normalizar email/teléfono al emparejar. Antes
+                // l.parentEmail === r.email y l.parentPhone === r.phone fallaban
+                // por diferencias de case/espacios o prefijo de país (+34), de modo
+                // que link quedaba undefined aunque el doc existiera en Firestore.
+                const _normEmail = window._cronosNormEmail || (v => (v == null ? '' : String(v).trim().toLowerCase()));
+                const _normPhone = window._cronosNormPhone || (v => (v == null ? '' : String(v)).replace(/\D/g, ''));
+                const _rEmail = _normEmail(r.email);
+                const _rPhone = _normPhone(r.phone);
                 let link = links.find(l => (r.id && r.id.includes('p_') === false ? l.parentUid === r.id : false)
-                                          || (r.email && l.parentEmail === r.email) 
-                                          || (r.phone && l.parentPhone === r.phone));
-                
+                                          || (_rEmail && _normEmail(l.parentEmail) === _rEmail)
+                                          || (_rPhone && _normPhone(l.parentPhone) === _rPhone));
+
+                // Fallback (Problema 2): si seguimos sin link pero el recipient trae
+                // datos del jugador, intentar localizar el link por playerNumber/
+                // playerAlias para recuperar parentUid y la identidad correcta.
+                if (!link && (r.playerNumber != null || r.playerId || r.playerAlias)) {
+                    link = links.find(l =>
+                        (r.playerNumber != null && l.playerNumber != null && String(l.playerNumber) === String(r.playerNumber)) ||
+                        (r.playerId && l.playerId && l.playerId === r.playerId) ||
+                        (r.playerAlias && l.playerAlias && String(l.playerAlias).trim().toLowerCase() === String(r.playerAlias).trim().toLowerCase())
+                    ) || link;
+                }
+
+                // Diagnóstico (Problema 2): si no hay link, distinguir entre "el
+                // link no se cargó por clubId" (filtro de la query) y "no casó".
+                if (!link) {
+                    console.warn('[Cronos][P2] link no encontrado para destinatario', r.label,
+                        { meClubId: me.clubId, linksCargados: links.length,
+                          rEmail: _rEmail, rPhone: _rPhone, rId: r.id });
+                }
+
                 // Fallback: si no hay link en Firestore pero el recipient tiene info de jugador (manual)
                 const fallbackPlayerId = r.playerId;
                 const fallbackPlayerNum = r.playerNumber;

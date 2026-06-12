@@ -1,5 +1,19 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v166
+//  CRONOS FUTBOL — Service Worker v167
+//  v167: FIX raiz informes duplicados a padres + link padre-jugador undefined.
+//         P1: liveMatchId usaba Math.random() en sus 3 copias de startLiveSync
+//         (app-init.js, match/live/sync.js, services/firestore-sync.js); reiniciar
+//         el sync cambiaba el sufijo (eq1u->x9k2) y, como _stableMatchId deriva de
+//         liveMatchId, el matchId del informe dejaba de ser estable y el dedup del
+//         padre no colapsaba. Fix: sufijo DETERMINISTA (hash FNV-1a de equipo+
+//         fecha+rival+convocatoria) via window._cronosBuildLiveMatchId, que ademas
+//         reutiliza el liveMatchId existente. v166 solo corrigio el Date.now() de
+//         _stableMatchId; la aleatoriedad real estaba aguas arriba.
+//         P2: el emparejado link padre-jugador (autoDispatchMatchReports/FaseC)
+//         comparaba email/telefono con === sin normalizar -> link undefined aunque
+//         el doc existiera (case/espacios o prefijo +34). Fix: _cronosNormEmail /
+//         _cronosNormPhone + fallback de link por playerNumber/playerAlias + log
+//         diagnostico que distingue "no cargado por clubId" de "no caso".
 //  v166: FIX informes individuales duplicados a padres (llegaban 10+ veces).
 //         Causa: sharedMatchId usaba Date.now(), así que cada disparo del fin
 //         de partido que se colaba por los guards creaba docs con matchId nuevo
@@ -137,8 +151,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v166';
-const CACHE_NAME = 'cronos-cache-v166';
+const VERSION    = 'v167';
+const CACHE_NAME = 'cronos-cache-v167';
 
 const ASSETS = [
     './',
