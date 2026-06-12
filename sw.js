@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v165
+//  CRONOS FUTBOL — Service Worker v166
+//  v166: FIX informes individuales duplicados a padres (llegaban 10+ veces).
+//         Causa: sharedMatchId usaba Date.now(), así que cada disparo del fin
+//         de partido que se colaba por los guards creaba docs con matchId nuevo
+//         (setDoc no idempotente) y el dedup del panel del padre no los colapsaba.
+//         Fix: matchId DETERMINISTA (helper _stableMatchId: liveMatchId o
+//         uid+fecha+rival, sin marcador) en auto y manual dispatch + dedup
+//         defensivo en parent/panel.js (fallback parentUid+playerNumber+fecha).
 //  v165: FIX informes club — ocultado suave por usuario (hiddenBy) en lugar de
 //         borrado físico. Director y coordinador comparten los mismos docs en
 //         Firestore: al borrar uno, el otro perdía el informe. Ahora sdDeleteReport
@@ -130,8 +137,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v165';
-const CACHE_NAME = 'cronos-cache-v165';
+const VERSION    = 'v166';
+const CACHE_NAME = 'cronos-cache-v166';
 
 const ASSETS = [
     './',

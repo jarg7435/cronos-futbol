@@ -772,16 +772,54 @@ async function openParentPanel() {
                     : Promise.resolve({ forEach: () => {} })
             ]);
 
-            const reportsMap = {};
-            rptByParent.forEach(d => { reportsMap[d.id] = { _id: d.id, ...d.data() }; });
-            // Añadir los del jugador que no tengan parentUid aún (evitar duplicados)
+            // FIX v2: Deduplicar por (matchId + playerNumber) en vez de por doc ID.
+            // El problema era que para un mismo partido+jugador, existen 3 documentos:
+            //   {matchId}_coach_p5  (staffReport=false, _forCoach=true)
+            //   {matchId}_staff_p5  (staffReport=true)
+            //   {matchId}_parent_UID_p5  (parentPlayerReport)
+            // Cada uno tiene un ID distinto, así que la deduplicación por doc ID
+            // no funcionaba → el padre veía el informe 3 veces (o 15 si hay 5 jugadores × 3 docs).
+            // Ahora agrupamos por matchId+playerNumber para mostrar SOLO UN informe por partido.
+            const reportsByMatch = {}; // clave: "matchId_playerNumber"
+            const seenDocIds = new Set(); // evitar procesar el mismo doc 2 veces
+
+            // Prioridad 1: docs con parentUid (informes específicos para padres)
+            rptByParent.forEach(d => {
+                const data = d.data();
+                // Excluir docs de staff y coach (no son para padres)
+                if (data.staffReport === true || data._forCoach === true) return;
+                if (seenDocIds.has(d.id)) return;
+                seenDocIds.add(d.id);
+                // FIX duplicados: clave de dedup defensiva. Antes solo usaba
+                // matchId+playerNumber, pero los informes ya en producción
+                // tienen matchId distintos por despacho (Date.now() histórico),
+                // así que no se colapsaban. Añadimos fallback por
+                // parentUid+playerNumber+fecha para unificar esas copias.
+                const _day = (data.matchDate || data.createdAt || '').slice(0, 10);
+                const dedupKey = data.matchId
+                    ? `${data.matchId}_${data.playerNumber || ''}`
+                    : `${data.parentUid || me.uid}_${data.playerNumber || ''}_${_day}`;
+                // Solo guardar si no tenemos ya un informe para este partido+jugador,
+                // o si este doc es tipo parent_player_report (prioridad más alta)
+                if (!reportsByMatch[dedupKey] || data.type === 'parent_player_report') {
+                    reportsByMatch[dedupKey] = { _id: d.id, ...data };
+                }
+            });
+            // Prioridad 2: docs por playerNumber sin parentUid (informes pasados pre-vinculación)
             rptByPlayer.forEach(d => {
                 const data = d.data();
-                // Solo incluir: informes del mismo jugador que aún no tengan parentUid asignado
-                // o que sean del tipo correcto (excluir staffReport=true que son del panel de staff)
-                if (!reportsMap[d.id] && !data.staffReport) {
-                    reportsMap[d.id] = { _id: d.id, ...data };
-                    // Aprovechar para actualizar parentUid en Firestore si falta
+                // Excluir docs de staff y coach
+                if (data.staffReport || data._forCoach) return;
+                if (seenDocIds.has(d.id)) return;
+                seenDocIds.add(d.id);
+                // FIX duplicados: misma clave de dedup defensiva (ver arriba).
+                const _day = (data.matchDate || data.createdAt || '').slice(0, 10);
+                const dedupKey = data.matchId
+                    ? `${data.matchId}_${data.playerNumber || ''}`
+                    : `${data.parentUid || me.uid}_${data.playerNumber || ''}_${_day}`;
+                if (!reportsByMatch[dedupKey]) {
+                    reportsByMatch[dedupKey] = { _id: d.id, ...data };
+                    // Actualizar parentUid en Firestore si falta
                     if (!data.parentUid && me.uid) {
                         const { updateDoc: upd, doc: docRef } = { updateDoc, doc };
                         upd(docRef(fa.db, 'cronos_player_reports', d.id), {
@@ -790,6 +828,9 @@ async function openParentPanel() {
                     }
                 }
             });
+
+            // Convertir el mapa deduplicado a array
+            const reportsMap = reportsByMatch;
 
             const reports = Object.values(reportsMap);
             reports.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));

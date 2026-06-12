@@ -1312,7 +1312,9 @@ window._executeReportsSend = async function(method) {
     // Generar matchId compartido para todos los destinatarios de staff de este envío.
     // Así todos comparten el mismo conjunto de cronos_player_reports en lugar de
     // generar partidos duplicados en el panel de Dirección.
-    const _sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
+    // FIX duplicados: matchId determinista (mismo helper que el auto-despacho)
+    // para que el envío manual escriba sobre los MISMOS docs que el auto.
+    const _sharedMatchId = _stableMatchId(me, rivalName);
     let _staffReportsWritten = false; // guard: escribir docs de staff solo una vez por envío
     try {
         for (const r of recipients) {
@@ -1334,6 +1336,7 @@ window._executeReportsSend = async function(method) {
                         type:      'aviso_partido_finalizado',
                         clubId:    me.clubId || null,
                         userId:    uidToNotify,            // ← FIX: campo que las reglas verifican
+                        coachUid:  me.uid,                // ← FIX (C3): coachUid para reglas Firestore
                         parentUid: uidToNotify,
                         staffUid:  uidToNotify,
                         matchDate,
@@ -1475,13 +1478,22 @@ window._executeReportsSend = async function(method) {
                 }
 
                 // Save in cronos_player_reports (for UI queries)
-                // FIX: solo se ejecuta si auto-despacho NO lo hizo ya
-                const reportId = `rpt_${player.number}_${Date.now().toString(36)}`;
+                // FIX v2: Usar ID determinista y type='parent_player_report' para que
+                // el documento se pueda deduplicar correctamente en el panel de padres.
+                // Antes usaba `rpt_${player.number}_${Date.now()}` que era aleatorio →
+                // no se deduplicaba y el padre veía el informe duplicado.
+                const targetPuid = link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id);
+                const manualMatchId = _sharedMatchId || _stableMatchId(me, rivalName);
+                const reportId = targetPuid
+                    ? `${manualMatchId}_parent_${targetPuid}_p${player.number}`
+                    : `rpt_${player.number}_${Date.now().toString(36)}`;
                 await setDoc(doc(db, 'cronos_player_reports', reportId), {
                     reportId,
+                    matchId:        manualMatchId,
+                    type:           'parent_player_report',
                     playerNumber:   player.number,
                     playerAlias:    player.name || player.alias || 'Jugador',
-                    parentUid:      (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id)),
+                    parentUid:      targetPuid,
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
                     matchDate, rival: rivalName,
@@ -1522,6 +1534,7 @@ window._executeReportsSend = async function(method) {
                         await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${player.number}_${Date.now().toString(36)}`), {
                             type: 'informe_partido', clubId: me.clubId || null,
                             userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
+                            coachUid: me.uid,                                   // ← FIX (C3): coachUid para reglas Firestore
                             parentUid: targetParentUid, playerNumber: player.number,
                             rival: rivalName, scoreHome, scoreAway,
                             minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
@@ -1598,6 +1611,24 @@ window._executeReportsSend = async function(method) {
     }
 }
 
+// ── matchId estable por partido (FIX informes duplicados) ──────────────
+// Deriva un identificador determinista del partido para que los IDs de los
+// documentos de informe sean idempotentes entre múltiples disparos del fin
+// de partido (crono + botón manual + expulsiones + recargas). NO incluye el
+// marcador para que un gol en el último segundo no genere un matchId nuevo.
+function _stableMatchId(me, rivalName) {
+    if (typeof liveMatchId !== 'undefined' && liveMatchId) {
+        return `match_${liveMatchId}`;
+    }
+    const uid   = (me && me.uid) || 'u';
+    const date  = new Date().toISOString().split('T')[0];
+    const home  = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || '';
+    const rival = rivalName || (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || '';
+    // Normalizar para que sea válido como ID de documento Firestore.
+    const slug  = `${home}_vs_${rival}`.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60);
+    return `match_${uid}_${date}_${slug}`;
+}
+
 // ── Despacho automático de informes (Interno) ──────────────────────────
 async function autoDispatchMatchReports() {
     const me = window._cronosCurrentUser;
@@ -1650,8 +1681,15 @@ async function autoDispatchMatchReports() {
                           `Informes individuales generados y enviados a padres autorizados.\n` +
                           `_Cronos Fútbol_`;
 
-        // ── Generar un matchId compartido para este partido ──────────────
-        const sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
+        // ── matchId compartido y DETERMINISTA para este partido ──────────
+        // FIX duplicados: antes usaba Date.now(), así que cada disparo del fin
+        // de partido que se colaba por los guards generaba un matchId distinto
+        // → setDoc creaba un doc nuevo (no idempotente) y el dedup del panel
+        // del padre (agrupa por matchId+playerNumber) no podía colapsarlos.
+        // Ahora el ID se deriva de la identidad estable del partido
+        // (liveMatchId si existe; si no, uid+fecha+rival), de modo que TODOS
+        // los despachos del mismo partido escriben sobre los MISMOS docs.
+        const sharedMatchId = _stableMatchId(me, rivalName);
 
         // ── Resolver destinatarios staff ANTES de escribir reports ──────────
         // FIX: antes los staff reports se escribían sin staffUids, así que los
@@ -1721,6 +1759,7 @@ async function autoDispatchMatchReports() {
                 type: 'aviso_partido_finalizado',
                 clubId: me.clubId || null,
                 userId: staff.uid,           // ← FIX: campo que las reglas verifican
+                coachUid: me.uid,            // ← FIX (C2): coachUid para reglas Firestore
                 parentUid: staff.uid,
                 staffUid: staff.uid,
                 matchDate, rival: rivalName, scoreHome, scoreAway,
@@ -1764,27 +1803,37 @@ async function autoDispatchMatchReports() {
                 if (!pUid) continue;
 
                 // ── Guardar en cronos_player_reports para el panel del padre ──
+                // FIX v2: Verificar si el documento ya existe antes de escribir.
+                // Si el partido se despachó previamente (auto o manual), el doc
+                // ya existe y setDoc lo sobreescribiría con los mismos datos.
+                // Pero si se ejecuta por una ruta sin guard, se crearía duplicado.
+                // Usamos un ID determinista basado en matchId + parentUid + playerNumber
+                // para que setDoc sea idempotente (sobreescribe el mismo doc, no crea otro).
                 const prId = `${sharedMatchId}_parent_${pUid}_p${player.number}`;
-                await setDoc(doc(db, 'cronos_player_reports', prId), {
-                    matchId:       sharedMatchId,
-                    type:          'parent_player_report',
-                    parentUid:     pUid,
-                    clubId:        me.clubId || null,
-                    coachUid:      me.uid,
-                    coachEmail:    me.email,
-                    matchDate:     new Date().toISOString().split('T')[0],
-                    rival:         rivalName,
-                    scoreHome,
-                    scoreAway,
-                    createdAt:     new Date().toISOString(),
-                    playerNumber:  String(player.number || ''),
-                    playerAlias:   player.alias || player.name || '',
-                    goals:         player.goals  || 0,
-                    cards:         player.cards  || 'ninguna',
-                    injured:       player.injured || false,
-                    minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
-                    history:       _parseHistoryForFirestore(player.history || []),
-                });
+                try {
+                    await setDoc(doc(db, 'cronos_player_reports', prId), {
+                        matchId:       sharedMatchId,
+                        type:          'parent_player_report',
+                        parentUid:     pUid,
+                        clubId:        me.clubId || null,
+                        coachUid:      me.uid,
+                        coachEmail:    me.email,
+                        matchDate:     new Date().toISOString().split('T')[0],
+                        rival:         rivalName,
+                        scoreHome,
+                        scoreAway,
+                        createdAt:     new Date().toISOString(),
+                        playerNumber:  String(player.number || ''),
+                        playerAlias:   player.alias || player.name || '',
+                        goals:         player.goals  || 0,
+                        cards:         player.cards  || 'ninguna',
+                        injured:       player.injured || false,
+                        minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
+                        history:       _parseHistoryForFirestore(player.history || []),
+                    });
+                } catch(parentDocErr) {
+                    console.warn(`[AutoDispatch] No se pudo escribir doc padre ${prId}:`, parentDocErr.message);
+                }
 
                 // ── Enviar mensaje al hilo de chat ───────────────────────────
                 const threadId = `${me.uid}_${pUid}`;
@@ -1812,6 +1861,7 @@ async function autoDispatchMatchReports() {
                     type:         'informe_partido',
                     clubId:       me.clubId || null,
                     userId:       pUid,                                // ← FIX: campo que las reglas verifican
+                    coachUid:     me.uid,                              // ← FIX (C2): coachUid para reglas Firestore
                     parentUid:    pUid,
                     playerNumber: player.number,
                     playerAlias:  player.alias || player.name,
@@ -2667,6 +2717,7 @@ window._sendTrainingNotification = async function() {
 
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
+            userId: uid,                                  // ← FIX (C3): campo que las reglas verifican
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             datetime, location, notes,
             createdAt: new Date().toISOString(),
@@ -3418,6 +3469,8 @@ window._sendCollectiveReportNow = async function() {
                 }
                 await setDoc(doc(db,'cronos_notifications',`coll_rpt_${s.uid}_${Date.now().toString(36)}`), {
                     type: 'informe_colectivo', clubId: me.clubId||null,
+                    userId: s.uid,                                // ← FIX (C3): campo que las reglas verifican
+                    coachUid: me.uid,                             // ← FIX (C3): coachUid para reglas Firestore
                     staffUid: s.uid, parentUid: s.uid,
                     coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
                     matchId,
@@ -3447,6 +3500,8 @@ window._sendCollectiveReportNow = async function() {
         const selfNotifId = `coll_rpt_self_${me.uid}_${Date.now().toString(36)}`;
         await setDoc(doc(db,'cronos_notifications', selfNotifId), {
             type: 'informe_colectivo', clubId: me.clubId||null,
+            userId: me.uid,                                // ← FIX (C3): campo que las reglas verifican
+            coachUid: me.uid,                              // ← FIX (C3): coachUid para reglas Firestore
             staffUid: me.uid, parentUid: me.uid,
             coachEmail: me.email, matchDate, rival, scoreHome, scoreAway,
             matchId,
@@ -3689,59 +3744,124 @@ window.openMisInformes = async function openMisInformes() {
             window.sdDownloadInforme(key64);
         };
 
-        // Eliminar informe del entrenador (soporta borrado local y real en Firestore)
+        // Eliminar informe del entrenador — FIX v2: SIEMPRE usa soft delete (dismissedBy)
+        // El borrado físico eliminaba el documento para TODOS los roles (Director y
+        // Coordinador lo perdían). Ahora se añade el UID del usuario al array
+        // `dismissedBy` del documento en Firestore. Así cada rol borra independientemente.
+        // Solo se hace borrado físico si el usuario es el coachUid (autor del informe).
         window.miEliminarInforme = async (key64, realDelete = false) => {
-            const promptMsg = realDelete 
-                ? '¿Deseas eliminar este informe DEFINITIVAMENTE de la base de datos? Esta acción no se puede deshacer.' 
-                : '¿Deseas ocultar este informe de tu lista?';
-            
-            if (!confirm(promptMsg)) return;
-            
             const key = decodeURIComponent(escape(atob(key64)));
-            
-            if (realDelete) {
-                const m = window._misInformesData?.[key];
-                if (m) {
-                    try {
-                        const { db, doc, deleteDoc } = await _cFS();
-                        if (typeof showSpinner === 'function') showSpinner('Eliminando de la base de datos…');
-                        
-                        // Eliminar cada documento de jugador asociado
-                        const deletePromises = m.players.map(p => {
-                            const docId = p._id || `${m.matchId}_p${p.playerNumber}`;
-                            return deleteDoc(doc(db, 'cronos_player_reports', docId));
-                        });
-                        await Promise.all(deletePromises);
-                        
-                        if (typeof hideSpinner === 'function') hideSpinner();
-                        if (typeof showToast === 'function') showToast('✅ Informe eliminado de la nube', 3000);
-                    } catch (err) {
-                        if (typeof hideSpinner === 'function') hideSpinner();
-                        console.error('[MisInformes] Error al borrar:', err);
-                        if (typeof showToast === 'function') showToast('⚠️ Error al eliminar: ' + err.message, 3000);
-                        return; // No quitar de la UI si falló
-                    }
+            const m   = window._misInformesData?.[key];
+            if (!m) return;
+
+            const me = window._cronosCurrentUser;
+            const isCoach = me && m.coachUid && me.uid === m.coachUid;
+
+            // Si es el coach autor, preguntar si quiere borrado físico o soft
+            // Si NO es el coach (director/coordinador), siempre soft delete
+            let doPhysicalDelete = false;
+            if (isCoach && realDelete) {
+                doPhysicalDelete = confirm(
+                    '¿Deseas eliminar este informe DEFINITIVAMENTE de la base de datos?\n' +
+                    'Esta acción no se puede deshacer y TODOS los roles lo perderán.\n\n' +
+                    'Pulsa Cancelar para ocultarlo solo de tu panel en vez de borrarlo.'
+                );
+            }
+
+            if (doPhysicalDelete && isCoach) {
+                // Borrado físico: solo el coach puede borrar sus propios informes
+                try {
+                    const { db, doc, deleteDoc } = await _cFS();
+                    if (typeof showSpinner === 'function') showSpinner('Eliminando de la base de datos…');
+
+                    const deletePromises = m.players.flatMap(p => {
+                        const docIds = [];
+                        if (p._id || p.id) docIds.push(p._id || p.id);
+                        const mid = m.matchId;
+                        if (mid && mid !== 'undefined' && mid !== '') {
+                            const pNum = p.playerNumber || p.number || '';
+                            if (pNum) {
+                                docIds.push(`${mid}_coach_p${pNum}`);
+                                docIds.push(`${mid}_staff_p${pNum}`);
+                                docIds.push(`${mid}_p${pNum}`);
+                            }
+                        }
+                        const uniqueIds = [...new Set(docIds)];
+                        return uniqueIds.map(docId =>
+                            deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
+                                console.warn(`[MisInformes] No se pudo borrar ${docId}:`, err.message);
+                            })
+                        );
+                    });
+                    await Promise.all(deletePromises);
+
+                    if (typeof hideSpinner === 'function') hideSpinner();
+                    if (typeof showToast === 'function') showToast('✅ Informe eliminado de la nube', 3000);
+                } catch (err) {
+                    if (typeof hideSpinner === 'function') hideSpinner();
+                    console.error('[MisInformes] Error al borrar:', err);
+                    if (typeof showToast === 'function') showToast('⚠️ Error al eliminar: ' + err.message, 3000);
+                    return;
                 }
             } else {
-                // Borrado "suave" (local storage)
-                const dismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
-                if (!dismissed.includes(key)) dismissed.push(key);
-                localStorage.setItem('cronos_mi_dismissed_info', JSON.stringify(dismissed));
-                if (typeof showToast === 'function') showToast('🗑️ Informe ocultado localmente', 2000);
+                // Soft delete: añadir mi UID a dismissedBy en Firestore
+                // Esto oculta el informe SOLO para mí, sin afectar a otros roles
+                if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
+
+                try {
+                    const { db, doc, updateDoc, arrayUnion } = await _cFS();
+                    if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
+
+                    const updatePromises = m.players.flatMap(p => {
+                        const docIds = [];
+                        // Prioridad 1: ID real del documento
+                        if (p._id || p.id) docIds.push(p._id || p.id);
+                        // Prioridad 2: IDs derivados si matchId es válido
+                        const mid = m.matchId;
+                        if (mid && mid !== 'undefined' && mid !== '') {
+                            const pNum = p.playerNumber || p.number || '';
+                            if (pNum) {
+                                docIds.push(`${mid}_coach_p${pNum}`);
+                                docIds.push(`${mid}_staff_p${pNum}`);
+                                docIds.push(`${mid}_p${pNum}`);
+                            }
+                        }
+                        const uniqueIds = [...new Set(docIds)];
+                        return uniqueIds.map(docId =>
+                            updateDoc(doc(db, 'cronos_player_reports', docId), {
+                                dismissedBy: arrayUnion(me.uid)
+                            }).catch(err => {
+                                console.warn(`[MisInformes] No se pudo ocultar ${docId}:`, err.message);
+                            })
+                        );
+                    });
+                    await Promise.all(updatePromises);
+
+                    if (typeof hideSpinner === 'function') hideSpinner();
+                    if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
+                } catch (err) {
+                    if (typeof hideSpinner === 'function') hideSpinner();
+                    console.error('[MisInformes] Error al ocultar:', err);
+                    if (typeof showToast === 'function') showToast('⚠️ Error al ocultar: ' + err.message, 3000);
+                    // Fallback: ocultar localmente aunque falle Firestore
+                    const dismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
+                    if (!dismissed.includes(key)) dismissed.push(key);
+                    localStorage.setItem('cronos_mi_dismissed_info', JSON.stringify(dismissed));
+                }
             }
 
             // Quitar de la UI
             const card = document.getElementById(`mi-rp-${key64}`);
             if (card) card.remove();
-            
+
             // Actualizar contador
             const currentCount = Object.keys(window._misInformesData).length - 1;
             const body = document.getElementById('mis-informes-body');
             if (body) {
-                const title = body.querySelector('div'); // el primer div tiene el contador
+                const title = body.querySelector('div');
                 if (title) title.innerHTML = `${currentCount} partido${currentCount!==1?'s':''} · Informes actualizados`;
             }
-            
+
             delete window._misInformesData[key];
         };
 
@@ -3992,6 +4112,8 @@ window._sendAllIndividualReports = async function() {
                 }
                 await setDoc(doc(db,'cronos_notifications',`indiv_rpt_${link.parentUid}_${p.number}_${Date.now().toString(36)}`), {
                     type:'informe_partido', clubId:me.clubId||null,
+                    userId: link.parentUid,                       // ← FIX (C3): campo que las reglas verifican
+                    coachUid: me.uid,                             // ← FIX (C3): coachUid para reglas Firestore
                     parentUid:link.parentUid, playerNumber:p.number, playerAlias:p.name,
                     rival, scoreHome, scoreAway, matchDate, coachEmail:me.email,
                     createdAt:new Date().toISOString(),
