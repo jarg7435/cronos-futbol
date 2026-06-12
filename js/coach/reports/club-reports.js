@@ -1167,21 +1167,22 @@ async function _sdLoadReports() {
             if (!matches[key]) {
                 matches[key] = {
                     key,
-                    matchDate:    r.matchDate,
-                    rival:        r.rival,
-                    scoreHome:    r.scoreHome,
-                    scoreAway:    r.scoreAway,
-                    coachEmail:   r.coachEmail,
-                    coachUid:     r.coachUid,
-                    createdAt:    r.createdAt,
+                    matchId:       r.matchId || r._id || '',
+                    matchDate:     r.matchDate,
+                    rival:         r.rival,
+                    scoreHome:     r.scoreHome,
+                    scoreAway:     r.scoreAway,
+                    coachEmail:    r.coachEmail,
+                    coachUid:      r.coachUid,
+                    createdAt:     r.createdAt,
                     // Campos opcionales (enriquecen la cabecera)
-                    category:     r.category,
-                    venue:        r.venue,
-                    competition:  r.competition,
-                    matchTime:    r.matchTime,
-                    duration:     r.duration,
-                    stoppageTime: r.stoppageTime,
-                    players:      [],
+                    category:      r.category,
+                    venue:         r.venue,
+                    competition:   r.competition,
+                    matchTime:     r.matchTime,
+                    duration:      r.duration,
+                    stoppageTime:  r.stoppageTime,
+                    players:       [],
                 };
             }
             matches[key].players.push(r);
@@ -1282,10 +1283,12 @@ async function _sdLoadReports() {
         };
 
         // ── Función para eliminar informe del panel individual ──────────
-        // FIX: El borrado es INDIVIDUAL por usuario, no físico. Se añade el UID
+        // FIX v2: El borrado es INDIVIDUAL por usuario, no físico. Se añade el UID
         // del usuario al array `dismissedBy` del documento. Así, si el Director
         // borra un informe, el Coordinador sigue viéndolo (y viceversa).
-        // Solo se borra físicamente cuando TODOS los staff lo han descartado.
+        // FIX v2: Se usan los IDs reales de los documentos (p._id) en vez de
+        // construir IDs con matchId que puede ser undefined, lo que causaba
+        // errores "No se pudo ocultar undefined_staff_p13".
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
             
@@ -1296,15 +1299,28 @@ async function _sdLoadReports() {
                 const { db, doc, updateDoc, arrayUnion, getDoc } = await _sdFS();
                 if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
                 
-                // Añadir mi UID a dismissedBy en cada documento de jugador
+                // FIX v2: Usar SIEMPRE el ID real del documento (p._id) que es el
+                // ID con el que se guardó en Firestore. Solo como fallback construir
+                // IDs con matchId si no hay _id disponible.
                 const updatePromises = match.players.flatMap(p => {
-                    const pNum = p.playerNumber || p.number || '';
-                    const ids = [];
-                    if (p._id || p.id) ids.push(p._id || p.id);
-                    ids.push(`${match.matchId}_coach_p${pNum}`);
-                    ids.push(`${match.matchId}_staff_p${pNum}`);
-                    ids.push(`${match.matchId}_p${pNum}`);
-                    const uniqueIds = [...new Set(ids)];
+                    const docIds = [];
+                    // Prioridad 1: ID real del documento (siempre disponible)
+                    if (p._id || p.id) {
+                        docIds.push(p._id || p.id);
+                    }
+                    // Prioridad 2: Solo construir IDs derivados si matchId es válido
+                    const mid = match.matchId;
+                    if (mid && mid !== 'undefined' && mid !== '') {
+                        const pNum = p.playerNumber || p.number || '';
+                        if (pNum) {
+                            docIds.push(`${mid}_coach_p${pNum}`);
+                            docIds.push(`${mid}_staff_p${pNum}`);
+                            docIds.push(`${mid}_p${pNum}`);
+                            // También el formato de informe para padres
+                            if (p.parentUid) docIds.push(`${mid}_parent_${p.parentUid}_p${pNum}`);
+                        }
+                    }
+                    const uniqueIds = [...new Set(docIds)];
                     return uniqueIds.map(docId =>
                         updateDoc(doc(db, 'cronos_player_reports', docId), {
                             dismissedBy: arrayUnion(me.uid)
