@@ -3699,18 +3699,6 @@ window.openMisInformes = async function openMisInformes() {
         };
 
         // Eliminar informe del entrenador (soporta borrado local y real en Firestore)
-        // FIX: Los documentos del entrenador usan IDs con sufijo '_coach_p{N}'
-        // (creados en FASE C de autoDispatch / _executeReportsSend), pero antes
-        // se buscaban con '_p{N}' (sin coach_), lo que provocaba que se intentara
-        // borrar documentos inexistentes o de otro rol, resultando en
-        // "Missing or insufficient permissions".
-        // Ahora se intentan TODAS las variantes de ID para cada jugador:
-        //   1. p._id (ID almacenado en el propio documento)
-        //   2. {matchId}_coach_p{N}  (documentos del entrenador)
-        //   3. {matchId}_staff_p{N}  (documentos del panel de staff)
-        // Esto asegura que al borrar desde el entrenador también se limpian
-        // los documentos de staff, evitando informes "fantasma" en el panel
-        // del Director/Coordinador.
         window.miEliminarInforme = async (key64, realDelete = false) => {
             const promptMsg = realDelete 
                 ? '¿Deseas eliminar este informe DEFINITIVAMENTE de la base de datos? Esta acción no se puede deshacer.' 
@@ -3727,26 +3715,22 @@ window.openMisInformes = async function openMisInformes() {
                         const { db, doc, deleteDoc } = await _cFS();
                         if (typeof showSpinner === 'function') showSpinner('Eliminando de la base de datos…');
                         
-                        // Eliminar cada documento de jugador asociado
-                        // FIX: generar TODAS las variantes de ID para cubrir
-                        // documentos de entrenador (_coach_p) y de staff (_staff_p)
+                        // FIX: Eliminar cada documento de jugador asociado probando TODAS
+                        // las variantes de ID (_coach_p, _staff_p, _p, id original).
+                        // Antes solo intentaba {matchId}_p{N}, pero los documentos reales
+                        // usan {matchId}_coach_p{N} y {matchId}_staff_p{N}, lo que causaba
+                        // "Missing or insufficient permissions" al intentar borrar docs
+                        // inexistentes.
                         const deletePromises = m.players.flatMap(p => {
                             const pNum = p.playerNumber || p.number || '';
                             const ids = [];
-                            // 1. ID almacenado en el propio documento (más fiable)
                             if (p._id || p.id) ids.push(p._id || p.id);
-                            // 2. Documentos del entrenador (FASE C)
                             ids.push(`${m.matchId}_coach_p${pNum}`);
-                            // 3. Documentos del panel de staff
                             ids.push(`${m.matchId}_staff_p${pNum}`);
-                            // 4. Variante antigua (sin coach_ ni staff_)
                             ids.push(`${m.matchId}_p${pNum}`);
-                            // Deduplicar
                             const uniqueIds = [...new Set(ids)];
                             return uniqueIds.map(docId =>
                                 deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
-                                    // Silenciar errores de permisos en docs que no existen
-                                    // o que pertenecen a otro rol (no interrumpen el flujo)
                                     console.warn(`[MisInformes] No se pudo borrar ${docId}:`, err.message);
                                 })
                             );
