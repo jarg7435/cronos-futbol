@@ -73,32 +73,10 @@ exports.setCustomClaims = functions.https.onCall(async (data, context) => {
   const callerRole = callerData?.role || context.auth.token.role;
 
   if (callerRole !== 'superadmin') {
-    // club_admin: puede propagar claims SOLO a miembros NO privilegiados de SU
-    // propio club (director/coordinator/user/parent/spectator). Esto resuelve el
-    // PROBLEMA 2: al activar a un entrenador, el club_admin propaga su clubId al
-    // token JWT para que sameClub()/sameClubAsDoc() funcionen. NO puede crear
-    // superadmins ni club_admins, ni tocar usuarios de otros clubes.
-    const callerClubId = callerData?.clubId || context.auth.token.clubId || null;
-    const PRIVILEGED_ROLES = ['superadmin', 'admin', 'club_admin', 'individual_admin', 'individual', 'admin_individual'];
-    const isClubAdmin = callerRole === 'club_admin';
-    const targetIsSafeRole = !PRIVILEGED_ROLES.includes(data.role);
-    const sameClub = data.clubId && callerClubId && String(data.clubId) === String(callerClubId);
-    if (!(isClubAdmin && targetIsSafeRole && sameClub)) {
-      throw new functions.https.HttpsError(
-        'permission-denied',
-        'No tienes permiso para asignar este rol/club.'
-      );
-    }
-    // Defensa adicional: el usuario objetivo debe pertenecer realmente al club
-    // del club_admin (segun su documento Firestore), no solo segun el payload.
-    const targetDocCheck = await admin.firestore().collection('users').doc(data.uid).get();
-    const targetClubId = targetDocCheck.exists ? (targetDocCheck.data().clubId || null) : null;
-    if (!targetClubId || String(targetClubId) !== String(callerClubId)) {
-      throw new functions.https.HttpsError(
-        'permission-denied',
-        'El usuario no pertenece a tu club.'
-      );
-    }
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Solo SuperAdmin puede asignar roles'
+    );
   }
 
   const { uid, role, clubId } = data;

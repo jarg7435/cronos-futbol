@@ -790,15 +790,7 @@ async function openParentPanel() {
                 if (data.staffReport === true || data._forCoach === true) return;
                 if (seenDocIds.has(d.id)) return;
                 seenDocIds.add(d.id);
-                // FIX duplicados: clave de dedup defensiva. Antes solo usaba
-                // matchId+playerNumber, pero los informes ya en producción
-                // tienen matchId distintos por despacho (Date.now() histórico),
-                // así que no se colapsaban. Añadimos fallback por
-                // parentUid+playerNumber+fecha para unificar esas copias.
-                const _day = (data.matchDate || data.createdAt || '').slice(0, 10);
-                const dedupKey = data.matchId
-                    ? `${data.matchId}_${data.playerNumber || ''}`
-                    : `${data.parentUid || me.uid}_${data.playerNumber || ''}_${_day}`;
+                const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
                 // Solo guardar si no tenemos ya un informe para este partido+jugador,
                 // o si este doc es tipo parent_player_report (prioridad más alta)
                 if (!reportsByMatch[dedupKey] || data.type === 'parent_player_report') {
@@ -812,11 +804,7 @@ async function openParentPanel() {
                 if (data.staffReport || data._forCoach) return;
                 if (seenDocIds.has(d.id)) return;
                 seenDocIds.add(d.id);
-                // FIX duplicados: misma clave de dedup defensiva (ver arriba).
-                const _day = (data.matchDate || data.createdAt || '').slice(0, 10);
-                const dedupKey = data.matchId
-                    ? `${data.matchId}_${data.playerNumber || ''}`
-                    : `${data.parentUid || me.uid}_${data.playerNumber || ''}_${_day}`;
+                const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
                 if (!reportsByMatch[dedupKey]) {
                     reportsByMatch[dedupKey] = { _id: d.id, ...data };
                     // Actualizar parentUid en Firestore si falta

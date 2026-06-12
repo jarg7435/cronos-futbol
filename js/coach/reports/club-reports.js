@@ -1134,17 +1134,17 @@ async function _sdLoadReports() {
         const snap = { empty: true, forEach: (fn) => {
             rawSnap.forEach(d => {
                 const data = d.data();
-                // FIX: excluir docs que este usuario ya ocultó individualmente
-                const hidden = data.hiddenBy || data.dismissedBy || [];
-                if (data.staffReport === true && !hidden.includes(me.uid)) fn(d);
+                // FIX: excluir docs que este usuario ya descartó individualmente
+                const dismissed = data.dismissedBy || [];
+                if (data.staffReport === true && !dismissed.includes(me.uid)) fn(d);
             });
         }};
         // Recalcular si está vacío
         let _snapHasDocs = false;
         rawSnap.forEach(d => {
             const data = d.data();
-            const hidden = data.hiddenBy || data.dismissedBy || [];
-            if (data.staffReport === true && !hidden.includes(me.uid)) _snapHasDocs = true;
+            const dismissed = data.dismissedBy || [];
+            if (data.staffReport === true && !dismissed.includes(me.uid)) _snapHasDocs = true;
         });
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
@@ -1243,7 +1243,7 @@ async function _sdLoadReports() {
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
                         <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
-                                title="Ocultar este informe de tu panel"
+                                title="Eliminar este informe definitivamente"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                                        color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
                                        display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
@@ -1284,13 +1284,13 @@ async function _sdLoadReports() {
 
         // ── Función para eliminar informe del panel individual ──────────
         // FIX v2: El borrado es INDIVIDUAL por usuario, no físico. Se añade el UID
-        // del usuario al array `hiddenBy` del documento. Así, si el Director
+        // del usuario al array `dismissedBy` del documento. Así, si el Director
         // borra un informe, el Coordinador sigue viéndolo (y viceversa).
         // FIX v2: Se usan los IDs reales de los documentos (p._id) en vez de
         // construir IDs con matchId que puede ser undefined, lo que causaba
         // errores "No se pudo ocultar undefined_staff_p13".
         window.sdDeleteReport = async (key64) => {
-            if (!confirm('¿Deseas ocultar este informe de tu panel? No se eliminará para otros roles.')) return;
+            if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
             
             const match = window._sdMatchData[key64];
             if (!match) return;
@@ -1323,7 +1323,7 @@ async function _sdLoadReports() {
                     const uniqueIds = [...new Set(docIds)];
                     return uniqueIds.map(docId =>
                         updateDoc(doc(db, 'cronos_player_reports', docId), {
-                            hiddenBy: arrayUnion(me.uid)
+                            dismissedBy: arrayUnion(me.uid)
                         }).catch(err => {
                             console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
                         })
