@@ -147,6 +147,9 @@ service cloud.firestore {
         request.auth.uid == userId ||
         sameClubAsDoc(resource.data.clubId) ||
         isClubAdminOf(resource.data.clubId) ||
+        // FIX: director/coordinador sin custom claim clubId necesita leer
+        // usuarios de su club para resolver coachUIDs en el dashboard.
+        userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
@@ -471,12 +474,31 @@ service cloud.firestore {
         request.auth.uid == resource.data.coachUid ||
         // FIX (entrenador sin claim): el autor reescribe su propio informe.
         request.auth.uid == request.resource.data.coachUid ||
+        // FIX v2: staff (director/coordinador) puede añadir su UID a hiddenBy
+        // para ocultar el informe de su panel individual sin afectar a otros.
+        (resource.data.staffUids != null &&
+         request.auth.uid in resource.data.staffUids &&
+         request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['hiddenBy', 'dismissedBy'])) ||
+        // FIX v2: padres pueden añadir su UID a hiddenBy para ocultar
+        // informes de su panel sin afectar a otros usuarios.
+        (request.auth.uid == resource.data.parentUid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['hiddenBy', 'dismissedBy'])) ||
         userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid == resource.data.coachUid ||
+        // FIX: entrenador listado en staffUids puede borrar sus propios
+        // informes de tipo staff (el coachUid coincide aunque el doc
+        // sea staffReport=true)
+        (resource.data.staffUids != null &&
+         request.auth.uid in resource.data.staffUids) ||
+        // FIX v2: padres pueden borrar informes individuales dirigidos a ellos
+        (request.auth.uid == resource.data.parentUid &&
+         resource.data.type == 'parent_player_report') ||
         userDocClubId(resource.data.clubId)
       );
     }

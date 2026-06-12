@@ -1048,77 +1048,104 @@ async function _sdLoadReports() {
     try {
         const { db, collection, getDocs, query, where, limit } = await _sdFS();
 
-        // FIX: Query dual para acceder a informes de staff.
-        // Query 1: por clubId (requiere que el token tenga el custom claim
-        //          clubId; las reglas exigen request.auth.token.clubId == clubId
-        //          sobre TODOS los docs candidatos, así que si el director/
-        //          coordinador aún no tiene el claim propagado, la query ENTERA
-        //          es rechazada con "Missing or insufficient permissions").
-        // Query 2: por staffUids array-contains (funciona sin custom claims,
-        //          ya que las reglas de Firestore permiten leer a quien esté
-        //          en resource.data.staffUids).
-        // Por eso la Query 1 va en su propio try/catch: si falla por permisos
-        // NO debe abortar el flujo; caemos a la Query 2.
-        let rawSnap = { forEach: () => {} };
-        let _clubQueryOk = false;
+        // ══════════════════════════════════════════════════════════════
+        // FIX: Sistema de 3 queries fusionadas para cubrir TODOS los
+        // informes del club, independientemente de claims y staffUids.
+        //
+        // Query 1: por clubId — funciona si el token tiene custom claim.
+        // Query 2: por staffUids array-contains — funciona sin claims.
+        // Query 3: por coachUid in [batch] — resuelve todos los coachUIDs
+        //          del club y busca sus informes; cubre partidos donde
+        //          el director NO está en staffUids.
+        // ══════════════════════════════════════════════════════════════
+        const docMap = new Map(); // deduplicar por doc ID
+
+        // ── Query 1: por clubId (custom claim) ──────────────────────
         try {
-            rawSnap = await getDocs(query(
+            const snap1 = await getDocs(query(
                 collection(db, 'cronos_player_reports'),
                 where('clubId', '==', clubId),
                 limit(500)
             ));
-            _clubQueryOk = true;
+            snap1.forEach(d => docMap.set(d.id, d));
+            console.log('[StaffDashboard] Query 1 (clubId):', snap1.size, 'docs');
         } catch (clubErr) {
-            console.warn('[StaffDashboard] Query por clubId falló (probable claim clubId no propagado), usando fallback staffUids:', clubErr.message);
+            console.warn('[StaffDashboard] Query por clubId falló:', clubErr.message);
         }
 
-        // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
-        let _hasStaffDocs = false;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
-
-        if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
+        // ── Query 2: por staffUids (sin custom claims) ──────────────
+        if (me.uid) {
             try {
-                const altSnap = await getDocs(query(
+                const snap2 = await getDocs(query(
                     collection(db, 'cronos_player_reports'),
                     where('staffUids', 'array-contains', me.uid),
                     limit(500)
                 ));
-                // Fusionar resultados alternativos con los originales
-                const existingIds = new Set();
-                rawSnap.forEach(d => existingIds.add(d.id));
-                altSnap.forEach(d => {
-                    if (!existingIds.has(d.id) && d.data().staffReport === true) {
-                        // Añadir docs que no estaban en el snap original
-                        _hasStaffDocs = true;
-                    }
-                });
-                // Usar el snap alternativo si tiene resultados de staff
-                if (_hasStaffDocs) {
-                    // Combinar ambos snaps
-                    const combinedDocs = [];
-                    rawSnap.forEach(d => combinedDocs.push(d));
-                    const existingIds2 = new Set(combinedDocs.map(d => d.id));
-                    altSnap.forEach(d => {
-                        if (!existingIds2.has(d.id)) combinedDocs.push(d);
-                    });
-                    rawSnap = { forEach: fn => combinedDocs.forEach(fn) };
-                }
+                snap2.forEach(d => { if (!docMap.has(d.id)) docMap.set(d.id, d); });
+                console.log('[StaffDashboard] Query 2 (staffUids):', snap2.size, 'docs (nuevos:', snap2.docs.filter(d => !docMap.has(d.id)).length + ' ya estaban)');
             } catch(altErr) {
-                console.warn('[StaffDashboard] Query alternativa por staffUids falló:', altErr.message);
+                console.warn('[StaffDashboard] Query por staffUids falló:', altErr.message);
             }
         }
 
+        // ── Query 3: por coachUid in [batch] ────────────────────────
+        // Resuelve todos los coachUIDs del club desde la colección users,
+        // luego busca informes de esos entrenadores. Esto cubre partidos
+        // donde el director NO está en staffUids y Query 1 falló.
+        try {
+            const usersSnap = await getDocs(query(
+                collection(db, 'users'),
+                where('clubId', '==', clubId)
+            ));
+            const coachUids = [];
+            usersSnap.forEach(d => {
+                const data = d.data();
+                // Usuarios con rol de entrenador o que son coach en informes
+                if (data.role === 'user' || (data.allRoles && data.allRoles.some(r => r.role === 'user'))) {
+                    coachUids.push(d.id);
+                }
+            });
+            // Firestore 'in' admite máximo 30 valores por batch
+            const BATCH = 30;
+            for (let i = 0; i < coachUids.length; i += BATCH) {
+                const batch = coachUids.slice(i, i + BATCH);
+                try {
+                    const snap3 = await getDocs(query(
+                        collection(db, 'cronos_player_reports'),
+                        where('coachUid', 'in', batch),
+                        limit(500)
+                    ));
+                    snap3.forEach(d => { if (!docMap.has(d.id)) docMap.set(d.id, d); });
+                } catch(batchErr) {
+                    console.warn('[StaffDashboard] Query 3 batch falló:', batchErr.message);
+                }
+            }
+            console.log('[StaffDashboard] Query 3 (coachUid):', coachUids.length, 'coaches buscados, total docs ahora:', docMap.size);
+        } catch(q3Err) {
+            console.warn('[StaffDashboard] Query 3 (users/coachUid) falló:', q3Err.message);
+        }
+
+        // ── Construir rawSnap a partir del Map fusionado ────────────
+        const rawSnap = { forEach: fn => docMap.forEach(d => fn(d)) };
+
         // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
+        // y que el usuario actual NO haya descartado individualmente (dismissedBy).
         // Esto evita requerir un índice compuesto en Firestore.
         const snap = { empty: true, forEach: (fn) => {
             rawSnap.forEach(d => {
                 const data = d.data();
-                if (data.staffReport === true) fn(d);
+                // FIX: excluir docs que este usuario ya ocultó individualmente
+                const hidden = data.hiddenBy || data.dismissedBy || [];
+                if (data.staffReport === true && !hidden.includes(me.uid)) fn(d);
             });
         }};
         // Recalcular si está vacío
         let _snapHasDocs = false;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) _snapHasDocs = true; });
+        rawSnap.forEach(d => {
+            const data = d.data();
+            const hidden = data.hiddenBy || data.dismissedBy || [];
+            if (data.staffReport === true && !hidden.includes(me.uid)) _snapHasDocs = true;
+        });
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
         if (snap.empty) {
@@ -1140,21 +1167,22 @@ async function _sdLoadReports() {
             if (!matches[key]) {
                 matches[key] = {
                     key,
-                    matchDate:    r.matchDate,
-                    rival:        r.rival,
-                    scoreHome:    r.scoreHome,
-                    scoreAway:    r.scoreAway,
-                    coachEmail:   r.coachEmail,
-                    coachUid:     r.coachUid,
-                    createdAt:    r.createdAt,
+                    matchId:       r.matchId || r._id || '',
+                    matchDate:     r.matchDate,
+                    rival:         r.rival,
+                    scoreHome:     r.scoreHome,
+                    scoreAway:     r.scoreAway,
+                    coachEmail:    r.coachEmail,
+                    coachUid:      r.coachUid,
+                    createdAt:     r.createdAt,
                     // Campos opcionales (enriquecen la cabecera)
-                    category:     r.category,
-                    venue:        r.venue,
-                    competition:  r.competition,
-                    matchTime:    r.matchTime,
-                    duration:     r.duration,
-                    stoppageTime: r.stoppageTime,
-                    players:      [],
+                    category:      r.category,
+                    venue:         r.venue,
+                    competition:   r.competition,
+                    matchTime:     r.matchTime,
+                    duration:      r.duration,
+                    stoppageTime:  r.stoppageTime,
+                    players:       [],
                 };
             }
             matches[key].players.push(r);
@@ -1215,7 +1243,7 @@ async function _sdLoadReports() {
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
                         <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
-                                title="Eliminar este informe definitivamente"
+                                title="Ocultar este informe de tu panel"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                                        color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
                                        display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
@@ -1254,31 +1282,58 @@ async function _sdLoadReports() {
             if (card) card.style.borderColor = isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(88,166,255,0.55)';
         };
 
-        // ── Función para eliminar informe definitivamente ──────────────
+        // ── Función para eliminar informe del panel individual ──────────
+        // FIX v2: El borrado es INDIVIDUAL por usuario, no físico. Se añade el UID
+        // del usuario al array `hiddenBy` del documento. Así, si el Director
+        // borra un informe, el Coordinador sigue viéndolo (y viceversa).
+        // FIX v2: Se usan los IDs reales de los documentos (p._id) en vez de
+        // construir IDs con matchId que puede ser undefined, lo que causaba
+        // errores "No se pudo ocultar undefined_staff_p13".
         window.sdDeleteReport = async (key64) => {
-            if (!confirm('¿Estás seguro de que deseas eliminar este informe de partido definitivamente? Esta acción borrará todos los datos del encuentro para todos los roles y no se puede deshacer.')) return;
+            if (!confirm('¿Deseas ocultar este informe de tu panel? No se eliminará para otros roles.')) return;
             
             const match = window._sdMatchData[key64];
             if (!match) return;
             
             try {
-                const { db, doc, deleteDoc } = await _sdFS();
-                if (typeof showSpinner === 'function') showSpinner('Eliminando informe…');
+                const { db, doc, updateDoc, arrayUnion, getDoc } = await _sdFS();
+                if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
                 
-                // Eliminar cada documento de jugador asociado
-                // Intentamos por el _id almacenado o por la clave compuesta estándar
-                const deletePromises = match.players.map(p => {
-                    const docId = p._id || p.id || `${match.matchId}_coach_p${p.playerNumber}` || `${match.matchId}_p${p.playerNumber}`;
-                    return deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
-                        console.warn(`[StaffDashboard] No se pudo borrar el sub-informe ${docId}:`, err.message);
-                        // No relanzamos el error para que Promise.all no se detenga
-                    });
+                // FIX v2: Usar SIEMPRE el ID real del documento (p._id) que es el
+                // ID con el que se guardó en Firestore. Solo como fallback construir
+                // IDs con matchId si no hay _id disponible.
+                const updatePromises = match.players.flatMap(p => {
+                    const docIds = [];
+                    // Prioridad 1: ID real del documento (siempre disponible)
+                    if (p._id || p.id) {
+                        docIds.push(p._id || p.id);
+                    }
+                    // Prioridad 2: Solo construir IDs derivados si matchId es válido
+                    const mid = match.matchId;
+                    if (mid && mid !== 'undefined' && mid !== '') {
+                        const pNum = p.playerNumber || p.number || '';
+                        if (pNum) {
+                            docIds.push(`${mid}_coach_p${pNum}`);
+                            docIds.push(`${mid}_staff_p${pNum}`);
+                            docIds.push(`${mid}_p${pNum}`);
+                            // También el formato de informe para padres
+                            if (p.parentUid) docIds.push(`${mid}_parent_${p.parentUid}_p${pNum}`);
+                        }
+                    }
+                    const uniqueIds = [...new Set(docIds)];
+                    return uniqueIds.map(docId =>
+                        updateDoc(doc(db, 'cronos_player_reports', docId), {
+                            hiddenBy: arrayUnion(me.uid)
+                        }).catch(err => {
+                            console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
+                        })
+                    );
                 });
                 
-                await Promise.all(deletePromises);
+                await Promise.all(updatePromises);
                 
                 if (typeof hideSpinner === 'function') hideSpinner();
-                if (typeof showToast === 'function') showToast('✅ Informe eliminado correctamente', 3000);
+                if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
                 
                 // Quitar de la UI
                 const card = document.getElementById(`rcard-${key64}`);
@@ -1293,8 +1348,8 @@ async function _sdLoadReports() {
                 
             } catch (err) {
                 if (typeof hideSpinner === 'function') hideSpinner();
-                console.error('[StaffDashboard] Error al eliminar:', err);
-                if (typeof showToast === 'function') showToast('⚠️ Error al eliminar: ' + err.message, 4000);
+                console.error('[StaffDashboard] Error al ocultar:', err);
+                if (typeof showToast === 'function') showToast('⚠️ Error al ocultar: ' + err.message, 4000);
             }
         };
 
