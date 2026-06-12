@@ -474,6 +474,12 @@ service cloud.firestore {
         request.auth.uid == resource.data.coachUid ||
         // FIX (entrenador sin claim): el autor reescribe su propio informe.
         request.auth.uid == request.resource.data.coachUid ||
+        // FIX: staff (director/coordinador) puede añadir su UID a dismissedBy
+        // para ocultar el informe de su panel individual sin afectar a otros.
+        (resource.data.staffUids != null &&
+         request.auth.uid in resource.data.staffUids &&
+         request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['dismissedBy'])) ||
         userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() && (
