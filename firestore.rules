@@ -147,8 +147,8 @@ service cloud.firestore {
         request.auth.uid == userId ||
         sameClubAsDoc(resource.data.clubId) ||
         isClubAdminOf(resource.data.clubId) ||
-        // FIX: directores/coordinadores pueden leer usuarios de su club
-        // aunque su token no tenga el custom claim clubId propagado.
+        // FIX: director/coordinador sin custom claim clubId necesita leer
+        // usuarios de su club para resolver coachUIDs en el dashboard.
         userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
@@ -480,11 +480,12 @@ service cloud.firestore {
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid == resource.data.coachUid ||
-        userDocClubId(resource.data.clubId) ||
-        // FIX: directores/coordinadores listados en staffUids pueden borrar
-        // informes de su club (igual que ya pueden leerlos)
+        // FIX: entrenador listado en staffUids puede borrar sus propios
+        // informes de tipo staff (el coachUid coincide aunque el doc
+        // sea staffReport=true)
         (resource.data.staffUids != null &&
-         request.auth.uid in resource.data.staffUids)
+         request.auth.uid in resource.data.staffUids) ||
+        userDocClubId(resource.data.clubId)
       );
     }
 
