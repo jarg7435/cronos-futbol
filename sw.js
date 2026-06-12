@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v163
+//  CRONOS FUTBOL — Service Worker v165
+//  v165: FIX informes club — ocultado suave por usuario (hiddenBy) en lugar de
+//         borrado físico. Director y coordinador comparten los mismos docs en
+//         Firestore: al borrar uno, el otro perdía el informe. Ahora sdDeleteReport
+//         hace updateDoc con hiddenBy: arrayUnion(uid); el filtro cliente excluye
+//         los docs ocultados por el propio uid y firestore.rules permite el update.
 //  v163: FIX CRÍTICO — al reanudar la 2ª parte tras el descanso el partido se
 //         reiniciaba (marcador 0-0, cronómetro a cero, vuelta a 1ª parte). Causa:
 //         el técnico volvía a «Configuración» durante el descanso para hacer
@@ -125,8 +130,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v163';
-const CACHE_NAME = 'cronos-cache-v163';
+const VERSION    = 'v165';
+const CACHE_NAME = 'cronos-cache-v165';
 
 const ASSETS = [
     './',
