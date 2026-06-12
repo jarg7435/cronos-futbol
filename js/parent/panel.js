@@ -772,24 +772,42 @@ async function openParentPanel() {
                     : Promise.resolve({ forEach: () => {} })
             ]);
 
-            const reportsMap = {};
-            // FIX: excluir docs con staffReport=true (son del panel de dirección, no del padre)
-            // y docs con _forCoach=true (son del panel del entrenador). Sin este filtro,
-            // el padre ve informes duplicados porque la query por parentUid devuelve
-            // TODOS los docs del club donde su UID aparece.
+            // FIX v2: Deduplicar por (matchId + playerNumber) en vez de por doc ID.
+            // El problema era que para un mismo partido+jugador, existen 3 documentos:
+            //   {matchId}_coach_p5  (staffReport=false, _forCoach=true)
+            //   {matchId}_staff_p5  (staffReport=true)
+            //   {matchId}_parent_UID_p5  (parentPlayerReport)
+            // Cada uno tiene un ID distinto, así que la deduplicación por doc ID
+            // no funcionaba → el padre veía el informe 3 veces (o 15 si hay 5 jugadores × 3 docs).
+            // Ahora agrupamos por matchId+playerNumber para mostrar SOLO UN informe por partido.
+            const reportsByMatch = {}; // clave: "matchId_playerNumber"
+            const seenDocIds = new Set(); // evitar procesar el mismo doc 2 veces
+
+            // Prioridad 1: docs con parentUid (informes específicos para padres)
             rptByParent.forEach(d => {
                 const data = d.data();
+                // Excluir docs de staff y coach (no son para padres)
                 if (data.staffReport === true || data._forCoach === true) return;
-                reportsMap[d.id] = { _id: d.id, ...data };
+                if (seenDocIds.has(d.id)) return;
+                seenDocIds.add(d.id);
+                const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
+                // Solo guardar si no tenemos ya un informe para este partido+jugador,
+                // o si este doc es tipo parent_player_report (prioridad más alta)
+                if (!reportsByMatch[dedupKey] || data.type === 'parent_player_report') {
+                    reportsByMatch[dedupKey] = { _id: d.id, ...data };
+                }
             });
-            // Añadir los del jugador que no tengan parentUid aún (evitar duplicados)
+            // Prioridad 2: docs por playerNumber sin parentUid (informes pasados pre-vinculación)
             rptByPlayer.forEach(d => {
                 const data = d.data();
-                // Solo incluir: informes del mismo jugador que aún no tengan parentUid asignado
-                // o que sean del tipo correcto (excluir staffReport=true que son del panel de staff)
-                if (!reportsMap[d.id] && !data.staffReport && !data._forCoach) {
-                    reportsMap[d.id] = { _id: d.id, ...data };
-                    // Aprovechar para actualizar parentUid en Firestore si falta
+                // Excluir docs de staff y coach
+                if (data.staffReport || data._forCoach) return;
+                if (seenDocIds.has(d.id)) return;
+                seenDocIds.add(d.id);
+                const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
+                if (!reportsByMatch[dedupKey]) {
+                    reportsByMatch[dedupKey] = { _id: d.id, ...data };
+                    // Actualizar parentUid en Firestore si falta
                     if (!data.parentUid && me.uid) {
                         const { updateDoc: upd, doc: docRef } = { updateDoc, doc };
                         upd(docRef(fa.db, 'cronos_player_reports', d.id), {
@@ -798,6 +816,9 @@ async function openParentPanel() {
                     }
                 }
             });
+
+            // Convertir el mapa deduplicado a array
+            const reportsMap = reportsByMatch;
 
             const reports = Object.values(reportsMap);
             reports.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
