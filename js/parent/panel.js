@@ -773,13 +773,21 @@ async function openParentPanel() {
             ]);
 
             const reportsMap = {};
-            rptByParent.forEach(d => { reportsMap[d.id] = { _id: d.id, ...d.data() }; });
+            // FIX: excluir docs con staffReport=true (son del panel de dirección, no del padre)
+            // y docs con _forCoach=true (son del panel del entrenador). Sin este filtro,
+            // el padre ve informes duplicados porque la query por parentUid devuelve
+            // TODOS los docs del club donde su UID aparece.
+            rptByParent.forEach(d => {
+                const data = d.data();
+                if (data.staffReport === true || data._forCoach === true) return;
+                reportsMap[d.id] = { _id: d.id, ...data };
+            });
             // Añadir los del jugador que no tengan parentUid aún (evitar duplicados)
             rptByPlayer.forEach(d => {
                 const data = d.data();
                 // Solo incluir: informes del mismo jugador que aún no tengan parentUid asignado
                 // o que sean del tipo correcto (excluir staffReport=true que son del panel de staff)
-                if (!reportsMap[d.id] && !data.staffReport) {
+                if (!reportsMap[d.id] && !data.staffReport && !data._forCoach) {
                     reportsMap[d.id] = { _id: d.id, ...data };
                     // Aprovechar para actualizar parentUid en Firestore si falta
                     if (!data.parentUid && me.uid) {
