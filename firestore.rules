@@ -147,11 +147,8 @@ service cloud.firestore {
         request.auth.uid == userId ||
         sameClubAsDoc(resource.data.clubId) ||
         isClubAdminOf(resource.data.clubId) ||
-        // FIX (C4): fallback para entrenador/director/coordinador sin custom claim
-        // clubId en su token. Lee el documento del propio usuario para verificar
-        // pertenencia al club. Esto permite que _cGetStaff() encuentre al
-        // director/coordinador incluso cuando el entrenador que finaliza el
-        // partido no tiene el claim propagado.
+        // FIX: directores/coordinadores pueden leer usuarios de su club
+        // aunque su token no tenga el custom claim clubId propagado.
         userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
@@ -483,7 +480,11 @@ service cloud.firestore {
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid == resource.data.coachUid ||
-        userDocClubId(resource.data.clubId)
+        userDocClubId(resource.data.clubId) ||
+        // FIX: directores/coordinadores listados en staffUids pueden borrar
+        // informes de su club (igual que ya pueden leerlos)
+        (resource.data.staffUids != null &&
+         request.auth.uid in resource.data.staffUids)
       );
     }
 
