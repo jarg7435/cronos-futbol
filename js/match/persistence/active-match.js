@@ -695,9 +695,13 @@ window.endMatch = function endMatch(skipConfirm = false) {
         stopLiveSync();
     }
 
-    // Guardar informes automáticamente si la función existe
+    // FIX (C4): log de errores en vez de silenciarlos completamente.
+    // Antes .catch(() => {}) ocultaba errores de permisos Firestore que
+    // impedían que los informes de staff se escribieran.
     if (typeof saveAllMatchReportsInternal === 'function') {
-        saveAllMatchReportsInternal().catch(() => {});
+        saveAllMatchReportsInternal().catch(e => {
+            console.error('[C4 endMatch] Error al guardar informes automáticamente:', e.message);
+        });
     }
 
     _showPostMatchOptions();
