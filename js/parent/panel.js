@@ -772,36 +772,47 @@ async function openParentPanel() {
                     : Promise.resolve({ forEach: () => {} })
             ]);
 
-            // FIX v2: Deduplicar por (matchId + playerNumber) en vez de por doc ID.
-            // El problema era que para un mismo partido+jugador, existen 3 documentos:
-            //   {matchId}_coach_p5  (staffReport=false, _forCoach=true)
-            //   {matchId}_staff_p5  (staffReport=true)
-            //   {matchId}_parent_UID_p5  (parentPlayerReport)
-            // Cada uno tiene un ID distinto, así que la deduplicación por doc ID
-            // no funcionaba → el padre veía el informe 3 veces (o 15 si hay 5 jugadores × 3 docs).
-            // Ahora agrupamos por matchId+playerNumber para mostrar SOLO UN informe por partido.
+            // ══════════════════════════════════════════════════════════════
+            // FIX v2: Deduplicación por (matchId + playerNumber)
+            // ══════════════════════════════════════════════════════════════
+            // ANTES: se usaba reportsMap[d.id] como clave → cada documento
+            // tiene un ID único, así que NO se deduplicaban los 3 tipos:
+            //   {matchId}_staff_p5   (staffReport=true)    → no filtrado por _forCoach
+            //   {matchId}_coach_p5   (_forCoach=true)      → NO FILTRADO = duplicado!
+            //   {matchId}_parent_UID_p5 (parent_player_report) → correcto
+            //   rpt_5_abc            (despacho manual)     → no deduplicable
+            //
+            // Con 15 jugadores × 3 docs = 45 docs por envío.
+            // Si el coach envía 3-4 veces → 10+ informes por partido.
+            //
+            // AHORA: deduplicamos por matchId+playerNumber, excluyendo
+            // documentos de staff (_forCoach=true, staffReport=true).
+            // ══════════════════════════════════════════════════════════════
             const reportsByMatch = {}; // clave: "matchId_playerNumber"
-            const seenDocIds = new Set(); // evitar procesar el mismo doc 2 veces
+            const seenDocIds = new Set();
 
             // Prioridad 1: docs con parentUid (informes específicos para padres)
             rptByParent.forEach(d => {
                 const data = d.data();
-                // Excluir docs de staff y coach (no son para padres)
+                // EXCLUIR docs de staff y coach — NO son para padres
                 if (data.staffReport === true || data._forCoach === true) return;
+                // EXCLUIR docs que este padre ya descartó (soft delete)
+                if (Array.isArray(data.dismissedBy) && data.dismissedBy.includes(me.uid)) return;
                 if (seenDocIds.has(d.id)) return;
                 seenDocIds.add(d.id);
                 const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
-                // Solo guardar si no tenemos ya un informe para este partido+jugador,
-                // o si este doc es tipo parent_player_report (prioridad más alta)
+                // Priorizar type=parent_player_report sobre otros tipos
                 if (!reportsByMatch[dedupKey] || data.type === 'parent_player_report') {
                     reportsByMatch[dedupKey] = { _id: d.id, ...data };
                 }
             });
-            // Prioridad 2: docs por playerNumber sin parentUid (informes pasados pre-vinculación)
+            // Prioridad 2: docs por playerNumber sin parentUid (informes pre-vinculación)
             rptByPlayer.forEach(d => {
                 const data = d.data();
-                // Excluir docs de staff y coach
-                if (data.staffReport || data._forCoach) return;
+                // EXCLUIR docs de staff y coach — NO son para padres
+                if (data.staffReport === true || data._forCoach === true) return;
+                // EXCLUIR docs que este padre ya descartó (soft delete)
+                if (Array.isArray(data.dismissedBy) && data.dismissedBy.includes(me.uid)) return;
                 if (seenDocIds.has(d.id)) return;
                 seenDocIds.add(d.id);
                 const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
@@ -817,10 +828,7 @@ async function openParentPanel() {
                 }
             });
 
-            // Convertir el mapa deduplicado a array
-            const reportsMap = reportsByMatch;
-
-            const reports = Object.values(reportsMap);
+            const reports = Object.values(reportsByMatch);
             reports.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 
             // ── MAX 40: auto-borrar los más antiguos si hay más ─────────────
@@ -988,15 +996,29 @@ async function openParentPanel() {
             };
 
             // ── Handler de borrado (expuesto globalmente) ────────────────────
+            // FIX v2: Soft delete — añade el UID del padre a dismissedBy
+            // en vez de borrar físicamente el documento. Así no afecta a otros roles.
             window._ppDeleteReport = async (reportId) => {
-                if (!confirm('¿Eliminar este informe de partido? Se quitará también de las estadísticas.')) return;
+                if (!confirm('¿Ocultar este informe de tu panel? Solo se eliminará para ti.')) return;
                 try {
-                    const { doc: dRef2, deleteDoc } = await import(
+                    const { doc: dRef2, updateDoc, arrayUnion } = await import(
                         'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    await deleteDoc(dRef2(fa.db, 'cronos_player_reports', reportId));
+                    await updateDoc(dRef2(fa.db, 'cronos_player_reports', reportId), {
+                        dismissedBy: arrayUnion(me.uid)
+                    });
                     if (typeof window.ppPlayer === 'function') window.ppPlayer();
                 } catch(err) {
-                    alert('⚠️ Error al eliminar: ' + err.message);
+                    // Fallback: si dismissedBy falla (permisos), intentar borrado físico
+                    // solo para informes de tipo parent_player_report del propio padre
+                    console.warn('[ppDelete] Soft delete falló, intentando borrado físico:', err.message);
+                    try {
+                        const { doc: dRef3, deleteDoc } = await import(
+                            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                        await deleteDoc(dRef3(fa.db, 'cronos_player_reports', reportId));
+                        if (typeof window.ppPlayer === 'function') window.ppPlayer();
+                    } catch(err2) {
+                        alert('⚠️ Error al eliminar: ' + err2.message);
+                    }
                 }
             };
 
