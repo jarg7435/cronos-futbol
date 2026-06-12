@@ -1129,16 +1129,23 @@ async function _sdLoadReports() {
         const rawSnap = { forEach: fn => docMap.forEach(d => fn(d)) };
 
         // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
+        // y que el usuario actual NO haya descartado individualmente (dismissedBy).
         // Esto evita requerir un índice compuesto en Firestore.
         const snap = { empty: true, forEach: (fn) => {
             rawSnap.forEach(d => {
                 const data = d.data();
-                if (data.staffReport === true) fn(d);
+                // FIX: excluir docs que este usuario ya descartó individualmente
+                const dismissed = data.dismissedBy || [];
+                if (data.staffReport === true && !dismissed.includes(me.uid)) fn(d);
             });
         }};
         // Recalcular si está vacío
         let _snapHasDocs = false;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) _snapHasDocs = true; });
+        rawSnap.forEach(d => {
+            const data = d.data();
+            const dismissed = data.dismissedBy || [];
+            if (data.staffReport === true && !dismissed.includes(me.uid)) _snapHasDocs = true;
+        });
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
         if (snap.empty) {
@@ -1274,23 +1281,23 @@ async function _sdLoadReports() {
             if (card) card.style.borderColor = isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(88,166,255,0.55)';
         };
 
-        // ── Función para eliminar informe definitivamente ──────────────
+        // ── Función para eliminar informe del panel individual ──────────
+        // FIX: El borrado es INDIVIDUAL por usuario, no físico. Se añade el UID
+        // del usuario al array `dismissedBy` del documento. Así, si el Director
+        // borra un informe, el Coordinador sigue viéndolo (y viceversa).
+        // Solo se borra físicamente cuando TODOS los staff lo han descartado.
         window.sdDeleteReport = async (key64) => {
-            if (!confirm('¿Estás seguro de que deseas eliminar este informe de partido definitivamente? Esta acción borrará todos los datos del encuentro para todos los roles y no se puede deshacer.')) return;
+            if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
             
             const match = window._sdMatchData[key64];
             if (!match) return;
             
             try {
-                const { db, doc, deleteDoc } = await _sdFS();
-                if (typeof showSpinner === 'function') showSpinner('Eliminando informe…');
+                const { db, doc, updateDoc, arrayUnion, getDoc } = await _sdFS();
+                if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
                 
-                // FIX: Eliminar cada documento de jugador asociado probando TODAS
-                // las variantes de ID (_staff_p, _coach_p, _p, id original).
-                // Antes solo intentaba un ID, y si no coincidía (p.ej. doc
-                // real era _staff_p pero se intentaba _p) fallaba con
-                // "Missing or insufficient permissions".
-                const deletePromises = match.players.flatMap(p => {
+                // Añadir mi UID a dismissedBy en cada documento de jugador
+                const updatePromises = match.players.flatMap(p => {
                     const pNum = p.playerNumber || p.number || '';
                     const ids = [];
                     if (p._id || p.id) ids.push(p._id || p.id);
@@ -1299,16 +1306,18 @@ async function _sdLoadReports() {
                     ids.push(`${match.matchId}_p${pNum}`);
                     const uniqueIds = [...new Set(ids)];
                     return uniqueIds.map(docId =>
-                        deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
-                            console.warn(`[StaffDashboard] No se pudo borrar ${docId}:`, err.message);
+                        updateDoc(doc(db, 'cronos_player_reports', docId), {
+                            dismissedBy: arrayUnion(me.uid)
+                        }).catch(err => {
+                            console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
                         })
                     );
                 });
                 
-                await Promise.all(deletePromises);
+                await Promise.all(updatePromises);
                 
                 if (typeof hideSpinner === 'function') hideSpinner();
-                if (typeof showToast === 'function') showToast('✅ Informe eliminado correctamente', 3000);
+                if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
                 
                 // Quitar de la UI
                 const card = document.getElementById(`rcard-${key64}`);
@@ -1323,8 +1332,8 @@ async function _sdLoadReports() {
                 
             } catch (err) {
                 if (typeof hideSpinner === 'function') hideSpinner();
-                console.error('[StaffDashboard] Error al eliminar:', err);
-                if (typeof showToast === 'function') showToast('⚠️ Error al eliminar: ' + err.message, 4000);
+                console.error('[StaffDashboard] Error al ocultar:', err);
+                if (typeof showToast === 'function') showToast('⚠️ Error al ocultar: ' + err.message, 4000);
             }
         };
 
