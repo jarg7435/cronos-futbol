@@ -147,6 +147,12 @@ service cloud.firestore {
         request.auth.uid == userId ||
         sameClubAsDoc(resource.data.clubId) ||
         isClubAdminOf(resource.data.clubId) ||
+        // FIX (C4): fallback para entrenador/director/coordinador sin custom claim
+        // clubId en su token. Lee el documento del propio usuario para verificar
+        // pertenencia al club. Esto permite que _cGetStaff() encuentre al
+        // director/coordinador incluso cuando el entrenador que finaliza el
+        // partido no tiene el claim propagado.
+        userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
@@ -564,9 +570,30 @@ service cloud.firestore {
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if isRegisteredUser();
-      allow create: if isAuth() && (isSuperAdmin() || sameClub(request.resource.data.clubId));
-      allow update: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
-      allow delete: if isAuth() && (isSuperAdmin() || sameClub(resource.data.clubId));
+      // El entrenador (rol 'user') normalmente NO lleva el claim 'clubId' en su
+      // token, así que sameClub() le denegaba escribir su propio partido en vivo
+      // una vez que el snapshot empezó a incluir clubId. userDocClubId() valida la
+      // pertenencia al club leyendo users/{uid}.clubId (mismo patrón ya usado para
+      // informes/mensajes). Se acepta también clubId == null para no romper
+      // partidos de prueba sin club asignado.
+      allow create: if isAuth() && (
+                       isSuperAdmin() ||
+                       request.resource.data.clubId == null ||
+                       sameClub(request.resource.data.clubId) ||
+                       userDocClubId(request.resource.data.clubId)
+                    );
+      allow update: if isAuth() && (
+                       isSuperAdmin() ||
+                       resource.data.clubId == null ||
+                       sameClub(resource.data.clubId) ||
+                       userDocClubId(resource.data.clubId)
+                    );
+      allow delete: if isAuth() && (
+                       isSuperAdmin() ||
+                       resource.data.clubId == null ||
+                       sameClub(resource.data.clubId) ||
+                       userDocClubId(resource.data.clubId)
+                    );
     }
 
     // ============================================================
