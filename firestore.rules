@@ -120,6 +120,31 @@ service cloud.firestore {
              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clubId == docClubId;
     }
 
+    // FIX (v179): Verifica si el clubId del documento aparece en allClubIds[]
+    // del usuario. allClubIds es un array de strings que se mantiene
+    // automáticamente con todos los clubIds a los que el usuario pertenece.
+    // Esto resuelve la inconsistencia donde diferentes miembros del mismo
+    // club tienen clubIds distintos en su campo raíz (p.ej. uno tiene
+    // club_mq1hzm6o_1j6j y otro club_mqlhzm6o_ij6j).
+    function userAllClubIdsContains(docClubId) {
+      return isAuth() && docClubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allClubIds != null
+             && docClubId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allClubIds;
+    }
+
+    // FIX (v179): Verificación combinada de pertenencia al club.
+    // Comprueba clubId por token, por documento users/{uid}.clubId, y por
+    // allClubIds[]. Esto resuelve la inconsistencia donde diferentes usuarios
+    // del mismo club tienen clubIds distintos.
+    function isClubMember(docClubId) {
+      return isAuth() && docClubId != null && (
+        sameClubAsDoc(docClubId) ||
+        userDocClubId(docClubId) ||
+        userAllClubIdsContains(docClubId)
+      );
+    }
+
     // El usuario tiene acceso al club de este enlace
     function isLinkClubMember() {
       return isAuth() && (
@@ -386,6 +411,9 @@ service cloud.firestore {
         request.auth.uid == resource.data.staffUid ||
         request.auth.uid == resource.data.parentUid ||
         userDocClubId(resource.data.clubId) ||
+        // FIX (v179): miembros del club según allClubIds[] — resuelve
+        // inconsistencias de clubId entre usuarios del mismo club.
+        isClubMember(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
@@ -394,7 +422,9 @@ service cloud.firestore {
         request.auth.uid in request.resource.data.participants ||
         // FIX (entrenador sin claim): el entrenador es autor del hilo
         // (coachUid) y debe poder crearlo aunque su token no tenga clubId.
-        request.auth.uid == request.resource.data.coachUid
+        request.auth.uid == request.resource.data.coachUid ||
+        // FIX (v179): miembros del club por allClubIds[]
+        isClubMember(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
@@ -404,7 +434,9 @@ service cloud.firestore {
         // FIX (v178): staff puede actualizar hilos donde es destinatario
         request.auth.uid == resource.data.staffUid ||
         request.auth.uid == resource.data.parentUid ||
-        userDocClubId(resource.data.clubId)
+        userDocClubId(resource.data.clubId) ||
+        // FIX (v179): miembros del club por allClubIds[]
+        isClubMember(resource.data.clubId)
       );
       allow delete: if isAuth() &&
                     (request.auth.uid in resource.data.participants ||
@@ -464,6 +496,9 @@ service cloud.firestore {
          request.auth.uid in resource.data.staffUids) ||
         // FIX (entrenador sin claim): miembros del club según users/{uid}.clubId.
         userDocClubId(resource.data.clubId) ||
+        // FIX (v179): miembros del club según allClubIds[] — resuelve
+        // inconsistencias de clubId entre usuarios del mismo club.
+        isClubMember(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
@@ -471,7 +506,9 @@ service cloud.firestore {
         sameClub(request.resource.data.clubId) ||
         request.auth.uid == request.resource.data.coachUid ||
         // FIX (entrenador sin claim): autor miembro del club por users/{uid}.
-        userDocClubId(request.resource.data.clubId)
+        userDocClubId(request.resource.data.clubId) ||
+        // FIX (v179): autor miembro del club por allClubIds[]
+        isClubMember(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
@@ -483,14 +520,16 @@ service cloud.firestore {
         // para ocultar el informe de su panel individual sin afectar a otros.
         (resource.data.staffUids != null &&
          request.auth.uid in resource.data.staffUids &&
-         request.resource.data.diff(resource.data).affectedKeys()
+         request.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedBy'])) ||
         // FIX v2: padres pueden añadir su UID a dismissedBy para ocultar
         // informes de su panel sin afectar a otros usuarios.
         (request.auth.uid == resource.data.parentUid &&
-         request.resource.data.diff(resource.data).affectedKeys()
+         request.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedBy'])) ||
-        userDocClubId(resource.data.clubId)
+        userDocClubId(resource.data.clubId) ||
+        // FIX (v179): miembros del club por allClubIds[]
+        isClubMember(resource.data.clubId)
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
