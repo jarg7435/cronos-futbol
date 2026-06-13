@@ -491,6 +491,12 @@ service cloud.firestore {
         // FIX v2: padres pueden borrar informes individuales dirigidos a ellos
         (request.auth.uid == resource.data.parentUid &&
          resource.data.type == 'parent_player_report') ||
+        // FIX v3: padres pueden borrar docs legacy (rpt_*) dirigidos a ellos
+        // que NO tienen type='parent_player_report' pero sí tienen su parentUid
+        // y NO son docs de staff (staffReport=true) ni de coach (_forCoach=true)
+        (request.auth.uid == resource.data.parentUid &&
+         resource.data.staffReport != true &&
+         resource.data._forCoach != true) ||
         userDocClubId(resource.data.clubId)
       );
     }
