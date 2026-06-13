@@ -97,6 +97,26 @@ async function openStaffDashboard() {
         return;
     }
 
+    // FIX (v179): Resolver clubId del director/coordinador desde Firestore.
+    // Si el campo raíz clubId del documento users/{uid} está vacío (solo existe
+    // en allRoles), las reglas Firestore (userDocClubId) no pueden verificarlo.
+    // _cResolveClubId migra clubId al campo raíz para que las reglas funcionen.
+    try {
+        if (typeof window._cResolveClubId === 'function' && me && me.uid && !me.clubId) {
+            const { doc, getDoc, updateDoc } = await _sdFS();
+            const db = window._cronos_auth?.db;
+            if (db) {
+                const resolvedId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
+                if (resolvedId) {
+                    me.clubId = resolvedId;
+                    console.log('[StaffDashboard] clubId resuelto vía _cResolveClubId:', resolvedId);
+                }
+            }
+        }
+    } catch(e) {
+        console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message);
+    }
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -1037,7 +1057,23 @@ const _RP = (() => {
 async function _sdLoadReports() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
-    const clubId    = me.clubId;
+
+    // FIX (v179): Intentar resolver clubId si no está disponible.
+    // Esto cubre el caso donde openStaffDashboard no pudo resolverlo
+    // (p.ej. _cResolveClubId no estaba disponible aún).
+    let clubId = me.clubId;
+    if (!clubId && me && me.uid && typeof window._cResolveClubId === 'function') {
+        try {
+            const { doc, getDoc, updateDoc } = await _sdFS();
+            const db = window._cronos_auth?.db;
+            if (db) {
+                clubId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
+                if (clubId) me.clubId = clubId;
+            }
+        } catch(e) {
+            console.warn('[StaffDashboard][_sdLoadReports] clubId resolution falló:', e.message);
+        }
+    }
 
     if (!clubId) {
         container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
@@ -1362,8 +1398,22 @@ async function _sdLoadReports() {
 async function _sdLoadMessages() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
-    const clubId    = me.clubId;
     if (!container) return;
+
+    // FIX (v179): Intentar resolver clubId si no está disponible.
+    let clubId = me.clubId;
+    if (!clubId && me && me.uid && typeof window._cResolveClubId === 'function') {
+        try {
+            const { doc, getDoc, updateDoc } = await _sdFS();
+            const db = window._cronos_auth?.db;
+            if (db) {
+                clubId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
+                if (clubId) me.clubId = clubId;
+            }
+        } catch(e) {
+            console.warn('[StaffDashboard][_sdLoadMessages] clubId resolution falló:', e.message);
+        }
+    }
 
     if (!clubId) {
         container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⚠️ Sin club asignado.</div>`;
@@ -1373,34 +1423,46 @@ async function _sdLoadMessages() {
     try {
         const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
-        // FIX (v178): Tres consultas para máxima cobertura de hilos de mensajes.
+        // FIX (v179): Cuatro consultas para máxima cobertura de hilos de mensajes.
         // Consulta A: staffUid == me.uid (hilos donde soy staff)
         // Consulta B: parentUid == me.uid (hilos donde soy padre/destinatario legacy)
-        // Consulta C: participants array-contains me.uid (fallback si A y B fallan
-        //   por reglas Firestore que no verificaban staffUid/parentUid antes de v178)
+        // Consulta C: participants array-contains me.uid (fallback si A y B fallan)
+        // Consulta D: clubId == me.clubId (fallback para hilos antiguos sin
+        //   staffUid/parentUid/participants pero con clubId; el director puede
+        //   leerlos si userDocClubId funciona en las reglas Firestore)
         // FIX (v178): Log diagnóstico para mensajes
         console.log('[StaffDashboard][DIAG-MSG] Cargando mensajes. uid:', me.uid, 'clubId:', clubId);
 
-        const [snapStaff, snapParent, snapParticipants] = await Promise.all([
+        const [snapStaff, snapParent, snapParticipants, snapClub] = await Promise.all([
             getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query staffUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
             getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
             // FIX (v178): consulta fallback por participants — siempre funciona
             // porque las reglas de Firestore siempre han verificado uid in participants
             getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            // FIX (v179): consulta fallback por clubId — cubre hilos antiguos
+            // que no tienen staffUid/parentUid/participants pero sí clubId
+            getDocs(query(collection(db,'cronos_messages'), where('clubId','==',clubId))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query clubId falló:', e.code||e.message); return {forEach:()=>{}}; }),
         ]);
 
-        // FIX (v178): Contar resultados de cada query para diagnóstico
-        let _staffMsgCount = 0, _parentMsgCount = 0, _participantsMsgCount = 0;
+        // FIX (v179): Contar resultados de cada query para diagnóstico
+        let _staffMsgCount = 0, _parentMsgCount = 0, _participantsMsgCount = 0, _clubMsgCount = 0;
         snapStaff.forEach(() => _staffMsgCount++);
         snapParent.forEach(() => _parentMsgCount++);
         snapParticipants.forEach(() => _participantsMsgCount++);
-        console.log('[StaffDashboard][DIAG-MSG] Resultados - staffUid:', _staffMsgCount, 'parentUid:', _parentMsgCount, 'participants:', _participantsMsgCount);
+        snapClub.forEach(() => _clubMsgCount++);
+        console.log('[StaffDashboard][DIAG-MSG] Resultados - staffUid:', _staffMsgCount, 'parentUid:', _parentMsgCount, 'participants:', _participantsMsgCount, 'clubId:', _clubMsgCount);
 
         const threadsMap = {};
         snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         // FIX (v178): fusionar resultados de participants
         snapParticipants.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        // FIX (v179): fusionar resultados de clubId (solo hilos de staff)
+        snapClub.forEach(d => {
+            if (!threadsMap[d.id] && d.data().recipientType === 'staff') {
+                threadsMap[d.id] = { _id:d.id, ...d.data() };
+            }
+        });
 
         const threads = Object.values(threadsMap)
             .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
