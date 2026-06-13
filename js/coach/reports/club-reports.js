@@ -1059,8 +1059,12 @@ async function _sdLoadReports() {
         //          en resource.data.staffUids).
         // Por eso la Query 1 va en su propio try/catch: si falla por permisos
         // NO debe abortar el flujo; caemos a la Query 2.
+        // FIX (v178): Log diagnóstico para entender qué ve el director/coordinador
+        console.log('[StaffDashboard][DIAG] Cargando informes. uid:', me.uid, 'clubId:', clubId, 'currentRole:', me.currentRole || me.role);
+
         let rawSnap = { forEach: () => {} };
         let _clubQueryOk = false;
+        let _clubQueryDocCount = 0;
         try {
             rawSnap = await getDocs(query(
                 collection(db, 'cronos_player_reports'),
@@ -1068,13 +1072,17 @@ async function _sdLoadReports() {
                 limit(500)
             ));
             _clubQueryOk = true;
+            rawSnap.forEach(d => { _clubQueryDocCount++; });
+            console.log('[StaffDashboard][DIAG] Query por clubId OK. Docs:', _clubQueryDocCount, 'clubId:', clubId);
         } catch (clubErr) {
-            console.warn('[StaffDashboard] Query por clubId falló (probable claim clubId no propagado), usando fallback staffUids:', clubErr.message);
+            console.warn('[StaffDashboard][DIAG] Query por clubId FALLÓ:', clubErr.code || clubErr.message);
         }
 
         // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
         let _hasStaffDocs = false;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
+        let _staffDocCount = 0;
+        rawSnap.forEach(d => { if (d.data().staffReport === true) { _hasStaffDocs = true; _staffDocCount++; } });
+        console.log('[StaffDashboard][DIAG] Docs staffReport=true en query clubId:', _staffDocCount);
 
         if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
             try {
@@ -1083,6 +1091,9 @@ async function _sdLoadReports() {
                     where('staffUids', 'array-contains', me.uid),
                     limit(500)
                 ));
+                let _altCount = 0;
+                altSnap.forEach(d => _altCount++);
+                console.log('[StaffDashboard][DIAG] Query staffUids array-contains. Docs:', _altCount, 'uid:', me.uid);
                 // Fusionar resultados alternativos con los originales
                 const existingIds = new Set();
                 rawSnap.forEach(d => existingIds.add(d.id));
@@ -1367,13 +1378,23 @@ async function _sdLoadMessages() {
         // Consulta B: parentUid == me.uid (hilos donde soy padre/destinatario legacy)
         // Consulta C: participants array-contains me.uid (fallback si A y B fallan
         //   por reglas Firestore que no verificaban staffUid/parentUid antes de v178)
+        // FIX (v178): Log diagnóstico para mensajes
+        console.log('[StaffDashboard][DIAG-MSG] Cargando mensajes. uid:', me.uid, 'clubId:', clubId);
+
         const [snapStaff, snapParent, snapParticipants] = await Promise.all([
-            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
-            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query staffUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
             // FIX (v178): consulta fallback por participants — siempre funciona
             // porque las reglas de Firestore siempre han verificado uid in participants
-            getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch(()=>({forEach:()=>{}})),
+            getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
         ]);
+
+        // FIX (v178): Contar resultados de cada query para diagnóstico
+        let _staffMsgCount = 0, _parentMsgCount = 0, _participantsMsgCount = 0;
+        snapStaff.forEach(() => _staffMsgCount++);
+        snapParent.forEach(() => _parentMsgCount++);
+        snapParticipants.forEach(() => _participantsMsgCount++);
+        console.log('[StaffDashboard][DIAG-MSG] Resultados - staffUid:', _staffMsgCount, 'parentUid:', _parentMsgCount, 'participants:', _participantsMsgCount);
 
         const threadsMap = {};
         snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
