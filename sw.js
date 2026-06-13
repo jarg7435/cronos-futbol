@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v171
+//  CRONOS FUTBOL — Service Worker v172
+//  v172: logging de diagnostico opcional para informes (activar con
+//         window._cronosDiagReports = true en consola). Sin efecto en
+//         produccion si la bandera no esta activada. Registra por que se
+//         omite cada padre/staff al enviar informes.
 //  v171: REDISENO del envio de informes de partido (raiz: padres recibian
 //         informes de jugadores que NO son sus hijos).
 //         - Helper compartido _cronosResolveParentReportTargets usado por
@@ -184,8 +188,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v171';
-const CACHE_NAME = 'cronos-cache-v171';
+const VERSION    = 'v172';
+const CACHE_NAME = 'cronos-cache-v172';
 
 const ASSETS = [
     './',

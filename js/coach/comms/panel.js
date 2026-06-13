@@ -90,10 +90,26 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
         ? window._cronosNormEmail(e)
         : String(e || '').trim().toLowerCase();
 
+    // Diagnóstico opcional: activar con window._cronosDiagReports = true en consola.
+    const _diag = (typeof window !== 'undefined' && window._cronosDiagReports);
+    const _skip = (c, motivo, extra) => {
+        if (_diag) console.log('[DiagReports][padre OMITIDO]', motivo, {
+            id: c && c.id, name: c && c.name, uid: c && c.uid,
+            email: c && c.email, playerId: c && c.playerId, tags: c && c.tags, ...extra
+        });
+    };
+    if (_diag) console.log('[DiagReports] Entrada:', {
+        contactos: (contacts || []).length,
+        parents: (contacts || []).filter(c => c && c.type === 'parent').length,
+        parentsConRpt: (contacts || []).filter(c => c && c.type === 'parent' && (c.tags||[]).includes('rpt')).length,
+        links: (links || []).length,
+        convocados: (homePlayers || []).map(p => p && p.number)
+    });
+
     for (const c of (contacts || [])) {
         if (!c || c.type !== 'parent') continue;
         // REGLA 3: solo si tiene el checkbox INF (tag 'rpt') activado.
-        if (!((c.tags || []).includes('rpt'))) continue;
+        if (!((c.tags || []).includes('rpt'))) { _skip(c, 'sin checkbox INF (tag rpt)'); continue; }
 
         // Resolver el link de Firestore de este contacto para obtener
         // inviteCode + parentUid REAL (registrado en la app).
@@ -110,20 +126,22 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
         const inviteCode = (link && link.inviteCode)
             || (c.playerId && /^J-?\d+$/i.test(c.playerId) ? c.playerId : null);
         const dorsal = _cronosExtractDorsal(inviteCode);
-        if (!dorsal) continue; // sin inviteCode válido → omitir en silencio
+        if (!dorsal) { _skip(c, 'sin inviteCode/dorsal valido', { linkEncontrado: !!link, inviteCode }); continue; }
 
         // Emparejar SOLO por dorsal contra la convocatoria.
         const player = (homePlayers || []).find(p => p && String(p.number) === String(dorsal));
-        if (!player) continue; // hijo no convocado → no enviar nada
+        if (!player) { _skip(c, 'hijo NO convocado', { dorsal }); continue; }
 
         // parentUid REAL (registrado en la app). Sin parentUid → omitir.
         const parentUid = (link && link.parentUid) || (c.uid || null);
-        if (!parentUid) continue;
-        if (seenParentUid.has(parentUid)) continue;
+        if (!parentUid) { _skip(c, 'sin parentUid registrado', { dorsal, linkEncontrado: !!link }); continue; }
+        if (seenParentUid.has(parentUid)) { _skip(c, 'duplicado (ya tiene informe)', { parentUid }); continue; }
         seenParentUid.add(parentUid);
 
+        if (_diag) console.log('[DiagReports][padre OK]', { id: c.id, name: c.name, parentUid, dorsal });
         out.push({ parentUid, dorsal: String(dorsal), player });
     }
+    if (_diag) console.log('[DiagReports] Resultado: ' + out.length + ' informe(s) de padre.');
     return out;
 }
 // Exponer en window para reutilización entre módulos y tests.
@@ -1393,6 +1411,11 @@ window._executeReportsSend = async function(method) {
     if (_autoAlreadyRan) {
         console.log('[ManualDispatch] Auto-despacho ya ejecutó el envío. Solo se procesarán destinatarios adicionales.');
     }
+    if (window._cronosDiagReports) {
+        console.log('[DiagReports][MANUAL] _autoAlreadyRan:', _autoAlreadyRan);
+        console.log('[DiagReports][MANUAL] recipients seleccionados:', recipients.map(r => ({ type: r.type, id: r.id, label: r.label, email: r.email, playerNumber: r.playerNumber })));
+        console.log('[DiagReports][MANUAL] links cargados:', links.length);
+    }
     showSpinner('Enviando informes internamente...');
     // Generar matchId compartido para todos los destinatarios de staff de este envío.
     // FIX v3: Si el auto-despacho ya generó un matchId para este partido,
@@ -1789,6 +1812,13 @@ async function autoDispatchMatchReports() {
                 }
             });
         const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+
+        if (window._cronosDiagReports) {
+            console.log('[DiagReports][STAFF] staffToNotify:', staffToNotify.map(s => ({ uid: s.uid, role: s.role, email: s.email })));
+            console.log('[DiagReports][STAFF] _allStaffUids:', _allStaffUids);
+            console.log('[DiagReports][STAFF] contactos staff (type!=parent):', contacts.filter(c => c.type !== 'parent').map(c => ({ id: c.id, name: c.name, role: c.role, uid: c.uid, tags: c.tags })));
+            console.log('[DiagReports][STAFF] clubId:', me.clubId);
+        }
 
         // ── Guardar documentos cronos_player_reports para el Gantt del staff ──
         // Un documento por jugador con type='staff_match_report' y staffReport=true.
