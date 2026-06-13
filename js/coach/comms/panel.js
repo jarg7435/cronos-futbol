@@ -1310,9 +1310,10 @@ window._executeReportsSend = async function(method) {
     }
     showSpinner('Enviando informes internamente...');
     // Generar matchId compartido para todos los destinatarios de staff de este envío.
-    // Así todos comparten el mismo conjunto de cronos_player_reports en lugar de
-    // generar partidos duplicados en el panel de Dirección.
-    const _sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
+    // FIX v3: Si el auto-despacho ya generó un matchId para este partido,
+    // reutilizarlo para que los documentos se sobreescriban en vez de duplicarse.
+    const _sharedMatchId = window._cronosLastAutoDispatchMatchId
+        || `match_${me.uid}_${Date.now().toString(36)}`;
     let _staffReportsWritten = false; // guard: escribir docs de staff solo una vez por envío
     try {
         for (const r of recipients) {
@@ -1476,22 +1477,33 @@ window._executeReportsSend = async function(method) {
                 }
 
                 // Save in cronos_player_reports (for UI queries)
-                // FIX: solo se ejecuta si auto-despacho NO lo hizo ya
-                const reportId = `rpt_${player.number}_${Date.now().toString(36)}`;
+                // FIX v3: Usar ID determinista con matchId y type='parent_player_report'
+                // ANTES: se usaba rpt_{n}_{random} sin matchId ni type → no deduplicable
+                // AHORA: mismo formato que autoDispatch ({matchId}_parent_{uid}_p{n})
+                // para que la deduplicación en parent-panel.js funcione correctamente.
+                const _manualMatchId = _sharedMatchId; // reutilizar el matchId compartido
+                const reportId = targetParentUid
+                    ? `${_manualMatchId}_parent_${targetParentUid}_p${player.number}`
+                    : `${_manualMatchId}_p${player.number}`;
                 await setDoc(doc(db, 'cronos_player_reports', reportId), {
+                    matchId:        _manualMatchId,
+                    type:           'parent_player_report',
                     reportId,
-                    playerNumber:   player.number,
+                    playerNumber:   String(player.number || ''),
                     playerAlias:    player.name || player.alias || 'Jugador',
-                    parentUid:      (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id)),
+                    parentUid:      targetParentUid || null,
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
-                    matchDate, rival: rivalName,
+                    matchDate:      new Date().toISOString().split('T')[0],
+                    rival:          rivalName,
                     scoreHome, scoreAway,
                     minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
                     goals: player.goals || 0,
                     cards: player.cards || 'ninguna',
                     injured: player.injured || false,
-                    history: player.history || [],
+                    history: typeof _parseHistoryForFirestore === 'function'
+                             ? _parseHistoryForFirestore(player.history || [])
+                             : (player.history || []),
                     createdAt: new Date().toISOString(),
                 });
 
@@ -1654,6 +1666,11 @@ async function autoDispatchMatchReports() {
 
         // ── Generar un matchId compartido para este partido ──────────────
         const sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
+        // FIX v3: Guardar matchId globalmente para que el envío manual
+        // pueda reutilizarlo si se ejecuta después del auto-despacho.
+        // Esto evita que se generen documentos duplicados con IDs distintos
+        // para el mismo partido.
+        window._cronosLastAutoDispatchMatchId = sharedMatchId;
 
         // ── Resolver destinatarios staff ANTES de escribir reports ──────────
         // FIX: antes los staff reports se escribían sin staffUids, así que los
