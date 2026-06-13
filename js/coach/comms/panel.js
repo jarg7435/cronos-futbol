@@ -231,13 +231,15 @@ if (typeof window !== 'undefined') window._cStaffThreadId = _cStaffThreadId;
 //  y el campo `role` de nivel raíz puede ser cualquier rol activo actual.
 // ════════════════════════════════════════════════════════════════════
 async function _cGetStaff(db, clubId, fns, roles) {
-    if (!clubId) return [];
     roles = roles || ['director', 'coordinator'];
     const byUid = new Map(); // deduplicar por uid
 
     const upsert = (uid, role, data) => {
         if (!byUid.has(uid)) byUid.set(uid, { uid, role, ...data });
     };
+
+    // FIX (v178): Log para diagnosticar por qué _cGetStaff puede devolver vacío
+    console.log('[_cGetStaff] Buscando staff. clubId:', clubId || '(vacío)', 'roles:', roles.join(','));
 
     // ── 1. emailConfig.contacts — FUENTE MÁS FIABLE ──────────────
     // El entrenador ya configuró quién recibe qué en Gestión de Contactos.
@@ -273,47 +275,116 @@ async function _cGetStaff(db, clubId, fns, roles) {
                     email: c.email || '', phone: c.phone || '', displayName: c.name || '',
                 }));
         }
-    } catch(_) {}
+        console.log('[_cGetStaff] Paso 1 (emailConfig):', byUid.size, 'miembros encontrados');
+    } catch(e1) { console.warn('[_cGetStaff] Paso 1 falló:', e1.message); }
 
     // ── 2. Firestore: role === rol específico (usuarios mono-rol) ──
+    // FIX (v178): Solo ejecutar si clubId es válido, pero NO retornar vacío si no lo es
     const { collection, getDocs, query, where } = fns;
-    for (const role of roles) {
-        try {
-            const snap = await getDocs(query(
-                collection(db, 'users'),
-                where('clubId', '==', clubId),
-                where('role',   '==', role)
-            ));
-            snap.forEach(d => upsert(d.id, role, d.data()));
-        } catch(_) {}
+    if (clubId) {
+        for (const role of roles) {
+            try {
+                const snap = await getDocs(query(
+                    collection(db, 'users'),
+                    where('clubId', '==', clubId),
+                    where('role',   '==', role)
+                ));
+                snap.forEach(d => upsert(d.id, role, d.data()));
+            } catch(e2) { console.warn('[_cGetStaff] Paso 2 falló para rol', role, ':', e2.code || e2.message); }
+        }
+        console.log('[_cGetStaff] Paso 2 (Firestore mono-rol):', byUid.size, 'miembros hasta ahora');
     }
 
     // ── 3. Firestore: buscar por clubId y filtrar allRoles en cliente ──
     // FIX v177: Se ejecuta SIEMPRE (antes solo si byUid.size === 0).
-    // Si un usuario tiene role='user' en el campo raíz pero tiene
-    // allRoles=[{role:'director',...},{role:'coordinator',...}], la query
-    // del paso 2 (where role=='director') NO lo encuentra porque su campo
-    // raíz no coincide. Solo la consulta amplia + filtrado por allRoles
-    // lo detecta. El upsert es idempotente, así que no duplica.
-    try {
-        const allSnap = await getDocs(query(
-            collection(db, 'users'),
-            where('clubId', '==', clubId)
-        ));
-        allSnap.forEach(d => {
-            const data = d.data();
-            (data.allRoles || []).forEach(r => {
-                if (roles.includes(r.role) &&
-                    r.isAuthorized !== false &&
-                    r.status !== 'rejected' &&
-                    r.status !== 'removed') {
-                    upsert(d.id, r.role, data);
-                }
+    // FIX v178: Solo si clubId es válido
+    if (clubId) {
+        try {
+            const allSnap = await getDocs(query(
+                collection(db, 'users'),
+                where('clubId', '==', clubId)
+            ));
+            allSnap.forEach(d => {
+                const data = d.data();
+                (data.allRoles || []).forEach(r => {
+                    if (roles.includes(r.role) &&
+                        r.isAuthorized !== false &&
+                        r.status !== 'rejected' &&
+                        r.status !== 'removed') {
+                        upsert(d.id, r.role, data);
+                    }
+                });
             });
-        });
-    } catch(_) {}
+            console.log('[_cGetStaff] Paso 3 (Firestore allRoles):', byUid.size, 'miembros hasta ahora');
+        } catch(e3) { console.warn('[_cGetStaff] Paso 3 falló:', e3.code || e3.message); }
+    }
 
-    return Array.from(byUid.values());
+    // ── 4. FIX (v178): Buscar SIN clubId usando el UID del coach actual ──
+    // Si los pasos 2-3 fallaron (clubId vacío o incorrecto), buscar TODOS los
+    // usuarios y filtrar en cliente por allRoles que contengan el mismo clubId
+    // que el coach tiene en SU documento de usuario.
+    if (!byUid.size) {
+        console.warn('[_cGetStaff] Pasos 2-3 no encontraron staff. Intentando búsqueda amplia...');
+        try {
+            const me = window._cronosCurrentUser;
+            if (me && me.uid) {
+                // Obtener el clubId del coach directamente desde su documento
+                const meSnap = await getDocs(query(
+                    collection(db, 'users'),
+                    where('__name__', '==', me.uid)  // Firestore no permite esto directamente
+                )).catch(() => null);
+                
+                // Fallback: obtener el propio documento del coach
+                try {
+                    const { doc: docFn, getDoc } = fns.doc && fns.getDoc ? fns : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                    const myDoc = await getDoc(docFn(db, 'users', me.uid));
+                    if (myDoc.exists()) {
+                        const myData = myDoc.data();
+                        const myClubId = myData.clubId || (myData.allRoles || []).find(r => r.clubId)?.clubId;
+                        console.log('[_cGetStaff] Paso 4: clubId del coach:', myClubId, '(desde users/' + me.uid + ')');
+                        if (myClubId && myClubId !== clubId) {
+                            // Reintentar con el clubId correcto
+                            for (const role of roles) {
+                                try {
+                                    const snap2 = await getDocs(query(
+                                        collection(db, 'users'),
+                                        where('clubId', '==', myClubId),
+                                        where('role', '==', role)
+                                    ));
+                                    snap2.forEach(d => upsert(d.id, role, d.data()));
+                                } catch(_) {}
+                            }
+                            try {
+                                const allSnap2 = await getDocs(query(
+                                    collection(db, 'users'),
+                                    where('clubId', '==', myClubId)
+                                ));
+                                allSnap2.forEach(d => {
+                                    const data = d.data();
+                                    (data.allRoles || []).forEach(r => {
+                                        if (roles.includes(r.role) &&
+                                            r.isAuthorized !== false &&
+                                            r.status !== 'rejected' &&
+                                            r.status !== 'removed') {
+                                            upsert(d.id, r.role, data);
+                                        }
+                                    });
+                                });
+                            } catch(_) {}
+                            // Actualizar me.clubId con el correcto
+                            if (myClubId && !me.clubId) me.clubId = myClubId;
+                            console.log('[_cGetStaff] Paso 4 (reintento con clubId correcto):', byUid.size, 'miembros');
+                        }
+                    }
+                } catch(e4) { console.warn('[_cGetStaff] Paso 4 falló:', e4.message); }
+            }
+        } catch(e4b) { console.warn('[_cGetStaff] Paso 4 (búsqueda amplia) falló:', e4b.message); }
+    }
+
+    const result = Array.from(byUid.values());
+    console.log('[_cGetStaff] RESULTADO FINAL:', result.length, 'miembros',
+        result.map(s => `${s.role}:${s.uid?.slice(0,8)}...`).join(', ') || '(ninguno)');
+    return result;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -4423,4 +4494,32 @@ window.openContactManager      = openContactManager;
 window.saveContactManagerData  = saveContactManagerData;
 window.saveAllMatchReportsInternal = saveAllMatchReportsInternal;
 window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
+
+// ════════════════════════════════════════════════════════════════════
+//  FIX (v178): Force re-dispatch — permite reenviar informes del
+//  partido actual con el código actualizado, saltándose el guard
+//  de idempotencia. Útil cuando el auto-despacho original se ejecutó
+//  con una versión anterior del código que no incluía staffUids,
+//  parentUid, etc.
+//  USO: Ejecutar en la consola del entrenador:
+//    window._cronosForceRedispatch()
+// ════════════════════════════════════════════════════════════════════
+window._cronosForceRedispatch = async function() {
+    console.log('🔄 Force re-dispatch: Limpiando guards de idempotencia...');
+    // Limpiar localStorage
+    const keysToRemove = Object.keys(localStorage).filter(k => k.startsWith('cronos_reports_sent_'));
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    console.log('🔄 Limpiadas', keysToRemove.length, 'claves de guard');
+    // Limpiar guard en memoria
+    window._cronosLastDispatchedMatch = null;
+    window._cronosLastAutoDispatchMatchId = null;
+    // Ejecutar auto-dispatch
+    console.log('🔄 Ejecutando autoDispatchMatchReports()...');
+    try {
+        await autoDispatchMatchReports();
+        console.log('✅ Force re-dispatch completado');
+    } catch(e) {
+        console.error('❌ Force re-dispatch falló:', e);
+    }
+};
 
