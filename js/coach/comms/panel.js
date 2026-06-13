@@ -56,6 +56,81 @@ function _parseHistoryForFirestore(raw) {
     });
     return result;
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  HELPER COMPARTIDO (v171): resolver destinatarios de informe individual
+//  de padre, de forma ESTRICTA. Usado por AMBAS rutas de envío
+//  (autoDispatchMatchReports y _executeReportsSend) para que la lógica
+//  sea idéntica.
+//
+//  REGLA 3 (padres, individual y estricto):
+//   - Solo contactos de tipo 'parent' con el checkbox INF activado (tag 'rpt').
+//   - Se obtiene su inviteCode (formato 'J10') del link de Firestore o del
+//     playerId del contacto, y se extrae el dorsal (10).
+//   - Se empareja SOLO por dorsal contra los jugadores convocados
+//     (homePlayers). NUNCA por nombre.
+//   - Solo se envía si el padre está registrado en la app con un parentUid
+//     válido (resuelto vía cronos_player_links). Sin parentUid → se omite.
+//   - Si el hijo de ese padre no fue convocado → no se envía nada.
+//   - Como máximo 1 informe por padre (dedup por parentUid).
+//
+//  Devuelve: Array<{ parentUid, dorsal, player }>.
+//  Función pura (sin I/O) para poder testearla en aislamiento.
+// ════════════════════════════════════════════════════════════════════
+function _cronosExtractDorsal(inviteCode) {
+    if (!inviteCode) return null;
+    const m = String(inviteCode).match(/^J-?(\d+)$/i);
+    return m ? m[1] : null;
+}
+
+function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
+    const out = [];
+    const seenParentUid = new Set(); // 1 informe por padre
+    const _normEmail = (e) => (typeof window._cronosNormEmail === 'function')
+        ? window._cronosNormEmail(e)
+        : String(e || '').trim().toLowerCase();
+
+    for (const c of (contacts || [])) {
+        if (!c || c.type !== 'parent') continue;
+        // REGLA 3: solo si tiene el checkbox INF (tag 'rpt') activado.
+        if (!((c.tags || []).includes('rpt'))) continue;
+
+        // Resolver el link de Firestore de este contacto para obtener
+        // inviteCode + parentUid REAL (registrado en la app).
+        const link = (links || []).find(l => {
+            if (!l) return false;
+            if (c.uid && (l.parentUid === c.uid || l.uid === c.uid)) return true;
+            if (c.id && (l._id === c.id || l.id === c.id)) return true;
+            if (c.playerId && (l.inviteCode === c.playerId || ('J' + l.playerNumber) === c.playerId)) return true;
+            if (c.email && l.parentEmail && _normEmail(l.parentEmail) === _normEmail(c.email)) return true;
+            return false;
+        }) || null;
+
+        // inviteCode: del link, o del playerId del contacto si tiene formato J<num>.
+        const inviteCode = (link && link.inviteCode)
+            || (c.playerId && /^J-?\d+$/i.test(c.playerId) ? c.playerId : null);
+        const dorsal = _cronosExtractDorsal(inviteCode);
+        if (!dorsal) continue; // sin inviteCode válido → omitir en silencio
+
+        // Emparejar SOLO por dorsal contra la convocatoria.
+        const player = (homePlayers || []).find(p => p && String(p.number) === String(dorsal));
+        if (!player) continue; // hijo no convocado → no enviar nada
+
+        // parentUid REAL (registrado en la app). Sin parentUid → omitir.
+        const parentUid = (link && link.parentUid) || (c.uid || null);
+        if (!parentUid) continue;
+        if (seenParentUid.has(parentUid)) continue;
+        seenParentUid.add(parentUid);
+
+        out.push({ parentUid, dorsal: String(dorsal), player });
+    }
+    return out;
+}
+// Exponer en window para reutilización entre módulos y tests.
+if (typeof window !== 'undefined') {
+    window._cronosResolveParentReportTargets = _cronosResolveParentReportTargets;
+    window._cronosExtractDorsal = _cronosExtractDorsal;
+}
 //
 //  ESTRATEGIA (en orden de fiabilidad):
 //  1. emailConfig.contacts guardado por el entrenador (FUENTE PRINCIPAL)
@@ -90,6 +165,16 @@ async function _cGetStaff(db, clubId, fns, roles) {
 
         contacts.filter(c => c.type !== 'parent' && c.uid && (c.tags||[]).includes('rpt'))
             .forEach(c => upsert(c.uid, c.role || 'staff', {
+                email: c.email || '', phone: c.phone || '', displayName: c.name || '',
+            }));
+
+        // REGLA 1 (v171): Director Deportivo y Coordinador reciben SIEMPRE el
+        // informe colectivo, aunque NO tengan el checkbox INF (tag 'rpt').
+        // El entrenador no puede desactivar este envío. Se añaden aquí
+        // explícitamente (idempotente: upsert no duplica si ya estaban).
+        contacts.filter(c => c.type !== 'parent' && c.uid &&
+                             (c.role === 'director' || c.role === 'coordinator'))
+            .forEach(c => upsert(c.uid, c.role, {
                 email: c.email || '', phone: c.phone || '', displayName: c.name || '',
             }));
 
@@ -1321,6 +1406,10 @@ window._executeReportsSend = async function(method) {
             return `match_${me.uid}_${_d}_${_rs}_${_sh}x${_sa}`;
         })();
     let _staffReportsWritten = false; // guard: escribir docs de staff solo una vez por envío
+    // v171: destinatarios de padres resueltos (lazy) con el helper compartido,
+    // para que el despacho manual use EXACTAMENTE la misma lógica que el automático.
+    let _parentTargetsManual = null;  // Array<{parentUid,dorsal,player}> o null si aún no resuelto
+    let _parentTargetsByUid = null;   // Map<parentUid, target>
     try {
         for (const r of recipients) {
             if (r.type === 'staff') {
@@ -1446,58 +1535,56 @@ window._executeReportsSend = async function(method) {
                 }
             } 
             else if (r.type === 'parent') {
-                // Find matched link
-                let link = links.find(l => (r.id && r.id.includes('p_') === false ? l.parentUid === r.id : false)
-                                          || (r.email && l.parentEmail === r.email) 
-                                          || (r.phone && l.parentPhone === r.phone));
-                
-                // Fallback: si no hay link en Firestore pero el recipient tiene info de jugador (manual)
-                const fallbackPlayerId = r.playerId;
-                const fallbackPlayerNum = r.playerNumber;
+                // ── REDISEÑO v171: misma lógica ESTRICTA que el auto-despacho ──
+                // Resolvemos los destinatarios válidos UNA sola vez con el helper
+                // compartido (_cronosResolveParentReportTargets): contactos 'parent'
+                // con checkbox INF (tag 'rpt'), inviteCode válido, parentUid real y
+                // jugador convocado. Emparejado SOLO por dorsal, nunca por nombre.
+                if (!_parentTargetsManual) {
+                    const _mc = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
+                    _parentTargetsManual = _cronosResolveParentReportTargets(_mc, links, homePlayers);
+                    _parentTargetsByUid = new Map(_parentTargetsManual.map(t => [t.parentUid, t]));
+                }
 
-                const player = homePlayers.find(p => 
-                    (p.playerId && p.playerId === fallbackPlayerId) ||
-                    (p.number != null && String(p.number) === String(fallbackPlayerNum)) ||
-                    (link && p.number != null && String(p.number) === String(link.playerNumber)) ||
-                    (link && p.playerId && p.playerId === link.playerId) ||
-                    (link && p.name && p.name === link.playerAlias) ||
-                    (link && p.alias && p.alias === link.playerAlias)
-                );
-                
-                if (!player) {
-                    console.warn(`[Cronos] No se encontró al jugador para el destinatario ${r.label}.`, {r, link, homePlayers});
+                // Resolver el parentUid de ESTE recipient (mismo emparejado que el helper).
+                const _normE = (e) => (typeof window._cronosNormEmail === 'function')
+                    ? window._cronosNormEmail(e) : String(e || '').trim().toLowerCase();
+                const link = links.find(l =>
+                    (r.id && r.id.includes('p_') === false && l.parentUid === r.id) ||
+                    (r.email && l.parentEmail && _normE(l.parentEmail) === _normE(r.email)) ||
+                    (r.phone && l.parentPhone === r.phone)) || null;
+                const recipientParentUid = (link && link.parentUid) || (r.id && !r.id.startsWith('p_') ? r.id : null);
+
+                // Solo se envía si este padre está entre los destinatarios válidos.
+                const target = recipientParentUid ? _parentTargetsByUid.get(recipientParentUid) : null;
+                if (!target) {
+                    // Hijo no convocado / sin inviteCode válido / sin parentUid → omitir en silencio.
+                    console.log('[ManualDispatch] Destinatario padre omitido (no cumple regla estricta v171):', r.label || r.id);
                     continue;
                 }
 
-                const reportText = _buildIndividualReportText(player, scoreHome, scoreAway, matchDate);
-
-                const targetParentUid = (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id));
-                // FIX: Si auto-despacho ya envió a este padre, saltar ANTES de escribir
-                // en cronos_player_reports para evitar informes duplicados.
-                // Antes, la escritura a cronos_player_reports estaba ARRIBA de este chequeo,
-                // lo que generaba un documento duplicado que el padre veía dos veces.
-                if (_autoAlreadyRan && targetParentUid) {
-                    console.log('[ManualDispatch] Saltando padre (auto-despacho ya ejecutado):', targetParentUid);
+                // FIX: Si auto-despacho ya envió a este padre, saltar (evita duplicado).
+                if (_autoAlreadyRan) {
+                    console.log('[ManualDispatch] Saltando padre (auto-despacho ya ejecutado):', target.parentUid);
                     sentCount++;
                     continue;
                 }
 
-                // Save in cronos_player_reports (for UI queries)
-                // FIX v3: Usar ID determinista con matchId y type='parent_player_report'
-                // ANTES: se usaba rpt_{n}_{random} sin matchId ni type → no deduplicable
-                // AHORA: mismo formato que autoDispatch ({matchId}_parent_{uid}_p{n})
-                // para que la deduplicación en parent-panel.js funcione correctamente.
+                const targetParentUid = target.parentUid;
+                const player = target.player;
+                const dorsal = target.dorsal;
+                const reportText = _buildIndividualReportText(player, scoreHome, scoreAway, matchDate);
+
+                // ID determinista e idempotente: {matchId}_parent_{parentUid}_p{dorsal}
                 const _manualMatchId = _sharedMatchId; // reutilizar el matchId compartido
-                const reportId = targetParentUid
-                    ? `${_manualMatchId}_parent_${targetParentUid}_p${player.number}`
-                    : `${_manualMatchId}_p${player.number}`;
+                const reportId = `${_manualMatchId}_parent_${targetParentUid}_p${dorsal}`;
                 await setDoc(doc(db, 'cronos_player_reports', reportId), {
                     matchId:        _manualMatchId,
                     type:           'parent_player_report',
                     reportId,
-                    playerNumber:   String(player.number || ''),
-                    playerAlias:    player.name || player.alias || 'Jugador',
-                    parentUid:      targetParentUid || null,
+                    playerNumber:   String(dorsal),
+                    playerAlias:    player.alias || player.name || 'Jugador',
+                    parentUid:      targetParentUid,
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
                     matchDate:      new Date().toISOString().split('T')[0],
@@ -1513,46 +1600,42 @@ window._executeReportsSend = async function(method) {
                     createdAt: new Date().toISOString(),
                 });
 
-                if (targetParentUid) {
-                    // Send via Thread Message
-                    const threadId = `${me.uid}_${targetParentUid}`;
-                    try {
-                        const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
-                        const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
-                        if (threadSnap.exists()) {
-                            await updateDoc(doc(db, 'cronos_messages', threadId), {
-                                messages: arrayUnion(msgEntry),
-                                lastMessage: '📊 Informe de partido enviado',
-                                lastMessageAt: msgEntry.timestamp,
-                                unreadByParent: (threadSnap.data().unreadByParent||0) + 1
-                            });
-                        } else {
-                            await setDoc(doc(db, 'cronos_messages', threadId), {
-                                threadId, coachUid: me.uid, coachEmail: me.email,
-                                clubId: me.clubId || null,                           // ← FIX: para reglas Firestore
-                                participants: [me.uid, targetParentUid],              // ← FIX: para reglas Firestore
-                                parentUid: targetParentUid, parentEmail: (link ? link.parentEmail : r.email) || '',
-                                messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
-                                lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
-                            });
-                        }
-
-                        // Also a notification for the parent
-                        await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${player.number}_${Date.now().toString(36)}`), {
-                            type: 'informe_partido', clubId: me.clubId || null,
-                            userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
-                            coachUid: me.uid,                                   // ← FIX (C3): coachUid para reglas Firestore
-                            parentUid: targetParentUid, playerNumber: player.number,
-                            rival: rivalName, scoreHome, scoreAway,
-                            minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
-                            goals: player.goals || 0, cards: player.cards || 'ninguna',
-                            injured: player.injured || false, createdAt: new Date().toISOString()
+                // Send via Thread Message + notificación (parentUid siempre válido aquí).
+                const threadId = `${me.uid}_${targetParentUid}`;
+                try {
+                    const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
+                    const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
+                    if (threadSnap.exists()) {
+                        await updateDoc(doc(db, 'cronos_messages', threadId), {
+                            messages: arrayUnion(msgEntry),
+                            lastMessage: '📊 Informe de partido enviado',
+                            lastMessageAt: msgEntry.timestamp,
+                            unreadByParent: (threadSnap.data().unreadByParent||0) + 1
                         });
-                    } catch(threadErr) {
-                        console.warn('[Cronos] Error enviando mensaje/notificación a parentUid:', targetParentUid, threadErr);
+                    } else {
+                        await setDoc(doc(db, 'cronos_messages', threadId), {
+                            threadId, coachUid: me.uid, coachEmail: me.email,
+                            clubId: me.clubId || null,                           // ← FIX: para reglas Firestore
+                            participants: [me.uid, targetParentUid],              // ← FIX: para reglas Firestore
+                            parentUid: targetParentUid, parentEmail: (link ? link.parentEmail : r.email) || '',
+                            messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
+                            lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
+                        });
                     }
-                } else {
-                    console.warn('[Cronos] El destinatario no tiene parentUid vinculado, el informe solo se guardó en la colección de informes.', r);
+
+                    // Also a notification for the parent
+                    await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${dorsal}_${Date.now().toString(36)}`), {
+                        type: 'informe_partido', clubId: me.clubId || null,
+                        userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
+                        coachUid: me.uid,                                   // ← FIX (C3): coachUid para reglas Firestore
+                        parentUid: targetParentUid, playerNumber: dorsal,
+                        rival: rivalName, scoreHome, scoreAway,
+                        minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
+                        goals: player.goals || 0, cards: player.cards || 'ninguna',
+                        injured: player.injured || false, createdAt: new Date().toISOString()
+                    });
+                } catch(threadErr) {
+                    console.warn('[Cronos] Error enviando mensaje/notificación a parentUid:', targetParentUid, threadErr);
                 }
 
                 sentCount++;
@@ -1763,9 +1846,16 @@ async function autoDispatchMatchReports() {
             });
         }
 
-        // --- FASE B: INFORMES INDIVIDUALES (PADRES) ---
-        for (const player of homePlayers) {
-            // Generar texto individual
+        // --- FASE B: INFORMES INDIVIDUALES (PADRES) — REDISEÑO v171 ---
+        // REGLA 3 (estricta): se itera por PADRES (no por jugadores). Cada padre
+        // con el checkbox INF (tag 'rpt') y un inviteCode válido (J<dorsal>)
+        // recibe EXACTAMENTE 1 informe del jugador cuyo número coincide con su
+        // dorsal, y solo si ese jugador fue convocado (homePlayers). El
+        // emparejado es SOLO por dorsal, nunca por nombre. La resolución vive en
+        // el helper compartido, idéntico al del despacho manual.
+        const _parentTargets = _cronosResolveParentReportTargets(contacts, links, homePlayers);
+        for (const { parentUid, dorsal, player } of _parentTargets) {
+            // Texto individual de este jugador
             const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ ${player.goals || 0} goles | ${player.cards === 'amarilla' ? '🟨' : player.cards === 'roja' ? '🟥' : '0 tarjetas'}`;
             const indivText = `📊 *INFORME INDIVIDUAL: ${player.name}*\n` +
                              `━━━━━━━━━━━━━━━━\n` +
@@ -1775,92 +1865,70 @@ async function autoDispatchMatchReports() {
                              `Revisa el panel de informes para más detalles.\n` +
                              `_Cronos Fútbol_`;
 
-            // Buscar padres vinculados (por Firestore links)
-            const linkedParents = links.filter(l =>
-                (l.playerId === player.playerId || String(l.playerNumber) === String(player.number))
-                && l.parentUid);
-            
-            // Buscar padres desde contactos manuales autorizados
-            const manualParents = contacts.filter(c => {
-                if (c.type !== 'parent' || !c.uid) return false;
-                const matchNum  = String(c.playerNumber || '') === String(player.number);
-                const matchId   = c.playerId && (c.playerId === player.playerId || c.playerId === `J${player.number}`);
-                const matchName = (c.name||'').toLowerCase().includes((player.alias||player.name||'').toLowerCase());
-                if (!matchNum && !matchId && !matchName) return false;
-                return isRecipientAuthorized(c);
+            // ── Guardar en cronos_player_reports para el panel del padre ──
+            // ID determinista e idempotente: {matchId}_parent_{parentUid}_p{dorsal}
+            const prId = `${sharedMatchId}_parent_${parentUid}_p${dorsal}`;
+            await setDoc(doc(db, 'cronos_player_reports', prId), {
+                matchId:       sharedMatchId,
+                type:          'parent_player_report',
+                parentUid:     parentUid,
+                clubId:        me.clubId || null,
+                coachUid:      me.uid,
+                coachEmail:    me.email,
+                matchDate:     new Date().toISOString().split('T')[0],
+                rival:         rivalName,
+                scoreHome,
+                scoreAway,
+                createdAt:     new Date().toISOString(),
+                playerNumber:  String(dorsal),
+                playerAlias:   player.alias || player.name || '',
+                goals:         player.goals  || 0,
+                cards:         player.cards  || 'ninguna',
+                injured:       player.injured || false,
+                minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
+                history:       _parseHistoryForFirestore(player.history || []),
             });
 
-            const parentMap = new Map();
-            linkedParents.forEach(l => parentMap.set(l.parentUid, l));
-            manualParents.forEach(c => { if (!parentMap.has(c.uid)) parentMap.set(c.uid, { parentUid: c.uid, parentEmail: c.email || '' }); });
-
-            for (const [pUid, linkData] of parentMap) {
-                if (!pUid) continue;
-
-                // ── Guardar en cronos_player_reports para el panel del padre ──
-                const prId = `${sharedMatchId}_parent_${pUid}_p${player.number}`;
-                await setDoc(doc(db, 'cronos_player_reports', prId), {
-                    matchId:       sharedMatchId,
-                    type:          'parent_player_report',
-                    parentUid:     pUid,
-                    clubId:        me.clubId || null,
-                    coachUid:      me.uid,
-                    coachEmail:    me.email,
-                    matchDate:     new Date().toISOString().split('T')[0],
-                    rival:         rivalName,
-                    scoreHome,
-                    scoreAway,
-                    createdAt:     new Date().toISOString(),
-                    playerNumber:  String(player.number || ''),
-                    playerAlias:   player.alias || player.name || '',
-                    goals:         player.goals  || 0,
-                    cards:         player.cards  || 'ninguna',
-                    injured:       player.injured || false,
-                    minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
-                    history:       _parseHistoryForFirestore(player.history || []),
+            // ── Enviar mensaje al hilo de chat ───────────────────────────
+            const threadId = `${me.uid}_${parentUid}`;
+            const msgEntry = { sender: 'coach', text: indivText, timestamp: new Date().toISOString(), type: 'report' };
+            try {
+                await updateDoc(doc(db, 'cronos_messages', threadId), {
+                    messages: arrayUnion(msgEntry),
+                    lastMessage: '📊 Informe de partido enviado',
+                    lastMessageAt: msgEntry.timestamp,
+                    unreadByParent: 1
                 });
-
-                // ── Enviar mensaje al hilo de chat ───────────────────────────
-                const threadId = `${me.uid}_${pUid}`;
-                const msgEntry = { sender: 'coach', text: indivText, timestamp: new Date().toISOString(), type: 'report' };
-                try {
-                    await updateDoc(doc(db, 'cronos_messages', threadId), {
-                        messages: arrayUnion(msgEntry),
-                        lastMessage: '📊 Informe de partido enviado',
-                        lastMessageAt: msgEntry.timestamp,
-                        unreadByParent: 1
-                    });
-                } catch(e) {
-                    await setDoc(doc(db, 'cronos_messages', threadId), {
-                        threadId, coachUid: me.uid, coachEmail: me.email,
-                        clubId: me.clubId || null,                        // ← FIX: para reglas Firestore
-                        participants: [me.uid, pUid],                     // ← FIX: para reglas Firestore
-                        parentUid: pUid, messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
-                        lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
-                    });
-                }
-
-                // ── Notificación push para el padre ───────────────────────────
-                const notifId = `notif_indiv_rpt_${pUid}_${Date.now().toString(36)}`;
-                await setDoc(doc(db, 'cronos_notifications', notifId), {
-                    type:         'informe_partido',
-                    clubId:       me.clubId || null,
-                    userId:       pUid,                                // ← FIX: campo que las reglas verifican
-                    coachUid:     me.uid,                              // ← FIX (C2): coachUid para reglas Firestore
-                    parentUid:    pUid,
-                    playerNumber: player.number,
-                    playerAlias:  player.alias || player.name,
-                    rival:        rivalName, 
-                    scoreHome, 
-                    scoreAway,
-                    minutes:      typeof formatTime==='function' ? formatTime(player.time||0) : String(player.time||0),
-                    goals:        player.goals || 0,
-                    cards:        player.cards || 'ninguna',
-                    history:      _parseHistoryForFirestore(player.history || []),
-                    matchId:      prId,
-                    createdAt:    new Date().toISOString()
+            } catch(e) {
+                await setDoc(doc(db, 'cronos_messages', threadId), {
+                    threadId, coachUid: me.uid, coachEmail: me.email,
+                    clubId: me.clubId || null,                        // ← FIX: para reglas Firestore
+                    participants: [me.uid, parentUid],                // ← FIX: para reglas Firestore
+                    parentUid: parentUid, messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
+                    lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
                 });
             }
+
+            // ── Notificación push para el padre ───────────────────────────
+            const notifId = `notif_indiv_rpt_${parentUid}_${Date.now().toString(36)}`;
+            await setDoc(doc(db, 'cronos_notifications', notifId), {
+                type:         'informe_partido',
+                clubId:       me.clubId || null,
+                userId:       parentUid,                           // ← FIX: campo que las reglas verifican
+                coachUid:     me.uid,                              // ← FIX (C2): coachUid para reglas Firestore
+                parentUid:    parentUid,
+                playerNumber: dorsal,
+                playerAlias:  player.alias || player.name,
+                rival:        rivalName,
+                scoreHome,
+                scoreAway,
+                minutes:      typeof formatTime==='function' ? formatTime(player.time||0) : String(player.time||0),
+                goals:        player.goals || 0,
+                cards:        player.cards || 'ninguna',
+                history:      _parseHistoryForFirestore(player.history || []),
+                matchId:      prId,
+                createdAt:    new Date().toISOString()
+            });
         }
 
         localStorage.removeItem('cronos_match_rpt_selection');

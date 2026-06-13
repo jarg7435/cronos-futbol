@@ -1,5 +1,16 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v170
+//  CRONOS FUTBOL — Service Worker v171
+//  v171: REDISENO del envio de informes de partido (raiz: padres recibian
+//         informes de jugadores que NO son sus hijos).
+//         - Helper compartido _cronosResolveParentReportTargets usado por
+//           AMBAS rutas (auto-despacho y envio manual): emparejado ESTRICTO
+//           SOLO por dorsal (inviteCode 'J10'), nunca por nombre; maximo 1
+//           informe por padre; solo si el padre tiene parentUid registrado y
+//           su hijo fue convocado (si no, se omite en silencio).
+//         - _cGetStaff Regla 1/2: director y coordinador SIEMPRE reciben el
+//           informe colectivo aunque no tengan el checkbox INF; el resto del
+//           staff solo con el checkbox.
+//         - IDs deterministas {matchId}_parent_{parentUid}_p{dorsal} (idempotentes).
 //  v170: FIX DEFINITIVO panel del padre (2 bugs latentes tras v169):
 //         (1) Perdida de datos: _rptDedupKey ignoraba matchId y deduplicaba por
 //         fecha+rival+marcador, asi que DOS partidos distintos el mismo dia contra
@@ -173,8 +184,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v170';
-const CACHE_NAME = 'cronos-cache-v170';
+const VERSION    = 'v171';
+const CACHE_NAME = 'cronos-cache-v171';
 
 const ASSETS = [
     './',
