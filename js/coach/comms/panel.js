@@ -1494,7 +1494,15 @@ window._executeReportsSend = async function(method) {
                                 unreadByStaff: 1
                             });
                         }
-                    } catch(thErr) { console.warn('[Cronos] Error creando hilo staff:', thErr); }
+                    } catch(thErr) {
+                        console.warn('[Cronos] Error creando hilo staff:', {
+                            code: thErr && thErr.code,
+                            message: thErr && thErr.message,
+                            threadId,
+                            staffUid: uidToNotify,
+                            coachClubId: me.clubId || null,
+                        }, thErr);
+                    }
 
                     // ── 3. CORRECCIÓN PRINCIPAL: escribir cronos_player_reports ────
                     // El panel de Dirección/Coordinación (_sdLoadReports) SOLO lee

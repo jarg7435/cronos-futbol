@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v172
+//  CRONOS FUTBOL — Service Worker v173
+//  v173: el catch de 'Error creando hilo staff' ahora vuelca code+message+
+//         threadId+staffUid+clubId para diagnosticar el permission-denied de
+//         las reglas de cronos_messages (sin cambio de comportamiento).
 //  v172: logging de diagnostico opcional para informes (activar con
 //         window._cronosDiagReports = true en consola). Sin efecto en
 //         produccion si la bandera no esta activada. Registra por que se
@@ -188,8 +191,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v172';
-const CACHE_NAME = 'cronos-cache-v172';
+const VERSION    = 'v173';
+const CACHE_NAME = 'cronos-cache-v173';
 
 const ASSETS = [
     './',
