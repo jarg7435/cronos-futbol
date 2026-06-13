@@ -467,13 +467,9 @@ async function _loadParentList() {
 
         contacts.forEach(c => {
             // Buscamos si ya existe en los links de Firestore para no duplicar
-            // FIX (Problema 2): comparar email/teléfono normalizados.
-            const _ne = window._cronosNormEmail || (v => (v == null ? '' : String(v).trim().toLowerCase()));
-            const _np = window._cronosNormPhone || (v => (v == null ? '' : String(v)).replace(/\D/g, ''));
-            const _cEmail = _ne(c.email), _cPhone = _np(c.phone);
             const exists = links.find(l => 
-                (_cEmail && _ne(l.parentEmail) === _cEmail) || 
-                (_cPhone && (_np(l.parentPhone) === _cPhone || _np(l.parentWA) === _cPhone || _np(l.phone) === _cPhone)) ||
+                (c.email && l.parentEmail === c.email) || 
+                (c.phone && (l.parentPhone === c.phone || l.parentWA === c.phone || l.phone === c.phone)) ||
                 (c.uid && (l.parentUid === c.uid || l.uid === c.uid))
             );
             
@@ -949,14 +945,10 @@ async function sendMatchReportsToParents() {
 
                 mergedContacts = [...contacts];
                 links.forEach(l => {
-                    // FIX (Problema 2): comparar email/teléfono normalizados.
-                    const _ne2 = window._cronosNormEmail || (v => (v == null ? '' : String(v).trim().toLowerCase()));
-                    const _np2 = window._cronosNormPhone || (v => (v == null ? '' : String(v)).replace(/\D/g, ''));
-                    const _lEmail = _ne2(l.parentEmail), _lPhone = _np2(l.parentPhone);
                     const exists = mergedContacts.find(c => 
                         (l.parentUid && c.uid === l.parentUid) || 
-                        (_lEmail && _ne2(c.email) === _lEmail) ||
-                        (_lPhone && _np2(c.phone) === _lPhone)
+                        (l.parentEmail && c.email === l.parentEmail) ||
+                        (l.parentPhone && c.phone === l.parentPhone)
                     );
                     if (!exists) {
                         mergedContacts.push({
@@ -1239,34 +1231,6 @@ window._executeReportsSend = async function(method) {
         console.warn('[Cronos] Error recuperando vínculos:', errLinks);
     }
 
-    // FIX (Problema 2): fallback de link por parentUid SIN filtro de club.
-    // La query anterior trae links por clubId/individualOwnerId/coachUid, pero si
-    // el doc del link de un padre concreto tiene un clubId distinto/ausente,
-    // queda fuera del array y el match devuelve undefined aunque exista en
-    // Firestore. Este helper lo recupera puntualmente (cacheado).
-    const _linkFallbackCache = {};
-    async function _fetchLinkByParentUid(parentUid) {
-        if (!parentUid) return null;
-        if (Object.prototype.hasOwnProperty.call(_linkFallbackCache, parentUid)) {
-            return _linkFallbackCache[parentUid];
-        }
-        let found = null;
-        try {
-            const snap = await getDocs(query(collection(db, 'cronos_player_links'),
-                                             where('parentUid', '==', parentUid)));
-            snap.forEach(d => { if (!found) found = { _id: d.id, ...d.data() }; });
-            if (found) {
-                console.log('[Cronos][P2] link recuperado sin filtro de club por parentUid', parentUid,
-                    '(clubId del link:', found.clubId, 'vs me.clubId:', me.clubId, ')');
-                if (!links.some(l => l._id === found._id)) links.push(found);
-            }
-        } catch (e) {
-            console.warn('[Cronos][P2] fallback de link por parentUid falló:', e && e.message);
-        }
-        _linkFallbackCache[parentUid] = found;
-        return found;
-    }
-
     const scoreHome = document.getElementById('score-home')?.textContent || '0';
     const scoreAway = document.getElementById('score-away')?.textContent || '0';
     const rivalName = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES && TEAM_NAMES.away) ? TEAM_NAMES.away : 'Rival';
@@ -1348,9 +1312,7 @@ window._executeReportsSend = async function(method) {
     // Generar matchId compartido para todos los destinatarios de staff de este envío.
     // Así todos comparten el mismo conjunto de cronos_player_reports en lugar de
     // generar partidos duplicados en el panel de Dirección.
-    // FIX duplicados: matchId determinista (mismo helper que el auto-despacho)
-    // para que el envío manual escriba sobre los MISMOS docs que el auto.
-    const _sharedMatchId = _stableMatchId(me, rivalName);
+    const _sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
     let _staffReportsWritten = false; // guard: escribir docs de staff solo una vez por envío
     try {
         for (const r of recipients) {
@@ -1478,44 +1440,10 @@ window._executeReportsSend = async function(method) {
             } 
             else if (r.type === 'parent') {
                 // Find matched link
-                // FIX (Problema 2): normalizar email/teléfono al emparejar. Antes
-                // l.parentEmail === r.email y l.parentPhone === r.phone fallaban
-                // por diferencias de case/espacios o prefijo de país (+34), de modo
-                // que link quedaba undefined aunque el doc existiera en Firestore.
-                const _normEmail = window._cronosNormEmail || (v => (v == null ? '' : String(v).trim().toLowerCase()));
-                const _normPhone = window._cronosNormPhone || (v => (v == null ? '' : String(v)).replace(/\D/g, ''));
-                const _rEmail = _normEmail(r.email);
-                const _rPhone = _normPhone(r.phone);
                 let link = links.find(l => (r.id && r.id.includes('p_') === false ? l.parentUid === r.id : false)
-                                          || (_rEmail && _normEmail(l.parentEmail) === _rEmail)
-                                          || (_rPhone && _normPhone(l.parentPhone) === _rPhone));
-
-                // Fallback (Problema 2): si seguimos sin link pero el recipient trae
-                // datos del jugador, intentar localizar el link por playerNumber/
-                // playerAlias para recuperar parentUid y la identidad correcta.
-                if (!link && (r.playerNumber != null || r.playerId || r.playerAlias)) {
-                    link = links.find(l =>
-                        (r.playerNumber != null && l.playerNumber != null && String(l.playerNumber) === String(r.playerNumber)) ||
-                        (r.playerId && l.playerId && l.playerId === r.playerId) ||
-                        (r.playerAlias && l.playerAlias && String(l.playerAlias).trim().toLowerCase() === String(r.playerAlias).trim().toLowerCase())
-                    ) || link;
-                }
-
-                // Fallback (Problema 2): si el recipient es un parentUid real y
-                // aún no hay link, consultarlo SIN filtro de club (cubre el caso
-                // de link con clubId distinto/ausente o me.clubId nulo).
-                if (!link && r.id && !String(r.id).startsWith('p_')) {
-                    link = await _fetchLinkByParentUid(r.id);
-                }
-
-                // Diagnóstico (Problema 2): si no hay link, distinguir entre "el
-                // link no se cargó por clubId" (filtro de la query) y "no casó".
-                if (!link) {
-                    console.warn('[Cronos][P2] link no encontrado para destinatario', r.label,
-                        { meClubId: me.clubId, linksCargados: links.length,
-                          rEmail: _rEmail, rPhone: _rPhone, rId: r.id });
-                }
-
+                                          || (r.email && l.parentEmail === r.email) 
+                                          || (r.phone && l.parentPhone === r.phone));
+                
                 // Fallback: si no hay link en Firestore pero el recipient tiene info de jugador (manual)
                 const fallbackPlayerId = r.playerId;
                 const fallbackPlayerNum = r.playerNumber;
@@ -1548,22 +1476,13 @@ window._executeReportsSend = async function(method) {
                 }
 
                 // Save in cronos_player_reports (for UI queries)
-                // FIX v2: Usar ID determinista y type='parent_player_report' para que
-                // el documento se pueda deduplicar correctamente en el panel de padres.
-                // Antes usaba `rpt_${player.number}_${Date.now()}` que era aleatorio →
-                // no se deduplicaba y el padre veía el informe duplicado.
-                const targetPuid = link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id);
-                const manualMatchId = _sharedMatchId || _stableMatchId(me, rivalName);
-                const reportId = targetPuid
-                    ? `${manualMatchId}_parent_${targetPuid}_p${player.number}`
-                    : `rpt_${player.number}_${Date.now().toString(36)}`;
+                // FIX: solo se ejecuta si auto-despacho NO lo hizo ya
+                const reportId = `rpt_${player.number}_${Date.now().toString(36)}`;
                 await setDoc(doc(db, 'cronos_player_reports', reportId), {
                     reportId,
-                    matchId:        manualMatchId,
-                    type:           'parent_player_report',
                     playerNumber:   player.number,
                     playerAlias:    player.name || player.alias || 'Jugador',
-                    parentUid:      targetPuid,
+                    parentUid:      (link ? link.parentUid : (r.id.startsWith('p_') ? null : r.id)),
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
                     matchDate, rival: rivalName,
@@ -1681,24 +1600,6 @@ window._executeReportsSend = async function(method) {
     }
 }
 
-// ── matchId estable por partido (FIX informes duplicados) ──────────────
-// Deriva un identificador determinista del partido para que los IDs de los
-// documentos de informe sean idempotentes entre múltiples disparos del fin
-// de partido (crono + botón manual + expulsiones + recargas). NO incluye el
-// marcador para que un gol en el último segundo no genere un matchId nuevo.
-function _stableMatchId(me, rivalName) {
-    if (typeof liveMatchId !== 'undefined' && liveMatchId) {
-        return `match_${liveMatchId}`;
-    }
-    const uid   = (me && me.uid) || 'u';
-    const date  = new Date().toISOString().split('T')[0];
-    const home  = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || '';
-    const rival = rivalName || (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || '';
-    // Normalizar para que sea válido como ID de documento Firestore.
-    const slug  = `${home}_vs_${rival}`.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60);
-    return `match_${uid}_${date}_${slug}`;
-}
-
 // ── Despacho automático de informes (Interno) ──────────────────────────
 async function autoDispatchMatchReports() {
     const me = window._cronosCurrentUser;
@@ -1730,37 +1631,6 @@ async function autoDispatchMatchReports() {
         const links = [];
         linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
 
-        // FIX (Problema 2): fallback de links SIN filtro de club. La query de
-        // arriba solo trae links con clubId == me.clubId; si me.clubId es null o
-        // el doc del link de un jugador tiene un clubId distinto/ausente, ese
-        // padre queda fuera de `links` y nunca recibe su informe. Este helper
-        // recupera los links de un dorsal concreto consultando por playerNumber
-        // (cacheado) y los incorpora a `links`. Se invoca por jugador solo cuando
-        // el match por club no encontró ningún padre vinculado.
-        const _linkFallbackCache = {};
-        async function _fetchLinksByPlayerNumber(playerNumber) {
-            const key = String(playerNumber || '');
-            if (!key) return [];
-            if (Object.prototype.hasOwnProperty.call(_linkFallbackCache, key)) {
-                return _linkFallbackCache[key];
-            }
-            let found = [];
-            try {
-                const snap = await getDocs(query(collection(db, 'cronos_player_links'),
-                                                 where('playerNumber', '==', key)));
-                snap.forEach(d => found.push({ _id: d.id, ...d.data() }));
-                if (found.length) {
-                    console.log('[Cronos][P2][auto] links recuperados sin filtro de club por playerNumber', key,
-                        '→', found.length, '(me.clubId:', me.clubId, ')');
-                    found.forEach(f => { if (!links.some(l => l._id === f._id)) links.push(f); });
-                }
-            } catch (e) {
-                console.warn('[Cronos][P2][auto] fallback de links por playerNumber falló:', e && e.message);
-            }
-            _linkFallbackCache[key] = found;
-            return found;
-        }
-
         if (typeof loadEmailConfig === 'function') await loadEmailConfig();
         const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
 
@@ -1782,15 +1652,8 @@ async function autoDispatchMatchReports() {
                           `Informes individuales generados y enviados a padres autorizados.\n` +
                           `_Cronos Fútbol_`;
 
-        // ── matchId compartido y DETERMINISTA para este partido ──────────
-        // FIX duplicados: antes usaba Date.now(), así que cada disparo del fin
-        // de partido que se colaba por los guards generaba un matchId distinto
-        // → setDoc creaba un doc nuevo (no idempotente) y el dedup del panel
-        // del padre (agrupa por matchId+playerNumber) no podía colapsarlos.
-        // Ahora el ID se deriva de la identidad estable del partido
-        // (liveMatchId si existe; si no, uid+fecha+rival), de modo que TODOS
-        // los despachos del mismo partido escriben sobre los MISMOS docs.
-        const sharedMatchId = _stableMatchId(me, rivalName);
+        // ── Generar un matchId compartido para este partido ──────────────
+        const sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
 
         // ── Resolver destinatarios staff ANTES de escribir reports ──────────
         // FIX: antes los staff reports se escribían sin staffUids, así que los
@@ -1882,18 +1745,9 @@ async function autoDispatchMatchReports() {
                              `_Cronos Fútbol_`;
 
             // Buscar padres vinculados (por Firestore links)
-            let linkedParents = links.filter(l =>
+            const linkedParents = links.filter(l =>
                 (l.playerId === player.playerId || String(l.playerNumber) === String(player.number))
                 && l.parentUid);
-
-            // Fallback (Problema 2): si por el filtro de clubId no salió ningún
-            // padre vinculado para este dorsal, reintentar SIN filtro de club.
-            if (!linkedParents.length) {
-                await _fetchLinksByPlayerNumber(player.number);
-                linkedParents = links.filter(l =>
-                    (l.playerId === player.playerId || String(l.playerNumber) === String(player.number))
-                    && l.parentUid);
-            }
             
             // Buscar padres desde contactos manuales autorizados
             const manualParents = contacts.filter(c => {
@@ -1913,37 +1767,27 @@ async function autoDispatchMatchReports() {
                 if (!pUid) continue;
 
                 // ── Guardar en cronos_player_reports para el panel del padre ──
-                // FIX v2: Verificar si el documento ya existe antes de escribir.
-                // Si el partido se despachó previamente (auto o manual), el doc
-                // ya existe y setDoc lo sobreescribiría con los mismos datos.
-                // Pero si se ejecuta por una ruta sin guard, se crearía duplicado.
-                // Usamos un ID determinista basado en matchId + parentUid + playerNumber
-                // para que setDoc sea idempotente (sobreescribe el mismo doc, no crea otro).
                 const prId = `${sharedMatchId}_parent_${pUid}_p${player.number}`;
-                try {
-                    await setDoc(doc(db, 'cronos_player_reports', prId), {
-                        matchId:       sharedMatchId,
-                        type:          'parent_player_report',
-                        parentUid:     pUid,
-                        clubId:        me.clubId || null,
-                        coachUid:      me.uid,
-                        coachEmail:    me.email,
-                        matchDate:     new Date().toISOString().split('T')[0],
-                        rival:         rivalName,
-                        scoreHome,
-                        scoreAway,
-                        createdAt:     new Date().toISOString(),
-                        playerNumber:  String(player.number || ''),
-                        playerAlias:   player.alias || player.name || '',
-                        goals:         player.goals  || 0,
-                        cards:         player.cards  || 'ninguna',
-                        injured:       player.injured || false,
-                        minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
-                        history:       _parseHistoryForFirestore(player.history || []),
-                    });
-                } catch(parentDocErr) {
-                    console.warn(`[AutoDispatch] No se pudo escribir doc padre ${prId}:`, parentDocErr.message);
-                }
+                await setDoc(doc(db, 'cronos_player_reports', prId), {
+                    matchId:       sharedMatchId,
+                    type:          'parent_player_report',
+                    parentUid:     pUid,
+                    clubId:        me.clubId || null,
+                    coachUid:      me.uid,
+                    coachEmail:    me.email,
+                    matchDate:     new Date().toISOString().split('T')[0],
+                    rival:         rivalName,
+                    scoreHome,
+                    scoreAway,
+                    createdAt:     new Date().toISOString(),
+                    playerNumber:  String(player.number || ''),
+                    playerAlias:   player.alias || player.name || '',
+                    goals:         player.goals  || 0,
+                    cards:         player.cards  || 'ninguna',
+                    injured:       player.injured || false,
+                    minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
+                    history:       _parseHistoryForFirestore(player.history || []),
+                });
 
                 // ── Enviar mensaje al hilo de chat ───────────────────────────
                 const threadId = `${me.uid}_${pUid}`;
@@ -3854,116 +3698,64 @@ window.openMisInformes = async function openMisInformes() {
             window.sdDownloadInforme(key64);
         };
 
-        // Eliminar informe del entrenador — FIX v2: SIEMPRE usa soft delete (dismissedBy)
+        // Eliminar informe — FIX v2: SIEMPRE soft delete (dismissedBy)
         // El borrado físico eliminaba el documento para TODOS los roles (Director y
         // Coordinador lo perdían). Ahora se añade el UID del usuario al array
-        // `dismissedBy` del documento en Firestore. Así cada rol borra independientemente.
-        // Solo se hace borrado físico si el usuario es el coachUid (autor del informe).
+        // `dismissedBy` en Firestore. Así cada rol borra independientemente.
         window.miEliminarInforme = async (key64, realDelete = false) => {
             const key = decodeURIComponent(escape(atob(key64)));
             const m   = window._misInformesData?.[key];
             if (!m) return;
-
             const me = window._cronosCurrentUser;
-            const isCoach = me && m.coachUid && me.uid === m.coachUid;
 
-            // Si es el coach autor, preguntar si quiere borrado físico o soft
-            // Si NO es el coach (director/coordinador), siempre soft delete
-            let doPhysicalDelete = false;
-            if (isCoach && realDelete) {
-                doPhysicalDelete = confirm(
-                    '¿Deseas eliminar este informe DEFINITIVAMENTE de la base de datos?\n' +
-                    'Esta acción no se puede deshacer y TODOS los roles lo perderán.\n\n' +
-                    'Pulsa Cancelar para ocultarlo solo de tu panel en vez de borrarlo.'
-                );
-            }
+            // Soft delete: ocultar SOLO para este usuario
+            if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
 
-            if (doPhysicalDelete && isCoach) {
-                // Borrado físico: solo el coach puede borrar sus propios informes
-                try {
-                    const { db, doc, deleteDoc } = await _cFS();
-                    if (typeof showSpinner === 'function') showSpinner('Eliminando de la base de datos…');
+            try {
+                const { db, doc, updateDoc, arrayUnion } = await _cFS();
+                if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
 
-                    const deletePromises = m.players.flatMap(p => {
-                        const docIds = [];
-                        if (p._id || p.id) docIds.push(p._id || p.id);
-                        const mid = m.matchId;
-                        if (mid && mid !== 'undefined' && mid !== '') {
-                            const pNum = p.playerNumber || p.number || '';
-                            if (pNum) {
-                                docIds.push(`${mid}_coach_p${pNum}`);
-                                docIds.push(`${mid}_staff_p${pNum}`);
-                                docIds.push(`${mid}_p${pNum}`);
-                            }
+                const updatePromises = m.players.flatMap(p => {
+                    const docIds = [];
+                    // Prioridad 1: ID real del documento
+                    if (p._id || p.id) docIds.push(p._id || p.id);
+                    // Prioridad 2: IDs derivados si matchId es válido
+                    const mid = m.matchId;
+                    if (mid && mid !== 'undefined' && mid !== '') {
+                        const pNum = p.playerNumber || p.number || '';
+                        if (pNum) {
+                            docIds.push(`${mid}_coach_p${pNum}`);
+                            docIds.push(`${mid}_staff_p${pNum}`);
+                            docIds.push(`${mid}_p${pNum}`);
                         }
-                        const uniqueIds = [...new Set(docIds)];
-                        return uniqueIds.map(docId =>
-                            deleteDoc(doc(db, 'cronos_player_reports', docId)).catch(err => {
-                                console.warn(`[MisInformes] No se pudo borrar ${docId}:`, err.message);
-                            })
-                        );
-                    });
-                    await Promise.all(deletePromises);
+                    }
+                    const uniqueIds = [...new Set(docIds)];
+                    return uniqueIds.map(docId =>
+                        updateDoc(doc(db, 'cronos_player_reports', docId), {
+                            dismissedBy: arrayUnion(me.uid)
+                        }).catch(err => {
+                            console.warn(`[MisInformes] No se pudo ocultar ${docId}:`, err.message);
+                        })
+                    );
+                });
+                await Promise.all(updatePromises);
 
-                    if (typeof hideSpinner === 'function') hideSpinner();
-                    if (typeof showToast === 'function') showToast('✅ Informe eliminado de la nube', 3000);
-                } catch (err) {
-                    if (typeof hideSpinner === 'function') hideSpinner();
-                    console.error('[MisInformes] Error al borrar:', err);
-                    if (typeof showToast === 'function') showToast('⚠️ Error al eliminar: ' + err.message, 3000);
-                    return;
-                }
-            } else {
-                // Soft delete: añadir mi UID a dismissedBy en Firestore
-                // Esto oculta el informe SOLO para mí, sin afectar a otros roles
-                if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
-
-                try {
-                    const { db, doc, updateDoc, arrayUnion } = await _cFS();
-                    if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
-
-                    const updatePromises = m.players.flatMap(p => {
-                        const docIds = [];
-                        // Prioridad 1: ID real del documento
-                        if (p._id || p.id) docIds.push(p._id || p.id);
-                        // Prioridad 2: IDs derivados si matchId es válido
-                        const mid = m.matchId;
-                        if (mid && mid !== 'undefined' && mid !== '') {
-                            const pNum = p.playerNumber || p.number || '';
-                            if (pNum) {
-                                docIds.push(`${mid}_coach_p${pNum}`);
-                                docIds.push(`${mid}_staff_p${pNum}`);
-                                docIds.push(`${mid}_p${pNum}`);
-                            }
-                        }
-                        const uniqueIds = [...new Set(docIds)];
-                        return uniqueIds.map(docId =>
-                            updateDoc(doc(db, 'cronos_player_reports', docId), {
-                                dismissedBy: arrayUnion(me.uid)
-                            }).catch(err => {
-                                console.warn(`[MisInformes] No se pudo ocultar ${docId}:`, err.message);
-                            })
-                        );
-                    });
-                    await Promise.all(updatePromises);
-
-                    if (typeof hideSpinner === 'function') hideSpinner();
-                    if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
-                } catch (err) {
-                    if (typeof hideSpinner === 'function') hideSpinner();
-                    console.error('[MisInformes] Error al ocultar:', err);
-                    if (typeof showToast === 'function') showToast('⚠️ Error al ocultar: ' + err.message, 3000);
-                    // Fallback: ocultar localmente aunque falle Firestore
-                    const dismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
-                    if (!dismissed.includes(key)) dismissed.push(key);
-                    localStorage.setItem('cronos_mi_dismissed_info', JSON.stringify(dismissed));
-                }
+                if (typeof hideSpinner === 'function') hideSpinner();
+                if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
+            } catch (err) {
+                if (typeof hideSpinner === 'function') hideSpinner();
+                console.error('[MisInformes] Error al ocultar:', err);
+                if (typeof showToast === 'function') showToast('⚠️ Error al ocultar: ' + err.message, 3000);
+                // Fallback: ocultar localmente aunque falle Firestore
+                const dismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
+                if (!dismissed.includes(key)) dismissed.push(key);
+                localStorage.setItem('cronos_mi_dismissed_info', JSON.stringify(dismissed));
             }
 
             // Quitar de la UI
             const card = document.getElementById(`mi-rp-${key64}`);
             if (card) card.remove();
-
+            
             // Actualizar contador
             const currentCount = Object.keys(window._misInformesData).length - 1;
             const body = document.getElementById('mis-informes-body');
@@ -3971,7 +3763,7 @@ window.openMisInformes = async function openMisInformes() {
                 const title = body.querySelector('div');
                 if (title) title.innerHTML = `${currentCount} partido${currentCount!==1?'s':''} · Informes actualizados`;
             }
-
+            
             delete window._misInformesData[key];
         };
 
