@@ -1632,11 +1632,20 @@ window._executeReportsSend = async function(method) {
                     const msgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
                     try {
                         // Intentar actualizar el hilo existente (añadir mensaje)
+                        // FIX (v179): añadir staffUid/parentUid/participants/clubId al updateDoc
+                        // para que los hilos creados por versiones anteriores (sin estos campos)
+                        // también sean encontrados por las consultas del director/coordinador.
                         await updateDoc(doc(db, 'cronos_messages', threadId), {
                             messages: arrayUnion(msgEntry),
                             lastMessage: '📊 Informe colectivo de partido',
                             lastMessageAt: msgEntry.timestamp,
-                            unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
+                            unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
+                            // FIX (v179): campos de identidad para consultas del director/coordinador
+                            staffUid:      uidToNotify,
+                            parentUid:     uidToNotify,   // club-reports.js busca por parentUid
+                            participants:  arrayUnion(me.uid, uidToNotify),
+                            clubId:        me.clubId || null,
+                            recipientType: 'staff'
                         });
                     } catch(updateErr) {
                         // Si update falla (hilo no existe o sin permiso de update),
@@ -2035,6 +2044,9 @@ async function autoDispatchMatchReports() {
         console.log('[StaffReport] Intentando enviar informe staff. clubId:', me?.clubId, 'players:', (homePlayers || []).length);
         for (const p of homePlayers) {
             const srId = `${sharedMatchId}_staff_p${p.number}`;
+            // FIX (v179): setDoc con {merge:true} para PRESERVAR campos existentes
+            // (p.ej. dismissedBy) al re-despachar. Sin merge, setDoc sobreescribe
+            // el documento completo y pierde dismissedBy → el informe "vuelve a aparecer".
             await setDoc(doc(db, 'cronos_player_reports', srId), {
                 matchId:       sharedMatchId,
                 type:          'staff_match_report',
@@ -2057,8 +2069,8 @@ async function autoDispatchMatchReports() {
                 injured:       p.injured || false,
                 minutesPlayed: typeof formatTime === 'function' ? formatTime(p.time || 0) : String(p.time || 0),
                 history:       _parseHistoryForFirestore(p.history || []),
-            });
-            console.log('[StaffReport] Documento staff escrito:', srId);
+            }, { merge: true });
+            console.log('[StaffReport] Documento staff escrito (merge):', srId);
         }
 
         // ── Notificar al staff (coordinador + director) ──────────────────
@@ -2095,11 +2107,20 @@ async function autoDispatchMatchReports() {
             const staffMsgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
             try {
                 // Intentar actualizar el hilo existente (añadir mensaje)
+                // FIX (v179): añadir staffUid/parentUid/participants/clubId al updateDoc
+                // para que los hilos creados por versiones anteriores (sin estos campos)
+                // también sean encontrados por las consultas del director/coordinador.
                 await updateDoc(doc(db, 'cronos_messages', threadId), {
                     messages: arrayUnion(staffMsgEntry),
                     lastMessage: '📊 Informe colectivo de partido',
                     lastMessageAt: staffMsgEntry.timestamp,
-                    unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
+                    unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
+                    // FIX (v179): campos de identidad para consultas del director/coordinador
+                    staffUid:      staff.uid,
+                    parentUid:     staff.uid,     // club-reports.js busca por parentUid
+                    participants:  arrayUnion(me.uid, staff.uid),
+                    clubId:        me.clubId || null,
+                    recipientType: 'staff'
                 });
             } catch(updateErr) {
                 // Si falla update (hilo no existe), crear con setDoc
@@ -3799,7 +3820,7 @@ window._sendCollectiveReportNow = async function() {
                 // history: array de eventos {type, minute} — clave para el Gantt
                 // p.history puede contener strings "Entra a las MM:SS (1ªP)" O objetos {type,minute}
                 history: _parseHistoryForFirestore(p.history || []),
-            });
+            }, { merge: true }); // FIX (v179): merge para preservar dismissedBy al re-despachar
         }
 
         // ── 2. Enviar mensaje de hilo a cada miembro del staff ───────────
@@ -3823,6 +3844,12 @@ window._sendCollectiveReportNow = async function() {
                         lastMessageAt: createdAt,
                         unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore)
                             ? firebase.firestore.FieldValue.increment(1) : 1,
+                        // FIX (v179): campos de identidad para consultas del director/coordinador
+                        staffUid:      s.uid,
+                        parentUid:     s.uid,         // club-reports.js busca por parentUid
+                        participants:  arrayUnion(me.uid, s.uid),
+                        clubId:        me.clubId || null,
+                        recipientType: 'staff'
                     });
                 } catch(updErr) {
                     try {
