@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v173
+//  CRONOS FUTBOL — Service Worker v174
+//  v174: dos bugs confirmados del envio de informes:
+//         Bug 1 (clubId null): _cResolveClubId lee clubId de users/{uid}
+//           cuando el token no trae el claim -> staff y padres dejan de
+//           recibir por sameClubAsDoc(null). Aplicado en ambas rutas.
+//         Bug 2 (contacto manual): _cronosResolveParentReportTargets empareja
+//           por playerId/dorsal de forma robusta (J10/J-10/playerNumber) para
+//           recuperar el parentUid del link; el target lleva su contacto y la
+//           ruta manual reempareja con las MISMAS vias que el helper.
 //  v173: el catch de 'Error creando hilo staff' ahora vuelca code+message+
 //         threadId+staffUid+clubId para diagnosticar el permission-denied de
 //         las reglas de cronos_messages (sin cambio de comportamiento).
@@ -191,8 +199,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v173';
-const CACHE_NAME = 'cronos-cache-v173';
+const VERSION    = 'v174';
+const CACHE_NAME = 'cronos-cache-v174';
 
 const ASSETS = [
     './',

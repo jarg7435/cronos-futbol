@@ -113,11 +113,21 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
 
         // Resolver el link de Firestore de este contacto para obtener
         // inviteCode + parentUid REAL (registrado en la app).
+        // FIX Bug 2: para contactos manuales con playerId 'J10' que no tienen uid,
+        // el emparejado por inviteCode/dorsal debe ser ROBUSTO (normalizar ambos
+        // lados con _cronosExtractDorsal) para recuperar el parentUid del link,
+        // tolerando variaciones como 'J-10', espacios o mayúsculas.
+        const _cDorsal = _cronosExtractDorsal(c.playerId);
         const link = (links || []).find(l => {
             if (!l) return false;
             if (c.uid && (l.parentUid === c.uid || l.uid === c.uid)) return true;
             if (c.id && (l._id === c.id || l.id === c.id)) return true;
             if (c.playerId && (l.inviteCode === c.playerId || ('J' + l.playerNumber) === c.playerId)) return true;
+            // Emparejado robusto por dorsal: inviteCode del link (J10) o playerNumber (10).
+            if (_cDorsal && (
+                _cronosExtractDorsal(l.inviteCode) === _cDorsal ||
+                String(l.playerNumber) === _cDorsal
+            )) return true;
             if (c.email && l.parentEmail && _normEmail(l.parentEmail) === _normEmail(c.email)) return true;
             return false;
         }) || null;
@@ -139,7 +149,7 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
         seenParentUid.add(parentUid);
 
         if (_diag) console.log('[DiagReports][padre OK]', { id: c.id, name: c.name, parentUid, dorsal });
-        out.push({ parentUid, dorsal: String(dorsal), player });
+        out.push({ parentUid, dorsal: String(dorsal), player, contact: c });
     }
     if (_diag) console.log('[DiagReports] Resultado: ' + out.length + ' informe(s) de padre.');
     return out;
@@ -149,6 +159,37 @@ if (typeof window !== 'undefined') {
     window._cronosResolveParentReportTargets = _cronosResolveParentReportTargets;
     window._cronosExtractDorsal = _cronosExtractDorsal;
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  HELPER (Bug 1 / v174): resolver el clubId del usuario actual.
+//  Si me.clubId ya existe lo devuelve; si no (el custom claim aún no se
+//  propagó al token), lo lee de users/{uid} en Firestore — el mismo patrón
+//  que parent/panel.js y app-init.js. Sin un clubId válido las reglas de
+//  cronos_messages / cronos_notifications / cronos_player_reports rechazan
+//  el envío al staff y a los padres (sameClubAsDoc(null) falla).
+//  Cachea el resultado en window._cronosCurrentUser.clubId para esta sesión.
+//  fns: { doc, getDoc }.
+// ════════════════════════════════════════════════════════════════════
+async function _cResolveClubId(db, me, fns) {
+    if (me && me.clubId) return me.clubId;
+    if (!me || !me.uid || !fns || !fns.doc || !fns.getDoc) return null;
+    try {
+        const snap = await fns.getDoc(fns.doc(db, 'users', me.uid));
+        if (snap && snap.exists()) {
+            const d = snap.data() || {};
+            const cid = d.clubId
+                || (Array.isArray(d.allRoles) ? (d.allRoles.find(r => r && r.clubId) || {}).clubId : null)
+                || null;
+            // Cachear en el usuario en memoria para futuras llamadas de la sesión.
+            if (cid && window._cronosCurrentUser) window._cronosCurrentUser.clubId = cid;
+            return cid;
+        }
+    } catch (e) {
+        console.warn('[Cronos] No se pudo resolver clubId desde Firestore:', e && e.message);
+    }
+    return null;
+}
+if (typeof window !== 'undefined') window._cResolveClubId = _cResolveClubId;
 //
 //  ESTRATEGIA (en orden de fiabilidad):
 //  1. emailConfig.contacts guardado por el entrenador (FUENTE PRINCIPAL)
@@ -1304,6 +1345,12 @@ window._executeReportsSend = async function(method) {
     }
 
     const { db, collection, getDocs, query, where, doc, getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
+
+    // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
+    // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
+    // el envío al staff y a los padres. Se cachea en me.clubId para esta sesión.
+    const _clubId = await _cResolveClubId(db, me, { doc, getDoc });
+    if (_clubId && !me.clubId) me.clubId = _clubId;
     
     // Obtener vínculos con timeout de seguridad y soporte para Admin Individual
     const links = [];
@@ -1577,17 +1624,29 @@ window._executeReportsSend = async function(method) {
                     _parentTargetsByUid = new Map(_parentTargetsManual.map(t => [t.parentUid, t]));
                 }
 
-                // Resolver el parentUid de ESTE recipient (mismo emparejado que el helper).
+                // Emparejar el recipient contra los targets YA validados por el
+                // helper, usando los MISMOS campos que el helper (uid/id/email/phone).
+                // FIX Bug 2: antes se re-resolvía recipientParentUid con menos vías
+                // (solo parentUid/email/phone), lo que dejaba fuera a contactos
+                // manuales emparejados por playerId/id/uid -> falsos "omitido".
                 const _normE = (e) => (typeof window._cronosNormEmail === 'function')
                     ? window._cronosNormEmail(e) : String(e || '').trim().toLowerCase();
-                const link = links.find(l =>
-                    (r.id && r.id.includes('p_') === false && l.parentUid === r.id) ||
-                    (r.email && l.parentEmail && _normE(l.parentEmail) === _normE(r.email)) ||
-                    (r.phone && l.parentPhone === r.phone)) || null;
-                const recipientParentUid = (link && link.parentUid) || (r.id && !r.id.startsWith('p_') ? r.id : null);
 
-                // Solo se envía si este padre está entre los destinatarios válidos.
-                const target = recipientParentUid ? _parentTargetsByUid.get(recipientParentUid) : null;
+                // 1) Por parentUid directo (r.id es un UID).
+                let target = (r.id && !r.id.startsWith('p_'))
+                    ? _parentTargetsByUid.get(r.id) : null;
+
+                // 2) Si no, emparejar por el contacto que originó cada target.
+                if (!target) {
+                    target = _parentTargetsManual.find(t => {
+                        const c = t.contact || {};
+                        return (c.uid && r.id && c.uid === r.id)
+                            || (c.id && r.id && c.id === r.id)
+                            || (r.email && c.email && _normE(c.email) === _normE(r.email))
+                            || (r.phone && c.phone && c.phone === r.phone);
+                    }) || null;
+                }
+
                 if (!target) {
                     // Hijo no convocado / sin inviteCode válido / sin parentUid → omitir en silencio.
                     console.log('[ManualDispatch] Destinatario padre omitido (no cumple regla estricta v171):', r.label || r.id);
@@ -1648,7 +1707,7 @@ window._executeReportsSend = async function(method) {
                             threadId, coachUid: me.uid, coachEmail: me.email,
                             clubId: me.clubId || null,                           // ← FIX: para reglas Firestore
                             participants: [me.uid, targetParentUid],              // ← FIX: para reglas Firestore
-                            parentUid: targetParentUid, parentEmail: (link ? link.parentEmail : r.email) || '',
+                            parentUid: targetParentUid, parentEmail: (target.contact && target.contact.email) || r.email || '',
                             messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
                             lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
                         });
@@ -1741,9 +1800,15 @@ async function autoDispatchMatchReports() {
     if (!me || !window.players) return;
 
     try {
-        const { setDoc, doc, collection, getDocs, query, where, updateDoc, arrayUnion } = await import(
+        const { setDoc, doc, getDoc, collection, getDocs, query, where, updateDoc, arrayUnion } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const db = window._cronos_auth.db;
+
+        // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
+        // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
+        // el envío al staff (director/coordinador) y a los padres.
+        const _clubId = await _cResolveClubId(db, me, { doc, getDoc });
+        if (_clubId && !me.clubId) me.clubId = _clubId;
 
         // E3 (punto 2): sin clubId válido, las reglas Firestore
         // (sameClubAsDoc) impiden que el panel de Dirección lea los

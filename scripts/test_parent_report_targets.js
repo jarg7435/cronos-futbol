@@ -74,6 +74,41 @@ assert('extractDorsal "ABC" -> null', extractDorsal('ABC') === null);
   assert('CASO 2: parentUid correcto', out[0] && out[0].parentUid === 'uid_padre10');
   assert('CASO 2: dorsal correcto', out[0] && out[0].dorsal === '10');
   assert('CASO 2: jugador correcto', out[0] && out[0].player.number === 10);
+  assert('CASO 2: target incluye contact (Bug 2)', out[0] && out[0].contact && out[0].contact.id === 'p1');
+}
+
+// ── Bug 2: contacto manual con playerId 'J10' (sin uid) resuelve parentUid del link ──
+{
+  const contacts = [
+    { id: 'cManual', type: 'parent', name: 'Bruna Martin Perez', playerId: 'J10', tags: ['rpt'] },
+  ];
+  const out = resolve(contacts, links, homePlayers);
+  assert('Bug 2: playerId J10 (sin uid) -> resuelve parentUid del link',
+    out.length === 1 && out[0].parentUid === 'uid_padre10' && out[0].dorsal === '10');
+  assert('Bug 2: target.contact preservado', out[0] && out[0].contact && out[0].contact.id === 'cManual');
+}
+
+// ── Bug 2: emparejado robusto por dorsal con inviteCode 'J-10' en el link ──
+{
+  const linksGuion = [
+    { _id: 'g10', parentUid: 'uid_guion', inviteCode: 'J-10', playerNumber: 10, parentEmail: 'g@mail.com' },
+  ];
+  const contacts = [
+    { id: 'cg', type: 'parent', name: 'Manual guion', playerId: 'J10', tags: ['rpt'] },
+  ];
+  const out = resolve(contacts, linksGuion, homePlayers);
+  assert('Bug 2: inviteCode J-10 empareja con playerId J10 (normalizado)',
+    out.length === 1 && out[0].parentUid === 'uid_guion' && out[0].dorsal === '10');
+}
+
+// ── Bug 2: playerId convocado pero NINGÚN link aporta parentUid -> omitir ──
+{
+  const contacts = [
+    { id: 'cNoLink', type: 'parent', name: 'Sin link', playerId: 'J7', tags: ['rpt'] },
+  ];
+  const sinLink7 = links.filter(l => l.playerNumber !== 7);
+  assert('Bug 2: playerId J7 sin link con parentUid -> 0 informes',
+    resolve(contacts, sinLink7, homePlayers).length === 0);
 }
 
 // ── CASO 3: padre con hijo NO convocado -> nada ──────────────────────────
@@ -203,10 +238,61 @@ async function testStaffAlwaysIncluded() {
   assert('CASO 1: padre nunca como staff',          !uids.includes('uid_padre10'));
 }
 
-testStaffAlwaysIncluded().then(() => {
-  console.log('\n' + (failed === 0 ? 'OK' : 'FALLOS') + ': ' + passed + ' passed, ' + failed + ' failed');
-  process.exit(failed === 0 ? 0 : 1);
-}).catch(err => {
-  console.error('Error ejecutando testStaffAlwaysIncluded:', err);
-  process.exit(1);
-});
+// ── Bug 1: _cResolveClubId lee clubId de users/{uid} cuando me.clubId es null ──
+async function testResolveClubId() {
+  const sb = { window: {}, console };
+  vm.createContext(sb);
+  vm.runInContext(extractFn('_cResolveClubId'), sb);
+  const resolveClub = sb._cResolveClubId;
+
+  // (a) me.clubId ya presente -> lo devuelve sin tocar Firestore.
+  {
+    const r = await resolveClub({}, { uid: 'u1', clubId: 'CLUB_X' }, null);
+    assert('Bug 1: devuelve me.clubId si ya existe', r === 'CLUB_X');
+  }
+
+  // (b) me.clubId null pero users/{uid}.clubId presente.
+  {
+    const fns = {
+      doc: () => ({}),
+      getDoc: async () => ({ exists: () => true, data: () => ({ clubId: 'CLUB_FS' }) }),
+    };
+    sb.window._cronosCurrentUser = { uid: 'u2' };
+    const r = await resolveClub({}, { uid: 'u2', clubId: null }, fns);
+    assert('Bug 1: lee clubId de users/{uid}', r === 'CLUB_FS');
+    assert('Bug 1: cachea en _cronosCurrentUser', sb.window._cronosCurrentUser.clubId === 'CLUB_FS');
+  }
+
+  // (c) me.clubId null y users/{uid} sin clubId pero con allRoles[].clubId.
+  {
+    const fns = {
+      doc: () => ({}),
+      getDoc: async () => ({ exists: () => true, data: () => ({ allRoles: [{ role: 'coach' }, { role: 'parent', clubId: 'CLUB_ROLE' }] }) }),
+    };
+    sb.window._cronosCurrentUser = { uid: 'u3' };
+    const r = await resolveClub({}, { uid: 'u3', clubId: null }, fns);
+    assert('Bug 1: fallback a allRoles[].clubId', r === 'CLUB_ROLE');
+  }
+
+  // (d) sin clubId en ningún sitio -> null (no empeora el comportamiento).
+  {
+    const fns = {
+      doc: () => ({}),
+      getDoc: async () => ({ exists: () => true, data: () => ({}) }),
+    };
+    sb.window._cronosCurrentUser = { uid: 'u4' };
+    const r = await resolveClub({}, { uid: 'u4', clubId: null }, fns);
+    assert('Bug 1: sin clubId en Firestore -> null', r === null);
+  }
+}
+
+Promise.resolve()
+  .then(testStaffAlwaysIncluded)
+  .then(testResolveClubId)
+  .then(() => {
+    console.log('\n' + (failed === 0 ? 'OK' : 'FALLOS') + ': ' + passed + ' passed, ' + failed + ' failed');
+    process.exit(failed === 0 ? 0 : 1);
+  }).catch(err => {
+    console.error('Error ejecutando tests async:', err);
+    process.exit(1);
+  });
