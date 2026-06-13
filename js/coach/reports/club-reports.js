@@ -1109,8 +1109,13 @@ async function _sdLoadReports() {
         }
 
         // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
-        // FIX v2: Y que el usuario actual NO haya descartado (dismissedBy).
-        // Esto evita requerir un índice compuesto en Firestore.
+        // FIX v3: Solo usar dismissKey con rol (uid_role) para el filtro.
+        // Así Director y Coordinador pueden borrar de forma INDEPENDIENTE:
+        // el borrado del Director añade "uid_director" y el del Coordinador
+        // añade "uid_coordinador". Cada uno solo ve su propia clave.
+        // IMPORTANTE: NO filtrar por me.uid a secas porque si dos roles
+        // comparten el mismo uid (o versiones antiguas lo guardaron sin rol)
+        // se borraría para ambos.
         const currentRole = me.currentRole || me.role || 'staff';
         const dismissKey = `${me.uid}_${currentRole}`;
 
@@ -1118,7 +1123,8 @@ async function _sdLoadReports() {
             rawSnap.forEach(d => {
                 const data = d.data();
                 const dismissed = data.dismissedBy || [];
-                if (data.staffReport === true && !dismissed.includes(me.uid) && !dismissed.includes(dismissKey)) fn(d);
+                // Solo excluir si contiene la clave específica de rol de este usuario
+                if (data.staffReport === true && !dismissed.includes(dismissKey)) fn(d);
             });
         }};
         // Recalcular si está vacío
@@ -1126,7 +1132,7 @@ async function _sdLoadReports() {
         rawSnap.forEach(d => {
             const data = d.data();
             const dismissed = data.dismissedBy || [];
-            if (data.staffReport === true && !dismissed.includes(me.uid) && !dismissed.includes(dismissKey)) _snapHasDocs = true;
+            if (data.staffReport === true && !dismissed.includes(dismissKey)) _snapHasDocs = true;
         });
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 

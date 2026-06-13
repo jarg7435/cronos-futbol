@@ -1313,7 +1313,13 @@ window._executeReportsSend = async function(method) {
     // FIX v3: Si el auto-despacho ya generó un matchId para este partido,
     // reutilizarlo para que los documentos se sobreescriban en vez de duplicarse.
     const _sharedMatchId = window._cronosLastAutoDispatchMatchId
-        || `match_${me.uid}_${Date.now().toString(36)}`;
+        || (() => {
+            const _d = new Date().toISOString().split('T')[0];
+            const _rs = (rivalName||'rival').replace(/[^a-z0-9]/gi,'_').toLowerCase().slice(0,20);
+            const _sh = document.getElementById('score-home')?.textContent||'0';
+            const _sa = document.getElementById('score-away')?.textContent||'0';
+            return `match_${me.uid}_${_d}_${_rs}_${_sh}x${_sa}`;
+        })();
     let _staffReportsWritten = false; // guard: escribir docs de staff solo una vez por envío
     try {
         for (const r of recipients) {
@@ -1557,7 +1563,10 @@ window._executeReportsSend = async function(method) {
         // FIX: Solo generar si auto-despacho no lo hizo ya (evita duplicados)
         if (!_autoAlreadyRan) {
         try {
-            const matchId = `match_${me.uid}_${Date.now().toString(36)}`;
+            const _today2 = new Date().toISOString().split('T')[0];
+            const _rivalSlug3 = (rivalName||'rival').replace(/[^a-z0-9]/gi,'_').toLowerCase().slice(0,20);
+            const matchId = window._cronosLastAutoDispatchMatchId
+                || `match_${me.uid}_${_today2}_${_rivalSlug3}_${scoreHome}x${scoreAway}`;
             for (const p of homePlayers) {
                 const rptId = `${matchId}_coach_p${p.number}`;
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
@@ -1664,12 +1673,17 @@ async function autoDispatchMatchReports() {
                           `Informes individuales generados y enviados a padres autorizados.\n` +
                           `_Cronos Fútbol_`;
 
-        // ── Generar un matchId compartido para este partido ──────────────
-        const sharedMatchId = `match_${me.uid}_${Date.now().toString(36)}`;
-        // FIX v3: Guardar matchId globalmente para que el envío manual
-        // pueda reutilizarlo si se ejecuta después del auto-despacho.
-        // Esto evita que se generen documentos duplicados con IDs distintos
-        // para el mismo partido.
+        // ── Generar un matchId DETERMINISTA para este partido ────────────────
+        // CRÍTICO: si usamos Date.now(), cada ejecución de autoDispatch genera
+        // un ID diferente → setDoc crea un doc NUEVO en vez de sobreescribir
+        // → los padres ven el informe duplicado N veces.
+        // Solución: construir el ID con datos del partido que no cambian
+        // (coachUid + fecha + rival + marcador) → idempotente aunque se llame
+        // múltiples veces en el mismo partido (o el usuario cambie de rol).
+        const _today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const _rivalSlug = (rivalName || 'rival').replace(/[^a-z0-9]/gi,'_').toLowerCase().slice(0, 20);
+        const sharedMatchId = `match_${me.uid}_${_today}_${_rivalSlug}_${scoreHome}x${scoreAway}`;
+        // Guardar globalmente para que el envío manual pueda reutilizarlo.
         window._cronosLastAutoDispatchMatchId = sharedMatchId;
 
         // ── Resolver destinatarios staff ANTES de escribir reports ──────────
@@ -3368,7 +3382,12 @@ window._sendCollectiveReportNow = async function() {
             ? window.players.filter(p => p.team === 'home')
             : [];
 
-        const matchId = `match_${me.uid}_${now.getTime().toString(36)}`;
+        // matchId DETERMINISTA: reutiliza el de autoDispatch si ya se ejecutó,
+        // o construye uno basado en fecha+rival+marcador (igual que autoDispatch).
+        // Así el "Enviar Informe" manual nunca crea docs duplicados.
+        const _rivalSlug2 = (rival || 'rival').replace(/[^a-z0-9]/gi,'_').toLowerCase().slice(0, 20);
+        const matchId = window._cronosLastAutoDispatchMatchId
+            || `match_${me.uid}_${matchDateISO}_${_rivalSlug2}_${scoreHome}x${scoreAway}`;
 
         for (const p of homePlayers) {
             const rptId = `${matchId}_p${p.number}`;
