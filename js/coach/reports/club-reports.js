@@ -1362,14 +1362,24 @@ async function _sdLoadMessages() {
     try {
         const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
-        const [snapStaff, snapParent] = await Promise.all([
+        // FIX (v178): Tres consultas para máxima cobertura de hilos de mensajes.
+        // Consulta A: staffUid == me.uid (hilos donde soy staff)
+        // Consulta B: parentUid == me.uid (hilos donde soy padre/destinatario legacy)
+        // Consulta C: participants array-contains me.uid (fallback si A y B fallan
+        //   por reglas Firestore que no verificaban staffUid/parentUid antes de v178)
+        const [snapStaff, snapParent, snapParticipants] = await Promise.all([
             getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
             getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
+            // FIX (v178): consulta fallback por participants — siempre funciona
+            // porque las reglas de Firestore siempre han verificado uid in participants
+            getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch(()=>({forEach:()=>{}})),
         ]);
 
         const threadsMap = {};
         snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        // FIX (v178): fusionar resultados de participants
+        snapParticipants.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
 
         const threads = Object.values(threadsMap)
             .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
