@@ -797,10 +797,9 @@ async function openParentPanel() {
             // Helper: generar clave de deduplicación robusta
             function _rptDedupKey(data) {
                 const pNum = data.playerNumber || '';
-                if (data.matchId && data.matchId !== 'undefined' && data.matchId !== '') {
-                    return `${data.matchId}_${pNum}`;
-                }
-                // Fallback: usar fecha + rival + marcador para distinguir partidos
+                // Ignoramos matchId porque cada vez que el entrenador pulsa "Enviar ahora",
+                // se genera un nuevo matchId, lo que evita la deduplicación.
+                // Usamos siempre fecha + rival + marcador para deduplicar.
                 const date = data.matchDate || '';
                 const rival = data.rival || '';
                 const sh = data.scoreHome != null ? String(data.scoreHome) : '';

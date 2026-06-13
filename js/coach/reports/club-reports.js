@@ -1111,11 +1111,14 @@ async function _sdLoadReports() {
         // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
         // FIX v2: Y que el usuario actual NO haya descartado (dismissedBy).
         // Esto evita requerir un índice compuesto en Firestore.
+        const currentRole = me.currentRole || me.role || 'staff';
+        const dismissKey = `${me.uid}_${currentRole}`;
+
         const snap = { empty: true, forEach: (fn) => {
             rawSnap.forEach(d => {
                 const data = d.data();
                 const dismissed = data.dismissedBy || [];
-                if (data.staffReport === true && !dismissed.includes(me.uid)) fn(d);
+                if (data.staffReport === true && !dismissed.includes(me.uid) && !dismissed.includes(dismissKey)) fn(d);
             });
         }};
         // Recalcular si está vacío
@@ -1123,7 +1126,7 @@ async function _sdLoadReports() {
         rawSnap.forEach(d => {
             const data = d.data();
             const dismissed = data.dismissedBy || [];
-            if (data.staffReport === true && !dismissed.includes(me.uid)) _snapHasDocs = true;
+            if (data.staffReport === true && !dismissed.includes(me.uid) && !dismissed.includes(dismissKey)) _snapHasDocs = true;
         });
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
@@ -1269,6 +1272,9 @@ async function _sdLoadReports() {
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
             
+            const currentRole = me.currentRole || me.role || 'staff';
+            const dismissKey = `${me.uid}_${currentRole}`;
+
             const match = window._sdMatchData[key64];
             if (!match) return;
             
@@ -1296,7 +1302,7 @@ async function _sdLoadReports() {
                     const uniqueIds = [...new Set(docIds)];
                     return uniqueIds.map(docId =>
                         updateDoc(doc(db, 'cronos_player_reports', docId), {
-                            dismissedBy: arrayUnion(me.uid)
+                            dismissedBy: arrayUnion(dismissKey)
                         }).catch(err => {
                             console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
                         })

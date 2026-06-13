@@ -147,7 +147,8 @@ service cloud.firestore {
         request.auth.uid == userId ||
         sameClubAsDoc(resource.data.clubId) ||
         isClubAdminOf(resource.data.clubId) ||
-        transitionalRead(resource.data.clubId)
+        transitionalRead(resource.data.clubId) ||
+        userDocClubId(resource.data.clubId)
       );
       allow create: if isAuth() && (
         request.auth.uid == userId ||
