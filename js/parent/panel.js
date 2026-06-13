@@ -797,19 +797,32 @@ async function openParentPanel() {
             // Helper: generar clave de deduplicación robusta
             function _rptDedupKey(data) {
                 const pNum = data.playerNumber || '';
-                // Ignoramos matchId porque cada vez que el entrenador pulsa "Enviar ahora",
-                // se genera un nuevo matchId, lo que evita la deduplicación.
-                // Usamos siempre fecha + rival + marcador para deduplicar.
+                // FIX DEFINITIVO: si el doc tiene matchId (estable y determinista
+                // desde v167/v168), la clave es matchId+dorsal. Asi evitamos colapsar
+                // DOS partidos distintos que coinciden en fecha+rival+marcador (p.ej.
+                // dos partidos el mismo dia contra el mismo rival con identico marcador),
+                // lo que antes hacia que el "cleanup" borrara de Firestore el informe
+                // del 2o partido (perdida de datos irreversible).
+                if (data.matchId) {
+                    return `mid:${data.matchId}_${pNum}`;
+                }
+                // Sin matchId (despacho manual legacy rpt_*): fallback por
+                // fecha + rival + marcador para distinguir partidos.
                 const date = data.matchDate || '';
                 const rival = data.rival || '';
                 const sh = data.scoreHome != null ? String(data.scoreHome) : '';
                 const sa = data.scoreAway != null ? String(data.scoreAway) : '';
-                return `${date}_${rival}_${sh}_${sa}_${pNum}`;
+                return `dt:${date}_${rival}_${sh}_${sa}_${pNum}`;
             }
 
             // Prioridad 1: docs con parentUid (informes específicos para padres)
             rptByParent.forEach(d => {
                 const data = d.data();
+                // FIX DEFINITIVO (simetria con Prioridad 2): solo informes de padre.
+                // Antes este loop solo excluia staff/coach, asi que un
+                // collective_match_report (u otro tipo) con parentUid del padre habria
+                // colado. El loop de Prioridad 2 ya filtra por tipo; lo unificamos.
+                if (data.type !== 'parent_player_report') return;
                 // EXCLUIR docs de staff y coach — NO son para padres
                 if (data.staffReport === true || data._forCoach === true) return;
                 // EXCLUIR docs que este padre ya descartó (soft delete)

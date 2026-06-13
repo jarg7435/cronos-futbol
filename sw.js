@@ -1,5 +1,18 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v168
+//  CRONOS FUTBOL — Service Worker v170
+//  v170: FIX DEFINITIVO panel del padre (2 bugs latentes tras v169):
+//         (1) Perdida de datos: _rptDedupKey ignoraba matchId y deduplicaba por
+//         fecha+rival+marcador, asi que DOS partidos distintos el mismo dia contra
+//         el mismo rival con identico marcador colapsaban a una clave y el cleanup
+//         borraba de Firestore el informe del 2o partido. Fix: la clave usa matchId
+//         (mid:<matchId>_<dorsal>) cuando existe; solo cae a fecha+rival+marcador
+//         (dt:...) para los rpt_* legacy sin matchId.
+//         (2) Asimetria de filtro: el loop de Prioridad 1 (parentUid) NO filtraba
+//         por type===parent_player_report (solo lo hacia Prioridad 2 desde v169),
+//         de modo que un collective_match_report con parentUid del padre habria
+//         colado. Anadido el mismo filtro estricto a Prioridad 1.
+//         Verificado con scripts/test_parent_dedup.js (6/6): incl. escenario de
+//         perdida de datos y colectivo con parentUid.
 //  v168: Refuerzo de los fixes v167 (P1/P2):
 //         P1: eliminado Math.random() por completo de las 3 copias de
 //         startLiveSync; el sufijo se deriva de uid+fecha+equipo(+rival+convo)
@@ -160,8 +173,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v169';
-const CACHE_NAME = 'cronos-cache-v169';
+const VERSION    = 'v170';
+const CACHE_NAME = 'cronos-cache-v170';
 
 const ASSETS = [
     './',

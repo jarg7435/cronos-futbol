@@ -171,6 +171,27 @@ _Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: 
     `parent_player_report`) → el padre ve exactamente 1 informe. `node --check` OK.
   - Bump SW a `cronos-cache-v169`.
 
+## COMPLETADO (HOTFIX v170 — fix DEFINITIVO panel del padre)
+
+- [x] **P4 (v170)**: dos bugs latentes en `js/parent/panel.js` que v169 no cerró
+  - **(1) Pérdida de datos en el cleanup**: `_rptDedupKey` ignoraba `matchId` y
+    deduplicaba por `fecha+rival+marcador`. Dos partidos DISTINTOS el mismo día,
+    contra el mismo rival y con idéntico marcador colapsaban a la misma clave; el
+    bloque "LIMPIEZA DE DUPLICADOS EN FIRESTORE" hacía `deleteDoc` del perdedor →
+    se BORRABA el informe del 2º partido de Firestore (irreversible). Fix: la clave
+    usa `mid:<matchId>_<dorsal>` cuando hay `matchId` (estable desde v167/v168) y
+    solo cae a `dt:<fecha>_<rival>_<sh>_<sa>_<dorsal>` para los `rpt_*` legacy sin
+    `matchId`.
+  - **(2) Asimetría de filtro**: el loop de Prioridad 1 (`rptByParent`, docs con
+    `parentUid==me.uid`) NO filtraba por `type==='parent_player_report'` (solo lo
+    hacía Prioridad 2 desde v169), así que un `collective_match_report` con
+    `parentUid` del padre habría colado. Añadido el mismo filtro estricto a
+    Prioridad 1.
+  - Verificado con `scripts/test_parent_dedup.js` (6/6): incluye el escenario
+    crítico de pérdida de datos (2 partidos mismo día/rival/marcador → 2 informes,
+    0 borrados) y el del colectivo con `parentUid` (excluido).
+  - Bump SW a `cronos-cache-v170` + cache-busting `?v=v170` en index.html.
+
 ## PENDIENTE (empezar por E6)
 
 - [ ] **E6**: Crono live sin progreso segundo a segundo
