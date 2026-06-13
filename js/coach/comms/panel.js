@@ -289,26 +289,29 @@ async function _cGetStaff(db, clubId, fns, roles) {
     }
 
     // ── 3. Firestore: buscar por clubId y filtrar allRoles en cliente ──
-    // Solo si aún no encontramos nadie (evita la query amplia cuando no es necesaria)
-    if (byUid.size === 0) {
-        try {
-            const allSnap = await getDocs(query(
-                collection(db, 'users'),
-                where('clubId', '==', clubId)
-            ));
-            allSnap.forEach(d => {
-                const data = d.data();
-                (data.allRoles || []).forEach(r => {
-                    if (roles.includes(r.role) &&
-                        r.isAuthorized !== false &&
-                        r.status !== 'rejected' &&
-                        r.status !== 'removed') {
-                        upsert(d.id, r.role, data);
-                    }
-                });
+    // FIX v177: Se ejecuta SIEMPRE (antes solo si byUid.size === 0).
+    // Si un usuario tiene role='user' en el campo raíz pero tiene
+    // allRoles=[{role:'director',...},{role:'coordinator',...}], la query
+    // del paso 2 (where role=='director') NO lo encuentra porque su campo
+    // raíz no coincide. Solo la consulta amplia + filtrado por allRoles
+    // lo detecta. El upsert es idempotente, así que no duplica.
+    try {
+        const allSnap = await getDocs(query(
+            collection(db, 'users'),
+            where('clubId', '==', clubId)
+        ));
+        allSnap.forEach(d => {
+            const data = d.data();
+            (data.allRoles || []).forEach(r => {
+                if (roles.includes(r.role) &&
+                    r.isAuthorized !== false &&
+                    r.status !== 'rejected' &&
+                    r.status !== 'removed') {
+                    upsert(d.id, r.role, data);
+                }
             });
-        } catch(_) {}
-    }
+        });
+    } catch(_) {}
 
     return Array.from(byUid.values());
 }
@@ -1813,7 +1816,9 @@ window._executeReportsSend = async function(method) {
             }
             const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
-                type: 'informe_colectivo', clubId: me.clubId || null, coachUid: me.uid,
+                type: 'informe_colectivo', clubId: me.clubId || null,
+                userId: me.uid,    // FIX v177: campo que las reglas Firestore verifican
+                coachUid: me.uid,
                 parentUid: me.uid, staffUid: me.uid, coachEmail: me.email,
                 matchDate: new Date().toISOString().split('T')[0],
                 rival: rivalName, scoreHome, scoreAway, matchId,
@@ -1946,6 +1951,11 @@ async function autoDispatchMatchReports() {
             console.log('[DiagReports][STAFF] contactos staff (type!=parent):', contacts.filter(c => c.type !== 'parent').map(c => ({ id: c.id, name: c.name, role: c.role, uid: c.uid, tags: c.tags })));
             console.log('[DiagReports][STAFF] clubId:', me.clubId);
         }
+        // FIX v177: Log SIEMPRE (no condicional) para diagnosticar por qué
+        // el informe colectivo no llega al director/coordinador.
+        console.log('[autoDispatch] Staff resuelto:', staffToNotify.length, 'miembros.',
+            'UIDs:', _allStaffUids.length ? _allStaffUids.join(',') : '(ninguno)',
+            'clubId:', me.clubId || '(vacío)');
 
         // ── Guardar documentos cronos_player_reports para el Gantt del staff ──
         // Un documento por jugador con type='staff_match_report' y staffReport=true.
@@ -2204,6 +2214,7 @@ async function autoDispatchMatchReports() {
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type:      'informe_colectivo', // Usamos el tipo estándar para que aparezca en el feed
                 clubId:    me.clubId || null,
+                userId:    me.uid,              // FIX v177: campo que las reglas Firestore verifican (request.auth.uid == resource.data.userId)
                 coachUid:  me.uid,
                 parentUid: me.uid, // necesario para que el filtro de lectura lo encuentre
                 staffUid:  me.uid,
@@ -3796,6 +3807,7 @@ window._sendCollectiveReportNow = async function() {
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type:      'informe_colectivo_entrenador',
                 clubId:    me.clubId || null,
+                userId:    me.uid,          // FIX v177: campo que las reglas Firestore verifican
                 coachUid:  me.uid,
                 parentUid: me.uid,
                 matchDate, rival, scoreHome, scoreAway,
