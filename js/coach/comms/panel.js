@@ -171,33 +171,7 @@ if (typeof window !== 'undefined') {
 //  fns: { doc, getDoc }.
 // ════════════════════════════════════════════════════════════════════
 async function _cResolveClubId(db, me, fns) {
-    if (me && me.clubId) {
-        // FIX (v179): Asegurar que allClubIds está actualizado aunque ya tengamos clubId
-        if (fns.updateDoc && fns.doc && me.uid && me.clubId) {
-            try {
-                const snap = await fns.getDoc(fns.doc(db, 'users', me.uid));
-                if (snap && snap.exists()) {
-                    const d = snap.data() || {};
-                    const existingIds = d.allClubIds || [];
-                    const allIds = new Set(existingIds);
-                    // Añadir clubId raíz
-                    if (d.clubId) allIds.add(d.clubId);
-                    // Añadir clubIds de allRoles
-                    if (Array.isArray(d.allRoles)) {
-                        d.allRoles.forEach(r => { if (r && r.clubId) allIds.add(r.clubId); });
-                    }
-                    // Si hay nuevos IDs, actualizar
-                    if (allIds.size > existingIds.length) {
-                        await fns.updateDoc(fns.doc(db, 'users', me.uid), {
-                            allClubIds: [...allIds]
-                        });
-                        console.log('[Cronos] allClubIds actualizado para users/' + me.uid, [...allIds]);
-                    }
-                }
-            } catch(_) {}
-        }
-        return me.clubId;
-    }
+    if (me && me.clubId) return me.clubId;
     if (!me || !me.uid || !fns || !fns.doc || !fns.getDoc) return null;
     try {
         const snap = await fns.getDoc(fns.doc(db, 'users', me.uid));
@@ -212,26 +186,12 @@ async function _cResolveClubId(db, me, fns) {
             // clubId del documento users/{uid} está vacío, escribirlo para que
             // las reglas Firestore (userDocClubId) puedan verificarlo sin necesidad
             // de parsear allRoles (las reglas NO pueden iterar arrays arbitrarios).
-            // FIX (v179): También actualizar allClubIds[] para que isClubMember()
-            // pueda verificar pertenencia al club por todos los clubIds conocidos.
-            if (fns.updateDoc) {
-                const updates = {};
-                if (cid && !d.clubId) updates.clubId = cid;
-                // Construir allClubIds
-                const allIds = new Set(d.allClubIds || []);
-                if (cid) allIds.add(cid);
-                if (d.clubId) allIds.add(d.clubId);
-                if (Array.isArray(d.allRoles)) {
-                    d.allRoles.forEach(r => { if (r && r.clubId) allIds.add(r.clubId); });
-                }
-                if (allIds.size > (d.allClubIds || []).length || (cid && !d.clubId)) {
-                    updates.allClubIds = [...allIds];
-                    try {
-                        await fns.updateDoc(fns.doc(db, 'users', me.uid), updates);
-                        console.log('[Cronos] clubId migrado y allClubIds actualizado para users/' + me.uid, updates);
-                    } catch (migrateErr) {
-                        console.warn('[Cronos] No se pudo migrar clubId/allClubIds:', migrateErr.message);
-                    }
+            if (cid && !d.clubId && fns.updateDoc) {
+                try {
+                    await fns.updateDoc(fns.doc(db, 'users', me.uid), { clubId: cid });
+                    console.log('[Cronos] clubId migrado desde allRoles al campo raíz de users/' + me.uid);
+                } catch (migrateErr) {
+                    console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
                 }
             }
             return cid;
@@ -1100,8 +1060,19 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
             // incrementar el contador correcto según tipo
             if (recipientType === 'staff') {
                 updateData.unreadByStaff = (snap.data().unreadByStaff || 0) + 1;
+                // FIX (v180): campos de identidad para consultas del director/coordinador
+                updateData.staffUid      = recipientUid;
+                updateData.parentUid     = recipientUid;
+                updateData.participants  = arrayUnion(me.uid, recipientUid);
+                updateData.clubId        = me.clubId || null;
+                updateData.recipientType = 'staff';
             } else {
                 updateData.unreadByParent = (snap.data().unreadByParent || 0) + 1;
+                // FIX (v180): campos de identidad
+                updateData.parentUid     = recipientUid;
+                updateData.participants  = arrayUnion(me.uid, recipientUid);
+                updateData.clubId        = me.clubId || null;
+                updateData.recipientType = 'parent';
             }
             await updateDoc(doc(db, 'cronos_messages', threadId), updateData);
         } else {
@@ -1133,6 +1104,9 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                     parentEmail:    recipientEmail,
                     recipientType: 'parent',
                     unreadByParent: 1,
+                    // FIX (v180): campos de identidad para consultas del director/coordinador
+                    clubId:        me.clubId || null,
+                    participants:  [me.uid, recipientUid],
                 });
             }
             await setDoc(doc(db, 'cronos_messages', threadId), baseDoc);
@@ -1672,17 +1646,15 @@ window._executeReportsSend = async function(method) {
                     const msgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
                     try {
                         // Intentar actualizar el hilo existente (añadir mensaje)
-                        // FIX (v179): añadir staffUid/parentUid/participants/clubId al updateDoc
-                        // para que los hilos creados por versiones anteriores (sin estos campos)
-                        // también sean encontrados por las consultas del director/coordinador.
+                        // FIX (v180): Incluir campos de identidad para consultas del director/coordinador
                         await updateDoc(doc(db, 'cronos_messages', threadId), {
                             messages: arrayUnion(msgEntry),
                             lastMessage: '📊 Informe colectivo de partido',
                             lastMessageAt: msgEntry.timestamp,
                             unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
-                            // FIX (v179): campos de identidad para consultas del director/coordinador
+                            // FIX (v180): campos de identidad para consultas del director/coordinador
                             staffUid:      uidToNotify,
-                            parentUid:     uidToNotify,   // club-reports.js busca por parentUid
+                            parentUid:     uidToNotify,
                             participants:  arrayUnion(me.uid, uidToNotify),
                             clubId:        me.clubId || null,
                             recipientType: 'staff'
@@ -1699,6 +1671,7 @@ window._executeReportsSend = async function(method) {
                                 participants:  [me.uid, uidToNotify], // ← FIX: para reglas Firestore
                                 staffUids:     [uidToNotify],         // ← FIX: lectura staff por array-contains
                                 staffUid:      uidToNotify,
+                                parentUid:     uidToNotify,           // FIX (v180): club-reports.js busca por parentUid
                                 recipientType: 'staff',
                                 messages:      [msgEntry],
                                 lastMessage:   '📊 Informe colectivo de partido',
@@ -1863,11 +1836,17 @@ window._executeReportsSend = async function(method) {
                 const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
                 try {
                     // Intentar actualizar hilo existente
+                    // FIX (v180): Incluir campos de identidad para consultas
                     await updateDoc(doc(db, 'cronos_messages', threadId), {
                         messages: arrayUnion(msgEntry),
                         lastMessage: '📊 Informe de partido enviado',
                         lastMessageAt: msgEntry.timestamp,
-                        unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
+                        unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
+                        // FIX (v180): campos de identidad
+                        parentUid:    targetParentUid,
+                        participants: arrayUnion(me.uid, targetParentUid),
+                        clubId:       me.clubId || null,
+                        recipientType: 'parent'
                     });
                 } catch(updateErr) {
                     // Si update falla (hilo no existe), crear con setDoc
@@ -2084,9 +2063,6 @@ async function autoDispatchMatchReports() {
         console.log('[StaffReport] Intentando enviar informe staff. clubId:', me?.clubId, 'players:', (homePlayers || []).length);
         for (const p of homePlayers) {
             const srId = `${sharedMatchId}_staff_p${p.number}`;
-            // FIX (v179): setDoc con {merge:true} para PRESERVAR campos existentes
-            // (p.ej. dismissedBy) al re-despachar. Sin merge, setDoc sobreescribe
-            // el documento completo y pierde dismissedBy → el informe "vuelve a aparecer".
             await setDoc(doc(db, 'cronos_player_reports', srId), {
                 matchId:       sharedMatchId,
                 type:          'staff_match_report',
@@ -2109,8 +2085,8 @@ async function autoDispatchMatchReports() {
                 injured:       p.injured || false,
                 minutesPlayed: typeof formatTime === 'function' ? formatTime(p.time || 0) : String(p.time || 0),
                 history:       _parseHistoryForFirestore(p.history || []),
-            }, { merge: true });
-            console.log('[StaffReport] Documento staff escrito (merge):', srId);
+            });
+            console.log('[StaffReport] Documento staff escrito:', srId);
         }
 
         // ── Notificar al staff (coordinador + director) ──────────────────
@@ -2147,17 +2123,18 @@ async function autoDispatchMatchReports() {
             const staffMsgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
             try {
                 // Intentar actualizar el hilo existente (añadir mensaje)
-                // FIX (v179): añadir staffUid/parentUid/participants/clubId al updateDoc
-                // para que los hilos creados por versiones anteriores (sin estos campos)
-                // también sean encontrados por las consultas del director/coordinador.
+                // FIX (v180): Incluir campos de identidad para que las queries del
+                // director/coordinador (por clubId, staffUid, parentUid, participants)
+                // encuentren este hilo. Sin estos campos, updateDoc solo añade el
+                // mensaje pero el hilo sigue siendo invisible para director/coordinador.
                 await updateDoc(doc(db, 'cronos_messages', threadId), {
                     messages: arrayUnion(staffMsgEntry),
                     lastMessage: '📊 Informe colectivo de partido',
                     lastMessageAt: staffMsgEntry.timestamp,
                     unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
-                    // FIX (v179): campos de identidad para consultas del director/coordinador
+                    // FIX (v180): campos de identidad para consultas del director/coordinador
                     staffUid:      staff.uid,
-                    parentUid:     staff.uid,     // club-reports.js busca por parentUid
+                    parentUid:     staff.uid,
                     participants:  arrayUnion(me.uid, staff.uid),
                     clubId:        me.clubId || null,
                     recipientType: 'staff'
@@ -2247,11 +2224,17 @@ async function autoDispatchMatchReports() {
             const threadId = `${me.uid}_${parentUid}`;
             const msgEntry = { sender: 'coach', text: indivText, timestamp: new Date().toISOString(), type: 'report' };
             try {
+                // FIX (v180): Incluir campos de identidad para consultas
                 await updateDoc(doc(db, 'cronos_messages', threadId), {
                     messages: arrayUnion(msgEntry),
                     lastMessage: '📊 Informe de partido enviado',
                     lastMessageAt: msgEntry.timestamp,
-                    unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
+                    unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
+                    // FIX (v180): campos de identidad
+                    parentUid:    parentUid,
+                    participants: arrayUnion(me.uid, parentUid),
+                    clubId:       me.clubId || null,
+                    recipientType: 'parent'
                 });
             } catch(e) {
                 await setDoc(doc(db, 'cronos_messages', threadId), {
@@ -3496,12 +3479,21 @@ window._sendBulkMsgFirestore = async function() {
                 await updateDoc(doc(db, 'cronos_messages', threadId), {
                     messages: arrayUnion(newMsg), lastMessage: preview,
                     lastMessageAt: newMsg.timestamp,
-                    unreadByParent: (snap.data().unreadByParent || 0) + 1
+                    unreadByParent: (snap.data().unreadByParent || 0) + 1,
+                    // FIX (v180): campos de identidad
+                    parentUid:    s.parentUid,
+                    participants: arrayUnion(me.uid, s.parentUid),
+                    clubId:       me.clubId || null,
+                    recipientType: 'parent'
                 });
             } else {
                 await setDoc(doc(db, 'cronos_messages', threadId), {
                     threadId, coachUid: me.uid, coachEmail: me.email,
                     parentUid: s.parentUid, parentEmail: s.parentEmail,
+                    // FIX (v180): campos de identidad
+                    clubId: me.clubId || null,
+                    participants: [me.uid, s.parentUid],
+                    recipientType: 'parent',
                     messages: [newMsg], lastMessage: preview,
                     lastMessageAt: newMsg.timestamp,
                     unreadByCoach: 0, unreadByParent: 1
@@ -3860,7 +3852,7 @@ window._sendCollectiveReportNow = async function() {
                 // history: array de eventos {type, minute} — clave para el Gantt
                 // p.history puede contener strings "Entra a las MM:SS (1ªP)" O objetos {type,minute}
                 history: _parseHistoryForFirestore(p.history || []),
-            }, { merge: true }); // FIX (v179): merge para preservar dismissedBy al re-despachar
+            });
         }
 
         // ── 2. Enviar mensaje de hilo a cada miembro del staff ───────────
@@ -3878,15 +3870,16 @@ window._sendCollectiveReportNow = async function() {
                 // getDoc puede dar permission-denied si las reglas no permiten leer
                 // (ej. entrenador sin claim clubId). updateDoc→setDoc evita el getDoc.
                 try {
+                    // FIX (v180): Incluir campos de identidad para consultas del director/coordinador
                     await updateDoc(doc(db,'cronos_messages',threadId), {
                         messages:      arrayUnion(msgEntry),
                         lastMessage:   '📊 Informe colectivo de partido',
                         lastMessageAt: createdAt,
                         unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore)
                             ? firebase.firestore.FieldValue.increment(1) : 1,
-                        // FIX (v179): campos de identidad para consultas del director/coordinador
+                        // FIX (v180): campos de identidad para consultas del director/coordinador
                         staffUid:      s.uid,
-                        parentUid:     s.uid,         // club-reports.js busca por parentUid
+                        parentUid:     s.uid,
                         participants:  arrayUnion(me.uid, s.uid),
                         clubId:        me.clubId || null,
                         recipientType: 'staff'
@@ -4496,12 +4489,20 @@ window._sendAllIndividualReports = async function() {
                         lastMessage: `📊 Informe de ${p.name}`,
                         lastMessageAt: msgEntry.timestamp,
                         unreadByParent: (snap.data().unreadByParent||0) + 1,
+                        // FIX (v180): campos de identidad
+                        parentUid:     link.parentUid,
+                        participants:  arrayUnion(me.uid, link.parentUid),
+                        clubId:        me.clubId || null,
+                        recipientType: 'parent'
                     });
                 } else {
                     await setDoc(doc(db,'cronos_messages',threadId), {
                         threadId, coachUid:me.uid, coachEmail:me.email,
                         parentUid:link.parentUid, parentEmail:link.parentEmail||'',
                         recipientType:'parent',
+                        // FIX (v180): campos de identidad
+                        clubId: me.clubId || null,
+                        participants: [me.uid, link.parentUid],
                         messages:[msgEntry],
                         lastMessage:`📊 Informe de ${p.name}`,
                         lastMessageAt:msgEntry.timestamp,
