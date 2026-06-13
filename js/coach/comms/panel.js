@@ -171,7 +171,33 @@ if (typeof window !== 'undefined') {
 //  fns: { doc, getDoc }.
 // ════════════════════════════════════════════════════════════════════
 async function _cResolveClubId(db, me, fns) {
-    if (me && me.clubId) return me.clubId;
+    if (me && me.clubId) {
+        // FIX (v179): Asegurar que allClubIds está actualizado aunque ya tengamos clubId
+        if (fns.updateDoc && fns.doc && me.uid && me.clubId) {
+            try {
+                const snap = await fns.getDoc(fns.doc(db, 'users', me.uid));
+                if (snap && snap.exists()) {
+                    const d = snap.data() || {};
+                    const existingIds = d.allClubIds || [];
+                    const allIds = new Set(existingIds);
+                    // Añadir clubId raíz
+                    if (d.clubId) allIds.add(d.clubId);
+                    // Añadir clubIds de allRoles
+                    if (Array.isArray(d.allRoles)) {
+                        d.allRoles.forEach(r => { if (r && r.clubId) allIds.add(r.clubId); });
+                    }
+                    // Si hay nuevos IDs, actualizar
+                    if (allIds.size > existingIds.length) {
+                        await fns.updateDoc(fns.doc(db, 'users', me.uid), {
+                            allClubIds: [...allIds]
+                        });
+                        console.log('[Cronos] allClubIds actualizado para users/' + me.uid, [...allIds]);
+                    }
+                }
+            } catch(_) {}
+        }
+        return me.clubId;
+    }
     if (!me || !me.uid || !fns || !fns.doc || !fns.getDoc) return null;
     try {
         const snap = await fns.getDoc(fns.doc(db, 'users', me.uid));
@@ -186,12 +212,26 @@ async function _cResolveClubId(db, me, fns) {
             // clubId del documento users/{uid} está vacío, escribirlo para que
             // las reglas Firestore (userDocClubId) puedan verificarlo sin necesidad
             // de parsear allRoles (las reglas NO pueden iterar arrays arbitrarios).
-            if (cid && !d.clubId && fns.updateDoc) {
-                try {
-                    await fns.updateDoc(fns.doc(db, 'users', me.uid), { clubId: cid });
-                    console.log('[Cronos] clubId migrado desde allRoles al campo raíz de users/' + me.uid);
-                } catch (migrateErr) {
-                    console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
+            // FIX (v179): También actualizar allClubIds[] para que isClubMember()
+            // pueda verificar pertenencia al club por todos los clubIds conocidos.
+            if (fns.updateDoc) {
+                const updates = {};
+                if (cid && !d.clubId) updates.clubId = cid;
+                // Construir allClubIds
+                const allIds = new Set(d.allClubIds || []);
+                if (cid) allIds.add(cid);
+                if (d.clubId) allIds.add(d.clubId);
+                if (Array.isArray(d.allRoles)) {
+                    d.allRoles.forEach(r => { if (r && r.clubId) allIds.add(r.clubId); });
+                }
+                if (allIds.size > (d.allClubIds || []).length || (cid && !d.clubId)) {
+                    updates.allClubIds = [...allIds];
+                    try {
+                        await fns.updateDoc(fns.doc(db, 'users', me.uid), updates);
+                        console.log('[Cronos] clubId migrado y allClubIds actualizado para users/' + me.uid, updates);
+                    } catch (migrateErr) {
+                        console.warn('[Cronos] No se pudo migrar clubId/allClubIds:', migrateErr.message);
+                    }
                 }
             }
             return cid;
