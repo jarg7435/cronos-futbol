@@ -182,6 +182,18 @@ async function _cResolveClubId(db, me, fns) {
                 || null;
             // Cachear en el usuario en memoria para futuras llamadas de la sesión.
             if (cid && window._cronosCurrentUser) window._cronosCurrentUser.clubId = cid;
+            // FIX v176: Si se resolvió clubId desde allRoles pero el campo raíz
+            // clubId del documento users/{uid} está vacío, escribirlo para que
+            // las reglas Firestore (userDocClubId) puedan verificarlo sin necesidad
+            // de parsear allRoles (las reglas NO pueden iterar arrays arbitrarios).
+            if (cid && !d.clubId && fns.updateDoc) {
+                try {
+                    await fns.updateDoc(fns.doc(db, 'users', me.uid), { clubId: cid });
+                    console.log('[Cronos] clubId migrado desde allRoles al campo raíz de users/' + me.uid);
+                } catch (migrateErr) {
+                    console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
+                }
+            }
             return cid;
         }
     } catch (e) {
@@ -1372,7 +1384,7 @@ window._executeReportsSend = async function(method) {
     // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
     // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
     // el envío al staff y a los padres. Se cachea en me.clubId para esta sesión.
-    const _clubId = await _cResolveClubId(db, me, { doc, getDoc });
+    const _clubId = await _cResolveClubId(db, me, { doc, getDoc, updateDoc });
     if (_clubId && !me.clubId) me.clubId = _clubId;
     
     // Obtener vínculos con timeout de seguridad y soporte para Admin Individual
@@ -1537,18 +1549,25 @@ window._executeReportsSend = async function(method) {
                     // ── 2. Hilo de mensajes unificado (mismo formato que auto-despacho) ──
                     // Usamos {clubId}_{staffUid} para que el hilo pertenezca al CLUB
                     // (sameClubAsDoc pasa siempre) y coincida con autoDispatchMatchReports.
+                    // FIX v176: Se eliminó el getDoc previo porque si el hilo fue creado
+                    // por OTRO entrenador del club, el getDoc falla con permission-denied
+                    // (el entrenador actual no está en participants del doc ajeno).
+                    // Ahora usamos patrón updateDoc→setDoc: intentar actualizar primero,
+                    // y si falla (hilo no existe), crearlo.
                     const threadId = _cStaffThreadId(me.clubId, me.uid, uidToNotify);
                     const msgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
                     try {
-                        const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
-                        if (threadSnap.exists()) {
-                            await updateDoc(doc(db, 'cronos_messages', threadId), {
-                                messages: arrayUnion(msgEntry),
-                                lastMessage: '📊 Informe colectivo de partido',
-                                lastMessageAt: msgEntry.timestamp,
-                                unreadByStaff: (threadSnap.data().unreadByStaff || 0) + 1
-                            });
-                        } else {
+                        // Intentar actualizar el hilo existente (añadir mensaje)
+                        await updateDoc(doc(db, 'cronos_messages', threadId), {
+                            messages: arrayUnion(msgEntry),
+                            lastMessage: '📊 Informe colectivo de partido',
+                            lastMessageAt: msgEntry.timestamp,
+                            unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
+                        });
+                    } catch(updateErr) {
+                        // Si update falla (hilo no existe o sin permiso de update),
+                        // intentar crear el hilo con setDoc.
+                        try {
                             await setDoc(doc(db, 'cronos_messages', threadId), {
                                 threadId,
                                 coachUid:      me.uid,
@@ -1564,15 +1583,15 @@ window._executeReportsSend = async function(method) {
                                 unreadByCoach: 0,
                                 unreadByStaff: 1
                             });
+                        } catch(setErr) {
+                            console.warn('[Cronos] Error creando hilo staff:', {
+                                code: setErr && setErr.code,
+                                message: setErr && setErr.message,
+                                threadId,
+                                staffUid: uidToNotify,
+                                coachClubId: me.clubId || null,
+                            }, setErr);
                         }
-                    } catch(thErr) {
-                        console.warn('[Cronos] Error creando hilo staff:', {
-                            code: thErr && thErr.code,
-                            message: thErr && thErr.message,
-                            threadId,
-                            staffUid: uidToNotify,
-                            coachClubId: me.clubId || null,
-                        }, thErr);
                     }
 
                     // ── 3. CORRECCIÓN PRINCIPAL: escribir cronos_player_reports ────
@@ -1715,18 +1734,21 @@ window._executeReportsSend = async function(method) {
                 });
 
                 // Send via Thread Message + notificación (parentUid siempre válido aquí).
+                // FIX v176: Mismo patrón updateDoc→setDoc que para staff.
+                // Se eliminó el getDoc previo para evitar permission-denied.
                 const threadId = `${me.uid}_${targetParentUid}`;
+                const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
                 try {
-                    const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
-                    const msgEntry = { sender: 'coach', text: reportText, timestamp: new Date().toISOString(), type: 'report' };
-                    if (threadSnap.exists()) {
-                        await updateDoc(doc(db, 'cronos_messages', threadId), {
-                            messages: arrayUnion(msgEntry),
-                            lastMessage: '📊 Informe de partido enviado',
-                            lastMessageAt: msgEntry.timestamp,
-                            unreadByParent: (threadSnap.data().unreadByParent||0) + 1
-                        });
-                    } else {
+                    // Intentar actualizar hilo existente
+                    await updateDoc(doc(db, 'cronos_messages', threadId), {
+                        messages: arrayUnion(msgEntry),
+                        lastMessage: '📊 Informe de partido enviado',
+                        lastMessageAt: msgEntry.timestamp,
+                        unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
+                    });
+                } catch(updateErr) {
+                    // Si update falla (hilo no existe), crear con setDoc
+                    try {
                         await setDoc(doc(db, 'cronos_messages', threadId), {
                             threadId, coachUid: me.uid, coachEmail: me.email,
                             clubId: me.clubId || null,                           // ← FIX: para reglas Firestore
@@ -1735,9 +1757,17 @@ window._executeReportsSend = async function(method) {
                             messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
                             lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
                         });
+                    } catch(setErr) {
+                        console.warn('[Cronos] Error creando hilo parent:', {
+                            code: setErr && setErr.code,
+                            message: setErr && setErr.message,
+                            threadId, parentUid: targetParentUid,
+                        }, setErr);
                     }
+                }
 
-                    // Also a notification for the parent
+                // Also a notification for the parent
+                try {
                     await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${dorsal}_${Date.now().toString(36)}`), {
                         type: 'informe_partido', clubId: me.clubId || null,
                         userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
@@ -1748,8 +1778,8 @@ window._executeReportsSend = async function(method) {
                         goals: player.goals || 0, cards: player.cards || 'ninguna',
                         injured: player.injured || false, createdAt: new Date().toISOString()
                     });
-                } catch(threadErr) {
-                    console.warn('[Cronos] Error enviando mensaje/notificación a parentUid:', targetParentUid, threadErr);
+                } catch(notifErr) {
+                    console.warn('[Cronos] Error enviando notificación a parentUid:', targetParentUid, notifErr);
                 }
 
                 sentCount++;
@@ -1831,7 +1861,7 @@ async function autoDispatchMatchReports() {
         // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
         // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
         // el envío al staff (director/coordinador) y a los padres.
-        const _clubId = await _cResolveClubId(db, me, { doc, getDoc });
+        const _clubId = await _cResolveClubId(db, me, { doc, getDoc, updateDoc });
         if (_clubId && !me.clubId) me.clubId = _clubId;
 
         // E3 (punto 2): sin clubId válido, las reglas Firestore
@@ -1952,7 +1982,7 @@ async function autoDispatchMatchReports() {
 
         // ── Notificar al staff (coordinador + director) ──────────────────
         // Los destinatarios ya fueron resueltos arriba (antes de los reports).
-        // Aquí solo enviamos las notificaciones y creamos los hilos de mensajes.
+        // Aquí enviamos las notificaciones Y creamos los hilos de mensajes.
 
         for (const staff of staffToNotify) {
             if (!staff.uid || notifiedUids.has(staff.uid)) continue;
@@ -1971,6 +2001,50 @@ async function autoDispatchMatchReports() {
                 message: globalText.replace(/[*_]/g, ''),
                 createdAt: new Date().toISOString()
             });
+
+            // ── 2. Hilo de mensajes para el staff ──────────────────────
+            // FIX v176: El auto-despacho NO creaba hilos de mensajes para el
+            // staff, así que el director/coordinador solo recibía la notificación
+            // push pero NO veía el informe en su bandeja de mensajes.
+            // Ahora se crea el hilo con el mismo patrón que el despacho manual.
+            const threadId = _cStaffThreadId(me.clubId, me.uid, staff.uid);
+            const staffMsgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
+            try {
+                // Intentar actualizar el hilo existente (añadir mensaje)
+                await updateDoc(doc(db, 'cronos_messages', threadId), {
+                    messages: arrayUnion(staffMsgEntry),
+                    lastMessage: '📊 Informe colectivo de partido',
+                    lastMessageAt: staffMsgEntry.timestamp,
+                    unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
+                });
+            } catch(updateErr) {
+                // Si falla update (hilo no existe), crear con setDoc
+                try {
+                    await setDoc(doc(db, 'cronos_messages', threadId), {
+                        threadId,
+                        coachUid:      me.uid,
+                        coachEmail:    me.email,
+                        clubId:        me.clubId || null,
+                        participants:  [me.uid, staff.uid],
+                        staffUids:     [staff.uid],
+                        staffUid:      staff.uid,
+                        recipientType: 'staff',
+                        messages:      [staffMsgEntry],
+                        lastMessage:   '📊 Informe colectivo de partido',
+                        lastMessageAt: staffMsgEntry.timestamp,
+                        unreadByCoach: 0,
+                        unreadByStaff: 1
+                    });
+                } catch(thErr) {
+                    console.warn('[autoDispatch] Error creando hilo staff:', {
+                        code: thErr && thErr.code,
+                        message: thErr && thErr.message,
+                        threadId,
+                        staffUid: staff.uid,
+                        coachClubId: me.clubId || null,
+                    }, thErr);
+                }
+            }
         }
 
         // --- FASE B: INFORMES INDIVIDUALES (PADRES) — REDISEÑO v171 ---
@@ -1982,6 +2056,11 @@ async function autoDispatchMatchReports() {
         // el helper compartido, idéntico al del despacho manual.
         const _parentTargets = _cronosResolveParentReportTargets(contacts, links, homePlayers);
         for (const { parentUid, dorsal, player } of _parentTargets) {
+            // FIX v176: Cada padre se envía en su propio try/catch para que un
+            // fallo con un padre (p.ej. permission-denied) NO impida el envío
+            // al resto de padres. Antes, si setDoc de un padre fallaba, el
+            // bucle se rompía y los padres siguientes no recibían su informe.
+            try {
             // Texto individual de este jugador
             const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ ${player.goals || 0} goles | ${player.cards === 'amarilla' ? '🟨' : player.cards === 'roja' ? '🟥' : '0 tarjetas'}`;
             const indivText = `📊 *INFORME INDIVIDUAL: ${player.name}*\n` +
@@ -2017,6 +2096,8 @@ async function autoDispatchMatchReports() {
             });
 
             // ── Enviar mensaje al hilo de chat ───────────────────────────
+            // FIX v176: Mismo patrón updateDoc→setDoc que para staff.
+            // El hilo de padres usa {coachUid}_{parentUid} como threadId.
             const threadId = `${me.uid}_${parentUid}`;
             const msgEntry = { sender: 'coach', text: indivText, timestamp: new Date().toISOString(), type: 'report' };
             try {
@@ -2024,7 +2105,7 @@ async function autoDispatchMatchReports() {
                     messages: arrayUnion(msgEntry),
                     lastMessage: '📊 Informe de partido enviado',
                     lastMessageAt: msgEntry.timestamp,
-                    unreadByParent: 1
+                    unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1
                 });
             } catch(e) {
                 await setDoc(doc(db, 'cronos_messages', threadId), {
@@ -2056,6 +2137,14 @@ async function autoDispatchMatchReports() {
                 matchId:      prId,
                 createdAt:    new Date().toISOString()
             });
+            } catch(parentErr) {
+                // Un padre falló → log y continuar con el siguiente
+                console.warn('[autoDispatch] Error enviando informe a padre:', {
+                    parentUid, dorsal,
+                    code: parentErr && parentErr.code,
+                    message: parentErr && parentErr.message,
+                }, parentErr);
+            }
         }
 
         localStorage.removeItem('cronos_match_rpt_selection');
