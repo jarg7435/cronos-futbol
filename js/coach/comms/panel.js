@@ -1998,6 +1998,9 @@ async function autoDispatchMatchReports() {
             if (!staff.uid || notifiedUids.has(staff.uid)) continue;
             notifiedUids.add(staff.uid);
 
+            // FIX (v178): Log detallado por cada staff para diagnosticar
+            console.log('[autoDispatch] Procesando staff:', staff.uid, 'role:', staff.role, 'email:', staff.email || '');
+
             // ── 1. Notificación push/UI ───────────────────────────────
             const notifId = `notif_global_rpt_${staff.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', notifId), {
@@ -2038,6 +2041,7 @@ async function autoDispatchMatchReports() {
                         participants:  [me.uid, staff.uid],
                         staffUids:     [staff.uid],
                         staffUid:      staff.uid,
+                        parentUid:     staff.uid,     // FIX (v178): club-reports.js busca por parentUid
                         recipientType: 'staff',
                         messages:      [staffMsgEntry],
                         lastMessage:   '📊 Informe colectivo de partido',
@@ -3694,6 +3698,10 @@ window._sendCollectiveReportNow = async function() {
                 // por staffReport===true. Sin esta marca el informe colectivo no
                 // llegaba nunca a coordinadores/directores.
                 staffReport:    true,
+                // FIX (v178): staffUids para que las reglas Firestore permitan leer
+                // a directores/coordinadores (request.auth.uid in resource.data.staffUids)
+                // y la consulta fallback array-contains los encuentre.
+                staffUids:      staff.map(s => s.uid).filter(Boolean),
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,
@@ -3734,26 +3742,41 @@ window._sendCollectiveReportNow = async function() {
                     matchId,
                     timestamp: createdAt,
                 };
-                const snap = await getDoc(doc(db,'cronos_messages',threadId));
-                if (snap.exists()) {
+                // FIX (v178): patrón updateDoc→setDoc en vez de getDoc→if/else.
+                // getDoc puede dar permission-denied si las reglas no permiten leer
+                // (ej. entrenador sin claim clubId). updateDoc→setDoc evita el getDoc.
+                try {
                     await updateDoc(doc(db,'cronos_messages',threadId), {
                         messages:      arrayUnion(msgEntry),
                         lastMessage:   '📊 Informe colectivo de partido',
                         lastMessageAt: createdAt,
-                        unreadByStaff: (snap.data().unreadByStaff||0) + 1,
+                        unreadByStaff: (typeof firebase !== 'undefined' && firebase.firestore)
+                            ? firebase.firestore.FieldValue.increment(1) : 1,
                     });
-                } else {
-                    await setDoc(doc(db,'cronos_messages',threadId), {
-                        threadId, coachUid: me.uid, coachEmail: me.email,
-                        clubId: me.clubId || null,            // ← FIX: hilo pertenece al club (reglas)
-                        participants: [me.uid, s.uid],        // ← FIX: reglas participants
-                        staffUids: [s.uid],                   // ← FIX: lectura staff por array-contains
-                        staffUid: s.uid, staffEmail: s.email||'', recipientType:'staff',
-                        messages: [msgEntry],
-                        lastMessage:   '📊 Informe colectivo de partido',
-                        lastMessageAt: createdAt,
-                        unreadByCoach: 0, unreadByStaff: 1,
-                    });
+                } catch(updErr) {
+                    try {
+                        await setDoc(doc(db,'cronos_messages',threadId), {
+                            threadId, coachUid: me.uid, coachEmail: me.email,
+                            clubId: me.clubId || null,
+                            participants: [me.uid, s.uid],
+                            staffUids: [s.uid],
+                            staffUid: s.uid,
+                            parentUid: s.uid,          // FIX (v178): club-reports.js busca por parentUid
+                            staffEmail: s.email||'',
+                            recipientType:'staff',
+                            messages: [msgEntry],
+                            lastMessage:   '📊 Informe colectivo de partido',
+                            lastMessageAt: createdAt,
+                            unreadByCoach: 0, unreadByStaff: 1,
+                        });
+                    } catch(setErr) {
+                        console.warn('[ColReport] Error creando hilo staff:', {
+                            code: setErr && setErr.code,
+                            message: setErr && setErr.message,
+                            threadId,
+                            staffUid: s.uid,
+                        }, setErr);
+                    }
                 }
                 await setDoc(doc(db,'cronos_notifications',`coll_rpt_${s.uid}_${Date.now().toString(36)}`), {
                     type: 'informe_colectivo', clubId: me.clubId||null,
