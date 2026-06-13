@@ -825,6 +825,13 @@ async function openParentPanel() {
             // Prioridad 2: docs por playerNumber sin parentUid (informes pre-vinculación)
             rptByPlayer.forEach(d => {
                 const data = d.data();
+                // ── FIX: la query por playerNumber+clubId arrastra TODOS los docs
+                // del partido con ese dorsal, incluidos los `collective_match_report`
+                // generados para el entrenador (uno por jugador convocado). Esos docs
+                // NO llevan staffReport/_forCoach, por lo que el filtro anterior los
+                // dejaba pasar y el padre veía 14 informes del mismo partido.
+                // Solo aceptamos informes específicos de padre: type === 'parent_player_report'.
+                if (data.type !== 'parent_player_report') return;
                 // EXCLUIR docs de staff y coach — NO son para padres
                 if (data.staffReport === true || data._forCoach === true) return;
                 // EXCLUIR docs que este padre ya descartó (soft delete)

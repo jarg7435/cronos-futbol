@@ -153,6 +153,24 @@ _Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: 
     - `js/coach/reports/generator.js` confirmado como **código muerto** (`ReportGenerator`/`generatePDF` no se instancian en ningún sitio); no es la fuente de la duplicación. Pendiente de limpieza (baja prioridad).
     - Verificado con test C+D que extrae las funciones reales de las fuentes: history antiguo con duplicados → 1 entrada/1 salida por turno; flujo limpio post-E5 intacto; dobles turnos legítimos preservados.
 
+
+## COMPLETADO (HOTFIX v169 — panel del padre: 14 informes por partido)
+
+- [x] **P3 (v169)**: El padre veía 14 informes del mismo partido en lugar de 1
+  - Causa: en `ppPlayer` (`js/parent/panel.js`) se lanzan 2 queries en paralelo sobre
+    `cronos_player_reports`: (1) `where(parentUid==me.uid)` y (2)
+    `where(playerNumber==…) + where(clubId==…)`. La query (2) arrastra TODOS los docs
+    del partido con ese dorsal, incluidos los `collective_match_report` que el
+    entrenador genera (uno por cada jugador convocado). El loop de Prioridad 2
+    (`rptByPlayer.forEach`) solo excluía `staffReport===true || _forCoach===true`, y
+    esos `collective_match_report` NO llevan esos flags → colaban los 14.
+  - Fix (`js/parent/panel.js`, loop de Prioridad 2): añadido filtro de inclusión
+    estricto `if (data.type !== 'parent_player_report') return;` antes de los demás
+    filtros. Solo los informes específicos de padre llegan al panel.
+  - Verificado con test (15 docs de entrada: 14 `collective_match_report` + 1
+    `parent_player_report`) → el padre ve exactamente 1 informe. `node --check` OK.
+  - Bump SW a `cronos-cache-v169`.
+
 ## PENDIENTE (empezar por E6)
 
 - [ ] **E6**: Crono live sin progreso segundo a segundo
