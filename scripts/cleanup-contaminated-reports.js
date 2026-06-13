@@ -122,13 +122,31 @@ async function resolveParentUid(email) {
   let total = 0;
   let legitParent = 0;       // type==parent_player_report con parentUid (LEGITIMO, intacto)
   let noParentUid = 0;       // sin parentUid (intacto)
-  const contaminated = [];   // {id, type, parentUid, playerNumber, matchId, matchDate, rival}
+  const contaminated = [];   // {id, type, parentUid, playerNumber, matchId, matchDate, rival, createdAt}
   const byType = {};
+  // PASO 2 + PASO 5: TODOS los docs con parentUid == targetUid (contaminados + legitimos),
+  // para listar el detalle pedido y para contar los informes legitimos que QUEDAN.
+  const targetAll = [];        // todos los docs con parentUid del padre objetivo
+  const targetLegitMatches = new Set(); // matchId distintos de sus parent_player_report
 
   snap.forEach((d) => {
     total++;
     const data = d.data();
     const hasParent = isNonEmpty(data.parentUid);
+
+    // PASO 2: recopilar TODOS los docs del padre objetivo (con o sin contaminacion)
+    if (targetUid && data.parentUid === targetUid) {
+      targetAll.push({
+        id: d.id,
+        type: data.type || '(sin type)',
+        playerNumber: data.playerNumber || '',
+        matchId: data.matchId || '',
+        createdAt: data.createdAt || '',
+      });
+      if (data.type === SAFE_TYPE) {
+        targetLegitMatches.add(data.matchId || ('id:' + d.id));
+      }
+    }
 
     if (!hasParent) { noParentUid++; return; }
 
@@ -147,8 +165,20 @@ async function resolveParentUid(email) {
       matchId: data.matchId || '',
       matchDate: data.matchDate || '',
       rival: data.rival || '',
+      createdAt: data.createdAt || '',
     });
   });
+
+  // PASO 2: listado detallado de TODOS los documentos del padre objetivo.
+  if (targetUid) {
+    console.log('--- PASO 2: documentos en ' + COLLECTION + ' con parentUid == ' + targetUid +
+                ' (' + targetAll.length + ') ---');
+    console.table(targetAll.slice(0, 100).map((c) => ({
+      id: c.id, type: c.type, dorsal: c.playerNumber, matchId: c.matchId, createdAt: c.createdAt,
+    })));
+    if (targetAll.length > 100) console.log('  (mostrados 100 de ' + targetAll.length + ')');
+    console.log('');
+  }
 
   console.log('--- RESUMEN ------------------------------------------');
   console.log(' Documentos totales en ' + COLLECTION + '        : ' + total);
@@ -178,6 +208,10 @@ async function resolveParentUid(email) {
   }
 
   if (!APPLY) {
+    if (targetUid) {
+      console.log('[CLEANUP][DRY-RUN][PASO 5 previsto] Tras borrar, este padre quedaria con ~' +
+                  targetLegitMatches.size + ' informe(s) parent_player_report (1 por partido jugado).');
+    }
     console.log('[CLEANUP][DRY-RUN] Modo auditoria: NO se ha borrado nada.');
     console.log('  Para BORRAR estos ' + contaminated.length + ' documentos, repite el comando con --apply:');
     console.log('    node scripts/cleanup-contaminated-reports.js' +
@@ -201,6 +235,29 @@ async function resolveParentUid(email) {
 
   console.log('\n[CLEANUP][DONE] ' + deleted + ' documentos contaminados borrados.');
   console.log('  Informes legitimos (parent_player_report) intactos: ' + legitParent + '\n');
+
+  // ─── PASO 5: confirmar resultado tras la limpieza (re-lectura real) ──────
+  if (targetUid) {
+    const after = await db.collection(COLLECTION).where('parentUid', '==', targetUid).get();
+    let afterParent = 0, afterOther = 0;
+    const afterMatches = new Set();
+    after.forEach((d) => {
+      const data = d.data();
+      if (data.type === SAFE_TYPE) { afterParent++; afterMatches.add(data.matchId || ('id:' + d.id)); }
+      else afterOther++;
+    });
+    console.log('--- PASO 5: confirmacion tras limpieza (parentUid == ' + targetUid + ') ---');
+    console.log('  Documentos restantes con su parentUid     : ' + after.size);
+    console.log('  - parent_player_report (correctos)        : ' + afterParent);
+    console.log('  - otros tipos (deberia ser 0)             : ' + afterOther);
+    console.log('  Partidos distintos del hijo (matchId)     : ' + afterMatches.size);
+    if (afterOther === 0) {
+      console.log('  [OK] No queda ningun contaminado para este padre.');
+      console.log('       El panel debe mostrar ~' + afterMatches.size + ' informes (1 por partido), no 40.\n');
+    } else {
+      console.log('  [AVISO] Aun quedan ' + afterOther + ' docs no-parent con su parentUid. Revisar.\n');
+    }
+  }
 
   await admin.app().delete();
   process.exit(0);
