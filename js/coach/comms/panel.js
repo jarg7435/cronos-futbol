@@ -190,6 +190,23 @@ async function _cResolveClubId(db, me, fns) {
     return null;
 }
 if (typeof window !== 'undefined') window._cResolveClubId = _cResolveClubId;
+
+// ════════════════════════════════════════════════════════════════════
+//  HELPER (Bug staff / v175): threadId de los hilos coach↔staff.
+//  ANTES: {coachUid}_{staffUid} -> el hilo "pertenecía" al coach; si un doc
+//  viejo no tenía coachUid/participants, las reglas de cronos_messages
+//  (read/update) rechazaban al coach (permission-denied) y el informe no
+//  llegaba al director/coordinador.
+//  AHORA: {clubId}_{staffUid} -> el hilo pertenece al CLUB; sameClub /
+//  sameClubAsDoc / userDocClubId siempre pasan para miembros del club.
+//  Si no hay clubId (admin individual) se mantiene el esquema legacy.
+//  El staff sigue leyendo por query (where staffUid == uid), así que el
+//  cambio de ID no afecta a su bandeja.
+// ════════════════════════════════════════════════════════════════════
+function _cStaffThreadId(clubId, coachUid, staffUid) {
+    return clubId ? `${clubId}_${staffUid}` : `${coachUid}_${staffUid}`;
+}
+if (typeof window !== 'undefined') window._cStaffThreadId = _cStaffThreadId;
 //
 //  ESTRATEGIA (en orden de fiabilidad):
 //  1. emailConfig.contacts guardado por el entrenador (FUENTE PRINCIPAL)
@@ -415,7 +432,7 @@ async function _loadStaffList() {
         const roleLabel = { director:'Director Deportivo', coordinator:'Coordinador' };
 
         body.innerHTML = staffList.map(s => {
-            const threadId = `${me.uid}_${s.uid}`;
+            const threadId = _cStaffThreadId(me.clubId, me.uid, s.uid);
             const thread   = threadsMap[threadId] || {};
             const unread   = thread.unreadByCoach || 0;
             const lastMsg  = thread.lastMessage || '— Sin mensajes —';
@@ -466,7 +483,7 @@ async function openThreadWithStaff(staffUid, staffEmail, staffRole) {
     const me = window._cronosCurrentUser;
     if (!me) return;
 
-    const threadId = `${me.uid}_${staffUid}`;
+    const threadId = _cStaffThreadId(me.clubId, me.uid, staffUid);
     const { db, doc, updateDoc } = await _cFS();
 
     const roleLabel = { director:'Director Deportivo', coordinator:'Coordinador' };
@@ -977,6 +994,12 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                     staffEmail:    recipientEmail,
                     recipientType: 'staff',
                     unreadByStaff: 1,
+                    // Hilo pertenece al CLUB (threadId = {clubId}_{staffUid}):
+                    // clubId + participants + staffUids hacen pasar las reglas
+                    // sameClubAsDoc / participants para coach y staff.
+                    clubId:        me.clubId || null,
+                    participants:  [me.uid, recipientUid],
+                    staffUids:     [recipientUid],
                 });
             } else {
                 Object.assign(baseDoc, {
@@ -1512,9 +1535,9 @@ window._executeReportsSend = async function(method) {
                     } // fin guard anti-duplicado
 
                     // ── 2. Hilo de mensajes unificado (mismo formato que auto-despacho) ──
-                    // Usamos {coachUid}_{staffUid} para que coincida con el hilo que
-                    // crea autoDispatchMatchReports, evitando hilos duplicados.
-                    const threadId = `${me.uid}_${uidToNotify}`;
+                    // Usamos {clubId}_{staffUid} para que el hilo pertenezca al CLUB
+                    // (sameClubAsDoc pasa siempre) y coincida con autoDispatchMatchReports.
+                    const threadId = _cStaffThreadId(me.clubId, me.uid, uidToNotify);
                     const msgEntry = { sender: 'coach', text: globalText, timestamp: new Date().toISOString(), type: 'collective_report' };
                     try {
                         const threadSnap = await getDoc(doc(db, 'cronos_messages', threadId));
@@ -1532,6 +1555,7 @@ window._executeReportsSend = async function(method) {
                                 coachEmail:    me.email,
                                 clubId:        me.clubId || null,     // ← FIX: para reglas Firestore
                                 participants:  [me.uid, uidToNotify], // ← FIX: para reglas Firestore
+                                staffUids:     [uidToNotify],         // ← FIX: lectura staff por array-contains
                                 staffUid:      uidToNotify,
                                 recipientType: 'staff',
                                 messages:      [msgEntry],
@@ -3603,7 +3627,7 @@ window._sendCollectiveReportNow = async function() {
         for (const s of staff) {
             // Solo envío in-app si tiene uid real
             if (s.uid) {
-                const threadId = `${me.uid}_${s.uid}`;
+                const threadId = _cStaffThreadId(me.clubId, me.uid, s.uid);
                 const msgEntry = {
                     sender: 'coach', type: 'collective_report',
                     text,
@@ -3621,6 +3645,9 @@ window._sendCollectiveReportNow = async function() {
                 } else {
                     await setDoc(doc(db,'cronos_messages',threadId), {
                         threadId, coachUid: me.uid, coachEmail: me.email,
+                        clubId: me.clubId || null,            // ← FIX: hilo pertenece al club (reglas)
+                        participants: [me.uid, s.uid],        // ← FIX: reglas participants
+                        staffUids: [s.uid],                   // ← FIX: lectura staff por array-contains
                         staffUid: s.uid, staffEmail: s.email||'', recipientType:'staff',
                         messages: [msgEntry],
                         lastMessage:   '📊 Informe colectivo de partido',

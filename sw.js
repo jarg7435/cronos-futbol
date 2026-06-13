@@ -1,5 +1,19 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v174
+//  CRONOS FUTBOL — Service Worker v175
+//  v175: FIX permission-denied del informe colectivo al staff (director/
+//         coordinador). Causa: el hilo coach<->staff usaba threadId
+//         {coachUid}_{staffUid}; los docs antiguos no tenian coachUid ni
+//         participants, asi que updateDoc/setDoc(merge) los rechazaba contra
+//         las reglas de cronos_messages -> el informe no llegaba al staff.
+//         Solucion: nuevo helper _cStaffThreadId -> el hilo pasa a
+//         {clubId}_{staffUid} (pertenece al CLUB) y los setDoc incluyen
+//         clubId + participants + staffUids, de modo que sameClubAsDoc/
+//         participants/coachUid SIEMPRE pasan. Aplicado en las 4 rutas:
+//         listado de hilos, openThreadWithStaff (chat manual), sendCoachMessage,
+//         _executeReportsSend (informe colectivo) y la 2a ruta de envio staff.
+//         El staff sigue leyendo por query (staffUid==uid / staffUids
+//         array-contains), asi que el cambio de ID no afecta a su bandeja.
+//         No requiere cambio en firestore.rules.
 //  v174: dos bugs confirmados del envio de informes:
 //         Bug 1 (clubId null): _cResolveClubId lee clubId de users/{uid}
 //           cuando el token no trae el claim -> staff y padres dejan de
@@ -199,8 +213,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v174';
-const CACHE_NAME = 'cronos-cache-v174';
+const VERSION    = 'v175';
+const CACHE_NAME = 'cronos-cache-v175';
 
 const ASSETS = [
     './',
