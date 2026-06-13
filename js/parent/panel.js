@@ -773,23 +773,40 @@ async function openParentPanel() {
             ]);
 
             // ══════════════════════════════════════════════════════════════
-            // FIX v2: Deduplicación por (matchId + playerNumber)
+            // FIX v3: Deduplicación robusta por partido + jugador
             // ══════════════════════════════════════════════════════════════
-            // ANTES: se usaba reportsMap[d.id] como clave → cada documento
-            // tiene un ID único, así que NO se deduplicaban los 3 tipos:
-            //   {matchId}_staff_p5   (staffReport=true)    → no filtrado por _forCoach
-            //   {matchId}_coach_p5   (_forCoach=true)      → NO FILTRADO = duplicado!
-            //   {matchId}_parent_UID_p5 (parent_player_report) → correcto
-            //   rpt_5_abc            (despacho manual)     → no deduplicable
+            // El problema anterior: la dedup usaba solo matchId+playerNumber,
+            // pero los docs rpt_* (despacho manual viejo) NO tienen matchId,
+            // así que su dedupKey era "_10" y TODOS los informes sin matchId
+            // del mismo jugador colapsaban a uno solo (perdiendo partidos
+            // distintos) O no se deduplicaban si tenían IDs distintos.
             //
-            // Con 15 jugadores × 3 docs = 45 docs por envío.
-            // Si el coach envía 3-4 veces → 10+ informes por partido.
-            //
-            // AHORA: deduplicamos por matchId+playerNumber, excluyendo
-            // documentos de staff (_forCoach=true, staffReport=true).
+            // FIX v3: Clave de deduplicación compuesta:
+            //   Si tiene matchId → "{matchId}_{playerNumber}"
+            //   Si NO tiene matchId → "{matchDate}_{rival}_{scoreHome}_{scoreAway}_{playerNumber}"
+            // Esto permite distinguir partidos distintos incluso sin matchId
+            // y deduplicar correctamente los 3 tipos de doc por partido:
+            //   {matchId}_staff_p5      (staffReport=true) → EXCLUIDO
+            //   {matchId}_coach_p5      (_forCoach=true)   → EXCLUIDO
+            //   {matchId}_parent_UID_p5 (parent_player_report) → CORRECTO
+            //   rpt_5_abc               (despacho manual)  → dedup por fecha+rival+marcador
             // ══════════════════════════════════════════════════════════════
-            const reportsByMatch = {}; // clave: "matchId_playerNumber"
+            const reportsByMatch = {}; // clave: dedupKey
             const seenDocIds = new Set();
+
+            // Helper: generar clave de deduplicación robusta
+            function _rptDedupKey(data) {
+                const pNum = data.playerNumber || '';
+                if (data.matchId && data.matchId !== 'undefined' && data.matchId !== '') {
+                    return `${data.matchId}_${pNum}`;
+                }
+                // Fallback: usar fecha + rival + marcador para distinguir partidos
+                const date = data.matchDate || '';
+                const rival = data.rival || '';
+                const sh = data.scoreHome != null ? String(data.scoreHome) : '';
+                const sa = data.scoreAway != null ? String(data.scoreAway) : '';
+                return `${date}_${rival}_${sh}_${sa}_${pNum}`;
+            }
 
             // Prioridad 1: docs con parentUid (informes específicos para padres)
             rptByParent.forEach(d => {
@@ -800,7 +817,7 @@ async function openParentPanel() {
                 if (Array.isArray(data.dismissedBy) && data.dismissedBy.includes(me.uid)) return;
                 if (seenDocIds.has(d.id)) return;
                 seenDocIds.add(d.id);
-                const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
+                const dedupKey = _rptDedupKey(data);
                 // Priorizar type=parent_player_report sobre otros tipos
                 if (!reportsByMatch[dedupKey] || data.type === 'parent_player_report') {
                     reportsByMatch[dedupKey] = { _id: d.id, ...data };
@@ -815,7 +832,7 @@ async function openParentPanel() {
                 if (Array.isArray(data.dismissedBy) && data.dismissedBy.includes(me.uid)) return;
                 if (seenDocIds.has(d.id)) return;
                 seenDocIds.add(d.id);
-                const dedupKey = `${data.matchId || ''}_${data.playerNumber || ''}`;
+                const dedupKey = _rptDedupKey(data);
                 if (!reportsByMatch[dedupKey]) {
                     reportsByMatch[dedupKey] = { _id: d.id, ...data };
                     // Actualizar parentUid en Firestore si falta
@@ -830,6 +847,24 @@ async function openParentPanel() {
 
             const reports = Object.values(reportsByMatch);
             reports.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+
+            // ── LIMPIEZA DE DUPLICADOS EN FIRESTORE ─────────────────────
+            // FIX v3: Los docs que NO fueron seleccionados como ganadores de
+            // la deduplicación son duplicados que deben borrarse de Firestore.
+            // Esto limpia progresivamente los docs rpt_* legacy y otros
+            // duplicados que se acumularon antes del fix.
+            const _winningIds = new Set(reports.map(r => r._id));
+            const _allSeenIds = Array.from(seenDocIds);
+            const _duplicateIds = _allSeenIds.filter(id => !_winningIds.has(id));
+            if (_duplicateIds.length > 0) {
+                console.log(`[ParentPanel] Limpiando ${_duplicateIds.length} docs duplicados de Firestore`);
+                import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
+                    .then(({ doc: dRef, deleteDoc }) => {
+                        _duplicateIds.forEach(id => {
+                            deleteDoc(dRef(fa.db, 'cronos_player_reports', id)).catch(() => {});
+                        });
+                    });
+            }
 
             // ── MAX 40: auto-borrar los más antiguos si hay más ─────────────
             const MAX_RPT = 40;
