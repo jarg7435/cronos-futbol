@@ -103,10 +103,10 @@ async function openStaffDashboard() {
     // Sin clubId, las queries por clubId fallan silenciosamente.
     if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
         try {
-            const { doc: docFn, getDoc } = await _sdFS();
+            const { doc: docFn, getDoc, updateDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc, updateDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                     console.log('[StaffDashboard] clubId resuelto via _cResolveClubId:', resolvedId);
@@ -1071,10 +1071,10 @@ async function _sdLoadReports() {
     // si el custom claim aún no se propagó al token).
     if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
         try {
-            const { doc: docFn, getDoc } = await _sdFS();
+            const { doc: docFn, getDoc, updateDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc, updateDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                     console.log('[StaffDashboard][DIAG] clubId resuelto via _cResolveClubId:', resolvedId);
@@ -1433,10 +1433,10 @@ async function _sdLoadMessages() {
     // _sdLoadReports y que el entrenador usa para enviar informes.
     if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
         try {
-            const { doc: docFn, getDoc } = await _sdFS();
+            const { doc: docFn, getDoc, updateDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc, updateDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                     console.log('[StaffDashboard][DIAG-MSG] clubId resuelto via _cResolveClubId:', resolvedId);

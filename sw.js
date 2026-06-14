@@ -1,5 +1,19 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v176
+//  CRONOS FUTBOL - Service Worker v177
+//  v177: FIX (P11-C/P11-D) el Panel de Informes seguia sin mostrar partidos
+//         nuevos al Director/Coordinador.
+//         P11-C: las 3 llamadas a _cResolveClubId en club-reports.js no pasaban
+//           updateDoc, asi que el clubId resuelto desde allRoles[] nunca se
+//           migraba al campo raiz de users/{uid} -> userDocClubId() fallaba y la
+//           Query A (por clubId) era rechazada. Ahora pasan { doc, getDoc,
+//           updateDoc } y la migracion se persiste.
+//         P11-D: _sendCollectiveReportNow hacia `return` si la lista de staff
+//           estaba vacia, ABORTANDO la escritura de cronos_player_reports -> el
+//           partido nuevo nunca aparecia (el panel se alimenta de esos docs).
+//           Ahora se escriben igualmente; staffUids incluye SIEMPRE me.uid
+//           (red de seguridad para la Query B array-contains) tanto en el
+//           colectivo como en autoDispatchMatchReports. Anadidos logs
+//           [StaffReport] con conteo TOTAL de docs escritos para diagnostico.
 //  v176: FIX (P11) panel de Informes no mostraba TODOS los partidos al
 //         Director/Coordinador. (1) La agrupacion usaba matchDate+rival+coach
 //         pero los docs staff_match_report guardan matchDate=hoy -> partidos
@@ -222,8 +236,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v176';
-const CACHE_NAME = 'cronos-cache-v176';
+const VERSION    = 'v177';
+const CACHE_NAME = 'cronos-cache-v177';
 
 const ASSETS = [
     './',

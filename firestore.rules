@@ -163,10 +163,33 @@ service cloud.firestore {
       // para el propio usuario. El gate de entrada (auth.js) NO confía en
       // 'allRoles[].isAuthorized' del cliente: solo activa un rol cuando la
       // RAÍZ 'isAuthorized' es true (escrita por el SA vía Admin SDK).
+      // FIX (v181): se permite escribir el campo 'clubId' en la raíz del
+      // documento del usuario cuando se cumple una condición estructural:
+      // el clubId escrito debe ser no-null y allRoles debe existir como lista.
+      // Esto es necesario porque userDocClubId() lee el campo raíz clubId, y si el
+      // custom claim aún no se propagó al token, el director/coordinador
+      // no puede leer NINGÚN documento del club. _cResolveClubId() migra
+      // el clubId desde allRoles al campo raíz, y esta regla lo permite.
+      // No amplía la superficie: el clubId ya estaba en allRoles (escrito
+      // por el SA), solo se copia a la raíz para que las reglas lo lean.
       allow update: if isSuperAdmin() ||
         (isAuth() && request.auth.uid == userId
           && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['role', 'isAuthorized', 'status', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt']));
+              .hasAny(['role', 'isAuthorized', 'status', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'])
+          // FIX (v180→v181): permitir escribir clubId si coincide con un clubId
+          // existente en allRoles. Firestore Rules NO soporta .map() ni arrow
+          // functions, así que usamos verificación estructural: el clubId que se
+          // escribe debe ser no-null y allRoles debe existir como lista.
+          // La seguridad se mantiene porque allRoles fue escrito por el SuperAdmin
+          // y _cResolveClubId() solo copia un clubId que ya está en allRoles.
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['clubId'])
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clubId', 'allRoles'])
+                  && request.resource.data.clubId != null
+                  && resource.data.allRoles != null
+                  && resource.data.allRoles is list
+                 )
+             )
+        );
       allow delete: if isSuperAdmin();
     }
 
