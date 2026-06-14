@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL — Service Worker v175
+//  CRONOS FUTBOL - Service Worker v176
+//  v176: FIX (P11) panel de Informes no mostraba TODOS los partidos al
+//         Director/Coordinador. (1) La agrupacion usaba matchDate+rival+coach
+//         pero los docs staff_match_report guardan matchDate=hoy -> partidos
+//         distintos contra el mismo rival el mismo dia colapsaban en una
+//         tarjeta. Ahora se agrupa por matchId. (2) La query por clubId no
+//         filtraba staffReport, agotando limit(500) con docs irrelevantes;
+//         ahora ambas queries (clubId+staffReport / staffUids) corren en
+//         paralelo con Promise.allSettled y se fusionan. Nuevo indice
+//         compuesto cronos_player_reports(clubId, staffReport).
 //  v175: FIX permission-denied del informe colectivo al staff (director/
 //         coordinador). Causa: el hilo coach<->staff usaba threadId
 //         {coachUid}_{staffUid}; los docs antiguos no tenian coachUid ni
@@ -213,8 +222,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v175';
-const CACHE_NAME = 'cronos-cache-v175';
+const VERSION    = 'v176';
+const CACHE_NAME = 'cronos-cache-v176';
 
 const ASSETS = [
     './',

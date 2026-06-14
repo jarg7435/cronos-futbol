@@ -173,6 +173,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "clubId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "staffReport",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cronos_player_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "parentUid",
           "order": "ASCENDING"
         },

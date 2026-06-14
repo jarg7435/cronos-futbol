@@ -1094,78 +1094,56 @@ async function _sdLoadReports() {
     try {
         const { db, collection, getDocs, query, where, limit } = await _sdFS();
 
-        // FIX: Query dual para acceder a informes de staff.
-        // Query 1: por clubId (requiere que el token tenga el custom claim
-        //          clubId; las reglas exigen request.auth.token.clubId == clubId
-        //          sobre TODOS los docs candidatos, así que si el director/
-        //          coordinador aún no tiene el claim propagado, la query ENTERA
-        //          es rechazada con "Missing or insufficient permissions").
-        // Query 2: por staffUids array-contains (funciona sin custom claims,
-        //          ya que las reglas de Firestore permiten leer a quien esté
-        //          en resource.data.staffUids).
-        // Por eso la Query 1 va en su propio try/catch: si falla por permisos
-        // NO debe abortar el flujo; caemos a la Query 2.
-        // FIX (v178): Log diagnóstico para entender qué ve el director/coordinador
+        // FIX (P11-b): Query dual EN PARALELO para informes de staff.
+        // Antes la Query 1 hacía where('clubId','==',clubId) SIN filtrar por
+        // staffReport, así que el limit(500) se consumía con documentos
+        // irrelevantes (informes de padres, etc.) y los partidos reales del
+        // staff quedaban fuera. Además la Query 2 (staffUids array-contains)
+        // casi nunca se activaba porque la Query 1 siempre encontraba ALGÚN
+        // doc staffReport=true.
+        // Solución: ambas queries filtran staffReport=true (la A directamente
+        // en Firestore con índice compuesto clubId+staffReport) y se ejecutan
+        // en paralelo con Promise.allSettled (si una falla por permisos/índice,
+        // la otra sigue). Se fusionan por id en un Map.
+        // Query A: por clubId + staffReport (requiere custom claim clubId;
+        //          puede fallar si el token aún no lo tiene propagado).
+        // Query B: por staffUids array-contains (funciona sin custom claims).
         console.log('[StaffDashboard][DIAG] Cargando informes. uid:', me.uid, 'clubId:', clubId, 'currentRole:', me.currentRole || me.role);
 
-        let rawSnap = { forEach: () => {} };
-        let _clubQueryOk = false;
-        let _clubQueryDocCount = 0;
-        try {
-            rawSnap = await getDocs(query(
+        const [snapA, snapB] = await Promise.allSettled([
+            getDocs(query(
                 collection(db, 'cronos_player_reports'),
                 where('clubId', '==', clubId),
+                where('staffReport', '==', true),
                 limit(500)
-            ));
-            _clubQueryOk = true;
-            rawSnap.forEach(d => { _clubQueryDocCount++; });
-            console.log('[StaffDashboard][DIAG] Query por clubId OK. Docs:', _clubQueryDocCount, 'clubId:', clubId);
-        } catch (clubErr) {
-            console.warn('[StaffDashboard][DIAG] Query por clubId FALLÓ:', clubErr.code || clubErr.message);
+            )),
+            getDocs(query(
+                collection(db, 'cronos_player_reports'),
+                where('staffUids', 'array-contains', me.uid),
+                limit(500)
+            )),
+        ]);
+
+        if (snapA.status === 'rejected') {
+            console.warn('[StaffDashboard][DIAG] Query clubId+staffReport FALLÓ:', snapA.reason?.code || snapA.reason?.message);
+        }
+        if (snapB.status === 'rejected') {
+            console.warn('[StaffDashboard][DIAG] Query staffUids array-contains FALLÓ:', snapB.reason?.code || snapB.reason?.message);
         }
 
-        // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
-        let _hasStaffDocs = false;
-        let _staffDocCount = 0;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) { _hasStaffDocs = true; _staffDocCount++; } });
-        console.log('[StaffDashboard][DIAG] Docs staffReport=true en query clubId:', _staffDocCount);
+        const combinedMap = new Map();
+        if (snapA.status === 'fulfilled') snapA.value.forEach(d => combinedMap.set(d.id, d));
+        if (snapB.status === 'fulfilled') snapB.value.forEach(d => {
+            // La query B no filtra staffReport en Firestore (staffUids ya implica
+            // doc de staff), pero filtramos defensivamente por si acaso.
+            if (!combinedMap.has(d.id) && d.data().staffReport === true) combinedMap.set(d.id, d);
+        });
+        console.log('[StaffDashboard][DIAG] Docs combinados (clubId+staffReport / staffUids):',
+            snapA.status === 'fulfilled' ? snapA.value.size : 'err',
+            '/', snapB.status === 'fulfilled' ? snapB.value.size : 'err',
+            '→ total único:', combinedMap.size);
 
-        if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
-            try {
-                const altSnap = await getDocs(query(
-                    collection(db, 'cronos_player_reports'),
-                    where('staffUids', 'array-contains', me.uid),
-                    limit(500)
-                ));
-                let _altCount = 0;
-                altSnap.forEach(d => _altCount++);
-                console.log('[StaffDashboard][DIAG] Query staffUids array-contains. Docs:', _altCount, 'uid:', me.uid);
-                // Fusionar resultados alternativos con los originales
-                const existingIds = new Set();
-                rawSnap.forEach(d => existingIds.add(d.id));
-                altSnap.forEach(d => {
-                    if (!existingIds.has(d.id) && d.data().staffReport === true) {
-                        // Añadir docs que no estaban en el snap original
-                        _hasStaffDocs = true;
-                    }
-                });
-                // Usar el snap alternativo si tiene resultados de staff
-                if (_hasStaffDocs) {
-                    // Combinar ambos snaps
-                    const combinedDocs = [];
-                    rawSnap.forEach(d => combinedDocs.push(d));
-                    const existingIds2 = new Set(combinedDocs.map(d => d.id));
-                    altSnap.forEach(d => {
-                        if (!existingIds2.has(d.id)) combinedDocs.push(d);
-                    });
-                    rawSnap = { forEach: fn => combinedDocs.forEach(fn) };
-                }
-            } catch(altErr) {
-                console.warn('[StaffDashboard] Query alternativa por staffUids falló:', altErr.message);
-            }
-        }
-
-        // Filtrar en cliente: solo documentos del panel de staff (staffReport=true)
+        const rawSnap = { forEach: fn => combinedMap.forEach(d => fn(d)) };
         // FIX v3: Solo usar dismissKey con rol (uid_role) para el filtro.
         // Así Director y Coordinador pueden borrar de forma INDEPENDIENTE:
         // el borrado del Director añade "uid_director" y el del Coordinador
