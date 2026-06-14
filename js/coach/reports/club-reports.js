@@ -97,8 +97,37 @@ async function openStaffDashboard() {
         return;
     }
 
+    // FIX (v180): Resolver clubId si no está en el objeto me.
+    // El director/coordinador puede tener el clubId solo en allRoles[]
+    // (no en el campo raíz) si el custom claim aún no se propagó.
+    // Sin clubId, las queries por clubId fallan silenciosamente.
+    if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
+        try {
+            const { doc: docFn, getDoc } = await _sdFS();
+            const db = window._cronos_auth?.db;
+            if (db) {
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                if (resolvedId) {
+                    me.clubId = resolvedId;
+                    console.log('[StaffDashboard] clubId resuelto via _cResolveClubId:', resolvedId);
+                }
+            }
+        } catch(e) { console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message); }
+    }
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
+
+    // FIX (v180): Ejecutar backfill de hilos existentes sin campos de identidad.
+    // Esto actualiza los hilos creados antes de v180 que no tienen
+    // clubId/staffUid/parentUid/participants/recipientType.
+    // Se ejecuta en segundo plano (no bloquea la UI) y solo una vez por club.
+    if (typeof window._cronosBackfillMessages === 'function') {
+        window._cronosBackfillMessages().catch(e =>
+            console.warn('[StaffDashboard] Backfill falló:', e.message)
+        );
+    }
+
     modal.innerHTML = `
     <div class="modal-content" style="width:min(96vw,960px);max-height:94vh;
          display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;">
@@ -1037,7 +1066,24 @@ const _RP = (() => {
 async function _sdLoadReports() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
-    const clubId    = me.clubId;
+
+    // FIX (v180): Resolver clubId si no está en el objeto me (puede faltar
+    // si el custom claim aún no se propagó al token).
+    if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
+        try {
+            const { doc: docFn, getDoc } = await _sdFS();
+            const db = window._cronos_auth?.db;
+            if (db) {
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                if (resolvedId) {
+                    me.clubId = resolvedId;
+                    console.log('[StaffDashboard][DIAG] clubId resuelto via _cResolveClubId:', resolvedId);
+                }
+            }
+        } catch(e) { console.warn('[StaffDashboard][DIAG] No se pudo resolver clubId:', e.message); }
+    }
+
+    const clubId = me.clubId;
 
     if (!clubId) {
         container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
@@ -1059,8 +1105,12 @@ async function _sdLoadReports() {
         //          en resource.data.staffUids).
         // Por eso la Query 1 va en su propio try/catch: si falla por permisos
         // NO debe abortar el flujo; caemos a la Query 2.
+        // FIX (v178): Log diagnóstico para entender qué ve el director/coordinador
+        console.log('[StaffDashboard][DIAG] Cargando informes. uid:', me.uid, 'clubId:', clubId, 'currentRole:', me.currentRole || me.role);
+
         let rawSnap = { forEach: () => {} };
         let _clubQueryOk = false;
+        let _clubQueryDocCount = 0;
         try {
             rawSnap = await getDocs(query(
                 collection(db, 'cronos_player_reports'),
@@ -1068,13 +1118,17 @@ async function _sdLoadReports() {
                 limit(500)
             ));
             _clubQueryOk = true;
+            rawSnap.forEach(d => { _clubQueryDocCount++; });
+            console.log('[StaffDashboard][DIAG] Query por clubId OK. Docs:', _clubQueryDocCount, 'clubId:', clubId);
         } catch (clubErr) {
-            console.warn('[StaffDashboard] Query por clubId falló (probable claim clubId no propagado), usando fallback staffUids:', clubErr.message);
+            console.warn('[StaffDashboard][DIAG] Query por clubId FALLÓ:', clubErr.code || clubErr.message);
         }
 
         // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
         let _hasStaffDocs = false;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
+        let _staffDocCount = 0;
+        rawSnap.forEach(d => { if (d.data().staffReport === true) { _hasStaffDocs = true; _staffDocCount++; } });
+        console.log('[StaffDashboard][DIAG] Docs staffReport=true en query clubId:', _staffDocCount);
 
         if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
             try {
@@ -1083,6 +1137,9 @@ async function _sdLoadReports() {
                     where('staffUids', 'array-contains', me.uid),
                     limit(500)
                 ));
+                let _altCount = 0;
+                altSnap.forEach(d => _altCount++);
+                console.log('[StaffDashboard][DIAG] Query staffUids array-contains. Docs:', _altCount, 'uid:', me.uid);
                 // Fusionar resultados alternativos con los originales
                 const existingIds = new Set();
                 rawSnap.forEach(d => existingIds.add(d.id));
@@ -1147,11 +1204,21 @@ async function _sdLoadReports() {
             return;
         }
 
-        // ── Agrupar documentos por partido (fecha + rival + coach) ───
+        // ── Agrupar documentos por partido ───────────────────────────
+        // FIX (P11): la clave de agrupación PRIORIZA matchId, que es único y
+        // determinista por partido. Antes se agrupaba por matchDate+rival+coach,
+        // pero los docs `staff_match_report` guardan matchDate = fecha de HOY
+        // (no la fecha real del partido). Resultado: dos partidos distintos
+        // contra el mismo rival enviados el mismo día colapsaban en UNA sola
+        // tarjeta → "no se muestran todos los partidos". Usando matchId cada
+        // partido conserva su propia tarjeta. Solo si falta matchId caemos al
+        // esquema antiguo (fecha+rival+coach) como último recurso.
         const matches = {};
         snap.forEach(docSnap => {
             const r   = { _id: docSnap.id, ...docSnap.data() };
-            const key = `${r.matchDate || 'sin-fecha'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
+            const key = (r.matchId && String(r.matchId).trim())
+                ? `mid:${r.matchId}`
+                : `${r.matchDate || 'sin-fecha'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
             if (!matches[key]) {
                 matches[key] = {
                     key,
@@ -1173,7 +1240,37 @@ async function _sdLoadReports() {
                     players:       [],
                 };
             }
+            // FIX (P11): completar metadatos faltantes desde cualquier doc del
+            // grupo. Distintas rutas de escritura guardan campos distintos
+            // (p.ej. los docs `staff_match_report` omiten venue/competition y
+            // ponen matchDate = hoy, mientras `collective_match_report` trae la
+            // fecha real y más metadatos). Tomamos el primer valor no vacío.
+            const grp = matches[key];
+            ['matchDate','rival','scoreHome','scoreAway','coachEmail','coachUid',
+             'createdAt','category','venue','competition','matchTime','duration',
+             'stoppageTime'].forEach(f => {
+                if ((grp[f] === undefined || grp[f] === null || grp[f] === '') &&
+                    r[f] !== undefined && r[f] !== null && r[f] !== '') {
+                    grp[f] = r[f];
+                }
+            });
             matches[key].players.push(r);
+        });
+
+        // FIX (P11): deduplicar jugadores por número dentro de cada partido.
+        // Un mismo partido puede tener docs de DOS rutas distintas
+        // (`staff_match_report` y `collective_match_report`) que ahora se agrupan
+        // juntos por matchId. Sin esto, el contador "X jugadores" y la suma de
+        // goles se duplicarían. Conservamos el doc con el historial más completo.
+        Object.values(matches).forEach(m => {
+            const byNum = {};
+            m.players.forEach(p => {
+                const k = String(p.playerNumber || p._id || Math.random());
+                if (!byNum[k] || (p.history || []).length > (byNum[k].history || []).length) {
+                    byNum[k] = p;
+                }
+            });
+            m.players = Object.values(byNum);
         });
 
         // Ordenar por fecha descendente
@@ -1351,8 +1448,26 @@ async function _sdLoadReports() {
 async function _sdLoadMessages() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
-    const clubId    = me.clubId;
     if (!container) return;
+
+    // FIX (v180): Resolver clubId si no está en el objeto me (puede faltar
+    // si el custom claim aún no se propagó al token). Mismo patrón que
+    // _sdLoadReports y que el entrenador usa para enviar informes.
+    if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
+        try {
+            const { doc: docFn, getDoc } = await _sdFS();
+            const db = window._cronos_auth?.db;
+            if (db) {
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                if (resolvedId) {
+                    me.clubId = resolvedId;
+                    console.log('[StaffDashboard][DIAG-MSG] clubId resuelto via _cResolveClubId:', resolvedId);
+                }
+            }
+        } catch(e) { console.warn('[StaffDashboard][DIAG-MSG] No se pudo resolver clubId:', e.message); }
+    }
+
+    const clubId = me.clubId;
 
     if (!clubId) {
         container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⚠️ Sin club asignado.</div>`;
@@ -1362,14 +1477,51 @@ async function _sdLoadMessages() {
     try {
         const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
-        const [snapStaff, snapParent] = await Promise.all([
-            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
-            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch(()=>({forEach:()=>{}})),
+        // FIX (v180): CUATRO consultas para máxima cobertura de hilos de mensajes.
+        // Consulta A: staffUid == me.uid (hilos donde soy staff)
+        // Consulta B: parentUid == me.uid (hilos donde soy padre/destinatario legacy)
+        // Consulta C: participants array-contains me.uid (fallback si A y B fallan)
+        // Consulta D: clubId == me.clubId (MISMA LOGÍSTICA QUE _sdLoadReports)
+        //   → Esta es la clave: _sdLoadReports YA consulta por clubId y FUNCIONA
+        //   (devuelve 210+ docs). Aplicamos la misma logística aquí.
+        //   Filtramos client-side por recipientType==='staff' para excluir hilos de padres.
+        console.log('[StaffDashboard][DIAG-MSG] Cargando mensajes. uid:', me.uid, 'clubId:', clubId);
+
+        const [snapStaff, snapParent, snapParticipants, snapClub] = await Promise.all([
+            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query staffUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            // FIX (v180): Consulta por clubId — MISMA LOGÍSTICA que _sdLoadReports
+            // que ya funciona (devuelve 210+ docs). Esta query encuentra TODOS los
+            // hilos del club, incluyendo los que NO tienen el uid del director en
+            // staffUid/parentUid/participants (el caso que causa el bug).
+            getDocs(query(collection(db,'cronos_messages'), where('clubId','==',clubId))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query clubId falló:', e.code||e.message); return {forEach:()=>{}}; }),
         ]);
+
+        // Contar resultados de cada query para diagnóstico
+        let _staffMsgCount = 0, _parentMsgCount = 0, _participantsMsgCount = 0, _clubMsgCount = 0;
+        snapStaff.forEach(() => _staffMsgCount++);
+        snapParent.forEach(() => _parentMsgCount++);
+        snapParticipants.forEach(() => _participantsMsgCount++);
+        snapClub.forEach(() => _clubMsgCount++);
+        console.log('[StaffDashboard][DIAG-MSG] Resultados - staffUid:', _staffMsgCount, 'parentUid:', _parentMsgCount, 'participants:', _participantsMsgCount, 'clubId:', _clubMsgCount);
 
         const threadsMap = {};
         snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        snapParticipants.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
+        // FIX (v180): Fusionar resultados de clubId — solo hilos de staff
+        // (recipientType==='staff' o que tengan staffUid). Los hilos de padres
+        // no son relevantes para el panel de dirección.
+        snapClub.forEach(d => {
+            if (!threadsMap[d.id]) {
+                const data = d.data();
+                // Solo incluir hilos de staff (no de padres)
+                if (data.recipientType === 'staff' || data.staffUid || (data.messages||[]).some(m => m.type === 'collective_report')) {
+                    threadsMap[d.id] = { _id: d.id, ...data };
+                }
+            }
+        });
 
         const threads = Object.values(threadsMap)
             .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
@@ -1506,6 +1658,91 @@ async function _sdLoadMessages() {
 
 window.openLiveMatchesView = () => {
     window.open('./live.html', '_blank');
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  FIX (v180): BACKFILL — Actualizar hilos existentes sin campos de identidad
+//  Los hilos creados antes de v180 no tienen clubId/staffUid/parentUid/
+//  participants/recipientType, así que el director/coordinador no los veía.
+//  Esta función actualiza TODOS los hilos del club para añadir esos campos.
+//  Se ejecuta UNA SOLA VEZ (guard en localStorage) y es idempotente.
+// ════════════════════════════════════════════════════════════════════
+window._cronosBackfillMessages = async function() {
+    const me = window._cronosCurrentUser;
+    if (!me || !me.clubId) {
+        console.warn('[Backfill] Sin clubId, abortando.');
+        return;
+    }
+
+    const backfillKey = `cronos_backfill_v180_${me.clubId}`;
+    if (localStorage.getItem(backfillKey)) {
+        console.log('[Backfill] Ya ejecutado para este club, saltando.');
+        return;
+    }
+
+    try {
+        const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
+
+        // Obtener TODOS los hilos del club
+        const snap = await getDocs(query(
+            collection(db, 'cronos_messages'),
+            where('clubId', '==', me.clubId)
+        ));
+
+        let updated = 0;
+        let skipped = 0;
+        for (const d of snap.docs) {
+            const data = d.data();
+            const needsUpdate = !data.staffUid && !data.parentUid && !data.recipientType;
+
+            if (needsUpdate) {
+                try {
+                    const updates = {};
+                    // Inferir campos de identidad
+                    if (data.coachUid) {
+                        updates.participants = [data.coachUid];
+                    }
+                    // Si tiene mensajes, buscar el tipo
+                    const hasCollective = (data.messages || []).some(m => m.type === 'collective_report');
+                    if (hasCollective) {
+                        updates.recipientType = 'staff';
+                        updates.staffUid = data.coachUid; // placeholder, se sobrescribe si hay más datos
+                    }
+                    // Intentar inferir staffUid del threadId
+                    // threadId = {clubId}_{staffUid} para hilos de staff
+                    const threadIdParts = d.id.split('_');
+                    if (threadIdParts.length >= 2) {
+                        // Si el threadId empieza con clubId_, el resto es el staffUid
+                        const possibleClubPrefix = threadIdParts.slice(0, 3).join('_'); // club_xxx_yyy
+                        if (possibleClubPrefix === me.clubId) {
+                            const inferredStaffUid = threadIdParts.slice(3).join('_');
+                            if (inferredStaffUid) {
+                                updates.staffUid = inferredStaffUid;
+                                updates.parentUid = inferredStaffUid;
+                                if (data.coachUid) {
+                                    updates.participants = [data.coachUid, inferredStaffUid];
+                                }
+                            }
+                        }
+                    }
+
+                    if (Object.keys(updates).length > 0) {
+                        await updateDoc(doc(db, 'cronos_messages', d.id), updates);
+                        updated++;
+                    }
+                } catch(err) {
+                    console.warn('[Backfill] Error actualizando hilo', d.id, ':', err.message);
+                }
+            } else {
+                skipped++;
+            }
+        }
+
+        console.log(`[Backfill] Completado. Actualizados: ${updated}, Saltados (ya OK): ${skipped}`);
+        localStorage.setItem(backfillKey, 'done');
+    } catch(e) {
+        console.warn('[Backfill] Error general:', e.message);
+    }
 };
 
 window.openStaffDashboard = openStaffDashboard;
