@@ -718,52 +718,6 @@ function _checkActiveMatch() {
     } catch(e) { return false; }
 }
 
-// [P14] Limpieza silenciosa de partidos caducados SIN mostrar el banner
-// flotante "Partido interrumpido". El partido sigue recuperable desde la
-// opcion "RECUPERAR PARTIDO" del modal de configuracion mientras no expire.
-function _expireStaleActiveMatch() {
-    if (localStorage.getItem('cronos_active_match_v2_finished')) {
-        localStorage.removeItem(_ACTIVE_MATCH_KEY);
-        localStorage.removeItem('cronos_active_match_v2_finished');
-        return;
-    }
-    try {
-        const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
-        if (!raw) return;
-        const state = JSON.parse(raw);
-        if (!state || !state.savedAt) return;
-        if (state.matchPhase === 'finished') {
-            localStorage.removeItem(_ACTIVE_MATCH_KEY);
-            return;
-        }
-
-        const mode = state.currentMode || 'f7';
-        const cat = (state.category || '').toLowerCase();
-        let limitMins = 80;
-
-        if (mode === 'f11') {
-            if (cat.includes('juvenil') || cat.includes('regional') || cat.includes('senior') || cat.includes('aficionado') || cat.includes('preferente') || cat.includes('primera') || cat.includes('segunda')) {
-                limitMins = 120;
-            } else if (cat.includes('cadete') || cat.includes('infantil')) {
-                limitMins = 110;
-            } else {
-                limitMins = 120;
-            }
-        } else {
-            limitMins = 80;
-        }
-
-        const LIMIT_SEC = limitMins * 60;
-        const startTimestamp = state.createdAt ? new Date(state.createdAt).getTime() : new Date(state.savedAt).getTime();
-        const elapsedSec = (Date.now() - startTimestamp) / 1000;
-
-        if (elapsedSec > LIMIT_SEC) {
-            _cancelInterruptedMatch(state);
-            localStorage.removeItem(_ACTIVE_MATCH_KEY);
-        }
-    } catch(e) { /* silencioso */ }
-}
-
 function _cancelInterruptedMatch(state) {
     // Cortar retransmisión en vivo en Firestore
     try {
@@ -2127,11 +2081,11 @@ function init(role) {
     setupEventListeners();
 
     if (!['director', 'coordinator', 'club_admin'].includes(role)) {
-        // [P14] Banner flotante "Partido interrumpido" eliminado del panel de
-        // entrenador. La recuperación de partidos sigue disponible desde la
-        // opción "RECUPERAR PARTIDO" del modal de configuración.
-        // Aun así limpiamos los partidos caducados de localStorage.
-        _expireStaleActiveMatch();
+        // [P14] Banner flotante "Partido interrumpido" eliminado: la recuperacion
+        // de partidos ya esta disponible dentro de openSetupModal() (boton
+        // "RECUPERAR PARTIDO"), por lo que _checkActiveMatch() era redundante.
+        // Las funciones _checkActiveMatch / _showRestoreMatchBanner se conservan,
+        // solo se deja de invocarlas aqui.
         openSetupModal();
     }
     registerServiceWorker();
