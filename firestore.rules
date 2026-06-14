@@ -156,7 +156,7 @@ service cloud.firestore {
       );
       // FIX (multi-rol): se permite que el usuario actualice su propio
       // 'allRoles' para AÑADIR roles PENDIENTES (necesario para el flujo
-      // "añadir rol a cuenta existencia"). La escalada real se sigue
+      // "añadir rol a cuenta existente"). La escalada real se sigue
       // bloqueando porque los campos de RAÍZ que controlan el acceso
       // efectivo ('role', 'isAuthorized', 'status', 'clubName',
       // 'authorizedAt', 'authorizedBy', 'blockedAt') permanecen prohibidos
@@ -396,10 +396,6 @@ service cloud.firestore {
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid in resource.data.participants ||
         request.auth.uid == resource.data.coachUid ||
-        // FIX (v178): directores/coordinadores buscan hilos por staffUid/parentUid
-        // pero las reglas no verificaban esos campos → queries fallaban silenciosamente.
-        request.auth.uid == resource.data.staffUid ||
-        request.auth.uid == resource.data.parentUid ||
         userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
@@ -416,9 +412,6 @@ service cloud.firestore {
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid in resource.data.participants ||
         request.auth.uid == resource.data.coachUid ||
-        // FIX (v178): staff puede actualizar hilos donde es destinatario
-        request.auth.uid == resource.data.staffUid ||
-        request.auth.uid == resource.data.parentUid ||
         userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() &&
