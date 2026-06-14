@@ -2119,7 +2119,7 @@ async function autoDispatchMatchReports() {
         const notifiedUids = new Set();
         let staffToNotify = [];
         try {
-            const _fns2 = { collection, getDocs, query, where };
+            const _fns2 = { collection, getDocs, query, where, doc, getDoc, updateDoc };
             staffToNotify = (await _cGetStaff(db, me.clubId || '', _fns2)) || [];
         } catch (e) {
             console.warn('[autoDispatch] _cGetStaff falló, usando emailConfig:', e.message);
