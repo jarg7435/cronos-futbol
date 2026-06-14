@@ -3212,57 +3212,12 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
-            <!-- CONVOCATORIA -->
-            <button onclick="openConvocationModal()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.1);">
-                <span class="icon">📲</span>
-                <div class="content">
-                    <div class="title" style="color:#3fb950;">Enviar Convocatoria</div>
-                    <div class="desc">A padres + dirección deportiva</div>
-                </div>
-            </button>
-
-            <!-- ENTRENAMIENTO -->
-            <button onclick="openTrainingModal()" class="btn-comms-card" style="--color:var(--secondary);--bg:rgba(240,136,62,0.1);">
-                <span class="icon">📅</span>
-                <div class="content">
-                    <div class="title" style="color:var(--secondary);">Info Entrenamiento</div>
-                    <div class="desc">Horarios y cambios a padres + dirección</div>
-                </div>
-            </button>
-
-            <!-- INFORME COLECTIVO → STAFF -->
-            <button onclick="openCollectiveReport()" class="btn-comms-card" style="--color:#d2a8ff;--bg:rgba(210,168,255,0.1);">
-                <span class="icon">📊</span>
-                <div class="content">
-                    <div class="title" style="color:#d2a8ff;">Informe Colectivo</div>
-                    <div class="desc">Resumen del partido → directores y coordinadores</div>
-                </div>
-            </button>
-
-            <!-- MIS INFORMES — copia del entrenador -->
-            <button onclick="openMisInformes()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.08);">
-                <span class="icon">📋</span>
-                <div class="content">
-                    <div class="title" style="color:#3fb950;">Mis Informes</div>
-                    <div class="desc">Tus informes de partido · guardados automáticamente</div>
-                </div>
-            </button>
-
             <!-- INFORMES INDIVIDUALES → PADRES -->
             <button onclick="openIndividualReports()" class="btn-comms-card" style="--color:#ffa500;--bg:rgba(255,165,0,0.1);">
                 <span class="icon">👤</span>
                 <div class="content">
                     <div class="title" style="color:#ffa500;">Informes Individuales</div>
                     <div class="desc">Informe por jugador → padre/tutor vinculado</div>
-                </div>
-            </button>
-
-            <!-- GESTIÓN CONTACTOS -->
-            <button onclick="openContactManager()" class="btn-comms-card" style="--color:#7d8590;--bg:rgba(255,255,255,0.05);">
-                <span class="icon">📱</span>
-                <div class="content">
-                    <div class="title">Gestión de Contactos</div>
-                    <div class="desc">Emails y teléfonos de staff y padres</div>
                 </div>
             </button>
 
