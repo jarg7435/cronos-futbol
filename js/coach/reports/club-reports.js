@@ -98,12 +98,15 @@ async function openStaffDashboard() {
     }
 
     // FIX (v180): Resolver clubId si no está en el objeto me.
+    // El director/coordinador puede tener el clubId solo en allRoles[]
+    // (no en el campo raíz) si el custom claim aún no se propagó.
+    // Sin clubId, las queries por clubId fallan silenciosamente.
     if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
         try {
-            const { doc: docFn, getDoc } = await _sdFS();
+            const { doc: docFn, getDoc, updateDoc: updDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc, updateDoc: updDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                     console.log('[StaffDashboard] clubId resuelto via _cResolveClubId:', resolvedId);
@@ -115,7 +118,10 @@ async function openStaffDashboard() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
 
-    // FIX (v180): Backfill de hilos existentes sin campos de identidad
+    // FIX (v180): Ejecutar backfill de hilos existentes sin campos de identidad.
+    // Esto actualiza los hilos creados antes de v180 que no tienen
+    // clubId/staffUid/parentUid/participants/recipientType.
+    // Se ejecuta en segundo plano (no bloquea la UI) y solo una vez por club.
     if (typeof window._cronosBackfillMessages === 'function') {
         window._cronosBackfillMessages().catch(e =>
             console.warn('[StaffDashboard] Backfill falló:', e.message)
@@ -1061,13 +1067,14 @@ async function _sdLoadReports() {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
 
-    // FIX (v180): Resolver clubId si no está en el objeto me
+    // FIX (v180): Resolver clubId si no está en el objeto me (puede faltar
+    // si el custom claim aún no se propagó al token).
     if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
         try {
-            const { doc: docFn, getDoc } = await _sdFS();
+            const { doc: docFn, getDoc, updateDoc: updDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc, updateDoc: updDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                     console.log('[StaffDashboard][DIAG] clubId resuelto via _cResolveClubId:', resolvedId);
@@ -1098,8 +1105,12 @@ async function _sdLoadReports() {
         //          en resource.data.staffUids).
         // Por eso la Query 1 va en su propio try/catch: si falla por permisos
         // NO debe abortar el flujo; caemos a la Query 2.
+        // FIX (v178): Log diagnóstico para entender qué ve el director/coordinador
+        console.log('[StaffDashboard][DIAG] Cargando informes. uid:', me.uid, 'clubId:', clubId, 'currentRole:', me.currentRole || me.role);
+
         let rawSnap = { forEach: () => {} };
         let _clubQueryOk = false;
+        let _clubQueryDocCount = 0;
         try {
             rawSnap = await getDocs(query(
                 collection(db, 'cronos_player_reports'),
@@ -1107,13 +1118,17 @@ async function _sdLoadReports() {
                 limit(500)
             ));
             _clubQueryOk = true;
+            rawSnap.forEach(d => { _clubQueryDocCount++; });
+            console.log('[StaffDashboard][DIAG] Query por clubId OK. Docs:', _clubQueryDocCount, 'clubId:', clubId);
         } catch (clubErr) {
-            console.warn('[StaffDashboard] Query por clubId falló (probable claim clubId no propagado), usando fallback staffUids:', clubErr.message);
+            console.warn('[StaffDashboard][DIAG] Query por clubId FALLÓ:', clubErr.code || clubErr.message);
         }
 
         // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
         let _hasStaffDocs = false;
-        rawSnap.forEach(d => { if (d.data().staffReport === true) _hasStaffDocs = true; });
+        let _staffDocCount = 0;
+        rawSnap.forEach(d => { if (d.data().staffReport === true) { _hasStaffDocs = true; _staffDocCount++; } });
+        console.log('[StaffDashboard][DIAG] Docs staffReport=true en query clubId:', _staffDocCount);
 
         if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
             try {
@@ -1122,6 +1137,9 @@ async function _sdLoadReports() {
                     where('staffUids', 'array-contains', me.uid),
                     limit(500)
                 ));
+                let _altCount = 0;
+                altSnap.forEach(d => _altCount++);
+                console.log('[StaffDashboard][DIAG] Query staffUids array-contains. Docs:', _altCount, 'uid:', me.uid);
                 // Fusionar resultados alternativos con los originales
                 const existingIds = new Set();
                 rawSnap.forEach(d => existingIds.add(d.id));
@@ -1397,10 +1415,10 @@ async function _sdLoadMessages() {
     // _sdLoadReports y que el entrenador usa para enviar informes.
     if (!me.clubId && typeof window._cResolveClubId === 'function' && me && me.uid) {
         try {
-            const { doc: docFn, getDoc } = await _sdFS();
+            const { doc: docFn, getDoc, updateDoc: updDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
+                const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc, updateDoc: updDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                     console.log('[StaffDashboard][DIAG-MSG] clubId resuelto via _cResolveClubId:', resolvedId);
@@ -1420,11 +1438,12 @@ async function _sdLoadMessages() {
         const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
         // FIX (v180): CUATRO consultas para máxima cobertura de hilos de mensajes.
-        // Consulta A: staffUid == me.uid
-        // Consulta B: parentUid == me.uid
-        // Consulta C: participants array-contains me.uid (fallback)
+        // Consulta A: staffUid == me.uid (hilos donde soy staff)
+        // Consulta B: parentUid == me.uid (hilos donde soy padre/destinatario legacy)
+        // Consulta C: participants array-contains me.uid (fallback si A y B fallan)
         // Consulta D: clubId == me.clubId (MISMA LOGÍSTICA QUE _sdLoadReports)
-        //   → _sdLoadReports YA consulta por clubId y FUNCIONA (devuelve 210+ docs).
+        //   → Esta es la clave: _sdLoadReports YA consulta por clubId y FUNCIONA
+        //   (devuelve 210+ docs). Aplicamos la misma logística aquí.
         //   Filtramos client-side por recipientType==='staff' para excluir hilos de padres.
         console.log('[StaffDashboard][DIAG-MSG] Cargando mensajes. uid:', me.uid, 'clubId:', clubId);
 
@@ -1433,9 +1452,13 @@ async function _sdLoadMessages() {
             getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
             getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
             // FIX (v180): Consulta por clubId — MISMA LOGÍSTICA que _sdLoadReports
+            // que ya funciona (devuelve 210+ docs). Esta query encuentra TODOS los
+            // hilos del club, incluyendo los que NO tienen el uid del director en
+            // staffUid/parentUid/participants (el caso que causa el bug).
             getDocs(query(collection(db,'cronos_messages'), where('clubId','==',clubId))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query clubId falló:', e.code||e.message); return {forEach:()=>{}}; }),
         ]);
 
+        // Contar resultados de cada query para diagnóstico
         let _staffMsgCount = 0, _parentMsgCount = 0, _participantsMsgCount = 0, _clubMsgCount = 0;
         snapStaff.forEach(() => _staffMsgCount++);
         snapParent.forEach(() => _parentMsgCount++);
@@ -1448,9 +1471,12 @@ async function _sdLoadMessages() {
         snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         snapParticipants.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         // FIX (v180): Fusionar resultados de clubId — solo hilos de staff
+        // (recipientType==='staff' o que tengan staffUid). Los hilos de padres
+        // no son relevantes para el panel de dirección.
         snapClub.forEach(d => {
             if (!threadsMap[d.id]) {
                 const data = d.data();
+                // Solo incluir hilos de staff (no de padres)
                 if (data.recipientType === 'staff' || data.staffUid || (data.messages||[]).some(m => m.type === 'collective_report')) {
                     threadsMap[d.id] = { _id: d.id, ...data };
                 }
@@ -1617,6 +1643,7 @@ window._cronosBackfillMessages = async function() {
     try {
         const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
+        // Obtener TODOS los hilos del club
         const snap = await getDocs(query(
             collection(db, 'cronos_messages'),
             where('clubId', '==', me.clubId)
@@ -1631,18 +1658,22 @@ window._cronosBackfillMessages = async function() {
             if (needsUpdate) {
                 try {
                     const updates = {};
+                    // Inferir campos de identidad
                     if (data.coachUid) {
                         updates.participants = [data.coachUid];
                     }
+                    // Si tiene mensajes, buscar el tipo
                     const hasCollective = (data.messages || []).some(m => m.type === 'collective_report');
                     if (hasCollective) {
                         updates.recipientType = 'staff';
-                        updates.staffUid = data.coachUid;
+                        updates.staffUid = data.coachUid; // placeholder, se sobrescribe si hay más datos
                     }
-                    // Inferir staffUid del threadId = {clubId}_{staffUid}
+                    // Intentar inferir staffUid del threadId
+                    // threadId = {clubId}_{staffUid} para hilos de staff
                     const threadIdParts = d.id.split('_');
                     if (threadIdParts.length >= 2) {
-                        const possibleClubPrefix = threadIdParts.slice(0, 3).join('_');
+                        // Si el threadId empieza con clubId_, el resto es el staffUid
+                        const possibleClubPrefix = threadIdParts.slice(0, 3).join('_'); // club_xxx_yyy
                         if (possibleClubPrefix === me.clubId) {
                             const inferredStaffUid = threadIdParts.slice(3).join('_');
                             if (inferredStaffUid) {
