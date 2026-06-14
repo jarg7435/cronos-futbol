@@ -51,6 +51,19 @@ service cloud.firestore {
              request.auth.token.clubId == clubId;
     }
 
+    // FIX (dismiss informes de staff): un usuario con rol director/coordinador
+    // según su DOCUMENTO users/{uid} (no el token, que puede no llevar el claim).
+    // Se usa para permitir que el staff oculte informes de SU panel añadiendo su
+    // UID a dismissedByStaff, incluso cuando el documento del informe NO incluye
+    // staffUids ni un clubId que case con users/{uid}.clubId (docs legacy o
+    // variantes _coach_pN / _pN sin esos campos). No amplía la superficie: la
+    // regla que la invoca sigue restringida a modificar SOLO dismissedByStaff.
+    function isStaffRoleByDoc() {
+      return isAuth()
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'coordinator'];
+    }
+
     function isIndividualRole() {
       return isAuth() &&
              (request.auth.token.role == 'individual' ||
@@ -508,6 +521,15 @@ service cloud.firestore {
         // del informe), restringido a UIDs listados en staffUids del propio doc.
         (resource.data.staffUids != null &&
          request.auth.uid in resource.data.staffUids &&
+         request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['dismissedByStaff'])) ||
+        // FIX (permisos dismiss): el staff (director/coordinador, según su doc
+        // users/{uid}.role) puede ocultar de SU panel CUALQUIER informe añadiendo
+        // su UID a dismissedByStaff, incluso si el doc NO trae staffUids ni un
+        // clubId que case con users/{uid}.clubId (docs legacy o variantes
+        // _coach_pN / _pN). Se restringe a modificar SOLO dismissedByStaff, así
+        // que no puede alterar el contenido del informe de otros usuarios.
+        (isStaffRoleByDoc() &&
          request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedByStaff'])) ||
         // FIX v2: padres pueden añadir su UID a dismissedBy para ocultar
