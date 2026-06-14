@@ -1144,30 +1144,33 @@ async function _sdLoadReports() {
             '→ total único:', combinedMap.size);
 
         const rawSnap = { forEach: fn => combinedMap.forEach(d => fn(d)) };
-        // FIX v3: Solo usar dismissKey con rol (uid_role) para el filtro.
-        // Así Director y Coordinador pueden borrar de forma INDEPENDIENTE:
-        // el borrado del Director añade "uid_director" y el del Coordinador
-        // añade "uid_coordinador". Cada uno solo ve su propia clave.
-        // IMPORTANTE: NO filtrar por me.uid a secas porque si dos roles
-        // comparten el mismo uid (o versiones antiguas lo guardaron sin rol)
-        // se borraría para ambos.
+        // FIX v4: filtro de ocultación POR USUARIO mediante el campo
+        // dismissedByStaff (array de UIDs). El doc físico compartido NO se borra:
+        // cada usuario (director/coordinador) oculta el informe de SU panel
+        // añadiendo su propio UID a dismissedByStaff. Así un rol ve/oculta de
+        // forma independiente sin afectar al otro.
+        // Se mantiene compatibilidad con el esquema antiguo dismissedBy (uid_role).
         const currentRole = me.currentRole || me.role || 'staff';
         const dismissKey = `${me.uid}_${currentRole}`;
+        const _isDismissedForMe = (data) => {
+            const byStaff = Array.isArray(data.dismissedByStaff) ? data.dismissedByStaff : [];
+            if (byStaff.includes(me.uid)) return true;
+            // Legacy: dismissedBy con clave uid_role.
+            const legacy = Array.isArray(data.dismissedBy) ? data.dismissedBy : [];
+            return legacy.includes(dismissKey);
+        };
 
         const snap = { empty: true, forEach: (fn) => {
             rawSnap.forEach(d => {
                 const data = d.data();
-                const dismissed = data.dismissedBy || [];
-                // Solo excluir si contiene la clave específica de rol de este usuario
-                if (data.staffReport === true && !dismissed.includes(dismissKey)) fn(d);
+                if (data.staffReport === true && !_isDismissedForMe(data)) fn(d);
             });
         }};
         // Recalcular si está vacío
         let _snapHasDocs = false;
         rawSnap.forEach(d => {
             const data = d.data();
-            const dismissed = data.dismissedBy || [];
-            if (data.staffReport === true && !dismissed.includes(dismissKey)) _snapHasDocs = true;
+            if (data.staffReport === true && !_isDismissedForMe(data)) _snapHasDocs = true;
         });
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
@@ -1346,15 +1349,13 @@ async function _sdLoadReports() {
         };
 
         // ── Función para ocultar informe del panel ──────────────
-        // FIX v2: Soft delete — añade el UID del usuario a dismissedBy.
-        // Así cada rol (Director/Coordinador) borra independientemente.
-        // El documento no se elimina físicamente, solo se oculta para este usuario.
-        // Solo el coach autor (coachUid) puede eliminar físicamente.
+        // FIX v4: Soft delete — añade el UID del usuario a dismissedByStaff.
+        // El documento compartido NO se elimina físicamente: cada rol
+        // (Director/Coordinador) lo oculta de SU panel de forma independiente,
+        // sin afectar al resto de roles. La lectura (_sdLoadReports) filtra en
+        // cliente los docs donde dismissedByStaff contiene me.uid.
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
-            
-            const currentRole = me.currentRole || me.role || 'staff';
-            const dismissKey = `${me.uid}_${currentRole}`;
 
             const match = window._sdMatchData[key64];
             if (!match) return;
@@ -1363,7 +1364,7 @@ async function _sdLoadReports() {
                 const { db, doc, updateDoc, arrayUnion } = await _sdFS();
                 if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
                 
-                // Añadir mi UID a dismissedBy en cada documento de jugador
+                // Añadir mi UID a dismissedByStaff en cada documento de jugador.
                 // Usar SIEMPRE el ID real del documento (p._id), no construir IDs
                 // con matchId que puede ser undefined
                 const updatePromises = match.players.flatMap(p => {
@@ -1383,7 +1384,7 @@ async function _sdLoadReports() {
                     const uniqueIds = [...new Set(docIds)];
                     return uniqueIds.map(docId =>
                         updateDoc(doc(db, 'cronos_player_reports', docId), {
-                            dismissedBy: arrayUnion(dismissKey)
+                            dismissedByStaff: arrayUnion(me.uid)
                         }).catch(err => {
                             console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
                         })

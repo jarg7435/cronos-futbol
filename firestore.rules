@@ -501,6 +501,15 @@ service cloud.firestore {
          request.auth.uid in resource.data.staffUids &&
          request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedBy'])) ||
+        // FIX v4: el staff destinatario (director/coordinador) oculta el informe
+        // de SU panel añadiendo su propio UID a dismissedByStaff. El doc físico
+        // compartido NO se borra: cada rol ve/oculta de forma independiente. Solo
+        // se permite modificar el campo dismissedByStaff (no se toca el contenido
+        // del informe), restringido a UIDs listados en staffUids del propio doc.
+        (resource.data.staffUids != null &&
+         request.auth.uid in resource.data.staffUids &&
+         request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['dismissedByStaff'])) ||
         // FIX v2: padres pueden añadir su UID a dismissedBy para ocultar
         // informes de su panel sin afectar a otros usuarios.
         (request.auth.uid == resource.data.parentUid &&
@@ -510,7 +519,7 @@ service cloud.firestore {
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.clubId) ||
+        // FIX v4: solo el coach AUTOR puede borrar físicamente el doc compartido.
         request.auth.uid == resource.data.coachUid ||
         // FIX v2: padres pueden borrar informes individuales dirigidos a ellos
         (request.auth.uid == resource.data.parentUid &&
@@ -521,7 +530,14 @@ service cloud.firestore {
         (request.auth.uid == resource.data.parentUid &&
          resource.data.staffReport != true &&
          resource.data._forCoach != true) ||
-        userDocClubId(resource.data.clubId)
+        // FIX v4: miembros del mismo club (incl. director/coordinador) SOLO pueden
+        // borrar físicamente documentos que NO son informes de staff. Para los
+        // informes de staff (staffReport=true) el director/coordinador NO borra el
+        // doc compartido: usa el campo dismissedByStaff (ver allow update) para
+        // ocultarlo SOLO de su propio panel, sin afectar a los demás roles.
+        (resource.data.staffReport != true &&
+         (sameClubAsDoc(resource.data.clubId) ||
+          userDocClubId(resource.data.clubId)))
       );
     }
 

@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v177
+//  CRONOS FUTBOL - Service Worker v178
+//  v178: Ocultar informes de staff por usuario sin borrar el doc compartido.
+//         El Director/Coordinador ya no borra fisicamente el documento de
+//         cronos_player_reports: ahora anade su propio UID a dismissedByStaff
+//         (arrayUnion) y la lectura (_sdLoadReports) filtra en cliente los
+//         docs donde dismissedByStaff contiene su UID. Asi cada rol ve/oculta
+//         de forma independiente sin afectar al otro. firestore.rules: el
+//         update de dismissedByStaff lo permite solo a UIDs listados en
+//         staffUids; el delete fisico de informes staffReport=true queda
+//         reservado al coach autor (coachUid) y al SuperAdmin.
 //  v177: FIX (P11-C/P11-D) el Panel de Informes seguia sin mostrar partidos
 //         nuevos al Director/Coordinador.
 //         P11-C: las 3 llamadas a _cResolveClubId en club-reports.js no pasaban
@@ -236,8 +245,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v177';
-const CACHE_NAME = 'cronos-cache-v177';
+const VERSION    = 'v178';
+const CACHE_NAME = 'cronos-cache-v178';
 
 const ASSETS = [
     './',
