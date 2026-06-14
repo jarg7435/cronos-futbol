@@ -319,97 +319,8 @@ async function _cGetStaff(db, clubId, fns, roles) {
         } catch(e3) { console.warn('[_cGetStaff] Paso 3 falló:', e3.code || e3.message); }
     }
 
-    // ── 3b. FIX (v181): Buscar via clubs/{clubId} — Lectura directa ──
-    // Si los pasos 1-3 no encontraron TODOS los roles requeridos (director,
-    // coordinator), puede ser porque el documento users/{uid} del director
-    // NO tiene clubId en el campo raíz (está solo en allRoles[]).
-    // Este paso lee clubs/{clubId} para obtener el adminUid y luego busca
-    // su documento users directamente para verificar allRoles.
-    // Es eficiente (2-3 lecturas) y no depende del campo raíz clubId.
-    {
-      const _foundRoles = new Set(Array.from(byUid.values()).map(s => s.role));
-      const _missingRoles = roles.filter(r => !_foundRoles.has(r));
-      if (clubId && _missingRoles.length > 0) {
-        try {
-            const { doc: _docFn, getDoc: _getDocFn } = fns.doc && fns.getDoc
-                ? fns
-                : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-            if (_docFn && _getDocFn) {
-                const clubSnap = await _getDocFn(_docFn(db, 'clubs', clubId));
-                if (clubSnap && clubSnap.exists()) {
-                    const clubData = clubSnap.data();
-                    // Recopilar UIDs candidatos: adminUid + miembros del club
-                    const candidateUids = [];
-                    if (clubData.adminUid) candidateUids.push(clubData.adminUid);
-                    if (Array.isArray(clubData.memberUids)) {
-                        clubData.memberUids.forEach(uid => { if (!candidateUids.includes(uid)) candidateUids.push(uid); });
-                    }
-                    // Leer cada documento de usuario y verificar allRoles
-                    for (const uid of candidateUids) {
-                        try {
-                            const userSnap = await _getDocFn(_docFn(db, 'users', uid));
-                            if (userSnap && userSnap.exists()) {
-                                const ud = userSnap.data();
-                                const matchRole = (ud.allRoles || []).find(r =>
-                                    _missingRoles.includes(r.role) &&
-                                    r.clubId === clubId &&
-                                    r.isAuthorized !== false &&
-                                    r.status !== 'rejected' &&
-                                    r.status !== 'removed'
-                                );
-                                if (matchRole) {
-                                    upsert(uid, matchRole.role, { email: ud.email || '', displayName: ud.clubName || '' });
-                                    // FIX (v181): Si el clubId del usuario no está en el campo raíz,
-                                    // migrarlo para que futuras consultas lo encuentren.
-                                    if (!ud.clubId && fns.updateDoc) {
-                                        try {
-                                            await fns.updateDoc(_docFn(db, 'users', uid), { clubId: clubId });
-                                            console.log('[_cGetStaff] clubId migrado para users/' + uid);
-                                        } catch(_) {}
-                                    }
-                                }
-                                // También verificar el campo raíz role
-                                if (_missingRoles.includes(ud.role) && ud.clubId === clubId) {
-                                    upsert(uid, ud.role, { email: ud.email || '', displayName: ud.clubName || '' });
-                                }
-                            }
-                        } catch(_) {}
-                    }
-
-                    // FIX (v181): Si aún faltan roles, buscar por adminEmail en users
-                    // El admin del club (director) puede estar registrado con un email
-                    // pero su UID puede no estar en adminUid (datos legacy).
-                    if (clubData.adminEmail && byUid.size === 0) {
-                        try {
-                            const _qryFns = fns.collection && fns.getDocs && fns.query && fns.where
-                                ? fns
-                                : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                            const emailSnap = await _qryFns.getDocs(_qryFns.query(
-                                _qryFns.collection(db, 'users'),
-                                _qryFns.where('email', '==', clubData.adminEmail)
-                            ));
-                            emailSnap.forEach(d => {
-                                const ud = d.data();
-                                const matchRole = (ud.allRoles || []).find(r =>
-                                    _missingRoles.includes(r.role) &&
-                                    r.clubId === clubId
-                                );
-                                if (matchRole) {
-                                    upsert(d.id, matchRole.role, { email: ud.email || '', displayName: ud.clubName || '' });
-                                }
-                            });
-                        } catch(_) {}
-                    }
-
-                    console.log('[_cGetStaff] Paso 3b (clubs/):', byUid.size, 'miembros hasta ahora');
-                }
-            }
-        } catch(e3b) { console.warn('[_cGetStaff] Paso 3b falló:', e3b.code || e3b.message); }
-      } // fin if clubId && _missingRoles.length > 0
-    } // fin bloque paso 3b
-
     // ── 4. FIX (v178): Buscar SIN clubId usando el UID del coach actual ──
-    // Si los pasos 2-3b fallaron (clubId vacío o incorrecto), buscar TODOS los
+    // Si los pasos 2-3 fallaron (clubId vacío o incorrecto), buscar TODOS los
     // usuarios y filtrar en cliente por allRoles que contengan el mismo clubId
     // que el coach tiene en SU documento de usuario.
     if (!byUid.size) {
@@ -1152,14 +1063,14 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                 // FIX (v180): campos de identidad para consultas del director/coordinador
                 updateData.staffUid      = recipientUid;
                 updateData.parentUid     = recipientUid;
-                updateData.participants  = arrayUnion(m[me.uid, recipientUid);
+                updateData.participants  = arrayUnion(me.uid, recipientUid);
                 updateData.clubId        = me.clubId || null;
                 updateData.recipientType = 'staff';
             } else {
                 updateData.unreadByParent = (snap.data().unreadByParent || 0) + 1;
                 // FIX (v180): campos de identidad
                 updateData.parentUid     = recipientUid;
-                updateData.participants  = arrayUnion(m[me.uid, recipientUid);
+                updateData.participants  = arrayUnion(me.uid, recipientUid);
                 updateData.clubId        = me.clubId || null;
                 updateData.recipientType = 'parent';
             }
@@ -1744,7 +1655,7 @@ window._executeReportsSend = async function(method) {
                             // FIX (v180): campos de identidad para consultas del director/coordinador
                             staffUid:      uidToNotify,
                             parentUid:     uidToNotify,
-                            participants:  arrayUnion(m[me.uid, uidToNotify),
+                            participants:  arrayUnion(me.uid, uidToNotify),
                             clubId:        me.clubId || null,
                             recipientType: 'staff'
                         });
@@ -1933,7 +1844,7 @@ window._executeReportsSend = async function(method) {
                         unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
                         // FIX (v180): campos de identidad
                         parentUid:    targetParentUid,
-                        participants: arrayUnion(m[me.uid, targetParentUid),
+                        participants: arrayUnion(me.uid, targetParentUid),
                         clubId:       me.clubId || null,
                         recipientType: 'parent'
                     });
@@ -2119,7 +2030,7 @@ async function autoDispatchMatchReports() {
         const notifiedUids = new Set();
         let staffToNotify = [];
         try {
-            const _fns2 = { collection, getDocs, query, where, doc, getDoc, updateDoc };
+            const _fns2 = { collection, getDocs, query, where };
             staffToNotify = (await _cGetStaff(db, me.clubId || '', _fns2)) || [];
         } catch (e) {
             console.warn('[autoDispatch] _cGetStaff falló, usando emailConfig:', e.message);
@@ -2224,7 +2135,7 @@ async function autoDispatchMatchReports() {
                     // FIX (v180): campos de identidad para consultas del director/coordinador
                     staffUid:      staff.uid,
                     parentUid:     staff.uid,
-                    participants:  arrayUnion(m[me.uid, staff.uid),
+                    participants:  arrayUnion(me.uid, staff.uid),
                     clubId:        me.clubId || null,
                     recipientType: 'staff'
                 });
@@ -2321,7 +2232,7 @@ async function autoDispatchMatchReports() {
                     unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
                     // FIX (v180): campos de identidad
                     parentUid:    parentUid,
-                    participants: arrayUnion(m[me.uid, parentUid),
+                    participants: arrayUnion(me.uid, parentUid),
                     clubId:       me.clubId || null,
                     recipientType: 'parent'
                 });
@@ -3571,7 +3482,7 @@ window._sendBulkMsgFirestore = async function() {
                     unreadByParent: (snap.data().unreadByParent || 0) + 1,
                     // FIX (v180): campos de identidad
                     parentUid:    s.parentUid,
-                    participants: arrayUnion(m[me.uid, s.parentUid),
+                    participants: arrayUnion(me.uid, s.parentUid),
                     clubId:       me.clubId || null,
                     recipientType: 'parent'
                 });
@@ -3969,7 +3880,7 @@ window._sendCollectiveReportNow = async function() {
                         // FIX (v180): campos de identidad para consultas del director/coordinador
                         staffUid:      s.uid,
                         parentUid:     s.uid,
-                        participants:  arrayUnion(m[me.uid, s.uid),
+                        participants:  arrayUnion(me.uid, s.uid),
                         clubId:        me.clubId || null,
                         recipientType: 'staff'
                     });
@@ -4580,7 +4491,7 @@ window._sendAllIndividualReports = async function() {
                         unreadByParent: (snap.data().unreadByParent||0) + 1,
                         // FIX (v180): campos de identidad
                         parentUid:     link.parentUid,
-                        participants:  arrayUnion(m[me.uid, link.parentUid),
+                        participants:  arrayUnion(me.uid, link.parentUid),
                         clubId:        me.clubId || null,
                         recipientType: 'parent'
                     });
