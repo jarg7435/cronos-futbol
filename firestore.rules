@@ -156,17 +156,14 @@ service cloud.firestore {
       );
       // FIX (multi-rol): se permite que el usuario actualice su propio
       // 'allRoles' para AÑADIR roles PENDIENTES (necesario para el flujo
-      // "añadir rol a cuenta existente"). La escalada real se sigue
+      // "añadir rol a cuenta existencia"). La escalada real se sigue
       // bloqueando porque los campos de RAÍZ que controlan el acceso
-      // efectivo ('role', 'isAuthorized', 'status', 'clubId', 'clubName',
+      // efectivo ('role', 'isAuthorized', 'status', 'clubName',
       // 'authorizedAt', 'authorizedBy', 'blockedAt') permanecen prohibidos
-      // para el propio usuario. El gate de entrada (auth.js) NO confía en
-      // 'allRoles[].isAuthorized' del cliente: solo activa un rol cuando la
-      // RAÍZ 'isAuthorized' es true (escrita por el SA vía Admin SDK).
-      // FIX (v181): se permite escribir el campo 'clubId' en la raíz del
-      // documento del usuario cuando se cumple una condición estructural:
-      // el clubId escrito debe ser no-null y allRoles debe existir como lista.
-      // Esto es necesario porque userDocClubId() lee el campo raíz clubId, y si el
+      // para el propio usuario.
+      // FIX (v180): 'clubId' se PERMITE actualizar SOLO si el nuevo valor
+      // coincide con un clubId que el usuario YA tiene en allRoles. Esto es
+      // necesario porque userDocClubId() lee el campo raíz clubId, y si el
       // custom claim aún no se propagó al token, el director/coordinador
       // no puede leer NINGÚN documento del club. _cResolveClubId() migra
       // el clubId desde allRoles al campo raíz, y esta regla lo permite.
@@ -176,17 +173,12 @@ service cloud.firestore {
         (isAuth() && request.auth.uid == userId
           && !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny(['role', 'isAuthorized', 'status', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'])
-          // FIX (v180→v181): permitir escribir clubId si coincide con un clubId
-          // existente en allRoles. Firestore Rules NO soporta .map() ni arrow
-          // functions, así que usamos verificación estructural: el clubId que se
-          // escribe debe ser no-null y allRoles debe existir como lista.
-          // La seguridad se mantiene porque allRoles fue escrito por el SuperAdmin
-          // y _cResolveClubId() solo copia un clubId que ya está en allRoles.
+          // FIX (v180): permitir escribir clubId si coincide con un clubId existente en allRoles
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['clubId'])
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clubId', 'allRoles'])
                   && request.resource.data.clubId != null
                   && resource.data.allRoles != null
-                  && resource.data.allRoles is list
+                  && request.resource.data.clubId in resource.data.allRoles.map(r => r.clubId)
                  )
              )
         );
@@ -404,6 +396,10 @@ service cloud.firestore {
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid in resource.data.participants ||
         request.auth.uid == resource.data.coachUid ||
+        // FIX (v178): directores/coordinadores buscan hilos por staffUid/parentUid
+        // pero las reglas no verificaban esos campos → queries fallaban silenciosamente.
+        request.auth.uid == resource.data.staffUid ||
+        request.auth.uid == resource.data.parentUid ||
         userDocClubId(resource.data.clubId) ||
         transitionalRead(resource.data.clubId)
       );
@@ -420,6 +416,9 @@ service cloud.firestore {
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid in resource.data.participants ||
         request.auth.uid == resource.data.coachUid ||
+        // FIX (v178): staff puede actualizar hilos donde es destinatario
+        request.auth.uid == resource.data.staffUid ||
+        request.auth.uid == resource.data.parentUid ||
         userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() &&
