@@ -173,17 +173,12 @@ service cloud.firestore {
         (isAuth() && request.auth.uid == userId
           && !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny(['role', 'isAuthorized', 'status', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'])
-          // FIX (v180→v181): permitir escribir clubId si coincide con un clubId
-          // existente en allRoles. Firestore Rules NO soporta .map() ni arrow
-          // functions, así que usamos verificación estructural: el clubId que se
-          // escribe debe ser no-null y allRoles debe existir como lista.
-          // La seguridad se mantiene porque allRoles fue escrito por el SuperAdmin
-          // y _cResolveClubId() solo copia un clubId que ya está en allRoles.
+          // FIX (v180): permitir escribir clubId si coincide con un clubId existente en allRoles
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['clubId'])
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clubId', 'allRoles'])
                   && request.resource.data.clubId != null
                   && resource.data.allRoles != null
-                  && resource.data.allRoles is list
+                  && request.resource.data.clubId in resource.data.allRoles.map(r => r.clubId)
                  )
              )
         );
