@@ -1152,14 +1152,14 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                 // FIX (v180): campos de identidad para consultas del director/coordinador
                 updateData.staffUid      = recipientUid;
                 updateData.parentUid     = recipientUid;
-                updateData.participants  = arrayUnion(me.uid, recipientUid);
+                updateData.participants  = arrayUnion(m[me.uid, recipientUid);
                 updateData.clubId        = me.clubId || null;
                 updateData.recipientType = 'staff';
             } else {
                 updateData.unreadByParent = (snap.data().unreadByParent || 0) + 1;
                 // FIX (v180): campos de identidad
                 updateData.parentUid     = recipientUid;
-                updateData.participants  = arrayUnion(me.uid, recipientUid);
+                updateData.participants  = arrayUnion(m[me.uid, recipientUid);
                 updateData.clubId        = me.clubId || null;
                 updateData.recipientType = 'parent';
             }
@@ -1744,7 +1744,7 @@ window._executeReportsSend = async function(method) {
                             // FIX (v180): campos de identidad para consultas del director/coordinador
                             staffUid:      uidToNotify,
                             parentUid:     uidToNotify,
-                            participants:  arrayUnion(me.uid, uidToNotify),
+                            participants:  arrayUnion(m[me.uid, uidToNotify),
                             clubId:        me.clubId || null,
                             recipientType: 'staff'
                         });
@@ -1933,7 +1933,7 @@ window._executeReportsSend = async function(method) {
                         unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
                         // FIX (v180): campos de identidad
                         parentUid:    targetParentUid,
-                        participants: arrayUnion(me.uid, targetParentUid),
+                        participants: arrayUnion(m[me.uid, targetParentUid),
                         clubId:       me.clubId || null,
                         recipientType: 'parent'
                     });
@@ -2224,7 +2224,7 @@ async function autoDispatchMatchReports() {
                     // FIX (v180): campos de identidad para consultas del director/coordinador
                     staffUid:      staff.uid,
                     parentUid:     staff.uid,
-                    participants:  arrayUnion(me.uid, staff.uid),
+                    participants:  arrayUnion(m[me.uid, staff.uid),
                     clubId:        me.clubId || null,
                     recipientType: 'staff'
                 });
@@ -2321,7 +2321,7 @@ async function autoDispatchMatchReports() {
                     unreadByParent: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.increment(1) : 1,
                     // FIX (v180): campos de identidad
                     parentUid:    parentUid,
-                    participants: arrayUnion(me.uid, parentUid),
+                    participants: arrayUnion(m[me.uid, parentUid),
                     clubId:       me.clubId || null,
                     recipientType: 'parent'
                 });
@@ -3571,7 +3571,7 @@ window._sendBulkMsgFirestore = async function() {
                     unreadByParent: (snap.data().unreadByParent || 0) + 1,
                     // FIX (v180): campos de identidad
                     parentUid:    s.parentUid,
-                    participants: arrayUnion(me.uid, s.parentUid),
+                    participants: arrayUnion(m[me.uid, s.parentUid),
                     clubId:       me.clubId || null,
                     recipientType: 'parent'
                 });
@@ -3969,7 +3969,7 @@ window._sendCollectiveReportNow = async function() {
                         // FIX (v180): campos de identidad para consultas del director/coordinador
                         staffUid:      s.uid,
                         parentUid:     s.uid,
-                        participants:  arrayUnion(me.uid, s.uid),
+                        participants:  arrayUnion(m[me.uid, s.uid),
                         clubId:        me.clubId || null,
                         recipientType: 'staff'
                     });
@@ -4580,7 +4580,7 @@ window._sendAllIndividualReports = async function() {
                         unreadByParent: (snap.data().unreadByParent||0) + 1,
                         // FIX (v180): campos de identidad
                         parentUid:     link.parentUid,
-                        participants:  arrayUnion(me.uid, link.parentUid),
+                        participants:  arrayUnion(m[me.uid, link.parentUid),
                         clubId:        me.clubId || null,
                         recipientType: 'parent'
                     });
