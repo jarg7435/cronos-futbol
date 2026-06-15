@@ -23,26 +23,39 @@
 (function () {
     'use strict';
 
-    // ── 0. Registro de intervalos para poder limpiarlos ──────────────
-    //  Todos los setInterval del parche se registran aquí para evitar
-    //  fugas de memoria/CPU. Se limpian al descargar la página y se
-    //  exponen vía window.cronosClearIntervals() para limpieza manual.
-    var _cronosIntervals = [];
-    function trackInterval(fn, ms) {
-        var id = setInterval(fn, ms);
-        _cronosIntervals.push(id);
-        return id;
+    // ── 0. Control de ciclo de vida de los intervalos del parche ─────
+    //  Los dos setInterval del parche (colorAllTimers cada 1s y
+    //  ensureMatchViewVisible cada 2s) se guardan en globales con nombre
+    //  para poder pararlos explícitamente cuando el partido termina o se
+    //  ejecuta la limpieza/salida del panel, evitando fugas de CPU/memoria
+    //  (el parche se carga sin caché y se re-ejecutaría en cada recarga).
+    //
+    //  Si el parche se vuelve a cargar, primero limpiamos cualquier
+    //  intervalo previo para no acumular duplicados.
+    if (window._cronos_interval_colorTimers)   clearInterval(window._cronos_interval_colorTimers);
+    if (window._cronos_interval_ensureVisible) clearInterval(window._cronos_interval_ensureVisible);
+    window._cronos_interval_colorTimers   = null;
+    window._cronos_interval_ensureVisible = null;
+
+    //  Limpieza centralizada: para ambos intervalos y deja las globales a null.
+    function clearCronosIntervals() {
+        if (window._cronos_interval_colorTimers) {
+            clearInterval(window._cronos_interval_colorTimers);
+            window._cronos_interval_colorTimers = null;
+        }
+        if (window._cronos_interval_ensureVisible) {
+            clearInterval(window._cronos_interval_ensureVisible);
+            window._cronos_interval_ensureVisible = null;
+        }
     }
-    function clearTrackedIntervals() {
-        _cronosIntervals.forEach(function (id) { clearInterval(id); });
-        _cronosIntervals.length = 0;
-    }
-    window.cronosClearIntervals = clearTrackedIntervals;
-    // Evita un segundo listener si patches.js se recarga (no cacheado).
+    window.cronosClearIntervals = clearCronosIntervals;
+
+    //  Defensa adicional: limpiar también al descargar la página.
+    //  Guard para no registrar el listener dos veces si patches.js se recarga.
     if (!window._cronosUnloadHooked) {
         window._cronosUnloadHooked = true;
-        window.addEventListener('pagehide', clearTrackedIntervals);
-        window.addEventListener('beforeunload', clearTrackedIntervals);
+        window.addEventListener('pagehide', clearCronosIntervals);
+        window.addEventListener('beforeunload', clearCronosIntervals);
     }
 
     // ── 1. Estilos globales ──────────────────────────────────────────
@@ -123,7 +136,9 @@
         var bench = document.getElementById('bench-list');
         if (bench) new MutationObserver(colorAllTimers).observe(bench, { childList:true, subtree:true });
         colorAllTimers();
-        trackInterval(colorAllTimers, 1000);
+        // Guardamos el id para poder pararlo en la limpieza del partido/panel.
+        if (window._cronos_interval_colorTimers) clearInterval(window._cronos_interval_colorTimers);
+        window._cronos_interval_colorTimers = setInterval(colorAllTimers, 1000);
     }
 
     // ── 3. Fix cronómetro inicial ────────────────────────────────────
@@ -291,7 +306,9 @@
             document.body.classList.remove('setup-mode');
         }
     }
-    trackInterval(ensureMatchViewVisible, 2000);
+    // Guardamos el id para poder pararlo en la limpieza del partido/panel.
+    if (window._cronos_interval_ensureVisible) clearInterval(window._cronos_interval_ensureVisible);
+    window._cronos_interval_ensureVisible = setInterval(ensureMatchViewVisible, 2000);
 
     // ── 7. Parchear goToTitularSelection para más seguridad ─────────
     function patchGoToTitularSelection() {
@@ -345,6 +362,32 @@
         };
     }
     patchGoToTitularSelection();
+
+    // ── 8. Limpieza de intervalos al finalizar el partido ────────────
+    //  endMatch() lo define active-match.js (cargado DESPUÉS de patches.js),
+    //  por eso esperamos a que exista y lo envolvemos para parar nuestros
+    //  intervalos cuando el partido termina. No se altera su lógica: solo
+    //  añadimos la limpieza del ciclo de vida de los setInterval del parche.
+    function patchEndMatchCleanup() {
+        if (typeof window.endMatch !== 'function') {
+            setTimeout(patchEndMatchCleanup, 300);
+            return;
+        }
+        if (window.endMatch._cronosCleanupWrapped) return; // idempotente
+        var orig = window.endMatch;
+        window.endMatch = function() {
+            var r = orig.apply(this, arguments);
+            // Solo limpiar si el partido quedó realmente finalizado
+            // (endMatch puede abortar si el usuario cancela el confirm).
+            if (typeof matchPhase === 'undefined' || matchPhase === 'finished') {
+                clearCronosIntervals();
+                console.log('[Cronos] Intervalos del parche detenidos al finalizar el partido');
+            }
+            return r;
+        };
+        window.endMatch._cronosCleanupWrapped = true;
+    }
+    patchEndMatchCleanup();
 
     function init() {
         if (window._cronosInited) return;   // evita intervalos/observers duplicados
