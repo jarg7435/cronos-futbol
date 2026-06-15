@@ -5259,7 +5259,7 @@ async function saClubs() {
             </div>
             ${cl.notes ? `<div style="font-size:0.75rem;color:var(--text-muted);
                 padding:0.4rem 0.6rem;background:rgba(255,255,255,0.03);
-                border-radius:6px;margin-top:0.4rem;">📝 ${cl.notes}</div>` : ''}
+                border-radius:6px;margin-top:0.4rem;">📝 ${escapeHtml(cl.notes)}</div>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -5322,11 +5322,11 @@ async function saOpenEditor(clubId) {
             <button onclick="saTab('clubs')" class="sa-btn"
                 style="color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
                 ← Volver</button>
-            <h3 style="margin:0;font-size:1rem;">✏️ ${cl.name||clubId}</h3>
+            <h3 style="margin:0;font-size:1rem;">✏️ ${escapeHtml(cl.name||clubId)}</h3>
           </div>
           <div class="sa-g2" style="margin-bottom:0.9rem;">
             <div><label class="sa-label">Nombre del club</label>
-                <input class="sa-input" id="ec-name" value="${cl.name||''}"></div>
+                <input class="sa-input" id="ec-name" value="${escapeHtml(cl.name||'')}"></div>
             <div><label class="sa-label">Email admin (único)</label>
                 <input class="sa-input" id="ec-admin" type="email" value="${cl.adminEmail||''}"></div>
           </div>
@@ -5366,7 +5366,7 @@ async function saOpenEditor(clubId) {
           <div style="margin-bottom:0.9rem;"><label class="sa-label">Precio/mes (€)</label>
             <input class="sa-input" id="ec-price" type="number" placeholder="0" value="${cl.price||''}"></div>
           <div style="margin-bottom:0.9rem;"><label class="sa-label">Notas internas</label>
-            <textarea class="sa-input" id="ec-notes" rows="2" style="resize:vertical;">${cl.notes||''}</textarea>
+            <textarea class="sa-input" id="ec-notes" rows="2" style="resize:vertical;">${escapeHtml(cl.notes||'')}</textarea>
           </div>
           <div style="display:flex;gap:0.6rem;">
             <button onclick="saTab('clubs')" class="sa-btn"
@@ -5477,7 +5477,7 @@ async function saIndividual() {
             </div>
             ${u.notes?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;
                 padding:0.4rem 0.6rem;background:rgba(255,255,255,0.03);border-radius:6px;">
-                📝 ${u.notes}</div>`:''}
+                📝 ${escapeHtml(u.notes)}</div>`:''}
           </div>
         </div>`;
     }).join('');
@@ -5528,9 +5528,9 @@ async function saOpenIndividualEditor(uid) {
           </div>
           <div style="display:flex;flex-direction:column;gap:0.7rem;">
             <div><label class="sa-label">Email *</label>
-                <input class="sa-input" id="iu-email" type="email" value="${u.email||''}"></div>
+                <input class="sa-input" id="iu-email" type="email" value="${escapeHtml(u.email||'')}"></div>
             <div><label class="sa-label">Nombre</label>
-                <input class="sa-input" id="iu-name" value="${u.displayName||''}"></div>
+                <input class="sa-input" id="iu-name" value="${escapeHtml(u.displayName||'')}"></div>
             <div class="sa-g2">
                 <div><label class="sa-label">Plan</label>
                     <select class="sa-input" id="iu-plan">
@@ -5550,7 +5550,7 @@ async function saOpenIndividualEditor(uid) {
                       `<option value="${k}" ${(u.status||'active')===k?'selected':''}>${v.label}</option>`).join('')}
                 </select></div>
             <div><label class="sa-label">Notas</label>
-                <textarea class="sa-input" id="iu-notes" rows="2" style="resize:vertical;">${u.notes||''}</textarea></div>
+                <textarea class="sa-input" id="iu-notes" rows="2" style="resize:vertical;">${escapeHtml(u.notes||'')}</textarea></div>
             <button onclick="saSaveIndividual('${uid||''}')" class="sa-btn"
                 style="padding:0.6rem;color:#79c0ff;border-color:rgba(121,192,255,0.4);
                        background:rgba(121,192,255,0.1);font-weight:700;font-size:0.88rem;">
