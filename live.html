@@ -631,9 +631,33 @@ function renderMatch(data) {
     const timeH2  = data.timeH2 || 0;
     let serverSecs = (phase === '2nd_half') ? timeH2 : timeH1;
 
+    // Tope de descuento por modalidad: F7 = 10 min, F11 = 15 min.
+    // El partido autofinaliza la parte al alcanzar maxTime + maxAddedSecs.
+    const maxAddedSecs = (data.mode === 'f7') ? 600 : 900;
+    const phaseLimit   = maxTime + maxAddedSecs;
+
+    // ── MODO AUTÓNOMO ──────────────────────────────────────────────
+    // Si el snapshot trae phaseStartedAt (epoch ms del inicio de la parte),
+    // el tiempo se deriva del reloj absoluto y NO depende de que el
+    // entrenador siga emitiendo snapshots: funciona aunque cierre la app.
+    let autonomous = false;
+    if (data.isRunning && data.phaseStartedAt && (phase === '1st_half' || phase === '2nd_half')) {
+        const startedMs = (typeof data.phaseStartedAt.toMillis === 'function')
+            ? data.phaseStartedAt.toMillis()
+            : (typeof data.phaseStartedAt.toDate === 'function')
+                ? data.phaseStartedAt.toDate().getTime()
+                : Number(data.phaseStartedAt);
+        if (startedMs > 0) {
+            autonomous = true;
+            const elapsed = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+            serverSecs = Math.min(elapsed, phaseLimit);
+        }
+    }
+
     // Si el partido está corriendo, compensar el tiempo transcurrido
-    // desde que el servidor guardó el snapshot hasta ahora
-    if (data.isRunning && data.updatedAt && (phase === '1st_half' || phase === '2nd_half')) {
+    // desde que el servidor guardó el snapshot hasta ahora.
+    // FALLBACK: solo si NO hay phaseStartedAt (snapshots antiguos).
+    if (!autonomous && data.isRunning && data.updatedAt && (phase === '1st_half' || phase === '2nd_half')) {
         let serverTimeMs = 0;
         if (typeof data.updatedAt.toMillis === 'function') {
             serverTimeMs = data.updatedAt.toMillis();
@@ -643,10 +667,8 @@ function renderMatch(data) {
             serverTimeMs = new Date(data.updatedAt).getTime();
         }
         if (serverTimeMs > 0) {
-            const maxAddedSecs = 900; // máximo 15 min de tiempo añadido
             const elapsed = Math.max(0, Math.floor((Date.now() - serverTimeMs) / 1000));
-            const limit = maxTime + maxAddedSecs;
-            const remaining = Math.max(0, limit - serverSecs);
+            const remaining = Math.max(0, phaseLimit - serverSecs);
             const delta = Math.min(elapsed, remaining);
             serverSecs += delta;
             // Actualizar tiempos de jugadores con el delta
@@ -666,7 +688,16 @@ function renderMatch(data) {
         maxTime:   maxTime,
         phase:     phase,
         isLive:    isLive,
-        isRunning: !!(data.isRunning)
+        isRunning: !!(data.isRunning),
+        phaseLimit:     phaseLimit,
+        autonomous:     autonomous,
+        phaseStartedMs: autonomous
+            ? ((typeof data.phaseStartedAt.toMillis === 'function')
+                ? data.phaseStartedAt.toMillis()
+                : (typeof data.phaseStartedAt.toDate === 'function')
+                    ? data.phaseStartedAt.toDate().getTime()
+                    : Number(data.phaseStartedAt))
+            : 0
     };
 
     // Mostrar tiempo inmediatamente
@@ -683,8 +714,15 @@ function renderMatch(data) {
                 updateTimerDisplay(b.secs, b.maxTime, b.phase);
                 return;
             }
-            const elapsed = (Date.now() - b.wallClock) / 1000;
-            const current = Math.floor(b.secs + elapsed);
+            // Modo autónomo: derivar del epoch absoluto; topado en phaseLimit.
+            let current, elapsed;
+            if (b.autonomous && b.phaseStartedMs > 0) {
+                current = Math.min(Math.floor((Date.now() - b.phaseStartedMs) / 1000), b.phaseLimit);
+                elapsed = (Date.now() - b.wallClock) / 1000;
+            } else {
+                elapsed = (Date.now() - b.wallClock) / 1000;
+                current = Math.min(Math.floor(b.secs + elapsed), b.phaseLimit);
+            }
             updateTimerDisplay(current, b.maxTime, b.phase);
             tickPlayerTimes(elapsed);
         }, 250);

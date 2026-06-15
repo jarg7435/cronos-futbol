@@ -84,6 +84,10 @@ async function pushLiveSnapshot(status = 'active') {
             timeH2:      masterTimeH2,
             half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
             half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
+            // phaseStartedAt: epoch ms de inicio de la parte actual (ver live/sync.js).
+            phaseStartedAt: ((typeof isRunning !== 'undefined' ? isRunning : true) && (matchPhase === '1st_half' || matchPhase === '2nd_half'))
+                ? (Date.now() - ((matchPhase === '2nd_half' ? masterTimeH2 : masterTimeH1) * 1000))
+                : null,
             formation:   activeFormationKey || '',
             category:    (document.getElementById('match-category')?.value || window._currentMatchCategory || ''),
 

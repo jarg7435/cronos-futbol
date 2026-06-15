@@ -369,7 +369,11 @@ function confirmSetup() {
     window._currentMatchCategory = category;
     let defaultTime = 30;
 
-    if (category.includes('infantil') || category.includes('cadete')) {
+    if (category.includes('prebenjamin')) {
+        defaultTime = 30;
+    } else if (category.includes('benjamin') || category.includes('alevin')) {
+        defaultTime = 35;
+    } else if (category.includes('infantil') || category.includes('cadete')) {
         defaultTime = 40;
     } else if (category.includes('juvenil') || category.includes('regional')) {
         defaultTime = 45;

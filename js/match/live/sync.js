@@ -126,6 +126,14 @@ async function pushLiveSnapshot(status = 'active') {
             timeH2:      masterTimeH2,
             half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
             half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
+            // phaseStartedAt: instante absoluto (epoch ms) en que arrancó la parte
+            // ACTUAL, derivado del tiempo de juego acumulado. Permite a live.html
+            // calcular el cronómetro de forma autónoma aunque el entrenador cierre
+            // la app. Solo se publica si el partido está corriendo en una parte de
+            // juego; en pausa/descanso/fin es null (live.html congela el display).
+            phaseStartedAt: (isRunning && (matchPhase === '1st_half' || matchPhase === '2nd_half'))
+                ? (Date.now() - ((matchPhase === '2nd_half' ? masterTimeH2 : masterTimeH1) * 1000))
+                : null,
             formation:   activeFormationKey || '',
 
             // Equipos
