@@ -1,5 +1,11 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v178
+//  CRONOS FUTBOL - Service Worker v179
+//  v179: P14 — eliminado el banner flotante "Partido interrumpido" del panel
+//         del entrenador (recuperacion sigue en "RECUPERAR PARTIDO" del modal).
+//         P15 — panel de Comunicaciones simplificado (openUnifiedCommsMenu):
+//         quitadas 5 tarjetas redundantes/rotas (Convocatoria, Entrenamiento,
+//         Informe Colectivo, Mis Informes, Gestion de Contactos); se conservan
+//         Mensajes, Informes Individuales, Partidos Terminados y Retransmision.
 //  v178: Ocultar informes de staff por usuario sin borrar el doc compartido.
 //         El Director/Coordinador ya no borra fisicamente el documento de
 //         cronos_player_reports: ahora anade su propio UID a dismissedByStaff
@@ -245,8 +251,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v178';
-const CACHE_NAME = 'cronos-cache-v178';
+const VERSION    = 'v179';
+const CACHE_NAME = 'cronos-cache-v179';
 
 const ASSETS = [
     './',
