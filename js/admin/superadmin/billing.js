@@ -525,8 +525,8 @@ async function _billSubs() {
                 ${subs.map(sub => `
                     <tr>
                         <td>
-                            <div style="font-weight:600;font-size:0.85rem">${sub.entityName||sub.entityId}</div>
-                            <div style="font-size:0.7rem;color:#8b949e">${sub.entityEmail||''}</div>
+                            <div style="font-weight:600;font-size:0.85rem">${typeof escapeHtml==='function'?escapeHtml(sub.entityName||sub.entityId):(sub.entityName||sub.entityId)}</div>
+                            <div style="font-size:0.7rem;color:#8b949e">${typeof escapeHtml==='function'?escapeHtml(sub.entityEmail||''):(sub.entityEmail||'')}</div>
                         </td>
                         <td style="font-size:0.78rem">${sub.entityType==='club'?'🏟️ Club':'👤 Individual'}</td>
                         <td>${_planBadge(sub.planCode)}</td>

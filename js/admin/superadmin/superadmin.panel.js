@@ -3367,7 +3367,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.5rem;">
                 <button onclick="saTab('clubs')" class="sa-btn"
                     style="color:#58a6ff;border-color:rgba(88,166,255,0.3);">← Volver</button>
-                <h3 style="margin:0;font-size:1rem;">✏️ Editar Club: ${clubName}</h3>
+                <h3 style="margin:0;font-size:1rem;">✏️ Editar Club: ${typeof escapeHtml==='function'?escapeHtml(clubName):clubName}</h3>
             </div>
             <div style="display:flex;flex-direction:column;gap:0.8rem;">
                 <div>
