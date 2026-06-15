@@ -27,8 +27,8 @@ service cloud.firestore {
     //   3. Que múltiples SAs no sean reconocidos
     function isSuperAdminEmail() {
       return isAuth() &&
-             get(/databases/$(database)/documents/cronos_config/superadmins).data.emails
-               .has(request.auth.token.email);
+             request.auth.token.email in
+               get(/databases/$(database)/documents/cronos_config/superadmins).data.emails;
     }
 
     function isSuperAdmin() {
