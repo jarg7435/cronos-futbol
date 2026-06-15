@@ -61,14 +61,23 @@ service cloud.firestore {
     function isStaffRoleByDoc() {
       return isAuth()
              && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'coordinator'];
-    }
-
-    function isIndividualRole() {
-      return isAuth() &&
-             (request.auth.token.role == 'individual' ||
-              request.auth.token.role == 'individual_admin' ||
-              request.auth.token.role == 'admin_individual');
+             && (
+                  // (A) Rol en el campo RAÍZ del documento (usuarios mono-rol).
+                  get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'coordinator']
+                  // (B) Usuarios MULTI-ROL: el rol activo vive en allRoles[], no en
+                  //     el campo raíz. Firestore Rules NO soporta .map() ni iterar
+                  //     allRoles[].role, así que se valida estructuralmente: el doc
+                  //     debe estar AUTORIZADO (isAuthorized == true, escrito por el
+                  //     SA vía Admin SDK) y tener allRoles como lista no vacía. No
+                  //     amplía la superficie real: la regla que invoca este helper
+                  //     restringe la mutación a SOLO el campo 'dismissedByStaff'
+                  //     (ocultar de su panel), nunca al contenido del informe.
+                  || (
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAuthorized == true
+                       && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles is list
+                       && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles.size() > 0
+                     )
+                );
     }
 
     function sameClub(clubId) {
