@@ -23,6 +23,28 @@
 (function () {
     'use strict';
 
+    // ── 0. Registro de intervalos para poder limpiarlos ──────────────
+    //  Todos los setInterval del parche se registran aquí para evitar
+    //  fugas de memoria/CPU. Se limpian al descargar la página y se
+    //  exponen vía window.cronosClearIntervals() para limpieza manual.
+    var _cronosIntervals = [];
+    function trackInterval(fn, ms) {
+        var id = setInterval(fn, ms);
+        _cronosIntervals.push(id);
+        return id;
+    }
+    function clearTrackedIntervals() {
+        _cronosIntervals.forEach(function (id) { clearInterval(id); });
+        _cronosIntervals.length = 0;
+    }
+    window.cronosClearIntervals = clearTrackedIntervals;
+    // Evita un segundo listener si patches.js se recarga (no cacheado).
+    if (!window._cronosUnloadHooked) {
+        window._cronosUnloadHooked = true;
+        window.addEventListener('pagehide', clearTrackedIntervals);
+        window.addEventListener('beforeunload', clearTrackedIntervals);
+    }
+
     // ── 1. Estilos globales ──────────────────────────────────────────
     var styleEl = document.createElement('style');
     styleEl.textContent =
@@ -101,7 +123,7 @@
         var bench = document.getElementById('bench-list');
         if (bench) new MutationObserver(colorAllTimers).observe(bench, { childList:true, subtree:true });
         colorAllTimers();
-        setInterval(colorAllTimers, 1000);
+        trackInterval(colorAllTimers, 1000);
     }
 
     // ── 3. Fix cronómetro inicial ────────────────────────────────────
@@ -269,7 +291,7 @@
             document.body.classList.remove('setup-mode');
         }
     }
-    setInterval(ensureMatchViewVisible, 2000);
+    trackInterval(ensureMatchViewVisible, 2000);
 
     // ── 7. Parchear goToTitularSelection para más seguridad ─────────
     function patchGoToTitularSelection() {
@@ -325,6 +347,8 @@
     patchGoToTitularSelection();
 
     function init() {
+        if (window._cronosInited) return;   // evita intervalos/observers duplicados
+        window._cronosInited = true;
         startTimerObserver();
         patchSetupModeSelect();
     }
