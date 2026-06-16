@@ -2042,13 +2042,7 @@ async function autoDispatchMatchReports() {
                     staffToNotify.push({ uid: c.uid, role: c.role || 'staff', email: c.email || '' });
                 }
             });
-        // FIX P11-D: incluir SIEMPRE me.uid en staffUids como red de seguridad
-        // para que la Query B (array-contains) del panel nunca quede vacía aunque
-        // _cGetStaff no resuelva ningún miembro con uid.
-        const _allStaffUids = Array.from(new Set([
-            ...staffToNotify.map(s => s.uid).filter(Boolean),
-            me.uid,
-        ].filter(Boolean)));
+        const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
 
         if (window._cronosDiagReports) {
             console.log('[DiagReports][STAFF] staffToNotify:', staffToNotify.map(s => ({ uid: s.uid, role: s.role, email: s.email })));
@@ -2066,8 +2060,7 @@ async function autoDispatchMatchReports() {
         // Un documento por jugador con type='staff_match_report' y staffReport=true.
         // FIX: incluye staffUids para que las reglas de Firestore permitan leer
         // a directores y coordinadores (request.auth.uid in resource.data.staffUids).
-        console.log('[StaffReport] Intentando enviar informe staff. clubId:', me?.clubId, 'players:', (homePlayers || []).length, 'staffUids:', _allStaffUids.length ? _allStaffUids.join(',') : '(ninguno)');
-        let _staffDocsWritten = 0;
+        console.log('[StaffReport] Intentando enviar informe staff. clubId:', me?.clubId, 'players:', (homePlayers || []).length);
         for (const p of homePlayers) {
             const srId = `${sharedMatchId}_staff_p${p.number}`;
             await setDoc(doc(db, 'cronos_player_reports', srId), {
@@ -2094,9 +2087,7 @@ async function autoDispatchMatchReports() {
                 history:       _parseHistoryForFirestore(p.history || []),
             });
             console.log('[StaffReport] Documento staff escrito:', srId);
-            _staffDocsWritten++;
         }
-        console.log('[StaffReport] TOTAL informes staff escritos en cronos_player_reports:', _staffDocsWritten, '/', (homePlayers || []).length);
 
         // ── Notificar al staff (coordinador + director) ──────────────────
         // Los destinatarios ya fueron resueltos arriba (antes de los reports).
@@ -3212,12 +3203,57 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
+            <!-- CONVOCATORIA -->
+            <button onclick="openConvocationModal()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.1);">
+                <span class="icon">📲</span>
+                <div class="content">
+                    <div class="title" style="color:#3fb950;">Enviar Convocatoria</div>
+                    <div class="desc">A padres + dirección deportiva</div>
+                </div>
+            </button>
+
+            <!-- ENTRENAMIENTO -->
+            <button onclick="openTrainingModal()" class="btn-comms-card" style="--color:var(--secondary);--bg:rgba(240,136,62,0.1);">
+                <span class="icon">📅</span>
+                <div class="content">
+                    <div class="title" style="color:var(--secondary);">Info Entrenamiento</div>
+                    <div class="desc">Horarios y cambios a padres + dirección</div>
+                </div>
+            </button>
+
+            <!-- INFORME COLECTIVO → STAFF -->
+            <button onclick="openCollectiveReport()" class="btn-comms-card" style="--color:#d2a8ff;--bg:rgba(210,168,255,0.1);">
+                <span class="icon">📊</span>
+                <div class="content">
+                    <div class="title" style="color:#d2a8ff;">Informe Colectivo</div>
+                    <div class="desc">Resumen del partido → directores y coordinadores</div>
+                </div>
+            </button>
+
+            <!-- MIS INFORMES — copia del entrenador -->
+            <button onclick="openMisInformes()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.08);">
+                <span class="icon">📋</span>
+                <div class="content">
+                    <div class="title" style="color:#3fb950;">Mis Informes</div>
+                    <div class="desc">Tus informes de partido · guardados automáticamente</div>
+                </div>
+            </button>
+
             <!-- INFORMES INDIVIDUALES → PADRES -->
             <button onclick="openIndividualReports()" class="btn-comms-card" style="--color:#ffa500;--bg:rgba(255,165,0,0.1);">
                 <span class="icon">👤</span>
                 <div class="content">
                     <div class="title" style="color:#ffa500;">Informes Individuales</div>
                     <div class="desc">Informe por jugador → padre/tutor vinculado</div>
+                </div>
+            </button>
+
+            <!-- GESTIÓN CONTACTOS -->
+            <button onclick="openContactManager()" class="btn-comms-card" style="--color:#7d8590;--bg:rgba(255,255,255,0.05);">
+                <span class="icon">📱</span>
+                <div class="content">
+                    <div class="title">Gestión de Contactos</div>
+                    <div class="desc">Emails y teléfonos de staff y padres</div>
                 </div>
             </button>
 
@@ -3747,15 +3783,9 @@ window._sendCollectiveReportNow = async function() {
     const me    = window._cronosCurrentUser;
     const staff = window._collectiveReportStaff || [];
     const text  = window._collectiveReportText  || '';
-    // FIX P11-D: ANTES se hacía `return` aquí si la lista de staff estaba vacía,
-    // abortando la escritura de cronos_player_reports → el partido NUNCA aparecía
-    // en el Panel de Informes (ese panel se alimenta de esos docs, no de los
-    // mensajes/notificaciones al staff). Ahora SOLO avisamos pero seguimos
-    // escribiendo los informes: el director/coordinador podrá verlos vía su
-    // clubId aunque el entrenador no tenga contactos configurados.
     if (!staff.length) {
-        console.warn('[StaffReport] Lista de staff vacía: se escriben los informes igualmente (visibles por clubId), pero no se enviarán mensajes/notificaciones directas.');
-        if (typeof showToast==='function') showToast('⚠️ Sin destinatarios directos; el informe se guardará para Dirección', 3500);
+        if (typeof showToast==='function') showToast('⚠️ Sin directores/coordinadores asignados', 3000);
+        return;
     }
     if (typeof showSpinner==='function') showSpinner('Enviando informe colectivo…');
     try {
@@ -3782,21 +3812,6 @@ window._sendCollectiveReportNow = async function() {
         const matchId = window._cronosLastAutoDispatchMatchId
             || `match_${me.uid}_${matchDateISO}_${_rivalSlug2}_${scoreHome}x${scoreAway}`;
 
-        // FIX P11-D: staffUids debe incluir SIEMPRE a los miembros con uid y, como
-        // red de seguridad, al propio entrenador (me.uid) para que la Query B
-        // (array-contains) nunca quede vacía. Sin esto, si el staff solo tiene
-        // contactos por email (sin uid), staffUids=[] y el doc era invisible.
-        const _collStaffUids = Array.from(new Set([
-            ...staff.map(s => s.uid).filter(Boolean),
-            me.uid,
-        ].filter(Boolean)));
-        console.log('[StaffReport] _sendCollectiveReportNow → escribiendo informes.',
-            'clubId:', me.clubId || '(vacío)',
-            'players:', homePlayers.length,
-            'staffUids:', _collStaffUids.length ? _collStaffUids.join(',') : '(ninguno)',
-            'matchId:', matchId);
-
-        let _collDocsWritten = 0;
         for (const p of homePlayers) {
             const rptId = `${matchId}_p${p.number}`;
             await setDoc(doc(db, 'cronos_player_reports', rptId), {
@@ -3810,7 +3825,7 @@ window._sendCollectiveReportNow = async function() {
                 // FIX (v178): staffUids para que las reglas Firestore permitan leer
                 // a directores/coordinadores (request.auth.uid in resource.data.staffUids)
                 // y la consulta fallback array-contains los encuentre.
-                staffUids:      _collStaffUids,
+                staffUids:      staff.map(s => s.uid).filter(Boolean),
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,
@@ -3838,10 +3853,7 @@ window._sendCollectiveReportNow = async function() {
                 // p.history puede contener strings "Entra a las MM:SS (1ªP)" O objetos {type,minute}
                 history: _parseHistoryForFirestore(p.history || []),
             });
-            _collDocsWritten++;
-            console.log('[StaffReport] Documento colectivo escrito:', rptId, '(', _collDocsWritten, '/', homePlayers.length, ')');
         }
-        console.log('[StaffReport] TOTAL informes colectivos escritos en cronos_player_reports:', _collDocsWritten);
 
         // ── 2. Enviar mensaje de hilo a cada miembro del staff ───────────
         for (const s of staff) {
