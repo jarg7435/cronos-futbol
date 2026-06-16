@@ -3755,15 +3755,23 @@ window.openCollectiveReport = async function openCollectiveReport() {
 
 window._sendCollectiveReportNow = async function() {
     const me    = window._cronosCurrentUser;
-    const staff = window._collectiveReportStaff || [];
+    let   staff = window._collectiveReportStaff || [];
     const text  = window._collectiveReportText  || '';
-    if (!staff.length) {
-        if (typeof showToast==='function') showToast('⚠️ Sin directores/coordinadores asignados', 3000);
-        return;
-    }
     if (typeof showSpinner==='function') showSpinner('Enviando informe colectivo…');
     try {
         const { db, doc, setDoc, updateDoc, getDoc, arrayUnion } = await _cFS();
+        // Fallback: si el panel no precargó el staff, recargarlo aquí.
+        if (!staff.length) {
+            try {
+                const fns4 = await _cFS();
+                staff = (await _cGetStaff(fns4.db, me.clubId || '', fns4)) || [];
+            } catch (e) { console.warn('[collectiveReport] recarga staff falló:', e.message); }
+        }
+        if (!staff.length) {
+            if (typeof hideSpinner==='function') hideSpinner();
+            if (typeof showToast==='function') showToast('⚠️ Sin directores/coordinadores asignados', 3000);
+            return;
+        }
         const now       = new Date();
         const matchDate = now.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
         const matchDateISO = now.toISOString().split('T')[0];
