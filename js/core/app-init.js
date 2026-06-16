@@ -376,8 +376,8 @@ function updateCategoryOptions(forcedMode) {
     if (mode === 'f7') {
         sel.innerHTML = `
             <option value="f7_prebenjamin">Prebenjamín (2T x 30')</option>
-            <option value="f7_benjamin">Benjamín (2T x 30')</option>
-            <option value="f7_alevin">Alevín (2T x 30')</option>
+            <option value="f7_benjamin">Benjamín (2T x 35')</option>
+            <option value="f7_alevin">Alevín (2T x 35')</option>
         `;
     } else {
         sel.innerHTML = `

@@ -651,6 +651,14 @@ function renderMatch(data) {
             autonomous = true;
             const elapsed = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
             serverSecs = Math.min(elapsed, phaseLimit);
+            // Si el tiempo autónomo alcanzó el tope de descuento, la parte se
+            // considera agotada aunque el entrenador (ausente) no haya marcado
+            // la transición. Etiqueta de espectador: 1ª parte -> DESCANSO,
+            // 2ª parte -> FIN DE PARTIDO. (Solo presentación: no escribe en Firestore.)
+            if (elapsed >= phaseLimit) {
+                document.getElementById('live-phase').textContent =
+                    (phase === '2nd_half') ? 'FIN DE PARTIDO' : 'DESCANSO';
+            }
         }
     }
 
