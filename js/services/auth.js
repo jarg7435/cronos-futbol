@@ -1220,7 +1220,7 @@ export async function checkAuthorization(user) {
         }
 
         if (authorizedRoles.length === 0) {
-            if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos-Auth] No authorized roles for:', user.email);
+            if(window._CRONOS_DEBUG) console.warn('[Cronos-Auth] No authorized roles for:', user.email);
             await fa.signOut(fa.auth);
             showAuthError('⚠️ Tu cuenta no tiene roles autorizados.');
             return;

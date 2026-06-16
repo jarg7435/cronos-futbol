@@ -2110,7 +2110,7 @@ function registerServiceWorker() {
                 };
             };
         })
-        .catch(err => 
+        .catch(err => { if (window._CRONOS_DEBUG) console.warn('SW Error:', err); });
 
     // Si el SW toma el control mientras la página está abierta → recargar también
     navigator.serviceWorker.addEventListener('controllerchange', () => {

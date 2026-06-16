@@ -307,7 +307,7 @@ function registerServiceWorker() {
                 };
             };
         })
-        .catch(err => 
+        .catch(err => { if (window._CRONOS_DEBUG) console.warn('SW Error:', err); });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
         window.location.reload();
     });
