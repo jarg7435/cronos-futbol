@@ -47,10 +47,7 @@ async function cleanupStaleMatches() {
         });
         await Promise.all(promises);
 
-        if (closed > 0)   console.log('Partidos zombis cerrados:', closed);
-        if (deleted > 0)  console.log('Partidos antiguos borrados:', deleted);
-
-    } catch(e) { console.warn('cleanupStaleMatches:', e.message); }
+    } catch(e) { if(window._CRONOS_DEBUG) console.warn('cleanupStaleMatches:', e.message); }
 }
 
 async function startLiveSync() {
@@ -91,7 +88,6 @@ async function startLiveSync() {
 
     // Mostrar botón de compartir en el header
     updateLiveButton(true);
-    console.log('🔴 Live sync iniciado:', liveMatchId);
 }
 
 async function pushLiveSnapshot(status = 'active') {
@@ -141,6 +137,7 @@ async function pushLiveSnapshot(status = 'active') {
                   ) * 1000)
                 : null,
             formation:   activeFormationKey || '',
+            myTeamRole:  window._userTeamRole || 'home',
 
             // Equipos
             homeTeam: {
@@ -191,7 +188,6 @@ async function stopLiveSync() {
     await pushLiveSnapshot(finalStatus);
     
     updateLiveButton(false);
-    console.log('⏹ Live sync detenido, status:', finalStatus);
 }
 
 function updateLiveButton(active) {
