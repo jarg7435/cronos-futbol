@@ -76,25 +76,23 @@ async function openClubAdminPanel(preClubId = null) {
             );
             if (myClub) {
                 clubId = myClub.id;
-                console.log('[ClubAdmin] Club encontrado por email/uid:', clubId);
                 // Actualizar el documento del usuario con el clubId
                 try {
                     await updateDoc(doc(db, 'users', me.uid), { clubId: myClub.id, clubName: myClub.name || '' });
                     me.clubId = myClub.id;
                     me.clubName = myClub.name || '';
                 } catch(updErr) {
-                    console.warn('[ClubAdmin] No se pudo actualizar clubId en user doc:', updErr.message);
+                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[ClubAdmin] No se pudo actualizar clubId en user doc:', updErr.message);
                 }
             } else if (clubs.length === 1) {
                 // Si solo hay un club, asumir que es el suyo
                 clubId = clubs[0].id;
-                console.log('[ClubAdmin] Un solo club encontrado, asignando:', clubId);
                 try {
                     await updateDoc(doc(db, 'users', me.uid), { clubId: clubs[0].id, clubName: clubs[0].name || '' });
                     me.clubId = clubs[0].id;
                     me.clubName = clubs[0].name || '';
                 } catch(updErr2) {
-                    console.warn('[ClubAdmin] No se pudo actualizar clubId:', updErr2.message);
+                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[ClubAdmin] No se pudo actualizar clubId:', updErr2.message);
                 }
             }
         } catch(findErr) {
@@ -179,7 +177,6 @@ async function openClubAdminPanel(preClubId = null) {
             where('clubId', '==', clubId)
         )).catch(e => {
             // Error de permisos es esperado si las reglas son estrictas, usamos users como respaldo
-            console.log('[CA] Usando respaldo de usuarios para solicitudes (platform_requests restringido).');
             return { forEach: () => {} }; // Simular snap vacío
         });
     } catch (queryErr) {
@@ -356,7 +353,6 @@ async function openClubAdminPanel(preClubId = null) {
     const pendingMembers = [...pendingAutoReg];
 
     console.group('%c[CA-DIAG] Club Admin Panel', 'color:#58a6ff;font-weight:bold');
-    console.log('clubId:', clubId, '| users:', users.length, '| pending:', pendingClubAdmin.length);
     console.groupEnd();
     // ─────────────────────────────────────────────────────────────────
 
@@ -1598,7 +1594,6 @@ async function openClubAdminPanel(preClubId = null) {
                         if (!fa || !fa.functions) throw new Error('Functions SDK no disponible');
                         var delFn = httpsCallable(fa.functions, 'deleteAuthUser');
                         var authRes = await delFn({ uid: realUid, email: realEmail });
-                        console.log('[caSetUserStatus] deleteAuthUser OK:', realEmail, authRes && authRes.data);
                     } catch (authErr) {
                         console.error('[caSetUserStatus] deleteAuthUser FALLÓ:',
                             authErr && authErr.code, authErr && authErr.message);
@@ -1687,7 +1682,6 @@ async function openClubAdminPanel(preClubId = null) {
                 try {
                     var setClaimsFn = httpsCallable(fa.functions, 'setCustomClaims');
                     await setClaimsFn({ uid: userId, role: role, clubId: cid });
-                    console.log('[caSetUserStatus] Custom claims propagados:', { uid: userId, role: role, clubId: cid });
                 } catch (claimErr) {
                     // No bloquea la activación: las reglas tienen fallback
                     // userDocClubId() que lee users/{uid}.clubId aunque el claim
