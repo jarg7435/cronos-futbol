@@ -63,9 +63,15 @@ function setupEventListeners() {
             if (isRunning) {
                 // Recuperar segundos perdidos por throttling del navegador/SO
                 const now = Date.now();
+                // FIX: Proteger contra lastTickTime = 0
+                if (!lastTickTime || lastTickTime === 0) lastTickTime = now;
                 const lostMs = now - lastTickTime;
                 if (lostMs > 1200) {
-                    const lostSec = Math.floor(lostMs / 1000);
+                    let lostSec = Math.floor(lostMs / 1000);
+                    // FIX: Limitar recuperación a 30 min máximo para evitar saltos grotescos
+                    // (si la pestaña estuvo cerrada horas, no sumamos horas al timer)
+                    const maxRecoverySec = 1800;
+                    lostSec = Math.min(lostSec, maxRecoverySec);
                     lastTickTime = now - (lostMs % 1000);
                     if (matchPhase === '1st_half') {
                         masterTimeH1 = Math.min(masterTimeH1 + lostSec, half1MaxTime + 900);
@@ -77,8 +83,9 @@ function setupEventListeners() {
                     players.forEach(p => { if (p.status === 'field') updatePlayerUI(p); });
                 }
                 // Reiniciar timerInterval (puede haber muerto por throttling)
+                // FIX: NO sobrescribir lastTickTime aquí — ya se ajustó arriba
                 clearInterval(timerInterval);
-                lastTickTime = Date.now();
+                if (!lastTickTime || lastTickTime === 0) lastTickTime = Date.now();
                 timerInterval = setInterval(tick, 1000);
             }
             // Empujar estado actualizado al live

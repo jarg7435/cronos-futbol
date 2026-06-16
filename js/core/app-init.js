@@ -1,3 +1,4 @@
+window._CRONOS_DEBUG = false; // Activar solo en desarrollo
 // SECURITY: Guaranteed escapeHtml & escapeAttr — prevents XSS if script load order fails
 // These polyfills MUST be at the very top of this file so they execute before anything else.
 // They only activate if the full implementations below haven't loaded yet.
@@ -42,7 +43,6 @@ async function loadAccessCode() {
             const data = snap.data();
             ACCESS_CODE = data.code || '';
             _accessCodeLoaded = true;
-            console.log('[Cronos] ACCESS_CODE cargado desde Firestore');
         } else {
             console.warn('[Cronos] No se encontró cronos_config/access en Firestore — usando código vacío');
             _accessCodeLoaded = true;
@@ -392,9 +392,6 @@ function updateCategoryOptions(forcedMode) {
 
 // --- APLICAR FORMACIÓN ---
 function applyFormationPreset(key) {
-    console.log('[FORMACIÓN] applyFormationPreset called:', key,
-        '| currentMode:', currentMode, '| analyzeAway:', analyzeAway,
-        '| players count:', players.length);
 
     const presets = FORMATION_PRESETS[currentMode];
     if (!presets) { console.warn('[FORMACIÓN] No presets para modo:', currentMode); return; }
@@ -409,8 +406,6 @@ function applyFormationPreset(key) {
         if (a.titularOrder !== undefined && b.titularOrder !== undefined) return a.titularOrder - b.titularOrder;
         return (a.number || 0) - (b.number || 0);
     });
-    console.log('[FORMACIÓN] Jugadores ordenados por dorsal:',
-        sortedPlayers.filter(p => p.status === 'field').map(p => `#${p.number} ${p.name} (${p.team})`).join(', '));
 
     let homeIdx = 0, awayIdx = 0;
     sortedPlayers.forEach(p => {
@@ -420,7 +415,6 @@ function applyFormationPreset(key) {
             if (positions[homeIdx]) {
                 const pos = clampToField(positions[homeIdx].x, positions[homeIdx].y);
                 p.x = pos.x; p.y = pos.y;
-                console.log(`[FORMACIÓN] ${p.team} #${p.number} ${p.name} → pos[${homeIdx}] (${pos.x}, ${pos.y})`);
                 homeIdx++;
             }
         } else if (p.team === 'away') {
@@ -428,7 +422,6 @@ function applyFormationPreset(key) {
             if (positions && positions[awayIdx]) {
                 const pos = clampToField(positions[awayIdx].x, positions[awayIdx].y);
                 p.x = pos.x; p.y = pos.y;
-                console.log(`[FORMACIÓN] ${p.team} #${p.number} ${p.name} → pos[${awayIdx}] (${pos.x}, ${pos.y})`);
                 awayIdx++;
             }
         }
@@ -448,13 +441,11 @@ function applyFormationPreset(key) {
             chip.style.left = `${p.x}%`;
             chip.style.top = `${p.y}%`;
             chip.style.transform = 'translate(-50%, -50%)';
-            console.log(`[FORMACIÓN] DOM actualizado: player-${p.id} → (${p.x}%, ${p.y}%)`);
         }
     });
 
     // Re-renderizar completo como respaldo
     renderPlayers();
-    console.log('[FORMACIÓN] Completada. activeFormationKey:', activeFormationKey);
 }
 
 // --- PLAYER ACTION MODAL ---
@@ -1458,8 +1449,6 @@ async function cleanupStaleMatches() {
         });
         await Promise.all(promises);
 
-        if (closed > 0)   console.log('Partidos zombis cerrados:', closed);
-        if (deleted > 0)  console.log('Partidos antiguos borrados:', deleted);
 
     } catch(e) { console.warn('cleanupStaleMatches:', e.message); }
 }
@@ -1501,7 +1490,6 @@ async function startLiveSync() {
 
     // Mostrar botón de compartir en el header
     updateLiveButton(true);
-    console.log('🔴 Live sync iniciado:', liveMatchId);
 }
 
 async function pushLiveSnapshot(status = 'active') {
@@ -1531,6 +1519,7 @@ async function pushLiveSnapshot(status = 'active') {
             half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
             half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
             formation:   activeFormationKey || '',
+            myTeamRole:  window._userTeamRole || 'home',
 
             // Equipos
             homeTeam: {
@@ -1581,7 +1570,6 @@ async function stopLiveSync() {
     await pushLiveSnapshot(finalStatus);
     
     updateLiveButton(false);
-    console.log('⏹ Live sync detenido, status:', finalStatus);
 }
 
 function updateLiveButton(active) {
@@ -1891,7 +1879,6 @@ async function syncFromCloud() {
             Object.entries(data).forEach(([k, v]) => {
                 if (k.startsWith('cronos_')) localStorage.setItem(k, v);
             });
-            console.log('☁️ Datos sincronizados desde Firestore');
         }
     } catch(e) {
         console.warn('syncFromCloud error:', e.message);
@@ -1933,7 +1920,6 @@ async function startRealtimeSync() {
             });
 
             if (changed) {
-                console.log('🔄 Datos actualizados desde otro dispositivo');
                 // Recargar configuraciones en memoria
                 loadEmailConfig();
                 loadStaffConfig();
@@ -1952,7 +1938,6 @@ async function startRealtimeSync() {
             console.warn('Realtime sync error:', err.message);
         });
 
-        console.log('✅ Sincronización en tiempo real activa');
     } catch(e) {
         console.warn('startRealtimeSync error:', e.message);
     }
@@ -1996,7 +1981,6 @@ async function migrateLocalToCloud() {
                 payload,
                 { merge: true }
             );
-            console.log('☁️ Datos locales migrados a Firestore');
             showToast('☁️ Datos guardados en la nube');
         }
     } catch(e) {
@@ -2058,7 +2042,6 @@ async function sendReportByEmail(matchInfo, reportHtml) {
                 }
             );
             successCount++;
-            console.log(`✅ Informe enviado a ${contact.name} (${contact.email})`);
         } catch(err) {
             console.error(`Error enviando email a ${contact.email}:`, err);
         }
@@ -2103,7 +2086,6 @@ function registerServiceWorker() {
 
     navigator.serviceWorker.register('./sw.js', { scope: './' })
         .then(reg => {
-            console.log('Cronos PWA Ready');
 
             // Comprobar si hay actualización disponible cada vez que se abre la app
             reg.update().catch(() => {});
@@ -2128,7 +2110,7 @@ function registerServiceWorker() {
                 };
             };
         })
-        .catch(err => console.log('SW Error:', err));
+        .catch(err => 
 
     // Si el SW toma el control mientras la página está abierta → recargar también
     navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -3622,7 +3604,7 @@ function startMatchWithConvocation() {
     if (scoreAwayEl) scoreAwayEl.textContent = '0';
     masterTimeH1 = 0;
     masterTimeH2 = 0;
-    lastTickTime = 0;
+    lastTickTime = Date.now(); // FIX: era 0, causaba deltaMs = ~1.7 billones en primer tick → congelamiento
     matchPhase = '1st_half';
     if (typeof window.matchEvents !== 'undefined') window.matchEvents = [];
     isRunning = false;
@@ -4132,113 +4114,14 @@ function spawnInitialPlayers() {
 }
 
 
-function updateMasterUI() {
-    const timerH1El = document.getElementById('timer-h1');
-    const timerH2El = document.getElementById('timer-h2');
-    const containerH1 = document.getElementById('timer-h1-container');
-    const containerH2 = document.getElementById('timer-h2-container');
-    const phaseLabel = document.getElementById('match-phase-label');
-    const actionsEl = document.getElementById('phase-actions');
-
-    const h1Display = masterTimeH1 <= half1MaxTime ? (half1MaxTime - masterTimeH1) : (masterTimeH1 - half1MaxTime);
-    timerH1El.textContent = formatTime(h1Display);
-    containerH1.classList.toggle('added', masterTimeH1 > half1MaxTime && matchPhase === '1st_half');
-    containerH1.classList.toggle('active', matchPhase === '1st_half');
-
-    const h2Display = masterTimeH2 <= half2MaxTime ? (half2MaxTime - masterTimeH2) : (masterTimeH2 - half2MaxTime);
-    timerH2El.textContent = formatTime(h2Display);
-    containerH2.classList.toggle('added', masterTimeH2 > half2MaxTime);
-    containerH2.classList.toggle('active', matchPhase === '2nd_half');
-
-    if (matchPhase === '1st_half') phaseLabel.textContent = masterTimeH1 > half1MaxTime ? '1ª PARTE (AÑADIDO)' : '1ª PARTE';
-    else if (matchPhase === 'break') phaseLabel.textContent = 'DESCANSO';
-    else if (matchPhase === '2nd_half') phaseLabel.textContent = masterTimeH2 > half2MaxTime ? '2ª PARTE (AÑADIDO)' : '2ª PARTE';
-    else if (matchPhase === 'finished') phaseLabel.textContent = 'FIN DEL PARTIDO';
-
-    const prev = document.getElementById('btn-inline-phase');
-    if (prev) prev.remove();
-
-    if (matchPhase !== 'finished') {
-        const btn = document.createElement('button');
-        btn.id = 'btn-inline-phase';
-        btn.style.cssText = 'font-size:1.1rem;padding:3px 6px;border-radius:6px;border:none;cursor:pointer;line-height:1;flex-shrink:0;';
-        if (matchPhase === '1st_half') {
-            btn.textContent = '🏁'; btn.title = 'Finalizar 1ª Parte';
-            btn.style.background = '#b8860b';
-            btn.onclick = (e) => { e.stopPropagation(); endFirstHalf(); };
-            containerH1.insertAdjacentElement('afterend', btn);
-        } else if (matchPhase === 'break') {
-            btn.textContent = '▶️'; btn.title = 'Iniciar 2ª Parte';
-            btn.style.background = '#1a5e8a';
-            btn.onclick = (e) => { e.stopPropagation(); startSecondHalf(); };
-            containerH2.insertAdjacentElement('beforebegin', btn);
-        } else if (matchPhase === '2nd_half') {
-            btn.textContent = '🏁'; btn.title = 'Finalizar Partido';
-            btn.style.background = '#8b0000';
-            btn.onclick = (e) => { e.stopPropagation(); endMatch(); };
-            containerH2.insertAdjacentElement('afterend', btn);
-        }
-    }
-
-    const cancelSubBtn = document.getElementById('btn-cancel-sub');
-    actionsEl.innerHTML = '';
-    if (cancelSubBtn) actionsEl.appendChild(cancelSubBtn);
-}
-
-// editTimer() → core.js
-
-// ── SPINNER DE CARGA ──────────────────────────────────────────────
-function showSpinner(msg) {
-    msg = msg || 'Guardando…';
-    let overlay = document.getElementById('cronos-spinner');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'cronos-spinner';
-        overlay.style.cssText =
-            'position:fixed;inset:0;background:rgba(10,14,20,0.75);z-index:99999;' +
-            'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;' +
-            'backdrop-filter:blur(3px);';
-        document.body.appendChild(overlay);
-    }
-    overlay.innerHTML =
-        '<div style="width:44px;height:44px;border-radius:50%;' +
-        'border:4px solid rgba(88,166,255,0.2);border-top-color:#58a6ff;' +
-        'animation:spinnerRotate 0.8s linear infinite;"></div>' +
-        '<p style="color:#cdd9e5;font-size:0.9rem;font-weight:700;margin:0;">' + msg + '</p>' +
-        '<style>@keyframes spinnerRotate{to{transform:rotate(360deg)}}</style>';
-    overlay.style.display = 'flex';
-}
-
-function hideSpinner() {
-    const overlay = document.getElementById('cronos-spinner');
-    if (overlay) overlay.style.display = 'none';
-}
-
-function showToast(msg, duration) {
-    duration = duration || 3000;
-    const existing = document.getElementById('cronos-toast');
-    if (existing) existing.remove();
-    const toast = document.createElement('div');
-    toast.id = 'cronos-toast';
-    toast.textContent = msg;
-    toast.style.cssText =
-        'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
-        'background:#1a7a3e;color:#fff;padding:10px 22px;border-radius:8px;' +
-        'font-size:0.85rem;font-weight:700;z-index:99998;' +
-        'box-shadow:0 4px 12px rgba(0,0,0,0.4);white-space:nowrap;' +
-        'animation:toastIn 0.2s ease;';
-    const style = document.createElement('style');
-    style.textContent = '@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
-    document.head.appendChild(style);
-    document.body.appendChild(toast);
-    setTimeout(() => { if (toast.parentNode) toast.remove(); }, duration);
-}
-
-function formatTime(sec) {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
+// ── FUNCIONES DE TIMER/UI ELIMINADAS ──────────────────────────────
+// updateMasterUI, showSpinner, hideSpinner, showToast, formatTime
+// — Definidas CANÓNICAMENTE en js/match/timer/core.js (con sync server
+//   cada 5s y RenderOptimizer). Carga DESPUÉS de app-init.js, por lo
+//   que sus versiones mejoradas sobrescriben estas.
+//   Se eliminan para evitar confusión de mantenimiento y asegurar que
+//   solo existe UNA definición de cada función.
+// ───────────────────────────────────────────────────────────────────
 
 // --- RENDER ---
 
