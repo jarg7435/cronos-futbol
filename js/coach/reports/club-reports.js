@@ -109,10 +109,9 @@ async function openStaffDashboard() {
                 const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
-                    console.log('[StaffDashboard] clubId resuelto via _cResolveClubId:', resolvedId);
                 }
             }
-        } catch(e) { console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message); }
+        } catch(e) { if(window._CRONOS_DEBUG) console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message); }
     }
 
     const modal = document.getElementById('setup-modal');
@@ -1077,10 +1076,9 @@ async function _sdLoadReports() {
                 const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
-                    console.log('[StaffDashboard][DIAG] clubId resuelto via _cResolveClubId:', resolvedId);
                 }
             }
-        } catch(e) { console.warn('[StaffDashboard][DIAG] No se pudo resolver clubId:', e.message); }
+        } catch(e) { if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] No se pudo resolver clubId:', e.message); }
     }
 
     const clubId = me.clubId;
@@ -1106,7 +1104,6 @@ async function _sdLoadReports() {
         // Por eso la Query 1 va en su propio try/catch: si falla por permisos
         // NO debe abortar el flujo; caemos a la Query 2.
         // FIX (v178): Log diagnóstico para entender qué ve el director/coordinador
-        console.log('[StaffDashboard][DIAG] Cargando informes. uid:', me.uid, 'clubId:', clubId, 'currentRole:', me.currentRole || me.role);
 
         let rawSnap = { forEach: () => {} };
         let _clubQueryOk = false;
@@ -1119,16 +1116,14 @@ async function _sdLoadReports() {
             ));
             _clubQueryOk = true;
             rawSnap.forEach(d => { _clubQueryDocCount++; });
-            console.log('[StaffDashboard][DIAG] Query por clubId OK. Docs:', _clubQueryDocCount, 'clubId:', clubId);
         } catch (clubErr) {
-            console.warn('[StaffDashboard][DIAG] Query por clubId FALLÓ:', clubErr.code || clubErr.message);
+            if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Query por clubId FALLÓ:', clubErr.code || clubErr.message);
         }
 
         // Si la query por clubId no devuelve docs de staff (o falló), intentar por staffUids
         let _hasStaffDocs = false;
         let _staffDocCount = 0;
         rawSnap.forEach(d => { if (d.data().staffReport === true) { _hasStaffDocs = true; _staffDocCount++; } });
-        console.log('[StaffDashboard][DIAG] Docs staffReport=true en query clubId:', _staffDocCount);
 
         if ((!_hasStaffDocs || !_clubQueryOk) && me.uid) {
             try {
@@ -1139,7 +1134,6 @@ async function _sdLoadReports() {
                 ));
                 let _altCount = 0;
                 altSnap.forEach(d => _altCount++);
-                console.log('[StaffDashboard][DIAG] Query staffUids array-contains. Docs:', _altCount, 'uid:', me.uid);
                 // Fusionar resultados alternativos con los originales
                 const existingIds = new Set();
                 rawSnap.forEach(d => existingIds.add(d.id));
@@ -1421,10 +1415,9 @@ async function _sdLoadMessages() {
                 const resolvedId = await window._cResolveClubId(db, me, { doc: docFn, getDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
-                    console.log('[StaffDashboard][DIAG-MSG] clubId resuelto via _cResolveClubId:', resolvedId);
                 }
             }
-        } catch(e) { console.warn('[StaffDashboard][DIAG-MSG] No se pudo resolver clubId:', e.message); }
+        } catch(e) { if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] No se pudo resolver clubId:', e.message); }
     }
 
     const clubId = me.clubId;
@@ -1445,17 +1438,16 @@ async function _sdLoadMessages() {
         //   → Esta es la clave: _sdLoadReports YA consulta por clubId y FUNCIONA
         //   (devuelve 210+ docs). Aplicamos la misma logística aquí.
         //   Filtramos client-side por recipientType==='staff' para excluir hilos de padres.
-        console.log('[StaffDashboard][DIAG-MSG] Cargando mensajes. uid:', me.uid, 'clubId:', clubId);
 
         const [snapStaff, snapParent, snapParticipants, snapClub] = await Promise.all([
-            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query staffUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
-            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
-            getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query staffUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
             // FIX (v180): Consulta por clubId — MISMA LOGÍSTICA que _sdLoadReports
             // que ya funciona (devuelve 210+ docs). Esta query encuentra TODOS los
             // hilos del club, incluyendo los que NO tienen el uid del director en
             // staffUid/parentUid/participants (el caso que causa el bug).
-            getDocs(query(collection(db,'cronos_messages'), where('clubId','==',clubId))).catch((e)=>{ console.warn('[StaffDashboard][DIAG-MSG] Query clubId falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            getDocs(query(collection(db,'cronos_messages'), where('clubId','==',clubId))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query clubId falló:', e.code||e.message); return {forEach:()=>{}}; }),
         ]);
 
         // Contar resultados de cada query para diagnóstico
@@ -1464,7 +1456,6 @@ async function _sdLoadMessages() {
         snapParent.forEach(() => _parentMsgCount++);
         snapParticipants.forEach(() => _participantsMsgCount++);
         snapClub.forEach(() => _clubMsgCount++);
-        console.log('[StaffDashboard][DIAG-MSG] Resultados - staffUid:', _staffMsgCount, 'parentUid:', _parentMsgCount, 'participants:', _participantsMsgCount, 'clubId:', _clubMsgCount);
 
         const threadsMap = {};
         snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
@@ -1630,13 +1621,12 @@ window.openLiveMatchesView = () => {
 window._cronosBackfillMessages = async function() {
     const me = window._cronosCurrentUser;
     if (!me || !me.clubId) {
-        console.warn('[Backfill] Sin clubId, abortando.');
+        if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Backfill] Sin clubId, abortando.');
         return;
     }
 
     const backfillKey = `cronos_backfill_v180_${me.clubId}`;
     if (localStorage.getItem(backfillKey)) {
-        console.log('[Backfill] Ya ejecutado para este club, saltando.');
         return;
     }
 
@@ -1698,7 +1688,6 @@ window._cronosBackfillMessages = async function() {
             }
         }
 
-        console.log(`[Backfill] Completado. Actualizados: ${updated}, Saltados (ya OK): ${skipped}`);
         localStorage.setItem(backfillKey, 'done');
     } catch(e) {
         console.warn('[Backfill] Error general:', e.message);
