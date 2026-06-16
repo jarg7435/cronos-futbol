@@ -29,10 +29,18 @@ function toggleGame() {
 
 function tick() {
     const now = Date.now();
+    // FIX: Si lastTickTime es 0 (reset mal hecho), el delta sería ~1.7 billones de ms,
+    // causando que el timer se congele al intentar sumar miles de segundos de golpe.
+    if (!lastTickTime || lastTickTime === 0) {
+        lastTickTime = now;
+    }
     const deltaMs = now - lastTickTime;
     const deltaSec = Math.floor(deltaMs / 1000);
-    if (deltaSec >= 1) {
-        lastTickTime += deltaSec * 1000;
+    // FIX: Limitar deltaSec máximo a 2 segundos para evitar saltos grotescos
+    // (ej: tab en segundo plano, o lastTickTime corrupto)
+    const clampedDeltaSec = Math.min(deltaSec, 2);
+    if (clampedDeltaSec >= 1) {
+        lastTickTime += clampedDeltaSec * 1000;
 
         // Límite de añadido por modalidad: F11=15 min, F7=10 min
         const maxAddedSecs = (typeof currentMode !== 'undefined' && currentMode === 'f11') ? 900 : 600;
@@ -40,13 +48,13 @@ function tick() {
         let shouldAutoEnd2 = false;
 
         if (matchPhase === '1st_half') {
-            masterTimeH1 += deltaSec;
+            masterTimeH1 += clampedDeltaSec;
             if (masterTimeH1 >= (half1MaxTime + maxAddedSecs)) {
                 masterTimeH1 = half1MaxTime + maxAddedSecs;
                 shouldAutoEnd1 = true;
             }
         } else if (matchPhase === '2nd_half') {
-            masterTimeH2 += deltaSec;
+            masterTimeH2 += clampedDeltaSec;
             if (masterTimeH2 >= (half2MaxTime + maxAddedSecs)) {
                 masterTimeH2 = half2MaxTime + maxAddedSecs;
                 shouldAutoEnd2 = true;
@@ -63,7 +71,7 @@ function tick() {
         // Actualizar timers de jugadores con render optimization
         players.forEach(p => {
             if (p.status === 'field') { 
-                p.time += deltaSec;
+                p.time += clampedDeltaSec;
                 if (window.renderOptimizer) {
                     window.renderOptimizer.scheduleRender(() => updatePlayerUI(p), 'normal');
                 } else {
@@ -107,7 +115,7 @@ async function syncTimerWithServer() {
         if (diffH1 > _maxDriftAllowed && matchPhase === '1st_half') {
             const correction = serverData.timeH1 - masterTimeH1;
             masterTimeH1 = serverData.timeH1;
-            console.warn(`⚠️ Timer H1 ajustado: ${correction > 0 ? '+' : ''}${correction}ms (drift corregido)`);
+            if(window._CRONOS_DEBUG) console.warn(`Timer H1 ajustado: ${correction > 0 ? '+' : ''}${correction}s (drift corregido)`);
             if (window.renderOptimizer) {
                 window.renderOptimizer.scheduleRender(updateMasterUI, 'high');
             } else {
@@ -118,7 +126,7 @@ async function syncTimerWithServer() {
         if (diffH2 > _maxDriftAllowed && matchPhase === '2nd_half') {
             const correction = serverData.timeH2 - masterTimeH2;
             masterTimeH2 = serverData.timeH2;
-            console.warn(`⚠️ Timer H2 ajustado: ${correction > 0 ? '+' : ''}${correction}ms (drift corregido)`);
+            if(window._CRONOS_DEBUG) console.warn(`Timer H2 ajustado: ${correction > 0 ? '+' : ''}${correction}s (drift corregido)`);
             if (window.renderOptimizer) {
                 window.renderOptimizer.scheduleRender(updateMasterUI, 'high');
             } else {
@@ -138,6 +146,9 @@ function updateMasterUI() {
     const containerH2 = document.getElementById('timer-h2-container');
     const phaseLabel = document.getElementById('match-phase-label');
     const actionsEl = document.getElementById('phase-actions');
+
+    // FIX: Guardar contra elementos DOM inexistentes (primer arranque)
+    if (!timerH1El || !timerH2El || !containerH1 || !containerH2 || !phaseLabel) return;
 
     const h1Display = masterTimeH1 <= half1MaxTime ? (half1MaxTime - masterTimeH1) : (masterTimeH1 - half1MaxTime);
     timerH1El.textContent = formatTime(h1Display);
@@ -242,6 +253,7 @@ function showToast(msg, duration) {
 }
 
 function formatTime(sec) {
+    sec = Math.max(0, sec || 0); // FIX: proteger contra valores negativos o undefined
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
