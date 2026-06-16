@@ -475,7 +475,7 @@ async function loadSuperAdminEmails() {
             SUPERADMIN_EMAILS = data.emails || [];
             _superAdminLoaded = true;
             // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email count
-            // console.log('[Cronos] Superadmin emails cargados desde Firestore:', SUPERADMIN_EMAILS.length);
+            // 
         } else {
             console.warn('[Cronos] No se encontró cronos_config/superadmins en Firestore');
             _superAdminLoaded = true; // Doc no existe pero ya lo intentamos
@@ -507,7 +507,7 @@ async function _ensureSuperAdminConfig(email) {
                 // Añadir el email del SA actual a la lista existente
                 await fa.setDoc(configRef, { emails: [...emails, email] }, { merge: true });
                 // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email
-                // console.log('[Cronos] Email superadmin añadido a cronos_config/superadmins:', email);
+                // 
             }
             // Actualizar la lista local también
             SUPERADMIN_EMAILS = [...(data.emails || []), email];
@@ -518,7 +518,7 @@ async function _ensureSuperAdminConfig(email) {
             SUPERADMIN_EMAILS = [email];
             _superAdminLoaded = true;
             // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email
-            // console.log('[Cronos] Documento cronos_config/superadmins creado con:', email);
+            // 
         }
     } catch (e) {
         console.warn('[Cronos] _ensureSuperAdminConfig error:', e.message);
@@ -554,7 +554,6 @@ export async function checkAuthorization(user) {
             window._addingRole = false;
             _addingRoleTimestamp = 0;
         } else {
-            console.log('[Cronos] Autorización pospuesta (añadiendo rol, ' + Math.round(elapsed/1000) + 's)...');
             return;
         }
     }
@@ -743,7 +742,7 @@ export async function checkAuthorization(user) {
             const _needsFix = !data.isAuthorized || data.status !== 'active' || data.role !== 'superadmin';
             if (_needsFix) {
                 // SECURITY FIX (SEC-M02): Removed log that exposed user email in SA context
-                // console.log('[Cronos] SuperAdmin bypass: corrigiendo documento desincronizado para', user.email);
+                // 
                 try {
                     await fa.setDoc(ref, {
                         isAuthorized: true,
@@ -771,7 +770,7 @@ export async function checkAuthorization(user) {
             );
 
             // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email
-            // console.log('[Cronos] SuperAdmin bypass aplicado para:', user.email);
+            // 
         }
         // ═══════ FIN SUPERADMIN BYPASS ═════════════════════════════
 
@@ -827,7 +826,6 @@ export async function checkAuthorization(user) {
 
                 if (!approvedSnap.empty) {
                     // SA aprobó — activar el usuario automáticamente
-                    console.log('[Cronos] SA approval found. Activating user...');
 
                     // Encontrar la plataform_request más reciente
                     let bestReq = null;
@@ -1013,7 +1011,6 @@ export async function checkAuthorization(user) {
                 needsRoleSync = true;
             }
             if (needsRoleSync) {
-                console.log('[Cronos] Sincronizando rol raíz con allRoles...');
                 fa.setDoc(ref, { allRoles }, { merge: true }).catch(() => {});
             }
         }
@@ -1115,7 +1112,6 @@ export async function checkAuthorization(user) {
                         } catch(_) {}
                     }
                     await fa.setDoc(ref, updateData, { merge: true }).catch(() => {});
-                    console.log('[Cronos] Roles auto-activados desde platform_requests aprobadas:', needsUpdate);
                 }
             }
         } catch (_saErr) {
@@ -1157,7 +1153,6 @@ export async function checkAuthorization(user) {
                 if (cleanedRoles.length !== allRoles.length) {
                     allRoles = cleanedRoles;
                     fa.setDoc(ref, { allRoles: cleanedRoles }, { merge: true }).catch(() => {});
-                    console.log('[Cronos] Roles limpiados. Quedan:', cleanedRoles.length);
                 }
             }
         } catch (_) {}
@@ -1225,7 +1220,7 @@ export async function checkAuthorization(user) {
         }
 
         if (authorizedRoles.length === 0) {
-            console.warn('[Cronos-Auth] No authorized roles for:', user.email);
+            if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos-Auth] No authorized roles for:', user.email);
             await fa.signOut(fa.auth);
             showAuthError('⚠️ Tu cuenta no tiene roles autorizados.');
             return;
@@ -1246,13 +1241,11 @@ export async function checkAuthorization(user) {
                 clubName: r.clubName || null,
             };
             
-            console.log('[Cronos] Un solo rol detectado:', r.role, 'entrando...');
             enterApp();
             return;
         }
 
         // ── Múltiples roles → mostrar selector ─────────────────
-        console.log('[Cronos] Múltiples roles detectados:', authorizedRoles.length, 'abriendo selector...');
         enterApp(); // Muestra el landing de "Bienvenido" que invoca showRoleSelection
 
     } catch (err) {
@@ -1628,7 +1621,7 @@ export async function doAuth() {
             isAuthorized = true;
             finalRole = 'superadmin';
             // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email and claim status
-            // console.log('[Cronos] SuperAdmin detectado en registro:', email, '(emails:', _saEmailsCheck, ', claims:', _saClaimCheck, ')');
+            // 
         }
 
         // ── Padre/tutor: guardar nombre del jugador que representa ──
@@ -1659,7 +1652,6 @@ export async function doAuth() {
 
                     if (!_entityHasAdmin) {
                         // FALLBACK: Consultar users para verificar si hay admin individual activo
-                        console.log('[Cronos] hasAdmin=false en entidad, verificando en users como fallback...');
                         try {
                             // Buscar usuarios con clubId = entityId y rol individual activo
                             const usersSnap1 = await m.getDocs(m.query(
@@ -1695,7 +1687,6 @@ export async function doAuth() {
 
                             if (_foundAdmin) {
                                 _entityHasAdmin = true;
-                                console.log('[Cronos] Admin individual encontrado en users (hasAdmin estaba desactualizado)');
                                 // CORREGIR la entidad: sincronizar hasAdmin=true
                                 try {
                                     const _collection = _isFromClubs ? 'clubs' : 'individuals';
@@ -1705,7 +1696,6 @@ export async function doAuth() {
                                         adminEmail: _adminData.email || null,
                                         adminName: _adminData.displayName || _adminData.firstName || null,
                                     });
-                                    console.log('[Cronos] hasAdmin corregido a true en entidad:', selectedIndivId);
                                 } catch(syncErr) {
                                     console.warn('[Cronos] No se pudo corregir hasAdmin en entidad:', syncErr.message);
                                 }
@@ -1908,7 +1898,6 @@ export async function doAuth() {
                 // El email existe en Firebase Auth pero no hay documento en Firestore
                 // (fue borrado o nunca se creó). Tratar como REGISTRO NUEVO.
                 window._addingRole = false;
-                console.log('[Cronos] Auth account exists but no user doc — creating new registration.');
 
                 const newAllRoles = [{
                     role:        finalRole,
@@ -2065,7 +2054,6 @@ export async function doAuth() {
 
             // ── CHECK: If user was removed, treat as NEW registration ──
             if (primaryData.status === 'removed') {
-                console.log('[Cronos] Previous account was removed. Creating fresh registration.');
                 // Delete the stale doc completely
                 try {
                     const _mdel = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -2126,7 +2114,7 @@ export async function doAuth() {
                         _saReqData2.individualOwnerId = selectedIndivId;
                         _saReqData2.clubId = selectedIndivId;
                     }
-                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid + '_' + requestedRole), _saReqData2).catch(function(e) { console.warn('[Cronos] Error creating platform_request:', e); });
+                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid + '_' + requestedRole), _saReqData2).catch(function(e) { if(window._CRONOS_DEBUG) console.warn('[Cronos] Error creating platform_request:', e); });
                 }
 
                 const rl3 = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Padre/Madre/Tutor', club_admin:'Administrador de Club', individual:'Administrador Individual' };
@@ -2178,7 +2166,6 @@ export async function doAuth() {
                 try {
                     const dupClubSnap = await fa.getDoc(fa.doc(fa.db, 'clubs', duplicate.clubId));
                     if (!dupClubSnap.exists()) {
-                        console.log('[Cronos] Duplicate apunta a club eliminado — permitiendo re-registro');
                         const cleanedRoles = currentRoles.filter(r =>
                             !(r.role === requestedRole && r.clubId === duplicate.clubId)
                         );
@@ -2365,7 +2352,6 @@ export async function doAuth() {
                         status: 'pending_individual',
                         createdAt: new Date().toISOString(),
                     });
-                    console.log('[Cronos] platform_request pending_individual creado para', requestedRole, 'bajo entidad', selectedIndivId);
                 } catch (prErr) {
                     console.warn('[Cronos] Error creando platform_request individual:', prErr.message);
                 }
@@ -2397,7 +2383,6 @@ export async function doAuth() {
                         _saReqData3.clubId = selectedIndivId;
                     }
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', saReqId), _saReqData3);
-                    console.log('[Cronos] platform_request pending_sa creado para', requestedRole);
                 } catch (prErr) {
                     console.warn('[Cronos] Error creando platform_request SA:', prErr.message);
                 }
@@ -2613,7 +2598,6 @@ export async function doAuth() {
                         userUid: cred.user.uid,
                         createdAt: new Date().toISOString(),
                     });
-                    console.log('[Cronos] Platform request creada para admin individual:', _prId);
                 } catch(_e) { console.warn('[Cronos] Error creando platform_request para admin individual:', _e.message); }
             }
 
@@ -3009,13 +2993,10 @@ function _launchWithRole(role) {
                 if (roleEntry.category) me.category = roleEntry.category;
             }
 
-            console.log('[RoleLaunch] Contexto actualizado para rol', role,
-                '| clubId:', me.clubId,
-                (role === 'parent') ? '| inviteCode:' + (me.inviteCode || 'null') : '');
         } else {
             // El SA entra a todos los paneles por diseño — no tiene entradas en allRoles para roles que no son suyos.
             if (!['superadmin','admin'].includes(me.role)) {
-                console.warn('[RoleLaunch] No se encontró entrada en allRoles para rol:', role,
+                if(window._CRONOS_DEBUG) console.warn('[RoleLaunch] No se encontró entrada en allRoles para rol:', role,
                     '| allRoles disponibles:', (me.allRoles || []).map(r => r.role).join(', '));
             }
         }

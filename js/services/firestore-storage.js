@@ -73,7 +73,6 @@ async function syncFromCloud() {
             Object.entries(data).forEach(([k, v]) => {
                 if (k.startsWith('cronos_')) localStorage.setItem(k, v);
             });
-            console.log('☁️ Datos sincronizados desde Firestore');
         }
     } catch(e) {
         console.warn('syncFromCloud error:', e.message);
@@ -108,7 +107,6 @@ function _refreshMatchUI() {
         const sa = document.getElementById('score-away');
         if (sh) sh.textContent = state.scoreHome ?? '0';
         if (sa) sa.textContent = state.scoreAway ?? '0';
-        console.log('🔄 Partido activo re-renderizado desde sync remoto');
     } catch (e) {
         console.warn('Error re-renderizando partido tras sync:', e);
     }
@@ -137,7 +135,6 @@ async function startRealtimeSync() {
                 }
             });
             if (changed) {
-                console.log('🔄 Datos actualizados desde otro dispositivo');
                 const activeMatchChanged = Object.keys(data).some(k => k === 'cronos_active_match_v2');
                 if (activeMatchChanged) _refreshMatchUI();
                 if (typeof loadEmailConfig === 'function') loadEmailConfig();
@@ -154,7 +151,6 @@ async function startRealtimeSync() {
         }, (err) => {
             console.warn('Realtime sync error:', err.message);
         });
-        console.log('✅ Sincronización en tiempo real activa');
     } catch(e) {
         console.warn('startRealtimeSync error:', e.message);
     }
@@ -164,7 +160,6 @@ function stopRealtimeSync() {
     if (_realtimeUnsubscribe) {
         _realtimeUnsubscribe();
         _realtimeUnsubscribe = null;
-        console.log('⏹ Sincronización en tiempo real detenida');
     }
 }
 
@@ -197,7 +192,6 @@ async function migrateLocalToCloud() {
                 payload,
                 { merge: true }
             );
-            console.log('☁️ Datos locales migrados a Firestore');
             showToast('☁️ Datos guardados en la nube');
         }
     } catch(e) {
@@ -271,7 +265,6 @@ async function sendReportByEmail(matchInfo, reportHtml) {
                 }
             );
             successCount++;
-            console.log(`✅ Informe enviado a ${contact.name} (${contact.email})`);
         } catch(err) {
             console.error(`Error enviando email a ${contact.email}:`, err);
         }
@@ -295,7 +288,6 @@ function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('./sw.js', { scope: './' })
         .then(reg => {
-            console.log('Cronos PWA Ready');
             reg.update().catch(() => {});
             reg.onupdatefound = () => {
                 const newWorker = reg.installing;
@@ -315,7 +307,7 @@ function registerServiceWorker() {
                 };
             };
         })
-        .catch(err => console.log('SW Error:', err));
+        .catch(err => 
     navigator.serviceWorker.addEventListener('controllerchange', () => {
         window.location.reload();
     });

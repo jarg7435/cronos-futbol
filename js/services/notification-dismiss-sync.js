@@ -40,7 +40,6 @@ const NotificationDismiss = (() => {
     // Cargar estado actual de localStorage
     _loadLocalDismissed();
 
-    console.log('[NotificationDismiss] Inicializado para usuario:', userId);
     return true;
   }
 
@@ -55,7 +54,6 @@ const NotificationDismiss = (() => {
       _saveLocalDismissed();
     }
 
-    console.log('[NotificationDismiss] Notificación descartada:', notificationId);
     return true;
   }
 
@@ -85,7 +83,6 @@ const NotificationDismiss = (() => {
       _saveLocalDismissed();
     }
 
-    console.log('[NotificationDismiss] Notificación restaurada:', notificationId);
     return true;
   }
 
@@ -137,7 +134,6 @@ const NotificationDismiss = (() => {
     } catch (e) {
       console.warn('[NotificationDismiss] Error limpiando localStorage:', e);
     }
-    console.log('[NotificationDismiss] Módulo limpiado para logout');
   }
 
   // ── API Pública ──

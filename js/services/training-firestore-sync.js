@@ -38,7 +38,7 @@ const TrainingSync = (() => {
    */
   function init(clubId) {
     if (!clubId) {
-      console.warn('[TrainingSync] clubId requerido para inicializar');
+      if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[TrainingSync] clubId requerido para inicializar');
       return false;
     }
 
@@ -51,7 +51,6 @@ const TrainingSync = (() => {
     //  en el primer login tras asignarse claims).
     _whenTokenReady().then(() => syncFromFirestore());
 
-    console.log('[TrainingSync] Inicializado para club:', clubId);
     return true;
   }
 
@@ -89,7 +88,6 @@ const TrainingSync = (() => {
       saveWeekToFirestore(weekKey, weekData);
     }
 
-    console.log('[TrainingSync] Semana guardada:', weekKey);
     return true;
   }
 
@@ -148,7 +146,6 @@ const TrainingSync = (() => {
       })();
     }
 
-    console.log('[TrainingSync] Semana eliminada:', weekKey);
     return true;
   }
 
@@ -182,7 +179,6 @@ const TrainingSync = (() => {
       ));
 
       localStorage.setItem(SYNC_TIMESTAMP_KEY, Date.now().toString());
-      console.log('[TrainingSync] Sincronizadas', entries.length, 'semanas a Firestore');
       return `✅ ${entries.length} semanas sincronizadas`;
     } catch (err) {
       console.error('[TrainingSync] Error en sincronización:', err);
@@ -224,7 +220,6 @@ const TrainingSync = (() => {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
 
       if (count > 0) {
-        console.log('[TrainingSync] Descargadas', count, 'semanas desde Firestore');
       }
 
       return count;
@@ -235,7 +230,6 @@ const TrainingSync = (() => {
       // siguiente arranque con el token ya refrescado. Se baja a console.debug
       // para no generar ruido de error en consola.
       if (err && err.code === 'permission-denied') {
-        console.debug('[TrainingSync] Sync omitido (claims aun no propagados):', err.code);
       } else {
         console.warn('[TrainingSync] Error descargando de Firestore:', err);
       }

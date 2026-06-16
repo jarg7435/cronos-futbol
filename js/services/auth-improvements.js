@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
  *             // Usuario fue eliminado, limpiar el documento antiguo
  *             const oldDoc = snapshot.docs[0];
  *             await deleteDoc(doc(fa.db, 'users', oldDoc.id));
- *             console.log('✅ Registro anterior limpiado, permitiendo nuevo registro');
+ *             
  *         }
  *
  *         // 4. Crear usuario en Firebase Auth
@@ -321,4 +321,3 @@ document.addEventListener('DOMContentLoaded', () => {
  * </div>
  */
 
-console.log('✅ Auth Improvements v8.0 cargado');

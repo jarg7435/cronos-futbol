@@ -81,14 +81,12 @@ async function setupUserSyncListener(clubId) {
             snapshot.docChanges().forEach((change) => {
                 if (change.type === 'removed') {
                     // Usuario eliminado en el club → eliminar del SuperAdmin
-                    console.log(`🗑️ Usuario ${change.doc.id} eliminado en club ${clubId}`);
                     // Actualizar vista del SuperAdmin si está abierta
                     if (typeof saClubs === 'function') {
                         saClubs();
                     }
                 } else if (change.type === 'modified') {
                     // Usuario modificado → actualizar vista
-                    console.log(`✏️ Usuario ${change.doc.id} modificado en club ${clubId}`);
                     if (typeof saClubs === 'function') {
                         saClubs();
                     }
@@ -408,7 +406,7 @@ window.purgeDeletedUser = purgeDeletedUser;
  *     
  *     try {
  *         await admin.auth().deleteUser(uid);
- *         console.log(`Usuario ${email} (${uid}) eliminado de Auth`);
+ *         
  *         return { success: true, message: `${email} eliminado de Auth` };
  *     } catch (error) {
  *         console.error('Error al eliminar usuario:', error);
@@ -460,4 +458,3 @@ window.purgeDeletedUser = purgeDeletedUser;
  * }
  */
 
-console.log('✅ User Management Improvements v8.0 cargado');

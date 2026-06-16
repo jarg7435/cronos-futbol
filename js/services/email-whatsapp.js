@@ -64,7 +64,6 @@ async function sendReportByEmail(matchInfo, reportHtml) {
                 }
             );
             successCount++;
-            console.log(`✅ Informe enviado a ${contact.name} (${contact.email})`);
         } catch(err) {
             console.error(`Error enviando email a ${contact.email}:`, err);
         }

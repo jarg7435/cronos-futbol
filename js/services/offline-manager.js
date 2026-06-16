@@ -150,7 +150,6 @@ class OfflineManager {
             putReq.onsuccess = () => resolve();
             putReq.onerror   = () => resolve();
         })));
-        console.log(`[OfflineManager] ♻️ ${dead.length} evento(s) dead-lettered re-encolado(s) para reintento.`);
         this.sync();
         return dead.length;
     }
@@ -179,7 +178,6 @@ class OfflineManager {
         const pending = await this._getPending().catch(() => []);
         if (!pending.length) return;
 
-        console.log(`[OfflineManager] Sincronizando ${pending.length} evento(s) pendiente(s)…`);
 
         const fa = window._cronos_auth;
         if (!fa || !fa.db) {
@@ -219,7 +217,6 @@ class OfflineManager {
             }
 
             if (synced > 0) {
-                console.log(`[OfflineManager] ✅ ${synced}/${pending.length} evento(s) sincronizado(s).`);
                 // Notificar a la UI si hay un listener registrado
                 if (typeof window._onOfflineSyncComplete === 'function') {
                     window._onOfflineSyncComplete(synced);

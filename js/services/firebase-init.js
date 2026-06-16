@@ -100,7 +100,6 @@
             if (_isSA) {
                 // Corregir documento si está desincronizado
                 if (!d.isAuthorized || d.status !== 'active') {
-                    console.log('[Cronos-fallback] SuperAdmin bypass: corrigiendo documento');
                     try {
                         await setDoc(ref, {
                             isAuthorized: true,
@@ -113,7 +112,6 @@
                 d.isAuthorized = true;
                 d.status = 'active';
                 d.role = 'superadmin';
-                console.log('[Cronos-fallback] SuperAdmin bypass aplicado para:', user.email);
             }
             // ═══ FIN SUPERADMIN BYPASS ════════════════════════════════
 
@@ -179,7 +177,6 @@
         }
     });
 
-    console.log('[Cronos] firebase-init.js cargado correctamente');
 })();
 
 // ══════════════════════════════════════════════════════════════════
@@ -210,4 +207,3 @@ window.saFS = async function saFS() {
     };
 };
 
-console.log('[Cronos] saFS() definido globalmente en firebase-init.js');
