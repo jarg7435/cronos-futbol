@@ -448,7 +448,6 @@ window.saIndividuals = async function saIndividuals() {
         for (const ent of individualEntities) {
             const realAdmin = _activeAdminsByEntity[ent.id];
             if (realAdmin && !ent.hasAdmin) {
-                console.log('[saIndividuals] Corrigiendo hasAdmin para entidad:', ent.id, '(admin encontrado:', realAdmin.email, ')');
                 try {
                     const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
                     await updateDoc(doc(db, 'clubs', ent.id), {
@@ -1123,7 +1122,6 @@ window.saQuickApprove = async function(uid, email, clubId) {
                         adminEmail: uData.email || email,
                         adminName: uData.displayName || uData.firstName || email,
                     });
-                    console.log('[saQuickApprove] hasAdmin actualizado a true en entidad:', _indEntityId);
                 } catch(entErr) {
                     console.warn('[saQuickApprove] Error setting hasAdmin:', entErr.message);
                     // Intentar en colección 'individuals' como fallback
@@ -1470,7 +1468,6 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                             await httpsCallable(fa.functions, 'setCustomClaims')({
                                 uid: id, role: 'club_admin', clubId,
                             });
-                            console.log('[saApprove] Custom claims asignados a club_admin', id, clubId);
                         } else {
                             console.warn('[saApprove] Functions no disponible; claims no asignados (fallback de reglas activo).');
                         }
@@ -1516,7 +1513,6 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                             await httpsCallable(fa.functions, 'setCustomClaims')({
                                 uid: id, role: 'individual', clubId: _indEntityId || null,
                             });
-                            console.log('[saApprove] Custom claims asignados a individual_admin', id, _indEntityId);
                         } else {
                             console.warn('[saApprove] Functions no disponible; claims no asignados (fallback de reglas activo).');
                         }
@@ -1571,7 +1567,6 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                                 await httpsCallable(fa.functions, 'setCustomClaims')({
                                     uid: id, role: u.role || 'user', clubId: _indEntityIdOther,
                                 });
-                                console.log('[saApprove] Custom claims asignados a usuario individual', id, u.role, _indEntityIdOther);
                             }
                         } catch (claimErr2) {
                             console.warn('[saApprove] setCustomClaims falló para usuario individual (continúa con fallback):', claimErr2.message);
@@ -1641,7 +1636,6 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                             await httpsCallable(fa.functions, 'setCustomClaims')({
                                 uid: r.userUid, role: 'club_admin', clubId: newClubId,
                             });
-                            console.log('[saApprove] Custom claims asignados a club_admin (user_request)', r.userUid, newClubId);
                         }
                     } catch (claimErrCA) {
                         console.warn('[saApprove] setCustomClaims falló para club_admin (user_request):', claimErrCA.message);
@@ -1690,7 +1684,6 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                             await httpsCallable(fa.functions, 'setCustomClaims')({
                                 uid: r.userUid, role: 'individual', clubId: _indEntityId3 || null,
                             });
-                            console.log('[saApprove] Custom claims asignados a individual_admin (user_request)', r.userUid, _indEntityId3);
                         }
                     } catch (claimErr3) {
                         console.warn('[saApprove] setCustomClaims falló para individual (user_request):', claimErr3.message);
@@ -1833,7 +1826,6 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                                 role: r.requestedRole || 'user',
                                 clubId: _claimClubId,
                             });
-                            console.log('[saApprove] Custom claims asignados a', r.requestedRole, r.userUid, _claimClubId);
                         }
                     } catch (claimErr4) {
                         console.warn('[saApprove] setCustomClaims falló para', r.requestedRole, '(continúa con fallback):', claimErr4.message);
@@ -2091,7 +2083,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
             if (_shouldDeleteAuth && httpsCallable && fa.functions) {
                 try {
                     var resB = await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
-                    console.log('[saSetClubUserStatus] deleteAuthUser OK:', realEmail, resB && resB.data);
                 } catch(cfErr) {
                     console.error('[saSetClubUserStatus] deleteAuthUser FALLÓ:', cfErr && cfErr.code, cfErr && cfErr.message);
                     var codeB = (cfErr.details && cfErr.details.code) || cfErr.code || '';
@@ -2206,7 +2197,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                             adminEmail: uData.email || email,
                             adminName: uData.displayName || uData.firstName || email,
                         });
-                        console.log('[saSetClubUserStatus] hasAdmin actualizado a true en entidad:', _entityId);
                     } catch(entErr2) {
                         console.warn('[saSetClubUserStatus] Error setting hasAdmin:', entErr2.message);
                     }
@@ -2231,7 +2221,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                                 adminEmail: null,
                                 adminName: null,
                             });
-                            console.log('[saSetClubUserStatus] hasAdmin actualizado a false en entidad:', _entityId);
                         }
                     } catch(entErr3) {
                         console.warn('[saSetClubUserStatus] Error updating hasAdmin on block:', entErr3.message);
@@ -2361,7 +2350,6 @@ window.saPurgeUser = async function saPurgeUser(uid, email) {
         if (httpsCallable && fa.functions) {
             try {
                 var resP = await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
-                console.log('[saPurgeUser] deleteAuthUser OK:', realEmail, resP && resP.data);
             } catch(cfErr) {
                 console.error('[saPurgeUser] deleteAuthUser FALLÓ:', cfErr && cfErr.code, cfErr && cfErr.message);
                 var codeP = (cfErr.details && cfErr.details.code) || cfErr.code || '';

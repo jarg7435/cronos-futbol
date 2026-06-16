@@ -236,8 +236,6 @@
                     const dDocs = await getDocs(collection(db, 'deletion_requests'));
                     dDocs.forEach(d => snapD_all.push(Object.assign({_id: d.id}, d.data())));
                     
-                    console.log('[SA-DEBUG] Solicitudes registro:', snapP_all.length);
-                    console.log('[SA-DEBUG] Solicitudes baja:', snapD_all.length);
                 } catch (e) { 
                     console.error('[SA-DEBUG] Error crítico de lectura:', e);
                     if (body) body.innerHTML = `<div style="padding:1rem;background:rgba(255,88,88,0.1);border:1px solid #ff5858;border-radius:8px;color:#ff5858;">
@@ -737,7 +735,6 @@ window.saFixIndividualNames = async function() {
         });
         if (ops.length > 0) {
             await Promise.all(ops);
-            console.log('[Cronos] Nombres individuales actualizados:', ops.length);
         }
         localStorage.setItem(key, '1');
     } catch(_) {}

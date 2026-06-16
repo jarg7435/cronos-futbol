@@ -1161,4 +1161,3 @@ window.billIndividualView = async function(containerId) {
     }
 };
 
-console.log('[Cronos] billing.js v1.0 cargado — Sistema de facturación iniciado');
