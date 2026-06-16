@@ -96,6 +96,7 @@ async function pushLiveSnapshot(status = 'active') {
                 : null,
             formation:   activeFormationKey || '',
             category:    (document.getElementById('match-category')?.value || window._currentMatchCategory || ''),
+            myTeamRole:  window._userTeamRole || 'home',
 
             // Equipos
             homeTeam: {
