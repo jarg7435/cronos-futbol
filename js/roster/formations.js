@@ -67,9 +67,6 @@ function updateCategoryOptions(forcedMode) {
 
 // --- APLICAR FORMACIÓN ---
 function applyFormationPreset(key) {
-    console.log('[FORMACIÓN] applyFormationPreset called:', key,
-        '| currentMode:', currentMode, '| analyzeAway:', analyzeAway,
-        '| players count:', players.length);
 
     const presets = FORMATION_PRESETS[currentMode];
     if (!presets) { console.warn('[FORMACIÓN] No presets para modo:', currentMode); return; }
@@ -84,8 +81,6 @@ function applyFormationPreset(key) {
         if (a.titularOrder !== undefined && b.titularOrder !== undefined) return a.titularOrder - b.titularOrder;
         return (a.number || 0) - (b.number || 0);
     });
-    console.log('[FORMACIÓN] Jugadores ordenados por dorsal:',
-        sortedPlayers.filter(p => p.status === 'field').map(p => `#${p.number} ${p.name} (${p.team})`).join(', '));
 
     let homeIdx = 0, awayIdx = 0;
     sortedPlayers.forEach(p => {
@@ -95,7 +90,6 @@ function applyFormationPreset(key) {
             if (positions[homeIdx]) {
                 const pos = clampToField(positions[homeIdx].x, positions[homeIdx].y);
                 p.x = pos.x; p.y = pos.y;
-                console.log(`[FORMACIÓN] ${p.team} #${p.number} ${p.name} → pos[${homeIdx}] (${pos.x}, ${pos.y})`);
                 homeIdx++;
             }
         } else if (p.team === 'away') {
@@ -103,7 +97,6 @@ function applyFormationPreset(key) {
             if (positions && positions[awayIdx]) {
                 const pos = clampToField(positions[awayIdx].x, positions[awayIdx].y);
                 p.x = pos.x; p.y = pos.y;
-                console.log(`[FORMACIÓN] ${p.team} #${p.number} ${p.name} → pos[${awayIdx}] (${pos.x}, ${pos.y})`);
                 awayIdx++;
             }
         }
@@ -123,11 +116,9 @@ function applyFormationPreset(key) {
             chip.style.left = `${p.x}%`;
             chip.style.top = `${p.y}%`;
             chip.style.transform = 'translate(-50%, -50%)';
-            console.log(`[FORMACIÓN] DOM actualizado: player-${p.id} → (${p.x}%, ${p.y}%)`);
         }
     });
 
     // Re-renderizar completo como respaldo
     renderPlayers();
-    console.log('[FORMACIÓN] Completada. activeFormationKey:', activeFormationKey);
 }
