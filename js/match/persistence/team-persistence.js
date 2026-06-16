@@ -252,7 +252,6 @@ function deleteTeamFromDropdown(teamKey) {
     const team = teams[index];
     
     if (team) {
-        console.log(`[Persistence] Solicitando borrado de equipo: ${team.name} (índice ${index})`);
         deleteTeamByIndex(teamKey, parseInt(index), team.name);
     } else {
         if (typeof showToast === 'function') showToast("❌ No se encontró el equipo seleccionado.", 3000);
