@@ -31,7 +31,6 @@ if (typeof window.saFS !== 'function') {
             httpsCallable: fnMod.httpsCallable,
         };
     };
-    console.log('[IndPanel] saFS local fallback activado');
 }
 
 
@@ -243,7 +242,6 @@ async function openIndividualAdminPanel() {
     // CRITICAL: Buscar usuarios que pertenezcan a esta entidad individual
     // Debemos buscar por TODOS los campos posibles: individualOwnerId, individualEntityId, clubId
     // porque tras la aprobación del SA, los usuarios confirmados tienen estos campos seteados
-    console.log('[IndPanel] Buscando usuarios para entityId:', _queryId, 'uid:', uid);
     const parentsSnap1 = await getDocs(query(collection(db, 'users'),
         where('individualOwnerId', '==', _queryId)
     )).catch(() => null);
@@ -297,12 +295,8 @@ async function openIndividualAdminPanel() {
         // El admin individual está en la lista pero su rol principal no es 'individual'
         // Esto puede pasar si se registró con otro rol primero. Actualizar el allRoles
         // para asegurar que tiene el rol de individual.
-        console.log('[IndPanel] Admin individual encontrado con rol:', adminInMap.role, '— corrigiendo allRoles');
     }
     const parents = Array.from(parentsMap.values());
-    console.log('[IndPanel] Usuarios encontrados:', parents.length,
-        '| Entrenadores activos:', parents.filter(u => u.status === 'active' && (u.role === 'user' || (u.allRoles||[]).some(r=>r.role==='user' && r.isAuthorized))).length,
-        '| Padres activos:', parents.filter(u => u.status === 'active' && (u.role === 'parent' || (u.allRoles||[]).some(r=>r.role==='parent' && r.isAuthorized))).length);
 
     const totalPending = pendingAutoReg.length + parents.filter(u => u.status === 'pending_individual' && u.isAuthorized === false).length;
 
@@ -990,7 +984,6 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
         if (_shouldDeleteAuth && httpsCallable && fa && fa.functions) {
             try {
                 const _authRes = await httpsCallable(fa.functions, 'deleteAuthUser')({ uid: parentUid, email });
-                console.log('[indDeleteParent] deleteAuthUser OK:', email, _authRes && _authRes.data);
             } catch(cfErr) {
                 console.error('[indDeleteParent] deleteAuthUser FALLÓ:', cfErr && cfErr.code, cfErr && cfErr.message);
                 try {
