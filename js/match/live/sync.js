@@ -127,12 +127,18 @@ async function pushLiveSnapshot(status = 'active') {
             half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
             half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
             // phaseStartedAt: instante absoluto (epoch ms) en que arrancó la parte
-            // ACTUAL, derivado del tiempo de juego acumulado. Permite a live.html
-            // calcular el cronómetro de forma autónoma aunque el entrenador cierre
-            // la app. Solo se publica si el partido está corriendo en una parte de
-            // juego; en pausa/descanso/fin es null (live.html congela el display).
+            // ACTUAL. Se ancla a lastTickTime (no a Date.now() crudo) sumando los
+            // segundos que el tick no pudo procesar por throttling del navegador
+            // (pestaña en background). Así el valor es ESTABLE e independiente del
+            // estado del cliente: live.html cuenta de forma autónoma aunque el
+            // entrenador minimice o cierre la app. En pausa/descanso/fin es null.
             phaseStartedAt: (isRunning && (matchPhase === '1st_half' || matchPhase === '2nd_half'))
-                ? (Date.now() - ((matchPhase === '2nd_half' ? masterTimeH2 : masterTimeH1) * 1000))
+                ? (Date.now() - (
+                    (matchPhase === '2nd_half' ? masterTimeH2 : masterTimeH1)
+                    + ((typeof lastTickTime !== 'undefined' && lastTickTime > 0)
+                        ? Math.max(0, Math.floor((Date.now() - lastTickTime) / 1000))
+                        : 0)
+                  ) * 1000)
                 : null,
             formation:   activeFormationKey || '',
 

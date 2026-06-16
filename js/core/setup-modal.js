@@ -769,7 +769,14 @@ async function _doResumeMatch(matchId) {
 
         const m = snap.data();
 
-        // ── Calcular tiempo transcurrido si el cronómetro estaba corriendo ──
+        // ── Calcular tiempo transcurrido ──
+        // PRIORIDAD: si el snapshot trae phaseStartedAt (modo autónomo), derivar el
+        // tiempo real exacto desde el reloj absoluto, igual que ve el espectador en vivo.
+        // Fallback (snapshots antiguos): m.savedAt/updatedAt + delta solo si isRunning.
+        let autonomousElapsedSec = null;
+        if (typeof m.phaseStartedAt === 'number' && m.phaseStartedAt > 0) {
+            autonomousElapsedSec = Math.max(0, Math.floor((Date.now() - m.phaseStartedAt) / 1000));
+        }
         let savedTimeMs = 0;
         if (m.savedAt) {
             savedTimeMs = new Date(m.savedAt).getTime();
@@ -783,7 +790,7 @@ async function _doResumeMatch(matchId) {
             }
         }
         let deltaSecs = 0;
-        if (m.isRunning && savedTimeMs > 0) {
+        if (autonomousElapsedSec === null && m.isRunning && savedTimeMs > 0) {
             deltaSecs = Math.max(0, Math.floor((Date.now() - savedTimeMs) / 1000));
         }
 
@@ -807,9 +814,25 @@ async function _doResumeMatch(matchId) {
         let activeAddedSec = 0;
         let shouldAutoEndFirstHalf = false;
         let shouldAutoEndMatch = false;
+        const maxAddedSecs = (currentMode === 'f11') ? 900 : 600; // 15 min F11, 10 min F7
 
-        if (deltaSecs > 0) {
-            const maxAddedSecs = (currentMode === 'f11') ? 900 : 600; // 15 min F11, 10 min F7
+        if (autonomousElapsedSec !== null) {
+            // Modo AUTÓNOMO: el tiempo real de la parte activa es el derivado desde
+            // phaseStartedAt, capado a (reglamentario + añadido). activeAddedSec es la
+            // diferencia respecto al valor guardado, para sumarla a los jugadores en campo.
+            if (matchPhase === '1st_half') {
+                const limit1 = half1MaxTime + maxAddedSecs;
+                const realTime = Math.min(autonomousElapsedSec, limit1);
+                activeAddedSec = Math.max(0, realTime - (m.timeH1 || 0));
+                if (autonomousElapsedSec >= limit1) shouldAutoEndFirstHalf = true;
+            } else if (matchPhase === '2nd_half') {
+                const limit2 = half2MaxTime + maxAddedSecs;
+                const realTime = Math.min(autonomousElapsedSec, limit2);
+                activeAddedSec = Math.max(0, realTime - (m.timeH2 || 0));
+                if (autonomousElapsedSec >= limit2) shouldAutoEndMatch = true;
+            }
+        } else if (deltaSecs > 0) {
+            // Fallback (snapshots antiguos sin phaseStartedAt)
             if (matchPhase === '1st_half') {
                 const limit1 = half1MaxTime + maxAddedSecs; // Reglamentario + añadido
                 const remaining = Math.max(0, limit1 - (m.timeH1 || 0));
@@ -958,8 +981,16 @@ async function _doResumeMatch(matchId) {
                 window.endMatch(true);
             }
         } else {
-            // Arrancar cronómetro y sync si el partido estaba en curso
-            if (m.isRunning) {
+            // ── Decidir si el partido debe continuar en marcha ──
+            // AUTÓNOMO: si la fase es de juego y el snapshot trae phaseStartedAt
+            // (no null), el partido estaba corriendo → continuar SIEMPRE en marcha,
+            // sincronizado con el tiempo real ya derivado. No hay que pulsar nada.
+            // Fallback: respetar m.isRunning para snapshots antiguos.
+            const inPlayPhase = (matchPhase === '1st_half' || matchPhase === '2nd_half');
+            const shouldRunAutonomous = (autonomousElapsedSec !== null) && inPlayPhase;
+            const shouldRun = shouldRunAutonomous || m.isRunning;
+
+            if (shouldRun) {
                 if (typeof isRunning !== 'undefined') {
                     isRunning = false; // Forzamos false para que toggleGame() lo pase a true y arranque el intervalo
                 }
