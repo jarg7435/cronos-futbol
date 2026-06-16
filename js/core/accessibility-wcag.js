@@ -230,7 +230,6 @@ const AccessibilityWCAG = (() => {
     // Mejorar headings semánticos
     _enhanceHeadings();
 
-    console.log('[AccessibilityWCAG] Documento mejorado. Stats:', _stats);
   }
 
   /**
@@ -322,7 +321,6 @@ const AccessibilityWCAG = (() => {
     }
 
     _initialized = true;
-    console.log('[AccessibilityWCAG] Inicializado');
   }
 
   /**

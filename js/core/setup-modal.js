@@ -262,7 +262,6 @@ function openSetupModal() {
                     var mode   = modeEl ? modeEl.value : 'f7';
                     if (typeof updateCategoryOptions  === 'function') updateCategoryOptions(mode);
                     if (typeof updateFormationOptions === 'function') updateFormationOptions(mode);
-                    console.log('[Setup] Categoría sincronizada tras cargar equipo. Modo:', mode);
                 }, 50);
             });
         }
@@ -394,7 +393,6 @@ function confirmSetup() {
         var t2 = document.getElementById('timer-h2');
         if (t1) t1.textContent = display;
         if (t2) t2.textContent = display;
-        console.log('[Setup] Cronómetros actualizados a ' + display + ' (' + currentMode + ' / ' + category + ')');
     })();
 
     openConvocationModal();
@@ -882,6 +880,11 @@ async function _doResumeMatch(matchId) {
         // Modo analizar visitante
         analyzeAway = !!(m.awayTeam && m.mode);
 
+        // FIX: restaurar el rol del equipo del entrenador (home/away). Sin esto,
+        // tras recuperar un partido jugado de visitante, _userTeamRole se perdía
+        // y los informes (filtrados por _cMyTeamKey) quedaban vacíos.
+        if (m.myTeamRole) window._userTeamRole = m.myTeamRole;
+
         // ── Restaurar jugadores ──
         if (Array.isArray(m.players) && m.players.length > 0) {
             players = m.players.map(p => ({
@@ -1025,7 +1028,6 @@ async function _doResumeMatch(matchId) {
 
         if (typeof showToast === 'function') showToast('✅ Partido recuperado correctamente', 3500);
 
-        console.log('[Recovery] Partido restaurado:', matchId);
 
     } catch (err) {
         if (typeof hideSpinner === 'function') hideSpinner();

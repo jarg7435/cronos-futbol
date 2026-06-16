@@ -163,7 +163,6 @@
                 var t2 = document.getElementById('timer-h2');
                 if (t1) t1.textContent = display;
                 if (t2) t2.textContent = display;
-                console.log('[Cronos v8] Tiempo de parte:', display);
             }
         };
     }
@@ -183,7 +182,6 @@
                 if (t1) t1.textContent = display;
                 if (t2) t2.textContent = display;
                 try { if (typeof updateMasterUI === 'function') updateMasterUI(); } catch(e) {}
-                console.log('[Cronos v8] Timers confirmados:', display);
             }
         };
     }
@@ -211,7 +209,6 @@
                         '<label style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;display:block;">Categoría</label>' +
                         '<select id="match-category" style="width:100%;background:var(--bg);border-color:var(--glass-border);padding:0.5rem;border-radius:8px;color:white;"></select>';
                     modeSelect.parentElement.insertAdjacentElement('afterend', catDiv);
-                    console.log('[Cronos v8] Inyectado select #match-category dinámicamente');
                 }
             }
         }
@@ -237,7 +234,6 @@
             populateSavedTeams('away');
         }
 
-        console.log('[Cronos v8] syncSetupMode:', mode, '| categoría y equipos filtrados');
     };
 
     // ── 5. Observer para parchear el select #setup-mode si se recrea ──
@@ -253,7 +249,6 @@
             var currentOnchange = sel.getAttribute('onchange') || '';
             if (currentOnchange.indexOf('syncSetupMode') === -1) {
                 sel.setAttribute('onchange', 'syncSetupMode(this.value)');
-                console.log('[Cronos v8] Patched setup-mode onchange → syncSetupMode');
             }
 
             // Asegurar que match-category existe y está sincronizado
@@ -381,7 +376,6 @@
             // (endMatch puede abortar si el usuario cancela el confirm).
             if (typeof matchPhase === 'undefined' || matchPhase === 'finished') {
                 clearCronosIntervals();
-                console.log('[Cronos] Intervalos del parche detenidos al finalizar el partido');
             }
             return r;
         };

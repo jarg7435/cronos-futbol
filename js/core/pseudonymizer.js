@@ -280,7 +280,6 @@ const Pseudonymizer = (() => {
     if (_initialized) return;
     _load();
     _initialized = true;
-    console.log('[Pseudonymizer] Inicializado. Mapa tiene', Object.keys(_map).length, 'entradas');
   }
 
   // Inicializar automáticamente al cargar
