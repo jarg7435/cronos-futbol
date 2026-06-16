@@ -474,7 +474,6 @@ async function openParentPanel() {
                         const invM = String(myData.inviteCode).match(/^J-?(\d+)$/i);
                         if (invM) {
                             pNum = invM[1];
-                            console.log('[ppPlayer] playerNumber extraído de inviteCode (top-level):', myData.inviteCode, '→', pNum);
                         }
                     }
 
@@ -491,7 +490,6 @@ async function openParentPanel() {
                                 if (invM2) {
                                     pNum = invM2[1];
                                     pAlias = parentEntry.playerAlias || parentEntry.displayName || pAlias;
-                                    console.log('[ppPlayer] playerNumber extraído de allRoles[parent].inviteCode:', parentEntry.inviteCode, '→', pNum);
                                 }
                             }
                             // Actualizar top-level inviteCode para futuros accesos más rápidos
@@ -688,7 +686,7 @@ async function openParentPanel() {
                         } else {
                             // Link no existe: crear uno nuevo
                             if (!clubId) {
-                                console.warn('[ppPlayer] Vinculación manual cancelada: clubId ausente, no se crea link para evitar ID basura "null_' + manualPNum + '" en cronos_player_links.');
+                                if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[ppPlayer] Vinculación manual cancelada: clubId ausente, no se crea link para evitar ID basura "null_' + manualPNum + '" en cronos_player_links.');
                                 return;
                             }
                             const newLinkId = clubId + '_' + manualPNum;
@@ -876,7 +874,6 @@ async function openParentPanel() {
             const _allSeenIds = Array.from(seenDocIds);
             const _duplicateIds = _allSeenIds.filter(id => !_winningIds.has(id));
             if (_duplicateIds.length > 0) {
-                console.log(`[ParentPanel] Limpiando ${_duplicateIds.length} docs duplicados de Firestore`);
                 import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
                     .then(({ doc: dRef, deleteDoc }) => {
                         _duplicateIds.forEach(id => {
