@@ -157,10 +157,8 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
         if (seenParentUid.has(parentUid)) { _skip(c, 'duplicado (ya tiene informe)', { parentUid }); continue; }
         seenParentUid.add(parentUid);
 
-        if (_diag) console.log('[DiagReports][padre OK]', { id: c.id, name: c.name, parentUid, dorsal });
         out.push({ parentUid, dorsal: String(dorsal), player, contact: c });
     }
-    if (_diag) console.log('[DiagReports] Resultado: ' + out.length + ' informe(s) de padre.');
     return out;
 }
 // Exponer en window para reutilización entre módulos y tests.
@@ -198,15 +196,14 @@ async function _cResolveClubId(db, me, fns) {
             if (cid && !d.clubId && fns.updateDoc) {
                 try {
                     await fns.updateDoc(fns.doc(db, 'users', me.uid), { clubId: cid });
-                    console.log('[Cronos] clubId migrado desde allRoles al campo raíz de users/' + me.uid);
                 } catch (migrateErr) {
-                    console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
+                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
                 }
             }
             return cid;
         }
     } catch (e) {
-        console.warn('[Cronos] No se pudo resolver clubId desde Firestore:', e && e.message);
+        if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos] No se pudo resolver clubId desde Firestore:', e && e.message);
     }
     return null;
 }
@@ -248,7 +245,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
     };
 
     // FIX (v178): Log para diagnosticar por qué _cGetStaff puede devolver vacío
-    console.log('[_cGetStaff] Buscando staff. clubId:', clubId || '(vacío)', 'roles:', roles.join(','));
 
     // ── 1. emailConfig.contacts — FUENTE MÁS FIABLE ──────────────
     // El entrenador ya configuró quién recibe qué en Gestión de Contactos.
@@ -284,7 +280,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
                     email: c.email || '', phone: c.phone || '', displayName: c.name || '',
                 }));
         }
-        console.log('[_cGetStaff] Paso 1 (emailConfig):', byUid.size, 'miembros encontrados');
     } catch(e1) { console.warn('[_cGetStaff] Paso 1 falló:', e1.message); }
 
     // ── 2. Firestore: role === rol específico (usuarios mono-rol) ──
@@ -301,7 +296,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
                 snap.forEach(d => upsert(d.id, role, d.data()));
             } catch(e2) { console.warn('[_cGetStaff] Paso 2 falló para rol', role, ':', e2.code || e2.message); }
         }
-        console.log('[_cGetStaff] Paso 2 (Firestore mono-rol):', byUid.size, 'miembros hasta ahora');
     }
 
     // ── 3. Firestore: buscar por clubId y filtrar allRoles en cliente ──
@@ -324,7 +318,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
                     }
                 });
             });
-            console.log('[_cGetStaff] Paso 3 (Firestore allRoles):', byUid.size, 'miembros hasta ahora');
         } catch(e3) { console.warn('[_cGetStaff] Paso 3 falló:', e3.code || e3.message); }
     }
 
@@ -350,7 +343,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
                     if (myDoc.exists()) {
                         const myData = myDoc.data();
                         const myClubId = myData.clubId || (myData.allRoles || []).find(r => r.clubId)?.clubId;
-                        console.log('[_cGetStaff] Paso 4: clubId del coach:', myClubId, '(desde users/' + me.uid + ')');
                         if (myClubId && myClubId !== clubId) {
                             // Reintentar con el clubId correcto
                             for (const role of roles) {
@@ -382,7 +374,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
                             } catch(_) {}
                             // Actualizar me.clubId con el correcto
                             if (myClubId && !me.clubId) me.clubId = myClubId;
-                            console.log('[_cGetStaff] Paso 4 (reintento con clubId correcto):', byUid.size, 'miembros');
                         }
                     }
                 } catch(e4) { console.warn('[_cGetStaff] Paso 4 falló:', e4.message); }
@@ -391,8 +382,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
     }
 
     const result = Array.from(byUid.values());
-    console.log('[_cGetStaff] RESULTADO FINAL:', result.length, 'miembros',
-        result.map(s => `${s.role}:${s.uid?.slice(0,8)}...`).join(', ') || '(ninguno)');
     return result;
 }
 
@@ -1588,12 +1577,8 @@ window._executeReportsSend = async function(method) {
     // que no fueron cubiertos por el auto-despacho.
     const _autoAlreadyRan = !!window._cronosLastDispatchedMatch;
     if (_autoAlreadyRan) {
-        console.log('[ManualDispatch] Auto-despacho ya ejecutó el envío. Solo se procesarán destinatarios adicionales.');
     }
     if (window._cronosDiagReports) {
-        console.log('[DiagReports][MANUAL] _autoAlreadyRan:', _autoAlreadyRan);
-        console.log('[DiagReports][MANUAL] recipients seleccionados:', recipients.map(r => ({ type: r.type, id: r.id, label: r.label, email: r.email, playerNumber: r.playerNumber })));
-        console.log('[DiagReports][MANUAL] links cargados:', links.length);
     }
     showSpinner('Enviando informes internamente...');
     // Generar matchId compartido para todos los destinatarios de staff de este envío.
@@ -1689,7 +1674,7 @@ window._executeReportsSend = async function(method) {
                                 unreadByStaff: 1
                             });
                         } catch(setErr) {
-                            console.warn('[Cronos] Error creando hilo staff:', {
+                            if(window._CRONOS_DEBUG) console.warn('[Cronos] Error creando hilo staff:', {
                                 code: setErr && setErr.code,
                                 message: setErr && setErr.message,
                                 threadId,
@@ -1797,13 +1782,11 @@ window._executeReportsSend = async function(method) {
 
                 if (!target) {
                     // Hijo no convocado / sin inviteCode válido / sin parentUid → omitir en silencio.
-                    console.log('[ManualDispatch] Destinatario padre omitido (no cumple regla estricta v171):', r.label || r.id);
                     continue;
                 }
 
                 // FIX: Si auto-despacho ya envió a este padre, saltar (evita duplicado).
                 if (_autoAlreadyRan) {
-                    console.log('[ManualDispatch] Saltando padre (auto-despacho ya ejecutado):', target.parentUid);
                     sentCount++;
                     continue;
                 }
@@ -1983,7 +1966,7 @@ async function autoDispatchMatchReports() {
         // Avisamos en consola para diagnóstico; el envío continúa porque
         // el entrenador igualmente recibe su copia, pero el staff no podrá leer.
         if (!me.clubId) {
-            console.warn('[autoDispatch] me.clubId ausente: los informes de staff ' +
+            if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[autoDispatch] me.clubId ausente: los informes de staff ' +
                 'no serán legibles por coordinadores/directores (reglas Firestore por club).');
         }
 
@@ -2054,22 +2037,14 @@ async function autoDispatchMatchReports() {
         const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
 
         if (window._cronosDiagReports) {
-            console.log('[DiagReports][STAFF] staffToNotify:', staffToNotify.map(s => ({ uid: s.uid, role: s.role, email: s.email })));
-            console.log('[DiagReports][STAFF] _allStaffUids:', _allStaffUids);
-            console.log('[DiagReports][STAFF] contactos staff (type!=parent):', contacts.filter(c => c.type !== 'parent').map(c => ({ id: c.id, name: c.name, role: c.role, uid: c.uid, tags: c.tags })));
-            console.log('[DiagReports][STAFF] clubId:', me.clubId);
         }
         // FIX v177: Log SIEMPRE (no condicional) para diagnosticar por qué
         // el informe colectivo no llega al director/coordinador.
-        console.log('[autoDispatch] Staff resuelto:', staffToNotify.length, 'miembros.',
-            'UIDs:', _allStaffUids.length ? _allStaffUids.join(',') : '(ninguno)',
-            'clubId:', me.clubId || '(vacío)');
 
         // ── Guardar documentos cronos_player_reports para el Gantt del staff ──
         // Un documento por jugador con type='staff_match_report' y staffReport=true.
         // FIX: incluye staffUids para que las reglas de Firestore permitan leer
         // a directores y coordinadores (request.auth.uid in resource.data.staffUids).
-        console.log('[StaffReport] Intentando enviar informe staff. clubId:', me?.clubId, 'players:', (homePlayers || []).length);
         for (const p of homePlayers) {
             const srId = `${sharedMatchId}_staff_p${p.number}`;
             await setDoc(doc(db, 'cronos_player_reports', srId), {
@@ -2095,7 +2070,6 @@ async function autoDispatchMatchReports() {
                 minutesPlayed: typeof formatTime === 'function' ? formatTime(p.time || 0) : String(p.time || 0),
                 history:       _parseHistoryForFirestore(p.history || []),
             });
-            console.log('[StaffReport] Documento staff escrito:', srId);
         }
 
         // ── Notificar al staff (coordinador + director) ──────────────────
@@ -2107,7 +2081,6 @@ async function autoDispatchMatchReports() {
             notifiedUids.add(staff.uid);
 
             // FIX (v178): Log detallado por cada staff para diagnosticar
-            console.log('[autoDispatch] Procesando staff:', staff.uid, 'role:', staff.role, 'email:', staff.email || '');
 
             // ── 1. Notificación push/UI ───────────────────────────────
             const notifId = `notif_global_rpt_${staff.uid}_${Date.now().toString(36)}`;
@@ -2168,7 +2141,7 @@ async function autoDispatchMatchReports() {
                         unreadByStaff: 1
                     });
                 } catch(thErr) {
-                    console.warn('[autoDispatch] Error creando hilo staff:', {
+                    if(window._CRONOS_DEBUG) console.warn('[autoDispatch] Error creando hilo staff:', {
                         code: thErr && thErr.code,
                         message: thErr && thErr.message,
                         threadId,
@@ -2294,11 +2267,7 @@ async function autoDispatchMatchReports() {
             const matchId = sharedMatchId; // mismo ID que staff
 
             // [DIAG TEMP] Confirmar que la FASE C se ejecuta y con qué datos.
-            console.log('[FaseC][DIAG] Iniciando auto-informe entrenador.',
-                'coachUid:', me.uid, 'clubId:', me.clubId || null,
-                'players:', (homePlayers || []).length, 'matchId:', matchId);
 
-            console.log('FASE C Iniciando escritura coach. homePlayers:', homePlayers.length, 'me.uid:', me.uid);
 
             // Guardar copia del informe en cronos_player_reports con coachUid = uid
             for (const p of homePlayers) {
@@ -2328,7 +2297,6 @@ async function autoDispatchMatchReports() {
                     history:       _parseHistoryForFirestore(p.history||[]),
                 });
                 // [DIAG TEMP] setDoc del coach OK para este jugador.
-                console.log('[FaseC][DIAG] Doc coach escrito OK:', rptId);
                 } catch (setErr) {
                     // [DIAG TEMP] Capturar el fallo concreto del setDoc por jugador
                     // (típicamente permission-denied de las reglas Firestore).
@@ -2356,7 +2324,6 @@ async function autoDispatchMatchReports() {
                 createdAt: new Date().toISOString(),
             });
             // [DIAG TEMP] FASE C completada sin lanzar excepción al nivel superior.
-            console.log('[FaseC][DIAG] FASE C completada. Notificación coach:', coachNotifId);
         } catch(e) {
             // [DIAG TEMP] mostrar mensaje + objeto de error completo.
             console.error('FASE C ERROR setDoc coach:', e.message, e);
@@ -2382,7 +2349,6 @@ async function saveAllMatchReportsInternal() {
     const _matchId = window.liveMatchId || ('local_' + (window._cronosCurrentUser?.uid || 'u') + '_' + new Date().toISOString().split('T')[0] + '_' + (window.TEAM_NAMES?.home || '') + '-' + _scoreHomeNow + '-' + _scoreAwayNow);
     const _guardKey = 'cronos_reports_sent_' + _matchId;
     if (localStorage.getItem(_guardKey)) {
-        console.log('[AutoReport] Informes ya despachados para este partido; se omite duplicado. live:' + _matchId);
         return;
     }
     localStorage.setItem(_guardKey, Date.now().toString());
@@ -2406,7 +2372,6 @@ async function saveAllMatchReportsInternal() {
               `${TEAM_NAMES.home}-${_scoreHomeNow}-${_scoreAwayNow}-${TEAM_NAMES.away}`;
 
     if (window._cronosLastDispatchedMatch === _matchFingerprint) {
-        console.log('[AutoReport] Informes ya despachados para este partido; se omite duplicado.', _matchFingerprint);
         return;
     }
     // Reservar la huella ANTES del await para cerrar la ventana de carrera
@@ -3910,7 +3875,7 @@ window._sendCollectiveReportNow = async function() {
                             unreadByCoach: 0, unreadByStaff: 1,
                         });
                     } catch(setErr) {
-                        console.warn('[ColReport] Error creando hilo staff:', {
+                        if(window._CRONOS_DEBUG) console.warn('[ColReport] Error creando hilo staff:', {
                             code: setErr && setErr.code,
                             message: setErr && setErr.message,
                             threadId,
@@ -4582,19 +4547,15 @@ window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
 //    window._cronosForceRedispatch()
 // ════════════════════════════════════════════════════════════════════
 window._cronosForceRedispatch = async function() {
-    console.log('🔄 Force re-dispatch: Limpiando guards de idempotencia...');
     // Limpiar localStorage
     const keysToRemove = Object.keys(localStorage).filter(k => k.startsWith('cronos_reports_sent_'));
     keysToRemove.forEach(k => localStorage.removeItem(k));
-    console.log('🔄 Limpiadas', keysToRemove.length, 'claves de guard');
     // Limpiar guard en memoria
     window._cronosLastDispatchedMatch = null;
     window._cronosLastAutoDispatchMatchId = null;
     // Ejecutar auto-dispatch
-    console.log('🔄 Ejecutando autoDispatchMatchReports()...');
     try {
         await autoDispatchMatchReports();
-        console.log('✅ Force re-dispatch completado');
     } catch(e) {
         console.error('❌ Force re-dispatch falló:', e);
     }
