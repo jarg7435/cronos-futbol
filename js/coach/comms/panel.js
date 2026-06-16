@@ -1975,6 +1975,10 @@ async function autoDispatchMatchReports() {
         const rivalName = TEAM_NAMES.away || 'Rival';
         const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
         const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
+        console.log('autoDispatch ejecutándose | teamKey:', _cMyTeamKey(),
+            '| total players:', (window.players||[]).length,
+            '| homePlayers (mi equipo):', homePlayers.length,
+            homePlayers.map(p => '#'+p.number+' '+p.name).join(', ') || '(NINGUNO)');
 
         // 1. Obtener links y contactos
         const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId || '')));
