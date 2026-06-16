@@ -12,6 +12,15 @@ async function _cFS() {
     return { ...module, db: window._cronos_auth?.db };
 }
 
+// ── Helper: equipo del entrenador según su rol (home/away) ────────────
+// FIX: cuando el entrenador dirige de visitante (_userTeamRole==='away'),
+// SU convocatoria se etiqueta team:'away'. Filtrar rígido 'home' dejaba
+// homePlayers vacío → ningún informe (staffReport) llegaba al staff.
+function _cMyTeamKey() {
+    return (typeof window !== 'undefined' && window._userTeamRole === 'away') ? 'away' : 'home';
+}
+if (typeof window !== 'undefined') window._cMyTeamKey = _cMyTeamKey;
+
 // ════════════════════════════════════════════════════════════════════
 //  HELPER: Convertir historial de player a formato estándar para Firestore
 //  La app guarda history como strings: "Entra a las 03:52 (1ªP) #C1"
@@ -1417,7 +1426,7 @@ function _buildGlobalReportText() {
     const scoreHome = document.getElementById('score-home')?.textContent || '0';
     const scoreAway = document.getElementById('score-away')?.textContent || '0';
     const matchDate = new Date().toLocaleDateString('es-ES', {weekday:'long', day:'numeric', month:'long'});
-    const homePlayers = window.players.filter(p => p.team === 'home');
+    const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
     
     let text = `📊 *RESUMEN GLOBAL DEL PARTIDO*\n━━━━━━━━━━━━━━━━\n`;
     text += `📅 ${matchDate}\n`;
@@ -1508,7 +1517,7 @@ window._executeReportsSend = async function(method) {
     const scoreAway = document.getElementById('score-away')?.textContent || '0';
     const rivalName = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES && TEAM_NAMES.away) ? TEAM_NAMES.away : 'Rival';
     const matchDate = new Date().toLocaleDateString('es-ES', {weekday:'long', day:'numeric', month:'long'});
-    const homePlayers = window.players.filter(p => p.team === 'home');
+    const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
     
     const globalText = _buildGlobalReportText();
     let sentCount = 0;
@@ -1982,7 +1991,7 @@ async function autoDispatchMatchReports() {
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
         const rivalName = TEAM_NAMES.away || 'Rival';
         const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
-        const homePlayers = window.players.filter(p => p.team === 'home');
+        const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
 
         // 1. Obtener links y contactos
         const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId || '')));
@@ -3570,7 +3579,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
     // Si no hay datos en vivo, intentar leer últimos informes de Firestore
     let playerData = [];
     if (hasLiveData) {
-        playerData = (window.players || []).filter(p => p.team === 'home');
+        playerData = (window.players || []).filter(p => p.team === _cMyTeamKey());
     } else {
         try {
             const { db, collection, getDocs, query, where, orderBy, limit } = await _cFS();
@@ -3802,7 +3811,7 @@ window._sendCollectiveReportNow = async function() {
         // Esto alimenta el Gantt visual en el panel de Dirección/Coordinación.
         // Se guarda UN documento por jugador con su historial completo.
         const homePlayers = window.players
-            ? window.players.filter(p => p.team === 'home')
+            ? window.players.filter(p => p.team === _cMyTeamKey())
             : [];
 
         // matchId DETERMINISTA: reutiliza el de autoDispatch si ya se ejecutó,
@@ -4342,7 +4351,7 @@ window.openIndividualReports = async function openIndividualReports() {
 
         // Jugadores del partido actual
         const players = window.players
-            ? window.players.filter(p => p.team==='home')
+            ? window.players.filter(p => p.team===_cMyTeamKey())
             : [];
 
         if (!players.length) {
