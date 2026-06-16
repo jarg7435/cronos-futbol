@@ -11,11 +11,10 @@ const W = sandbox.window;
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
-    if (cond) { pass++; console.log('  ✓', msg); }
+    if (cond) { pass++;  }
     else { fail++; console.error('  ✗ FALLO:', msg); }
 }
 
-console.log('\n=== PROBLEMA 1: liveMatchId DETERMINISTA ===');
 
 // 1a. El mismo seed (mismo partido) → mismo sufijo en disparos repetidos.
 const opts = { teamName: 'Fútbol-7', rivalName: 'Rival CF',
@@ -64,7 +63,6 @@ function stableMatchId(liveMatchId, me, rivalName) {
 }
 assert(stableMatchId(id1) === stableMatchId(id2), 'matchId del informe estable entre disparos');
 
-console.log('\n=== PROBLEMA 2: matching de link padre↔jugador ===');
 
 // Simula links de Firestore y un recipient con email/teléfono "sucios".
 const links = [
@@ -103,7 +101,6 @@ const strictFail = links.find(l => l.parentEmail === 'familia.bruno@gmail.com'
                                  || l.parentPhone === '600112233');
 assert(strictFail == null, 'pre-fix (comparación estricta) NO encontraba el link (confirma la causa)');
 
-console.log('\n=== PROBLEMA 2-bis: fallback de link por parentUid SIN filtro de club ===');
 
 // El link de BRUNO existe en Firestore pero con un clubId distinto al de me,
 // por lo que la query por clubId NO lo trae (array de club vacío para él).
@@ -158,6 +155,5 @@ async function resolveLinkWithFallback(r, loadedLinks) {
     assert(lp.length === 1 && lp[0].parentUid === 'uidBruno',
         'auto: fallback por playerNumber (sin filtro de club) recupera el padre del dorsal 9');
 
-    console.log(`\n=== RESULTADO: ${pass} OK, ${fail} fallos ===`);
     process.exit(fail ? 1 : 0);
 })();

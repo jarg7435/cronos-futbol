@@ -323,18 +323,15 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-    console.log(`[SW ${VERSION}] Activado - eliminando cachés antiguas`);
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => {
-                        console.log(`[SW ${VERSION}] Borrando caché antigua:`, key);
                         return caches.delete(key);
                     })
             );
         }).then(() => {
-            console.log(`[SW ${VERSION}] Todas las cachés antiguas eliminadas`);
             return self.clients.claim();
         })
     );
