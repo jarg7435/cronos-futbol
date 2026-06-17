@@ -931,6 +931,21 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCION: cronos_staff_registry
+    // FIX (v184): Director/coordinador registra su UID aqui para que
+    // _cGetStaff lo encuentre. Permite crear/actualizar si el usuario
+    // esta autenticado y el documento tiene su UID.
+    // ============================================================
+    match /cronos_staff_registry/{regId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isAuth()
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================
     // CATCH-ALL — bloquear TODO lo no definido explícitamente
     // FIX CRÍTICO: antes era "allow read: if isAuth()"
     // ============================================================
