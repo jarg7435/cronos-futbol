@@ -447,6 +447,60 @@ async function _cGetStaff(db, clubId, fns, roles) {
         } catch(e5) { console.warn('[_cGetStaff] Paso 5 (club doc) falló:', e5.message); }
     }
 
+    // ── 5b. FIX (v184): LEER cronos_staff_registry — FUENTE MÁS FIABLE ──
+    // El director/coordinador auto-registra su UID en cronos_staff_registry
+    // cuando abre su panel (club-reports.js). Esta colección es legible por
+    // cualquier usuario autenticado, así que el coach SIEMPRE puede leerla.
+    // Buscamos documentos con clubId del coach para encontrar staff.
+    if (!byUid.size && clubId) {
+        if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Paso 5b: buscando en cronos_staff_registry...');
+        try {
+            const staffSnap = await getDocs(query(
+                collection(db, 'cronos_staff_registry'),
+                where('clubId', '==', clubId)
+            ));
+            staffSnap.forEach(d => {
+                const data = d.data();
+                if (data.uid && roles.includes(data.role)) {
+                    upsert(data.uid, data.role, {
+                        email: data.email || '',
+                        displayName: data.displayName || '',
+                    });
+                }
+            });
+            if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Tras Paso 5b (staff_registry):', byUid.size, 'miembros');
+        } catch(e5b) {
+            console.warn('[_cGetStaff] Paso 5b (staff_registry) falló:', e5b.code || e5b.message);
+            // Fallback: si la query falla, probar con getDoc individual por UID conocido
+            // (por si el director ya se registró antes)
+            try {
+                const me = window._cronosCurrentUser;
+                if (me && me.clubId) {
+                    // Intentar leer el documento del director conocido por su patrón de ID
+                    const { doc: docFn5b, getDoc: getDoc5b } = fns.doc && fns.getDoc
+                        ? fns
+                        : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                    // Si emailConfig tiene contacts de tipo staff, usar sus UIDs
+                    const contacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts))
+                        ? emailConfig.contacts : [];
+                    const staffContacts = contacts.filter(c => c.type !== 'parent' && c.uid);
+                    for (const c of staffContacts) {
+                        try {
+                            const regId = `${me.clubId}_${c.uid}`;
+                            const regDoc = await getDoc5b(docFn5b(db, 'cronos_staff_registry', regId));
+                            if (regDoc.exists()) {
+                                const rd = regDoc.data();
+                                if (roles.includes(rd.role)) {
+                                    upsert(rd.uid, rd.role, { email: rd.email || c.email || '', displayName: rd.displayName || c.name || '' });
+                                }
+                            }
+                        } catch(_) {}
+                    }
+                }
+            } catch(_) {}
+        }
+    }
+
     // ── 6. FIX (v182): ÚLTIMO RECURSO — Leer allRoles del propio coach ──
     // Si TOD0 falló, buscar en los allRoles del coach UIDs de director/coordinador
     // que compartan el mismo clubId. Esto funciona porque el coach puede leer su
