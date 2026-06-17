@@ -215,7 +215,17 @@ service cloud.firestore {
       allow update: if isSuperAdmin() ||
                        isClubAdmin(clubId) ||
                        (isIndividualAdmin(clubId) &&
-                        isIndividualEntity(resource.data));
+                        isIndividualEntity(resource.data)) ||
+                       // FIX (v182): Director/coordinador puede registrar su UID en el club
+                       // para que _cGetStaff lo encuentre. Solo permite escribir
+                       // directorUids/coordinatorUids, no otros campos.
+                       (isAuth() && isRegisteredUser() &&
+                        (request.auth.token.role == 'director' || request.auth.token.role == 'coordinator'
+                         || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director'
+                         || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'coordinator') &&
+                        request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['directorUids', 'coordinatorUids'])
+                       );
       allow delete: if isSuperAdmin();
     }
 
