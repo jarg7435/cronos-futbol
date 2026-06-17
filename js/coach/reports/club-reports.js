@@ -116,35 +116,25 @@ async function openStaffDashboard() {
         if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message);
     }
 
-    // FIX (v183): Auto-registrar UID del director/coordinador en el documento del club
-    // usando Cloud Function (Admin SDK) para evitar permission-denied de Firestore rules.
+    // FIX (v184): Auto-registrar UID del director/coordinador en una colección
+    // separada (cronos_staff_registry) que las reglas Firestore SÍ permiten escribir.
+    // Luego _cGetStaff lee de ahí para encontrar los UIDs de staff.
+    // Esto evita CORS de Cloud Functions y permission-denied en clubs.
     if (me && me.uid && me.clubId && ['director','coordinator'].includes(activeRole)) {
         try {
-            // Usar saFS() que tiene httpsCallable disponible
-            const sa = await (typeof saFS === 'function' ? saFS() : null);
-            if (sa && sa.httpsCallable && sa.fa && sa.fa.functions) {
-                const registerFn = sa.httpsCallable(sa.fa.functions, 'registerStaffUid');
-                const result = await registerFn({ role: activeRole, clubId: me.clubId });
-                if (result.data?.success) {
-                    console.log('[StaffDashboard] UID registrado via Cloud Function en clubs.' + result.data.field);
-                }
-            } else {
-                console.warn('[StaffDashboard] Cloud Functions no disponible, intentando escritura directa...');
-                // Fallback: intentar escritura directa (puede fallar por permisos)
-                const { db: db2, doc: doc2, getDoc: getDoc2, updateDoc: updateDoc2, arrayUnion } = await _sdFS();
-                const clubRef = doc2(db2, 'clubs', me.clubId);
-                const clubSnap = await getDoc2(clubRef);
-                if (clubSnap.exists()) {
-                    const field = activeRole === 'director' ? 'directorUids' : 'coordinatorUids';
-                    const existingUids = clubSnap.data()[field] || [];
-                    if (!existingUids.includes(me.uid)) {
-                        await updateDoc2(clubRef, { [field]: arrayUnion(me.uid) });
-                        console.log('[StaffDashboard] UID registrado en clubs.' + field + ':', me.uid);
-                    }
-                }
-            }
+            const { db: db2, doc: doc2, setDoc: setDoc2 } = await _sdFS();
+            const regId = `${me.clubId}_${me.uid}`;
+            await setDoc2(doc2(db2, 'cronos_staff_registry', regId), {
+                uid: me.uid,
+                role: activeRole,
+                clubId: me.clubId,
+                email: me.email || '',
+                displayName: me.displayName || me.name || '',
+                registeredAt: new Date().toISOString(),
+            });
+            console.log('[StaffDashboard] UID registrado en cronos_staff_registry:', activeRole);
         } catch(regErr) {
-            console.warn('[StaffDashboard] No se pudo registrar UID en club:', regErr.code || regErr.message);
+            console.warn('[StaffDashboard] No se pudo registrar UID:', regErr.code || regErr.message);
         }
     }
 
