@@ -116,24 +116,31 @@ async function openStaffDashboard() {
         if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message);
     }
 
-    // FIX (v182): Auto-registrar UID del director/coordinador en el documento del club.
-    // Esto es CRÍTICO porque _cGetStaff (en panel.js) necesita saber qué UIDs son
-    // director/coordinador para incluirlos en staffUids de los informes. Sin este
-    // registro, _cGetStaff devuelve vacío → staffUids: [] → informes no llegan.
+    // FIX (v183): Auto-registrar UID del director/coordinador en el documento del club
+    // usando Cloud Function (Admin SDK) para evitar permission-denied de Firestore rules.
     if (me && me.uid && me.clubId && ['director','coordinator'].includes(activeRole)) {
         try {
-            const { db: db2, doc: doc2, getDoc: getDoc2, updateDoc: updateDoc2, arrayUnion } = await _sdFS();
-            const clubRef = doc2(db2, 'clubs', me.clubId);
-            const clubSnap = await getDoc2(clubRef);
-            if (clubSnap.exists()) {
-                const clubData = clubSnap.data();
-                const field = activeRole === 'director' ? 'directorUids' : 'coordinatorUids';
-                const existingUids = clubData[field] || [];
-                if (!existingUids.includes(me.uid)) {
-                    await updateDoc2(clubRef, {
-                        [field]: arrayUnion(me.uid)
-                    });
-                    console.log('[StaffDashboard] UID registrado en clubs.' + field + ':', me.uid);
+            // Usar saFS() que tiene httpsCallable disponible
+            const sa = await (typeof saFS === 'function' ? saFS() : null);
+            if (sa && sa.httpsCallable && sa.fa && sa.fa.functions) {
+                const registerFn = sa.httpsCallable(sa.fa.functions, 'registerStaffUid');
+                const result = await registerFn({ role: activeRole, clubId: me.clubId });
+                if (result.data?.success) {
+                    console.log('[StaffDashboard] UID registrado via Cloud Function en clubs.' + result.data.field);
+                }
+            } else {
+                console.warn('[StaffDashboard] Cloud Functions no disponible, intentando escritura directa...');
+                // Fallback: intentar escritura directa (puede fallar por permisos)
+                const { db: db2, doc: doc2, getDoc: getDoc2, updateDoc: updateDoc2, arrayUnion } = await _sdFS();
+                const clubRef = doc2(db2, 'clubs', me.clubId);
+                const clubSnap = await getDoc2(clubRef);
+                if (clubSnap.exists()) {
+                    const field = activeRole === 'director' ? 'directorUids' : 'coordinatorUids';
+                    const existingUids = clubSnap.data()[field] || [];
+                    if (!existingUids.includes(me.uid)) {
+                        await updateDoc2(clubRef, { [field]: arrayUnion(me.uid) });
+                        console.log('[StaffDashboard] UID registrado en clubs.' + field + ':', me.uid);
+                    }
                 }
             }
         } catch(regErr) {
