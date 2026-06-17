@@ -672,7 +672,9 @@ exports.sendInviteEmail = functions
   /* ---- Cuerpo principal del mensaje (por defecto o personalizado) ---- */
   const customBodyHtml = body
     ? _esc(body).replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
-          .replace(/\
+          .replace(/\n/g, '<br/>')
+    : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
+
 /* ----------------------------------------------------------- */
 /* FIX (v183): Registrar UID de director/coordinador en el club */
 /* Cloud Function invocable por el cliente. Usa Admin SDK que  */
@@ -725,9 +727,6 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', err.message);
   }
 });
-
-n/g, '<br/>')
-    : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
 
   /* ---- Cuerpo en HTML con logo y diseño profesional ---- */
   const htmlBody = (
