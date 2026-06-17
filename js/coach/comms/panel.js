@@ -453,7 +453,7 @@ async function _cGetStaff(db, clubId, fns, roles) {
     // cualquier usuario autenticado, así que el coach SIEMPRE puede leerla.
     // Buscamos documentos con clubId del coach para encontrar staff.
     if (!byUid.size && clubId) {
-        if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Paso 5b: buscando en cronos_staff_registry...');
+        console.log('[_cGetStaff] Paso 5b: buscando en cronos_staff_registry...');
         try {
             const staffSnap = await getDocs(query(
                 collection(db, 'cronos_staff_registry'),
@@ -469,6 +469,7 @@ async function _cGetStaff(db, clubId, fns, roles) {
                 }
             });
             if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Tras Paso 5b (staff_registry):', byUid.size, 'miembros');
+            console.log('[_cGetStaff] Paso 5b completado | encontrados:', byUid.size, 'miembros');
         } catch(e5b) {
             console.warn('[_cGetStaff] Paso 5b (staff_registry) falló:', e5b.code || e5b.message);
             // Fallback: si la query falla, probar con getDoc individual por UID conocido
@@ -555,7 +556,7 @@ async function _cGetStaff(db, clubId, fns, roles) {
     }
 
     const result = Array.from(byUid.values());
-    if(window._CRONOS_DEBUG) console.log('[_cGetStaff] RESULTADO FINAL:', result.length, 'miembros', result.map(s => ({ uid: s.uid, role: s.role })));
+    console.log('[_cGetStaff] RESULTADO FINAL:', result.length, 'miembros', result.map(s => ({ uid: s.uid, role: s.role })));
     return result;
 }
 
@@ -2149,10 +2150,8 @@ async function autoDispatchMatchReports() {
         const rivalName = TEAM_NAMES.away || 'Rival';
         const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
         const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
-        console.log('autoDispatch ejecutándose | teamKey:', _cMyTeamKey(),
-            '| total players:', (window.players||[]).length,
-            '| homePlayers (mi equipo):', homePlayers.length,
-            homePlayers.map(p => '#'+p.number+' '+p.name).join(', ') || '(NINGUNO)');
+        console.log('[autoDispatch] INICIO | me.uid:', me.uid, '| me.clubId:', me.clubId, '| teamKey:', _cMyTeamKey(),
+            '| homePlayers:', homePlayers.length);
 
         // 1. Obtener links y contactos
         const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId || '')));
@@ -2213,6 +2212,9 @@ async function autoDispatchMatchReports() {
                 }
             });
         let _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+
+        // LOG SIEMPRE VISIBLE para diagnóstico
+        console.log('[autoDispatch] _cGetStaff resultado | staffToNotify:', staffToNotify.length, '| _allStaffUids:', _allStaffUids, '| clubId:', me.clubId);
 
         // FIX (v182): Si _cGetStaff y emailConfig NO encontraron staff, leer
         // el documento del club para encontrar UIDs de director/coordinador.
