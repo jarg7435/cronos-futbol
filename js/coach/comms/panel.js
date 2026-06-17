@@ -244,8 +244,68 @@ async function _cGetStaff(db, clubId, fns, roles) {
         if (!byUid.has(uid)) byUid.set(uid, { uid, role, ...data });
     };
 
-    // FIX (v182): Log diagnóstico para entender por qué _cGetStaff puede devolver vacío
-    if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Iniciando | clubId:', clubId, '| roles:', roles);
+    console.log('[_cGetStaff] INICIO | clubId:', clubId, '| roles:', roles);
+
+    // ── PASO 0 (v185): SIEMPRE consultar cronos_staff_registry PRIMERO ──
+    // Esta es la fuente MÁS FIABLE porque el director/coordinador se registra
+    // automáticamente al abrir su panel. No depende de emailConfig ni de
+    // queries complejas que pueden fallar por permisos Firestore.
+    // ANTES: era el Paso 5b, solo se ejecutaba si TODOS los pasos anteriores
+    // fallaban (!byUid.size). Ahora se ejecuta SIEMPRE como primera fuente.
+    console.log('[_cGetStaff] Paso 0: consultando cronos_staff_registry (clubId=' + clubId + ')...');
+    try {
+        const { collection, getDocs, query, where } = fns;
+        // Recopilar TODOS los clubIds del coach (raíz + allRoles) para cubrir
+        // el caso donde el coach y el director tienen clubIds diferentes.
+        const _coachClubIds = new Set();
+        if (clubId) _coachClubIds.add(clubId);
+        const _me = window._cronosCurrentUser;
+        if (_me && _me.uid) {
+            try {
+                const { doc: _docFn, getDoc: _getDocFn } = fns.doc && fns.getDoc
+                    ? fns
+                    : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const _myDoc = await _getDocFn(_docFn(db, 'users', _me.uid));
+                if (_myDoc.exists()) {
+                    const _myData = _myDoc.data();
+                    if (_myData.clubId) _coachClubIds.add(_myData.clubId);
+                    if (Array.isArray(_myData.allRoles)) {
+                        _myData.allRoles.forEach(r => { if (r.clubId) _coachClubIds.add(r.clubId); });
+                    }
+                }
+            } catch(_) {}
+        }
+
+        if (_coachClubIds.size > 0) {
+            for (const _cid of _coachClubIds) {
+                try {
+                    const staffSnap = await getDocs(query(
+                        collection(db, 'cronos_staff_registry'),
+                        where('clubId', '==', _cid)
+                    ));
+                    let registryCount = 0;
+                    staffSnap.forEach(d => {
+                        const data = d.data();
+                        if (data.uid && roles.includes(data.role)) {
+                            upsert(data.uid, data.role, {
+                                email: data.email || '',
+                                displayName: data.displayName || '',
+                            });
+                            registryCount++;
+                        }
+                    });
+                    console.log('[_cGetStaff] Paso 0 (clubId=' + _cid + ') encontró:', registryCount, 'staff');
+                } catch(qErr) {
+                    console.warn('[_cGetStaff] Paso 0 query falló para clubId', _cid, ':', qErr.code || qErr.message);
+                }
+            }
+            console.log('[_cGetStaff] Paso 0 completado | byUid total:', byUid.size);
+        } else {
+            console.warn('[_cGetStaff] Paso 0 OMITIDO: sin clubIds para consultar');
+        }
+    } catch(e0) {
+        console.warn('[_cGetStaff] Paso 0 (staff_registry) falló:', e0.code || e0.message);
+    }
 
     // ── 1. emailConfig.contacts — FUENTE MÁS FIABLE ──────────────
     // El entrenador ya configuró quién recibe qué en Gestión de Contactos.
@@ -447,60 +507,9 @@ async function _cGetStaff(db, clubId, fns, roles) {
         } catch(e5) { console.warn('[_cGetStaff] Paso 5 (club doc) falló:', e5.message); }
     }
 
-    // ── 5b. FIX (v184): LEER cronos_staff_registry — FUENTE MÁS FIABLE ──
-    // El director/coordinador auto-registra su UID en cronos_staff_registry
-    // cuando abre su panel (club-reports.js). Esta colección es legible por
-    // cualquier usuario autenticado, así que el coach SIEMPRE puede leerla.
-    // Buscamos documentos con clubId del coach para encontrar staff.
-    if (!byUid.size && clubId) {
-        console.log('[_cGetStaff] Paso 5b: buscando en cronos_staff_registry...');
-        try {
-            const staffSnap = await getDocs(query(
-                collection(db, 'cronos_staff_registry'),
-                where('clubId', '==', clubId)
-            ));
-            staffSnap.forEach(d => {
-                const data = d.data();
-                if (data.uid && roles.includes(data.role)) {
-                    upsert(data.uid, data.role, {
-                        email: data.email || '',
-                        displayName: data.displayName || '',
-                    });
-                }
-            });
-            if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Tras Paso 5b (staff_registry):', byUid.size, 'miembros');
-            console.log('[_cGetStaff] Paso 5b completado | encontrados:', byUid.size, 'miembros');
-        } catch(e5b) {
-            console.warn('[_cGetStaff] Paso 5b (staff_registry) falló:', e5b.code || e5b.message);
-            // Fallback: si la query falla, probar con getDoc individual por UID conocido
-            // (por si el director ya se registró antes)
-            try {
-                const me = window._cronosCurrentUser;
-                if (me && me.clubId) {
-                    // Intentar leer el documento del director conocido por su patrón de ID
-                    const { doc: docFn5b, getDoc: getDoc5b } = fns.doc && fns.getDoc
-                        ? fns
-                        : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    // Si emailConfig tiene contacts de tipo staff, usar sus UIDs
-                    const contacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts))
-                        ? emailConfig.contacts : [];
-                    const staffContacts = contacts.filter(c => c.type !== 'parent' && c.uid);
-                    for (const c of staffContacts) {
-                        try {
-                            const regId = `${me.clubId}_${c.uid}`;
-                            const regDoc = await getDoc5b(docFn5b(db, 'cronos_staff_registry', regId));
-                            if (regDoc.exists()) {
-                                const rd = regDoc.data();
-                                if (roles.includes(rd.role)) {
-                                    upsert(rd.uid, rd.role, { email: rd.email || c.email || '', displayName: rd.displayName || c.name || '' });
-                                }
-                            }
-                        } catch(_) {}
-                    }
-                }
-            } catch(_) {}
-        }
-    }
+    // ── 5b. ELIMINADO (v185): cronos_staff_registry ahora es el PASO 0 ──
+    // Antes era el Paso 5b, solo se ejecutaba si todos los pasos anteriores fallaban.
+    // Ahora se ejecuta SIEMPRE como Paso 0 (ver arriba).
 
     // ── 6. FIX (v182): ÚLTIMO RECURSO — Leer allRoles del propio coach ──
     // Si TOD0 falló, buscar en los allRoles del coach UIDs de director/coordinador
@@ -2216,6 +2225,72 @@ async function autoDispatchMatchReports() {
         // LOG SIEMPRE VISIBLE para diagnóstico
         console.log('[autoDispatch] _cGetStaff resultado | staffToNotify:', staffToNotify.length, '| _allStaffUids:', _allStaffUids, '| clubId:', me.clubId);
 
+        // FIX (v185): Si _cGetStaff devolvió vacío y clubId también está vacío,
+        // intentar resolver clubId DESDE FIRESTORE antes de los fallbacks.
+        // Esto cubre el caso donde el coach no tiene clubId en su token
+        // ni en su documento users (raro pero posible).
+        if (!_allStaffUids.length && !me.clubId) {
+            console.warn('[autoDispatch] STAFF VACÍO y SIN clubId. Intentando resolver desde Firestore...');
+            try {
+                const myDoc = await getDoc(doc(db, 'users', me.uid));
+                if (myDoc.exists()) {
+                    const myData = myDoc.data();
+                    const resolvedCid = myData.clubId
+                        || (myData.allRoles || []).find(r => r.clubId)?.clubId
+                        || null;
+                    if (resolvedCid) {
+                        console.log('[autoDispatch] clubId resuelto desde users doc:', resolvedCid);
+                        me.clubId = resolvedCid;
+                        // Reintentar _cGetStaff con el clubId resuelto
+                        const retryStaff = (await _cGetStaff(db, resolvedCid, { collection, getDocs, query, where })) || [];
+                        retryStaff.forEach(s => {
+                            if (!staffToNotify.some(x => x.uid === s.uid)) {
+                                staffToNotify.push(s);
+                            }
+                        });
+                        _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+                        console.log('[autoDispatch] Tras retry con clubId resuelto | staffToNotify:', staffToNotify.length, '| _allStaffUids:', _allStaffUids);
+                    } else {
+                        console.warn('[autoDispatch] No se pudo resolver clubId desde users doc. clubId del coach es desconocido.');
+                    }
+                }
+            } catch(resolveErr) {
+                console.warn('[autoDispatch] Error resolviendo clubId:', resolveErr.message);
+            }
+        }
+
+        // FIX (v185): Si AÚN no hay staff, intentar leer cronos_staff_registry
+        // SIN clubId (barrido completo). Es menos eficiente pero garantiza que
+        // encontramos al director si se registró.
+        if (!_allStaffUids.length) {
+            console.warn('[autoDispatch] STAFF VACÍO. Intentando barrido de cronos_staff_registry...');
+            try {
+                const allRegSnap = await getDocs(collection(db, 'cronos_staff_registry'));
+                let registryHits = 0;
+                allRegSnap.forEach(d => {
+                    const data = d.data();
+                    if (data.uid && ['director','coordinator'].includes(data.role) && data.uid !== me.uid) {
+                        if (!staffToNotify.some(s => s.uid === data.uid)) {
+                            staffToNotify.push({ uid: data.uid, role: data.role, email: data.email || '', displayName: data.displayName || '' });
+                            registryHits++;
+                        }
+                    }
+                });
+                _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+                console.log('[autoDispatch] Barrido cronos_staff_registry | encontrados:', registryHits, '| _allStaffUids:', _allStaffUids);
+                // Si encontramos staff pero no teníamos clubId, usar el clubId del registry
+                if (staffToNotify.length && !me.clubId) {
+                    const firstReg = allRegSnap.docs.find(d => d.data().uid === staffToNotify[0].uid);
+                    if (firstReg) {
+                        me.clubId = firstReg.data().clubId;
+                        console.log('[autoDispatch] clubId inferido del registry:', me.clubId);
+                    }
+                }
+            } catch(sweepErr) {
+                console.warn('[autoDispatch] Barrido cronos_staff_registry falló:', sweepErr.code || sweepErr.message);
+            }
+        }
+
         // FIX (v182): Si _cGetStaff y emailConfig NO encontraron staff, leer
         // el documento del club para encontrar UIDs de director/coordinador.
         // Esto es CRÍTICO porque sin staffUids en los informes, las reglas
@@ -2574,6 +2649,18 @@ async function autoDispatchMatchReports() {
         }
 
         showToast('✅ Informes enviados automáticamente (Interno)', 4000);
+
+        // FIX (v185): DIAGNÓSTICO VISIBLE — mostrar resultado del envío a staff
+        // directamente en la UI para que el entrenador pueda reportar qué pasó
+        // sin necesidad de abrir la consola.
+        const _diagInfo = staffToNotify.length > 0
+            ? `✅ Informe colectivo enviado a ${staffToNotify.length} miembro(s) de staff: ${staffToNotify.map(s => s.role + ' (' + (s.email || s.uid.slice(0,8)) + ')').join(', ')}`
+            : `⚠️ ATENCIÓN: No se encontró director/coordinador para enviar informe colectivo. clubId: ${me.clubId || 'VACÍO'}. El director debe abrir su panel primero para registrarse.`;
+        console.log('[autoDispatch] DIAG: ' + _diagInfo);
+        // Mostrar como toast más largo si no encontró staff
+        if (!staffToNotify.length) {
+            showToast('⚠️ No se encontró director/coordinador. ¿Ha abierto su panel?', 8000);
+        }
 
     } catch(e) {
         console.error('[AutoDispatch] Error:', e);
