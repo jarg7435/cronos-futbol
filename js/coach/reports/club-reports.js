@@ -116,16 +116,6 @@ async function openStaffDashboard() {
         if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message);
     }
 
-    // FIX (v181): Ejecutar backfill de hilos existentes sin campos de identidad.
-    // Esto actualiza los hilos creados antes de v180 que no tienen
-    // clubId/staffUid/parentUid/participants/recipientType.
-    // Se ejecuta en segundo plano (no bloquea la UI) y solo una vez por club.
-    if (typeof window._cronosBackfillMessages === 'function') {
-        window._cronosBackfillMessages().catch(e =>
-            console.warn('[StaffDashboard] Backfill falló:', e.message)
-        );
-    }
-
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -1515,51 +1505,29 @@ async function _sdLoadMessages() {
     }
 
     try {
-        const { db, collection, getDocs, query, where, doc, updateDoc, getDoc, limit } = await _sdFS();
+        const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
 
-        // FIX (v181): Cuatro consultas para máxima cobertura de hilos de mensajes.
+        // FIX (v179): Cuatro consultas para máxima cobertura de hilos de mensajes.
         // Consulta A: staffUid == me.uid (hilos donde soy staff)
         // Consulta B: parentUid == me.uid (hilos donde soy padre/destinatario legacy)
         // Consulta C: participants array-contains me.uid (fallback si A y B fallan)
-        // Consulta D: clubId == cada clubId del club (multi-clubId, igual que _sdLoadReports)
+        // Consulta D: clubId == me.clubId (fallback para hilos antiguos sin
+        //   staffUid/parentUid/participants pero con clubId; el director puede
+        //   leerlos si userDocClubId funciona en las reglas Firestore)
+        // FIX (v178): Log diagnóstico para mensajes
 
-        // FIX (v181): Recopilar clubIds del mismo club para la query D
-        const _msgClubIds = new Set([clubId]);
-        try {
-            const myDoc = await getDoc(doc(db, 'users', me.uid));
-            if (myDoc.exists()) {
-                const myData = myDoc.data();
-                if (myData.clubId) _msgClubIds.add(myData.clubId);
-                if (myData.allRoles && Array.isArray(myData.allRoles)) {
-                    myData.allRoles.forEach(r => { if (r.clubId) _msgClubIds.add(r.clubId); });
-                }
-            }
-        } catch(_) {}
-
-        // Consultas A, B, C por UID (siempre las mismas)
-        const [snapStaff, snapParent, snapParticipants] = await Promise.all([
+        const [snapStaff, snapParent, snapParticipants, snapClub] = await Promise.all([
             getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query staffUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
             getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            // FIX (v178): consulta fallback por participants — siempre funciona
+            // porque las reglas de Firestore siempre han verificado uid in participants
             getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
+            // FIX (v179): consulta fallback por clubId — cubre hilos antiguos
+            // que no tienen staffUid/parentUid/participants pero sí clubId
+            getDocs(query(collection(db,'cronos_messages'), where('clubId','==',clubId))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query clubId falló:', e.code||e.message); return {forEach:()=>{}}; }),
         ]);
 
-        // Consulta D: multi-clubId (igual que _sdLoadReports)
-        const snapClubDocs = [];
-        const snapClubSeenIds = new Set();
-        for (const cid of _msgClubIds) {
-            try {
-                const snap = await getDocs(query(collection(db,'cronos_messages'), where('clubId','==',cid), limit(500)));
-                snap.forEach(d => {
-                    if (!snapClubSeenIds.has(d.id)) {
-                        snapClubSeenIds.add(d.id);
-                        snapClubDocs.push(d);
-                    }
-                });
-            } catch(e) { if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query clubId', cid, 'falló:', e.code||e.message); }
-        }
-        const snapClub = { forEach: fn => snapClubDocs.forEach(fn) };
-
-        // FIX (v181): Contar resultados de cada query para diagnóstico
+        // FIX (v179): Contar resultados de cada query para diagnóstico
         let _staffMsgCount = 0, _parentMsgCount = 0, _participantsMsgCount = 0, _clubMsgCount = 0;
         snapStaff.forEach(() => _staffMsgCount++);
         snapParent.forEach(() => _parentMsgCount++);
@@ -1571,19 +1539,10 @@ async function _sdLoadMessages() {
         snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
         // FIX (v178): fusionar resultados de participants
         snapParticipants.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        // FIX (v181): Fusionar resultados de clubId — solo hilos de staff
-        // (recipientType==='staff' o que tengan staffUid). Los hilos de padres
-        // no son relevantes para el panel de dirección.
-        // FIX: incluir también hilos con messages[].type==='collective_report'
-        // porque los hilos creados antes de v180 pueden no tener recipientType
-        // pero sí contener informes colectivos que el director debe ver.
+        // FIX (v179): fusionar resultados de clubId (solo hilos de staff)
         snapClub.forEach(d => {
-            if (!threadsMap[d.id]) {
-                const data = d.data();
-                // Solo incluir hilos de staff (no de padres)
-                if (data.recipientType === 'staff' || data.staffUid || (data.messages||[]).some(m => m.type === 'collective_report')) {
-                    threadsMap[d.id] = { _id: d.id, ...data };
-                }
+            if (!threadsMap[d.id] && d.data().recipientType === 'staff') {
+                threadsMap[d.id] = { _id:d.id, ...d.data() };
             }
         });
 
@@ -1722,111 +1681,6 @@ async function _sdLoadMessages() {
 
 window.openLiveMatchesView = () => {
     window.open('./live.html', '_blank');
-};
-
-// ════════════════════════════════════════════════════════════════════
-//  FIX (v181): BACKFILL — Actualizar hilos existentes sin campos de identidad
-//  Los hilos creados antes de v180 no tienen clubId/staffUid/parentUid/
-//  participants/recipientType, así que el director/coordinador no los veía.
-//  Esta función actualiza TODOS los hilos del club para añadir esos campos.
-//  Se ejecuta UNA SOLA VEZ (guard en localStorage) y es idempotente.
-// ════════════════════════════════════════════════════════════════════
-window._cronosBackfillMessages = async function() {
-    const me = window._cronosCurrentUser;
-    if (!me || !me.clubId) {
-        return;
-    }
-
-    const backfillKey = `cronos_backfill_v181_${me.clubId}`;
-    if (localStorage.getItem(backfillKey)) {
-        return;
-    }
-
-    try {
-        const { db, collection, getDocs, query, where, doc, updateDoc, getDoc } = await _sdFS();
-
-        // Recopilar clubIds del mismo club (igual que _sdLoadReports)
-        const _allClubIds = new Set([me.clubId]);
-        try {
-            const myDoc = await getDoc(doc(db, 'users', me.uid));
-            if (myDoc.exists()) {
-                const myData = myDoc.data();
-                if (myData.clubId) _allClubIds.add(myData.clubId);
-                if (myData.allRoles && Array.isArray(myData.allRoles)) {
-                    myData.allRoles.forEach(r => {
-                        if (r.clubId) _allClubIds.add(r.clubId);
-                    });
-                }
-            }
-        } catch(_) {}
-
-        let updated = 0;
-        let skipped = 0;
-
-        for (const cid of _allClubIds) {
-            try {
-                // Obtener TODOS los hilos del club
-                const snap = await getDocs(query(
-                    collection(db, 'cronos_messages'),
-                    where('clubId', '==', cid)
-                ));
-
-                for (const d of snap.docs) {
-                    const data = d.data();
-                    const needsUpdate = !data.staffUid && !data.parentUid && !data.recipientType;
-
-                    if (needsUpdate) {
-                        try {
-                            const updates = {};
-                            // Inferir campos de identidad
-                            if (data.coachUid) {
-                                updates.participants = [data.coachUid];
-                            }
-                            // Si tiene mensajes, buscar el tipo
-                            const hasCollective = (data.messages || []).some(m => m.type === 'collective_report');
-                            if (hasCollective) {
-                                updates.recipientType = 'staff';
-                                updates.staffUid = data.coachUid; // placeholder, se sobrescribe si hay más datos
-                            }
-                            // Intentar inferir staffUid del threadId
-                            // threadId = {clubId}_{staffUid} para hilos de staff
-                            const threadIdParts = d.id.split('_');
-                            if (threadIdParts.length >= 2) {
-                                // Si el threadId empieza con clubId_, el resto es el staffUid
-                                const possibleClubPrefix = threadIdParts.slice(0, 3).join('_'); // club_xxx_yyy
-                                if (possibleClubPrefix === cid) {
-                                    const inferredStaffUid = threadIdParts.slice(3).join('_');
-                                    if (inferredStaffUid) {
-                                        updates.staffUid = inferredStaffUid;
-                                        updates.parentUid = inferredStaffUid;
-                                        if (data.coachUid) {
-                                            updates.participants = [data.coachUid, inferredStaffUid];
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (Object.keys(updates).length > 0) {
-                                await updateDoc(doc(db, 'cronos_messages', d.id), updates);
-                                updated++;
-                            }
-                        } catch(err) {
-                            if(window._CRONOS_DEBUG) console.warn('[Backfill] Error actualizando hilo', d.id, ':', err.message);
-                        }
-                    } else {
-                        skipped++;
-                    }
-                }
-            } catch(e) {
-                if(window._CRONOS_DEBUG) console.warn('[Backfill] Error consultando clubId', cid, ':', e.message);
-            }
-        }
-
-        localStorage.setItem(backfillKey, 'done');
-        if(window._CRONOS_DEBUG) console.log('[Backfill] Completado:', updated, 'actualizados,', skipped, 'omitidos');
-    } catch(e) {
-        if(window._CRONOS_DEBUG) console.warn('[Backfill] Error general:', e.message);
-    }
 };
 
 window.openStaffDashboard = openStaffDashboard;
