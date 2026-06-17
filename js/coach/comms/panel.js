@@ -244,7 +244,8 @@ async function _cGetStaff(db, clubId, fns, roles) {
         if (!byUid.has(uid)) byUid.set(uid, { uid, role, ...data });
     };
 
-    // FIX (v178): Log para diagnosticar por qué _cGetStaff puede devolver vacío
+    // FIX (v182): Log diagnóstico para entender por qué _cGetStaff puede devolver vacío
+    if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Iniciando | clubId:', clubId, '| roles:', roles);
 
     // ── 1. emailConfig.contacts — FUENTE MÁS FIABLE ──────────────
     // El entrenador ya configuró quién recibe qué en Gestión de Contactos.
@@ -282,6 +283,8 @@ async function _cGetStaff(db, clubId, fns, roles) {
         }
     } catch(e1) { console.warn('[_cGetStaff] Paso 1 falló:', e1.message); }
 
+    if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Tras Paso 1 (emailConfig):', byUid.size, 'miembros');
+
     // ── 2. Firestore: role === rol específico (usuarios mono-rol) ──
     // FIX (v178): Solo ejecutar si clubId es válido, pero NO retornar vacío si no lo es
     const { collection, getDocs, query, where } = fns;
@@ -297,6 +300,8 @@ async function _cGetStaff(db, clubId, fns, roles) {
             } catch(e2) { console.warn('[_cGetStaff] Paso 2 falló para rol', role, ':', e2.code || e2.message); }
         }
     }
+
+    if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Tras Paso 2 (role query):', byUid.size, 'miembros');
 
     // ── 3. Firestore: buscar por clubId y filtrar allRoles en cliente ──
     // FIX v177: Se ejecuta SIEMPRE (antes solo si byUid.size === 0).
@@ -321,21 +326,17 @@ async function _cGetStaff(db, clubId, fns, roles) {
         } catch(e3) { console.warn('[_cGetStaff] Paso 3 falló:', e3.code || e3.message); }
     }
 
+    if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Tras Paso 3 (allRoles query):', byUid.size, 'miembros');
+
     // ── 4. FIX (v178): Buscar SIN clubId usando el UID del coach actual ──
     // Si los pasos 2-3 fallaron (clubId vacío o incorrecto), buscar TODOS los
     // usuarios y filtrar en cliente por allRoles que contengan el mismo clubId
     // que el coach tiene en SU documento de usuario.
     if (!byUid.size) {
-        console.warn('[_cGetStaff] Pasos 2-3 no encontraron staff. Intentando búsqueda amplia...');
+        if(window._CRONOS_DEBUG) console.warn('[_cGetStaff] Pasos 2-3 no encontraron staff. Intentando búsqueda amplia...');
         try {
             const me = window._cronosCurrentUser;
             if (me && me.uid) {
-                // Obtener el clubId del coach directamente desde su documento
-                const meSnap = await getDocs(query(
-                    collection(db, 'users'),
-                    where('__name__', '==', me.uid)  // Firestore no permite esto directamente
-                )).catch(() => null);
-                
                 // Fallback: obtener el propio documento del coach
                 try {
                     const { doc: docFn, getDoc } = fns.doc && fns.getDoc ? fns : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -381,7 +382,126 @@ async function _cGetStaff(db, clubId, fns, roles) {
         } catch(e4b) { console.warn('[_cGetStaff] Paso 4 (búsqueda amplia) falló:', e4b.message); }
     }
 
+    // ── 5. FIX (v182): LEER DOCUMENTO DEL CLUB para encontrar UIDs de staff ──
+    // Los pasos 2-4 usan collection queries que pueden fallar por permisos Firestore
+    // (el coach no tiene claim clubId → sameClubAsDoc falla). Pero el coach SÍ puede
+    // leer el documento del club (clubs/{clubId}) si es miembro. El club tiene
+    // directorUids/coordinatorUids (o adminUid) que podemos usar para hacer getDoc
+    // individual de cada usuario — getDoc individual SÍ funciona porque las reglas
+    // permiten leer users/{uid} si request.auth.uid == userId.
+    if (!byUid.size && clubId) {
+        if(window._CRONOS_DEBUG) console.warn('[_cGetStaff] Pasos 1-4 vacíos. Intentando leer documento del club...');
+        try {
+            const { doc: docFn5, getDoc: getDoc5 } = fns.doc && fns.getDoc
+                ? fns
+                : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+            // Leer documento del club
+            const clubDoc = await getDoc5(docFn5(db, 'clubs', clubId));
+            if (clubDoc.exists()) {
+                const clubData = clubDoc.data();
+                // Recopilar UIDs de staff del documento del club
+                const staffUidCandidates = [
+                    clubData.adminUid,
+                    ...(clubData.directorUids || []),
+                    ...(clubData.coordinatorUids || []),
+                    ...(clubData.staffUids || []),
+                    ...(clubData.members || []),
+                ].filter(Boolean).filter(uid => uid !== window._cronosCurrentUser?.uid);
+
+                if(window._CRONOS_DEBUG) console.log('[_cGetStaff] Club doc encontrado. Staff UIDs candidatos:', staffUidCandidates.length);
+
+                // Leer cada documento de usuario individualmente (getDoc funciona
+                // porque las reglas permiten leer users/{uid} si request.auth.uid == userId
+                // O si userDocClubId pasa — el coach puede leer docs de su mismo club)
+                for (const uid of staffUidCandidates) {
+                    try {
+                        const userDoc = await getDoc5(docFn5(db, 'users', uid));
+                        if (userDoc.exists()) {
+                            const userData = userDoc.data();
+                            // Verificar si es director o coordinador
+                            const userRole = userData.role;
+                            const userAllRoles = userData.allRoles || [];
+                            const isStaff = roles.includes(userRole) ||
+                                userAllRoles.some(r => roles.includes(r.role) &&
+                                    r.isAuthorized !== false &&
+                                    r.status !== 'rejected' &&
+                                    r.status !== 'removed');
+                            if (isStaff) {
+                                const effectiveRole = roles.includes(userRole) ? userRole :
+                                    (userAllRoles.find(r => roles.includes(r.role))?.role || 'staff');
+                                upsert(uid, effectiveRole, {
+                                    email: userData.email || '',
+                                    phone: userData.phone || '',
+                                    displayName: userData.displayName || userData.name || '',
+                                });
+                            }
+                        }
+                    } catch(indErr) {
+                        if(window._CRONOS_DEBUG) console.warn('[_cGetStaff] No se pudo leer usuario', uid, ':', indErr.code || indErr.message);
+                    }
+                }
+            } else {
+                if(window._CRONOS_DEBUG) console.warn('[_cGetStaff] Club doc no existe para clubId:', clubId);
+            }
+        } catch(e5) { console.warn('[_cGetStaff] Paso 5 (club doc) falló:', e5.message); }
+    }
+
+    // ── 6. FIX (v182): ÚLTIMO RECURSO — Leer allRoles del propio coach ──
+    // Si TOD0 falló, buscar en los allRoles del coach UIDs de director/coordinador
+    // que compartan el mismo clubId. Esto funciona porque el coach puede leer su
+    // propio documento y allRoles puede incluir referencias a otros miembros.
+    if (!byUid.size) {
+        try {
+            const me = window._cronosCurrentUser;
+            if (me && me.uid) {
+                const { doc: docFn6, getDoc: getDoc6 } = fns.doc && fns.getDoc
+                    ? fns
+                    : await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const myDoc = await getDoc6(docFn6(db, 'users', me.uid));
+                if (myDoc.exists()) {
+                    const myData = myDoc.data();
+                    const myClubId = myData.clubId || (myData.allRoles || []).find(r => r.clubId)?.clubId;
+                    if (myClubId) {
+                        // Usar el clubId resuelto para leer el documento del club
+                        try {
+                            const clubDoc2 = await getDoc6(docFn6(db, 'clubs', myClubId));
+                            if (clubDoc2.exists()) {
+                                const cd = clubDoc2.data();
+                                const candidates = [
+                                    cd.adminUid,
+                                    ...(cd.directorUids || []),
+                                    ...(cd.coordinatorUids || []),
+                                    ...(cd.staffUids || []),
+                                ].filter(Boolean).filter(uid => uid !== me.uid);
+
+                                for (const uid of candidates) {
+                                    try {
+                                        const userDoc = await getDoc6(docFn6(db, 'users', uid));
+                                        if (userDoc.exists()) {
+                                            const userData = userDoc.data();
+                                            const isStaff = roles.includes(userData.role) ||
+                                                (userData.allRoles || []).some(r => roles.includes(r.role) &&
+                                                    r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed');
+                                            if (isStaff) {
+                                                upsert(uid, roles.includes(userData.role) ? userData.role : 'staff', {
+                                                    email: userData.email || '', displayName: userData.displayName || '',
+                                                });
+                                            }
+                                        }
+                                    } catch(_) {}
+                                }
+                                if (myClubId && !me.clubId) me.clubId = myClubId;
+                            }
+                        } catch(_) {}
+                    }
+                }
+            }
+        } catch(e6) { console.warn('[_cGetStaff] Paso 6 (último recurso) falló:', e6.message); }
+    }
+
     const result = Array.from(byUid.values());
+    if(window._CRONOS_DEBUG) console.log('[_cGetStaff] RESULTADO FINAL:', result.length, 'miembros', result.map(s => ({ uid: s.uid, role: s.role })));
     return result;
 }
 
@@ -1975,7 +2095,7 @@ async function autoDispatchMatchReports() {
         const rivalName = TEAM_NAMES.away || 'Rival';
         const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
         const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
-        if(window._CRONOS_DEBUG) console.log('autoDispatch ejecutándose | teamKey:', _cMyTeamKey(),
+        console.log('autoDispatch ejecutándose | teamKey:', _cMyTeamKey(),
             '| total players:', (window.players||[]).length,
             '| homePlayers (mi equipo):', homePlayers.length,
             homePlayers.map(p => '#'+p.number+' '+p.name).join(', ') || '(NINGUNO)');
@@ -2038,7 +2158,71 @@ async function autoDispatchMatchReports() {
                     staffToNotify.push({ uid: c.uid, role: c.role || 'staff', email: c.email || '' });
                 }
             });
-        const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+        let _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+
+        // FIX (v182): Si _cGetStaff y emailConfig NO encontraron staff, leer
+        // el documento del club para encontrar UIDs de director/coordinador.
+        // Esto es CRÍTICO porque sin staffUids en los informes, las reglas
+        // Firestore impiden que el director/coordinador los lea.
+        if (!_allStaffUids.length && me.clubId) {
+            if(window._CRONOS_DEBUG) console.warn('[autoDispatch] staffToNotify vacío. Intentando leer club doc para encontrar staff...');
+            try {
+                const clubDoc = await getDoc(doc(db, 'clubs', me.clubId));
+                if (clubDoc.exists()) {
+                    const cd = clubDoc.data();
+                    const candidateUids = [
+                        cd.adminUid,
+                        ...(cd.directorUids || []),
+                        ...(cd.coordinatorUids || []),
+                        ...(cd.staffUids || []),
+                    ].filter(Boolean).filter(uid => uid !== me.uid);
+
+                    for (const uid of candidateUids) {
+                        try {
+                            const userDoc = await getDoc(doc(db, 'users', uid));
+                            if (userDoc.exists()) {
+                                const userData = userDoc.data();
+                                const isStaff = ['director','coordinator'].includes(userData.role) ||
+                                    (userData.allRoles || []).some(r => ['director','coordinator'].includes(r.role) &&
+                                        r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed');
+                                if (isStaff && !_allStaffUids.includes(uid)) {
+                                    _allStaffUids.push(uid);
+                                    staffToNotify.push({
+                                        uid,
+                                        role: ['director','coordinator'].includes(userData.role) ? userData.role : 'staff',
+                                        email: userData.email || '',
+                                    });
+                                }
+                            }
+                        } catch(_) {}
+                    }
+                    if(window._CRONOS_DEBUG) console.log('[autoDispatch] Tras leer club doc: _allStaffUids =', _allStaffUids);
+                }
+            } catch(clubErr) {
+                if(window._CRONOS_DEBUG) console.warn('[autoDispatch] No se pudo leer club doc:', clubErr.code || clubErr.message);
+            }
+        }
+
+        // FIX (v182): Si AÚN no hay staff, resolver clubId desde Firestore y reintentar
+        if (!_allStaffUids.length) {
+            try {
+                const resolvedClubId = await _cResolveClubId(db, me, { doc, getDoc, updateDoc });
+                if (resolvedClubId && resolvedClubId !== me.clubId) {
+                    me.clubId = resolvedClubId;
+                    // Reintentar _cGetStaff con el clubId correcto
+                    const retryStaff = (await _cGetStaff(db, resolvedClubId, { collection, getDocs, query, where })) || [];
+                    retryStaff.forEach(s => {
+                        if (!_allStaffUids.includes(s.uid)) {
+                            _allStaffUids.push(s.uid);
+                            staffToNotify.push(s);
+                        }
+                    });
+                    if(window._CRONOS_DEBUG) console.log('[autoDispatch] Tras retry con clubId resuelto:', _allStaffUids);
+                }
+            } catch(_) {}
+        }
+
+        if(window._CRONOS_DEBUG) console.log('[autoDispatch] staffToNotify FINAL:', staffToNotify.length, '| _allStaffUids:', _allStaffUids);
 
         if (window._cronosDiagReports) {
         }
