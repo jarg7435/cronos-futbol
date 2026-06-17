@@ -672,7 +672,61 @@ exports.sendInviteEmail = functions
   /* ---- Cuerpo principal del mensaje (por defecto o personalizado) ---- */
   const customBodyHtml = body
     ? _esc(body).replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
-          .replace(/\n/g, '<br/>')
+          .replace(/\
+/* ----------------------------------------------------------- */
+/* FIX (v183): Registrar UID de director/coordinador en el club */
+/* Cloud Function invocable por el cliente. Usa Admin SDK que  */
+/* ignora las reglas Firestore, así que siempre funciona.       */
+/* Sin este registro, _cGetStaff no encuentra staff →          */
+/* staffUids=[] → informes no llegan al director/coordinador.  */
+/* ----------------------------------------------------------- */
+exports.registerStaffUid = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
+  }
+
+  const uid = context.auth.uid;
+  const role = data.role; // 'director' o 'coordinator'
+  const clubId = data.clubId;
+
+  if (!role || !clubId) {
+    throw new functions.https.HttpsError('invalid-argument', 'role y clubId son obligatorios');
+  }
+
+  if (!['director', 'coordinator'].includes(role)) {
+    throw new functions.https.HttpsError('permission-denied', 'Solo director o coordinador pueden registrarse');
+  }
+
+  // Verificar que el usuario realmente tiene ese rol en su documento
+  try {
+    const userDoc = await admin.firestore().collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Usuario no encontrado');
+    }
+    const userData = userDoc.data();
+    const hasRole = userData.role === role ||
+      (userData.allRoles || []).some(r => r.role === role && r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed');
+
+    if (!hasRole) {
+      throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role);
+    }
+
+    // Registrar UID en el documento del club
+    const field = role === 'director' ? 'directorUids' : 'coordinatorUids';
+    await admin.firestore().collection('clubs').doc(clubId).set({
+      [field]: admin.firestore.FieldValue.arrayUnion(uid)
+    }, { merge: true });
+
+    console.log('[registerStaffUid] UID', uid, 'registrado como', role, 'en club', clubId);
+    return { success: true, field, uid };
+  } catch (err) {
+    if (err.code && err.code.startsWith('functions.https.HttpsError')) throw err;
+    console.error('[registerStaffUid] Error:', err.message);
+    throw new functions.https.HttpsError('internal', err.message);
+  }
+});
+
+n/g, '<br/>')
     : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
 
   /* ---- Cuerpo en HTML con logo y diseño profesional ---- */
