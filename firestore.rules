@@ -142,6 +142,25 @@ service cloud.firestore {
              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clubId == docClubId;
     }
 
+    // FIX (v183): Verifica si el usuario es director o coordinador
+    // leyendo directamente desde users/{uid} (no del token, que puede no tener claims).
+    // Soporta rol raiz y allRoles[].role (multi-rol).
+    function isDirectorOrCoordinator() {
+      return isAuth()
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'coordinator'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[0].role == 'director'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[0].role == 'coordinator'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[1].role == 'director'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[1].role == 'coordinator'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[2].role == 'director'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[2].role == 'coordinator'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[3].role == 'director'
+                 || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allRoles[3].role == 'coordinator'
+                );
+    }
+
     // El usuario tiene acceso al club de este enlace
     function isLinkClubMember() {
       return isAuth() && (
@@ -216,15 +235,16 @@ service cloud.firestore {
                        isClubAdmin(clubId) ||
                        (isIndividualAdmin(clubId) &&
                         isIndividualEntity(resource.data)) ||
-                       // FIX (v182): Director/coordinador puede registrar su UID en el club
-                       // para que _cGetStaff lo encuentre. Solo permite escribir
+                       // FIX (v183): Director/coordinador puede registrar su UID en el club.
+                       // Usamos userDocHasRole() en vez de token claims porque los
+                       // claims pueden no estar asignados. Solo permite escribir
                        // directorUids/coordinatorUids, no otros campos.
-                       (isAuth() && isRegisteredUser() &&
-                        (request.auth.token.role == 'director' || request.auth.token.role == 'coordinator'
-                         || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director'
-                         || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'coordinator') &&
+                       (isAuth() &&
+                        isDirectorOrCoordinator() &&
                         request.resource.data.diff(resource.data).affectedKeys()
-                          .hasOnly(['directorUids', 'coordinatorUids'])
+                          .hasOnly(['directorUids', 'coordinatorUids']) &&
+                        request.resource.data.directorUids != null &&
+                        request.resource.data.coordinatorUids != null
                        );
       allow delete: if isSuperAdmin();
     }
