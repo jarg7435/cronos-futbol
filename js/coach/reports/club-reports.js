@@ -1081,7 +1081,7 @@ async function _sdLoadReports() {
     }
 
     try {
-        const { db, collection, getDocs, query, where, limit, doc, getDoc } = await _sdFS();
+        const { db, collection, getDocs, query, where, orderBy, limit, doc, getDoc } = await _sdFS();
 
         // FIX (v179): Query multi-clubId para acceder a informes de staff.
         // PROBLEMA IDENTIFICADO: El clubId del entrenador y el del director
@@ -1173,23 +1173,66 @@ async function _sdLoadReports() {
         let _clubQueryOk = false;
 
         for (const cid of _allClubIds) {
+            // FIX (limit-500): el club puede tener MILES de docs (informes de
+            // staff + coach + padres de muchos partidos). La query antigua
+            //   where(clubId==cid).limit(500)
+            // traía 500 docs SIN orden, que se llenaban con _coach_pN / _parent_*
+            // y partidos antiguos; tras el filtro cliente staffReport===true al
+            // director le quedaban muy pocos (o 1) partido visible. Ahora la query
+            // PRIMARIA filtra ya por staffReport==true y ordena por createdAt desc,
+            // así el limit se gasta SOLO en docs útiles del panel de staff.
+            // Requiere el índice compuesto (clubId, staffReport, createdAt desc).
+            // Si el índice aún no está desplegado (failed-precondition), se hace
+            // fallback a la query antigua sin orderBy para no romper nada.
             try {
                 const snap = await getDocs(query(
                     collection(db, 'cronos_player_reports'),
                     where('clubId', '==', cid),
+                    where('staffReport', '==', true),
+                    orderBy('createdAt', 'desc'),
                     limit(500)
                 ));
                 _clubQueryOk = true;
-                let count = 0;
                 snap.forEach(d => {
                     if (!seenIds.has(d.id)) {
                         seenIds.add(d.id);
                         combinedDocs.push(d);
                     }
-                    count++;
                 });
             } catch (clubErr) {
-                if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Query por clubId', cid, 'FALLÓ:', clubErr.code || clubErr.message);
+                const _code = clubErr.code || clubErr.message || '';
+                if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Query staff por clubId', cid, 'FALLÓ:', _code, '— intentando fallback sin orderBy');
+                // Fallback A: misma query sin orderBy (cubre el caso de índice no
+                // desplegado; sigue filtrando por staffReport para no saturar limit).
+                try {
+                    const snapA = await getDocs(query(
+                        collection(db, 'cronos_player_reports'),
+                        where('clubId', '==', cid),
+                        where('staffReport', '==', true),
+                        limit(500)
+                    ));
+                    _clubQueryOk = true;
+                    snapA.forEach(d => {
+                        if (!seenIds.has(d.id)) { seenIds.add(d.id); combinedDocs.push(d); }
+                    });
+                } catch (clubErr2) {
+                    // Fallback B: query original (sin filtro staffReport). Último
+                    // recurso para clubs pequeños / reglas que no permitan el filtro.
+                    if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Fallback staff también falló:', clubErr2.code || clubErr2.message, '— usando query legacy');
+                    try {
+                        const snapB = await getDocs(query(
+                            collection(db, 'cronos_player_reports'),
+                            where('clubId', '==', cid),
+                            limit(500)
+                        ));
+                        _clubQueryOk = true;
+                        snapB.forEach(d => {
+                            if (!seenIds.has(d.id)) { seenIds.add(d.id); combinedDocs.push(d); }
+                        });
+                    } catch (clubErr3) {
+                        if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Query legacy por clubId', cid, 'FALLÓ:', clubErr3.code || clubErr3.message);
+                    }
+                }
             }
         }
 

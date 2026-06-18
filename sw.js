@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v179
+//  CRONOS FUTBOL - Service Worker v183
+//  v183: FIX panel de Direccion mostraba solo 1 partido al director/coordinador.
+//         RAIZ: _sdLoadReports hacia where(clubId==cid).limit(500) SIN orden ni
+//         filtro; con clubs de miles de docs el cupo de 500 se llenaba de docs
+//         _coach_pN / _parent_* y, tras el filtro cliente staffReport===true,
+//         apenas sobrevivia 1 partido. AHORA la query primaria filtra ya por
+//         staffReport==true + orderBy(createdAt desc) + limit(500) (indice
+//         compuesto clubId,staffReport,createdAt desc desplegado), con fallback
+//         sin orderBy y fallback legacy. El fallback staffUids array-contains
+//         downstream se conserva intacto como red de seguridad.
 //  v179: P14 — eliminado el banner flotante "Partido interrumpido" del panel
 //         del entrenador (recuperacion sigue en "RECUPERAR PARTIDO" del modal).
 //         P15 — panel de Comunicaciones simplificado (openUnifiedCommsMenu):
@@ -251,8 +260,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v182';
-const CACHE_NAME = 'cronos-cache-v182';
+const VERSION    = 'v183';
+const CACHE_NAME = 'cronos-cache-v183';
 
 const ASSETS = [
     './',
