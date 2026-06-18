@@ -1027,36 +1027,8 @@ function saveCurrentTeam() {
     }, 300);
 }
 
-function setupEventListeners() {
-    document.getElementById('btn-play-pause').addEventListener('click', toggleGame);
-    document.getElementById('btn-reset').addEventListener('click', resetMatch);
-    document.getElementById('btn-save-team').addEventListener('click', saveCurrentTeam);
-    document.getElementById('btn-export').addEventListener('click', exportData);
-
-    window.endFirstHalf = () => {
-        if (matchPhase !== '1st_half') return; // E5: guard idempotencia (evita Sale DESCANSO duplicado)
-        if (!confirm("¿Finalizar 1ª Parte?")) return;
-        isRunning = false;
-        clearInterval(timerInterval);
-        const timestamp1 = formatTime(masterTimeH1);
-        players.filter(p => p.status === 'field').forEach(p => {
-            p.history.push(`Sale a las ${timestamp1} (DESCANSO)`);
-        });
-        matchPhase = 'break';
-        document.getElementById('btn-play-pause').textContent = 'REANUDAR';
-        document.getElementById('btn-play-pause').classList.remove('danger');
-        updateMasterUI();
-        alert("1ª Parte finalizada. Realice los cambios necesarios durante el descanso.");
-    };
-
-    window.startSecondHalf = () => {
-        if (matchPhase !== 'break') return; // E5: guard idempotencia (evita Entra 2ªP duplicado)
-        matchPhase = '2nd_half';
-        const timestamp2 = formatTime(masterTimeH1);
-        players.filter(p => p.status === 'field').forEach(p => {
-            p.history.push(`Entra a las ${timestamp2} (2ªP)`);
-        });
-        lastTickTime = Date.now();
-        if (!isRunning) toggleGame();
-    };
-}
+// -- setupEventListeners ELIMINADA (C-19/C-20) -------------------
+// Copia obsoleta que existia aqui en js/ai/import.js. La definicion
+// canonica vive en js/core/event-listeners.js. Se elimina para que
+// no haya redefiniciones globales dependientes del orden de carga.
+// -----------------------------------------------------------------
