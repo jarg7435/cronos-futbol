@@ -1121,7 +1121,10 @@ async function openParentPanel() {
                 const { svg: tlSvg, events: tlEvts, periods: tlPeriods, playedSec: tlSec } = _buildTimeline(r);
                 const tlLabel = tlSec > 0 ? _secToLabel(tlSec) : '0\'';
                 const sh = r.scoreHome, sa = r.scoreAway;
-                const resultNum = (sh != null && sa != null) ? (Number(sh) > Number(sa) ? 'VICTORIA' : Number(sh) < Number(sa) ? 'DERROTA' : 'EMPATE') : '';
+                // Resultado desde la perspectiva del equipo (myTeamRole). Sin el campo (informes antiguos) → 'home', comportamiento previo.
+                const _mine   = r.myTeamRole === 'away' ? Number(sa) : Number(sh);
+                const _theirs = r.myTeamRole === 'away' ? Number(sh) : Number(sa);
+                const resultNum = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
                 const rCol = resultNum === 'VICTORIA' ? '#3fb950' : resultNum === 'DERROTA' ? '#ff5858' : '#eab308';
 
                 // Eventos cronológicos para el listado

@@ -1,5 +1,16 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v183
+//  CRONOS FUTBOL - Service Worker v185
+//  v185: FIX resultado V/D/E invertido al jugar de VISITANTE. Los informes
+//         guardaban scoreHome/scoreAway como marcador local-visitante pero la
+//         formula asumia scoreHome=mi equipo, dando DERROTA cuando se ganaba de
+//         visitante. AHORA: (1) escritura -> se persiste myTeamRole (_cMyTeamKey)
+//         en parent_player_report, staff_match_report, collective_match_report y
+//         la notificacion informe_partido; (2) lectura -> los 4 puntos de calculo
+//         (coach/reports/club-reports.js x2, coach/comms/panel.js, parent/panel.js)
+//         comparan goles propios vs rival segun myTeamRole. Docs antiguos sin el
+//         campo -> fallback 'home' (comportamiento previo intacto, sin backfill).
+//         Pendiente C-25: js/club-reports.js (duplicado muerto) + linea 2413
+//         aviso_partido_finalizado (consistencia, no afecta al bug).
 //  v183: FIX panel de Direccion mostraba solo 1 partido al director/coordinador.
 //         RAIZ: _sdLoadReports hacia where(clubId==cid).limit(500) SIN orden ni
 //         filtro; con clubs de miles de docs el cupo de 500 se llenaba de docs
@@ -260,8 +271,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v183';
-const CACHE_NAME = 'cronos-cache-v183';
+const VERSION    = 'v185';
+const CACHE_NAME = 'cronos-cache-v185';
 
 const ASSETS = [
     './',

@@ -578,7 +578,11 @@ const _RP = (() => {
         const away  = esc(m.rival || 'Sin rival');
         const sh = m.scoreHome, sa = m.scoreAway;
         const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '— : —';
-        const res   = (sh != null && sa != null) ? (sh > sa ? 'VICTORIA' : sh < sa ? 'DERROTA' : 'EMPATE') : '';
+        // Resultado desde la perspectiva del equipo del usuario (myTeamRole).
+        // Sin myTeamRole (informes antiguos) → fallback 'home' (sh = mi equipo): comportamiento previo intacto.
+        const _mine   = m.myTeamRole === 'away' ? sa : sh;
+        const _theirs = m.myTeamRole === 'away' ? sh : sa;
+        const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
         const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
         const dateStr = m.matchDate
             ? new Date(m.matchDate).toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
@@ -1375,7 +1379,10 @@ async function _sdLoadReports() {
                 : '—';
             const sh = m.scoreHome, sa = m.scoreAway;
             const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
-            const res   = (sh != null && sa != null) ? (sh > sa ? 'VICTORIA' : sh < sa ? 'DERROTA' : 'EMPATE') : '';
+            // Resultado según myTeamRole; sin el campo (informes antiguos) → fallback 'home', comportamiento previo.
+            const _mine   = m.myTeamRole === 'away' ? sa : sh;
+            const _theirs = m.myTeamRole === 'away' ? sh : sa;
+            const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
             const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
 

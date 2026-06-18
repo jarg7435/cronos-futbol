@@ -1868,6 +1868,7 @@ window._executeReportsSend = async function(method) {
                         coachUid: me.uid,                                   // ← FIX (C3): coachUid para reglas Firestore
                         parentUid: targetParentUid, playerNumber: dorsal,
                         rival: rivalName, scoreHome, scoreAway,
+                        myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                         minutesPlayed: window.formatTime ? window.formatTime(player.time||0) : player.time||0,
                         goals: player.goals || 0, cards: player.cards || 'ninguna',
                         injured: player.injured || false, createdAt: new Date().toISOString()
@@ -1895,6 +1896,7 @@ window._executeReportsSend = async function(method) {
                     coachUid: me.uid, coachEmail: me.email,
                     matchDate: new Date().toISOString().split('T')[0],
                     rival: rivalName, scoreHome, scoreAway,
+                    myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                     category: (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
                     createdAt: new Date().toISOString(),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
@@ -2063,6 +2065,7 @@ async function autoDispatchMatchReports() {
                 rival:         rivalName,
                 scoreHome,
                 scoreAway,
+                myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                 category:      window._currentMatchCategory || '',
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(p.number || ''),
@@ -2194,6 +2197,7 @@ async function autoDispatchMatchReports() {
                 rival:         rivalName,
                 scoreHome,
                 scoreAway,
+                myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(dorsal),
                 playerAlias:   player.alias || player.name || '',
@@ -4073,7 +4077,9 @@ window.openMisInformes = async function openMisInformes() {
         </div>` + sorted.map(m => {
             const sh=m.scoreHome, sa=m.scoreAway;
             const score=(sh!=null&&sa!=null)?`${sh}–${sa}`:'—';
-            const res=(sh!=null&&sa!=null)?(sh>sa?'VICTORIA':sh<sa?'DERROTA':'EMPATE'):'';
+            // Resultado segun myTeamRole; sin el campo (informes antiguos) -> fallback 'home', comportamiento previo.
+            const _mine=m.myTeamRole==='away'?sa:sh, _theirs=m.myTeamRole==='away'?sh:sa;
+            const res=(sh!=null&&sa!=null)?(_mine>_theirs?'VICTORIA':_mine<_theirs?'DERROTA':'EMPATE'):'';
             const rCol=res==='VICTORIA'?'#3fb950':res==='DERROTA'?'#ff5858':'#eab308';
             const dateStr=m.matchDate
                 ?new Date(m.matchDate+'T12:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}):'—';
