@@ -2293,6 +2293,7 @@ async function autoDispatchMatchReports() {
                     rival:         rivalName,
                     scoreHome,
                     scoreAway,
+                    myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                     category:      window._currentMatchCategory || '',
                     createdAt:     new Date().toISOString(),
                     playerNumber:  String(p.number||''),
@@ -3823,6 +3824,7 @@ window._sendCollectiveReportNow = async function() {
                 rival,
                 scoreHome,
                 scoreAway,
+                myTeamRole:     _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto). CRÍTICO: este doc tiene staffReport:true y lo lee el Panel de Dirección.
                 category:       (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
                                  (typeof window.currentCategory !== 'undefined' ? window.currentCategory : ''),
                 venue:          (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
@@ -4048,6 +4050,7 @@ window.openMisInformes = async function openMisInformes() {
                     key, matchId: r.matchId||key,
                     matchDate: r.matchDate||r.createdAt?.slice(0,10),
                     rival: r.rival, scoreHome: r.scoreHome, scoreAway: r.scoreAway,
+                    myTeamRole: r.myTeamRole,   // FIX: propagar rol del equipo para el cálculo V/D/E correcto (visitante)
                     category: r.category||'', venue: r.venue||'',
                     competition: r.competition||'', matchTime: r.matchTime||'',
                     duration: r.duration||'', stoppageTime: r.stoppageTime||0,
@@ -4059,6 +4062,9 @@ window.openMisInformes = async function openMisInformes() {
             const existing = matches[key]._playerMap[pNum];
             if (!existing || (r.createdAt||'') > (existing.createdAt||''))
                 matches[key]._playerMap[pNum] = r;
+            // FIX: adoptar myTeamRole si el objeto agrupado aún no lo tiene.
+            if (matches[key].myTeamRole == null && r.myTeamRole != null)
+                matches[key].myTeamRole = r.myTeamRole;
         });
         Object.values(matches).forEach(m => {
             m.players = Object.values(m._playerMap)

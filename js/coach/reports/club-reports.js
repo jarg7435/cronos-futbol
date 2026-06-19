@@ -1338,6 +1338,7 @@ async function _sdLoadReports() {
                     rival:         r.rival,
                     scoreHome:     r.scoreHome,
                     scoreAway:     r.scoreAway,
+                    myTeamRole:    r.myTeamRole,   // FIX: propagar rol del equipo para el cálculo V/D/E correcto (visitante)
                     coachEmail:    r.coachEmail,
                     coachUid:      r.coachUid,
                     createdAt:     r.createdAt,
@@ -1352,6 +1353,11 @@ async function _sdLoadReports() {
                 };
             }
             matches[key].players.push(r);
+            // FIX: si el objeto agrupado aún no tiene myTeamRole pero este doc sí,
+            // adoptarlo (algunos docs antiguos del mismo partido pueden no llevarlo).
+            if (matches[key].myTeamRole == null && r.myTeamRole != null) {
+                matches[key].myTeamRole = r.myTeamRole;
+            }
         });
 
         // Ordenar por fecha descendente

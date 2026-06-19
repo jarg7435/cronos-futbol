@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v185
+//  CRONOS FUTBOL - Service Worker v186
+//  v186: FIX (continuacion v185) resultado V/D/E AUN invertido de VISITANTE en
+//         el Panel de Direccion y Mis Informes pese a que los docs en Firestore
+//         SI tenian myTeamRole correcto. RAIZ: al AGRUPAR los docs por partido
+//         (matches[key]) los 3 puntos de agrupacion (club-reports.js _sdLoadReports,
+//         panel.js openMisInformes) NO copiaban myTeamRole al objeto agrupado, asi
+//         que el calculo leia m.myTeamRole=undefined -> fallback 'home' -> DERROTA.
+//         AHORA: se propaga myTeamRole en la construccion del objeto agrupado y se
+//         adopta del primer doc que lo traiga. Sin backfill.
 //  v185: FIX resultado V/D/E invertido al jugar de VISITANTE. Los informes
 //         guardaban scoreHome/scoreAway como marcador local-visitante pero la
 //         formula asumia scoreHome=mi equipo, dando DERROTA cuando se ganaba de
@@ -271,8 +279,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v185';
-const CACHE_NAME = 'cronos-cache-v185';
+const VERSION    = 'v186';
+const CACHE_NAME = 'cronos-cache-v186';
 
 const ASSETS = [
     './',
