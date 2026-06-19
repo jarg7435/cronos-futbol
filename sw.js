@@ -1,4 +1,15 @@
 // ─────────────────────────────────────────────────────────────
+//  CRONOS FUTBOL - Service Worker v187
+//  v187: FIX campo mostraba AMBOS equipos al jugar de VISITANTE con el checkbox
+//         "Analizar Contrario" DESACTIVADO. RAIZ: setup-modal.js forzaba
+//         analyzeAway=true cuando _userTeamRole==='away', ignorando el checkbox,
+//         y spawnInitialPlayers creaba siempre el equipo home (rival generico).
+//         AHORA: spawnInitialPlayers se reescribe en torno a "mi equipo" (team =
+//         userRole, siempre) vs "el contrario" (solo si analyzeAway). Se elimina
+//         el forzado de analyzeAway. Como de visitante mi banca esta en la sidebar
+//         derecha, se anade clase body.role-away + CSS para que hide-visitor oculte
+//         la sidebar izquierda (rival) en vez de la derecha (mia). Bug especifico
+//         del rol visitante; de local sin el checkbox ya funcionaba bien.
 //  CRONOS FUTBOL - Service Worker v186
 //  v186: FIX (continuacion v185) resultado V/D/E AUN invertido de VISITANTE en
 //         el Panel de Direccion y Mis Informes pese a que los docs en Firestore
@@ -279,8 +290,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v186';
-const CACHE_NAME = 'cronos-cache-v186';
+const VERSION    = 'v187';
+const CACHE_NAME = 'cronos-cache-v187';
 
 const ASSETS = [
     './',

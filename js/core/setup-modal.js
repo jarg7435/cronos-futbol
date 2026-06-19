@@ -339,12 +339,11 @@ function confirmSetup() {
     const myRoleEl = document.getElementById('setup-my-team-role');
     window._userTeamRole = myRoleEl ? (myRoleEl.value || 'home') : 'home';
 
-    // Si mi equipo juega de visitante, activar análisis del contrario automáticamente
-    if (window._userTeamRole === 'away') {
-        analyzeAway = true;
-        const chk = document.getElementById('setup-analyze-away');
-        if (chk) chk.checked = true;
-    }
+    // NOTA: NO se fuerza analyzeAway al jugar de visitante. "Analizar Contrario"
+    // (analyzeAway) controla EXCLUSIVAMENTE si se dibuja también el equipo rival.
+    // El equipo del entrenador se crea siempre (sea 'home' o 'away') en
+    // spawnInitialPlayers(). Forzarlo aquí dibujaba ambos equipos de visitante
+    // aunque el checkbox estuviera desactivado.
 
     if (!selectedFormationOnStart) {
         selectedFormationOnStart = currentMode === 'f7' ? '231' : '442';
@@ -355,6 +354,10 @@ function confirmSetup() {
     document.getElementById('team-a-name').textContent = TEAM_NAMES.home;
     document.getElementById('team-b-name').textContent = TEAM_NAMES.away;
 
+    // hide-visitor: oculta la banca del equipo CONTRARIO y agranda el campo.
+    // role-away: cuando juego de visitante mi banca está en la sidebar derecha,
+    // así el CSS sabe que debe ocultar la izquierda (home) en vez de la derecha.
+    document.body.classList.toggle('role-away', window._userTeamRole === 'away');
     if (!analyzeAway) {
         document.body.classList.add('hide-visitor');
     } else {
@@ -925,6 +928,7 @@ async function _doResumeMatch(matchId) {
 
         // ── Ajustar clases de modalidad ──
         document.body.classList.toggle('mode-f11', currentMode === 'f11');
+        document.body.classList.toggle('role-away', window._userTeamRole === 'away');
         if (!analyzeAway) {
             document.body.classList.add('hide-visitor');
         } else {

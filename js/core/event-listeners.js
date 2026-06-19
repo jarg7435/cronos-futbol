@@ -128,26 +128,42 @@ function spawnInitialPlayers() {
 
     const userRole = window._userTeamRole || 'home';
     const loadedAway = window.loadedTeamPlayers?.['away'];
+    const awayColors = COLORS.away;
 
-    if (userRole === 'home' && homeConvocation) {
+    // ── Modelo: "mi equipo" (el del entrenador) vs "el contrario" ──────────
+    //  - Mi equipo (team = userRole) SIEMPRE se crea desde la convocatoria.
+    //  - El contrario (el otro team) SOLO se crea si "Analizar Contrario"
+    //    (analyzeAway) está activo, y se rellena con jugadores genéricos.
+    //  Esto evita que al jugar de VISITANTE con el checkbox desactivado se
+    //  dibuje también el equipo local genérico (bug del campo con ambos equipos).
+    const myTeam       = userRole;                       // 'home' | 'away'
+    const oppTeam      = userRole === 'away' ? 'home' : 'away';
+    const myColors     = userRole === 'away' ? awayColors : homeColors;
+    const oppColors    = userRole === 'away' ? homeColors : awayColors;
+    const myIdBase     = userRole === 'away' ? 100 : 0;  // ids 1..N (home) o 101..N (away)
+    const oppIdBase    = userRole === 'away' ? 0   : 100;
+    const oppGenLabel  = oppTeam === 'home' ? 'Local' : 'Visitante';
+    const loadedMine   = userRole === 'away' ? loadedAway : loadedHome;
+
+    // ── 1) MI EQUIPO (siempre) ─────────────────────────────────────────────
+    if (homeConvocation && homeConvocation.length) {
         homeConvocation.forEach((pData, index) => {
             const playerObj = {
-                id: (index + 1),
+                id: myIdBase + (index + 1),
                 number: pData.number,
                 name: pData.alias || pData.name || `J${pData.number}`,
-                team: 'home',
+                team: myTeam,
                 status: pData.initialStatus === 'field' ? 'field' : 'bench',
                 titularOrder: pData.titularOrder,
                 time: 0,
-                color: homeColors.primary,
-                shortsColor: homeColors.shorts,
-                textColor: homeColors.text,
+                color: myColors.primary,
+                shortsColor: myColors.shorts,
+                textColor: myColors.text,
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0,
                 convocado: true
             };
-
-            if (loadedHome) {
-                const saved = loadedHome.find(lp => lp.number == pData.number);
+            if (loadedMine) {
+                const saved = loadedMine.find(lp => lp.number == pData.number);
                 if (saved) {
                     playerObj.x = saved.x !== undefined ? saved.x : 0;
                     playerObj.y = saved.y !== undefined ? saved.y : 0;
@@ -156,56 +172,29 @@ function spawnInitialPlayers() {
             players.push(playerObj);
         });
     } else {
+        // Sin convocatoria: plantilla genérica para mi propio equipo.
         for (let i = 1; i <= defaultTotalCount; i++) {
             players.push({
-                id: i, number: i, name: `Local ${i}`, team: 'home',
+                id: myIdBase + i, number: i,
+                name: `${myTeam === 'home' ? 'Local' : 'Visitante'} ${i}`, team: myTeam,
                 status: i <= defaultStartersLimit ? 'field' : 'bench',
-                time: 0, color: homeColors.primary, shortsColor: homeColors.shorts,
-                textColor: homeColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0,
+                time: 0, color: myColors.primary, shortsColor: myColors.shorts,
+                textColor: myColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0,
                 convocado: true
             });
         }
     }
 
-    if (analyzeAway || userRole === 'away') {
-        const awayColors = COLORS.away;
-        
-        if (userRole === 'away' && homeConvocation) {
-            homeConvocation.forEach((pData, index) => {
-                const playerObj = {
-                    id: 100 + (index + 1),
-                    number: pData.number,
-                    name: pData.alias || pData.name || `J${pData.number}`,
-                    team: 'away',
-                    status: pData.initialStatus === 'field' ? 'field' : 'bench',
-                    titularOrder: pData.titularOrder,
-                    time: 0,
-                    color: awayColors.primary,
-                    shortsColor: awayColors.shorts,
-                    textColor: awayColors.text,
-                    history: [], goals: 0, cards: 'ninguna', x: 0, y: 0,
-                    convocado: true
-                };
-
-                if (loadedAway) {
-                    const saved = loadedAway.find(lp => lp.number == pData.number);
-                    if (saved) {
-                        playerObj.x = saved.x !== undefined ? saved.x : 0;
-                        playerObj.y = saved.y !== undefined ? saved.y : 0;
-                    }
-                }
-                players.push(playerObj);
+    // ── 2) EL CONTRARIO (solo si "Analizar Contrario" está activo) ─────────
+    if (analyzeAway) {
+        for (let i = 1; i <= defaultTotalCount; i++) {
+            players.push({
+                id: oppIdBase + i, number: i, name: `${oppGenLabel} ${i}`, team: oppTeam,
+                status: i <= defaultStartersLimit ? 'field' : 'bench',
+                time: 0, color: oppColors.primary, shortsColor: oppColors.shorts,
+                textColor: oppColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0,
+                convocado: true
             });
-        } else {
-            for (let i = 1; i <= defaultTotalCount; i++) {
-                players.push({
-                    id: 100 + i, number: i, name: `Visitante ${i}`, team: 'away',
-                    status: i <= defaultStartersLimit ? 'field' : 'bench',
-                    time: 0, color: awayColors.primary, shortsColor: awayColors.shorts,
-                    textColor: awayColors.text, history: [], goals: 0, cards: 'ninguna', x: 0, y: 0,
-                    convocado: true
-                });
-            }
         }
     }
 }

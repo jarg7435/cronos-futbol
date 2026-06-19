@@ -1075,6 +1075,11 @@ input, select {
 /* --- HIDE VISITOR --- */
 .hide-visitor .sidebar-right { display: none !important; }
 
+/* Jugando de VISITANTE: mi banca está en la sidebar DERECHA (away); al ocultar
+   el contrario hay que ocultar la IZQUIERDA (home) en su lugar. */
+.hide-visitor.role-away .sidebar-right { display: flex !important; }
+.hide-visitor.role-away .sidebar { display: none !important; }
+
 @media (min-width: 951px) {
     .hide-visitor .main-container {
         display: flex;
@@ -1082,7 +1087,8 @@ input, select {
         gap: 0;
     }
 
-    .hide-visitor .sidebar {
+    .hide-visitor:not(.role-away) .sidebar,
+    .hide-visitor.role-away .sidebar-right {
         position: relative !important;
         transform: none !important;
         flex: 0 0 250px;
@@ -1111,7 +1117,8 @@ input, select {
 }
 
 @media (max-width: 950px) and (orientation: landscape) {
-    .hide-visitor .sidebar {
+    .hide-visitor:not(.role-away) .sidebar,
+    .hide-visitor.role-away .sidebar-right {
         position: relative !important;
         transform: none !important;
         width: 170px !important;
