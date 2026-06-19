@@ -192,13 +192,59 @@ _Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: 
     0 borrados) y el del colectivo con `parentUid` (excluido).
   - Bump SW a `cronos-cache-v170` + cache-busting `?v=v170` en index.html.
 
+## COMPLETADO (v182-v188 — claims automaticos + reglas staff)
+
+- [x] **C2 (v182)**: Custom claims automaticos al aprobar/cambiar rol de un usuario
+  - Causa raiz del bug "director/coordinador no recibe informes": `_cGetStaff`
+    (`js/coach/comms/panel.js`) consulta `users` por `clubId`, pero las reglas
+    Firestore (`sameClubAsDoc`) necesitan `clubId` en el TOKEN del solicitante.
+    Si el custom claim nunca se asigno (o no se propago), las queries de staff
+    fallan -> `staffUids=[]` -> los informes colectivos/individuales no llegan.
+  - Fix (raiz): nueva Cloud Function `autoSetClaimsOnApproval`
+    (`functions/index.js`), trigger `users/{userId}.onWrite`. Cuando cambia
+    `isAuthorized`/`status`/`role`/`clubId` y el usuario queda autorizado y
+    activo, escribe `role`+`clubId` en los custom claims (idempotente: solo si
+    difieren; soporta multi-rol via `allRoles[].clubId`). No hay bucle: setear
+    claims afecta a Auth, no dispara otra escritura Firestore.
+  - Coexiste con `syncUserChanges` (mismo trigger, responsabilidades distintas:
+    notificaciones de borrado + decremento de slots). Deuda menor: dos triggers
+    onWrite sobre el mismo doc (2 invocaciones por escritura); aceptable.
+
+- [x] **registerStaffUid (v183)**: Cloud Function invocable de respaldo
+  - `functions/index.js`: `registerStaffUid({role, clubId})` valida server-side
+    que el solicitante tenga ese rol (raiz o `allRoles[]`) y registra su UID en
+    `clubs/{clubId}.directorUids|coordinatorUids` via Admin SDK (ignora reglas).
+    Mecanismo de respaldo por si los claims aun no estuvieran disponibles. Sin
+    caller en el cliente todavia (infraestructura lista para uso futuro).
+
+- [x] **cronos_staff_registry (v184 -> ELIMINADO v188)**: la coleccion y su
+  regla en `firestore.rules` se ANADIERON y luego se RETIRARON: ningun codigo
+  JS (desplegado ni en repo) la lee o escribe. `registerStaffUid` registra en
+  `clubs/{clubId}.directorUids` (Admin SDK), no en esta coleccion. Dejarla seria
+  una puerta de acceso sin proposito; se elimino por higiene de seguridad.
+
+- [x] **Refactor de seguridad (v188)** sobre el WIP v183:
+  - `isDirectorOrCoordinator()` hacia **11 get()** al mismo doc -> superaba el
+    limite de **10 document-access calls** de Firestore -> la regla habria
+    fallado SIEMPRE con PERMISSION_DENIED. Ademas indexaba `allRoles[0..3].role`
+    sin comprobar tamano. Se elimino por completo: era el unico consumidor de la
+    rama de update en `clubs/{clubId}` que permitia a director/coordinador
+    escribir `directorUids/coordinatorUids` desde el cliente, rama que ademas
+    abria **escalada cross-club** (un director del club A podia anadirse al club
+    B). El registro va EXCLUSIVAMENTE por `registerStaffUid` (Admin SDK), que
+    valida el rol server-side. Reglas mas simples y seguras.
+  - `firestore.rules` validado con `firebase deploy --only firestore:rules
+    --dry-run`: "rules file compiled successfully". `functions/index.js` con
+    `node --check` OK y carga real (15 exports, `registerStaffUid` +
+    `autoSetClaimsOnApproval` presentes).
+  - Pendiente de DESPLIEGUE: `firebase deploy --only firestore:rules,functions`.
+
 ## PENDIENTE (empezar por E6)
 
 - [ ] **E6**: Crono live sin progreso segundo a segundo
 - [ ] **E7**: Tiempos con redondeo en informes
 - [ ] **E8**: Zoom deshabilitado
 - [ ] **E9**: Vista vertical móvil
-- [ ] **C2**: Custom claims al aprobar usuarios (tras E1-E9)
 
 ## Notas técnicas
 

@@ -443,6 +443,61 @@ exports.syncUserChanges = functions.firestore
     }
   });
 
+/* ----------------------------------------------------------- */
+/* FIX (v182): Auto-set custom claims cuando un usuario es      */
+/* aprobado o su rol cambia. Esto asegura que clubId y role      */
+/* esten siempre en el token, lo que permite que las reglas      */
+/* Firestore (sameClubAsDoc) funcionen correctamente.            */
+/* Sin estos claims, _cGetStaff falla -> staffUids=[] ->         */
+/* informes no llegan al director/coordinador.                   */
+/* ----------------------------------------------------------- */
+exports.autoSetClaimsOnApproval = functions.firestore
+  .document('users/{userId}')
+  .onWrite(async (change, context) => {
+    const userId = context.params.userId;
+
+    // Solo procesar si el documento existe (no eliminacion)
+    if (!change.after.exists) return;
+
+    const before = change.before.data();
+    const after = change.after.data();
+
+    // Solo disparar si cambio isAuthorized, status, role, o clubId
+    const significantChange =
+      before?.isAuthorized !== after?.isAuthorized ||
+      before?.status !== after?.status ||
+      before?.role !== after?.role ||
+      before?.clubId !== after?.clubId;
+
+    if (!significantChange) return;
+
+    // Solo si el usuario esta autorizado y activo
+    if (!after.isAuthorized || after.status === 'removed' || after.status === 'blocked') return;
+
+    const role = after.role;
+    const clubId = after.clubId ||
+      (Array.isArray(after.allRoles) ? (after.allRoles.find(r => r.clubId) || {}).clubId : null);
+
+    if (!role || !clubId) return;
+
+    try {
+      const userRecord = await admin.auth().getUser(userId);
+      const currentClaims = userRecord.customClaims || {};
+
+      if (currentClaims.role !== role || currentClaims.clubId !== clubId) {
+        await admin.auth().setCustomUserClaims(userId, {
+          ...currentClaims,
+          role: role,
+          clubId: clubId,
+          claimsSetAt: Date.now(),
+        });
+        console.log('[autoSetClaims] Claims actualizados para', userId, ': role=' + role + ', clubId=' + clubId);
+      }
+    } catch (err) {
+      console.error('[autoSetClaims] Error para ' + userId + ':', err.message);
+    }
+  });
+
 /* ==================================================================== */
 /* 6️⃣ Cloud Function: cleanupExpiredRequests – Limpiar solicitudes de plazas expiradas */
 /* ==================================================================== */
@@ -716,6 +771,59 @@ exports.sendInviteEmail = functions
 });
 
 console.log('Cloud Functions v8.4 cargadas (Fase 0 + originales + sendInviteEmail + logAuditEntry auditoria completa)');
+
+/* ----------------------------------------------------------- */
+/* FIX (v183): Registrar UID de director/coordinador en el club */
+/* Cloud Function invocable por el cliente. Usa Admin SDK que  */
+/* ignora las reglas Firestore, así que siempre funciona.       */
+/* Sin este registro, _cGetStaff no encuentra staff →          */
+/* staffUids=[] → informes no llegan al director/coordinador.  */
+/* ----------------------------------------------------------- */
+exports.registerStaffUid = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
+  }
+
+  const uid = context.auth.uid;
+  const role = data.role; // 'director' o 'coordinator'
+  const clubId = data.clubId;
+
+  if (!role || !clubId) {
+    throw new functions.https.HttpsError('invalid-argument', 'role y clubId son obligatorios');
+  }
+
+  if (!['director', 'coordinator'].includes(role)) {
+    throw new functions.https.HttpsError('permission-denied', 'Solo director o coordinador pueden registrarse');
+  }
+
+  // Verificar que el usuario realmente tiene ese rol en su documento
+  try {
+    const userDoc = await admin.firestore().collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Usuario no encontrado');
+    }
+    const userData = userDoc.data();
+    const hasRole = userData.role === role ||
+      (userData.allRoles || []).some(r => r.role === role && r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed');
+
+    if (!hasRole) {
+      throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role);
+    }
+
+    // Registrar UID en el documento del club
+    const field = role === 'director' ? 'directorUids' : 'coordinatorUids';
+    await admin.firestore().collection('clubs').doc(clubId).set({
+      [field]: admin.firestore.FieldValue.arrayUnion(uid)
+    }, { merge: true });
+
+    console.log('[registerStaffUid] UID', uid, 'registrado como', role, 'en club', clubId);
+    return { success: true, field, uid };
+  } catch (err) {
+    if (err.code && err.code.startsWith('functions.https.HttpsError')) throw err;
+    console.error('[registerStaffUid] Error:', err.message);
+    throw new functions.https.HttpsError('internal', err.message);
+  }
+});
 
 /* ==================================================================== */
 /* 0️⃣0️⃣ Cloud Function: approveIndividualAdmin – Aprobar admin individual */
