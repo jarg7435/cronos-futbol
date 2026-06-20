@@ -657,11 +657,16 @@ function playEventSound(type) {
     const now = ctx.currentTime;
     // [frecuencia(Hz), inicio(s), duración(s)]
     const SEQ = {
-        goal:   [[660,0,0.12],[880,0.12,0.12],[1175,0.24,0.22]],   // fanfarria ascendente
-        yellow: [[520,0,0.18]],                                     // pitido medio
-        red:    [[400,0,0.18],[300,0.20,0.30]],                    // doble grave
-        sub:    [[700,0,0.10],[900,0.12,0.12]],                    // dos notas suaves
-        injury: [[300,0,0.25],[260,0.27,0.35]]                     // tono descendente de aviso
+        // fanfarria ascendente (4 notas) + sostenido final brillante -> ~2.0 s
+        goal:   [[660,0,0.30],[880,0.30,0.30],[1175,0.60,0.35],[1318,0.95,1.05]],
+        // pitido medio sostenido con un repunte que conserva su caracter -> ~2.0 s
+        yellow: [[520,0,1.20],[600,1.25,0.75]],
+        // doble grave descendente repetido -> ~2.0 s
+        red:    [[400,0,0.45],[300,0.50,0.50],[400,1.05,0.45],[300,1.55,0.45]],
+        // dos notas suaves repetidas dos veces -> ~2.0 s
+        sub:    [[700,0,0.40],[900,0.45,0.45],[700,1.00,0.40],[900,1.45,0.55]],
+        // tono descendente lento de aviso -> ~2.0 s
+        injury: [[300,0,0.70],[260,0.72,0.60],[230,1.35,0.65]]
     };
     const seq = SEQ[type] || SEQ.sub;
     seq.forEach(([freq, start, dur]) => {
