@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v187
+//  CRONOS FUTBOL - Service Worker v188
+//  v188: NUEVO — Alertas sonoras + visuales en la pestaña "En Vivo" del Panel
+//         de Direccion (live.html). Al ocurrir un evento (gol, tarjeta amarilla/
+//         roja, cambio o lesion) en cualquier partido seguido, se muestra un
+//         toast con flash de pantalla, un sonido sintetico (WebAudio, sin
+//         archivos) distinto por evento y vibracion en movil. Funciona aunque
+//         el director este viendo otro partido: un watcher en segundo plano
+//         (onSnapshot a todos los partidos seguidos) detecta los cambios
+//         comparando snapshots consecutivos por jugador. Boton de silenciar
+//         (persistente en localStorage). Bump fuerza recarga de live.html.
 //  v187: FIX campo mostraba AMBOS equipos al jugar de VISITANTE con el checkbox
 //         "Analizar Contrario" DESACTIVADO. RAIZ: setup-modal.js forzaba
 //         analyzeAway=true cuando _userTeamRole==='away', ignorando el checkbox,
@@ -290,8 +299,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v187';
-const CACHE_NAME = 'cronos-cache-v187';
+const VERSION    = 'v188';
+const CACHE_NAME = 'cronos-cache-v188';
 
 const ASSETS = [
     './',

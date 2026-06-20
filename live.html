@@ -299,6 +299,67 @@
             #bench-panel { display: none; }
             #live-header { padding: 0.5rem 0.8rem; }
         }
+
+        /* ── ALERTAS DE EVENTO (sonoras + visuales) ── */
+        #event-toast-stack {
+            position: fixed; top: 1rem; right: 1rem;
+            z-index: 1200; display: flex; flex-direction: column;
+            gap: 0.55rem; max-width: min(380px, 92vw);
+            pointer-events: none;
+        }
+        .event-toast {
+            pointer-events: auto;
+            display: flex; align-items: center; gap: 0.7rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--primary);
+            border-radius: 10px; padding: 0.7rem 0.9rem;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+            animation: toastIn 0.35s cubic-bezier(.2,.9,.3,1.2),
+                       toastPulse 1.1s ease-in-out 0.35s 2;
+            cursor: pointer;
+        }
+        .event-toast.leaving { animation: toastOut 0.3s ease forwards; }
+        .event-toast .et-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1; }
+        .event-toast .et-body { flex: 1; min-width: 0; }
+        .event-toast .et-title {
+            font-weight: 800; font-size: 0.84rem; color: var(--text);
+            display: flex; align-items: center; gap: 0.4rem;
+        }
+        .event-toast .et-sub {
+            font-size: 0.72rem; color: var(--muted); margin-top: 1px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .event-toast.ev-goal     { border-left-color: #3fb950; }
+        .event-toast.ev-yellow   { border-left-color: #e3b341; }
+        .event-toast.ev-red      { border-left-color: #da3633; }
+        .event-toast.ev-sub      { border-left-color: #58a6ff; }
+        .event-toast.ev-injury   { border-left-color: #e74c3c; }
+        @keyframes toastIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+        }
+        @keyframes toastOut {
+            from { transform: translateX(0);    opacity: 1; max-height: 100px; }
+            to   { transform: translateX(120%); opacity: 0; max-height: 0; margin: 0; padding: 0; }
+        }
+        @keyframes toastPulse {
+            0%,100% { box-shadow: 0 8px 28px rgba(0,0,0,0.55); }
+            50%     { box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 0 0 4px rgba(255,255,255,0.06); }
+        }
+        #event-flash {
+            position: fixed; inset: 0; z-index: 1100;
+            pointer-events: none; opacity: 0;
+            background: radial-gradient(circle at 50% 30%, rgba(63,185,80,0.18), transparent 70%);
+        }
+        #event-flash.fire { animation: flashFx 0.65s ease-out; }
+        @keyframes flashFx { 0%{opacity:0} 15%{opacity:1} 100%{opacity:0} }
+        #btn-mute {
+            padding: 0.4rem 0.7rem; background: var(--glass);
+            border: 1px solid var(--border); border-radius: 6px;
+            color: var(--muted); font-size: 0.82rem; cursor: pointer;
+        }
+        #btn-mute.muted { color: var(--danger); border-color: rgba(255,88,88,0.4); }
     </style>
 </head>
 <body>
@@ -372,6 +433,7 @@
         <button onclick="doSignOut()"
             style="padding:0.4rem 0.8rem;background:none;border:1px solid rgba(255,255,255,0.12);
                    color:var(--muted);font-size:0.72rem;border-radius:6px;cursor:pointer;">⏻ Salir</button>
+        <button id="btn-mute" onclick="toggleMute()" title="Silenciar alertas">🔔</button>
     </div>
 </header>
 
@@ -505,6 +567,197 @@ window.doSignOut = async () => {
 
 let userData = null;
 
+// ════════════════════════════════════════════════════════════════
+//  ALERTAS DE EVENTO (gol · tarjeta · cambio · lesión)
+//  Detecta cambios comparando snapshots consecutivos por jugador.
+// ════════════════════════════════════════════════════════════════
+let _alertsMuted = (localStorage.getItem("cronos_live_muted") === "1");
+let _audioCtx = null;
+// Estado anterior por matchId: { players:{id->{goals,cards,injured,status}}, home, away }
+const _matchPrevState = {};
+// Para no avisar de eventos ya existentes la primera vez que vemos un partido.
+const _matchSeeded = {};
+
+window.toggleMute = function() {
+    _alertsMuted = !_alertsMuted;
+    localStorage.setItem("cronos_live_muted", _alertsMuted ? "1" : "0");
+    const btn = document.getElementById("btn-mute");
+    if (btn) { btn.textContent = _alertsMuted ? "🔕" : "🔔"; btn.classList.toggle("muted", _alertsMuted); btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas"; }
+    if (!_alertsMuted) unlockAudio();
+};
+
+function _initMuteBtn() {
+    const btn = document.getElementById("btn-mute");
+    if (!btn) return;
+    btn.textContent = _alertsMuted ? "🔕" : "🔔";
+    btn.classList.toggle("muted", _alertsMuted);
+    btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas";
+}
+
+// El audio del navegador requiere un gesto del usuario. El login (clic) ya
+// cuenta como gesto, pero re-desbloqueamos en el primer toque por seguridad.
+function unlockAudio() {
+    try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_audioCtx.state === "suspended") _audioCtx.resume();
+    } catch(e) { /* sin audio disponible */ }
+}
+document.addEventListener("pointerdown", unlockAudio, { once: false });
+
+// Sonidos sintéticos por tipo (sin archivos externos).
+function playEventSound(type) {
+    if (_alertsMuted) return;
+    unlockAudio();
+    if (!_audioCtx) return;
+    const ctx = _audioCtx;
+    const now = ctx.currentTime;
+    // [frecuencia(Hz), inicio(s), duración(s)]
+    const SEQ = {
+        goal:   [[660,0,0.12],[880,0.12,0.12],[1175,0.24,0.22]],   // fanfarria ascendente
+        yellow: [[520,0,0.18]],                                     // pitido medio
+        red:    [[400,0,0.18],[300,0.20,0.30]],                    // doble grave
+        sub:    [[700,0,0.10],[900,0.12,0.12]],                    // dos notas suaves
+        injury: [[300,0,0.25],[260,0.27,0.35]]                     // tono descendente de aviso
+    };
+    const seq = SEQ[type] || SEQ.sub;
+    seq.forEach(([freq, start, dur]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = (type === "goal") ? "triangle" : "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + start);
+        gain.gain.exponentialRampToValueAtTime(0.22, now + start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(now + start); osc.stop(now + start + dur + 0.02);
+    });
+}
+
+// Vibración en móvil (si está disponible).
+function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e){} }
+
+const EVENT_META = {
+    goal:   { icon: "⚽", cls: "ev-goal",   title: "¡GOL!",        flash: "rgba(63,185,80,0.22)",  vib: [120,60,120] },
+    yellow: { icon: "🟨", cls: "ev-yellow", title: "Tarjeta amarilla", flash: "rgba(227,179,65,0.20)", vib: [200] },
+    red:    { icon: "🟥", cls: "ev-red",    title: "Tarjeta roja",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
+    sub:    { icon: "🔄", cls: "ev-sub",    title: "Cambio",        flash: "rgba(88,166,255,0.18)", vib: [100] },
+    injury: { icon: "🚑", cls: "ev-injury", title: "Lesión",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] }
+};
+
+function showEventToast(type, line, sub) {
+    const meta  = EVENT_META[type] || EVENT_META.sub;
+    const stack = document.getElementById("event-toast-stack");
+    if (!stack) return;
+    const el = document.createElement("div");
+    el.className = "event-toast " + meta.cls;
+    el.innerHTML = 
+        '<div class="et-icon">' + meta.icon + '</div>' +
+        '<div class="et-body">' +
+            '<div class="et-title">' + escapeHtml(line || meta.title) + '</div>' +
+            (sub ? '<div class="et-sub">' + escapeHtml(sub) + '</div>' : "") +
+        '</div>';
+    const remove = () => {
+        el.classList.add("leaving");
+        setTimeout(() => el.remove(), 320);
+    };
+    el.onclick = remove;
+    stack.appendChild(el);
+    // Limitar a 5 toasts simultáneos
+    while (stack.children.length > 5) stack.firstChild.remove();
+    setTimeout(remove, 6500);
+
+    // Flash de pantalla
+    const flash = document.getElementById("event-flash");
+    if (flash) {
+        flash.style.background = "radial-gradient(circle at 50% 30%, " + meta.flash + ", transparent 70%)";
+        flash.classList.remove("fire"); void flash.offsetWidth; flash.classList.add("fire");
+    }
+    playEventSound(type);
+    if (!_alertsMuted) vibrate(meta.vib);
+}
+
+// Construye el mapa de estado por jugador a partir de un snapshot.
+function _buildState(data) {
+    const players = {};
+    (data.players || []).forEach(p => {
+        if (p.id == null) return;
+        players[p.id] = {
+            goals:   p.goals   || 0,
+            cards:   p.cards   || "ninguna",
+            injured: !!p.injured,
+            status:  p.status,
+            name:    p.name,
+            number:  p.number,
+            team:    p.team
+        };
+    });
+    return {
+        players,
+        home: data.homeTeam?.score ?? 0,
+        away: data.awayTeam?.score ?? 0
+    };
+}
+
+// Compara el snapshot nuevo con el anterior y dispara alertas.
+// matchId identifica el partido; matchData es el snapshot de Firestore.
+function detectAndAlert(matchId, matchData) {
+    const next = _buildState(matchData);
+    const prev = _matchPrevState[matchId];
+    _matchPrevState[matchId] = next;
+
+    // La primera vez que vemos un partido NO avisamos del estado preexistente.
+    if (!prev || !_matchSeeded[matchId]) { _matchSeeded[matchId] = true; return; }
+    if (matchData.status !== "active") return; // solo partidos en vivo
+
+    const matchLabel = (matchData.homeTeam?.name || "Local") + " vs " + (matchData.awayTeam?.name || "Visitante");
+    const subPending = []; // jugadores que pasaron a banquillo (posible "sale")
+    const subIn      = []; // jugadores que entraron al campo
+
+    Object.keys(next.players).forEach(id => {
+        const np = next.players[id];
+        const pp = prev.players[id];
+        if (!pp) return;
+        const who = "#" + (np.number ?? "?") + " " + (np.name || "Jugador");
+
+        // GOL — los goles del jugador aumentaron
+        if (np.goals > pp.goals) {
+            const n = np.goals - pp.goals;
+            showEventToast("goal", "¡GOL! " + who, matchLabel + (n > 1 ? " · +" + n : ""));
+        }
+        // TARJETAS — cambio de estado de tarjeta
+        if (np.cards !== pp.cards) {
+            if (np.cards === "amarilla" && pp.cards !== "amarilla")
+                showEventToast("yellow", "Amarilla · " + who, matchLabel);
+            else if (np.cards === "roja" && pp.cards !== "roja")
+                showEventToast("red", "Roja · " + who, matchLabel);
+        }
+        // LESIÓN — pasó a lesionado
+        if (np.injured && !pp.injured) {
+            showEventToast("injury", "Lesión · " + who, matchLabel);
+        }
+        // CAMBIO — transiciones field<->bench (no por expulsión roja)
+        if (np.status !== pp.status && np.cards !== "roja" && pp.cards !== "roja") {
+            if (pp.status === "field" && np.status === "bench") subPending.push(who);
+            else if (pp.status === "bench" && np.status === "field") subIn.push(who);
+        }
+    });
+
+    // Sustituciones: emparejar entradas/salidas en un único aviso si es posible.
+    if (subIn.length || subPending.length) {
+        const pairs = Math.max(subIn.length, subPending.length);
+        for (let i = 0; i < pairs; i++) {
+            const inP  = subIn[i];
+            const outP = subPending[i];
+            let line = "Cambio";
+            if (inP && outP) line = "Cambio · ▲ " + inP + "  ▼ " + outP;
+            else if (inP)    line = "Entra · " + inP;
+            else if (outP)   line = "Sale · " + outP;
+            showEventToast("sub", line, matchLabel);
+        }
+    }
+}
+
+
 async function checkUserAccess(user) {
     const errEl = document.getElementById('auth-error');
     try {
@@ -545,8 +798,67 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
+// ── Vigilancia en segundo plano de TODOS los partidos seguidos ─────
+// Suscribe un onSnapshot a cada partido en vivo que el usuario puede
+// seguir, de modo que las alertas (gol/tarjeta/cambio/lesión) suenen
+// en cualquier partido aunque el director esté viendo otro o la lista.
+const _bgWatchers = {};   // matchId -> unsubscribe
+let _bgPollTimer = null;
+
+function _userCanFollow(m) {
+    if (!m || m.status !== "active") return false;
+    const isSA = (userData.role === "superadmin" || userData.role === "admin");
+    if (isSA) {
+        if (window._saClubFilter) return m.clubId === window._saClubFilter;
+        return true;
+    }
+    if (userData.clubId && m.clubId === userData.clubId) return true;
+    if (m.createdBy && m.createdBy === userData.uid) return true;
+    if (m.coachEmail && userData.email && m.coachEmail.toLowerCase() === userData.email.toLowerCase()) return true;
+    return false;
+}
+
+async function refreshBackgroundWatchers() {
+    try {
+        const snap = await getDocs(collection(db, "live_matches"));
+        const activeIds = new Set();
+        snap.forEach(d => {
+            const m = { id: d.id, ...d.data() };
+            if (!_userCanFollow(m)) return;
+            activeIds.add(m.id);
+            if (_bgWatchers[m.id]) return; // ya suscrito
+            _bgWatchers[m.id] = onSnapshot(doc(db, "live_matches", m.id), (s2) => {
+                if (!s2.exists()) return;
+                const data = s2.data();
+                // El partido que estamos viendo ya lo procesa renderMatch;
+                // evitamos avisar dos veces del mismo cambio.
+                if (m.id === currentMatchId) { _matchPrevState[m.id] = _buildState(data); return; }
+                detectAndAlert(m.id, data);
+            }, () => {});
+        });
+        // Cancelar suscripciones de partidos que ya no están activos/seguidos.
+        Object.keys(_bgWatchers).forEach(id => {
+            if (!activeIds.has(id)) {
+                try { _bgWatchers[id](); } catch(e){}
+                delete _bgWatchers[id];
+                delete _matchPrevState[id];
+                delete _matchSeeded[id];
+            }
+        });
+    } catch(e) { console.warn("[LIVE] refreshBackgroundWatchers:", e.message); }
+}
+
+function startBackgroundWatch() {
+    if (_bgPollTimer) return;
+    refreshBackgroundWatchers();
+    // Reevaluar la lista de partidos seguidos periódicamente (altas/bajas).
+    _bgPollTimer = setInterval(refreshBackgroundWatchers, 30000);
+}
+
 // ── Enter live view ────────────────────────────────────────────────
 async function enterLiveView() {
+    _initMuteBtn();
+    startBackgroundWatch();
     if (urlMatchId) {
         // Enlace directo a un partido concreto
         loadMatch(urlMatchId);
@@ -572,6 +884,7 @@ window.loadMatch = function(matchId) {
             }
             const data = snap.data();
             lastSnapshot = data;
+            detectAndAlert(matchId, data);
             renderMatch(data);
         },
         (err) => {
@@ -1359,5 +1672,7 @@ function showLoadingScreen(msg) {
     document.getElementById('loading-msg').textContent       = msg;
 }
 </script>
+<div id="event-flash"></div>
+<div id="event-toast-stack"></div>
 </body>
 </html>
