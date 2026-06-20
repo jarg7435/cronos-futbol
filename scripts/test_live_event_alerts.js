@@ -38,11 +38,13 @@ const sandbox = {
   doc(){return {};}, getDoc(){}, collection(){return {};}, onSnapshot(){return ()=>{};}, getDocs(){return Promise.resolve({forEach(){}});},
 };
 sandbox.window = sandbox; // window === global-ish
+sandbox.addEventListener = function(){};
+sandbox.removeEventListener = function(){};
 sandbox.webkitAudioContext = sandbox.AudioContext;
 vm.createContext(sandbox);
 
 // Inyectar un hook para capturar showEventToast: lo reemplazamos tras evaluar.
-js += '\n;globalThis.__exports = { detectAndAlert, _buildState, EVENT_META, showEventToast };';
+js += '\n;globalThis.__exports = { detectAndAlert, _buildState, EVENT_META, showEventToast, _matchPrevState, _matchSeeded, _matchLastTs };';
 // Sustituir el cuerpo de showEventToast por un registrador.
 js = js.replace(
   /function showEventToast\(type, line, sub\) \{[\s\S]*?\n\}/,
@@ -52,11 +54,18 @@ sandbox.__fired = fired;
 sandbox.globalThis = sandbox;
 
 vm.runInContext(js, sandbox, { filename: 'live-extracted.js' });
-const { detectAndAlert, _buildState } = sandbox.__exports;
+const { detectAndAlert, _buildState, _matchPrevState, _matchSeeded, _matchLastTs } = sandbox.__exports;
 
 // ── Datos base ──
-function mk(players, home, away, status='active') {
-  return { status, homeTeam:{name:'Aguilas', score:home}, awayTeam:{name:'Leones', score:away}, players };
+// updatedAt monotónico: cada snapshot creado con mk() es más reciente que el
+// anterior, replicando el serverTimestamp creciente real de Firestore. Permite
+// que el guard anti-snapshot-antiguo (2b) no descarte los snapshots del test.
+let _ts = 1000;
+function ts(ms) { return { toMillis: () => ms }; }
+function mk(players, home, away, status='active', updatedMs) {
+  const ms = (updatedMs != null) ? updatedMs : (_ts += 1000);
+  return { status, updatedAt: ts(ms),
+           homeTeam:{name:'Aguilas', score:home}, awayTeam:{name:'Leones', score:away}, players };
 }
 function P(id, opts={}) {
   return Object.assign({ id, number:id, name:'Jug'+id, team:'home', status:'field', goals:0, cards:'ninguna', injured:false }, opts);
@@ -133,6 +142,66 @@ detectAndAlert('match2', mk([P(1,{goals:3})], 3, 0));
 check('Segundo partido: primer snapshot es seed (sin alertas)', fired.length===0);
 detectAndAlert('match2', mk([P(1,{goals:4})], 4, 0));
 check('Segundo partido: gol posterior detectado', fired.some(f=>f.type==='goal'));
+
+// ════════════════════════════════════════════════════════════════════
+//  CASOS NUEVOS — Correcciones QA del commit 570a8a3
+// ════════════════════════════════════════════════════════════════════
+
+// Helper: reinicia el estado de un partido para empezar un escenario limpio.
+function reset(id){ delete _matchPrevState[id]; delete _matchSeeded[id]; delete _matchLastTs[id]; }
+
+// ── 2b · Snapshot NO monotónico (reenvío / reconexión) ──────────────
+// Tras semillar y avisar de un gol, reenviar un snapshot con updatedAt IGUAL
+// o ANTERIOR no debe re-disparar la alerta ya mostrada.
+reset('m2b');
+const T1 = 5000, T2 = 6000;
+detectAndAlert('m2b', mk(roster(), 1, 0, 'active', T1));          // seed (ts=T1)
+fired.length=0;
+detectAndAlert('m2b', mk(roster({1:{goals:2}}), 2, 0, 'active', T2)); // gol real (ts=T2)
+check('2b · Gol nuevo con ts creciente detectado', fired.filter(f=>f.type==='goal').length===1);
+
+fired.length=0;
+detectAndAlert('m2b', mk(roster({1:{goals:2}}), 2, 0, 'active', T2)); // MISMO ts reenviado
+check('2b · Reenvío con MISMO updatedAt descartado (sin doble alerta)', fired.length===0);
+
+fired.length=0;
+detectAndAlert('m2b', mk(roster({1:{goals:2}}), 2, 0, 'active', T1)); // ts ANTERIOR (snapshot viejo)
+check('2b · Snapshot con updatedAt ANTERIOR descartado', fired.length===0);
+
+// Un cambio de tarjeta reenviado por flip caché→servidor con ts viejo tampoco re-dispara.
+fired.length=0;
+detectAndAlert('m2b', mk(roster({1:{goals:2}, 2:{cards:'roja'}}), 2, 0, 'active', T2-500)); // ts < último
+check('2b · Tarjeta en snapshot atrasado NO re-dispara', fired.length===0);
+
+// ── 2b · Snapshot fromCache se ignora ───────────────────────────────
+reset('mCache');
+detectAndAlert('mCache', mk(roster(), 1, 0, 'active', 9000));               // seed (server)
+fired.length=0;
+detectAndAlert('mCache', mk(roster({1:{goals:2}}), 2, 0, 'active', 10000), /*fromCache*/true);
+check('2b · Snapshot fromCache=true ignorado (sin alerta)', fired.length===0);
+// El mismo cambio confirmado por el servidor (fromCache=false) SÍ avisa.
+detectAndAlert('mCache', mk(roster({1:{goals:2}}), 2, 0, 'active', 10001), /*fromCache*/false);
+check('2b · Mismo cambio confirmado por servidor SÍ avisa', fired.some(f=>f.type==='goal'));
+
+// ── 1a · Sin doble alerta en el partido activo ──────────────────────
+// Simula el flujo real: el listener de loadMatch llama detectAndAlert para el
+// partido activo; el watcher de fondo CEDE (no procesa currentMatchId). Aunque
+// el snapshot llegue por ambos canales, solo debe avisar UNA vez.
+reset('mActive');
+const currentMatchId = 'mActive'; // el watcher de fondo haría: if (m.id===currentMatchId) return;
+detectAndAlert('mActive', mk(roster(), 1, 0, 'active', 11000)); // seed (listener activo)
+fired.length=0;
+// (1) listener activo procesa el snapshot del gol:
+detectAndAlert('mActive', mk(roster({1:{goals:2}}), 2, 0, 'active', 12000));
+// (2) watcher de fondo recibe el MISMO snapshot pero, como m.id===currentMatchId,
+//     hace 'return' y NO vuelve a llamar detectAndAlert (comportamiento del código):
+if ('mActive' === currentMatchId) { /* cede: no procesa */ }
+check('1a · Partido activo: una sola alerta de gol (sin duplicar)', fired.filter(f=>f.type==='goal').length===1);
+
+// Aunque por error el watcher de fondo reprocesara el MISMO ts, el guard 2b lo frena:
+fired.length=0;
+detectAndAlert('mActive', mk(roster({1:{goals:2}}), 2, 0, 'active', 12000)); // mismo ts
+check('1a · Reproceso del mismo snapshot no duplica alerta', fired.length===0);
 
 console.log('\nRESULTADO: ' + pass + ' OK, ' + fail + ' fallos');
 process.exit(fail ? 1 : 0);

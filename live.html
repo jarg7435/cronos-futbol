@@ -558,9 +558,25 @@ if (window.opener && !window.opener.closed) {
     if (btn) btn.style.display = 'inline-block';
 }
 
+// Cancela TODOS los listeners de fondo y detiene el polling de la lista.
+// Idempotente: seguro llamarla varias veces.
+function teardownBackgroundWatch() {
+    if (typeof _bgPollTimer !== "undefined" && _bgPollTimer) { clearInterval(_bgPollTimer); _bgPollTimer = null; }
+    if (typeof _bgWatchers !== "undefined") {
+        Object.keys(_bgWatchers).forEach(id => {
+            try { _bgWatchers[id](); } catch(e) {}
+            delete _bgWatchers[id];
+            delete _matchPrevState[id];
+            delete _matchSeeded[id];
+            delete _matchLastTs[id];
+        });
+    }
+}
+
 window.doSignOut = async () => {
     if (unsubscribeMatch) unsubscribeMatch();
     clearInterval(timerInterval); timerInterval = null;
+    teardownBackgroundWatch();
     await signOut(auth);
     location.reload();
 };
@@ -577,6 +593,11 @@ let _audioCtx = null;
 const _matchPrevState = {};
 // Para no avisar de eventos ya existentes la primera vez que vemos un partido.
 const _matchSeeded = {};
+// Ultimo updatedAt (epoch ms) PROCESADO por matchId. Sirve para descartar
+// snapshots no monotonicos (reenvios de Firestore tras reconexion o emisiones
+// desde cache local desactualizada), que de otro modo re-dispararian alertas
+// ya mostradas.
+const _matchLastTs = {};
 
 window.toggleMute = function() {
     _alertsMuted = !_alertsMuted;
@@ -603,6 +624,10 @@ function unlockAudio() {
     } catch(e) { /* sin audio disponible */ }
 }
 document.addEventListener("pointerdown", unlockAudio, { once: false });
+// Liberar listeners de Firestore al ocultar/cerrar la pagina. 'pagehide' cubre
+// navegacion y cierre; el navegador igualmente cierra los canales onSnapshot al
+// destruir el contexto, pero esto los suelta de forma explicita y temprana.
+window.addEventListener("pagehide", teardownBackgroundWatch);
 
 // Sonidos sintéticos por tipo (sin archivos externos).
 function playEventSound(type) {
@@ -700,7 +725,23 @@ function _buildState(data) {
 
 // Compara el snapshot nuevo con el anterior y dispara alertas.
 // matchId identifica el partido; matchData es el snapshot de Firestore.
-function detectAndAlert(matchId, matchData) {
+function detectAndAlert(matchId, matchData, fromCache) {
+    // Descartar snapshots de cache local desactualizada: cuando hay un cambio
+    // pendiente de confirmar en el servidor, Firestore puede emitir primero un
+    // snapshot fromCache que puede estar atrasado. No avisamos con datos de cache.
+    if (fromCache) { return; }
+    // Descartar snapshots no monotonicos: si este snapshot no es mas reciente
+    // que el ultimo procesado para este partido, ignorarlo (evita re-disparar
+    // alertas tras reconexiones o reenvios de Firestore).
+    const ts = (typeof matchData.updatedAt?.toMillis === 'function')
+        ? matchData.updatedAt.toMillis()
+        : (typeof matchData.updatedAt?.toDate === 'function')
+            ? matchData.updatedAt.toDate().getTime()
+            : 0;
+    const prevTs = _matchLastTs[matchId] || 0;
+    if (ts && prevTs && ts <= prevTs) return;
+    if (ts) _matchLastTs[matchId] = ts;
+
     const next = _buildState(matchData);
     const prev = _matchPrevState[matchId];
     _matchPrevState[matchId] = next;
@@ -830,10 +871,13 @@ async function refreshBackgroundWatchers() {
             _bgWatchers[m.id] = onSnapshot(doc(db, "live_matches", m.id), (s2) => {
                 if (!s2.exists()) return;
                 const data = s2.data();
-                // El partido que estamos viendo ya lo procesa renderMatch;
-                // evitamos avisar dos veces del mismo cambio.
-                if (m.id === currentMatchId) { _matchPrevState[m.id] = _buildState(data); return; }
-                detectAndAlert(m.id, data);
+                // El partido que se esta viendo lo procesa EXCLUSIVAMENTE el
+                // listener de loadMatch (via detectAndAlert -> renderMatch). El
+                // watcher de fondo se desentiende por completo de ese partido para
+                // no competir por _matchPrevState (evita falsos negativos por orden
+                // de callbacks no determinista entre ambos listeners).
+                if (m.id === currentMatchId) return;
+                detectAndAlert(m.id, data, s2.metadata && s2.metadata.fromCache);
             }, () => {});
         });
         // Cancelar suscripciones de partidos que ya no están activos/seguidos.
@@ -843,6 +887,7 @@ async function refreshBackgroundWatchers() {
                 delete _bgWatchers[id];
                 delete _matchPrevState[id];
                 delete _matchSeeded[id];
+                delete _matchLastTs[id];
             }
         });
     } catch(e) { console.warn("[LIVE] refreshBackgroundWatchers:", e.message); }
@@ -884,7 +929,7 @@ window.loadMatch = function(matchId) {
             }
             const data = snap.data();
             lastSnapshot = data;
-            detectAndAlert(matchId, data);
+            detectAndAlert(matchId, data, snap.metadata && snap.metadata.fromCache);
             renderMatch(data);
         },
         (err) => {
