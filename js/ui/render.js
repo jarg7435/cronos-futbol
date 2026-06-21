@@ -179,7 +179,7 @@ function renderPlayers() {
         const chip = createPlayerChip(p);
 
         // ── FIX: Restaurar estado visual si hay un drag táctil activo ──
-        if (touchData && touchData.draggedPlayerId != null &&
+        if (touchData && touchData.draggedPlayerId != null && touchData.clone &&
             String(touchData.draggedPlayerId) === String(p.id)) {
             chip.style.opacity = '0.3';
         }
