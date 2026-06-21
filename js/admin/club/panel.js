@@ -554,11 +554,6 @@ async function openClubAdminPanel(preClubId = null) {
                      border:1px solid rgba(210,168,255,0.4);border-radius:10px;
                      color:#d2a8ff;font-size:0.75rem;font-weight:700;cursor:pointer;">
               🔄 Ceder Administración</button>
-          <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
-              style="padding:0.45rem 1rem;background:rgba(255,215,0,0.1);
-                     border:1px solid rgba(255,215,0,0.3);border-radius:10px;
-                     color:#ffd700;font-size:0.75rem;font-weight:700;cursor:pointer;">
-              ⇄ Cambiar Rol</button>
           <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
               style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
                      border:1px solid rgba(255,88,88,0.4);border-radius:10px;
