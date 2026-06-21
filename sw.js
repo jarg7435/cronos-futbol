@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v188
+//  CRONOS FUTBOL - Service Worker v189
+//  v189: FIX sonido de alerta En Vivo: se oia "una vez y corta" en partidos
+//         reales. Las alertas llegan desde el callback de Firestore (no es un
+//         gesto del usuario), con el AudioContext en 'suspended'; al leer
+//         currentTime congelado las repeticiones colapsaban en un golpe. Ahora
+//         playEventSound() solo programa con ctx.state 'running' (si no, resume()
+//         + then) y _playSeq() repite 3 veces fijas una secuencia CORTA por
+//         evento con envolvente sostenida. Bump fuerza recarga de live.html.
 //  v188: NUEVO — Alertas sonoras + visuales en la pestaña "En Vivo" del Panel
 //         de Direccion (live.html). Al ocurrir un evento (gol, tarjeta amarilla/
 //         roja, cambio o lesion) en cualquier partido seguido, se muestra un
@@ -299,8 +306,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v188';
-const CACHE_NAME = 'cronos-cache-v188';
+const VERSION    = 'v189';
+const CACHE_NAME = 'cronos-cache-v189';
 
 const ASSETS = [
     './',
