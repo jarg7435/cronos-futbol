@@ -608,11 +608,7 @@ async function openIndividualAdminPanel() {
                      border:1px solid rgba(88,166,255,0.4);border-radius:10px;
                      color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
               📡 Transmitir al SuperAdmin</button>
-          <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
-              style="padding:0.45rem 1rem;background:rgba(255,215,0,0.1);
-                     border:1px solid rgba(255,215,0,0.3);border-radius:10px;
-                     color:#ffd700;font-size:0.75rem;font-weight:700;cursor:pointer;">
-              ⇄ Cambiar Rol</button>
+          
           <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
               style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
                      border:1px solid rgba(255,88,88,0.4);border-radius:10px;
