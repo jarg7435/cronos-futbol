@@ -654,32 +654,61 @@ function playEventSound(type) {
     unlockAudio();
     if (!_audioCtx) return;
     const ctx = _audioCtx;
+    // El contexto puede estar 'suspended' si esta llamada NO viene de un gesto
+    // del usuario (p.ej. desde el callback de Firestore -> detectAndAlert). Si
+    // leemos currentTime con el contexto suspendido, queda congelado y las 3
+    // repeticiones se programan casi en el mismo instante -> al reanudar el
+    // reloj salta y se colapsan en un solo golpe (se oye "una vez y corta").
+    // Por eso SOLO programamos cuando el contexto esta 'running', releyendo
+    // currentTime ya valido dentro del then() de resume().
+    if (ctx.state === "running") {
+        _playSeq(ctx, type);
+    } else {
+        ctx.resume().then(function(){ _playSeq(ctx, type); }).catch(function(){ /* sin audio */ });
+    }
+}
+
+// Programa las 3 repeticiones de la secuencia leyendo currentTime en el momento
+// (con el contexto ya 'running', para que los tiempos no esten congelados).
+function _playSeq(ctx, type) {
     const now = ctx.currentTime;
-    // [frecuencia(Hz), inicio(s), duración(s)]
+    // [frecuencia(Hz), inicio(s), duracion(s)]
+    // Secuencia CORTA original (melodia reconocible de cada evento). En lugar de
+    // alargar cada nota (que sonaba a golpe + silencio por el decay exponencial),
+    // repetimos la secuencia completa 3 veces (mas abajo) manteniendo su melodia.
+    // Cada nota usa envolvente sostenida (sin huecos internos).
     const SEQ = {
-        // fanfarria ascendente (4 notas) + sostenido final brillante -> ~2.0 s
-        goal:   [[660,0,0.30],[880,0.30,0.30],[1175,0.60,0.35],[1318,0.95,1.05]],
-        // pitido medio sostenido con un repunte que conserva su caracter -> ~2.0 s
-        yellow: [[520,0,1.20],[600,1.25,0.75]],
-        // doble grave descendente repetido -> ~2.0 s
-        red:    [[400,0,0.45],[300,0.50,0.50],[400,1.05,0.45],[300,1.55,0.45]],
-        // dos notas suaves repetidas dos veces -> ~2.0 s
-        sub:    [[700,0,0.40],[900,0.45,0.45],[700,1.00,0.40],[900,1.45,0.55]],
-        // tono descendente lento de aviso -> ~2.0 s
-        injury: [[300,0,0.70],[260,0.72,0.60],[230,1.35,0.65]]
+        goal:   [[660,0,0.12],[880,0.12,0.12],[1175,0.24,0.22]],   // fanfarria ascendente
+        yellow: [[520,0,0.18]],                                     // pitido medio
+        red:    [[400,0,0.18],[300,0.20,0.30]],                    // doble grave
+        sub:    [[700,0,0.10],[900,0.12,0.12]],                    // dos notas suaves
+        injury: [[300,0,0.25],[260,0.27,0.35]]                     // tono descendente
     };
     const seq = SEQ[type] || SEQ.sub;
-    seq.forEach(([freq, start, dur]) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = (type === "goal") ? "triangle" : "sine";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.0001, now + start);
-        gain.gain.exponentialRampToValueAtTime(0.22, now + start + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.start(now + start); osc.stop(now + start + dur + 0.02);
-    });
+    const REPS = 3;                                     // 3 repeticiones fijas
+    const GAP  = 0.06;                                  // pausa entre repeticiones
+    // Duracion de una pasada = fin de su ultima nota.
+    const seqDur = Math.max.apply(null, seq.map(function(n){ return n[1] + n[2]; }));
+    const step   = seqDur + GAP;
+    for (let r = 0; r < REPS; r++) {
+        const base = r * step;
+        seq.forEach(([freq, start, dur]) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = (type === "goal") ? "triangle" : "sine";
+            osc.frequency.value = freq;
+            const t0  = now + base + start;
+            const atk = 0.012;                            // ataque
+            const rel = Math.min(0.05, dur * 0.35);       // release corto al final
+            const sus = t0 + Math.max(atk, dur - rel);
+            gain.gain.setValueAtTime(0.0001, t0);
+            gain.gain.exponentialRampToValueAtTime(0.22, t0 + atk);   // ataque
+            gain.gain.setValueAtTime(0.22, sus);                      // sostenido pleno
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur); // release corto
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start(t0); osc.stop(t0 + dur + 0.02);
+        });
+    }
 }
 
 // Vibración en móvil (si está disponible).
