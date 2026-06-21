@@ -150,11 +150,7 @@ async function openStaffDashboard() {
                            color:var(--text-muted);padding:0.35rem 0.7rem;border-radius:6px;
                            cursor:pointer;font-size:0.74rem;font-weight:600;" title="Recargar panel">
                     🔄 Recargar</button>
-                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
-                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
-                           color:#ffd700;padding:0.35rem 0.8rem;border-radius:6px;
-                           cursor:pointer;font-size:0.74rem;font-weight:700;">
-                    ⇄ Cambiar rol</button>
+                
                 <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
                     style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                            color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;
