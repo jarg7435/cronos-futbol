@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v189
+//  CRONOS FUTBOL - Service Worker v190
+//  v190: FIX audio de alertas En Vivo en iPhone PWA standalone (instalada en
+//         pantalla de inicio): no sonaba NUNCA, ni la 1a repeticion (PC/iPad ya
+//         iban OK tras v189). iOS standalone suspende el AudioContext entre
+//         gestos y no permite resume() fuera de un gesto; las alertas llegan por
+//         Firestore (sin gesto). Fix: keep-alive del AudioContext (loop de
+//         silencio inaudible) que lo mantiene 'running' de forma continua tras
+//         el primer toque, para que _playSeq suene sin gesto. Bump fuerza
+//         recarga de live.html.
 //  v189: FIX sonido de alerta En Vivo: se oia "una vez y corta" en partidos
 //         reales. Las alertas llegan desde el callback de Firestore (no es un
 //         gesto del usuario), con el AudioContext en 'suspended'; al leer
@@ -306,8 +314,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v189';
-const CACHE_NAME = 'cronos-cache-v189';
+const VERSION    = 'v190';
+const CACHE_NAME = 'cronos-cache-v190';
 
 const ASSETS = [
     './',
