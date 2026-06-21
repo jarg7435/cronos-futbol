@@ -1332,7 +1332,7 @@ function renderField(data) {
         const isHome = p.team === 'home';
         // FIX: usar color individual del jugador (incluido en snapshot) con fallback al color del equipo
         const color  = safeColor(p.color,     safeColor(isHome ? data.homeTeam?.color     : data.awayTeam?.color,     isHome ? '#58a6ff' : '#ff5858'));
-        const shortsColor = safeColor(p.shortsColor, safeColor(isHome ? data.homeTeam?.shortsColor : data.awayTeam?.shortsColor, isHome ? '#1a4e99' : '#b22222'));
+        const shortsColor = safeColor(p.shortsColor, safeColor(isHome ? data.homeTeam?.shorts : data.awayTeam?.shorts, isHome ? '#1a4e99' : '#b22222'));
         const text   = safeColor(p.textColor, safeColor(isHome ? data.homeTeam?.textColor : data.awayTeam?.textColor, '#fff'));
 
         const goals     = p.goals  || 0;
@@ -1393,7 +1393,7 @@ function renderBench(data) {
         container.innerHTML = benchPlayers.map(p => {
             // FIX: usar color individual del jugador con fallback al color del equipo
             const color = safeColor(p.color, safeColor(teamColor, team === 'home' ? '#58a6ff' : '#ff5858'));
-            const shortsColor = safeColor(p.shortsColor, safeColor(team === 'home' ? data.homeTeam?.shortsColor : data.awayTeam?.shortsColor, team === 'home' ? '#1a4e99' : '#b22222'));
+            const shortsColor = safeColor(p.shortsColor, safeColor(team === 'home' ? data.homeTeam?.shorts : data.awayTeam?.shorts, team === 'home' ? '#1a4e99' : '#b22222'));
             const cardIcon = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
             const goalIcon = (p.goals || 0) > 0 ? ` ⚽×${p.goals}` : '';
             return `<div class="bench-player-row">

@@ -1,5 +1,37 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v187
+//  CRONOS FUTBOL - Service Worker v191
+//  v191: Boton explicito "Activar sonido" en live.html para iPhone PWA
+//         standalone. live.html se abre con window.open(_blank), un documento
+//         separado que NO hereda el gesto del usuario de la pagina padre, asi que
+//         su AudioContext nunca se desbloqueaba (en iPhone; PC/iPad iban OK por
+//         politica de autoplay mas laxa). El boton da un gesto GARANTIZADO en
+//         este documento: desbloquea el AudioContext + keep-alive y emite un bip
+//         de confirmacion. Tras desbloquear pasa a "Sonido activo". Bump fuerza
+//         recarga de live.html.
+//  v190: FIX audio de alertas En Vivo en iPhone PWA standalone (instalada en
+//         pantalla de inicio): no sonaba NUNCA, ni la 1a repeticion (PC/iPad ya
+//         iban OK tras v189). iOS standalone suspende el AudioContext entre
+//         gestos y no permite resume() fuera de un gesto; las alertas llegan por
+//         Firestore (sin gesto). Fix: keep-alive del AudioContext (loop de
+//         silencio inaudible) que lo mantiene 'running' de forma continua tras
+//         el primer toque, para que _playSeq suene sin gesto. Bump fuerza
+//         recarga de live.html.
+//  v189: FIX sonido de alerta En Vivo: se oia "una vez y corta" en partidos
+//         reales. Las alertas llegan desde el callback de Firestore (no es un
+//         gesto del usuario), con el AudioContext en 'suspended'; al leer
+//         currentTime congelado las repeticiones colapsaban en un golpe. Ahora
+//         playEventSound() solo programa con ctx.state 'running' (si no, resume()
+//         + then) y _playSeq() repite 3 veces fijas una secuencia CORTA por
+//         evento con envolvente sostenida. Bump fuerza recarga de live.html.
+//  v188: NUEVO — Alertas sonoras + visuales en la pestaña "En Vivo" del Panel
+//         de Direccion (live.html). Al ocurrir un evento (gol, tarjeta amarilla/
+//         roja, cambio o lesion) en cualquier partido seguido, se muestra un
+//         toast con flash de pantalla, un sonido sintetico (WebAudio, sin
+//         archivos) distinto por evento y vibracion en movil. Funciona aunque
+//         el director este viendo otro partido: un watcher en segundo plano
+//         (onSnapshot a todos los partidos seguidos) detecta los cambios
+//         comparando snapshots consecutivos por jugador. Boton de silenciar
+//         (persistente en localStorage). Bump fuerza recarga de live.html.
 //  v187: FIX campo mostraba AMBOS equipos al jugar de VISITANTE con el checkbox
 //         "Analizar Contrario" DESACTIVADO. RAIZ: setup-modal.js forzaba
 //         analyzeAway=true cuando _userTeamRole==='away', ignorando el checkbox,
@@ -290,8 +322,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v187';
-const CACHE_NAME = 'cronos-cache-v187';
+const VERSION    = 'v191';
+const CACHE_NAME = 'cronos-cache-v192';
 
 const ASSETS = [
     './',
