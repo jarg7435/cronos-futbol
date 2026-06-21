@@ -299,6 +299,79 @@
             #bench-panel { display: none; }
             #live-header { padding: 0.5rem 0.8rem; }
         }
+
+        /* ── ALERTAS DE EVENTO (sonoras + visuales) ── */
+        #event-toast-stack {
+            position: fixed; top: 1rem; right: 1rem;
+            z-index: 1200; display: flex; flex-direction: column;
+            gap: 0.55rem; max-width: min(380px, 92vw);
+            pointer-events: none;
+        }
+        .event-toast {
+            pointer-events: auto;
+            display: flex; align-items: center; gap: 0.7rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--primary);
+            border-radius: 10px; padding: 0.7rem 0.9rem;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+            animation: toastIn 0.35s cubic-bezier(.2,.9,.3,1.2),
+                       toastPulse 1.1s ease-in-out 0.35s 2;
+            cursor: pointer;
+        }
+        .event-toast.leaving { animation: toastOut 0.3s ease forwards; }
+        .event-toast .et-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1; }
+        .event-toast .et-body { flex: 1; min-width: 0; }
+        .event-toast .et-title {
+            font-weight: 800; font-size: 0.84rem; color: var(--text);
+            display: flex; align-items: center; gap: 0.4rem;
+        }
+        .event-toast .et-sub {
+            font-size: 0.72rem; color: var(--muted); margin-top: 1px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .event-toast.ev-goal     { border-left-color: #3fb950; }
+        .event-toast.ev-yellow   { border-left-color: #e3b341; }
+        .event-toast.ev-red      { border-left-color: #da3633; }
+        .event-toast.ev-sub      { border-left-color: #58a6ff; }
+        .event-toast.ev-injury   { border-left-color: #e74c3c; }
+        @keyframes toastIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+        }
+        @keyframes toastOut {
+            from { transform: translateX(0);    opacity: 1; max-height: 100px; }
+            to   { transform: translateX(120%); opacity: 0; max-height: 0; margin: 0; padding: 0; }
+        }
+        @keyframes toastPulse {
+            0%,100% { box-shadow: 0 8px 28px rgba(0,0,0,0.55); }
+            50%     { box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 0 0 4px rgba(255,255,255,0.06); }
+        }
+        #event-flash {
+            position: fixed; inset: 0; z-index: 1100;
+            pointer-events: none; opacity: 0;
+            background: radial-gradient(circle at 50% 30%, rgba(63,185,80,0.18), transparent 70%);
+        }
+        #event-flash.fire { animation: flashFx 0.65s ease-out; }
+        @keyframes flashFx { 0%{opacity:0} 15%{opacity:1} 100%{opacity:0} }
+        #btn-mute {
+            padding: 0.4rem 0.7rem; background: var(--glass);
+            border: 1px solid var(--border); border-radius: 6px;
+            color: var(--muted); font-size: 0.82rem; cursor: pointer;
+        }
+        #btn-mute.muted { color: var(--danger); border-color: rgba(255,88,88,0.4); }
+        #btn-activate-sound {
+            padding: 0.4rem 0.7rem; background: rgba(63,185,80,0.15);
+            border: 1px solid rgba(63,185,80,0.5); border-radius: 6px;
+            color: #3fb950; font-size: 0.82rem; cursor: pointer; font-weight: 700;
+            animation: pulseSound 1.6s ease-in-out infinite;
+        }
+        #btn-activate-sound.ready { animation: none; background: var(--glass);
+            border-color: var(--border); color: var(--muted); font-weight: 400; }
+        @keyframes pulseSound {
+            0%,100% { box-shadow: 0 0 0 0 rgba(63,185,80,0.4); }
+            50%     { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
+        }
     </style>
 </head>
 <body>
@@ -372,6 +445,9 @@
         <button onclick="doSignOut()"
             style="padding:0.4rem 0.8rem;background:none;border:1px solid rgba(255,255,255,0.12);
                    color:var(--muted);font-size:0.72rem;border-radius:6px;cursor:pointer;">⏻ Salir</button>
+        <button id="btn-mute" onclick="toggleMute()" title="Silenciar alertas">🔔</button>
+        <button id="btn-activate-sound" onclick="activateSound()"
+                title="Toca para activar el sonido de alertas en este dispositivo">🔊 Activar sonido</button>
     </div>
 </header>
 
@@ -496,14 +572,378 @@ if (window.opener && !window.opener.closed) {
     if (btn) btn.style.display = 'inline-block';
 }
 
+// Cancela TODOS los listeners de fondo y detiene el polling de la lista.
+// Idempotente: seguro llamarla varias veces.
+function teardownBackgroundWatch() {
+    if (typeof _bgPollTimer !== "undefined" && _bgPollTimer) { clearInterval(_bgPollTimer); _bgPollTimer = null; }
+    if (typeof _bgWatchers !== "undefined") {
+        Object.keys(_bgWatchers).forEach(id => {
+            try { _bgWatchers[id](); } catch(e) {}
+            delete _bgWatchers[id];
+            delete _matchPrevState[id];
+            delete _matchSeeded[id];
+            delete _matchLastTs[id];
+        });
+    }
+}
+
 window.doSignOut = async () => {
     if (unsubscribeMatch) unsubscribeMatch();
     clearInterval(timerInterval); timerInterval = null;
+    teardownBackgroundWatch();
     await signOut(auth);
     location.reload();
 };
 
 let userData = null;
+
+// ════════════════════════════════════════════════════════════════
+//  ALERTAS DE EVENTO (gol · tarjeta · cambio · lesión)
+//  Detecta cambios comparando snapshots consecutivos por jugador.
+// ════════════════════════════════════════════════════════════════
+let _alertsMuted = (localStorage.getItem("cronos_live_muted") === "1");
+let _audioCtx = null;
+// Estado anterior por matchId: { players:{id->{goals,cards,injured,status}}, home, away }
+const _matchPrevState = {};
+// Para no avisar de eventos ya existentes la primera vez que vemos un partido.
+const _matchSeeded = {};
+// Ultimo updatedAt (epoch ms) PROCESADO por matchId. Sirve para descartar
+// snapshots no monotonicos (reenvios de Firestore tras reconexion o emisiones
+// desde cache local desactualizada), que de otro modo re-dispararian alertas
+// ya mostradas.
+const _matchLastTs = {};
+
+window.toggleMute = function() {
+    _alertsMuted = !_alertsMuted;
+    localStorage.setItem("cronos_live_muted", _alertsMuted ? "1" : "0");
+    const btn = document.getElementById("btn-mute");
+    if (btn) { btn.textContent = _alertsMuted ? "🔕" : "🔔"; btn.classList.toggle("muted", _alertsMuted); btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas"; }
+    if (!_alertsMuted) unlockAudio(); else _stopKeepAlive();
+};
+
+// Boton explicito de "Activar sonido". En iPhone con la PWA en pantalla de
+// inicio (standalone), live.html es un documento separado abierto con
+// window.open(_blank): NO hereda el gesto del usuario de la pagina padre, y su
+// AudioContext arranca 'suspended'. Como las alertas llegan por Firestore (sin
+// gesto), el sonido no se desbloqueaba nunca. Este boton da un gesto GARANTIZADO
+// dentro de este documento: desbloquea el audio y arranca el keep-alive. Tras
+// desbloquear, se reproduce un bip de confirmacion y el boton pasa a "Sonido
+// activo". En PC/iPad ya funcionaba; esto cubre el caso iPhone standalone.
+window.activateSound = function() {
+    unlockAudio();                       // crea/resume AudioContext + keep-alive (gesto)
+    // Bip corto AUDIBLE de confirmacion (dentro del mismo gesto).
+    try {
+        if (_audioCtx && _audioCtx.state !== "running") _audioCtx.resume();
+        if (_audioCtx) {
+            const o = _audioCtx.createOscillator();
+            const g = _audioCtx.createGain();
+            o.type = "sine"; o.frequency.value = 880;
+            const n = _audioCtx.currentTime;
+            g.gain.setValueAtTime(0.0001, n);
+            g.gain.exponentialRampToValueAtTime(0.2, n + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, n + 0.25);
+            o.connect(g); g.connect(_audioCtx.destination);
+            o.start(n); o.stop(n + 0.27);
+        }
+    } catch(e) {}
+    _refreshSoundBtn();
+};
+
+// Refresca el estado visual del boton de activar sonido segun el AudioContext.
+function _refreshSoundBtn() {
+    const btn = document.getElementById("btn-activate-sound");
+    if (!btn) return;
+    const running = !!(_audioCtx && _audioCtx.state === "running");
+    if (running) {
+        btn.textContent = "🔊 Sonido activo";
+        btn.classList.add("ready");
+        btn.title = "El sonido de alertas esta activo en este dispositivo";
+    } else {
+        btn.textContent = "🔊 Activar sonido";
+        btn.classList.remove("ready");
+        btn.title = "Toca para activar el sonido de alertas en este dispositivo";
+    }
+}
+
+function _initMuteBtn() {
+    const btn = document.getElementById("btn-mute");
+    if (!btn) return;
+    btn.textContent = _alertsMuted ? "🔕" : "🔔";
+    btn.classList.toggle("muted", _alertsMuted);
+    btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas";
+}
+
+// El audio del navegador requiere un gesto del usuario. El login (clic) ya
+// cuenta como gesto, pero re-desbloqueamos en el primer toque por seguridad.
+function unlockAudio() {
+    try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_audioCtx.state === "suspended") _audioCtx.resume();
+        // "Silent unlock": un buffer mudo arrancado de forma sincrona dentro del
+        // gesto. Es lo unico que iOS acepta como desbloqueo real del audio.
+        const buf = _audioCtx.createBuffer(1, 1, 22050);
+        const src = _audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(_audioCtx.destination);
+        src.start(0);
+        // KEEP-ALIVE (clave para iPhone PWA standalone): tras el primer gesto
+        // mantenemos el AudioContext permanentemente 'running' con un loop de
+        // silencio inaudible. En iPhone instalado en pantalla de inicio, iOS
+        // suspende el contexto entre gestos y NO permite resume() fuera de un
+        // gesto; cuando la alerta llega por Firestore (sin gesto) el sonido no
+        // sonaba ni una vez. Con el hardware de audio activo de forma continua,
+        // el contexto sigue 'running' y _playSeq programa y suena sin gesto.
+        _startKeepAlive();
+    } catch(e) { /* sin audio disponible */ }
+}
+
+// Loop de silencio permanente que evita que iOS suspenda el AudioContext.
+let _keepAliveSrc = null;
+function _startKeepAlive() {
+    try {
+        if (!_audioCtx || _alertsMuted) return;
+        if (_keepAliveSrc) return;                 // ya activo
+        // Buffer de ~0.5 s de silencio, en bucle, a volumen 0.
+        const frames = Math.floor(_audioCtx.sampleRate * 0.5);
+        const buf = _audioCtx.createBuffer(1, frames, _audioCtx.sampleRate);
+        const src = _audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const g = _audioCtx.createGain();
+        g.gain.value = 0;                           // inaudible
+        src.connect(g); g.connect(_audioCtx.destination);
+        src.start(0);
+        _keepAliveSrc = src;
+    } catch(e) { /* ignorar */ }
+}
+function _stopKeepAlive() {
+    try { if (_keepAliveSrc) { _keepAliveSrc.stop(); _keepAliveSrc.disconnect(); } } catch(e){}
+    _keepAliveSrc = null;
+}
+// iOS no dispara 'pointerdown' de forma fiable como gesto de audio: anadimos
+// touchend y click. {once:false} para re-desbloquear tras cada interaccion.
+["pointerdown", "touchend", "click"].forEach(ev =>
+    document.addEventListener(ev, unlockAudio, { once: false, passive: true })
+);
+// iOS suspende el AudioContext en segundo plano / pantalla bloqueada. Al volver
+// a primer plano reanudamos y reactivamos el keep-alive (el resume aqui no esta
+// dentro de un gesto, pero en muchos casos basta; el siguiente toque lo asegura).
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && _audioCtx) {
+        if (_audioCtx.state === "suspended") _audioCtx.resume().catch(() => {});
+        // El loop pudo detenerse al suspender; lo recreamos.
+        _stopKeepAlive();
+        _startKeepAlive();
+    }
+});
+// Liberar listeners de Firestore al ocultar/cerrar la pagina. 'pagehide' cubre
+// navegacion y cierre; el navegador igualmente cierra los canales onSnapshot al
+// destruir el contexto, pero esto los suelta de forma explicita y temprana.
+window.addEventListener("pagehide", teardownBackgroundWatch);
+
+// Sonidos sintéticos por tipo (sin archivos externos).
+function playEventSound(type) {
+    if (_alertsMuted) return;
+    unlockAudio();
+    if (!_audioCtx) return;
+    const ctx = _audioCtx;
+    // El contexto puede estar 'suspended' si esta llamada NO viene de un gesto
+    // del usuario (p.ej. desde el callback de Firestore -> detectAndAlert). Si
+    // leemos currentTime con el contexto suspendido, queda congelado y las 3
+    // repeticiones se programan casi en el mismo instante -> al reanudar el
+    // reloj salta y se colapsan en un solo golpe (se oye "una vez y corta").
+    // Por eso SOLO programamos cuando el contexto esta 'running', releyendo
+    // currentTime ya valido dentro del then() de resume().
+    if (ctx.state === "running") {
+        _playSeq(ctx, type);
+    } else {
+        ctx.resume().then(function(){ _playSeq(ctx, type); }).catch(function(){ /* sin audio */ });
+    }
+}
+
+// Programa las 3 repeticiones de la secuencia leyendo currentTime en el momento
+// (con el contexto ya 'running', para que los tiempos no esten congelados).
+function _playSeq(ctx, type) {
+    const now = ctx.currentTime;
+    // [frecuencia(Hz), inicio(s), duracion(s)]
+    // Secuencia CORTA original (melodia reconocible de cada evento). En lugar de
+    // alargar cada nota (que sonaba a golpe + silencio por el decay exponencial),
+    // repetimos la secuencia completa 3 veces (mas abajo) manteniendo su melodia.
+    // Cada nota usa envolvente sostenida (sin huecos internos).
+    const SEQ = {
+        goal:   [[660,0,0.12],[880,0.12,0.12],[1175,0.24,0.22]],   // fanfarria ascendente
+        yellow: [[520,0,0.18]],                                     // pitido medio
+        red:    [[400,0,0.18],[300,0.20,0.30]],                    // doble grave
+        sub:    [[700,0,0.10],[900,0.12,0.12]],                    // dos notas suaves
+        injury: [[300,0,0.25],[260,0.27,0.35]]                     // tono descendente
+    };
+    const seq = SEQ[type] || SEQ.sub;
+    const REPS = 3;                                     // 3 repeticiones fijas
+    const GAP  = 0.06;                                  // pausa entre repeticiones
+    // Duracion de una pasada = fin de su ultima nota.
+    const seqDur = Math.max.apply(null, seq.map(function(n){ return n[1] + n[2]; }));
+    const step   = seqDur + GAP;
+    for (let r = 0; r < REPS; r++) {
+        const base = r * step;
+        seq.forEach(([freq, start, dur]) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = (type === "goal") ? "triangle" : "sine";
+            osc.frequency.value = freq;
+            const t0  = now + base + start;
+            const atk = 0.012;                            // ataque
+            const rel = Math.min(0.05, dur * 0.35);       // release corto al final
+            const sus = t0 + Math.max(atk, dur - rel);
+            gain.gain.setValueAtTime(0.0001, t0);
+            gain.gain.exponentialRampToValueAtTime(0.22, t0 + atk);   // ataque
+            gain.gain.setValueAtTime(0.22, sus);                      // sostenido pleno
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur); // release corto
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start(t0); osc.stop(t0 + dur + 0.02);
+        });
+    }
+}
+
+// Vibración en móvil (si está disponible).
+function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e){} }
+
+const EVENT_META = {
+    goal:   { icon: "⚽", cls: "ev-goal",   title: "¡GOL!",        flash: "rgba(63,185,80,0.22)",  vib: [120,60,120] },
+    yellow: { icon: "🟨", cls: "ev-yellow", title: "Tarjeta amarilla", flash: "rgba(227,179,65,0.20)", vib: [200] },
+    red:    { icon: "🟥", cls: "ev-red",    title: "Tarjeta roja",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
+    sub:    { icon: "🔄", cls: "ev-sub",    title: "Cambio",        flash: "rgba(88,166,255,0.18)", vib: [100] },
+    injury: { icon: "🚑", cls: "ev-injury", title: "Lesión",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] }
+};
+
+function showEventToast(type, line, sub) {
+    const meta  = EVENT_META[type] || EVENT_META.sub;
+    const stack = document.getElementById("event-toast-stack");
+    if (!stack) return;
+    const el = document.createElement("div");
+    el.className = "event-toast " + meta.cls;
+    el.innerHTML = 
+        '<div class="et-icon">' + meta.icon + '</div>' +
+        '<div class="et-body">' +
+            '<div class="et-title">' + escapeHtml(line || meta.title) + '</div>' +
+            (sub ? '<div class="et-sub">' + escapeHtml(sub) + '</div>' : "") +
+        '</div>';
+    const remove = () => {
+        el.classList.add("leaving");
+        setTimeout(() => el.remove(), 320);
+    };
+    el.onclick = remove;
+    stack.appendChild(el);
+    // Limitar a 5 toasts simultáneos
+    while (stack.children.length > 5) stack.firstChild.remove();
+    setTimeout(remove, 6500);
+
+    // Flash de pantalla
+    const flash = document.getElementById("event-flash");
+    if (flash) {
+        flash.style.background = "radial-gradient(circle at 50% 30%, " + meta.flash + ", transparent 70%)";
+        flash.classList.remove("fire"); void flash.offsetWidth; flash.classList.add("fire");
+    }
+    playEventSound(type);
+    if (!_alertsMuted) vibrate(meta.vib);
+}
+
+// Construye el mapa de estado por jugador a partir de un snapshot.
+function _buildState(data) {
+    const players = {};
+    (data.players || []).forEach(p => {
+        if (p.id == null) return;
+        players[p.id] = {
+            goals:   p.goals   || 0,
+            cards:   p.cards   || "ninguna",
+            injured: !!p.injured,
+            status:  p.status,
+            name:    p.name,
+            number:  p.number,
+            team:    p.team
+        };
+    });
+    return {
+        players,
+        home: data.homeTeam?.score ?? 0,
+        away: data.awayTeam?.score ?? 0
+    };
+}
+
+// Compara el snapshot nuevo con el anterior y dispara alertas.
+// matchId identifica el partido; matchData es el snapshot de Firestore.
+function detectAndAlert(matchId, matchData, fromCache) {
+    // Descartar snapshots de cache local desactualizada: cuando hay un cambio
+    // pendiente de confirmar en el servidor, Firestore puede emitir primero un
+    // snapshot fromCache que puede estar atrasado. No avisamos con datos de cache.
+    if (fromCache) { return; }
+    // Descartar snapshots no monotonicos: si este snapshot no es mas reciente
+    // que el ultimo procesado para este partido, ignorarlo (evita re-disparar
+    // alertas tras reconexiones o reenvios de Firestore).
+    const ts = (typeof matchData.updatedAt?.toMillis === 'function')
+        ? matchData.updatedAt.toMillis()
+        : (typeof matchData.updatedAt?.toDate === 'function')
+            ? matchData.updatedAt.toDate().getTime()
+            : 0;
+    const prevTs = _matchLastTs[matchId] || 0;
+    if (ts && prevTs && ts <= prevTs) return;
+    if (ts) _matchLastTs[matchId] = ts;
+
+    const next = _buildState(matchData);
+    const prev = _matchPrevState[matchId];
+    _matchPrevState[matchId] = next;
+
+    // La primera vez que vemos un partido NO avisamos del estado preexistente.
+    if (!prev || !_matchSeeded[matchId]) { _matchSeeded[matchId] = true; return; }
+    if (matchData.status !== "active") return; // solo partidos en vivo
+
+    const matchLabel = (matchData.homeTeam?.name || "Local") + " vs " + (matchData.awayTeam?.name || "Visitante");
+    const subPending = []; // jugadores que pasaron a banquillo (posible "sale")
+    const subIn      = []; // jugadores que entraron al campo
+
+    Object.keys(next.players).forEach(id => {
+        const np = next.players[id];
+        const pp = prev.players[id];
+        if (!pp) return;
+        const who = "#" + (np.number ?? "?") + " " + (np.name || "Jugador");
+
+        // GOL — los goles del jugador aumentaron
+        if (np.goals > pp.goals) {
+            const n = np.goals - pp.goals;
+            showEventToast("goal", "¡GOL! " + who, matchLabel + (n > 1 ? " · +" + n : ""));
+        }
+        // TARJETAS — cambio de estado de tarjeta
+        if (np.cards !== pp.cards) {
+            if (np.cards === "amarilla" && pp.cards !== "amarilla")
+                showEventToast("yellow", "Amarilla · " + who, matchLabel);
+            else if (np.cards === "roja" && pp.cards !== "roja")
+                showEventToast("red", "Roja · " + who, matchLabel);
+        }
+        // LESIÓN — pasó a lesionado
+        if (np.injured && !pp.injured) {
+            showEventToast("injury", "Lesión · " + who, matchLabel);
+        }
+        // CAMBIO — transiciones field<->bench (no por expulsión roja)
+        if (np.status !== pp.status && np.cards !== "roja" && pp.cards !== "roja") {
+            if (pp.status === "field" && np.status === "bench") subPending.push(who);
+            else if (pp.status === "bench" && np.status === "field") subIn.push(who);
+        }
+    });
+
+    // Sustituciones: emparejar entradas/salidas en un único aviso si es posible.
+    if (subIn.length || subPending.length) {
+        const pairs = Math.max(subIn.length, subPending.length);
+        for (let i = 0; i < pairs; i++) {
+            const inP  = subIn[i];
+            const outP = subPending[i];
+            let line = "Cambio";
+            if (inP && outP) line = "Cambio · ▲ " + inP + "  ▼ " + outP;
+            else if (inP)    line = "Entra · " + inP;
+            else if (outP)   line = "Sale · " + outP;
+            showEventToast("sub", line, matchLabel);
+        }
+    }
+}
+
 
 async function checkUserAccess(user) {
     const errEl = document.getElementById('auth-error');
@@ -545,8 +985,74 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
+// ── Vigilancia en segundo plano de TODOS los partidos seguidos ─────
+// Suscribe un onSnapshot a cada partido en vivo que el usuario puede
+// seguir, de modo que las alertas (gol/tarjeta/cambio/lesión) suenen
+// en cualquier partido aunque el director esté viendo otro o la lista.
+const _bgWatchers = {};   // matchId -> unsubscribe
+let _bgPollTimer = null;
+
+function _userCanFollow(m) {
+    if (!m || m.status !== "active") return false;
+    const isSA = (userData.role === "superadmin" || userData.role === "admin");
+    if (isSA) {
+        if (window._saClubFilter) return m.clubId === window._saClubFilter;
+        return true;
+    }
+    if (userData.clubId && m.clubId === userData.clubId) return true;
+    if (m.createdBy && m.createdBy === userData.uid) return true;
+    if (m.coachEmail && userData.email && m.coachEmail.toLowerCase() === userData.email.toLowerCase()) return true;
+    return false;
+}
+
+async function refreshBackgroundWatchers() {
+    try {
+        const snap = await getDocs(collection(db, "live_matches"));
+        const activeIds = new Set();
+        snap.forEach(d => {
+            const m = { id: d.id, ...d.data() };
+            if (!_userCanFollow(m)) return;
+            activeIds.add(m.id);
+            if (_bgWatchers[m.id]) return; // ya suscrito
+            _bgWatchers[m.id] = onSnapshot(doc(db, "live_matches", m.id), (s2) => {
+                if (!s2.exists()) return;
+                const data = s2.data();
+                // El partido que se esta viendo lo procesa EXCLUSIVAMENTE el
+                // listener de loadMatch (via detectAndAlert -> renderMatch). El
+                // watcher de fondo se desentiende por completo de ese partido para
+                // no competir por _matchPrevState (evita falsos negativos por orden
+                // de callbacks no determinista entre ambos listeners).
+                if (m.id === currentMatchId) return;
+                detectAndAlert(m.id, data, s2.metadata && s2.metadata.fromCache);
+            }, () => {});
+        });
+        // Cancelar suscripciones de partidos que ya no están activos/seguidos.
+        Object.keys(_bgWatchers).forEach(id => {
+            if (!activeIds.has(id)) {
+                try { _bgWatchers[id](); } catch(e){}
+                delete _bgWatchers[id];
+                delete _matchPrevState[id];
+                delete _matchSeeded[id];
+                delete _matchLastTs[id];
+            }
+        });
+    } catch(e) { console.warn("[LIVE] refreshBackgroundWatchers:", e.message); }
+}
+
+function startBackgroundWatch() {
+    if (_bgPollTimer) return;
+    refreshBackgroundWatchers();
+    // Reevaluar la lista de partidos seguidos periódicamente (altas/bajas).
+    _bgPollTimer = setInterval(refreshBackgroundWatchers, 30000);
+}
+
 // ── Enter live view ────────────────────────────────────────────────
 async function enterLiveView() {
+    _initMuteBtn();
+    _refreshSoundBtn();
+    // Re-evaluar el estado del boton tras cada cambio de visibilidad/estado.
+    if (_audioCtx) { try { _audioCtx.onstatechange = _refreshSoundBtn; } catch(e){} }
+    startBackgroundWatch();
     if (urlMatchId) {
         // Enlace directo a un partido concreto
         loadMatch(urlMatchId);
@@ -572,6 +1078,7 @@ window.loadMatch = function(matchId) {
             }
             const data = snap.data();
             lastSnapshot = data;
+            detectAndAlert(matchId, data, snap.metadata && snap.metadata.fromCache);
             renderMatch(data);
         },
         (err) => {
@@ -888,9 +1395,14 @@ function renderBench(data) {
 
 // ── Show history ───────────────────────────────────────────────────
 // ── Pantalla principal: partidos EN VIVO ──────────────────────────
+let _liveListUnsubscribe = null;
+let _liveListTimerInterval = null;
+
 window.showLiveNow = async function() {
     console.log("[LIVE] showLiveNow: start");
     clearInterval(timerInterval); timerInterval = null;
+    if (_liveListUnsubscribe) { _liveListUnsubscribe(); _liveListUnsubscribe = null; }
+    if (_liveListTimerInterval) { clearInterval(_liveListTimerInterval); _liveListTimerInterval = null; }
     window._prevPhase = null; // reset para resinc al volver
     document.getElementById('scoreboard').style.display      = 'none';
     document.getElementById('live-main').style.display       = 'none';
@@ -942,15 +1454,13 @@ window.showLiveNow = async function() {
     listEl.innerHTML = '<p style="color:var(--muted);text-align:center;margin-top:2rem;">⏳ Buscando partidos en vivo…</p>';
 
     try {
-        // Sin orderBy para no requerir índice — ordenamos en cliente
-        const q    = collection(db, 'live_matches');
-        console.log("[LIVE] getDocs: executing...");
-        const snap = await getDocs(q);
-        console.log("[LIVE] getDocs: got " + snap.size + " docs");
-
-        const liveMatches = [];
-        const allDocs = [];
-        snap.forEach(d => { allDocs.push({ id: d.id, ...d.data() }); });
+        const q = collection(db, 'live_matches');
+        console.log("[LIVE] Subscribing to live list...");
+        
+        _liveListUnsubscribe = onSnapshot(q, (snap) => {
+            const liveMatches = [];
+            const allDocs = [];
+            snap.forEach(d => { allDocs.push({ id: d.id, ...d.data() }); });
         // Ordenar cliente (sin índice Firestore)
         allDocs.sort((a,b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
         
@@ -1016,11 +1526,6 @@ window.showLiveNow = async function() {
                 : '—';
             const homePlayers = (m.players||[]).filter(p=>p.team==='home'&&p.status==='field').length;
             const awayPlayers = (m.players||[]).filter(p=>p.team==='away'&&p.status==='field').length;
-            const totalSecs   = (m.timeH1||0) + (m.timeH2||0);
-            const mins        = Math.floor(totalSecs/60);
-            const secs        = totalSecs % 60;
-            const timeStr     = `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
-
             const card = document.createElement('div');
             card.className = 'history-card';
             card.style.cssText =
@@ -1039,7 +1544,7 @@ window.showLiveNow = async function() {
                                      color:#ff5858;letter-spacing:1px;">EN VIVO</span>
                     </div>
                     <span style="font-size:0.75rem;color:var(--muted);">
-                        ⏱ ${timeStr} · Actualizado ${time}
+                        Actualizado ${time}
                     </span>
                 </div>
 
@@ -1061,11 +1566,13 @@ window.showLiveNow = async function() {
                             ${homePlayers} en campo
                         </div>
                     </div>
-                    <div style="text-align:center;">
-                        <div style="font-size:1.5rem;color:var(--muted);
-                                    font-weight:300;line-height:1;">–</div>
-                        <div style="font-size:0.65rem;color:var(--muted);
-                                    margin-top:0.3rem;">
+                    <!-- CRONÓMETRO NUEVO EN MEDIO -->
+                    <div style="text-align:center; min-width: 70px;">
+                        <div class="live-list-timer" data-match='${escapeHtml(JSON.stringify(m))}'
+                             style="font-family:'Outfit',sans-serif; font-size:1.8rem; font-weight:700; color:var(--text);">
+                            --:--
+                        </div>
+                        <div style="font-size:0.65rem;color:var(--muted); margin-top:0.3rem;">
                             ${m.mode==='f7'?'F7':'F11'}
                         </div>
                     </div>
@@ -1107,6 +1614,52 @@ window.showLiveNow = async function() {
             };
             listEl.appendChild(card);
         });
+
+        }); // fin onSnapshot callback
+
+        // Levantar el setInterval para los relojes de las tarjetas
+        _liveListTimerInterval = setInterval(() => {
+            document.querySelectorAll('.live-list-timer').forEach(el => {
+                const m = JSON.parse(el.getAttribute('data-match') || '{}');
+                const phase = m.phase || '1st_half';
+                const isBreak = phase === 'break' || phase === 'halftime' || phase === 'finished';
+                
+                let secs = (phase === '2nd_half' ? m.timeH2 : m.timeH1) || 0;
+                const maxTime = phase === '2nd_half' ? (m.half2MaxTime || (m.mode==='f7'?1800:2400)) : (m.half1MaxTime || (m.mode==='f7'?1800:2400));
+                const phaseLimit = maxTime + (m.mode === 'f7' ? 600 : 900);
+
+                if (m.isRunning && !isBreak) {
+                    // Reutilizar matemática de modo autónomo
+                    if (m.phaseStartedAt) {
+                        const startedMs = typeof m.phaseStartedAt === 'object' && m.phaseStartedAt.seconds 
+                                ? m.phaseStartedAt.seconds * 1000 
+                                : Number(m.phaseStartedAt);
+                        if (startedMs > 0) {
+                            const elapsed = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+                            secs = Math.min(elapsed, phaseLimit);
+                        }
+                    } else if (m.updatedAt) {
+                        const serverTimeMs = typeof m.updatedAt === 'object' && m.updatedAt.seconds
+                                ? m.updatedAt.seconds * 1000
+                                : new Date(m.updatedAt).getTime();
+                        if (serverTimeMs > 0) {
+                            const elapsed = Math.max(0, Math.floor((Date.now() - serverTimeMs) / 1000));
+                            const remaining = Math.max(0, phaseLimit - secs);
+                            secs += Math.min(elapsed, remaining);
+                        }
+                    }
+                }
+                
+                // Lógica de mostrar añadido (+)
+                let display = isBreak ? 0 : (secs <= maxTime ? (maxTime - secs) : (secs - maxTime));
+                const min = Math.floor(display / 60).toString().padStart(2, '0');
+                const sec = (display % 60).toString().padStart(2, '0');
+                const isAdded = secs > maxTime && !isBreak;
+                
+                el.textContent = (isAdded ? '+' : '') + min + ':' + sec;
+                el.style.color = isAdded ? '#f0883e' : (secs < maxTime/2 ? '#2ea043' : '#e3b341'); // Mismos colores que renderMatch
+            });
+        }, 1000);
 
     } catch(err) {
         console.error('[LIVE] showLiveNow ERROR:', err);
@@ -1359,5 +1912,7 @@ function showLoadingScreen(msg) {
     document.getElementById('loading-msg').textContent       = msg;
 }
 </script>
+<div id="event-flash"></div>
+<div id="event-toast-stack"></div>
 </body>
 </html>
