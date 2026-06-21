@@ -604,7 +604,7 @@ window.toggleMute = function() {
     localStorage.setItem("cronos_live_muted", _alertsMuted ? "1" : "0");
     const btn = document.getElementById("btn-mute");
     if (btn) { btn.textContent = _alertsMuted ? "🔕" : "🔔"; btn.classList.toggle("muted", _alertsMuted); btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas"; }
-    if (!_alertsMuted) unlockAudio();
+    if (!_alertsMuted) unlockAudio(); else _stopKeepAlive();
 };
 
 function _initMuteBtn() {
@@ -628,7 +628,39 @@ function unlockAudio() {
         src.buffer = buf;
         src.connect(_audioCtx.destination);
         src.start(0);
+        // KEEP-ALIVE (clave para iPhone PWA standalone): tras el primer gesto
+        // mantenemos el AudioContext permanentemente 'running' con un loop de
+        // silencio inaudible. En iPhone instalado en pantalla de inicio, iOS
+        // suspende el contexto entre gestos y NO permite resume() fuera de un
+        // gesto; cuando la alerta llega por Firestore (sin gesto) el sonido no
+        // sonaba ni una vez. Con el hardware de audio activo de forma continua,
+        // el contexto sigue 'running' y _playSeq programa y suena sin gesto.
+        _startKeepAlive();
     } catch(e) { /* sin audio disponible */ }
+}
+
+// Loop de silencio permanente que evita que iOS suspenda el AudioContext.
+let _keepAliveSrc = null;
+function _startKeepAlive() {
+    try {
+        if (!_audioCtx || _alertsMuted) return;
+        if (_keepAliveSrc) return;                 // ya activo
+        // Buffer de ~0.5 s de silencio, en bucle, a volumen 0.
+        const frames = Math.floor(_audioCtx.sampleRate * 0.5);
+        const buf = _audioCtx.createBuffer(1, frames, _audioCtx.sampleRate);
+        const src = _audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const g = _audioCtx.createGain();
+        g.gain.value = 0;                           // inaudible
+        src.connect(g); g.connect(_audioCtx.destination);
+        src.start(0);
+        _keepAliveSrc = src;
+    } catch(e) { /* ignorar */ }
+}
+function _stopKeepAlive() {
+    try { if (_keepAliveSrc) { _keepAliveSrc.stop(); _keepAliveSrc.disconnect(); } } catch(e){}
+    _keepAliveSrc = null;
 }
 // iOS no dispara 'pointerdown' de forma fiable como gesto de audio: anadimos
 // touchend y click. {once:false} para re-desbloquear tras cada interaccion.
@@ -636,11 +668,14 @@ function unlockAudio() {
     document.addEventListener(ev, unlockAudio, { once: false, passive: true })
 );
 // iOS suspende el AudioContext en segundo plano / pantalla bloqueada. Al volver
-// a primer plano intentamos reanudar (efectivo en el siguiente gesto si iOS lo
-// exige; en muchos casos basta con esto al reactivar la PWA).
+// a primer plano reanudamos y reactivamos el keep-alive (el resume aqui no esta
+// dentro de un gesto, pero en muchos casos basta; el siguiente toque lo asegura).
 document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && _audioCtx && _audioCtx.state === "suspended") {
-        _audioCtx.resume().catch(() => {});
+    if (document.visibilityState === "visible" && _audioCtx) {
+        if (_audioCtx.state === "suspended") _audioCtx.resume().catch(() => {});
+        // El loop pudo detenerse al suspender; lo recreamos.
+        _stopKeepAlive();
+        _startKeepAlive();
     }
 });
 // Liberar listeners de Firestore al ocultar/cerrar la pagina. 'pagehide' cubre
