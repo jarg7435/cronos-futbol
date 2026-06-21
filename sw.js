@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v191
+//  CRONOS FUTBOL - Service Worker v195
+//  v195: Restaura panel.js de Administrador de Club (443 lineas borradas en
+//         edicion local recuperadas) + elimina boton Cambiar Rol de ese panel
+//         por decision de Jose Alberto. Alinea VERSION y CACHE_NAME (desfasados
+//         entre v191/v194 por cambios de sesion anterior sin commitear). Bump
+//         fuerza recarga completa del bundle de admin.
 //  v191: Boton explicito "Activar sonido" en live.html para iPhone PWA
 //         standalone. live.html se abre con window.open(_blank), un documento
 //         separado que NO hereda el gesto del usuario de la pagina padre, asi que
@@ -322,8 +327,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v191';
-const CACHE_NAME = 'cronos-cache-v191';
+const VERSION    = 'v195';
+const CACHE_NAME = 'cronos-cache-v195';
 
 const ASSETS = [
     './',
