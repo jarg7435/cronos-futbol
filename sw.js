@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v195
+//  CRONOS FUTBOL - Service Worker v196
+//  v196: Fix ficha difuminada tras confirmar cambio de jugador por toque (tap)
+//         en iPad/movil. renderPlayers() exigia ahora que exista un clon de
+//         arrastre activo (touchData.clone) antes de aplicar opacity:0.3,
+//         evitando que un draggedPlayerId residual deje la ficha entrante
+//         atenuada hasta el siguiente gesto. Bump fuerza recarga del bundle de UI.
 //  v195: Restaura panel.js de Administrador de Club (443 lineas borradas en
 //         edicion local recuperadas) + elimina boton Cambiar Rol de ese panel
 //         por decision de Jose Alberto. Alinea VERSION y CACHE_NAME (desfasados
@@ -327,8 +332,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v195';
-const CACHE_NAME = 'cronos-cache-v195';
+const VERSION    = 'v196';
+const CACHE_NAME = 'cronos-cache-v196';
 
 const ASSETS = [
     './',
