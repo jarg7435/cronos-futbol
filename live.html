@@ -360,6 +360,18 @@
             color: var(--muted); font-size: 0.82rem; cursor: pointer;
         }
         #btn-mute.muted { color: var(--danger); border-color: rgba(255,88,88,0.4); }
+        #btn-activate-sound {
+            padding: 0.4rem 0.7rem; background: rgba(63,185,80,0.15);
+            border: 1px solid rgba(63,185,80,0.5); border-radius: 6px;
+            color: #3fb950; font-size: 0.82rem; cursor: pointer; font-weight: 700;
+            animation: pulseSound 1.6s ease-in-out infinite;
+        }
+        #btn-activate-sound.ready { animation: none; background: var(--glass);
+            border-color: var(--border); color: var(--muted); font-weight: 400; }
+        @keyframes pulseSound {
+            0%,100% { box-shadow: 0 0 0 0 rgba(63,185,80,0.4); }
+            50%     { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
+        }
     </style>
 </head>
 <body>
@@ -434,6 +446,8 @@
             style="padding:0.4rem 0.8rem;background:none;border:1px solid rgba(255,255,255,0.12);
                    color:var(--muted);font-size:0.72rem;border-radius:6px;cursor:pointer;">⏻ Salir</button>
         <button id="btn-mute" onclick="toggleMute()" title="Silenciar alertas">🔔</button>
+        <button id="btn-activate-sound" onclick="activateSound()"
+                title="Toca para activar el sonido de alertas en este dispositivo">🔊 Activar sonido</button>
     </div>
 </header>
 
@@ -606,6 +620,50 @@ window.toggleMute = function() {
     if (btn) { btn.textContent = _alertsMuted ? "🔕" : "🔔"; btn.classList.toggle("muted", _alertsMuted); btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas"; }
     if (!_alertsMuted) unlockAudio(); else _stopKeepAlive();
 };
+
+// Boton explicito de "Activar sonido". En iPhone con la PWA en pantalla de
+// inicio (standalone), live.html es un documento separado abierto con
+// window.open(_blank): NO hereda el gesto del usuario de la pagina padre, y su
+// AudioContext arranca 'suspended'. Como las alertas llegan por Firestore (sin
+// gesto), el sonido no se desbloqueaba nunca. Este boton da un gesto GARANTIZADO
+// dentro de este documento: desbloquea el audio y arranca el keep-alive. Tras
+// desbloquear, se reproduce un bip de confirmacion y el boton pasa a "Sonido
+// activo". En PC/iPad ya funcionaba; esto cubre el caso iPhone standalone.
+window.activateSound = function() {
+    unlockAudio();                       // crea/resume AudioContext + keep-alive (gesto)
+    // Bip corto AUDIBLE de confirmacion (dentro del mismo gesto).
+    try {
+        if (_audioCtx && _audioCtx.state !== "running") _audioCtx.resume();
+        if (_audioCtx) {
+            const o = _audioCtx.createOscillator();
+            const g = _audioCtx.createGain();
+            o.type = "sine"; o.frequency.value = 880;
+            const n = _audioCtx.currentTime;
+            g.gain.setValueAtTime(0.0001, n);
+            g.gain.exponentialRampToValueAtTime(0.2, n + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, n + 0.25);
+            o.connect(g); g.connect(_audioCtx.destination);
+            o.start(n); o.stop(n + 0.27);
+        }
+    } catch(e) {}
+    _refreshSoundBtn();
+};
+
+// Refresca el estado visual del boton de activar sonido segun el AudioContext.
+function _refreshSoundBtn() {
+    const btn = document.getElementById("btn-activate-sound");
+    if (!btn) return;
+    const running = !!(_audioCtx && _audioCtx.state === "running");
+    if (running) {
+        btn.textContent = "🔊 Sonido activo";
+        btn.classList.add("ready");
+        btn.title = "El sonido de alertas esta activo en este dispositivo";
+    } else {
+        btn.textContent = "🔊 Activar sonido";
+        btn.classList.remove("ready");
+        btn.title = "Toca para activar el sonido de alertas en este dispositivo";
+    }
+}
 
 function _initMuteBtn() {
     const btn = document.getElementById("btn-mute");
@@ -991,6 +1049,9 @@ function startBackgroundWatch() {
 // ── Enter live view ────────────────────────────────────────────────
 async function enterLiveView() {
     _initMuteBtn();
+    _refreshSoundBtn();
+    // Re-evaluar el estado del boton tras cada cambio de visibilidad/estado.
+    if (_audioCtx) { try { _audioCtx.onstatechange = _refreshSoundBtn; } catch(e){} }
     startBackgroundWatch();
     if (urlMatchId) {
         // Enlace directo a un partido concreto
