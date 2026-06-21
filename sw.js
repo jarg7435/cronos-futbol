@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v190
+//  CRONOS FUTBOL - Service Worker v191
+//  v191: Boton explicito "Activar sonido" en live.html para iPhone PWA
+//         standalone. live.html se abre con window.open(_blank), un documento
+//         separado que NO hereda el gesto del usuario de la pagina padre, asi que
+//         su AudioContext nunca se desbloqueaba (en iPhone; PC/iPad iban OK por
+//         politica de autoplay mas laxa). El boton da un gesto GARANTIZADO en
+//         este documento: desbloquea el AudioContext + keep-alive y emite un bip
+//         de confirmacion. Tras desbloquear pasa a "Sonido activo". Bump fuerza
+//         recarga de live.html.
 //  v190: FIX audio de alertas En Vivo en iPhone PWA standalone (instalada en
 //         pantalla de inicio): no sonaba NUNCA, ni la 1a repeticion (PC/iPad ya
 //         iban OK tras v189). iOS standalone suspende el AudioContext entre
@@ -314,8 +322,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v190';
-const CACHE_NAME = 'cronos-cache-v190';
+const VERSION    = 'v191';
+const CACHE_NAME = 'cronos-cache-v191';
 
 const ASSETS = [
     './',
