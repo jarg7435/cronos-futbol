@@ -899,6 +899,15 @@ function detectAndAlert(matchId, matchData, fromCache) {
     const matchLabel = (matchData.homeTeam?.name || "Local") + " vs " + (matchData.awayTeam?.name || "Visitante");
     const subPending = []; // jugadores que pasaron a banquillo (posible "sale")
     const subIn      = []; // jugadores que entraron al campo
+    // Goles ya atribuidos a un jugador concreto en ESTE recorrido, por equipo.
+    // Sirve para restar del delta del marcador agregado (home/away en el estado,
+    // derivado de homeTeam.score / awayTeam.score) los goles que ya provocaron
+    // su propio showEventToast, y así NO duplicar la alerta cuando el gol SÍ es
+    // de un jugador con plantilla. El resto del delta no explicado por jugadores
+    // son goles "sin jugador" (equipo rival sin plantilla, o gol no asignado /
+    // propia puerta del equipo propio) que el bucle por jugador no detecta.
+    let playerGoalsHome = 0;
+    let playerGoalsAway = 0;
 
     Object.keys(next.players).forEach(id => {
         const np = next.players[id];
@@ -909,6 +918,7 @@ function detectAndAlert(matchId, matchData, fromCache) {
         // GOL — los goles del jugador aumentaron
         if (np.goals > pp.goals) {
             const n = np.goals - pp.goals;
+            if (np.team === "away") playerGoalsAway += n; else playerGoalsHome += n;
             showEventToast("goal", "¡GOL! " + who, matchLabel + (n > 1 ? " · +" + n : ""));
         }
         // TARJETAS — cambio de estado de tarjeta
@@ -928,6 +938,34 @@ function detectAndAlert(matchId, matchData, fromCache) {
             else if (pp.status === "bench" && np.status === "field") subIn.push(who);
         }
     });
+
+    // GOL SIN JUGADOR ASOCIADO — marcador agregado.
+    // El bucle anterior solo detecta goles cuando el campo `goals` de un jugador
+    // del array aumenta. Los goles registrados vía window._cronosExtraGoals
+    // (equipo rival SIN plantilla cargada, o "gol no asignado / propia puerta"
+    // del equipo propio) suben homeTeam.score / awayTeam.score en Firestore pero
+    // NO incrementan el `goals` de ningún jugador, por lo que el bucle no los ve.
+    // Aquí comparamos el delta REAL del marcador agregado (next.home/next.away,
+    // derivado de homeTeam.score/awayTeam.score en _buildState) y restamos los
+    // goles que YA fueron atribuidos a un jugador en este mismo ciclo
+    // (playerGoalsHome / playerGoalsAway) para no duplicar la alerta del gol
+    // propio. El remanente no explicado son goles sin jugador → una alerta por
+    // cada uno, con el NOMBRE REAL del equipo configurado.
+    const homeName = matchData.homeTeam?.name || "Local";
+    const awayName = matchData.awayTeam?.name || "Visitante";
+    const deltaHome = (next.home || 0) - (prev.home || 0);
+    const deltaAway = (next.away || 0) - (prev.away || 0);
+    // Solo deltas POSITIVOS no explicados por jugadores → goles. Un gol anulado
+    // (delta negativo) o un marcador que no cambia no dispara nada. Si el delta
+    // queda totalmente explicado por goles de jugador, el remanente es 0.
+    const extraHome = Math.max(0, deltaHome - playerGoalsHome);
+    const extraAway = Math.max(0, deltaAway - playerGoalsAway);
+    for (let i = 0; i < extraHome; i++) {
+        showEventToast("goal", "¡GOL! " + homeName, matchLabel);
+    }
+    for (let i = 0; i < extraAway; i++) {
+        showEventToast("goal", "¡GOL! " + awayName, matchLabel);
+    }
 
     // Sustituciones: emparejar entradas/salidas en un único aviso si es posible.
     if (subIn.length || subPending.length) {
@@ -1332,6 +1370,7 @@ function renderField(data) {
         const isHome = p.team === 'home';
         // FIX: usar color individual del jugador (incluido en snapshot) con fallback al color del equipo
         const color  = safeColor(p.color,     safeColor(isHome ? data.homeTeam?.color     : data.awayTeam?.color,     isHome ? '#58a6ff' : '#ff5858'));
+        const shortsColor = safeColor(p.shortsColor, safeColor(isHome ? data.homeTeam?.shorts : data.awayTeam?.shorts, isHome ? '#1a4e99' : '#b22222'));
         const text   = safeColor(p.textColor, safeColor(isHome ? data.homeTeam?.textColor : data.awayTeam?.textColor, '#fff'));
 
         const goals     = p.goals  || 0;
@@ -1346,14 +1385,26 @@ function renderField(data) {
         const xPct = Math.max(3, Math.min(97, p.x || 50));
         const yPct = Math.max(3, Math.min(97, p.y || 50));
 
+        // Calcular color del timer según minutos jugados
+        const half1Max = data.half1MaxTime || (data.mode === 'f7' ? 1800 : 2400);
+        const half2Max = data.half2MaxTime || (data.mode === 'f7' ? 1800 : 2400);
+        const totalSec = half1Max + half2Max;
+        const timeSec = p.time || 0;
+        let timerBg = '#da3633'; let timerText = '#ffffff';
+        if (timeSec >= totalSec / 2) {
+            timerBg = '#2ea043'; timerText = '#000000';
+        } else if (timeSec >= totalSec / 3) {
+            timerBg = '#e3b341'; timerText = '#000000';
+        }
+
         return `<div class="live-player" style="left:${xPct}%;top:${yPct}%;">
+            <div class="live-player-time" data-base-time="${timeSec}" style="background:${timerBg}; color:${timerText};">${formatTime(timeSec)}</div>
             <div class="live-player-chip ${chipClass}"
                  data-goal-label="${goalLabel}"
-                 style="background:${color};color:${text};">
+                 style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%);color:${text};">
                 ${escapeHtml(p.number)}
             </div>
             <div class="live-player-label">${escapeHtml(p.name)}</div>
-            <div class="live-player-time" data-base-time="${p.time || 0}">${formatTime(p.time || 0)}</div>
         </div>`;
     }).join('');
 }
@@ -1380,10 +1431,11 @@ function renderBench(data) {
         container.innerHTML = benchPlayers.map(p => {
             // FIX: usar color individual del jugador con fallback al color del equipo
             const color = safeColor(p.color, safeColor(teamColor, team === 'home' ? '#58a6ff' : '#ff5858'));
+            const shortsColor = safeColor(p.shortsColor, safeColor(team === 'home' ? data.homeTeam?.shorts : data.awayTeam?.shorts, team === 'home' ? '#1a4e99' : '#b22222'));
             const cardIcon = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
             const goalIcon = (p.goals || 0) > 0 ? ` ⚽×${p.goals}` : '';
             return `<div class="bench-player-row">
-                <div class="bench-dot" style="background:${color};color:#0a0e14;">${escapeHtml(p.number)}</div>
+                <div class="bench-dot" style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%);color:#0a0e14;">${escapeHtml(p.number)}</div>
                 <div class="bench-info">
                     <div class="bench-name">${escapeHtml(p.name)}${cardIcon}${goalIcon}${p.injured ? ' <span style="color:#e74c3c;font-size:0.7rem;">✚</span>' : ''}</div>
                 </div>
@@ -1395,9 +1447,14 @@ function renderBench(data) {
 
 // ── Show history ───────────────────────────────────────────────────
 // ── Pantalla principal: partidos EN VIVO ──────────────────────────
+let _liveListUnsubscribe = null;
+let _liveListTimerInterval = null;
+
 window.showLiveNow = async function() {
     console.log("[LIVE] showLiveNow: start");
     clearInterval(timerInterval); timerInterval = null;
+    if (_liveListUnsubscribe) { _liveListUnsubscribe(); _liveListUnsubscribe = null; }
+    if (_liveListTimerInterval) { clearInterval(_liveListTimerInterval); _liveListTimerInterval = null; }
     window._prevPhase = null; // reset para resinc al volver
     document.getElementById('scoreboard').style.display      = 'none';
     document.getElementById('live-main').style.display       = 'none';
@@ -1449,15 +1506,13 @@ window.showLiveNow = async function() {
     listEl.innerHTML = '<p style="color:var(--muted);text-align:center;margin-top:2rem;">⏳ Buscando partidos en vivo…</p>';
 
     try {
-        // Sin orderBy para no requerir índice — ordenamos en cliente
-        const q    = collection(db, 'live_matches');
-        console.log("[LIVE] getDocs: executing...");
-        const snap = await getDocs(q);
-        console.log("[LIVE] getDocs: got " + snap.size + " docs");
-
-        const liveMatches = [];
-        const allDocs = [];
-        snap.forEach(d => { allDocs.push({ id: d.id, ...d.data() }); });
+        const q = collection(db, 'live_matches');
+        console.log("[LIVE] Subscribing to live list...");
+        
+        _liveListUnsubscribe = onSnapshot(q, (snap) => {
+            const liveMatches = [];
+            const allDocs = [];
+            snap.forEach(d => { allDocs.push({ id: d.id, ...d.data() }); });
         // Ordenar cliente (sin índice Firestore)
         allDocs.sort((a,b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
         
@@ -1523,11 +1578,6 @@ window.showLiveNow = async function() {
                 : '—';
             const homePlayers = (m.players||[]).filter(p=>p.team==='home'&&p.status==='field').length;
             const awayPlayers = (m.players||[]).filter(p=>p.team==='away'&&p.status==='field').length;
-            const totalSecs   = (m.timeH1||0) + (m.timeH2||0);
-            const mins        = Math.floor(totalSecs/60);
-            const secs        = totalSecs % 60;
-            const timeStr     = `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
-
             const card = document.createElement('div');
             card.className = 'history-card';
             card.style.cssText =
@@ -1546,7 +1596,7 @@ window.showLiveNow = async function() {
                                      color:#ff5858;letter-spacing:1px;">EN VIVO</span>
                     </div>
                     <span style="font-size:0.75rem;color:var(--muted);">
-                        ⏱ ${timeStr} · Actualizado ${time}
+                        Actualizado ${time}
                     </span>
                 </div>
 
@@ -1568,11 +1618,13 @@ window.showLiveNow = async function() {
                             ${homePlayers} en campo
                         </div>
                     </div>
-                    <div style="text-align:center;">
-                        <div style="font-size:1.5rem;color:var(--muted);
-                                    font-weight:300;line-height:1;">–</div>
-                        <div style="font-size:0.65rem;color:var(--muted);
-                                    margin-top:0.3rem;">
+                    <!-- CRONÓMETRO NUEVO EN MEDIO -->
+                    <div style="text-align:center; min-width: 70px;">
+                        <div class="live-list-timer" data-match='${escapeHtml(JSON.stringify(m))}'
+                             style="font-family:'Outfit',sans-serif; font-size:1.8rem; font-weight:700; color:var(--text);">
+                            --:--
+                        </div>
+                        <div style="font-size:0.65rem;color:var(--muted); margin-top:0.3rem;">
                             ${m.mode==='f7'?'F7':'F11'}
                         </div>
                     </div>
@@ -1614,6 +1666,52 @@ window.showLiveNow = async function() {
             };
             listEl.appendChild(card);
         });
+
+        }); // fin onSnapshot callback
+
+        // Levantar el setInterval para los relojes de las tarjetas
+        _liveListTimerInterval = setInterval(() => {
+            document.querySelectorAll('.live-list-timer').forEach(el => {
+                const m = JSON.parse(el.getAttribute('data-match') || '{}');
+                const phase = m.phase || '1st_half';
+                const isBreak = phase === 'break' || phase === 'halftime' || phase === 'finished';
+                
+                let secs = (phase === '2nd_half' ? m.timeH2 : m.timeH1) || 0;
+                const maxTime = phase === '2nd_half' ? (m.half2MaxTime || (m.mode==='f7'?1800:2400)) : (m.half1MaxTime || (m.mode==='f7'?1800:2400));
+                const phaseLimit = maxTime + (m.mode === 'f7' ? 600 : 900);
+
+                if (m.isRunning && !isBreak) {
+                    // Reutilizar matemática de modo autónomo
+                    if (m.phaseStartedAt) {
+                        const startedMs = typeof m.phaseStartedAt === 'object' && m.phaseStartedAt.seconds 
+                                ? m.phaseStartedAt.seconds * 1000 
+                                : Number(m.phaseStartedAt);
+                        if (startedMs > 0) {
+                            const elapsed = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+                            secs = Math.min(elapsed, phaseLimit);
+                        }
+                    } else if (m.updatedAt) {
+                        const serverTimeMs = typeof m.updatedAt === 'object' && m.updatedAt.seconds
+                                ? m.updatedAt.seconds * 1000
+                                : new Date(m.updatedAt).getTime();
+                        if (serverTimeMs > 0) {
+                            const elapsed = Math.max(0, Math.floor((Date.now() - serverTimeMs) / 1000));
+                            const remaining = Math.max(0, phaseLimit - secs);
+                            secs += Math.min(elapsed, remaining);
+                        }
+                    }
+                }
+                
+                // Lógica de mostrar añadido (+)
+                let display = isBreak ? 0 : (secs <= maxTime ? (maxTime - secs) : (secs - maxTime));
+                const min = Math.floor(display / 60).toString().padStart(2, '0');
+                const sec = (display % 60).toString().padStart(2, '0');
+                const isAdded = secs > maxTime && !isBreak;
+                
+                el.textContent = (isAdded ? '+' : '') + min + ':' + sec;
+                el.style.color = isAdded ? '#f0883e' : (secs < maxTime/2 ? '#2ea043' : '#e3b341'); // Mismos colores que renderMatch
+            });
+        }, 1000);
 
     } catch(err) {
         console.error('[LIVE] showLiveNow ERROR:', err);
