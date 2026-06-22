@@ -1,5 +1,17 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v198
+//  CRONOS FUTBOL - Service Worker v199
+//  v199: FIX CRITICO DE PRIVACIDAD - localStorage no estaba aislado por usuario,
+//         causando que un usuario nuevo en el mismo dispositivo heredara plantillas,
+//         jugadores, partidos y datos de la cuenta anterior. Se anade
+//         _purgeStaleLocalDataIfNeeded() y _cronosPurgeAllLocalPII() en
+//         firestore-storage.js: purga automatica de claves cronos_* con PII al
+//         detectar cambio de uid en login (checkAuthorization, _launchWithRole,
+//         auto-recovery de superadmin/individual) y en logout (logoutUser,
+//         cerrarSesion). Autosanea dispositivos ya afectados en su proximo login,
+//         sin accion manual. No afecta sincronizacion legitima entre dispositivos
+//         del mismo usuario (Firestore ya estaba aislado por uid correctamente).
+//         Bump fuerza recarga obligatoria de todos los bundles para que el fix
+//         llegue a todos los usuarios cuanto antes.
 //  v198: Fix condicion de carrera en live.html entre el watcher de fondo
 //         (background) y el listener visible del partido abierto. Durante la
 //         ventana de "partido recien creado + interaccion temprana", ambos
@@ -350,8 +362,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v198';
-const CACHE_NAME = 'cronos-cache-v198';
+const VERSION    = 'v199';
+const CACHE_NAME = 'cronos-cache-v199';
 
 const ASSETS = [
     './',
