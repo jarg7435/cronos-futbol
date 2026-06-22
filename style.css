@@ -763,7 +763,7 @@ header {
     transition: transform 0.1s, box-shadow 0.1s;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     z-index: 10;
-    touch-action: none;
+    touch-action: pinch-zoom;
     user-select: none;
 }
 
@@ -992,7 +992,7 @@ header {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    touch-action: none;
+    touch-action: pinch-zoom;
 }
 
 /* Modal */
