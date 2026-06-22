@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v199
+//  CRONOS FUTBOL - Service Worker v200
+//  v200: Habilitado pinch-to-zoom en movil y iPad. Se quito
+//         maximum-scale=1.0 y user-scalable=no del meta viewport en
+//         index.html, live.html y sound-test.html. Se cambio touch-action
+//         de 'none' a 'pinch-zoom' en .player-chip (campo y banquillo) para
+//         permitir zoom con 2 dedos sin afectar el arrastre con 1 dedo. El
+//         drag-and-drop tactil no requirio cambios (el touchcancel existente
+//         en render.js ya limpia el clon de arrastre si el navegador
+//         intercepta el gesto de 2 dedos).
 //  v199: FIX CRITICO DE PRIVACIDAD - localStorage no estaba aislado por usuario,
 //         causando que un usuario nuevo en el mismo dispositivo heredara plantillas,
 //         jugadores, partidos y datos de la cuenta anterior. Se anade
@@ -362,8 +370,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v199';
-const CACHE_NAME = 'cronos-cache-v199';
+const VERSION    = 'v200';
+const CACHE_NAME = 'cronos-cache-v200';
 
 const ASSETS = [
     './',
