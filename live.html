@@ -1105,6 +1105,19 @@ window.loadMatch = function(matchId) {
     currentMatchId = matchId;
     showLoadingScreen('Conectando al partido…');
 
+    // El listener visible RECLAMA este partido: resetea de forma SINCRONA el
+    // estado de seeding/monotonia para este matchId, descartando cualquier valor
+    // que el watcher de fondo (startBackgroundWatch) hubiera tocado durante la
+    // ventana en que currentMatchId aun no estaba fijado. Asi el primer snapshot
+    // que reciba este onSnapshot vuelve a sembrar limpio (sin avisar del estado
+    // preexistente) y el listener visible queda como dueno unico de la deteccion
+    // de eventos para este partido. Estos delete corren ANTES de registrar el
+    // onSnapshot de abajo y, como Firestore entrega callbacks en un turno de
+    // event loop posterior, ningun snapshot puede colarse entre medias.
+    delete _matchSeeded[matchId];
+    delete _matchLastTs[matchId];
+    delete _matchPrevState[matchId];
+
     if (unsubscribeMatch) unsubscribeMatch();
 
     unsubscribeMatch = onSnapshot(
