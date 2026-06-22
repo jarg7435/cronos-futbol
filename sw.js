@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v196
+//  CRONOS FUTBOL - Service Worker v197
+//  v197: Fix alerta de gol (sonido+imagen) que no se disparaba en live.html para
+//         goles del equipo rival sin plantilla cargada, ni para goles no
+//         asignados/propia puerta del equipo propio. detectAndAlert() ahora
+//         compara el delta de marcador agregado (homeTeam.score/awayTeam.score)
+//         restando los goles ya atribuidos a jugadores, evitando alertas
+//         duplicadas. Usa el nombre real del equipo configurado. Bump fuerza
+//         recarga del bundle de live.html.
 //  v196: Fix ficha difuminada tras confirmar cambio de jugador por toque (tap)
 //         en iPad/movil. renderPlayers() exigia ahora que exista un clon de
 //         arrastre activo (touchData.clone) antes de aplicar opacity:0.3,
@@ -332,8 +339,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v196';
-const CACHE_NAME = 'cronos-cache-v196';
+const VERSION    = 'v197';
+const CACHE_NAME = 'cronos-cache-v197';
 
 const ASSETS = [
     './',
