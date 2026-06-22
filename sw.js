@@ -1,5 +1,16 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v197
+//  CRONOS FUTBOL - Service Worker v198
+//  v198: Fix condicion de carrera en live.html entre el watcher de fondo
+//         (background) y el listener visible del partido abierto. Durante la
+//         ventana de "partido recien creado + interaccion temprana", ambos
+//         listeners competian por el mismo estado de seeding/monotonia
+//         (_matchSeeded/_matchLastTs/_matchPrevState), de modo que el watcher de
+//         fondo gastaba el seed o avanzaba la monotonia del partido a punto de
+//         abrirse y el listener visible descartaba el snapshot del gol sin
+//         comparar el delta de marcador (gol del rival no disparaba alerta).
+//         Fix: loadMatch() resetea de forma SINCRONA esos tres objetos para el
+//         matchId justo antes de suscribir su onSnapshot, quedando como dueno
+//         unico de la deteccion. Bump fuerza recarga del bundle de live.html.
 //  v197: Fix alerta de gol (sonido+imagen) que no se disparaba en live.html para
 //         goles del equipo rival sin plantilla cargada, ni para goles no
 //         asignados/propia puerta del equipo propio. detectAndAlert() ahora
@@ -339,8 +350,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v197';
-const CACHE_NAME = 'cronos-cache-v197';
+const VERSION    = 'v198';
+const CACHE_NAME = 'cronos-cache-v198';
 
 const ASSETS = [
     './',
