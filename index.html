@@ -1127,7 +1127,7 @@
     // 1. cerrarSesion
     window.cerrarSesion = window.cerrarSesion || function() {
         if (typeof window.logoutUser === 'function') window.logoutUser();
-        else if (confirm('¿Cerrar sesión?')) { sessionStorage.clear(); location.reload(); }
+        else if (confirm('¿Cerrar sesión?')) { if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII(); sessionStorage.clear(); location.reload(); }
     };
 
     // 2. openUnifiedCommsMenu — se sobreescribe cuando cargue 21_coach_comms.js

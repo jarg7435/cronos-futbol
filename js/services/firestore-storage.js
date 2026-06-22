@@ -4,6 +4,99 @@
 //  El resto del código no cambia — solo se llaman estas funciones.
 // ══════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════
+//  PURGA DE PII LOCAL AL CAMBIAR DE USUARIO EN EL MISMO DISPOSITIVO
+//  ──────────────────────────────────────────────────────────────────
+//  localStorage NO está namespaced por uid. Si un usuario distinto
+//  inicia sesión en el mismo navegador, heredaría la caché del anterior
+//  (plantillas, jugadores, configs...). Estas funciones purgan TODA
+//  clave 'cronos_*' de PII cuando se detecta un cambio de uid (login)
+//  o al cerrar sesión (logout), ANTES de que cloudGet/syncFromCloud
+//  repueblen la caché desde Firestore (aislado por uid).
+// ══════════════════════════════════════════════════════════════════
+
+// Lista blanca COMPARTIDA: claves cronos_* genéricas/seguras por
+// dispositivo que NUNCA se purgan (preferencias UI, flags). Reutilizada
+// por login (_purgeStaleLocalDataIfNeeded) y logout (_cronosPurgeAllLocalPII).
+const _CRONOS_LOCAL_KEEP_KEYS = new Set([
+    'cronos_owner_uid',      // marcador de propietario del dispositivo
+    'cronos_install_shown',  // timestamp banner PWA (por dispositivo)
+    'cronos_live_muted',     // preferencia mute alertas (por dispositivo)
+    'cronos_tutorial_done',  // flag tutorial visto (genérico)
+    'cronos_post_update',    // flag actualización SW (normalmente sessionStorage)
+]);
+window._CRONOS_LOCAL_KEEP_KEYS = _CRONOS_LOCAL_KEEP_KEYS;
+
+// Barrido interno: elimina toda clave cronos_* salvo la lista blanca.
+// Devuelve el array de claves purgadas (para logging). Síncrono.
+function _cronosSweepLocalPII() {
+    const _purged = [];
+    // Copia de claves: removeItem muta el índice de localStorage al iterar.
+    const _allKeys = Object.keys(localStorage);
+    for (const key of _allKeys) {
+        if (!key.startsWith('cronos_')) continue;       // no tocar claves ajenas
+        if (_CRONOS_LOCAL_KEEP_KEYS.has(key)) continue; // conservar genéricas
+        localStorage.removeItem(key);
+        _purged.push(key);
+    }
+    return _purged;
+}
+
+// LOGIN: purga condicional por cambio de uid. Idempotente y SÍNCRONA.
+// Debe invocarse tras fijar window._cronosCurrentUser y ANTES de cualquier
+// cloudGet/syncFromCloud/_initSprint4Sync del usuario entrante.
+function _purgeStaleLocalDataIfNeeded(incomingUid) {
+    try {
+        if (!incomingUid) {
+            console.warn('[Cronos-Privacy] _purgeStaleLocalDataIfNeeded llamado sin uid — omitido.');
+            return;
+        }
+        const ownerUid = localStorage.getItem('cronos_owner_uid');
+
+        // CASO 1: mismo usuario que la última vez → no tocar nada (preserva
+        // la caché legítima y la sincronización entre dispositivos del mismo uid).
+        if (ownerUid === incomingUid) {
+            console.log('[Cronos-Privacy] Mismo usuario en el dispositivo (uid coincide). Sin purga.');
+            return;
+        }
+
+        // CASO 2: dispositivo nuevo (sin marcador) o cambio de usuario → purgar PII.
+        const _purged = _cronosSweepLocalPII();
+        localStorage.setItem('cronos_owner_uid', incomingUid);
+
+        if (ownerUid) {
+            console.log(
+                `[Cronos-Privacy] 🔒 Cambio de usuario detectado en el dispositivo. ` +
+                `Purgadas ${_purged.length} clave(s) de PII del usuario anterior:`,
+                _purged
+            );
+        } else {
+            console.log(
+                `[Cronos-Privacy] Dispositivo sin marcador previo. ` +
+                `Limpieza preventiva de ${_purged.length} clave(s) cronos_* y marcador establecido.`,
+                _purged
+            );
+        }
+    } catch (e) {
+        console.warn('[Cronos-Privacy] Error en _purgeStaleLocalDataIfNeeded:', e.message);
+    }
+}
+
+// LOGOUT: purga incondicional de PII + elimina el marcador, dejando el
+// dispositivo limpio para el siguiente usuario (red de seguridad).
+function _cronosPurgeAllLocalPII() {
+    try {
+        const _purged = _cronosSweepLocalPII();
+        localStorage.removeItem('cronos_owner_uid');
+        console.log(`[Cronos-Privacy] 🔒 Logout: purgadas ${_purged.length} clave(s) de PII + marcador.`, _purged);
+    } catch (e) {
+        console.warn('[Cronos-Privacy] Error en _cronosPurgeAllLocalPII:', e.message);
+    }
+}
+
+window._purgeStaleLocalDataIfNeeded = _purgeStaleLocalDataIfNeeded;
+window._cronosPurgeAllLocalPII      = _cronosPurgeAllLocalPII;
+
 // ── Referencia al doc de settings del usuario actual ─────────────
 function _userRef() {
     const fa  = window._cronos_auth;

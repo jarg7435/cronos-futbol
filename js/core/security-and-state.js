@@ -47,6 +47,9 @@ async function cerrarSesion() {
     window._loginThisSession  = false;
     sessionStorage.clear();
 
+    // [Cronos-Privacy] Logout: purga incondicional de PII + marcador.
+    if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
+
     // Recargar para volver al login
     location.reload();
 }

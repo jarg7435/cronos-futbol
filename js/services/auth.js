@@ -605,6 +605,8 @@ export async function checkAuthorization(user) {
                     clubId:  null,
                     clubName: null,
                 };
+                // [Cronos-Privacy] Purga PII local del usuario anterior si cambió el uid.
+                if (typeof window._purgeStaleLocalDataIfNeeded === 'function') window._purgeStaleLocalDataIfNeeded(user.uid);
                 enterApp();
                 return;
             }
@@ -691,6 +693,8 @@ export async function checkAuthorization(user) {
                         clubId:  null,
                         clubName: null,
                     };
+                    // [Cronos-Privacy] Purga PII local del usuario anterior si cambió el uid.
+                    if (typeof window._purgeStaleLocalDataIfNeeded === 'function') window._purgeStaleLocalDataIfNeeded(user.uid);
                     enterApp();
                     return;
                 }
@@ -1209,6 +1213,10 @@ export async function checkAuthorization(user) {
             individualEntityId: data.individualEntityId || null,
             allRoles:     allRoles
         };
+
+        // [Cronos-Privacy] Punto primario: purga PII local del usuario anterior
+        // si cambió el uid, ANTES de cualquier cloudGet/syncFromCloud del entrante.
+        if (typeof window._purgeStaleLocalDataIfNeeded === 'function') window._purgeStaleLocalDataIfNeeded(user.uid);
 
         // ── Auto-crear cronos_config/superadmins si es superadmin ──
         // Esto asegura que las reglas de Firestore siempre puedan verificar
@@ -3046,6 +3054,8 @@ function _launchWithRole(role) {
     sessionStorage.setItem('cronos_session_email', window._cronosCurrentUser.email);
     sessionStorage.setItem('cronos_session_role',  activeRole);
 
+    // [Cronos-Privacy] Red de seguridad: purga idempotente antes de sincronizar.
+    if (typeof window._purgeStaleLocalDataIfNeeded === 'function') window._purgeStaleLocalDataIfNeeded(window._cronosCurrentUser?.uid);
     // SPRINT 4: Inicializar sync de Training Plans (+ NotificationDismiss localStorage)
     if (typeof window._initSprint4Sync === 'function') window._initSprint4Sync();
 
@@ -3072,6 +3082,8 @@ function _launchWithRole(role) {
 window.logoutUser = () => {
     if (!confirm('¿Seguro que deseas salir y volver al inicio?')) return;
     sessionStorage.clear();
+    // [Cronos-Privacy] Logout: purga incondicional de PII + marcador.
+    if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
     if (window._cronos_auth?.auth) {
         import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js')
             .then(({ signOut }) => {
