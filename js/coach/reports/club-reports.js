@@ -150,11 +150,7 @@ async function openStaffDashboard() {
                            color:var(--text-muted);padding:0.35rem 0.7rem;border-radius:6px;
                            cursor:pointer;font-size:0.74rem;font-weight:600;" title="Recargar panel">
                     🔄 Recargar</button>
-                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
-                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
-                           color:#ffd700;padding:0.35rem 0.8rem;border-radius:6px;
-                           cursor:pointer;font-size:0.74rem;font-weight:700;">
-                    ⇄ Cambiar rol</button>
+                
                 <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
                     style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                            color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;
@@ -765,24 +761,24 @@ const _RP = (() => {
                 svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${pw.toFixed(1)}"
                     height="${TRACK_H}" rx="3" fill="#58a6ff" fill-opacity="0.82"/>`;
 
-                // Inicio de barra desde banquillo (sub_in): verde — nombre del que reemplazó
+                // Inicio de barra desde banquillo (sub_in): verde — nombre propio + minuto de entrada
                 if (a > 0.15) {
                     const outName = findNear(subInMap, aliasKey, a);
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
-                        stroke="#3fb950" stroke-width="1.8"/>`;
+                        stroke="#3fb950" stroke-width="1.2"/>`;
                     svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}"
-                        font-size="7" fill="#3fb950" font-weight="700">▲${outName ? 'x ' + outName : ''}</text>`;
+                        font-size="7" fill="#3fb950" font-weight="700">▲${alias} ${Math.floor(a)}'</text>`;
                 }
 
-                // Fin de barra antes del final (sub_out): rojo — nombre del que entró
+                // Fin de barra antes del final (sub_out): rojo — nombre propio + minuto de salida
                 if (b < totMin - 0.3) {
                     const inpName = findNear(subOutMap, aliasKey, b);
                     const ex = px + pw;
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
-                        stroke="#ff5858" stroke-width="1.8"/>`;
+                        stroke="#ff5858" stroke-width="1.2"/>`;
                     const lx = Math.min(ex - 2, W - 50);
                     svg += `<text x="${lx.toFixed(1)}" y="${TRACK_Y-7}"
-                        text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${inpName ? inpName + ' ▼' : '▼'}</text>`;
+                        text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▼</text>`;
                 }
             });
 
