@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v201
+//  CRONOS FUTBOL - Service Worker v202
+//  v202: Persiste subcategory en los 5 docs cronos_player_reports (Opcion A: derivada de me.allRoles del entrenador segun la category del partido)
 //  v201: Corrige etiquetas entrada/salida en linea de tiempo de informes colectivos (verde=entra, roja=sale, con nombre propio y minuto)
 //  v200: Habilitado pinch-to-zoom en movil y iPad. Se quito
 //         maximum-scale=1.0 y user-scalable=no del meta viewport en
@@ -371,8 +372,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v201';
-const CACHE_NAME = 'cronos-cache-v201';
+const VERSION    = 'v202';
+const CACHE_NAME = 'cronos-cache-v202';
 
 const ASSETS = [
     './',
