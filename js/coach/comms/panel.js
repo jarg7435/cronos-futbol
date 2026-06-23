@@ -236,6 +236,23 @@ if (typeof window !== 'undefined') window._cStaffThreadId = _cStaffThreadId;
 //  (director + coordinador + entrenador + padre) almacenados en allRoles[]
 //  y el campo `role` de nivel raíz puede ser cualquier rol activo actual.
 // ════════════════════════════════════════════════════════════════════
+// ── Helper: derivar la subcategoría del partido (Opción A) ────────────
+// Busca en me.allRoles la entrada de entrenador ('user'/'coach') cuya
+// category coincida con la del partido ya calculada y devuelve su
+// subcategory. Fallback '' (mismo estilo que category). No lanza.
+function _cMatchSubcatFor(me, cat) {
+    try {
+        const roles = (me && Array.isArray(me.allRoles)) ? me.allRoles : [];
+        const c = (cat || '').toString().trim().toLowerCase();
+        const isCoach = r => r && (r.role === 'user' || r.role === 'coach');
+        // 1) Coincidencia exacta de categoría entre roles de entrenador
+        const hit = roles.find(r => isCoach(r) &&
+            (r.category || '').toString().trim().toLowerCase() === c);
+        if (hit && hit.subcategory) return hit.subcategory;
+        return '';
+    } catch (_) { return ''; }
+}
+
 async function _cGetStaff(db, clubId, fns, roles) {
     roles = roles || ['director', 'coordinator'];
     const byUid = new Map(); // deduplicar por uid
@@ -1719,6 +1736,8 @@ window._executeReportsSend = async function(method) {
                                     scoreAway,
                                     category:      (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
                                                    (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || '',
+                                    subcategory:   _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                                   (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || ''),
                                     venue:         (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
                                     competition:   (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
                                     matchTime:     (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
@@ -1898,6 +1917,7 @@ window._executeReportsSend = async function(method) {
                     rival: rivalName, scoreHome, scoreAway,
                     myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                     category: (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
+                    subcategory: _cMatchSubcatFor(me, (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:'')),
                     createdAt: new Date().toISOString(),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
                     position: p.position || p.pos || '',
@@ -2067,6 +2087,7 @@ async function autoDispatchMatchReports() {
                 scoreAway,
                 myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                 category:      window._currentMatchCategory || '',
+                subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(p.number || ''),
                 playerAlias:   p.alias || p.name || '',
@@ -2295,6 +2316,7 @@ async function autoDispatchMatchReports() {
                     scoreAway,
                     myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                     category:      window._currentMatchCategory || '',
+                    subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
                     createdAt:     new Date().toISOString(),
                     playerNumber:  String(p.number||''),
                     playerAlias:   p.alias || p.name || '',
@@ -3827,6 +3849,8 @@ window._sendCollectiveReportNow = async function() {
                 myTeamRole:     _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto). CRÍTICO: este doc tiene staffReport:true y lo lee el Panel de Dirección.
                 category:       (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
                                  (typeof window.currentCategory !== 'undefined' ? window.currentCategory : ''),
+                subcategory:    _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                 (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '')),
                 venue:          (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
                 competition:    (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
                 matchTime:      (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
