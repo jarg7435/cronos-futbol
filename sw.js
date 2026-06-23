@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v200
+//  CRONOS FUTBOL - Service Worker v201
+//  v201: Corrige etiquetas entrada/salida en linea de tiempo de informes colectivos (verde=entra, roja=sale, con nombre propio y minuto)
 //  v200: Habilitado pinch-to-zoom en movil y iPad. Se quito
 //         maximum-scale=1.0 y user-scalable=no del meta viewport en
 //         index.html, live.html y sound-test.html. Se cambio touch-action
@@ -370,8 +371,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v200';
-const CACHE_NAME = 'cronos-cache-v200';
+const VERSION    = 'v201';
+const CACHE_NAME = 'cronos-cache-v201';
 
 const ASSETS = [
     './',
