@@ -60,23 +60,40 @@ function _purgeStaleLocalDataIfNeeded(incomingUid) {
             return;
         }
 
-        // CASO 2: dispositivo nuevo (sin marcador) o cambio de usuario → purgar PII.
+        // CASO 2: dispositivo SIN marcador previo (ownerUid == null).
+        // ───────────────────────────────────────────────────────────────
+        // FIX PÉRDIDA DE DATOS: el marcador 'cronos_owner_uid' se introdujo en
+        // v199. Cualquier usuario que ya tuviera datos ANTES de v199 (o que
+        // limpiara la caché del navegador) no tiene marcador. NO podemos asumir
+        // que esos datos son "heredados de otro usuario": lo más probable es que
+        // sean del PROPIO usuario que está entrando. Purgarlos aquí provocaba que
+        // en CADA actualización de versión el entrenador perdiera plantillas,
+        // formaciones, convocatorias y planificaciones de entrenamiento (claves
+        // que SOLO viven en localStorage y no se restauran desde Firestore).
+        //
+        // Comportamiento seguro: ADOPTAR el uid entrante como propietario SIN
+        // purgar. Si los datos locales fueran realmente de otro usuario, quedarán
+        // sobreescritos de forma natural por syncFromCloud() del usuario entrante
+        // (Firestore está aislado por uid). Solo se purga ante un cambio de uid
+        // REAL y comprobado (CASO 3).
+        if (!ownerUid) {
+            localStorage.setItem('cronos_owner_uid', incomingUid);
+            console.log(
+                '[Cronos-Privacy] Dispositivo sin marcador previo. Se adopta el uid ' +
+                'actual como propietario SIN purgar (se preservan los datos locales ' +
+                'existentes, que pertenecen al usuario entrante).'
+            );
+            return;
+        }
+
+        // CASO 3: cambio de usuario REAL (ownerUid existe y NO coincide) → purgar PII.
         const _purged = _cronosSweepLocalPII();
         localStorage.setItem('cronos_owner_uid', incomingUid);
-
-        if (ownerUid) {
-            console.log(
-                `[Cronos-Privacy] 🔒 Cambio de usuario detectado en el dispositivo. ` +
-                `Purgadas ${_purged.length} clave(s) de PII del usuario anterior:`,
-                _purged
-            );
-        } else {
-            console.log(
-                `[Cronos-Privacy] Dispositivo sin marcador previo. ` +
-                `Limpieza preventiva de ${_purged.length} clave(s) cronos_* y marcador establecido.`,
-                _purged
-            );
-        }
+        console.log(
+            `[Cronos-Privacy] 🔒 Cambio de usuario detectado en el dispositivo. ` +
+            `Purgadas ${_purged.length} clave(s) de PII del usuario anterior:`,
+            _purged
+        );
     } catch (e) {
         console.warn('[Cronos-Privacy] Error en _purgeStaleLocalDataIfNeeded:', e.message);
     }

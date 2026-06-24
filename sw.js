@@ -1,5 +1,17 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v203
+//  CRONOS FUTBOL - Service Worker v204
+//  v204: FIX CRITICO PERDIDA DE DATOS EN CADA ACTUALIZACION. La logica de
+//         privacidad introducida en v199 (_purgeStaleLocalDataIfNeeded) borraba
+//         TODAS las claves cronos_* cuando el dispositivo no tenia el marcador
+//         'cronos_owner_uid'. Como ese marcador solo existe desde v199, cualquier
+//         usuario con datos previos (o que limpiara la cache) entraba en la rama
+//         de "limpieza preventiva" en su siguiente login tras CADA actualizacion,
+//         perdiendo plantillas, formaciones, convocatorias y planificaciones de
+//         entrenamiento (claves que solo viven en localStorage). FIX: la purga
+//         ahora SOLO se dispara ante un cambio de uid REAL y comprobado (CASO 3).
+//         Si no hay marcador previo (CASO 2) se ADOPTA el uid actual como
+//         propietario SIN purgar, preservando los datos del usuario entrante.
+//         Bump fuerza recarga del bundle de firestore-storage.js.
 //  v203: Anade selector de tipo de Coordinador (F7/F11/F7&11) en registro.
 //  v202: Persiste subcategory en los informes colectivos (deriva de allRoles del entrenador, base para futuro resumen agregado de estadisticas)
 //  v201: Corrige etiquetas entrada/salida en linea de tiempo de informes colectivos (verde=entra, roja=sale, con nombre propio y minuto)
@@ -373,8 +385,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v203';
-const CACHE_NAME = 'cronos-cache-v203';
+const VERSION    = 'v204';
+const CACHE_NAME = 'cronos-cache-v204';
 
 const ASSETS = [
     './',
