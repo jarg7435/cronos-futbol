@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v202
+//  CRONOS FUTBOL - Service Worker v203
+//  v203: Anade selector de tipo de Coordinador (F7/F11/F7&11) en registro.
 //  v202: Persiste subcategory en los informes colectivos (deriva de allRoles del entrenador, base para futuro resumen agregado de estadisticas)
 //  v201: Corrige etiquetas entrada/salida en linea de tiempo de informes colectivos (verde=entra, roja=sale, con nombre propio y minuto)
 //  v200: Habilitado pinch-to-zoom en movil y iPad. Se quito
@@ -372,8 +373,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v202';
-const CACHE_NAME = 'cronos-cache-v202';
+const VERSION    = 'v203';
+const CACHE_NAME = 'cronos-cache-v203';
 
 const ASSETS = [
     './',
