@@ -314,7 +314,7 @@ window.saClubs = async function saClubs() {
             // Contadores por rol
             const countByRole = (role) => vis.filter(u => {
                 if (u.role === role && u.status !== 'removed') return true;
-                return (u.allRoles||[]).some(r => r.role === role && r.isAuthorized && r.clubId === c.id);
+                return u.status !== 'removed' && (u.allRoles||[]).some(r => r.role === role && r.isAuthorized && r.clubId === c.id);
             }).length;
             const slotBar = (role, icon, label, color) => {
                 const used = countByRole(role);
@@ -333,7 +333,7 @@ window.saClubs = async function saClubs() {
                     </div>
                 </div>`;
             };
-            const adminCount = vis.filter(u => u.role === 'club_admin' && u.status !== 'removed').length;
+            const adminCount = countByRole('club_admin');
 
             html += `
             <div style="margin-bottom:1rem;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;">
