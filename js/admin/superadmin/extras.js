@@ -524,7 +524,8 @@
                                         clubId: clubId || ar.clubId, 
                                         clubName: clubName || ar.clubName,
                                         category: r.category || ar.category || null,
-                                        subcategory: r.subcategory || ar.subcategory || null
+                                        subcategory: r.subcategory || ar.subcategory || null,
+                                        coordinatorType: r.requestedCoordinatorType || r.coordinatorType || ar.coordinatorType || null
                                     }) : ar;
                                 });
                                 if (!finalRoles.some(function(ar){ return ar.role === role; })) {

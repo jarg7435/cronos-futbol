@@ -410,6 +410,11 @@ export function handleRoleChange() {
     if (indivCont)     indivCont.style.display      = 'block';
     // Categoría: entrenador, padre, y sub-usuarios individual
     if (catCont)       catCont.style.display        = needsCategory ? 'block' : 'none';
+    // Tipo de Coordinador (F7/F11/F7&11): visible solo para rol 'coordinator'
+    const coordTypeCont = document.getElementById('auth-coordinator-type-container');
+    if (coordTypeCont) coordTypeCont.style.display = (role === 'coordinator') ? 'block' : 'none';
+    const coordTypeEl = document.getElementById('auth-coordinator-type');
+    if (coordTypeEl && role !== 'coordinator') coordTypeEl.value = '';
     // Campo email del administrador individual: NO necesario si ya se seleccionó del desplegable
     // Solo mostrar si el usuario necesita buscar al individual manualmente
     if (indOwnerCont)  indOwnerCont.style.display   = 'none';
@@ -1512,6 +1517,8 @@ export async function doAuth() {
         // Categoría y subcategoría (solo entrenadores y padres)
         const selectedCategory = document.getElementById('auth-category')?.value || '';
         const selectedSubcat   = document.getElementById('auth-subcat')?.value   || '';
+        // Tipo de Coordinador (solo rol coordinator): 'f7' | 'f11' | 'f711'
+        const _coordType       = document.getElementById('auth-coordinator-type')?.value || '';
         const inviteCode       = document.getElementById('auth-invite-code')?.value.trim().toUpperCase() || '';
         const requestedSlot    = selectedCategory
             ? (selectedSubcat ? `${selectedCategory}_${selectedSubcat}` : selectedCategory)
@@ -1523,6 +1530,10 @@ export async function doAuth() {
         }
         if (requestedRole === 'individual' && !selectedIndivId) {
             showAuthError('⚠️ Selecciona tu entidad individual del desplegable.'); return;
+        }
+        // Coordinador: el tipo de coordinación (F7/F11/F7&11) es obligatorio
+        if (requestedRole === 'coordinator' && !_coordType) {
+            showAuthError('⚠️ Selecciona el tipo de coordinación (Fútbol 7, Fútbol 11 o ambos).'); return;
         }
         // Entrenador/Padre bajo individual: deben seleccionar una entidad individual
         const _entityTypeVal = document.getElementById('auth-entity-type')?.value || '';
@@ -2077,7 +2088,7 @@ export async function doAuth() {
                 window._addingRole = false;
 
                 // Create fresh registration (same logic as new user section below)
-                const freshAllRoles = [{ role: finalRole, clubId, clubName, isAuthorized: isAuthorized, firstName: firstName || null, lastName: lastName || null, displayName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null }];
+                const freshAllRoles = [{ role: finalRole, clubId, clubName, isAuthorized: isAuthorized, firstName: firstName || null, lastName: lastName || null, displayName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, coordinatorType: _coordType || null }];
                 const freshNeedsApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
                 const freshIsUnderIndiv = !!selectedIndivId;
                 const freshStatus = isAuthorized ? 'active'
@@ -2273,6 +2284,7 @@ export async function doAuth() {
                 lastName:    lastName || null,
                 displayName: displayName,
                 playerAlias: (requestedRole === 'parent') ? (playerName || null) : null,
+                coordinatorType: _coordType || null,
             };
             if (selectedIndivId) {
                 newRoleEntry.individualEntityId = selectedIndivId;
@@ -2410,6 +2422,7 @@ export async function doAuth() {
                         requestedRoleLabel: ROLE_LABELS[finalRole] || finalRole,
                         requestedCategory: selectedCategory || null,
                         requestedSubcategory:   selectedSubcat   || null,
+                        requestedCoordinatorType: _coordType || null,
                         requestedSlot:     requestedSlot    || null,
                         userUid: cred.user.uid,
                         status: 'pending_club_admin',
@@ -2488,6 +2501,7 @@ export async function doAuth() {
                 firstName:   firstName || null,
                 lastName:    lastName || null,
                 displayName: displayName,
+                coordinatorType: _coordType || null,
             }];
 
             // Determine status: pending_club_admin for roles needing club+SA approval
@@ -3001,6 +3015,11 @@ function _launchWithRole(role) {
                 if (roleEntry.category) me.category = roleEntry.category;
             }
 
+            // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──
+            if (role === 'coordinator') {
+                if (roleEntry.coordinatorType) me.coordinatorType = roleEntry.coordinatorType;
+            }
+
         } else {
             // El SA entra a todos los paneles por diseño — no tiene entradas en allRoles para roles que no son suyos.
             if (!['superadmin','admin'].includes(me.role)) {
@@ -3067,6 +3086,8 @@ function _launchWithRole(role) {
         if (typeof openClubAdminPanel === 'function') openClubAdminPanel();
     } else if (['director', 'coordinator'].includes(activeRole)) {
         if (typeof openStaffDashboard === 'function') openStaffDashboard();
+        // Pill de solo lectura con el tipo de coordinación (F7/F11/F7&11) ya fijo.
+        if (activeRole === 'coordinator') _renderCoordinatorTypePill(window._cronosCurrentUser);
     } else if (activeRole === 'individual') {
         // Individual: primero cargar el campo, luego abrir el panel de gestión
         if (typeof init === 'function') init(activeRole);
@@ -3076,6 +3097,37 @@ function _launchWithRole(role) {
     } else {
         if (typeof init === 'function') init(activeRole);
     }
+}
+
+// ── Pill de solo lectura: tipo de coordinación (F7/F11/F7&11) ya fijo ──
+// Mismo estilo visual que el badge de categoría en individual/panel.js.
+// Se inyecta en la cabecera del Panel de Dirección (openStaffDashboard).
+function _renderCoordinatorTypePill(me) {
+    try {
+        const ct = me && me.coordinatorType;
+        if (!ct) return;
+        const LABELS = { f7: 'Fútbol 7', f11: 'Fútbol 11', f711: 'Fútbol 7 y 11' };
+        const label = LABELS[ct] || ct;
+        // Reintentar porque openStaffDashboard puede renderizar de forma asíncrona.
+        let tries = 0;
+        const inject = () => {
+            const modal = document.getElementById('setup-modal');
+            const sub = modal && Array.from(modal.querySelectorAll('div')).find(d =>
+                /\uD83C\uDFAF\s*Coordinador/.test(d.textContent || '') && d.children.length === 0);
+            if (!sub) {
+                if (tries++ < 20) return setTimeout(inject, 150);
+                return;
+            }
+            if (sub.querySelector('[data-coord-type-pill]')) return;
+            const pill = document.createElement('span');
+            pill.setAttribute('data-coord-type-pill', ct);
+            pill.textContent = '\uD83C\uDFAF ' + label;
+            pill.style.cssText = 'font-size:0.68rem;color:#d2a8ff;background:rgba(210,168,255,0.1);'
+                + 'border:1px solid rgba(210,168,255,0.2);border-radius:4px;padding:1px 6px;margin-left:0.4rem;';
+            sub.appendChild(pill);
+        };
+        inject();
+    } catch (_) { /* no-op: la pill es informativa */ }
 }
 
 // ── Logout ─────────────────────────────────────────────────

@@ -1321,6 +1321,7 @@ async function openClubAdminPanel(preClubId = null) {
             // Obtener categorías si existen (del doc del usuario, allRoles, o de la solicitud original)
             let userCatFwd    = userData.requestedCategory || userData.category || null;
             let userSubcatFwd = userData.requestedSubcategory   || userData.subcategory || null;
+            let userCoordTypeFwd = userData.requestedCoordinatorType || userData.coordinatorType || null;
             const userSlotFwd = userData.requestedSlot     || null;
             // Buscar también en allRoles si no se encontró en el doc raíz
             if (!userCatFwd && userData.allRoles) {
@@ -1328,6 +1329,7 @@ async function openClubAdminPanel(preClubId = null) {
                 if (roleEntry) {
                     userCatFwd    = roleEntry.category || roleEntry.categoryLabel || null;
                     userSubcatFwd = roleEntry.subcategory || null;
+                    if (!userCoordTypeFwd) userCoordTypeFwd = roleEntry.coordinatorType || null;
                 }
             }
 
@@ -1341,6 +1343,7 @@ async function openClubAdminPanel(preClubId = null) {
                 requestedRoleLabel: ROLE_LABELS[role] || role,
                 requestedCategory: userCatFwd,
                 requestedSubcategory:   userSubcatFwd,
+                requestedCoordinatorType: userCoordTypeFwd,
                 requestedSlot:     userSlotFwd,
                 userUid: uid,
                 status: 'pending_sa',
