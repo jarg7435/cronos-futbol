@@ -457,9 +457,18 @@ async function openClubAdminPanel(preClubId = null) {
                 const isAuth = r.isAuthorized === true || r.authorized === true || (u.role === 'superadmin');
                 
                 if (rCid === cidStr && isAuth && r.status !== 'rejected') {
+                    // Fallback por-rol: si esta entrada concreta de allRoles no trae
+                    // category/subcategory (tipico de altas del flujo Club previas al
+                    // fix), respaldarlas desde la raiz del documento del usuario.
+                    // Misma fuente que el fallback de array vacio (lineas 449-450).
+                    const _roleData = (r.category == null && r.subcategory == null)
+                        ? { ...r,
+                            category:    r.category    != null ? r.category    : (u.category || u.categoryLabel),
+                            subcategory: r.subcategory != null ? r.subcategory : u.subcategory }
+                        : r;
                     expandedUsers.push({
                         ...u,
-                        _activeRoleData: r
+                        _activeRoleData: _roleData
                     });
                 }
             });
