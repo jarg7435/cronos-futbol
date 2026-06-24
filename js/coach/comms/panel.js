@@ -2060,6 +2060,20 @@ async function autoDispatchMatchReports() {
                     staffToNotify.push({ uid: c.uid, role: c.role || 'staff', email: c.email || '' });
                 }
             });
+        // ── Pieza 2: filtrar coordinadores por modalidad del partido ──────
+        // Director Deportivo siempre; Coordinador solo si su coordinatorType
+        // (f7/f11/f711) encaja con la modalidad de la categoría del partido.
+        if (typeof window._cronosResolveStaffForMatch === 'function') {
+            const _matchCat  = window._currentMatchCategory || '';
+            const _matchMode = (typeof currentMode !== 'undefined' ? currentMode : null);
+            const _before = staffToNotify.length;
+            staffToNotify = window._cronosResolveStaffForMatch(staffToNotify, _matchCat, _matchMode);
+            if (staffToNotify.length !== _before) {
+                console.log('[autoDispatch] Staff filtrado por modalidad (' +
+                    (window._cronosMatchModality(_matchCat, _matchMode) || '?') + '): ' +
+                    _before + ' → ' + staffToNotify.length);
+            }
+        }
         const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
 
         if (window._cronosDiagReports) {
@@ -3755,6 +3769,17 @@ window.openCollectiveReport = async function openCollectiveReport() {
             }
         });
 
+        // ── Pieza 2: filtrar coordinadores por modalidad del partido ──────
+        // (igual criterio que autoDispatch: director siempre; coordinador
+        // solo si su coordinatorType encaja con la modalidad de la categoría).
+        if (typeof window._cronosResolveStaffForMatch === 'function') {
+            const _matchCat  = (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                               (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') ||
+                               window._currentMatchCategory || '';
+            const _matchMode = (typeof currentMode !== 'undefined' ? currentMode : null);
+            staffList = window._cronosResolveStaffForMatch(staffList, _matchCat, _matchMode);
+        }
+
         const listEl = document.getElementById('coll-rpt-staff-list');
         if (listEl) {
             if (!staffList.length) {
@@ -3797,6 +3822,15 @@ window._sendCollectiveReportNow = async function() {
                 const fns4 = await _cFS();
                 staff = (await _cGetStaff(fns4.db, me.clubId || '', fns4)) || [];
             } catch (e) { console.warn('[collectiveReport] recarga staff falló:', e.message); }
+            // Pieza 2: si recargamos aquí, aplicar el filtro por modalidad
+            // (en el flujo normal ya viene filtrado desde openCollectiveReport).
+            if (staff.length && typeof window._cronosResolveStaffForMatch === 'function') {
+                const _matchCat  = (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                   (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') ||
+                                   window._currentMatchCategory || '';
+                const _matchMode = (typeof currentMode !== 'undefined' ? currentMode : null);
+                staff = window._cronosResolveStaffForMatch(staff, _matchCat, _matchMode);
+            }
         }
         if (!staff.length) {
             if (typeof hideSpinner==='function') hideSpinner();

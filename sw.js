@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v204
+//  CRONOS FUTBOL - Service Worker v205
+//  v205: Pieza 2 - Resolutor de staff por modalidad del partido. Al despachar
+//         el informe colectivo (auto y manual) los Coordinadores se filtran por
+//         su coordinatorType (f7/f11/f711) segun la modalidad de la categoria
+//         del partido: F7 solo lo reciben coords f7/f711/sin-tipo, F11 solo
+//         f11/f711/sin-tipo; el Director Deportivo lo recibe SIEMPRE. Helpers
+//         puros en js/core/utils.js (_cronosMatchModality /
+//         _cronosStaffCoordinatorType / _cronosResolveStaffForMatch). Bump
+//         fuerza recarga de utils.js + coach/comms/panel.js.
 //  v204: FIX CRITICO PERDIDA DE DATOS EN CADA ACTUALIZACION. La logica de
 //         privacidad introducida en v199 (_purgeStaleLocalDataIfNeeded) borraba
 //         TODAS las claves cronos_* cuando el dispositivo no tenia el marcador
@@ -385,8 +393,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v204';
-const CACHE_NAME = 'cronos-cache-v204';
+const VERSION    = 'v205';
+const CACHE_NAME = 'cronos-cache-v205';
 
 const ASSETS = [
     './',
