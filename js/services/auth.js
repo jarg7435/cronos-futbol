@@ -1926,6 +1926,8 @@ export async function doAuth() {
                     firstName:   firstName || null,
                     lastName:    lastName || null,
                     displayName: displayName,
+                    category:    selectedCategory || null,
+                    subcategory: selectedSubcat   || null,
                 }];
 
                 const needsApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
@@ -2088,7 +2090,7 @@ export async function doAuth() {
                 window._addingRole = false;
 
                 // Create fresh registration (same logic as new user section below)
-                const freshAllRoles = [{ role: finalRole, clubId, clubName, isAuthorized: isAuthorized, firstName: firstName || null, lastName: lastName || null, displayName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, coordinatorType: _coordType || null }];
+                const freshAllRoles = [{ role: finalRole, clubId, clubName, isAuthorized: isAuthorized, firstName: firstName || null, lastName: lastName || null, displayName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, coordinatorType: _coordType || null, category: selectedCategory || null, subcategory: selectedSubcat || null }];
                 const freshNeedsApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
                 const freshIsUnderIndiv = !!selectedIndivId;
                 const freshStatus = isAuthorized ? 'active'
@@ -2285,6 +2287,8 @@ export async function doAuth() {
                 displayName: displayName,
                 playerAlias: (requestedRole === 'parent') ? (playerName || null) : null,
                 coordinatorType: _coordType || null,
+                category:    selectedCategory || null,
+                subcategory: selectedSubcat   || null,
             };
             if (selectedIndivId) {
                 newRoleEntry.individualEntityId = selectedIndivId;
@@ -2501,6 +2505,8 @@ export async function doAuth() {
                 firstName:   firstName || null,
                 lastName:    lastName || null,
                 displayName: displayName,
+                category:    selectedCategory || null,
+                subcategory: selectedSubcat   || null,
                 coordinatorType: _coordType || null,
             }];
 
