@@ -546,6 +546,13 @@ async function openClubAdminPanel(preClubId = null) {
     let modalHTML;
     try {
     modalHTML = SA_CSS + `
+    <style>
+      /* Fix minimo: selector de hijo directo para que el plegado funcione con
+         tarjetas .sa-card anidadas (cada nivel controla solo su propio body/chevron).
+         Sobrescribe la regla descendente compartida sin tocar los otros archivos. */
+      .sa-card.expanded > .sa-card-body { display: block; }
+      .sa-card.expanded > .sa-card-head .sa-chevron { transform: rotate(0deg); }
+    </style>
     <div class="modal-content sa-modal">
       <div class="sa-topbar">
         <div>
