@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v208
+//  CRONOS FUTBOL - Service Worker v209
+//  v209: Panel del Club — dentro de cada Subcategoria, la lista de usuarios
+//         pasa a columnas alineadas: Rol · Nombre · Email · Fecha (+acciones),
+//         con fila de cabecera. "Nombre" muestra solo el nombre de pila
+//         (firstName, con fallback a displayName.split(' ')[0]). Bump fuerza
+//         recarga de js/admin/club/panel.js.
 //  v208: Panel del Club — la lista plana de "Usuarios del Club" pasa a un
 //         arbol jerarquico: bloque Staff fijo (Director + Coordinadores con
 //         su modalidad F7/F11/F7&11) y 7 Categorias x 3 Subcategorias
@@ -401,8 +406,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v208';
-const CACHE_NAME = 'cronos-cache-v208';
+const VERSION    = 'v209';
+const CACHE_NAME = 'cronos-cache-v209';
 
 const ASSETS = [
     './',
