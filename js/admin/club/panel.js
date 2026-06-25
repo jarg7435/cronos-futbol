@@ -553,15 +553,14 @@ async function openClubAdminPanel(preClubId = null) {
             const ecid  = (clubId || '').replace(/'/g, "\\'");
             const erole = (r.role || u.role || '').replace(/'/g, "\\'");
             return `
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;
-                            padding:0.55rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05);">
-                    <div style="min-width:0;">
-                        <div style="font-weight:600; color:white; font-size:0.85rem;">${name}
-                            <span style="font-size:0.66rem; color:${roleMeta.color}; font-weight:600;">${roleMeta.icon} ${escapeHtml(roleMeta.label)}</span>
-                        </div>
-                        <div style="font-size:0.72rem; color:#8b949e; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(u.email || '')} · ${regDate}</div>
-                    </div>
-                    <div style="display:flex; gap:0.4rem; flex-shrink:0;">
+                <div style="display:grid; grid-template-columns:minmax(96px,auto) minmax(80px,1fr) minmax(0,2fr) auto auto;
+                            align-items:center; gap:0.6rem; padding:0.55rem 0.6rem;
+                            border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size:0.7rem; color:${roleMeta.color}; font-weight:600; white-space:nowrap;">${roleMeta.icon} ${escapeHtml(roleMeta.label)}</div>
+                    <div style="font-weight:600; color:white; font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>
+                    <div style="font-size:0.74rem; color:#8b949e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</div>
+                    <div style="font-size:0.72rem; color:#8b949e; white-space:nowrap;">${regDate}</div>
+                    <div style="display:flex; gap:0.4rem; flex-shrink:0; justify-content:flex-end;">
                         <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${erole}')"
                             title="Quitar este rol (conserva la cuenta y los demás roles)"
                             class="sa-btn" style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Rol</button>
@@ -571,6 +570,19 @@ async function openClubAdminPanel(preClubId = null) {
                     </div>
                 </div>`;
         };
+
+        // ── Cabecera de columnas para la lista de una subcategoría ───
+        //    Mismo grid que _userRowHtml: Rol · Nombre · Email · Fecha · (acciones).
+        const _userRowHeaderHtml = () => `
+                <div style="display:grid; grid-template-columns:minmax(96px,auto) minmax(80px,1fr) minmax(0,2fr) auto auto;
+                            align-items:center; gap:0.6rem; padding:0.4rem 0.6rem;
+                            border-bottom:1px solid rgba(255,255,255,0.1);">
+                    <div style="font-size:0.62rem; font-weight:700; color:#79c0ff; text-transform:uppercase; letter-spacing:0.6px;">Rol</div>
+                    <div style="font-size:0.62rem; font-weight:700; color:#79c0ff; text-transform:uppercase; letter-spacing:0.6px;">Nombre</div>
+                    <div style="font-size:0.62rem; font-weight:700; color:#79c0ff; text-transform:uppercase; letter-spacing:0.6px;">Email</div>
+                    <div style="font-size:0.62rem; font-weight:700; color:#79c0ff; text-transform:uppercase; letter-spacing:0.6px;">Fecha</div>
+                    <div></div>
+                </div>`;
 
         // ── Bloque Staff (siempre visible, sin plegar) ───────────────
         const _staffBlockHtml = (staff) => {
@@ -621,7 +633,7 @@ async function openClubAdminPanel(preClubId = null) {
                 ? `<span class="sa-badge" style="background:rgba(63,185,80,0.18); color:#3fb950;">${users.length}</span>`
                 : `<span style="font-size:0.7rem; color:#6e7681;">vacía</span>`;
             const body = hasAny
-                ? users.map(_userRowHtml).join('')
+                ? _userRowHeaderHtml() + users.map(_userRowHtml).join('')
                 : '<div style="font-size:0.75rem; color:#6e7681; padding:0.5rem 0.6rem;">Sin usuarios en esta subcategoría.</div>';
             return `
                 <div class="sa-card" style="margin-bottom:0.5rem; padding:0.6rem 0.7rem;
