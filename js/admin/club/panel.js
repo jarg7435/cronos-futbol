@@ -474,16 +474,73 @@ async function openClubAdminPanel(preClubId = null) {
             });
         });
             
-        // 2. Generar las filas de la tabla
-        const rows = expandedUsers.map(u => {
+        // ── 2. Construir índices (una sola pasada O(n)) ──────────────
+        //    · staff: Director + Coordinador(es) con coordinatorType válido.
+        //    · byCatSub: Map<catId, Map<subId, user[]>> solo Entrenador/Padre
+        //      con category Y subcategory válidas. Los registros incompletos
+        //      (históricos) se EXCLUYEN por completo (decisión de diseño).
+        const CLUB_CATEGORIES = [
+            { id: 'prebenjamin', label: 'Prebenjamín' },
+            { id: 'benjamin',    label: 'Benjamín' },
+            { id: 'alevin',      label: 'Alevín' },
+            { id: 'infantil',    label: 'Infantil' },
+            { id: 'cadete',      label: 'Cadete' },
+            { id: 'juvenil',     label: 'Juvenil' },
+            { id: 'regional',    label: 'Regional' },
+        ];
+        const CLUB_SUBCATS = ['A', 'B', 'C'];
+        const _validCatIds = new Set(CLUB_CATEGORIES.map(c => c.id));
+        const _coordLabel = { f7: 'F7', f11: 'F11', f711: 'F7&11' };
+
+        const _buildUserIndex = (eUsers) => {
+            const staff = [];                 // {u, role, coordType?}
+            const byCatSub = new Map();       // catId -> (subId -> [rows])
+            const catHasAny = new Set();      // catId
+            const subHasAny = new Set();      // "catId|subId"
+            eUsers.forEach(u => {
+                const r = u._activeRoleData || {};
+                const role = r.role || u.role;
+                if (role === 'director') {
+                    staff.push({ u, role, coordType: '' });
+                    return;
+                }
+                if (role === 'coordinator') {
+                    // Tipo de modalidad: preferir la entrada de rol concreta,
+                    // con respaldo en el normalizador canónico global.
+                    let ct = '';
+                    const raw = (r.coordinatorType || r.requestedCoordinatorType || '');
+                    const n = String(raw).trim().toLowerCase();
+                    if (n === 'f7' || n === 'f11' || n === 'f711') ct = n;
+                    if (!ct && typeof window._cronosStaffCoordinatorType === 'function') {
+                        ct = window._cronosStaffCoordinatorType(u) || '';
+                    }
+                    // EXCLUIR coordinador sin tipo válido (registro histórico).
+                    if (!ct) return;
+                    staff.push({ u, role, coordType: ct });
+                    return;
+                }
+                if (role !== 'user' && role !== 'parent') return; // club_admin u otros: fuera del árbol
+                // Entrenador / Padre → al árbol. Requiere cat Y subcat válidas.
+                const cat = String(r.category || '').trim().toLowerCase();
+                const sub = String(r.subcategory || '').trim().toUpperCase();
+                if (!_validCatIds.has(cat)) return;        // EXCLUIR sin categoría válida
+                if (!CLUB_SUBCATS.includes(sub)) return;    // EXCLUIR sin subcategoría válida
+                if (!byCatSub.has(cat)) byCatSub.set(cat, new Map());
+                const subMap = byCatSub.get(cat);
+                if (!subMap.has(sub)) subMap.set(sub, []);
+                subMap.get(sub).push(u);
+                catHasAny.add(cat);
+                subHasAny.add(cat + '|' + sub);
+            });
+            return { staff, byCatSub, catHasAny, subHasAny };
+        };
+
+        // ── Fila plana de un usuario (Entrenador/Padre) ──────────────
+        const _userRowHtml = (u) => {
             const r = u._activeRoleData || {};
             const roleMeta = (window.ROLE_META || {})[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' };
-            
-            // Nombre visible
             let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
-            name = name.split(' ')[0];
-
-            // Fecha de registro
+            name = escapeHtml(String(name).split(' ')[0]);
             let regDate = '–';
             if (u.createdAt) {
                 const d = u.createdAt.toDate ? u.createdAt.toDate() : new Date(u.createdAt.seconds ? u.createdAt.seconds * 1000 : u.createdAt);
@@ -491,26 +548,20 @@ async function openClubAdminPanel(preClubId = null) {
             } else if (u.authorizedAt) {
                 regDate = new Date(u.authorizedAt).toLocaleDateString();
             }
-
-            const catLabel = r.category || '–';
-            const subLabel = r.subcategory || '–';
-            const euid = (u._id || '').replace(/'/g, "\\'");
+            const euid  = (u._id || '').replace(/'/g, "\\'");
             const email = (u.email || '').replace(/'/g, "\\'");
-            const ecid = (clubId || '').replace(/'/g, "\\'");
+            const ecid  = (clubId || '').replace(/'/g, "\\'");
             const erole = (r.role || u.role || '').replace(/'/g, "\\'");
-
             return `
-            <tr style="border-bottom:1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
-                <td style="padding:0.8rem 0.7rem;">
-                    <div style="font-weight:600; color:white;">${name}</div>
-                    <div style="font-size:0.68rem; color:${roleMeta.color};">${roleMeta.icon} ${roleMeta.label}</div>
-                </td>
-                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#8b949e;">${u.email}</td>
-                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#8b949e;">${regDate}</td>
-                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#3fb950; font-weight:600;">${catLabel}</td>
-                <td style="padding:0.8rem 0.7rem; font-size:0.8rem; color:#d2a8ff; font-weight:600;">${subLabel}</td>
-                <td style="padding:0.8rem 0.7rem; text-align:right;">
-                    <div style="display:flex; gap:0.4rem; justify-content:flex-end;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;
+                            padding:0.55rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="min-width:0;">
+                        <div style="font-weight:600; color:white; font-size:0.85rem;">${name}
+                            <span style="font-size:0.66rem; color:${roleMeta.color}; font-weight:600;">${roleMeta.icon} ${escapeHtml(roleMeta.label)}</span>
+                        </div>
+                        <div style="font-size:0.72rem; color:#8b949e; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(u.email || '')} · ${regDate}</div>
+                    </div>
+                    <div style="display:flex; gap:0.4rem; flex-shrink:0;">
                         <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${erole}')"
                             title="Quitar este rol (conserva la cuenta y los demás roles)"
                             class="sa-btn" style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Rol</button>
@@ -518,27 +569,106 @@ async function openClubAdminPanel(preClubId = null) {
                             title="Eliminar usuario completamente (borra la cuenta Auth y todos sus roles)"
                             class="sa-btn" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.3); font-weight:700;">🗑️ Usuario</button>
                     </div>
-                </td>
-            </tr>`;
-        }).join('');
+                </div>`;
+        };
 
+        // ── Bloque Staff (siempre visible, sin plegar) ───────────────
+        const _staffBlockHtml = (staff) => {
+            // Orden: Director primero, luego Coordinadores.
+            const ordered = staff.slice().sort((a, b) =>
+                (a.role === 'director' ? 0 : 1) - (b.role === 'director' ? 0 : 1));
+            const items = ordered.map(({ u, role, coordType }) => {
+                const roleMeta = (window.ROLE_META || {})[role] || { icon: '👤', color: '#8b949e', label: role };
+                let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
+                name = escapeHtml(String(name).split(' ')[0]);
+                const euid  = (u._id || '').replace(/'/g, "\\'");
+                const email = (u.email || '').replace(/'/g, "\\'");
+                const ecid  = (clubId || '').replace(/'/g, "\\'");
+                const erole = (role || '').replace(/'/g, "\\'");
+                const modBadge = coordType
+                    ? `<span class="sa-badge" style="background:rgba(210,168,255,0.15); color:#d2a8ff;">${_coordLabel[coordType] || coordType}</span>`
+                    : '';
+                return `
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;
+                                padding:0.5rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <div style="display:flex; align-items:center; gap:0.5rem; min-width:0;">
+                            <span style="font-size:0.85rem; font-weight:700; color:white;">${name}</span>
+                            <span style="font-size:0.7rem; color:${roleMeta.color}; font-weight:600;">${roleMeta.icon} ${escapeHtml(roleMeta.label)}</span>
+                            ${modBadge}
+                        </div>
+                        <div style="display:flex; gap:0.4rem; flex-shrink:0;">
+                            <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${erole}')"
+                                title="Quitar este rol" class="sa-btn"
+                                style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Rol</button>
+                            <button onclick="caDeleteUserComplete('${euid}','${email}','${ecid}')"
+                                title="Eliminar usuario completamente" class="sa-btn"
+                                style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.3); font-weight:700;">🗑️ Usuario</button>
+                        </div>
+                    </div>`;
+            }).join('');
+            return `
+            <div style="background:rgba(240,136,62,0.05); border:1px solid rgba(240,136,62,0.25);
+                        border-radius:10px; padding:0.8rem 0.9rem; margin-bottom:1rem;">
+                <div style="font-size:0.78rem; font-weight:700; color:#f0883e; text-transform:uppercase;
+                            letter-spacing:1px; margin-bottom:0.5rem;">📋 Staff del Club</div>
+                ${items || '<div style="font-size:0.78rem; color:#8b949e; padding:0.4rem 0;">Sin staff (Director / Coordinadores) registrado.</div>'}
+            </div>`;
+        };
+
+        // ── Subtarjeta (nivel 2): subcategoría A/B/C ─────────────────
+        const _subcategoryCardHtml = (catId, subId, users, hasAny) => {
+            const dot = hasAny
+                ? `<span class="sa-badge" style="background:rgba(63,185,80,0.18); color:#3fb950;">${users.length}</span>`
+                : `<span style="font-size:0.7rem; color:#6e7681;">vacía</span>`;
+            const body = hasAny
+                ? users.map(_userRowHtml).join('')
+                : '<div style="font-size:0.75rem; color:#6e7681; padding:0.5rem 0.6rem;">Sin usuarios en esta subcategoría.</div>';
+            return `
+                <div class="sa-card" style="margin-bottom:0.5rem; padding:0.6rem 0.7rem;
+                            border-color:rgba(255,255,255,0.08);">
+                    <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
+                        <div class="sa-card-title" style="font-size:0.82rem;">
+                            <span class="sa-chevron">▼</span>
+                            <span>Subcategoría ${subId}</span>
+                            ${dot}
+                        </div>
+                    </div>
+                    <div class="sa-card-body">${body}</div>
+                </div>`;
+        };
+
+        // ── Tarjeta (nivel 1): categoría ─────────────────────────────
+        const _categoryCardHtml = (catDef, idx) => {
+            const subMap = idx.byCatSub.get(catDef.id) || new Map();
+            const catHas = idx.catHasAny.has(catDef.id);
+            const subsHtml = CLUB_SUBCATS.map(subId => {
+                const users = subMap.get(subId) || [];
+                const subHas = idx.subHasAny.has(catDef.id + '|' + subId);
+                return _subcategoryCardHtml(catDef.id, subId, users, subHas);
+            }).join('');
+            const dot = catHas
+                ? '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#3fb950; box-shadow:0 0 6px rgba(63,185,80,0.7);"></span>'
+                : '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,0.12);"></span>';
+            return `
+                <div class="sa-card" style="margin-bottom:0.6rem; border-color:rgba(88,166,255,0.2);">
+                    <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
+                        <div class="sa-card-title">
+                            <span class="sa-chevron">▼</span>
+                            <span>${escapeHtml(catDef.label)}</span>
+                            ${dot}
+                        </div>
+                    </div>
+                    <div class="sa-card-body">${subsHtml}</div>
+                </div>`;
+        };
+
+        // ── Render final: Staff + árbol de 7×3 ───────────────────────
+        const _idx = _buildUserIndex(expandedUsers);
+        const _treeHtml = CLUB_CATEGORIES.map(c => _categoryCardHtml(c, _idx)).join('');
         return `
-        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; overflow:hidden; margin-bottom:1.5rem;">
-            <table style="width:100%; border-collapse:collapse; text-align:left;">
-                <thead>
-                    <tr style="background:rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.1);">
-                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Nombre</th>
-                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Email</th>
-                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Registro</th>
-                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Categoría</th>
-                        <th style="padding:0.8rem 0.7rem; font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px;">Subcat.</th>
-                        <th style="padding:0.8rem 0.7rem; text-align:right;"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows || '<tr><td colspan="6" style="padding:2rem; text-align:center; color:#8b949e;">No hay usuarios registrados.</td></tr>'}
-                </tbody>
-            </table>
+        <div style="margin-bottom:1.5rem;">
+            ${_staffBlockHtml(_idx.staff)}
+            ${_treeHtml}
         </div>`;
     };
 
