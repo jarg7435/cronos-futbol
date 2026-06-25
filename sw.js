@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v205
+//  CRONOS FUTBOL - Service Worker v208
+//  v208: Panel del Club — la lista plana de "Usuarios del Club" pasa a un
+//         arbol jerarquico: bloque Staff fijo (Director + Coordinadores con
+//         su modalidad F7/F11/F7&11) y 7 Categorias x 3 Subcategorias
+//         plegables (Entrenadores/Padres por grupo). Selector CSS de hijo
+//         directo para soportar el plegado anidado. Bump fuerza recarga de
+//         js/admin/club/panel.js.
+//  v207: Bump tras fix de category/subcategory en el flujo de alta del Club.
+//  v206: Bump tras fix del contador "Admin de Club" (countByRole via allRoles).
 //  v205: Pieza 2 - Resolutor de staff por modalidad del partido. Al despachar
 //         el informe colectivo (auto y manual) los Coordinadores se filtran por
 //         su coordinatorType (f7/f11/f711) segun la modalidad de la categoria
@@ -393,8 +401,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v207';
-const CACHE_NAME = 'cronos-cache-v207';
+const VERSION    = 'v208';
+const CACHE_NAME = 'cronos-cache-v208';
 
 const ASSETS = [
     './',
