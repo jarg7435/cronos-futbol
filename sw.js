@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v209
+//  CRONOS FUTBOL - Service Worker v211
+//  v211: Panel del SuperAdmin â€” saClubs() y saShowEntityUsers() ahora
+//         renderizan el arbol jerarquico Categoria/Subcategoria (solo
+//         lectura) via window.renderCategoryTreeReadOnly, en lugar de la
+//         lista plana. Helper compartido en js/admin/shared/category-tree.js
+//         (modo club con bloque Staff; modo individual sin Staff). Bump
+//         fuerza recarga de js/admin/superadmin/superadmin.panel.js y del
+//         nuevo js/admin/shared/category-tree.js.
 //  v209: Panel del Club — dentro de cada Subcategoria, la lista de usuarios
 //         pasa a columnas alineadas: Rol · Nombre · Email · Fecha (+acciones),
 //         con fila de cabecera. "Nombre" muestra solo el nombre de pila
@@ -406,8 +413,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION    = 'v210';
-const CACHE_NAME = 'cronos-cache-v210';
+const VERSION    = 'v211';
+const CACHE_NAME = 'cronos-cache-v211';
 
 const ASSETS = [
     './',
