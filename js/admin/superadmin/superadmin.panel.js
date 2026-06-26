@@ -192,8 +192,7 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
         </div>
     </div>
     <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-        <button onclick="saGoBackToRoles()"
-            style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);color:#ffd700;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⇄ Cambiar rol</button>
+        
         <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
             style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⏻ Salir</button>
     </div>
@@ -282,6 +281,45 @@ window.saClubs = async function saClubs() {
 
         const stColor = { active:'#3fb950', blocked:'#f0883e', removed:'#ff5858', pending:'#ffd700', pending_club:'#ffa500', pending_register:'#79c0ff' };
         const stLabel = { active:'Activo', blocked:'Bloqueado', removed:'Baja', pending:'⏳ Pend.SA', pending_club:'⏳ Pend.Club', pending_register:'⏳ Sin registrar' };
+
+        // Expande los usuarios de un club a la forma { ...u, _activeRoleData }
+        // que consume window.renderCategoryTreeReadOnly (mismo criterio que
+        // js/admin/club/panel.js: allRoles del club + fallback al rol raiz,
+        // con respaldo de category/subcategory).
+        const _expandClubUsers = (clubUsers, cid) => {
+            const cidStr = String(cid || '');
+            const expanded = [];
+            (clubUsers || []).filter(u => u.status !== 'removed').forEach(u => {
+                let roles = u.allRoles || [];
+                if (roles.length === 0) {
+                    const rootClubId = String(u.clubId || u.requestedClubId || '');
+                    const isAuth = u.isAuthorized === true || u.authorized === true;
+                    if (rootClubId === cidStr) {
+                        roles = [{
+                            role: u.role || u.requestedRole,
+                            clubId: u.clubId || null,
+                            isAuthorized: isAuth,
+                            status: u.status,
+                            category: u.category || u.categoryLabel,
+                            subcategory: u.subcategory,
+                        }];
+                    }
+                }
+                roles.forEach(r => {
+                    const rCid = String(r.clubId || '');
+                    const isAuth = r.isAuthorized === true || r.authorized === true || (u.role === 'superadmin');
+                    if (rCid === cidStr && isAuth && r.status !== 'rejected') {
+                        const _roleData = (r.category == null && r.subcategory == null)
+                            ? { ...r,
+                                category:    r.category    != null ? r.category    : (u.category || u.categoryLabel),
+                                subcategory: r.subcategory != null ? r.subcategory : u.subcategory }
+                            : r;
+                        expanded.push({ ...u, _activeRoleData: _roleData });
+                    }
+                });
+            });
+            return expanded;
+        };
 
         const renderRow = (u, cid) => {
             const st   = u.status || (u.isAuthorized?'active':'pending');
@@ -380,7 +418,7 @@ window.saClubs = async function saClubs() {
                                     border-top:1px solid rgba(255,255,255,0.05);">
                         <span>▾</span> Ver usuarios (${vis.length})
                     </summary>
-                    ${vis.length?'<div>'+vis.map(u=>renderRow(u,c.id)).join('')+'</div>':'<p style="margin:0;padding:0.6rem 0.9rem;color:#8b949e;font-size:0.8rem;">Sin usuarios asignados.</p>'}
+                    ${(function(){const _ex=_expandClubUsers(vis,c.id);return _ex.length?window.renderCategoryTreeReadOnly(_ex,{mode:'club'}):'<p style="margin:0;padding:0.6rem 0.9rem;color:#8b949e;font-size:0.8rem;">Sin usuarios asignados.</p>';})()}
                 </details>
             </div>`;
         });
@@ -2828,28 +2866,36 @@ window.saShowEntityUsers = async function(entityId) {
         } else {
             const _escH = typeof escapeHtml==='function'?escapeHtml:function(s){return s;};
             const _escA = typeof escapeAttr==='function'?escapeAttr:function(s){return s;};
-            users.forEach(u => {
-                const st = u.status || (u.isAuthorized?'active':'pending');
-                const meta = window.ROLE_META[u.role] || { icon:'👤', color:'#8b949e', label:u.role||'?' };
-                const eid = _escA(u.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-                const em  = _escA(u.email||u.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-                html += `
-                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:9px;padding:0.7rem 0.85rem;margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between;">
-                    <div style="display:flex;align-items:center;gap:0.6rem;flex:1;min-width:0;">
-                        <span style="font-size:1.2rem;">${meta.icon}</span>
-                        <div style="flex:1;min-width:0;">
-                            <div style="font-weight:600;font-size:0.85rem;color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escH(u.email||u.id)}</div>
-                            <div style="font-size:0.72rem;color:${stColor[st]||'#8b949e'};">${_escH(u.displayName||'')} · ${meta.label} · ${stLabel[st]||st}</div>
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:0.25rem;flex-shrink:0;">
-                        ${st==='pending'||st==='pending_register'||st==='pending_sa'||st==='pending_individual'?`<button onclick="saActivateIndividual('${eid}','${em}')" style="padding:0.22rem 0.5rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:5px;color:#3fb950;font-size:0.7rem;cursor:pointer;font-weight:700;">✅ Activar</button>`:''}
-                        ${st==='active'?`<button onclick="saSetClubUserStatus('${eid}','${em}','blocked','${_escA(entityId).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" style="padding:0.22rem 0.5rem;background:rgba(240,136,62,0.15);border:1px solid rgba(240,136,62,0.4);border-radius:5px;color:#f0883e;font-size:0.7rem;cursor:pointer;">🔒</button>`:''}
-                        ${st==='blocked'?`<button onclick="saSetClubUserStatus('${eid}','${em}','active','${_escA(entityId).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" style="padding:0.22rem 0.5rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:5px;color:#3fb950;font-size:0.7rem;cursor:pointer;">✅</button>`:''}
-                        ${st!=='removed'?`<button onclick="saSetClubUserStatus('${eid}','${em}','removed','${_escA(entityId).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" style="padding:0.22rem 0.5rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:5px;color:#ff5858;font-size:0.7rem;cursor:pointer;">🗑️</button>`:''}
-                    </div>
-                </div>`;
-            });
+            const _expandEntityUsers = (entUsers) => {
+                const expanded = [];
+                (entUsers || []).filter(u => u.status !== 'removed').forEach(u => {
+                    let roles = u.allRoles || [];
+                    if (roles.length === 0) {
+                        roles = [{
+                            role: u.role || u.requestedRole,
+                            clubId: u.clubId || u.individualEntityId || u.individualOwnerId || null,
+                            isAuthorized: (u.isAuthorized === true || u.authorized === true),
+                            status: u.status,
+                            category: u.category || u.categoryLabel,
+                            subcategory: u.subcategory,
+                        }];
+                    }
+                    roles.forEach(r => {
+                        const isAuth = r.isAuthorized === true || r.authorized === true;
+                        if (isAuth && r.status !== 'rejected') {
+                            const _roleData = (r.category == null && r.subcategory == null)
+                                ? { ...r,
+                                    category:    r.category    != null ? r.category    : (u.category || u.categoryLabel),
+                                    subcategory: r.subcategory != null ? r.subcategory : u.subcategory }
+                                : r;
+                            expanded.push({ ...u, _activeRoleData: _roleData });
+                        }
+                    });
+                });
+                return expanded;
+            };
+            const _expandedEnt = _expandEntityUsers(users);
+            html += window.renderCategoryTreeReadOnly(_expandedEnt, { mode: 'individual' });
         }
         body.innerHTML = html;
     } catch(e) {
