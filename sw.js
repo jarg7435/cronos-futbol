@@ -452,6 +452,7 @@ const ASSETS = [
     './js/admin/superadmin/superadmin.panel.js',
     './js/admin/superadmin/extras.js',
     './js/admin/superadmin/billing.js',
+    './js/admin/shared/category-tree.js',
     './js/admin/club/panel.js',
     './js/admin/individual/panel.js',
     './js/admin/billing/payments.js',
