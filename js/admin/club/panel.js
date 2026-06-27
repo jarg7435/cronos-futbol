@@ -348,6 +348,18 @@ async function openClubAdminPanel(preClubId = null) {
             }
         });
     });
+
+    // FIX duplicados: un rol pendiente que ya se mostró en "Solicitudes de Registro"
+    // (vía pendingFromPlatformReqs/pendingFromUserDocs, ver seenPendingKeys arriba)
+    // NO debe repetirse en "Nuevos Roles Solicitados". Misma clave: (_id||email)+'_'+rol.
+    const pendingRolesInAllRolesDeduped = pendingRolesInAllRoles.filter(u => {
+        const key = (u._id || u.email) + '_' + u._pendingRole;
+        if (seenPendingKeys.has(key)) return false;
+        seenPendingKeys.add(key);
+        return true;
+    });
+    pendingRolesInAllRoles.length = 0;
+    pendingRolesInAllRoles.push(...pendingRolesInAllRolesDeduped);
     const pendingAutoReg = users.filter(u => u.status === 'pending' && u.requestedRole !== 'club_admin');
     const pendingClubApproval = users.filter(u => u.status === 'pending_club' && u.approvedBySA === true);
     const pendingMembers = [...pendingAutoReg];
