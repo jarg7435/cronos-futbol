@@ -1725,9 +1725,23 @@ export async function doAuth() {
                             }
                         } catch(queryErr) {
                             console.warn('[Cronos] Error consultando users para verificar admin:', queryErr.message);
-                            // Si no podemos verificar, asumir que hay admin (más seguro)
-                            // para no bloquear registros legítimos
-                            _entityHasAdmin = true;
+                            // FIX (admin individual): la query a 'users' falla por reglas de
+                            // Firestore cuando el usuario recién creado aún no tiene documento
+                            // (un primer admin de una entidad con 0 usuarios). En ese caso NO
+                            // podemos verificar si hay admin previo.
+                            //   - Si el usuario pide ser 'individual' (Administrador Individual),
+                            //     tratarlo como PRIMER admin (_entityHasAdmin = false). El control
+                            //     real de duplicados lo hace el SuperAdmin al aprobar la solicitud.
+                            //     Si asumiéramos true, se le degradaría a sub-rol 'parent' (bug:
+                            //     aparecía como "Padre/Madre/Tutor").
+                            //   - Para cualquier OTRO rol (user/parent), mantener el comportamiento
+                            //     conservador (_entityHasAdmin = true) para no permitir que un
+                            //     entrenador/padre se registre antes de que exista el admin.
+                            if (requestedRole === 'individual') {
+                                _entityHasAdmin = false;
+                            } else {
+                                _entityHasAdmin = true;
+                            }
                         }
                     }
 
@@ -1777,7 +1791,12 @@ export async function doAuth() {
         // ── Registro bajo Administrador Individual ─────────────────────────────
         // Interceptar ANTES de isAddingRole para manejar el flujo especial
         // registerUnderIndividual = se seleccionó una entidad individual con admin
-        const _isUnderIndiv = registerUnderIndividual;
+        // GUARD (admin individual): un usuario que pide ser 'individual' (Administrador
+        // Individual) NUNCA debe entrar al bloque de sub-usuario (entrenador/padre),
+        // independientemente de cómo se resolviera _entityHasAdmin. Si llegara aquí con
+        // registerUnderIndividual = true por una verificación fallida, se le degradaría
+        // a sub-rol 'parent'. Forzamos su exclusión del flujo de sub-usuario.
+        const _isUnderIndiv = registerUnderIndividual && requestedRole !== 'individual';
         if (_isUnderIndiv && cred) {
             // El sub-rol es el que el usuario eligió: 'user' (Entrenador) o 'parent' (Padre/Madre/Tutor)
             const _finalSubRole = requestedRole === 'user' ? 'user' : 'parent';
