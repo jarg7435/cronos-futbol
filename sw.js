@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v211
+//  CRONOS FUTBOL - Service Worker v214
+//  v214: Bump tras fix de duplicado Solicitudes de Registro / Nuevos Roles Solicitados (panel.js).
 //  v211: Panel del SuperAdmin â€” saClubs() y saShowEntityUsers() ahora
 //         renderizan el arbol jerarquico Categoria/Subcategoria (solo
 //         lectura) via window.renderCategoryTreeReadOnly, en lugar de la
@@ -413,8 +414,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v213';
-const CACHE_NAME = 'cronos-cache-v213';
+const VERSION = 'v214';
+const CACHE_NAME = 'cronos-cache-v214';
 
 const ASSETS = [
     './',
