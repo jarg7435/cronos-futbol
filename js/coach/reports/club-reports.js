@@ -487,13 +487,30 @@ const _RP = (() => {
     // ── Reconstruir intervalos en campo desde el historial ────────────
     // history contiene eventos {type:'sub_in'|'sub_out'|'goal'|..., minute:N, second:S, timeStr:"MM:SS"}
     const buildIvs = (player, totMin) => {
-        const hist = (player.history || [])
-            .filter(e => e.type === 'sub_in' || e.type === 'sub_out')
-            .sort((a, b) => {
-                const ta = (a.minute || 0) + (a.second || 0) / 60;
-                const tb = (b.minute || 0) + (b.second || 0) / 60;
-                return ta - tb;
-            });
+        const rawHist = (player.history || []).filter(e => e.type === 'sub_in' || e.type === 'sub_out');
+        
+        // Agrupar por tiempo exacto para eliminar intercambios de posición (sub_in y sub_out simultáneos del mismo jugador)
+        const timeMap = {};
+        rawHist.forEach(e => {
+            const exact = (e.minute || 0) + (e.second || 0) / 60;
+            const tKey = exact.toFixed(3);
+            if (!timeMap[tKey]) timeMap[tKey] = { in: false, out: false, events: [] };
+            if (e.type === 'sub_in') timeMap[tKey].in = true;
+            if (e.type === 'sub_out') timeMap[tKey].out = true;
+            timeMap[tKey].events.push(e);
+        });
+        
+        const hist = [];
+        Object.values(timeMap).forEach(g => {
+            if (g.in && g.out) return; // Se anulan (cambio de posición en el campo)
+            hist.push(...g.events);
+        });
+        
+        hist.sort((a, b) => {
+            const ta = (a.minute || 0) + (a.second || 0) / 60;
+            const tb = (b.minute || 0) + (b.second || 0) / 60;
+            return ta - tb;
+        });
             
         if (!hist.length) {
             const playedSome = (player.minutesPlayed > 0) || (player.status === 'field') || (player.initialStatus === 'field') || (player.titular === true);
@@ -548,10 +565,24 @@ const _RP = (() => {
     const buildSubs = players => {
         const outs = [], ins = [];
         players.forEach(p => {
-            (p.history || []).forEach(ev => {
+            const evs = (p.history || []);
+            // Filtrar eventos simultáneos (cambios de posición)
+            const timeMap = {};
+            evs.forEach(ev => {
+                if (ev.type !== 'sub_in' && ev.type !== 'sub_out') return;
                 const exact = (ev.minute || 0) + (ev.second || 0) / 60;
-                if (ev.type === 'sub_out') outs.push({ min: exact, timeStr: ev.timeStr || '', p });
-                if (ev.type === 'sub_in')  ins.push({ min: exact, timeStr: ev.timeStr || '', p });
+                const tKey = exact.toFixed(3);
+                if (!timeMap[tKey]) timeMap[tKey] = { in: false, out: false, eIn: null, eOut: null };
+                if (ev.type === 'sub_in')  { timeMap[tKey].in = true; timeMap[tKey].eIn = ev; }
+                if (ev.type === 'sub_out') { timeMap[tKey].out = true; timeMap[tKey].eOut = ev; }
+            });
+            
+            Object.keys(timeMap).forEach(tKey => {
+                const g = timeMap[tKey];
+                if (g.in && g.out) return; // Es un simple cambio de posición en el campo, no sustitución
+                const exact = parseFloat(tKey);
+                if (g.out) outs.push({ min: exact, timeStr: g.eOut.timeStr || '', p });
+                if (g.in)  ins.push({ min: exact, timeStr: g.eIn.timeStr || '', p });
             });
         });
         outs.sort((a, b) => a.min - b.min);
