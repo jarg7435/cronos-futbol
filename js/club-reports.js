@@ -550,7 +550,7 @@ const _RP = (() => {
         outs.sort((a, b) => a.min - b.min);
         const used = new Set();
         return outs.map(o => {
-            const found = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias));
+            const found = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias) && i.p.playerAlias !== o.p.playerAlias);
             if (found) used.add(found.p.playerAlias);
             return { min: o.min, timeStr: o.timeStr, out: o.p, inp: found ? found.p : null };
         });
@@ -694,14 +694,15 @@ const _RP = (() => {
             if (!s.out || !s.inp) return;
             const oa = s.out.playerAlias  || ('#' + s.out.playerNumber);
             const ia = s.inp.playerAlias  || ('#' + s.inp.playerNumber);
-            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: ia });
-            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: oa });
+            const minStr = Math.floor(s.min) + "'";
+            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${ia.substring(0, 9)} ${minStr}` });
+            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${oa.substring(0, 9)} ${minStr}` });
         });
         const findNear = (map, alias, t) => {
             const arr = map[alias];
             if (!arr) return null;
             const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.12);
-            return hit ? hit.name.substring(0, 9) : null;
+            return hit ? hit.name : null;
         };
 
         const W = 500, Hrow = 62;
@@ -764,7 +765,7 @@ const _RP = (() => {
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
                         stroke="#3fb950" stroke-width="1.8"/>`;
                     svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}"
-                        font-size="7" fill="#3fb950" font-weight="700">▲${outName ? 'x ' + outName : ''}</text>`;
+                        font-size="7" fill="#3fb950" font-weight="700">▲ ${outName || ''}</text>`;
                 }
 
                 // Fin de barra antes del final (sub_out): rojo — nombre del que entró
@@ -775,7 +776,7 @@ const _RP = (() => {
                         stroke="#ff5858" stroke-width="1.8"/>`;
                     const lx = Math.min(ex - 2, W - 50);
                     svg += `<text x="${lx.toFixed(1)}" y="${TRACK_Y-7}"
-                        text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${inpName ? inpName + ' ▼' : '▼'}</text>`;
+                        text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${inpName ? inpName + ' ▲' : '▲'}</text>`;
                 }
             });
 
@@ -838,7 +839,7 @@ const _RP = (() => {
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:#58a6ff;border-radius:2px;opacity:0.82;"></span>En campo</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:rgba(255,255,255,0.07);border:0.5px solid rgba(255,255,255,0.15);border-radius:2px;"></span>Banquillo</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#3fb950;"></span><span style="color:#3fb950;font-weight:700;font-size:0.62rem;">▲ NOMBRE</span> Entra (reemplaza a)</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▼</span> Sale (relevado por)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▲</span> Sale (relevado por)</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:9px;height:9px;border-radius:50%;background:white;border:1.5px solid #3fb950;display:inline-block;"></span>Gol</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;"></span>Amarilla</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;"></span>Roja</span>` +
