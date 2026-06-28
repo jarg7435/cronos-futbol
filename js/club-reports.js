@@ -151,11 +151,7 @@ async function openStaffDashboard() {
                            color:var(--text-muted);padding:0.35rem 0.7rem;border-radius:6px;
                            cursor:pointer;font-size:0.74rem;font-weight:600;" title="Recargar panel">
                     🔄 Recargar</button>
-                <button onclick="if(typeof showRoleSelector==='function')showRoleSelector();else if(typeof showRoleSelection==='function')showRoleSelection();"
-                    style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);
-                           color:#ffd700;padding:0.35rem 0.8rem;border-radius:6px;
-                           cursor:pointer;font-size:0.74rem;font-weight:700;">
-                    ⇄ Cambiar rol</button>
+
                 <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
                     style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                            color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;
@@ -554,7 +550,7 @@ const _RP = (() => {
         outs.sort((a, b) => a.min - b.min);
         const used = new Set();
         return outs.map(o => {
-            const found = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias));
+            const found = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias) && i.p.playerAlias !== o.p.playerAlias);
             if (found) used.add(found.p.playerAlias);
             return { min: o.min, timeStr: o.timeStr, out: o.p, inp: found ? found.p : null };
         });
@@ -698,14 +694,15 @@ const _RP = (() => {
             if (!s.out || !s.inp) return;
             const oa = s.out.playerAlias  || ('#' + s.out.playerNumber);
             const ia = s.inp.playerAlias  || ('#' + s.inp.playerNumber);
-            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: ia });
-            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: oa });
+            const minStr = Math.floor(s.min) + "'";
+            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${ia.substring(0, 9)} ${minStr}` });
+            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${oa.substring(0, 9)} ${minStr}` });
         });
         const findNear = (map, alias, t) => {
             const arr = map[alias];
             if (!arr) return null;
             const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.12);
-            return hit ? hit.name.substring(0, 9) : null;
+            return hit ? hit.name : null;
         };
 
         const W = 500, Hrow = 62;
@@ -768,7 +765,7 @@ const _RP = (() => {
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
                         stroke="#3fb950" stroke-width="1.8"/>`;
                     svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}"
-                        font-size="7" fill="#3fb950" font-weight="700">▲${outName ? 'x ' + outName : ''}</text>`;
+                        font-size="7" fill="#3fb950" font-weight="700">▲ ${outName || ''}</text>`;
                 }
 
                 // Fin de barra antes del final (sub_out): rojo — nombre del que entró
