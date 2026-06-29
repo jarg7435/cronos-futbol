@@ -576,6 +576,7 @@ if (window.opener && !window.opener.closed) {
 // Idempotente: seguro llamarla varias veces.
 function teardownBackgroundWatch() {
     if (typeof _bgPollTimer !== "undefined" && _bgPollTimer) { clearInterval(_bgPollTimer); _bgPollTimer = null; }
+    if (typeof _stopAutonomousPhaseWatch === "function") _stopAutonomousPhaseWatch();
     if (typeof _bgWatchers !== "undefined") {
         Object.keys(_bgWatchers).forEach(id => {
             try { _bgWatchers[id](); } catch(e) {}
@@ -583,6 +584,8 @@ function teardownBackgroundWatch() {
             delete _matchPrevState[id];
             delete _matchSeeded[id];
             delete _matchLastTs[id];
+            delete _matchPrevPhase[id];
+            delete _matchLastData[id];
         });
     }
 }
@@ -612,6 +615,15 @@ const _matchSeeded = {};
 // desde cache local desactualizada), que de otro modo re-dispararian alertas
 // ya mostradas.
 const _matchLastTs = {};
+// Fase EFECTIVA anterior por matchId (1st_half|break|2nd_half|finished). Igual
+// que _matchSeeded, se SIEMBRA sin disparar la primera vez; es COMPARTIDA entre
+// el listener visible y el watcher de fondo, por lo que NO se borra en loadMatch
+// (solo al cancelar el watcher de un partido terminado).
+const _matchPrevPhase = {};
+// Ultimo snapshot autoritativo cacheado por matchId. Lo usa _autonomousPhaseTick
+// para reevaluar la fase derivada del reloj cuando el entrenador ha cerrado la
+// app (sin emitir snapshots).
+const _matchLastData = {};
 
 window.toggleMute = function() {
     _alertsMuted = !_alertsMuted;
@@ -847,6 +859,279 @@ function showEventToast(type, line, sub) {
     if (!_alertsMuted) vibrate(meta.vib);
 }
 
+// ════════════════════════════════════════════════════════════════
+//  SILBATO + OVERLAY DE MOMENTO DEL PARTIDO (fin de parte / fin de partido)
+//  Réplica para espectadores de _cronosWhistle / _cronosMatchMomentOverlay
+//  del entrenador (js/core/event-listeners.js, js/match/persistence/active-match.js).
+//  Diferencias clave de live.html:
+//   · El silbato se sintetiza SOBRE el _audioCtx compartido (keep-alive), NUNCA
+//     creando un AudioContext propio (eso rompe en iOS PWA standalone).
+//   · El overlay visual SIEMPRE se muestra (incluso con _alertsMuted); solo el
+//     silbato se salta si está silenciado, igual que playEventSound/_playSeq.
+//   · Cola FIFO para que dos transiciones casi simultáneas (p.ej. dos partidos
+//     en fondo) no se pisen: se muestran una tras otra.
+// ════════════════════════════════════════════════════════════════
+
+// Silbato del árbitro sobre el _audioCtx compartido. times: 2 (fin 1ª parte),
+// 3 (fin de partido). Respeta _alertsMuted (silencio → no suena). No bloquea:
+// el overlay no espera al silbato (a diferencia del flujo del entrenador, aquí
+// el overlay se encola por separado).
+function _liveWhistle(times) {
+    if (_alertsMuted) return;                 // silencio: sin pitido (overlay sí)
+    unlockAudio();                            // asegura _audioCtx running (best-effort)
+    const ctx = _audioCtx;
+    if (!ctx) return;
+    const fire = () => {
+        try {
+            const whistleDuration = 1.1;      // segundos por pitido
+            const gapDuration     = 0.35;     // silencio entre pitidos
+            let t = ctx.currentTime + 0.05;
+            for (let i = 0; i < times; i++) {
+                const osc    = ctx.createOscillator();
+                const gainEnv = ctx.createGain();
+                const noise  = ctx.createOscillator();
+                const noiseG = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(3100, t);
+                osc.frequency.setValueAtTime(3200, t + 0.05);
+                osc.frequency.setValueAtTime(3050, t + 0.10);
+                osc.frequency.setValueAtTime(3200, t + 0.15);
+                osc.frequency.setValueAtTime(3050, t + 0.20);
+                osc.frequency.setValueAtTime(3150, t + 0.25);
+                osc.frequency.setValueAtTime(3000, t + 0.30);
+                osc.frequency.setValueAtTime(3150, t + 0.35);
+                osc.frequency.setValueAtTime(3000, t + 0.40);
+                gainEnv.gain.setValueAtTime(0, t);
+                gainEnv.gain.linearRampToValueAtTime(0.55, t + 0.04);
+                gainEnv.gain.setValueAtTime(0.55, t + whistleDuration - 0.15);
+                gainEnv.gain.linearRampToValueAtTime(0, t + whistleDuration);
+                noise.type = 'square';
+                noise.frequency.setValueAtTime(6200, t);
+                noiseG.gain.setValueAtTime(0.08, t);
+                noiseG.gain.linearRampToValueAtTime(0, t + whistleDuration);
+                osc.connect(gainEnv);  noise.connect(noiseG);
+                gainEnv.connect(ctx.destination);  noiseG.connect(ctx.destination);
+                osc.start(t);   osc.stop(t + whistleDuration);
+                noise.start(t); noise.stop(t + whistleDuration);
+                t += whistleDuration + gapDuration;
+            }
+        } catch (e) { /* sin audio */ }
+    };
+    // Mismo patrón que playEventSound: si el contexto no está 'running' (alerta
+    // sin gesto), reanudar y programar dentro del then() para no congelar el reloj.
+    if (ctx.state === "running") fire();
+    else ctx.resume().then(fire).catch(function(){ /* sin audio */ });
+}
+
+// ── Cola FIFO de overlays de momento ───────────────────────────────
+// Si llega una transición mientras otra está visible, se encola y se muestra al
+// cerrarse la anterior. _momentActive evita solapes; _momentQueue conserva orden.
+const _momentQueue = [];
+let _momentActive = false;
+
+// Encola un overlay. opts: { icon, title, subtitle, matchId, navigable }
+// Si navigable===true y matchId !== currentMatchId, el overlay añade un botón
+// "Ver partido" que navega vía loadMatch(matchId). Para el partido ya abierto
+// (currentMatchId) el overlay solo cierra, sin botón extra.
+function _enqueueMoment(opts) {
+    _momentQueue.push(opts);
+    _drainMomentQueue();
+}
+
+function _drainMomentQueue() {
+    if (_momentActive) return;
+    const opts = _momentQueue.shift();
+    if (!opts) return;
+    _momentActive = true;
+    _showMomentOverlay(opts, () => {
+        _momentActive = false;
+        _drainMomentQueue();
+    });
+}
+
+function _showMomentOverlay(opts, onDone) {
+    const existing = document.getElementById('live-moment-overlay');
+    if (existing) existing.remove();
+
+    const navigable = !!opts.navigable && opts.matchId && opts.matchId !== currentMatchId;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'live-moment-overlay';
+    overlay.style.cssText = [
+        'position:fixed', 'inset:0', 'z-index:999999',
+        'display:flex', 'flex-direction:column',
+        'align-items:center', 'justify-content:center', 'gap:1rem',
+        'background:rgba(10,14,20,0.96)',
+        'backdrop-filter:blur(8px)',
+        'animation:_lmFadeIn 0.3s ease',
+        'cursor:pointer'
+    ].join(';');
+
+    const btnHtml = navigable
+        ? '<button id="live-moment-go" style="margin-top:1.2rem;padding:0.7rem 1.6rem;' +
+          'background:#ff5858;border:none;border-radius:10px;color:#fff;font-weight:800;' +
+          'font-size:0.95rem;letter-spacing:0.5px;cursor:pointer;">🔴 Ver partido</button>'
+        : '';
+
+    overlay.innerHTML =
+        '<style>' +
+        '@keyframes _lmFadeIn  { from { opacity:0; transform:scale(0.92) } to { opacity:1; transform:scale(1) } }' +
+        '@keyframes _lmFadeOut { from { opacity:1; transform:scale(1)    } to { opacity:0; transform:scale(1.05) } }' +
+        '@keyframes _lmBounce  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }' +
+        '@keyframes _lmPulse   { 0%,100%{opacity:1} 50%{opacity:0.6} }' +
+        '</style>' +
+        '<div style="font-size:5.5rem;animation:_lmBounce 0.8s ease infinite;line-height:1;">' + opts.icon + '</div>' +
+        '<div style="font-size:2.2rem;font-weight:900;letter-spacing:3px;color:#ffffff;' +
+        'text-align:center;text-transform:uppercase;text-shadow:0 0 30px rgba(255,255,255,0.4);' +
+        'font-family:\'Inter\',system-ui,sans-serif;">' + escapeHtml(opts.title) + '</div>' +
+        '<div style="font-size:1rem;font-weight:600;color:rgba(255,255,255,0.55);' +
+        'letter-spacing:1.5px;text-transform:uppercase;text-align:center;">' + escapeHtml(opts.subtitle || '') + '</div>' +
+        btnHtml +
+        '<div style="margin-top:1.5rem;font-size:0.75rem;color:rgba(255,255,255,0.25);' +
+        'animation:_lmPulse 1.2s ease infinite;">Toca para continuar</div>';
+
+    document.body.appendChild(overlay);
+
+    let dismissed = false;
+    const dismiss = (cb) => {
+        if (dismissed) return;
+        dismissed = true;
+        clearTimeout(autoTimer);
+        overlay.style.animation = '_lmFadeOut 0.4s ease forwards';
+        setTimeout(() => {
+            if (overlay.parentNode) overlay.remove();
+            if (typeof cb === 'function') cb();
+            if (typeof onDone === 'function') onDone();
+        }, 400);
+    };
+
+    // Click en el fondo cierra; el botón "Ver partido" navega tras cerrar.
+    overlay.addEventListener('click', () => dismiss());
+    if (navigable) {
+        const goBtn = overlay.querySelector('#live-moment-go');
+        if (goBtn) goBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const mid = opts.matchId;
+            dismiss(() => {
+                history.pushState({}, '', '?match=' + mid);
+                loadMatch(mid);
+            });
+        });
+    }
+    const autoTimer = setTimeout(() => dismiss(), 4000); // Auto-cierra a los 4s
+}
+
+// ── Inferencia de fase EFECTIVA ────────────────────────────────────
+// Centraliza la lógica de qué fase está REALMENTE en curso para un snapshot,
+// incluyendo el modo autónomo: si el entrenador cerró la app, el reloj absoluto
+// (phaseStartedAt) puede haber agotado la parte sin que él marque la transición.
+// En ese caso la fase efectiva pasa a 'break' (1ª parte agotada) o 'finished'
+// (2ª parte agotada). Devuelve uno de: 1st_half | break | 2nd_half | finished.
+function _effectivePhase(matchData) {
+    if (!matchData) return null;
+    // Fin de partido autoritativo del servidor (status no activo).
+    if (matchData.status && matchData.status !== "active") return "finished";
+    let phase = matchData.phase || "1st_half";
+    if (phase === "halftime") phase = "break";
+    if (phase === "finished") return "finished";
+    if (phase === "break") return "break";
+    // 1ª/2ª parte: comprobar agotamiento autónomo por reloj absoluto.
+    if (matchData.isRunning && matchData.phaseStartedAt && (phase === "1st_half" || phase === "2nd_half")) {
+        const startedMs = (typeof matchData.phaseStartedAt.toMillis === 'function')
+            ? matchData.phaseStartedAt.toMillis()
+            : (typeof matchData.phaseStartedAt.toDate === 'function')
+                ? matchData.phaseStartedAt.toDate().getTime()
+                : Number(matchData.phaseStartedAt);
+        if (startedMs > 0) {
+            const defaultMaxTime = matchData.mode === 'f7' ? 30 * 60 : 40 * 60;
+            const maxTime = phase === '2nd_half'
+                ? (matchData.half2MaxTime || defaultMaxTime)
+                : (matchData.half1MaxTime || defaultMaxTime);
+            const maxAddedSecs = (matchData.mode === 'f7') ? 600 : 900;
+            const phaseLimit = maxTime + maxAddedSecs;
+            const elapsed = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+            if (elapsed >= phaseLimit) return (phase === '2nd_half') ? "finished" : "break";
+        }
+    }
+    return phase;
+}
+
+// ── Punto ÚNICO de decisión de transición de fase ──────────────────
+// Invocado desde: (1) el listener visible, (2) el watcher de fondo, (3) el timer
+// autónomo _autonomousPhaseTick. Compara la fase efectiva nueva con la anterior
+// (_matchPrevPhase) y, en las transiciones relevantes, dispara silbato + overlay.
+// SIEMBRA sin disparar la primera vez que ve un partido (igual que _matchSeeded).
+// matchData es opcional para fin autónomo derivado solo del cacheado.
+function _handlePhaseTransition(matchId, matchData) {
+    const data = matchData || _matchLastData[matchId];
+    if (!data) return;
+    if (matchData) _matchLastData[matchId] = matchData;
+
+    const nextPhase = _effectivePhase(data);
+    if (nextPhase == null) return;
+    const prevPhase = _matchPrevPhase[matchId];
+
+    // Primera vez: sembrar SIN disparar (no avisar del estado preexistente).
+    if (prevPhase === undefined) { _matchPrevPhase[matchId] = nextPhase; return; }
+    if (nextPhase === prevPhase) return;
+    _matchPrevPhase[matchId] = nextPhase;
+
+    // ¿Es el partido que el usuario está viendo ahora? El partido abierto no lleva
+    // botón "Ver partido"; los de fondo sí (equipos + marcador + navegación).
+    const isCurrent  = (matchId === currentMatchId);
+    const homeName   = data.homeTeam?.name || "Local";
+    const awayName   = data.awayTeam?.name || "Visitante";
+    const homeScore  = data.homeTeam?.score ?? 0;
+    const awayScore  = data.awayTeam?.score ?? 0;
+    const scoreLine  = homeName + " " + homeScore + " · " + awayScore + " " + awayName;
+
+    // Transición a DESCANSO (fin de 1ª parte): desde 1ª parte.
+    if (nextPhase === "break" && prevPhase === "1st_half") {
+        _liveWhistle(2);
+        _enqueueMoment({
+            icon: '🏁',
+            title: 'FINAL DE PRIMERA PARTE',
+            subtitle: isCurrent ? 'Descanso' : scoreLine,
+            matchId: matchId,
+            navigable: !isCurrent
+        });
+        return;
+    }
+    // Transición a FIN DE PARTIDO: desde cualquier fase de juego.
+    if (nextPhase === "finished" && (prevPhase === "1st_half" || prevPhase === "2nd_half" || prevPhase === "break")) {
+        _liveWhistle(3);
+        _enqueueMoment({
+            icon: '🤝',
+            title: 'FINAL DEL PARTIDO',
+            subtitle: isCurrent ? 'El árbitro ha pitado el final' : scoreLine,
+            matchId: matchId,
+            navigable: !isCurrent
+        });
+        return;
+    }
+    // Otras transiciones (break → 2nd_half) no llevan silbato/overlay.
+}
+
+// ── Timer autónomo de transiciones ─────────────────────────────────
+// Cuando el entrenador cierra la app, deja de emitir snapshots, así que ni el
+// listener visible ni el watcher de fondo reciben el evento de agotamiento de la
+// parte. Este timer reevalúa periódicamente la fase efectiva (derivada del reloj
+// absoluto phaseStartedAt) de TODOS los partidos cacheados y dispara la
+// transición a DESCANSO/FIN cuando el reloj la alcanza, aunque no llegue snapshot.
+let _autonomousPhaseTimer = null;
+function _autonomousPhaseTick() {
+    Object.keys(_matchLastData).forEach(id => {
+        _handlePhaseTransition(id, null);   // null → usa el snapshot cacheado
+    });
+}
+function _startAutonomousPhaseWatch() {
+    if (_autonomousPhaseTimer) return;
+    _autonomousPhaseTimer = setInterval(_autonomousPhaseTick, 1000);
+}
+function _stopAutonomousPhaseWatch() {
+    if (_autonomousPhaseTimer) { clearInterval(_autonomousPhaseTimer); _autonomousPhaseTimer = null; }
+}
+
 // Construye el mapa de estado por jugador a partir de un snapshot.
 function _buildState(data) {
     const players = {};
@@ -887,6 +1172,13 @@ function detectAndAlert(matchId, matchData, fromCache) {
     const prevTs = _matchLastTs[matchId] || 0;
     if (ts && prevTs && ts <= prevTs) return;
     if (ts) _matchLastTs[matchId] = ts;
+
+    // TRANSICIONES DE FASE (silbato + overlay). Se evalúa SIEMPRE, por ENCIMA del
+    // guard `status !== "active"` de más abajo, porque el fin de partido implica
+    // precisamente status='finished' y debe disparar el overlay de FIN DE PARTIDO.
+    // _handlePhaseTransition cachea el snapshot en _matchLastData para el timer
+    // autónomo y siembra/compara _matchPrevPhase con su propia lógica.
+    _handlePhaseTransition(matchId, matchData);
 
     const next = _buildState(matchData);
     const prev = _matchPrevState[matchId];
@@ -1072,6 +1364,8 @@ async function refreshBackgroundWatchers() {
                 delete _matchPrevState[id];
                 delete _matchSeeded[id];
                 delete _matchLastTs[id];
+                delete _matchPrevPhase[id];
+                delete _matchLastData[id];
             }
         });
     } catch(e) { console.warn("[LIVE] refreshBackgroundWatchers:", e.message); }
@@ -1082,6 +1376,9 @@ function startBackgroundWatch() {
     refreshBackgroundWatchers();
     // Reevaluar la lista de partidos seguidos periódicamente (altas/bajas).
     _bgPollTimer = setInterval(refreshBackgroundWatchers, 30000);
+    // Timer autónomo: dispara transiciones de fase por reloj absoluto aunque el
+    // entrenador haya cerrado la app y dejen de llegar snapshots.
+    _startAutonomousPhaseWatch();
 }
 
 // ── Enter live view ────────────────────────────────────────────────
