@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v214
+//  CRONOS FUTBOL - Service Worker v215
+//  v215: Bump tras fix de emparejado de sustituciones simultaneas por subId en
+//         el informe colectivo (coach/reports/club-reports.js) + captura de subId
+//         en _parseHistoryForFirestore (coach/comms/panel.js). Invalida el precache
+//         para servir el club-reports.js corregido en vez de la version con el bug.
 //  v214: Bump tras fix de duplicado Solicitudes de Registro / Nuevos Roles Solicitados (panel.js).
 //  v211: Panel del SuperAdmin â€” saClubs() y saShowEntityUsers() ahora
 //         renderizan el arbol jerarquico Categoria/Subcategoria (solo
@@ -415,8 +419,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v214';
-const CACHE_NAME = 'cronos-cache-v214';
+const VERSION = 'v215';
+const CACHE_NAME = 'cronos-cache-v215';
 
 const ASSETS = [
     './',
