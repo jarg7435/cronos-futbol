@@ -1,6 +1,6 @@
 # Cronos Fútbol — Estado de correcciones
 
-_Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: empezar por E6._
+_Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Próxima sesión: empezar por E6._
 
 ## COMPLETADO
 
@@ -238,6 +238,57 @@ _Última actualización: 2026-06-01 (sesión E5 — cerrada). Próxima sesión: 
     `node --check` OK y carga real (15 exports, `registerStaffUid` +
     `autoSetClaimsOnApproval` presentes).
   - Pendiente de DESPLIEGUE: `firebase deploy --only firestore:rules,functions`.
+
+## COMPLETADO (live.html — silbato + overlay de fin de parte/partido para espectadores)
+
+- [x] **LIVE-1 (commit `a29356f`)**: replicado el silbato + overlay de fin de 1ª
+  parte / fin de partido del entrenador (`_cronosWhistle` /
+  `_cronosMatchMomentOverlay` de `js/core/event-listeners.js` y
+  `js/match/persistence/active-match.js`) en `live.html` (vista de seguimiento en
+  vivo para espectadores), cubriendo TAMBIÉN los partidos en segundo plano.
+  - Diseño previo: 5 decisiones de producto cerradas → (1) modo autónomo en
+    background cubierto, (2) colisión de overlays = cola FIFO, (3) overlay de
+    partido en fondo con equipos + marcador + botón «Ver partido», (4) auto-cierre
+    4s (igual que el del entrenador), (5) overlay SIEMPRE visible con modo silencio
+    (solo se salta el silbato).
+  - Implementación (toda en `live.html`):
+    - `_handlePhaseTransition(matchId, matchData)`: punto ÚNICO de decisión.
+      Invocado desde el listener visible y el watcher de fondo (ambos vía
+      `detectAndAlert`, colocado por ENCIMA del guard `status !== "active"` para
+      no perder el FIN de partido, que es justamente `status='finished'`) y desde
+      el nuevo timer autónomo.
+    - `_effectivePhase(matchData)`: centraliza la inferencia de la fase REAL,
+      incluido el modo autónomo (el reloj absoluto `phaseStartedAt` agota la parte
+      → `break`/`finished` aunque el entrenador haya cerrado la app y no marque la
+      transición). Solo presentación: no escribe en Firestore.
+    - `_autonomousPhaseTick` (timer ~1s) + `_matchLastData[matchId]` (cache del
+      último snapshot por partido): reevalúa la fase efectiva y dispara
+      DESCANSO/FIN aunque dejen de llegar snapshots.
+    - `_matchPrevPhase[matchId]`: sembrado SIN disparo la primera vez (mismo patrón
+      que `_matchSeeded`); COMPARTIDO entre fondo y visible, por lo que NO se borra
+      en `loadMatch`; SÍ se borra al cancelar watchers de partidos terminados
+      (`refreshBackgroundWatchers` + `teardownBackgroundWatch`).
+    - `_liveWhistle(times)`: sintetizado sobre el `_audioCtx` compartido (con
+      keep-alive), NUNCA un `AudioContext` propio (lo que hacía el `_cronosWhistle`
+      original y rompería en iOS PWA standalone). Respeta `_alertsMuted` igual que
+      `playEventSound`/`_playSeq`.
+    - Cola FIFO de overlays (`_momentQueue` + `_momentActive`): dos transiciones
+      casi simultáneas (p.ej. dos partidos en fondo) no se pisan; se muestran una
+      tras otra.
+    - Overlay de partido en fondo: subtítulo con equipos + marcador y botón
+      «Ver partido» que navega vía `loadMatch(matchId)`; el partido ya abierto
+      (`currentMatchId`) solo cierra, sin botón extra. Auto-cierre 4s.
+  - SIN bump de SW: `live.html` se sirve network-first y NO está en `ASSETS`, así
+    que la feature llega a los usuarios sin tocar `sw.js`.
+  - Verificado: `scripts/_check_html_inline_js.js` (`node --check` del módulo
+    inline → OK, 1767 líneas) y `scripts/test_live_phase_transition.js` (extrae los
+    cuerpos REALES de `_effectivePhase`/`_handlePhaseTransition` y los ejecuta en
+    sandbox → 15/15 OK: siembra sin disparo, 1ªP→DESCANSO silbato×2, 2ªP→FIN
+    silbato×3, agotamiento autónomo por reloj, sin duplicado, break→2ªP sin
+    disparo, modo silencio, navigable abierto vs fondo, subtítulo con marcador).
+  - Nota técnica: `live.html` se normalizó de EOL CRLF→LF en el working tree (git
+    ya lo almacenaba como LF), por lo que el diff del commit son +297 líneas puras
+    de contenido sin ruido de fin de línea.
 
 ## PENDIENTE (empezar por E6)
 
