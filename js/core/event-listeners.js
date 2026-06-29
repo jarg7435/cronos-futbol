@@ -4,6 +4,127 @@
 // Extraído de app.js (líneas 4324-4508)
 // ══════════════════════════════════════════════════════════════════
 
+// ── SILBATO DEL ÁRBITRO ─────────────────────────────────────────────
+// Sintetiza el silbato con Web Audio API (sin archivos externos).
+// times: número de pitidos (2 = fin 1ª parte, 3 = fin de partido)
+// onDone: callback ejecutado cuando termina la secuencia
+function _cronosWhistle(times, onDone) {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const whistleDuration = 1.1; // segundos por pitido
+        const gapDuration     = 0.35; // silencio entre pitidos
+        let t = ctx.currentTime + 0.05;
+
+        for (let i = 0; i < times; i++) {
+            const osc     = ctx.createOscillator();
+            const gainEnv = ctx.createGain();
+            const noise   = ctx.createOscillator();
+            const noiseG  = ctx.createGain();
+
+            // Tono principal del silbato (~3100 Hz con vibrato)
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(3100, t);
+            // Vibrato rápido (trino del árbitro)
+            osc.frequency.setValueAtTime(3200, t + 0.05);
+            osc.frequency.setValueAtTime(3050, t + 0.10);
+            osc.frequency.setValueAtTime(3200, t + 0.15);
+            osc.frequency.setValueAtTime(3050, t + 0.20);
+            osc.frequency.setValueAtTime(3150, t + 0.25);
+            osc.frequency.setValueAtTime(3000, t + 0.30);
+            osc.frequency.setValueAtTime(3150, t + 0.35);
+            osc.frequency.setValueAtTime(3000, t + 0.40);
+
+            // Envolvente de volumen: ataque rápido, caída suave al final
+            gainEnv.gain.setValueAtTime(0, t);
+            gainEnv.gain.linearRampToValueAtTime(0.55, t + 0.04);
+            gainEnv.gain.setValueAtTime(0.55, t + whistleDuration - 0.15);
+            gainEnv.gain.linearRampToValueAtTime(0, t + whistleDuration);
+
+            // Ruido de "cuerpo" del silbato (2º armónico)
+            noise.type = 'square';
+            noise.frequency.setValueAtTime(6200, t);
+            noiseG.gain.setValueAtTime(0.08, t);
+            noiseG.gain.linearRampToValueAtTime(0, t + whistleDuration);
+
+            osc.connect(gainEnv);
+            noise.connect(noiseG);
+            gainEnv.connect(ctx.destination);
+            noiseG.connect(ctx.destination);
+
+            osc.start(t);
+            osc.stop(t + whistleDuration);
+            noise.start(t);
+            noise.stop(t + whistleDuration);
+
+            t += whistleDuration + gapDuration;
+        }
+
+        const totalMs = (whistleDuration + gapDuration) * times * 1000;
+        setTimeout(() => {
+            try { ctx.close(); } catch(e) {}
+            if (typeof onDone === 'function') onDone();
+        }, totalMs + 100);
+
+    } catch (e) {
+        console.warn('[Cronos] Whistle AudioContext error:', e);
+        if (typeof onDone === 'function') onDone();
+    }
+}
+
+// ── PANTALLA FLASH DE MOMENTO DEL PARTIDO ──────────────────────────
+// Muestra un overlay de pantalla completa durante 3 segundos.
+// icon: emoji/svg, title: texto grande, subtitle: texto pequeño
+function _cronosMatchMomentOverlay(icon, title, subtitle, onDone) {
+    const existing = document.getElementById('cronos-moment-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'cronos-moment-overlay';
+    overlay.style.cssText = [
+        'position:fixed', 'inset:0', 'z-index:999999',
+        'display:flex', 'flex-direction:column',
+        'align-items:center', 'justify-content:center', 'gap:1rem',
+        'background:rgba(10,14,20,0.96)',
+        'backdrop-filter:blur(8px)',
+        'animation:_cmFadeIn 0.3s ease',
+        'cursor:pointer'
+    ].join(';');
+
+    overlay.innerHTML = `
+        <style>
+            @keyframes _cmFadeIn  { from { opacity:0; transform:scale(0.92) } to { opacity:1; transform:scale(1) } }
+            @keyframes _cmFadeOut { from { opacity:1; transform:scale(1)    } to { opacity:0; transform:scale(1.05) } }
+            @keyframes _cmBounce  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+            @keyframes _cmPulse   { 0%,100%{opacity:1} 50%{opacity:0.6} }
+        </style>
+        <div style="font-size:5.5rem;animation:_cmBounce 0.8s ease infinite;line-height:1;">${icon}</div>
+        <div style="font-size:2.2rem;font-weight:900;letter-spacing:3px;color:#ffffff;
+                    text-align:center;text-transform:uppercase;text-shadow:0 0 30px rgba(255,255,255,0.4);
+                    font-family:'Inter',system-ui,sans-serif;">${title}</div>
+        <div style="font-size:1rem;font-weight:600;color:rgba(255,255,255,0.55);
+                    letter-spacing:1.5px;text-transform:uppercase;">${subtitle}</div>
+        <div style="margin-top:1.5rem;font-size:0.75rem;color:rgba(255,255,255,0.25);
+                    animation:_cmPulse 1.2s ease infinite;">Toca para continuar</div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    let dismissed = false;
+    const dismiss = () => {
+        if (dismissed) return;
+        dismissed = true;
+        overlay.style.animation = '_cmFadeOut 0.4s ease forwards';
+        setTimeout(() => {
+            if (overlay.parentNode) overlay.remove();
+            if (typeof onDone === 'function') onDone();
+        }, 400);
+    };
+
+    overlay.addEventListener('click', dismiss);
+    setTimeout(dismiss, 4000); // Auto-cierra a los 4 segundos
+}
+
+
 function setupEventListeners() {
     document.getElementById('btn-play-pause').addEventListener('click', toggleGame);
     document.getElementById('btn-reset').addEventListener('click', resetMatch);
@@ -28,7 +149,18 @@ function setupEventListeners() {
         updateMasterUI();
         if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
         _saveMatchStateToStorage();
-        if (!skipConfirm) alert("1ª Parte finalizada. Realice los cambios necesarios durante el descanso.");
+
+        // 🔴🔴 DOBLE SILBATO + PANTALLA FINAL DE 1ª PARTE
+        _cronosWhistle(2, () => {
+            _cronosMatchMomentOverlay(
+                '🏁',
+                'FINAL DE PRIMERA PARTE',
+                'Descanso · Reanudar cuando estés listo',
+                () => {
+                    if (!skipConfirm) alert("1ª Parte finalizada. Realice los cambios necesarios durante el descanso.");
+                }
+            );
+        });
     };
     window.startSecondHalf = function startSecondHalf() {
         // E5: guard de idempotencia. La 2ª parte solo arranca desde el descanso;

@@ -407,7 +407,23 @@ window.endMatch = function endMatch(skipConfirm = false) {
         });
     }
 
-    _showPostMatchOptions();
+    // \ud83d\udd34\ud83d\udd34\ud83d\udd34 TRIPLE SILBATO + PANTALLA FINAL DEL PARTIDO
+    if (typeof _cronosWhistle === 'function') {
+        _cronosWhistle(3, () => {
+            if (typeof _cronosMatchMomentOverlay === 'function') {
+                _cronosMatchMomentOverlay(
+                    '\ud83e\udd1d',
+                    'FINAL DEL PARTIDO',
+                    'El \u00e1rbitro ha pitado el final',
+                    () => { _showPostMatchOptions(); }
+                );
+            } else {
+                _showPostMatchOptions();
+            }
+        });
+    } else {
+        _showPostMatchOptions();
+    }
 };
 
 /**
