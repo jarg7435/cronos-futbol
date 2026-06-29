@@ -47,11 +47,12 @@ function resetMatch() {
 }
 
 function goBackToSetup() {
-    if (isRunning) {
-        isRunning = false; clearInterval(timerInterval);
-        document.getElementById('btn-play-pause').textContent = 'REANUDAR';
-        document.getElementById('btn-play-pause').classList.remove('danger');
-    }
+    // Eliminada la pausa automática para que el modo autónomo sobreviva:
+    // if (isRunning) {
+    //     isRunning = false; clearInterval(timerInterval);
+    //     document.getElementById('btn-play-pause').textContent = 'REANUDAR';
+    //     document.getElementById('btn-play-pause').classList.remove('danger');
+    // }
     
     // Guardar el estado actual en LocalStorage antes de detener el sync y salir,
     // asegurando que sea recuperable en todo momento
