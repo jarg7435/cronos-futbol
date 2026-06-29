@@ -43,8 +43,8 @@ function _parseHistoryForFirestore(raw) {
     };
     raw.forEach(e => {
         if (typeof e === 'object' && e !== null && e.type) {
-            // Ya es objeto — solo limpiar
-            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', note: e.note || '' });
+            // Ya es objeto — solo limpiar (preservando subId si el doc ya lo trae)
+            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', subId: e.subId || null, note: e.note || '' });
             return;
         }
         if (typeof e !== 'string') return;
@@ -53,6 +53,13 @@ function _parseHistoryForFirestore(raw) {
         const minute = tMatch ? parseInt(tMatch[1]) : 0;
         const second = tMatch ? parseInt(tMatch[2]) : 0;
         const timeStr = tMatch ? tMatch[0] : '00:00';
+        // subId: id numerico de sustitucion (Date.now()) compartido por la pareja
+        // entra/sale, anexado al string como "#<digitos>" (app-init.js:4494, drag-drop.js:255).
+        // Es la unica forma fiable de emparejar entradas/salidas simultaneas en el
+        // mismo minuto. Strings sin #<digitos> (DESCANSO/2ªP/FIN, o cambios grupales
+        // 'C1'/'C2') -> subId null -> el emparejado cae al fallback por proximidad temporal.
+        const subMatch = e.match(/#(\d+)/);
+        const subId = subMatch ? subMatch[1] : null;
         const low = e.toLowerCase();
         let type = '';
         if (low.startsWith('entra'))                              type = 'sub_in';
@@ -61,7 +68,7 @@ function _parseHistoryForFirestore(raw) {
         else if (low.includes('amarilla'))                        type = 'yellow';
         else if (low.includes('roja'))                            type = 'red';
         else if (low.includes('lesión') || low.includes('lesion')) type = 'injury';
-        if (type) pushEvent({ type, minute, second, timeStr, note: e });
+        if (type) pushEvent({ type, minute, second, timeStr, subId, note: e });
     });
     return result;
 }
