@@ -487,23 +487,48 @@ const _RP = (() => {
     // ── Reconstruir intervalos en campo desde el historial ────────────
     // history contiene eventos {type:'sub_in'|'sub_out'|'goal'|..., minute:N, second:S, timeStr:"MM:SS"}
     const buildIvs = (player, totMin) => {
-        const hist = (player.history || [])
-            .filter(e => e.type === 'sub_in' || e.type === 'sub_out')
-            .sort((a, b) => {
-                const ta = (a.minute || 0) + (a.second || 0) / 60;
-                const tb = (b.minute || 0) + (b.second || 0) / 60;
-                return ta - tb;
-            });
-        if (!hist.length) return [[0, totMin]];
+        const rawHist = (player.history || []).filter(e => e.type === 'sub_in' || e.type === 'sub_out');
+        
+        // Agrupar por tiempo exacto para eliminar intercambios de posición (sub_in y sub_out simultáneos del mismo jugador)
+        const timeMap = {};
+        rawHist.forEach(e => {
+            const exact = (e.minute || 0) + (e.second || 0) / 60;
+            const tKey = exact.toFixed(3);
+            if (!timeMap[tKey]) timeMap[tKey] = { in: false, out: false, events: [] };
+            if (e.type === 'sub_in') timeMap[tKey].in = true;
+            if (e.type === 'sub_out') timeMap[tKey].out = true;
+            timeMap[tKey].events.push(e);
+        });
+        
+        const hist = [];
+        Object.values(timeMap).forEach(g => {
+            if (g.in && g.out) return; // Se anulan (cambio de posición en el campo)
+            hist.push(...g.events);
+        });
+        
+        hist.sort((a, b) => {
+            const ta = (a.minute || 0) + (a.second || 0) / 60;
+            const tb = (b.minute || 0) + (b.second || 0) / 60;
+            return ta - tb;
+        });
+            
+        if (!hist.length) {
+            const playedSome = (player.minutesPlayed > 0) || (player.status === 'field') || (player.initialStatus === 'field') || (player.titular === true);
+            return playedSome ? [[0, totMin]] : [];
+        }
+        
         const ivs = [];
-        let on = hist[0].type === 'sub_out', at = on ? 0 : null;
+        let on = (player.status === 'field' || player.initialStatus === 'field' || player.titular === true) || hist[0].type === 'sub_out';
+        let at = on ? 0 : null;
+        
         hist.forEach(ev => {
             const exact = (ev.minute || 0) + (ev.second || 0) / 60;
-            if (ev.type === 'sub_in')              { on = true;  at = exact; }
+            if (ev.type === 'sub_in' && !on) { on = true;  at = exact; }
             else if (ev.type === 'sub_out' && on)  { ivs.push([at, exact]); on = false; at = null; }
         });
+        
         if (on && at !== null) ivs.push([at, totMin]);
-        return ivs.length ? ivs : [[0, totMin]];
+        return ivs;
     };
 
     // ── Calcular minutos totales desde intervalos ─────────────────────
@@ -540,16 +565,30 @@ const _RP = (() => {
     const buildSubs = players => {
         const outs = [], ins = [];
         players.forEach(p => {
-            (p.history || []).forEach(ev => {
+            const evs = (p.history || []);
+            // Filtrar eventos simultáneos (cambios de posición)
+            const timeMap = {};
+            evs.forEach(ev => {
+                if (ev.type !== 'sub_in' && ev.type !== 'sub_out') return;
                 const exact = (ev.minute || 0) + (ev.second || 0) / 60;
-                if (ev.type === 'sub_out') outs.push({ min: exact, timeStr: ev.timeStr || '', p });
-                if (ev.type === 'sub_in')  ins.push({ min: exact, timeStr: ev.timeStr || '', p });
+                const tKey = exact.toFixed(3);
+                if (!timeMap[tKey]) timeMap[tKey] = { in: false, out: false, eIn: null, eOut: null };
+                if (ev.type === 'sub_in')  { timeMap[tKey].in = true; timeMap[tKey].eIn = ev; }
+                if (ev.type === 'sub_out') { timeMap[tKey].out = true; timeMap[tKey].eOut = ev; }
+            });
+            
+            Object.keys(timeMap).forEach(tKey => {
+                const g = timeMap[tKey];
+                if (g.in && g.out) return; // Es un simple cambio de posición en el campo, no sustitución
+                const exact = parseFloat(tKey);
+                if (g.out) outs.push({ min: exact, timeStr: g.eOut.timeStr || '', p });
+                if (g.in)  ins.push({ min: exact, timeStr: g.eIn.timeStr || '', p });
             });
         });
         outs.sort((a, b) => a.min - b.min);
         const used = new Set();
         return outs.map(o => {
-            const found = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias));
+            const found = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias) && i.p.playerAlias !== o.p.playerAlias);
             if (found) used.add(found.p.playerAlias);
             return { min: o.min, timeStr: o.timeStr, out: o.p, inp: found ? found.p : null };
         });
@@ -697,14 +736,15 @@ const _RP = (() => {
             if (!s.out || !s.inp) return;
             const oa = s.out.playerAlias  || ('#' + s.out.playerNumber);
             const ia = s.inp.playerAlias  || ('#' + s.inp.playerNumber);
-            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: ia });
-            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: oa });
+            const minStr = Math.floor(s.min) + "'";
+            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${ia.substring(0, 9)} ${minStr}` });
+            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${oa.substring(0, 9)} ${minStr}` });
         });
         const findNear = (map, alias, t) => {
             const arr = map[alias];
             if (!arr) return null;
             const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.12);
-            return hit ? hit.name.substring(0, 9) : null;
+            return hit ? hit.name : null;
         };
 
         const W = 500, Hrow = 62;
@@ -761,24 +801,33 @@ const _RP = (() => {
                 svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${pw.toFixed(1)}"
                     height="${TRACK_H}" rx="3" fill="#58a6ff" fill-opacity="0.82"/>`;
 
-                // Inicio de barra desde banquillo (sub_in): verde — nombre propio + minuto de entrada
+                // Inicio de barra desde banquillo (sub_in)
                 if (a > 0.15) {
-                    const outName = findNear(subInMap, aliasKey, a);
-                    svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
-                        stroke="#3fb950" stroke-width="1.2"/>`;
-                    svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}"
-                        font-size="7" fill="#3fb950" font-weight="700">▲${alias} ${Math.floor(a)}'</text>`;
+                    const outName = findNear(subInMap, aliasKey, a); // Nombre del que salió
+                    svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#3fb950" stroke-width="1.8"/>`;
+                    
+                    // Texto Verde (el que entra, alias) abajo a la derecha
+                    svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▲ ${alias} ${Math.floor(a)}'</text>`;
+                    
+                    // Texto Rojo (el que sale, outName) arriba a la izquierda
+                    if (outName) {
+                        svg += `<text x="${(px-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${outName} ▲</text>`;
+                    }
                 }
 
-                // Fin de barra antes del final (sub_out): rojo — nombre propio + minuto de salida
+                // Fin de barra antes del final (sub_out)
                 if (b < totMin - 0.3) {
-                    const inpName = findNear(subOutMap, aliasKey, b);
+                    const inpName = findNear(subOutMap, aliasKey, b); // Nombre del que entró
                     const ex = px + pw;
-                    svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
-                        stroke="#ff5858" stroke-width="1.2"/>`;
-                    const lx = Math.min(ex - 2, W - 50);
-                    svg += `<text x="${lx.toFixed(1)}" y="${TRACK_Y-7}"
-                        text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▼</text>`;
+                    svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#ff5858" stroke-width="1.8"/>`;
+                    
+                    // Texto Rojo (el que sale, alias) arriba a la izquierda
+                    svg += `<text x="${(ex-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▲</text>`;
+                    
+                    // Texto Verde (el que entra, inpName) abajo a la derecha
+                    if (inpName) {
+                        svg += `<text x="${(ex+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▲ ${inpName}</text>`;
+                    }
                 }
             });
 
