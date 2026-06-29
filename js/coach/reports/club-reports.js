@@ -581,15 +581,49 @@ const _RP = (() => {
                 const g = timeMap[tKey];
                 if (g.in && g.out) return; // Es un simple cambio de posición en el campo, no sustitución
                 const exact = parseFloat(tKey);
-                if (g.out) outs.push({ min: exact, timeStr: g.eOut.timeStr || '', p });
-                if (g.in)  ins.push({ min: exact, timeStr: g.eIn.timeStr || '', p });
+                if (g.out) outs.push({ min: exact, timeStr: g.eOut.timeStr || '', subId: g.eOut.subId || null, p });
+                if (g.in)  ins.push({ min: exact, timeStr: g.eIn.timeStr || '', subId: g.eIn.subId || null, p });
             });
         });
         outs.sort((a, b) => a.min - b.min);
-        const used = new Set();
-        return outs.map(o => {
-            const found = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias) && i.p.playerAlias !== o.p.playerAlias);
-            if (found) used.add(found.p.playerAlias);
+        const used = new Set(); // playerAlias de entradas (ins) ya emparejadas
+
+        // Indice de entradas por subId para el emparejado PRIORITARIO. El subId
+        // (id numerico de sustitucion) lo comparten la salida y la entrada de un
+        // mismo cambio, asi que empareja con exactitud aunque haya varias
+        // sustituciones en el mismo minuto (lo que la proximidad temporal no podia).
+        const insBySubId = new Map(); // subId -> [ins]
+        ins.forEach(i => {
+            if (i.subId == null) return;
+            if (!insBySubId.has(i.subId)) insBySubId.set(i.subId, []);
+            insBySubId.get(i.subId).push(i);
+        });
+
+        const pairIn = new Array(outs.length).fill(null);
+
+        // PASO 1 (prioritario): emparejar por subId exacto, ignorando la distancia
+        // temporal. Se resuelve para TODAS las salidas con subId antes de pasar a la
+        // proximidad, para que esta no 'robe' una entrada destinada a un subId.
+        outs.forEach((o, idx) => {
+            if (o.subId == null) return;
+            const cands = insBySubId.get(o.subId);
+            if (!cands) return;
+            const hit = cands.find(i => !used.has(i.p.playerAlias) && i.p.playerAlias !== o.p.playerAlias);
+            if (hit) { pairIn[idx] = hit; used.add(hit.p.playerAlias); }
+        });
+
+        // PASO 2 (fallback): salidas sin emparejar (informes antiguos sin subId, o
+        // sin coincidencia por id) -> proximidad 0.05 min + entrada libre (Set de
+        // playerAlias usados) + no auto-emparejar al mismo jugador.
+        outs.forEach((o, idx) => {
+            if (pairIn[idx]) return;
+            const hit = ins.find(i => Math.abs(i.min - o.min) <= 0.05 && !used.has(i.p.playerAlias) && i.p.playerAlias !== o.p.playerAlias);
+            if (hit) { pairIn[idx] = hit; used.add(hit.p.playerAlias); }
+        });
+
+        // Array unico final, en el mismo orden que outs (ordenado por min).
+        return outs.map((o, idx) => {
+            const found = pairIn[idx];
             return { min: o.min, timeStr: o.timeStr, out: o.p, inp: found ? found.p : null };
         });
     };
