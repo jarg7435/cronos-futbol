@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v215
+//  CRONOS FUTBOL - Service Worker v216
+//  v216: Bump tras feat del silbato de arbitro + overlay de fin de parte/partido
+//         (js/core/event-listeners.js: _cronosWhistle, _cronosMatchMomentOverlay;
+//         enganche en endMatch de active-match.js) y fix de no pausar el cronometro
+//         al volver al setup en modo autonomo (movement-log.js). Invalida el precache.
 //  v215: Bump tras fix de emparejado de sustituciones simultaneas por subId en
 //         el informe colectivo (coach/reports/club-reports.js) + captura de subId
 //         en _parseHistoryForFirestore (coach/comms/panel.js). Invalida el precache
@@ -419,8 +423,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v215';
-const CACHE_NAME = 'cronos-cache-v215';
+const VERSION = 'v216';
+const CACHE_NAME = 'cronos-cache-v216';
 
 const ASSETS = [
     './',
