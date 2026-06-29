@@ -252,7 +252,7 @@
         .bench-info { flex: 1; overflow: hidden; }
         .bench-name { font-size: 0.75rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .bench-num  { font-size: 0.65rem; color: var(--muted); }
-        .bench-time { font-size: 0.65rem; color: var(--muted); text-align: right; }
+        .bench-time { font-size: 0.65rem; font-weight: 700; text-align: center; border-radius: 3px; padding: 1px 5px; white-space: nowrap; }
 
         /* ── HISTORY VIEW ── */
         #history-view {
@@ -1671,6 +1671,21 @@ function safeColor(value, fallback) {
     return fallback;
 }
 
+// ── Semáforo de tiempo jugado ──────────────────────────────────────
+// Color compartido por campo (live-player-time) y banquillo (bench-time):
+// rojo por defecto, amarillo a partir de total/3, verde a partir de total/2.
+// total = half1Max + half2Max, con fallback f7=1800/parte, f11=2400/parte.
+// Sin caso especial para 00:00 (cae en rojo por la cadena de comparaciones).
+function _timerColorFor(timeSec, data) {
+    const half1Max = data.half1MaxTime || (data.mode === 'f7' ? 1800 : 2400);
+    const half2Max = data.half2MaxTime || (data.mode === 'f7' ? 1800 : 2400);
+    const totalSec = half1Max + half2Max;
+    const t = timeSec || 0;
+    if (t >= totalSec / 2) return { bg: '#2ea043', text: '#000000' };
+    if (t >= totalSec / 3) return { bg: '#e3b341', text: '#000000' };
+    return { bg: '#da3633', text: '#ffffff' };
+}
+
 // ── Render field ───────────────────────────────────────────────────
 function renderField(data) {
     const pitch   = document.getElementById('live-pitch');
@@ -1695,17 +1710,9 @@ function renderField(data) {
         const xPct = Math.max(3, Math.min(97, p.x || 50));
         const yPct = Math.max(3, Math.min(97, p.y || 50));
 
-        // Calcular color del timer según minutos jugados
-        const half1Max = data.half1MaxTime || (data.mode === 'f7' ? 1800 : 2400);
-        const half2Max = data.half2MaxTime || (data.mode === 'f7' ? 1800 : 2400);
-        const totalSec = half1Max + half2Max;
+        // Calcular color del timer según minutos jugados (función compartida con renderBench)
         const timeSec = p.time || 0;
-        let timerBg = '#da3633'; let timerText = '#ffffff';
-        if (timeSec >= totalSec / 2) {
-            timerBg = '#2ea043'; timerText = '#000000';
-        } else if (timeSec >= totalSec / 3) {
-            timerBg = '#e3b341'; timerText = '#000000';
-        }
+        const { bg: timerBg, text: timerText } = _timerColorFor(timeSec, data);
 
         return `<div class="live-player" style="left:${xPct}%;top:${yPct}%;">
             <div class="live-player-time" data-base-time="${timeSec}" style="background:${timerBg}; color:${timerText};">${formatTime(timeSec)}</div>
@@ -1744,12 +1751,18 @@ function renderBench(data) {
             const shortsColor = safeColor(p.shortsColor, safeColor(team === 'home' ? data.homeTeam?.shorts : data.awayTeam?.shorts, team === 'home' ? '#1a4e99' : '#b22222'));
             const cardIcon = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
             const goalIcon = (p.goals || 0) > 0 ? ` ⚽×${p.goals}` : '';
+
+            // Semáforo de tiempo jugado (misma función/regla que renderField).
+            // Igual que en campo, el color va en la etiqueta de tiempo (.bench-time), no en el dorsal.
+            const timeSec = p.time || 0;
+            const { bg: timerBg, text: timerText } = _timerColorFor(timeSec, data);
+
             return `<div class="bench-player-row">
                 <div class="bench-dot" style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%);color:#0a0e14;">${escapeHtml(p.number)}</div>
                 <div class="bench-info">
                     <div class="bench-name">${escapeHtml(p.name)}${cardIcon}${goalIcon}${p.injured ? ' <span style="color:#e74c3c;font-size:0.7rem;">✚</span>' : ''}</div>
                 </div>
-                <div class="bench-time">${formatTime(p.time || 0)}</div>
+                <div class="bench-time" style="background:${timerBg}; color:${timerText};">${formatTime(timeSec)}</div>
             </div>`;
         }).join('');
     });
