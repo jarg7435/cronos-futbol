@@ -152,8 +152,9 @@
 //         (coach/reports/club-reports.js x2, coach/comms/panel.js, parent/panel.js)
 //         comparan goles propios vs rival segun myTeamRole. Docs antiguos sin el
 //         campo -> fallback 'home' (comportamiento previo intacto, sin backfill).
-//         Pendiente C-25: js/club-reports.js (duplicado muerto) + linea 2413
-//         aviso_partido_finalizado (consistencia, no afecta al bug).
+//         C-25 (resuelto): js/club-reports.js (duplicado muerto) ELIMINADO del
+//         repo; el activo es js/coach/reports/club-reports.js. Pendiente aun:
+//         linea 2413 aviso_partido_finalizado (consistencia, no afecta al bug).
 //  v183: FIX panel de Direccion mostraba solo 1 partido al director/coordinador.
 //         RAIZ: _sdLoadReports hacia where(clubId==cid).limit(500) SIN orden ni
 //         filtro; con clubs de miles de docs el cupo de 500 se llenaba de docs
