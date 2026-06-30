@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v223
-//  v223: Fix campo se metía debajo de la franja de banquillo en portrait
+//  CRONOS FUTBOL - Service Worker v224
+//  v224: Banquillo en flujo flex (no fixed) - campo se ajusta solo, sin solapamiento
 //  v216: Bump tras feat del silbato de arbitro + overlay de fin de parte/partido
 //         (js/core/event-listeners.js: _cronosWhistle, _cronosMatchMomentOverlay;
 //         enganche en endMatch de active-match.js) y fix de no pausar el cronometro
@@ -424,8 +424,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v223';
-const CACHE_NAME = 'cronos-cache-v223';
+const VERSION = 'v224';
+const CACHE_NAME = 'cronos-cache-v224';
 
 const ASSETS = [
     './',
