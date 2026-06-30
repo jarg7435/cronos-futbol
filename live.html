@@ -173,43 +173,54 @@
                 linear-gradient(90deg, transparent 84.5%, rgba(255,255,255,0.12) 84.5%, rgba(255,255,255,0.12) 85%, transparent 85%);
             pointer-events: none;
         }
+        /* ── FICHA DE JUGADOR (compacta: tiempo + ficha + nombre en fila) ──
+           Antes: flex-direction: column → tiempo ARRIBA, ficha MEDIO, nombre ABAJO.
+           La ficha de 42px con etiquetas a 68px hacía que dos fichas vecinas
+           se solaparan (tiempo de una pisando nombre de otra).
+           Ahora: fichas más pequeñas + etiquetas con max-width = ancho ficha,
+           y opacidad reducida para no saturar visualmente. */
         .live-player {
             position: absolute;
             transform: translate(-50%, -50%);
             display: flex; flex-direction: column;
-            align-items: center; gap: 3px;
+            align-items: center; gap: 1px;
             cursor: default;
+            z-index: 10;
         }
         .live-player-chip {
-            width: 42px; height: 42px; border-radius: 50%;
+            width: 30px; height: 30px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            font-size: 0.9rem; font-weight: 800;
-            border: 2.5px solid rgba(255,255,255,0.7);
-            box-shadow: 0 3px 12px rgba(0,0,0,0.7),
+            font-size: 0.62rem; font-weight: 800;
+            border: 2px solid rgba(255,255,255,0.75);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.7),
                         0 0 0 1px rgba(0,0,0,0.4);
             position: relative;
         }
         .live-player-label {
-            font-size: 0.68rem; font-weight: 800;
+            font-size: 0.5rem; font-weight: 700;
             background: rgba(0,0,0,0.82);
             color: #f5f0e8;
-            border-radius: 4px;
-            padding: 2px 6px;
+            border-radius: 3px;
+            padding: 1px 3px;
             white-space: nowrap;
-            max-width: 68px;
+            max-width: 38px;
             overflow: hidden;
             text-overflow: ellipsis;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.2px;
             text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            line-height: 1.2;
         }
         .live-player-time {
-            font-size: 0.6rem;
+            font-size: 0.48rem;
             font-weight: 700;
             color: #f5f0e8;
-            background: rgba(0,0,0,0.65);
-            border-radius: 3px;
-            padding: 1px 5px;
+            background: rgba(0,0,0,0.75);
+            border-radius: 2px;
+            padding: 0px 3px;
             text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+            line-height: 1.2;
+            margin-bottom: 1px;
+            white-space: nowrap;
         }
         /* chip-goal usa atributo data-goals para mostrar número */
         .chip-goal::after {
@@ -464,10 +475,10 @@
             .bench-time { font-size: 0.55rem; padding: 1px 4px; }
             .bench-section-title { font-size: 0.58rem; margin-top: 0.5rem; margin-bottom: 0.3rem; }
 
-            /* Fichas más pequeñas para evitar amontonamiento en campo grande */
-            .live-player-chip { width: 38px; height: 38px; font-size: 0.78rem; }
-            .live-player-label { font-size: 0.55rem; max-width: 48px; padding: 1px 4px; }
-            .live-player-time { font-size: 0.5rem; padding: 1px 3px; }
+            /* Fichas aún más pequeñas para evitar amontonamiento en landscape móvil */
+            .live-player-chip { width: 26px; height: 26px; font-size: 0.55rem; border-width: 1.5px; }
+            .live-player-label { font-size: 0.45rem; max-width: 32px; padding: 0px 2px; }
+            .live-player-time { font-size: 0.42rem; padding: 0px 2px; }
 
             #live-header {
                 padding: 0.2rem 0.4rem;
@@ -537,17 +548,23 @@
                 overflow: hidden;
             }
             #live-pitch {
-                /* El campo ocupa toda la altura disponible del field-wrap,
-                   ancho derivado del aspect-ratio 2:3 (vertical). Limitado
-                   por max-width: 100% para que no exceda el ancho del padre. */
-                height: 100%;
-                width: auto;
+                /* Campo vertical que ocupa TODO el ancho disponible.
+                   Antes: height:100% + width:auto dejaba el campo estrecho.
+                   Ahora: width:100% primero, height derivada del aspect-ratio,
+                   limitada por max-height: 100% para no desbordar el field-wrap. */
+                width: 100%;
                 max-width: 100%;
+                height: auto;
                 max-height: 100%;
                 aspect-ratio: 2/3;
                 flex-shrink: 1;
                 min-height: 0;
             }
+
+            /* Fichas más pequeñas en portrait móvil para evitar amontonamiento */
+            .live-player-chip { width: 26px; height: 26px; font-size: 0.55rem; border-width: 1.5px; }
+            .live-player-label { font-size: 0.45rem; max-width: 34px; padding: 0px 2px; }
+            .live-player-time { font-size: 0.42rem; padding: 0px 2px; }
 
             /* Banquillo como franja inferior horizontal con scroll X */
             #bench-panel {
@@ -641,9 +658,8 @@
                 margin-top: 2px;
             }
 
-            .live-player-chip { width: 34px; height: 34px; font-size: 0.75rem; }
-            .live-player-label { font-size: 0.58rem; max-width: 52px; }
-            .live-player-time { font-size: 0.52rem; }
+            /* Fichas en portrait móvil ya definidas arriba (26px).
+               Eliminado el override viejo de 34px que las hacía demasiado grandes. */
 
             #live-header { padding: 0.5rem 0.8rem; }
         }
