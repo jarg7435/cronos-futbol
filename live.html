@@ -198,76 +198,76 @@
                 linear-gradient(90deg, transparent 84.5%, rgba(255,255,255,0.12) 84.5%, rgba(255,255,255,0.12) 85%, transparent 85%);
             pointer-events: none;
         }
-        /* ── FICHA DE JUGADOR (compacta: tiempo + ficha + nombre en fila) ──
-           Antes: flex-direction: column → tiempo ARRIBA, ficha MEDIO, nombre ABAJO.
-           La ficha de 42px con etiquetas a 68px hacía que dos fichas vecinas
-           se solaparan (tiempo de una pisando nombre de otra).
-           Ahora: fichas más pequeñas + etiquetas con max-width = ancho ficha,
-           y opacidad reducida para no saturar visualmente. */
+        /* ── FICHA DE JUGADOR (tamaño legible) ──
+           Antes: 30px base / 26px móvil → muy pequeñas, nombres y cronos
+           apenas legibles. Ahora: 36px base / 32px móvil, con etiquetas
+           más grandes para que se vean bien sin solaparse. */
         .live-player {
             position: absolute;
             transform: translate(-50%, -50%);
             display: flex; flex-direction: column;
-            align-items: center; gap: 1px;
+            align-items: center; gap: 2px;
             cursor: default;
             z-index: 10;
         }
         .live-player-chip {
-            width: 30px; height: 30px; border-radius: 50%;
+            width: 36px; height: 36px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            font-size: 0.62rem; font-weight: 800;
-            border: 2px solid rgba(255,255,255,0.75);
+            font-size: 0.78rem; font-weight: 800;
+            border: 2.5px solid rgba(255,255,255,0.8);
             box-shadow: 0 2px 8px rgba(0,0,0,0.7),
                         0 0 0 1px rgba(0,0,0,0.4);
             position: relative;
         }
         .live-player-label {
-            font-size: 0.5rem; font-weight: 700;
-            background: rgba(0,0,0,0.82);
+            font-size: 0.62rem; font-weight: 700;
+            background: rgba(0,0,0,0.85);
             color: #f5f0e8;
             border-radius: 3px;
-            padding: 1px 3px;
+            padding: 1px 4px;
             white-space: nowrap;
-            max-width: 38px;
+            max-width: 56px;
             overflow: hidden;
             text-overflow: ellipsis;
             letter-spacing: 0.2px;
             text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-            line-height: 1.2;
+            line-height: 1.25;
         }
         .live-player-time {
-            font-size: 0.48rem;
+            font-size: 0.58rem;
             font-weight: 700;
             color: #f5f0e8;
-            background: rgba(0,0,0,0.75);
+            background: rgba(0,0,0,0.8);
             border-radius: 2px;
-            padding: 0px 3px;
+            padding: 1px 4px;
             text-shadow: 0 1px 2px rgba(0,0,0,0.9);
-            line-height: 1.2;
+            line-height: 1.25;
             margin-bottom: 1px;
             white-space: nowrap;
         }
         /* chip-goal usa atributo data-goals para mostrar número */
         .chip-goal::after {
             content: attr(data-goal-label);
-            position: absolute; top: -10px; right: -10px;
-            font-size: 0.65rem; font-weight: 700;
+            position: absolute; top: -12px; right: -12px;
+            font-size: 0.7rem; font-weight: 700;
             background: rgba(0,0,0,0.85);
             color: #fff; border-radius: 4px;
-            padding: 1px 4px; white-space: nowrap;
+            padding: 2px 5px; white-space: nowrap;
             border: 1px solid rgba(255,255,255,0.2);
         }
-        .chip-yellow::after { content: '🟨'; position:absolute; bottom:-6px; right:-6px; font-size:0.75rem; z-index:35; }
-        .chip-red::after    { content: '🟥'; position:absolute; bottom:-6px; right:-6px; font-size:0.75rem; z-index:35; }
-        /* Indicador de lesión en live — lado izquierdo */
+        /* Indicadores de tarjeta amarilla/roja — más grandes para mejor visibilidad */
+        .chip-yellow::after { content: '🟨'; position:absolute; bottom:-8px; right:-8px; font-size:1rem; z-index:35; }
+        .chip-red::after    { content: '🟥'; position:absolute; bottom:-8px; right:-8px; font-size:1rem; z-index:35; }
+        /* Indicador de lesión en live — lado izquierdo, más grande */
         .chip-injured::before {
             content: '✚';
-            position: absolute; bottom: -6px; left: -6px;
-            width: 15px; height: 15px; border-radius: 50%;
+            position: absolute; bottom: -8px; left: -8px;
+            width: 20px; height: 20px; border-radius: 50%;
             background: #e74c3c; color: #fff;
-            font-size: 0.55rem; font-weight: 700;
+            font-size: 0.75rem; font-weight: 700;
             display: flex; align-items: center; justify-content: center;
-            border: 1.5px solid #fff;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.6);
         }
 
         /* ── BENCH PANEL ── */
@@ -502,10 +502,10 @@
             .bench-time { font-size: 0.55rem; padding: 1px 4px; }
             .bench-section-title { font-size: 0.58rem; margin-top: 0.5rem; margin-bottom: 0.3rem; }
 
-            /* Fichas aún más pequeñas para evitar amontonamiento en landscape móvil */
-            .live-player-chip { width: 26px; height: 26px; font-size: 0.55rem; border-width: 1.5px; }
-            .live-player-label { font-size: 0.45rem; max-width: 32px; padding: 0px 2px; }
-            .live-player-time { font-size: 0.42rem; padding: 0px 2px; }
+            /* Fichas en landscape móvil — más grandes pero sin solaparse */
+            .live-player-chip { width: 32px; height: 32px; font-size: 0.7rem; border-width: 2px; }
+            .live-player-label { font-size: 0.55rem; max-width: 48px; padding: 1px 3px; }
+            .live-player-time { font-size: 0.52rem; padding: 1px 3px; }
 
             #live-header {
                 padding: 0.2rem 0.4rem;
@@ -600,10 +600,10 @@
                 min-height: 0;
             }
 
-            /* Fichas más pequeñas en portrait móvil para evitar amontonamiento */
-            .live-player-chip { width: 26px; height: 26px; font-size: 0.55rem; border-width: 1.5px; }
-            .live-player-label { font-size: 0.45rem; max-width: 34px; padding: 0px 2px; }
-            .live-player-time { font-size: 0.42rem; padding: 0px 2px; }
+            /* Fichas en portrait móvil — más grandes pero sin solaparse */
+            .live-player-chip { width: 32px; height: 32px; font-size: 0.7rem; border-width: 2px; }
+            .live-player-label { font-size: 0.55rem; max-width: 50px; padding: 1px 3px; }
+            .live-player-time { font-size: 0.52rem; padding: 1px 3px; }
 
             /* Banquillo como franja inferior horizontal con scroll X */
             #bench-panel {
@@ -2653,5 +2653,149 @@ function showLoadingScreen(msg) {
 </script>
 <div id="event-flash"></div>
 <div id="event-toast-stack"></div>
+
+<!-- ── BANNER "TOCA PARA ACTIVAR SONIDO" (solo móvil) ──
+     iOS/Android requieren un gesto del usuario para desbloquear el AudioContext.
+     Este banner aparece al entrar a la vista en vivo en móvil y desaparece
+     al tocarlo (o al tocar cualquier parte de la pantalla). -->
+<div id="sound-activate-banner" style="display:none;">
+    <div class="sound-banner-inner">
+        <span class="sound-banner-icon">🔊</span>
+        <span class="sound-banner-text">
+            <strong>TOCA AQUÍ PARA ACTIVAR SONIDO</strong>
+            <small>Necesario para oír alertas de gol, tarjeta y lesión</small>
+        </span>
+    </div>
+</div>
+
+<script>
+// ── BANNER DE ACTIVACIÓN DE SONIDO EN MÓVIL ──────────────────────────
+// Aparece automáticamente al entrar a la vista en vivo en móvil.
+// Al pulsarlo (o al tocar cualquier parte), desbloquea el audio y se oculta.
+(function() {
+    const banner = document.getElementById('sound-activate-banner');
+    if (!banner) return;
+
+    // Detectar móvil (mismo criterio que el CSS: max-width 950px)
+    function isMobile() {
+        return window.matchMedia('(max-width: 950px)').matches;
+    }
+
+    // Mostrar banner si estamos en móvil y el audio no está desbloqueado
+    function showBannerIfNeeded() {
+        if (!isMobile()) return;
+        if (_alertsMuted) return;  // usuario silenció manualmente
+        if (_audioAutoUnlocked) return;  // ya se desbloqueó
+        banner.style.display = 'flex';
+        console.log('[LIVE] Banner de activación de sonido visible');
+    }
+
+    // Ocultar banner
+    function hideBanner() {
+        banner.style.display = 'none';
+    }
+
+    // Cuando el usuario toca el banner → desbloquear audio
+    banner.addEventListener('click', function() {
+        try {
+            unlockAudio();
+            _audioAutoUnlocked = true;
+            const btn = document.getElementById('btn-activate-sound');
+            if (btn && _audioCtx && _audioCtx.state === 'running') {
+                btn.classList.add('ready');
+                btn.textContent = '🔊 Sonido activo';
+            }
+            console.log('[LIVE] Audio desbloqueado por click en banner');
+        } catch(e) {}
+        hideBanner();
+    });
+
+    // Cuando el audio se desbloquea por cualquier otra vía → ocultar banner
+    const _originalUnlock = window._audioAutoUnlocked;
+    Object.defineProperty(window, '_audioAutoUnlocked', {
+        get: function() { return _originalUnlock; },
+        set: function(v) {
+            _originalUnlock = v;
+            if (v) hideBanner();
+        },
+        configurable: true
+    });
+
+    // Mostrar banner cuando se muestre el live-main (tras login)
+    const observer = new MutationObserver(function() {
+        const main = document.getElementById('live-main');
+        if (main && main.style.display === 'flex') {
+            showBannerIfNeeded();
+        }
+    });
+    const main = document.getElementById('live-main');
+    if (main) {
+        observer.observe(main, { attributes: true, attributeFilter: ['style'] });
+    }
+
+    // También comprobar cada 500ms por si el MutationObserver no pilla el cambio
+    setInterval(showBannerIfNeeded, 1000);
+})();
+</script>
+<style>
+#sound-activate-banner {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2000;
+    background: linear-gradient(135deg, rgba(63,185,80,0.95), rgba(46,160,67,0.95));
+    border: 3px solid #fff;
+    border-radius: 16px;
+    padding: 1.2rem 1.5rem;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 0 8px rgba(63,185,80,0.2);
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    gap: 1rem;
+    max-width: 90vw;
+    animation: bannerPulse 1.5s ease-in-out infinite;
+    font-family: 'Inter', sans-serif;
+}
+.sound-banner-inner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.sound-banner-icon {
+    font-size: 2.5rem;
+    line-height: 1;
+    animation: iconBounce 0.8s ease-in-out infinite;
+}
+.sound-banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+.sound-banner-text strong {
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}
+.sound-banner-text small {
+    font-size: 0.7rem;
+    opacity: 0.9;
+    font-weight: 500;
+}
+@keyframes bannerPulse {
+    0%, 100% { box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 0 8px rgba(63,185,80,0.2); }
+    50%      { box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 0 16px rgba(63,185,80,0.05); }
+}
+@keyframes iconBounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+}
+/* En desktop el banner no se muestra nunca */
+@media (min-width: 951px) {
+    #sound-activate-banner { display: none !important; }
+}
+</style>
 </body>
 </html>

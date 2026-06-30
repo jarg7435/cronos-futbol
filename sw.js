@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v221
-//  v221: Campo a TODO el ancho real (100%) + ocultar franja 'live-status' + auto-unlock audio en móvil
+//  CRONOS FUTBOL - Service Worker v222
+//  v222: Fichas más grandes (32px) + banner grande 'TOCA PARA ACTIVAR SONIDO' en móvil
 //  v216: Bump tras feat del silbato de arbitro + overlay de fin de parte/partido
 //         (js/core/event-listeners.js: _cronosWhistle, _cronosMatchMomentOverlay;
 //         enganche en endMatch de active-match.js) y fix de no pausar el cronometro
@@ -424,8 +424,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v221';
-const CACHE_NAME = 'cronos-cache-v221';
+const VERSION = 'v222';
+const CACHE_NAME = 'cronos-cache-v222';
 
 const ASSETS = [
     './',
