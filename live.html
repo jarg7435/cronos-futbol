@@ -158,11 +158,14 @@
         }
         /* En móvil: el campo debe ocupar TODO el ancho disponible para que
            las fichas se separen. Eliminamos max-width:700px y reducimos
-           el padding del field-wrap a cero. IMPORTANTE: el !important aquí
-           anula el max-width:700px del CSS base. */
+           el padding lateral del field-wrap a cero. El padding-bottom se
+           ajusta por separado en cada orientación (landscape/portrait) para
+           reservar espacio para el banquillo. */
         @media (max-width: 950px) {
             #field-wrap {
-                padding: 0 !important;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                padding-top: 0 !important;
                 margin: 0 !important;
                 width: 100% !important;
                 max-width: 100% !important;
@@ -580,17 +583,22 @@
             #field-wrap {
                 flex: 1;
                 padding: 0.3rem;
-                padding-bottom: 104px;  /* espacio para 1 franja (96px + 8px margen) */
+                /* padding-bottom amplio para reservar espacio para la franja
+                   de banquillo (96px) + zona segura inferior (env safe-area) +
+                   margen de seguridad. Sin esto, el campo se extiende debajo
+                   de la franja y los nombres de la fila inferior no se ven. */
+                padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
                 align-items: center;
-                justify-content: center;
+                justify-content: flex-start;
                 min-height: 0;
                 overflow: hidden;
+                box-sizing: border-box;
             }
             #live-pitch {
                 /* Campo vertical que ocupa TODO el ancho disponible.
-                   Antes: height:100% + width:auto dejaba el campo estrecho.
-                   Ahora: width:100% primero, height derivada del aspect-ratio,
-                   limitada por max-height: 100% para no desbordar el field-wrap. */
+                   Altura limitada para NO extenderse debajo de la franja de
+                   banquillo. max-height = 100% del field-wrap (que ya tiene
+                   padding-bottom reservado). */
                 width: 100%;
                 max-width: 100%;
                 height: auto;
@@ -598,6 +606,7 @@
                 aspect-ratio: 2/3;
                 flex-shrink: 1;
                 min-height: 0;
+                box-sizing: border-box;
             }
 
             /* Fichas en portrait móvil — más grandes pero sin solaparse */
