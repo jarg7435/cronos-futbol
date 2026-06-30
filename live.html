@@ -2,7 +2,10 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Chronos Fútbol - Live View</title>
     <meta name="theme-color" content="#0a0e14">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,6 +28,7 @@
             background: var(--bg); color: var(--text);
             font-family: 'Inter', sans-serif;
             min-height: 100vh; display: flex; flex-direction: column;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
 
         /* ── AUTH OVERLAY ── */
@@ -63,7 +67,9 @@
         #live-header {
             background: var(--surface);
             border-bottom: 1px solid var(--border);
-            padding: 0.7rem 1.2rem;
+            padding-top: max(0.7rem, env(safe-area-inset-top));
+            padding-left: max(1.2rem, env(safe-area-inset-left));
+            padding-right: max(1.2rem, env(safe-area-inset-right));
             display: flex; align-items: center; justify-content: space-between;
             gap: 1rem; flex-wrap: wrap;
         }
@@ -371,6 +377,21 @@
         @keyframes pulseSound {
             0%,100% { box-shadow: 0 0 0 0 rgba(63,185,80,0.4); }
             50%     { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
+        }
+
+        /* paridad con style.css para orientación y pantallas cortas */
+        @media (orientation: portrait) and (max-width: 400px) {
+            #live-pitch { aspect-ratio: auto; max-width: 100%; }
+            #bench-panel { display: none; }
+        }
+        @media (orientation: landscape) and (max-width: 950px) {
+            #live-main { flex-direction: row; }
+            #live-pitch { max-width: 60%; }
+            #bench-panel { width: 160px; }
+        }
+        @media (max-height: 500px) {
+            #live-header { padding: 0.3rem 0.8rem; }
+            #scoreboard { font-size: 0.85em; }
         }
     </style>
 </head>
