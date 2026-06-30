@@ -141,6 +141,7 @@
         #field-wrap {
             flex: 1; padding: 0.8rem;
             display: flex; align-items: center; justify-content: center;
+            min-height: 0;
         }
         #live-pitch {
             width: 100%; max-width: 700px;
@@ -380,9 +381,20 @@
         }
 
         /* paridad con style.css para orientación y pantallas cortas */
-        @media (orientation: portrait) and (max-width: 400px) {
-            #live-pitch { aspect-ratio: auto; max-width: 100%; }
+        @media (orientation: portrait) and (max-width: 600px) {
             #bench-panel { display: none; }
+            #field-wrap {
+                padding: 0.3rem;
+                align-items: stretch;
+            }
+            #live-pitch {
+                max-width: 100%;
+                width: 100%;
+                aspect-ratio: 2/3;
+            }
+            .live-player-chip { width: 34px; height: 34px; font-size: 0.75rem; }
+            .live-player-label { font-size: 0.58rem; max-width: 52px; }
+            .live-player-time { font-size: 0.52rem; }
         }
         @media (orientation: landscape) and (max-width: 950px) {
             #live-main { flex-direction: row; }
