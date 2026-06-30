@@ -158,13 +158,27 @@
         }
         /* En móvil: el campo debe ocupar TODO el ancho disponible para que
            las fichas se separen. Eliminamos max-width:700px y reducimos
-           el padding del field-wrap a casi cero. */
+           el padding del field-wrap a cero. IMPORTANTE: el !important aquí
+           anula el max-width:700px del CSS base. */
         @media (max-width: 950px) {
             #field-wrap {
-                padding: 0.2rem !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
             }
             #live-pitch {
                 max-width: 100% !important;
+                width: 100% !important;
+                border-radius: 0 !important;   /* sin esquinas redondeadas en móvil = más ancho útil */
+                border-left: none !important;
+                border-right: none !important;
+            }
+            /* Ocultar la franja "live-status" que muestra "Acceso verificado,
+               cargando partidos..." — en móvil ocupa espacio valioso entre el
+               scoreboard y el campo. En desktop se mantiene por debugging. */
+            #live-status {
+                display: none !important;
             }
         }
         /* Field lines */
@@ -500,9 +514,21 @@
                 flex-wrap: nowrap;
                 overflow: hidden;
             }
-            /* Header más compacto: ocultar botones no esenciales en landscape móvil */
-            #live-header > div:last-child > button:not(#btn-mute):not([onclick*="doSignOut"]) {
+            /* Header más compacto: ocultar botones no esenciales en landscape móvil.
+               PERO mantenemos visibles: btn-mute, btn-activate-sound (clave para
+               activar el audio de las alertas en móvil) y Salir. */
+            #live-header > div:last-child > button:not(#btn-mute):not(#btn-activate-sound):not([onclick*="doSignOut"]) {
                 display: none;
+            }
+            /* Resaltar el botón de activar sonido en móvil para que el usuario
+               lo pulse en cuanto entre a la vista en vivo (sin él, no hay audio
+               de goles/tarjetas/lesiones porque iOS/Android requieren un gesto
+               del usuario para desbloquear el AudioContext). */
+            #btn-activate-sound {
+                display: inline-block !important;
+                font-size: 0.6rem !important;
+                padding: 0.25rem 0.5rem !important;
+                animation: pulseSound 1.2s ease-in-out infinite !important;
             }
             #live-header .logo img { height: 36px !important; }
             #live-header #live-badge { font-size: 0.6rem; }
@@ -1016,6 +1042,36 @@ function unlockAudio() {
         _startKeepAlive();
     } catch(e) { /* sin audio disponible */ }
 }
+
+// ── AUTO-DESBLOQUEO DE AUDIO EN MÓVIL ─────────────────────────────────
+// iOS/Android requieren un gesto del usuario para activar el AudioContext.
+// El botón "🔊 Activar sonido" sigue ahí, PERO además interceptamos el
+// PRIMER toque/click a la página entera para desbloquear el audio sin
+// requerir que el usuario pulse explícitamente el botón. Esto cubre el
+// caso común: el usuario entra a "en vivo", toca la pantalla para
+// interactuar, y el audio queda desbloqueado para las alertas que lleguen
+// por Firestore (sin gesto directo).
+let _audioAutoUnlocked = false;
+function _autoUnlockOnFirstGesture() {
+    if (_audioAutoUnlocked) return;
+    _audioAutoUnlocked = true;
+    try {
+        if (!_alertsMuted) {
+            unlockAudio();
+            // Ocultar el botón "Activar sonido" si el auto-unlock funcionó
+            const btn = document.getElementById('btn-activate-sound');
+            if (btn && _audioCtx && _audioCtx.state === 'running') {
+                btn.classList.add('ready');
+                btn.textContent = '🔊 Sonido activo';
+            }
+            console.log('[LIVE] Audio auto-desbloqueado por gesto del usuario');
+        }
+    } catch(e) { /* sin audio */ }
+}
+// Escuchamos una sola vez los siguientes gestos (cualquiera de ellos desbloquea):
+['touchstart', 'click', 'keydown', 'pointerdown'].forEach(function(ev) {
+    window.addEventListener(ev, _autoUnlockOnFirstGesture, { once: true, passive: true });
+});
 
 // Loop de silencio permanente que evita que iOS suspenda el AudioContext.
 let _keepAliveSrc = null;
