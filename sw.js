@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v219
-//  v219: Fichas más pequeñas (26px) + campo portrait ocupa todo el ancho + sin solape cronos/nombres
+//  CRONOS FUTBOL - Service Worker v220
+//  v220: Campo a TODO el ancho en landscape (pegado al banquillo) + portrait ya a todo ancho
 //  v216: Bump tras feat del silbato de arbitro + overlay de fin de parte/partido
 //         (js/core/event-listeners.js: _cronosWhistle, _cronosMatchMomentOverlay;
 //         enganche en endMatch de active-match.js) y fix de no pausar el cronometro
@@ -424,8 +424,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v219';
-const CACHE_NAME = 'cronos-cache-v219';
+const VERSION = 'v220';
+const CACHE_NAME = 'cronos-cache-v220';
 
 const ASSETS = [
     './',

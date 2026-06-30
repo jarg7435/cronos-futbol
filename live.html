@@ -156,6 +156,17 @@
             border-radius: 8px;
             position: relative; overflow: hidden;
         }
+        /* En móvil: el campo debe ocupar TODO el ancho disponible para que
+           las fichas se separen. Eliminamos max-width:700px y reducimos
+           el padding del field-wrap a casi cero. */
+        @media (max-width: 950px) {
+            #field-wrap {
+                padding: 0.2rem !important;
+            }
+            #live-pitch {
+                max-width: 100% !important;
+            }
+        }
         /* Field lines */
         #live-pitch::before {
             content: '';
@@ -441,22 +452,24 @@
             }
             #field-wrap {
                 flex: 1;
-                padding: 0.3rem;
-                align-items: center;
-                justify-content: center;
+                padding: 0.2rem;
+                align-items: stretch;
+                justify-content: stretch;
                 min-height: 0;
                 overflow: hidden;
             }
             #live-pitch {
-                /* El campo ocupa toda la altura disponible del field-wrap,
-                   y el ancho se deriva del aspect-ratio 3:2. Si el ancho
-                   excede el 100% del padre, se limita con max-width. */
-                height: 100%;
-                width: auto;
+                /* El campo ocupa TODO el ancho disponible del field-wrap.
+                   El alto se deriva del aspect-ratio 3:2, pero limitado
+                   por max-height: 100% para no desbordar el viewport.
+                   Antes: height:100% dejaba campo estrecho; ahora: width:100%
+                   llena el ancho hasta pegarse al banquillo. */
+                width: 100%;
                 max-width: 100%;
+                height: auto;
                 max-height: 100%;
                 aspect-ratio: 3 / 2;
-                flex-shrink: 0;
+                flex-shrink: 1;
             }
             #bench-panel {
                 width: 140px;
