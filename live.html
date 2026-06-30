@@ -307,12 +307,38 @@
             #live-header { padding: 0.5rem 0.8rem; }
         }
 
-        /* ── ALERTAS DE EVENTO (sonoras + visuales) ── */
+        /* ── ALERTAS DE EVENTO (sonoras + visuales) ──
+           Posicionamiento responsive:
+           - Desktop/tablet (>950px): top-right clásico
+           - Móvil landscape: debajo del scoreboard, a la derecha
+           - Móvil portrait: debajo del scoreboard, a la derecha
+           Nunca dentro del campo ni tapados por la notch del móvil. */
         #event-toast-stack {
             position: fixed; top: 1rem; right: 1rem;
             z-index: 1200; display: flex; flex-direction: column;
             gap: 0.55rem; max-width: min(380px, 92vw);
             pointer-events: none;
+        }
+        /* En móvil, los toasts se reposicionan a la altura del marcador */
+        @media (max-width: 950px) {
+            #event-toast-stack {
+                /* top dinámico: header + scoreboard + pequeño margen.
+                   En portrait: header (~48px) + scoreboard (~50px) = ~100px
+                   En landscape móvil: header (~47px) + scoreboard (~40px) = ~90px
+                   Usamos calc con env(safe-area-inset-top) para evitar la notch. */
+                top: calc(env(safe-area-inset-top, 0px) + 100px);
+                right: 0.5rem;
+                left: 0.5rem;
+                max-width: none;
+                align-items: flex-end;
+            }
+            .event-toast {
+                max-width: min(340px, 92vw);
+                padding: 0.5rem 0.7rem;
+            }
+            .event-toast .et-icon { font-size: 1.1rem; }
+            .event-toast .et-title { font-size: 0.74rem; }
+            .event-toast .et-sub { font-size: 0.65rem; }
         }
         .event-toast {
             pointer-events: auto;
@@ -381,25 +407,245 @@
         }
 
         /* paridad con style.css para orientación y pantallas cortas */
-        @media (orientation: portrait) and (max-width: 600px) {
-            #bench-panel { display: none; }
+
+        /* ── LANDSCAPE MÓVIL: campo grande + banquillo lateral compacto ──
+           Antes: #live-pitch { max-width: 60% } dejaba el campo limitado
+           al 60% del ancho en landscape, con ~40% de espacio vacío a los
+           lados y fichas amontonadas. Ahora el campo ocupa casi todo el
+           alto disponible y el ancho proporcional 3:2, con banquillo
+           lateral reducido a 140px. */
+        @media (orientation: landscape) and (max-width: 950px) {
+            /* Body debe respetar el viewport (sin overflow) */
+            body {
+                height: 100vh;
+                height: 100dvh;
+                min-height: 0;
+                overflow: hidden;
+            }
+            #live-main {
+                flex-direction: row;
+                flex: 1;
+                min-height: 0;
+                overflow: hidden;
+            }
             #field-wrap {
+                flex: 1;
                 padding: 0.3rem;
-                align-items: stretch;
+                align-items: center;
+                justify-content: center;
+                min-height: 0;
+                overflow: hidden;
             }
             #live-pitch {
+                /* El campo ocupa toda la altura disponible del field-wrap,
+                   y el ancho se deriva del aspect-ratio 3:2. Si el ancho
+                   excede el 100% del padre, se limita con max-width. */
+                height: 100%;
+                width: auto;
                 max-width: 100%;
-                width: 100%;
-                aspect-ratio: 2/3;
+                max-height: 100%;
+                aspect-ratio: 3 / 2;
+                flex-shrink: 0;
             }
+            #bench-panel {
+                width: 140px;
+                flex-shrink: 0;
+                padding: 0.4rem;
+                overflow-y: auto;
+            }
+            .bench-player-row {
+                padding: 0.3rem 0.4rem;
+                gap: 0.35rem;
+                margin-bottom: 3px;
+            }
+            .bench-dot { width: 18px; height: 18px; font-size: 0.55rem; }
+            .bench-name { font-size: 0.65rem; }
+            .bench-num  { font-size: 0.55rem; }
+            .bench-time { font-size: 0.55rem; padding: 1px 4px; }
+            .bench-section-title { font-size: 0.58rem; margin-top: 0.5rem; margin-bottom: 0.3rem; }
+
+            /* Fichas más pequeñas para evitar amontonamiento en campo grande */
+            .live-player-chip { width: 38px; height: 38px; font-size: 0.78rem; }
+            .live-player-label { font-size: 0.55rem; max-width: 48px; padding: 1px 4px; }
+            .live-player-time { font-size: 0.5rem; padding: 1px 3px; }
+
+            #live-header {
+                padding: 0.2rem 0.4rem;
+                min-height: 0;
+                gap: 0.3rem;
+                flex-wrap: nowrap;
+                overflow: hidden;
+            }
+            /* Header más compacto: ocultar botones no esenciales en landscape móvil */
+            #live-header > div:last-child > button:not(#btn-mute):not([onclick*="doSignOut"]) {
+                display: none;
+            }
+            #live-header .logo img { height: 36px !important; }
+            #live-header #live-badge { font-size: 0.6rem; }
+            #live-header #last-update { font-size: 0.55rem; }
+            #live-header button { font-size: 0.6rem !important; padding: 0.2rem 0.4rem !important; }
+
+            /* Scoreboard compacto en landscape móvil para liberar espacio
+               vertical para el campo. */
+            #scoreboard {
+                padding: 0.15rem 0.5rem;
+                gap: 0.8rem;
+            }
+            .team-score-name { font-size: 0.55rem; margin-bottom: 0; }
+            .team-score-num  { font-size: 1.2rem; }
+            .score-sep       { font-size: 1rem; }
+            #live-timer      { font-size: 1rem; }
+            .match-meta      { gap: 0.1rem; flex-direction: row; align-items: center; }
+            #live-phase      { font-size: 0.5rem; }
+            #live-mode       { font-size: 0.5rem; }
+        }
+
+        /* ── PORTRAIT MÓVIL: campo arriba + banquillo en franja inferior
+                                 con scroll horizontal ──
+           Antes: #bench-panel { display: none } ocultaba los suplentes
+           por completo en portrait. Ahora el banquillo es una franja
+           inferior siempre visible con scroll horizontal nativo.
+
+           Estructura DOM:
+              #bench-panel
+                ├ .bench-section-title (LOCAL)
+                ├ #bench-home  → contiene .bench-player-row
+                ├ .bench-section-title (VISITANTE)
+                └ #bench-away  → contiene .bench-player-row
+        */
+        @media (orientation: portrait) and (max-width: 600px) {
+            /* Body debe respetar el viewport (sin overflow) */
+            body {
+                height: 100vh;
+                height: 100dvh;
+                min-height: 0;
+                overflow: hidden;
+            }
+            #live-main {
+                flex-direction: column;
+                flex: 1;
+                min-height: 0;
+                overflow: hidden;
+            }
+            #field-wrap {
+                flex: 1;
+                padding: 0.3rem;
+                padding-bottom: 104px;  /* espacio para 1 franja (96px + 8px margen) */
+                align-items: center;
+                justify-content: center;
+                min-height: 0;
+                overflow: hidden;
+            }
+            #live-pitch {
+                /* El campo ocupa toda la altura disponible del field-wrap,
+                   ancho derivado del aspect-ratio 2:3 (vertical). Limitado
+                   por max-width: 100% para que no exceda el ancho del padre. */
+                height: 100%;
+                width: auto;
+                max-width: 100%;
+                max-height: 100%;
+                aspect-ratio: 2/3;
+                flex-shrink: 1;
+                min-height: 0;
+            }
+
+            /* Banquillo como franja inferior horizontal con scroll X */
+            #bench-panel {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100% !important;
+                height: 96px;
+                max-height: 96px;
+                background: rgba(10, 14, 20, 0.96);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                border-top: 1px solid var(--border);
+                border-left: none;
+                box-shadow: 0 -8px 24px rgba(0,0,0,0.6);
+                padding: 4px 6px;
+                display: flex;
+                flex-direction: row;        /* fila única con todo el contenido */
+                flex-wrap: nowrap;
+                align-items: stretch;
+                gap: 6px;
+                overflow-x: auto;
+                overflow-y: hidden;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+                scrollbar-color: var(--primary) transparent;
+                overscroll-behavior-x: contain;
+                z-index: 1500;
+                box-sizing: border-box;
+            }
+
+            /* Títulos de sección inline (etiquetas verticales tipo chip) */
+            #bench-panel > .bench-section-title {
+                writing-mode: vertical-rl;
+                transform: rotate(180deg);
+                font-size: 0.55rem;
+                margin: 0;
+                padding: 4px 2px;
+                flex-shrink: 0;
+                align-self: center;
+                letter-spacing: 1px;
+                color: var(--primary);
+                border-left: 2px solid var(--primary);
+                padding-left: 4px;
+            }
+
+            /* Contenedores #bench-home y #bench-away en fila horizontal */
+            #bench-home, #bench-away {
+                display: flex;
+                flex-direction: row;
+                flex-wrap: nowrap;
+                align-items: center;
+                gap: 4px;
+                flex-shrink: 0;
+            }
+
+            /* Cada suplente: tarjeta vertical compacta */
+            .bench-player-row {
+                display: inline-flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
+                padding: 4px 4px;
+                margin: 0;
+                background: var(--glass);
+                border-radius: 6px;
+                flex-shrink: 0;
+                width: 54px;
+            }
+            .bench-dot { width: 26px; height: 26px; font-size: 0.6rem; }
+            .bench-info {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 1px;
+                text-align: center;
+                width: 100%;
+                overflow: visible;
+            }
+            .bench-name {
+                font-size: 0.55rem;
+                max-width: 50px;
+                text-align: center;
+                white-space: nowrap;
+            }
+            .bench-num { font-size: 0.5rem; }
+            .bench-time {
+                font-size: 0.55rem;
+                padding: 1px 4px;
+                margin-top: 2px;
+            }
+
             .live-player-chip { width: 34px; height: 34px; font-size: 0.75rem; }
             .live-player-label { font-size: 0.58rem; max-width: 52px; }
             .live-player-time { font-size: 0.52rem; }
-        }
-        @media (orientation: landscape) and (max-width: 950px) {
-            #live-main { flex-direction: row; }
-            #live-pitch { max-width: 60%; }
-            #bench-panel { width: 160px; }
+
+            #live-header { padding: 0.5rem 0.8rem; }
         }
         @media (max-height: 500px) {
             #live-header { padding: 0.3rem 0.8rem; }
