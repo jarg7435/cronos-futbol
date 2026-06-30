@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v216
+//  CRONOS FUTBOL - Service Worker v218
+//  v218: Fix jugadores fuera del campo en portrait + toasts a altura del marcador (no en esquina superior)
 //  v216: Bump tras feat del silbato de arbitro + overlay de fin de parte/partido
 //         (js/core/event-listeners.js: _cronosWhistle, _cronosMatchMomentOverlay;
 //         enganche en endMatch de active-match.js) y fix de no pausar el cronometro
@@ -423,8 +424,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v216';
-const CACHE_NAME = 'cronos-cache-v216';
+const VERSION = 'v218';
+const CACHE_NAME = 'cronos-cache-v218';
 
 const ASSETS = [
     './',
