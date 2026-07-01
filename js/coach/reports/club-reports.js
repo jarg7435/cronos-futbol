@@ -165,6 +165,7 @@ async function openStaffDashboard() {
             <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
             <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
             <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
+            <button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>
             <button onclick="openLiveMatchesView()" class="staff-tab"
                 style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
                 🔴 En Vivo</button>
@@ -223,6 +224,7 @@ window.switchStaffTab = async (tab) => {
     if (tab === 'entrenamientos') await _sdLoadEvents('planificacion_semanal');
     if (tab === 'informes')       await _sdLoadReports();
     if (tab === 'mensajes')       await _sdLoadMessages();
+    if (tab === 'config')         await _renderDirectorConfig();
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -1819,3 +1821,24 @@ window.openLiveMatchesView = () => {
 };
 
 window.openStaffDashboard = openStaffDashboard;
+// ════════════════════════════════════════════════════════════════════
+//  TAB: CONFIGURACIÓN DEL CLUB (Director)
+// ════════════════════════════════════════════════════════════════════
+async function _renderDirectorConfig() {
+    const container = document.getElementById('staff-dashboard-content');
+    const me = window._cronosCurrentUser;
+    const clubId = me?.clubId;
+    if (!clubId) {
+        container.innerHTML = '<p style="color:var(--text-muted);padding:2rem;">Sin club asignado.</p>';
+        return;
+    }
+
+    // TODO: cuerpo pendiente de recibir (formulario de configuración del club).
+    container.innerHTML = `
+    <div style="padding:2rem;text-align:center;color:var(--text-muted);">
+        <div style="font-size:2rem;margin-bottom:0.8rem;">⚙️</div>
+        <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">Configuración del club</div>
+        <div style="font-size:0.8rem;">Panel en construcción.</div>
+    </div>`;
+}
+window._renderDirectorConfig = _renderDirectorConfig;
