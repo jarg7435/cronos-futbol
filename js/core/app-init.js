@@ -5792,7 +5792,6 @@ async function checkClubAccess(userData) {
     return true;
 }
 window.checkClubAccess = checkClubAccess;
-window.checkClubAccess = checkClubAccess;
 
 // ════════════════════════════════════════════════════════════════════
 //  ENVÍO DE AVISO DE PAGO — Email + WhatsApp

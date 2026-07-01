@@ -834,6 +834,25 @@ function startMatchWithConvocation() {
     
     window.activeConvocation = selectedPlayers.length > 0 ? selectedPlayers : null;
 
+    // ── Refrescar umbrales del semáforo del club (getTimerColor) ─────────
+    // La versión de app-init.js (eclipsada por este archivo) recargaba
+    // cl.timerThresholds al empezar partido; se replica aquí por si el
+    // director los cambió tras el login. Best-effort, no bloquea el arranque.
+    const _clubIdTh = window._cronosCurrentUser?.clubId;
+    if (_clubIdTh) {
+        Promise.resolve().then(async () => {
+            try {
+                const { db } = window._cronos_auth || {};
+                const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const snap = await getDoc(doc(db, 'clubs', _clubIdTh));
+                if (snap.exists()) {
+                    const thresh = snap.data().timerThresholds;
+                    if (thresh) window._clubTimerThresholds = thresh;
+                }
+            } catch(e) { /* no bloquear inicio de partido */ }
+        });
+    }
+
     // ── FIX (bug: "informes no se envían a nadie") ───────────────────
     // Esta es la versión ACTIVA de startMatchWithConvocation (js/ai/import.js
     // se carga DESPUÉS de js/core/app-init.js, así que eclipsa a su versión).

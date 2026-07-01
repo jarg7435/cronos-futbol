@@ -3060,6 +3060,16 @@ function _launchWithRole(role) {
     const isSA        = (activeRole === 'superadmin');
     const isAdminJob  = ['director', 'coordinator', 'club_admin'].includes(activeRole);
 
+    // ── Verificar acceso al club y cargar umbrales del semáforo ──────────
+    // checkClubAccess (js/core/app-init.js) valida que el club no este
+    // bloqueado/vencido y publica window._clubTimerThresholds para getTimerColor.
+    // Antes estaba definida pero nunca invocada, asi que los umbrales del
+    // director no se cargaban al login (solo al empezar un partido).
+    // Best-effort: no bloquea el arranque ni espera a la promesa.
+    if (typeof window.checkClubAccess === 'function') {
+        window.checkClubAccess(window._cronosCurrentUser).catch(() => {});
+    }
+
     document.getElementById('main-container').style.display = isFieldRole || (isUnderIndividual && activeRole === 'user') ? 'flex' : 'none';
     document.getElementById('main-header').style.display    = isFieldRole || (isUnderIndividual && activeRole === 'user') ? 'flex' : 'none';
 

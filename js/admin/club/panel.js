@@ -2132,22 +2132,6 @@ window.caSetPermission = async function caSetPermission(userId, permKey, value) 
     }
 };
 
-// ── Verificar acceso al club al iniciar sesión ───────────────────────
-async function checkClubAccess(userData) {
-    if (!userData?.clubId) return true;
-    try {
-        const cl = await saGet('clubs', userData.clubId);
-        if (!cl) return true;
-        if (cl.status === 'blocked') {
-            const { signOut } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
-            await signOut(window._cronos_auth?.auth);
-            showToast('🔒 Club suspendido. Contacta con el administrador.', 8000);
-            return false;
-        }
-        if (cl.expiresAt && new Date(cl.expiresAt) < new Date() && cl.status !== 'blocked') {
-            showToast('⚠️ El plan de tu club ha vencido. Contacta con el administrador.', 6000);
-        }
-    } catch(e) { /* no bloquear */ }
-    return true;
-}
-window.checkClubAccess = checkClubAccess;
+// ── Verificar acceso al club: definición única en js/core/app-init.js ─
+//    (esta copia se eliminó: eclipsaba a la versión completa que sí
+//     carga cl.timerThresholds para el semáforo de getTimerColor).
