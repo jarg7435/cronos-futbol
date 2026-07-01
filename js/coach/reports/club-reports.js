@@ -1833,12 +1833,95 @@ async function _renderDirectorConfig() {
         return;
     }
 
-    // TODO: cuerpo pendiente de recibir (formulario de configuración del club).
+    const { doc, getDoc } = await _sdFS();
+    const db = window._cronos_auth?.db;
+    const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+    const clubData = clubSnap.exists() ? clubSnap.data() : {};
+    const features = clubData.features || {};
+    const thresholds = clubData.timerThresholds || { red: 33, yellow: 50 };
+    const sendReports = !!features.sendIndividualReports;
+
     container.innerHTML = `
-    <div style="padding:2rem;text-align:center;color:var(--text-muted);">
-        <div style="font-size:2rem;margin-bottom:0.8rem;">⚙️</div>
-        <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">Configuración del club</div>
-        <div style="font-size:0.8rem;">Panel en construcción.</div>
+    <div style="max-width:560px;">
+      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                  border-radius:12px;padding:1.2rem;margin-bottom:1rem;">
+        <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:0.3rem;">
+          Semaforo de tiempo de juego
+        </div>
+        <div style="font-size:0.72rem;color:#7d8590;margin-bottom:1rem;">
+          Porcentaje del tiempo total que determina el color de cada jugador en el planometro.
+        </div>
+        <label style="display:flex;align-items:center;gap:1rem;margin-bottom:0.8rem;">
+          <span style="width:90px;font-size:0.8rem;color:#da3633;font-weight:700;">Rojo hasta</span>
+          <input type="range" id="dir-threshold-red" min="10" max="45" step="1"
+                 value="${thresholds.red}"
+                 oninput="document.getElementById('dir-red-val').textContent=this.value+'%'"
+                 style="flex:1;accent-color:#da3633;">
+          <span id="dir-red-val" style="width:38px;text-align:right;font-weight:700;color:#da3633;">
+            ${thresholds.red}%
+          </span>
+        </label>
+        <label style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;">
+          <span style="width:90px;font-size:0.8rem;color:#e3b341;font-weight:700;">Amarillo hasta</span>
+          <input type="range" id="dir-threshold-yellow" min="30" max="70" step="1"
+                 value="${thresholds.yellow}"
+                 oninput="document.getElementById('dir-yellow-val').textContent=this.value+'%'"
+                 style="flex:1;accent-color:#e3b341;">
+          <span id="dir-yellow-val" style="width:38px;text-align:right;font-weight:700;color:#e3b341;">
+            ${thresholds.yellow}%
+          </span>
+        </label>
+        <div style="font-size:0.7rem;color:#7d8590;margin-bottom:0.8rem;">
+          Verde: del umbral amarillo hasta el final del partido.
+        </div>
+        <button onclick="window._dirSaveThresholds('${clubId}')"
+            style="background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);
+                   color:#58a6ff;padding:0.45rem 1.2rem;border-radius:7px;
+                   font-size:0.82rem;font-weight:700;cursor:pointer;">
+          Guardar semaforo
+        </button>
+      </div>
+
+      <div style="background:rgba(210,168,255,0.06);border:1px solid rgba(210,168,255,0.2);
+                  border-radius:12px;padding:1.2rem;">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+          <input type="checkbox" id="dir-toggle-reports"
+                 ${sendReports ? 'checked' : ''}
+                 onchange="window._dirToggleReports('${clubId}', this.checked)"
+                 style="width:20px;height:20px;accent-color:#d2a8ff;">
+          <div>
+            <div style="font-size:0.85rem;font-weight:700;color:white;">
+              Enviar informes individualizados a padres
+            </div>
+            <div style="font-size:0.72rem;color:#7d8590;margin-top:0.15rem;">
+              Cuando esta activo, los entrenadores pueden enviar el informe de cada jugador al padre vinculado.
+            </div>
+          </div>
+        </label>
+      </div>
     </div>`;
 }
+
+window._dirSaveThresholds = async function(clubId) {
+    const red    = parseInt(document.getElementById('dir-threshold-red')?.value)    || 33;
+    const yellow = parseInt(document.getElementById('dir-threshold-yellow')?.value) || 50;
+    if (red >= yellow) { showToast('El umbral rojo debe ser menor que el amarillo.', 3000); return; }
+    try {
+        const { doc, updateDoc } = await _sdFS();
+        const db = window._cronos_auth?.db;
+        await updateDoc(doc(db, 'clubs', clubId), { timerThresholds: { red, yellow } });
+        window._clubTimerThresholds = { red, yellow };
+        showToast('Semaforo actualizado', 2500);
+    } catch(e) { showToast('Error: ' + e.message, 4000); }
+};
+
+window._dirToggleReports = async function(clubId, value) {
+    try {
+        const { doc, updateDoc } = await _sdFS();
+        const db = window._cronos_auth?.db;
+        await updateDoc(doc(db, 'clubs', clubId), { 'features.sendIndividualReports': value });
+        showToast('Informes a padres ' + (value ? 'activados' : 'desactivados'), 3000);
+    } catch(e) { showToast('Error: ' + e.message, 4000); }
+};
+
 window._renderDirectorConfig = _renderDirectorConfig;
