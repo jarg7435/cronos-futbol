@@ -3582,6 +3582,20 @@ function goToTitularSelection() {
 
 function startMatchWithConvocation() {
     if (_guardAgainstMatchReset()) return;
+    const _clubId = window._cronosCurrentUser?.clubId;
+    if (_clubId) {
+        Promise.resolve().then(async () => {
+            try {
+                const { db } = window._cronos_auth || {};
+                const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const snap = await getDoc(doc(db, 'clubs', _clubId));
+                if (snap.exists()) {
+                    const thresh = snap.data().timerThresholds;
+                    if (thresh) window._clubTimerThresholds = thresh;
+                }
+            } catch(e) { /* no bloquear inicio de partido */ }
+        });
+    }
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');
