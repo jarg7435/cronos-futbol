@@ -4255,16 +4255,14 @@ function updatePlayerUI(player) {
 // Los umbrales se calculan desde half1MaxTime + half2MaxTime (segundos)
 function getTimerColor(timeSec) {
     const totalSec  = (half1MaxTime || 1800) + (half2MaxTime || 1800);
-    const third     = totalSec / 3;   // mínimo = 1/3 del partido
-    const half      = totalSec / 2;   // objetivo = mitad del partido
-    if (timeSec >= half) {
-        // Verde — superó la mitad
+    const t = window._clubTimerThresholds || {};
+    const redSec    = totalSec * ((t.red    ?? 33) / 100);
+    const yellowSec = totalSec * ((t.yellow ?? 50) / 100);
+    if (timeSec >= yellowSec) {
         return { bg: '#2ea043', text: '#000000', fontSize: '0.8rem' };
-    } else if (timeSec >= third) {
-        // Amarillo — entre 1/3 y 1/2
+    } else if (timeSec >= redSec) {
         return { bg: '#e3b341', text: '#000000', fontSize: '0.8rem' };
     } else {
-        // Rojo — no ha llegado al tercio mínimo
         return { bg: '#da3633', text: '#ffffff', fontSize: '0.8rem' };
     }
 }
@@ -5775,6 +5773,7 @@ async function checkClubAccess(userData) {
         if (cl.expiresAt && new Date(cl.expiresAt) < new Date() && cl.status !== 'blocked') {
             showToast('⚠️ El plan de tu club ha vencido. Contacta con el administrador.', 6000);
         }
+        if (cl.timerThresholds) window._clubTimerThresholds = cl.timerThresholds; // ponytail: umbrales del director
     } catch(e) { /* no bloquear */ }
     return true;
 }
