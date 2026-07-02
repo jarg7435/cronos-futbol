@@ -961,15 +961,17 @@ const _RP = (() => {
             const outPerBadge = opPeriods > 1 && opPeriodIdx >= 0
                 ? ` <span style="font-size:0.62rem;opacity:0.6;">(${opPeriodIdx + 1}º per.)</span>` : '';
 
+            // v218: flechas CORREGIDAS. ▲ verde = ENTRA al campo, ▼ roja = SALE del campo.
+            // Sin "nº<num>"; solo se muestra el nombre del jugador.
             const outPill =
-                `<span style="background:${oc}1a;color:${oc};padding:2px 8px;border-radius:100px;` +
-                `font-size:0.77rem;display:inline-flex;align-items:center;gap:2px;white-space:nowrap;flex-shrink:0;">` +
-                `<span style="font-size:0.72rem;">↑</span> nº${op.playerNumber || '?'} ${esc((op.playerAlias || '').substring(0, 15))}${outPerBadge}</span>`;
+                `<span style="background:rgba(255,88,88,0.10);color:#ff5858;padding:2px 8px;border-radius:100px;` +
+                `font-size:0.77rem;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;flex-shrink:0;">` +
+                `<span style="font-size:0.85rem;color:#ff5858;font-weight:800;">▼</span> ${esc((op.playerAlias || 'Jugador').substring(0, 15))}${outPerBadge}</span>`;
 
             const inPill = ip
-                ? `<span style="background:${ic}1a;color:${ic};padding:2px 8px;border-radius:100px;` +
-                  `font-size:0.77rem;display:inline-flex;align-items:center;gap:2px;white-space:nowrap;flex-shrink:0;">` +
-                  `<span style="font-size:0.72rem;">↓</span> nº${ip.playerNumber || '?'} ${esc((ip.playerAlias || '').substring(0, 15))}</span>`
+                ? `<span style="background:rgba(63,185,80,0.10);color:#3fb950;padding:2px 8px;border-radius:100px;` +
+                  `font-size:0.77rem;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;flex-shrink:0;">` +
+                  `<span style="font-size:0.85rem;color:#3fb950;font-weight:800;">▲</span> ${esc((ip.playerAlias || 'Jugador').substring(0, 15))}</span>`
                 : `<span style="font-size:0.77rem;color:var(--text-muted);font-style:italic;">banquillo</span>`;
 
             return (
@@ -1002,27 +1004,36 @@ const _RP = (() => {
         if (!relevant.length) return '';
 
         const rows = relevant.map((ev, idx) => {
-            const name = esc((ev._p.playerAlias || `nº${ev._p.playerNumber || '?'}`).substring(0, 16));
+            // v218: sin "nº<num>"; solo nombre del jugador.
+            const name = esc((ev._p.playerAlias || 'Jugador').substring(0, 16));
             let icon = '', col = 'var(--text-muted)', txt = '';
 
             if (ev.type === 'goal') {
                 icon = `<span style="width:10px;height:10px;border-radius:50%;background:#3fb950;border:2px solid #27500A;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#3fb950'; txt = `Gol &middot; ${name}`;
+                // v218: GOL en MAYÚSCULAS (verde).
+                col = '#3fb950'; txt = `<strong style="letter-spacing:0.5px;">GOL</strong> &middot; ${name}`;
             } else if (ev.type === 'yellow') {
                 icon = `<span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#eab308'; txt = `Tarjeta amarilla &middot; ${name}`;
+                // v218: TARJETA en MAYÚSCULAS (amarillo).
+                col = '#eab308'; txt = `<strong style="letter-spacing:0.5px;">TARJETA</strong> &middot; ${name}`;
             } else if (ev.type === 'red') {
                 icon = `<span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#ff5858'; txt = `Tarjeta roja &middot; ${name}`;
+                // v218: TARJETA en MAYÚSCULAS (rojo).
+                col = '#ff5858'; txt = `<strong style="letter-spacing:0.5px;">TARJETA</strong> &middot; ${name}`;
             } else if (ev.type === 'injury') {
                 icon = `<span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid #f97316;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#f97316'; txt = `Lesión &middot; ${name}`;
+                // v218: LESIÓN en MAYÚSCULAS (rojo).
+                col = '#ef4444'; txt = `<strong style="letter-spacing:0.5px;">LESIÓN</strong> &middot; ${name}`;
             } else if (ev.type === 'sub_in') {
-                icon = `<span style="color:#3fb950;font-size:11px;line-height:1;flex-shrink:0;">↑</span>`;
-                txt  = `Entra al campo &middot; ${name}`;
+                // v218: ▲ verde = ENTRA al campo.
+                icon = `<span style="color:#3fb950;font-size:13px;line-height:1;flex-shrink:0;font-weight:800;">▲</span>`;
+                col  = '#58a6ff';
+                txt  = `<strong style="letter-spacing:0.5px;color:#58a6ff;">CAMBIO</strong> · <span style="color:#3fb950;">Entra</span> &middot; ${name}`;
             } else if (ev.type === 'sub_out') {
-                icon = `<span style="color:var(--text-muted);font-size:11px;line-height:1;flex-shrink:0;">↓</span>`;
-                txt  = `Sale al campo &middot; ${name}`;
+                // v218: ▼ roja = SALE del campo.
+                icon = `<span style="color:#ff5858;font-size:13px;line-height:1;flex-shrink:0;font-weight:800;">▼</span>`;
+                col  = '#58a6ff';
+                txt  = `<strong style="letter-spacing:0.5px;color:#58a6ff;">CAMBIO</strong> · <span style="color:#ff5858;">Sale</span> &middot; ${name}`;
             }
 
             return (

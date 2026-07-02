@@ -109,9 +109,10 @@ class ReportGenerator {
             <div class="legend-box">
                 <strong>Sustituciones:</strong><br>
                 ${legendEntries.map(([sid, color]) => {
+                    // v218: sin '#<num>', solo el nombre del jugador.
                     const paired = sorted.filter(p =>
                         (p.history || []).some(h => h.includes('#' + sid))
-                    ).map(p => '#' + p.number + ' ' + p.name);
+                    ).map(p => p.name || ('Jugador ' + p.number));
                     return `<span class="legend-chip" style="background:${color}">${paired.join(' ⇄ ')}</span>`;
                 }).join('')}
             </div>` : '';
