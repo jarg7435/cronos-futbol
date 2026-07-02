@@ -1026,7 +1026,7 @@ async function openParentPanel() {
                     const col = e.type === 'sub_in' ? '#3fb950' : '#ff5858';
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
                         stroke="${col}" stroke-width="1.5"/>`;
-                    const arrow = e.type === 'sub_in' ? '▲' : '▼';
+                    const arrow = e.type === 'sub_in' ? '▼' : '▲';
                     svg += `<text x="${ex.toFixed(1)}" y="${EVT_Y}" text-anchor="middle"
                         font-size="8" fill="${col}">${arrow}</text>`;
                 });
@@ -1130,8 +1130,8 @@ async function openParentPanel() {
                 // v218: etiquetas en MAYÚSCULAS. Lesión cambia a rojo (#ef4444).
                 const evIcons = {
                     starter: {icon:'🏁', col:'#58a6ff',  txt:'TITULAR'},
-                    sub_in:  {icon:'▲',  col:'#3fb950',  txt:'CAMBIO · Entra'},
-                    sub_out: {icon:'▼',  col:'#ff5858',  txt:'CAMBIO · Sale'},
+                    sub_in:  {icon:'▼',  col:'#3fb950',  txt:'CAMBIO · Entra'},
+                    sub_out: {icon:'▲',  col:'#ff5858',  txt:'CAMBIO · Sale'},
                     goal:    {icon:'⚽', col:'#3fb950',  txt:'GOL'},
                     yellow:  {icon:'🟨', col:'#eab308',  txt:'TARJETA AMARILLA'},
                     red:     {icon:'🟥', col:'#ef4444',  txt:'TARJETA ROJA'},
@@ -1203,7 +1203,7 @@ async function openParentPanel() {
                     <div style="display:flex;gap:10px;margin:4px 0 8px;font-size:0.63rem;color:rgba(255,255,255,0.3);">
                         <span><span style="display:inline-block;width:10px;height:6px;background:#58a6ff;border-radius:2px;vertical-align:middle;"></span> En campo</span>
                         <span><span style="display:inline-block;width:10px;height:6px;background:rgba(255,255,255,0.08);border-radius:2px;vertical-align:middle;"></span> Banquillo</span>
-                        <span>▲ Entra  ▼ Sale</span>
+                        <span>▼ Entra  ▲ Sale</span>
                     </div>
 
                     <!-- Eventos cronológicos -->
