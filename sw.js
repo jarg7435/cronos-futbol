@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v226
+//  CRONOS FUTBOL - Service Worker v227
+//  v227: FIX v219 - inversión de flechas de sustitución:
+//        · ▼ verde = ENTRA al campo (señala el campo hacia abajo).
+//        · ▲ roja = SALE del campo (señala hacia fuera, hacia arriba).
+//        Motivo: el toast aparece arriba a la derecha, así que ▼ señala
+//        el campo (entra) y ▲ señala fuera (sale).
 //  v226: FIX v218 - formato de mensajes de eventos:
 //        · Sin '#' antes del dorsal del jugador (solo nombre).
 //        · Palabras GOL/TARJETA/LESIÓN/CAMBIO en MAYÚSCULAS con color
@@ -435,8 +440,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v226';
-const CACHE_NAME = 'cronos-cache-v226';
+const VERSION = 'v227';
+const CACHE_NAME = 'cronos-cache-v227';
 
 const ASSETS = [
     './',

@@ -1691,20 +1691,20 @@ function detectAndAlert(matchId, matchData, fromCache) {
         for (let i = 0; i < pairs; i++) {
             const inP  = subIn[i];     // nombre del jugador que ENTRA
             const outP = subPending[i]; // nombre del jugador que SALE
-            // v218: "CAMBIO" en MAYÚSCULAS azul.
-            // Flecha verde ▲ para el jugador que ENTRA (hacia el campo).
-            // Flecha roja ▼ para el jugador que SALE (hacia fuera del campo).
+            // v219: "CAMBIO" en MAYÚSCULAS azul.
+            // Flecha verde ▼ para el jugador que ENTRA (señala el campo, hacia abajo).
+            // Flecha roja ▲ para el jugador que SALE (señala hacia fuera, hacia arriba).
             // NO se muestra el # del dorsal, solo el nombre.
             const kwColor = EVENT_KEYWORD_COLOR.CAMBIO;
             const greenArr = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
-                             ';font-weight:800;font-size:1.05em;">▲</span>';
-            const redArr   = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
                              ';font-weight:800;font-size:1.05em;">▼</span>';
+            const redArr   = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
+                             ';font-weight:800;font-size:1.05em;">▲</span>';
             const kwSpan   = '<span style="color:' + kwColor +
                              ';font-weight:800;letter-spacing:0.5px;">CAMBIO</span>';
             let line;
             if (inP && outP) {
-                // Jugador que ENTRA (verde ▲) + jugador que SALE (rojo ▼).
+                // v219: Jugador que ENTRA (verde ▼) + jugador que SALE (roja ▲).
                 line = kwSpan + ' · ' + greenArr + ' ' + escapeHtml(inP) +
                        '   ' + redArr + ' ' + escapeHtml(outP);
             } else if (inP) {
