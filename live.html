@@ -1236,7 +1236,7 @@ function showEventToast(type, line, sub) {
     const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
         ? line
         : escapeHtml(line || meta.title);
-    el.innerHTML = 
+    el.innerHTML =
         '<div class="et-icon">' + meta.icon + '</div>' +
         '<div class="et-body">' +
             '<div class="et-title">' + titleHTML + '</div>' +
@@ -1248,9 +1248,14 @@ function showEventToast(type, line, sub) {
     };
     el.onclick = remove;
     stack.appendChild(el);
-    // Limitar a 5 toasts simultáneos
-    while (stack.children.length > 5) stack.firstChild.remove();
-    setTimeout(remove, 6500);
+    // v220: subir el límite de 5 a 15 para que cuando se hagan 7 cambios
+    // grupales de golpe (que llegan en un único snapshot por el throttle
+    // de 2s de liveSyncOnAction) no se evicten los primeros toasts.
+    while (stack.children.length > 15) stack.firstChild.remove();
+    setTimeout(remove, 8000);
+
+    // v220: también añadir al panel persistente de historial (no efímero).
+    _appendEventToHistoryPanel(type, line, sub, meta);
 
     // Flash de pantalla
     const flash = document.getElementById("event-flash");
@@ -1261,6 +1266,85 @@ function showEventToast(type, line, sub) {
     playEventSound(type);
     if (!_alertsMuted) vibrate(meta.vib);
 }
+
+// ── v220: PANEL PERSISTENTE DE HISTORIAL DEL PARTIDO ──────────────────
+// Acumula TODOS los eventos del partido en una lista persistente en la
+// parte inferior de la pantalla. A diferencia de los toasts (efímeros),
+// este panel NUNCA elimina eventos automáticamente. Así el usuario puede
+// ver los 7 cambios aunque los toasts hayan desaparecido.
+window._matchEventsLog = window._matchEventsLog || [];
+
+function _appendEventToHistoryPanel(type, line, sub, meta) {
+    try {
+        const panel     = document.getElementById('match-events-panel');
+        const listEl    = document.getElementById('match-events-list');
+        const countEl   = document.getElementById('match-events-count');
+        if (!panel || !listEl) return;
+
+        // Mostrar el panel automáticamente al primer evento.
+        if (panel.style.display !== 'flex') panel.style.display = 'flex';
+
+        // Construir el HTML de la fila (igual que el toast pero más compacto).
+        const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
+            ? line
+            : escapeHtml(line || (meta ? meta.title : ''));
+        const ts = new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const evIcon = meta ? meta.icon : '•';
+
+        // Acumular en el log global (para poder re-renderizar tras colapsar/expandir).
+        window._matchEventsLog.push({ type, titleHTML, sub: sub || '', ts, icon: evIcon });
+        if (countEl) countEl.textContent = '(' + window._matchEventsLog.length + ')';
+
+        // Crear la fila del DOM.
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 0;' +
+                            'border-bottom:1px solid rgba(255,255,255,0.04);';
+        row.innerHTML =
+            '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + ts + '</span>' +
+            '<span style="font-size:0.9rem; flex-shrink:0;">' + evIcon + '</span>' +
+            '<span style="flex:1; min-width:0;">' + titleHTML +
+                (sub ? ' <span style="color:#7d8590; font-size:0.65rem;">· ' + escapeHtml(sub) + '</span>' : '') +
+            '</span>';
+        listEl.appendChild(row);
+
+        // Auto-scroll al final para ver el evento más reciente.
+        listEl.scrollTop = listEl.scrollHeight;
+    } catch(e) { console.warn('[_appendEventToHistoryPanel]', e); }
+}
+
+// Inicializar los botones del panel de historial cuando el DOM esté listo.
+(function _initMatchEventsPanel() {
+    function bind() {
+        const panel  = document.getElementById('match-events-panel');
+        const clear  = document.getElementById('match-events-clear');
+        const toggle = document.getElementById('match-events-toggle');
+        const list   = document.getElementById('match-events-list');
+        if (!panel || !clear || !toggle || !list) { setTimeout(bind, 500); return; }
+        // v220: ser defensivo — en algunos entornos (tests headless) los
+        // elementos stub no implementan addEventListener.
+        if (typeof clear.addEventListener  !== 'function' ||
+            typeof toggle.addEventListener !== 'function') { return; }
+
+        let collapsed = false;
+        clear.addEventListener('click', () => {
+            window._matchEventsLog = [];
+            list.innerHTML = '';
+            const countEl = document.getElementById('match-events-count');
+            if (countEl) countEl.textContent = '(0)';
+        });
+        toggle.addEventListener('click', () => {
+            collapsed = !collapsed;
+            list.style.display = collapsed ? 'none' : 'block';
+            toggle.textContent = collapsed ? '+' : '−';
+            panel.style.maxHeight = collapsed ? 'auto' : '35vh';
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+})();
 
 // ════════════════════════════════════════════════════════════════
 //  SILBATO + OVERLAY DE MOMENTO DEL PARTIDO (fin de parte / fin de partido)
@@ -2036,6 +2120,11 @@ function renderMatch(data) {
         }, 250);
     }
 
+    // v220: guardar el último snapshot para que tickPlayerTimes pueda
+    // recalcular el color del cronómetro en cada tick (250ms) usando los
+    // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
+    window._liveLastData = data;
+
     // Field & bench
     renderField(data);
     renderBench(data);
@@ -2087,10 +2176,23 @@ function formatTime(secs) {
 }
 
 function tickPlayerTimes(elapsed) {
+    // v220: además de actualizar el texto, RECALCULAR el color del cronómetro
+    // en cada tick (250ms). Antes el color solo se refrescaba cuando llegaba
+    // un snapshot nuevo de Firestore (~cada 5s), lo que causaba que el color
+    // fuese retrasado respecto al tiempo mostrado (un jugador podía mostrar
+    // "09:02" en texto pero seguir con el color de "08:55").
+    const data = window._liveLastData || {};
     const els = document.querySelectorAll('.live-player-time[data-base-time]');
     els.forEach(el => {
         const base = parseInt(el.getAttribute('data-base-time')) || 0;
-        el.textContent = formatTime(Math.floor(base + elapsed));
+        const newSec = Math.floor(base + elapsed);
+        el.textContent = formatTime(newSec);
+        // Recalcular el color del cronómetro con el nuevo tiempo.
+        const c = _timerColorFor(newSec, data);
+        if (c && c.bg) {
+            el.style.setProperty('background', c.bg, 'important');
+            el.style.setProperty('color', c.text, 'important');
+        }
     });
 }
 
@@ -2741,6 +2843,40 @@ function showLoadingScreen(msg) {
 </script>
 <div id="event-flash"></div>
 <div id="event-toast-stack"></div>
+
+<!-- ── v220: PANEL PERSISTENTE DE EVENTOS DEL PARTIDO ──
+     A diferencia de los toasts (efímeros, 8s), este panel acumula TODOS
+     los eventos del partido (goles, tarjetas, lesiones, cambios) y los
+     muestra en una lista persistente en la parte inferior. Así el usuario
+     siempre puede ver el historial completo, aunque haya hecho 7 cambios
+     de golpe y los toasts hayan desaparecido.
+     Botón para colapsar/expandir y para limpiar. -->
+<div id="match-events-panel" style="
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998;
+    background: rgba(13,17,23,0.97); border-top: 2px solid rgba(88,166,255,0.35);
+    backdrop-filter: blur(8px); max-height: 35vh; display: none;
+    flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+    <div style="display:flex; align-items:center; justify-content:space-between;
+                padding: 6px 12px; background: rgba(88,166,255,0.10);
+                border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink:0;">
+        <span style="font-size:0.78rem; font-weight:800; color:#58a6ff; letter-spacing:0.5px;">
+            📋 HISTORIAL DEL PARTIDO <span id="match-events-count" style="opacity:0.7; font-weight:600;">(0)</span>
+        </span>
+        <div style="display:flex; gap:6px;">
+            <button id="match-events-clear" style="
+                background:rgba(218,54,51,0.15); border:1px solid rgba(218,54,51,0.3);
+                color:#da3633; padding:2px 8px; border-radius:5px;
+                font-size:0.65rem; font-weight:700; cursor:pointer;">Limpiar</button>
+            <button id="match-events-toggle" style="
+                background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
+                color:#7d8590; padding:2px 8px; border-radius:5px;
+                font-size:0.65rem; font-weight:700; cursor:pointer;">−</button>
+        </div>
+    </div>
+    <div id="match-events-list" style="
+        overflow-y:auto; padding: 4px 12px; font-size:0.72rem; color:#c9d1d9;
+        flex: 1; min-height: 0;"></div>
+</div>
 
 <!-- ── BANNER "TOCA PARA ACTIVAR SONIDO" (solo móvil) ──
      iOS/Android requieren un gesto del usuario para desbloquear el AudioContext.

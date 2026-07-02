@@ -1,5 +1,21 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v227
+//  CRONOS FUTBOL - Service Worker v228
+//  v228: FIX v220 - dos bugs críticos:
+//        1) Panel "en vivo" solo mostraba 5 cambios aunque se hiciesen 7:
+//           · Subido el límite de toasts simultáneos de 5 a 15.
+//           · Añadido panel persistente "HISTORIAL DEL PARTIDO" que acumula
+//             TODOS los eventos (goles/tarjetas/lesiones/cambios) en una
+//             lista no efímera en la parte inferior de la pantalla.
+//        2) Colores del cronómetro distintos en panel entrenador vs "en vivo":
+//           · tickPlayerTimes ahora recalcula el color en cada tick 250ms
+//             (antes solo actualizaba el texto; el color iba retrasado 5s).
+//           · getTimerColor en app-init.js usa fallback mode-aware
+//             (F7=1800+1800=3600, F11=2400+2400=4800) consistente con live.html.
+//           · sync.js envía half1MaxTime/half2MaxTime >0 (antes enviaba 0
+//             si el global era 0, y live caía a defaults distintos del coach).
+//           · renderPlayers() llama colorAllTimers() sincrónicamente para
+//             evitar la ventana de 1s donde los chips mostraban los colores
+//             por defecto del CSS (amarillo #ffde59) en lugar del semáforo.
 //  v227: FIX v219 - inversión de flechas de sustitución:
 //        · ▼ verde = ENTRA al campo (señala el campo hacia abajo).
 //        · ▲ roja = SALE del campo (señala hacia fuera, hacia arriba).
@@ -440,8 +456,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v227';
-const CACHE_NAME = 'cronos-cache-v227';
+const VERSION = 'v228';
+const CACHE_NAME = 'cronos-cache-v228';
 
 const ASSETS = [
     './',
