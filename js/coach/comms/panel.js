@@ -3707,7 +3707,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
         msg += `🆚 ${me.clubName||'Nuestro equipo'} ${scoreHome} – ${scoreAway} ${rival}\n\n`;
 
         // Línea de tiempo global (todos los eventos ordenados)
-        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▲ CAMBIO·Entra', sub_out:'▼ CAMBIO·Sale', injury:'🚑 LESIÓN' };
+        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
         const allEvents = [];
         playerData.forEach(p => {
             const alias = p.name || 'Jugador';
@@ -4495,7 +4495,7 @@ window.openIndividualReports = async function openIndividualReports() {
             return;
         }
 
-        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▲ CAMBIO·Entra', sub_out:'▼ CAMBIO·Sale', injury:'🚑 LESIÓN' };
+        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
 
         body.innerHTML = players.map(p => {
             const link    = links[p.number];
@@ -4586,7 +4586,7 @@ window._sendAllIndividualReports = async function() {
         const matchDate = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
         // v218: palabras en MAYÚSCULAS + flechas ▲/▼ coherentes con el feed en vivo.
         const evIcon    = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA',
-                            sub_in:'▲ CAMBIO·Entra', sub_out:'▼ CAMBIO·Sale', injury:'🚑 LESIÓN' };
+                            sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
 
         let sent = 0;
         const noLinkList = [];
