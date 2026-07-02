@@ -122,6 +122,18 @@ async function pushLiveSnapshot(status = 'active') {
             timeH2:      masterTimeH2,
             half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
             half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
+            // FIX (v217): incluir umbrales del semáforo configurados por el
+            // Director Deportivo para que live.html (padres/coordinadores en
+            // seguimiento online) aplique los MISMOS colores que la app del
+            // entrenador. Se leen de window._clubTimerThresholds (cargado
+            // en checkClubAccess / startMatchWithConvocation).
+            timerThresholds: (window._clubTimerThresholds &&
+                              typeof window._clubTimerThresholds === 'object')
+                ? {
+                    red:    Number(window._clubTimerThresholds.red)    || 33,
+                    yellow: Number(window._clubTimerThresholds.yellow) || 50
+                  }
+                : null,
             // phaseStartedAt: instante absoluto (epoch ms) en que arrancó la parte
             // ACTUAL. Se ancla a lastTickTime (no a Date.now() crudo) sumando los
             // segundos que el tick no pudo procesar por throttling del navegador
