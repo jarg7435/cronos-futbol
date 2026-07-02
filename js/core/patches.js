@@ -103,8 +103,11 @@
             window.getTimerColor !== getTimerColor) {
             return window.getTimerColor(timeSec);
         }
-        var h1 = (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : 1800;
-        var h2 = (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : 1800;
+        var _f7Def = 1800, _f11Def = 2400;
+        var _isF11 = (typeof currentMode !== 'undefined' && currentMode === 'f11');
+        var _def = _isF11 ? _f11Def : _f7Def;
+        var h1 = (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : _def;
+        var h2 = (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : _def;
         var total = h1 + h2;
         var t = (typeof window !== 'undefined' && window._clubTimerThresholds) || {};
         var redPct    = (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33;
