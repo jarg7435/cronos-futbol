@@ -95,22 +95,32 @@ fired.length=0;
 detectAndAlert(MID, mk(roster({1:{goals:2}}), 2, 0));
 check('Gol detectado', fired.some(f=>f.type==='goal' && /GOL/.test(f.line)));
 check('Solo 1 alerta de gol', fired.filter(f=>f.type==='goal').length===1);
+// v218: GOL en MAYÚSCULAS con color verde (span style).
+check('v218: GOL con span color verde', fired.some(f=>f.type==='goal' && /color:#3fb950[^>]*>GOL</.test(f.line||'')));
+// v218: no debe aparecer '#' antes del dorsal del jugador.
+check('v218: GOL sin "#" del dorsal', fired.every(f=>!/#\d(?!\d|[a-fA-F])/.test(f.line||'')));
 
 // 3. Tarjeta amarilla nueva en P3.
 fired.length=0;
 detectAndAlert(MID, mk(roster({1:{goals:2}, 3:{cards:'amarilla'}}), 2, 0));
 check('Amarilla detectada', fired.some(f=>f.type==='yellow'));
+// v218: TARJETA en MAYÚSCULAS, color amarillo.
+check('v218: TARJETA amarilla con color', fired.some(f=>f.type==='yellow' && /color:#eab308[^>]*>TARJETA</.test(f.line||'')));
 
 // 4. Roja en P2 (de amarilla a roja).
 fired.length=0;
 detectAndAlert(MID, mk(roster({1:{goals:2}, 2:{cards:'roja'}, 3:{cards:'amarilla'}}), 2, 0));
 check('Roja detectada', fired.some(f=>f.type==='red'));
 check('No re-avisa amarilla previa', !fired.some(f=>f.type==='yellow'));
+// v218: TARJETA en MAYÚSCULAS, color rojo.
+check('v218: TARJETA roja con color', fired.some(f=>f.type==='red' && /color:#ef4444[^>]*>TARJETA</.test(f.line||'')));
 
 // 5. Lesión en P1.
 fired.length=0;
 detectAndAlert(MID, mk(roster({1:{goals:2,injured:true}, 2:{cards:'roja'}, 3:{cards:'amarilla'}}), 2, 0));
 check('Lesión detectada', fired.some(f=>f.type==='injury'));
+// v218: LESIÓN en MAYÚSCULAS, color rojo.
+check('v218: LESIÓN con color rojo', fired.some(f=>f.type==='injury' && /color:#ef4444[^>]*>LESIÓN</.test(f.line||'')));
 
 // 6. Cambio: P3 sale a banca (sin roja), P4 entra al campo. P2(roja) ya en campo.
 fired.length=0;
@@ -119,6 +129,13 @@ check('Cambio detectado', fired.some(f=>f.type==='sub'));
 check('Solo 1 evento de cambio', fired.filter(f=>f.type==='sub').length===1);
 const subAlert = fired.find(f=>f.type==='sub');
 check('Cambio empareja entra/sale', subAlert && /▲/.test(subAlert.line) && /▼/.test(subAlert.line));
+// v218: CAMBIO en MAYÚSCULAS, color azul.
+check('v218: CAMBIO con color azul', subAlert && /color:#58a6ff[^>]*>CAMBIO</.test(subAlert.line||''));
+// v218: ▲ verde (entra) y ▼ roja (sale).
+check('v218: ▲ verde (entra)', subAlert && /color:#3fb950[^>]*>▲</.test(subAlert.line||''));
+check('v218: ▼ roja (sale)', subAlert && /color:#ef4444[^>]*>▼</.test(subAlert.line||''));
+// v218: no debe haber '#' antes del dorsal en el mensaje de cambio.
+check('v218: CAMBIO sin "#" del dorsal', subAlert && !/#\d(?!\d|[a-fA-F])/.test(subAlert.line||''));
 
 // 6b. Expulsión: P5 entra, P2 (roja) pasa a banca -> NO debe contar como "cambio" la salida por roja.
 fired.length=0;
