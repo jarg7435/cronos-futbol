@@ -386,7 +386,8 @@ async function exportData() {
             <td style="border:1px solid #ddd;padding:8px;font-size:0.8rem;color:#333;">
                 ${(p.events||[]).map(e =>
                     e.time + '(' + e.half + ') ' +
-                    (e.type==='GOL' ? '⚽' : e.type==='AMARILLA' ? '🟨' : e.type==='ROJA' ? '🟥' : '🚑')
+                    // v218: etiqueta en MAYÚSCULAS junto al emoji.
+                    (e.type==='GOL' ? '⚽ GOL' : e.type==='AMARILLA' ? '🟨 TARJETA' : e.type==='ROJA' ? '🟥 TARJETA' : '🚑 LESIÓN')
                 ).join('  ')}
             </td>
             ${makeShiftCells(p.shiftsH1.concat(Array(maxH1 - p.shiftsH1.length).fill(null)))}
@@ -406,7 +407,7 @@ async function exportData() {
             usedColors.forEach(([sid, color]) => {
                 const paired = processedPlayers.filter(p =>
                     p.history.some(h => h.includes('#' + sid))
-                ).map(p => p.number + ' ' + p.name);
+                ).map(p => p.name || ('Jugador ' + p.number));   // v218: sin número, solo nombre
                 pairsByColor[color] = paired;
             });
             legendEl.innerHTML = '<strong style="font-size:0.85rem;">🔄 Leyenda de sustituciones:</strong><br>' +
@@ -445,9 +446,10 @@ async function exportData() {
         const injured = p.injured ? ' 🚑' : '';
         const evts    = (p.events||[]).map(e =>
             e.time + '(' + e.half + ')' +
-            (e.type==='GOL'?'⚽':e.type==='AMARILLA'?'🟨':e.type==='ROJA'?'🟥':'🚑')
+            // v218: etiqueta en MAYÚSCULAS junto al emoji.
+            (e.type==='GOL'?' ⚽GOL':e.type==='AMARILLA'?' 🟨TARJETA':e.type==='ROJA'?' 🟥TARJETA':' 🚑LESIÓN')
         ).join(' ');
-        return p.number + '. ' + p.name + ' — ' + formatTime(p.time) +
+        return p.name + ' — ' + formatTime(p.time) +
                goals + card + injured + (evts ? ' [' + evts + ']' : '');
     });
 
