@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v224
+//  CRONOS FUTBOL - Service Worker v225
+//  v225: FIX v217 - semaforo respeta umbrales del Director Deportivo
+//        (patches.js ya no pisa window.getTimerColor; live.html lee
+//        data.timerThresholds del snapshot) + checkbox per-partido del
+//        modal de informes se respeta ESTRICTAMENTE (authorizedIds en
+//        _cronosResolveParentReportTargets y autoDispatch FASE A/B).
 //  v224: Banquillo en flujo flex (no fixed) - campo se ajusta solo, sin solapamiento
 //  v216: Bump tras feat del silbato de arbitro + overlay de fin de parte/partido
 //         (js/core/event-listeners.js: _cronosWhistle, _cronosMatchMomentOverlay;
@@ -424,8 +429,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v224';
-const CACHE_NAME = 'cronos-cache-v224';
+const VERSION = 'v225';
+const CACHE_NAME = 'cronos-cache-v225';
 
 const ASSETS = [
     './',

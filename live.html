@@ -2049,17 +2049,24 @@ function safeColor(value, fallback) {
 }
 
 // ── Semáforo de tiempo jugado ──────────────────────────────────────
-// Color compartido por campo (live-player-time) y banquillo (bench-time):
-// rojo por defecto, amarillo a partir de total/3, verde a partir de total/2.
+// Color compartido por campo (live-player-time) y banquillo (bench-time).
+// FIX (v217): respeta los umbrales configurados por el Director Deportivo
+// (clubs/{clubId}.timerThresholds = { red, yellow }), que viajan dentro del
+// snapshot en data.timerThresholds. Si no se incluyen, se aplica el default
+// rojo <33% · ámbar 33-50% · verde ≥50%.
 // total = half1Max + half2Max, con fallback f7=1800/parte, f11=2400/parte.
-// Sin caso especial para 00:00 (cae en rojo por la cadena de comparaciones).
 function _timerColorFor(timeSec, data) {
     const half1Max = data.half1MaxTime || (data.mode === 'f7' ? 1800 : 2400);
     const half2Max = data.half2MaxTime || (data.mode === 'f7' ? 1800 : 2400);
     const totalSec = half1Max + half2Max;
     const t = timeSec || 0;
-    if (t >= totalSec / 2) return { bg: '#2ea043', text: '#000000' };
-    if (t >= totalSec / 3) return { bg: '#e3b341', text: '#000000' };
+    const th = data.timerThresholds || {};
+    const redPct    = (typeof th.red    === 'number' && !isNaN(th.red))    ? th.red    : 33;
+    const yellowPct = (typeof th.yellow === 'number' && !isNaN(th.yellow)) ? th.yellow : 50;
+    const redSec    = totalSec * (redPct    / 100);
+    const yellowSec = totalSec * (yellowPct / 100);
+    if (t >= yellowSec) return { bg: '#2ea043', text: '#000000' };
+    if (t >= redSec)    return { bg: '#e3b341', text: '#000000' };
     return { bg: '#da3633', text: '#ffffff' };
 }
 
