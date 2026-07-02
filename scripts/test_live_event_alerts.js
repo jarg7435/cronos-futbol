@@ -132,8 +132,8 @@ check('Cambio empareja entra/sale', subAlert && /▲/.test(subAlert.line) && /�
 // v218: CAMBIO en MAYÚSCULAS, color azul.
 check('v218: CAMBIO con color azul', subAlert && /color:#58a6ff[^>]*>CAMBIO</.test(subAlert.line||''));
 // v218: ▲ verde (entra) y ▼ roja (sale).
-check('v218: ▲ verde (entra)', subAlert && /color:#3fb950[^>]*>▲</.test(subAlert.line||''));
-check('v218: ▼ roja (sale)', subAlert && /color:#ef4444[^>]*>▼</.test(subAlert.line||''));
+check('v219: ▼ verde (entra)', subAlert && /color:#3fb950[^>]*>▼</.test(subAlert.line||''));
+check('v219: ▲ roja (sale)', subAlert && /color:#ef4444[^>]*>▲</.test(subAlert.line||''));
 // v218: no debe haber '#' antes del dorsal en el mensaje de cambio.
 check('v218: CAMBIO sin "#" del dorsal', subAlert && !/#\d(?!\d|[a-fA-F])/.test(subAlert.line||''));
 
