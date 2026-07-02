@@ -1474,7 +1474,7 @@ function _buildGlobalReportText() {
     
     homePlayers.forEach(p => {
         const cardIcon = p.cards === 'amarilla' ? '🟨' : p.cards === 'roja' ? '🟥' : '—';
-        text += `👤 ${p.name} (#${p.number}) - ${window.formatTime ? window.formatTime(p.time||0) : p.time||0} min\n`;
+        text += `👤 ${p.name} - ${window.formatTime ? window.formatTime(p.time||0) : p.time||0} min\n`;
         text += `   ⚽ Goles: ${p.goals||0} | 🃏 Thrj: ${cardIcon} ${p.injured ? '| 🚑 Lesión' : ''}\n`;
     });
     return text + `\n_Cronos Fútbol · Dirección Deportiva_`;
@@ -2291,7 +2291,8 @@ async function autoDispatchMatchReports() {
             // bucle se rompía y los padres siguientes no recibían su informe.
             try {
             // Texto individual de este jugador
-            const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ ${player.goals || 0} goles | ${player.cards === 'amarilla' ? '🟨' : player.cards === 'roja' ? '🟥' : '0 tarjetas'}`;
+            const cardLbl = player.cards === 'amarilla' ? '🟨 TARJETA' : player.cards === 'roja' ? '🟥 TARJETA' : 'Sin tarjetas';
+            const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ GOL ×${player.goals || 0} | ${cardLbl}`;
             const indivText = `📊 *INFORME INDIVIDUAL: ${player.name}*\n` +
                              `━━━━━━━━━━━━━━━━\n` +
                              `📅 ${matchDate}\n` +
@@ -3706,18 +3707,19 @@ window.openCollectiveReport = async function openCollectiveReport() {
         msg += `🆚 ${me.clubName||'Nuestro equipo'} ${scoreHome} – ${scoreAway} ${rival}\n\n`;
 
         // Línea de tiempo global (todos los eventos ordenados)
-        const evIcon = { goal:'⚽', yellow:'🟨', red:'🟥', sub_in:'▶️', sub_out:'⏸️', injury:'🩹' };
+        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▲ CAMBIO·Entra', sub_out:'▼ CAMBIO·Sale', injury:'🚑 LESIÓN' };
         const allEvents = [];
         playerData.forEach(p => {
-            const alias = p.name || `#${p.number}`;
+            const alias = p.name || 'Jugador';
             (p.history||[]).forEach(ev => {
                 if (typeof ev === 'object' && ev.type) {
                     allEvents.push({ minute: ev.minute||0, type: ev.type, player: alias });
                 }
             });
-            if (p.subInMinute)  allEvents.push({ minute:p.subInMinute,  type:'sub_in',  player:p.name||`#${p.number}` });
-            if (p.subOutMinute) allEvents.push({ minute:p.subOutMinute, type:'sub_out', player:p.name||`#${p.number}` });
-            if (p.injuryMinute) allEvents.push({ minute:p.injuryMinute, type:'injury',  player:p.name||`#${p.number}` });
+            // v218: sin '#<num>' en el fallback; solo el nombre del jugador.
+            if (p.subInMinute)  allEvents.push({ minute:p.subInMinute,  type:'sub_in',  player:p.name||'Jugador' });
+            if (p.subOutMinute) allEvents.push({ minute:p.subOutMinute, type:'sub_out', player:p.name||'Jugador' });
+            if (p.injuryMinute) allEvents.push({ minute:p.injuryMinute, type:'injury',  player:p.name||'Jugador' });
         });
         allEvents.sort((a,b) => a.minute - b.minute);
 
@@ -3733,7 +3735,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
         msg += `👥 *JUGADORES:*\n`;
         playerData.forEach(p => {
             const mins = p.minutesPlayed || (typeof formatTime==='function' ? formatTime(p.time||0) : '—');
-            let line = `• #${p.number} ${p.name||'Jugador'} — ⏱${mins}`;
+            let line = `• ${p.name||'Jugador'} — ⏱${mins}`;
             if (p.goals > 0) line += ` ⚽${p.goals}`;
             if (p.cards === 'amarilla' || p.cards === 'yellow') line += ' 🟨';
             if (p.cards === 'roja'     || p.cards === 'red')    line += ' 🟥';
@@ -4493,7 +4495,7 @@ window.openIndividualReports = async function openIndividualReports() {
             return;
         }
 
-        const evIcon = { goal:'⚽', yellow:'🟨', red:'🟥', sub_in:'▶️ Entra', sub_out:'⏸️ Sale', injury:'🩹 Lesión' };
+        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▲ CAMBIO·Entra', sub_out:'▼ CAMBIO·Sale', injury:'🚑 LESIÓN' };
 
         body.innerHTML = players.map(p => {
             const link    = links[p.number];
@@ -4525,7 +4527,7 @@ window.openIndividualReports = async function openIndividualReports() {
                     <div style="display:flex;align-items:center;gap:0.5rem;">
                         <span style="background:rgba(88,166,255,0.15);color:var(--primary);
                                      font-weight:700;font-size:0.8rem;padding:2px 7px;border-radius:5px;">
-                            #${p.number}
+                            ${typeof escapeHtml==='function'?escapeHtml(p.name||'Jugador'):(p.name||'Jugador')}
                         </span>
                         <span style="font-weight:700;font-size:0.88rem;">${typeof escapeHtml==='function'?escapeHtml(p.name||'Jugador'):p.name||'Jugador'}</span>
                     </div>
@@ -4582,8 +4584,9 @@ window._sendAllIndividualReports = async function() {
         const scoreHome = document.getElementById('score-home')?.textContent||'?';
         const scoreAway = document.getElementById('score-away')?.textContent||'?';
         const matchDate = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
-        const evIcon    = { goal:'⚽ Gol', yellow:'🟨 Amarilla', red:'🟥 Roja',
-                            sub_in:'▶️ Entra', sub_out:'⏸️ Sale', injury:'🩹 Lesión' };
+        // v218: palabras en MAYÚSCULAS + flechas ▲/▼ coherentes con el feed en vivo.
+        const evIcon    = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA',
+                            sub_in:'▲ CAMBIO·Entra', sub_out:'▼ CAMBIO·Sale', injury:'🚑 LESIÓN' };
 
         let sent = 0;
         const noLinkList = [];
@@ -4592,7 +4595,7 @@ window._sendAllIndividualReports = async function() {
             const link = links[p.number];
             // Saltar solo si no hay NINGÚN dato de contacto
             if (!link || (!link.parentUid && !link.parentEmail && !link.parentPhone)) {
-                noLinkList.push(p.name || `#${p.number}`);
+                noLinkList.push(p.name || 'Jugador');
                 continue;
             }
 
@@ -4604,7 +4607,7 @@ window._sendAllIndividualReports = async function() {
             if (p.injuryMinute) events.push({ minute:p.injuryMinute, type:'injury'  });
             events.sort((a,b)=>(a.minute||0)-(b.minute||0));
 
-            const text = `📊 *INFORME INDIVIDUAL: ${p.name} #${p.number}*\n` +
+            const text = `📊 *INFORME INDIVIDUAL: ${p.name}*\n` +
                 `━━━━━━━━━━━━━━━━\n` +
                 `📅 ${matchDate} · 🆚 vs ${rival} (${scoreHome}-${scoreAway})\n\n` +
                 `⏱ Minutos: *${mins}*\n` +
