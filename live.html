@@ -1198,11 +1198,32 @@ function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(patte
 
 const EVENT_META = {
     goal:   { icon: "⚽", cls: "ev-goal",   title: "¡GOL!",        flash: "rgba(63,185,80,0.22)",  vib: [120,60,120] },
-    yellow: { icon: "🟨", cls: "ev-yellow", title: "Tarjeta amarilla", flash: "rgba(227,179,65,0.20)", vib: [200] },
-    red:    { icon: "🟥", cls: "ev-red",    title: "Tarjeta roja",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
-    sub:    { icon: "🔄", cls: "ev-sub",    title: "Cambio",        flash: "rgba(88,166,255,0.18)", vib: [100] },
-    injury: { icon: "🚑", cls: "ev-injury", title: "Lesión",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] }
+    yellow: { icon: "🟨", cls: "ev-yellow", title: "TARJETA AMARILLA", flash: "rgba(227,179,65,0.20)", vib: [200] },
+    red:    { icon: "🟥", cls: "ev-red",    title: "TARJETA ROJA",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
+    sub:    { icon: "🔄", cls: "ev-sub",    title: "CAMBIO",        flash: "rgba(88,166,255,0.18)", vib: [100] },
+    injury: { icon: "🚑", cls: "ev-injury", title: "LESIÓN",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] }
 };
+
+// v218: colores oficiales para las palabras clave en MAYÚSCULAS.
+// GOL -> verde, TARJETA -> amarillo/rojo según tipo, LESIÓN -> rojo, CAMBIO -> azul.
+const EVENT_KEYWORD_COLOR = {
+    GOL:         '#3fb950', // verde
+    TARJETA_AMR: '#eab308', // amarillo
+    TARJETA_ROJ: '#ef4444', // rojo
+    LESION:      '#ef4444', // rojo
+    CAMBIO:      '#58a6ff'  // azul
+};
+
+// v218: construye el HTML del título con la palabra clave en MAYÚSCULAS y color,
+// seguida del nombre del jugador (sin #). Acepta tanto texto plano como HTML.
+// Si `line` ya viene como HTML (contiene '<'), se inserta tal cual; si no, se escapa.
+function _buildEventTitleHTML(line) {
+    if (line && typeof line === 'string' && line.indexOf('<') >= 0) {
+        // Ya es HTML (lo construimos aquí con spans) → inyectar tal cual.
+        return line;
+    }
+    return escapeHtml(line || '');
+}
 
 function showEventToast(type, line, sub) {
     const meta  = EVENT_META[type] || EVENT_META.sub;
@@ -1210,10 +1231,15 @@ function showEventToast(type, line, sub) {
     if (!stack) return;
     const el = document.createElement("div");
     el.className = "event-toast " + meta.cls;
+    // v218: `line` puede ser HTML (con spans de color para la palabra clave).
+    // Si contiene '<', se inyecta tal cual; si no, se escapa.
+    const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
+        ? line
+        : escapeHtml(line || meta.title);
     el.innerHTML = 
         '<div class="et-icon">' + meta.icon + '</div>' +
         '<div class="et-body">' +
-            '<div class="et-title">' + escapeHtml(line || meta.title) + '</div>' +
+            '<div class="et-title">' + titleHTML + '</div>' +
             (sub ? '<div class="et-sub">' + escapeHtml(sub) + '</div>' : "") +
         '</div>';
     const remove = () => {
@@ -1582,29 +1608,47 @@ function detectAndAlert(matchId, matchData, fromCache) {
         const np = next.players[id];
         const pp = prev.players[id];
         if (!pp) return;
-        const who = "#" + (np.number ?? "?") + " " + (np.name || "Jugador");
+        // v218: NO usar "#<num>"; solo el nombre del jugador.
+        const playerName = np.name || "Jugador";
+        const safeName = escapeHtml(playerName);
 
         // GOL — los goles del jugador aumentaron
         if (np.goals > pp.goals) {
             const n = np.goals - pp.goals;
             if (np.team === "away") playerGoalsAway += n; else playerGoalsHome += n;
-            showEventToast("goal", "¡GOL! " + who, matchLabel + (n > 1 ? " · +" + n : ""));
+            // v218: "GOL" en MAYÚSCULAS, color verde, seguido del nombre (sin #).
+            const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                         ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + safeName;
+            showEventToast("goal", line, matchLabel + (n > 1 ? " · +" + n : ""));
         }
         // TARJETAS — cambio de estado de tarjeta
         if (np.cards !== pp.cards) {
-            if (np.cards === "amarilla" && pp.cards !== "amarilla")
-                showEventToast("yellow", "Amarilla · " + who, matchLabel);
-            else if (np.cards === "roja" && pp.cards !== "roja")
-                showEventToast("red", "Roja · " + who, matchLabel);
+            if (np.cards === "amarilla" && pp.cards !== "amarilla") {
+                // v218: "TARJETA" en MAYÚSCULAS, color amarillo.
+                const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_AMR +
+                             ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
+                showEventToast("yellow", line, matchLabel);
+            }
+            else if (np.cards === "roja" && pp.cards !== "roja") {
+                // v218: "TARJETA" en MAYÚSCULAS, color rojo.
+                const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
+                             ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
+                showEventToast("red", line, matchLabel);
+            }
         }
         // LESIÓN — pasó a lesionado
         if (np.injured && !pp.injured) {
-            showEventToast("injury", "Lesión · " + who, matchLabel);
+            // v218: "LESIÓN" en MAYÚSCULAS, color rojo.
+            const line = '<span style="color:' + EVENT_KEYWORD_COLOR.LESION +
+                         ';font-weight:800;letter-spacing:0.5px;">LESIÓN</span> · ' + safeName;
+            showEventToast("injury", line, matchLabel);
         }
         // CAMBIO — transiciones field<->bench (no por expulsión roja)
         if (np.status !== pp.status && np.cards !== "roja" && pp.cards !== "roja") {
-            if (pp.status === "field" && np.status === "bench") subPending.push(who);
-            else if (pp.status === "bench" && np.status === "field") subIn.push(who);
+            // v218: guardamos el NOMBRE (sin #) para construir el HTML del toast
+            // después con flechas verdes/rojas según entre/sale.
+            if (pp.status === "field" && np.status === "bench") subPending.push(playerName);
+            else if (pp.status === "bench" && np.status === "field") subIn.push(playerName);
         }
     });
 
@@ -1630,22 +1674,46 @@ function detectAndAlert(matchId, matchData, fromCache) {
     const extraHome = Math.max(0, deltaHome - playerGoalsHome);
     const extraAway = Math.max(0, deltaAway - playerGoalsAway);
     for (let i = 0; i < extraHome; i++) {
-        showEventToast("goal", "¡GOL! " + homeName, matchLabel);
+        // v218: "GOL" en MAYÚSCULAS verde, seguido del nombre del equipo.
+        const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                     ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(homeName);
+        showEventToast("goal", line, matchLabel);
     }
     for (let i = 0; i < extraAway; i++) {
-        showEventToast("goal", "¡GOL! " + awayName, matchLabel);
+        const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                     ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(awayName);
+        showEventToast("goal", line, matchLabel);
     }
 
     // Sustituciones: emparejar entradas/salidas en un único aviso si es posible.
     if (subIn.length || subPending.length) {
         const pairs = Math.max(subIn.length, subPending.length);
         for (let i = 0; i < pairs; i++) {
-            const inP  = subIn[i];
-            const outP = subPending[i];
-            let line = "Cambio";
-            if (inP && outP) line = "Cambio · ▲ " + inP + "  ▼ " + outP;
-            else if (inP)    line = "Entra · " + inP;
-            else if (outP)   line = "Sale · " + outP;
+            const inP  = subIn[i];     // nombre del jugador que ENTRA
+            const outP = subPending[i]; // nombre del jugador que SALE
+            // v218: "CAMBIO" en MAYÚSCULAS azul.
+            // Flecha verde ▲ para el jugador que ENTRA (hacia el campo).
+            // Flecha roja ▼ para el jugador que SALE (hacia fuera del campo).
+            // NO se muestra el # del dorsal, solo el nombre.
+            const kwColor = EVENT_KEYWORD_COLOR.CAMBIO;
+            const greenArr = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                             ';font-weight:800;font-size:1.05em;">▲</span>';
+            const redArr   = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
+                             ';font-weight:800;font-size:1.05em;">▼</span>';
+            const kwSpan   = '<span style="color:' + kwColor +
+                             ';font-weight:800;letter-spacing:0.5px;">CAMBIO</span>';
+            let line;
+            if (inP && outP) {
+                // Jugador que ENTRA (verde ▲) + jugador que SALE (rojo ▼).
+                line = kwSpan + ' · ' + greenArr + ' ' + escapeHtml(inP) +
+                       '   ' + redArr + ' ' + escapeHtml(outP);
+            } else if (inP) {
+                line = kwSpan + ' · ' + greenArr + ' ' + escapeHtml(inP);
+            } else if (outP) {
+                line = kwSpan + ' · ' + redArr + ' ' + escapeHtml(outP);
+            } else {
+                line = kwSpan;
+            }
             showEventToast("sub", line, matchLabel);
         }
     }

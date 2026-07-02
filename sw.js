@@ -1,5 +1,11 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v225
+//  CRONOS FUTBOL - Service Worker v226
+//  v226: FIX v218 - formato de mensajes de eventos:
+//        · Sin '#' antes del dorsal del jugador (solo nombre).
+//        · Palabras GOL/TARJETA/LESIÓN/CAMBIO en MAYÚSCULAS con color
+//          (verde/amarillo/rojo/rojo/azul respectivamente) en HTML.
+//        · Flecha ▲ verde = ENTRA al campo; flecha ▼ roja = SALE del campo.
+//        · Texto plano (WhatsApp/email) usa emojis + MAYÚSCULAS.
 //  v225: FIX v217 - semaforo respeta umbrales del Director Deportivo
 //        (patches.js ya no pisa window.getTimerColor; live.html lee
 //        data.timerThresholds del snapshot) + checkbox per-partido del
@@ -429,8 +435,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v225';
-const CACHE_NAME = 'cronos-cache-v225';
+const VERSION = 'v226';
+const CACHE_NAME = 'cronos-cache-v226';
 
 const ASSETS = [
     './',
