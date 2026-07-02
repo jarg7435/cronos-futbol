@@ -751,7 +751,7 @@ async function openParentPanel() {
 
             const link        = links[0];
             const playerLabel = link.playerAlias || link.playerName
-                              || `Jugador #${link.playerNumber}`;
+                              || `Jugador`;
 
             // Informes de partido enviados por el entrenador
             // ── FIX B: buscar por parentUid (informes futuros) Y por playerNumber+clubId (informes pasados) ──
@@ -1082,7 +1082,7 @@ async function openParentPanel() {
                                          background:rgba(88,166,255,0.05);margin-bottom:1rem;">
                 <div style="font-size:1.05rem;font-weight:700;">
                     ⚽ ${typeof escapeHtml==='function'?escapeHtml(playerLabel):playerLabel}
-                    <span style="color:#58a6ff;"> · #${typeof escapeHtml==='function'?escapeHtml(link.playerNumber):link.playerNumber}</span>
+                    <span style="color:#58a6ff;"> · ${typeof escapeHtml==='function'?escapeHtml(link.playerNumber):link.playerNumber}</span>
                 </div>
                 <div style="font-size:0.74rem;color:#7d8590;margin-top:0.15rem;">
                     ${typeof escapeHtml==='function'?escapeHtml(link.teamName || clubName || ''):link.teamName || clubName || ''}
@@ -1127,15 +1127,15 @@ async function openParentPanel() {
                 const resultNum = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
                 const rCol = resultNum === 'VICTORIA' ? '#3fb950' : resultNum === 'DERROTA' ? '#ff5858' : '#eab308';
 
-                // Eventos cronológicos para el listado
+                // v218: etiquetas en MAYÚSCULAS. Lesión cambia a rojo (#ef4444).
                 const evIcons = {
-                    starter: {icon:'🏁', col:'#58a6ff',               txt:'Titular desde el inicio'},
-                    sub_in:  {icon:'▲',  col:'#3fb950',               txt:'Entra al campo'},
-                    sub_out: {icon:'▼',  col:'rgba(255,100,100,0.9)', txt:'Sale al banquillo'},
-                    goal:    {icon:'⚽', col:'#3fb950',               txt:'Gol'},
-                    yellow:  {icon:'🟨', col:'#eab308',               txt:'Tarjeta amarilla'},
-                    red:     {icon:'🟥', col:'#ef4444',               txt:'Tarjeta roja'},
-                    injury:  {icon:'🚑', col:'#f97316',               txt:'Lesión'},
+                    starter: {icon:'🏁', col:'#58a6ff',  txt:'TITULAR'},
+                    sub_in:  {icon:'▲',  col:'#3fb950',  txt:'CAMBIO · Entra'},
+                    sub_out: {icon:'▼',  col:'#ff5858',  txt:'CAMBIO · Sale'},
+                    goal:    {icon:'⚽', col:'#3fb950',  txt:'GOL'},
+                    yellow:  {icon:'🟨', col:'#eab308',  txt:'TARJETA AMARILLA'},
+                    red:     {icon:'🟥', col:'#ef4444',  txt:'TARJETA ROJA'},
+                    injury:  {icon:'🚑', col:'#ef4444',  txt:'LESIÓN'},
                 };
                 const allEvts = [...tlEvts].sort((a,b) => a.timeSec - b.timeSec);
                 const evRows = allEvts.length ? allEvts.map(ev => {
