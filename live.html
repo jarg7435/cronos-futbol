@@ -2130,11 +2130,13 @@ function renderMatch(data) {
     // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
     window._liveLastData = data;
 
-    // v221: si el snapshot no trae timerThresholds (coach no tenía
-    // window._clubTimerThresholds cargado), leerlos directamente de
-    // clubs/{clubId} como fallback. Esto garantiza que el live SIEMPRE
-    // aplique los umbrales configurados por el Director Deportivo.
-    if (!data.timerThresholds && data.clubId && typeof _fetchClubThresholdsForLive === 'function') {
+    // v222: SIEMPRE leer los umbrales directamente de Firestore para
+    // garantizar que el live aplique los configurados por el Director
+    // Deportivo, aunque el snapshot venga con umbrales stale (defaults
+    // 33/50) porque el coach los cargó antes de que el Director cambiara
+    // la configuración. _fetchClubThresholdsForLive tiene caché de 60s
+    // y solo actualiza _liveCachedThresholds si difieren del snapshot.
+    if (data.clubId && typeof _fetchClubThresholdsForLive === 'function') {
         _fetchClubThresholdsForLive(data.clubId);
     }
 
@@ -2261,43 +2263,61 @@ function _timerColorFor(timeSec, data) {
 // v221: fallback asincrónico — si el snapshot no trae timerThresholds (p.ej.
 // porque el coach no tiene clubId configurado), leer directamente clubs/{clubId}
 // desde Firestore usando el clubId del snapshot. Se cachea en window._liveCachedThresholds.
+// v222: ahora se llama SIEMPRE (no solo si el snapshot viene sin thresholds),
+// con caché TTL 60s. Esto garantiza que el live SIEMPRE aplique los umbrales
+// frescos del Director Deportivo, aunque el coach los haya cargado stale.
 window._liveCachedThresholds = null;
 let _liveThresholdsFetchInFlight = false;
+let _liveThresholdsLastFetch = 0;
+const _LIVE_THRESHOLDS_TTL_MS = 60_000; // 60 segundos
+
 async function _fetchClubThresholdsForLive(clubId) {
     if (!clubId) {
-        console.warn('[live v221] _fetchClubThresholdsForLive: clubId vacío. No se pueden leer umbrales.');
+        console.warn('[live v222] _fetchClubThresholdsForLive: clubId vacío. No se pueden leer umbrales.');
         return;
     }
-    if (window._liveCachedThresholds || _liveThresholdsFetchInFlight) return;
+    // No saltar el fetch si ya hay caché — solo respetar TTL de 60s.
+    const now = Date.now();
+    const cacheFresh = (now - _liveThresholdsLastFetch) < _LIVE_THRESHOLDS_TTL_MS;
+    if (_liveThresholdsFetchInFlight) return;
+    if (window._liveCachedThresholds && cacheFresh) return; // caché fresco
+
     _liveThresholdsFetchInFlight = true;
     try {
-        const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const db = window._cronos_auth?.db;
-        if (!db) {
-            console.warn('[live v221] _fetchClubThresholdsForLive: window._cronos_auth.db no disponible.');
+        // v222: en live.html la instancia de Firestore es `db` (variable local
+        // del módulo ES, declarada con `const db = getFirestore(app)` en la
+        // inicialización). Antes (v221) usábamos window._cronos_auth.db que
+        // solo existe en el coach app, no en live.html. Por eso el fallback
+        // siempre fallaba con "window._cronos_auth.db no disponible".
+        if (typeof db === 'undefined' || !db) {
+            console.warn('[live v222] db no disponible en este contexto.');
             _liveThresholdsFetchInFlight = false;
             return;
         }
-        console.log('[live v221] Fallback: leyendo clubs/' + clubId + '/timerThresholds de Firestore...');
+        console.log('[live v222] Fallback: leyendo clubs/' + clubId + '/timerThresholds de Firestore...');
         const snap = await getDoc(doc(db, 'clubs', clubId));
         if (snap.exists()) {
             const data = snap.data() || {};
             const t = data.timerThresholds || {};
-            window._liveCachedThresholds = {
+            const newValue = {
                 red:    (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33,
                 yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50
             };
-            console.log('[live v221] Umbrales cacheados del club', clubId, ':', window._liveCachedThresholds);
+            _liveThresholdsLastFetch = now;
+            const oldValue = window._liveCachedThresholds;
+            window._liveCachedThresholds = newValue;
+            console.log('[live v222] Umbrales cacheados del club', clubId, ':', newValue,
+                        oldValue ? '(antes: ' + JSON.stringify(oldValue) + ')' : '');
             // Forzar re-render del campo y banquillo para aplicar los nuevos umbrales.
             if (window._liveLastData) {
                 renderField(window._liveLastData);
                 renderBench(window._liveLastData);
             }
         } else {
-            console.warn('[live v221] clubs/' + clubId + ' NO existe en Firestore');
+            console.warn('[live v222] clubs/' + clubId + ' NO existe en Firestore');
         }
     } catch(e) {
-        console.warn('[live v221] Fallback fetch club thresholds ERROR:', e);
+        console.warn('[live v222] Fallback fetch club thresholds ERROR:', e);
     } finally {
         _liveThresholdsFetchInFlight = false;
     }
