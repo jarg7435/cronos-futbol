@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v228
+//  CRONOS FUTBOL - Service Worker v229
+//  v229: FIX v221 - sincronización de umbrales del semáforo entre
+//        coach y live.html:
+//        · pushLiveSnapshot ahora lee DIRECTAMENTE clubs/{clubId}.timerThresholds
+//          de Firestore (con caché 60s) en vez de fiarse de window._clubTimerThresholds
+//          que podía ser null o estar desactualizado.
+//        · live.html añadido fallback asincrónico: si el snapshot llega sin
+//          timerThresholds, lee clubs/{clubId} directamente y re-renderiza.
+//        Esto garantiza que el live SIEMPRE aplique los umbrales configurados
+//        por el Director Deportivo, aunque los haya cambiado a mitad de partido.
 //  v228: FIX v220 - dos bugs críticos:
 //        1) Panel "en vivo" solo mostraba 5 cambios aunque se hiciesen 7:
 //           · Subido el límite de toasts simultáneos de 5 a 15.
@@ -456,8 +465,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v228';
-const CACHE_NAME = 'cronos-cache-v228';
+const VERSION = 'v229';
+const CACHE_NAME = 'cronos-cache-v229';
 
 const ASSETS = [
     './',

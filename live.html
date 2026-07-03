@@ -2125,6 +2125,14 @@ function renderMatch(data) {
     // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
     window._liveLastData = data;
 
+    // v221: si el snapshot no trae timerThresholds (coach no tenía
+    // window._clubTimerThresholds cargado), leerlos directamente de
+    // clubs/{clubId} como fallback. Esto garantiza que el live SIEMPRE
+    // aplique los umbrales configurados por el Director Deportivo.
+    if (!data.timerThresholds && data.clubId && typeof _fetchClubThresholdsForLive === 'function') {
+        _fetchClubThresholdsForLive(data.clubId);
+    }
+
     // Field & bench
     renderField(data);
     renderBench(data);
@@ -2230,7 +2238,12 @@ function _timerColorFor(timeSec, data) {
     const half2Max = data.half2MaxTime || (data.mode === 'f7' ? 1800 : 2400);
     const totalSec = half1Max + half2Max;
     const t = timeSec || 0;
-    const th = data.timerThresholds || {};
+    // v221: usar window._liveCachedThresholds si el snapshot no trae thresholds.
+    // Esto se carga asincrónicamente en _fetchClubThresholdsForLive() a partir
+    // del clubId del snapshot, como fallback cuando el coach no los incluyó.
+    // (typeof window check para entornos sandbox sin window, p.ej. tests VM).
+    const _cached = (typeof window !== 'undefined' && window._liveCachedThresholds) || null;
+    const th = data.timerThresholds || _cached || {};
     const redPct    = (typeof th.red    === 'number' && !isNaN(th.red))    ? th.red    : 33;
     const yellowPct = (typeof th.yellow === 'number' && !isNaN(th.yellow)) ? th.yellow : 50;
     const redSec    = totalSec * (redPct    / 100);
@@ -2238,6 +2251,40 @@ function _timerColorFor(timeSec, data) {
     if (t >= yellowSec) return { bg: '#2ea043', text: '#000000' };
     if (t >= redSec)    return { bg: '#e3b341', text: '#000000' };
     return { bg: '#da3633', text: '#ffffff' };
+}
+
+// v221: fallback asincrónico — si el snapshot no trae timerThresholds (p.ej.
+// porque el coach no tiene clubId configurado), leer directamente clubs/{clubId}
+// desde Firestore usando el clubId del snapshot. Se cachea en window._liveCachedThresholds.
+window._liveCachedThresholds = null;
+let _liveThresholdsFetchInFlight = false;
+async function _fetchClubThresholdsForLive(clubId) {
+    if (!clubId) return;
+    if (window._liveCachedThresholds || _liveThresholdsFetchInFlight) return;
+    _liveThresholdsFetchInFlight = true;
+    try {
+        const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth?.db;
+        if (!db) { _liveThresholdsFetchInFlight = false; return; }
+        const snap = await getDoc(doc(db, 'clubs', clubId));
+        if (snap.exists()) {
+            const data = snap.data() || {};
+            const t = data.timerThresholds || {};
+            window._liveCachedThresholds = {
+                red:    (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33,
+                yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50
+            };
+            // Forzar re-render del campo y banquillo para aplicar los nuevos umbrales.
+            if (window._liveLastData) {
+                renderField(window._liveLastData);
+                renderBench(window._liveLastData);
+            }
+        }
+    } catch(e) {
+        console.warn('[live] Fallback fetch club thresholds:', e);
+    } finally {
+        _liveThresholdsFetchInFlight = false;
+    }
 }
 
 // ── Render field ───────────────────────────────────────────────────
