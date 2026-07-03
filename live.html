@@ -8,6 +8,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Chronos Fútbol - Live View</title>
     <meta name="theme-color" content="#0a0e14">
+    <!-- v224: favicon SVG para evitar 404 de /favicon.ico que aparecía en consola. -->
+    <link rel="icon" type="image/svg+xml" href="public/assets/icons/chronos-192.svg">
+    <link rel="apple-touch-icon" href="public/assets/icons/chronos-192.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Outfit:wght@600&display=swap" rel="stylesheet">
     <style>
@@ -2294,7 +2297,8 @@ async function _fetchClubThresholdsForLive(clubId) {
             _liveThresholdsFetchInFlight = false;
             return;
         }
-        console.log('[live v222] Fallback: leyendo clubs/' + clubId + '/timerThresholds de Firestore...');
+        // v224: log silenciado en producción (era de diagnóstico v222).
+        // console.log('[live v222] Fallback: leyendo clubs/' + clubId + '/timerThresholds de Firestore...');
         const snap = await getDoc(doc(db, 'clubs', clubId));
         if (snap.exists()) {
             const data = snap.data() || {};
@@ -2306,8 +2310,9 @@ async function _fetchClubThresholdsForLive(clubId) {
             _liveThresholdsLastFetch = now;
             const oldValue = window._liveCachedThresholds;
             window._liveCachedThresholds = newValue;
-            console.log('[live v222] Umbrales cacheados del club', clubId, ':', newValue,
-                        oldValue ? '(antes: ' + JSON.stringify(oldValue) + ')' : '');
+            // v224: log silenciado en producción (era de diagnóstico v222).
+            // console.log('[live v222] Umbrales cacheados del club', clubId, ':', newValue,
+            //             oldValue ? '(antes: ' + JSON.stringify(oldValue) + ')' : '');
             // Forzar re-render del campo y banquillo para aplicar los nuevos umbrales.
             if (window._liveLastData) {
                 renderField(window._liveLastData);
@@ -2984,8 +2989,12 @@ function showLoadingScreen(msg) {
     if (!banner) return;
 
     // Detectar móvil (mismo criterio que el CSS: max-width 950px)
+    // v224: además del ancho, exigir que el userAgent sea de móvil real,
+    // para que el banner de "TOCA PARA ACTIVAR SONIDO" no aparezca en PC
+    // con ventana estrecha.
     function isMobile() {
-        return window.matchMedia('(max-width: 950px)').matches;
+        if (!window.matchMedia('(max-width: 950px)').matches) return false;
+        return /Mobi|Android|iPhone|iPad|iPod|BlackBerry|Opera Mini|IEMobile/i.test(navigator.userAgent);
     }
 
     // Mostrar banner si estamos en móvil y el audio no está desbloqueado
