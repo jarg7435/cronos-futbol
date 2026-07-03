@@ -502,9 +502,12 @@ function confirmStopLive() {
 }
 
 // Llamar a pushLiveSnapshot en cada acción relevante del partido.
-// Throttle de 2 s: agrupa ráfagas de acciones rápidas (gol, tarjeta,
-// sustitución, lesión…) en una sola escritura a Firestore. La primera
-// acción programa el push y las siguientes dentro de la ventana se ignoran.
+// v225: throttle reducido de 2s a 500ms para que los goles y otros eventos
+// críticos se sincronicen casi en tiempo real con el panel en vivo. Antes,
+// con 2s, un gol metido justo antes de un cambio podía quedar "atrapado" en
+// el mismo batch y el live no lo veía hasta 2s después (o se perdía si había
+// race conditions). 500ms sigue agrupando ráfagas rápidas pero es mucho más
+// responsivo.
 let _liveSyncThrottleTimer = null;
 function liveSyncOnAction() {
     if (!liveIsActive) return;
@@ -512,8 +515,22 @@ function liveSyncOnAction() {
     _liveSyncThrottleTimer = setTimeout(() => {
         _liveSyncThrottleTimer = null;
         if (liveIsActive) pushLiveSnapshot('active');
-    }, 2000);
+    }, 500);
 }
+
+// v225: flush inmediato para eventos críticos (gol, tarjeta, lesión, cambio).
+// Estos eventos deben llegar al live lo antes posible, sin esperar al throttle.
+// Cancela cualquier timer pendiente y envía el snapshot inmediatamente.
+function liveSyncFlushNow() {
+    if (!liveIsActive) return;
+    if (_liveSyncThrottleTimer) {
+        clearTimeout(_liveSyncThrottleTimer);
+        _liveSyncThrottleTimer = null;
+    }
+    pushLiveSnapshot('active');
+}
+// Exponer para que player-actions.js pueda llamarlo tras meter un gol.
+window.liveSyncFlushNow = liveSyncFlushNow;
 
 // ══════════════════════════════════════════════════════════════════
 //  CAPA DE ALMACENAMIENTO EN LA NUBE (Firestore)

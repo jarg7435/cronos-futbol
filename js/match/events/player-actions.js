@@ -523,7 +523,15 @@ function changeGoals(amount) {
         if (amount > 0 && typeof commitCriticalEvent === 'function') {
             commitCriticalEvent('goal', { playerId: p.id, playerName: p.name, playerNumber: p.number, team: p.team, value: p.goals });
         }
-        liveSyncOnAction();
+        // v225: flush inmediato en goles (no esperar al throttle de 500ms)
+        // para que el panel en vivo reciba el gol sin delay. Antes usábamos
+        // liveSyncOnAction() que esperaba 2s (ahora 500ms) y el gol podía
+        // llegar retrasado o perderse en race conditions.
+        if (amount > 0 && typeof window.liveSyncFlushNow === 'function') {
+            window.liveSyncFlushNow();
+        } else {
+            liveSyncOnAction();
+        }
     }
 }
 
