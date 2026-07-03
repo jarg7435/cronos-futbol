@@ -62,7 +62,9 @@ class RenderOptimizer {
 
         // Log de perf si excede 16ms (causa lag en 60fps)
         if (duration > 16) {
-            console.warn(`⚠️ Render lento: ${duration.toFixed(2)}ms (target: <16ms)`);
+            // v224: solo avisar si el render es MUY lento (>30ms). Antes avisaba a partir de 16ms
+            // y eso generaba ruido constante en consola sin ser un problema real.
+            if (duration > 30) console.warn(`⚠️ Render lento: ${duration.toFixed(2)}ms (target: <16ms)`);
         }
     }
 
