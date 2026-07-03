@@ -127,7 +127,8 @@ async function _fetchClubTimerThresholds(db, clubId) {
             // aplique los mismos umbrales en sus propios cronómetros.
             window._clubTimerThresholds = value;
             _clubThresholdsCache = { value, fetchedAt: now, clubId };
-            console.log('[sync v221] Umbrales leídos de Firestore para club', clubId, ':', value);
+            // v224: log silenciado en producción (era de diagnóstico v221).
+            // console.log('[sync v221] Umbrales leídos de Firestore para club', clubId, ':', value);
             return value;
         } else {
             console.warn('[sync v221] clubs/' + clubId + ' NO existe en Firestore');
@@ -245,10 +246,10 @@ async function pushLiveSnapshot(status = 'active') {
             }))
         };
 
-        // v222: log de diagnóstico para ver qué umbrales se envían en el snapshot.
-        console.log('[sync v221] Snapshot enviado. timerThresholds=', snapshot.timerThresholds,
-                    '| half1Max=', snapshot.half1MaxTime, '| half2Max=', snapshot.half2MaxTime,
-                    '| mode=', snapshot.mode);
+        // v224: log silenciado en producción (era de diagnóstico v221/v222).
+        // console.log('[sync v221] Snapshot enviado. timerThresholds=', snapshot.timerThresholds,
+        //             '| half1Max=', snapshot.half1MaxTime, '| half2Max=', snapshot.half2MaxTime,
+        //             '| mode=', snapshot.mode);
 
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
     } catch (err) {
