@@ -90,6 +90,48 @@ async function startLiveSync() {
     updateLiveButton(true);
 }
 
+// v221: caché de umbrales del club para evitar leer Firestore en cada
+// pushLiveSnapshot (que se llama cada 2-5s). TTL de 60s: si el Director
+// Deportivo cambia los umbrales, como mucho tardan 60s en reflejarse en
+// el snapshot en vivo. Sin este caché, el snapshot podría enviarse con
+// timerThresholds: null si window._clubTimerThresholds no estaba cargado
+// en el navegador del coach (p.ej. si el coach abrió el partido antes
+// de que el Director guardara los umbrales nuevos).
+let _clubThresholdsCache = null; // {value, fetchedAt, clubId}
+const _CLUB_THRESHOLDS_TTL_MS = 60_000; // 60 segundos
+
+async function _fetchClubTimerThresholds(db, clubId) {
+    if (!clubId || !db) return null;
+    const now = Date.now();
+    // Devolver caché si es válido (mismo clubId y no expirado).
+    if (_clubThresholdsCache &&
+        _clubThresholdsCache.clubId === clubId &&
+        (now - _clubThresholdsCache.fetchedAt) < _CLUB_THRESHOLDS_TTL_MS) {
+        return _clubThresholdsCache.value;
+    }
+    try {
+        const { doc, getDoc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const snap = await getDoc(doc(db, 'clubs', clubId));
+        if (snap.exists()) {
+            const data = snap.data() || {};
+            const t = data.timerThresholds || {};
+            const value = {
+                red:    (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33,
+                yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50
+            };
+            // Actualizar TAMBIÉN window._clubTimerThresholds para que el coach
+            // aplique los mismos umbrales en sus propios cronómetros.
+            window._clubTimerThresholds = value;
+            _clubThresholdsCache = { value, fetchedAt: now, clubId };
+            return value;
+        }
+    } catch(e) {
+        console.warn('[sync] Error fetching club timer thresholds:', e);
+    }
+    return null;
+}
+
 async function pushLiveSnapshot(status = 'active') {
     const fa = window._cronos_auth;
     if (!fa || !fa.db || !liveMatchId) return;
@@ -100,6 +142,13 @@ async function pushLiveSnapshot(status = 'active') {
 
         const scoreHome = document.getElementById('score-home')?.textContent || '0';
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
+
+        // v221: SIEMPRE leer los umbrales frescos del club (con caché 60s).
+        // Antes dependíamos de window._clubTimerThresholds que podía ser null
+        // o estar desactualizado si el Director cambió los umbrales después
+        // de que el coach abriera el partido.
+        const _clubId = window._cronosCurrentUser?.clubId;
+        const _thresholds = await _fetchClubTimerThresholds(fa.db, _clubId);
 
         const snapshot = {
             id:          liveMatchId,
@@ -128,16 +177,17 @@ async function pushLiveSnapshot(status = 'active') {
             // distintos para el mismo jugador en coach vs live.
             half1MaxTime: (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : 1800,
             half2MaxTime: (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : 1800,
-            // FIX (v217): incluir umbrales del semáforo configurados por el
-            // Director Deportivo para que live.html (padres/coordinadores en
-            // seguimiento online) aplique los MISMOS colores que la app del
-            // entrenador. Se leen de window._clubTimerThresholds (cargado
-            // en checkClubAccess / startMatchWithConvocation).
-            timerThresholds: (window._clubTimerThresholds &&
-                              typeof window._clubTimerThresholds === 'object')
+            // v221: umbrales del semáforo configurados por el Director Deportivo.
+            // Se leen DIRECTAMENTE de Firestore (con caché 60s en _fetchClubTimerThresholds)
+            // para garantizar que siempre estén frescos, incluso si el Director
+            // cambió los umbrales DESPUÉS de que el coach abriera el partido.
+            // Antes (v217) usábamos window._clubTimerThresholds que podía ser null
+            // o estar desactualizado → el live caía a defaults (33/50) → colores
+            // distintos entre coach y live para el mismo jugador.
+            timerThresholds: (_thresholds && typeof _thresholds === 'object')
                 ? {
-                    red:    Number(window._clubTimerThresholds.red)    || 33,
-                    yellow: Number(window._clubTimerThresholds.yellow) || 50
+                    red:    Number(_thresholds.red)    || 33,
+                    yellow: Number(_thresholds.yellow) || 50
                   }
                 : null,
             // phaseStartedAt: instante absoluto (epoch ms) en que arrancó la parte
