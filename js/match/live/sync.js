@@ -120,8 +120,26 @@ async function pushLiveSnapshot(status = 'active') {
             isRunning:   isRunning,
             timeH1:      masterTimeH1,
             timeH2:      masterTimeH2,
-            half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
-            half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
+            // v220: usar `|| 1800` para que si half1MaxTime/half2MaxTime son 0
+            // (caso de corrupción de estado) se envíe 1800 y no 0. Antes se
+            // usaba `typeof !== 'undefined'` que enviaba 0 tal cual, y entonces
+            // live.html hacía `data.half1MaxTime || (mode==='f7'?1800:2400)`
+            // → en F11 caía a 2400 mientras el coach usaba 1800 → colores
+            // distintos para el mismo jugador en coach vs live.
+            half1MaxTime: (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : 1800,
+            half2MaxTime: (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : 1800,
+            // FIX (v217): incluir umbrales del semáforo configurados por el
+            // Director Deportivo para que live.html (padres/coordinadores en
+            // seguimiento online) aplique los MISMOS colores que la app del
+            // entrenador. Se leen de window._clubTimerThresholds (cargado
+            // en checkClubAccess / startMatchWithConvocation).
+            timerThresholds: (window._clubTimerThresholds &&
+                              typeof window._clubTimerThresholds === 'object')
+                ? {
+                    red:    Number(window._clubTimerThresholds.red)    || 33,
+                    yellow: Number(window._clubTimerThresholds.yellow) || 50
+                  }
+                : null,
             // phaseStartedAt: instante absoluto (epoch ms) en que arrancó la parte
             // ACTUAL. Se ancla a lastTickTime (no a Date.now() crudo) sumando los
             // segundos que el tick no pudo procesar por throttling del navegador

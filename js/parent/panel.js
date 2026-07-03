@@ -751,7 +751,7 @@ async function openParentPanel() {
 
             const link        = links[0];
             const playerLabel = link.playerAlias || link.playerName
-                              || `Jugador #${link.playerNumber}`;
+                              || `Jugador`;
 
             // Informes de partido enviados por el entrenador
             // ── FIX B: buscar por parentUid (informes futuros) Y por playerNumber+clubId (informes pasados) ──
@@ -1026,7 +1026,7 @@ async function openParentPanel() {
                     const col = e.type === 'sub_in' ? '#3fb950' : '#ff5858';
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
                         stroke="${col}" stroke-width="1.5"/>`;
-                    const arrow = e.type === 'sub_in' ? '▲' : '▼';
+                    const arrow = e.type === 'sub_in' ? '▼' : '▲';
                     svg += `<text x="${ex.toFixed(1)}" y="${EVT_Y}" text-anchor="middle"
                         font-size="8" fill="${col}">${arrow}</text>`;
                 });
@@ -1082,7 +1082,7 @@ async function openParentPanel() {
                                          background:rgba(88,166,255,0.05);margin-bottom:1rem;">
                 <div style="font-size:1.05rem;font-weight:700;">
                     ⚽ ${typeof escapeHtml==='function'?escapeHtml(playerLabel):playerLabel}
-                    <span style="color:#58a6ff;"> · #${typeof escapeHtml==='function'?escapeHtml(link.playerNumber):link.playerNumber}</span>
+                    <span style="color:#58a6ff;"> · ${typeof escapeHtml==='function'?escapeHtml(link.playerNumber):link.playerNumber}</span>
                 </div>
                 <div style="font-size:0.74rem;color:#7d8590;margin-top:0.15rem;">
                     ${typeof escapeHtml==='function'?escapeHtml(link.teamName || clubName || ''):link.teamName || clubName || ''}
@@ -1127,15 +1127,15 @@ async function openParentPanel() {
                 const resultNum = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
                 const rCol = resultNum === 'VICTORIA' ? '#3fb950' : resultNum === 'DERROTA' ? '#ff5858' : '#eab308';
 
-                // Eventos cronológicos para el listado
+                // v218: etiquetas en MAYÚSCULAS. Lesión cambia a rojo (#ef4444).
                 const evIcons = {
-                    starter: {icon:'🏁', col:'#58a6ff',               txt:'Titular desde el inicio'},
-                    sub_in:  {icon:'▲',  col:'#3fb950',               txt:'Entra al campo'},
-                    sub_out: {icon:'▼',  col:'rgba(255,100,100,0.9)', txt:'Sale al banquillo'},
-                    goal:    {icon:'⚽', col:'#3fb950',               txt:'Gol'},
-                    yellow:  {icon:'🟨', col:'#eab308',               txt:'Tarjeta amarilla'},
-                    red:     {icon:'🟥', col:'#ef4444',               txt:'Tarjeta roja'},
-                    injury:  {icon:'🚑', col:'#f97316',               txt:'Lesión'},
+                    starter: {icon:'🏁', col:'#58a6ff',  txt:'TITULAR'},
+                    sub_in:  {icon:'▼',  col:'#3fb950',  txt:'CAMBIO · Entra'},
+                    sub_out: {icon:'▲',  col:'#ff5858',  txt:'CAMBIO · Sale'},
+                    goal:    {icon:'⚽', col:'#3fb950',  txt:'GOL'},
+                    yellow:  {icon:'🟨', col:'#eab308',  txt:'TARJETA AMARILLA'},
+                    red:     {icon:'🟥', col:'#ef4444',  txt:'TARJETA ROJA'},
+                    injury:  {icon:'🚑', col:'#ef4444',  txt:'LESIÓN'},
                 };
                 const allEvts = [...tlEvts].sort((a,b) => a.timeSec - b.timeSec);
                 const evRows = allEvts.length ? allEvts.map(ev => {
@@ -1203,7 +1203,7 @@ async function openParentPanel() {
                     <div style="display:flex;gap:10px;margin:4px 0 8px;font-size:0.63rem;color:rgba(255,255,255,0.3);">
                         <span><span style="display:inline-block;width:10px;height:6px;background:#58a6ff;border-radius:2px;vertical-align:middle;"></span> En campo</span>
                         <span><span style="display:inline-block;width:10px;height:6px;background:rgba(255,255,255,0.08);border-radius:2px;vertical-align:middle;"></span> Banquillo</span>
-                        <span>▲ Entra  ▼ Sale</span>
+                        <span>▼ Entra  ▲ Sale</span>
                     </div>
 
                     <!-- Eventos cronológicos -->

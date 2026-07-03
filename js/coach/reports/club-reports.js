@@ -842,10 +842,10 @@ const _RP = (() => {
                     const outName = findNear(subInMap, aliasKey, a); // Nombre del que salió
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#3fb950" stroke-width="1.8"/>`;
                     
-                    // Texto Verde (el que entra, alias) abajo a la derecha
-                    svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▲ ${alias} ${Math.floor(a)}'</text>`;
+                    // v219: Texto Verde (el que entra, alias) abajo — ▼ hacia el campo
+                    svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${alias} ${Math.floor(a)}'</text>`;
                     
-                    // Texto Rojo (el que sale, outName) arriba a la izquierda
+                    // v219: Texto Rojo (el que sale, outName) arriba — ▲ hacia fuera
                     if (outName) {
                         svg += `<text x="${(px-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${outName} ▲</text>`;
                     }
@@ -857,12 +857,12 @@ const _RP = (() => {
                     const ex = px + pw;
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#ff5858" stroke-width="1.8"/>`;
                     
-                    // Texto Rojo (el que sale, alias) arriba a la izquierda
+                    // v219: Texto Rojo (el que sale, alias) arriba — ▲ hacia fuera
                     svg += `<text x="${(ex-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▲</text>`;
                     
-                    // Texto Verde (el que entra, inpName) abajo a la derecha
+                    // v219: Texto Verde (el que entra, inpName) abajo — ▼ hacia el campo
                     if (inpName) {
-                        svg += `<text x="${(ex+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▲ ${inpName}</text>`;
+                        svg += `<text x="${(ex+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${inpName}</text>`;
                     }
                 }
             });
@@ -925,8 +925,8 @@ const _RP = (() => {
         `<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin:6px 0 0.85rem;font-size:0.66rem;color:var(--text-muted);">` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:#58a6ff;border-radius:2px;opacity:0.82;"></span>En campo</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:rgba(255,255,255,0.07);border:0.5px solid rgba(255,255,255,0.15);border-radius:2px;"></span>Banquillo</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#3fb950;"></span><span style="color:#3fb950;font-weight:700;font-size:0.62rem;">▲ NOMBRE</span> Entra (reemplaza a)</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▼</span> Sale (relevado por)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#3fb950;"></span><span style="color:#3fb950;font-weight:700;font-size:0.62rem;">▼ NOMBRE</span> Entra (reemplaza a)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▲</span> Sale (relevado por)</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:9px;height:9px;border-radius:50%;background:white;border:1.5px solid #3fb950;display:inline-block;"></span>Gol</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;"></span>Amarilla</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;"></span>Roja</span>` +
@@ -961,15 +961,17 @@ const _RP = (() => {
             const outPerBadge = opPeriods > 1 && opPeriodIdx >= 0
                 ? ` <span style="font-size:0.62rem;opacity:0.6;">(${opPeriodIdx + 1}º per.)</span>` : '';
 
+            // v219: flechas invertidas. ▼ verde = ENTRA al campo (hacia abajo), ▲ roja = SALE del campo (hacia arriba).
+            // Sin "nº<num>"; solo se muestra el nombre del jugador.
             const outPill =
-                `<span style="background:${oc}1a;color:${oc};padding:2px 8px;border-radius:100px;` +
-                `font-size:0.77rem;display:inline-flex;align-items:center;gap:2px;white-space:nowrap;flex-shrink:0;">` +
-                `<span style="font-size:0.72rem;">↑</span> nº${op.playerNumber || '?'} ${esc((op.playerAlias || '').substring(0, 15))}${outPerBadge}</span>`;
+                `<span style="background:rgba(255,88,88,0.10);color:#ff5858;padding:2px 8px;border-radius:100px;` +
+                `font-size:0.77rem;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;flex-shrink:0;">` +
+                `<span style="font-size:0.85rem;color:#ff5858;font-weight:800;">▲</span> ${esc((op.playerAlias || 'Jugador').substring(0, 15))}${outPerBadge}</span>`;
 
             const inPill = ip
-                ? `<span style="background:${ic}1a;color:${ic};padding:2px 8px;border-radius:100px;` +
-                  `font-size:0.77rem;display:inline-flex;align-items:center;gap:2px;white-space:nowrap;flex-shrink:0;">` +
-                  `<span style="font-size:0.72rem;">↓</span> nº${ip.playerNumber || '?'} ${esc((ip.playerAlias || '').substring(0, 15))}</span>`
+                ? `<span style="background:rgba(63,185,80,0.10);color:#3fb950;padding:2px 8px;border-radius:100px;` +
+                  `font-size:0.77rem;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;flex-shrink:0;">` +
+                  `<span style="font-size:0.85rem;color:#3fb950;font-weight:800;">▼</span> ${esc((ip.playerAlias || 'Jugador').substring(0, 15))}</span>`
                 : `<span style="font-size:0.77rem;color:var(--text-muted);font-style:italic;">banquillo</span>`;
 
             return (
@@ -1002,27 +1004,36 @@ const _RP = (() => {
         if (!relevant.length) return '';
 
         const rows = relevant.map((ev, idx) => {
-            const name = esc((ev._p.playerAlias || `nº${ev._p.playerNumber || '?'}`).substring(0, 16));
+            // v218: sin "nº<num>"; solo nombre del jugador.
+            const name = esc((ev._p.playerAlias || 'Jugador').substring(0, 16));
             let icon = '', col = 'var(--text-muted)', txt = '';
 
             if (ev.type === 'goal') {
                 icon = `<span style="width:10px;height:10px;border-radius:50%;background:#3fb950;border:2px solid #27500A;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#3fb950'; txt = `Gol &middot; ${name}`;
+                // v218: GOL en MAYÚSCULAS (verde).
+                col = '#3fb950'; txt = `<strong style="letter-spacing:0.5px;">GOL</strong> &middot; ${name}`;
             } else if (ev.type === 'yellow') {
                 icon = `<span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#eab308'; txt = `Tarjeta amarilla &middot; ${name}`;
+                // v218: TARJETA en MAYÚSCULAS (amarillo).
+                col = '#eab308'; txt = `<strong style="letter-spacing:0.5px;">TARJETA</strong> &middot; ${name}`;
             } else if (ev.type === 'red') {
                 icon = `<span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#ff5858'; txt = `Tarjeta roja &middot; ${name}`;
+                // v218: TARJETA en MAYÚSCULAS (rojo).
+                col = '#ff5858'; txt = `<strong style="letter-spacing:0.5px;">TARJETA</strong> &middot; ${name}`;
             } else if (ev.type === 'injury') {
                 icon = `<span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid #f97316;display:inline-block;flex-shrink:0;"></span>`;
-                col = '#f97316'; txt = `Lesión &middot; ${name}`;
+                // v218: LESIÓN en MAYÚSCULAS (rojo).
+                col = '#ef4444'; txt = `<strong style="letter-spacing:0.5px;">LESIÓN</strong> &middot; ${name}`;
             } else if (ev.type === 'sub_in') {
-                icon = `<span style="color:#3fb950;font-size:11px;line-height:1;flex-shrink:0;">↑</span>`;
-                txt  = `Entra al campo &middot; ${name}`;
+                // v219: ▼ verde = ENTRA al campo (hacia abajo).
+                icon = `<span style="color:#3fb950;font-size:13px;line-height:1;flex-shrink:0;font-weight:800;">▼</span>`;
+                col  = '#58a6ff';
+                txt  = `<strong style="letter-spacing:0.5px;color:#58a6ff;">CAMBIO</strong> · <span style="color:#3fb950;">Entra</span> &middot; ${name}`;
             } else if (ev.type === 'sub_out') {
-                icon = `<span style="color:var(--text-muted);font-size:11px;line-height:1;flex-shrink:0;">↓</span>`;
-                txt  = `Sale al campo &middot; ${name}`;
+                // v219: ▲ roja = SALE del campo (hacia arriba).
+                icon = `<span style="color:#ff5858;font-size:13px;line-height:1;flex-shrink:0;font-weight:800;">▲</span>`;
+                col  = '#58a6ff';
+                txt  = `<strong style="letter-spacing:0.5px;color:#58a6ff;">CAMBIO</strong> · <span style="color:#ff5858;">Sale</span> &middot; ${name}`;
             }
 
             return (

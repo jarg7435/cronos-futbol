@@ -99,7 +99,7 @@ function _cronosExtractDorsal(inviteCode) {
     return m ? m[1] : null;
 }
 
-function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
+function _cronosResolveParentReportTargets(contacts, links, homePlayers, authorizedIds) {
     const out = [];
     const seenParentUid = new Set(); // 1 informe por padre
     const _normEmail = (e) => (typeof window._cronosNormEmail === 'function')
@@ -119,13 +119,40 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers) {
         parents: (contacts || []).filter(c => c && c.type === 'parent').length,
         parentsConRpt: (contacts || []).filter(c => c && c.type === 'parent' && (c.tags||[]).includes('rpt')).length,
         links: (links || []).length,
-        convocados: (homePlayers || []).map(p => p && p.number)
+        convocados: (homePlayers || []).map(p => p && p.number),
+        authorizedIds: Array.isArray(authorizedIds) ? authorizedIds.length : 'null (usa tag rpt global)'
     });
+
+    // FIX (v217): authorizedIds = pre-seleccion por partido guardada en
+    // localStorage.cronos_match_rpt_selection (checkbox del modal "enviar
+    // informe individual a este padre" antes del partido).
+    // Cuando se pasa un array no vacio, SOLO se envia informe a los contactos
+    // cuyo id este en esa lista, IGNORANDO incluso el tag 'rpt' global.
+    // Cuando es null/undefined/array vacio (no se uso el modal), se mantiene
+    // el comportamiento legacy (tag 'rpt' global en el contacto).
+    // Esto hace que el checkbox del modal sea ESTRICTAMENTE respetado:
+    //   - padre con tag 'rpt' ON pero SIN check en el partido  -> NO se envia
+    //   - padre con tag 'rpt' OFF pero CON check en el partido -> SI se envia
+    const _authorizedSet = (Array.isArray(authorizedIds) && authorizedIds.length > 0)
+        ? new Set(authorizedIds.map(String))
+        : null;
 
     for (const c of (contacts || [])) {
         if (!c || c.type !== 'parent') continue;
-        // REGLA 3: solo si tiene el checkbox INF (tag 'rpt') activado.
-        if (!((c.tags || []).includes('rpt'))) { _skip(c, 'sin checkbox INF (tag rpt)'); continue; }
+
+        // REGLA 3 (estricta v217): el envio depende PRIMERO del checkbox del
+        // partido (pre-seleccion). Si hay pre-seleccion, SOLO se respeta esa.
+        // Si no hay pre-seleccion (null), se respeta el tag 'rpt' global.
+        if (_authorizedSet) {
+            const cid = String(c.id || '');
+            if (!cid || !_authorizedSet.has(cid)) {
+                _skip(c, 'no seleccionado en el partido (pre-seleccion per-match)');
+                continue;
+            }
+        } else {
+            // Sin pre-seleccion por partido -> comportamiento legacy (tag 'rpt' global).
+            if (!((c.tags || []).includes('rpt'))) { _skip(c, 'sin checkbox INF (tag rpt)'); continue; }
+        }
 
         // Resolver el link de Firestore de este contacto para obtener
         // inviteCode + parentUid REAL (registrado en la app).
@@ -1447,7 +1474,7 @@ function _buildGlobalReportText() {
     
     homePlayers.forEach(p => {
         const cardIcon = p.cards === 'amarilla' ? '🟨' : p.cards === 'roja' ? '🟥' : '—';
-        text += `👤 ${p.name} (#${p.number}) - ${window.formatTime ? window.formatTime(p.time||0) : p.time||0} min\n`;
+        text += `👤 ${p.name} - ${window.formatTime ? window.formatTime(p.time||0) : p.time||0} min\n`;
         text += `   ⚽ Goles: ${p.goals||0} | 🃏 Thrj: ${cardIcon} ${p.injured ? '| 🚑 Lesión' : ''}\n`;
     });
     return text + `\n_Cronos Fútbol · Dirección Deportiva_`;
@@ -1779,7 +1806,23 @@ window._executeReportsSend = async function(method) {
                 // jugador convocado. Emparejado SOLO por dorsal, nunca por nombre.
                 if (!_parentTargetsManual) {
                     const _mc = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
-                    _parentTargetsManual = _cronosResolveParentReportTargets(_mc, links, homePlayers);
+                    // FIX (v217): en el envio manual, usar la pre-seleccion per-partido
+                    // (si existe) como autoridad. Si el modal no se uso, caer a tag 'rpt'.
+                    let _manualAuthIds = null;
+                    try {
+                        const _raw = localStorage.getItem('cronos_match_rpt_selection');
+                        if (_raw) {
+                            const _parsed = JSON.parse(_raw);
+                            if (Array.isArray(_parsed) && _parsed.length > 0) _manualAuthIds = _parsed;
+                        }
+                    } catch(_) {}
+                    // Si no hay pre-seleccion per-partido, construir authorizedIds a
+                    // partir de los checkboxes ACTUALMENTE marcados en el DOM
+                    // (recipients ya viene de sharedGetSelectedRecipients('rpt')).
+                    if (!_manualAuthIds && Array.isArray(recipients) && recipients.length > 0) {
+                        _manualAuthIds = recipients.map(r => String(r.id)).filter(Boolean);
+                    }
+                    _parentTargetsManual = _cronosResolveParentReportTargets(_mc, links, homePlayers, _manualAuthIds);
                     _parentTargetsByUid = new Map(_parentTargetsManual.map(t => [t.parentUid, t]));
                 }
 
@@ -2083,6 +2126,34 @@ async function autoDispatchMatchReports() {
         }
         const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
 
+        // FIX (v217): aplicar pre-seleccion per-partido al staff TAMBIEN.
+        // Si preSelectionIds esta presente (modal de convocatoria usado),
+        // filtramos staffToNotify para QUE SOLO queden los contactos cuyo
+        // id este en la pre-seleccion. El director/coordinador se mantiene
+        // SIEMPRE (Regla 1) salvo que el entrenador lo haya deschequeado
+        // explicitamente en el modal del partido.
+        if (preSelectionIds && Array.isArray(preSelectionIds) && preSelectionIds.length > 0) {
+            const _staffSel = new Set(preSelectionIds.map(String));
+            staffToNotify = staffToNotify.filter(s => {
+                // Conservar si su uid O email coincide con un contacto seleccionado.
+                if (!s) return false;
+                if (s.uid && _staffSel.has(String(s.uid))) return true;
+                if (s.email) {
+                    const matchByEmail = (contacts || []).some(c =>
+                        c && c.type !== 'parent' && c.email &&
+                        String(c.email).toLowerCase() === String(s.email).toLowerCase() &&
+                        _staffSel.has(String(c.id))
+                    );
+                    if (matchByEmail) return true;
+                }
+                return false;
+            });
+            if (window._cronosDiagReports) {
+                console.log('[autoDispatch] Staff filtrado por pre-seleccion per-partido:',
+                    staffToNotify.length, 'destinatarios');
+            }
+        }
+
         if (window._cronosDiagReports) {
         }
         // FIX v177: Log SIEMPRE (no condicional) para diagnosticar por qué
@@ -2208,7 +2279,11 @@ async function autoDispatchMatchReports() {
         // dorsal, y solo si ese jugador fue convocado (homePlayers). El
         // emparejado es SOLO por dorsal, nunca por nombre. La resolución vive en
         // el helper compartido, idéntico al del despacho manual.
-        const _parentTargets = _cronosResolveParentReportTargets(contacts, links, homePlayers);
+        // FIX (v217): pasar preSelectionIds como 4o argumento para que el helper
+        // respete ESTRICTAMENTE el checkbox per-partido (modal de convocatoria).
+        // Si preSelectionIds es null (no se uso el modal), el helper cae al
+        // comportamiento legacy (tag 'rpt' global).
+        const _parentTargets = _cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds);
         for (const { parentUid, dorsal, player } of _parentTargets) {
             // FIX v176: Cada padre se envía en su propio try/catch para que un
             // fallo con un padre (p.ej. permission-denied) NO impida el envío
@@ -2216,7 +2291,8 @@ async function autoDispatchMatchReports() {
             // bucle se rompía y los padres siguientes no recibían su informe.
             try {
             // Texto individual de este jugador
-            const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ ${player.goals || 0} goles | ${player.cards === 'amarilla' ? '🟨' : player.cards === 'roja' ? '🟥' : '0 tarjetas'}`;
+            const cardLbl = player.cards === 'amarilla' ? '🟨 TARJETA' : player.cards === 'roja' ? '🟥 TARJETA' : 'Sin tarjetas';
+            const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ GOL ×${player.goals || 0} | ${cardLbl}`;
             const indivText = `📊 *INFORME INDIVIDUAL: ${player.name}*\n` +
                              `━━━━━━━━━━━━━━━━\n` +
                              `📅 ${matchDate}\n` +
@@ -3631,18 +3707,19 @@ window.openCollectiveReport = async function openCollectiveReport() {
         msg += `🆚 ${me.clubName||'Nuestro equipo'} ${scoreHome} – ${scoreAway} ${rival}\n\n`;
 
         // Línea de tiempo global (todos los eventos ordenados)
-        const evIcon = { goal:'⚽', yellow:'🟨', red:'🟥', sub_in:'▶️', sub_out:'⏸️', injury:'🩹' };
+        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
         const allEvents = [];
         playerData.forEach(p => {
-            const alias = p.name || `#${p.number}`;
+            const alias = p.name || 'Jugador';
             (p.history||[]).forEach(ev => {
                 if (typeof ev === 'object' && ev.type) {
                     allEvents.push({ minute: ev.minute||0, type: ev.type, player: alias });
                 }
             });
-            if (p.subInMinute)  allEvents.push({ minute:p.subInMinute,  type:'sub_in',  player:p.name||`#${p.number}` });
-            if (p.subOutMinute) allEvents.push({ minute:p.subOutMinute, type:'sub_out', player:p.name||`#${p.number}` });
-            if (p.injuryMinute) allEvents.push({ minute:p.injuryMinute, type:'injury',  player:p.name||`#${p.number}` });
+            // v218: sin '#<num>' en el fallback; solo el nombre del jugador.
+            if (p.subInMinute)  allEvents.push({ minute:p.subInMinute,  type:'sub_in',  player:p.name||'Jugador' });
+            if (p.subOutMinute) allEvents.push({ minute:p.subOutMinute, type:'sub_out', player:p.name||'Jugador' });
+            if (p.injuryMinute) allEvents.push({ minute:p.injuryMinute, type:'injury',  player:p.name||'Jugador' });
         });
         allEvents.sort((a,b) => a.minute - b.minute);
 
@@ -3658,7 +3735,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
         msg += `👥 *JUGADORES:*\n`;
         playerData.forEach(p => {
             const mins = p.minutesPlayed || (typeof formatTime==='function' ? formatTime(p.time||0) : '—');
-            let line = `• #${p.number} ${p.name||'Jugador'} — ⏱${mins}`;
+            let line = `• ${p.name||'Jugador'} — ⏱${mins}`;
             if (p.goals > 0) line += ` ⚽${p.goals}`;
             if (p.cards === 'amarilla' || p.cards === 'yellow') line += ' 🟨';
             if (p.cards === 'roja'     || p.cards === 'red')    line += ' 🟥';
@@ -4418,7 +4495,7 @@ window.openIndividualReports = async function openIndividualReports() {
             return;
         }
 
-        const evIcon = { goal:'⚽', yellow:'🟨', red:'🟥', sub_in:'▶️ Entra', sub_out:'⏸️ Sale', injury:'🩹 Lesión' };
+        const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
 
         body.innerHTML = players.map(p => {
             const link    = links[p.number];
@@ -4450,7 +4527,7 @@ window.openIndividualReports = async function openIndividualReports() {
                     <div style="display:flex;align-items:center;gap:0.5rem;">
                         <span style="background:rgba(88,166,255,0.15);color:var(--primary);
                                      font-weight:700;font-size:0.8rem;padding:2px 7px;border-radius:5px;">
-                            #${p.number}
+                            ${typeof escapeHtml==='function'?escapeHtml(p.name||'Jugador'):(p.name||'Jugador')}
                         </span>
                         <span style="font-weight:700;font-size:0.88rem;">${typeof escapeHtml==='function'?escapeHtml(p.name||'Jugador'):p.name||'Jugador'}</span>
                     </div>
@@ -4507,8 +4584,9 @@ window._sendAllIndividualReports = async function() {
         const scoreHome = document.getElementById('score-home')?.textContent||'?';
         const scoreAway = document.getElementById('score-away')?.textContent||'?';
         const matchDate = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
-        const evIcon    = { goal:'⚽ Gol', yellow:'🟨 Amarilla', red:'🟥 Roja',
-                            sub_in:'▶️ Entra', sub_out:'⏸️ Sale', injury:'🩹 Lesión' };
+        // v218: palabras en MAYÚSCULAS + flechas ▲/▼ coherentes con el feed en vivo.
+        const evIcon    = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA',
+                            sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
 
         let sent = 0;
         const noLinkList = [];
@@ -4517,7 +4595,7 @@ window._sendAllIndividualReports = async function() {
             const link = links[p.number];
             // Saltar solo si no hay NINGÚN dato de contacto
             if (!link || (!link.parentUid && !link.parentEmail && !link.parentPhone)) {
-                noLinkList.push(p.name || `#${p.number}`);
+                noLinkList.push(p.name || 'Jugador');
                 continue;
             }
 
@@ -4529,7 +4607,7 @@ window._sendAllIndividualReports = async function() {
             if (p.injuryMinute) events.push({ minute:p.injuryMinute, type:'injury'  });
             events.sort((a,b)=>(a.minute||0)-(b.minute||0));
 
-            const text = `📊 *INFORME INDIVIDUAL: ${p.name} #${p.number}*\n` +
+            const text = `📊 *INFORME INDIVIDUAL: ${p.name}*\n` +
                 `━━━━━━━━━━━━━━━━\n` +
                 `📅 ${matchDate} · 🆚 vs ${rival} (${scoreHome}-${scoreAway})\n\n` +
                 `⏱ Minutos: *${mins}*\n` +

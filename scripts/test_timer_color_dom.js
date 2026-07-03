@@ -103,14 +103,14 @@ function check(name, cond) {
 }
 
 // ── 3 rangos verificados sobre el DOM real, campo y banquillo ──────
-// f11 por defecto -> total 4800 ; total/3=1600 ; total/2=2400
+// f11 por defecto -> total 4800 ; 33% = 1584 ; 50% = 2400
 {
     const casos = [
         { t: 0,    exp: RED,    etq: '00:00 -> ROJO' },
-        { t: 1599, exp: RED,    etq: '1599s (< total/3) -> ROJO' },
-        { t: 1600, exp: YELLOW, etq: '1600s (= total/3) -> AMARILLO' },
-        { t: 2399, exp: YELLOW, etq: '2399s (< total/2) -> AMARILLO' },
-        { t: 2400, exp: GREEN,  etq: '2400s (= total/2) -> VERDE' },
+        { t: 1583, exp: RED,    etq: '1583s (< 33%) -> ROJO' },
+        { t: 1584, exp: YELLOW, etq: '1584s (= 33%) -> AMARILLO' },
+        { t: 2399, exp: YELLOW, etq: '2399s (< 50%) -> AMARILLO' },
+        { t: 2400, exp: GREEN,  etq: '2400s (= 50%) -> VERDE' },
         { t: 4000, exp: GREEN,  etq: '4000s -> VERDE' },
     ];
     let n = 1;
@@ -118,6 +118,23 @@ function check(name, cond) {
         const r = emit(c.t, {});
         check((n++) + 'a. campo '     + c.etq, eq(r.field, c.exp));
         check((n - 1) + 'b. banquillo ' + c.etq, eq(r.bench, c.exp));
+    }
+}
+
+// ── v217: umbrales configurables se reflejan en el DOM ─────────────
+// total 4800 ; red=25% (1200s) ; yellow=55% (2640s)
+{
+    const cfg = { timerThresholds: { red: 25, yellow: 55 } };
+    const casos = [
+        { t: 1199, exp: RED,    etq: 'v217 1199s (<25%) -> ROJO' },
+        { t: 1200, exp: YELLOW, etq: 'v217 1200s (=25%) -> AMARILLO' },
+        { t: 2639, exp: YELLOW, etq: 'v217 2639s (<55%) -> AMARILLO' },
+        { t: 2640, exp: GREEN,  etq: 'v217 2640s (=55%) -> VERDE' },
+    ];
+    for (const c of casos) {
+        const r = emit(c.t, cfg);
+        check('v217-DOM campo ' + c.etq, eq(r.field, c.exp));
+        check('v217-DOM banq ' + c.etq, eq(r.bench, c.exp));
     }
 }
 

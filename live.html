@@ -1198,11 +1198,32 @@ function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(patte
 
 const EVENT_META = {
     goal:   { icon: "⚽", cls: "ev-goal",   title: "¡GOL!",        flash: "rgba(63,185,80,0.22)",  vib: [120,60,120] },
-    yellow: { icon: "🟨", cls: "ev-yellow", title: "Tarjeta amarilla", flash: "rgba(227,179,65,0.20)", vib: [200] },
-    red:    { icon: "🟥", cls: "ev-red",    title: "Tarjeta roja",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
-    sub:    { icon: "🔄", cls: "ev-sub",    title: "Cambio",        flash: "rgba(88,166,255,0.18)", vib: [100] },
-    injury: { icon: "🚑", cls: "ev-injury", title: "Lesión",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] }
+    yellow: { icon: "🟨", cls: "ev-yellow", title: "TARJETA AMARILLA", flash: "rgba(227,179,65,0.20)", vib: [200] },
+    red:    { icon: "🟥", cls: "ev-red",    title: "TARJETA ROJA",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
+    sub:    { icon: "🔄", cls: "ev-sub",    title: "CAMBIO",        flash: "rgba(88,166,255,0.18)", vib: [100] },
+    injury: { icon: "🚑", cls: "ev-injury", title: "LESIÓN",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] }
 };
+
+// v218: colores oficiales para las palabras clave en MAYÚSCULAS.
+// GOL -> verde, TARJETA -> amarillo/rojo según tipo, LESIÓN -> rojo, CAMBIO -> azul.
+const EVENT_KEYWORD_COLOR = {
+    GOL:         '#3fb950', // verde
+    TARJETA_AMR: '#eab308', // amarillo
+    TARJETA_ROJ: '#ef4444', // rojo
+    LESION:      '#ef4444', // rojo
+    CAMBIO:      '#58a6ff'  // azul
+};
+
+// v218: construye el HTML del título con la palabra clave en MAYÚSCULAS y color,
+// seguida del nombre del jugador (sin #). Acepta tanto texto plano como HTML.
+// Si `line` ya viene como HTML (contiene '<'), se inserta tal cual; si no, se escapa.
+function _buildEventTitleHTML(line) {
+    if (line && typeof line === 'string' && line.indexOf('<') >= 0) {
+        // Ya es HTML (lo construimos aquí con spans) → inyectar tal cual.
+        return line;
+    }
+    return escapeHtml(line || '');
+}
 
 function showEventToast(type, line, sub) {
     const meta  = EVENT_META[type] || EVENT_META.sub;
@@ -1210,10 +1231,15 @@ function showEventToast(type, line, sub) {
     if (!stack) return;
     const el = document.createElement("div");
     el.className = "event-toast " + meta.cls;
-    el.innerHTML = 
+    // v218: `line` puede ser HTML (con spans de color para la palabra clave).
+    // Si contiene '<', se inyecta tal cual; si no, se escapa.
+    const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
+        ? line
+        : escapeHtml(line || meta.title);
+    el.innerHTML =
         '<div class="et-icon">' + meta.icon + '</div>' +
         '<div class="et-body">' +
-            '<div class="et-title">' + escapeHtml(line || meta.title) + '</div>' +
+            '<div class="et-title">' + titleHTML + '</div>' +
             (sub ? '<div class="et-sub">' + escapeHtml(sub) + '</div>' : "") +
         '</div>';
     const remove = () => {
@@ -1222,9 +1248,14 @@ function showEventToast(type, line, sub) {
     };
     el.onclick = remove;
     stack.appendChild(el);
-    // Limitar a 5 toasts simultáneos
-    while (stack.children.length > 5) stack.firstChild.remove();
-    setTimeout(remove, 6500);
+    // v220: subir el límite de 5 a 15 para que cuando se hagan 7 cambios
+    // grupales de golpe (que llegan en un único snapshot por el throttle
+    // de 2s de liveSyncOnAction) no se evicten los primeros toasts.
+    while (stack.children.length > 15) stack.firstChild.remove();
+    setTimeout(remove, 8000);
+
+    // v220: también añadir al panel persistente de historial (no efímero).
+    _appendEventToHistoryPanel(type, line, sub, meta);
 
     // Flash de pantalla
     const flash = document.getElementById("event-flash");
@@ -1235,6 +1266,85 @@ function showEventToast(type, line, sub) {
     playEventSound(type);
     if (!_alertsMuted) vibrate(meta.vib);
 }
+
+// ── v220: PANEL PERSISTENTE DE HISTORIAL DEL PARTIDO ──────────────────
+// Acumula TODOS los eventos del partido en una lista persistente en la
+// parte inferior de la pantalla. A diferencia de los toasts (efímeros),
+// este panel NUNCA elimina eventos automáticamente. Así el usuario puede
+// ver los 7 cambios aunque los toasts hayan desaparecido.
+window._matchEventsLog = window._matchEventsLog || [];
+
+function _appendEventToHistoryPanel(type, line, sub, meta) {
+    try {
+        const panel     = document.getElementById('match-events-panel');
+        const listEl    = document.getElementById('match-events-list');
+        const countEl   = document.getElementById('match-events-count');
+        if (!panel || !listEl) return;
+
+        // Mostrar el panel automáticamente al primer evento.
+        if (panel.style.display !== 'flex') panel.style.display = 'flex';
+
+        // Construir el HTML de la fila (igual que el toast pero más compacto).
+        const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
+            ? line
+            : escapeHtml(line || (meta ? meta.title : ''));
+        const ts = new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const evIcon = meta ? meta.icon : '•';
+
+        // Acumular en el log global (para poder re-renderizar tras colapsar/expandir).
+        window._matchEventsLog.push({ type, titleHTML, sub: sub || '', ts, icon: evIcon });
+        if (countEl) countEl.textContent = '(' + window._matchEventsLog.length + ')';
+
+        // Crear la fila del DOM.
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 0;' +
+                            'border-bottom:1px solid rgba(255,255,255,0.04);';
+        row.innerHTML =
+            '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + ts + '</span>' +
+            '<span style="font-size:0.9rem; flex-shrink:0;">' + evIcon + '</span>' +
+            '<span style="flex:1; min-width:0;">' + titleHTML +
+                (sub ? ' <span style="color:#7d8590; font-size:0.65rem;">· ' + escapeHtml(sub) + '</span>' : '') +
+            '</span>';
+        listEl.appendChild(row);
+
+        // Auto-scroll al final para ver el evento más reciente.
+        listEl.scrollTop = listEl.scrollHeight;
+    } catch(e) { console.warn('[_appendEventToHistoryPanel]', e); }
+}
+
+// Inicializar los botones del panel de historial cuando el DOM esté listo.
+(function _initMatchEventsPanel() {
+    function bind() {
+        const panel  = document.getElementById('match-events-panel');
+        const clear  = document.getElementById('match-events-clear');
+        const toggle = document.getElementById('match-events-toggle');
+        const list   = document.getElementById('match-events-list');
+        if (!panel || !clear || !toggle || !list) { setTimeout(bind, 500); return; }
+        // v220: ser defensivo — en algunos entornos (tests headless) los
+        // elementos stub no implementan addEventListener.
+        if (typeof clear.addEventListener  !== 'function' ||
+            typeof toggle.addEventListener !== 'function') { return; }
+
+        let collapsed = false;
+        clear.addEventListener('click', () => {
+            window._matchEventsLog = [];
+            list.innerHTML = '';
+            const countEl = document.getElementById('match-events-count');
+            if (countEl) countEl.textContent = '(0)';
+        });
+        toggle.addEventListener('click', () => {
+            collapsed = !collapsed;
+            list.style.display = collapsed ? 'none' : 'block';
+            toggle.textContent = collapsed ? '+' : '−';
+            panel.style.maxHeight = collapsed ? 'auto' : '35vh';
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+})();
 
 // ════════════════════════════════════════════════════════════════
 //  SILBATO + OVERLAY DE MOMENTO DEL PARTIDO (fin de parte / fin de partido)
@@ -1582,29 +1692,47 @@ function detectAndAlert(matchId, matchData, fromCache) {
         const np = next.players[id];
         const pp = prev.players[id];
         if (!pp) return;
-        const who = "#" + (np.number ?? "?") + " " + (np.name || "Jugador");
+        // v218: NO usar "#<num>"; solo el nombre del jugador.
+        const playerName = np.name || "Jugador";
+        const safeName = escapeHtml(playerName);
 
         // GOL — los goles del jugador aumentaron
         if (np.goals > pp.goals) {
             const n = np.goals - pp.goals;
             if (np.team === "away") playerGoalsAway += n; else playerGoalsHome += n;
-            showEventToast("goal", "¡GOL! " + who, matchLabel + (n > 1 ? " · +" + n : ""));
+            // v218: "GOL" en MAYÚSCULAS, color verde, seguido del nombre (sin #).
+            const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                         ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + safeName;
+            showEventToast("goal", line, matchLabel + (n > 1 ? " · +" + n : ""));
         }
         // TARJETAS — cambio de estado de tarjeta
         if (np.cards !== pp.cards) {
-            if (np.cards === "amarilla" && pp.cards !== "amarilla")
-                showEventToast("yellow", "Amarilla · " + who, matchLabel);
-            else if (np.cards === "roja" && pp.cards !== "roja")
-                showEventToast("red", "Roja · " + who, matchLabel);
+            if (np.cards === "amarilla" && pp.cards !== "amarilla") {
+                // v218: "TARJETA" en MAYÚSCULAS, color amarillo.
+                const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_AMR +
+                             ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
+                showEventToast("yellow", line, matchLabel);
+            }
+            else if (np.cards === "roja" && pp.cards !== "roja") {
+                // v218: "TARJETA" en MAYÚSCULAS, color rojo.
+                const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
+                             ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
+                showEventToast("red", line, matchLabel);
+            }
         }
         // LESIÓN — pasó a lesionado
         if (np.injured && !pp.injured) {
-            showEventToast("injury", "Lesión · " + who, matchLabel);
+            // v218: "LESIÓN" en MAYÚSCULAS, color rojo.
+            const line = '<span style="color:' + EVENT_KEYWORD_COLOR.LESION +
+                         ';font-weight:800;letter-spacing:0.5px;">LESIÓN</span> · ' + safeName;
+            showEventToast("injury", line, matchLabel);
         }
         // CAMBIO — transiciones field<->bench (no por expulsión roja)
         if (np.status !== pp.status && np.cards !== "roja" && pp.cards !== "roja") {
-            if (pp.status === "field" && np.status === "bench") subPending.push(who);
-            else if (pp.status === "bench" && np.status === "field") subIn.push(who);
+            // v218: guardamos el NOMBRE (sin #) para construir el HTML del toast
+            // después con flechas verdes/rojas según entre/sale.
+            if (pp.status === "field" && np.status === "bench") subPending.push(playerName);
+            else if (pp.status === "bench" && np.status === "field") subIn.push(playerName);
         }
     });
 
@@ -1630,22 +1758,46 @@ function detectAndAlert(matchId, matchData, fromCache) {
     const extraHome = Math.max(0, deltaHome - playerGoalsHome);
     const extraAway = Math.max(0, deltaAway - playerGoalsAway);
     for (let i = 0; i < extraHome; i++) {
-        showEventToast("goal", "¡GOL! " + homeName, matchLabel);
+        // v218: "GOL" en MAYÚSCULAS verde, seguido del nombre del equipo.
+        const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                     ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(homeName);
+        showEventToast("goal", line, matchLabel);
     }
     for (let i = 0; i < extraAway; i++) {
-        showEventToast("goal", "¡GOL! " + awayName, matchLabel);
+        const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                     ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(awayName);
+        showEventToast("goal", line, matchLabel);
     }
 
     // Sustituciones: emparejar entradas/salidas en un único aviso si es posible.
     if (subIn.length || subPending.length) {
         const pairs = Math.max(subIn.length, subPending.length);
         for (let i = 0; i < pairs; i++) {
-            const inP  = subIn[i];
-            const outP = subPending[i];
-            let line = "Cambio";
-            if (inP && outP) line = "Cambio · ▲ " + inP + "  ▼ " + outP;
-            else if (inP)    line = "Entra · " + inP;
-            else if (outP)   line = "Sale · " + outP;
+            const inP  = subIn[i];     // nombre del jugador que ENTRA
+            const outP = subPending[i]; // nombre del jugador que SALE
+            // v219: "CAMBIO" en MAYÚSCULAS azul.
+            // Flecha verde ▼ para el jugador que ENTRA (señala el campo, hacia abajo).
+            // Flecha roja ▲ para el jugador que SALE (señala hacia fuera, hacia arriba).
+            // NO se muestra el # del dorsal, solo el nombre.
+            const kwColor = EVENT_KEYWORD_COLOR.CAMBIO;
+            const greenArr = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
+                             ';font-weight:800;font-size:1.05em;">▼</span>';
+            const redArr   = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
+                             ';font-weight:800;font-size:1.05em;">▲</span>';
+            const kwSpan   = '<span style="color:' + kwColor +
+                             ';font-weight:800;letter-spacing:0.5px;">CAMBIO</span>';
+            let line;
+            if (inP && outP) {
+                // v219: Jugador que ENTRA (verde ▼) + jugador que SALE (roja ▲).
+                line = kwSpan + ' · ' + greenArr + ' ' + escapeHtml(inP) +
+                       '   ' + redArr + ' ' + escapeHtml(outP);
+            } else if (inP) {
+                line = kwSpan + ' · ' + greenArr + ' ' + escapeHtml(inP);
+            } else if (outP) {
+                line = kwSpan + ' · ' + redArr + ' ' + escapeHtml(outP);
+            } else {
+                line = kwSpan;
+            }
             showEventToast("sub", line, matchLabel);
         }
     }
@@ -1968,6 +2120,11 @@ function renderMatch(data) {
         }, 250);
     }
 
+    // v220: guardar el último snapshot para que tickPlayerTimes pueda
+    // recalcular el color del cronómetro en cada tick (250ms) usando los
+    // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
+    window._liveLastData = data;
+
     // Field & bench
     renderField(data);
     renderBench(data);
@@ -2019,10 +2176,23 @@ function formatTime(secs) {
 }
 
 function tickPlayerTimes(elapsed) {
+    // v220: además de actualizar el texto, RECALCULAR el color del cronómetro
+    // en cada tick (250ms). Antes el color solo se refrescaba cuando llegaba
+    // un snapshot nuevo de Firestore (~cada 5s), lo que causaba que el color
+    // fuese retrasado respecto al tiempo mostrado (un jugador podía mostrar
+    // "09:02" en texto pero seguir con el color de "08:55").
+    const data = window._liveLastData || {};
     const els = document.querySelectorAll('.live-player-time[data-base-time]');
     els.forEach(el => {
         const base = parseInt(el.getAttribute('data-base-time')) || 0;
-        el.textContent = formatTime(Math.floor(base + elapsed));
+        const newSec = Math.floor(base + elapsed);
+        el.textContent = formatTime(newSec);
+        // Recalcular el color del cronómetro con el nuevo tiempo.
+        const c = _timerColorFor(newSec, data);
+        if (c && c.bg) {
+            el.style.setProperty('background', c.bg, 'important');
+            el.style.setProperty('color', c.text, 'important');
+        }
     });
 }
 
@@ -2049,17 +2219,24 @@ function safeColor(value, fallback) {
 }
 
 // ── Semáforo de tiempo jugado ──────────────────────────────────────
-// Color compartido por campo (live-player-time) y banquillo (bench-time):
-// rojo por defecto, amarillo a partir de total/3, verde a partir de total/2.
+// Color compartido por campo (live-player-time) y banquillo (bench-time).
+// FIX (v217): respeta los umbrales configurados por el Director Deportivo
+// (clubs/{clubId}.timerThresholds = { red, yellow }), que viajan dentro del
+// snapshot en data.timerThresholds. Si no se incluyen, se aplica el default
+// rojo <33% · ámbar 33-50% · verde ≥50%.
 // total = half1Max + half2Max, con fallback f7=1800/parte, f11=2400/parte.
-// Sin caso especial para 00:00 (cae en rojo por la cadena de comparaciones).
 function _timerColorFor(timeSec, data) {
     const half1Max = data.half1MaxTime || (data.mode === 'f7' ? 1800 : 2400);
     const half2Max = data.half2MaxTime || (data.mode === 'f7' ? 1800 : 2400);
     const totalSec = half1Max + half2Max;
     const t = timeSec || 0;
-    if (t >= totalSec / 2) return { bg: '#2ea043', text: '#000000' };
-    if (t >= totalSec / 3) return { bg: '#e3b341', text: '#000000' };
+    const th = data.timerThresholds || {};
+    const redPct    = (typeof th.red    === 'number' && !isNaN(th.red))    ? th.red    : 33;
+    const yellowPct = (typeof th.yellow === 'number' && !isNaN(th.yellow)) ? th.yellow : 50;
+    const redSec    = totalSec * (redPct    / 100);
+    const yellowSec = totalSec * (yellowPct / 100);
+    if (t >= yellowSec) return { bg: '#2ea043', text: '#000000' };
+    if (t >= redSec)    return { bg: '#e3b341', text: '#000000' };
     return { bg: '#da3633', text: '#ffffff' };
 }
 
@@ -2666,6 +2843,40 @@ function showLoadingScreen(msg) {
 </script>
 <div id="event-flash"></div>
 <div id="event-toast-stack"></div>
+
+<!-- ── v220: PANEL PERSISTENTE DE EVENTOS DEL PARTIDO ──
+     A diferencia de los toasts (efímeros, 8s), este panel acumula TODOS
+     los eventos del partido (goles, tarjetas, lesiones, cambios) y los
+     muestra en una lista persistente en la parte inferior. Así el usuario
+     siempre puede ver el historial completo, aunque haya hecho 7 cambios
+     de golpe y los toasts hayan desaparecido.
+     Botón para colapsar/expandir y para limpiar. -->
+<div id="match-events-panel" style="
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998;
+    background: rgba(13,17,23,0.97); border-top: 2px solid rgba(88,166,255,0.35);
+    backdrop-filter: blur(8px); max-height: 35vh; display: none;
+    flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+    <div style="display:flex; align-items:center; justify-content:space-between;
+                padding: 6px 12px; background: rgba(88,166,255,0.10);
+                border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink:0;">
+        <span style="font-size:0.78rem; font-weight:800; color:#58a6ff; letter-spacing:0.5px;">
+            📋 HISTORIAL DEL PARTIDO <span id="match-events-count" style="opacity:0.7; font-weight:600;">(0)</span>
+        </span>
+        <div style="display:flex; gap:6px;">
+            <button id="match-events-clear" style="
+                background:rgba(218,54,51,0.15); border:1px solid rgba(218,54,51,0.3);
+                color:#da3633; padding:2px 8px; border-radius:5px;
+                font-size:0.65rem; font-weight:700; cursor:pointer;">Limpiar</button>
+            <button id="match-events-toggle" style="
+                background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
+                color:#7d8590; padding:2px 8px; border-radius:5px;
+                font-size:0.65rem; font-weight:700; cursor:pointer;">−</button>
+        </div>
+    </div>
+    <div id="match-events-list" style="
+        overflow-y:auto; padding: 4px 12px; font-size:0.72rem; color:#c9d1d9;
+        flex: 1; min-height: 0;"></div>
+</div>
 
 <!-- ── BANNER "TOCA PARA ACTIVAR SONIDO" (solo móvil) ──
      iOS/Android requieren un gesto del usuario para desbloquear el AudioContext.

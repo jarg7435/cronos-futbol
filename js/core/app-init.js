@@ -4268,7 +4268,15 @@ function updatePlayerUI(player) {
 // Rojo   → no ha llegado al tercio mínimo
 // Los umbrales se calculan desde half1MaxTime + half2MaxTime (segundos)
 function getTimerColor(timeSec) {
-    const totalSec  = (half1MaxTime || 1800) + (half2MaxTime || 1800);
+    // v220: fallback consistente con live.html. Antes el coach siempre caia
+    // a 1800+1800=3600 aunque el modo fuese F11 (deberia ser 2400+2400=4800).
+    // Esto causaba que un jugador con, p.ej., 1800s saliese VERDE en el
+    // coach (>=50% de 3600) pero AMARILLO en el live (>=33% pero <50% de 4800).
+    const _f7Default  = 1800;
+    const _f11Default = 2400;
+    const _isF11 = (typeof currentMode !== 'undefined' && currentMode === 'f11');
+    const _def = _isF11 ? _f11Default : _f7Default;
+    const totalSec  = (half1MaxTime || _def) + (half2MaxTime || _def);
     const t = window._clubTimerThresholds || {};
     const redSec    = totalSec * ((t.red    ?? 33) / 100);
     const yellowSec = totalSec * ((t.yellow ?? 50) / 100);

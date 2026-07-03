@@ -203,6 +203,17 @@ function renderPlayers() {
 
     // Re-aplicar marcas visuales del modo grupal después de re-renderizar
     if (groupSubMode) reapplyGroupSubMarks();
+
+    // v220: re-aplicar colores del semáforo SINCRÓNICAMENTE después de
+    // re-renderizar los chips. Antes dependíamos del setInterval(colorAllTimers, 1000)
+    // de patches.js, lo que dejaba una ventana de hasta 1 segundo donde los
+    // chips mostraban los colores por defecto del CSS (amarillo #ffde59 sobre
+    // negro para activos, gris para banquillo) en lugar del color real del
+    // semáforo. Esto producía la ilusión de "3 jugadores con el mismo tiempo
+    // y 3 colores distintos" durante ese breve periodo.
+    if (typeof colorAllTimers === 'function') {
+        try { colorAllTimers(); } catch(e) { /* colorAllTimers puede no estar listo aún */ }
+    }
 }
 
 function sortBenchUI(team) {

@@ -83,23 +83,52 @@
     document.head.appendChild(styleEl);
 
     // ── 2. Semáforo de tiempo jugado ─────────────────────────────────
-    //  Referencia = tiempo TOTAL del partido (h1+h2):
-    //    F7   30+30=60 min → rojo <20 · ámbar 20-30 · verde ≥30
-    //    F11  40+40=80 min → rojo <26:40 · ámbar 26:40-40 · verde ≥40
-    //    F11j 45+45=90 min → rojo <30 · ámbar 30-45 · verde ≥45
+    //  Referencia = tiempo TOTAL del partido (h1+h2).
+    //  Los umbrales se leen de window._clubTimerThresholds (configurables
+    //  desde el panel del Director Deportivo y guardados en
+    //  clubs/{clubId}.timerThresholds = { red, yellow }).
+    //  Defaults: rojo <33% · ámbar 33-50% · verde ≥50%.
+    //  FIX (v217): antes este bloque hardcodeaba total/3 y total/2 y
+    //  pisaba con window.getTimerColor = getTimerColor la versión
+    //  correcta de js/core/app-init.js, ignorando los umbrales
+    //  configurados por el Director Deportivo. Ahora delegamos SIEMPRE
+    //  en window.getTimerColor (canónica) y no reasignamos.
     function getTimerColor(timeSec) {
-        var h1 = (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : 1800;
-        var h2 = (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : 1800;
+        // Delegar en la implementación canónica de app-init.js, que sí
+        // consulta window._clubTimerThresholds. Si por alguna razón no
+        // existe todavía (orden de carga), usar un fallback que también
+        // respete los umbrales.
+        if (typeof window.getTimerColor === 'function' &&
+            // evitamos recursión si ya somos nosotros
+            window.getTimerColor !== getTimerColor) {
+            return window.getTimerColor(timeSec);
+        }
+        var _f7Def = 1800, _f11Def = 2400;
+        var _isF11 = (typeof currentMode !== 'undefined' && currentMode === 'f11');
+        var _def = _isF11 ? _f11Def : _f7Def;
+        var h1 = (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : _def;
+        var h2 = (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : _def;
         var total = h1 + h2;
-        if (timeSec >= total / 2) return { bg: '#2ea043', text: '#000000' };
-        if (timeSec >= total / 3) return { bg: '#e3b341', text: '#000000' };
-        return                        { bg: '#da3633', text: '#000000' };
+        var t = (typeof window !== 'undefined' && window._clubTimerThresholds) || {};
+        var redPct    = (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33;
+        var yellowPct = (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50;
+        var redSec    = total * (redPct    / 100);
+        var yellowSec = total * (yellowPct / 100);
+        if (timeSec >= yellowSec) return { bg: '#2ea043', text: '#000000' };
+        if (timeSec >= redSec)    return { bg: '#e3b341', text: '#000000' };
+        return                        { bg: '#da3633', text: '#ffffff' };
     }
-    window.getTimerColor = getTimerColor;
+    // NO reasignamos window.getTimerColor: la versión canónica vive en
+    // js/core/app-init.js y ya consulta window._clubTimerThresholds.
+    // Esto evita que los umbrales del Director Deportivo sean ignorados.
 
     function applyTimerColor(el, sec) {
         if (!el) return;
-        var c = getTimerColor(sec || 0);
+        // Usar siempre la versión canónica de window.getTimerColor
+        // (definida en app-init.js), que respeta los umbrales configurados.
+        var c = (typeof window.getTimerColor === 'function')
+            ? window.getTimerColor(sec || 0)
+            : getTimerColor(sec || 0);
         el.style.setProperty('background',    c.bg,     'important');
         el.style.setProperty('color',         c.text,   'important');
         el.style.setProperty('font-weight',   '800',    'important');
