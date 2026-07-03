@@ -952,6 +952,10 @@ let userData = null;
 //  Detecta cambios comparando snapshots consecutivos por jugador.
 // ════════════════════════════════════════════════════════════════
 let _alertsMuted = (localStorage.getItem("cronos_live_muted") === "1");
+// v222: exponer _alertsMuted en window para que el segundo <script> (no-module)
+// del banner de sonido pueda acceder a él. Antes era undefined ahí y lanzaba
+// "Uncaught ReferenceError: _alertsMuted is not defined" en showBannerIfNeeded.
+window._alertsMuted = _alertsMuted;
 let _audioCtx = null;
 // Estado anterior por matchId: { players:{id->{goals,cards,injured,status}}, home, away }
 const _matchPrevState = {};
@@ -974,6 +978,7 @@ const _matchLastData = {};
 
 window.toggleMute = function() {
     _alertsMuted = !_alertsMuted;
+    window._alertsMuted = _alertsMuted;   // v222: mantener window._alertsMuted sincronizado
     localStorage.setItem("cronos_live_muted", _alertsMuted ? "1" : "0");
     const btn = document.getElementById("btn-mute");
     if (btn) { btn.textContent = _alertsMuted ? "🔕" : "🔔"; btn.classList.toggle("muted", _alertsMuted); btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas"; }
@@ -2259,13 +2264,21 @@ function _timerColorFor(timeSec, data) {
 window._liveCachedThresholds = null;
 let _liveThresholdsFetchInFlight = false;
 async function _fetchClubThresholdsForLive(clubId) {
-    if (!clubId) return;
+    if (!clubId) {
+        console.warn('[live v221] _fetchClubThresholdsForLive: clubId vacío. No se pueden leer umbrales.');
+        return;
+    }
     if (window._liveCachedThresholds || _liveThresholdsFetchInFlight) return;
     _liveThresholdsFetchInFlight = true;
     try {
         const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const db = window._cronos_auth?.db;
-        if (!db) { _liveThresholdsFetchInFlight = false; return; }
+        if (!db) {
+            console.warn('[live v221] _fetchClubThresholdsForLive: window._cronos_auth.db no disponible.');
+            _liveThresholdsFetchInFlight = false;
+            return;
+        }
+        console.log('[live v221] Fallback: leyendo clubs/' + clubId + '/timerThresholds de Firestore...');
         const snap = await getDoc(doc(db, 'clubs', clubId));
         if (snap.exists()) {
             const data = snap.data() || {};
@@ -2274,14 +2287,17 @@ async function _fetchClubThresholdsForLive(clubId) {
                 red:    (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33,
                 yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50
             };
+            console.log('[live v221] Umbrales cacheados del club', clubId, ':', window._liveCachedThresholds);
             // Forzar re-render del campo y banquillo para aplicar los nuevos umbrales.
             if (window._liveLastData) {
                 renderField(window._liveLastData);
                 renderBench(window._liveLastData);
             }
+        } else {
+            console.warn('[live v221] clubs/' + clubId + ' NO existe en Firestore');
         }
     } catch(e) {
-        console.warn('[live] Fallback fetch club thresholds:', e);
+        console.warn('[live v221] Fallback fetch club thresholds ERROR:', e);
     } finally {
         _liveThresholdsFetchInFlight = false;
     }
@@ -2955,7 +2971,8 @@ function showLoadingScreen(msg) {
     // Mostrar banner si estamos en móvil y el audio no está desbloqueado
     function showBannerIfNeeded() {
         if (!isMobile()) return;
-        if (_alertsMuted) return;  // usuario silenció manualmente
+        // v222: usar window._alertsMuted (el <script> del módulo expone la variable aquí).
+        if (window._alertsMuted) return;  // usuario silenció manualmente
         if (_audioAutoUnlocked) return;  // ya se desbloqueó
         banner.style.display = 'flex';
         console.log('[LIVE] Banner de activación de sonido visible');

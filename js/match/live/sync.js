@@ -101,7 +101,10 @@ let _clubThresholdsCache = null; // {value, fetchedAt, clubId}
 const _CLUB_THRESHOLDS_TTL_MS = 60_000; // 60 segundos
 
 async function _fetchClubTimerThresholds(db, clubId) {
-    if (!clubId || !db) return null;
+    if (!clubId || !db) {
+        console.warn('[sync v221] _fetchClubTimerThresholds: clubId o db vacíos. clubId=', clubId);
+        return null;
+    }
     const now = Date.now();
     // Devolver caché si es válido (mismo clubId y no expirado).
     if (_clubThresholdsCache &&
@@ -124,10 +127,13 @@ async function _fetchClubTimerThresholds(db, clubId) {
             // aplique los mismos umbrales en sus propios cronómetros.
             window._clubTimerThresholds = value;
             _clubThresholdsCache = { value, fetchedAt: now, clubId };
+            console.log('[sync v221] Umbrales leídos de Firestore para club', clubId, ':', value);
             return value;
+        } else {
+            console.warn('[sync v221] clubs/' + clubId + ' NO existe en Firestore');
         }
     } catch(e) {
-        console.warn('[sync] Error fetching club timer thresholds:', e);
+        console.warn('[sync v221] Error fetching club timer thresholds:', e);
     }
     return null;
 }
@@ -238,6 +244,11 @@ async function pushLiveSnapshot(status = 'active') {
                 y:       p.y       || 0
             }))
         };
+
+        // v222: log de diagnóstico para ver qué umbrales se envían en el snapshot.
+        console.log('[sync v221] Snapshot enviado. timerThresholds=', snapshot.timerThresholds,
+                    '| half1Max=', snapshot.half1MaxTime, '| half2Max=', snapshot.half2MaxTime,
+                    '| mode=', snapshot.mode);
 
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
     } catch (err) {
