@@ -883,6 +883,19 @@ const db   = getFirestore(app);
 // Ensure session shared with main app
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 
+
+// ── App Check con reCAPTCHA v3 ───────────────────────────────
+try {
+    const { initializeAppCheck, ReCaptchaV3Provider } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
+    const appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider('6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23'),
+        isTokenAutoRefreshEnabled: true
+    });
+    console.log('[AppCheck live.html] Activado (reCAPTCHA v3)');
+} catch (e) {
+    console.warn('[AppCheck live.html] No se pudo inicializar:', e.message);
+}
+
 // ── State ─────────────────────────────────────────────────────────
 let currentMatchId   = null;
 let unsubscribeMatch = null;
