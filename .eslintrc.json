@@ -1,0 +1,54 @@
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "es2022": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "extends": ["eslint:recommended"],
+  "globals": {
+    "window": "readonly",
+    "document": "readonly",
+    "console": "readonly",
+    "firebase": "readonly",
+    "Promise": "readonly",
+    "setTimeout": "readonly",
+    "setInterval": "readonly",
+    "clearTimeout": "readonly",
+    "clearInterval": "readonly",
+    "fetch": "readonly",
+    "localStorage": "readonly",
+    "sessionStorage": "readonly",
+    "location": "readonly",
+    "navigator": "readonly",
+    "crypto": "readonly",
+    "alert": "readonly",
+    "prompt": "readonly",
+    "confirm": "readonly"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-undef": "error",
+    "no-redeclare": "error",
+    "prefer-const": "warn",
+    "no-var": "error",
+    "eqeqeq": ["warn", "smart"],
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "semi": ["warn", "always"],
+    "indent": ["warn", 4, { "SwitchCase": 1 }],
+    "quotes": ["warn", "single", { "allowTemplateLiterals": true }]
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    "functions/node_modules/",
+    ".firebase/",
+    "dist/",
+    "scripts/test_*.js"
+  ]
+}

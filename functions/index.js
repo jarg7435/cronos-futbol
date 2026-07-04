@@ -456,27 +456,49 @@ exports.autoSetClaimsOnApproval = functions.firestore
   .onWrite(async (change, context) => {
     const userId = context.params.userId;
 
-    // Solo procesar si el documento existe (no eliminacion)
     if (!change.after.exists) return;
 
-    const before = change.before.data();
-    const after = change.after.data();
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
 
-    // Solo disparar si cambio isAuthorized, status, role, o clubId
+    // GUARD ANTI-LOOP #1: si el único cambio es claimsSetAt, abortar
+    const beforeKeys = Object.keys(before).sort();
+    const afterKeys = Object.keys(after).sort();
+    const changedKeys = afterKeys.filter(
+      (k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])
+    );
+
+    if (changedKeys.length === 1 && changedKeys[0] === 'claimsSetAt') {
+      console.log(`[autoSetClaims v2] Solo cambió claimsSetAt. Abortando.`);
+      return;
+    }
+
+    // GUARD ANTI-LOOP #2: si _claimsSyncedAt es muy reciente (<5s), abortar
+    if (after._claimsSyncedAt) {
+      const ageMs = after._claimsSyncedAt.toMillis
+        ? after._claimsSyncedAt.toMillis()
+        : after._claimsSyncedAt;
+      if (Date.now() - ageMs < 5000) return;
+    }
+
+    // Solo disparar si cambió isAuthorized, status, role, o clubId
     const significantChange =
-      before?.isAuthorized !== after?.isAuthorized ||
-      before?.status !== after?.status ||
-      before?.role !== after?.role ||
-      before?.clubId !== after?.clubId;
+      before.isAuthorized !== after.isAuthorized ||
+      before.status !== after.status ||
+      before.role !== after.role ||
+      before.clubId !== after.clubId;
 
     if (!significantChange) return;
 
-    // Solo si el usuario esta autorizado y activo
+    // Solo si el usuario está autorizado y activo
     if (!after.isAuthorized || after.status === 'removed' || after.status === 'blocked') return;
 
     const role = after.role;
-    const clubId = after.clubId ||
-      (Array.isArray(after.allRoles) ? (after.allRoles.find(r => r.clubId) || {}).clubId : null);
+    const clubId =
+      after.clubId ||
+      (Array.isArray(after.allRoles)
+        ? (after.allRoles.find((r) => r.clubId) || {}).clubId
+        : null);
 
     if (!role || !clubId) return;
 
@@ -484,17 +506,39 @@ exports.autoSetClaimsOnApproval = functions.firestore
       const userRecord = await admin.auth().getUser(userId);
       const currentClaims = userRecord.customClaims || {};
 
-      if (currentClaims.role !== role || currentClaims.clubId !== clubId) {
-        await admin.auth().setCustomUserClaims(userId, {
-          ...currentClaims,
-          role: role,
-          clubId: clubId,
-          claimsSetAt: Date.now(),
-        });
-        console.log('[autoSetClaims] Claims actualizados para', userId, ': role=' + role + ', clubId=' + clubId);
+      // Si los claims ya están correctos, no hacer nada
+      if (currentClaims.role === role && currentClaims.clubId === clubId) {
+        console.log(`[autoSetClaims v2] Claims ya correctos para ${userId}. Skip.`);
+        return;
       }
+
+      // Asignar claims
+      await admin.auth().setCustomUserClaims(userId, {
+        ...currentClaims,
+        role: role,
+        clubId: clubId,
+        claimsSetAt: Date.now(),
+      });
+
+      // Escribir _claimsSyncedAt (NO claimsSetAt) para no disparar loop
+      await admin.firestore().collection('users').doc(userId).set(
+        {
+          _claimsSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      console.log(
+        `[autoSetClaims v2] Claims OK para ${userId}: role=${role}, clubId=${clubId}`
+      );
     } catch (err) {
-      console.error('[autoSetClaims] Error para ' + userId + ':', err.message);
+      console.error(`[autoSetClaims v2] Error para ${userId}:`, err.message);
+      await admin.firestore().collection('error_logs').add({
+        function: 'autoSetClaimsOnApproval',
+        targetUid: userId,
+        error: err.message,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
     }
   });
 

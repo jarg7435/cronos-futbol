@@ -1,16 +1,16 @@
-﻿{
+{
   "name": "chronos-futbol",
   "version": "1.0.0",
-  "description": "CHRONOS FUTBOL — Control de tiempos de juego para futbol base",
+  "description": "CHRONOS FÚTBOL — Control de tiempos de juego para fútbol base",
   "private": true,
   "scripts": {
     "dev": "firebase serve --only hosting,functions",
-    "build": "echo TODO && exit 0",
+    "build": "echo 'TODO: configurar Vite en Fase 2' && exit 0",
     "lint": "eslint js/ functions/ --ext .js",
     "lint:fix": "eslint js/ functions/ --ext .js --fix",
     "format": "prettier --write \"js/**/*.js\" \"functions/**/*.js\" \"*.json\" \"*.html\"",
     "format:check": "prettier --check \"js/**/*.js\" \"functions/**/*.js\"",
-    "test": "echo TODO && exit 0",
+    "test": "echo 'TODO: configurar Vitest en Fase 4' && exit 0",
     "deploy:staging": "firebase deploy --project cronos-futbol-staging",
     "deploy:prod": "firebase deploy --project cronos-futbol-app",
     "deploy:hosting": "firebase deploy --only hosting",
@@ -26,7 +26,9 @@
     "eslint": "^9.0.0",
     "prettier": "^3.2.0",
     "@eslint/js": "^9.0.0",
-    "firebase-tools": "^13.0.0"
+    "firebase-tools": "^13.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.2.0"
   },
   "engines": {
     "node": ">=18.0.0"
