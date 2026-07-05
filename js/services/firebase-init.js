@@ -65,6 +65,25 @@
     };
 
     const app  = initializeApp(firebaseConfig);
+
+    // v226: Inicializar App Check con reCAPTCHA v3 para que Firestore y Auth
+    // no fallen con "AppCheck: ReCAPTCHA error" cuando App Check está enforced
+    // en la consola de Firebase.
+    try {
+        const { initializeAppCheck, ReCaptchaV3Provider } =
+            await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
+        // Site key de reCAPTCHA v3 generada en https://www.google.com/recaptcha/admin
+        // Etiqueta: "Chronos Fútbol" — dominios: cronos-futbol-app.web.app, .firebaseapp.com, localhost
+        const _RECAPTCHA_SITE_KEY = '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
+        initializeAppCheck(app, {
+            provider: new ReCaptchaV3Provider(_RECAPTCHA_SITE_KEY),
+            isTokenAutoRefreshEnabled: true
+        });
+        console.log('[Cronos] App Check inicializado correctamente con reCAPTCHA v3.');
+    } catch (e) {
+        console.warn('[Cronos] No se pudo inicializar App Check:', e.message);
+    }
+
     const auth = getAuth(app);
     const db   = getFirestore(app);
     const functions = getFunctions(app);
