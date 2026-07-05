@@ -883,19 +883,6 @@ const db   = getFirestore(app);
 // Ensure session shared with main app
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 
-
-// ── App Check con reCAPTCHA v3 ───────────────────────────────
-try {
-    const { initializeAppCheck, ReCaptchaV3Provider } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
-    const appCheck = initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider('6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23'),
-        isTokenAutoRefreshEnabled: true
-    });
-    console.log('[AppCheck live.html] Activado (reCAPTCHA v3)');
-} catch (e) {
-    console.warn('[AppCheck live.html] No se pudo inicializar:', e.message);
-}
-
 // ── State ─────────────────────────────────────────────────────────
 let currentMatchId   = null;
 let unsubscribeMatch = null;
@@ -1290,18 +1277,44 @@ function showEventToast(type, line, sub) {
     if (!_alertsMuted) vibrate(meta.vib);
 }
 
-// ── v220: PANEL PERSISTENTE DE HISTORIAL DEL PARTIDO ──────────────────
-// Acumula TODOS los eventos del partido en una lista persistente en la
-// parte inferior de la pantalla. A diferencia de los toasts (efímeros),
-// este panel NUNCA elimina eventos automáticamente. Así el usuario puede
-// ver los 7 cambios aunque los toasts hayan desaparecido.
+// ── v228: PANEL HISTORIAL DEL PARTIDO (franja fina + auto-expand) ────
+// Comportamiento:
+// · Por defecto: franja fina (36px) siempre visible, NO tapa el campo ni el banquillo.
+// · Cuando ocurre un evento: se expande automáticamente a 22vh durante 5 segundos
+//   para mostrar el evento, luego se contrae solo a la franja fina.
+// · Si el usuario hace clic en la franja: se expande manualmente y se queda abierto
+//   (con scroll) hasta que haga clic de nuevo para contraerlo.
+// · Botón "Limpiar" solo visible cuando está expandido.
 window._matchEventsLog = window._matchEventsLog || [];
+let _matchEventsPanelMode = 'collapsed'; // 'collapsed' | 'auto-expanded' | 'manual-expanded'
+let _matchEventsAutoCollapseTimer = null;
+
+function _setMatchEventsPanelMode(mode) {
+    const panel  = document.getElementById('match-events-panel');
+    const list   = document.getElementById('match-events-list');
+    const toggle = document.getElementById('match-events-toggle');
+    const clear  = document.getElementById('match-events-clear');
+    if (!panel) return;
+    _matchEventsPanelMode = mode;
+    if (mode === 'collapsed') {
+        panel.style.height = '36px';
+        if (toggle) toggle.textContent = '▲';
+        if (clear) clear.style.display = 'none';
+    } else {
+        // auto-expanded o manual-expanded → misma altura
+        panel.style.height = '22vh';
+        if (toggle) toggle.textContent = '▼';
+        if (clear) clear.style.display = 'inline-block';
+        if (list) list.scrollTop = list.scrollHeight;
+    }
+}
 
 function _appendEventToHistoryPanel(type, line, sub, meta) {
     try {
         const panel     = document.getElementById('match-events-panel');
         const listEl    = document.getElementById('match-events-list');
         const countEl   = document.getElementById('match-events-count');
+        const previewEl = document.getElementById('match-events-preview');
         if (!panel || !listEl) return;
 
         // Mostrar el panel automáticamente al primer evento.
@@ -1311,12 +1324,18 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
             ? line
             : escapeHtml(line || (meta ? meta.title : ''));
+        // v228: texto plano del título para el preview de la franja (sin HTML).
+        const titleText = (typeof line === 'string' && line.indexOf('<') >= 0)
+            ? line.replace(/<[^>]+>/g, '')
+            : (line || (meta ? meta.title : ''));
         const ts = new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
         const evIcon = meta ? meta.icon : '•';
 
         // Acumular en el log global (para poder re-renderizar tras colapsar/expandir).
-        window._matchEventsLog.push({ type, titleHTML, sub: sub || '', ts, icon: evIcon });
+        window._matchEventsLog.push({ type, titleHTML, titleText, sub: sub || '', ts, icon: evIcon });
         if (countEl) countEl.textContent = '(' + window._matchEventsLog.length + ')';
+        // v228: actualizar el preview de la franja con el último evento.
+        if (previewEl) previewEl.textContent = '· ' + evIcon + ' ' + titleText;
 
         // Crear la fila del DOM.
         const row = document.createElement('div');
@@ -1332,6 +1351,18 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
 
         // Auto-scroll al final para ver el evento más reciente.
         listEl.scrollTop = listEl.scrollHeight;
+
+        // v228: auto-expandir el panel durante 5 segundos para mostrar el evento,
+        // PERO solo si el usuario no lo tiene expandido manualmente.
+        if (_matchEventsPanelMode !== 'manual-expanded') {
+            _setMatchEventsPanelMode('auto-expanded');
+            if (_matchEventsAutoCollapseTimer) clearTimeout(_matchEventsAutoCollapseTimer);
+            _matchEventsAutoCollapseTimer = setTimeout(() => {
+                if (_matchEventsPanelMode === 'auto-expanded') {
+                    _setMatchEventsPanelMode('collapsed');
+                }
+            }, 5000);
+        }
     } catch(e) { console.warn('[_appendEventToHistoryPanel]', e); }
 }
 
@@ -1339,27 +1370,55 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
 (function _initMatchEventsPanel() {
     function bind() {
         const panel  = document.getElementById('match-events-panel');
+        const strip  = document.getElementById('match-events-strip');
         const clear  = document.getElementById('match-events-clear');
         const toggle = document.getElementById('match-events-toggle');
         const list   = document.getElementById('match-events-list');
-        if (!panel || !clear || !toggle || !list) { setTimeout(bind, 500); return; }
+        if (!panel || !strip || !clear || !toggle || !list) { setTimeout(bind, 500); return; }
         // v220: ser defensivo — en algunos entornos (tests headless) los
         // elementos stub no implementan addEventListener.
-        if (typeof clear.addEventListener  !== 'function' ||
+        if (typeof strip.addEventListener  !== 'function' ||
+            typeof clear.addEventListener  !== 'function' ||
             typeof toggle.addEventListener !== 'function') { return; }
 
-        let collapsed = false;
-        clear.addEventListener('click', () => {
+        // v228: clic en la franja superior → toggle manual (expandido/colapsado).
+        // Si el usuario lo expande manualmente, cancelar el auto-collapse.
+        strip.addEventListener('click', (e) => {
+            // Evitar que el clic en los botones dispare el toggle del strip.
+            if (e.target === clear || e.target === toggle) return;
+            if (_matchEventsAutoCollapseTimer) {
+                clearTimeout(_matchEventsAutoCollapseTimer);
+                _matchEventsAutoCollapseTimer = null;
+            }
+            if (_matchEventsPanelMode === 'collapsed' || _matchEventsPanelMode === 'auto-expanded') {
+                _setMatchEventsPanelMode('manual-expanded');
+            } else {
+                _setMatchEventsPanelMode('collapsed');
+            }
+        });
+
+        clear.addEventListener('click', (e) => {
+            e.stopPropagation();
             window._matchEventsLog = [];
             list.innerHTML = '';
             const countEl = document.getElementById('match-events-count');
             if (countEl) countEl.textContent = '(0)';
+            const previewEl = document.getElementById('match-events-preview');
+            if (previewEl) previewEl.textContent = '';
         });
-        toggle.addEventListener('click', () => {
-            collapsed = !collapsed;
-            list.style.display = collapsed ? 'none' : 'block';
-            toggle.textContent = collapsed ? '+' : '−';
-            panel.style.maxHeight = collapsed ? 'auto' : '35vh';
+
+        // El botón toggle hace lo mismo que clicar en la franja.
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (_matchEventsAutoCollapseTimer) {
+                clearTimeout(_matchEventsAutoCollapseTimer);
+                _matchEventsAutoCollapseTimer = null;
+            }
+            if (_matchEventsPanelMode === 'collapsed' || _matchEventsPanelMode === 'auto-expanded') {
+                _setMatchEventsPanelMode('manual-expanded');
+            } else {
+                _setMatchEventsPanelMode('collapsed');
+            }
         });
     }
     if (document.readyState === 'loading') {
@@ -2947,35 +3006,44 @@ function showLoadingScreen(msg) {
 <div id="event-flash"></div>
 <div id="event-toast-stack"></div>
 
-<!-- ── v220: PANEL PERSISTENTE DE EVENTOS DEL PARTIDO ──
-     A diferencia de los toasts (efímeros, 8s), este panel acumula TODOS
-     los eventos del partido (goles, tarjetas, lesiones, cambios) y los
-     muestra en una lista persistente en la parte inferior. Así el usuario
-     siempre puede ver el historial completo, aunque haya hecho 7 cambios
-     de golpe y los toasts hayan desaparecido.
-     Botón para colapsar/expandir y para limpiar. -->
+<!-- ── v228: PANEL HISTORIAL DEL PARTIDO (franja fina + auto-expand) ──
+     Comportamiento:
+     · Por defecto: franja fina (36px) siempre visible, NO tapa el campo ni el banquillo.
+       Muestra "📋 HISTORIAL (N) · <último evento>" en una sola línea.
+     · Cuando ocurre un evento: se expande automáticamente a 22vh durante 5 segundos
+       para mostrar el evento, luego se contrae solo.
+     · Si el usuario hace clic en la franja: se expande manualmente y se queda abierto
+       (con scroll) hasta que haga clic de nuevo para contraerlo.
+     · Botón "Limpiar" solo visible cuando está expandido. -->
 <div id="match-events-panel" style="
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998;
     background: rgba(13,17,23,0.97); border-top: 2px solid rgba(88,166,255,0.35);
-    backdrop-filter: blur(8px); height: 22vh; display: none;
-    flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-    <div style="display:flex; align-items:center; justify-content:space-between;
-                padding: 6px 12px; background: rgba(88,166,255,0.10);
-                border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink:0;">
-        <span style="font-size:0.78rem; font-weight:800; color:#58a6ff; letter-spacing:0.5px;">
-            📋 HISTORIAL DEL PARTIDO <span id="match-events-count" style="opacity:0.7; font-weight:600;">(0)</span>
+    backdrop-filter: blur(8px); height: 36px; display: none;
+    flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    transition: height 0.3s ease; overflow: hidden; cursor: pointer;">
+    <!-- Franja superior (siempre visible) -->
+    <div id="match-events-strip" style="
+        display:flex; align-items:center; justify-content:space-between;
+        padding: 6px 12px; background: rgba(88,166,255,0.10);
+        border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink:0; height: 36px;
+        gap: 8px; overflow: hidden;">
+        <span style="font-size:0.72rem; font-weight:800; color:#58a6ff; letter-spacing:0.4px;
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;">
+            📋 HISTORIAL <span id="match-events-count" style="opacity:0.7; font-weight:600;">(0)</span>
+            <span id="match-events-preview" style="color:#c9d1d9; font-weight:500; margin-left: 6px;"></span>
         </span>
-        <div style="display:flex; gap:6px;">
+        <div style="display:flex; gap:6px; flex-shrink: 0;">
             <button id="match-events-clear" style="
                 background:rgba(218,54,51,0.15); border:1px solid rgba(218,54,51,0.3);
                 color:#da3633; padding:2px 8px; border-radius:5px;
-                font-size:0.65rem; font-weight:700; cursor:pointer;">Limpiar</button>
+                font-size:0.65rem; font-weight:700; cursor:pointer; display:none;">Limpiar</button>
             <button id="match-events-toggle" style="
                 background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
                 color:#7d8590; padding:2px 8px; border-radius:5px;
-                font-size:0.65rem; font-weight:700; cursor:pointer;">−</button>
+                font-size:0.7rem; font-weight:700; cursor:pointer;">▲</button>
         </div>
     </div>
+    <!-- Lista de eventos (solo visible cuando está expandido) -->
     <div id="match-events-list" style="
         overflow-y:auto; padding: 4px 12px; font-size:0.72rem; color:#c9d1d9;
         flex: 1; min-height: 0;"></div>
