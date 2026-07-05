@@ -52,8 +52,6 @@
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     const { getFunctions } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-    const { initializeAppCheck, ReCaptchaV3Provider } =
-        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
 
     // ── Configuración Firebase ────────────────────────────────────
     const firebaseConfig = {
@@ -67,20 +65,28 @@
     };
 
     const app  = initializeApp(firebaseConfig);
+
+    // v226: Inicializar App Check con reCAPTCHA v3 para que Firestore y Auth
+    // no fallen con "AppCheck: ReCAPTCHA error" cuando App Check está enforced
+    // en la consola de Firebase.
+    try {
+        const { initializeAppCheck, ReCaptchaV3Provider } =
+            await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
+        // Site key de reCAPTCHA v3 generada en https://www.google.com/recaptcha/admin
+        // Etiqueta: "Chronos Fútbol" — dominios: cronos-futbol-app.web.app, .firebaseapp.com, localhost
+        const _RECAPTCHA_SITE_KEY = '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
+        initializeAppCheck(app, {
+            provider: new ReCaptchaV3Provider(_RECAPTCHA_SITE_KEY),
+            isTokenAutoRefreshEnabled: true
+        });
+        console.log('[Cronos] App Check inicializado correctamente con reCAPTCHA v3.');
+    } catch (e) {
+        console.warn('[Cronos] No se pudo inicializar App Check:', e.message);
+    }
+
     const auth = getAuth(app);
     const db   = getFirestore(app);
     const functions = getFunctions(app);
-
-    // ── App Check con reCAPTCHA v3 ───────────────────────────────
-    try {
-        const appCheck = initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider('6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23'),
-            isTokenAutoRefreshEnabled: true
-        });
-        if (window._CRONOS_DEBUG) console.log('[AppCheck] Activado (reCAPTCHA v3)');
-    } catch (e) {
-        console.warn('[AppCheck] No se pudo inicializar:', e.message);
-    }
 
     // ── Función checkAuthorization (fallback si auth.js no cargó) ──
     // FIX: Añadido SuperAdmin bypass para que el fallback no bloquee al SA
