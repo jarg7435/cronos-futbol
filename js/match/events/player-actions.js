@@ -6,6 +6,37 @@
 
 // activeActionPlayerId ya declarado en app.js
 
+// v230: Registrar eventos del partido en window._cronosMatchEvents para que
+// se incluyan en el snapshot de Firestore (live_matches/{id}.events) y asi
+// los usuarios que entren tarde al partido puedan ver el historial completo.
+// Cada evento tiene: tipo, texto, hora real, tiempo del partido, icono.
+window._cronosMatchEvents = window._cronosMatchEvents || [];
+function _registerMatchEvent(type, text, icon) {
+    try {
+        const now = new Date();
+        const realTime = now.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        let matchTime = '';
+        try {
+            const h1 = (typeof masterTimeH1 !== 'undefined') ? masterTimeH1 : 0;
+            const h2 = (typeof masterTimeH2 !== 'undefined') ? masterTimeH2 : 0;
+            const phase = (typeof matchPhase !== 'undefined') ? matchPhase : '1st_half';
+            const total = (phase === '2nd_half' || phase === 'finished') ? (h1 + h2) : h1;
+            const part = (phase === '2nd_half' || phase === 'finished') ? '2T' : '1T';
+            const m = Math.floor(total / 60).toString().padStart(2, '0');
+            const s = (total % 60).toString().padStart(2, '0');
+            matchTime = part + ' ' + m + ':' + s;
+        } catch(e) {}
+        window._cronosMatchEvents.push({
+            type: type, text: text, icon: icon || '•',
+            realTime: realTime, matchTime: matchTime,
+            timestamp: now.toISOString()
+        });
+        if (window._cronosMatchEvents.length > 200) {
+            window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
+        }
+    } catch(e) { console.warn('[_registerMatchEvent]', e); }
+}
+
 // ════════════════════════════════════════════════════════════════════
 //  E1: Guard para acciones permitidas SOLO a jugadores EN EL CAMPO.
 //  Se aplica únicamente a GOLES. Las TARJETAS y la LESIÓN se permiten
@@ -133,7 +164,7 @@ function toggleInjury() {
     if (!p) return;
     const wasInjured = p.injured;
     p.injured = !p.injured;
-    if (p.injured) logEvent(p, 'LESIÓN');
+    if (p.injured) { logEvent(p, 'LESIÓN'); _registerMatchEvent('injury', 'LESIÓN · ' + p.name, '🚑'); }
 
     // 📊 SOLUCIÓN #7: Auditar cambio de lesión
     if (window.auditLogger && liveMatchId) {
@@ -204,7 +235,7 @@ function assignCard(type) {
         const wasCards = p.cards;
         p.cards       = 'roja';
         p.yellowCards = 0; // Roja directa → NO es doble amarilla
-        logEvent(p, 'TARJETA ROJA');
+        logEvent(p, 'TARJETA ROJA'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name, '🟥');
         // Commit síncrono del evento crítico antes de sincronizar con Firestore.
         if (typeof commitCriticalEvent === 'function') {
             commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'roja_directa' });
@@ -250,7 +281,7 @@ function assignCard(type) {
             const wasYellow = p.yellowCards;
             p.cards       = 'roja';
             p.yellowCards = 2; // Doble amarilla → queda registrado
-            logEvent(p, 'DOBLE AMARILLA → EXPULSADO');
+            logEvent(p, 'DOBLE AMARILLA → EXPULSADO'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name + ' (doble amarilla)', '🟥');
             // Commit síncrono del evento crítico antes de sincronizar con Firestore.
             if (typeof commitCriticalEvent === 'function') {
                 commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'doble_amarilla' });
@@ -291,7 +322,7 @@ function assignCard(type) {
         const wasCards2 = p.cards;
         p.cards       = 'amarilla';
         p.yellowCards = 1;
-        logEvent(p, 'TARJETA AMARILLA');
+        logEvent(p, 'TARJETA AMARILLA'); _registerMatchEvent('yellow', 'TARJETA AMARILLA · ' + p.name, '🟨');
         // Commit síncrono del evento crítico antes de sincronizar con Firestore.
         if (typeof commitCriticalEvent === 'function') {
             commitCriticalEvent('card_yellow', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 1 });
@@ -486,7 +517,7 @@ function changeGoals(amount) {
         const prevGoals = p.goals || 0;
         p.goals = Math.max(0, prevGoals + amount);
         if (amount > 0 && p.goals > prevGoals) {
-            logEvent(p, `GOL (${p.goals}º)`);
+            logEvent(p, `GOL (${p.goals}º)`); _registerMatchEvent('goal', 'GOL · ' + p.name, '⚽');;
             
             // 📊 SOLUCIÓN #7: Auditar gol
             if (window.auditLogger && liveMatchId) {

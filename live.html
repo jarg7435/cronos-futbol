@@ -1341,8 +1341,12 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         const ts = new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
         const evIcon = meta ? meta.icon : '•';
 
+        // v230: el meta puede traer matchTime (minuto del partido) y realTime.
+        const realTime  = (meta && meta.realTime)  ? meta.realTime  : ts;
+        const matchTime = (meta && meta.matchTime) ? meta.matchTime : '';
+
         // Acumular en el log global (para poder re-renderizar tras colapsar/expandir).
-        window._matchEventsLog.push({ type, titleHTML, titleText, sub: sub || '', ts, icon: evIcon });
+        window._matchEventsLog.push({ type, titleHTML, titleText, sub: sub || '', ts, realTime, matchTime, icon: evIcon });
         if (countEl) countEl.textContent = '(' + window._matchEventsLog.length + ')';
         // v228: actualizar el preview de la franja con el último evento.
         if (previewEl) previewEl.textContent = '· ' + evIcon + ' ' + titleText;
@@ -1351,8 +1355,13 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 0;' +
                             'border-bottom:1px solid rgba(255,255,255,0.04);';
+        // v230: mostrar hora real Y tiempo del partido (si existe).
+        const timeLabel = matchTime
+            ? '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>' +
+              '<span style="font-size:0.6rem; color:#58a6ff; font-weight:700; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
+            : '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>';
         row.innerHTML =
-            '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + ts + '</span>' +
+            timeLabel +
             '<span style="font-size:0.9rem; flex-shrink:0;">' + evIcon + '</span>' +
             '<span style="flex:1; min-width:0;">' + titleHTML +
                 (sub ? ' <span style="color:#7d8590; font-size:0.65rem;">· ' + escapeHtml(sub) + '</span>' : '') +
@@ -1375,6 +1384,57 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         }
     } catch(e) { console.warn('[_appendEventToHistoryPanel]', e); }
 }
+
+// v230: cargar historial de eventos desde el snapshot de Firestore.
+// Esto permite que un usuario que entre tarde al partido vea todos los
+// eventos anteriores (goles, tarjetas, lesiones, cambios).
+window._loadMatchEventsFromSnapshot = function(events) {
+    if (!Array.isArray(events) || !events.length) return;
+    const listEl = document.getElementById('match-events-list');
+    const countEl = document.getElementById('match-events-count');
+    const panel = document.getElementById('match-events-panel');
+    if (!listEl || !panel) return;
+
+    // Limpiar el log actual y reemplazarlo con los eventos del snapshot.
+    window._matchEventsLog = [];
+    listEl.innerHTML = '';
+
+    events.forEach(ev => {
+        if (!ev) return;
+        const titleText = ev.text || '';
+        const titleHTML = escapeHtml(titleText);
+        const realTime = ev.realTime || '';
+        const matchTime = ev.matchTime || '';
+        const evIcon = ev.icon || '•';
+        const type = ev.type || 'event';
+
+        window._matchEventsLog.push({ type, titleHTML, titleText, sub: '', ts: realTime, realTime, matchTime, icon: evIcon });
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 0;' +
+                            'border-bottom:1px solid rgba(255,255,255,0.04);';
+        const timeLabel = matchTime
+            ? '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>' +
+              '<span style="font-size:0.6rem; color:#58a6ff; font-weight:700; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
+            : '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>';
+        row.innerHTML =
+            timeLabel +
+            '<span style="font-size:0.9rem; flex-shrink:0;">' + evIcon + '</span>' +
+            '<span style="flex:1; min-width:0;">' + titleHTML + '</span>';
+        listEl.appendChild(row);
+    });
+
+    if (countEl) countEl.textContent = '(' + window._matchEventsLog.length + ')';
+    if (panel.style.display !== 'flex') panel.style.display = 'flex';
+
+    // Mostrar el último evento en el preview de la franja.
+    const previewEl = document.getElementById('match-events-preview');
+    const lastEv = window._matchEventsLog[window._matchEventsLog.length - 1];
+    if (previewEl && lastEv) previewEl.textContent = '· ' + lastEv.icon + ' ' + lastEv.titleText;
+
+    // Scroll al final.
+    listEl.scrollTop = listEl.scrollHeight;
+};
 
 // Inicializar los botones del panel de historial cuando el DOM esté listo.
 (function _initMatchEventsPanel() {
@@ -2216,6 +2276,16 @@ function renderMatch(data) {
     // recalcular el color del cronómetro en cada tick (250ms) usando los
     // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
     window._liveLastData = data;
+
+    // v230: cargar historial de eventos desde el snapshot si existe.
+    // Esto permite que un usuario que entre tarde al partido vea todos
+    // los eventos anteriores. Solo cargar la primera vez (cuando el log
+    // local está vacío) para no sobrescribir eventos nuevos detectados.
+    if (data.events && Array.isArray(data.events) && data.events.length > 0 &&
+        window._matchEventsLog && window._matchEventsLog.length === 0 &&
+        typeof window._loadMatchEventsFromSnapshot === 'function') {
+        window._loadMatchEventsFromSnapshot(data.events);
+    }
 
     // v222: SIEMPRE leer los umbrales directamente de Firestore para
     // garantizar que el live aplique los configurados por el Director

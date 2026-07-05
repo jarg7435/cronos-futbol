@@ -243,8 +243,30 @@ async function pushLiveSnapshot(status = 'active') {
                 injured: p.injured || false,
                 x:       p.x       || 0,
                 y:       p.y       || 0
-            }))
+            })),
+
+            // v230: historial de eventos del partido persistente en Firestore.
+            // Permite que un usuario que entre tarde al partido pueda ver todos
+            // los eventos anteriores (goles, tarjetas, lesiones, cambios).
+            // Cada evento tiene: tipo, texto, tiempo real, tiempo del partido,
+            // y los jugadores involucrados.
+            events: window._cronosMatchEvents || []
         };
+
+        // v230: si el snapshot no tiene la marca de tiempo del partido actual,
+        // calcularla a partir de masterTimeH1/masterTimeH2/matchPhase.
+        const _currentMatchMinute = (() => {
+            try {
+                const h1 = (typeof masterTimeH1 !== 'undefined') ? masterTimeH1 : 0;
+                const h2 = (typeof masterTimeH2 !== 'undefined') ? masterTimeH2 : 0;
+                const phase = (typeof matchPhase !== 'undefined') ? matchPhase : '1st_half';
+                const total = (phase === '2nd_half' || phase === 'finished') ? (h1 + h2) : h1;
+                const part = (phase === '2nd_half' || phase === 'finished') ? '2T' : '1T';
+                const m = Math.floor(total / 60).toString().padStart(2, '0');
+                const s = (total % 60).toString().padStart(2, '0');
+                return part + ' ' + m + ':' + s;
+            } catch(e) { return ''; }
+        })();
 
         // v224: log silenciado en producción (era de diagnóstico v221/v222).
         // console.log('[sync v221] Snapshot enviado. timerThresholds=', snapshot.timerThresholds,

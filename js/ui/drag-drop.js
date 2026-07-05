@@ -253,6 +253,12 @@ function logMovement(player, subId) {
     const action = player.status === 'field' ? 'Entra' : 'Sale';
     // subId permite emparejar la entrada con la salida en el informe
     player.history.push(`${action} a las ${timestamp} (${halfLabel})${subId ? ' #' + subId : ''}`);
+    // v230: registrar cambio en el historial del partido para Firestore.
+    if (action === 'Entra' && typeof _registerMatchEvent === 'function') {
+        _registerMatchEvent('sub_in', 'CAMBIO · Entra · ' + (player.name || 'Jugador'), '▼');
+    } else if (action === 'Sale' && typeof _registerMatchEvent === 'function') {
+        _registerMatchEvent('sub_out', 'CAMBIO · Sale · ' + (player.name || 'Jugador'), '▲');
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
