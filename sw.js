@@ -465,8 +465,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v237';
-const CACHE_NAME = 'cronos-cache-v237';
+const VERSION = 'v238';
+const CACHE_NAME = 'cronos-cache-v238';
 
 const ASSETS = [
     './',
@@ -625,6 +625,11 @@ self.addEventListener('fetch', event => {
 
 self.addEventListener('message', event => {
     if (event.data === 'force-update') {
+        self.skipWaiting();
+    }
+    // v229: soporte para mensaje { action: 'skipWaiting' } desde el banner
+    // de actualización. Esto activa el nuevo SW inmediatamente.
+    if (event.data && event.data.action === 'skipWaiting') {
         self.skipWaiting();
     }
 });

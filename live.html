@@ -1091,6 +1091,16 @@ function _autoUnlockOnFirstGesture() {
         }
     } catch(e) { /* sin audio */ }
 }
+// v229: exponer unlockAudio y _audioAutoUnlocked a window para que el
+// script del banner de sonido (que está en un <script> regular, no module)
+// pueda acceder a ellos. Sin esto, el banner no se oculta al tocarlo porque
+// unlockAudio() lanza ReferenceError y _audioAutoUnlocked = true nunca se ejecuta.
+window.unlockAudio = unlockAudio;
+Object.defineProperty(window, '_audioAutoUnlocked', {
+    get: () => _audioAutoUnlocked,
+    set: (v) => { _audioAutoUnlocked = v; },
+    configurable: true
+});
 // Escuchamos una sola vez los siguientes gestos (cualquiera de ellos desbloquea):
 ['touchstart', 'click', 'keydown', 'pointerdown'].forEach(function(ev) {
     window.addEventListener(ev, _autoUnlockOnFirstGesture, { once: true, passive: true });
@@ -3006,6 +3016,70 @@ function showLoadingScreen(msg) {
 <div id="event-flash"></div>
 <div id="event-toast-stack"></div>
 
+<!-- v229: BANNER DE ACTUALIZACIÓN DISPONIBLE — aparece cuando el Service
+     Worker detecta una nueva versión. Funciona en PC, iPad y móvil.
+     No fuerza la actualización: el usuario decide si actualizar o no. -->
+<div id="update-banner" style="
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10000;
+    background: linear-gradient(135deg, #2ea043, #27500A);
+    color: white; padding: 10px 16px; display: none;
+    align-items: center; justify-content: space-between; gap: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4); font-size: 0.85rem;">
+    <span style="font-weight: 700; flex: 1; min-width: 0;">
+        🔄 Nueva versión disponible — actualiza para tener las últimas mejoras
+    </span>
+    <div style="display: flex; gap: 8px; flex-shrink: 0;">
+        <button id="update-now" style="
+            background: white; color: #2ea043; border: none;
+            padding: 6px 16px; border-radius: 6px; font-weight: 800;
+            cursor: pointer; font-size: 0.82rem;">Actualizar</button>
+        <button id="update-later" style="
+            background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4);
+            padding: 6px 12px; border-radius: 6px; font-weight: 600;
+            cursor: pointer; font-size: 0.82rem;">Ahora no</button>
+    </div>
+</div>
+<script>
+// v229: Detectar nueva versión del Service Worker y mostrar banner.
+(function() {
+    if (!('serviceWorker' in navigator)) return;
+    let _newWorker = null;
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+        // El nuevo SW ha tomado el control — recargar para usar la nueva versión.
+        window.location.reload();
+    });
+    navigator.serviceWorker.getRegistration().then(function(reg) {
+        if (!reg) return;
+        reg.addEventListener('updatefound', function() {
+            _newWorker = reg.installing;
+            if (!_newWorker) return;
+            _newWorker.addEventListener('statechange', function() {
+                if (_newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    // Nueva versión instalada y esperando — mostrar banner.
+                    const banner = document.getElementById('update-banner');
+                    if (banner) banner.style.display = 'flex';
+                }
+            });
+        });
+    });
+    // Botón "Actualizar" — activar el nuevo SW y recargar.
+    document.addEventListener('click', function(e) {
+        if (e.target && e.target.id === 'update-now') {
+            if (_newWorker && _newWorker.state === 'installed') {
+                _newWorker.postMessage({ action: 'skipWaiting' });
+            } else {
+                window.location.reload();
+            }
+        }
+        if (e.target && e.target.id === 'update-later') {
+            const banner = document.getElementById('update-banner');
+            if (banner) banner.style.display = 'none';
+        }
+    });
+})();
+</script>
+
 <!-- ── v228: PANEL HISTORIAL DEL PARTIDO (franja fina + auto-expand) ──
      Comportamiento:
      · Por defecto: franja fina (36px) siempre visible, NO tapa el campo ni el banquillo.
@@ -3085,7 +3159,8 @@ function showLoadingScreen(msg) {
         if (!isMobile()) return;
         // v222: usar window._alertsMuted (el <script> del módulo expone la variable aquí).
         if (window._alertsMuted) return;  // usuario silenció manualmente
-        if (_audioAutoUnlocked) return;  // ya se desbloqueó
+        // v229: usar window._audioAutoUnlocked (expuesto desde el módulo en v229).
+        if (window._audioAutoUnlocked) return;  // ya se desbloqueó
         banner.style.display = 'flex';
         console.log('[LIVE] Banner de activación de sonido visible');
     }
@@ -3098,28 +3173,24 @@ function showLoadingScreen(msg) {
     // Cuando el usuario toca el banner → desbloquear audio
     banner.addEventListener('click', function() {
         try {
-            unlockAudio();
-            _audioAutoUnlocked = true;
+            // v229: poner _audioAutoUnlocked = true PRIMERO, antes de unlockAudio(),
+            // para que si unlockAudio falla, el banner no vuelva a aparecer.
+            window._audioAutoUnlocked = true;
+            if (typeof window.unlockAudio === 'function') {
+                window.unlockAudio();
+            }
             const btn = document.getElementById('btn-activate-sound');
             if (btn && _audioCtx && _audioCtx.state === 'running') {
                 btn.classList.add('ready');
                 btn.textContent = '🔊 Sonido activo';
             }
             console.log('[LIVE] Audio desbloqueado por click en banner');
-        } catch(e) {}
+        } catch(e) { console.warn('[LIVE] Error desbloqueando audio:', e); }
         hideBanner();
     });
 
-    // Cuando el audio se desbloquea por cualquier otra vía → ocultar banner
-    const _originalUnlock = window._audioAutoUnlocked;
-    Object.defineProperty(window, '_audioAutoUnlocked', {
-        get: function() { return _originalUnlock; },
-        set: function(v) {
-            _originalUnlock = v;
-            if (v) hideBanner();
-        },
-        configurable: true
-    });
+    // v229: el Object.defineProperty redundant ha sido eliminado — ahora
+    // _audioAutoUnlocked se expone correctamente desde el módulo (línea 1099).
 
     // Mostrar banner cuando se muestre el live-main (tras login)
     const observer = new MutationObserver(function() {
