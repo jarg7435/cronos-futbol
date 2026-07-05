@@ -66,14 +66,19 @@
 
     const app  = initializeApp(firebaseConfig);
 
-    // v226: Inicializar App Check con reCAPTCHA v3 para que Firestore y Auth
-    // no fallen con "AppCheck: ReCAPTCHA error" cuando App Check está enforced
-    // en la consola de Firebase.
+    // v227: App Check DESACTIVADO en el código.
+    // Motivo: Firebase App Check está registrado en la consola con reCAPTCHA v3,
+    // pero al intentar intercambiar el token devuelve 403 Forbidden y entra en
+    // throttle de 24h. Como App Check NO está "enforced" para Firestore ni Auth
+    // (lo verificamos en la consola), la app funciona perfectamente sin él.
+    // Si en el futuro quieres reactivar App Check:
+    //   1. Verifica que la site key Y la secret key estén bien en Firebase Console
+    //   2. Verifica que el dominio cronos-futbol-app.web.app esté en reCAPTCHA
+    //   3. Descomenta el bloque de abajo
+    /*
     try {
         const { initializeAppCheck, ReCaptchaV3Provider } =
             await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
-        // Site key de reCAPTCHA v3 generada en https://www.google.com/recaptcha/admin
-        // Etiqueta: "Chronos Fútbol" — dominios: cronos-futbol-app.web.app, .firebaseapp.com, localhost
         const _RECAPTCHA_SITE_KEY = '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
         initializeAppCheck(app, {
             provider: new ReCaptchaV3Provider(_RECAPTCHA_SITE_KEY),
@@ -83,6 +88,8 @@
     } catch (e) {
         console.warn('[Cronos] No se pudo inicializar App Check:', e.message);
     }
+    */
+    console.log('[Cronos] App Check desactivado (v227). Si lo necesitas, verifícalo en Firebase Console.');
 
     const auth = getAuth(app);
     const db   = getFirestore(app);
