@@ -410,6 +410,12 @@
                 left: 0.5rem;
                 max-width: none;
                 align-items: flex-end;
+                /* v232: en móvil, permitir scroll vertical en la pila de toasts
+                   para que cuando haya más de 3 cambios se pueda hacer scroll
+                   y verlos todos. Especialmente útil en landscape móvil. */
+                max-height: calc(100vh - env(safe-area-inset-top, 0px) - 120px);
+                overflow-y: auto;
+                pointer-events: auto;
             }
             .event-toast {
                 max-width: min(340px, 92vw);
@@ -418,6 +424,21 @@
             .event-toast .et-icon { font-size: 1.1rem; }
             .event-toast .et-title { font-size: 0.74rem; }
             .event-toast .et-sub { font-size: 0.65rem; }
+        }
+        /* v232: En móvil landscape, los toasts son más compactos y con scroll
+           para que quepan más en la pantalla horizontal. */
+        @media (orientation: landscape) and (max-width: 950px) {
+            #event-toast-stack {
+                max-height: calc(100vh - env(safe-area-inset-top, 0px) - 100px);
+                gap: 0.3rem;
+            }
+            .event-toast {
+                padding: 0.35rem 0.5rem;
+                max-width: min(300px, 85vw);
+            }
+            .event-toast .et-icon { font-size: 0.9rem; }
+            .event-toast .et-title { font-size: 0.66rem; }
+            .event-toast .et-sub { font-size: 0.58rem; }
         }
         .event-toast {
             pointer-events: auto;

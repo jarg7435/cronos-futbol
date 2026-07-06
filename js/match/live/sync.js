@@ -139,6 +139,37 @@ async function _fetchClubTimerThresholds(db, clubId) {
     return null;
 }
 
+// v232: cargar eventos existentes de Firestore al iniciar, para no sobrescribirlos.
+// Esto evita que al cerrar y reabrir la app del coach, el primer snapshot
+// borre el historial de eventos guardado en Firestore.
+let _eventsLoadedFromFirestore = false;
+async function _loadEventsFromFirestore() {
+    if (_eventsLoadedFromFirestore) return;
+    _eventsLoadedFromFirestore = true;
+    try {
+        const { doc, getDoc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const _db = window._cronos_auth?.db;
+        if (!_db || !liveMatchId) return;
+        const snap = await getDoc(doc(_db, 'live_matches', liveMatchId));
+        if (snap.exists()) {
+            const data = snap.data() || {};
+            const existingEvents = data.events || [];
+            if (Array.isArray(existingEvents) && existingEvents.length > 0) {
+                // Cargar eventos existentes en window._cronosMatchEvents
+                window._cronosMatchEvents = window._cronosMatchEvents || [];
+                // Combinar: eventos de Firestore + eventos nuevos locales (que no estén ya)
+                const existingTimestamps = new Set(existingEvents.map(e => e.timestamp));
+                const newLocalEvents = window._cronosMatchEvents.filter(e => !existingTimestamps.has(e.timestamp));
+                window._cronosMatchEvents = existingEvents.concat(newLocalEvents);
+                console.log('[sync v232] Eventos cargados de Firestore:', existingEvents.length);
+            }
+        }
+    } catch(e) {
+        console.warn('[sync v232] Error cargando eventos de Firestore:', e);
+    }
+}
+
 async function pushLiveSnapshot(status = 'active') {
     const fa = window._cronos_auth;
     if (!fa || !fa.db || !liveMatchId) return;
@@ -146,6 +177,12 @@ async function pushLiveSnapshot(status = 'active') {
     try {
         const { setDoc, doc, serverTimestamp } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+        // v232: cargar eventos existentes de Firestore antes del primer push
+        // para no sobrescribirlos con un array vacío.
+        if (!_eventsLoadedFromFirestore) {
+            await _loadEventsFromFirestore();
+        }
 
         const scoreHome = document.getElementById('score-home')?.textContent || '0';
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
