@@ -10,6 +10,8 @@
 // se incluyan en el snapshot de Firestore (live_matches/{id}.events) y asi
 // los usuarios que entren tarde al partido puedan ver el historial completo.
 // Cada evento tiene: tipo, texto, hora real, tiempo del partido, icono.
+// v236: tras registrar, disparar flush inmediato del snapshot para que el
+// evento llegue a Firestore YA (sin esperar al throttle de 500ms).
 window._cronosMatchEvents = window._cronosMatchEvents || [];
 function _registerMatchEvent(type, text, icon) {
     try {
@@ -26,13 +28,19 @@ function _registerMatchEvent(type, text, icon) {
             const s = (total % 60).toString().padStart(2, '0');
             matchTime = part + ' ' + m + ':' + s;
         } catch(e) {}
-        window._cronosMatchEvents.push({
+        const ev = {
             type: type, text: text, icon: icon || '•',
             realTime: realTime, matchTime: matchTime,
             timestamp: now.toISOString()
-        });
+        };
+        window._cronosMatchEvents.push(ev);
         if (window._cronosMatchEvents.length > 200) {
             window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
+        }
+        console.log('[v236] Evento registrado:', ev.type, '| Total eventos:', window._cronosMatchEvents.length);
+        // v236: disparar flush inmediato para que el evento llegue a Firestore YA.
+        if (typeof window.liveSyncFlushNow === 'function') {
+            window.liveSyncFlushNow();
         }
     } catch(e) { console.warn('[_registerMatchEvent]', e); }
 }
