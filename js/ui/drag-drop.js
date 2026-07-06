@@ -237,8 +237,10 @@ function handleSmartSwap(dragged, target, forcedSubId) {
     if (dragged.status === 'field') { const c = clampToField(dragged.x, dragged.y); dragged.x = c.x; dragged.y = c.y; }
     if (target.status === 'field') { const c = clampToField(target.x, target.y); target.x = c.x; target.y = c.y; }
 
-    if (isRunning) {
-        // ID de sustitución: usar forcedSubId si viene (cambio grupal), sino Date.now()
+    // v240: SIEMPRE registrar el cambio, no solo si isRunning.
+    // Antes, si el partido estaba pausado o en descanso, los cambios no se
+    // registraban y el historial se perdía al salir y volver a entrar.
+    {
         const subId = forcedSubId || Date.now();
         logMovement(dragged, subId);
         logMovement(target,  subId);

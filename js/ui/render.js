@@ -129,7 +129,17 @@ function executeGroupSubstitution(team) {
         if (outPlayer && inPlayer) {
             const forcedSubId = 'C' + (i + 1);
             handleSmartSwap(outPlayer, inPlayer, forcedSubId);
+            // v240: registrar el cambio directamente en el historial, sin
+            // depender de logMovement (que solo funciona si isRunning es true).
+            if (typeof _registerMatchEvent === 'function') {
+                _registerMatchEvent('sub_in', 'CAMBIO · Entra · ' + (inPlayer.name || 'Jugador'), '▼');
+                _registerMatchEvent('sub_out', 'CAMBIO · Sale · ' + (outPlayer.name || 'Jugador'), '▲');
+            }
         }
+    }
+    // v240: flush inmediato tras el cambio grupal para que llegue a Firestore YA.
+    if (typeof window.liveSyncFlushNow === 'function') {
+        window.liveSyncFlushNow();
     }
 
     // Limpiar estado
