@@ -6,12 +6,12 @@
 
 // activeActionPlayerId ya declarado en app.js
 
-// v230: Registrar eventos del partido en window._cronosMatchEvents para que
-// se incluyan en el snapshot de Firestore (live_matches/{id}.events) y asi
-// los usuarios que entren tarde al partido puedan ver el historial completo.
-// Cada evento tiene: tipo, texto, hora real, tiempo del partido, icono.
-// v236: tras registrar, disparar flush inmediato del snapshot para que el
-// evento llegue a Firestore YA (sin esperar al throttle de 500ms).
+// v241: NUEVO ENFOQUE — escribir eventos DIRECTAMENTE a Firestore en una
+// subcolección separada: live_matches/{matchId}/events/{eventId}
+// Esto elimina TODA dependencia de pushLiveSnapshot, liveIsActive, throttle,
+// race conditions, etc. Cada evento se escribe como un documento independiente
+// que NUNCA se sobrescribe. El live.html escucha esta subcolección con
+// onSnapshot y muestra los eventos en tiempo real + al cargar.
 window._cronosMatchEvents = window._cronosMatchEvents || [];
 function _registerMatchEvent(type, text, icon) {
     try {
@@ -29,19 +29,37 @@ function _registerMatchEvent(type, text, icon) {
             matchTime = part + ' ' + m + ':' + s;
         } catch(e) {}
         const ev = {
-            type: type, text: text, icon: icon || '•',
+            type: type, text: text, icon: icon || '\u2022',
             realTime: realTime, matchTime: matchTime,
-            timestamp: now.toISOString()
+            timestamp: now.toISOString(),
+            createdAt: now.getTime()
         };
+        // Guardar en memoria local (para compatibilidad con sync.js)
         window._cronosMatchEvents.push(ev);
         if (window._cronosMatchEvents.length > 200) {
             window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
         }
-        console.log('[v236] Evento registrado:', ev.type, '| Total eventos:', window._cronosMatchEvents.length);
-        // v236: disparar flush inmediato para que el evento llegue a Firestore YA.
-        if (typeof window.liveSyncFlushNow === 'function') {
-            window.liveSyncFlushNow();
-        }
+        console.log('[v241] Evento registrado:', ev.type, '| Total:', window._cronosMatchEvents.length);
+
+        // v241: escribir DIRECTAMENTE a Firestore en subcolección separada.
+        // NO depende de liveIsActive, pushLiveSnapshot, ni throttle.
+        (async () => {
+            try {
+                const fs = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const _db = window._cronos_auth?.db;
+                const _matchId = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
+                if (!_db || !_matchId) {
+                    console.warn('[v241] No se pudo escribir evento: db o matchId no disponibles');
+                    return;
+                }
+                // Usar timestamp como ID del documento para orden natural.
+                const evId = 'ev_' + now.getTime() + '_' + Math.random().toString(36).substr(2, 5);
+                await fs.setDoc(fs.doc(_db, 'live_matches', _matchId, 'events', evId), ev);
+                console.log('[v241] Evento escrito a Firestore:', evId);
+            } catch(e) {
+                console.warn('[v241] Error escribiendo evento a Firestore:', e);
+            }
+        })();
     } catch(e) { console.warn('[_registerMatchEvent]', e); }
 }
 

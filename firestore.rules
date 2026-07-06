@@ -651,6 +651,13 @@ service cloud.firestore {
     // legítimo y elimina la fuga de datos.
     // ============================================================
     match /live_matches/{matchId} {
+      // v241: subcolección de eventos del partido — permite leer/escribir
+      // a cualquier usuario autenticado (mismas reglas que el documento padre).
+      match /events/{eventId} {
+        allow read: if isRegisteredUser();
+        allow create: if isAuth();
+        allow update, delete: if isAuth();
+      }
       allow read: if isRegisteredUser();
       // El entrenador (rol 'user') normalmente NO lleva el claim 'clubId' en su
       // token, así que sameClub() le denegaba escribir su propio partido en vivo

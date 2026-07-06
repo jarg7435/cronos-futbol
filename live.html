@@ -955,6 +955,7 @@ setPersistence(auth, browserLocalPersistence).catch(() => {});
 // ── State ─────────────────────────────────────────────────────────
 let currentMatchId   = null;
 let unsubscribeMatch = null;
+let unsubscribeEvents = null; // v241: listener de subcolección events
 let timerInterval    = null;
 let lastSnapshot     = null;
 let localTimerSecs   = 0;
@@ -2252,6 +2253,27 @@ window.loadMatch = function(matchId) {
         },
         (err) => {
             showLoadingScreen('Error al conectar: ' + err.message);
+        }
+    );
+
+    // v241: escuchar la subcolección events con onSnapshot.
+    // Esto garantiza que el historial se cargue inmediatamente al entrar
+    // al partido Y se actualice en tiempo real cuando ocurran nuevos eventos.
+    // Los eventos se ordenan por createdAt (timestamp en ms).
+    if (unsubscribeEvents) unsubscribeEvents();
+    unsubscribeEvents = onSnapshot(
+        query(collection(db, 'live_matches', matchId, 'events'),
+              orderBy('createdAt', 'asc')),
+        (snap) => {
+            const events = [];
+            snap.forEach(d => events.push(d.data()));
+            console.log('[live v241] Eventos de subcolección:', events.length);
+            if (events.length > 0 && typeof window._loadMatchEventsFromSnapshot === 'function') {
+                window._loadMatchEventsFromSnapshot(events);
+            }
+        },
+        (err) => {
+            console.warn('[live v241] Error escuchando eventos:', err);
         }
     );
 };
