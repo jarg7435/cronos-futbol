@@ -669,6 +669,17 @@ function confirmSubstitutionWith(fieldPlayer) {
     handleSmartSwap(pendingSubstitution.player, fieldPlayer);
     cancelPendingSubstitution();
     renderPlayers();
+    // v238: registrar el cambio directamente aquí como BACKUP, por si
+    // logMovement en drag-drop.js no lo hizo (p.ej. si isRunning era false).
+    // Esto garantiza que el historial SIEMPRE tenga el evento de cambio.
+    if (typeof _registerMatchEvent === 'function') {
+        if (inPlayer) {
+            _registerMatchEvent('sub_in', 'CAMBIO · Entra · ' + (inPlayer.name || 'Jugador'), '▼');
+        }
+        if (fieldPlayer) {
+            _registerMatchEvent('sub_out', 'CAMBIO · Sale · ' + (fieldPlayer.name || 'Jugador'), '▲');
+        }
+    }
     // Commit síncrono del evento crítico antes de sincronizar con Firestore.
     if (typeof commitCriticalEvent === 'function') {
         commitCriticalEvent('substitution', {
@@ -678,7 +689,12 @@ function confirmSubstitutionWith(fieldPlayer) {
             value: { inId: inPlayer ? inPlayer.id : null, outId: fieldPlayer ? fieldPlayer.id : null },
         });
     }
-    liveSyncOnAction();
+    // v238: usar flush inmediato en vez de liveSyncOnAction (throttle 500ms)
+    if (typeof window.liveSyncFlushNow === 'function') {
+        window.liveSyncFlushNow();
+    } else {
+        liveSyncOnAction();
+    }
 }
 
 function cancelPendingSubstitution() {
