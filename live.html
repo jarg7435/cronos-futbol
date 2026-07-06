@@ -253,15 +253,26 @@
             margin-bottom: 1px;
             white-space: nowrap;
         }
-        /* chip-goal usa atributo data-goals para mostrar número */
+        /* chip-goal usa atributo data-goals para mostrar número.
+           v234: reposicionado a la mitad derecha de la ficha para que NO tape
+           el cronómetro (que está arriba) ni el número (centro de la ficha).
+           Ahora aparece como un badge pegado al borde derecho de la ficha.
+           !important para garantizar que override cualquier estilo cacheado. */
         .chip-goal::after {
-            content: attr(data-goal-label);
-            position: absolute; top: -12px; right: -12px;
-            font-size: 0.7rem; font-weight: 700;
-            background: rgba(0,0,0,0.85);
-            color: #fff; border-radius: 4px;
-            padding: 2px 5px; white-space: nowrap;
-            border: 1px solid rgba(255,255,255,0.2);
+            content: attr(data-goal-label) !important;
+            position: absolute !important;
+            top: 50% !important;
+            right: -22px !important;
+            transform: translateY(-50%) !important;
+            font-size: 0.7rem !important;
+            font-weight: 700 !important;
+            background: rgba(0,0,0,0.9) !important;
+            color: #fff !important;
+            border-radius: 4px !important;
+            padding: 2px 5px !important;
+            white-space: nowrap !important;
+            border: 1px solid rgba(255,255,255,0.3) !important;
+            z-index: 36 !important;
         }
         /* Indicadores de tarjeta amarilla/roja — más grandes para mejor visibilidad */
         .chip-yellow::after { content: '🟨'; position:absolute; bottom:-8px; right:-8px; font-size:1rem; z-index:35; }
@@ -278,38 +289,41 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.6);
         }
 
-        /* v230: En PC y iPad (pantallas anchas, min-width: 951px) las fichas,
-           cronómetros y nombres de jugador son MÁS GRANDES para mejor visibilidad.
+        /* v233: En PC y iPad (pantallas anchas, min-width: 951px) las fichas,
+           cronómetros y nombres de jugador son MUCHO MÁS GRANDES para mejor visibilidad.
+           Aprovecha el espacio libre del campo en pantallas anchas.
            En móvil (max-width: 950px) se mantienen los tamaños originales. */
         @media (min-width: 951px) {
             .live-player-chip {
-                width: 48px; height: 48px;
-                font-size: 1.05rem;
-                border-width: 3px;
+                width: 64px; height: 64px;
+                font-size: 1.4rem;
+                border-width: 3.5px;
             }
             .live-player-label {
-                font-size: 0.82rem;
-                padding: 2px 6px;
-                max-width: 90px;
+                font-size: 1rem;
+                padding: 3px 8px;
+                max-width: 120px;
             }
             .live-player-time {
-                font-size: 0.75rem;
-                padding: 2px 6px;
+                font-size: 0.95rem;
+                padding: 3px 8px;
                 font-weight: 800;
             }
+            /* Icono de gol reposicionado a mitad de la ficha, borde derecho */
             .chip-goal::after {
-                font-size: 0.85rem;
-                top: -14px; right: -14px;
-                padding: 3px 6px;
+                font-size: 0.95rem !important;
+                top: 50% !important;
+                right: -30px !important;
+                padding: 4px 8px !important;
             }
             .chip-yellow::after, .chip-red::after {
-                font-size: 1.3rem;
-                bottom: -10px; right: -10px;
+                font-size: 1.6rem;
+                bottom: -12px; right: -12px;
             }
             .chip-injured::before {
-                width: 26px; height: 26px;
-                font-size: 0.95rem;
-                bottom: -10px; left: -10px;
+                width: 32px; height: 32px;
+                font-size: 1.15rem;
+                bottom: -12px; left: -12px;
             }
         }
 
@@ -2355,14 +2369,30 @@ function renderMatch(data) {
     // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
     window._liveLastData = data;
 
-    // v230: cargar historial de eventos desde el snapshot si existe.
+    // v233: cargar historial de eventos desde el snapshot si existe.
     // Esto permite que un usuario que entre tarde al partido vea todos
-    // los eventos anteriores. Solo cargar la primera vez (cuando el log
-    // local está vacío) para no sobrescribir eventos nuevos detectados.
+    // los eventos anteriores. Se carga la primera vez que recibimos
+    // eventos del snapshot Y el log local está vacío (para no sobrescribir
+    // eventos que el live ya detectó por diff de snapshots).
+    // v233: si el log local tiene MENOS eventos que el snapshot, recargar
+    // desde el snapshot (el usuario puede haber perdido eventos al cerrar
+    // y reabrir la pestaña).
     if (data.events && Array.isArray(data.events) && data.events.length > 0 &&
-        window._matchEventsLog && window._matchEventsLog.length === 0 &&
         typeof window._loadMatchEventsFromSnapshot === 'function') {
-        window._loadMatchEventsFromSnapshot(data.events);
+        const localCount = (window._matchEventsLog && window._matchEventsLog.length) || 0;
+        const snapshotCount = data.events.length;
+        // Cargar si el log local está vacío O si el snapshot tiene más eventos
+        // (el snapshot viene de Firestore que es la fuente de verdad).
+        if (localCount === 0 || snapshotCount > localCount) {
+            // Solo recargar si los eventos son diferentes (comparar último timestamp).
+            const lastLocal = window._matchEventsLog && window._matchEventsLog[window._matchEventsLog.length - 1];
+            const lastSnapshot = data.events[data.events.length - 1];
+            const lastLocalTs = lastLocal ? (lastLocal.ts || '') : '';
+            const lastSnapshotTs = lastSnapshot ? (lastSnapshot.realTime || lastSnapshot.timestamp || '') : '';
+            if (localCount === 0 || lastLocalTs !== lastSnapshotTs) {
+                window._loadMatchEventsFromSnapshot(data.events);
+            }
+        }
     }
 
     // v222: SIEMPRE leer los umbrales directamente de Firestore para

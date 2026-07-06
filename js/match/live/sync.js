@@ -139,35 +139,41 @@ async function _fetchClubTimerThresholds(db, clubId) {
     return null;
 }
 
-// v232: cargar eventos existentes de Firestore al iniciar, para no sobrescribirlos.
+// v234: cargar eventos existentes de Firestore al iniciar, para no sobrescribirlos.
 // Esto evita que al cerrar y reabrir la app del coach, el primer snapshot
 // borre el historial de eventos guardado en Firestore.
+// v234: usar una promesa para evitar race conditions entre múltiples pushLiveSnapshot.
 let _eventsLoadedFromFirestore = false;
+let _eventsLoadPromise = null;
 async function _loadEventsFromFirestore() {
     if (_eventsLoadedFromFirestore) return;
-    _eventsLoadedFromFirestore = true;
-    try {
-        const { doc, getDoc } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const _db = window._cronos_auth?.db;
-        if (!_db || !liveMatchId) return;
-        const snap = await getDoc(doc(_db, 'live_matches', liveMatchId));
-        if (snap.exists()) {
-            const data = snap.data() || {};
-            const existingEvents = data.events || [];
-            if (Array.isArray(existingEvents) && existingEvents.length > 0) {
-                // Cargar eventos existentes en window._cronosMatchEvents
-                window._cronosMatchEvents = window._cronosMatchEvents || [];
-                // Combinar: eventos de Firestore + eventos nuevos locales (que no estén ya)
-                const existingTimestamps = new Set(existingEvents.map(e => e.timestamp));
-                const newLocalEvents = window._cronosMatchEvents.filter(e => !existingTimestamps.has(e.timestamp));
-                window._cronosMatchEvents = existingEvents.concat(newLocalEvents);
-                console.log('[sync v232] Eventos cargados de Firestore:', existingEvents.length);
+    if (_eventsLoadPromise) return _eventsLoadPromise;
+    _eventsLoadPromise = (async () => {
+        try {
+            const { doc, getDoc } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const _db = window._cronos_auth?.db;
+            if (!_db || !liveMatchId) { _eventsLoadedFromFirestore = true; return; }
+            const snap = await getDoc(doc(_db, 'live_matches', liveMatchId));
+            if (snap.exists()) {
+                const data = snap.data() || {};
+                const existingEvents = data.events || [];
+                if (Array.isArray(existingEvents) && existingEvents.length > 0) {
+                    window._cronosMatchEvents = window._cronosMatchEvents || [];
+                    const existingTimestamps = new Set(existingEvents.map(e => e.timestamp));
+                    const newLocalEvents = window._cronosMatchEvents.filter(e => !existingTimestamps.has(e.timestamp));
+                    window._cronosMatchEvents = existingEvents.concat(newLocalEvents);
+                    console.log('[sync v234] Eventos cargados de Firestore:', existingEvents.length);
+                }
             }
+        } catch(e) {
+            console.warn('[sync v234] Error cargando eventos de Firestore:', e);
+        } finally {
+            _eventsLoadedFromFirestore = true;
+            _eventsLoadPromise = null;
         }
-    } catch(e) {
-        console.warn('[sync v232] Error cargando eventos de Firestore:', e);
-    }
+    })();
+    return _eventsLoadPromise;
 }
 
 async function pushLiveSnapshot(status = 'active') {
@@ -282,13 +288,20 @@ async function pushLiveSnapshot(status = 'active') {
                 y:       p.y       || 0
             })),
 
-            // v230: historial de eventos del partido persistente en Firestore.
+            // v234: historial de eventos del partido persistente en Firestore.
             // Permite que un usuario que entre tarde al partido pueda ver todos
             // los eventos anteriores (goles, tarjetas, lesiones, cambios).
-            // Cada evento tiene: tipo, texto, tiempo real, tiempo del partido,
-            // y los jugadores involucrados.
-            events: window._cronosMatchEvents || []
+            // v234: NO incluir `events` en el snapshot si el array local está
+            // vacío, para no sobrescribir los eventos guardados en Firestore.
+            // Esto es crítico: si el coach reabre la app y _cronosMatchEvents
+            // está vacío, enviar events: [] borraría el historial.
         };
+
+        // v234: solo incluir events si tenemos eventos que enviar.
+        const _localEvents = window._cronosMatchEvents || [];
+        if (_localEvents.length > 0) {
+            snapshot.events = _localEvents;
+        }
 
         // v230: si el snapshot no tiene la marca de tiempo del partido actual,
         // calcularla a partir de masterTimeH1/masterTimeH2/matchPhase.
