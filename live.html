@@ -278,6 +278,41 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.6);
         }
 
+        /* v230: En PC y iPad (pantallas anchas, min-width: 951px) las fichas,
+           cronómetros y nombres de jugador son MÁS GRANDES para mejor visibilidad.
+           En móvil (max-width: 950px) se mantienen los tamaños originales. */
+        @media (min-width: 951px) {
+            .live-player-chip {
+                width: 48px; height: 48px;
+                font-size: 1.05rem;
+                border-width: 3px;
+            }
+            .live-player-label {
+                font-size: 0.82rem;
+                padding: 2px 6px;
+                max-width: 90px;
+            }
+            .live-player-time {
+                font-size: 0.75rem;
+                padding: 2px 6px;
+                font-weight: 800;
+            }
+            .chip-goal::after {
+                font-size: 0.85rem;
+                top: -14px; right: -14px;
+                padding: 3px 6px;
+            }
+            .chip-yellow::after, .chip-red::after {
+                font-size: 1.3rem;
+                bottom: -10px; right: -10px;
+            }
+            .chip-injured::before {
+                width: 26px; height: 26px;
+                font-size: 0.95rem;
+                bottom: -10px; left: -10px;
+            }
+        }
+
         /* ── BENCH PANEL ── */
         #bench-panel {
             width: 200px; flex-shrink: 0;
@@ -1245,7 +1280,7 @@ function _buildEventTitleHTML(line) {
     return escapeHtml(line || '');
 }
 
-function showEventToast(type, line, sub) {
+function showEventToast(type, line, sub, matchTime) {
     const meta  = EVENT_META[type] || EVENT_META.sub;
     const stack = document.getElementById("event-toast-stack");
     if (!stack) return;
@@ -1275,7 +1310,9 @@ function showEventToast(type, line, sub) {
     setTimeout(remove, 8000);
 
     // v220: también añadir al panel persistente de historial (no efímero).
-    _appendEventToHistoryPanel(type, line, sub, meta);
+    // v230: pasar matchTime (minuto del partido) para que se muestre en naranja.
+    const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '' });
+    _appendEventToHistoryPanel(type, line, sub, _metaExt);
 
     // Flash de pantalla
     const flash = document.getElementById("event-flash");
@@ -1355,10 +1392,10 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 0;' +
                             'border-bottom:1px solid rgba(255,255,255,0.04);';
-        // v230: mostrar hora real Y tiempo del partido (si existe).
+        // v230: mostrar hora real (gris) Y tiempo del partido (NARANJA) si existe.
         const timeLabel = matchTime
             ? '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>' +
-              '<span style="font-size:0.6rem; color:#58a6ff; font-weight:700; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
+              '<span style="font-size:0.62rem; color:#f0883e; font-weight:800; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
             : '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>';
         row.innerHTML =
             timeLabel +
@@ -1415,7 +1452,7 @@ window._loadMatchEventsFromSnapshot = function(events) {
                             'border-bottom:1px solid rgba(255,255,255,0.04);';
         const timeLabel = matchTime
             ? '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>' +
-              '<span style="font-size:0.6rem; color:#58a6ff; font-weight:700; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
+              '<span style="font-size:0.62rem; color:#f0883e; font-weight:800; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
             : '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>';
         row.innerHTML =
             timeLabel +
@@ -1828,6 +1865,26 @@ function detectAndAlert(matchId, matchData, fromCache) {
     if (matchData.status !== "active") return; // solo partidos en vivo
 
     const matchLabel = (matchData.homeTeam?.name || "Local") + " vs " + (matchData.awayTeam?.name || "Visitante");
+    // v230: calcular el minuto del partido a partir del snapshot para mostrarlo
+    // en el historial junto a la hora real. phase: 1st_half/2nd_half/break/finished.
+    const _matchTime = (() => {
+        try {
+            const h1 = matchData.timeH1 || 0;
+            const h2 = matchData.timeH2 || 0;
+            const phase = matchData.phase || '1st_half';
+            const total = (phase === '2nd_half' || phase === 'finished') ? (h1 + h2) : h1;
+            const part = (phase === '2nd_half' || phase === 'finished') ? '2T' : '1T';
+            const m = Math.floor(total / 60).toString().padStart(2, '0');
+            const s = (total % 60).toString().padStart(2, '0');
+            return part + ' ' + m + ':' + s;
+        } catch(e) { return ''; }
+    })();
+    // v230: meta extendido con matchTime para que _appendEventToHistoryPanel
+    // lo muestre en naranja junto a la hora real.
+    const _metaWithTime = (type) => {
+        const base = EVENT_META[type] || EVENT_META.sub;
+        return Object.assign({}, base, { matchTime: _matchTime });
+    };
     const subPending = []; // jugadores que pasaron a banquillo (posible "sale")
     const subIn      = []; // jugadores que entraron al campo
     // Goles ya atribuidos a un jugador concreto en ESTE recorrido, por equipo.
@@ -1855,7 +1912,7 @@ function detectAndAlert(matchId, matchData, fromCache) {
             // v218: "GOL" en MAYÚSCULAS, color verde, seguido del nombre (sin #).
             const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
                          ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + safeName;
-            showEventToast("goal", line, matchLabel + (n > 1 ? " · +" + n : ""));
+            showEventToast("goal", line, matchLabel + (n > 1 ? " · +" + n : ""), _matchTime);
         }
         // TARJETAS — cambio de estado de tarjeta
         if (np.cards !== pp.cards) {
@@ -1863,13 +1920,13 @@ function detectAndAlert(matchId, matchData, fromCache) {
                 // v218: "TARJETA" en MAYÚSCULAS, color amarillo.
                 const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_AMR +
                              ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
-                showEventToast("yellow", line, matchLabel);
+                showEventToast("yellow", line, matchLabel, _matchTime);
             }
             else if (np.cards === "roja" && pp.cards !== "roja") {
                 // v218: "TARJETA" en MAYÚSCULAS, color rojo.
                 const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
                              ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
-                showEventToast("red", line, matchLabel);
+                showEventToast("red", line, matchLabel, _matchTime);
             }
         }
         // LESIÓN — pasó a lesionado
@@ -1877,7 +1934,7 @@ function detectAndAlert(matchId, matchData, fromCache) {
             // v218: "LESIÓN" en MAYÚSCULAS, color rojo.
             const line = '<span style="color:' + EVENT_KEYWORD_COLOR.LESION +
                          ';font-weight:800;letter-spacing:0.5px;">LESIÓN</span> · ' + safeName;
-            showEventToast("injury", line, matchLabel);
+            showEventToast("injury", line, matchLabel, _matchTime);
         }
         // CAMBIO — transiciones field<->bench (no por expulsión roja)
         if (np.status !== pp.status && np.cards !== "roja" && pp.cards !== "roja") {
@@ -1913,12 +1970,12 @@ function detectAndAlert(matchId, matchData, fromCache) {
         // v218: "GOL" en MAYÚSCULAS verde, seguido del nombre del equipo.
         const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
                      ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(homeName);
-        showEventToast("goal", line, matchLabel);
+        showEventToast("goal", line, matchLabel, _matchTime);
     }
     for (let i = 0; i < extraAway; i++) {
         const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
                      ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(awayName);
-        showEventToast("goal", line, matchLabel);
+        showEventToast("goal", line, matchLabel, _matchTime);
     }
 
     // Sustituciones: emparejar entradas/salidas en un único aviso si es posible.
@@ -1950,7 +2007,7 @@ function detectAndAlert(matchId, matchData, fromCache) {
             } else {
                 line = kwSpan;
             }
-            showEventToast("sub", line, matchLabel);
+            showEventToast("sub", line, matchLabel, _matchTime);
         }
     }
 }
