@@ -253,23 +253,24 @@
             margin-bottom: 1px;
             white-space: nowrap;
         }
-        /* chip-goal usa atributo data-goals para mostrar número.
-           v234: reposicionado a la mitad derecha de la ficha para que NO tape
-           el cronómetro (que está arriba) ni el número (centro de la ficha).
-           Ahora aparece como un badge pegado al borde derecho de la ficha.
+        /* chip-goal: badge de goles.
+           v235: posicionado EN EL HUECO entre el cronómetro (arriba) y la ficha
+           circular con el número. Usa `bottom: 100%` para que el badge quede
+           POR ENCIMA de la ficha, pegado a su borde superior. Así NO tapa ni
+           el cronómetro (que está más arriba) ni el número (centro de la ficha).
            !important para garantizar que override cualquier estilo cacheado. */
         .chip-goal::after {
             content: attr(data-goal-label) !important;
             position: absolute !important;
-            top: 50% !important;
-            right: -22px !important;
-            transform: translateY(-50%) !important;
-            font-size: 0.7rem !important;
+            bottom: 100% !important;
+            right: -20px !important;
+            margin-bottom: 1px !important;
+            font-size: 0.65rem !important;
             font-weight: 700 !important;
             background: rgba(0,0,0,0.9) !important;
             color: #fff !important;
             border-radius: 4px !important;
-            padding: 2px 5px !important;
+            padding: 1px 4px !important;
             white-space: nowrap !important;
             border: 1px solid rgba(255,255,255,0.3) !important;
             z-index: 36 !important;
@@ -309,12 +310,13 @@
                 padding: 3px 8px;
                 font-weight: 800;
             }
-            /* Icono de gol reposicionado a mitad de la ficha, borde derecho */
+            /* v235: Icono de gol en el hueco entre cronómetro y ficha */
             .chip-goal::after {
-                font-size: 0.95rem !important;
-                top: 50% !important;
-                right: -30px !important;
-                padding: 4px 8px !important;
+                font-size: 0.85rem !important;
+                bottom: 100% !important;
+                right: -28px !important;
+                margin-bottom: 2px !important;
+                padding: 2px 6px !important;
             }
             .chip-yellow::after, .chip-red::after {
                 font-size: 1.6rem;
@@ -2369,22 +2371,19 @@ function renderMatch(data) {
     // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
     window._liveLastData = data;
 
-    // v233: cargar historial de eventos desde el snapshot si existe.
+    // v235: cargar historial de eventos desde el snapshot si existe.
     // Esto permite que un usuario que entre tarde al partido vea todos
     // los eventos anteriores. Se carga la primera vez que recibimos
     // eventos del snapshot Y el log local está vacío (para no sobrescribir
     // eventos que el live ya detectó por diff de snapshots).
-    // v233: si el log local tiene MENOS eventos que el snapshot, recargar
+    // v235: si el log local tiene MENOS eventos que el snapshot, recargar
     // desde el snapshot (el usuario puede haber perdido eventos al cerrar
     // y reabrir la pestaña).
     if (data.events && Array.isArray(data.events) && data.events.length > 0 &&
         typeof window._loadMatchEventsFromSnapshot === 'function') {
         const localCount = (window._matchEventsLog && window._matchEventsLog.length) || 0;
         const snapshotCount = data.events.length;
-        // Cargar si el log local está vacío O si el snapshot tiene más eventos
-        // (el snapshot viene de Firestore que es la fuente de verdad).
         if (localCount === 0 || snapshotCount > localCount) {
-            // Solo recargar si los eventos son diferentes (comparar último timestamp).
             const lastLocal = window._matchEventsLog && window._matchEventsLog[window._matchEventsLog.length - 1];
             const lastSnapshot = data.events[data.events.length - 1];
             const lastLocalTs = lastLocal ? (lastLocal.ts || '') : '';
@@ -2393,6 +2392,34 @@ function renderMatch(data) {
                 window._loadMatchEventsFromSnapshot(data.events);
             }
         }
+    }
+
+    // v235: FALLBACK — si el snapshot NO trae eventos Y el log local está
+    // vacío, leer directamente live_matches/{id} de Firestore para cargar
+    // el historial. Esto garantiza que un usuario que entre tarde SIEMPRE
+    // vea el historial, aunque el coach no haya incluido events en el
+    // snapshot (p.ej. porque reabrió la app y su array local estaba vacío).
+    if ((!data.events || !Array.isArray(data.events) || data.events.length === 0) &&
+        (!window._matchEventsLog || window._matchEventsLog.length === 0) &&
+        !window._liveEventsFetchedDirectly && data.id &&
+        typeof db !== 'undefined' && db) {
+        window._liveEventsFetchedDirectly = true;
+        (async () => {
+            try {
+                const snap = await getDoc(doc(db, 'live_matches', data.id));
+                if (snap.exists()) {
+                    const d = snap.data() || {};
+                    if (d.events && Array.isArray(d.events) && d.events.length > 0) {
+                        console.log('[live v235] Eventos leídos directamente de Firestore:', d.events.length);
+                        if (typeof window._loadMatchEventsFromSnapshot === 'function') {
+                            window._loadMatchEventsFromSnapshot(d.events);
+                        }
+                    }
+                }
+            } catch(e) {
+                console.warn('[live v235] Error leyendo eventos directamente:', e);
+            }
+        })();
     }
 
     // v222: SIEMPRE leer los umbrales directamente de Firestore para
