@@ -465,8 +465,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v245';
-const CACHE_NAME = 'cronos-cache-v245';
+const VERSION = 'v246';
+const CACHE_NAME = 'cronos-cache-v246';
 
 const ASSETS = [
     './',

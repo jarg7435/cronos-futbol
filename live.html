@@ -254,18 +254,17 @@
             white-space: nowrap;
         }
         /* chip-goal: badge de goles.
-           v235: posicionado EN EL HUECO entre el cronómetro (arriba) y la ficha
-           circular con el número. Usa `bottom: 100%` para que el badge quede
-           POR ENCIMA de la ficha, pegado a su borde superior. Así NO tapa ni
-           el cronómetro (que está más arriba) ni el número (centro de la ficha).
-           !important para garantizar que override cualquier estilo cacheado. */
+           v237: posicionado en la parte SUPERIOR DERECHA de la ficha, al nivel
+           del número pero desplazado a la derecha (fuera del círculo). Así NO
+           tapa ni el cronómetro (arriba) ni el número (centro de la ficha).
+           El badge sobresale del borde derecho de la ficha, a la altura del
+           borde superior, en el hueco entre el cronómetro y el número. */
         .chip-goal::after {
             content: attr(data-goal-label) !important;
             position: absolute !important;
-            bottom: 100% !important;
-            right: -20px !important;
-            margin-bottom: 1px !important;
-            font-size: 0.65rem !important;
+            top: 2px !important;
+            right: -24px !important;
+            font-size: 0.62rem !important;
             font-weight: 700 !important;
             background: rgba(0,0,0,0.9) !important;
             color: #fff !important;
@@ -310,12 +309,11 @@
                 padding: 3px 8px;
                 font-weight: 800;
             }
-            /* v235: Icono de gol en el hueco entre cronómetro y ficha */
+            /* v237: Icono de gol en parte superior derecha de la ficha */
             .chip-goal::after {
-                font-size: 0.85rem !important;
-                bottom: 100% !important;
-                right: -28px !important;
-                margin-bottom: 2px !important;
+                font-size: 0.82rem !important;
+                top: 3px !important;
+                right: -32px !important;
                 padding: 2px 6px !important;
             }
             .chip-yellow::after, .chip-red::after {
@@ -2177,6 +2175,21 @@ window.loadMatch = function(matchId) {
     currentMatchId = matchId;
     showLoadingScreen('Conectando al partido…');
 
+    // v237: resetear el historial de eventos al cargar un partido nuevo.
+    // Sin esto, si el usuario estaba viendo otro partido antes, los eventos
+    // del partido anterior siguen en _matchEventsLog y bloquean la carga
+    // de los eventos del partido nuevo (la condición length === 0 es false).
+    window._matchEventsLog = [];
+    window._liveEventsFetchedDirectly = false;
+    const _listEl = document.getElementById('match-events-list');
+    const _countEl = document.getElementById('match-events-count');
+    const _previewEl = document.getElementById('match-events-preview');
+    const _panelEl = document.getElementById('match-events-panel');
+    if (_listEl) _listEl.innerHTML = '';
+    if (_countEl) _countEl.textContent = '(0)';
+    if (_previewEl) _previewEl.textContent = '';
+    if (_panelEl) _panelEl.style.display = 'none';
+
     // El listener visible RECLAMA este partido: resetea de forma SINCRONA el
     // estado de seeding/monotonia para este matchId, descartando cualquier valor
     // que el watcher de fondo (startBackgroundWatch) hubiera tocado durante la
@@ -2191,6 +2204,23 @@ window.loadMatch = function(matchId) {
     delete _matchPrevState[matchId];
 
     if (unsubscribeMatch) unsubscribeMatch();
+
+    // v237: leer eventos directamente de Firestore al cargar el partido.
+    // Esto garantiza que el usuario vea el historial completo inmediatamente,
+    // sin esperar a que el snapshot incluya el campo events.
+    if (typeof db !== 'undefined' && db) {
+        getDoc(doc(db, 'live_matches', matchId)).then(snap => {
+            if (snap.exists()) {
+                const d = snap.data() || {};
+                if (d.events && Array.isArray(d.events) && d.events.length > 0) {
+                    console.log('[live v237] Eventos leídos directamente al cargar partido:', d.events.length);
+                    if (typeof window._loadMatchEventsFromSnapshot === 'function') {
+                        window._loadMatchEventsFromSnapshot(d.events);
+                    }
+                }
+            }
+        }).catch(e => console.warn('[live v237] Error leyendo eventos al cargar:', e));
+    }
 
     unsubscribeMatch = onSnapshot(
         doc(db, 'live_matches', matchId),
