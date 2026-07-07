@@ -6,35 +6,59 @@
 
 // activeActionPlayerId ya declarado en app.js
 
-// v230: Registrar eventos del partido en window._cronosMatchEvents para que
-// se incluyan en el snapshot de Firestore (live_matches/{id}.events) y asi
-// los usuarios que entren tarde al partido puedan ver el historial completo.
-// Cada evento tiene: tipo, texto, hora real, tiempo del partido, icono.
+// v246: Registrar eventos del partido en window._cronosMatchEvents (local)
+// Y escribirlos DIRECTAMENTE a Firestore con setDoc + merge + arrayUnion.
+// arrayUnion anade al array sin sobrescribir los eventos anteriores.
+// setDoc con merge crea el documento si no existe.
+// pushLiveSnapshot NUNCA incluye events en el snapshot (ver sync.js v246).
 window._cronosMatchEvents = window._cronosMatchEvents || [];
 function _registerMatchEvent(type, text, icon) {
     try {
-        const now = new Date();
-        const realTime = now.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-        let matchTime = '';
+        var now = new Date();
+        var realTime = now.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        var matchTime = '';
         try {
-            const h1 = (typeof masterTimeH1 !== 'undefined') ? masterTimeH1 : 0;
-            const h2 = (typeof masterTimeH2 !== 'undefined') ? masterTimeH2 : 0;
-            const phase = (typeof matchPhase !== 'undefined') ? matchPhase : '1st_half';
-            const total = (phase === '2nd_half' || phase === 'finished') ? (h1 + h2) : h1;
-            const part = (phase === '2nd_half' || phase === 'finished') ? '2T' : '1T';
-            const m = Math.floor(total / 60).toString().padStart(2, '0');
-            const s = (total % 60).toString().padStart(2, '0');
+            var h1 = (typeof masterTimeH1 !== 'undefined') ? masterTimeH1 : 0;
+            var h2 = (typeof masterTimeH2 !== 'undefined') ? masterTimeH2 : 0;
+            var phase = (typeof matchPhase !== 'undefined') ? matchPhase : '1st_half';
+            var total = (phase === '2nd_half' || phase === 'finished') ? (h1 + h2) : h1;
+            var part = (phase === '2nd_half' || phase === 'finished') ? '2T' : '1T';
+            var m = Math.floor(total / 60).toString().padStart(2, '0');
+            var s = (total % 60).toString().padStart(2, '0');
             matchTime = part + ' ' + m + ':' + s;
         } catch(e) {}
-        window._cronosMatchEvents.push({
-            type: type, text: text, icon: icon || '•',
+        var eventEntry = {
+            type: type, text: text, icon: icon || '\u2022',
             realTime: realTime, matchTime: matchTime,
-            timestamp: now.toISOString()
-        });
+            timestamp: now.toISOString(),
+            createdAt: now.getTime()
+        };
+        window._cronosMatchEvents.push(eventEntry);
         if (window._cronosMatchEvents.length > 200) {
             window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
         }
-    } catch(e) { console.warn('[_registerMatchEvent]', e); }
+        console.log('[v246] Evento registrado:', type, '| Total local:', window._cronosMatchEvents.length);
+
+        // v246: escribir a Firestore con setDoc + merge + arrayUnion.
+        var fa = window._cronos_auth;
+        var _id = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
+        if (fa && fa.db && _id) {
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
+                .then(function(fs) {
+                    return fs.setDoc(fs.doc(fa.db, 'live_matches', _id), {
+                        events: fs.arrayUnion(eventEntry)
+                    }, { merge: true });
+                })
+                .then(function() {
+                    console.log('[v246] Evento guardado en Firestore OK');
+                })
+                .catch(function(err) {
+                    console.error('[v246] ERROR guardando evento:', err && err.code || '', err && err.message);
+                });
+        } else {
+            console.warn('[v246] No se pudo guardar: fa=', !!fa, 'matchId=', _id);
+        }
+    } catch(e) { console.error('[v246] ERROR _registerMatchEvent:', e && e.message); }
 }
 
 // ════════════════════════════════════════════════════════════════════
