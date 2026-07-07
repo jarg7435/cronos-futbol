@@ -302,3 +302,20 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
 - Sin trackear: `firestore.rules.BACKUP` (no incluido en commits).
 - Avisos Firebase no bloqueantes: `firebase-functions` desactualizado; `functions.config()` deprecado (límite marzo 2027).
 - Entorno Windows: cmd requiere `chcp 65001` por acentos en la ruta del proyecto.
+
+## Mejoras opcionales aparcadas
+
+- [ ] **Q2 — guard `_seededOnce[matchId]` en live.html (aparcado)**: limitar el
+  repintado destructivo de `_loadMatchEventsFromSnapshot` (que hace
+  `listEl.innerHTML=''` + `_matchEventsLog=[]`) a UNA sola vez por partido, para
+  que no vuelva a borrar el HTML coloreado que `detectAndAlert` pinta en vivo
+  despues. Diseno: declarar `const _matchEventsSeeded = {}` junto a los otros
+  mapas por matchId (~L1046), consultarlo/marcarlo en el "Sitio A" de
+  `renderMatch` (~L2385), y `delete _matchEventsSeeded[matchId]` al cambiar de
+  partido en `loadMatch` (~L2190). NO aplicado a proposito: eliminaria la red de
+  re-sync de v235 (`snapshotCount > localCount`), util si un espectador pierde
+  eventos con la pestana en background. Revisar SOLO si en pruebas reales se
+  detecta parpadeo o borrado del panel de historial. Con el fix del commit
+  `9d24a6c` (shape unificado del arrayUnion), cada evento nuevo ya llega por
+  `detectAndAlert`, por lo que el re-sync destructivo es redundante en el flujo
+  normal; por eso queda como mejora opcional y no como bug abierto.
