@@ -54,39 +54,49 @@ async function startLiveSync() {
     if (typeof updateLiveButton === 'function') updateLiveButton(true);
 }
 
-// v244: pushLiveSnapshot delega a la versión canónica en js/match/live/sync.js
-// que incluye events, timerThresholds, y usa { merge: true }.
-// La versión que estaba aquí era ANTIGUA y pisaba la de sync.js porque
-// firestore-sync.js carga DESPUÉS en index.html. Esto causaba que los
-// eventos del historial NO se incluyeran en el snapshot.
+// v247: pushLiveSnapshot incluye colores de equipos y jugadores.
 async function pushLiveSnapshot(status = 'active') {
-    // La versión canónica está en live/sync.js (cargada antes).
-    // Como ambas son function declarations globales, la última en cargar
-    // pisa a la anterior. Hemos eliminado la de aquí para que NO pise.
-    // Si por alguna razón live/sync.js no cargó, usar un fallback mínimo.
-    const fa = window._cronos_auth;
+    var fa = window._cronos_auth;
     if (!fa || !fa.db || !liveMatchId) return;
     try {
-        const { setDoc, doc, serverTimestamp } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const scoreHome = document.getElementById('score-home')?.textContent || '0';
-        const scoreAway = document.getElementById('score-away')?.textContent || '0';
-        const snapshot = {
+        var fsMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        var scoreHome = document.getElementById('score-home')?.textContent || '0';
+        var scoreAway = document.getElementById('score-away')?.textContent || '0';
+        var snapshot = {
             id: liveMatchId, status: status,
-            updatedAt: serverTimestamp(),
+            updatedAt: fsMod.serverTimestamp(),
             clubId: window._cronosCurrentUser?.clubId || null,
             mode: currentMode, phase: matchPhase,
             isRunning: typeof isRunning !== 'undefined' ? isRunning : true,
             timeH1: masterTimeH1, timeH2: masterTimeH2,
-            homeTeam: { name: TEAM_NAMES.home, score: parseInt(scoreHome) || 0 },
-            awayTeam: { name: TEAM_NAMES.away, score: parseInt(scoreAway) || 0 },
-            players: players.map(p => ({ id: p.id, number: p.number, name: p.name,
-                team: p.team, status: p.status, time: p.time,
-                goals: p.goals||0, cards: p.cards||'ninguna', injured: p.injured||false,
-                x: p.x||0, y: p.y||0 }))
+            half1MaxTime: (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : 1800,
+            half2MaxTime: (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : 1800,
+            homeTeam: {
+                name: TEAM_NAMES.home, score: parseInt(scoreHome) || 0,
+                color: COLORS.home.primary,
+                shorts: COLORS.home.shorts,
+                textColor: COLORS.home.text
+            },
+            awayTeam: {
+                name: TEAM_NAMES.away, score: parseInt(scoreAway) || 0,
+                color: COLORS.away.primary,
+                shorts: COLORS.away.shorts,
+                textColor: COLORS.away.text
+            },
+            players: players.map(function(p) {
+                return {
+                    id: p.id, number: p.number, name: p.name,
+                    team: p.team, status: p.status, time: p.time,
+                    goals: p.goals||0, cards: p.cards||'ninguna', injured: p.injured||false,
+                    x: p.x||0, y: p.y||0,
+                    color: p.color || (p.team === 'home' ? COLORS.home.primary : COLORS.away.primary),
+                    shortsColor: p.shortsColor || (p.team === 'home' ? COLORS.home.shorts : COLORS.away.shorts),
+                    textColor: p.textColor || (p.team === 'home' ? COLORS.home.text : COLORS.away.text)
+                };
+            })
         };
-        await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
-    } catch (err) { /* offline — esperado */ }
+        await fsMod.setDoc(fsMod.doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
+    } catch (err) { /* offline */ }
 }
 
 async function stopLiveSync() {
