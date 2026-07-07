@@ -2210,26 +2210,7 @@ window.loadMatch = function(matchId) {
         }
     );
 
-    // v243: escuchar la subcolección events con onSnapshot.
-    // Esto garantiza que el historial se cargue inmediatamente al entrar
-    // al partido Y se actualice en tiempo real cuando ocurran nuevos eventos.
-    if (unsubscribeEvents) unsubscribeEvents();
-    console.log('[live v243] Abriendo listener de eventos para matchId:', matchId);
-    unsubscribeEvents = onSnapshot(
-        query(collection(db, 'live_matches', matchId, 'events'),
-              orderBy('createdAt', 'asc')),
-        (snap) => {
-            const events = [];
-            snap.forEach(d => events.push(d.data()));
-            console.log('[live v243] Eventos recibidos para', matchId, ':', events.length);
-            if (events.length > 0 && typeof window._loadMatchEventsFromSnapshot === 'function') {
-                window._loadMatchEventsFromSnapshot(events);
-            }
-        },
-        (err) => {
-            console.warn('[live v243] Error escuchando eventos para', matchId, ':', err);
-        }
-    );
+
 };
 
 // ── Render match data ──────────────────────────────────────────────
