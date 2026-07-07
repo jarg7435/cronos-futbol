@@ -2210,16 +2210,9 @@ window.loadMatch = function(matchId) {
         }
     );
 
-// v244: El historial se lee del campo data.events del snapshot del documento.
-            console.log('[live v243] Eventos recibidos para', matchId, ':', events.length);
-            if (events.length > 0 && typeof window._loadMatchEventsFromSnapshot === 'function') {
-                window._loadMatchEventsFromSnapshot(events);
-            }
-        },
-        (err) => {
-            console.warn('[live v243] Error escuchando eventos para', matchId, ':', err);
-        }
-    );
+    // v244: El historial se lee del campo data.events del snapshot del documento.
+    // Los eventos se añaden con arrayUnion desde player-actions.js, y
+    // pushLiveSnapshot usa merge:true para no sobrescribirlos.
 };
 
 // ── Render match data ──────────────────────────────────────────────
