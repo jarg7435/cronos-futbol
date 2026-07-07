@@ -26,45 +26,13 @@ function _registerMatchEvent(type, text, icon) {
             const s = (total % 60).toString().padStart(2, '0');
             matchTime = part + ' ' + m + ':' + s;
         } catch(e) {}
-        // v242: construir el evento UNA sola vez y reutilizar la MISMA forma
-        // tanto en el log local (_cronosMatchEvents, que pushLiveSnapshot envia
-        // por setDoc merge) como en la escritura puntual por arrayUnion de abajo.
-        // Shapes identicos => arrayUnion es idempotente y el merge del snapshot
-        // no genera duplicados; ademas el espectador recibe realTime/matchTime
-        // (hora real + minuto del partido) y la dedup por `timestamp` funciona.
-        const eventEntry = {
+        window._cronosMatchEvents.push({
             type: type, text: text, icon: icon || '•',
             realTime: realTime, matchTime: matchTime,
             timestamp: now.toISOString()
-        };
-        window._cronosMatchEvents.push(eventEntry);
+        });
         if (window._cronosMatchEvents.length > 200) {
             window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
-        }
-
-        // v241: escritura puntual e incremental a Firestore mediante arrayUnion
-        // sobre live_matches/{liveMatchId}.events. Es independiente de
-        // pushLiveSnapshot() (que se ejecuta constantemente y NO debe reescribir
-        // este array): aqui solo se ANADE el evento recien registrado, una vez.
-        // Fire-and-forget: cualquier fallo (offline, permisos) se ignora sin
-        // afectar al push local ya realizado ni al flujo del entrenador.
-        try {
-            const fa = window._cronos_auth;
-            const _id = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
-            if (fa && fa.db && _id) {
-                // eventEntry se construyo arriba con la MISMA forma que el log local.
-                import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
-                    .then(({ doc, updateDoc, arrayUnion }) => {
-                        return updateDoc(doc(fa.db, 'live_matches', _id), {
-                            events: arrayUnion(eventEntry)
-                        });
-                    })
-                    .catch(err => {
-                        if (window._CRONOS_DEBUG) console.warn('[_registerMatchEvent arrayUnion]', err && err.message);
-                    });
-            }
-        } catch(e) {
-            if (window._CRONOS_DEBUG) console.warn('[_registerMatchEvent arrayUnion]', e && e.message);
         }
     } catch(e) { console.warn('[_registerMatchEvent]', e); }
 }

@@ -54,93 +54,39 @@ async function startLiveSync() {
     if (typeof updateLiveButton === 'function') updateLiveButton(true);
 }
 
+// v244: pushLiveSnapshot delega a la versión canónica en js/match/live/sync.js
+// que incluye events, timerThresholds, y usa { merge: true }.
+// La versión que estaba aquí era ANTIGUA y pisaba la de sync.js porque
+// firestore-sync.js carga DESPUÉS en index.html. Esto causaba que los
+// eventos del historial NO se incluyeran en el snapshot.
 async function pushLiveSnapshot(status = 'active') {
+    // La versión canónica está en live/sync.js (cargada antes).
+    // Como ambas son function declarations globales, la última en cargar
+    // pisa a la anterior. Hemos eliminado la de aquí para que NO pise.
+    // Si por alguna razón live/sync.js no cargó, usar un fallback mínimo.
     const fa = window._cronos_auth;
     if (!fa || !fa.db || !liveMatchId) return;
-
     try {
         const { setDoc, doc, serverTimestamp } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-
         const scoreHome = document.getElementById('score-home')?.textContent || '0';
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
-
-        // Si se perdió por reinicio, usar la hora actual como createdAt
-        if (!liveMatchStartTime) liveMatchStartTime = new Date().toISOString();
-
         const snapshot = {
-            id:          liveMatchId,
-            status:      status,          // 'active' | 'finished'
-            updatedAt:   serverTimestamp(),
-            createdAt:   liveMatchStartTime,  // ← ISO string, no varía durante el partido
-            createdBy:   window._cronosCurrentUser?.uid   || '',
-            coachEmail:  window._cronosCurrentUser?.email || '',
-            clubId:      window._cronosCurrentUser?.clubId || null,
-
-            mode:        currentMode,
-            phase:       matchPhase,
-            isRunning:   typeof isRunning !== 'undefined' ? isRunning : true,
-            timeH1:      masterTimeH1,
-            timeH2:      masterTimeH2,
-            half1MaxTime: typeof half1MaxTime !== 'undefined' ? half1MaxTime : 1800,
-            half2MaxTime: typeof half2MaxTime !== 'undefined' ? half2MaxTime : 1800,
-            // phaseStartedAt: epoch ms de inicio de la parte actual (ver live/sync.js).
-            // Anclado a lastTickTime para ser estable frente al throttling del tick.
-            phaseStartedAt: ((typeof isRunning !== 'undefined' ? isRunning : true) && (matchPhase === '1st_half' || matchPhase === '2nd_half'))
-                ? (Date.now() - (
-                    (matchPhase === '2nd_half' ? masterTimeH2 : masterTimeH1)
-                    + ((typeof lastTickTime !== 'undefined' && lastTickTime > 0)
-                        ? Math.max(0, Math.floor((Date.now() - lastTickTime) / 1000))
-                        : 0)
-                  ) * 1000)
-                : null,
-            formation:   activeFormationKey || '',
-            category:    (document.getElementById('match-category')?.value || window._currentMatchCategory || ''),
-            myTeamRole:  window._userTeamRole || 'home',
-
-            // Equipos
-            homeTeam: {
-                name:     TEAM_NAMES.home,
-                score:    parseInt(scoreHome) || 0,
-                color:    COLORS.home.primary,
-                shorts:   COLORS.home.shorts,
-                textColor:COLORS.home.text
-            },
-            awayTeam: {
-                name:     TEAM_NAMES.away,
-                score:    parseInt(scoreAway) || 0,
-                color:    COLORS.away.primary,
-                shorts:   COLORS.away.shorts,
-                textColor:COLORS.away.text
-            },
-
-            // Jugadores (campo + banquillo)
-            // FIX: incluir color individual de cada jugador para que live.html diferencie equipos
-            players: players.map(p => ({
-                id:         p.id,
-                number:     p.number,
-                name:       p.name,
-                team:       p.team,
-                status:     p.status,    // 'field' | 'bench'
-                time:       p.time,
-                goals:      p.goals   || 0,
-                cards:      p.cards   || 'ninguna',
-                injured:    p.injured || false,
-                x:          p.x       || 0,
-                y:          p.y       || 0,
-                history:    p.history || [],
-                convocado:  p.convocado || false,
-                // Colores individuales (fallback al color del equipo si no tiene los suyos)
-                color:      p.color      || (p.team === 'home' ? COLORS.home.primary : COLORS.away.primary),
-                shortsColor:p.shortsColor|| (p.team === 'home' ? COLORS.home.shorts  : COLORS.away.shorts),
-                textColor:  p.textColor  || (p.team === 'home' ? COLORS.home.text    : COLORS.away.text)
-            }))
+            id: liveMatchId, status: status,
+            updatedAt: serverTimestamp(),
+            clubId: window._cronosCurrentUser?.clubId || null,
+            mode: currentMode, phase: matchPhase,
+            isRunning: typeof isRunning !== 'undefined' ? isRunning : true,
+            timeH1: masterTimeH1, timeH2: masterTimeH2,
+            homeTeam: { name: TEAM_NAMES.home, score: parseInt(scoreHome) || 0 },
+            awayTeam: { name: TEAM_NAMES.away, score: parseInt(scoreAway) || 0 },
+            players: players.map(p => ({ id: p.id, number: p.number, name: p.name,
+                team: p.team, status: p.status, time: p.time,
+                goals: p.goals||0, cards: p.cards||'ninguna', injured: p.injured||false,
+                x: p.x||0, y: p.y||0 }))
         };
-
-        await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot);
-    } catch (err) {
-        // Error de sincronización (puede ser offline — es esperado)
-    }
+        await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
+    } catch (err) { /* offline — esperado */ }
 }
 
 async function stopLiveSync() {
