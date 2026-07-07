@@ -297,11 +297,10 @@ async function pushLiveSnapshot(status = 'active') {
             // está vacío, enviar events: [] borraría el historial.
         };
 
-        // v234: solo incluir events si tenemos eventos que enviar.
-        const _localEvents = window._cronosMatchEvents || [];
-        if (_localEvents.length > 0) {
-            snapshot.events = _localEvents;
-        }
+        // v246: NUNCA incluir events en el snapshot. Los eventos se escriben
+        // exclusivamente con arrayUnion desde _registerMatchEvent. Si los
+        // incluyéramos aquí, sobrescribiríamos el array acumulado por arrayUnion.
+        // El arrayUnion añade sin sobrescribir; setDoc merge reemplaza arrays enteros.
 
         // v230: si el snapshot no tiene la marca de tiempo del partido actual,
         // calcularla a partir de masterTimeH1/masterTimeH2/matchPhase.
