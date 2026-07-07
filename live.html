@@ -254,16 +254,18 @@
             white-space: nowrap;
         }
         /* chip-goal: badge de goles.
-           v238: posicionado ENTRE el cronómetro (arriba) y la ficha (abajo).
-           Usa top: 20% para que esté en la parte superior de la ficha pero
-           claramente DEBAJO del cronómetro. Sobresale a la derecha. */
+           v235: posicionado EN EL HUECO entre el cronómetro (arriba) y la ficha
+           circular con el número. Usa `bottom: 100%` para que el badge quede
+           POR ENCIMA de la ficha, pegado a su borde superior. Así NO tapa ni
+           el cronómetro (que está más arriba) ni el número (centro de la ficha).
+           !important para garantizar que override cualquier estilo cacheado. */
         .chip-goal::after {
             content: attr(data-goal-label) !important;
             position: absolute !important;
-            top: 20% !important;
-            right: -22px !important;
-            transform: translateY(-50%) !important;
-            font-size: 0.62rem !important;
+            bottom: 100% !important;
+            right: -20px !important;
+            margin-bottom: 1px !important;
+            font-size: 0.65rem !important;
             font-weight: 700 !important;
             background: rgba(0,0,0,0.9) !important;
             color: #fff !important;
@@ -308,11 +310,12 @@
                 padding: 3px 8px;
                 font-weight: 800;
             }
-            /* v238: Icono de gol ENTRE cronómetro y ficha, parte superior derecha */
+            /* v235: Icono de gol en el hueco entre cronómetro y ficha */
             .chip-goal::after {
-                font-size: 0.82rem !important;
-                top: 20% !important;
-                right: -30px !important;
+                font-size: 0.85rem !important;
+                bottom: 100% !important;
+                right: -28px !important;
+                margin-bottom: 2px !important;
                 padding: 2px 6px !important;
             }
             .chip-yellow::after, .chip-red::after {
@@ -2175,21 +2178,6 @@ window.loadMatch = function(matchId) {
     currentMatchId = matchId;
     showLoadingScreen('Conectando al partido…');
 
-    // v237: resetear el historial de eventos al cargar un partido nuevo.
-    // Sin esto, si el usuario estaba viendo otro partido antes, los eventos
-    // del partido anterior siguen en _matchEventsLog y bloquean la carga
-    // de los eventos del partido nuevo (la condición length === 0 es false).
-    window._matchEventsLog = [];
-    window._liveEventsFetchedDirectly = false;
-    const _listEl = document.getElementById('match-events-list');
-    const _countEl = document.getElementById('match-events-count');
-    const _previewEl = document.getElementById('match-events-preview');
-    const _panelEl = document.getElementById('match-events-panel');
-    if (_listEl) _listEl.innerHTML = '';
-    if (_countEl) _countEl.textContent = '(0)';
-    if (_previewEl) _previewEl.textContent = '';
-    if (_panelEl) _panelEl.style.display = 'none';
-
     // El listener visible RECLAMA este partido: resetea de forma SINCRONA el
     // estado de seeding/monotonia para este matchId, descartando cualquier valor
     // que el watcher de fondo (startBackgroundWatch) hubiera tocado durante la
@@ -2204,40 +2192,6 @@ window.loadMatch = function(matchId) {
     delete _matchPrevState[matchId];
 
     if (unsubscribeMatch) unsubscribeMatch();
-
-    // v239: leer eventos directamente de Firestore al cargar el partido.
-    // Esto garantiza que el usuario vea el historial completo inmediatamente,
-    // sin esperar a que el snapshot incluya el campo events.
-    // v239: reintentar 3 veces con delay de 2s por si Firestore tarda en responder.
-    if (typeof db !== 'undefined' && db) {
-        let _retryCount = 0;
-        const _tryLoadEvents = () => {
-            getDoc(doc(db, 'live_matches', matchId)).then(snap => {
-                if (snap.exists()) {
-                    const d = snap.data() || {};
-                    if (d.events && Array.isArray(d.events) && d.events.length > 0) {
-                        console.log('[live v239] Eventos leídos de Firestore (intento ' + (_retryCount+1) + '):', d.events.length);
-                        if (typeof window._loadMatchEventsFromSnapshot === 'function') {
-                            window._loadMatchEventsFromSnapshot(d.events);
-                        }
-                    } else {
-                        console.log('[live v239] No hay eventos en Firestore aún (intento ' + (_retryCount+1) + ')');
-                        if (_retryCount < 3) {
-                            _retryCount++;
-                            setTimeout(_tryLoadEvents, 2000);
-                        }
-                    }
-                }
-            }).catch(e => {
-                console.warn('[live v239] Error leyendo eventos (intento ' + (_retryCount+1) + '):', e);
-                if (_retryCount < 3) {
-                    _retryCount++;
-                    setTimeout(_tryLoadEvents, 2000);
-                }
-            });
-        };
-        _tryLoadEvents();
-    }
 
     unsubscribeMatch = onSnapshot(
         doc(db, 'live_matches', matchId),
@@ -2256,24 +2210,24 @@ window.loadMatch = function(matchId) {
         }
     );
 
-    // v241: escuchar la subcolección events con onSnapshot.
+    // v243: escuchar la subcolección events con onSnapshot.
     // Esto garantiza que el historial se cargue inmediatamente al entrar
     // al partido Y se actualice en tiempo real cuando ocurran nuevos eventos.
-    // Los eventos se ordenan por createdAt (timestamp en ms).
     if (unsubscribeEvents) unsubscribeEvents();
+    console.log('[live v243] Abriendo listener de eventos para matchId:', matchId);
     unsubscribeEvents = onSnapshot(
         query(collection(db, 'live_matches', matchId, 'events'),
               orderBy('createdAt', 'asc')),
         (snap) => {
             const events = [];
             snap.forEach(d => events.push(d.data()));
-            console.log('[live v241] Eventos de subcolección:', events.length);
+            console.log('[live v243] Eventos recibidos para', matchId, ':', events.length);
             if (events.length > 0 && typeof window._loadMatchEventsFromSnapshot === 'function') {
                 window._loadMatchEventsFromSnapshot(events);
             }
         },
         (err) => {
-            console.warn('[live v241] Error escuchando eventos:', err);
+            console.warn('[live v243] Error escuchando eventos para', matchId, ':', err);
         }
     );
 };
@@ -2439,43 +2393,55 @@ function renderMatch(data) {
     // mismos umbrales y half1MaxTime/half2MaxTime que el render inicial.
     window._liveLastData = data;
 
-    // v239: cargar historial de eventos desde el snapshot si existe.
-    // v239: SIMPLIFICADO — si el snapshot tiene eventos Y el log local tiene
-    // MENOS eventos, cargar SIEMPRE. Sin condiciones complejas.
+    // v235: cargar historial de eventos desde el snapshot si existe.
+    // Esto permite que un usuario que entre tarde al partido vea todos
+    // los eventos anteriores. Se carga la primera vez que recibimos
+    // eventos del snapshot Y el log local está vacío (para no sobrescribir
+    // eventos que el live ya detectó por diff de snapshots).
+    // v235: si el log local tiene MENOS eventos que el snapshot, recargar
+    // desde el snapshot (el usuario puede haber perdido eventos al cerrar
+    // y reabrir la pestaña).
     if (data.events && Array.isArray(data.events) && data.events.length > 0 &&
         typeof window._loadMatchEventsFromSnapshot === 'function') {
         const localCount = (window._matchEventsLog && window._matchEventsLog.length) || 0;
         const snapshotCount = data.events.length;
-        // Cargar si el snapshot tiene más eventos que el log local.
-        if (snapshotCount > localCount) {
-            console.log('[live v239] Cargando eventos del snapshot:', snapshotCount, '(local:', localCount, ')');
-            window._loadMatchEventsFromSnapshot(data.events);
+        if (localCount === 0 || snapshotCount > localCount) {
+            const lastLocal = window._matchEventsLog && window._matchEventsLog[window._matchEventsLog.length - 1];
+            const lastSnapshot = data.events[data.events.length - 1];
+            const lastLocalTs = lastLocal ? (lastLocal.ts || '') : '';
+            const lastSnapshotTs = lastSnapshot ? (lastSnapshot.realTime || lastSnapshot.timestamp || '') : '';
+            if (localCount === 0 || lastLocalTs !== lastSnapshotTs) {
+                window._loadMatchEventsFromSnapshot(data.events);
+            }
         }
     }
 
-    // v239: FALLBACK — si el snapshot NO trae eventos Y el log local está
-    // vacío, leer directamente de Firestore. Se ejecuta en cada renderMatch
-    // (no solo la primera vez) para que si los eventos llegan tarde, se carguen.
+    // v235: FALLBACK — si el snapshot NO trae eventos Y el log local está
+    // vacío, leer directamente live_matches/{id} de Firestore para cargar
+    // el historial. Esto garantiza que un usuario que entre tarde SIEMPRE
+    // vea el historial, aunque el coach no haya incluido events en el
+    // snapshot (p.ej. porque reabrió la app y su array local estaba vacío).
     if ((!data.events || !Array.isArray(data.events) || data.events.length === 0) &&
         (!window._matchEventsLog || window._matchEventsLog.length === 0) &&
-        data.id && typeof db !== 'undefined' && db &&
-        !window._liveEventsFallbackInFlight) {
-        window._liveEventsFallbackInFlight = true;
-        getDoc(doc(db, 'live_matches', data.id)).then(snap => {
-            if (snap.exists()) {
-                const d = snap.data() || {};
-                if (d.events && Array.isArray(d.events) && d.events.length > 0) {
-                    console.log('[live v239] Fallback: eventos leídos de Firestore:', d.events.length);
-                    if (typeof window._loadMatchEventsFromSnapshot === 'function') {
-                        window._loadMatchEventsFromSnapshot(d.events);
+        !window._liveEventsFetchedDirectly && data.id &&
+        typeof db !== 'undefined' && db) {
+        window._liveEventsFetchedDirectly = true;
+        (async () => {
+            try {
+                const snap = await getDoc(doc(db, 'live_matches', data.id));
+                if (snap.exists()) {
+                    const d = snap.data() || {};
+                    if (d.events && Array.isArray(d.events) && d.events.length > 0) {
+                        console.log('[live v235] Eventos leídos directamente de Firestore:', d.events.length);
+                        if (typeof window._loadMatchEventsFromSnapshot === 'function') {
+                            window._loadMatchEventsFromSnapshot(d.events);
+                        }
                     }
                 }
+            } catch(e) {
+                console.warn('[live v235] Error leyendo eventos directamente:', e);
             }
-        }).catch(e => {
-            console.warn('[live v239] Fallback error:', e);
-        }).finally(() => {
-            window._liveEventsFallbackInFlight = false;
-        });
+        })();
     }
 
     // v222: SIEMPRE leer los umbrales directamente de Firestore para
