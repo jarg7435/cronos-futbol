@@ -95,17 +95,26 @@ function changeScore(team, delta) {
                     if (typeof logEvent === 'function') {
                         logEvent(scorer, `GOL (${scorer.goals}º)`);
                     }
+                    if (typeof _registerMatchEvent === 'function') {
+                        _registerMatchEvent('goal', 'GOL · ' + (scorer.name || 'Jugador'), '⚽');
+                    }
                     renderPlayers();
                 } else if (answer.trim() === '0' || idx === -1) {
                     if (!window._cronosExtraGoals) window._cronosExtraGoals = { home: 0, away: 0 };
                     window._cronosExtraGoals[team]++;
-                    if (typeof showToast === 'function') showToast(`⚽ Gol no asignado sumado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                    if (typeof _registerMatchEvent === 'function') {
+                        _registerMatchEvent('goal', 'GOL · ' + (team === 'home' ? (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.home : 'Local') : (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.away : 'Visitante')), '⚽');
+                    }
+                    if (typeof showToast === 'function') showToast(`⚽ Gol no asignado sumado a ${team === 'home' ? (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.home : 'Local') : (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.away : 'Visitante')}`, 3000);
                 }
                 syncScoreFromPlayers(team);
             }
         } else {
             if (!window._cronosExtraGoals) window._cronosExtraGoals = { home: 0, away: 0 };
             window._cronosExtraGoals[team]++;
+            if (typeof _registerMatchEvent === 'function') {
+                _registerMatchEvent('goal', 'GOL · ' + (team === 'home' ? (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.home : 'Local') : (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.away : 'Visitante')), '⚽');
+            }
             syncScoreFromPlayers(team);
         }
     } else {
@@ -120,11 +129,17 @@ function changeScore(team, delta) {
                 if (typeof logEvent === 'function') {
                     logEvent(scorers[0], `GOL ANULADO (Quedan: ${scorers[0].goals})`);
                 }
+                if (typeof _registerMatchEvent === 'function') {
+                    _registerMatchEvent('goal', 'GOL ANULADO · ' + (scorers[0].name || 'Jugador'), '❌');
+                }
                 renderPlayers();
                 syncScoreFromPlayers(team);
             } else if (scorers.length === 0 && extraGoals > 0) {
                 window._cronosExtraGoals[team]--;
-                if (typeof showToast === 'function') showToast(`⚽ Gol no asignado anulado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                if (typeof _registerMatchEvent === 'function') {
+                    _registerMatchEvent('goal', 'GOL ANULADO · ' + (team === 'home' ? (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.home : 'Local') : (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.away : 'Visitante')), '❌');
+                }
+                if (typeof showToast === 'function') showToast(`❌ Gol no asignado anulado`, 3000);
                 syncScoreFromPlayers(team);
             } else if (scorers.length > 0 || extraGoals > 0) {
                 const listLines = scorers.map((p, i) =>
@@ -147,10 +162,16 @@ function changeScore(team, delta) {
                         if (typeof logEvent === 'function') {
                             logEvent(scorer, `GOL ANULADO (Quedan: ${scorer.goals})`);
                         }
+                        if (typeof _registerMatchEvent === 'function') {
+                            _registerMatchEvent('goal', 'GOL ANULADO · ' + (scorer.name || 'Jugador'), '❌');
+                        }
                         renderPlayers();
                     } else if ((answer.trim() === '0' || idx === -1) && extraGoals > 0) {
                         window._cronosExtraGoals[team]--;
-                        if (typeof showToast === 'function') showToast(`⚽ Gol no asignado anulado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                        if (typeof _registerMatchEvent === 'function') {
+                            _registerMatchEvent('goal', 'GOL ANULADO · ' + (team === 'home' ? (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.home : 'Local') : (typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES.away : 'Visitante')), '❌');
+                        }
+                        if (typeof showToast === 'function') showToast(`❌ Gol no asignado anulado`, 3000);
                     }
                     syncScoreFromPlayers(team);
                 }

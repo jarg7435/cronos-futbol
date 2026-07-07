@@ -1212,7 +1212,15 @@ function selectForSubstitution(benchPlayer) {
 
 function confirmSubstitutionWith(fieldPlayer) {
     if (!pendingSubstitution) return;
+    const inPlayer = pendingSubstitution.player;
     handleSmartSwap(pendingSubstitution.player, fieldPlayer);
+    
+    // Registrar evento de partido para Firestore (para que los que entren tarde vean el cambio)
+    if (typeof _registerMatchEvent === 'function') {
+        _registerMatchEvent('sub_in', 'CAMBIO · Entra · ' + (inPlayer.name || 'Jugador'), '▼');
+        _registerMatchEvent('sub_out', 'CAMBIO · Sale · ' + (fieldPlayer.name || 'Jugador'), '▲');
+    }
+
     cancelPendingSubstitution();
     renderPlayers();
     liveSyncOnAction();
