@@ -254,14 +254,14 @@
             white-space: nowrap;
         }
         /* chip-goal: badge de goles.
-           v248: posicionado al 20% de la ficha (parte superior), sobresaliendo
-           a la derecha. Así queda ENTRE el cronómetro (arriba) y el número
-           (centro), sin tapar ninguno de los dos. */
+           v250: posicionado a la DERECHA de la ficha, al mismo nivel que
+           el número (centro vertical). Sobresale del borde derecho del círculo.
+           Así NO tapa ni el cronómetro (arriba) ni el número (centro). */
         .chip-goal::after {
             content: attr(data-goal-label) !important;
             position: absolute !important;
-            top: 20% !important;
-            right: -22px !important;
+            top: 50% !important;
+            right: -24px !important;
             transform: translateY(-50%) !important;
             font-size: 0.62rem !important;
             font-weight: 700 !important;
@@ -308,11 +308,11 @@
                 padding: 3px 8px;
                 font-weight: 800;
             }
-            /* v248: Icono de gol al 20% de la ficha, parte superior derecha */
+            /* v250: Icono de gol a la derecha de la ficha, nivel del número */
             .chip-goal::after {
                 font-size: 0.82rem !important;
-                top: 20% !important;
-                right: -30px !important;
+                top: 50% !important;
+                right: -32px !important;
                 padding: 2px 6px !important;
             }
             .chip-yellow::after, .chip-red::after {
