@@ -34,6 +34,31 @@ function _registerMatchEvent(type, text, icon) {
         if (window._cronosMatchEvents.length > 200) {
             window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
         }
+
+        // v241: escritura puntual e incremental a Firestore mediante arrayUnion
+        // sobre live_matches/{liveMatchId}.events. Es independiente de
+        // pushLiveSnapshot() (que se ejecuta constantemente y NO debe reescribir
+        // este array): aqui solo se ANADE el evento recien registrado, una vez.
+        // Fire-and-forget: cualquier fallo (offline, permisos) se ignora sin
+        // afectar al push local ya realizado ni al flujo del entrenador.
+        try {
+            const fa = window._cronos_auth;
+            const _id = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
+            if (fa && fa.db && _id) {
+                const eventEntry = { type: type, text: text, icon: icon || '•', ts: Date.now() };
+                import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
+                    .then(({ doc, updateDoc, arrayUnion }) => {
+                        return updateDoc(doc(fa.db, 'live_matches', _id), {
+                            events: arrayUnion(eventEntry)
+                        });
+                    })
+                    .catch(err => {
+                        if (window._CRONOS_DEBUG) console.warn('[_registerMatchEvent arrayUnion]', err && err.message);
+                    });
+            }
+        } catch(e) {
+            if (window._CRONOS_DEBUG) console.warn('[_registerMatchEvent arrayUnion]', e && e.message);
+        }
     } catch(e) { console.warn('[_registerMatchEvent]', e); }
 }
 
