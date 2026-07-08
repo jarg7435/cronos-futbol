@@ -381,7 +381,7 @@ function confirmRosterImport(mode) {
     // Escribir los jugadores importados
     imported.forEach((p, i) => {
         if (i < limit) {
-            const existingId = roster[mode][i]?.id || ('J-' + String(i + 1).padStart(2, '0'));
+            const existingId = roster[mode][i]?.id || (window._cronosGeneratePlayerId ? window._cronosGeneratePlayerId(i) : 'J-' + String(i + 1).padStart(2, '0'));
             roster[mode][i] = {
                 id: existingId,
                 number:  p.number || (i + 1),

@@ -50,16 +50,23 @@ function updateCategoryOptions(forcedMode) {
     sel.innerHTML = '';
     if (mode === 'f7') {
         sel.innerHTML = `
-            <option value="f7_prebenjamin">Prebenjamín (2T x 30')</option>
-            <option value="f7_benjamin">Benjamín (2T x 35')</option>
-            <option value="f7_alevin">Alevín (2T x 35')</option>
+            <option value="f7_prebenjamín">Prebenjamín (2T x 30')</option>
+        <option value="f7_benjamin">Benjamín (2T x 35')</option>
+        <option value="f7_alevin">Alevín (2T x 35')</option>
+        <option value="f7_infantil">Infantil (2T x 35')</option>
+        <option value="f7_cadete">Cadete (2T x 40')</option>
+        <option value="f7_juvenil">Juvenil (2T x 45')</option>
+        <option value="f7_regional">Regional (2T x 45')</option>
         `;
     } else {
         sel.innerHTML = `
-            <option value="f11_infantil">Infantil (2T x 40')</option>
-            <option value="f11_cadete">Cadete (2T x 40')</option>
-            <option value="f11_juvenil">Juvenil (2T x 45')</option>
-            <option value="f11_regional">Regional (2T x 45')</option>
+            <option value="f11_prebenjamín">Prebenjamín (2T x 30')</option>
+        <option value="f11_benjamin">Benjamín (2T x 35')</option>
+        <option value="f11_alevin">Alevín (2T x 35')</option>
+        <option value="f11_infantil">Infantil (2T x 40')</option>
+        <option value="f11_cadete">Cadete (2T x 40')</option>
+        <option value="f11_juvenil">Juvenil (2T x 45')</option>
+        <option value="f11_regional">Regional (2T x 45')</option>
         `;
     }
     // NO dispatchEvent — elimina bucles y efectos secundarios indeseados

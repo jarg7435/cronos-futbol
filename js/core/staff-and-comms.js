@@ -92,6 +92,23 @@ function renderStaffInBench() {
     benchList.appendChild(card);
 }
 
+// v256: Generar ID de jugador basado en categoria + subcategoria.
+// Mapeo: prebenjamin=PR, benjamin=BJ, alevin=AL, infantil=IF, cadete=CD, juvenil=JV, regional=RG
+window._cronosGeneratePlayerId = function(index) {
+    var cat = window._currentMatchCategory || '';
+    var sub = window._currentMatchSubcategory || 'A';
+    var prefix = 'J'; // fallback
+    if (cat.includes('prebenjamin')) prefix = 'PR';
+    else if (cat.includes('benjamin')) prefix = 'BJ';
+    else if (cat.includes('alevin')) prefix = 'AL';
+    else if (cat.includes('infantil')) prefix = 'IF';
+    else if (cat.includes('cadete')) prefix = 'CD';
+    else if (cat.includes('juvenil')) prefix = 'JV';
+    else if (cat.includes('regional')) prefix = 'RG';
+    var num = String(index + 1).padStart(2, '0');
+    return prefix + sub + num; // ej: PRA01, BJ-B02, IFC03
+};
+
 function openRosterManager() {
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const mode = document.getElementById('setup-mode').value;
@@ -100,7 +117,7 @@ function openRosterManager() {
     if (roster[mode].length < limit) {
         for (let i = roster[mode].length; i < limit; i++) {
             roster[mode].push({ 
-                id: 'J-' + String(i + 1).padStart(2, '0'), 
+                id: window._cronosGeneratePlayerId(i), 
                 number: i + 1, name: '', surname: '', alias: '' 
             });
         }
@@ -108,7 +125,7 @@ function openRosterManager() {
 
     // Asegurar que TODOS tengan un ID (migración para los ya guardados)
     roster[mode].forEach((p, i) => {
-        if (!p.id) p.id = 'J-' + String(i + 1).padStart(2, '0');
+        if (!p.id) p.id = window._cronosGeneratePlayerId(i);
     });
 
     const modal = document.getElementById('setup-modal');
@@ -149,7 +166,7 @@ function openRosterManager() {
                             <th style="width:50px;">ID</th>
                             <th style="width:44px;">#</th>
                             <th>Nombre</th>
-                            <th>Apellidos</th>
+                            
                             <th style="color:var(--primary);">★ Alias <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);">(en ficha)</span></th>
                         </tr>
                     </thead>
@@ -160,7 +177,7 @@ function openRosterManager() {
                                     style="width:45px; background:transparent; border:none; color:var(--text-muted); font-size:0.7rem; font-weight:bold; text-align:center;"></td>
                                 <td><input type="number" class="r-num" value="${p.number}" style="width:40px;"></td>
                                 <td><input type="text" class="r-name" value="${p.name}"></td>
-                                <td><input type="text" class="r-surname" value="${p.surname}"></td>
+                                <td></td>
                                 <td><input type="text" class="r-alias" value="${p.alias}"></td>
                             </tr>
                         `).join('')}

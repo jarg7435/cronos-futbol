@@ -153,6 +153,14 @@ function openSetupModal() {
                         <!-- Se llena dinámicamente por syncSetupMode() -->
                     </select>
                 </div>
+                    <div style="min-width:80px;">
+                        <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">Subcategoría</label>
+                        <select id="match-subcategory" style="width:100%; padding:6px 8px; background:var(--surface); color:var(--text); border:1px solid var(--glass-border); border-radius:6px; font-size:0.8rem;">
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                        </select>
+                    </div>
                 <div class="form-group" style="margin:0;">
                     <label style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; display:block;">Sistema táctico inicial</label>
                     <select id="setup-formation" style="width:100%; font-weight:700; background:var(--bg); border-color:var(--glass-border); padding:0.5rem; border-radius:8px; color:white;">
@@ -280,6 +288,7 @@ function saveSetupState() {
         awayText:      document.getElementById('setup-away-text')?.value  || '#ffffff',
         mode:          document.getElementById('setup-mode')?.value       || 'f7',
         category:      document.getElementById('match-category')?.value   || '',
+        subcategory: document.getElementById('match-subcategory')?.value || 'A',
         formation:     document.getElementById('setup-formation')?.value  || '',
         analyzeAway:   document.getElementById('setup-analyze-away')?.checked || false,
         myTeamRole:    document.getElementById('setup-my-team-role')?.value || 'home',
@@ -315,6 +324,8 @@ function restoreSetupState() {
     const categoryMatchesMode = s.category && s.category.startsWith(s.mode + '_');
     if (categoryMatchesMode) {
         set('match-category', s.category);
+            set('match-subcategory', s.subcategory || 'A');
+            set('match-subcategory', s.subcategory || 'A');
     }
     set('setup-formation', s.formation);
     window._pendingSetupState = null;
@@ -369,6 +380,8 @@ function confirmSetup() {
     const catEl = document.getElementById('match-category');
     const category = catEl ? catEl.value : 'f7_prebenjamin';
     window._currentMatchCategory = category;
+        window._currentMatchSubcategory = document.getElementById('match-subcategory')?.value || 'A';
+        window._currentMatchSubcategory = document.getElementById('match-subcategory')?.value || 'A';
     let defaultTime = 30;
 
     if (category.includes('prebenjamin')) {
