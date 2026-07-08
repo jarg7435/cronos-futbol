@@ -320,13 +320,13 @@
         // Solo quitar setup-mode si main-header es visible Y el modal NO está activo
         if (mainHeader && mainHeader.style.display === 'flex' &&
             document.body.classList.contains('setup-mode')) {
-            console.warn('[Cronos v9] Detectado setup-mode + partido visible (sin modal) — corrigiendo');
+            console.warn('[Chronos v9] Detectado setup-mode + partido visible (sin modal) — corrigiendo');
             document.body.classList.remove('setup-mode');
         }
 
         if (setupModal && setupModal.style.display === 'none' &&
             document.body.classList.contains('setup-mode')) {
-            console.warn('[Cronos v9] setup-mode activo sin modal visible — quitando clase');
+            console.warn('[Chronos v9] setup-mode activo sin modal visible — quitando clase');
             document.body.classList.remove('setup-mode');
         }
     }
@@ -348,7 +348,7 @@
             try {
                 orig();
             } catch(e) {
-                console.error('[Cronos v8] Error en goToTitularSelection original:', e);
+                console.error('[Chronos v8] Error en goToTitularSelection original:', e);
             }
 
             // Asegurar que la vista de partido es visible
@@ -361,7 +361,7 @@
 
             // Doble verificación: si no hay jugadores, crear fallback
             if (typeof players !== 'undefined' && (!players || players.length === 0)) {
-                console.warn('[Cronos v8] No hay jugadores después de goToTitularSelection — creando fallback');
+                console.warn('[Chronos v8] No hay jugadores después de goToTitularSelection — creando fallback');
                 try {
                     var defaultCount = (typeof currentMode !== 'undefined' && currentMode === 'f7') ? 7 : 11;
                     var homeColors = (typeof COLORS !== 'undefined') ? COLORS.home : { primary: '#58a6ff', shorts: '#ffffff', text: '#000000' };
@@ -378,7 +378,7 @@
                     }
                     if (typeof renderPlayers === 'function') renderPlayers();
                 } catch(e2) {
-                    console.error('[Cronos v8] Error creando jugadores fallback:', e2);
+                    console.error('[Chronos v8] Error creando jugadores fallback:', e2);
                 }
             }
 

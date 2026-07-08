@@ -400,7 +400,7 @@ function buildConvocationText() {
         msg += `💬 ${extra}\n\n`;
     }
 
-    msg += `_Cronos Fútbol_ ⚽`;
+    msg += `_Chronos Fútbol_ ⚽`;
     return msg;
 }
 

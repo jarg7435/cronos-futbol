@@ -1737,7 +1737,7 @@ function _buildWeeklyPlanText() {
         }
     });
 
-    text += `⚽ _Enviado desde Cronos Fútbol_`;
+    text += `⚽ _Enviado desde Chronos Fútbol_`;
     return text;
 }
 

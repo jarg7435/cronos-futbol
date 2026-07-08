@@ -208,8 +208,8 @@ function openTrainingSendPanel(target) {
 
     // Build preview message
     const fullMessage = isParents
-        ? `${greeting} familia! 👋\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}\n_Cronos Fútbol_ ⚽`
-        : `${greeting}! 👋\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}\n_Cronos Fútbol_ ⚽`;
+        ? `${greeting} familia! 👋\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}\n_Chronos Fútbol_ ⚽`
+        : `${greeting}! 👋\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}\n_Chronos Fútbol_ ⚽`;
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
@@ -302,7 +302,7 @@ function updateTrainingPreview() {
     const audience = isParents ? 'familia! 👋' : '! 👋';
     let msg = `${greeting} ${audience}\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}`;
     if (extra) msg += `\n💬 ${extra}\n`;
-    msg += `\n_Cronos Fútbol_ ⚽`;
+    msg += `\n_Chronos Fútbol_ ⚽`;
     preview.textContent = msg;
 }
 

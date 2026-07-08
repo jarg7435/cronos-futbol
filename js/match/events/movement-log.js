@@ -453,7 +453,7 @@ async function exportData() {
                goals + card + injured + (evts ? ' [' + evts + ']' : '');
     });
 
-    const waMsg = '📊 *INFORME — Cronos Fútbol*\n' +
+    const waMsg = '📊 *INFORME — Chronos Fútbol*\n' +
         '━━━━━━━━━━━━━━━━━━\n' +
         '📅 ' + date + '  |  ' + mode + '\n' +
         '⚽ *' + homeName + ' ' + scoreHome + ' - ' + scoreAway + ' ' + awayName + '*\n' +
@@ -461,7 +461,7 @@ async function exportData() {
         '━━━━━━━━━━━━━━━━━━\n' +
         waLines.join('\n') + '\n' +
         '━━━━━━━━━━━━━━━━━━\n' +
-        '_Cronos Fútbol_';
+        '_Chronos Fútbol_';
 
     if (waNumbers.length > 0) {
         const encoded = encodeURIComponent(waMsg);

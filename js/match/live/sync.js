@@ -535,8 +535,8 @@ function shareLiveEmail(url) {
         `Hola,\n\n` +
         `Puedes seguir el partido en tiempo real desde este enlace:\n${url}\n\n` +
         `${TEAM_NAMES.home} vs ${TEAM_NAMES.away} · ${date}\n\n` +
-        `Necesitas estar registrado y autorizado en Cronos Fútbol para acceder.\n\n` +
-        `Cronos Fútbol — Coach Assistant`);
+        `Necesitas estar registrado y autorizado en Chronos Fútbol para acceder.\n\n` +
+        `Chronos Fútbol — Coach Assistant`);
     const to = emailConfig?.directorEmail || '';
     window.open(`mailto:${to}?subject=${subject}&body=${body}`);
 }
@@ -553,7 +553,7 @@ window.notifyAllLiveContacts = function(url) {
         `⚽ *PARTIDO EN VIVO — ${TEAM_NAMES.home} vs ${TEAM_NAMES.away}*\n` +
         `📅 ${date}\n\n` +
         `Sigue el partido en tiempo real aquí:\n${url}\n\n` +
-        `_Cronos Fútbol_`);
+        `_Chronos Fútbol_`);
     let opened = 0;
     liveContacts.forEach((c, i) => {
         // Abrimos ventanas escalonadas para no bloquear pop-ups

@@ -231,13 +231,13 @@ async function _cResolveClubId(db, me, fns) {
                 try {
                     await fns.updateDoc(fns.doc(db, 'users', me.uid), { clubId: cid });
                 } catch (migrateErr) {
-                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
+                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Chronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
                 }
             }
             return cid;
         }
     } catch (e) {
-        if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos] No se pudo resolver clubId desde Firestore:', e && e.message);
+        if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Chronos] No se pudo resolver clubId desde Firestore:', e && e.message);
     }
     return null;
 }
@@ -1477,7 +1477,7 @@ function _buildGlobalReportText() {
         text += `👤 ${p.name} - ${window.formatTime ? window.formatTime(p.time||0) : p.time||0} min\n`;
         text += `   ⚽ Goles: ${p.goals||0} | 🃏 Thrj: ${cardIcon} ${p.injured ? '| 🚑 Lesión' : ''}\n`;
     });
-    return text + `\n_Cronos Fútbol · Dirección Deportiva_`;
+    return text + `\n_Chronos Fútbol · Dirección Deportiva_`;
 }
 
 function _buildIndividualReportText(player, scoreHome, scoreAway, matchDate) {
@@ -1495,7 +1495,7 @@ function _buildIndividualReportText(player, scoreHome, scoreAway, matchDate) {
            `🃏 Tarjetas: *${cardIcon}*\n` +
            (player.injured ? `🚑 *LESIONADO*\n` : '') +
            `━━━━━━━━━━━━━━━━\n` +
-           `_Cronos Fútbol · Informe automático_`;
+           `_Chronos Fútbol · Informe automático_`;
 }
 
 // Ejecutor unificado
@@ -1550,7 +1550,7 @@ window._executeReportsSend = async function(method) {
             fbSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
         }
     } catch(errLinks) {
-        console.warn('[Cronos] Error recuperando vínculos:', errLinks);
+        console.warn('[Chronos] Error recuperando vínculos:', errLinks);
     }
 
     const scoreHome = document.getElementById('score-home')?.textContent || '0';
@@ -1725,7 +1725,7 @@ window._executeReportsSend = async function(method) {
                                 unreadByStaff: 1
                             });
                         } catch(setErr) {
-                            if(window._CRONOS_DEBUG) console.warn('[Cronos] Error creando hilo staff:', {
+                            if(window._CRONOS_DEBUG) console.warn('[Chronos] Error creando hilo staff:', {
                                 code: setErr && setErr.code,
                                 message: setErr && setErr.message,
                                 threadId,
@@ -1791,7 +1791,7 @@ window._executeReportsSend = async function(method) {
                                 });
                             }
                         } catch(srErr) {
-                            console.warn('[Cronos] Error escribiendo cronos_player_reports para staff:', srErr);
+                            console.warn('[Chronos] Error escribiendo cronos_player_reports para staff:', srErr);
                         }
                     }
 
@@ -1921,7 +1921,7 @@ window._executeReportsSend = async function(method) {
                             lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
                         });
                     } catch(setErr) {
-                        console.warn('[Cronos] Error creando hilo parent:', {
+                        console.warn('[Chronos] Error creando hilo parent:', {
                             code: setErr && setErr.code,
                             message: setErr && setErr.message,
                             threadId, parentUid: targetParentUid,
@@ -1943,7 +1943,7 @@ window._executeReportsSend = async function(method) {
                         injured: player.injured || false, createdAt: new Date().toISOString()
                     });
                 } catch(notifErr) {
-                    console.warn('[Cronos] Error enviando notificación a parentUid:', targetParentUid, notifErr);
+                    console.warn('[Chronos] Error enviando notificación a parentUid:', targetParentUid, notifErr);
                 }
 
                 sentCount++;
@@ -1994,7 +1994,7 @@ window._executeReportsSend = async function(method) {
         } // fin guard !_autoAlreadyRan
 
     } catch (sendErr) {
-        console.error('[Cronos] Error enviando informes internos:', sendErr);
+        console.error('[Chronos] Error enviando informes internos:', sendErr);
         if (msgEl) {
             msgEl.style.color = '#da3633';
             msgEl.textContent = '⚠️ Error al enviar. Comprueba la conexión e inténtalo de nuevo.';
@@ -2076,7 +2076,7 @@ async function autoDispatchMatchReports() {
                           `📅 ${matchDate}\n` +
                           `⚽ ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${rivalName}\n\n` +
                           `Informes individuales generados y enviados a padres autorizados.\n` +
-                          `_Cronos Fútbol_`;
+                          `_Chronos Fútbol_`;
 
         // ── Generar un matchId DETERMINISTA para este partido ────────────────
         // CRÍTICO: si usamos Date.now(), cada ejecución de autoDispatch genera
@@ -2299,7 +2299,7 @@ async function autoDispatchMatchReports() {
                              `⚽ Partido vs ${rivalName}\n` +
                              `📈 Rendimiento: ${stats}\n\n` +
                              `Revisa el panel de informes para más detalles.\n` +
-                             `_Cronos Fútbol_`;
+                             `_Chronos Fútbol_`;
 
             // ── Guardar en cronos_player_reports para el panel del padre ──
             // ID determinista e idempotente: {matchId}_parent_{parentUid}_p{dorsal}
@@ -3743,7 +3743,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
             msg += line + '\n';
         });
 
-        msg += `\n_Cronos Fútbol · Informe Entrenador_ ⚽`;
+        msg += `\n_Chronos Fútbol · Informe Entrenador_ ⚽`;
         return msg;
     }
 
@@ -4617,7 +4617,7 @@ window._sendAllIndividualReports = async function() {
                 (events.length
                     ? `\n📋 *Acciones:*\n` + events.map(ev => `• ${ev.minute||'?'}' ${evIcon[ev.type]||ev.type}`).join('\n') + '\n'
                     : '') +
-                `\n_Cronos Fútbol_ ⚽`;
+                `\n_Chronos Fútbol_ ⚽`;
 
             // ── Envío in-app (solo si tiene uid registrado en la app) ──
             if (link.parentUid) {
