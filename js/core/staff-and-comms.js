@@ -92,12 +92,35 @@ function renderStaffInBench() {
     benchList.appendChild(card);
 }
 
-// v256: Generar ID de jugador basado en categoria + subcategoria.
+// v257: Generar ID de jugador basado en la CATEGORÍA Y SUBCATEGORÍA DEL ENTRENADOR
+// (no del selector del partido). El entrenador tiene su categoría registrada
+// en allRoles (ej: {role:'user', category:'f11_cadete', subcategory:'B'}).
+// Si el entrenador no tiene categoría en su perfil, usa la del partido como fallback.
 // Mapeo: prebenjamin=PR, benjamin=BJ, alevin=AL, infantil=IF, cadete=CD, juvenil=JV, regional=RG
 window._cronosGeneratePlayerId = function(index) {
-    var cat = window._currentMatchCategory || '';
-    var sub = window._currentMatchSubcategory || 'A';
-    var prefix = 'J'; // fallback
+    // 1. Intentar obtener categoría del perfil del entrenador (allRoles)
+    var cat = '';
+    var sub = 'A';
+    try {
+        var me = window._cronosCurrentUser;
+        if (me && me.allRoles) {
+            // Buscar el rol de entrenador (role='user' o role='coach')
+            var coachRole = me.allRoles.find(function(r) {
+                return r && (r.role === 'user' || r.role === 'coach');
+            });
+            if (coachRole) {
+                cat = coachRole.category || '';
+                sub = coachRole.subcategory || 'A';
+            }
+        }
+    } catch(e) {}
+
+    // 2. Fallback: usar la categoría del partido si el entrenador no tiene
+    if (!cat) cat = window._currentMatchCategory || '';
+    if (!sub || sub === 'A') sub = window._currentMatchSubcategory || 'A';
+
+    // 3. Mapear categoría a prefijo
+    var prefix = 'J'; // fallback si no hay categoría
     if (cat.includes('prebenjamin')) prefix = 'PR';
     else if (cat.includes('benjamin')) prefix = 'BJ';
     else if (cat.includes('alevin')) prefix = 'AL';
@@ -105,8 +128,9 @@ window._cronosGeneratePlayerId = function(index) {
     else if (cat.includes('cadete')) prefix = 'CD';
     else if (cat.includes('juvenil')) prefix = 'JV';
     else if (cat.includes('regional')) prefix = 'RG';
+
     var num = String(index + 1).padStart(2, '0');
-    return prefix + sub + num; // ej: PRA01, BJ-B02, IFC03
+    return prefix + sub + num; // ej: CDB01, PRA02, IFC03
 };
 
 function openRosterManager() {
