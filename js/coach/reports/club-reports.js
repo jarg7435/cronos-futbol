@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v3.0
+//  CHRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v3.0
 //  ADDED: Motor de Informes Visual — Gantt + Panel de Rotaciones +
 //         Cabecera completa con logo, marcador, fecha, venue, tiempo
 // ════════════════════════════════════════════════════════════════════
@@ -353,7 +353,7 @@ async function _sdLoadEvents(type) {
             const logo = `<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;justify-content:center;">
                 <span style="font-size:1.8rem;">${isC?'📋':'📅'}</span>
                 <div>
-                    <div style="font-size:1.1rem;font-weight:900;color:${isC?'var(--primary)':'#f0883e'};">CRONOS FÚTBOL</div>
+                    <div style="font-size:1.1rem;font-weight:900;color:${isC?'var(--primary)':'#f0883e'};">CHRONOS FÚTBOL</div>
                     <div style="font-size:0.75rem;color:var(--text-muted);">${isC?'CONVOCATORIA':isPlan?'PLANIFICACIÓN SEMANAL':'AVISO DE ENTRENAMIENTO'}</div>
                 </div>
             </div>`;
@@ -682,7 +682,7 @@ const _RP = (() => {
             `<div style="width:30px;height:30px;border-radius:50%;background:#0d1117;border:2px solid #3fb950;` +
             `display:flex;align-items:center;justify-content:center;flex-shrink:0;">${logoSVG}</div>` +
             `<div style="flex:1;">` +
-            `<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.7px;color:#3fb950;">CRONOS FÚTBOL</div>` +
+            `<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.7px;color:#3fb950;">CHRONOS FÚTBOL</div>` +
             `<div style="font-size:0.64rem;color:var(--text-muted);">Informe oficial post-partido · Generado automáticamente · No editable</div>` +
             `</div>` +
             `<div style="text-align:right;font-size:0.67rem;">` +

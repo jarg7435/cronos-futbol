@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Envío de convocatoria por WhatsApp / Email
+//  CHRONOS FÚTBOL — Envío de convocatoria por WhatsApp / Email
 //  v76: Fusión de whatsapp-email.js + convocation.js.
 //       convocation.js eliminado — todas sus funciones viven aquí.
 //       Añadido parámetro `target` en openConvocationMessage():

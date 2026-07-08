@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Sistema de Comunicación Entrenador ↔ Padres v1.0
+//  CHRONOS FÚTBOL — Sistema de Comunicación Entrenador ↔ Padres v1.0
 //  Colecciones Firestore:
 //    cronos_player_links/{clubId}_{playerNumber} → vincula padre con jugador
 //    cronos_messages/{coachUid}_{parentUid}      → hilo de mensajes

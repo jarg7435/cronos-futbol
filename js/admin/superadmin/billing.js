@@ -915,7 +915,7 @@ function _billPrintInvoice(inv) {
 
   <div class="header">
     <div>
-      <div class="brand">⚽ CRONOS FÚTBOL</div>
+      <div class="brand">⚽ CHRONOS FÚTBOL</div>
       <div class="brand-sub">Sistema de Gestión Deportiva</div>
     </div>
     <div class="inv-box">

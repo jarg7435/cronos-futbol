@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — cronos_patches.js  v10
+//  CHRONOS FÚTBOL — cronos_patches.js  v10
 //  Mejoras que se cargan siempre frescos (nunca cacheados)
 //
 //  Cambios v10 (desde v9):

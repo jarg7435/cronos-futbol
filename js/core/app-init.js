@@ -1212,15 +1212,7 @@ function selectForSubstitution(benchPlayer) {
 
 function confirmSubstitutionWith(fieldPlayer) {
     if (!pendingSubstitution) return;
-    const inPlayer = pendingSubstitution.player;
     handleSmartSwap(pendingSubstitution.player, fieldPlayer);
-    
-    // Registrar evento de partido para Firestore (para que los que entren tarde vean el cambio)
-    if (typeof _registerMatchEvent === 'function') {
-        _registerMatchEvent('sub_in', 'CAMBIO · Entra · ' + (inPlayer.name || 'Jugador'), '▼');
-        _registerMatchEvent('sub_out', 'CAMBIO · Sale · ' + (fieldPlayer.name || 'Jugador'), '▲');
-    }
-
     cancelPendingSubstitution();
     renderPlayers();
     liveSyncOnAction();
@@ -1759,7 +1751,7 @@ function copyLiveUrl() {
 function shareLiveWhatsApp(url) {
     const date = new Date().toLocaleDateString('es-ES');
     const msg  = encodeURIComponent(
-        `⚽ *CRONOS FÚTBOL — Partido en Vivo*\n` +
+        `⚽ *CHRONOS FÚTBOL — Partido en Vivo*\n` +
         `${TEAM_NAMES.home} vs ${TEAM_NAMES.away} · ${date}\n\n` +
         `Sigue el partido en tiempo real:\n${url}\n\n` +
         `_(Necesitas estar registrado en la app para verlo)_`);
@@ -2571,7 +2563,7 @@ function triggerRosterPhoto() {
 // ── OCR con Tesseract.js (100% local, sin API, sin coste) ───────────
 // Carga la librería solo cuando se necesita (lazy load)
 // ══════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Importación de plantilla con IA (Gemini Vision)
+//  CHRONOS FÚTBOL — Importación de plantilla con IA (Gemini Vision)
 //  Motor: Google Gemini 1.5 Flash (gratis hasta 1500 imgs/día)
 //  Fallback: Tesseract.js (100% local, sin límite)
 // ══════════════════════════════════════════════════════════════════
@@ -4536,7 +4528,7 @@ function logEvent(player, eventType) {
 
 
 // ══════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Panel SuperAdmin v3
+//  CHRONOS FÚTBOL — Panel SuperAdmin v3
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ✏️  DATOS DEL SUPERADMINISTRADOR — Rellenar antes de publicar
@@ -5982,7 +5974,7 @@ Destinatario: ${adminEmail || '⚠️ Sin email de admin definido'}
 window.saSendPaymentEmail = saSendPaymentEmail;
 
 // ══════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Envío de convocatoria por WhatsApp / Email
+//  CHRONOS FÚTBOL — Envío de convocatoria por WhatsApp / Email
 // ══════════════════════════════════════════════════════════════════
 
 function openConvocationMessage(target) {

@@ -10,7 +10,7 @@ function triggerRosterPhoto() {
 // ── OCR con Tesseract.js (100% local, sin API, sin coste) ───────────
 // Carga la librería solo cuando se necesita (lazy load)
 // ══════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Importación de plantilla con IA (Gemini Vision)
+//  CHRONOS FÚTBOL — Importación de plantilla con IA (Gemini Vision)
 //  Motor: Google Gemini 1.5 Flash (gratis hasta 1500 imgs/día)
 //  Fallback: Tesseract.js (100% local, sin límite)
 // ══════════════════════════════════════════════════════════════════

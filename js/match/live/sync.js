@@ -520,7 +520,7 @@ function copyLiveUrl() {
 function shareLiveWhatsApp(url) {
     const date = new Date().toLocaleDateString('es-ES');
     const msg  = encodeURIComponent(
-        `⚽ *CRONOS FÚTBOL — Partido en Vivo*\n` +
+        `⚽ *CHRONOS FÚTBOL — Partido en Vivo*\n` +
         `${TEAM_NAMES.home} vs ${TEAM_NAMES.away} · ${date}\n\n` +
         `Sigue el partido en tiempo real:\n${url}\n\n` +
         `_(Necesitas estar registrado en la app para verlo)_`);

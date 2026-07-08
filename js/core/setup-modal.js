@@ -18,7 +18,7 @@ function openSetupModal() {
             <!-- Cabecera -->
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
                 <div style="display:flex; align-items:center;">
-                    <img src="img/logo_cronos.png" style="height:40px; margin-right:12px; filter: drop-shadow(0 0 10px rgba(88,166,255,0.3));" onerror="this.style.display='none'">
+                    <img src="public/assets/logo.png" style="height:40px; margin-right:12px; filter: drop-shadow(0 0 10px rgba(88,166,255,0.3));" onerror="this.style.display='none'">
                     <span style="font-size:1.4rem; font-weight:900; color:var(--text); letter-spacing:-0.5px;">CRONOS <span style="color:#58a6ff;">FÚTBOL</span></span>
                 </div>
                 <button onclick="cerrarSesion()" style="background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:var(--text-muted); padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.75rem;">Cerrar Sesión</button>

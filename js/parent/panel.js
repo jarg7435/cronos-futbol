@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Panel de Padres/Madres v3
+//  CHRONOS FÚTBOL — Panel de Padres/Madres v3
 //  3 pestañas: 🔴 En Vivo · 📬 Mensajes · 👤 Mi Jugador
 // ════════════════════════════════════════════════════════════════════
 
@@ -1941,7 +1941,7 @@ window.ppNotifsByType = async function(type) {
                 <div style="text-align:center;margin-bottom:1.2rem;padding-bottom:1rem;border-bottom:1px solid rgba(255,255,255,0.08);">
                     <div style="font-size:2.2rem;margin-bottom:0.3rem;">${isC?'📋':'📅'}</div>
                     <div style="font-size:1.1rem;font-weight:900;letter-spacing:1px;color:${isC?'var(--primary)':'#f0883e'};">
-                        CRONOS FÚTBOL
+                        CHRONOS FÚTBOL
                     </div>
                     <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">
                         ${isC ? 'CONVOCATORIA OFICIAL' : isPlan ? 'PLANIFICACIÓN SEMANAL' : 'AVISO DE ENTRENAMIENTO'}
