@@ -253,12 +253,11 @@
             margin-bottom: 1px;
             white-space: nowrap;
         }
-        /* chip-goal: badge de goles.
-           v251: posicionado JUSTO POR ENCIMA DEL NÚMERO, a la derecha.
-           top: 20% = parte superior de la ficha pero NO centro (50%).
-           Así queda entre el cronómetro (arriba) y el número (centro). */
-        .chip-goal::after {
-            content: attr(data-goal-label) !important;
+        /* v252: badge de goles usando un <span> separado (NO ::after).
+           Esto permite que coexista con tarjeta amarilla/roja que también
+           usan ::after. El span se posiciona a la derecha de la ficha,
+           justo por encima del número (top: 20%). */
+        .goal-badge {
             position: absolute !important;
             top: 20% !important;
             right: -22px !important;
@@ -272,6 +271,7 @@
             white-space: nowrap !important;
             border: 1px solid rgba(255,255,255,0.3) !important;
             z-index: 36 !important;
+            pointer-events: none;
         }
         /* Indicadores de tarjeta amarilla/roja — más grandes para mejor visibilidad */
         .chip-yellow::after { content: '🟨'; position:absolute; bottom:-8px; right:-8px; font-size:1rem; z-index:35; }
@@ -308,8 +308,8 @@
                 padding: 3px 8px;
                 font-weight: 800;
             }
-            /* v251: Icono de gol justo por encima del número, a la derecha */
-            .chip-goal::after {
+            /* v252: Icono de gol (span) justo por encima del número, a la derecha */
+            .goal-badge {
                 font-size: 0.82rem !important;
                 top: 20% !important;
                 right: -30px !important;
@@ -2636,7 +2636,12 @@ function renderField(data) {
         const hasYellow = p.cards === 'amarilla';
         const hasRed    = p.cards === 'roja';
         const isInjured = p.injured === true;
-        let chipClass   = hasRed ? 'chip-red' : hasYellow ? 'chip-yellow' : hasGoal ? 'chip-goal' : '';
+        // v252: permitir MÚLTIPLES clases (no solo una con ternario).
+        // Antes: hasRed ? 'chip-red' : hasYellow ? 'chip-yellow' : hasGoal ? 'chip-goal' : ''
+        // Eso hacía que si un jugador tenía amarilla + gol, solo mostraba la amarilla.
+        let chipClass   = '';
+        if (hasRed) chipClass += ' chip-red';
+        if (hasYellow) chipClass += ' chip-yellow';
         if (isInjured) chipClass += ' chip-injured';
         const goalLabel = hasGoal ? `⚽×${goals}` : '';
 
@@ -2650,9 +2655,9 @@ function renderField(data) {
         return `<div class="live-player" style="left:${xPct}%;top:${yPct}%;">
             <div class="live-player-time" data-base-time="${timeSec}" style="background:${timerBg}; color:${timerText};">${formatTime(timeSec)}</div>
             <div class="live-player-chip ${chipClass}"
-                 data-goal-label="${goalLabel}"
                  style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%);color:${text};">
                 ${escapeHtml(p.number)}
+                ${hasGoal ? `<span class="goal-badge">${goalLabel}</span>` : ''}
             </div>
             <div class="live-player-label">${escapeHtml(p.name)}</div>
         </div>`;
