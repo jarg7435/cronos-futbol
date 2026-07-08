@@ -391,11 +391,11 @@ class ReportGenerator {
 <div class="report-header">
     <div>
         <div class="report-title">INFORME DE PARTIDO</div>
-        <div class="report-subtitle">Cronos Fútbol — Asistente de Entrenadores</div>
+        <div class="report-subtitle">Chronos Fútbol — Asistente de Entrenadores</div>
     </div>
     <div class="brand">
         Generado: ${new Date().toLocaleString('es-ES')}<br>
-        Ref: CRONOS-${Date.now().toString(36).toUpperCase()}
+        Ref: CHRONOS-${Date.now().toString(36).toUpperCase()}
     </div>
 </div>
 
@@ -503,7 +503,7 @@ ${legendHTML}
 
 <!-- Footer -->
 <div class="report-footer">
-    Informe generado automáticamente por Cronos Fútbol — Asistente de Entrenadores
+    Informe generado automáticamente por Chronos Fútbol — Asistente de Entrenadores
 </div>
 
 <!-- Botón imprimir (solo en pantalla, no se imprime) -->
