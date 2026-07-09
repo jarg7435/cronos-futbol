@@ -2603,7 +2603,19 @@ async function openContactManager() {
 
         // --- CARGAR PLANTILLA PARA VINCULACIÓN ---
         const rosterData = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
-        const currentSquad = rosterData[currentMode || 'f11'] || [];
+        const _modeKey = currentMode || 'f11';
+        // v263: regenerar IDs de la plantilla con el formato correcto (categoria+subcategoria)
+        // antes de mostrarlos en el desplegable de contactos.
+        if (rosterData[_modeKey] && typeof window._cronosGeneratePlayerId === 'function') {
+            rosterData[_modeKey].forEach((p, i) => {
+                var newId = window._cronosGeneratePlayerId(i);
+                if (p.id !== newId) {
+                    p.id = newId;
+                }
+            });
+            localStorage.setItem('cronos_master_roster', JSON.stringify(rosterData));
+        }
+        const currentSquad = rosterData[_modeKey] || [];
         window._cronos_squad_cache = currentSquad; // Caché global para renderParentRowMarkup
 
         modal.innerHTML = `
