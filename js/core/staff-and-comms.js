@@ -111,12 +111,18 @@ window._cronosGeneratePlayerId = function(index) {
             // Buscar el rol de entrenador cuya categoría coinca con la modalidad actual
             var coachRole = me.allRoles.find(function(r) {
                 if (!r || (r.role !== 'user' && r.role !== 'coach')) return false;
-                // La categoría del rol empieza con 'f7_' o 'f11_'
-                var rcat = r.category || '';
-                if (mode === 'f7' && rcat.startsWith('f7_')) return true;
-                if (mode === 'f11' && rcat.startsWith('f11_')) return true;
-                // Si la categoría no tiene prefijo de modalidad, aceptarla igual
-                if (!rcat.startsWith('f7_') && !rcat.startsWith('f11_') && rcat) return true;
+                // v259: aceptar categoría con o sin prefijo de modalidad.
+                // El dropdown auth-category guarda 'alevin', 'cadete', etc. (sin f7_/f11_).
+                // Pero el dropdown match-category guarda 'f7_alevin', 'f11_cadete', etc.
+                // Aceptamos ambos formatos.
+                var rcat = (r.category || '').toLowerCase();
+                if (!rcat) return false;
+                // Quitar prefijo de modalidad si lo tiene
+                var rcatBase = rcat.replace(/^f7_/, '').replace(/^f11_/, '');
+                // Coincidir si la categoría base no está vacía
+                // (no filtramos por modalidad porque el dropdown auth-category
+                // no distingue F7/F11 — la categoría es la misma)
+                if (rcatBase) return true;
                 return false;
             });
             if (coachRole) {
