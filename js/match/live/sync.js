@@ -78,6 +78,21 @@ async function startLiveSync() {
     // E4: nuevo partido en vivo → liberar el guard de despacho de informes.
     window._cronosLastDispatchedMatch = null;
 
+    // v264: Limpiar el array events del documento en Firestore al empezar
+    // un partido nuevo. Sin esto, los eventos de partidos anteriores con el
+    // mismo matchId (mismo equipo + misma fecha + mismo rival) se acumulan
+    // y el usuario ve eventos de partidos anteriores en el historial.
+    // También limpiar la caché local de eventos.
+    window._cronosMatchEvents = [];
+    _eventsLoadedFromFirestore = false;
+    try {
+        const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        await setDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] }, { merge: true });
+        console.log('[v264] Array events limpiado para nuevo partido:', liveMatchId);
+    } catch(e) {
+        console.warn('[v264] Error limpiando events:', e);
+    }
+
     // Guardar el snapshot inicial
     await pushLiveSnapshot('active');
 
