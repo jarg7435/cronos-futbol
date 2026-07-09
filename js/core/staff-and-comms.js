@@ -92,21 +92,32 @@ function renderStaffInBench() {
     benchList.appendChild(card);
 }
 
-// v257: Generar ID de jugador basado en la CATEGORÍA Y SUBCATEGORÍA DEL ENTRENADOR
-// (no del selector del partido). El entrenador tiene su categoría registrada
-// en allRoles (ej: {role:'user', category:'f11_cadete', subcategory:'B'}).
-// Si el entrenador no tiene categoría en su perfil, usa la del partido como fallback.
-// Mapeo: prebenjamin=PR, benjamin=BJ, alevin=AL, infantil=IF, cadete=CD, juvenil=JV, regional=RG
+// v258: Generar ID de jugador basado en la CATEGORÍA Y SUBCATEGORÍA DEL ENTRENADOR
+// filtrando por la MODALIDAD actual (F7 o F11). Si el entrenador tiene
+// Juvenil B (F11) y crea una plantilla F7, NO debe usar JVB sino la categoría
+// F7 que tenga registrada (si la tiene). Si no tiene ninguna F7, usa fallback.
 window._cronosGeneratePlayerId = function(index) {
-    // 1. Intentar obtener categoría del perfil del entrenador (allRoles)
     var cat = '';
     var sub = 'A';
+    var mode = 'f7'; // default
+    try {
+        var modeEl = document.getElementById('setup-mode');
+        if (modeEl) mode = modeEl.value || 'f7';
+    } catch(e) {}
+
     try {
         var me = window._cronosCurrentUser;
         if (me && me.allRoles) {
-            // Buscar el rol de entrenador (role='user' o role='coach')
+            // Buscar el rol de entrenador cuya categoría coinca con la modalidad actual
             var coachRole = me.allRoles.find(function(r) {
-                return r && (r.role === 'user' || r.role === 'coach');
+                if (!r || (r.role !== 'user' && r.role !== 'coach')) return false;
+                // La categoría del rol empieza con 'f7_' o 'f11_'
+                var rcat = r.category || '';
+                if (mode === 'f7' && rcat.startsWith('f7_')) return true;
+                if (mode === 'f11' && rcat.startsWith('f11_')) return true;
+                // Si la categoría no tiene prefijo de modalidad, aceptarla igual
+                if (!rcat.startsWith('f7_') && !rcat.startsWith('f11_') && rcat) return true;
+                return false;
             });
             if (coachRole) {
                 cat = coachRole.category || '';
@@ -115,12 +126,11 @@ window._cronosGeneratePlayerId = function(index) {
         }
     } catch(e) {}
 
-    // 2. Fallback: usar la categoría del partido si el entrenador no tiene
+    // Fallback: usar la categoría del partido
     if (!cat) cat = window._currentMatchCategory || '';
     if (!sub || sub === 'A') sub = window._currentMatchSubcategory || 'A';
 
-    // 3. Mapear categoría a prefijo
-    var prefix = 'J'; // fallback si no hay categoría
+    var prefix = 'J';
     if (cat.includes('prebenjamin')) prefix = 'PR';
     else if (cat.includes('benjamin')) prefix = 'BJ';
     else if (cat.includes('alevin')) prefix = 'AL';
@@ -130,7 +140,7 @@ window._cronosGeneratePlayerId = function(index) {
     else if (cat.includes('regional')) prefix = 'RG';
 
     var num = String(index + 1).padStart(2, '0');
-    return prefix + sub + num; // ej: CDB01, PRA02, IFC03
+    return prefix + sub + num;
 };
 
 function openRosterManager() {
