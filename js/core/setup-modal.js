@@ -7,10 +7,58 @@
 //        - Listener en equipos guardados para re-sincronizar
 // ══════════════════════════════════════════════════════════════════
 
+// v261: Variable global para recordar qué modalidades tiene permitidas el entrenador.
+window._cronosAllowedModes = ['f7', 'f11']; // por defecto, ambas
+
 function openSetupModal() {
     document.body.classList.add('setup-mode');
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
+
+    // v261: Limitar la modalidad según la categoría del entrenador.
+    // Si el entrenador tiene categoría F7 (prebenjamin, benjamin, alevin),
+    // solo puede crear partidos F7. Si tiene F11 (infantil, cadete, juvenil,
+    // regional), solo puede crear F11. Si tiene ambas, puede elegir.
+    try {
+        var me = window._cronosCurrentUser;
+        var hasF7 = false, hasF11 = false;
+        if (me && me.allRoles) {
+            me.allRoles.forEach(function(r) {
+                if (!r || (r.role !== 'user' && r.role !== 'coach')) return;
+                var rcat = (r.category || '').toLowerCase();
+                // Categorías F7: prebenjamin, benjamin, alevin
+                // Categorías F11: infantil, cadete, juvenil, regional
+                // (aceptamos también con prefijo f7_/f11_)
+                if (rcat.includes('prebenjamin') || rcat.includes('benjamin') || rcat.includes('alevin')) hasF7 = true;
+                if (rcat.includes('infantil') || rcat.includes('cadete') || rcat.includes('juvenil') || rcat.includes('regional')) hasF11 = true;
+                if (rcat.startsWith('f7_')) hasF7 = true;
+                if (rcat.startsWith('f11_')) hasF11 = true;
+            });
+        }
+        // Guardar modalidades permitidas en variable global
+        if (hasF7 && !hasF11) {
+            window._cronosAllowedModes = ['f7'];
+        } else if (hasF11 && !hasF7) {
+            window._cronosAllowedModes = ['f11'];
+        } else {
+            window._cronosAllowedModes = ['f7', 'f11'];
+        }
+        // Aplicar restricción al desplegable
+        setTimeout(function() {
+            var modeSel = document.getElementById('setup-mode');
+            if (!modeSel) return;
+            var allowed = window._cronosAllowedModes;
+            var options = '';
+            if (allowed.indexOf('f7') >= 0) options += '<option value="f7">Fútbol  7</option>';
+            if (allowed.indexOf('f11') >= 0) options += '<option value="f11">Fútbol  11</option>';
+            modeSel.innerHTML = options;
+            modeSel.value = allowed[0];
+            // Desactivar el desplegable si solo hay una opción
+            modeSel.disabled = (allowed.length === 1);
+            console.log('[v261] Modalidades permitidas:', allowed.join(', '));
+            if (typeof syncSetupMode === 'function') syncSetupMode(modeSel.value);
+        }, 100);
+    } catch(e) { console.warn('[v261] Error limitando modalidad:', e); }
     
     modal.style.display = 'flex';
     modal.innerHTML = `
