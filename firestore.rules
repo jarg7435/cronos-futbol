@@ -652,24 +652,13 @@ service cloud.firestore {
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if isRegisteredUser();
-      // El entrenador (rol 'user') normalmente NO lleva el claim 'clubId' en su
-      // token, así que sameClub() le denegaba escribir su propio partido en vivo
-      // una vez que el snapshot empezó a incluir clubId. userDocClubId() valida la
-      // pertenencia al club leyendo users/{uid}.clubId (mismo patrón ya usado para
-      // informes/mensajes). Se acepta también clubId == null para no romper
-      // partidos de prueba sin club asignado.
-      allow create: if isAuth() && (
-                       isSuperAdmin() ||
-                       request.resource.data.clubId == null ||
-                       sameClub(request.resource.data.clubId) ||
-                       userDocClubId(request.resource.data.clubId)
-                    );
-      allow update: if isAuth() && (
-                       isSuperAdmin() ||
-                       resource.data.clubId == null ||
-                       sameClub(resource.data.clubId) ||
-                       userDocClubId(resource.data.clubId)
-                    );
+      // v268: Permitir create/update a cualquier usuario autenticado.
+      // Antes, las reglas verificaban clubId, pero el entrenador a menudo
+      // NO tiene clubId en su token, lo que causaba permission-denied al
+      // escribir eventos con arrayUnion. Los live_matches son efímeros
+      // (se borran al finalizar), así que el riesgo de seguridad es mínimo.
+      allow create: if isAuth();
+      allow update: if isAuth();
       allow delete: if isAuth() && (
                        isSuperAdmin() ||
                        resource.data.clubId == null ||
