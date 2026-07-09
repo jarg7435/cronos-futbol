@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // utils.js — Funciones de utilidad y seguridad
-// Cronos Fútbol — v5.1
+// Chronos Fútbol — v5.1
 // ════════════════════════════════════════════════════════════════
 
 // ── SECURITY FIX (SEC-M04): Polyfills de escape HTML ──────────
@@ -84,9 +84,10 @@ if (typeof window._cronosBuildLiveMatchId !== 'function') {
         // pasado explícitamente (binding léxico `liveMatchId` de los scripts
         // clásicos, que NO es window.liveMatchId) como window.liveMatchId.
         const existing = opts.existing || (typeof window.liveMatchId === 'string' ? window.liveMatchId : '');
-        if (!opts.forceNew && existing) {
-            return existing;
-        }
+        // v266: NUNCA reutilizar el ID existente. Siempre generar uno nuevo
+        // con la hora actual para que cada partido tenga un ID Único.
+        // Antes, si existing tenía valor, reutilizaba el ID del partido
+        // anterior (sin hora), lo que mezclaba los eventos.
         const slugify = (str) => (str || 'equipo')
             .toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
