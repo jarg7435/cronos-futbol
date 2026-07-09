@@ -163,10 +163,17 @@ function openRosterManager() {
         }
     }
 
-    // Asegurar que TODOS tengan un ID (migración para los ya guardados)
+    // v260: REGENERAR TODOS los IDs con el formato correcto (categoria+subcategoria).
+    // Antes solo se generaban IDs para slots vacíos, pero los ya guardados
+    // seguían con J-01. Ahora regeneramos TODOS.
     roster[mode].forEach((p, i) => {
-        if (!p.id) p.id = window._cronosGeneratePlayerId(i);
+        var newId = window._cronosGeneratePlayerId(i);
+        if (p.id !== newId) {
+            console.log('[v260] ID actualizado:', p.id, '→', newId);
+            p.id = newId;
+        }
     });
+    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
 
     const modal = document.getElementById('setup-modal');
     modal.innerHTML = `
