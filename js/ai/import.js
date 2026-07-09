@@ -407,13 +407,13 @@ function saveMasterRoster(mode) {
         const rows = document.querySelectorAll('#roster-tbody tr');
         const playersData = Array.from(rows).map(row => {
             const id      = row.querySelector('.r-id')?.value || '';
-            const number  = row.querySelector('.r-num').value;
-            const name    = (row.querySelector('.r-name').value || '').trim();
-            const surname = (row.querySelector('.r-surname').value || '').trim();
-            let   alias   = (row.querySelector('.r-alias').value || '').trim();
-            // Auto-rellenar alias si está vacío: primer apellido o nombre
-            if (!alias && surname) alias = surname.split(' ')[0];
-            if (!alias && name)    alias = name.split(' ')[0];
+            const number  = row.querySelector('.r-num')?.value || '';
+            const name    = (row.querySelector('.r-name')?.value || '').trim();
+            // v263: la columna APELLIDOS fue eliminada en v256. Usar optional chaining.
+            const surname = (row.querySelector('.r-surname')?.value || '').trim();
+            let   alias   = (row.querySelector('.r-alias')?.value || '').trim();
+            // Auto-rellenar alias si está vacío: usar el nombre
+            if (!alias && name) alias = name.split(' ')[0];
             return { id, number, name, surname, alias };
         });
         const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
