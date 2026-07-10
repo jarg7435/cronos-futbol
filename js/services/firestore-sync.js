@@ -39,10 +39,15 @@ async function startLiveSync() {
     // y los eventos se mezclan en el historial.
     const _hourSlug = String(now.getHours()).padStart(2,'0') +
                       String(now.getMinutes()).padStart(2,'0');
+    // v269: FIX SyntaxError — el parche v267 dejó el ternario con DOS ramas ':'
+    // (añadió el fallback nuevo con _hourSlug pero no eliminó el antiguo), lo que
+    // impedía cargar el archivo entero. Se deja un único ?: válido. _hourSlug SE
+    // CONSERVA: _cronosBuildLiveMatchId deriva su sufijo de un hash determinista de
+    // (uid|equipo|fecha|rival|convocatoria) SIN componente horario, así que dos
+    // partidos idénticos el mismo día colisionarían sin la hora.
     liveMatchId        = (typeof window._cronosBuildLiveMatchId === 'function')
         ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: null, uid: _uidSlug }) + '-' + _hourSlug
-        : `${slugify(TEAM_NAMES.home)}-${String(now.getDate()).padStart(2,'0')}${String(now.getMonth()+1).padStart(2,'0')}${now.getFullYear()}-${_uidSlug.substring(0,4)}-${_hourSlug}`
-        : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}`;
+        : `${slugify(TEAM_NAMES.home)}-${String(now.getDate()).padStart(2,'0')}${String(now.getMonth()+1).padStart(2,'0')}${now.getFullYear()}-${_uidSlug.substring(0,4)}-${_hourSlug}`;
     liveIsActive       = true;
     liveMatchStartTime = new Date().toISOString(); // ← fijar hora de inicio (no cambia)
     // E4: nuevo partido en vivo → liberar el guard de despacho de informes.

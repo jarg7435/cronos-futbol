@@ -165,7 +165,7 @@ async function openStaffDashboard() {
             <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
             <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
             <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
-            <button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>
+            ${activeRole === 'director' ? `<button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>` : ''}
             <button onclick="openLiveMatchesView()" class="staff-tab"
                 style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
                 🔴 En Vivo</button>
@@ -1405,7 +1405,7 @@ async function _sdLoadReports() {
         // IMPORTANTE: NO filtrar por me.uid a secas porque si dos roles
         // comparten el mismo uid (o versiones antiguas lo guardaron sin rol)
         // se borraría para ambos.
-        const currentRole = me.currentRole || me.role || 'staff';
+        const currentRole = me._activeRole || me.role || 'staff'; // v269: usar rol ACTIVO (no me.currentRole) para que Director/Coordinador borren informes de forma independiente
         const dismissKey = `${me.uid}_${currentRole}`;
 
         const snap = { empty: true, forEach: (fn) => {
@@ -1576,7 +1576,7 @@ async function _sdLoadReports() {
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
             
-            const currentRole = me.currentRole || me.role || 'staff';
+            const currentRole = me._activeRole || me.role || 'staff'; // v269: usar rol ACTIVO (no me.currentRole) para que Director/Coordinador borren informes de forma independiente
             const dismissKey = `${me.uid}_${currentRole}`;
 
             const match = window._sdMatchData[key64];
