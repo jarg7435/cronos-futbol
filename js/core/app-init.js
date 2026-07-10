@@ -44,14 +44,14 @@ async function loadAccessCode() {
             ACCESS_CODE = data.code || '';
             _accessCodeLoaded = true;
         } else {
-            console.warn('[Cronos] No se encontró cronos_config/access en Firestore — usando código vacío');
+            console.warn('[Chronos] No se encontró cronos_config/access en Firestore — usando código vacío');
             _accessCodeLoaded = true;
         }
     } catch(e) {
         // Si falla por permisos es comportamiento esperado (usuario no autenticado aún).
         // El reintento se produce automáticamente tras login vía _retryAccessCodeLoad().
         if (e.code !== 'permission-denied' && !(e.message && e.message.includes('permission'))) {
-            console.error('[Cronos] Error cargando ACCESS_CODE:', e);
+            console.error('[Chronos] Error cargando ACCESS_CODE:', e);
         }
     }
 }
@@ -1236,7 +1236,7 @@ function cancelPendingSubstitution() {
 
 const TUTORIAL_STEPS = [
     {
-        title: '👋 Bienvenido a Cronos Fútbol',
+        title: '👋 Bienvenido a Chronos Fútbol',
         text:  'Este tutorial te enseñará a usar todas las funciones de la app en menos de 2 minutos. Puedes cerrarlo en cualquier momento y volver cuando quieras.',
         target: null,
         position: 'center'
@@ -1474,9 +1474,14 @@ async function startLiveSync() {
     // FIX (Problema 1): ID DETERMINISTA — SIN Math.random(). Reutiliza el id
     // existente o deriva el sufijo de uid+fecha+equipo (+rival+convocatoria).
     const _uidSlug = (window._cronosCurrentUser && window._cronosCurrentUser.uid) || 'u';
+    // v269: Añadir la HORA al matchId para que cada partido tenga un ID ÚNICO.
+    // Sin esto, dos partidos del mismo equipo el mismo día tienen el mismo ID
+    // y los eventos se mezclan en el historial.
+    const _hourSlug = String(now.getHours()).padStart(2,'0') +
+                      String(now.getMinutes()).padStart(2,'0');
     liveMatchId    = (typeof window._cronosBuildLiveMatchId === 'function')
-        ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: liveMatchId, uid: _uidSlug })
-        : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}`;
+        ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: null, uid: _uidSlug }) + '-' + _hourSlug
+        : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}-${_hourSlug}`;
     liveIsActive = true;
 
     // Guardar el snapshot inicial
@@ -1766,8 +1771,8 @@ function shareLiveEmail(url) {
         `Hola,\n\n` +
         `Puedes seguir el partido en tiempo real desde este enlace:\n${url}\n\n` +
         `${TEAM_NAMES.home} vs ${TEAM_NAMES.away} · ${date}\n\n` +
-        `Necesitas estar registrado y autorizado en Cronos Fútbol para acceder.\n\n` +
-        `Cronos Fútbol — Coach Assistant`);
+        `Necesitas estar registrado y autorizado en Chronos Fútbol para acceder.\n\n` +
+        `Chronos Fútbol — Coach Assistant`);
     const to = emailConfig?.directorEmail || '';
     window.open(`mailto:${to}?subject=${subject}&body=${body}`);
 }
@@ -1784,7 +1789,7 @@ window.notifyAllLiveContacts = function(url) {
         `⚽ *PARTIDO EN VIVO — ${TEAM_NAMES.home} vs ${TEAM_NAMES.away}*\n` +
         `📅 ${date}\n\n` +
         `Sigue el partido en tiempo real aquí:\n${url}\n\n` +
-        `_Cronos Fútbol_`);
+        `_Chronos Fútbol_`);
     let opened = 0;
     liveContacts.forEach((c, i) => {
         // Abrimos ventanas escalonadas para no bloquear pop-ups
@@ -2097,7 +2102,7 @@ function registerServiceWorker() {
                         // Nueva versión lista → guardar sesión y recargar automáticamente
                         sessionStorage.setItem('cronos_post_update', '1');
                         const toast = document.createElement('div');
-                        toast.innerHTML = '🔄 Actualizando Cronos Fútbol…';
+                        toast.innerHTML = '🔄 Actualizando Chronos Fútbol…';
                         toast.style.cssText =
                             'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
                             'background:#1a7a3e;color:#fff;padding:10px 24px;border-radius:8px;' +
@@ -2317,7 +2322,7 @@ function updateTrainingPreview() {
     const audience = isParents ? 'familia! 👋' : '! 👋';
     let msg = `${greeting} ${audience}\n\n🏃 *PLANIFICACIÓN SEMANAL*\n\n${weekText}`;
     if (extra) msg += `\n💬 ${extra}\n`;
-    msg += `\n_Cronos Fútbol_ ⚽`;
+    msg += `\n_Chronos Fútbol_ ⚽`;
     preview.textContent = msg;
 }
 
@@ -4534,7 +4539,7 @@ function logEvent(player, eventType) {
 //  ✏️  DATOS DEL SUPERADMINISTRADOR — Rellenar antes de publicar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const SA_CONFIG = {
-    nombre:      'TU_NOMBRE_O_NOMBRE_COMERCIAL',   // ej: "José · Cronos Fútbol"
+    nombre:      'TU_NOMBRE_O_NOMBRE_COMERCIAL',   // ej: "José · Chronos Fútbol"
     bizum:       'TU_NUMERO_BIZUM',                // ej: "612 345 678"
     iban:        'TU_IBAN',                        // ej: "ES12 3456 7890 1234 5678 9012"
     whatsapp:    'TU_NUMERO_WHATSAPP',             // ej: "34612345678" (sin + ni espacios)
@@ -4692,7 +4697,7 @@ async function openSuperAdminPanel() {
     <div class="modal-content sa-modal">
       <div class="sa-topbar">
         <div>
-          <div style="font-size:1.2rem;font-weight:700;">⚙️ SuperAdmin · Cronos Fútbol</div>
+          <div style="font-size:1.2rem;font-weight:700;">⚙️ SuperAdmin · Chronos Fútbol</div>
           <div id="sa-subtitle" style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">
             Cargando…</div>
         </div>
@@ -5819,13 +5824,13 @@ async function saSendPaymentEmail(id, type) {
 
     // ── Contenido del email ──────────────────────────────────────
     const subject = encodeURIComponent(
-        `Cronos Fútbol — Aviso de renovación · ${name}`
+        `Chronos Fútbol — Aviso de renovación · ${name}`
     );
 
     const body = encodeURIComponent(
 `Hola,
 
-Te contacto en relación a tu plan de Cronos Fútbol para el club "${name}".
+Te contacto en relación a tu plan de Chronos Fútbol para el club "${name}".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
   DETALLES DEL PLAN
@@ -5861,7 +5866,7 @@ ${SA_CONFIG.email}
 
     // ── Contenido de WhatsApp ────────────────────────────────────
     const waText = encodeURIComponent(
-`Hola 👋 te escribo desde Cronos Fútbol.
+`Hola 👋 te escribo desde Chronos Fútbol.
 
 📋 *Aviso de renovación — ${name}*
 • Plan: ${plan.label}
@@ -6214,7 +6219,7 @@ function buildConvocationText() {
         msg += `💬 ${extra}\n\n`;
     }
 
-    msg += `_Cronos Fútbol_ ⚽`;
+    msg += `_Chronos Fútbol_ ⚽`;
     return msg;
 }
 
