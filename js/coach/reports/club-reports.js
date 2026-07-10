@@ -832,37 +832,44 @@ const _RP = (() => {
             });
 
             // Barras de tiempo en campo (azul) + etiquetas de cambio
-            periods.forEach(([a, b]) => {
+            // v271: Renderizar períodos con etiquetas de sustitución NO superpuestas.
+            // Cuando hay cambios grupales (mismo minuto), alternar las posiciones Y
+            // de las etiquetas para que no se sobrepongan.
+            periods.forEach(([a, b], periodIdx) => {
                 const px = a * sc, pw = Math.max(2, (b - a) * sc);
                 svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${pw.toFixed(1)}"
                     height="${TRACK_H}" rx="3" fill="#58a6ff" fill-opacity="0.82"/>`;
 
                 // Inicio de barra desde banquillo (sub_in)
                 if (a > 0.15) {
-                    const outName = findNear(subInMap, aliasKey, a); // Nombre del que salió
+                    const outName = findNear(subInMap, aliasKey, a);
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#3fb950" stroke-width="1.8"/>`;
                     
-                    // v219: Texto Verde (el que entra, alias) abajo — ▼ hacia el campo
-                    svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${alias} ${Math.floor(a)}'</text>`;
+                    // v271: Alternar posición Y para evitar superposición
+                    const yGreen = TRACK_Y + TRACK_H + 11 + (periodIdx % 2 === 0 ? 0 : 8);
+                    const yRed   = TRACK_Y - 7 - (periodIdx % 2 === 0 ? 0 : 8);
                     
-                    // v219: Texto Rojo (el que sale, outName) arriba — ▲ hacia fuera
+                    svg += `<text x="${(px+3).toFixed(1)}" y="${yGreen}" font-size="7" fill="#3fb950" font-weight="700">▼ ${alias} ${Math.floor(a)}'</text>`;
+                    
                     if (outName) {
-                        svg += `<text x="${(px-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${outName} ▲</text>`;
+                        svg += `<text x="${(px-3).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${outName} ▲</text>`;
                     }
                 }
 
                 // Fin de barra antes del final (sub_out)
                 if (b < totMin - 0.3) {
-                    const inpName = findNear(subOutMap, aliasKey, b); // Nombre del que entró
+                    const inpName = findNear(subOutMap, aliasKey, b);
                     const ex = px + pw;
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#ff5858" stroke-width="1.8"/>`;
                     
-                    // v219: Texto Rojo (el que sale, alias) arriba — ▲ hacia fuera
-                    svg += `<text x="${(ex-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▲</text>`;
+                    // v271: Alternar posición Y
+                    const yRed   = TRACK_Y - 7 - (periodIdx % 2 === 0 ? 0 : 8);
+                    const yGreen = TRACK_Y + TRACK_H + 11 + (periodIdx % 2 === 0 ? 0 : 8);
                     
-                    // v219: Texto Verde (el que entra, inpName) abajo — ▼ hacia el campo
+                    svg += `<text x="${(ex-3).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▲</text>`;
+                    
                     if (inpName) {
-                        svg += `<text x="${(ex+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${inpName}</text>`;
+                        svg += `<text x="${(ex+3).toFixed(1)}" y="${yGreen}" font-size="7" fill="#3fb950" font-weight="700">▼ ${inpName}</text>`;
                     }
                 }
             });
@@ -877,9 +884,21 @@ const _RP = (() => {
                     text-anchor="${mn===0?'start':mn===totMin?'end':'middle'}">${mn}'</text>`;
             });
 
-            // Eventos sobre la barra (goles, tarjetas, lesiones) con tiempo exacto
+            // v272: Eventos sobre la barra (goles, tarjetas, lesiones).
+            // Los goles SOLO se muestran si el jugador estaba en el campo (azul)
+            // en el momento del evento. Las tarjetas y lesiones se muestran
+            // siempre (pueden ocurrir en el banquillo).
             (p.history || [])
                 .filter(e => ['goal','yellow','red','injury'].includes(e.type))
+                .filter(e => {
+                    // v272: Si es un gol, verificar que el jugador estaba en el campo.
+                    if (e.type === 'goal') {
+                        const ef = (e.minute||0) + (e.second||0)/60;
+                        const wasOnField = periods.some(([a, b]) => ef >= a && ef <= b);
+                        if (!wasOnField) return false; // No mostrar gol si estaba en banquillo
+                    }
+                    return true; // Tarjetas y lesiones se muestran siempre
+                })
                 .forEach(ev => {
                     const ef = (ev.minute||0) + (ev.second||0)/60;
                     const ex = ef * sc;
