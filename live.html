@@ -2120,12 +2120,12 @@ async function refreshBackgroundWatchers() {
             _bgWatchers[m.id] = onSnapshot(doc(db, "live_matches", m.id), (s2) => {
                 if (!s2.exists()) return;
                 const data = s2.data();
-                // El partido que se esta viendo lo procesa EXCLUSIVAMENTE el
-                // listener de loadMatch (via detectAndAlert -> renderMatch). El
-                // watcher de fondo se desentiende por completo de ese partido para
-                // no competir por _matchPrevState (evita falsos negativos por orden
-                // de callbacks no determinista entre ambos listeners).
-                if (m.id === currentMatchId) return;
+                // v274: SOLO procesar eventos del partido que se está viendo.
+                // Antes, el background watcher llamaba a detectAndAlert para TODOS
+                // los partidos en vivo, lo que hacía que los eventos de un partido
+                // (ej: DORAMAS) aparecieran en el historial de otro (ej: ARINAGA 11).
+                // Ahora, si no es el partido actual, NO procesar nada.
+                if (m.id !== currentMatchId) return;
                 detectAndAlert(m.id, data, s2.metadata && s2.metadata.fromCache);
             }, () => {});
         });
