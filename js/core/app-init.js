@@ -1474,11 +1474,7 @@ async function startLiveSync() {
     // FIX (Problema 1): ID DETERMINISTA — SIN Math.random(). Reutiliza el id
     // existente o deriva el sufijo de uid+fecha+equipo (+rival+convocatoria).
     const _uidSlug = (window._cronosCurrentUser && window._cronosCurrentUser.uid) || 'u';
-    // v269: Añadir la HORA al matchId para que cada partido tenga un ID ÚNICO.
-    // Sin esto, dos partidos del mismo equipo el mismo día tienen el mismo ID
-    // y los eventos se mezclan en el historial.
-    const _hourSlug = String(now.getHours()).padStart(2,'0') +
-                      String(now.getMinutes()).padStart(2,'0');
+    const _hourSlug = String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
     liveMatchId    = (typeof window._cronosBuildLiveMatchId === 'function')
         ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: null, uid: _uidSlug }) + '-' + _hourSlug
         : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}-${_hourSlug}`;
