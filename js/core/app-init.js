@@ -4465,55 +4465,14 @@ function handleBenchDrop(e, player) {
     renderPlayers();
 }
 
-function handleSmartSwap(dragged, target) {
-    if (dragged.cards === 'roja') {
-        if (target.status === 'bench') {
-            dragged.status = 'bench'; dragged.x = 0; dragged.y = 0;
-            if (isRunning) logMovement(dragged);
-            renderPlayers(); sortBenchUI(dragged.team); return;
-        } else {
-            alert("Un jugador expulsado no puede volver al campo."); return;
-        }
-    }
-    if (target.cards === 'roja') { alert("No se puede realizar cambios con un jugador expulsado."); return; }
-
-    const oldDraggedStatus = dragged.status;
-    const oldDraggedX = dragged.x;
-    const oldDraggedY = dragged.y;
-    const oldDraggedOrder = dragged.benchOrder;
-
-    dragged.status = target.status;
-    dragged.x = target.x; dragged.y = target.y;
-    dragged.benchOrder = target.benchOrder;
-
-    target.status = oldDraggedStatus;
-    target.x = oldDraggedX; target.y = oldDraggedY;
-    target.benchOrder = oldDraggedOrder;
-
-    if (dragged.status === 'bench') { dragged.x = 0; dragged.y = 0; }
-    if (target.status === 'bench') { target.x = 0; target.y = 0; }
-
-    // Clamp posiciones en campo
-    if (dragged.status === 'field') { const c = clampToField(dragged.x, dragged.y); dragged.x = c.x; dragged.y = c.y; }
-    if (target.status === 'field') { const c = clampToField(target.x, target.y); target.x = c.x; target.y = c.y; }
-
-    if (isRunning) {
-        // Generar ID de sustitución compartido para emparejar los dos jugadores
-        const subId = Date.now();
-        logMovement(dragged, subId);
-        logMovement(target,  subId);
-    }
-    if (dragged.status === 'bench' || target.status === 'bench') sortBenchUI(dragged.team);
-}
-
-function logMovement(player, subId) {
-    const elapsed = matchPhase === '2nd_half' ? (masterTimeH1 + masterTimeH2) : masterTimeH1;
-    const timestamp = formatTime(elapsed);
-    const halfLabel = matchPhase === '1st_half' ? '1ªP' : matchPhase === '2nd_half' ? '2ªP' : 'DESC';
-    const action = player.status === 'field' ? 'Entra' : 'Sale';
-    // subId permite emparejar la entrada con la salida en el informe
-    player.history.push(`${action} a las ${timestamp} (${halfLabel})${subId ? ' #' + subId : ''}`);
-}
+// handleSmartSwap() → js/ui/drag-drop.js (fuente canónica)
+// logMovement()     → js/ui/drag-drop.js (fuente canónica)
+// Auditoría Parte 2: estas dos copias estaban MUERTAS por shadowing
+// (drag-drop.js carga después en index.html y siempre gana). La versión de
+// drag-drop.js soporta el 3er argumento forcedSubId (cambio grupal desde
+// render.js) y registra los eventos sub_in/sub_out en Firestore (v230/v240),
+// cosas que estas copias NO hacían. Eliminadas para evitar que un
+// reordenamiento de <script> reactivara la versión vieja e incompleta.
 
 function logEvent(player, eventType) {
     // Registra gol, tarjeta o lesión con el minuto exacto
