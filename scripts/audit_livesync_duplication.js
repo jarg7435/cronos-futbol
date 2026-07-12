@@ -1,22 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────
-// audit_livesync_duplication.js  ·  Auditoría formal — Parte 1
+// audit_livesync_duplication.js  ·  Guard de regresión post-unificación (v276)
 //
-// Duplicación de pushLiveSnapshot / startLiveSync / stopLiveSync.
+// HISTORIA: existían 3 copias globales de startLiveSync/pushLiveSnapshot/
+// stopLiveSync (app-init.js, match/live/sync.js, firestore-sync.js). Por orden
+// de <script>, ganaba silenciosamente firestore-sync.js, que NO emitía
+// phaseStartedAt ni timerThresholds → degradaba features de live.html.
 //
-// Hay TRES copias globales de cada función (funciones-declaración en scripts
-// clásicos), cargadas en este orden por index.html:
-//     1258  js/core/app-init.js
-//     1289  js/match/live/sync.js
-//     1292  js/services/firestore-sync.js   ← última ⇒ GANA
+// La Parte 3 UNIFICÓ todo en js/match/live/sync.js (fuente única de verdad) y
+// eliminó las copias de app-init.js y firestore-sync.js.
 //
-// Esta auditoría NO asume el ganador: lo DEMUESTRA. Las tres copias son
-// `async function pushLiveSnapshot(){…}` en scripts CLÁSICOS a nivel global,
-// así que el navegador aplica la semántica de "última declaración gana"
-// (function-declaration hoisting con reasignación). Reproducimos exactamente
-// eso: extraemos el TEXTO REAL de cada copia y las declaramos, en el mismo
-// orden que index.html, en un único contexto; la que sobrevive es la que
-// corre en producción. Después cotejamos los CAMPOS que emite contra los que
-// live.html realmente CONSUME.
+// Este script ahora GUARDA ese estado: falla si alguien reintroduce una copia
+// duplicada o si la copia única deja de emitir los campos críticos. NO asume
+// el ganador: extrae el texto REAL de la(s) copia(s) y ejecuta la superviviente
+// con un import() de Firestore interceptado, igual que antes.
 // ─────────────────────────────────────────────────────────────────────────
 'use strict';
 const fs = require('fs');
@@ -26,12 +22,14 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..');
 const rd = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-// Orden REAL de <script> en index.html (los 3 que definen las funciones).
-const LOAD_ORDER = [
+// Todos los ficheros que HISTÓRICAMENTE definieron estas funciones. El guard
+// verifica que solo UNO (la fuente única) las siga definiendo.
+const CANDIDATE_FILES = [
     'js/core/app-init.js',
     'js/match/live/sync.js',
     'js/services/firestore-sync.js',
 ];
+const SOURCE_OF_TRUTH = 'js/match/live/sync.js';
 
 let fail = 0;
 const ok = (name, cond, extra) => {
@@ -54,25 +52,26 @@ function extractFn(src, name) {
     return src.slice(m.index, i);
 }
 
-// ── PARTE 1 · censo de definiciones ───────────────────────────────────────
-console.log('\n── PARTE 1 · censo de definiciones ──');
+// ── PARTE 1 · una sola definición por función (fuente única) ───────────────
+console.log('\n── PARTE 1 · fuente única (sin copias duplicadas) ──');
 const NAMES = ['startLiveSync', 'pushLiveSnapshot', 'stopLiveSync'];
-const census = {};
-for (const fn of NAMES) census[fn] = [];
-for (const rel of LOAD_ORDER.concat(['js/ai/import.js'])) {
-    const src = rd(rel);
-    for (const fn of NAMES) {
+for (const fn of NAMES) {
+    const owners = [];
+    for (const rel of CANDIDATE_FILES) {
         const re = new RegExp('function\\s+' + fn + '\\s*\\(', 'g');
-        const n = (src.match(re) || []).length;
-        if (n > 0) census[fn].push(`${rel}×${n}`);
+        const n = (rd(rel).match(re) || []).length;
+        if (n > 0) owners.push(`${rel}×${n}`);
     }
+    ok(`1.· ${fn} definida EXACTAMENTE 1 vez`, owners.length === 1 && /live\/sync/.test(owners[0]),
+       'owners=' + (owners.join(', ') || 'ninguno'));
 }
-ok('1.1 · startLiveSync definida ≥3 veces', census.startLiveSync.length >= 3, census.startLiveSync.join(', '));
-ok('1.2 · pushLiveSnapshot definida ≥3 veces', census.pushLiveSnapshot.length >= 3, census.pushLiveSnapshot.join(', '));
-ok('1.3 · stopLiveSync definida ≥3 veces', census.stopLiveSync.length >= 3, census.stopLiveSync.join(', '));
+ok('1.4 · firestore-sync.js YA NO define ninguna de las 3',
+   NAMES.every(fn => !new RegExp('function\\s+' + fn + '\\s*\\(').test(rd('js/services/firestore-sync.js'))));
+ok('1.5 · app-init.js YA NO define ninguna de las 3',
+   NAMES.every(fn => !new RegExp('function\\s+' + fn + '\\s*\\(').test(rd('js/core/app-init.js'))));
 
-// ── PARTE 2 · ganador en runtime (declaración-en-orden, no suposición) ────
-console.log('\n── PARTE 2 · ganador en runtime (orden real de <script>) ──');
+// ── PARTE 2 · la copia única emite los campos correctos ───────────────────
+console.log('\n── PARTE 2 · snapshot de la fuente única ──');
 
 function buildSandbox() {
     const captured = { snapshot: null, mergeOpts: undefined, importUrls: [] };
@@ -92,7 +91,6 @@ function buildSandbox() {
         setTimeout: (fn) => { if (fn) fn(); return 1; },
         clearInterval() {}, setInterval() { return 1; },
         Date,
-        // stubs de estado global que las funciones leen (declarados en app.js real)
         liveMatchId: 'atletico-09072026-abcd', liveSyncTimer: null, liveIsActive: true,
         isRunning: true, currentMode: 'f7', matchPhase: '1st_half',
         masterTimeH1: 65, masterTimeH2: 0, half1MaxTime: 1800, half2MaxTime: 1800,
@@ -104,11 +102,9 @@ function buildSandbox() {
                     goals: 1, cards: 'ninguna', injured: false, x: 10, y: 20,
                     color: '#e11', shortsColor: '#fff', textColor: '#000' }],
         updateLiveButton() {},
-        // helpers internos de match/live/sync.js (stubbeados)
         _fetchClubTimerThresholds: async () => ({ red: 40, yellow: 60 }),
         _loadEventsFromFirestore: async () => {},
         _eventsLoadedFromFirestore: true,
-        // import() dinámico interceptado
         __imp: async (url) => {
             captured.importUrls.push(url);
             return {
@@ -122,109 +118,56 @@ function buildSandbox() {
     return { sandbox, captured };
 }
 
-// Declara las 3 copias de pushLiveSnapshot en orden (última gana), reescribiendo
-// `import(` → `__imp(` para interceptar el setDoc. Las funciones-declaración se
-// reasignan: exactamente lo que hace el navegador con 3 <script> clásicos.
-function loadInOrder(name) {
-    const { sandbox, captured } = buildSandbox();
-    vm.createContext(sandbox);
-    let bodies = '';
-    for (const rel of LOAD_ORDER) {
-        const fnText = extractFn(rd(rel), name);
-        if (!fnText) continue;
-        bodies += '\n' + fnText.replace(/\bimport\s*\(/g, '__imp(') + '\n';
-    }
-    vm.runInContext(bodies, sandbox, { filename: name + '.combined.js' });
-    return { sandbox, captured };
-}
-
-const { sandbox, captured } = loadInOrder('pushLiveSnapshot');
+const { sandbox, captured } = buildSandbox();
+vm.createContext(sandbox);
+const pushText = extractFn(rd(SOURCE_OF_TRUTH), 'pushLiveSnapshot').replace(/\bimport\s*\(/g, '__imp(');
+vm.runInContext(pushText, sandbox, { filename: 'pushLiveSnapshot.js' });
 const runner = vm.runInContext('(async () => { await pushLiveSnapshot("active"); })()', sandbox);
 
 runner.then(() => {
     const snap = captured.snapshot;
-    ok('2.1 · pushLiveSnapshot ganador produjo un snapshot', !!snap, 'no se capturó snapshot');
+    ok('2.1 · pushLiveSnapshot produjo un snapshot', !!snap);
 
-    const hasPhaseStarted = snap && ('phaseStartedAt' in snap);
-    const hasThresholds   = snap && ('timerThresholds' in snap);
-    const hasCreatedBy    = snap && ('createdBy' in snap);
-    const hasClubName     = snap && ('clubName' in snap);
-    const playerHasColor  = snap && snap.players && snap.players[0] && ('color' in snap.players[0]);
-    const usesMerge       = captured.mergeOpts && captured.mergeOpts.merge === true;
+    const has = (k) => snap && (k in snap);
+    const playerHasColor = snap && snap.players && snap.players[0] && ('color' in snap.players[0]);
+    const usesMerge = captured.mergeOpts && captured.mergeOpts.merge === true;
 
-    console.log('\n   → campos del snapshot GANADOR:');
-    console.log('     phaseStartedAt :', hasPhaseStarted, '  (sí en match/live/sync.js)');
-    console.log('     timerThresholds:', hasThresholds, '  (sí en match/live/sync.js)');
-    console.log('     createdBy      :', hasCreatedBy);
-    console.log('     clubName       :', hasClubName);
-    console.log('     player.color   :', playerHasColor, '  (sí en firestore-sync.js)');
-    console.log('     setDoc merge   :', usesMerge);
+    console.log('\n   → campos de la copia ÚNICA:');
+    for (const k of ['phaseStartedAt', 'timerThresholds', 'createdBy', 'coachEmail', 'clubId'])
+        console.log('     ' + k.padEnd(16), has(k));
+    console.log('     player.color   ', playerHasColor);
+    console.log('     setDoc merge   ', usesMerge);
 
-    // El ganador es firestore-sync.js: emite colores por jugador y merge:true,
-    // pero NO phaseStartedAt ni timerThresholds ni createdBy/clubName.
-    ok('2.2 · GANADOR = js/services/firestore-sync.js (última en <script>)',
-       playerHasColor && usesMerge && !hasPhaseStarted && !hasThresholds && !hasCreatedBy,
-       `phaseStartedAt=${hasPhaseStarted} thresholds=${hasThresholds} createdBy=${hasCreatedBy} playerColor=${playerHasColor} merge=${usesMerge}`);
+    ok('2.2 · emite phaseStartedAt (crono autónomo en live.html)', has('phaseStartedAt'));
+    ok('2.3 · emite timerThresholds (semáforo del club)', has('timerThresholds'));
+    ok('2.4 · emite createdBy + coachEmail (permiso de vista)', has('createdBy') && has('coachEmail'));
+    ok('2.5 · emite clubId (permiso primario)', has('clubId'));
+    ok('2.6 · emite colores por jugador (portados desde firestore-sync.js)', playerHasColor);
+    ok('2.7 · usa setDoc({ merge: true })', usesMerge);
 
-    // ── PARTE 3 · impacto: features que live.html consume y el ganador NO emite ──
-    console.log('\n── PARTE 3 · impacto sobre live.html ──');
+    // ── PARTE 3 · live.html sigue consumiendo esos campos ─────────────────
+    console.log('\n── PARTE 3 · compatibilidad con live.html ──');
     const liveHtml = rd('live.html');
-    const consumes = (needle) => liveHtml.includes(needle);
+    ok('3.1 · live.html consume phaseStartedAt', liveHtml.includes('phaseStartedAt'));
+    ok('3.2 · live.html consume timerThresholds', liveHtml.includes('timerThresholds'));
+    ok('3.3 · live.html consume m.createdBy', liveHtml.includes('m.createdBy'));
 
-    ok('3.1 · live.html CONSUME data.phaseStartedAt (crono autónomo)', consumes('phaseStartedAt'));
-    ok('3.2 · live.html CONSUME data.timerThresholds (semáforo del club)', consumes('timerThresholds'));
-    const hasClubId       = snap && ('clubId' in snap);
-    ok('3.3 · live.html CONSUME m.createdBy (permiso de vista del coach)', consumes('m.createdBy'));
+    // ── PARTE 4 · startLiveSync: 5000ms + isRunning + guard ───────────────
+    console.log('\n── PARTE 4 · startLiveSync unificada ──');
+    const body = extractFn(rd(SOURCE_OF_TRUTH), 'startLiveSync') || '';
+    ok('4.1 · latido 5000ms', /\}\s*,\s*5000\s*\)/.test(body));
+    ok('4.2 · empuja SOLO con liveIsActive && isRunning', /liveIsActive\s*&&\s*isRunning\s*\)\s*pushLiveSnapshot/.test(body));
+    ok('4.3 · guard anti-doble-intervalo (clearInterval antes de setInterval)',
+       /if\s*\(\s*liveSyncTimer\s*\)\s*clearInterval\s*\(\s*liveSyncTimer\s*\)/.test(body));
 
-    ok('3.4 · REGRESIÓN: crono autónomo roto — ganador NO emite phaseStartedAt',
-       consumes('phaseStartedAt') && !hasPhaseStarted,
-       'live.html cuenta el reloj de forma autónoma con phaseStartedAt; firestore-sync.js NO lo emite');
-    ok('3.5 · REGRESIÓN: semáforo del club roto — ganador NO emite timerThresholds',
-       consumes('timerThresholds') && !hasThresholds,
-       'live.html pinta el semáforo con timerThresholds del club; firestore-sync.js NO lo emite → cae a defaults 33/50');
-    // El permiso principal en _userCanFollow es m.clubId===userData.clubId, que el
-    // ganador SÍ emite. createdBy/coachEmail son RUTAS DE RESPALDO (coach sin
-    // clubId, o display del email para superadmin/admin) que quedan degradadas.
-    ok('3.6 · MITIGADO: el permiso primario (clubId) SÍ lo emite el ganador',
-       hasClubId, 'clubId presente → el staff del mismo club sigue viendo el partido');
-    ok('3.7 · DEGRADACIÓN menor: rutas de respaldo createdBy/coachEmail perdidas',
-       consumes('m.createdBy') && !hasCreatedBy && !hasClubName,
-       'coach sin clubId, y el display del email para superadmin/admin, dejan de funcionar');
-
-    // ── PARTE 4 · divergencias de startLiveSync entre las 3 copias ────────
-    console.log('\n── PARTE 4 · startLiveSync: divergencias entre copias ──');
-    const bodies = LOAD_ORDER.map(rel => ({ rel, body: extractFn(rd(rel), 'startLiveSync') || '' }));
-    const winner = bodies[bodies.length - 1]; // firestore-sync.js (última)
-
-    // 4.1 · el ganador NO tiene guard anti-doble-intervalo (app-init.js sí).
-    const appInit = bodies.find(b => /app-init/.test(b.rel));
-    ok('4.1 · app-init.js SÍ protege contra intervalos duplicados (clearInterval antes de setInterval)',
-       /if\s*\(\s*liveSyncTimer\s*\)\s*clearInterval/.test(appInit.body));
-    ok('4.2 · FUGA: el GANADOR (firestore-sync.js) NO limpia el intervalo previo → leak si se llama 2×',
-       !/clearInterval\s*\(\s*liveSyncTimer\s*\)/.test(winner.body),
-       'setInterval sin clearInterval previo: startLiveSync() dos veces deja timers huérfanos');
-
-    // 4.3 · el ganador empuja cada 1s SOLO si isRunning; match/live/sync.js empuja
-    // cada 5s SIEMPRE (incluso en pausa). Divergencia de comportamiento observable.
-    const liveSync = bodies.find(b => /live\/sync/.test(b.rel));
-    ok('4.3 · GANADOR: intervalo 1000ms y sólo si isRunning (no empuja en pausa)',
-       /\}\s*,\s*1000\s*\)/.test(winner.body) && /liveIsActive\s*&&\s*isRunning/.test(winner.body));
-    ok('4.4 · match/live/sync.js (copia perdedora): 5000ms y empuja aunque esté en pausa',
-       /\}\s*,\s*5000\s*\)/.test(liveSync.body) && /if\s*\(\s*liveIsActive\s*\)\s*pushLiveSnapshot/.test(liveSync.body));
-
-    // 4.5 · sólo match/live/sync.js resetea el array events del doc (v265). El
-    // ganador NO lo hace → depende de que el matchId (con hora) sea nuevo.
-    ok('4.5 · GANADOR no resetea el array events del doc (lógica v265 sólo en la copia perdedora)',
-       !/events:\s*\[\]/.test(winner.body) && /events:\s*\[\]/.test(liveSync.body));
-
-    // ── PARTE 5 · sanity del harness ──────────────────────────────────────
+    // ── PARTE 5 · sanity ──────────────────────────────────────────────────
     console.log('\n── PARTE 5 · sanity del harness ──');
     ok('5.1 · el push usó import() dinámico de firebase-firestore',
-       captured.importUrls.some(u => /firebase-firestore/.test(u)), captured.importUrls.join(', '));
+       captured.importUrls.some(u => /firebase-firestore/.test(u)));
 
     console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'}`);
     process.exit(fail ? 1 : 0);
 }).catch(err => {
-    console.log('ERROR ejecutando pushLiveSnapshot ganador:', err && err.stack || err);
+    console.log('ERROR ejecutando pushLiveSnapshot:', err && err.stack || err);
     process.exit(1);
 });

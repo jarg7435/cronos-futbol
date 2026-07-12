@@ -107,9 +107,13 @@ async function startLiveSync() {
     // Guardar el snapshot inicial
     await pushLiveSnapshot('active');
 
-    // Sincronizar estado cada 5 segundos — siempre, incluso en pausa
+    // v276 (unificación): latido cada 5000ms — SOLO con isRunning (en pausa/descanso
+    // los cambios ya se auto-flushean por liveSyncOnAction/liveSyncFlushNow, así que
+    // no hace falta latir en pausa). Guard anti-doble-intervalo: si startLiveSync se
+    // llama 2× (p.ej. share-modal + import), evita dejar timers huérfanos.
+    if (liveSyncTimer) clearInterval(liveSyncTimer);
     liveSyncTimer = setInterval(() => {
-        if (liveIsActive) pushLiveSnapshot('active');
+        if (liveIsActive && isRunning) pushLiveSnapshot('active');
     }, 5000);
 
     // Mostrar botón de compartir en el header
@@ -300,6 +304,10 @@ async function pushLiveSnapshot(status = 'active') {
             },
 
             // Jugadores (campo + banquillo)
+            // v276 (unificación): incluir los colores por jugador. Antes solo los
+            // emitía la copia de firestore-sync.js; live.html los consume con
+            // fallback a los colores del equipo (safeColor), así que es una mejora
+            // con degradación elegante.
             players: players.map(p => ({
                 id:      p.id,
                 number:  p.number,
@@ -311,7 +319,10 @@ async function pushLiveSnapshot(status = 'active') {
                 cards:   p.cards   || 'ninguna',
                 injured: p.injured || false,
                 x:       p.x       || 0,
-                y:       p.y       || 0
+                y:       p.y       || 0,
+                color:       p.color       || (p.team === 'home' ? COLORS.home.primary : COLORS.away.primary),
+                shortsColor: p.shortsColor || (p.team === 'home' ? COLORS.home.shorts  : COLORS.away.shorts),
+                textColor:   p.textColor   || (p.team === 'home' ? COLORS.home.text    : COLORS.away.text)
             })),
 
             // v234: historial de eventos del partido persistente en Firestore.
