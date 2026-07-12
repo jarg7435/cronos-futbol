@@ -303,6 +303,21 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
 - Avisos Firebase no bloqueantes: `firebase-functions` desactualizado; `functions.config()` deprecado (límite marzo 2027).
 - Entorno Windows: cmd requiere `chcp 65001` por acentos en la ruta del proyecto.
 
+## Deuda de seguridad (preexistente, a revisar)
+
+- [ ] **SEC — `live_matches` borrable por cualquier autenticado si `clubId == null`**:
+  la regla `allow delete` de `match /live_matches/{matchId}` incluye la rama
+  `resource.data.clubId == null`, que permite a **cualquier usuario autenticado**
+  borrar un partido en vivo sin `clubId`. Es **preexistente** (NO la introdujo la
+  feature v274 de borrado de huérfanos; v274 solo añadió las ramas
+  `createdBy==uid` y `coachEmail==token.email`). Riesgo real bajo: los partidos
+  nuevos desde la unificación de live-sync (Parte 3) siempre llevan `clubId`
+  (o `null` explícito solo cuando el coach no lo tiene), y los docs son efímeros
+  (se auto-borran). Pensada como escotilla para limpiar huérfanos legacy sin
+  `clubId`. **No bloquea** el commit de v274. A revisar por separado: valorar
+  endurecerla (p.ej. exigir además `createdBy==uid` o `coachEmail==token.email`
+  aunque `clubId` sea null, para que solo el creador pueda borrar el huérfano).
+
 ## Mejoras opcionales aparcadas
 
 - [ ] **Q2 — guard `_seededOnce[matchId]` en live.html (aparcado)**: limitar el
