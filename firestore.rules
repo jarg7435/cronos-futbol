@@ -659,11 +659,25 @@ service cloud.firestore {
       // (se borran al finalizar), así que el riesgo de seguridad es mínimo.
       allow create: if isAuth();
       allow update: if isAuth();
+      // v274: Borrado ampliado para permitir limpiar partidos en vivo
+      // huerfanos / descoordinados / abandonados. Puede borrar:
+      //   - superadmin
+      //   - cualquier club_admin/individual_admin del mismo club (token o doc)
+      //   - cualquier usuario cuyo users/{uid}.clubId coincide con el clubId
+      //     del partido (entrenadores sin claim de clubId en el token)
+      //   - el propio entrenador que creo el partido (createdBy == uid)
+      //   - el entrenador cuyo email coincide con coachEmail
+      //   - cualquiera, si el partido no tiene clubId (huerfano legacy)
       allow delete: if isAuth() && (
                        isSuperAdmin() ||
                        resource.data.clubId == null ||
                        sameClub(resource.data.clubId) ||
-                       userDocClubId(resource.data.clubId)
+                       userDocClubId(resource.data.clubId) ||
+                       (resource.data.createdBy != null &&
+                        resource.data.createdBy == request.auth.uid) ||
+                       (resource.data.coachEmail != null &&
+                        request.auth.token.email != null &&
+                        resource.data.coachEmail == request.auth.token.email)
                     );
     }
 

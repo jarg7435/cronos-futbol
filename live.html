@@ -2906,22 +2906,38 @@ window.showLiveNow = async function() {
                     </div>
                 </div>
 
-                <!-- Entrenador + botón -->
+                <!-- Entrenador + botones -->
                 <div style="display:flex;justify-content:space-between;
                             align-items:center;border-top:1px solid rgba(255,255,255,0.07);
-                            padding-top:0.7rem;">
-                    <div style="font-size:0.72rem;color:var(--muted);">
+                            padding-top:0.7rem;gap:0.5rem;flex-wrap:wrap;">
+                    <div style="font-size:0.72rem;color:var(--muted);flex:1;min-width:0;
+                                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                         ${(m.coachEmail && (userData.role === 'superadmin' || userData.role === 'admin')) ? '👨‍💼 ' + escapeHtml(m.coachEmail) : ''}
+                        ${m.id ? `<span style="color:rgba(255,255,255,0.25);font-size:0.62rem;margin-left:0.3rem;" title="${escapeHtml(m.id)}">${escapeHtml(m.id.substring(0,16))}…</span>` : ''}
                     </div>
-                    <button style="padding:0.55rem 1.2rem;background:#ff5858;
-                                   border:none;border-radius:8px;color:#fff;
-                                   font-weight:700;font-size:0.85rem;
-                                   cursor:pointer;letter-spacing:0.5px;">
-                        🔴 VER PARTIDO
-                    </button>
+                    <div style="display:flex;gap:0.4rem;align-items:center;flex-shrink:0;">
+                        <button class="live-card-btn-ver"
+                                style="padding:0.55rem 1.2rem;background:#ff5858;
+                                       border:none;border-radius:8px;color:#fff;
+                                       font-weight:700;font-size:0.85rem;
+                                       cursor:pointer;letter-spacing:0.5px;">
+                            🔴 VER PARTIDO
+                        </button>
+                        <button class="live-card-btn-del"
+                                onclick="window.deleteLiveMatch('${escapeHtml(m.id)}', event)"
+                                title="Eliminar este partido en vivo (desconectado / huérfano / mal creado)"
+                                style="padding:0.55rem 0.9rem;background:rgba(255,88,88,0.12);
+                                       border:1px solid rgba(255,88,88,0.5);border-radius:8px;
+                                       color:#ff5858;font-weight:700;font-size:0.85rem;
+                                       cursor:pointer;display:flex;align-items:center;gap:0.3rem;">
+                            🗑️ ELIMINAR
+                        </button>
+                    </div>
                 </div>`;
 
-            card.onclick = () => {
+            card.onclick = (ev) => {
+                // Si el click viene del botón Eliminar, no cargar el partido.
+                if (ev && ev.target && ev.target.closest && ev.target.closest('.live-card-btn-del')) return;
                 history.pushState({}, '', '?match=' + m.id);
                 loadMatch(m.id);
             };
@@ -3036,6 +3052,111 @@ window.deleteMatch = async function(matchId, e) {
     }
 };
 
+// ── v274: Eliminar partido EN VIVO huérfano / descoordinado ───────
+// Pensado para partidos que se quedaron "colgados" en Firestore sin
+// entrenador conectado. Permite al supervisor/admin/entrenador del
+// mismo club limpiar la lista de partidos en vivo.
+window.deleteLiveMatch = async function(matchId, e) {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    if (!matchId) return;
+
+    // Confirmación doble: primero confirmar, luego advertencia de que se
+    // perderán todos los eventos registrados.
+    const ok = confirm(
+        '⚠️ Vas a ELIMINAR este partido en vivo.\n\n' +
+        'Esta acción NO se puede deshacer. Se perderán:\n' +
+        '  • Todos los eventos registrados (goles, tarjetas, cambios…)\n' +
+        '  • El cronómetro y marcador actuales\n' +
+        '  • El acceso de espectadores al partido\n\n' +
+        'Solo hazlo si el partido está descoordinado, duplicado, o fue ' +
+        'abandonado por error y NO se puede finalizar de forma normal.\n\n' +
+        '¿Confirmar eliminación?'
+    );
+    if (!ok) return;
+
+    const ok2 = confirm('Última confirmación: ¿Eliminar definitivamente este partido en vivo?');
+    if (!ok2) return;
+
+    // Si el partido que se elimina es el que se está viendo ahora mismo,
+    // volver a la lista de partidos en vivo.
+    const isCurrent = (window.currentMatchId === matchId);
+    if (isCurrent && typeof unsubscribeMatch === 'function') {
+        try { unsubscribeMatch(); } catch(e){}
+        try { window.currentMatchId = null; } catch(e){}
+    }
+
+    // Botón feedback visual: buscar el botón pulsado y ponerlo en "Borrando…"
+    let btnEl = null;
+    try {
+        if (e && e.currentTarget) btnEl = e.currentTarget;
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.style.opacity = '0.5';
+            btnEl.style.cursor = 'wait';
+            const orig = btnEl.innerHTML;
+            btnEl.innerHTML = '⏳ Borrando…';
+            btnEl.dataset.origHtml = orig;
+        }
+    } catch(e2) {}
+
+    try {
+        const { doc, deleteDoc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        // Primero marcamos como "cancelled" por si la eliminación falla por permisos.
+        // Si funciona el deleteDoc, el documento desaparece. Si no, al menos
+        // lo ocultamos de la lista activa.
+        try {
+            await updateDoc(doc(db, 'live_matches', matchId), {
+                status: 'cancelled',
+                cancelledAt: new Date().toISOString(),
+                cancelReason: 'manual_delete_by_user'
+            });
+        } catch(eUpd) {
+            console.warn('[LIVE] No se pudo marcar como cancelado (probablemente ya no existe):', eUpd.message);
+        }
+        // Ahora sí, borrar definitivamente.
+        await deleteDoc(doc(db, 'live_matches', matchId));
+        console.log('[LIVE] Partido eliminado:', matchId);
+
+        // Limpiar localStorage si era el partido activo del entrenador.
+        try {
+            const raw = localStorage.getItem('cronos_active_match_v2');
+            if (raw) {
+                const state = JSON.parse(raw);
+                if (state && state.liveMatchId === matchId) {
+                    localStorage.removeItem('cronos_active_match_v2');
+                    localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
+                    console.log('[LIVE] cronos_active_match_v2 limpiado (era el partido activo local).');
+                }
+            }
+        } catch(eLs) {}
+
+        // Si estábamos viendo la lista showLiveNow, el onSnapshot detectará
+        // automáticamente el cambio y la tarjeta desaparecerá. Pero por si
+        // acaso, forzamos refresh.
+        if (typeof showLiveNow === 'function') {
+            setTimeout(() => { try { showLiveNow(); } catch(e){} }, 400);
+        }
+
+    } catch(err) {
+        console.error('[LIVE] Error al eliminar partido en vivo:', err);
+        alert('No se pudo eliminar el partido:\n' + err.message +
+              '\n\nSi eres entrenador, comprueba que el partido pertenece a tu club. ' +
+              'Si el problema persiste, contacta con un administrador.');
+    } finally {
+        // Restaurar botón si todavía existe
+        try {
+            if (btnEl && btnEl.dataset.origHtml) {
+                btnEl.disabled = false;
+                btnEl.style.opacity = '';
+                btnEl.style.cursor = '';
+                btnEl.innerHTML = btnEl.dataset.origHtml;
+                delete btnEl.dataset.origHtml;
+            }
+        } catch(e3) {}
+    }
+};
+
+
 window.showHistory = async function() {
     clearInterval(timerInterval); timerInterval = null;
     window._prevPhase = null; // reset para resinc al volver
@@ -3133,18 +3254,35 @@ window.showHistory = async function() {
                             ${m.homeTeam?.score??0} – ${m.awayTeam?.score??0}
                         </div>
                     </div>
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.4rem;">
-                        <div class="history-meta">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.4rem;gap:0.5rem;flex-wrap:wrap;">
+                        <div class="history-meta" style="flex:1;min-width:0;">
                             ${m.mode==='f7'?'Fútbol 7':'Fútbol 11'} · Actualizado: ${time}
                             ${(m.coachEmail && (userData.role==='superadmin' || userData.role==='admin'))?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
                         </div>
-                        <button style="padding:0.5rem 1rem;background:#ff5858;border:none;
-                                       border-radius:8px;color:#fff;font-weight:700;
-                                       font-size:0.82rem;cursor:pointer;white-space:nowrap;">
-                            🔴 VER EN VIVO
-                        </button>
+                        <div style="display:flex;gap:0.4rem;align-items:center;flex-shrink:0;">
+                            <button class="hist-card-btn-ver"
+                                    style="padding:0.5rem 1rem;background:#ff5858;border:none;
+                                   border-radius:8px;color:#fff;font-weight:700;
+                                   font-size:0.82rem;cursor:pointer;white-space:nowrap;">
+                                🔴 VER EN VIVO
+                            </button>
+                            <button class="hist-card-btn-del"
+                                    onclick="window.deleteLiveMatch('${escapeHtml(m.id)}', event)"
+                                    title="Eliminar partido en vivo huérfano"
+                                    style="padding:0.5rem 0.8rem;background:rgba(255,88,88,0.12);
+                                           border:1px solid rgba(255,88,88,0.5);border-radius:8px;
+                                           color:#ff5858;font-weight:700;font-size:0.82rem;
+                                           cursor:pointer;white-space:nowrap;">
+                                🗑️
+                            </button>
+                        </div>
                     </div>`;
-                card.onclick = () => { history.pushState({},'','?match='+m.id); setMatchListContext(finishedMatches.length ? [...liveMatches,...finishedMatches] : [m], m.id); loadMatch(m.id); };
+                card.onclick = (ev) => {
+                    if (ev && ev.target && ev.target.closest && ev.target.closest('.hist-card-btn-del')) return;
+                    history.pushState({},'','?match='+m.id);
+                    setMatchListContext(finishedMatches.length ? [...liveMatches,...finishedMatches] : [m], m.id);
+                    loadMatch(m.id);
+                };
                 listEl.appendChild(card);
             });
         } else {
