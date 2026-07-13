@@ -318,6 +318,30 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
   endurecerla (p.ej. exigir además `createdBy==uid` o `coachEmail==token.email`
   aunque `clubId` sea null, para que solo el creador pueda borrar el huérfano).
 
+- [ ] **SEC-C3 — test de comportamiento del emulador PENDIENTE (bloqueado por
+  entorno)**: el commit `a39c2bd` cerró el hueco de `create`/`update` abiertos a
+  `if isAuth()` en `match /live_matches/{matchId}`. Verificación ya realizada:
+  (1) compilación remota OK vía `firebase deploy --only firestore:rules
+  --dry-run` → "rules file firestore.rules compiled successfully"; (2) validación
+  estructural (llaves/paréntesis balanceados, una sola regla por verbo, sin
+  `if isAuth();` residual). **QUEDA PENDIENTE** el test de comportamiento real con
+  el emulador de Firestore + `@firebase/rules-unit-testing` para los 5 casos:
+  (a) coach del club A → `update` de partido con `clubId` del club B → DENY;
+  (b) coach del club A → su propio partido (`sameClub`/`userDocClubId`) → ALLOW;
+  (c) coach sin `clubId` en token pero `users/{uid}.clubId` coincide → ALLOW;
+  (d) coach con `clubId:null` + `createdBy==uid` (legacy) → ALLOW; (e) superadmin
+  → ALLOW. **Motivo del bloqueo**: (1) solo hay JDK 8 instalado y el emulador de
+  firebase-tools 15.x exige JDK ≥ 21; (2) en este entorno TODAS las descargas de
+  Internet están bloqueadas (curl a google.com, adoptium.net y registry.npmjs.org
+  devuelven HTTP `000`), por lo que NO se puede instalar JDK 21 ni el paquete
+  `@firebase/rules-unit-testing`. Traza estática (no sustituye al test): los 5
+  casos dan el resultado esperado; **matiz a revisar en el test**: el caso (a) es
+  DENY para `update` (hueco principal cerrado), pero para `create` un coach podría
+  crear un doc con `clubId=B` si además pone `createdBy=su_propio_uid` (pasa por la
+  rama `createdBy==uid`); solo puede crear docs que él mismo posee, pero valdría la
+  pena decidir si se restringe también ese "spoof" de creación cross-club. Ejecutar
+  el test en una máquina con JDK 21 + acceso a npm antes de dar por cerrado SEC-C3.
+
 ## Mejoras opcionales aparcadas
 
 - [ ] **Q2 — guard `_seededOnce[matchId]` en live.html (aparcado)**: limitar el
