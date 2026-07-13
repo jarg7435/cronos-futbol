@@ -238,12 +238,19 @@ async function _sdLoadEvents(type) {
         const { db, collection, getDocs, query, where, orderBy, deleteDoc, doc: firestoreDoc, limit } = await _sdFS();
         const clubId = me.clubId || '';
 
-        // Buscar por clubId O por parentUid (para coordinadores/directores)
+        // Receptor: solo lo dirigido al usuario (parentUid) o lo que él envió (coachUid).
         // FIX: filtrar docs donde me.uid está en dismissedBy (borrado "personal" sin afectar a otros)
         let items = [];
+        // FIX (bug A/B): el panel de staff (director/coordinador/entrenador) YA NO hace
+        // broadcast por clubId. Solo ve lo que va dirigido a él (parentUid) o lo que él
+        // mismo envió (coachUid). Antes, el broadcast por clubId hacía que un envío a UNA
+        // sola persona llegara a TODO el staff del club.
+        // Consultas de CAMPO ÚNICO (sin 'type' en servidor) para usar los índices
+        // automáticos de campo único y no depender de un índice compuesto (parentUid,type)
+        // que no existe. El filtro por 'type' se hace en cliente (abajo) por pestaña.
         const queries = [
-            getDocs(query(collection(db,'cronos_notifications'), where('clubId','==',clubId), where('type','==',type))).catch(()=>null),
-            getDocs(query(collection(db,'cronos_notifications'), where('parentUid','==',me.uid), where('type','==',type))).catch(()=>null),
+            getDocs(query(collection(db,'cronos_notifications'), where('parentUid','==',me.uid))).catch(()=>null),
+            getDocs(query(collection(db,'cronos_notifications'), where('coachUid','==',me.uid))).catch(()=>null),
         ];
         const snaps = await Promise.all(queries);
         const seen  = new Set();
@@ -253,6 +260,8 @@ async function _sdLoadEvents(type) {
                 if (seen.has(d.id)) return;
                 seen.add(d.id);
                 const dat = d.data();
+                // Solo la pestaña actual (convocatoria o planificacion_semanal)
+                if (dat.type !== type) return;
                 // Omitir si este usuario ya lo descartó individualmente
                 if (Array.isArray(dat.dismissedBy) && dat.dismissedBy.includes(me.uid)) return;
                 items.push({ _id: d.id, ...dat });

@@ -3228,24 +3228,56 @@ window._sendTrainingNotification = async function() {
             ? new Date(datetime).toLocaleString('es-ES', {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
             : '—';
 
+        // ── Construir la SEMANA COMPLETA desde la planificación (bug C) ──
+        const _trOffset = window._trWeekOffset || 0;
+        const _trMon = (function() {
+            const now = new Date(); const dow = now.getDay();
+            const m = new Date(now); m.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + _trOffset * 7);
+            m.setHours(0,0,0,0); return m;
+        })();
+        const _trWeekKey = _trMon.toISOString().substring(0, 10);
+        const _trWeekAll = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+        const _trWeekData = _trWeekAll[_trWeekKey] || {};
+        const _trHasWeek = Object.keys(_trWeekData).length > 0;
+
+        const DAYS_ES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+        const _buildWeekDays = (weekData) => Object.keys(weekData).sort().map(ds => {
+            const d = weekData[ds];
+            const dt = new Date(ds + 'T12:00:00');
+            const dayIdx = dt.getDay();
+            const dayNum = dayIdx === 0 ? 6 : dayIdx - 1;
+            const noteParts = [];
+            if (d.tipo)         noteParts.push(d.tipo.charAt(0).toUpperCase() + d.tipo.slice(1));
+            if (d.duracion)     noteParts.push('⏱️ ' + d.duracion);
+            if (d.equipaciones) noteParts.push('👕 ' + d.equipaciones);
+            return {
+                day:   DAYS_ES[dayNum] + ' ' + dt.toLocaleDateString('es-ES', { day:'numeric', month:'short' }),
+                time:  d.hora   || '',
+                venue: d.lugar  || '',
+                note:  noteParts.join(' · ')
+            };
+        });
+        const _weekDays = _trHasWeek ? _buildWeekDays(_trWeekData) : [];
+        const _weekText = _trHasWeek ? (typeof _getTrainingWeekText === 'function' ? _getTrainingWeekText() : '') : '';
+
+        // FIX (bug C): si hay semana planificada, enviar TODA la semana;
+        // si no, enviar solo la sesión única del formulario.
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
-            userId: uid,                                  // ← FIX (C3): campo que las reglas verifican
+            userId: uid,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
-            datetime, location, notes,
+            datetime: _trHasWeek ? '' : (datetime || ''),
+            location: _trHasWeek ? '' : (location || ''),
+            notes: notes || '',
+            weekStartDate: _trWeekKey,
+            days: _weekDays,
+            weekText: _weekText,
             createdAt: new Date().toISOString(),
         });
 
-        // Asegurar caché cargada antes de enviar
-        if (typeof window._cronos_getContactsByFlag === 'function' && !window._cronosContactsCache) {
-            await window._cronos_getContactsByFlag('tr');
-        }
-
-        // Fuente de verdad: flag 'tr' + seleccionados manualmente
-        let trContacts = [];
-        if (typeof window._cronos_getContactsByFlag === 'function') {
-            trContacts = await window._cronos_getContactsByFlag('tr');
-        }
+        // ── FUENTE DE VERDAD: SOLO los marcados en el checkbox (bug B) ──
+        // Antes se enviaba a TODOS los contactos con la etiqueta 'tr',
+        // ignorando el checkbox → llegaba a director+coordinador+padres.
         const manualSelected = (typeof window.sharedGetSelectedRecipients === 'function')
             ? window.sharedGetSelectedRecipients('tr')
             : [];
@@ -3253,14 +3285,7 @@ window._sendTrainingNotification = async function() {
         const notifiedUids = new Set();
         let sentInternal = 0;
 
-        for (const c of trContacts) {
-            if (!c.uid || notifiedUids.has(c.uid)) continue;
-            notifiedUids.add(c.uid);
-            await setDoc(doc(db, 'cronos_notifications', 'tr_' + c.uid + '_' + Date.now().toString(36)), notifPayload(c.uid));
-            sentInternal++;
-        }
         for (const r of manualSelected) {
-            // FIX: sharedGetSelectedRecipients ahora incluye uid; usar id como fallback
             const uid = r.uid || r.id;
             if (!uid || notifiedUids.has(uid)) continue;
             notifiedUids.add(uid);

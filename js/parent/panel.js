@@ -229,12 +229,14 @@ async function openParentPanel() {
             const { collection, getDocs, query, where } = await import(
                 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
+            // FIX: cada usuario solo ve las notificaciones dirigidas a él (parentUid),
+            // no todas las del club. Antes se leía por clubId y cualquier envío
+            // llegaba a todos los padres y a todo el staff del club.
             let snap;
-            if (clubId) {
-                snap = await getDocs(query(
-                    collection(fa.db,'cronos_notifications'),
-                    where('clubId','==',clubId)
-                ));
+            if (me && me.uid) {
+                const _w = [ where('parentUid','==', me.uid) ];
+                if (clubId) _w.push(where('clubId','==', clubId));
+                snap = await getDocs(query(collection(fa.db,'cronos_notifications'), ..._w));
             } else {
                 snap = await getDocs(collection(fa.db,'cronos_notifications'));
             }
@@ -1820,12 +1822,11 @@ window.ppNotifsByType = async function(type) {
 
         // Buscar por parentUid (enviadas personalmente) + clubId como fallback
         const clubId = me.clubId || me.individualId || '';
+        // FIX: leer solo lo dirigido a este usuario (parentUid). Sin el fallback de
+        // clubId, que volvía broadcast cualquier envío del club a todo el staff/padres.
         const queries = [
             getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==',me.uid), where('type','==',type))).catch(()=>null),
         ];
-        if (clubId) {
-            queries.push(getDocs(query(collection(fa.db,'cronos_notifications'), where('clubId','==',clubId), where('type','==',type))).catch(()=>null));
-        }
         const snaps = await Promise.all(queries);
         const seen  = new Set();
         let items   = [];

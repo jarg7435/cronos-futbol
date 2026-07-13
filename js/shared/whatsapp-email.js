@@ -595,10 +595,6 @@ async function publishConvocationToApp() {
                 await window._cronos_getContactsByFlag('cv');
             }
         }
-        let cvContacts = [];
-        if (typeof window._cronos_getContactsByFlag === 'function') {
-            cvContacts = await window._cronos_getContactsByFlag('cv');
-        }
         const manualSelected = (typeof window.sharedGetSelectedRecipients === 'function')
             ? window.sharedGetSelectedRecipients('cv')
             : [];
@@ -607,12 +603,6 @@ async function publishConvocationToApp() {
         const notifiedUids = new Set();
         let count = 0;
 
-        for (const c of cvContacts) {
-            if (!c.uid || notifiedUids.has(c.uid)) continue;
-            notifiedUids.add(c.uid);
-            await setDoc(doc(db, 'cronos_notifications', 'cv_' + c.uid + '_' + Date.now().toString(36)), notifPayload(c.uid));
-            count++;
-        }
         for (const r of manualSelected) {
             const uid = r.uid || r.id;
             if (!uid || notifiedUids.has(uid)) continue;
