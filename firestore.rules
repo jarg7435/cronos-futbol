@@ -652,13 +652,49 @@ service cloud.firestore {
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if isRegisteredUser();
-      // v268: Permitir create/update a cualquier usuario autenticado.
-      // Antes, las reglas verificaban clubId, pero el entrenador a menudo
-      // NO tiene clubId en su token, lo que causaba permission-denied al
-      // escribir eventos con arrayUnion. Los live_matches son efímeros
-      // (se borran al finalizar), así que el riesgo de seguridad es mínimo.
-      allow create: if isAuth();
-      allow update: if isAuth();
+      // SEC (cierre de hueco): create/update ya NO son un `if isAuth()` abierto.
+      // El documento contiene PII (coachEmail, nombres/dorsales de jugadores
+      // -menores-, nombre/colores de club), asi que cualquier autenticado podia
+      // ANTES sobrescribir/inyectar datos en el partido en vivo de otro club sin
+      // ninguna comprobacion de pertenencia. Ahora se exige que el escritor sea
+      // miembro legitimo del club del partido, reutilizando EXACTAMENTE la misma
+      // logica de pertenencia que ya usa `allow delete` (salvo la rama
+      // `clubId == null`, deuda preexistente que NO se propaga aqui):
+      //   - superadmin
+      //   - club_admin / individual_admin del mismo club (por token: sameClub)
+      //   - miembro cuyo users/{uid}.clubId coincide (entrenador SIN claim en el
+      //     token -> userDocClubId; cubre el caso v268 del arrayUnion de eventos)
+      //   - el propio creador del partido (createdBy == uid)
+      //   - el entrenador cuyo email coincide con coachEmail
+      //
+      // CREATE: se valida contra el clubId ENTRANTE (request.resource.data). El
+      // bootstrap del coach escribe primero un doc minimo `{ events: [] }` SIN
+      // clubId; por eso se admite tambien al coach autor exigiendo que el
+      // createdBy/coachEmail entrantes sean los del propio usuario (no puede
+      // suplantar a otro entrenador ni escribir en el partido de otro club).
+      allow create: if isAuth() && (
+                       isSuperAdmin() ||
+                       sameClub(request.resource.data.clubId) ||
+                       userDocClubId(request.resource.data.clubId) ||
+                       (request.resource.data.createdBy != null &&
+                        request.resource.data.createdBy == request.auth.uid) ||
+                       (request.resource.data.coachEmail != null &&
+                        request.auth.token.email != null &&
+                        request.resource.data.coachEmail == request.auth.token.email)
+                    );
+      // UPDATE: se valida contra el clubId YA EXISTENTE en el documento
+      // (resource.data), no contra el entrante, para evitar que un escritor
+      // "reclame" el partido cambiando el clubId a uno al que pertenece.
+      allow update: if isAuth() && (
+                       isSuperAdmin() ||
+                       sameClub(resource.data.clubId) ||
+                       userDocClubId(resource.data.clubId) ||
+                       (resource.data.createdBy != null &&
+                        resource.data.createdBy == request.auth.uid) ||
+                       (resource.data.coachEmail != null &&
+                        request.auth.token.email != null &&
+                        resource.data.coachEmail == request.auth.token.email)
+                    );
       // v274: Borrado ampliado para permitir limpiar partidos en vivo
       // huerfanos / descoordinados / abandonados. Puede borrar:
       //   - superadmin
