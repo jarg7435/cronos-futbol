@@ -223,21 +223,31 @@ async function _cResolveClubId(db, me, fns) {
                 || null;
             // Cachear en el usuario en memoria para futuras llamadas de la sesión.
             if (cid && window._cronosCurrentUser) window._cronosCurrentUser.clubId = cid;
-            // FIX v176: Si se resolvió clubId desde allRoles pero el campo raíz
-            // clubId del documento users/{uid} está vacío, escribirlo para que
-            // las reglas Firestore (userDocClubId) puedan verificarlo sin necesidad
-            // de parsear allRoles (las reglas NO pueden iterar arrays arbitrarios).
-            if (cid && !d.clubId && fns.updateDoc) {
+            // SEC-C1: si se resolvió clubId desde allRoles pero el campo RAÍZ
+            // clubId del documento está vacío, hay que migrarlo a la raíz para
+            // que las reglas Firestore (userDocClubId) lo puedan verificar (las
+            // reglas NO pueden iterar arrays arbitrarios como allRoles).
+            // ANTES lo escribía el propio cliente (updateDoc) — eso permitía
+            // fijar un clubId AJENO. AHORA la escritura la hace el Admin SDK vía
+            // la Cloud Function syncRootClubId(), que valida server-side que el
+            // clubId pertenece de verdad al usuario. Fallo NO fatal: me.clubId ya
+            // está cacheado en memoria (las queries de esta sesión funcionan) y
+            // el trigger autoSetClaimsOnApproval poblará la raíz en la aprobación.
+            if (cid && !d.clubId) {
                 try {
-                    await fns.updateDoc(fns.doc(db, 'users', me.uid), { clubId: cid });
+                    const fa = (typeof window !== 'undefined') ? window._cronos_auth : null;
+                    if (fa && fa.functions) {
+                        const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+                        await httpsCallable(fa.functions, 'syncRootClubId')({ clubId: cid });
+                    }
                 } catch (migrateErr) {
-                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Chronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
+                    if (window._CRONOS_DEBUG) console.warn('[Chronos] syncRootClubId no pudo migrar clubId a la raíz:', migrateErr && migrateErr.message);
                 }
             }
             return cid;
         }
     } catch (e) {
-        if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Chronos] No se pudo resolver clubId desde Firestore:', e && e.message);
+        if(window._CRONOS_DEBUG) console.warn('[Chronos] No se pudo resolver clubId desde Firestore:', e && e.message);
     }
     return null;
 }
@@ -1521,7 +1531,7 @@ window._executeReportsSend = async function(method) {
     // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
     // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
     // el envío al staff y a los padres. Se cachea en me.clubId para esta sesión.
-    const _clubId = await _cResolveClubId(db, me, { doc, getDoc, updateDoc });
+    const _clubId = await _cResolveClubId(db, me, { doc, getDoc }); // SEC-C1: la migración de clubId la hace syncRootClubId (CF), no el cliente
     if (_clubId && !me.clubId) me.clubId = _clubId;
     
     // Obtener vínculos con timeout de seguridad y soporte para Admin Individual
@@ -2029,7 +2039,7 @@ async function autoDispatchMatchReports() {
         // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
         // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
         // el envío al staff (director/coordinador) y a los padres.
-        const _clubId = await _cResolveClubId(db, me, { doc, getDoc, updateDoc });
+        const _clubId = await _cResolveClubId(db, me, { doc, getDoc }); // SEC-C1: la migración de clubId la hace syncRootClubId (CF), no el cliente
         if (_clubId && !me.clubId) me.clubId = _clubId;
 
         // E3 (punto 2): sin clubId válido, las reglas Firestore

@@ -185,21 +185,18 @@ service cloud.firestore {
       // para el propio usuario. El gate de entrada (auth.js) NO confía en
       // 'allRoles[].isAuthorized' del cliente: solo activa un rol cuando la
       // RAÍZ 'isAuthorized' es true (escrita por el SA vía Admin SDK).
-      // FIX (v182): permitir escribir clubId si es non-null, sin requerir allRoles.
-      // _cResolveClubId() migra clubId al campo raiz para que userDocClubId() funcione.
-      // No amplia la superficie: clubId solo se puede escribir, el resto prohibido.
+      // SEC-C1 (endurecido): se ELIMINO la excepcion v182 que permitia al
+      // usuario escribir su propio 'clubId'. Un usuario podia fijar un clubId
+      // AJENO (non-null) y obtener acceso cross-club via userDocClubId().
+      // Ahora 'clubId' vuelve a ser NO escribible por el cliente bajo ningun
+      // caso: la migracion del clubId a la raiz la hace EXCLUSIVAMENTE el
+      // Admin SDK, via la Cloud Function syncRootClubId() (valida server-side
+      // que el clubId pertenece al usuario) o el trigger autoSetClaimsOnApproval
+      // (lo puebla al aprobar). 'clubId' esta en la lista prohibida de hasAny().
       allow update: if isSuperAdmin() ||
         (isAuth() && request.auth.uid == userId
           && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['role', 'isAuthorized', 'status', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'])
-          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['clubId'])
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clubId', 'allRoles'])
-                  && request.resource.data.clubId != null
-                 )
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clubId'])
-                  && request.resource.data.clubId != null
-                 )
-             )
+              .hasAny(['role', 'isAuthorized', 'status', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'])
         );
 
       allow delete: if isSuperAdmin();

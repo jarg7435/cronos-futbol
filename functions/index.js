@@ -481,12 +481,16 @@ exports.autoSetClaimsOnApproval = functions.firestore
       if (Date.now() - ageMs < 5000) return;
     }
 
-    // Solo disparar si cambió isAuthorized, status, role, o clubId
+    // Solo disparar si cambió isAuthorized, status, role, clubId o allRoles.
+    // SEC-C1: se añade allRoles para que, en el flujo multi-rol donde el SA
+    // solo toca allRoles[] (sin cambiar la raíz), el trigger también pueble el
+    // clubId raíz. Cierra la ventana de carrera sin depender del cliente.
     const significantChange =
       before.isAuthorized !== after.isAuthorized ||
       before.status !== after.status ||
       before.role !== after.role ||
-      before.clubId !== after.clubId;
+      before.clubId !== after.clubId ||
+      JSON.stringify(before.allRoles) !== JSON.stringify(after.allRoles);
 
     if (!significantChange) return;
 
@@ -494,21 +498,46 @@ exports.autoSetClaimsOnApproval = functions.firestore
     if (!after.isAuthorized || after.status === 'removed' || after.status === 'blocked') return;
 
     const role = after.role;
+    // clubId autorizado: primero la raíz; si está vacía, el primer allRoles[]
+    // con clubId cuyo rol NO esté rechazado/eliminado (mismo criterio que
+    // syncRootClubId, para no poblar la raíz con un clubId de un rol revocado).
     const clubId =
       after.clubId ||
       (Array.isArray(after.allRoles)
-        ? (after.allRoles.find((r) => r.clubId) || {}).clubId
+        ? (after.allRoles.find(
+            (r) => r && r.clubId &&
+                   r.isAuthorized !== false &&
+                   r.status !== 'rejected' &&
+                   r.status !== 'removed'
+          ) || {}).clubId
         : null);
 
     if (!role || !clubId) return;
+
+    // SEC-C1: si la raíz clubId está vacía pero lo resolvimos desde allRoles,
+    // hay que migrarlo a la raíz (userDocClubId de las reglas lee la raíz).
+    const rootClubIdMissing = !after.clubId && !!clubId;
 
     try {
       const userRecord = await admin.auth().getUser(userId);
       const currentClaims = userRecord.customClaims || {};
 
-      // Si los claims ya están correctos, no hacer nada
+      // Si los claims ya están correctos, no hay que tocarlos. Pero AÚN así
+      // hay que migrar el clubId raíz si falta (SEC-C1): puede que los claims
+      // ya estuvieran bien y solo cambiara allRoles[].
       if (currentClaims.role === role && currentClaims.clubId === clubId) {
-        console.log(`[autoSetClaims v2] Claims ya correctos para ${userId}. Skip.`);
+        if (rootClubIdMissing) {
+          await admin.firestore().collection('users').doc(userId).set(
+            {
+              clubId: clubId,
+              _claimsSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+          console.log(`[autoSetClaims v2] clubId raíz migrado para ${userId}: ${clubId}`);
+        } else {
+          console.log(`[autoSetClaims v2] Claims ya correctos para ${userId}. Skip.`);
+        }
         return;
       }
 
@@ -520,11 +549,15 @@ exports.autoSetClaimsOnApproval = functions.firestore
         claimsSetAt: Date.now(),
       });
 
-      // Escribir _claimsSyncedAt (NO claimsSetAt) para no disparar loop
+      // Escribir _claimsSyncedAt (NO claimsSetAt) para no disparar loop.
+      // SEC-C1: si la raíz clubId estaba vacía, poblarla aquí (Admin SDK) para
+      // que userDocClubId de las reglas funcione sin escritura del cliente.
+      const rootUpdate = {
+        _claimsSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (rootClubIdMissing) rootUpdate.clubId = clubId;
       await admin.firestore().collection('users').doc(userId).set(
-        {
-          _claimsSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
+        rootUpdate,
         { merge: true }
       );
 
@@ -870,7 +903,85 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
 });
 
 /* ==================================================================== */
-/* 0️⃣0️⃣ Cloud Function: approveIndividualAdmin – Aprobar admin individual */
+/* Cloud Function: syncRootClubId – Migrar clubId a la raíz del doc        */
+/*                                                                        */
+/* SEC-C1: cierra la auto-asignación de clubId en users/{userId}.         */
+/*                                                                        */
+/* Contexto: las reglas Firestore (userDocClubId) necesitan el clubId en  */
+/* el CAMPO RAÍZ de users/{uid} porque no pueden iterar arrays arbitrarios */
+/* (allRoles[]). Antes, el cliente (_cResolveClubId) escribía clubId       */
+/* directamente vía `allow update`, lo que permitía a un usuario fijar un  */
+/* clubId AJENO y obtener acceso cross-club. Ahora esa escritura la hace   */
+/* EXCLUSIVAMENTE esta Cloud Function con Admin SDK, validando server-side  */
+/* que el clubId propuesto pertenece de verdad al usuario (mismo criterio  */
+/* que registerStaffUid v183). La regla `allow update` ya NO permite tocar */
+/* clubId bajo ningún caso.                                                */
+/* ==================================================================== */
+exports.syncRootClubId = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
+  }
+
+  const uid = context.auth.uid;
+  const clubId = data && data.clubId;
+
+  if (!clubId || typeof clubId !== 'string') {
+    throw new functions.https.HttpsError('invalid-argument', 'clubId es obligatorio');
+  }
+
+  try {
+    const userRef = admin.firestore().collection('users').doc(uid);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Usuario no encontrado');
+    }
+    const userData = userDoc.data() || {};
+
+    // 1. La cuenta debe estar habilitada (mismo criterio que registerStaffUid).
+    if (userData.isAuthorized === false ||
+        userData.status === 'rejected' ||
+        userData.status === 'removed' ||
+        userData.status === 'blocked') {
+      throw new functions.https.HttpsError('permission-denied', 'Cuenta no habilitada');
+    }
+
+    // 2. El clubId propuesto debe ser realmente del usuario: coincidir con el
+    //    clubId raíz ya existente, o con algún allRoles[].clubId autorizado
+    //    (escrito por el SA vía Admin SDK). NUNCA se confía en un clubId que el
+    //    cliente proponga sin respaldo en el propio documento.
+    const rootMatches = userData.clubId != null && userData.clubId === clubId;
+    const roleMatches = Array.isArray(userData.allRoles) && userData.allRoles.some(
+      (r) => r && r.clubId === clubId &&
+             r.isAuthorized !== false &&
+             r.status !== 'rejected' &&
+             r.status !== 'removed'
+    );
+
+    if (!rootMatches && !roleMatches) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'El clubId no corresponde a este usuario'
+      );
+    }
+
+    // 3. Ya está poblado y coincide: nada que hacer (idempotente).
+    if (userData.clubId === clubId) {
+      return { success: true, clubId, migrated: false };
+    }
+
+    // 4. Escribir el clubId raíz con Admin SDK (se salta las reglas cliente).
+    await userRef.set({ clubId }, { merge: true });
+    console.log('[syncRootClubId] UID', uid, 'clubId raíz ->', clubId);
+    return { success: true, clubId, migrated: true };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    console.error('[syncRootClubId] Error:', err.message);
+    throw new functions.https.HttpsError('internal', err.message);
+  }
+});
+
+/* ==================================================================== */
+/* Cloud Function: approveIndividualAdmin - Aprobar admin individual      */
 /* ==================================================================== */
 exports.approveIndividualAdmin = functions.https.onCall(async (data, context) => {
   if (!context.auth) {

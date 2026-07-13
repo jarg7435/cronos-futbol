@@ -103,10 +103,12 @@ async function openStaffDashboard() {
     // _cResolveClubId migra clubId al campo raíz para que las reglas funcionen.
     try {
         if (typeof window._cResolveClubId === 'function' && me && me.uid && !me.clubId) {
-            const { doc, getDoc, updateDoc } = await _sdFS();
+            const { doc, getDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                const resolvedId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
+                // SEC-C1: _cResolveClubId ya no escribe clubId directamente; la
+                // migración a la raíz la hace la Cloud Function syncRootClubId.
+                const resolvedId = await window._cResolveClubId(db, me, { doc, getDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                 }
@@ -1187,10 +1189,11 @@ async function _sdLoadReports() {
     let clubId = me.clubId;
     if (!clubId && me && me.uid && typeof window._cResolveClubId === 'function') {
         try {
-            const { doc, getDoc, updateDoc } = await _sdFS();
+            const { doc, getDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                clubId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
+                // SEC-C1: migración de clubId a la raíz vía syncRootClubId (CF).
+                clubId = await window._cResolveClubId(db, me, { doc, getDoc });
                 if (clubId) me.clubId = clubId;
             }
         } catch(e) {
@@ -1664,10 +1667,11 @@ async function _sdLoadMessages() {
     let clubId = me.clubId;
     if (!clubId && me && me.uid && typeof window._cResolveClubId === 'function') {
         try {
-            const { doc, getDoc, updateDoc } = await _sdFS();
+            const { doc, getDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                clubId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
+                // SEC-C1: migración de clubId a la raíz vía syncRootClubId (CF).
+                clubId = await window._cResolveClubId(db, me, { doc, getDoc });
                 if (clubId) me.clubId = clubId;
             }
         } catch(e) {

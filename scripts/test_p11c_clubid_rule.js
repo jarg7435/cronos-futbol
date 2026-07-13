@@ -1,60 +1,56 @@
-// Test P11-C: el clubId del director/coordinador (multi-rol via allRoles[])
-// debe MIGRARSE al campo raíz de users/{uid} para que las reglas Firestore
+// Test P11-C / SEC-C1: migración del clubId del director/coordinador (multi-rol
+// vía allRoles[]) al campo RAÍZ de users/{uid} para que las reglas Firestore
 // (userDocClubId) autoricen la lectura de informes.
 //
-// CAUSA RAÍZ: _cResolveClubId(db, me, fns) solo ejecuta la migración
-//   updateDoc(users/{uid}, { clubId }) si fns.updateDoc está presente.
-//   Las tres llamadas en club-reports.js lo invocaban SIN updateDoc, así que
-//   me.clubId se resolvía en memoria (la query corría) pero el campo raíz del
-//   documento seguía vacío -> userDocClubId() fallaba -> la query por clubId era
-//   rechazada entera por las reglas -> faltaban partidos.
+// HISTORIA:
+//   · P11-C (v179): el bug era que _cResolveClubId no persistía el clubId a la
+//     raíz (faltaba updateDoc) -> userDocClubId() fallaba.
+//   · SEC-C1: la persistencia YA NO la hace el cliente con updateDoc (permitía
+//     fijar un clubId AJENO). Ahora la hace el Admin SDK vía la Cloud Function
+//     syncRootClubId(), y la regla `allow update` prohíbe clubId al cliente.
 //
-// FIX: las tres llamadas pasan ahora { doc, getDoc, updateDoc }.
+// Este test verifica el estado POST-SEC-C1: _cResolveClubId ya no escribe
+// directamente; delega en syncRootClubId; y los call-sites no pasan updateDoc.
 
 const fs = require('fs');
-const src = fs.readFileSync('js/coach/reports/club-reports.js', 'utf8');
+const path = require('path');
+const ROOT = path.join(__dirname, '..');
+const panel    = fs.readFileSync(path.join(ROOT, 'js/coach/comms/panel.js'), 'utf8');
+const creports = fs.readFileSync(path.join(ROOT, 'js/coach/reports/club-reports.js'), 'utf8');
 
 let pass = true;
 const assert = (c, m) => { if (!c) { pass = false; console.error('FAIL:', m); } else console.log('ok:', m); };
 
-// 1) No deben quedar llamadas a _cResolveClubId sin updateDoc.
-const callsSinUpdate = (src.match(/_cResolveClubId\(db, me, \{ doc: docFn, getDoc \}\)/g) || []).length;
-assert(callsSinUpdate === 0, 'ninguna llamada a _cResolveClubId sin updateDoc');
+// 1) _cResolveClubId ya NO escribe clubId con updateDoc (SEC-C1).
+const resolveFn = panel.slice(panel.indexOf('async function _cResolveClubId'),
+                              panel.indexOf('window._cResolveClubId = _cResolveClubId'));
+assert(!/fns\.updateDoc/.test(resolveFn), '_cResolveClubId no usa fns.updateDoc (SEC-C1)');
 
-// 2) Las tres llamadas deben incluir updateDoc.
-const callsConUpdate = (src.match(/_cResolveClubId\(db, me, \{ doc: docFn, getDoc, updateDoc \}\)/g) || []).length;
-assert(callsConUpdate === 3, 'las 3 llamadas a _cResolveClubId pasan updateDoc (encontradas: ' + callsConUpdate + ')');
+// 2) La persistencia se delega en la Cloud Function syncRootClubId.
+assert(/syncRootClubId/.test(resolveFn), '_cResolveClubId invoca syncRootClubId (CF)');
 
-// 3) Los imports correspondientes deben desestructurar updateDoc.
-const importsConUpdate = (src.match(/const \{ doc: docFn, getDoc, updateDoc \} = await _sdFS\(\);/g) || []).length;
-assert(importsConUpdate === 3, 'los 3 imports desestructuran updateDoc (encontrados: ' + importsConUpdate + ')');
+// 3) Ningún call-site pasa ya updateDoc a _cResolveClubId.
+const callSitesPassingUpdate =
+    (panel.match(/_cResolveClubId\(db, me, \{ doc, getDoc, updateDoc \}\)/g) || []).length +
+    (creports.match(/_cResolveClubId\(db, me, \{ doc, getDoc, updateDoc \}\)/g) || []).length;
+assert(callSitesPassingUpdate === 0, 'ningún call-site pasa updateDoc a _cResolveClubId (encontrados: ' + callSitesPassingUpdate + ')');
 
-// 4) Simulación del comportamiento de _cResolveClubId.
-async function resolveClubId(me, userDoc, fns) {
+// 4) Siguen existiendo los 5 call-sites (2 comms + 3 reports) y aún resuelven clubId.
+const callsPanel   = (panel.match(/await _cResolveClubId\(db, me,/g) || []).length;
+const callsReports = (creports.match(/_cResolveClubId\(db, me,/g) || []).length;
+assert(callsPanel === 2, '2 llamadas en comms/panel.js (encontradas: ' + callsPanel + ')');
+assert(callsReports === 3, '3 llamadas en club-reports.js (encontradas: ' + callsReports + ')');
+
+// 5) Simulación de la resolución: sigue resolviendo clubId desde allRoles[] y
+//    cacheándolo en memoria (me.clubId) aunque la raíz esté vacía.
+function resolveClubId(me, userDoc) {
   if (me.clubId) return me.clubId;
-  const cid = userDoc.clubId
+  return userDoc.clubId
     || (Array.isArray(userDoc.allRoles) ? (userDoc.allRoles.find(r => r && r.clubId) || {}).clubId : null)
     || null;
-  if (cid && !userDoc.clubId && fns.updateDoc) {
-    fns.updateDoc('users', { clubId: cid }); // simula la migración
-  }
-  return cid;
 }
+const cid = resolveClubId({ uid: 'u1' }, { clubId: null, allRoles: [{ role: 'director', clubId: 'club_abc' }] });
+assert(cid === 'club_abc', 'resuelve clubId desde allRoles (en memoria)');
 
-(async () => {
-  // Director multi-rol: clubId solo en allRoles, campo raíz vacío.
-  const userDoc = { clubId: null, allRoles: [{ role: 'director', clubId: 'club_abc' }] };
-  let migrated = null;
-  const fns = { updateDoc: (col, data) => { migrated = data.clubId; } };
-  const cid = await resolveClubId({ uid: 'u1' }, userDoc, fns);
-  assert(cid === 'club_abc', 'resuelve clubId desde allRoles');
-  assert(migrated === 'club_abc', 'con updateDoc presente, MIGRA clubId al campo raíz');
-
-  // Sin updateDoc (comportamiento antiguo): NO migra -> bug.
-  let migrated2 = null;
-  await resolveClubId({ uid: 'u1' }, { clubId: null, allRoles: [{ role: 'director', clubId: 'club_abc' }] }, {});
-  assert(migrated2 === null, 'sin updateDoc NO migra (reproduce el bug P11-C antiguo)');
-
-  console.log(pass ? '\nALL TESTS PASSED' : '\nTESTS FAILED');
-  process.exit(pass ? 0 : 1);
-})();
+console.log(pass ? '\nALL TESTS PASSED' : '\nTESTS FAILED');
+process.exit(pass ? 0 : 1);
