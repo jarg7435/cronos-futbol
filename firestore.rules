@@ -676,11 +676,22 @@ service cloud.firestore {
                        isSuperAdmin() ||
                        sameClub(request.resource.data.clubId) ||
                        userDocClubId(request.resource.data.clubId) ||
-                       (request.resource.data.createdBy != null &&
-                        request.resource.data.createdBy == request.auth.uid) ||
-                       (request.resource.data.coachEmail != null &&
-                        request.auth.token.email != null &&
-                        request.resource.data.coachEmail == request.auth.token.email)
+                       // MATIZ CERRADO (createdBy/coachEmail): estas ramas SOLO
+                       // autorizan cuando el doc NO lleva clubId (huerfano legacy
+                       // o coach SIN club). Antes autorizaban con CUALQUIER clubId,
+                       // lo que permitia a un coach del club A inyectar un partido
+                       // en la lista del club B creando el doc con clubId=B y
+                       // createdBy=su_propio_uid (pasaba por la rama createdBy). Con
+                       // un clubId ajeno, sameClub()/userDocClubId() fallan y, al
+                       // exigir clubId == null aqui, la rama queda vetada: solo el
+                       // creador de un partido SIN club puede crearlo por esta via.
+                       (request.resource.data.clubId == null && (
+                         (request.resource.data.createdBy != null &&
+                          request.resource.data.createdBy == request.auth.uid) ||
+                         (request.resource.data.coachEmail != null &&
+                          request.auth.token.email != null &&
+                          request.resource.data.coachEmail == request.auth.token.email)
+                       ))
                     );
       // UPDATE: se valida contra el clubId YA EXISTENTE en el documento
       // (resource.data), no contra el entrante, para evitar que un escritor
