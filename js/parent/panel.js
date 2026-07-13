@@ -234,9 +234,9 @@ async function openParentPanel() {
             // llegaba a todos los padres y a todo el staff del club.
             let snap;
             if (me && me.uid) {
-                const _w = [ where('parentUid','==', me.uid) ];
-                if (clubId) _w.push(where('clubId','==', clubId));
-                snap = await getDocs(query(collection(fa.db,'cronos_notifications'), ..._w));
+                // Campo único: usa el índice automático de 'parentUid' (NO exige
+                // índice compuesto). Cada padre ve solo lo dirigido a él.
+                snap = await getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==', me.uid)));
             } else {
                 snap = await getDocs(collection(fa.db,'cronos_notifications'));
             }
@@ -1824,8 +1824,10 @@ window.ppNotifsByType = async function(type) {
         const clubId = me.clubId || me.individualId || '';
         // FIX: leer solo lo dirigido a este usuario (parentUid). Sin el fallback de
         // clubId, que volvía broadcast cualquier envío del club a todo el staff/padres.
+        // Campo único 'parentUid' (índice automático). El filtro por 'type' se
+        // hace en cliente para no precisar un índice compuesto (parentUid,type).
         const queries = [
-            getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==',me.uid), where('type','==',type))).catch(()=>null),
+            getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==',me.uid))).catch(()=>null),
         ];
         const snaps = await Promise.all(queries);
         const seen  = new Set();
@@ -1836,6 +1838,7 @@ window.ppNotifsByType = async function(type) {
                 if (seen.has(d.id)) return;
                 seen.add(d.id);
                 const dat = d.data();
+                if (dat.type !== type) return;   // filtro por tipo en cliente
                 // FIX: omitir si este usuario ya lo descartó individualmente
                 if (Array.isArray(dat.dismissedBy) && dat.dismissedBy.includes(me.uid)) return;
                 items.push({ _id: d.id, ...dat });
