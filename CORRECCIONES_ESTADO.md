@@ -342,6 +342,8 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
   pena decidir si se restringe también ese "spoof" de creación cross-club. Ejecutar
   el test en una máquina con JDK 21 + acceso a npm antes de dar por cerrado SEC-C3.
 
+- [ ] **SEC-C1 (create): pendiente, requiere rediseñar el descubrimiento de usuarios pendientes por club_admin antes de poder nulificar clubId en el alta — no tocar sin analizar club/panel.js:172 y la aprobación completa**.
+
 ## Mejoras opcionales aparcadas
 
 - [ ] **Q2 — guard `_seededOnce[matchId]` en live.html (aparcado)**: limitar el
