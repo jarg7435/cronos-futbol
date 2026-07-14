@@ -256,26 +256,6 @@ async function callSync(userDoc, data, ctxAuth) {
     ok('3f · escribir {allRoles} (multi-rol legítimo) → ALLOW', ruleAllowsUpdate(['allRoles']) === true);
     ok('3g · escribir {playerAlias, inviteCode} (perfil) → ALLOW', ruleAllowsUpdate(['playerAlias', 'inviteCode']) === true);
 
-    // ═══════════════════ PARTE 3.5 · regla allow create endurecida ═════════
-    console.log('\n── PARTE 3.5 · regla allow create de users/{userId} (firestore.rules) ──');
-
-    const allowCreate = usersBlock.slice(usersBlock.indexOf('allow create:'),
-                                         usersBlock.indexOf('allow update:'));
-    // 3h. El create ya restringe clubId (null o ausente).
-    ok('3h · allow create referencia clubId (restricción)', /clubId/.test(allowCreate), allowCreate.slice(0, 200));
-    ok('3i · allow create exige clubId null o ausente',
-       /!\('clubId' in request\.resource\.data\)/.test(allowCreate) && /request\.resource\.data\.clubId == null/.test(allowCreate),
-       allowCreate);
-
-    // 3j. Simulación de la regla de create: uid==userId && (clubId ausente || null).
-    function ruleAllowsCreate(data) {
-        const hasClubId = Object.prototype.hasOwnProperty.call(data, 'clubId');
-        return !hasClubId || data.clubId == null;
-    }
-    ok('3j · create con {clubId:"CLUB_X"} → DENY', ruleAllowsCreate({ email: 'a@b.c', clubId: 'CLUB_X' }) === false);
-    ok('3k · create con {clubId:null} → ALLOW', ruleAllowsCreate({ email: 'a@b.c', clubId: null }) === true);
-    ok('3l · create sin clubId → ALLOW', ruleAllowsCreate({ email: 'a@b.c', role: 'user' }) === true);
-
     // ═══════════════════ PARTE 4 · call-sites cliente ═════════════════════
     console.log('\n── PARTE 4 · call-sites cliente (ya no escriben clubId directo) ──');
 

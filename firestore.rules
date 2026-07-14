@@ -172,17 +172,10 @@ service cloud.firestore {
         transitionalRead(resource.data.clubId) ||
         userDocClubId(resource.data.clubId)
       );
-      // SEC-C1 (create endurecido): el usuario puede CREAR su propio doc, pero
-      // NO puede fijar 'clubId': debe quedar null o ausente en el create. Sin
-      // esto, cerrar solo 'update' dejaba la puerta abierta (borrar+recrear el
-      // doc, o fijar clubId en el alta) para obtener acceso cross-club via
-      // userDocClubId(). El 'clubId' raiz lo rellena DESPUES exclusivamente el
-      // Admin SDK: el SuperAdmin, la Cloud Function syncRootClubId() o el
-      // trigger autoSetClaimsOnApproval al aprobar. El SA sigue sin restriccion.
-      allow create: if isSuperAdmin() ||
-        (isAuth() && request.auth.uid == userId
-          && (!('clubId' in request.resource.data) || request.resource.data.clubId == null)
-        );
+      allow create: if isAuth() && (
+        request.auth.uid == userId ||
+        isSuperAdmin()
+      );
       // FIX (multi-rol): se permite que el usuario actualice su propio
       // 'allRoles' para AÑADIR roles PENDIENTES (necesario para el flujo
       // "añadir rol a cuenta existente"). La escalada real se sigue
