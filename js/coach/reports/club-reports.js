@@ -781,10 +781,11 @@ const _RP = (() => {
             (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${ia.substring(0, 9)} ${minStr}` });
             (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${oa.substring(0, 9)} ${minStr}` });
         });
+        // FIX (Error #20c): aumentar tolerancia a 0.5 min para encontrar sustituciones
         const findNear = (map, alias, t) => {
             const arr = map[alias];
             if (!arr) return null;
-            const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.12);
+            const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.5);
             return hit ? hit.name : null;
         };
 
@@ -847,35 +848,39 @@ const _RP = (() => {
                 svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${pw.toFixed(1)}"
                     height="${TRACK_H}" rx="3" fill="#58a6ff" fill-opacity="0.82"/>`;
 
-                // Inicio de barra desde banquillo (sub_in)
+                // FIX (Error #20c): etiquetas de sustitucion claras y NO superpuestas.
+                // Cuando un jugador ENTRA (sub_in): verde abajo con su nombre,
+                // y rojo arriba con quien reemplazo. NUNCA el mismo nombre.
+                // Cuando un jugador SALE (sub_out): rojo arriba con su nombre,
+                // y verde abajo con quien le reemplazo.
                 if (a > 0.15) {
-                    const outName = findNear(subInMap, aliasKey, a);
+                    const replacedName = findNear(subInMap, aliasKey, a);
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-6}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#3fb950" stroke-width="2.2"/>`;
                     
-                    // FIX (Error #20b): etiquetas mas grandes y claras
-                    const yGreen = TRACK_Y + TRACK_H + 14 + (periodIdx % 2 === 0 ? 0 : 12);
-                    const yRed   = TRACK_Y - 10 - (periodIdx % 2 === 0 ? 0 : 12);
+                    // Verde abajo: ENTRA este jugador
+                    const yGreen = TRACK_Y + TRACK_H + 14;
+                    svg += `<text x="${(px+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${alias} (${Math.floor(a)}')</text>`;
                     
-                    svg += `<text x="${(px+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ${alias} ${Math.floor(a)}'</text>`;
-                    
-                    if (outName) {
-                        svg += `<text x="${(px-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ ${outName}</text>`;
+                    // Rojo arriba: SALE el jugador reemplazado (si es distinto)
+                    if (replacedName && !replacedName.startsWith(alias.substring(0, 5))) {
+                        const yRed = TRACK_Y - 8;
+                        svg += `<text x="${(px-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${replacedName}</text>`;
                     }
                 }
 
-                // Fin de barra antes del final (sub_out)
                 if (b < totMin - 0.3) {
-                    const inpName = findNear(subOutMap, aliasKey, b);
+                    const replacementName = findNear(subOutMap, aliasKey, b);
                     const ex = px + pw;
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-6}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#ff5858" stroke-width="2.2"/>`;
                     
-                    const yRed   = TRACK_Y - 10 - (periodIdx % 2 === 0 ? 0 : 12);
-                    const yGreen = TRACK_Y + TRACK_H + 14 + (periodIdx % 2 === 0 ? 0 : 12);
+                    // Rojo arriba: SALE este jugador
+                    const yRed = TRACK_Y - 8;
+                    svg += `<text x="${(ex-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${alias} (${Math.floor(b)}')</text>`;
                     
-                    svg += `<text x="${(ex-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ ${alias} ${Math.floor(b)}'</text>`;
-                    
-                    if (inpName) {
-                        svg += `<text x="${(ex+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ${inpName}</text>`;
+                    // Verde abajo: ENTRA el reemplazo (si es distinto)
+                    if (replacementName && !replacementName.startsWith(alias.substring(0, 5))) {
+                        const yGreen = TRACK_Y + TRACK_H + 14;
+                        svg += `<text x="${(ex+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${replacementName}</text>`;
                     }
                 }
             });
@@ -1485,41 +1490,42 @@ async function _sdLoadReports() {
         // Mapa global de datos de partido para renderizado lazy
         window._sdMatchData = {};
 
-        // FIX (Error #20): calcular TOTALES de todos los informes
+        // FIX (Error #20 v2): calcular TOTALES de todos los informes.
+        // NO contar faltas ni corners (no se usan en esta app).
         let totalGoals = 0, totalYCards = 0, totalRCards = 0, totalInjured = 0;
-        let totalFouls = 0, totalCorners = 0;
-        // Mapa de jugadores para el informe individual acumulado
+        // Mapa de jugadores para el informe individual acumulado.
+        // FIX: contar partidos UNICOS por jugador (un jugador que aparece
+        // en 3 docs del mismo partido cuenta como 1 partido, no 3).
         const playerStats = {};
         sorted.forEach(m => {
+            const matchKey = m.key;  // clave unica del partido
             m.players.forEach(p => {
                 totalGoals += (p.goals || 0);
                 if (p.cards === 'yellow' || p.cards === 'amarilla') totalYCards++;
                 if (p.cards === 'red' || p.cards === 'roja') totalRCards++;
                 if (p.injured) totalInjured++;
-                totalFouls += (p.fouls || 0);
-                totalCorners += (p.corners || 0);
-                // Acumular por jugador
                 const pKey = p.playerAlias || p.alias || p.name || ('#' + (p.number || p.playerNumber || 0));
                 if (!playerStats[pKey]) {
                     playerStats[pKey] = {
                         name: pKey,
                         number: p.number || p.playerNumber || '',
-                        matches: 0, goals: 0, yCards: 0, rCards: 0,
-                        injured: 0, fouls: 0, corners: 0, minutes: 0
+                        matchKeys: new Set(),  // FIX: Set de partidos unicos
+                        goals: 0, yCards: 0, rCards: 0, injured: 0
                     };
                 }
                 const ps = playerStats[pKey];
-                ps.matches++;
+                ps.matchKeys.add(matchKey);  // FIX: contar partido unico
                 ps.goals += (p.goals || 0);
                 if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
                 if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
                 if (p.injured) ps.injured++;
-                ps.fouls += (p.fouls || 0);
-                ps.corners += (p.corners || 0);
-                if (p.minutesPlayed && typeof p.minutesPlayed === 'number') ps.minutes += p.minutesPlayed;
             });
         });
-        const playerList = Object.values(playerStats).sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
+        // Convertir Set a contador
+        const playerList = Object.values(playerStats).map(p => ({
+            ...p,
+            matches: p.matchKeys.size  // FIX: numero de partidos unicos
+        })).sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
 
         let html = `
         <div style="margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
@@ -1547,14 +1553,6 @@ async function _sdLoadReports() {
                     <div style="font-size:1.5rem;font-weight:800;color:#ff5858;">${totalRCards}</div>
                     <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟥 Tarj. Rojas</div>
                 </div>
-                <div style="text-align:center;background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#f0883e;">${totalFouls}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">⚠️ Faltas</div>
-                </div>
-                <div style="text-align:center;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#58a6ff;">${totalCorners}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🚩 Córners</div>
-                </div>
                 <div style="text-align:center;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
                     <div style="font-size:1.5rem;font-weight:800;color:#f97316;">${totalInjured}</div>
                     <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🚑 Lesiones</div>
@@ -1565,7 +1563,7 @@ async function _sdLoadReports() {
         <!-- FIX (Error #20): INFORME INDIVIDUAL POR JUGADOR -->
         ${playerList.length > 0 ? `
         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1rem;margin-bottom:1rem;">
-            <div style="font-size:0.82rem;font-weight:700;color:#f0883e;margin-bottom:0.7rem;letter-spacing:0.3px;">👤 INFORME INDIVIDUAL POR JUGADOR (${playerList.length} jugadores)</div>
+            <div style="font-size:0.82rem;font-weight:700;color:#f0883e;margin-bottom:0.7rem;letter-spacing:0.3px;">👤 INFORME INDIVIDUAL POR JUGADOR</div>
             <div style="overflow-x:auto;">
                 <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
                     <thead>
@@ -1576,7 +1574,6 @@ async function _sdLoadReports() {
                             <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⚽ Goles</th>
                             <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟨 TA</th>
                             <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟥 TR</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⚠️ Faltas</th>
                             <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🚑 Les.</th>
                         </tr>
                     </thead>
@@ -1589,7 +1586,6 @@ async function _sdLoadReports() {
                                 <td style="padding:0.45rem 0.5rem;text-align:center;color:#3fb950;font-weight:700;">${p.goals > 0 ? p.goals : '—'}</td>
                                 <td style="padding:0.45rem 0.5rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
                                 <td style="padding:0.45rem 0.5rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#f0883e;">${p.fouls > 0 ? p.fouls : '—'}</td>
                                 <td style="padding:0.45rem 0.5rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
                             </tr>
                         `).join('')}
