@@ -9,6 +9,406 @@
 //         (sin valor)    → título genérico "Enviar Convocatoria"
 // ══════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════
+// FIX (Error #13): Cargar usuarios REALES del club desde Firestore
+// para que directores/coordinadores/entrenadores/padres aparezcan
+// automáticamente en el selector, sin necesidad de añadirlos manualmente
+// en Gestión de Contactos.
+// ════════════════════════════════════════════════════════════════════
+window._cronosClubUsersCache = null;
+window._cronosLoadClubUsers = async function() {
+    if (window._cronosClubUsersCache) return window._cronosClubUsersCache;
+    const me = window._cronosCurrentUser;
+    const fa = window._cronos_auth;
+    if (!me || !fa) { window._cronosClubUsersCache = []; return []; }
+    try {
+        const { collection, getDocs, query, where } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const clubId = me.clubId;
+        if (!clubId) { window._cronosClubUsersCache = []; return []; }
+        const snap = await getDocs(query(collection(fa.db, 'users'), where('clubId', '==', clubId)));
+        const users = [];
+        snap.forEach(d => {
+            const u = d.data();
+            users.push({
+                id: d.id,
+                uid: d.id,
+                name: u.displayName || u.firstName || u.email || 'Sin nombre',
+                email: u.email || '',
+                phone: u.phone || '',
+                role: u.role || '',
+                type: (u.role === 'parent' || u.role === 'parent_individual') ? 'parent' : 'staff',
+                category: u.category || '',
+                subcategory: u.subcategory || '',
+                playerAlias: u.playerAlias || '',
+                allRoles: u.allRoles || []
+            });
+        });
+        window._cronosClubUsersCache = users;
+        // FIX (Error #14): log DETALLADO para ver exactamente qué roles tienen
+        console.log('[_cronosLoadClubUsers] cargados', users.length, 'usuarios del club:');
+        users.forEach((u, i) => {
+            const allRolesStr = Array.isArray(u.allRoles)
+                ? u.allRoles.map(r => r.role || JSON.stringify(r)).join(', ')
+                : '(sin allRoles)';
+            console.log(`  [${i}] name="${u.name}" | email="${u.email}" | rootRole="${u.role}" | type="${u.type}" | allRoles=[${allRolesStr}]`);
+        });
+        return users;
+    } catch(e) {
+        console.warn('[_cronosLoadClubUsers] ERROR:', e.code || e.message);
+        window._cronosClubUsersCache = [];
+        return [];
+    }
+};
+
+// ════════════════════════════════════════════════════════════════════
+// NUEVO FLUJO SIMPLIFICADO (Error #11):
+// 1. Tras rellenar convocatoria/entrenamiento → aparece selector de roles
+// 2. Al elegir rol → aparece lista de personas de ese rol con checkboxes
+// 3. Se envía SOLO a las personas marcadas
+// ════════════════════════════════════════════════════════════════════
+
+// Almacena el rol seleccionado y las personas marcadas temporalmente
+window._cronosSelectedRole = null;
+window._cronosSelectedRecipients = [];
+
+// PASO 1: Selector de roles (6 combinaciones)
+window._cronosOpenRoleSelector = function(context) {
+    // context: 'convocatoria' | 'entrenamiento'
+    window._cronosSelectedRole = null;
+    window._cronosSelectedRecipients = [];
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+    const isConv = context === 'convocatoria';
+    const title = isConv ? '📤 Enviar Convocatoria' : '📤 Enviar Entrenamiento';
+    const icon = isConv ? '📋' : '📅';
+
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(94vw,460px);max-height:90vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0;">
+
+        <div style="padding:1.2rem;border-bottom:1px solid var(--glass-border);
+                    display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <h3 style="margin:0;font-size:1.1rem;">${icon} ${title}</h3>
+            <button onclick="openConvocationModal()"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+        </div>
+
+        <div style="padding:1.2rem;overflow-y:auto;flex:1;">
+            <div style="font-size:0.85rem;color:var(--text);margin-bottom:0.5rem;font-weight:600;">
+                ¿A quién quieres enviar?
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:1.2rem;">
+                Selecciona el destinatario. Luego podrás elegir personas concretas.
+            </div>
+
+            <div style="display:grid;gap:0.7rem;">
+                <button onclick="_cronosOpenRecipientPicker('directores', '${context}')"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">📋</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Solo Directores Deportivos</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar únicamente a directores</div>
+                    </div>
+                </button>
+
+                <button onclick="_cronosOpenRecipientPicker('coordinadores', '${context}')"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(240,136,62,0.08);border:1px solid rgba(240,136,62,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">🎯</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Solo Coordinadores</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar únicamente a coordinadores</div>
+                    </div>
+                </button>
+
+                <button onclick="_cronosOpenRecipientPicker('padres', '${context}')"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">👨‍👩‍👧</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Solo Padres</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar únicamente a padres/tutores</div>
+                    </div>
+                </button>
+
+                <button onclick="_cronosOpenRecipientPicker('directores_coordinadores', '${context}')"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(180,120,200,0.08);border:1px solid rgba(180,120,200,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">📋🎯</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Directores + Coordinadores</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a staff técnico completo</div>
+                    </div>
+                </button>
+
+                <button onclick="_cronosOpenRecipientPicker('directores_padres', '${context}')"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(100,180,200,0.08);border:1px solid rgba(100,180,200,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">📋👨‍👩‍👧</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Directores + Padres</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a directores y padres</div>
+                    </div>
+                </button>
+
+                <button onclick="_cronosOpenRecipientPicker('coordinadores_padres', '${context}')"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(200,180,100,0.08);border:1px solid rgba(200,180,100,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">🎯👨‍👩‍👧</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Coordinadores + Padres</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a coordinadores y padres</div>
+                    </div>
+                </button>
+
+                <button onclick="_cronosOpenRecipientPicker('todos', '${context}')"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(150,150,255,0.1);border:1px solid rgba(150,150,255,0.35);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">📋🎯👨‍👩‍👧</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Directores + Coordinadores + Padres</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a todos (staff + padres)</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);flex-shrink:0;">
+            <button onclick="openConvocationModal()" class="btn"
+                style="color:var(--text-muted);width:100%;">← Volver</button>
+        </div>
+    </div>`;
+};
+
+// PASO 2: Lista de personas del rol seleccionado, con checkboxes
+window._cronosOpenRecipientPicker = async function(role, context) {
+    window._cronosSelectedRole = role;
+    window._cronosSelectedRecipients = [];
+
+    // FIX (Error #13): combinar contactos manuales (emailConfig.contacts)
+    // con usuarios REALES del club cargados desde Firestore.
+    const manualContacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts))
+        ? emailConfig.contacts : [];
+    const clubUsers = await window._cronosLoadClubUsers();
+    // Combinar, deduplicando por email
+    const seenEmails = new Set();
+    const contacts = [];
+    // Primero los manuales (prioridad)
+    manualContacts.forEach(c => {
+        if (!c) return;
+        const email = (c.email || '').toLowerCase().trim();
+        if (email) seenEmails.add(email);
+        contacts.push(c);
+    });
+    // Luego los del club que no estén ya
+    clubUsers.forEach(c => {
+        const email = (c.email || '').toLowerCase().trim();
+        if (email && seenEmails.has(email)) return;
+        contacts.push(c);
+    });
+    console.log('[_cronosOpenRecipientPicker] contactos combinados:', contacts.length,
+        '(manuales:', manualContacts.length, '+ club:', clubUsers.length, ')');
+
+    // FIX (Error #12): 'todos' = Directores + Coordinadores + Padres
+    const wantsDirectores = role === 'todos' || role.includes('directores');
+    const wantsCoordinadores = role === 'todos' || role.includes('coordinadores');
+    const wantsPadres = role === 'todos' || role.includes('padres');
+
+    // FIX (Error #12/13): mejorar deteccion de roles. Ahora busca en role,
+    // name, cargo Y allRoles (para usuarios del club desde Firestore).
+    const filtered = contacts.filter(c => {
+        if (!c || (!c.name && !c.email && !c.phone)) return false;
+        const type = c.type || 'staff';
+        const roleField = (c.role || '').toLowerCase();
+        const name = (c.name || '').toLowerCase();
+        const cargo = (c.cargo || '').toLowerCase();
+        // allRoles: array de roles del usuario en Firestore
+        const allRolesStr = Array.isArray(c.allRoles)
+            ? c.allRoles.map(r => (r.role || '').toLowerCase()).join(' ')
+            : '';
+        // Buscar en role, name, cargo y allRoles
+        const searchText = roleField + ' ' + name + ' ' + cargo + ' ' + allRolesStr;
+        // Detectar directores (por role, nombre, cargo o allRoles)
+        const isDirector = type === 'staff' && (
+            roleField === 'director' || allRolesStr.includes('director') ||
+            searchText.includes('director') || searchText.includes('deportiv')
+        );
+        // Detectar coordinadores
+        const isCoordinator = type === 'staff' && (
+            roleField === 'coordinator' || allRolesStr.includes('coordinator') ||
+            searchText.includes('coordin')
+        );
+        // Detectar entrenadores (para cuando se busque staff completo)
+        const isCoach = type === 'staff' && (
+            roleField === 'coach' || roleField === 'user' ||
+            allRolesStr.includes('coach') || allRolesStr.includes('user') ||
+            searchText.includes('entrenador')
+        );
+        // FIX (Error #17): detectar padres tambien si tienen 'parent' en allRoles,
+        // incluso si su rootRole es 'club_admin' (multi-rol).
+        const isParent = type === 'parent' || roleField === 'parent'
+            || allRolesStr.includes('parent') || allRolesStr.includes('parent_individual')
+            || allRolesStr.includes('padre');
+        // Staff generico (sin rol claro) — se incluye si se busca 'todos' o staff
+        const isStaffGeneric = type === 'staff' && !isDirector && !isCoordinator && !isCoach;
+
+        if (wantsPadres && isParent) return true;
+        if (wantsDirectores && isDirector) return true;
+        if (wantsCoordinadores && isCoordinator) return true;
+        // Si se busca 'todos' o cualquier combinacion que incluya staff,
+        // incluir tambien el staff generico y entrenadores
+        if ((role === 'todos' || role === 'directores_coordinadores') && (isStaffGeneric || isCoach)) return true;
+        return false;
+    });
+    // FIX (Error #14/17): si el filtro devuelve 0 pero hay usuarios del club,
+    // mostrar TODOS los del club como fallback. Si se busca padres, incluir
+    // tambien a los que tienen 'parent' en allRoles (multi-rol).
+    if (filtered.length === 0 && clubUsers.length > 0) {
+        console.warn('[_cronosOpenRecipientPicker] filtro devolvio 0 - mostrando TODOS los usuarios del club como fallback');
+        if (wantsPadres && !wantsDirectores && !wantsCoordinadores) {
+            // Solo padres: incluir type=parent O allRoles con parent
+            clubUsers.forEach(u => {
+                const ar = Array.isArray(u.allRoles) ? u.allRoles.map(r => (r.role||'').toLowerCase()).join(' ') : '';
+                if (u.type === 'parent' || ar.includes('parent') || ar.includes('padre')) {
+                    filtered.push(u);
+                }
+            });
+            // Si sigue vacio, mostrar todos (ultimo recurso)
+            if (filtered.length === 0) clubUsers.forEach(u => filtered.push(u));
+        } else if (wantsDirectores || wantsCoordinadores) {
+            // Staff (cualquiera)
+            clubUsers.forEach(u => { if (u.type === 'staff') filtered.push(u); });
+        } else {
+            // Todos
+            clubUsers.forEach(u => filtered.push(u));
+        }
+    }
+    console.log('[_cronosOpenRecipientPicker] filtered despues de fallback:', filtered.length);
+
+    const roleLabel = role === 'directores' ? 'Directores Deportivos'
+        : role === 'coordinadores' ? 'Coordinadores'
+        : role === 'padres' ? 'Padres/Tutores'
+        : role === 'directores_coordinadores' ? 'Directores + Coordinadores'
+        : role === 'directores_padres' ? 'Directores + Padres'
+        : role === 'coordinadores_padres' ? 'Coordinadores + Padres'
+        : role === 'todos' ? 'Directores + Coordinadores + Padres'
+        : 'Destinatarios';
+
+    const isConv = context === 'convocatoria';
+    const sendFunction = isConv ? 'publishConvocationToAppV2' : '_sendTrainingNotificationV2';
+    const sendLabel = isConv ? '📨 Enviar Convocatoria' : '📨 Enviar Entrenamiento';
+
+    const modal = document.getElementById('setup-modal');
+    modal.style.display = 'flex';
+
+    const listHTML = filtered.length
+        ? filtered.map(c => {
+            const id = c.id || ('c_' + Math.random().toString(36).substr(2,5));
+            // FIX (Error #15): mostrar nombre real (no email) + rol + email
+            const realName = c.name || c.email || 'Contacto';
+            // Detectar rol para mostrarlo como etiqueta
+            const allRolesStr = Array.isArray(c.allRoles)
+                ? c.allRoles.map(r => r.role || '').filter(Boolean)
+                : [];
+            let roleLabel = c.cargo || c.role || '';
+            if (!roleLabel && allRolesStr.length) {
+                // Si tiene varios roles, mostrar el que coincide con el seleccionado
+                const wantsDir = role.includes('directores');
+                const wantsCoord = role.includes('coordinadores');
+                if (wantsDir && allRolesStr.includes('director')) roleLabel = 'director';
+                else if (wantsCoord && allRolesStr.includes('coordinator')) roleLabel = 'coordinator';
+                else roleLabel = allRolesStr[0];
+            }
+            const roleDisplay = roleLabel
+                ? (roleLabel === 'director' ? 'Director Deportivo'
+                : roleLabel === 'coordinator' ? 'Coordinador'
+                : roleLabel === 'coach' || roleLabel === 'user' ? 'Entrenador'
+                : roleLabel === 'parent' ? 'Padre/Tutor'
+                : roleLabel === 'club_admin' ? 'Admin Club'
+                : roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1))
+                : '';
+            const sub = [c.email, c.phone].filter(Boolean).join(' · ');
+            const typeIcon = c.type === 'parent' ? '👨‍👩‍👧'
+                : roleLabel === 'director' ? '📋'
+                : roleLabel === 'coordinator' ? '🎯'
+                : roleLabel === 'coach' || roleLabel === 'user' ? '🏃'
+                : '🏢';
+            return `
+            <label style="display:flex;align-items:center;gap:0.7rem;padding:0.7rem 0.8rem;
+                           background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
+                           border-radius:8px;cursor:pointer;">
+                <input type="checkbox" class="cronos-pick-chk" data-id="${id}"
+                    data-uid="${c.uid||''}" data-email="${c.email||''}" data-phone="${c.phone||''}"
+                    data-label="${(realName||'').replace(/"/g,'&quot;')}"
+                    data-role="${roleLabel}"
+                    data-target-role="${roleLabel}"
+                    checked style="width:18px;height:18px;accent-color:var(--primary);flex-shrink:0;">
+                <span style="font-size:1.1rem;">${typeIcon}</span>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.85rem;font-weight:600;color:var(--text);">${realName}</div>
+                    ${roleDisplay ? `<div style="font-size:0.68rem;color:#58a6ff;font-weight:600;margin-top:1px;">${roleDisplay}</div>` : ''}
+                    ${sub ? `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:1px;">${sub}</div>` : ''}
+                </div>
+            </label>`;
+        }).join('')
+        : `<div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:0.85rem;">
+            ⚠️ No hay contactos de tipo "${roleLabel}" configurados.<br><br>
+            Ve a <strong>Gestión de Contactos</strong> y añade contactos con el rol correcto.
+           </div>`;
+
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(94vw,500px);max-height:90vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0;">
+
+        <div style="padding:1.2rem;border-bottom:1px solid var(--glass-border);
+                    display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <div>
+                <h3 style="margin:0;font-size:1.05rem;">✓ ${roleLabel}</h3>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+                    Marca quién recibirá el ${isConv?'convocatoria':'entrenamiento'}
+                </div>
+            </div>
+            <button onclick="_cronosOpenRoleSelector('${context}')"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+        </div>
+
+        <div style="padding:1rem 1.2rem;overflow-y:auto;flex:1;">
+            <div style="display:flex;gap:0.4rem;margin-bottom:0.8rem;">
+                <button onclick="(function(){document.querySelectorAll('.cronos-pick-chk').forEach(c=>c.checked=true);})()"
+                    style="flex:1;font-size:0.72rem;padding:0.4rem;background:rgba(88,166,255,0.1);
+                           border:1px solid rgba(88,166,255,0.3);border-radius:6px;color:var(--primary);cursor:pointer;">
+                    ✓ Todos</button>
+                <button onclick="(function(){document.querySelectorAll('.cronos-pick-chk').forEach(c=>c.checked=false);})()"
+                    style="flex:1;font-size:0.72rem;padding:0.4rem;background:rgba(255,255,255,0.05);
+                           border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);cursor:pointer;">
+                    ✗ Ninguno</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.4rem;">
+                ${listHTML}
+            </div>
+        </div>
+
+        <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);
+                    display:flex;gap:0.5rem;flex-shrink:0;">
+            <button onclick="_cronosOpenRoleSelector('${context}')" class="btn"
+                style="color:var(--text-muted);">← Volver</button>
+            <button onclick="${sendFunction}()"
+                class="btn" ${filtered.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed;flex:1;"' : 'style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);color:#3fb950;font-weight:700;flex:1;"'}
+                >${sendLabel}</button>
+        </div>
+    </div>`;
+};
+
 function openConvocationMessage(target) {
     // FIX: usar _savedConvokedPlayers + pre-cargar caché de contactos
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
@@ -207,7 +607,7 @@ function openConvocationMessage(target) {
                     style="background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.3);
                            color:var(--primary);flex:1;">
                     👁️ Vista previa</button>
-                <button onclick="publishConvocationToApp()" class="btn"
+                <button onclick="_cronosOpenRoleSelector('convocatoria')" class="btn"
                     style="background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
                            color:var(--primary);font-weight:700;">
                     📱 Envío Interno</button>
@@ -554,16 +954,70 @@ async function publishConvocationToApp() {
     const fa = window._cronos_auth;
     if (!me || !fa) return;
 
-    const fullText   = buildConvocationText();
-    const dateVal    = document.getElementById('cv-date')?.value    || '';
-    const rival      = document.getElementById('cv-rival')?.value.trim()    || '';
-    const meettime   = document.getElementById('cv-meettime')?.value || '';
-    const kickoff    = document.getElementById('cv-kickoff')?.value  || '';
-    const venue      = document.getElementById('cv-venue')?.value.trim()    || '';
-    const extra      = document.getElementById('cv-extra')?.value.trim()    || '';
-    const playersArr = Array.from(document.querySelectorAll('.conv-player-name')).map(el => el.value.trim());
+    // FIX (Error #15b): leer jugadores de _savedConvokedPlayers PRIMERO,
+    // antes de buildConvocationText (que puede fallar si el DOM no existe).
+    const sv = window._savedConvData || {};
+    const dateVal    = sv.date || '';
+    const rival      = sv.rival || '';
+    const meettime   = sv.meettime || '';
+    const kickoff    = sv.time || '';
+    const venue      = sv.venue || '';
+    const extra      = sv.type || '';
+    // Construir playersArr desde _savedConvokedPlayers
+    let playersArr = [];
+    if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
+        // FIX (Error #15d): log DETALLADO del primer jugador para ver su estructura
+        console.log('[publishConvocationToAppV2] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
+        playersArr = window._savedConvokedPlayers.map(p => {
+            // Intentar TODOS los campos posibles del roster
+            const num = p.number || p.dorsal || p.num || '';
+            const alias = p.alias || p.name || p.surname || p.playerName || p.displayName || '';
+            let label;
+            if (num && alias) label = num + '. ' + alias;
+            else if (alias) label = alias;
+            else if (num) label = String(num);
+            else label = '';
+            return label.trim();
+        }).filter(s => s.length > 0);
+        console.log('[publishConvocationToAppV2] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
+        // Si el mapeo dio 0 pero _savedConvokedPlayers tenia elementos, usar los nombres directos
+        if (!playersArr.length && window._savedConvokedPlayers.length) {
+            playersArr = window._savedConvokedPlayers.map((p, i) => {
+                const keys = Object.keys(p);
+                console.log('[publishConvocationToAppV2] jugador ' + i + ' keys:', keys);
+                // Buscar cualquier campo que tenga texto
+                for (const k of ['alias', 'name', 'surname', 'playerName', 'displayName', 'number', 'dorsal']) {
+                    if (p[k] && String(p[k]).trim()) return String(p[k]).trim();
+                }
+                return 'Jugador ' + (i + 1);
+            });
+            console.log('[publishConvocationToAppV2] jugadores (fallback keys):', playersArr.length, playersArr);
+        }
+    }
+    // Fallback: leer del DOM
+    if (!playersArr.length) {
+        playersArr = Array.from(document.querySelectorAll('.conv-player-name')).map(el => el.value.trim()).filter(Boolean);
+        console.log('[publishConvocationToAppV2] jugadores desde DOM (fallback):', playersArr.length);
+    }
+    // Fallback: leer de localStorage (cronos_last_conv)
+    if (!playersArr.length) {
+        try {
+            const lastConv = JSON.parse(localStorage.getItem('cronos_last_conv') || '{}');
+            if (lastConv.players && Array.isArray(lastConv.players)) {
+                playersArr = lastConv.players;
+                console.log('[publishConvocationToAppV2] jugadores desde localStorage:', playersArr.length);
+            }
+        } catch(e) {}
+    }
 
-    if (!playersArr.length) { showToast('⚠️ No hay jugadores para convocar', 3000); return; }
+    if (!playersArr.length) {
+        showToast('⚠️ No hay jugadores convocados. Vuelve y marca jugadores.', 5000);
+        console.warn('[publishConvocationToAppV2] SIN jugadores - abortando');
+        return;
+    }
+    // Ahora safe llamar buildConvocationText (con try/catch)
+    let fullText = '';
+    try { fullText = buildConvocationText(); } catch(e) { console.warn('[publishConvocationToAppV2] buildConvocationText error:', e.message); }
 
     showSpinner('Publicando convocatoria interna…');
     saveConvConfig();
@@ -636,6 +1090,188 @@ async function publishConvocationToApp() {
 }
 
 // ── Exports globales ─────────────────────────────────────────────────
+// ── V2: Enviar convocatoria usando el nuevo flujo simplificado ──
+window.publishConvocationToAppV2 = async function() {
+    console.log('[publishConvocationToAppV2] ====== INICIO ======');
+    console.log('[publishConvocationToAppV2] _savedConvokedPlayers:', window._savedConvokedPlayers ? window._savedConvokedPlayers.length : 'UNDEFINED', window._savedConvokedPlayers);
+    console.log('[publishConvocationToAppV2] _savedConvData:', window._savedConvData);
+    const me = window._cronosCurrentUser;
+    const fa = window._cronos_auth;
+    if (!me || !fa) { console.warn('[publishConvocationToAppV2] no me/fa'); return; }
+
+    // Leer los checkboxes marcados en el picker
+    const selected = Array.from(document.querySelectorAll('.cronos-pick-chk:checked')).map(chk => ({
+        id: chk.dataset.id,
+        uid: chk.dataset.uid || '',
+        email: chk.dataset.email || '',
+        phone: chk.dataset.phone || '',
+        label: chk.dataset.label || '',
+        role: chk.dataset.role || '',
+        targetRole: chk.dataset.targetRole || chk.dataset.role || ''
+    }));
+
+    if (!selected.length) {
+        if (typeof showToast === 'function') showToast('⚠️ Selecciona al menos una persona', 3000);
+        return;
+    }
+
+    // FIX (Error #15b): sincronizado con publishConvocationToApp. Leer datos
+    // y jugadores desde _savedConvData / _savedConvokedPlayers (fuente de
+    // verdad) PRIMERO. Cuando V2 se ejecuta, el DOM del formulario (cv-date,
+    // .conv-player-name) ya fue reemplazado por el picker de destinatarios,
+    // así que leer del DOM devuelve vacío.
+    const sv = window._savedConvData || {};
+    const dateVal    = sv.date     || document.getElementById('cv-date')?.value           || '';
+    const rival      = sv.rival    || document.getElementById('cv-rival')?.value.trim()    || '';
+    const meettime   = sv.meettime || document.getElementById('cv-meettime')?.value        || '';
+    const kickoff    = sv.time     || document.getElementById('cv-kickoff')?.value         || '';
+    const venue      = sv.venue    || document.getElementById('cv-venue')?.value.trim()    || '';
+    const extra      = sv.type     || document.getElementById('cv-extra')?.value.trim()    || '';
+
+    // Construir playersArr desde _savedConvokedPlayers (con fallbacks)
+    let playersArr = [];
+    if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
+        console.log('[publishConvocationToAppV2] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
+        playersArr = window._savedConvokedPlayers.map(p => {
+            const num = p.number || p.dorsal || p.num || '';
+            const alias = p.alias || p.name || p.surname || p.playerName || p.displayName || '';
+            let label;
+            if (num && alias) label = num + '. ' + alias;
+            else if (alias) label = alias;
+            else if (num) label = String(num);
+            else label = '';
+            return label.trim();
+        }).filter(s => s.length > 0);
+        console.log('[publishConvocationToAppV2] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
+        // Si el mapeo dio 0 pero había elementos, usar los nombres directos
+        if (!playersArr.length && window._savedConvokedPlayers.length) {
+            playersArr = window._savedConvokedPlayers.map((p, i) => {
+                const keys = Object.keys(p);
+                console.log('[publishConvocationToAppV2] jugador ' + i + ' keys:', keys);
+                for (const k of ['alias', 'name', 'surname', 'playerName', 'displayName', 'number', 'dorsal']) {
+                    if (p[k] && String(p[k]).trim()) return String(p[k]).trim();
+                }
+                return 'Jugador ' + (i + 1);
+            });
+            console.log('[publishConvocationToAppV2] jugadores (fallback keys):', playersArr.length, playersArr);
+        }
+    }
+    // Fallback: leer del DOM
+    if (!playersArr.length) {
+        playersArr = Array.from(document.querySelectorAll('.conv-player-name')).map(el => el.value.trim()).filter(Boolean);
+        console.log('[publishConvocationToAppV2] jugadores desde DOM (fallback):', playersArr.length);
+    }
+    // Fallback: leer de localStorage (cronos_last_conv)
+    if (!playersArr.length) {
+        try {
+            const lastConv = JSON.parse(localStorage.getItem('cronos_last_conv') || '{}');
+            if (lastConv.players && Array.isArray(lastConv.players)) {
+                playersArr = lastConv.players;
+                console.log('[publishConvocationToAppV2] jugadores desde localStorage:', playersArr.length);
+            }
+        } catch(e) {}
+    }
+
+    if (!playersArr.length) {
+        showToast('⚠️ No hay jugadores convocados. Vuelve y marca jugadores.', 5000);
+        console.warn('[publishConvocationToAppV2] SIN jugadores - abortando');
+        return;
+    }
+
+    // Ahora safe llamar buildConvocationText (con try/catch, el DOM puede no existir)
+    let fullText = '';
+    try { fullText = buildConvocationText(); } catch(e) { console.warn('[publishConvocationToAppV2] buildConvocationText error:', e.message); }
+
+    if (typeof showSpinner === 'function') showSpinner('Enviando convocatoria...');
+
+    try {
+        const { setDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = fa.db;
+
+        const dateStr = dateVal
+            ? new Date(dateVal + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'long',day:'numeric',month:'long'})
+            : '—';
+
+        const _resolveRole = (r) => {
+            // FIX (Error #15): usar el data-target-role del checkbox (que coincide
+            // con el rol seleccionado en el selector). Así, si un usuario tiene
+            // varios roles (director+coordinador+padre), la notificación va
+            // SOLO al panel del rol que se seleccionó.
+            if (r.targetRole) return r.targetRole;
+            const label = (r.label || r.role || '').toLowerCase();
+            if (label.includes('director')) return 'director';
+            if (label.includes('coordin')) return 'coordinator';
+            return 'staff';
+        };
+
+        const notifPayload = (uid, role) => ({
+            type:       'convocatoria',
+            clubId:     me.clubId  || null,
+            parentUid:  uid,
+            coachUid:   me.uid,
+            coachEmail: me.email   || '',
+            targetRole: role || null,
+            matchDate:  dateStr,
+            rival, meettime, kickoff, venue, extra,
+            players:    playersArr,
+            fullText,
+            createdAt:  new Date().toISOString(),
+        });
+
+        const notifiedUids = new Set();
+        let count = 0;
+        const sinUid = [];
+        const debugLog = [];
+
+        for (const r of selected) {
+            let uid = r.uid;
+            // Resolver por email si no tiene uid
+            if (!uid && r.email && typeof window._cronosResolveUidByEmail === 'function') {
+                uid = await window._cronosResolveUidByEmail(r.email);
+            } else if (r.email && typeof window._cronosResolveUidByEmail === 'function') {
+                // Verificar uid aunque exista
+                const resolved = await window._cronosResolveUidByEmail(r.email);
+                if (resolved && resolved !== uid) {
+                    debugLog.push(`[${r.label}] uid reemplazado: ${uid} → ${resolved}`);
+                    uid = resolved;
+                }
+            }
+            if (!uid) {
+                sinUid.push(r.label || r.email);
+                continue;
+            }
+            if (notifiedUids.has(uid)) continue;
+            notifiedUids.add(uid);
+            await setDoc(doc(db, 'cronos_notifications', 'cv_' + uid + '_' + Date.now().toString(36)), notifPayload(uid, _resolveRole(r)));
+            count++;
+            debugLog.push(`[✓ ${r.label}] enviado a uid=${uid}`);
+        }
+        console.log('[publishConvocationToAppV2] Debug:', debugLog);
+
+        if (typeof hideSpinner === 'function') hideSpinner();
+
+        if (count > 0) {
+            let msg = '✅ Convocatoria enviada a ' + count + ' persona(s)';
+            if (sinUid.length > 0) {
+                msg += '\n⚠️ No enviado a ' + sinUid.length + ' sin cuenta App: ' + sinUid.slice(0,3).join(', ');
+            }
+            if (typeof showToast === 'function') showToast(msg, sinUid.length > 0 ? 8000 : 5000);
+            // Volver al menu principal
+            if (typeof openUnifiedCommsMenu === 'function') openUnifiedCommsMenu();
+        } else {
+            let msg = '⚠️ 0 destinatarios válidos.';
+            if (sinUid.length > 0) {
+                msg += ' Sin cuenta App: ' + sinUid.slice(0,3).join(', ') + '. Verifica el email en Gestión de Contactos.';
+            }
+            if (typeof showToast === 'function') showToast(msg, 8000);
+        }
+    } catch(e) {
+        if (typeof hideSpinner === 'function') hideSpinner();
+        console.error('[publishConvocationToAppV2]', e);
+        if (typeof showToast === 'function') showToast('⚠️ Error: ' + e.message, 5000);
+    }
+};
+
 window.openConvocationMessage = openConvocationMessage;
 window.publishConvocationToApp = publishConvocationToApp;
 
