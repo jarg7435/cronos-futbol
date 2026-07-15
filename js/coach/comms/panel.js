@@ -3491,15 +3491,6 @@ window._sendTrainingNotificationV2 = async function() {
 
         for (const r of selected) {
             let uid = r.uid;
-            if (!uid && r.email && typeof window._cronosResolveUidByEmail === 'function') {
-                uid = await window._cronosResolveUidByEmail(r.email);
-            } else if (r.email && typeof window._cronosResolveUidByEmail === 'function') {
-                const resolved = await window._cronosResolveUidByEmail(r.email);
-                if (resolved && resolved !== uid) {
-                    debugLogTr.push(`[${r.label}] uid reemplazado: ${uid} → ${resolved}`);
-                    uid = resolved;
-                }
-            }
             if (!uid) {
                 sinUidTr.push(r.label || r.email);
                 continue;

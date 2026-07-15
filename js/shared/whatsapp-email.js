@@ -1239,17 +1239,6 @@ window.publishConvocationToAppV2 = async function() {
 
         for (const r of selected) {
             let uid = r.uid;
-            // Resolver por email si no tiene uid
-            if (!uid && r.email && typeof window._cronosResolveUidByEmail === 'function') {
-                uid = await window._cronosResolveUidByEmail(r.email);
-            } else if (r.email && typeof window._cronosResolveUidByEmail === 'function') {
-                // Verificar uid aunque exista
-                const resolved = await window._cronosResolveUidByEmail(r.email);
-                if (resolved && resolved !== uid) {
-                    debugLog.push(`[${r.label}] uid reemplazado: ${uid} → ${resolved}`);
-                    uid = resolved;
-                }
-            }
             if (!uid) {
                 sinUid.push(r.label || r.email);
                 continue;
