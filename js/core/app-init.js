@@ -2913,7 +2913,7 @@ function openConvocationModal() {
                     <div>
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F4C5} Fecha</label>
                         <input type="date" id="conv-date" class="conv-input"
-                            value="${savedConv.date || new Date().toISOString().substring(0,10)}">
+                            value="${savedConv.date || _cronosLocalDateKey(new Date())}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F552} Hora del partido</label>
@@ -5272,7 +5272,7 @@ async function saOpenPaymentForm(id, type) {
         : new Date();
     const suggested = new Date(base);
     suggested.setMonth(suggested.getMonth() + 1);
-    const suggestedStr = suggested.toISOString().substring(0, 10);
+    const suggestedStr = _cronosLocalDateKey(suggested);
 
     body.innerHTML = `
         <div style="max-width:480px;">

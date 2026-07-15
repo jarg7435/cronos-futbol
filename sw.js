@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v303 (cache): Fix zona horaria en las claves de fecha de la semana de
+//        entrenamiento. Se sustituye date.toISOString().substring(0,10)
+//        (que convierte a UTC y desplazaba la clave -1 dia en España,
+//        UTC+1/+2) por el helper _cronosLocalDateKey (js/core/utils.js),
+//        que usa componentes de fecha LOCAL. Afecta a training/panel.js,
+//        comms/panel.js, parent/panel.js y app-init.js. Bump para forzar
+//        recarga del JS corregido.
 //  v299 (cache): Unificado el render del aviso de entrenamiento
 //        (planificacion_semanal) en un helper compartido
 //        _cronosRenderTrainingWeekCards (js/shared/whatsapp-email.js).
@@ -472,7 +479,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v276';
-const CACHE_NAME = 'cronos-cache-v302';
+const CACHE_NAME = 'cronos-cache-v303';
 
 const ASSETS = [
     './',

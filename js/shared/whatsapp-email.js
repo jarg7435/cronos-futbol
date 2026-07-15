@@ -528,7 +528,7 @@ function openConvocationMessage(target) {
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Fecha del partido</label>
                         <input id="cv-date" type="date" class="conv-input"
-                            value="${typeof escapeAttr==='function'?escapeAttr(saved.date || new Date().toISOString().substring(0,10)):saved.date || new Date().toISOString().substring(0,10)}">
+                            value="${typeof escapeAttr==='function'?escapeAttr(saved.date || _cronosLocalDateKey(new Date())):saved.date || _cronosLocalDateKey(new Date())}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Rival</label>
