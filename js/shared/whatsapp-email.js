@@ -1047,6 +1047,61 @@ function _cronosResolvePlayersArr() {
 }
 window._cronosResolvePlayersArr = _cronosResolvePlayersArr;
 
+// ════════════════════════════════════════════════════════════════════
+// RENDER COMPARTIDO — PLANIFICACIÓN SEMANAL (tarjetas horizontales)
+// ════════════════════════════════════════════════════════════════════
+// Fuente ÚNICA del layout del aviso de entrenamiento para que todas las
+// vistas (coordinador/director en club-reports.js y padres en parent/
+// panel.js) usen exactamente el mismo HTML/CSS y no se desincronicen —
+// mismo patrón que _cronosResolvePlayersArr.
+//
+// `days` = array de { day, time, venue, note } (ver notifPayload en
+// coach/comms/panel.js). `note` ya incluye tipo · duración · equipación.
+// `opts.hint` (por defecto true) muestra la pista de scroll lateral.
+// Devuelve el HTML de la pista + el contenedor con scroll horizontal y una
+// tarjeta por día (badge 🏃 ENTRENO / ⚽ PARTIDO, hora, lugar y nota).
+// ════════════════════════════════════════════════════════════════════
+function _cronosRenderTrainingWeekCards(days, opts) {
+    opts = opts || {};
+    const esc = (v) => typeof escapeHtml === 'function'
+        ? escapeHtml(v == null ? '' : String(v))
+        : (v == null ? '' : String(v));
+    const isMatchDay = (note) => {
+        const s = (note || '').toLowerCase();
+        return s.includes('partido') || s.includes('match');
+    };
+    const cardsHTML = Array.isArray(days) && days.length
+        ? days.map((dy, idx) => {
+            const hasData    = dy.time || dy.venue || dy.note;
+            const match      = isMatchDay(dy.note);
+            const cardBg     = match ? 'rgba(63,185,80,0.1)' : 'rgba(255,255,255,0.05)';
+            const cardBorder = match ? 'rgba(63,185,80,0.4)' : 'rgba(255,255,255,0.12)';
+            const dayColor   = match ? '#3fb950' : '#f0883e';
+            const dayBadge   = match ? '⚽ PARTIDO' : '🏃 ENTRENO';
+            const dayBadgeBg = match ? 'rgba(63,185,80,0.2)' : 'rgba(240,136,62,0.2)';
+            return '<div style="flex:0 0 auto;min-width:160px;max-width:200px;background:' + cardBg + ';border:1px solid ' + cardBorder + ';border-radius:12px;padding:0.9rem;display:flex;flex-direction:column;gap:0.45rem;">'
+                + '<div style="font-weight:800;color:' + dayColor + ';font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:0.4rem;margin-bottom:0.2rem;">' + esc(dy.day || ('Día ' + (idx + 1))) + '</div>'
+                + '<div style="font-size:0.55rem;font-weight:700;color:' + dayColor + ';background:' + dayBadgeBg + ';padding:2px 8px;border-radius:4px;align-self:flex-start;letter-spacing:0.5px;">' + dayBadge + '</div>'
+                + (hasData
+                    ? '<div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.78rem;">'
+                        + (dy.time ? '<div style="display:flex;align-items:center;gap:0.4rem;"><span style="font-size:1rem;">🕐</span><strong style="font-size:0.85rem;">' + esc(dy.time) + '</strong></div>' : '')
+                        + (dy.venue ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📍</span><span style="line-height:1.3;">' + esc(dy.venue) + '</span></div>' : '')
+                        + (dy.note ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📝</span><span style="line-height:1.3;color:var(--text-muted);font-size:0.72rem;">' + esc(dy.note) + '</span></div>' : '')
+                        + '</div>'
+                    : '<div style="font-size:0.75rem;color:#666;font-style:italic;text-align:center;padding:0.8rem 0;">😴 Descanso</div>')
+                + '</div>';
+        }).join('')
+        : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem;text-align:center;">No hay días en esta planificación.</div>';
+    const hint = (opts.hint === false)
+        ? ''
+        : '<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.8rem;display:flex;align-items:center;gap:0.3rem;"><span>👈 Desplaza lateralmente para ver todos los días</span></div>';
+    return hint
+        + '<div style="display:flex;gap:0.6rem;overflow-x:auto;padding-bottom:0.6rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin;">'
+        + cardsHTML
+        + '</div>';
+}
+window._cronosRenderTrainingWeekCards = _cronosRenderTrainingWeekCards;
+
 // ── Publicar convocatoria interna (visible en app padres) ───────────
 async function publishConvocationToApp() {
     const me = window._cronosCurrentUser;

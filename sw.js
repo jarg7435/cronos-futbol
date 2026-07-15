@@ -1,5 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v299 (cache): Unificado el render del aviso de entrenamiento
+//        (planificacion_semanal) en un helper compartido
+//        _cronosRenderTrainingWeekCards (js/shared/whatsapp-email.js).
+//        El panel de padres dejaba de mostrar una tabla vertical y ahora
+//        usa las mismas tarjetas horizontales con scroll lateral que el
+//        panel de coordinador/director. Bump para forzar recarga del JS.
 //  v229: FIX v221 - sincronización de umbrales del semáforo entre
 //        coach y live.html:
 //        · pushLiveSnapshot ahora lee DIRECTAMENTE clubs/{clubId}.timerThresholds
@@ -466,7 +472,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v276';
-const CACHE_NAME = 'cronos-cache-v298';
+const CACHE_NAME = 'cronos-cache-v299';
 
 const ASSETS = [
     './',

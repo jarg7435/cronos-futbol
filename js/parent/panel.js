@@ -326,47 +326,19 @@ async function openParentPanel() {
                             color:#7d8590;font-style:italic;">💬 ${typeof escapeHtml==='function'?escapeHtml(n.extra):n.extra}</div>` : ''}
                     `;
                 } else if (n.type === 'planificacion_semanal') {
-                    // Unificado con el panel de coordinador/director (club-reports.js):
-                    // tarjetas HORIZONTALES con scroll lateral, una por día, en vez de tabla.
+                    // Render UNIFICADO con coordinador/director via helper
+                    // compartido (_cronosRenderTrainingWeekCards en whatsapp-email.js):
+                    // tarjetas HORIZONTALES con scroll lateral, una por día.
                     const d = new Date(n.weekStartDate + 'T12:00:00');
                     const weekStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long', year:'numeric' });
-                    const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v) : v;
-                    const isMatchDay = (note) => {
-                        const s = (note || '').toLowerCase();
-                        return s.includes('partido') || s.includes('match');
-                    };
-                    const weekDaysHTML = Array.isArray(n.days) && n.days.length
-                        ? n.days.map((dy, idx) => {
-                            const hasData    = dy.time || dy.venue || dy.note;
-                            const match      = isMatchDay(dy.note);
-                            const cardBg     = match ? 'rgba(63,185,80,0.1)' : 'rgba(255,255,255,0.05)';
-                            const cardBorder = match ? 'rgba(63,185,80,0.4)' : 'rgba(255,255,255,0.12)';
-                            const dayColor   = match ? '#3fb950' : '#f0883e';
-                            const dayBadge   = match ? '⚽ PARTIDO' : '🏃 ENTRENO';
-                            const dayBadgeBg = match ? 'rgba(63,185,80,0.2)' : 'rgba(240,136,62,0.2)';
-                            return '<div style="flex:0 0 auto;min-width:160px;max-width:200px;background:' + cardBg + ';border:1px solid ' + cardBorder + ';border-radius:12px;padding:0.9rem;display:flex;flex-direction:column;gap:0.45rem;">'
-                                + '<div style="font-weight:800;color:' + dayColor + ';font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:0.4rem;margin-bottom:0.2rem;">' + esc(dy.day || ('Día ' + (idx + 1))) + '</div>'
-                                + '<div style="font-size:0.55rem;font-weight:700;color:' + dayColor + ';background:' + dayBadgeBg + ';padding:2px 8px;border-radius:4px;align-self:flex-start;letter-spacing:0.5px;">' + dayBadge + '</div>'
-                                + (hasData
-                                    ? '<div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.78rem;">'
-                                        + (dy.time ? '<div style="display:flex;align-items:center;gap:0.4rem;"><span style="font-size:1rem;">🕐</span><strong style="font-size:0.85rem;">' + esc(dy.time) + '</strong></div>' : '')
-                                        + (dy.venue ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📍</span><span style="line-height:1.3;">' + esc(dy.venue) + '</span></div>' : '')
-                                        + (dy.note ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📝</span><span style="line-height:1.3;color:var(--text-muted);font-size:0.72rem;">' + esc(dy.note) + '</span></div>' : '')
-                                        + '</div>'
-                                    : '<div style="font-size:0.75rem;color:#666;font-style:italic;text-align:center;padding:0.8rem 0;">😴 Descanso</div>')
-                                + '</div>';
-                        }).join('')
+                    const weekCards = (typeof _cronosRenderTrainingWeekCards === 'function')
+                        ? _cronosRenderTrainingWeekCards(n.days)
                         : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem;text-align:center;">No hay días en esta planificación.</div>';
                     inner = `
                         <div style="font-size:1rem;font-weight:800;margin-bottom:0.3rem;color:#f0883e;">
                             📅 Semana del ${weekStr}
                         </div>
-                        <div style="font-size:0.72rem;color:#7d8590;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.3rem;">
-                            <span>👈 Desplaza lateralmente para ver todos los días</span>
-                        </div>
-                        <div style="display:flex;gap:0.6rem;overflow-x:auto;padding-bottom:0.6rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin;">
-                            ${weekDaysHTML}
-                        </div>
+                        ${weekCards}
                     `;
                 } else {
                     inner = `
@@ -1940,35 +1912,12 @@ window.ppNotifsByType = async function(type) {
                 ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
                 : '';
 
-            // Build weekly schedule HTML for planificacion_semanal.
-            // Unificado con el modal de coordinador/director (club-reports.js):
-            // tarjetas HORIZONTALES con scroll lateral, una por día.
-            const _escP = (v) => typeof escapeHtml === 'function' ? escapeHtml(v) : v;
-            const _isMatchDay = (note) => {
-                const s = (note || '').toLowerCase();
-                return s.includes('partido') || s.includes('match');
-            };
-            const weekPlanHTML = isPlan && Array.isArray(d.days) && d.days.length
-                ? d.days.map((dy, idx) => {
-                    const hasData    = dy.time || dy.venue || dy.note;
-                    const match      = _isMatchDay(dy.note);
-                    const cardBg     = match ? 'rgba(63,185,80,0.1)' : 'rgba(255,255,255,0.05)';
-                    const cardBorder = match ? 'rgba(63,185,80,0.4)' : 'rgba(255,255,255,0.12)';
-                    const dayColor   = match ? '#3fb950' : '#f0883e';
-                    const dayBadge   = match ? '⚽ PARTIDO' : '🏃 ENTRENO';
-                    const dayBadgeBg = match ? 'rgba(63,185,80,0.2)' : 'rgba(240,136,62,0.2)';
-                    return '<div style="flex:0 0 auto;min-width:160px;max-width:200px;background:' + cardBg + ';border:1px solid ' + cardBorder + ';border-radius:12px;padding:0.9rem;display:flex;flex-direction:column;gap:0.45rem;">'
-                        + '<div style="font-weight:800;color:' + dayColor + ';font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:0.4rem;margin-bottom:0.2rem;">' + _escP(dy.day || ('Día ' + (idx + 1))) + '</div>'
-                        + '<div style="font-size:0.55rem;font-weight:700;color:' + dayColor + ';background:' + dayBadgeBg + ';padding:2px 8px;border-radius:4px;align-self:flex-start;letter-spacing:0.5px;">' + dayBadge + '</div>'
-                        + (hasData
-                            ? '<div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.78rem;">'
-                                + (dy.time ? '<div style="display:flex;align-items:center;gap:0.4rem;"><span style="font-size:1rem;">🕐</span><strong style="font-size:0.85rem;">' + _escP(dy.time) + '</strong></div>' : '')
-                                + (dy.venue ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📍</span><span style="line-height:1.3;">' + _escP(dy.venue) + '</span></div>' : '')
-                                + (dy.note ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📝</span><span style="line-height:1.3;color:var(--text-muted);font-size:0.72rem;">' + _escP(dy.note) + '</span></div>' : '')
-                                + '</div>'
-                            : '<div style="font-size:0.75rem;color:#666;font-style:italic;text-align:center;padding:0.8rem 0;">😴 Descanso</div>')
-                        + '</div>';
-                }).join('')
+            // Build weekly schedule HTML for planificacion_semanal via helper
+            // compartido (_cronosRenderTrainingWeekCards en whatsapp-email.js):
+            // tarjetas HORIZONTALES con scroll lateral, una por día. Idéntico al
+            // modal de coordinador/director para no desincronizarse.
+            const weekPlanHTML = isPlan && (typeof _cronosRenderTrainingWeekCards === 'function')
+                ? _cronosRenderTrainingWeekCards(d.days)
                 : '';
 
             overlay.innerHTML = `
@@ -1995,8 +1944,7 @@ window.ppNotifsByType = async function(type) {
                         ${d.kickoff ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">⚽ Inicio: <strong>${typeof escapeHtml==='function'?escapeHtml(d.kickoff):d.kickoff}h</strong></div>`:''}
                     ` : isPlan ? `
                         ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.3rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.8rem;display:flex;align-items:center;gap:0.3rem;"><span>👈 Desplaza lateralmente para ver todos los días</span></div>
-                        <div style="display:flex;gap:0.6rem;overflow-x:auto;padding-bottom:0.6rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin;">${weekPlanHTML}</div>
+                        ${weekPlanHTML}
                     ` : `
                         <div style="font-size:0.95rem;margin-bottom:0.5rem;">📅 <strong>${typeof escapeHtml==='function'?escapeHtml(dtFmt):dtFmt}</strong></div>
                         ${d.location||d.venue?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">📍 ${typeof escapeHtml==='function'?escapeHtml(d.location||d.venue):d.location||d.venue}</div>`:''}

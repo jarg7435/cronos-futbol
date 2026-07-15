@@ -388,25 +388,19 @@ async function _sdLoadEvents(type) {
                 </div>`:''}
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:8px;font-style:italic;">💬 ${escapeHtml(d.extra)}</div>`:''}`;
             } else if (isPlan && (Array.isArray(d.days) || d.weekStartDate)) {
-                // Planificación Semanal con tabla de días
-                const weekDaysHTML = Array.isArray(d.days)
-                    ? d.days.map(dy => {
-                        const hasData = dy.time || dy.venue || dy.note;
-                        return '<div style="display:flex;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
-                            + '<div style="font-weight:700;color:#f0883e;min-width:80px;font-size:0.82rem;">' + escapeHtml(dy.day||'') + '</div>'
-                            + '<div style="font-size:0.8rem;color:' + (hasData?'var(--text)':'#555') + ';">'
-                            + (hasData
-                                ? [dy.time?'🕐 '+dy.time:'', dy.venue?'📍 '+escapeHtml(dy.venue):'', dy.note?'📝 '+escapeHtml(dy.note):''].filter(Boolean).join(' &nbsp;·&nbsp; ')
-                                : '_Descanso_')
-                            + '</div></div>';
-                    }).join('')
-                    : '';
+                // FIX (Error #16): Planificación Semanal con tarjetas HORIZONTALES
+                // y scroll lateral. Render UNIFICADO via helper compartido
+                // (_cronosRenderTrainingWeekCards en whatsapp-email.js) para que
+                // esta vista y la del padre no se desincronicen.
+                const weekDaysHTML = (typeof _cronosRenderTrainingWeekCards === 'function')
+                    ? _cronosRenderTrainingWeekCards(d.days)
+                    : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem;text-align:center;">No hay días en esta planificación.</div>';
                 body = `
-                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
-                    ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                    <div style="display:flex;flex-direction:column;gap:0;">${weekDaysHTML}</div>
-                    ${d.location?`<div style="font-size:0.85rem;margin-top:0.5rem;">📍 ${escapeHtml(d.location)}</div>`:''}
-                    ${d.notes?`<div style="font-size:0.82rem;margin-top:0.4rem;padding:0.5rem;background:rgba(255,255,255,0.04);border-radius:6px;">📝 ${escapeHtml(d.notes)}</div>`:''}
+                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:12px;padding:1rem;margin-bottom:0.8rem;">
+                    ${d.weekStartDate?`<div style="font-size:1rem;font-weight:800;color:#f0883e;margin-bottom:0.3rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
+                    ${weekDaysHTML}
+                    ${d.location?`<div style="font-size:0.85rem;margin-top:0.6rem;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.1);">📍 ${escapeHtml(d.location)}</div>`:''}
+                    ${d.notes?`<div style="font-size:0.82rem;margin-top:0.5rem;padding:0.6rem;background:rgba(240,136,62,0.1);border-radius:8px;border:1px solid rgba(240,136,62,0.2);">💬 ${escapeHtml(d.notes)}</div>`:''}
                 </div>`;
             } else {
                 const dtFmt = d.datetime
@@ -421,7 +415,7 @@ async function _sdLoadEvents(type) {
             }
 
             overlay.innerHTML = `
-            <div style="width:min(92vw,540px);background:var(--surface,#161b22);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:1.4rem;margin:auto;">
+            <div style="width:min(96vw,${isPlan?'800px':'540px'});background:var(--surface,#161b22);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:1.4rem;margin:auto;">
                 ${logo}
                 ${body}
                 <div style="text-align:right;margin-top:1rem;">
