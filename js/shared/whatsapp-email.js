@@ -201,11 +201,12 @@ window._cronosOpenRecipientPicker = async function(role, context) {
         ? emailConfig.contacts : [];
     const clubUsers = await window._cronosLoadClubUsers();
     // Combinar, deduplicando por email.
-    // FIX (dedup uid): si un contacto manual y un usuario REAL del club
-    // comparten email, conservamos el contacto manual (prioridad para los
-    // datos editados a mano) PERO lo enriquecemos con el uid del club. Sin
-    // esto, el manual (que normalmente NO tiene uid) pisa al usuario del club
-    // y perdemos el uid → la notificación a la app no puede resolver la cuenta.
+    // FIX (dedup uid v2): PRIORIDAD INVERTIDA. Cuando un contacto manual y un
+    // usuario REAL del club comparten email, el registro del CLUB (con uid) es
+    // la base/fuente de verdad — el uid SIEMPRE gana. Encima superponemos los
+    // datos útiles editados a mano del contacto manual (alias/etiqueta visible
+    // tipo "BRUNO", teléfono, cargo). Así nunca perdemos el uid real y a la vez
+    // conservamos las personalizaciones del entrenador.
     const clubUsersByEmail = new Map();
     clubUsers.forEach(u => {
         const email = (u.email || '').toLowerCase().trim();
@@ -213,7 +214,7 @@ window._cronosOpenRecipientPicker = async function(role, context) {
     });
     const seenEmails = new Set();
     const contacts = [];
-    // Primero los manuales (prioridad), enriquecidos con datos del club si coincide email
+    // Recorremos los manuales; si hay match con el club, fusionamos con el club como base
     manualContacts.forEach(c => {
         if (!c) return;
         const email = (c.email || '').toLowerCase().trim();
@@ -222,17 +223,29 @@ window._cronosOpenRecipientPicker = async function(role, context) {
             seenEmails.add(email);
             const clubMatch = clubUsersByEmail.get(email);
             if (clubMatch) {
-                // Copia superficial para no mutar emailConfig.contacts original
-                merged = { ...c };
-                if (!merged.uid && clubMatch.uid) merged.uid = clubMatch.uid;
-                if ((!merged.allRoles || !merged.allRoles.length) && clubMatch.allRoles) merged.allRoles = clubMatch.allRoles;
-                if (!merged.category && clubMatch.category) merged.category = clubMatch.category;
-                if (!merged.subcategory && clubMatch.subcategory) merged.subcategory = clubMatch.subcategory;
+                // BASE = usuario del club (uid + roles/categoría reales).
+                // OVERLAY = campos editados a mano del contacto manual (si existen).
+                merged = { ...clubMatch };
+                // uid: SIEMPRE el del club (fuente de verdad). Solo caemos al
+                // manual si el club no lo tuviera (no debería pasar).
+                merged.uid = clubMatch.uid || c.uid || '';
+                // Nombre/alias visible: preferimos la etiqueta personalizada del manual.
+                const manualLabel = c.alias || c.name || c.label;
+                if (manualLabel && manualLabel.trim()) merged.name = manualLabel.trim();
+                if (c.alias && c.alias.trim()) merged.alias = c.alias.trim();
+                // Datos de contacto editados a mano tienen prioridad si están presentes.
+                if (c.phone && c.phone.trim()) merged.phone = c.phone.trim();
+                if (c.email && c.email.trim()) merged.email = c.email.trim();
+                // Cargo/rol manual (si el entrenador lo fijó explícitamente).
+                if (c.cargo && c.cargo.trim()) merged.cargo = c.cargo.trim();
+                if (c.role && c.role.trim()) merged.role = c.role.trim();
+                // Conservar cualquier flag/etiqueta extra del manual sin pisar lo del club.
+                if (c.tags && !merged.tags) merged.tags = c.tags;
             }
         }
         contacts.push(merged);
     });
-    // Luego los del club que no estén ya
+    // Luego los del club que no estén ya (sin match manual)
     clubUsers.forEach(c => {
         const email = (c.email || '').toLowerCase().trim();
         if (email && seenEmails.has(email)) return;
