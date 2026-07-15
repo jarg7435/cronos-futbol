@@ -2564,6 +2564,65 @@ async function openContactManager() {
         const links = [];
         snap.forEach(d => links.push({ _id: d.id, ...d.data() }));
 
+        // FIX (Error #18): cargar usuarios REALES del club desde Firestore
+        // y fusionarlos con los contactos manuales de emailConfig.contacts.
+        // Asi el entrenador ve automaticamente a directores, coordinadores
+        // y padres de su categoria/subcategoria sin tener que anadirlos a mano.
+        let clubUsers = [];
+        try {
+            const clubSnap = await getDocs(query(
+                collection(db, 'users'), where('clubId', '==', me.clubId || '')
+            ));
+            clubSnap.forEach(d => {
+                const u = d.data();
+                clubUsers.push({
+                    id: 'club_' + d.id,
+                    uid: d.id,
+                    name: u.displayName || u.firstName || u.email || 'Sin nombre',
+                    email: u.email || '',
+                    phone: u.phone || '',
+                    role: u.role || '',
+                    cargo: u.role || '',
+                    type: (u.role === 'parent' || u.role === 'parent_individual') ? 'parent' : 'staff',
+                    allRoles: u.allRoles || [],
+                    category: u.category || '',
+                    subcategory: u.subcategory || '',
+                    playerAlias: u.playerAlias || '',
+                    tags: ['cv', 'tr', 'msg', 'rpt'],  // activar todos por defecto
+                    _fromClub: true  // marca: viene de Firestore, no es manual
+                });
+            });
+            console.log('[openContactManager] usuarios del club cargados:', clubUsers.length, clubUsers.map(u => ({name: u.name, role: u.role, type: u.type})));
+        } catch(e) {
+            console.warn('[openContactManager] error cargando usuarios del club:', e.code || e.message);
+        }
+
+        // Fusionar: anadir usuarios del club que no esten ya en emailConfig.contacts.
+        // FIX (dedup uid): si un contacto manual ya existe con el mismo email
+        // pero SIN uid, lo enriquecemos con el uid (y datos) del usuario real
+        // del club. Sin esto, el manual sin uid gana y perdemos la referencia
+        // a la cuenta de la app, de modo que las notificaciones no llegan.
+        const contactsByEmail = new Map();
+        (emailConfig.contacts || []).forEach(c => {
+            const email = (c.email || '').toLowerCase().trim();
+            if (email) contactsByEmail.set(email, c);
+        });
+        clubUsers.forEach(u => {
+            const email = (u.email || '').toLowerCase().trim();
+            if (!email) { emailConfig.contacts.push(u); return; }
+            const existing = contactsByEmail.get(email);
+            if (!existing) {
+                emailConfig.contacts.push(u);
+                contactsByEmail.set(email, u);
+            } else {
+                // Enriquecer el contacto manual con datos del club sin pisar lo editado a mano
+                if (!existing.uid && u.uid) existing.uid = u.uid;
+                if ((!existing.allRoles || !existing.allRoles.length) && u.allRoles) existing.allRoles = u.allRoles;
+                if (!existing.category && u.category) existing.category = u.category;
+                if (!existing.subcategory && u.subcategory) existing.subcategory = u.subcategory;
+            }
+        });
+
         hideSpinner();
 
         // --- MIGRACIÓN Y PREPARACIÓN DE DATOS ---
@@ -2686,7 +2745,8 @@ async function openContactManager() {
                             <thead>
                                 <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);
                                            text-align:left;">
-                                    <th style="padding:0.45rem;min-width:120px;">NOMBRE / CARGO</th>
+                                    <th style="padding:0.45rem;min-width:100px;">NOMBRE</th>
+                                    <th style="padding:0.45rem;min-width:110px;">CARGO</th>
                                     <th style="padding:0.45rem;min-width:130px;">EMAIL</th>
                                     <th style="padding:0.45rem;min-width:110px;">WHATSAPP</th>
                                     <th style="padding:0.45rem;min-width:100px;">UID (APP)</th>
@@ -2884,6 +2944,8 @@ async function saveContactManagerData() {
                 id:    row.dataset.id || ('c_' + Math.random().toString(36).substr(2,6)),
                 type:  row.dataset.type || 'staff',
                 name:  row.querySelector('.c-name').value.trim(),
+                cargo: (row.querySelector('.c-cargo')?.value || '').trim(),
+                role:  (row.querySelector('.c-cargo')?.value || '').trim(),
                 email: row.querySelector('.c-email').value.trim(),
                 phone: row.querySelector('.c-phone').value.trim().replace(/\s/g, ''),
                 uid:   row.querySelector('.c-uid').value.trim(),
@@ -2958,8 +3020,20 @@ function renderContactRowMarkup(c = {}) {
     <tr class="custom-contact-row" data-id="${typeof escapeAttr==='function'?escapeAttr(id):id}" data-type="${typeof escapeAttr==='function'?escapeAttr(c.type||'staff'):c.type||'staff'}" 
         style="border-bottom:1px solid rgba(255,255,255,0.05); ${isCoach ? 'background:rgba(88,166,255,0.03);' : ''}">
         <td style="padding:0.4rem;">
-            <input type="text" class="c-name" value="${typeof escapeAttr==='function'?escapeAttr(c.name||''):c.name||''}" placeholder="Nombre / Cargo"
+            <input type="text" class="c-name" value="${typeof escapeAttr==='function'?escapeAttr(c.name||''):c.name||''}" placeholder="Nombre"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
+        </td>
+        <td style="padding:0.4rem;">
+            <select class="c-cargo" style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.72rem;">
+                <option value="" ${(c.cargo||c.role||'')===''?'selected':''}>-- Seleccionar --</option>
+                <option value="director" ${(c.cargo||c.role||'')==='director'?'selected':''}>Director Deportivo</option>
+                <option value="coordinator" ${(c.cargo||c.role||'')==='coordinator'?'selected':''}>Coordinador</option>
+                <option value="delegado" ${(c.cargo||c.role||'')==='delegado'?'selected':''}>Delegado</option>
+                <option value="entrenador" ${(c.cargo||c.role||'')==='entrenador'?'selected':''}>Entrenador</option>
+                <option value="fisioterapeuta" ${(c.cargo||c.role||'')==='fisioterapeuta'?'selected':''}>Fisioterapeuta</option>
+                <option value="utilero" ${(c.cargo||c.role||'')==='utilero'?'selected':''}>Utilero</option>
+                <option value="otros" ${(c.cargo||c.role||'')==='otros'?'selected':''}>Otros</option>
+            </select>
         </td>
         <td style="padding:0.4rem;">
             <input type="email" class="c-email" value="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}" placeholder="email@ejemplo.com"
@@ -3201,7 +3275,7 @@ async function openTrainingNotification() {
                     display:flex;gap:0.5rem;flex-shrink:0;">
             <button onclick="openUnifiedCommsMenu()" class="btn"
                 style="color:var(--text-muted);padding:0.5rem 0.9rem;">← Volver</button>
-            <button onclick="_sendTrainingNotification()"
+            <button onclick="_cronosOpenRoleSelector('entrenamiento')"
                 style="flex:1;padding:0.5rem;background:rgba(240,136,62,0.15);
                        border:1px solid rgba(240,136,62,0.4);border-radius:7px;
                        color:#f0883e;font-weight:700;cursor:pointer;font-size:0.85rem;">
@@ -3314,6 +3388,150 @@ window._sendTrainingNotification = async function() {
         if (typeof hideSpinner === 'function') hideSpinner();
         if (typeof showToast  === 'function') showToast('⚠️ Error: ' + e.message, 4000);
         console.error('[TrainingNotif]', e);
+    }
+};
+
+// ── V2: Enviar entrenamiento usando el nuevo flujo simplificado ──
+window._sendTrainingNotificationV2 = async function() {
+    const me = window._cronosCurrentUser;
+    const fa = window._cronos_auth;
+    if (!me || !fa) return;
+
+    // Leer los checkboxes marcados en el picker
+    const selected = Array.from(document.querySelectorAll('.cronos-pick-chk:checked')).map(chk => ({
+        id: chk.dataset.id,
+        uid: chk.dataset.uid || '',
+        email: chk.dataset.email || '',
+        phone: chk.dataset.phone || '',
+        label: chk.dataset.label || '',
+        role: chk.dataset.role || '',
+        targetRole: chk.dataset.targetRole || chk.dataset.role || ''
+    }));
+
+    if (!selected.length) {
+        if (typeof showToast === 'function') showToast('⚠️ Selecciona al menos una persona', 3000);
+        return;
+    }
+
+    if (typeof showSpinner === 'function') showSpinner('Enviando entrenamiento...');
+
+    try {
+        const { setDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = fa.db;
+
+        // Construir la semana completa desde localStorage
+        const _trOffset = window._trWeekOffset || 0;
+        const _trMon = (function() {
+            const now = new Date(); const dow = now.getDay();
+            const m = new Date(now); m.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + _trOffset * 7);
+            m.setHours(0,0,0,0); return m;
+        })();
+        let _trWeekKey = _trMon.toISOString().substring(0, 10);
+        const _trWeekAll = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+        let _trWeekData = _trWeekAll[_trWeekKey] || {};
+        let _trHasWeek = Object.keys(_trWeekData).length > 0;
+        // Fallback a semana mas reciente
+        if (!_trHasWeek) {
+            const _weeksWithData = Object.keys(_trWeekAll)
+                .filter(k => _trWeekAll[k] && Object.keys(_trWeekAll[k]).length > 0)
+                .sort();
+            if (_weeksWithData.length > 0) {
+                _trWeekKey = _weeksWithData[_weeksWithData.length - 1];
+                _trWeekData = _trWeekAll[_trWeekKey];
+                _trHasWeek = Object.keys(_trWeekData).length > 0;
+            }
+        }
+
+        const DAYS_ES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+        const _buildWeekDays = (weekData) => Object.keys(weekData).sort().map(ds => {
+            const d = weekData[ds];
+            const dt = new Date(ds + 'T12:00:00');
+            const dayIdx = dt.getDay();
+            const dayNum = dayIdx === 0 ? 6 : dayIdx - 1;
+            const noteParts = [];
+            if (d.tipo)         noteParts.push(d.tipo.charAt(0).toUpperCase() + d.tipo.slice(1));
+            if (d.duracion)     noteParts.push('⏱️ ' + d.duracion);
+            if (d.equipaciones) noteParts.push('👕 ' + d.equipaciones);
+            return {
+                day:   DAYS_ES[dayNum] + ' ' + dt.toLocaleDateString('es-ES', { day:'numeric', month:'short' }),
+                time:  d.hora   || '',
+                venue: d.lugar  || '',
+                note:  noteParts.join(' · ')
+            };
+        });
+        const _weekDays = _trHasWeek ? _buildWeekDays(_trWeekData) : [];
+        const _weekText = _trHasWeek ? (typeof _getTrainingWeekText === 'function' ? _getTrainingWeekText() : '') : '';
+
+        const _resolveRoleTr = (r) => {
+            // FIX (Error #15): usar targetRole del checkbox (coincide con rol seleccionado)
+            if (r.targetRole) return r.targetRole;
+            const label = (r.label || r.role || '').toLowerCase();
+            if (label.includes('director')) return 'director';
+            if (label.includes('coordin')) return 'coordinator';
+            return 'staff';
+        };
+
+        const notifPayload = (uid, role) => ({
+            type: 'planificacion_semanal', clubId: me.clubId || null,
+            userId: uid,
+            parentUid: uid, coachUid: me.uid, coachEmail: me.email,
+            targetRole: role || null,
+            weekStartDate: _trWeekKey,
+            days: _weekDays,
+            weekText: _weekText,
+            datetime: _trHasWeek ? '' : '',
+            location: _trHasWeek ? '' : '',
+            createdAt: new Date().toISOString(),
+        });
+
+        const notifiedUids = new Set();
+        let sentInternal = 0;
+        const sinUidTr = [];
+        const debugLogTr = [];
+
+        for (const r of selected) {
+            let uid = r.uid;
+            if (!uid && r.email && typeof window._cronosResolveUidByEmail === 'function') {
+                uid = await window._cronosResolveUidByEmail(r.email);
+            } else if (r.email && typeof window._cronosResolveUidByEmail === 'function') {
+                const resolved = await window._cronosResolveUidByEmail(r.email);
+                if (resolved && resolved !== uid) {
+                    debugLogTr.push(`[${r.label}] uid reemplazado: ${uid} → ${resolved}`);
+                    uid = resolved;
+                }
+            }
+            if (!uid) {
+                sinUidTr.push(r.label || r.email);
+                continue;
+            }
+            if (notifiedUids.has(uid)) continue;
+            notifiedUids.add(uid);
+            await setDoc(doc(db, 'cronos_notifications', 'tr_' + uid + '_' + Date.now().toString(36)), notifPayload(uid, _resolveRoleTr(r)));
+            sentInternal++;
+            debugLogTr.push(`[✓ ${r.label}] enviado a uid=${uid}`);
+        }
+        console.log('[_sendTrainingNotificationV2] Debug:', debugLogTr);
+
+        if (typeof hideSpinner === 'function') hideSpinner();
+
+        if (sentInternal > 0) {
+            let msg = `✅ Entrenamiento enviado a ${sentInternal} persona(s)`;
+            if (sinUidTr.length > 0) {
+                msg += `\n⚠️ No enviado a ${sinUidTr.length} sin cuenta App: ` + sinUidTr.slice(0,3).join(', ');
+            }
+            if (typeof showToast === 'function') showToast(msg, sinUidTr.length > 0 ? 8000 : 5000);
+            if (typeof openUnifiedCommsMenu === 'function') openUnifiedCommsMenu();
+        } else {
+            let msg = '⚠️ 0 destinatarios válidos.';
+            if (sinUidTr.length > 0) {
+                msg += ' Sin cuenta App: ' + sinUidTr.slice(0,3).join(', ') + '. Verifica el email.';
+            }
+            if (typeof showToast === 'function') showToast(msg, 8000);
+        }
+    } catch(e) {
+        if (typeof hideSpinner === 'function') hideSpinner();
+        console.error('[_sendTrainingNotificationV2]', e);
+        if (typeof showToast === 'function') showToast('⚠️ Error: ' + e.message, 5000);
     }
 };
 

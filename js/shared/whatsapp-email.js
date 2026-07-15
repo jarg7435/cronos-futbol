@@ -200,15 +200,37 @@ window._cronosOpenRecipientPicker = async function(role, context) {
     const manualContacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts))
         ? emailConfig.contacts : [];
     const clubUsers = await window._cronosLoadClubUsers();
-    // Combinar, deduplicando por email
+    // Combinar, deduplicando por email.
+    // FIX (dedup uid): si un contacto manual y un usuario REAL del club
+    // comparten email, conservamos el contacto manual (prioridad para los
+    // datos editados a mano) PERO lo enriquecemos con el uid del club. Sin
+    // esto, el manual (que normalmente NO tiene uid) pisa al usuario del club
+    // y perdemos el uid → la notificación a la app no puede resolver la cuenta.
+    const clubUsersByEmail = new Map();
+    clubUsers.forEach(u => {
+        const email = (u.email || '').toLowerCase().trim();
+        if (email) clubUsersByEmail.set(email, u);
+    });
     const seenEmails = new Set();
     const contacts = [];
-    // Primero los manuales (prioridad)
+    // Primero los manuales (prioridad), enriquecidos con datos del club si coincide email
     manualContacts.forEach(c => {
         if (!c) return;
         const email = (c.email || '').toLowerCase().trim();
-        if (email) seenEmails.add(email);
-        contacts.push(c);
+        let merged = c;
+        if (email) {
+            seenEmails.add(email);
+            const clubMatch = clubUsersByEmail.get(email);
+            if (clubMatch) {
+                // Copia superficial para no mutar emailConfig.contacts original
+                merged = { ...c };
+                if (!merged.uid && clubMatch.uid) merged.uid = clubMatch.uid;
+                if ((!merged.allRoles || !merged.allRoles.length) && clubMatch.allRoles) merged.allRoles = clubMatch.allRoles;
+                if (!merged.category && clubMatch.category) merged.category = clubMatch.category;
+                if (!merged.subcategory && clubMatch.subcategory) merged.subcategory = clubMatch.subcategory;
+            }
+        }
+        contacts.push(merged);
     });
     // Luego los del club que no estén ya
     clubUsers.forEach(c => {
