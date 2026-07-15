@@ -948,6 +948,70 @@ function sendConvocationEmail() {
     setTimeout(() => openConvocationModal(), 1000);
 }
 
+// ════════════════════════════════════════════════════════════════════
+// FIX (Error #15b - raíz): resolución compartida de jugadores convocados.
+// Lógica única usada por publishConvocationToApp y publishConvocationToAppV2
+// para que no vuelvan a desincronizarse. Orden de fuentes:
+//   1. window._savedConvokedPlayers (fuente de verdad) → mapear
+//      number/dorsal/num + alias/name/surname/... con fallback a claves genéricas.
+//   2. DOM .conv-player-name (cuando el formulario sigue montado).
+//   3. localStorage cronos_last_conv.players (última convocatoria guardada).
+// Devuelve siempre un array de strings no vacíos.
+// ════════════════════════════════════════════════════════════════════
+function _cronosResolvePlayersArr() {
+    let playersArr = [];
+
+    // 1) Fuente de verdad: _savedConvokedPlayers
+    if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
+        console.log('[_cronosResolvePlayersArr] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
+        playersArr = window._savedConvokedPlayers.map(p => {
+            // Intentar TODOS los campos posibles del roster
+            const num = p.number || p.dorsal || p.num || '';
+            const alias = p.alias || p.name || p.surname || p.playerName || p.displayName || '';
+            let label;
+            if (num && alias) label = num + '. ' + alias;
+            else if (alias) label = alias;
+            else if (num) label = String(num);
+            else label = '';
+            return label.trim();
+        }).filter(s => s.length > 0);
+        console.log('[_cronosResolvePlayersArr] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
+        // Si el mapeo dio 0 pero había elementos, usar cualquier clave con texto
+        if (!playersArr.length && window._savedConvokedPlayers.length) {
+            playersArr = window._savedConvokedPlayers.map((p, i) => {
+                const keys = Object.keys(p);
+                console.log('[_cronosResolvePlayersArr] jugador ' + i + ' keys:', keys);
+                for (const k of ['alias', 'name', 'surname', 'playerName', 'displayName', 'number', 'dorsal']) {
+                    if (p[k] && String(p[k]).trim()) return String(p[k]).trim();
+                }
+                return 'Jugador ' + (i + 1);
+            });
+            console.log('[_cronosResolvePlayersArr] jugadores (fallback keys):', playersArr.length, playersArr);
+        }
+    }
+
+    // 2) Fallback: leer del DOM (.conv-player-name)
+    if (!playersArr.length) {
+        playersArr = Array.from(document.querySelectorAll('.conv-player-name'))
+            .map(el => el.value.trim()).filter(Boolean);
+        console.log('[_cronosResolvePlayersArr] jugadores desde DOM (fallback):', playersArr.length);
+    }
+
+    // 3) Fallback: leer de localStorage (cronos_last_conv)
+    if (!playersArr.length) {
+        try {
+            const lastConv = JSON.parse(localStorage.getItem('cronos_last_conv') || '{}');
+            if (lastConv.players && Array.isArray(lastConv.players)) {
+                playersArr = lastConv.players.filter(Boolean);
+                console.log('[_cronosResolvePlayersArr] jugadores desde localStorage:', playersArr.length);
+            }
+        } catch(e) {}
+    }
+
+    return playersArr;
+}
+window._cronosResolvePlayersArr = _cronosResolvePlayersArr;
+
 // ── Publicar convocatoria interna (visible en app padres) ───────────
 async function publishConvocationToApp() {
     const me = window._cronosCurrentUser;
@@ -963,56 +1027,12 @@ async function publishConvocationToApp() {
     const kickoff    = sv.time || '';
     const venue      = sv.venue || '';
     const extra      = sv.type || '';
-    // Construir playersArr desde _savedConvokedPlayers
-    let playersArr = [];
-    if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
-        // FIX (Error #15d): log DETALLADO del primer jugador para ver su estructura
-        console.log('[publishConvocationToAppV2] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
-        playersArr = window._savedConvokedPlayers.map(p => {
-            // Intentar TODOS los campos posibles del roster
-            const num = p.number || p.dorsal || p.num || '';
-            const alias = p.alias || p.name || p.surname || p.playerName || p.displayName || '';
-            let label;
-            if (num && alias) label = num + '. ' + alias;
-            else if (alias) label = alias;
-            else if (num) label = String(num);
-            else label = '';
-            return label.trim();
-        }).filter(s => s.length > 0);
-        console.log('[publishConvocationToAppV2] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
-        // Si el mapeo dio 0 pero _savedConvokedPlayers tenia elementos, usar los nombres directos
-        if (!playersArr.length && window._savedConvokedPlayers.length) {
-            playersArr = window._savedConvokedPlayers.map((p, i) => {
-                const keys = Object.keys(p);
-                console.log('[publishConvocationToAppV2] jugador ' + i + ' keys:', keys);
-                // Buscar cualquier campo que tenga texto
-                for (const k of ['alias', 'name', 'surname', 'playerName', 'displayName', 'number', 'dorsal']) {
-                    if (p[k] && String(p[k]).trim()) return String(p[k]).trim();
-                }
-                return 'Jugador ' + (i + 1);
-            });
-            console.log('[publishConvocationToAppV2] jugadores (fallback keys):', playersArr.length, playersArr);
-        }
-    }
-    // Fallback: leer del DOM
-    if (!playersArr.length) {
-        playersArr = Array.from(document.querySelectorAll('.conv-player-name')).map(el => el.value.trim()).filter(Boolean);
-        console.log('[publishConvocationToAppV2] jugadores desde DOM (fallback):', playersArr.length);
-    }
-    // Fallback: leer de localStorage (cronos_last_conv)
-    if (!playersArr.length) {
-        try {
-            const lastConv = JSON.parse(localStorage.getItem('cronos_last_conv') || '{}');
-            if (lastConv.players && Array.isArray(lastConv.players)) {
-                playersArr = lastConv.players;
-                console.log('[publishConvocationToAppV2] jugadores desde localStorage:', playersArr.length);
-            }
-        } catch(e) {}
-    }
+    // Construir playersArr con la lógica compartida (fuente de verdad → DOM → localStorage)
+    const playersArr = _cronosResolvePlayersArr();
 
     if (!playersArr.length) {
         showToast('⚠️ No hay jugadores convocados. Vuelve y marca jugadores.', 5000);
-        console.warn('[publishConvocationToAppV2] SIN jugadores - abortando');
+        console.warn('[publishConvocationToApp] SIN jugadores - abortando');
         return;
     }
     // Ahora safe llamar buildConvocationText (con try/catch)
@@ -1128,49 +1148,8 @@ window.publishConvocationToAppV2 = async function() {
     const venue      = sv.venue    || document.getElementById('cv-venue')?.value.trim()    || '';
     const extra      = sv.type     || document.getElementById('cv-extra')?.value.trim()    || '';
 
-    // Construir playersArr desde _savedConvokedPlayers (con fallbacks)
-    let playersArr = [];
-    if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
-        console.log('[publishConvocationToAppV2] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
-        playersArr = window._savedConvokedPlayers.map(p => {
-            const num = p.number || p.dorsal || p.num || '';
-            const alias = p.alias || p.name || p.surname || p.playerName || p.displayName || '';
-            let label;
-            if (num && alias) label = num + '. ' + alias;
-            else if (alias) label = alias;
-            else if (num) label = String(num);
-            else label = '';
-            return label.trim();
-        }).filter(s => s.length > 0);
-        console.log('[publishConvocationToAppV2] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
-        // Si el mapeo dio 0 pero había elementos, usar los nombres directos
-        if (!playersArr.length && window._savedConvokedPlayers.length) {
-            playersArr = window._savedConvokedPlayers.map((p, i) => {
-                const keys = Object.keys(p);
-                console.log('[publishConvocationToAppV2] jugador ' + i + ' keys:', keys);
-                for (const k of ['alias', 'name', 'surname', 'playerName', 'displayName', 'number', 'dorsal']) {
-                    if (p[k] && String(p[k]).trim()) return String(p[k]).trim();
-                }
-                return 'Jugador ' + (i + 1);
-            });
-            console.log('[publishConvocationToAppV2] jugadores (fallback keys):', playersArr.length, playersArr);
-        }
-    }
-    // Fallback: leer del DOM
-    if (!playersArr.length) {
-        playersArr = Array.from(document.querySelectorAll('.conv-player-name')).map(el => el.value.trim()).filter(Boolean);
-        console.log('[publishConvocationToAppV2] jugadores desde DOM (fallback):', playersArr.length);
-    }
-    // Fallback: leer de localStorage (cronos_last_conv)
-    if (!playersArr.length) {
-        try {
-            const lastConv = JSON.parse(localStorage.getItem('cronos_last_conv') || '{}');
-            if (lastConv.players && Array.isArray(lastConv.players)) {
-                playersArr = lastConv.players;
-                console.log('[publishConvocationToAppV2] jugadores desde localStorage:', playersArr.length);
-            }
-        } catch(e) {}
-    }
+    // Construir playersArr con la lógica compartida (fuente de verdad → DOM → localStorage)
+    const playersArr = _cronosResolvePlayersArr();
 
     if (!playersArr.length) {
         showToast('⚠️ No hay jugadores convocados. Vuelve y marca jugadores.', 5000);
