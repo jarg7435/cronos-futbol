@@ -616,13 +616,6 @@
             <button id="btn-reset" class="btn danger">REINICIAR</button>
             <button id="btn-save-team" class="btn">GUARDAR</button>
             <button id="btn-export" class="btn">DESCARGAR</button>
-            
-            <button id="btn-unified-comms" onclick="openUnifiedCommsMenu()" title="Comunicaciones y Reportes"
-                style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
-                       color:var(--primary); font-size:0.75rem; padding:0.4rem 0.8rem;
-                       border-radius:8px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px;">
-                💬 COMUNICACIONES
-            </button>
 
             <!-- ═══ BOTÓN ADMIN — solo visible para rol "individual" ═══ -->
             <button id="btn-individual-admin"
@@ -1255,89 +1248,89 @@
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
     <!-- ══ CORE: app.js (lógica principal, carga primero) ══════════════════════ -->
-    <script src="js/core/app-init.js?v=v301"></script>
+    <script src="js/core/app-init.js?v=v302"></script>
 
     <!-- ══ CORE: configuración y parches ══════════════════════════════════════ -->
-    <script src="js/core/setup-modal.js?v=v301"></script>
-    <script src="js/core/patches.js?v=v301"></script>
+    <script src="js/core/setup-modal.js?v=v302"></script>
+    <script src="js/core/patches.js?v=v302"></script>
 
     <!-- ══ SERVICES: Firebase + Auth ══════════════════════════════════════════ -->
-    <script type="module" src="js/services/firebase-init.js?v=v301"></script>
-    <script type="module" src="js/services/auth.js?v=v301"></script>
-    <script src="js/services/auth-improvements.js?v=v301"></script>
+    <script type="module" src="js/services/firebase-init.js?v=v302"></script>
+    <script type="module" src="js/services/auth.js?v=v302"></script>
+    <script src="js/services/auth-improvements.js?v=v302"></script>
 
     <!-- ══ CORE: seguridad, utilidades, seudonimizador ═══════════════════════ -->
-    <script src="js/core/security-and-state.js?v=v301"></script>
-    <script src="js/core/utils.js?v=v301"></script>
-    <script src="js/core/pseudonymizer.js?v=v301"></script>
+    <script src="js/core/security-and-state.js?v=v302"></script>
+    <script src="js/core/utils.js?v=v302"></script>
+    <script src="js/core/pseudonymizer.js?v=v302"></script>
     <!-- SPRINT 4: Accesibilidad WCAG 2.1 básica (debe cargar temprano) -->
-    <script src="js/core/accessibility-wcag.js?v=v301"></script>
+    <script src="js/core/accessibility-wcag.js?v=v302"></script>
 
     <!-- ══ SPRINT 3: Auditoría y Optimización de Renders ════════════════════ -->
-    <script src="js/services/audit-logger.js?v=v301"></script>
-    <script src="js/core/render-optimizer.js?v=v301"></script>
-    <script src="js/core/sprint3-init.js?v=v301"></script>
-    <script src="js/core/sprint3-tests.js?v=v301"></script>
+    <script src="js/services/audit-logger.js?v=v302"></script>
+    <script src="js/core/render-optimizer.js?v=v302"></script>
+    <script src="js/core/sprint3-init.js?v=v302"></script>
+    <script src="js/core/sprint3-tests.js?v=v302"></script>
 
     <!-- ══ MATCH: eventos del partido ═════════════════════════════════════════ -->
-    <script src="js/match/events/player-actions.js?v=v301"></script>
-    <script src="js/match/demo-tutorial.js?v=v301"></script>
-    <script src="js/match/timer/core.js?v=v301"></script>
-    <script src="js/match/persistence/active-match.js?v=v301"></script>
-    <script src="js/match/events/movement-log.js?v=v301"></script>
-    <script src="js/match/persistence/team-persistence.js?v=v301"></script>
-    <script src="js/match/live/sync.js?v=v301"></script>
+    <script src="js/match/events/player-actions.js?v=v302"></script>
+    <script src="js/match/demo-tutorial.js?v=v302"></script>
+    <script src="js/match/timer/core.js?v=v302"></script>
+    <script src="js/match/persistence/active-match.js?v=v302"></script>
+    <script src="js/match/events/movement-log.js?v=v302"></script>
+    <script src="js/match/persistence/team-persistence.js?v=v302"></script>
+    <script src="js/match/live/sync.js?v=v302"></script>
 
     <!-- ══ SERVICES: Firestore, cloud, offline ════════════════════════════════ -->
-    <script src="js/services/firestore-sync.js?v=v301"></script>
-    <script src="js/services/firestore-storage.js?v=v301"></script>
-    <script src="js/services/offline-manager.js?v=v301"></script>
+    <script src="js/services/firestore-sync.js?v=v302"></script>
+    <script src="js/services/firestore-storage.js?v=v302"></script>
+    <script src="js/services/offline-manager.js?v=v302"></script>
     <!-- SPRINT 4: Notificaciones y Training Plans sincronizados -->
-    <script src="js/services/notification-dismiss-sync.js?v=v301"></script>
-    <script src="js/services/user-management.js?v=v301"></script>
+    <script src="js/services/notification-dismiss-sync.js?v=v302"></script>
+    <script src="js/services/user-management.js?v=v302"></script>
 
     <!-- ══ STAFF & COMMS ══════════════════════════════════════════════════════ -->
-    <script src="js/core/staff-and-comms.js?v=v301"></script>
+    <script src="js/core/staff-and-comms.js?v=v302"></script>
 
     <!-- ══ AI: importación de jugadores ════════════════════════════════════════ -->
-    <script src="js/ai/import.js?v=v301"></script>
+    <script src="js/ai/import.js?v=v302"></script>
 
     <!-- ══ ROSTER: plantilla y formaciones ═════════════════════════════════════ -->
-    <script src="js/roster/formations.js?v=v301"></script>
-    <script src="js/roster/legacy-formations.js?v=v301"></script>
+    <script src="js/roster/formations.js?v=v302"></script>
+    <script src="js/roster/legacy-formations.js?v=v302"></script>
 
     <!-- ══ UI: render, drag-drop, scroll ══════════════════════════════════════ -->
-    <script src="js/ui/bench-scroll.js?v=v301"></script>
-    <script src="js/ui/render.js?v=v301"></script>
-    <script src="js/ui/drag-drop.js?v=v301"></script>
+    <script src="js/ui/bench-scroll.js?v=v302"></script>
+    <script src="js/ui/render.js?v=v302"></script>
+    <script src="js/ui/drag-drop.js?v=v302"></script>
 
     <!-- ══ SHARED: WhatsApp, email, admin constants ═══════════════════════════ -->
-    <script src="js/shared/whatsapp-email.js?v=v301"></script>
-        <script src="js/shared/admin-shared.js?v=v301"></script>
+    <script src="js/shared/whatsapp-email.js?v=v302"></script>
+        <script src="js/shared/admin-shared.js?v=v302"></script>
 
     <!-- ══ ADMIN: SuperAdmin, Club, Individual, Billing ═══════════════════════ -->
-    <script src="js/admin/shared/category-tree.js?v=v301"></script>
-    <script src="js/admin/superadmin/superadmin.panel.js?v=v301"></script>
-    <script src="js/admin/superadmin/extras.js?v=v301"></script>
-    <script src="js/admin/superadmin/billing.js?v=v301"></script>
-    <script src="js/admin/club/panel.js?v=v301"></script>
-    <script src="js/admin/individual/panel.js?v=v301"></script>
-    <script src="js/admin/billing/payments.js?v=v301"></script>
-    <script src="js/admin/billing/ui.js?v=v301"></script>
+    <script src="js/admin/shared/category-tree.js?v=v302"></script>
+    <script src="js/admin/superadmin/superadmin.panel.js?v=v302"></script>
+    <script src="js/admin/superadmin/extras.js?v=v302"></script>
+    <script src="js/admin/superadmin/billing.js?v=v302"></script>
+    <script src="js/admin/club/panel.js?v=v302"></script>
+    <script src="js/admin/individual/panel.js?v=v302"></script>
+    <script src="js/admin/billing/payments.js?v=v302"></script>
+    <script src="js/admin/billing/ui.js?v=v302"></script>
 
     <!-- ══ COACH: comunicaciones, reportes, entrenamiento ════════════════════ -->
-    <script src="js/coach/comms/panel.js?v=v301"></script>
-    <script src="js/coach/reports/club-reports.js?v=v301"></script>
-    <script src="js/coach/reports/generator.js?v=v301"></script>
+    <script src="js/coach/comms/panel.js?v=v302"></script>
+    <script src="js/coach/reports/club-reports.js?v=v302"></script>
+    <script src="js/coach/reports/generator.js?v=v302"></script>
     <!-- SPRINT 4: Training Plans sync con Firestore (debe ir ANTES de panel.js) -->
-    <script src="js/services/training-firestore-sync.js?v=v301"></script>
-    <script src="js/coach/training/panel.js?v=v301"></script>
+    <script src="js/services/training-firestore-sync.js?v=v302"></script>
+    <script src="js/coach/training/panel.js?v=v302"></script>
 
     <!-- ══ PARENT: portal de padres ═══════════════════════════════════════════ -->
-    <script src="js/parent/panel.js?v=v301"></script>
+    <script src="js/parent/panel.js?v=v302"></script>
 
     <!-- ══ CORE: event listeners (debe ir al final) ══════════════════════════ -->
-    <script src="js/core/event-listeners.js?v=v301"></script>
+    <script src="js/core/event-listeners.js?v=v302"></script>
 
     <!-- ══ BANNER: nueva versión disponible (aparece automáticamente) ══ -->
 

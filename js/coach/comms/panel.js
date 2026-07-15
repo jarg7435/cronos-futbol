@@ -3529,131 +3529,17 @@ window._sendTrainingNotificationV2 = async function() {
 window.openTrainingNotification = openTrainingNotification;
 
 async function openUnifiedCommsMenu() {
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = `
-    <div class="modal-content" style="width:min(95vw,480px);max-height:90vh;display:flex;flex-direction:column;gap:1.2rem;padding:1.6rem;background:linear-gradient(145deg, #0f1218 0%, #0a0e14 100%);border:1px solid rgba(255,255,255,0.1);box-shadow:0 20px 40px rgba(0,0,0,0.6);">
-        
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:38px;height:38px;background:rgba(88,166,255,0.1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;">💬</div>
-                <h2 style="margin:0;font-size:1.3rem;font-family:'Outfit',sans-serif;color:white;">Comunicaciones</h2>
-            </div>
-            <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
-                ${typeof _cronosDevRoleBtn==='function'?_cronosDevRoleBtn("typeof showRoleSelector==='function'?showRoleSelector():typeof showRoleSelection==='function'&&showRoleSelection()","padding:0.3rem 0.7rem;border-radius:6px;font-size:0.72rem;"):''}
-                <button onclick="typeof logoutUser==='function'?logoutUser():typeof cerrarSesion==='function'&&cerrarSesion()"
-                    style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
-                           color:#ff5858;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;
-                           font-size:0.72rem;font-weight:700;">⏻ Salir</button>
-                <button onclick="document.getElementById('setup-modal').style.display='none';" 
-                    style="background:none;border:none;color:var(--text-muted);font-size:1.7rem;cursor:pointer;line-height:1;padding:0 0.2rem;">✕</button>
-            </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr;gap:0.75rem;flex:1;overflow-y:auto;padding-right:4px;">
-
-            <!-- MENSAJES -->
-            <button onclick="openCoachMessaging('parents')" class="btn-comms-card">
-                <span class="icon">💬</span>
-                <div class="content">
-                    <div class="title">Mensajes</div>
-                    <div class="desc">Chat con padres · dirección · coordinación</div>
-                </div>
-            </button>
-
-            <!-- CONVOCATORIA -->
-            <button onclick="openConvocationModal()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.1);">
-                <span class="icon">📲</span>
-                <div class="content">
-                    <div class="title" style="color:#3fb950;">Enviar Convocatoria</div>
-                    <div class="desc">A padres + dirección deportiva</div>
-                </div>
-            </button>
-
-            <!-- ENTRENAMIENTO -->
-            <button onclick="openTrainingModal()" class="btn-comms-card" style="--color:var(--secondary);--bg:rgba(240,136,62,0.1);">
-                <span class="icon">📅</span>
-                <div class="content">
-                    <div class="title" style="color:var(--secondary);">Info Entrenamiento</div>
-                    <div class="desc">Horarios y cambios a padres + dirección</div>
-                </div>
-            </button>
-
-            <!-- INFORME COLECTIVO → STAFF -->
-            <button onclick="openCollectiveReport()" class="btn-comms-card" style="--color:#d2a8ff;--bg:rgba(210,168,255,0.1);">
-                <span class="icon">📊</span>
-                <div class="content">
-                    <div class="title" style="color:#d2a8ff;">Informe Colectivo</div>
-                    <div class="desc">Resumen del partido → directores y coordinadores</div>
-                </div>
-            </button>
-
-            <!-- MIS INFORMES — copia del entrenador -->
-            <button onclick="openMisInformes()" class="btn-comms-card" style="--color:#3fb950;--bg:rgba(63,185,80,0.08);">
-                <span class="icon">📋</span>
-                <div class="content">
-                    <div class="title" style="color:#3fb950;">Mis Informes</div>
-                    <div class="desc">Tus informes de partido · guardados automáticamente</div>
-                </div>
-            </button>
-
-            <!-- INFORMES INDIVIDUALES → PADRES -->
-            <button onclick="openIndividualReports()" class="btn-comms-card" style="--color:#ffa500;--bg:rgba(255,165,0,0.1);">
-                <span class="icon">👤</span>
-                <div class="content">
-                    <div class="title" style="color:#ffa500;">Informes Individuales</div>
-                    <div class="desc">Informe por jugador → padre/tutor vinculado</div>
-                </div>
-            </button>
-
-            <!-- GESTIÓN CONTACTOS -->
-            <button onclick="openContactManager()" class="btn-comms-card" style="--color:#7d8590;--bg:rgba(255,255,255,0.05);">
-                <span class="icon">📱</span>
-                <div class="content">
-                    <div class="title">Gestión de Contactos</div>
-                    <div class="desc">Emails y teléfonos de staff y padres</div>
-                </div>
-            </button>
-
-            <!-- PARTIDOS TERMINADOS -->
-            <button onclick="showFinishedMatches()" class="btn-comms-card" style="--color:#ff5858;--bg:rgba(255,88,88,0.08);">
-                <span class="icon">📋</span>
-                <div class="content">
-                    <div class="title" style="color:#ff5858;">Partidos Terminados</div>
-                    <div class="desc">Ver y volver a partidos finalizados</div>
-                </div>
-            </button>
-
-            <!-- RETRANSMISIÓN EN VIVO (SHARE URL) -->
-            <button onclick="if(typeof showLiveShareModal==='function') showLiveShareModal(); else alert('Transmisión no iniciada');" class="btn-comms-card" style="--color:#ff5858;--bg:rgba(255,88,88,0.12);">
-                <span class="icon">🔴</span>
-                <div class="content">
-                    <div class="title" style="color:#ff5858;">Retransmisión en Vivo</div>
-                    <div class="desc">Copiar enlace para padres y directores</div>
-                </div>
-            </button>
-
-        </div>
-    </div>
-    <style>
-        .btn-comms-card {
-            display:flex;align-items:center;gap:14px;padding:0.95rem;
-            background:var(--bg,rgba(88,166,255,0.08));
-            border:1px solid rgba(255,255,255,0.08);border-radius:13px;
-            transition:all 0.22s cubic-bezier(0.4,0,0.2,1);
-            cursor:pointer;width:100%;text-decoration:none;color:inherit;
-        }
-        .btn-comms-card:hover {
-            background:var(--bg,rgba(88,166,255,0.15));
-            border-color:var(--color,var(--primary));
-            transform:translateY(-2px);
-            box-shadow:0 6px 18px rgba(0,0,0,0.3);
-        }
-        .btn-comms-card .icon { font-size:1.6rem; }
-        .btn-comms-card .content { text-align:left;flex:1; }
-        .btn-comms-card .title  { font-weight:700;color:var(--color,var(--primary));font-size:0.95rem;margin-bottom:2px; }
-        .btn-comms-card .desc   { font-size:0.74rem;color:var(--text-muted);line-height:1.3; }
-    </style>`;
+    // FIX: el panel de Comunicaciones se ha eliminado. Todas sus opciones
+    // estan disponibles en el panel principal del entrenador y en el menu
+    // de Comunicaciones del panel (boton morado). Redirigir ahi.
+    console.log('[openUnifiedCommsMenu] redirigiendo a openSetupModal (panel principal)');
+    if (typeof openSetupModal === 'function') {
+        openSetupModal();
+    } else {
+        // Si no existe openSetupModal, simplemente cerrar el modal
+        const modal = document.getElementById('setup-modal');
+        if (modal) modal.style.display = 'none';
+    }
 }
 
 // ── Seleccionar / deseleccionar todos los padres ─────────────────────
