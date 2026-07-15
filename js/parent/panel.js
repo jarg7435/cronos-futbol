@@ -233,11 +233,12 @@ async function openParentPanel() {
             // no todas las del club. Antes se leía por clubId y cualquier envío
             // llegaba a todos los padres y a todo el staff del club.
             let snap;
-            if (me && me.uid) {
-                // Campo único: usa el índice automático de 'parentUid' (NO exige
-                // índice compuesto). Cada padre ve solo lo dirigido a él.
-                snap = await getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==', me.uid)));
-            } else {
+                    if (me && me.uid) {
+            // Campo único: usa el índice automático de 'parentId' (NO exige
+            // índice compuesto). Cada padre ve solo lo dirigido a él.
+            snap = await getDocs(query(collection(fa.db, 'cronos_notifications'), where('parentUid', '==', me.uid)));
+        } else {
+
                 snap = await getDocs(collection(fa.db,'cronos_notifications'));
             }
 
@@ -325,34 +326,46 @@ async function openParentPanel() {
                             color:#7d8590;font-style:italic;">💬 ${typeof escapeHtml==='function'?escapeHtml(n.extra):n.extra}</div>` : ''}
                     `;
                 } else if (n.type === 'planificacion_semanal') {
+                    // Unificado con el panel de coordinador/director (club-reports.js):
+                    // tarjetas HORIZONTALES con scroll lateral, una por día, en vez de tabla.
                     const d = new Date(n.weekStartDate + 'T12:00:00');
-                    const weekStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long' });
+                    const weekStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long', year:'numeric' });
+                    const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v) : v;
+                    const isMatchDay = (note) => {
+                        const s = (note || '').toLowerCase();
+                        return s.includes('partido') || s.includes('match');
+                    };
+                    const weekDaysHTML = Array.isArray(n.days) && n.days.length
+                        ? n.days.map((dy, idx) => {
+                            const hasData    = dy.time || dy.venue || dy.note;
+                            const match      = isMatchDay(dy.note);
+                            const cardBg     = match ? 'rgba(63,185,80,0.1)' : 'rgba(255,255,255,0.05)';
+                            const cardBorder = match ? 'rgba(63,185,80,0.4)' : 'rgba(255,255,255,0.12)';
+                            const dayColor   = match ? '#3fb950' : '#f0883e';
+                            const dayBadge   = match ? '⚽ PARTIDO' : '🏃 ENTRENO';
+                            const dayBadgeBg = match ? 'rgba(63,185,80,0.2)' : 'rgba(240,136,62,0.2)';
+                            return '<div style="flex:0 0 auto;min-width:160px;max-width:200px;background:' + cardBg + ';border:1px solid ' + cardBorder + ';border-radius:12px;padding:0.9rem;display:flex;flex-direction:column;gap:0.45rem;">'
+                                + '<div style="font-weight:800;color:' + dayColor + ';font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:0.4rem;margin-bottom:0.2rem;">' + esc(dy.day || ('Día ' + (idx + 1))) + '</div>'
+                                + '<div style="font-size:0.55rem;font-weight:700;color:' + dayColor + ';background:' + dayBadgeBg + ';padding:2px 8px;border-radius:4px;align-self:flex-start;letter-spacing:0.5px;">' + dayBadge + '</div>'
+                                + (hasData
+                                    ? '<div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.78rem;">'
+                                        + (dy.time ? '<div style="display:flex;align-items:center;gap:0.4rem;"><span style="font-size:1rem;">🕐</span><strong style="font-size:0.85rem;">' + esc(dy.time) + '</strong></div>' : '')
+                                        + (dy.venue ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📍</span><span style="line-height:1.3;">' + esc(dy.venue) + '</span></div>' : '')
+                                        + (dy.note ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📝</span><span style="line-height:1.3;color:var(--text-muted);font-size:0.72rem;">' + esc(dy.note) + '</span></div>' : '')
+                                        + '</div>'
+                                    : '<div style="font-size:0.75rem;color:#666;font-style:italic;text-align:center;padding:0.8rem 0;">😴 Descanso</div>')
+                                + '</div>';
+                        }).join('')
+                        : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem;text-align:center;">No hay días en esta planificación.</div>';
                     inner = `
-                        <div style="font-size:0.85rem;font-weight:700;margin-bottom:0.6rem;color:#58a6ff;">
-                            🗓️ Semana del ${weekStr}
+                        <div style="font-size:1rem;font-weight:800;margin-bottom:0.3rem;color:#f0883e;">
+                            📅 Semana del ${weekStr}
                         </div>
-                        <div style="overflow-x:auto;">
-                            <table style="width:100%;font-size:0.78rem;border-collapse:collapse;border:1px solid rgba(255,255,255,0.08);">
-                                <thead>
-                                    <tr style="background:rgba(88,166,255,0.08);color:#7d8590;">
-                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">DÍA</th>
-                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">HORA</th>
-                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">NOTA</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${n.days.map(day => `
-                                        <tr>
-                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);font-weight:700;color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(day.day):day.day}</td>
-                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);">${typeof escapeHtml==='function'?escapeHtml(day.time||'—'):day.time||'—'}</td>
-                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);color:#7d8590;">
-                                                ${typeof escapeHtml==='function'?escapeHtml(day.note||(day.time?'':'Descanso')):day.note||(day.time?'':'Descanso')}
-                                                ${day.venue ? `<br><small>📍 ${typeof escapeHtml==='function'?escapeHtml(day.venue):day.venue}</small>` : ''}
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
+                        <div style="font-size:0.72rem;color:#7d8590;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.3rem;">
+                            <span>👈 Desplaza lateralmente para ver todos los días</span>
+                        </div>
+                        <div style="display:flex;gap:0.6rem;overflow-x:auto;padding-bottom:0.6rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin;">
+                            ${weekDaysHTML}
                         </div>
                     `;
                 } else {
@@ -1826,9 +1839,12 @@ window.ppNotifsByType = async function(type) {
         // clubId, que volvía broadcast cualquier envío del club a todo el staff/padres.
         // Campo único 'parentUid' (índice automático). El filtro por 'type' se
         // hace en cliente para no precisar un índice compuesto (parentUid,type).
-        const queries = [
-            getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==',me.uid))).catch(()=>null),
-        ];
+           // Campo único 'parentId' (índice automático). El filtro por 'type' se
+    // hace en cliente para no precisar un índice compuesto (parentId,type).
+    const queries = [
+        getDocs(query(collection(fa.db, 'cronos_notifications'), where('parentUid','==',me.uid))).catch(()=>null),
+    ];
+
         const snaps = await Promise.all(queries);
         const seen  = new Set();
         let items   = [];
@@ -1924,22 +1940,39 @@ window.ppNotifsByType = async function(type) {
                 ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
                 : '';
 
-            // Build weekly schedule HTML for planificacion_semanal
-            const weekPlanHTML = isPlan && Array.isArray(d.days)
-                ? d.days.map(dy => {
-                    const hasData = dy.time || dy.venue || dy.note;
-                    return '<div style="display:flex;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
-                        + '<div style="font-weight:700;color:#f0883e;min-width:80px;font-size:0.85rem;">' + (typeof escapeHtml==='function'?escapeHtml(dy.day):dy.day) + '</div>'
-                        + '<div style="font-size:0.82rem;color:' + (hasData?'var(--text)':'#555') + ';">'
+            // Build weekly schedule HTML for planificacion_semanal.
+            // Unificado con el modal de coordinador/director (club-reports.js):
+            // tarjetas HORIZONTALES con scroll lateral, una por día.
+            const _escP = (v) => typeof escapeHtml === 'function' ? escapeHtml(v) : v;
+            const _isMatchDay = (note) => {
+                const s = (note || '').toLowerCase();
+                return s.includes('partido') || s.includes('match');
+            };
+            const weekPlanHTML = isPlan && Array.isArray(d.days) && d.days.length
+                ? d.days.map((dy, idx) => {
+                    const hasData    = dy.time || dy.venue || dy.note;
+                    const match      = _isMatchDay(dy.note);
+                    const cardBg     = match ? 'rgba(63,185,80,0.1)' : 'rgba(255,255,255,0.05)';
+                    const cardBorder = match ? 'rgba(63,185,80,0.4)' : 'rgba(255,255,255,0.12)';
+                    const dayColor   = match ? '#3fb950' : '#f0883e';
+                    const dayBadge   = match ? '⚽ PARTIDO' : '🏃 ENTRENO';
+                    const dayBadgeBg = match ? 'rgba(63,185,80,0.2)' : 'rgba(240,136,62,0.2)';
+                    return '<div style="flex:0 0 auto;min-width:160px;max-width:200px;background:' + cardBg + ';border:1px solid ' + cardBorder + ';border-radius:12px;padding:0.9rem;display:flex;flex-direction:column;gap:0.45rem;">'
+                        + '<div style="font-weight:800;color:' + dayColor + ';font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:0.4rem;margin-bottom:0.2rem;">' + _escP(dy.day || ('Día ' + (idx + 1))) + '</div>'
+                        + '<div style="font-size:0.55rem;font-weight:700;color:' + dayColor + ';background:' + dayBadgeBg + ';padding:2px 8px;border-radius:4px;align-self:flex-start;letter-spacing:0.5px;">' + dayBadge + '</div>'
                         + (hasData
-                            ? [dy.time?'🕐 '+dy.time:'', dy.venue?'📍 '+(typeof escapeHtml==='function'?escapeHtml(dy.venue):dy.venue):'', dy.note?'📝 '+(typeof escapeHtml==='function'?escapeHtml(dy.note):dy.note):''].filter(Boolean).join(' &nbsp;·&nbsp; ')
-                            : '_Descanso_')
-                        + '</div></div>';
+                            ? '<div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.78rem;">'
+                                + (dy.time ? '<div style="display:flex;align-items:center;gap:0.4rem;"><span style="font-size:1rem;">🕐</span><strong style="font-size:0.85rem;">' + _escP(dy.time) + '</strong></div>' : '')
+                                + (dy.venue ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📍</span><span style="line-height:1.3;">' + _escP(dy.venue) + '</span></div>' : '')
+                                + (dy.note ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📝</span><span style="line-height:1.3;color:var(--text-muted);font-size:0.72rem;">' + _escP(dy.note) + '</span></div>' : '')
+                                + '</div>'
+                            : '<div style="font-size:0.75rem;color:#666;font-style:italic;text-align:center;padding:0.8rem 0;">😴 Descanso</div>')
+                        + '</div>';
                 }).join('')
                 : '';
 
             overlay.innerHTML = `
-            <div style="width:min(92vw,520px);background:#161b22;border:1px solid rgba(255,255,255,0.1);
+            <div style="width:min(92vw,${isPlan?'800px':'520px'});background:#161b22;border:1px solid rgba(255,255,255,0.1);
                         border-radius:16px;padding:1.5rem;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
                 <!-- Cabecera con logo -->
                 <div style="text-align:center;margin-bottom:1.2rem;padding-bottom:1rem;border-bottom:1px solid rgba(255,255,255,0.08);">
@@ -1961,8 +1994,9 @@ window.ppNotifsByType = async function(type) {
                         ${d.meettime?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">🕐 Presentación: <strong>${typeof escapeHtml==='function'?escapeHtml(d.meettime):d.meettime}h</strong></div>`:''}
                         ${d.kickoff ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">⚽ Inicio: <strong>${typeof escapeHtml==='function'?escapeHtml(d.kickoff):d.kickoff}h</strong></div>`:''}
                     ` : isPlan ? `
-                        ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                        <div style="display:flex;flex-direction:column;gap:0;">${weekPlanHTML}</div>
+                        ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.3rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.8rem;display:flex;align-items:center;gap:0.3rem;"><span>👈 Desplaza lateralmente para ver todos los días</span></div>
+                        <div style="display:flex;gap:0.6rem;overflow-x:auto;padding-bottom:0.6rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin;">${weekPlanHTML}</div>
                     ` : `
                         <div style="font-size:0.95rem;margin-bottom:0.5rem;">📅 <strong>${typeof escapeHtml==='function'?escapeHtml(dtFmt):dtFmt}</strong></div>
                         ${d.location||d.venue?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">📍 ${typeof escapeHtml==='function'?escapeHtml(d.location||d.venue):d.location||d.venue}</div>`:''}
