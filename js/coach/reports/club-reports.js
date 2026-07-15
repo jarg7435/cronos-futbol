@@ -1492,29 +1492,36 @@ async function _sdLoadReports() {
 
         // FIX (Error #20 v2): calcular TOTALES de todos los informes.
         // NO contar faltas ni corners (no se usan en esta app).
+        // FIX (Error #20 v3): deduplicar por (matchKey + dorsal) antes de sumar.
+        // Hay multiples tipos de documentos por jugador y partido
+        // (parent_player_report, staff_report, etc.) que DUPLICAN los datos.
         let totalGoals = 0, totalYCards = 0, totalRCards = 0, totalInjured = 0;
-        // Mapa de jugadores para el informe individual acumulado.
-        // FIX: contar partidos UNICOS por jugador (un jugador que aparece
-        // en 3 docs del mismo partido cuenta como 1 partido, no 3).
         const playerStats = {};
+        const seenPlayerMatch = new Set();
         sorted.forEach(m => {
-            const matchKey = m.key;  // clave unica del partido
+            const matchKey = m.key;
             m.players.forEach(p => {
+                const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
+                const dedupKey = matchKey + '_' + dorsal;
+                if (seenPlayerMatch.has(dedupKey)) return;
+                seenPlayerMatch.add(dedupKey);
+
                 totalGoals += (p.goals || 0);
                 if (p.cards === 'yellow' || p.cards === 'amarilla') totalYCards++;
                 if (p.cards === 'red' || p.cards === 'roja') totalRCards++;
                 if (p.injured) totalInjured++;
-                const pKey = p.playerAlias || p.alias || p.name || ('#' + (p.number || p.playerNumber || 0));
+
+                const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
                 if (!playerStats[pKey]) {
                     playerStats[pKey] = {
                         name: pKey,
                         number: p.number || p.playerNumber || '',
-                        matchKeys: new Set(),  // FIX: Set de partidos unicos
+                        matchKeys: new Set(),
                         goals: 0, yCards: 0, rCards: 0, injured: 0
                     };
                 }
                 const ps = playerStats[pKey];
-                ps.matchKeys.add(matchKey);  // FIX: contar partido unico
+                ps.matchKeys.add(matchKey);
                 ps.goals += (p.goals || 0);
                 if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
                 if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;

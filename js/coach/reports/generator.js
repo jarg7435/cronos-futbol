@@ -406,34 +406,6 @@ class ReportGenerator {
     <div class="team-name">${away}</div>
 </div>
 
-<!-- Estadísticas rápidas -->
-<div class="stats-bar">
-    <div class="stat-item">
-        <div class="stat-value">${players.length}</div>
-        <div class="stat-label">Jugadores</div>
-    </div>
-    <div class="stat-item">
-        <div class="stat-value">${totalGoalsH + totalGoalsA}</div>
-        <div class="stat-label">Goles</div>
-    </div>
-    <div class="stat-item">
-        <div class="stat-value">${yellowCards}</div>
-        <div class="stat-label">Amarillas</div>
-    </div>
-    <div class="stat-item">
-        <div class="stat-value">${redCards}</div>
-        <div class="stat-label">Rojas</div>
-    </div>
-    <div class="stat-item">
-        <div class="stat-value">${injuredCount}</div>
-        <div class="stat-label">Lesiones</div>
-    </div>
-    <div class="stat-item">
-        <div class="stat-value">${substitutions}</div>
-        <div class="stat-label">Cambios</div>
-    </div>
-</div>
-
 <!-- Metadatos -->
 <div class="metadata">
     <div class="meta-item">
