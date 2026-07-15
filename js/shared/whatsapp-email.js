@@ -528,7 +528,7 @@ function openConvocationMessage(target) {
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Fecha del partido</label>
                         <input id="cv-date" type="date" class="conv-input"
-                            value="${typeof escapeAttr==='function'?escapeAttr(saved.date || _cronosLocalDateKey(new Date())):saved.date || _cronosLocalDateKey(new Date())}">
+                            value="${typeof escapeAttr==='function'?escapeAttr(saved.date || new Date().toISOString().substring(0,10)):saved.date || new Date().toISOString().substring(0,10)}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Rival</label>
@@ -1066,29 +1066,96 @@ function _cronosRenderTrainingWeekCards(days, opts) {
     const esc = (v) => typeof escapeHtml === 'function'
         ? escapeHtml(v == null ? '' : String(v))
         : (v == null ? '' : String(v));
-    const isMatchDay = (note) => {
-        const s = (note || '').toLowerCase();
+
+    // FIX (Error #19): parsear el campo 'note' que viene concatenado con '·'
+    // y separarlo en lineas independientes: tipo, duracion, equipaciones.
+    // Cada dato va en su propia linea, con su icono, claro y ordenado.
+    const parseNoteFields = (note) => {
+        // El note se construye como: "Tipo · ⏱️ 90 MIN · 👕 ENTRENAMIENTOS"
+        // (ver _buildWeekDays en comms/panel.js)
+        const fields = { tipo: '', duracion: '', equipaciones: '', extra: '' };
+        if (!note) return fields;
+        const parts = note.split('·').map(s => s.trim()).filter(Boolean);
+        for (const p of parts) {
+            const lower = p.toLowerCase();
+            // Quitar iconos para clasificar
+            const clean = p.replace(/^[^a-zA-Z0-9\s]+\s*/, '').trim();
+            if (lower.includes('⏱') || lower.includes('min') || /^\d+\s*min/.test(clean.toLowerCase())) {
+                fields.duracion = p;
+            } else if (lower.includes('👕') || lower.includes('equipac')) {
+                fields.equipaciones = clean;
+            } else if (lower.includes('partido') || lower.includes('entrenamiento') || lower.includes('amistoso') || lower.includes('liga') || lower.includes('copa') || lower.includes('torneo')) {
+                fields.tipo = clean;
+            } else {
+                // Si no encaja en nada, guardarlo como extra
+                if (fields.extra) fields.extra += ' · ' + p;
+                else fields.extra = p;
+            }
+        }
+        return fields;
+    };
+
+    const isMatchDay = (note, tipo) => {
+        const s = ((note || '') + ' ' + (tipo || '')).toLowerCase();
         return s.includes('partido') || s.includes('match');
     };
     const cardsHTML = Array.isArray(days) && days.length
         ? days.map((dy, idx) => {
+            const nf = parseNoteFields(dy.note);
             const hasData    = dy.time || dy.venue || dy.note;
-            const match      = isMatchDay(dy.note);
+            const match      = isMatchDay(dy.note, nf.tipo);
             const cardBg     = match ? 'rgba(63,185,80,0.1)' : 'rgba(255,255,255,0.05)';
             const cardBorder = match ? 'rgba(63,185,80,0.4)' : 'rgba(255,255,255,0.12)';
             const dayColor   = match ? '#3fb950' : '#f0883e';
             const dayBadge   = match ? '⚽ PARTIDO' : '🏃 ENTRENO';
             const dayBadgeBg = match ? 'rgba(63,185,80,0.2)' : 'rgba(240,136,62,0.2)';
-            return '<div style="flex:0 0 auto;min-width:160px;max-width:200px;background:' + cardBg + ';border:1px solid ' + cardBorder + ';border-radius:12px;padding:0.9rem;display:flex;flex-direction:column;gap:0.45rem;">'
-                + '<div style="font-weight:800;color:' + dayColor + ';font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:0.4rem;margin-bottom:0.2rem;">' + esc(dy.day || ('Día ' + (idx + 1))) + '</div>'
-                + '<div style="font-size:0.55rem;font-weight:700;color:' + dayColor + ';background:' + dayBadgeBg + ';padding:2px 8px;border-radius:4px;align-self:flex-start;letter-spacing:0.5px;">' + dayBadge + '</div>'
+
+            // FIX: cada dato en su propia linea, bien separado y ordenado
+            const lines = [];
+            if (dy.time) {
+                lines.push('<div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    + '<span style="font-size:1rem;flex-shrink:0;">🕐</span>'
+                    + '<strong style="font-size:0.88rem;">' + esc(dy.time) + '</strong>'
+                    + '</div>');
+            }
+            if (dy.venue) {
+                lines.push('<div style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    + '<span style="font-size:1rem;flex-shrink:0;">📍</span>'
+                    + '<span style="line-height:1.35;font-size:0.82rem;">' + esc(dy.venue) + '</span>'
+                    + '</div>');
+            }
+            if (nf.tipo) {
+                lines.push('<div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    + '<span style="font-size:1rem;flex-shrink:0;">📋</span>'
+                    + '<span style="font-size:0.82rem;font-weight:600;color:' + dayColor + ';">' + esc(nf.tipo) + '</span>'
+                    + '</div>');
+            }
+            if (nf.duracion) {
+                const durClean = nf.duracion.replace(/⏱️?\s*/, '').trim();
+                lines.push('<div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    + '<span style="font-size:1rem;flex-shrink:0;">⏱️</span>'
+                    + '<span style="font-size:0.82rem;">' + esc(durClean) + '</span>'
+                    + '</div>');
+            }
+            if (nf.equipaciones) {
+                lines.push('<div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    + '<span style="font-size:1rem;flex-shrink:0;">👕</span>'
+                    + '<span style="font-size:0.82rem;">' + esc(nf.equipaciones) + '</span>'
+                    + '</div>');
+            }
+            if (nf.extra) {
+                lines.push('<div style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0;"'
+                    + '<span style="font-size:1rem;flex-shrink:0;">📝</span>'
+                    + '<span style="font-size:0.78rem;color:var(--text-muted);line-height:1.3;">' + esc(nf.extra) + '</span>'
+                    + '</div>');
+            }
+
+            return '<div style="flex:0 0 auto;min-width:180px;max-width:220px;background:' + cardBg + ';border:1px solid ' + cardBorder + ';border-radius:12px;padding:0.85rem;display:flex;flex-direction:column;gap:0.3rem;">'
+                + '<div style="font-weight:800;color:' + dayColor + ';font-size:0.92rem;border-bottom:2px solid ' + cardBorder + ';padding-bottom:0.5rem;margin-bottom:0.3rem;">' + esc(dy.day || ('Día ' + (idx + 1))) + '</div>'
+                + '<div style="font-size:0.62rem;font-weight:700;color:' + dayColor + ';background:' + dayBadgeBg + ';padding:3px 10px;border-radius:4px;align-self:flex-start;letter-spacing:0.5px;margin-bottom:0.3rem;">' + dayBadge + '</div>'
                 + (hasData
-                    ? '<div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.78rem;">'
-                        + (dy.time ? '<div style="display:flex;align-items:center;gap:0.4rem;"><span style="font-size:1rem;">🕐</span><strong style="font-size:0.85rem;">' + esc(dy.time) + '</strong></div>' : '')
-                        + (dy.venue ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📍</span><span style="line-height:1.3;">' + esc(dy.venue) + '</span></div>' : '')
-                        + (dy.note ? '<div style="display:flex;align-items:flex-start;gap:0.4rem;"><span style="font-size:1rem;">📝</span><span style="line-height:1.3;color:var(--text-muted);font-size:0.72rem;">' + esc(dy.note) + '</span></div>' : '')
-                        + '</div>'
-                    : '<div style="font-size:0.75rem;color:#666;font-style:italic;text-align:center;padding:0.8rem 0;">😴 Descanso</div>')
+                    ? '<div style="display:flex;flex-direction:column;">' + lines.join('') + '</div>'
+                    : '<div style="font-size:0.82rem;color:#666;font-style:italic;text-align:center;padding:1rem 0;">😴 Descanso</div>')
                 + '</div>';
         }).join('')
         : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem;text-align:center;">No hay días en esta planificación.</div>';
