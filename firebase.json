@@ -16,7 +16,18 @@
       "package-lock.json",
       "*.log",
       "usuarios_temp.json",
-      "*.md"
+      "*.md",
+      "**/*.bak",
+      "**/*.exe",
+      "**/*.bat",
+      "**/*.cmd",
+      "**/*.ps1",
+      "**/*.sh",
+      "**/*.dll",
+      "**/*.msi",
+      "**/*.zip",
+      "**/*.patch",
+      ".firebase/**"
     ],
     "rewrites": [
       {

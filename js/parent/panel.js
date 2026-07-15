@@ -1494,7 +1494,7 @@ function openWeeklyPlanModal() {
     // Obtener el lunes de la semana actual
     const dayOfWeek = today.getDay(); // 0: domingo, 1: lunes...
     const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    const startOfWeek = new Date(today.setDate(diff)).toISOString().substring(0,10);
+    const startOfWeek = _cronosLocalDateKey(new Date(today.setDate(diff)));
 
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -1606,7 +1606,7 @@ function openWeeklyPlanModal() {
                 mon.setHours(0,0,0,0);
                 return mon;
             })();
-        const weekKey = getMon.toISOString().substring(0, 10);
+        const weekKey = _cronosLocalDateKey(getMon);
         // Actualizar el date input para reflejar la semana activa en el panel
         const dateInput = document.getElementById('wp-start-date');
         if (dateInput) dateInput.value = weekKey;
@@ -1617,7 +1617,7 @@ function openWeeklyPlanModal() {
         document.querySelectorAll('.wp-day-row').forEach((row) => {
             const idx = parseInt(row.dataset.idx || '0');
             const ms = getMon.getTime() + idx * 86400000;
-            const dateKey = new Date(ms).toISOString().substring(0, 10);
+            const dateKey = _cronosLocalDateKey(new Date(ms));
             const dd = weekData[dateKey] || {};
             if (dd.hora)  row.querySelector('.wp-time').value = dd.hora;
             if (dd.lugar) row.querySelector('.wp-venue').value = dd.lugar;

@@ -2057,7 +2057,7 @@ function renderTrainingWeek() {
 
     const fmtD = d => d.toLocaleDateString('es-ES', {day:'numeric',month:'short'});
     const fmtDD = d => d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0');
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
 
     const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     const weekData = allWeeks[weekKey] || {};
@@ -2095,7 +2095,7 @@ function renderTrainingWeek() {
                         </tr>
                     </thead>
                     <tbody>${DAYS.map((dayName, i) => {
-                        const ds = dayDates[i].toISOString().substring(0, 10);
+                        const ds = _cronosLocalDateKey(dayDates[i]);
                         const dd = weekData[ds] || {};
                         const isWE = i >= 5;
                         const today = new Date(); today.setHours(0,0,0,0);
@@ -2128,7 +2128,7 @@ function renderTrainingWeek() {
 function saveTrainingWeek() {
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     const inputs = document.querySelectorAll('[data-day][data-field]');
     const weekData = {};
     inputs.forEach(inp => {
@@ -2147,7 +2147,7 @@ function clearTrainingWeek() {
     if (!confirm('¿Limpiar todos los datos de esta semana?')) return;
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     delete allWeeks[weekKey];
     localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
@@ -2162,7 +2162,7 @@ function clearTrainingWeek() {
 function _getTrainingWeekText() {
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     const weekData = allWeeks[weekKey] || {};
     if (Object.keys(weekData).length === 0) return null;
@@ -5332,7 +5332,7 @@ async function saOpenPaymentForm(id, type) {
                     <div>
                         <label class="sa-label">Fecha del pago *</label>
                         <input class="sa-input" id="pay-date" type="date"
-                            value="${new Date().toISOString().substring(0,10)}">
+                            value="${_cronosLocalDateKey(new Date())}">
                     </div>
                 </div>
 
@@ -5886,7 +5886,7 @@ function openConvocationMessage(target) {
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Fecha del partido</label>
                         <input id="cv-date" type="date" class="conv-input"
-                            value="${convData.date || saved.date || new Date().toISOString().substring(0,10)}">
+                            value="${convData.date || saved.date || _cronosLocalDateKey(new Date())}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Rival</label>

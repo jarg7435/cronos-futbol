@@ -546,20 +546,10 @@ function openConvocationModal() {
                 </div>
 
                 <div style="display:flex; gap:0.4rem;">
-                    <button class="btn" onclick="saveConvData(); saveConvPlayers(); openConvocationMessage('directors')"
-                        style="flex:1; background:rgba(88,166,255,0.1); border:1px solid rgba(88,166,255,0.3);
-                               color:var(--primary); font-weight:700; font-size:0.72rem;">
-                        \u{1F4CB} DIRECTORES
-                    </button>
-                    <button class="btn" onclick="saveConvData(); saveConvPlayers(); openConvocationMessage('coordinators')"
-                        style="flex:1; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3);
-                               color:#f0883e; font-weight:700; font-size:0.72rem;">
-                        \u{1F3AF} COORDINADORES
-                    </button>
-                    <button class="btn" onclick="saveConvData(); saveConvPlayers(); openConvocationMessage('parents')"
-                        style="flex:1; background:rgba(63,185,80,0.1); border:1px solid rgba(63,185,80,0.3);
-                               color:#3fb950; font-weight:700; font-size:0.72rem;">
-                        \u{1F468}\u200D\u{1F469}\u200D\u{1F467} PADRES
+                    <button class="btn" onclick="saveConvData(); saveConvPlayers(); _cronosOpenRoleSelector('convocatoria')"
+                        style="flex:1; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
+                               color:var(--primary); font-weight:700; font-size:0.78rem; padding:0.5rem;">
+                        \u{1F4E4} ENVIAR CONVOCATORIA
                     </button>
                 </div>
 
@@ -725,6 +715,10 @@ function saveConvData() {
         meettime: document.getElementById('conv-meettime')?.value || ''
     };
     localStorage.setItem('cronos_conv_data', JSON.stringify(data));
+    // FIX (Error #15c): guardar TAMBIEN en window._savedConvData para que
+    // publishConvocationToAppV2 pueda leer los datos cuando el modal de
+    // convocatoria ya no está en el DOM.
+    window._savedConvData = data;
     return data;
 }
 
@@ -737,6 +731,11 @@ function saveConvPlayers() {
         const p = myPlayers[parseInt(r.dataset.index)];
         return p ? { ...p, initialStatus: r.dataset.state === 'titular' ? 'field' : 'bench' } : null;
     }).filter(Boolean);
+    // FIX (Error #15c): log para depurar
+    console.log('[saveConvPlayers] convRows encontradas:', convRows.length,
+        '| myPlayers:', myPlayers.length,
+        '| _savedConvokedPlayers:', window._savedConvokedPlayers.length,
+        window._savedConvokedPlayers.map(p => p.alias || p.name));
 }
 
 // ── IR AL PARTIDO (desde convocatoria con 3 estados: convocado/titular) ──

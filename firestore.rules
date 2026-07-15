@@ -452,10 +452,9 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.userId ||
+        request.auth.uid == resource.data.parentUid ||
+        request.auth.uid == resource.data.coachUid ||
         sameClubAsDoc(resource.data.clubId) ||
-        // FIX (C2): fallback para usuarios sin custom claim clubId.
-        // Permite que directores/coordinadores/padres lean sus notificaciones
-        // aunque su token aún no tenga el claim propagado.
         userDocClubId(resource.data.clubId)
       );
       allow create: if isAuth() && (

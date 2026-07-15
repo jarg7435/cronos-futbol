@@ -253,8 +253,8 @@ function openSetupModal() {
                     </button>
                 </div>
 
-                <!-- BOTONES PRINCIPALES: CONTINUAR + RECUPERAR PARTIDO -->
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem;">
+                <!-- BOTONES PRINCIPALES: CONTINUAR + RECUPERAR + COMUNICACIONES -->
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.7rem;">
                     <button class="btn primary" onclick="confirmSetup()"
                         style="width:100%; padding:0.9rem; font-size:1rem; font-weight:900;
                                letter-spacing:0.3px; box-shadow:0 6px 20px rgba(88,166,255,0.3);
@@ -270,6 +270,15 @@ function openSetupModal() {
                                border:2px solid rgba(240,136,62,0.5); cursor:pointer;
                                text-transform:uppercase;">
                         🔄 RECUPERAR PARTIDO
+                    </button>
+                    <button class="btn" onclick="if(typeof _openCoachCommsMenu==='function') _openCoachCommsMenu();"
+                        title="Mensajes, Partidos Terminados y Retransmisión en Vivo"
+                        style="width:100%; padding:0.9rem; font-size:1rem; font-weight:900;
+                               letter-spacing:0.3px; border-radius:10px;
+                               background:rgba(180,120,200,0.15); color:#b478c8;
+                               border:2px solid rgba(180,120,200,0.5); cursor:pointer;
+                               text-transform:uppercase;">
+                        💬 COMUNICACIONES
                     </button>
                 </div>
             </div>
@@ -1139,3 +1148,75 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
         console.error('[Recovery] Error eliminando:', err);
     }
 }
+
+// ════════════════════════════════════════════════════════════════════
+// COMUNICACIONES (desde panel del entrenador)
+// Abre un modal con 3 opciones: Mensajes, Partidos Terminados, Retransmisión
+// ════════════════════════════════════════════════════════════════════
+window._openCoachCommsMenu = function() {
+    const modal = document.getElementById('setup-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(94vw,460px);max-height:90vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0;">
+
+        <div style="padding:1.2rem;border-bottom:1px solid var(--glass-border);
+                    display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <h3 style="margin:0;font-size:1.1rem;">💬 Comunicaciones</h3>
+            <button onclick="openSetupModal()"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+        </div>
+
+        <div style="padding:1.2rem;overflow-y:auto;flex:1;">
+            <div style="font-size:0.85rem;color:var(--text);margin-bottom:0.5rem;font-weight:600;">
+                ¿Qué quieres hacer?
+            </div>
+
+            <div style="display:grid;gap:0.7rem;">
+
+                <!-- MENSAJES -->
+                <button onclick="(function(){ if(typeof openCoachMessaging==='function'){openCoachMessaging('parents');}else{alert('Módulo de mensajes no disponible');} })()"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">💬</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Mensajes</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Chat con padres · dirección · coordinación</div>
+                    </div>
+                </button>
+
+                <!-- PARTIDOS TERMINADOS -->
+                <button onclick="(function(){ if(typeof showFinishedMatches==='function'){showFinishedMatches();}else{alert('Módulo no disponible');} })()"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(255,88,88,0.08);border:1px solid rgba(255,88,88,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">📋</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Partidos Terminados</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Ver y volver a partidos finalizados</div>
+                    </div>
+                </button>
+
+                <!-- RETRANSMISIÓN EN VIVO -->
+                <button onclick="(function(){ if(typeof showLiveShareModal==='function'){showLiveShareModal();}else{alert('Transmisión no iniciada');} })()"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(255,88,88,0.12);border:1px solid rgba(255,88,88,0.35);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">🔴</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Retransmisión en Vivo</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Copiar enlace para padres y directores</div>
+                    </div>
+                </button>
+
+            </div>
+        </div>
+
+        <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);flex-shrink:0;">
+            <button onclick="openSetupModal()" class="btn"
+                style="color:var(--text-muted);width:100%;">← Volver</button>
+        </div>
+    </div>`;
+};

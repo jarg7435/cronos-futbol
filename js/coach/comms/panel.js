@@ -3178,7 +3178,7 @@ async function openTrainingNotification() {
         const m = new Date(now); m.setDate(now.getDate() - (dow===0?6:dow-1) + _trOffset*7);
         m.setHours(0,0,0,0); return m;
     })();
-    const _trWeekKey = _trMon.toISOString().substring(0,10);
+    const _trWeekKey = _cronosLocalDateKey(_trMon);
     const _trWeekAll = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     const _trWeekData = _trWeekAll[_trWeekKey] || {};
     const _trFirstDs = Object.keys(_trWeekData).sort()[0];
@@ -3319,7 +3319,7 @@ window._sendTrainingNotification = async function() {
             const m = new Date(now); m.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + _trOffset * 7);
             m.setHours(0,0,0,0); return m;
         })();
-        const _trWeekKey = _trMon.toISOString().substring(0, 10);
+        const _trWeekKey = _cronosLocalDateKey(_trMon);
         const _trWeekAll = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
         const _trWeekData = _trWeekAll[_trWeekKey] || {};
         const _trHasWeek = Object.keys(_trWeekData).length > 0;
@@ -3426,7 +3426,7 @@ window._sendTrainingNotificationV2 = async function() {
             const m = new Date(now); m.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + _trOffset * 7);
             m.setHours(0,0,0,0); return m;
         })();
-        let _trWeekKey = _trMon.toISOString().substring(0, 10);
+        let _trWeekKey = _cronosLocalDateKey(_trMon);
         const _trWeekAll = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
         let _trWeekData = _trWeekAll[_trWeekKey] || {};
         let _trHasWeek = Object.keys(_trWeekData).length > 0;

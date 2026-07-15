@@ -541,25 +541,6 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
                 </div>
             </button>
 
-            <!-- COMUNICACIONES -->
-            <button onclick="openUnifiedCommsMenu ? openUnifiedCommsMenu() : null"
-                style="display:flex;align-items:center;gap:0.9rem;
-                       padding:0.9rem 1rem;width:100%;
-                       background:rgba(255,255,255,0.04);
-                       border:1px solid var(--glass-border);
-                       border-radius:10px;cursor:pointer;
-                       color:white;font-size:0.92rem;font-weight:600;
-                       transition:all 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.08)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.04)'">
-                <span style="font-size:1.4rem;">💬</span>
-                <div style="text-align:left;">
-                    <div>Comunicaciones</div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);
-                                font-weight:400;">Convocatoria, mensajes y más</div>
-                </div>
-            </button>
-
             <!-- NUEVA CONFIGURACIÓN -->
             <button onclick="_postMatchNewSetup()"
                 style="display:flex;align-items:center;gap:0.9rem;

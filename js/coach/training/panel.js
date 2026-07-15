@@ -34,7 +34,7 @@ function renderTrainingWeek() {
 
     const fmtD = d => d.toLocaleDateString('es-ES', {day:'numeric',month:'short'});
     const fmtDD = d => d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0');
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
 
     const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     const weekData = allWeeks[weekKey] || {};
@@ -72,7 +72,7 @@ function renderTrainingWeek() {
                         </tr>
                     </thead>
                     <tbody>${DAYS.map((dayName, i) => {
-                        const ds = dayDates[i].toISOString().substring(0, 10);
+                        const ds = _cronosLocalDateKey(dayDates[i]);
                         const dd = weekData[ds] || {};
                         const isWE = i >= 5;
                         const today = new Date(); today.setHours(0,0,0,0);
@@ -95,7 +95,7 @@ function renderTrainingWeek() {
             </div>
 
             <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
-                <button class="btn" onclick="typeof openTrainingNotification==='function'?openTrainingNotification():null" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
+                <button class="btn" onclick="(function(){if(typeof saveTrainingWeek==='function'){try{saveTrainingWeek();}catch(e){}} if(typeof _cronosOpenRoleSelector==='function'){_cronosOpenRoleSelector('entrenamiento');}else if(typeof openTrainingNotification==='function'){openTrainingNotification();}})()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
                 <button class="btn" onclick="copyTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3); color:#f0883e;">📋 COPIAR</button>
                 ${localStorage.getItem('cronos_week_clipboard') ? '<button class="btn" onclick="pasteTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(121,192,255,0.1); border:1px solid rgba(121,192,255,0.35); color:#79c0ff;">📋 PEGAR</button>' : ''}
                 <button class="btn" onclick="clearTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(255,88,88,0.08); border:1px solid rgba(255,88,88,0.25); color:#ff5858;">🗑️ LIMPIAR</button>
@@ -107,7 +107,7 @@ function renderTrainingWeek() {
 function saveTrainingWeek() {
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     const inputs = document.querySelectorAll('[data-day][data-field]');
     const weekData = {};
     inputs.forEach(inp => {
@@ -134,7 +134,7 @@ function clearTrainingWeek() {
     if (!confirm('¿Limpiar todos los datos de esta semana?')) return;
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     
     // SPRINT 4: Usar TrainingSync para eliminar de localStorage + Firestore
     if (window.TrainingSync) {
@@ -156,7 +156,7 @@ function clearTrainingWeek() {
 function _getTrainingWeekText() {
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     const weekData = allWeeks[weekKey] || {};
     if (Object.keys(weekData).length === 0) return null;
@@ -337,7 +337,7 @@ function copyTrainingWeek() {
     saveTrainingWeek(); // Guardar estado actual primero
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     const weekData = allWeeks[weekKey] || {};
     if (!Object.keys(weekData).length) {
@@ -370,10 +370,10 @@ function pasteTrainingWeek() {
     const weekData = {};
     Object.keys(relative).forEach(idx => {
         const ms = monday.getTime() + parseInt(idx) * 86400000;
-        const dateKey = new Date(ms).toISOString().substring(0, 10);
+        const dateKey = _cronosLocalDateKey(new Date(ms));
         weekData[dateKey] = relative[idx];
     });
-    const weekKey = monday.toISOString().substring(0, 10);
+    const weekKey = _cronosLocalDateKey(monday);
     allWeeks[weekKey] = weekData;
     localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
     if (typeof showToast === 'function') showToast('✅ Semana pegada correctamente', 3000);

@@ -44,6 +44,31 @@ if (typeof window.escapeAttr !== 'function') {
     };
 }
 
+// ── FIX (zona horaria): clave de fecha LOCAL YYYY-MM-DD ───────
+// BUG: en todo el flujo de planificación semanal se usaba
+//   date.toISOString().substring(0,10)
+// para derivar la clave de la semana / de cada día. `toISOString()`
+// convierte SIEMPRE a UTC, pero los Date se construyen a medianoche
+// LOCAL (mon.setHours(0,0,0,0)). En zonas UTC+ (p.ej. España, UTC+1/+2)
+// la medianoche local del lunes cae en el día ANTERIOR en UTC, así que
+// la clave retrocedía 1 día (lunes 13 → "2026-07-12"). Esto desincroniza
+// el guardado, el envío y la lectura de la semana de entrenamiento.
+//
+// Este helper devuelve la fecha del calendario LOCAL sin conversión de
+// huso, evitando el desplazamiento. Úsalo siempre que la clave deba
+// coincidir con el día que ve el usuario.
+if (typeof window._cronosLocalDateKey !== 'function') {
+    window._cronosLocalDateKey = function(date) {
+        const d = (date instanceof Date) ? date : new Date(date);
+        if (isNaN(d.getTime())) return '';
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + day;
+    };
+}
+
+
 // ── FIX (Problema 1): sufijo DETERMINISTA para liveMatchId ─────
 // Antes, las 3 copias de startLiveSync (app-init.js, match/live/sync.js,
 // services/firestore-sync.js) generaban el sufijo con Math.random(), por
