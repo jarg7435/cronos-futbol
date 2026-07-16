@@ -854,22 +854,31 @@ const _RP = (() => {
                 // Cuando un jugador SALE (sub_out): rojo arriba con su nombre,
                 // y verde abajo con quien le reemplazo.
                 if (a > 0.15) {
-                    const replacedName = findNear(subInMap, aliasKey, a);
+                    // FIX (Error #20d): cuando un jugador ENTRA, el que SALE es el
+                    // jugador que estaba en su lugar. subInMap[aliasKey] contiene
+                    // a quien reemplazo al entrar (el que salio).
+                    const outPlayer = findNear(subInMap, aliasKey, a);
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-6}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#3fb950" stroke-width="2.2"/>`;
                     
                     // Verde abajo: ENTRA este jugador
                     const yGreen = TRACK_Y + TRACK_H + 14;
                     svg += `<text x="${(px+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${alias} (${Math.floor(a)}')</text>`;
                     
-                    // Rojo arriba: SALE el jugador reemplazado (si es distinto)
-                    if (replacedName && !replacedName.startsWith(alias.substring(0, 5))) {
-                        const yRed = TRACK_Y - 8;
-                        svg += `<text x="${(px-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${replacedName}</text>`;
+                    // Rojo arriba: SALE el jugador reemplazado (debe ser DISTINTO)
+                    if (outPlayer) {
+                        // outPlayer viene como "NOMBRE min'" — extraer el nombre
+                        const outName = outPlayer.split(' ')[0];
+                        if (outName && outName !== alias.substring(0, outName.length)) {
+                            const yRed = TRACK_Y - 8;
+                            svg += `<text x="${(px-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${outName}</text>`;
+                        }
                     }
                 }
 
                 if (b < totMin - 0.3) {
-                    const replacementName = findNear(subOutMap, aliasKey, b);
+                    // FIX (Error #20d): cuando un jugador SALE, el que ENTRA es
+                    // el reemplazo. subOutMap[aliasKey] contiene a quien entro.
+                    const inPlayer = findNear(subOutMap, aliasKey, b);
                     const ex = px + pw;
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-6}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#ff5858" stroke-width="2.2"/>`;
                     
@@ -877,10 +886,13 @@ const _RP = (() => {
                     const yRed = TRACK_Y - 8;
                     svg += `<text x="${(ex-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${alias} (${Math.floor(b)}')</text>`;
                     
-                    // Verde abajo: ENTRA el reemplazo (si es distinto)
-                    if (replacementName && !replacementName.startsWith(alias.substring(0, 5))) {
-                        const yGreen = TRACK_Y + TRACK_H + 14;
-                        svg += `<text x="${(ex+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${replacementName}</text>`;
+                    // Verde abajo: ENTRA el reemplazo (debe ser DISTINTO)
+                    if (inPlayer) {
+                        const inName = inPlayer.split(' ')[0];
+                        if (inName && inName !== alias.substring(0, inName.length)) {
+                            const yGreen = TRACK_Y + TRACK_H + 14;
+                            svg += `<text x="${(ex+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${inName}</text>`;
+                        }
                     }
                 }
             });
