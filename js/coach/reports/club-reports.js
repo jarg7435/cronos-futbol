@@ -1516,10 +1516,9 @@ async function _sdLoadReports() {
         function _normCatId(raw) {
             const normalized = String(raw || '')
                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                .toLowerCase()
-                .replace(/[^a-z]/g, '');
+                .toLowerCase();
             for (const c of STAFF_CATEGORIES) {
-                if (normalized.startsWith(c.id)) return c.id;
+                if (normalized.includes(c.id)) return c.id;
             }
             return 'sin-categoria';
         }
