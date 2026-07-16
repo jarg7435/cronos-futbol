@@ -3050,6 +3050,21 @@ function _launchWithRole(role) {
                     meCategory: me.category,
                     meSubcategory: me.subcategory
                 });
+                // FIX (Error #21 CRÍTICO): forzar updateCategoryOptions DESPUES
+                // de asignar me.category/subcategory. Sin esto, el dropdown se
+                // rellenaba ANTES de que me.category estuviera disponible y
+                // siempre quedaba en Prebenjamín (primera opción).
+                setTimeout(function() {
+                    if (typeof window.updateCategoryOptions === 'function') {
+                        const mode = document.getElementById('setup-mode')?.value || 'f7';
+                        window.updateCategoryOptions(mode);
+                        console.log('[auth] updateCategoryOptions re-llamado tras asignar category');
+                    } else if (typeof updateCategoryOptions === 'function') {
+                        const mode = document.getElementById('setup-mode')?.value || 'f7';
+                        updateCategoryOptions(mode);
+                        console.log('[auth] updateCategoryOptions (global) re-llamado tras asignar category');
+                    }
+                }, 200);
             }
 
             // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──

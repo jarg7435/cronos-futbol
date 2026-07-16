@@ -422,6 +422,9 @@ function updateCategoryOptions(forcedMode) {
     }
     // NO dispatchEvent — elimina bucles y efectos secundarios indeseados
 }
+// FIX (Error #21): exponer como window.updateCategoryOptions para que auth.js
+// pueda llamarla tras asignar me.category/subcategory.
+window.updateCategoryOptions = updateCategoryOptions;
 
 // --- APLICAR FORMACIÓN ---
 function applyFormationPreset(key) {
