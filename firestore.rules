@@ -467,11 +467,19 @@ service cloud.firestore {
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        request.auth.uid == resource.data.userId
+        request.auth.uid == resource.data.userId ||
+        request.auth.uid == resource.data.parentUid ||
+        request.auth.uid == resource.data.coachUid ||
+        sameClubAsDoc(resource.data.clubId) ||
+        userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
-        request.auth.uid == resource.data.userId
+        request.auth.uid == resource.data.userId ||
+        request.auth.uid == resource.data.parentUid ||
+        request.auth.uid == resource.data.coachUid ||
+        sameClubAsDoc(resource.data.clubId) ||
+        userDocClubId(resource.data.clubId)
       );
     }
 

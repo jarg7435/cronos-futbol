@@ -3476,6 +3476,9 @@ window._sendTrainingNotificationV2 = async function() {
             userId: uid,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             targetRole: role || null,
+            // FIX (Error #21): incluir categoria/subcategoria
+            category:    me.category    || null,
+            subcategory: me.subcategory || null,
             weekStartDate: _trWeekKey,
             days: _weekDays,
             weekText: _weekText,

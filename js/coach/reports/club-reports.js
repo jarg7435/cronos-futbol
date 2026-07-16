@@ -90,7 +90,7 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
                 ? (typeof renderSummary === 'function' ? renderSummary(subItems) : '') + subItems.map(renderItem).join('')
                 : '<div class="ct-empty">Sin ' + (typeLabel || 'registros') + ' en esta subcategoría.</div>';
             return '<div class="ct-card ct-sub ' + (subHas ? 'expanded' : '') + '">' +
-                '<div class="ct-card-head" onclick="this.closest(".ct-sub").classList.toggle("expanded")">' +
+                '<div class="ct-card-head" onclick="this.closest(\'.ct-sub\').classList.toggle(\'expanded\')">' +
                 '<div class="ct-card-title" style="font-size:0.78rem;">' +
                 '<span class="ct-chevron">▼</span>' +
                 '<span>Subcategoría ' + subId + '</span>' +
@@ -102,7 +102,7 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
 
         const dot = catHas ? '<span class="ct-dot on"></span>' : '<span class="ct-dot"></span>';
         return '<div class="ct-card ' + (catHas ? 'expanded' : '') + '" style="border-color:rgba(88,166,255,0.2);">' +
-            '<div class="ct-card-head" onclick="this.closest(".ct-card").classList.toggle("expanded")">' +
+            '<div class="ct-card-head" onclick="this.closest(\'.ct-card\').classList.toggle(\'expanded\')">' +
             '<div class="ct-card-title">' +
             '<span class="ct-chevron">▼</span>' +
             '<span>' + esc(catDef.label) + '</span>' +
@@ -115,7 +115,7 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
 
     const noCatHtml = noCatItems.length
         ? '<div class="ct-card expanded" style="border-color:rgba(255,165,0,0.3);">' +
-            '<div class="ct-card-head" onclick="this.closest(".ct-card").classList.toggle("expanded")">' +
+            '<div class="ct-card-head" onclick="this.closest(\'.ct-card\').classList.toggle(\'expanded\')">' +
             '<div class="ct-card-title">' +
             '<span class="ct-chevron">▼</span>' +
             '<span>📋 Sin categoría asignada</span>' +

@@ -1347,6 +1347,9 @@ window.publishConvocationToAppV2 = async function() {
             coachUid:   me.uid,
             coachEmail: me.email   || '',
             targetRole: role || null,
+            // FIX (Error #21): incluir categoria/subcategoria del entrenador
+            category:    me.category    || null,
+            subcategory: me.subcategory || null,
             matchDate:  dateStr,
             rival, meettime, kickoff, venue, extra,
             players:    playersArr,
