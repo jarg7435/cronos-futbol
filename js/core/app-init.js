@@ -387,6 +387,39 @@ function updateCategoryOptions(forcedMode) {
             <option value="f11_regional">Regional (2T x 45')</option>
         `;
     }
+
+    // FIX (Error #21 CRÍTICO): auto-seleccionar la categoría Y subcategoría
+    // del entrenador según su registro en allRoles. Antes, el dropdown siempre
+    // mostraba la primera opción (Prebenjamín) aunque el entrenador fuera de Alevín.
+    const me = window._cronosCurrentUser;
+    if (me && me.category) {
+        const userCat = String(me.category).toLowerCase();
+        let targetValue = '';
+        if (userCat.includes('prebenj'))      targetValue = mode + '_prebenjamin';
+        else if (userCat.includes('benj'))    targetValue = mode + '_benjamin';
+        else if (userCat.includes('alev'))    targetValue = mode + '_alevin';
+        else if (userCat.includes('infant'))  targetValue = mode + '_infantil';
+        else if (userCat.includes('cadet'))   targetValue = mode + '_cadete';
+        else if (userCat.includes('juvenil')) targetValue = mode + '_juvenil';
+        else if (userCat.includes('regional'))targetValue = mode + '_regional';
+        if (targetValue) {
+            const opt = sel.querySelector('option[value="' + targetValue + '"]');
+            if (opt) {
+                sel.value = targetValue;
+                console.log('[updateCategoryOptions] categoria auto-seleccionada:', targetValue, '(user:', me.category + ')');
+            }
+        }
+    }
+
+    // FIX (Error #21): auto-seleccionar la subcategoría del entrenador
+    const subSel = document.getElementById('match-subcategory');
+    if (subSel && me && me.subcategory) {
+        const userSub = String(me.subcategory).toUpperCase().trim();
+        if (['A','B','C'].includes(userSub)) {
+            subSel.value = userSub;
+            console.log('[updateCategoryOptions] subcategoria auto-seleccionada:', userSub);
+        }
+    }
     // NO dispatchEvent — elimina bucles y efectos secundarios indeseados
 }
 

@@ -3037,7 +3037,9 @@ function _launchWithRole(role) {
 
             // ── Campos exclusivos del rol 'user' (entrenador) ──
             if (role === 'user' || role === 'coach') {
-                if (roleEntry.category) me.category = roleEntry.category;
+                if (roleEntry.category)    me.category    = roleEntry.category;
+                // FIX (Error #21): propagar subcategory del rol activo
+                if (roleEntry.subcategory) me.subcategory = roleEntry.subcategory;
             }
 
             // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──
