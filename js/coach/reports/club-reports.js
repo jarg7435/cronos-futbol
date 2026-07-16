@@ -298,7 +298,10 @@ async function _sdLoadEvents(type) {
             ${items.length} registros · máx. ${MAX_ITEMS} (los más antiguos se eliminan automáticamente)
         </div>`;
 
-        items.forEach(d => {
+        // FIX (Error #22): renderizar como árbol colapsable de categorías/subcategorías
+        // (igual que el panel del Administrador del Club)
+        const typeLabel = isConv ? 'convocatorias' : 'entrenamientos';
+        const renderItemCard = (d) => {
             const date = d.createdAt
                 ? new Date(d.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})
                 : '—';
@@ -316,9 +319,8 @@ async function _sdLoadEvents(type) {
                     ? (Array.isArray(d.days) ? d.days.filter(dy=>dy.time||dy.venue).map(dy=>dy.day+': '+[dy.time,dy.venue].filter(Boolean).join(' ')).slice(0,2).join(' | ') : (d.location ? '📍 ' + escapeHtml(d.location) : ''))
                     : (d.location ? ' · 📍 ' + escapeHtml(d.location) : '');
 
-            html += `
-            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};">
-                <!-- Botón eliminar -->
+            return `
+            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};margin-bottom:0.5rem;">
                 <button onclick="sdDeleteNotif('${escapeAttr(d._id)}')"
                     title="Eliminar" 
                     style="position:absolute;top:0.6rem;right:0.6rem;background:rgba(255,88,88,0.1);
@@ -344,7 +346,14 @@ async function _sdLoadEvents(type) {
                            border-color:rgba(88,166,255,0.3);color:var(--primary);">
                     👁 Ver</button>
             </div>`;
-        });
+        };
+
+        if (typeof window._cronosRenderCatTree === 'function') {
+            html += window._cronosRenderCatTree(items, renderItemCard, typeLabel);
+        } else {
+            // Fallback: lista plana si no existe el helper
+            items.forEach(d => { html += renderItemCard(d); });
+        }
         container.innerHTML = html;
 
         // ── Detalle completo sin alert() ────────────────────────────────
@@ -1616,49 +1625,8 @@ async function _sdLoadReports() {
 
         <!-- LISTA DE INFORMES POR PARTIDO -->`;
 
-        // FIX (Error #22): agrupar informes por categoria/subcategoria
-        const _catLabels = {
-            'f7_prebenjamin': 'Prebenjamín', 'f7_benjamin': 'Benjamín', 'f7_alevin': 'Alevín',
-            'f11_infantil': 'Infantil', 'f11_cadete': 'Cadete', 'f11_juvenil': 'Juvenil', 'f11_regional': 'Regional',
-            'prebenjamin': 'Prebenjamín', 'benjamin': 'Benjamín', 'alevin': 'Alevín',
-            'infantil': 'Infantil', 'cadete': 'Cadete', 'juvenil': 'Juvenil', 'regional': 'Regional'
-        };
-        const _getCatLabel = (cat) => {
-            if (!cat) return 'Sin categoría';
-            const c = String(cat).toLowerCase();
-            for (const k in _catLabels) { if (c.includes(k.split('_').pop())) return _catLabels[k]; }
-            return cat;
-        };
-        const _grouped = {};
-        sorted.forEach(m => {
-            const cat = m.category || '';
-            const sub = m.subcategory || '';
-            const gk = cat + '|' + sub;
-            if (!_grouped[gk]) _grouped[gk] = { category: cat, subcategory: sub, matches: [] };
-            _grouped[gk].matches.push(m);
-        });
-        const _groupKeys = Object.keys(_grouped).sort((a, b) => {
-            const ga = _grouped[a], gb = _grouped[b];
-            if (!ga.category && gb.category) return 1;
-            if (ga.category && !gb.category) return -1;
-            return (ga.category||'').localeCompare(gb.category||'') || (ga.subcategory||'').localeCompare(gb.subcategory||'');
-        });
-
-        _groupKeys.forEach(gk => {
-            const g = _grouped[gk];
-            const catLabel = _getCatLabel(g.category);
-            const subLabel = g.subcategory || '';
-            html += `
-            <div style="margin-bottom:1.2rem;">
-                <div style="background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2);border-radius:8px;padding:0.5rem 0.8rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;">
-                    <span style="font-size:0.85rem;">📂</span>
-                    <strong style="font-size:0.82rem;color:var(--primary);">${escapeHtml(catLabel)}</strong>
-                    ${subLabel ? `<span style="font-size:0.72rem;color:var(--text-muted);">· Subcategoría ${escapeHtml(subLabel)}</span>` : ''}
-                    <span style="font-size:0.68rem;color:var(--text-muted);margin-left:auto;">${g.matches.length} encuentro${g.matches.length !== 1 ? 's' : ''}</span>
-                </div>
-            `;
-
-            g.matches.forEach(m => {
+        // FIX (Error #22): renderizar como árbol colapsable de categorías/subcategorías
+        const renderReportCard = (m) => {
             const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
             const injured = m.players.filter(p => p.injured).length;
             const dateStr = m.matchDate
@@ -1666,18 +1634,16 @@ async function _sdLoadReports() {
                 : '—';
             const sh = m.scoreHome, sa = m.scoreAway;
             const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
-            // Resultado según myTeamRole; sin el campo (informes antiguos) → fallback 'home', comportamiento previo.
             const _mine   = m.myTeamRole === 'away' ? sa : sh;
             const _theirs = m.myTeamRole === 'away' ? sh : sa;
             const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
             const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
 
-            // Guardar datos del partido para renderizado lazy en el toggle
             window._sdMatchData[key64] = m;
 
-            html += `
-            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
+            return `
+            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')" style="margin-bottom:0.5rem;">
                 <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
@@ -1687,7 +1653,6 @@ async function _sdLoadReports() {
                         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
                             <span>📅 ${dateStr}</span>
                             ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
-                            ${m.category ? `<span style="color:#58a6ff;">${escapeHtml(m.category)}</span>` : ''}
                             <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
                         </div>
                     </div>
@@ -1707,14 +1672,17 @@ async function _sdLoadReports() {
                         </button>
                     </div>
                 </div>
-                <!-- Panel de detalle: vacío hasta el primer click (lazy render) -->
                 <div id="rdetail-${key64}"
                      style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
                 </div>
             </div>`;
-            });  // fin g.matches.forEach
-            html += `</div>`;  // cerrar div del grupo
-        });  // fin _groupKeys.forEach
+        };
+
+        if (typeof window._cronosRenderCatTree === 'function') {
+            html += window._cronosRenderCatTree(sorted, renderReportCard, 'informes');
+        } else {
+            sorted.forEach(m => { html += renderReportCard(m); });
+        }
 
         container.innerHTML = html;
 
