@@ -2975,7 +2975,8 @@ function _launchWithRole(role) {
     document.getElementById('role-selection-screen').style.display = 'none';
 
     // Detectar si es un rol individual (entrenador o padre bajo ente individual)
-    const me = window._cronosCurrentUser;
+    // FIX (Error #21): 'let' en vez de 'const' porque reasignamos me tras el spread
+    let me = window._cronosCurrentUser;
 
     // ══════════════════════════════════════════════════════════════════
     //  MULTI-ROL FIX: Cargar datos específicos del rol activo
