@@ -43,21 +43,6 @@ function openSetupModal() {
         } else {
             window._cronosAllowedModes = ['f7', 'f11'];
         }
-        
-        // Determinar categoría y subcategoría exactas del coach para bloquearlas
-        var coachCat = '';
-        var coachSubcat = '';
-        if (me && me.allRoles) {
-            me.allRoles.forEach(function(r) {
-                if (r && (r.role === 'user' || r.role === 'coach')) {
-                    if (r.category) coachCat = r.category;
-                    if (r.subcategory) coachSubcat = r.subcategory;
-                }
-            });
-        }
-        if (!coachCat && me && me.category) coachCat = me.category;
-        if (!coachSubcat && me && me.subcategory) coachSubcat = me.subcategory;
-
         // Aplicar restricción al desplegable
         setTimeout(function() {
             var modeSel = document.getElementById('setup-mode');
@@ -71,35 +56,7 @@ function openSetupModal() {
             // Desactivar el desplegable si solo hay una opción
             modeSel.disabled = (allowed.length === 1);
             console.log('[v261] Modalidades permitidas:', allowed.join(', '));
-            
             if (typeof syncSetupMode === 'function') syncSetupMode(modeSel.value);
-
-            // Bloquear categoría y subcategoría automáticamente
-            if (coachCat || coachSubcat) {
-                setTimeout(function() {
-                    var catSel = document.getElementById('match-category');
-                    var subcatSel = document.getElementById('match-subcategory');
-                    
-                    if (catSel && coachCat) {
-                        // Intentar seleccionar la opción por texto (porque los values son códigos como 'f7_alevin')
-                        for (var i = 0; i < catSel.options.length; i++) {
-                            if (catSel.options[i].text.includes(coachCat) || catSel.options[i].value === coachCat) {
-                                catSel.selectedIndex = i;
-                                break;
-                            }
-                        }
-                        catSel.disabled = true;
-                        catSel.style.opacity = '0.7';
-                        catSel.style.cursor = 'not-allowed';
-                    }
-                    if (subcatSel && coachSubcat) {
-                        subcatSel.value = coachSubcat;
-                        subcatSel.disabled = true;
-                        subcatSel.style.opacity = '0.7';
-                        subcatSel.style.cursor = 'not-allowed';
-                    }
-                }, 50); // Pequeño delay adicional para asegurar que syncSetupMode terminó de renderizar
-            }
         }, 100);
     } catch(e) { console.warn('[v261] Error limitando modalidad:', e); }
     
@@ -421,11 +378,21 @@ function restoreSetupState() {
     if (typeof updateCategoryOptions === 'function') updateCategoryOptions(s.mode);
 
     // Restaurar categoría si coincide con la modalidad
+    // FIX (Error #21 CRÍTICO): NO sobrescribir la categoria si el entrenador
+    // tiene una categoria asignada en su perfil (me.category). El saveSetupState
+    // guarda lo último usado, que puede ser de otro entrenador o sesión anterior.
+    // Sin este fix, siempre vuelve a Prebenjamín (el valor guardado).
+    const me = window._cronosCurrentUser;
+    const userHasCategory = me && me.category;
     const categoryMatchesMode = s.category && s.category.startsWith(s.mode + '_');
-    if (categoryMatchesMode) {
+    if (categoryMatchesMode && !userHasCategory) {
         set('match-category', s.category);
-            set('match-subcategory', s.subcategory || 'A');
-            set('match-subcategory', s.subcategory || 'A');
+        set('match-subcategory', s.subcategory || 'A');
+    }
+    // Si el usuario tiene categoria asignada, forzar updateCategoryOptions
+    // para que auto-seleccione la correcta
+    if (userHasCategory && typeof updateCategoryOptions === 'function') {
+        updateCategoryOptions(s.mode);
     }
     set('setup-formation', s.formation);
     window._pendingSetupState = null;
