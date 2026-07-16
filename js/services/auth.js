@@ -3021,6 +3021,10 @@ function _launchWithRole(role) {
                     ...(roleEntry.clubName ? { clubName: roleEntry.clubName } : {}),
                 };
             }
+            // FIX (Error #21 CRÍTICO): despues del spread, 'me' apunta al objeto
+            // VIEJO. Hay que actualizar 'me' para que los cambios siguientes
+            // se apliquen a window._cronosCurrentUser (el objeto nuevo).
+            me = window._cronosCurrentUser;
 
             // ── Campos exclusivos del rol 'parent' ──
             // inviteCode (ej: 'J10') vincula al jugador hijo
@@ -3038,8 +3042,13 @@ function _launchWithRole(role) {
             // ── Campos exclusivos del rol 'user' (entrenador) ──
             if (role === 'user' || role === 'coach') {
                 if (roleEntry.category)    me.category    = roleEntry.category;
-                // FIX (Error #21): propagar subcategory del rol activo
                 if (roleEntry.subcategory) me.subcategory = roleEntry.subcategory;
+                console.log('[auth] roleEntry entrenador:', {
+                    category: roleEntry.category,
+                    subcategory: roleEntry.subcategory,
+                    meCategory: me.category,
+                    meSubcategory: me.subcategory
+                });
             }
 
             // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──

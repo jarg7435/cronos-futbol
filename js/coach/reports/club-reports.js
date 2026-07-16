@@ -1656,7 +1656,7 @@ async function _sdLoadReports() {
                         name: pKey,
                         number: p.number || p.playerNumber || '',
                         matchKeys: new Set(),
-                        goals: 0, yCards: 0, rCards: 0, injured: 0
+                        goals: 0, yCards: 0, rCards: 0, injured: 0, minutes: 0
                     };
                 }
                 const ps = playerStats[pKey];
@@ -1665,6 +1665,15 @@ async function _sdLoadReports() {
                 if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
                 if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
                 if (p.injured) ps.injured++;
+                // FIX: acumular minutos jugados
+                if (p.minutesPlayed) {
+                    if (typeof p.minutesPlayed === 'number') {
+                        ps.minutes += p.minutesPlayed;
+                    } else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
+                        const parts = String(p.minutesPlayed).split(':');
+                        ps.minutes += parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                    }
+                }
             });
         });
         // Convertir Set a contador
@@ -1721,6 +1730,7 @@ async function _sdLoadReports() {
                             <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟨 TA</th>
                             <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟥 TR</th>
                             <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🚑 Les.</th>
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⏱️ Min.</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1733,6 +1743,7 @@ async function _sdLoadReports() {
                                 <td style="padding:0.45rem 0.5rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
                                 <td style="padding:0.45rem 0.5rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
                                 <td style="padding:0.45rem 0.5rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
+                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#58a6ff;font-weight:600;">${p.minutes > 0 ? Math.floor(p.minutes / 60) + ':' + String(p.minutes % 60).padStart(2, '0') : '—'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
