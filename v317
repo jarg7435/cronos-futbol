@@ -1,0 +1,2 @@
+[main 888b737] fix: borrado + category en payload + categorias expandibles- firestore.rules: allow update/delete por parentUid/coachUid/club- publishConvocationToAppV2: anade category+subcategory al payload- _sendTrainingNotificationV2: anade category+subcategory al payload- Arregladas comillas en onclick de categorias (" - Bump cache v316 -
+ 6 files changed, 70 insertions(+), 56 deletions(-)

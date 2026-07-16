@@ -383,7 +383,10 @@ async function _sdLoadEvents(type) {
                 // Solo la pestaña actual (convocatoria o planificacion_semanal)
                 if (dat.type !== type) return;
                 // Omitir si este usuario ya lo descartó individualmente
-                if (Array.isArray(dat.dismissedBy) && dat.dismissedBy.includes(me.uid)) return;
+                // FIX (Error #23): comprobar dismissKey uid_role (y compatibilidad con uid solo)
+                const _dk = me.uid + '_' + (me?._activeRole || me?.role || 'staff');
+                const _db = Array.isArray(dat.dismissedBy) ? dat.dismissedBy : [];
+                if (_db.includes(_dk) || _db.includes(me.uid)) return;
                 items.push({ _id: d.id, ...dat });
             });
         });
@@ -398,13 +401,24 @@ async function _sdLoadEvents(type) {
             });
         }
 
+        // FIX (Error #23): aunque no haya items, mostrar el arbol de categorias
+        // vacio para que la estructura siempre este visible.
         if (!items.length) {
             const label = type === 'convocatoria' ? 'convocatorias' : 'avisos de entrenamiento';
-            container.innerHTML = `<div style="text-align:center;padding:4rem;color:var(--text-muted);">
+            const emptyTree = (typeof window._cronosRenderCatTree === 'function')
+                ? window._cronosRenderCatTree([], () => '', label)
+                : '';
+            container.innerHTML = `
+            <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.8rem;text-align:right;">
+                0 registros
+            </div>
+            <div style="text-align:center;padding:1.5rem;color:var(--text-muted);margin-bottom:1rem;">
                 📭 Sin ${label} recibidos aún.<br>
                 <span style="font-size:0.78rem;margin-top:0.5rem;display:block;">
                     El entrenador debe activar las palomillas en <strong>Gestión de Contactos</strong> y enviar via Envío Interno.
-                </span></div>`;
+                </span>
+            </div>
+            ${emptyTree}`;
             return;
         }
 
@@ -562,23 +576,26 @@ async function _sdLoadEvents(type) {
         // FIX: "borrar" = marcar como descartado por este usuario (no borra para los demás)
         window.sdDeleteNotif = async (id) => {
             if (!confirm('¿Quitar este aviso de tu panel? Los demás roles seguirán viéndolo.')) return;
+            // FIX (Error #23): usar dismissKey = uid_role para que director y
+            // coordinador borren de forma INDEPENDIENTE aunque compartan uid.
+            const activeRole = me?._activeRole || me?.role || 'staff';
+            const dismissKey = me.uid + '_' + activeRole;
             try {
                 const { db: db2, doc: dRef, updateDoc: upd, arrayUnion: au } = await _sdFS();
                 await upd(dRef(db2, 'cronos_notifications', id), {
-                    dismissedBy: au(me.uid)
+                    dismissedBy: au(dismissKey)
                 });
                 items = items.filter(it => it._id !== id);
                 await _sdLoadEvents(type);
-                if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel', 2000);
+                if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel (' + activeRole + ')', 2000);
             } catch(e) {
-                // Fallback: si el campo arrayUnion falla (doc sin el campo), intentar con set merge
                 try {
                     const { db: db3, doc: dRef3 } = await _sdFS();
                     const { updateDoc, arrayUnion } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    await updateDoc(dRef3(db3, 'cronos_notifications', id), { dismissedBy: arrayUnion(me.uid) });
+                    await updateDoc(dRef3(db3, 'cronos_notifications', id), { dismissedBy: arrayUnion(dismissKey) });
                     items = items.filter(it => it._id !== id);
                     await _sdLoadEvents(type);
-                    if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel', 2000);
+                    if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel (' + activeRole + ')', 2000);
                 } catch(e2) {
                     if (typeof showToast === 'function') showToast('⚠️ Error: ' + e2.message, 3000);
                 }
