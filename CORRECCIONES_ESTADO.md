@@ -342,7 +342,38 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
   pena decidir si se restringe también ese "spoof" de creación cross-club. Ejecutar
   el test en una máquina con JDK 21 + acceso a npm antes de dar por cerrado SEC-C3.
 
-- [ ] **SEC-C1 (create): pendiente, requiere rediseñar el descubrimiento de usuarios pendientes por club_admin antes de poder nulificar clubId en el alta — no tocar sin analizar club/panel.js:172 y la aprobación completa**.
+- [x] **SEC-C1 (update): CERRADO Y VERIFICADO EN PRODUCCIÓN (2026-07-16)**. La
+  rama `allow update` de `users/{userId}` tiene `clubId` en la lista PROHIBIDA de
+  `hasAny()`; el cliente ya no puede escribir su propio `clubId` bajo ningún caso.
+  La migración del `clubId` a la raíz la hace EXCLUSIVAMENTE el Admin SDK: el
+  SuperAdmin, la Cloud Function `syncRootClubId()` (valida server-side que el
+  clubId pertenece al usuario) o el trigger `autoSetClaimsOnApproval` (lo puebla
+  al aprobar). Verificación FINAL en producción (`scripts/verify_sec_c1_prod.js`,
+  9/9 PASS): (1) el ruleset ACTIVO del proyecto `cronos-futbol-app` (release
+  `cloud.firestore`, ruleset `017c55fb…`, updateTime 2026-07-16T12:15:42Z) se
+  descargó vía la Rules REST API y contiene `clubId` en la lista prohibida;
+  (2) la fuente desplegada COINCIDE byte a byte (normalizada) con `firestore.rules`
+  local → no hay cambios sin desplegar; (3) `firebase deploy --only firestore:rules
+  --dry-run` compila OK; (4) las 3 CF de las que depende el fix están DESPLEGADAS
+  (`syncRootClubId` callable, `autoSetClaimsOnApproval` document.write,
+  `registerStaffUid` callable); (5) `scripts/test_sec_c1_clubid.js` con el código
+  real de las CFs + reglas da 26/26 PASS.
+
+- [ ] **SEC-C1 (create): pendiente (riesgo residual BAJO)**. Bloquear `clubId` en
+  el `create` de `users/{userId}` se REVIRTIÓ (commit `f3444df`) porque el alta de
+  usuarios individuales escribe legítimamente `clubId = _entityId` en el propio
+  create (`services/auth.js:1879,1893`) para que el panel del SuperAdmin y el
+  descubrimiento de pendientes por club_admin funcionen (queries `where('clubId','==',…)`).
+  Nulificarlo en el alta exige rediseñar ese descubrimiento primero. **Por qué el
+  riesgo residual es BAJO aun sin cerrar el create**: (a) el `create` solo permite
+  al usuario crear SU PROPIO doc (`request.auth.uid == userId`), no el de otro;
+  (b) fijar un `clubId` ajeno en el alta NO concede acceso efectivo por sí solo:
+  las reglas sensibles cruzan `isAuthorized`/`status` de la RAÍZ, que el usuario
+  NO puede escribir (siguen prohibidos en create+update), y esos campos solo los
+  activa el SuperAdmin vía Admin SDK en la aprobación; (c) `userDocClubId()` da
+  lectura del club, pero el vector real de escalada (escribir informes/mensajes
+  cross-club) requiere además pasar el resto de gates. **No tocar sin analizar
+  `js/coach/comms/panel.js` (descubrimiento) y el flujo de aprobación completo.**
 
 ## Mejoras opcionales aparcadas
 
