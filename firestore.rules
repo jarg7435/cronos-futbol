@@ -718,10 +718,24 @@ service cloud.firestore {
       //     del partido (entrenadores sin claim de clubId en el token)
       //   - el propio entrenador que creo el partido (createdBy == uid)
       //   - el entrenador cuyo email coincide con coachEmail
-      //   - cualquiera, si el partido no tiene clubId (huerfano legacy)
+      //
+      // SEC-C2 (endurecido): se ELIMINO la rama standalone
+      // `resource.data.clubId == null` que permitia a CUALQUIER usuario
+      // autenticado borrar un partido en vivo sin clubId (docs con PII de
+      // menores: nombres, dorsales, colores). Era una escotilla demasiado
+      // ancha: un usuario del club B podia borrar el partido huerfano de un
+      // coach del club A. El caso legitimo (el coach limpia SU propio partido
+      // sin club) sigue cubierto por las ramas `createdBy == uid` y
+      // `coachEmail == token.email`, que NO llevan gate de clubId: el panel de
+      // recuperacion (setup-modal.js) y sync.js SIEMPRE escriben createdBy con
+      // el uid del propio coach, y la query de recuperacion filtra por
+      // createdBy == me.uid, asi que el flujo de borrado del coach no se rompe.
+      // Los huerfanos legacy SIN createdBy/coachEmail (pre-v274) solo los limpia
+      // ya el superadmin (el barrido cliente cleanupStaleMatches >7 dias fallara
+      // ahora en esos docs ajenos, que quedan para el SA), evitando el borrado
+      // cruzado entre clubes.
       allow delete: if isAuth() && (
                        isSuperAdmin() ||
-                       resource.data.clubId == null ||
                        sameClub(resource.data.clubId) ||
                        userDocClubId(resource.data.clubId) ||
                        (resource.data.createdBy != null &&

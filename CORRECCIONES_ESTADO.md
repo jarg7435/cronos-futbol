@@ -305,18 +305,34 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
 
 ## Deuda de seguridad (preexistente, a revisar)
 
-- [ ] **SEC — `live_matches` borrable por cualquier autenticado si `clubId == null`**:
-  la regla `allow delete` de `match /live_matches/{matchId}` incluye la rama
-  `resource.data.clubId == null`, que permite a **cualquier usuario autenticado**
-  borrar un partido en vivo sin `clubId`. Es **preexistente** (NO la introdujo la
-  feature v274 de borrado de huérfanos; v274 solo añadió las ramas
-  `createdBy==uid` y `coachEmail==token.email`). Riesgo real bajo: los partidos
-  nuevos desde la unificación de live-sync (Parte 3) siempre llevan `clubId`
-  (o `null` explícito solo cuando el coach no lo tiene), y los docs son efímeros
-  (se auto-borran). Pensada como escotilla para limpiar huérfanos legacy sin
-  `clubId`. **No bloquea** el commit de v274. A revisar por separado: valorar
-  endurecerla (p.ej. exigir además `createdBy==uid` o `coachEmail==token.email`
-  aunque `clubId` sea null, para que solo el creador pueda borrar el huérfano).
+- [x] **SEC-C2 — `live_matches` borrable por cualquier autenticado si `clubId == null`: CERRADO Y VERIFICADO EN PRODUCCIÓN (2026-07-16)**.
+  La regla `allow delete` de `match /live_matches/{matchId}` incluía la rama
+  standalone `resource.data.clubId == null`, que permitía a **cualquier usuario
+  autenticado** borrar un partido en vivo sin `clubId` (docs con PII de menores:
+  nombres, dorsales, colores) — un usuario del club B podía borrar el huérfano de
+  un coach del club A. Era **preexistente** (NO la introdujo la feature v274 de
+  borrado de huérfanos; v274 solo añadió las ramas `createdBy==uid` y
+  `coachEmail==token.email`).
+  **Fix**: se ELIMINÓ la rama standalone `clubId == null`. El caso legítimo (el
+  coach limpia SU propio partido sin club) sigue cubierto por `createdBy==uid` y
+  `coachEmail==token.email`, que NO llevan gate de `clubId`: `sync.js` SIEMPRE
+  escribe `createdBy` con el uid del propio coach y la query de recuperación
+  (`setup-modal.js`) filtra por `createdBy==me.uid`, así que el flujo de borrado
+  del coach NO se rompe. Los huérfanos legacy SIN `createdBy`/`coachEmail`
+  (pre-v274) solo los limpia ya el SuperAdmin (el barrido cliente
+  `cleanupStaleMatches` >7 días fallará sobre docs ajenos, que quedan para el SA),
+  evitando el borrado cruzado entre clubes.
+  **Verificación** (el emulador sigue bloqueado por entorno: solo JDK 8, exige
+  JDK≥21): (1) `scripts/test_sec_c2_live_delete.js` — 21/21 PASS: parser
+  estructural del `allow delete` desplegado + simulación del predicado en 9
+  escenarios (hueco cerrado en a/b/f/h; flujos legítimos c/d/e/g intactos) +
+  comprobación de que el cliente escribe `createdBy`; (2)
+  `scripts/verify_sec_c2_prod.js` — 10/10 PASS: el ruleset ACTIVO del proyecto
+  (`cronos-futbol-app`, ruleset `6391f0e3…`, updateTime 2026-07-16T23:34:41Z) ya
+  NO contiene la rama `clubId == null` en el `allow delete` de `live_matches` y
+  COINCIDE byte a byte (normalizado) con `firestore.rules` local; (3) `firebase
+  deploy --only firestore:rules` compiló y publicó OK.
+
 
 - [ ] **SEC-C3 — test de comportamiento del emulador PENDIENTE (bloqueado por
   entorno)**: el commit `a39c2bd` cerró el hueco de `create`/`update` abiertos a
