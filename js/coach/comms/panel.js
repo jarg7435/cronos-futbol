@@ -293,9 +293,25 @@ function _cMatchSubcatFor(me, cat) {
         const hit = roles.find(r => isCoach(r) &&
             (r.category || '').toString().trim().toLowerCase() === c);
         if (hit && hit.subcategory) return hit.subcategory;
+        // FIX (Error #24): fallback a me.subcategory si no hay coincidencia
+        if (me && me.subcategory) return me.subcategory;
         return '';
     } catch (_) { return ''; }
 }
+
+// FIX (Error #24): funcion para obtener la categoria real del entrenador.
+// Prioriza me.category (asignada al entrar con el rol), luego el dropdown.
+window._cronosGetCoachCategory = function() {
+    const me = window._cronosCurrentUser;
+    if (me && me.category) return me.category;
+    const cat = document.getElementById('match-category')?.value || window._currentMatchCategory || '';
+    return cat;
+};
+window._cronosGetCoachSubcategory = function() {
+    const me = window._cronosCurrentUser;
+    if (me && me.subcategory) return me.subcategory;
+    return document.getElementById('match-subcategory')?.value || 'A';
+};
 
 async function _cGetStaff(db, clubId, fns, roles) {
     roles = roles || ['director', 'coordinator'];
@@ -3492,14 +3508,23 @@ window._sendTrainingNotificationV2 = async function() {
         const sinUidTr = [];
         const debugLogTr = [];
 
+        // FIX (Error #24): dedup por email TAMBIEN para evitar duplicados
+        const notifiedEmailsTr = new Set();
         for (const r of selected) {
             let uid = r.uid;
+            const email = (r.email || '').toLowerCase().trim();
             if (!uid) {
                 sinUidTr.push(r.label || r.email);
                 continue;
             }
             if (notifiedUids.has(uid)) continue;
+            // Dedup por email
+            if (email && notifiedEmailsTr.has(email)) {
+                debugLogTr.push(`[skip ${r.label}] email ya enviado: ${email}`);
+                continue;
+            }
             notifiedUids.add(uid);
+            if (email) notifiedEmailsTr.add(email);
             await setDoc(doc(db, 'cronos_notifications', 'tr_' + uid + '_' + Date.now().toString(36)), notifPayload(uid, _resolveRoleTr(r)));
             sentInternal++;
             debugLogTr.push(`[✓ ${r.label}] enviado a uid=${uid}`);

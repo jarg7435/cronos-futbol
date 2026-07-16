@@ -1362,14 +1362,26 @@ window.publishConvocationToAppV2 = async function() {
         const sinUid = [];
         const debugLog = [];
 
+        // FIX (Error #24): dedup por email TAMBIEN (no solo uid) para evitar
+        // duplicados cuando el mismo contacto esta como manual y como usuario
+        // del club con el mismo email.
+        const notifiedEmails = new Set();
         for (const r of selected) {
             let uid = r.uid;
+            const email = (r.email || '').toLowerCase().trim();
             if (!uid) {
                 sinUid.push(r.label || r.email);
                 continue;
             }
+            // Dedup por uid
             if (notifiedUids.has(uid)) continue;
+            // Dedup por email (evita duplicados mismo usuario, contacto distinto)
+            if (email && notifiedEmails.has(email)) {
+                debugLog.push(`[skip ${r.label}] email ya enviado: ${email}`);
+                continue;
+            }
             notifiedUids.add(uid);
+            if (email) notifiedEmails.add(email);
             await setDoc(doc(db, 'cronos_notifications', 'cv_' + uid + '_' + Date.now().toString(36)), notifPayload(uid, _resolveRole(r)));
             count++;
             debugLog.push(`[✓ ${r.label}] enviado a uid=${uid}`);
