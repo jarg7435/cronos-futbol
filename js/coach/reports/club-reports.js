@@ -1526,7 +1526,11 @@ async function _sdLoadReports() {
 
         const catTree = new Map();
         STAFF_CATEGORIES.forEach(c => {
-            catTree.set(c.id, { label: c.label, subcats: new Map(), totalMatches: 0 });
+            const subcats = new Map();
+            subcats.set('A', []);
+            subcats.set('B', []);
+            subcats.set('C', []);
+            catTree.set(c.id, { label: c.label, subcats: subcats, totalMatches: 0 });
         });
         catTree.set('sin-categoria', { label: 'Sin categoría asignada', subcats: new Map(), totalMatches: 0 });
 
@@ -1535,7 +1539,13 @@ async function _sdLoadReports() {
             let subId = (m.subcategory || '').trim().toUpperCase();
             if (!subId) subId = 'Sin asignar';
             
-            if (!catTree.has(catId)) catTree.set(catId, { label: m.category || catId, subcats: new Map(), totalMatches: 0 });
+            if (!catTree.has(catId)) {
+                const subcats = new Map();
+                subcats.set('A', []);
+                subcats.set('B', []);
+                subcats.set('C', []);
+                catTree.set(catId, { label: m.category || catId, subcats: subcats, totalMatches: 0 });
+            }
             
             const catNode = catTree.get(catId);
             if (!catNode.subcats.has(subId)) catNode.subcats.set(subId, []);
@@ -1655,8 +1665,6 @@ async function _sdLoadReports() {
 
         catTree.forEach((catNode, catId) => {
             const hasMatches = catNode.totalMatches > 0;
-            // Si la categoría 'sin-categoria' está vacía, no la mostramos
-            if (catId === 'sin-categoria' && !hasMatches) return;
             
             const isOpen = ''; // Las categorías NO se expanden solas
             const indicator = hasMatches ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb950;margin-right:8px;box-shadow:0 0 5px rgba(63,185,80,0.5);"></span>' 
@@ -1677,30 +1685,40 @@ async function _sdLoadReports() {
                 <div style="padding:1rem;border-top:1px solid rgba(88,166,255,0.15);">
             `;
 
-            if (hasMatches) {
-                // Ordenar subcategorías alfabéticamente, pero poner 'Sin asignar' al final
-                const subcats = Array.from(catNode.subcats.keys()).sort((a, b) => {
-                    if (a === 'Sin asignar') return 1;
-                    if (b === 'Sin asignar') return -1;
-                    return a.localeCompare(b);
-                });
+            // Ordenar subcategorías alfabéticamente, pero poner 'Sin asignar' al final
+            const subcats = Array.from(catNode.subcats.keys()).sort((a, b) => {
+                if (a === 'Sin asignar') return 1;
+                if (b === 'Sin asignar') return -1;
+                return a.localeCompare(b);
+            });
 
-                subcats.forEach(subId => {
-                    const subcatMatches = catNode.subcats.get(subId);
+            subcats.forEach(subId => {
+                const subcatMatches = catNode.subcats.get(subId);
+                const isSubEmpty = subcatMatches.length === 0;
+
+                // Omitir subcategoría 'Sin asignar' si no tiene partidos
+                if (subId === 'Sin asignar' && isSubEmpty) return;
+                
+                const subLabel = (subId === 'A' || subId === 'B' || subId === 'C') ? 'Subcategoría ' + subId : (subId === 'Sin asignar' ? subId : 'Subcategoría ' + subId);
+                const subTitle = (subId === 'A' || subId === 'B' || subId === 'C') ? 'Subcategoría ' + subId : subId;
+
+                html += `
+                <details class="sa-card" style="margin-bottom:0.8rem;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:rgba(0,0,0,0.15);">
+                    <summary style="padding:0.75rem 1rem;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.03);">
+                        <div style="display:flex;align-items:center;font-weight:600;font-size:0.9rem;color:var(--text);">
+                            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${isSubEmpty ? '#555' : '#f0883e'};margin-right:8px;"></span>
+                            ${escapeHtml(subTitle)} ${isSubEmpty ? '<span style="color:var(--text-muted);font-size:0.75rem;margin-left:5px;">vacía</span>' : ''}
+                        </div>
+                        <span style="color:var(--text-muted);font-size:0.75rem;">${subcatMatches.length} partido${subcatMatches.length !== 1 ? 's' : ''} ▼</span>
+                    </summary>
+                    <div style="padding:1rem;border-top:1px solid rgba(255,255,255,0.05);">
+                `;
+
+                if (isSubEmpty) {
+                    html += `<div style="text-align:center;padding:1rem;color:var(--text-muted);font-size:0.8rem;">Sin informes en esta subcategoría.</div>`;
+                } else {
+                    html += _buildSubcatStats(subcatMatches);
                     
-                    html += `
-                    <details class="sa-card" style="margin-bottom:0.8rem;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:rgba(0,0,0,0.15);">
-                        <summary style="padding:0.75rem 1rem;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.03);">
-                            <div style="display:flex;align-items:center;font-weight:600;font-size:0.9rem;color:var(--text);">
-                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f0883e;margin-right:8px;"></span>
-                                Subcategoría: ${escapeHtml(subId)}
-                            </div>
-                            <span style="color:var(--text-muted);font-size:0.75rem;">${subcatMatches.length} partido${subcatMatches.length !== 1 ? 's' : ''} ▼</span>
-                        </summary>
-                        <div style="padding:1rem;border-top:1px solid rgba(255,255,255,0.05);">
-                            ${_buildSubcatStats(subcatMatches)}
-                    `;
-
                     subcatMatches.forEach(m => {
                         const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
                         const injured = m.players.filter(p => p.injured).length;
@@ -1750,14 +1768,12 @@ async function _sdLoadReports() {
                             <div id="rdetail-${key64}" style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;"></div>
                         </div>`;
                     });
-                    
-                    html += `
-                        </div>
-                    </details>`;
-                });
-            } else {
-                html += `<div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:0.8rem;">No hay informes en esta categoría.</div>`;
-            }
+                }
+                
+                html += `
+                    </div>
+                </details>`;
+            });
 
             html += `
                 </div>
