@@ -43,6 +43,21 @@ function openSetupModal() {
         } else {
             window._cronosAllowedModes = ['f7', 'f11'];
         }
+        
+        // Determinar categoría y subcategoría exactas del coach para bloquearlas
+        var coachCat = '';
+        var coachSubcat = '';
+        if (me && me.allRoles) {
+            me.allRoles.forEach(function(r) {
+                if (r && (r.role === 'user' || r.role === 'coach')) {
+                    if (r.category) coachCat = r.category;
+                    if (r.subcategory) coachSubcat = r.subcategory;
+                }
+            });
+        }
+        if (!coachCat && me && me.category) coachCat = me.category;
+        if (!coachSubcat && me && me.subcategory) coachSubcat = me.subcategory;
+
         // Aplicar restricción al desplegable
         setTimeout(function() {
             var modeSel = document.getElementById('setup-mode');
@@ -56,7 +71,35 @@ function openSetupModal() {
             // Desactivar el desplegable si solo hay una opción
             modeSel.disabled = (allowed.length === 1);
             console.log('[v261] Modalidades permitidas:', allowed.join(', '));
+            
             if (typeof syncSetupMode === 'function') syncSetupMode(modeSel.value);
+
+            // Bloquear categoría y subcategoría automáticamente
+            if (coachCat || coachSubcat) {
+                setTimeout(function() {
+                    var catSel = document.getElementById('match-category');
+                    var subcatSel = document.getElementById('match-subcategory');
+                    
+                    if (catSel && coachCat) {
+                        // Intentar seleccionar la opción por texto (porque los values son códigos como 'f7_alevin')
+                        for (var i = 0; i < catSel.options.length; i++) {
+                            if (catSel.options[i].text.includes(coachCat) || catSel.options[i].value === coachCat) {
+                                catSel.selectedIndex = i;
+                                break;
+                            }
+                        }
+                        catSel.disabled = true;
+                        catSel.style.opacity = '0.7';
+                        catSel.style.cursor = 'not-allowed';
+                    }
+                    if (subcatSel && coachSubcat) {
+                        subcatSel.value = coachSubcat;
+                        subcatSel.disabled = true;
+                        subcatSel.style.opacity = '0.7';
+                        subcatSel.style.cursor = 'not-allowed';
+                    }
+                }, 50); // Pequeño delay adicional para asegurar que syncSetupMode terminó de renderizar
+            }
         }, 100);
     } catch(e) { console.warn('[v261] Error limitando modalidad:', e); }
     

@@ -1502,49 +1502,144 @@ async function _sdLoadReports() {
         // Mapa global de datos de partido para renderizado lazy
         window._sdMatchData = {};
 
-        // FIX (Error #20 v2): calcular TOTALES de todos los informes.
-        // NO contar faltas ni corners (no se usan en esta app).
-        // FIX (Error #20 v3): deduplicar por (matchKey + dorsal) antes de sumar.
-        // Hay multiples tipos de documentos por jugador y partido
-        // (parent_player_report, staff_report, etc.) que DUPLICAN los datos.
-        let totalGoals = 0, totalYCards = 0, totalRCards = 0, totalInjured = 0;
-        const playerStats = {};
-        const seenPlayerMatch = new Set();
-        sorted.forEach(m => {
-            const matchKey = m.key;
-            m.players.forEach(p => {
-                const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
-                const dedupKey = matchKey + '_' + dorsal;
-                if (seenPlayerMatch.has(dedupKey)) return;
-                seenPlayerMatch.add(dedupKey);
+        // ── Agrupación en Árbol (Categoría -> Subcategoría) ───
+        const STAFF_CATEGORIES = [
+            { id: 'prebenjamin', label: 'Prebenjamín' },
+            { id: 'benjamin',    label: 'Benjamín'    },
+            { id: 'alevin',      label: 'Alevín'      },
+            { id: 'infantil',    label: 'Infantil'    },
+            { id: 'cadete',      label: 'Cadete'      },
+            { id: 'juvenil',     label: 'Juvenil'     },
+            { id: 'regional',    label: 'Regional'    },
+        ];
+        
+        function _normCatId(raw) {
+            const normalized = String(raw || '')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z]/g, '');
+            for (const c of STAFF_CATEGORIES) {
+                if (normalized.startsWith(c.id)) return c.id;
+            }
+            return 'sin-categoria';
+        }
 
-                totalGoals += (p.goals || 0);
-                if (p.cards === 'yellow' || p.cards === 'amarilla') totalYCards++;
-                if (p.cards === 'red' || p.cards === 'roja') totalRCards++;
-                if (p.injured) totalInjured++;
-
-                const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
-                if (!playerStats[pKey]) {
-                    playerStats[pKey] = {
-                        name: pKey,
-                        number: p.number || p.playerNumber || '',
-                        matchKeys: new Set(),
-                        goals: 0, yCards: 0, rCards: 0, injured: 0
-                    };
-                }
-                const ps = playerStats[pKey];
-                ps.matchKeys.add(matchKey);
-                ps.goals += (p.goals || 0);
-                if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
-                if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
-                if (p.injured) ps.injured++;
-            });
+        const catTree = new Map();
+        STAFF_CATEGORIES.forEach(c => {
+            catTree.set(c.id, { label: c.label, subcats: new Map(), totalMatches: 0 });
         });
-        // Convertir Set a contador
-        const playerList = Object.values(playerStats).map(p => ({
-            ...p,
-            matches: p.matchKeys.size  // FIX: numero de partidos unicos
-        })).sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
+        catTree.set('sin-categoria', { label: 'Sin categoría asignada', subcats: new Map(), totalMatches: 0 });
+
+        sorted.forEach(m => {
+            const catId = _normCatId(m.category);
+            let subId = (m.subcategory || '').trim().toUpperCase();
+            if (!subId) subId = 'Sin asignar';
+            
+            if (!catTree.has(catId)) catTree.set(catId, { label: m.category || catId, subcats: new Map(), totalMatches: 0 });
+            
+            const catNode = catTree.get(catId);
+            if (!catNode.subcats.has(subId)) catNode.subcats.set(subId, []);
+            catNode.subcats.get(subId).push(m);
+            catNode.totalMatches++;
+        });
+
+        // Helper para construir stats de una subcategoría
+        function _buildSubcatStats(subcatMatches) {
+            let tGoals = 0, tYCards = 0, tRCards = 0, tInjured = 0;
+            const pStats = {};
+            const seen = new Set();
+            
+            subcatMatches.forEach(m => {
+                m.players.forEach(p => {
+                    const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
+                    const dedupKey = m.key + '_' + dorsal;
+                    if (seen.has(dedupKey)) return;
+                    seen.add(dedupKey);
+
+                    tGoals += (p.goals || 0);
+                    if (p.cards === 'yellow' || p.cards === 'amarilla') tYCards++;
+                    if (p.cards === 'red' || p.cards === 'roja') tRCards++;
+                    if (p.injured) tInjured++;
+
+                    const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
+                    if (!pStats[pKey]) {
+                        pStats[pKey] = { name: pKey, number: dorsal, matchKeys: new Set(), goals: 0, yCards: 0, rCards: 0, injured: 0 };
+                    }
+                    const ps = pStats[pKey];
+                    ps.matchKeys.add(m.key);
+                    ps.goals += (p.goals || 0);
+                    if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
+                    if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
+                    if (p.injured) ps.injured++;
+                });
+            });
+
+            const pList = Object.values(pStats).map(p => ({
+                ...p, matches: p.matchKeys.size
+            })).sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
+            
+            let statsHtml = `
+            <div style="background:linear-gradient(135deg,rgba(88,166,255,0.08),rgba(63,185,80,0.05));border:1px solid rgba(88,166,255,0.25);border-radius:12px;padding:1rem;margin-bottom:1rem;">
+                <div style="font-size:0.82rem;font-weight:700;color:var(--primary);margin-bottom:0.7rem;letter-spacing:0.3px;">📋 RESUMEN TOTAL (Subcategoría)</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:0.6rem;">
+                    <div style="text-align:center;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                        <div style="font-size:1.5rem;font-weight:800;color:#3fb950;">${tGoals}</div>
+                        <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">⚽ Goles</div>
+                    </div>
+                    <div style="text-align:center;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                        <div style="font-size:1.5rem;font-weight:800;color:#ffd700;">${tYCards}</div>
+                        <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟨 Tarj. Amarillas</div>
+                    </div>
+                    <div style="text-align:center;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                        <div style="font-size:1.5rem;font-weight:800;color:#ff5858;">${tRCards}</div>
+                        <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟥 Tarj. Rojas</div>
+                    </div>
+                    <div style="text-align:center;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                        <div style="font-size:1.5rem;font-weight:800;color:#f97316;">${tInjured}</div>
+                        <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🚑 Lesiones</div>
+                    </div>
+                </div>
+            </div>`;
+
+            if (pList.length > 0) {
+                statsHtml += `
+                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1rem;margin-bottom:1rem;">
+                    <div style="font-size:0.82rem;font-weight:700;color:#f0883e;margin-bottom:0.7rem;letter-spacing:0.3px;">👤 INFORME INDIVIDUAL POR JUGADOR</div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                            <thead>
+                                <tr style="background:rgba(255,255,255,0.04);color:var(--text-muted);text-align:left;">
+                                    <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">#</th>
+                                    <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">Jugador</th>
+                                    <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">Partidos</th>
+                                    <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⚽</th>
+                                    <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟨</th>
+                                    <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟥</th>
+                                    <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🚑</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${pList.map(p => `
+                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                        <td style="padding:0.45rem 0.5rem;color:var(--text-muted);">${p.number || '—'}</td>
+                                        <td style="padding:0.45rem 0.5rem;font-weight:600;">${escapeHtml(p.name)}</td>
+                                        <td style="padding:0.45rem 0.5rem;text-align:center;">${p.matches}</td>
+                                        <td style="padding:0.45rem 0.5rem;text-align:center;color:#3fb950;font-weight:700;">${p.goals > 0 ? p.goals : '—'}</td>
+                                        <td style="padding:0.45rem 0.5rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
+                                        <td style="padding:0.45rem 0.5rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
+                                        <td style="padding:0.45rem 0.5rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>`;
+            }
+            return statsHtml;
+        }
+
+        // Mapa global de datos de partido para renderizado lazy
+        window._sdMatchData = {};
 
         let html = `
         <div style="margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
@@ -1555,122 +1650,121 @@ async function _sdLoadReports() {
                 Club: <strong style="color:var(--primary);">${escapeHtml(me.clubName||clubId)}</strong>
             </span>
         </div>
+        
+        <div class="reports-tree-container">`;
 
-        <!-- FIX (Error #20): RESUMEN DE TOTALES -->
-        <div style="background:linear-gradient(135deg,rgba(88,166,255,0.08),rgba(63,185,80,0.05));border:1px solid rgba(88,166,255,0.25);border-radius:12px;padding:1rem;margin-bottom:1rem;">
-            <div style="font-size:0.82rem;font-weight:700;color:var(--primary);margin-bottom:0.7rem;letter-spacing:0.3px;">📋 RESUMEN TOTAL (todos los informes)</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:0.6rem;">
-                <div style="text-align:center;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#3fb950;">${totalGoals}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">⚽ Goles</div>
-                </div>
-                <div style="text-align:center;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#ffd700;">${totalYCards}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟨 Tarj. Amarillas</div>
-                </div>
-                <div style="text-align:center;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#ff5858;">${totalRCards}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟥 Tarj. Rojas</div>
-                </div>
-                <div style="text-align:center;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#f97316;">${totalInjured}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🚑 Lesiones</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- FIX (Error #20): INFORME INDIVIDUAL POR JUGADOR -->
-        ${playerList.length > 0 ? `
-        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1rem;margin-bottom:1rem;">
-            <div style="font-size:0.82rem;font-weight:700;color:#f0883e;margin-bottom:0.7rem;letter-spacing:0.3px;">👤 INFORME INDIVIDUAL POR JUGADOR</div>
-            <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
-                    <thead>
-                        <tr style="background:rgba(255,255,255,0.04);color:var(--text-muted);text-align:left;">
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">#</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">Jugador</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">Partidos</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⚽ Goles</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟨 TA</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟥 TR</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🚑 Les.</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${playerList.map(p => `
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                                <td style="padding:0.45rem 0.5rem;color:var(--text-muted);">${p.number || '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;font-weight:600;">${escapeHtml(p.name)}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;">${p.matches}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#3fb950;font-weight:700;">${p.goals > 0 ? p.goals : '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        ` : ''}
-
-        <!-- LISTA DE INFORMES POR PARTIDO -->`;
-
-        sorted.forEach(m => {
-            const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
-            const injured = m.players.filter(p => p.injured).length;
-            const dateStr = m.matchDate
-                ? new Date(m.matchDate).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' })
-                : '—';
-            const sh = m.scoreHome, sa = m.scoreAway;
-            const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
-            // Resultado según myTeamRole; sin el campo (informes antiguos) → fallback 'home', comportamiento previo.
-            const _mine   = m.myTeamRole === 'away' ? sa : sh;
-            const _theirs = m.myTeamRole === 'away' ? sh : sa;
-            const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
-            const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
-            const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
-
-            // Guardar datos del partido para renderizado lazy en el toggle
-            window._sdMatchData[key64] = m;
+        catTree.forEach((catNode, catId) => {
+            const hasMatches = catNode.totalMatches > 0;
+            // Si la categoría 'sin-categoria' está vacía, no la mostramos
+            if (catId === 'sin-categoria' && !hasMatches) return;
+            
+            const isOpen = ''; // Las categorías NO se expanden solas
+            const indicator = hasMatches ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb950;margin-right:8px;box-shadow:0 0 5px rgba(63,185,80,0.5);"></span>' 
+                                         : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin-right:8px;"></span>';
 
             html += `
-            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
-                <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
-                    <div style="flex:1;min-width:0;">
-                        <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                            🆚 vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>
-                            ${res ? `<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.5px;color:${rCol};">${res}</span>` : ''}
+            <details class="sa-card" ${isOpen} style="margin-bottom:0.8rem;border:1px solid rgba(88,166,255,0.25);border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.02);">
+                <summary style="padding:1rem;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;background:rgba(88,166,255,0.05);user-select:none;">
+                    <div style="display:flex;align-items:center;font-weight:700;font-size:1rem;color:#58a6ff;">
+                        ${indicator}
+                        ${escapeHtml(catNode.label)}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;color:var(--text-muted);font-size:0.8rem;">
+                        <span>${catNode.totalMatches} partido${catNode.totalMatches !== 1 ? 's' : ''}</span>
+                        <span style="opacity:0.5;">▼</span>
+                    </div>
+                </summary>
+                <div style="padding:1rem;border-top:1px solid rgba(88,166,255,0.15);">
+            `;
+
+            if (hasMatches) {
+                // Ordenar subcategorías alfabéticamente, pero poner 'Sin asignar' al final
+                const subcats = Array.from(catNode.subcats.keys()).sort((a, b) => {
+                    if (a === 'Sin asignar') return 1;
+                    if (b === 'Sin asignar') return -1;
+                    return a.localeCompare(b);
+                });
+
+                subcats.forEach(subId => {
+                    const subcatMatches = catNode.subcats.get(subId);
+                    
+                    html += `
+                    <details class="sa-card" style="margin-bottom:0.8rem;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:rgba(0,0,0,0.15);">
+                        <summary style="padding:0.75rem 1rem;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.03);">
+                            <div style="display:flex;align-items:center;font-weight:600;font-size:0.9rem;color:var(--text);">
+                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f0883e;margin-right:8px;"></span>
+                                Subcategoría: ${escapeHtml(subId)}
+                            </div>
+                            <span style="color:var(--text-muted);font-size:0.75rem;">${subcatMatches.length} partido${subcatMatches.length !== 1 ? 's' : ''} ▼</span>
+                        </summary>
+                        <div style="padding:1rem;border-top:1px solid rgba(255,255,255,0.05);">
+                            ${_buildSubcatStats(subcatMatches)}
+                    `;
+
+                    subcatMatches.forEach(m => {
+                        const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
+                        const injured = m.players.filter(p => p.injured).length;
+                        const dateStr = m.matchDate
+                            ? new Date(m.matchDate).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' })
+                            : '—';
+                        const sh = m.scoreHome, sa = m.scoreAway;
+                        const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
+                        const _mine   = m.myTeamRole === 'away' ? sa : sh;
+                        const _theirs = m.myTeamRole === 'away' ? sh : sa;
+                        const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
+                        const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
+                        const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
+
+                        window._sdMatchData[key64] = m;
+
+                        html += `
+                        <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
+                            <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                                        🆚 vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>
+                                        ${res ? `<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.5px;color:${rCol};">${res}</span>` : ''}
+                                    </div>
+                                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
+                                        <span>📅 ${dateStr}</span>
+                                        ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
+                                        <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
+                                    </div>
+                                </div>
+                                <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                                    <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">${m.players.length} jugadores</span>
+                                    ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">⚽ ${goals} gol${goals !== 1 ? 'es' : ''}</span>` : ''}
+                                    ${injured > 0 ? `<span class="sd-badge" style="background:rgba(249,115,22,0.12);color:#f97316;">🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
+                                    <div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;">▼ Ver informe completo</div>
+                                </div>
+                                <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
+                                    <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
+                                            title="Eliminar este informe definitivamente"
+                                            style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                                                   color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
+                                                   display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+                                        🗑️
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="rdetail-${key64}" style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;"></div>
+                        </div>`;
+                    });
+                    
+                    html += `
                         </div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
-                            <span>📅 ${dateStr}</span>
-                            ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
-                            ${m.category ? `<span style="color:#58a6ff;">${escapeHtml(m.category)}</span>` : ''}
-                            <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
-                        </div>
-                    </div>
-                    <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                        <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">${m.players.length} jugadores</span>
-                        ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">⚽ ${goals} gol${goals !== 1 ? 'es' : ''}</span>` : ''}
-                        ${injured > 0 ? `<span class="sd-badge" style="background:rgba(249,115,22,0.12);color:#f97316;">🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
-                        <div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;">▼ Ver informe completo</div>
-                    </div>
-                    <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
-                        <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
-                                title="Eliminar este informe definitivamente"
-                                style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
-                                       color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
-                                       display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
-                            🗑️
-                        </button>
-                    </div>
+                    </details>`;
+                });
+            } else {
+                html += `<div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:0.8rem;">No hay informes en esta categoría.</div>`;
+            }
+
+            html += `
                 </div>
-                <!-- Panel de detalle: vacío hasta el primer click (lazy render) -->
-                <div id="rdetail-${key64}"
-                     style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
-                </div>
-            </div>`;
+            </details>`;
         });
+
+        html += `</div>`;
 
         container.innerHTML = html;
 
