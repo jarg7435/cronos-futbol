@@ -11,6 +11,124 @@ async function _sdFS() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  FIX (Error #22): Árbol colapsable de categorías/subcategorías
+//  Estructura idéntica al panel del Administrador del Club:
+//  7 categorías (Prebenjamín...Regional) × 3 subcategorías (A, B, C)
+// ════════════════════════════════════════════════════════════════════
+window._CRONOS_CATEGORIES = [
+    { id: 'prebenjamin', label: 'Prebenjamín' },
+    { id: 'benjamin',    label: 'Benjamín' },
+    { id: 'alevin',      label: 'Alevín' },
+    { id: 'infantil',    label: 'Infantil' },
+    { id: 'cadete',      label: 'Cadete' },
+    { id: 'juvenil',     label: 'Juvenil' },
+    { id: 'regional',    label: 'Regional' },
+];
+window._CRONOS_SUBCATS = ['A', 'B', 'C'];
+
+window._cronosRenderCatTree = function(items, renderItem, typeLabel) {
+    const esc = (v) => typeof escapeHtml === 'function'
+        ? escapeHtml(v == null ? '' : String(v))
+        : (v == null ? '' : String(v));
+
+    const normCat = (cat) => {
+        if (!cat) return null;
+        const c = String(cat).toLowerCase();
+        for (const def of window._CRONOS_CATEGORIES) {
+            if (c.includes(def.id) || c.includes(def.label.toLowerCase())) return def.id;
+        }
+        return null;
+    };
+    const normSub = (sub) => {
+        if (!sub) return null;
+        const s = String(sub).toUpperCase().trim();
+        if (window._CRONOS_SUBCATS.includes(s)) return s;
+        const m = s.match(/([ABC])/);
+        return m ? m[1] : null;
+    };
+
+    const byCatSub = new Map();
+    const noCatItems = [];
+    items.forEach(d => {
+        const catId = normCat(d.category);
+        const subId = normSub(d.subcategory);
+        if (catId && subId) {
+            if (!byCatSub.has(catId)) byCatSub.set(catId, new Map());
+            const subMap = byCatSub.get(catId);
+            if (!subMap.has(subId)) subMap.set(subId, []);
+            subMap.get(subId).push(d);
+        } else {
+            noCatItems.push(d);
+        }
+    });
+
+    const css = '<style>' +
+        '.ct-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem;}' +
+        '.ct-card-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:0.5rem;user-select:none;}' +
+        '.ct-card-title{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.85rem;color:white;}' +
+        '.ct-card-body{display:none;padding-top:0.5rem;margin-top:0.4rem;}' +
+        '.ct-card.expanded > .ct-card-body{display:block;}' +
+        '.ct-chevron{display:inline-block;transform:rotate(-90deg);transition:transform 0.2s;font-size:0.7rem;color:var(--text-muted);}' +
+        '.ct-card.expanded > .ct-card-head .ct-chevron{transform:rotate(0deg);}' +
+        '.ct-sub{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.4rem;}' +
+        '.ct-sub.expanded > .ct-card-body{display:block;}' +
+        '.ct-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.12);}' +
+        '.ct-dot.on{background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.7);}' +
+        '.ct-badge{display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:20px;font-size:0.68rem;font-weight:700;background:rgba(88,166,255,0.12);color:#58a6ff;}' +
+        '.ct-empty{font-size:0.72rem;color:#6e7681;padding:0.4rem 0.5rem;font-style:italic;}' +
+        '</style>';
+
+    const catsHtml = window._CRONOS_CATEGORIES.map(catDef => {
+        const subMap = byCatSub.get(catDef.id) || new Map();
+        const catCount = Array.from(subMap.values()).reduce((s, arr) => s + arr.length, 0);
+        const catHas = catCount > 0;
+
+        const subsHtml = window._CRONOS_SUBCATS.map(subId => {
+            const subItems = subMap.get(subId) || [];
+            const subHas = subItems.length > 0;
+            const body = subHas
+                ? subItems.map(renderItem).join('')
+                : '<div class="ct-empty">Sin ' + (typeLabel || 'registros') + ' en esta subcategoría.</div>';
+            return '<div class="ct-card ct-sub ' + (subHas ? 'expanded' : '') + '">' +
+                '<div class="ct-card-head" onclick="this.closest(".ct-sub").classList.toggle("expanded")">' +
+                '<div class="ct-card-title" style="font-size:0.78rem;">' +
+                '<span class="ct-chevron">▼</span>' +
+                '<span>Subcategoría ' + subId + '</span>' +
+                (subHas ? '<span class="ct-badge">' + subItems.length + '</span>' : '<span style="font-size:0.68rem;color:#6e7681;">vacía</span>') +
+                '</div></div>' +
+                '<div class="ct-card-body">' + body + '</div>' +
+                '</div>';
+        }).join('');
+
+        const dot = catHas ? '<span class="ct-dot on"></span>' : '<span class="ct-dot"></span>';
+        return '<div class="ct-card ' + (catHas ? 'expanded' : '') + '" style="border-color:rgba(88,166,255,0.2);">' +
+            '<div class="ct-card-head" onclick="this.closest(".ct-card").classList.toggle("expanded")">' +
+            '<div class="ct-card-title">' +
+            '<span class="ct-chevron">▼</span>' +
+            '<span>' + esc(catDef.label) + '</span>' +
+            dot +
+            (catHas ? '<span class="ct-badge">' + catCount + '</span>' : '<span style="font-size:0.68rem;color:#6e7681;">vacía</span>') +
+            '</div></div>' +
+            '<div class="ct-card-body">' + subsHtml + '</div>' +
+            '</div>';
+    }).join('');
+
+    const noCatHtml = noCatItems.length
+        ? '<div class="ct-card expanded" style="border-color:rgba(255,165,0,0.3);">' +
+            '<div class="ct-card-head" onclick="this.closest(".ct-card").classList.toggle("expanded")">' +
+            '<div class="ct-card-title">' +
+            '<span class="ct-chevron">▼</span>' +
+            '<span>📋 Sin categoría asignada</span>' +
+            '<span class="ct-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">' + noCatItems.length + '</span>' +
+            '</div></div>' +
+            '<div class="ct-card-body">' + noCatItems.map(renderItem).join('') + '</div>' +
+            '</div>'
+        : '';
+
+    return css + '<div style="margin-bottom:1rem;">' + catsHtml + noCatHtml + '</div>';
+};
+
+// ════════════════════════════════════════════════════════════════════
 //  MODO PRUEBA MULTI-ROL — Solo SuperAdmin
 // ════════════════════════════════════════════════════════════════════
 window._testRoleClubId = null;
