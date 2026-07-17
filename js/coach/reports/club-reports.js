@@ -351,6 +351,7 @@ async function _sdLoadEvents(type) {
         const isConv = type === 'convocatoria';
         const accent = isConv ? 'var(--primary)' : '#f0883e';
         const icon   = isConv ? '📋' : '📅';
+        const typeLabel = isConv ? 'convocatorias' : 'entrenamientos';
 
         let html = `<div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.8rem;text-align:right;">
             ${items.length} registros · máx. ${MAX_ITEMS} (los más antiguos se eliminan automáticamente)
