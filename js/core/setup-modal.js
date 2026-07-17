@@ -10,6 +10,18 @@
 // v261: Variable global para recordar qué modalidades tiene permitidas el entrenador.
 window._cronosAllowedModes = ['f7', 'f11']; // por defecto, ambas
 
+// FIX (Error #26): Helper para mostrar botones con candado si el extra está desactivado
+window._cronosExtraBtn = function(extraKey, label, onclickAction, styleStr) {
+    const me = window._cronosCurrentUser;
+    const extras = (me && me.extras) || {};
+    const enabled = extras[extraKey] !== false;
+    if (enabled) {
+        return '<button class="btn" onclick="' + onclickAction + '" style="background:' + styleStr + '; font-size:0.7rem; font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">' + label + '</button>';
+    } else {
+        return '<button class="btn" disabled title="No disponible en tu plan" style="background:rgba(255,255,255,0.03); color:#555; font-size:0.7rem; border:1px solid rgba(255,255,255,0.08); font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center; cursor:not-allowed; opacity:0.6;">🔒 ' + label + '</button>';
+    }
+};
+
 function openSetupModal() {
     document.body.classList.add('setup-mode');
     const modal = document.getElementById('setup-modal');

@@ -3056,14 +3056,16 @@ function _launchWithRole(role) {
             // Usar funcion async autoejecutable porque _launchWithRole no es async.
             (async () => {
                 try {
-                    const { db, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                    const _db = window._cronos_auth?.db;
+                    if (!_db) { me.extras = {}; return; }
                     const clubId2 = roleEntry.clubId || me.clubId;
                     if (clubId2) {
-                        const clubDoc = await getDoc(doc(db, 'clubs', clubId2));
+                        const clubDoc = await getDoc(doc(_db, 'clubs', clubId2));
                         if (clubDoc.exists()) {
                             me.extras = clubDoc.data().extras || {};
                         } else {
-                            const indDoc = await getDoc(doc(db, 'individuals', clubId2));
+                            const indDoc = await getDoc(doc(_db, 'individuals', clubId2));
                             if (indDoc.exists()) {
                                 me.extras = indDoc.data().extras || {};
                             }
