@@ -1594,13 +1594,19 @@ async function _sdLoadReports() {
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
         if (snap.empty) {
+            // FIX (Error #24): mostrar el arbol de categorias vacio aunque
+            // no haya informes, para que la estructura siempre este visible.
+            const emptyTree = (typeof window._cronosRenderCatTree === 'function')
+                ? window._cronosRenderCatTree([], () => '', 'informes')
+                : '';
             container.innerHTML = `
-            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
-                <div style="font-size:2.5rem;margin-bottom:1rem;">📊</div>
-                <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">Sin informes de partido aún</div>
-                <div style="font-size:0.8rem;">Los informes aparecen aquí cuando un entrenador finaliza un partido
+            <div style="text-align:center;padding:1.5rem;color:var(--text-muted);">
+                <div style="font-size:2rem;margin-bottom:0.5rem;">📊</div>
+                <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.3rem;">Sin informes de partido aún</div>
+                <div style="font-size:0.78rem;">Los informes aparecen aquí cuando un entrenador finaliza un partido
                     y pulsa <strong>"Enviar Informe"</strong> en la app.</div>
-            </div>`;
+            </div>
+            ${emptyTree}`;
             return;
         }
 

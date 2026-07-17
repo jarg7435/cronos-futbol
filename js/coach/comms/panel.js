@@ -1788,6 +1788,9 @@ window._executeReportsSend = async function(method) {
                                     staffReport:   true,
                                     staffUids:     _manualStaffUids, // ← FIX: UIDs para reglas Firestore
                                     clubId:        me.clubId || null,
+                    // FIX (Error #24): categoria/subcategoria del entrenador
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                                     coachUid:      me.uid,
                                     coachEmail:    me.email,
                                     matchDate:     new Date().toISOString().split('T')[0],
@@ -1903,6 +1906,9 @@ window._executeReportsSend = async function(method) {
                     parentUid:      targetParentUid,
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
+                    // FIX (Error #24): categoria/subcategoria del entrenador
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     matchDate:      new Date().toISOString().split('T')[0],
                     rival:          rivalName,
                     scoreHome, scoreAway,
@@ -1988,6 +1994,9 @@ window._executeReportsSend = async function(method) {
                 const rptId = `${matchId}_coach_p${p.number}`;
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
                     matchId, type: 'collective_match_report', clubId: me.clubId || null,
+                    // FIX (Error #24): categoria/subcategoria del entrenador
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     coachUid: me.uid, coachEmail: me.email,
                     matchDate: new Date().toISOString().split('T')[0],
                     rival: rivalName, scoreHome, scoreAway,
@@ -2197,6 +2206,9 @@ async function autoDispatchMatchReports() {
                 staffReport:   true,          // ← filtro exclusivo del panel staff
                 staffUids:     _allStaffUids, // ← FIX: UIDs de staff para reglas Firestore
                 clubId:        me.clubId || null,
+                    // FIX (Error #24): categoria/subcategoria del entrenador
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
                 matchDate:     new Date().toISOString().split('T')[0],
@@ -2335,6 +2347,9 @@ async function autoDispatchMatchReports() {
                 type:          'parent_player_report',
                 parentUid:     parentUid,
                 clubId:        me.clubId || null,
+                    // FIX (Error #24): categoria/subcategoria del entrenador
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
                 matchDate:     new Date().toISOString().split('T')[0],
@@ -2431,6 +2446,9 @@ async function autoDispatchMatchReports() {
                     staffReport:   false,         // no aparece en vista del staff (ya tiene staffReport=true)
                     _forCoach:     true,
                     clubId:        me.clubId || null,
+                    // FIX (Error #24): categoria/subcategoria del entrenador
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     coachUid:      me.uid,
                     coachEmail:    me.email,
                     matchDate:     new Date().toISOString().split('T')[0],
@@ -3508,16 +3526,20 @@ window._sendTrainingNotificationV2 = async function() {
         const sinUidTr = [];
         const debugLogTr = [];
 
-        // FIX (Error #24): dedup por email TAMBIEN para evitar duplicados
+        // FIX (Error #24 v2): dedup por email Y por uid normalizado.
+        const _normEmailTr = (e) => (e || '').toLowerCase().trim().replace(/\s+/g, '');
         const notifiedEmailsTr = new Set();
         for (const r of selected) {
             let uid = r.uid;
-            const email = (r.email || '').toLowerCase().trim();
+            const email = _normEmailTr(r.email);
             if (!uid) {
                 sinUidTr.push(r.label || r.email);
                 continue;
             }
-            if (notifiedUids.has(uid)) continue;
+            if (notifiedUids.has(uid)) {
+                debugLogTr.push(`[skip ${r.label}] uid ya enviado: ${uid}`);
+                continue;
+            }
             // Dedup por email
             if (email && notifiedEmailsTr.has(email)) {
                 debugLogTr.push(`[skip ${r.label}] email ya enviado: ${email}`);
@@ -3525,6 +3547,7 @@ window._sendTrainingNotificationV2 = async function() {
             }
             notifiedUids.add(uid);
             if (email) notifiedEmailsTr.add(email);
+            console.log('[_sendTrainingNotificationV2] enviando a:', r.label, '| uid:', uid, '| email:', email);
             await setDoc(doc(db, 'cronos_notifications', 'tr_' + uid + '_' + Date.now().toString(36)), notifPayload(uid, _resolveRoleTr(r)));
             sentInternal++;
             debugLogTr.push(`[✓ ${r.label}] enviado a uid=${uid}`);
@@ -4128,6 +4151,9 @@ window._sendCollectiveReportNow = async function() {
                 // y la consulta fallback array-contains los encuentre.
                 staffUids:      staff.map(s => s.uid).filter(Boolean),
                 clubId:         me.clubId || null,
+                    // FIX (Error #24): categoria/subcategoria del entrenador
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,
                 matchDate:      matchDateISO,

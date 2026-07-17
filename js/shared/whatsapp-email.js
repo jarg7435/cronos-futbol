@@ -1362,19 +1362,22 @@ window.publishConvocationToAppV2 = async function() {
         const sinUid = [];
         const debugLog = [];
 
-        // FIX (Error #24): dedup por email TAMBIEN (no solo uid) para evitar
-        // duplicados cuando el mismo contacto esta como manual y como usuario
-        // del club con el mismo email.
+        // FIX (Error #24 v2): dedup por email Y por uid normalizado.
+        // Normalizar email: lowercase, trim, quitar espacios internos.
+        const _normEmail = (e) => (e || '').toLowerCase().trim().replace(/\s+/g, '');
         const notifiedEmails = new Set();
         for (const r of selected) {
             let uid = r.uid;
-            const email = (r.email || '').toLowerCase().trim();
+            const email = _normEmail(r.email);
             if (!uid) {
                 sinUid.push(r.label || r.email);
                 continue;
             }
             // Dedup por uid
-            if (notifiedUids.has(uid)) continue;
+            if (notifiedUids.has(uid)) {
+                debugLog.push(`[skip ${r.label}] uid ya enviado: ${uid}`);
+                continue;
+            }
             // Dedup por email (evita duplicados mismo usuario, contacto distinto)
             if (email && notifiedEmails.has(email)) {
                 debugLog.push(`[skip ${r.label}] email ya enviado: ${email}`);
@@ -1382,6 +1385,7 @@ window.publishConvocationToAppV2 = async function() {
             }
             notifiedUids.add(uid);
             if (email) notifiedEmails.add(email);
+            console.log('[publishConvocationToAppV2] enviando a:', r.label, '| uid:', uid, '| email:', email);
             await setDoc(doc(db, 'cronos_notifications', 'cv_' + uid + '_' + Date.now().toString(36)), notifPayload(uid, _resolveRole(r)));
             count++;
             debugLog.push(`[✓ ${r.label}] enviado a uid=${uid}`);
