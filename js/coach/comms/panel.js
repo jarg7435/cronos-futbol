@@ -1797,10 +1797,8 @@ window._executeReportsSend = async function(method) {
                                     rival:         rivalName,
                                     scoreHome,
                                     scoreAway,
-                                    category:      (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
-                                                   (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || '',
-                                    subcategory:   _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
-                                                   (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || ''),
+                                    // FIX (Error #24 v2): category/subcategory ya fijadas arriba con me.category
+                                    // No sobrescribir con currentCategory que puede estar vacio
                                     venue:         (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
                                     competition:   (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
                                     matchTime:     (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
@@ -2001,8 +1999,7 @@ window._executeReportsSend = async function(method) {
                     matchDate: new Date().toISOString().split('T')[0],
                     rival: rivalName, scoreHome, scoreAway,
                     myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                    category: (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
-                    subcategory: _cMatchSubcatFor(me, (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:'')),
+                    // FIX (Error #24 v2): category/subcategory ya fijadas arriba con me.category
                     createdAt: new Date().toISOString(),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
                     position: p.position || p.pos || '',
@@ -4161,10 +4158,7 @@ window._sendCollectiveReportNow = async function() {
                 scoreHome,
                 scoreAway,
                 myTeamRole:     _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto). CRÍTICO: este doc tiene staffReport:true y lo lee el Panel de Dirección.
-                category:       (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
-                                 (typeof window.currentCategory !== 'undefined' ? window.currentCategory : ''),
-                subcategory:    _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
-                                 (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '')),
+                // FIX (Error #24 v2): category/subcategory ya fijadas arriba con me.category
                 venue:          (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
                 competition:    (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
                 matchTime:      (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
