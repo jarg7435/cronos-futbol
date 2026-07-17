@@ -4407,10 +4407,122 @@ window.openMisInformes = async function openMisInformes() {
 
         window._misInformesData = matches;
 
+        // FIX: Calcular totales de todos los informes del entrenador
+        let miTotalGoals = 0, miTotalYCards = 0, miTotalRCards = 0, miTotalInjured = 0, miTotalMinutes = 0;
+        const miPlayerStats = {};
+        const miSeen = new Set();
+        sorted.forEach(m => {
+            const mk = m.key;
+            m.players.forEach(p => {
+                const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
+                const dk = mk + '_' + dorsal;
+                if (miSeen.has(dk)) return;
+                miSeen.add(dk);
+                miTotalGoals += (p.goals || 0);
+                if (p.cards === 'yellow' || p.cards === 'amarilla') miTotalYCards++;
+                if (p.cards === 'red' || p.cards === 'roja') miTotalRCards++;
+                if (p.injured) miTotalInjured++;
+                if (p.minutesPlayed) {
+                    if (typeof p.minutesPlayed === 'number') { miTotalMinutes += p.minutesPlayed; }
+                    else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
+                        const _mp = String(p.minutesPlayed).split(':');
+                        miTotalMinutes += parseInt(_mp[0]) * 60 + parseInt(_mp[1]);
+                    }
+                }
+                const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
+                if (!miPlayerStats[pKey]) {
+                    miPlayerStats[pKey] = { name: pKey, number: p.playerNumber || p.number || '', matchKeys: new Set(), goals: 0, yCards: 0, rCards: 0, injured: 0, minutes: 0 };
+                }
+                const ps = miPlayerStats[pKey];
+                ps.matchKeys.add(mk);
+                ps.goals += (p.goals || 0);
+                if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
+                if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
+                if (p.injured) ps.injured++;
+                if (p.minutesPlayed) {
+                    if (typeof p.minutesPlayed === 'number') ps.minutes += p.minutesPlayed;
+                    else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
+                        const parts = String(p.minutesPlayed).split(':');
+                        ps.minutes += parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                    }
+                }
+            });
+        });
+        const miPlayerList = Object.values(miPlayerStats).map(p => ({ ...p, matches: p.matchKeys.size }))
+            .sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
+        const miTotalMatches = sorted.length;
+        const fmtMin = (s) => s > 0 ? Math.floor(s/60)+':'+String(s%60).padStart(2,'0') : '0';
+
         const body = document.getElementById('mis-informes-body');
-        body.innerHTML = `<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.8rem;">
+        body.innerHTML = `
+        <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.8rem;">
             ${sorted.length} partido${sorted.length!==1?'s':''} · ${reports.length} informes de jugadores
-        </div>` + sorted.map(m => {
+        </div>
+
+        <!-- FIX: RESUMEN TOTAL DE TODOS LOS INFORMES DEL ENTRENADOR -->
+        <div style="background:linear-gradient(135deg,rgba(88,166,255,0.08),rgba(63,185,80,0.05));border:1px solid rgba(88,166,255,0.25);border-radius:12px;padding:1rem;margin-bottom:1rem;">
+            <div style="font-size:0.82rem;font-weight:700;color:var(--primary);margin-bottom:0.7rem;">📋 RESUMEN DE TODOS LOS INFORMES</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:0.5rem;margin-bottom:0.7rem;">
+                <div style="text-align:center;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.2);border-radius:8px;padding:0.5rem;">
+                    <div style="font-size:1.3rem;font-weight:800;color:#58a6ff;">${miTotalMatches}</div>
+                    <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Partidos</div>
+                </div>
+                <div style="text-align:center;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.2);border-radius:8px;padding:0.5rem;">
+                    <div style="font-size:1.3rem;font-weight:800;color:#3fb950;">${miTotalGoals}</div>
+                    <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">⚽ Goles</div>
+                </div>
+                <div style="text-align:center;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.2);border-radius:8px;padding:0.5rem;">
+                    <div style="font-size:1.3rem;font-weight:800;color:#ffd700;">${miTotalYCards}</div>
+                    <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">🟨 TA</div>
+                </div>
+                <div style="text-align:center;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.2);border-radius:8px;padding:0.5rem;">
+                    <div style="font-size:1.3rem;font-weight:800;color:#ff5858;">${miTotalRCards}</div>
+                    <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">🟥 TR</div>
+                </div>
+                <div style="text-align:center;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.2);border-radius:8px;padding:0.5rem;">
+                    <div style="font-size:1.3rem;font-weight:800;color:#f97316;">${miTotalInjured}</div>
+                    <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">🚑 Les</div>
+                </div>
+                <div style="text-align:center;background:rgba(180,120,200,0.1);border:1px solid rgba(180,120,200,0.2);border-radius:8px;padding:0.5rem;">
+                    <div style="font-size:1.3rem;font-weight:800;color:#b478c8;">${fmtMin(miTotalMinutes)}</div>
+                    <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">⏱️ Min Total</div>
+                </div>
+            </div>
+            ${miPlayerList.length > 0 ? `
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
+                    <thead>
+                        <tr style="background:rgba(255,255,255,0.04);color:var(--text-muted);text-align:left;">
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);">#</th>
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);">Jugador</th>
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">Partidos</th>
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⚽</th>
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟨</th>
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟥</th>
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🚑</th>
+                            <th style="padding:0.4rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⏱️</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${miPlayerList.map(p => `
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                <td style="padding:0.35rem 0.4rem;color:var(--text-muted);">${p.number || '—'}</td>
+                                <td style="padding:0.35rem 0.4rem;font-weight:600;">${typeof escapeHtml==='function'?escapeHtml(p.name):p.name}</td>
+                                <td style="padding:0.35rem 0.4rem;text-align:center;">${p.matches}</td>
+                                <td style="padding:0.35rem 0.4rem;text-align:center;color:#3fb950;font-weight:700;">${p.goals > 0 ? p.goals : '—'}</td>
+                                <td style="padding:0.35rem 0.4rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
+                                <td style="padding:0.35rem 0.4rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
+                                <td style="padding:0.35rem 0.4rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
+                                <td style="padding:0.35rem 0.4rem;text-align:center;color:#58a6ff;">${p.minutes > 0 ? fmtMin(p.minutes) : '—'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            ` : ''}
+        </div>
+
+        ` + sorted.map(m => {
             const sh=m.scoreHome, sa=m.scoreAway;
             const score=(sh!=null&&sa!=null)?`${sh}–${sa}`:'—';
             // Resultado segun myTeamRole; sin el campo (informes antiguos) -> fallback 'home', comportamiento previo.
