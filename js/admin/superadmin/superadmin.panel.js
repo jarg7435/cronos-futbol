@@ -3504,7 +3504,9 @@ window.saExtras = async function saExtras() {
     if (!body) return;
     body.innerHTML = '<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando…</div>';
     try {
-        const { db, collection, getDocs, doc, getDoc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { collection, getDocs, doc, updateDoc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth?.db;
+        if (!db) { body.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ Firebase no disponible</div>'; return; }
         
         // Cargar clubes
         const clubsSnap = await getDocs(collection(db, 'cronos_clubs'));
@@ -3577,7 +3579,9 @@ window.saExtras = async function saExtras() {
 
 window.saSaveExtras = async function saSaveExtras() {
     try {
-        const { db, doc, updateDoc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { doc, updateDoc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth?.db;
+        if (!db) { if (typeof showToast==='function') showToast('⚠️ Firebase no disponible', 3000); return; }
         const toggles = document.querySelectorAll('.sa-extra-toggle');
         const byEntity = {};
         toggles.forEach(t => {
