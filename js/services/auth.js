@@ -3059,11 +3059,11 @@ function _launchWithRole(role) {
                     const { db, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
                     const clubId2 = roleEntry.clubId || me.clubId;
                     if (clubId2) {
-                        const clubDoc = await getDoc(doc(db, 'cronos_clubs', clubId2));
+                        const clubDoc = await getDoc(doc(db, 'clubs', clubId2));
                         if (clubDoc.exists()) {
                             me.extras = clubDoc.data().extras || {};
                         } else {
-                            const indDoc = await getDoc(doc(db, 'cronos_individuals', clubId2));
+                            const indDoc = await getDoc(doc(db, 'individuals', clubId2));
                             if (indDoc.exists()) {
                                 me.extras = indDoc.data().extras || {};
                             }

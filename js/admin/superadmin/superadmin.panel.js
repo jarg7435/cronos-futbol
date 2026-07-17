@@ -3509,12 +3509,12 @@ window.saExtras = async function saExtras() {
         if (!db) { body.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ Firebase no disponible</div>'; return; }
         
         // Cargar clubes
-        const clubsSnap = await getDocs(collection(db, 'cronos_clubs'));
+        const clubsSnap = await getDocs(collection(db, 'clubs'));
         const clubs = [];
         clubsSnap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
         
         // Cargar individuales
-        const indSnap = await getDocs(collection(db, 'cronos_individuals'));
+        const indSnap = await getDocs(collection(db, 'individuals'));
         const individuals = [];
         indSnap.forEach(d => individuals.push({ id: d.id, ...d.data() }));
         
@@ -3595,16 +3595,16 @@ window.saSaveExtras = async function saSaveExtras() {
         for (const [entityId, extras] of Object.entries(byEntity)) {
             // Intentar actualizar en clubs, luego en individuals
             try {
-                await updateDoc(doc(db, 'cronos_clubs', entityId), { extras });
+                await updateDoc(doc(db, 'clubs', entityId), { extras });
                 saved++;
             } catch(e1) {
                 try {
-                    await updateDoc(doc(db, 'cronos_individuals', entityId), { extras });
+                    await updateDoc(doc(db, 'individuals', entityId), { extras });
                     saved++;
                 } catch(e2) {
                     // Si no existe, crear con setDoc merge
                     try {
-                        await setDoc(doc(db, 'cronos_clubs', entityId), { extras }, { merge: true });
+                        await setDoc(doc(db, 'clubs', entityId), { extras }, { merge: true });
                         saved++;
                     } catch(e3) {
                         console.warn('[saSaveExtras] Error guardando', entityId, e3.message);
