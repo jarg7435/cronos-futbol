@@ -378,10 +378,7 @@ function restoreSetupState() {
     if (typeof updateCategoryOptions === 'function') updateCategoryOptions(s.mode);
 
     // Restaurar categoría si coincide con la modalidad
-    // FIX (Error #21 CRÍTICO): NO sobrescribir la categoria si el entrenador
-    // tiene una categoria asignada en su perfil (me.category). El saveSetupState
-    // guarda lo último usado, que puede ser de otro entrenador o sesión anterior.
-    // Sin este fix, siempre vuelve a Prebenjamín (el valor guardado).
+    // FIX: NO sobrescribir si el entrenador tiene me.category asignada
     const me = window._cronosCurrentUser;
     const userHasCategory = me && me.category;
     const categoryMatchesMode = s.category && s.category.startsWith(s.mode + '_');
@@ -389,8 +386,6 @@ function restoreSetupState() {
         set('match-category', s.category);
         set('match-subcategory', s.subcategory || 'A');
     }
-    // Si el usuario tiene categoria asignada, forzar updateCategoryOptions
-    // para que auto-seleccione la correcta
     if (userHasCategory && typeof updateCategoryOptions === 'function') {
         updateCategoryOptions(s.mode);
     }

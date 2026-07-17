@@ -10,11 +10,7 @@ async function _sdFS() {
     return { ...m, db: window._cronos_auth?.db };
 }
 
-// ════════════════════════════════════════════════════════════════════
-//  FIX (Error #22): Árbol colapsable de categorías/subcategorías
-//  Estructura idéntica al panel del Administrador del Club:
-//  7 categorías (Prebenjamín...Regional) × 3 subcategorías (A, B, C)
-// ════════════════════════════════════════════════════════════════════
+// FIX: Arbol colapsable de categorias
 window._CRONOS_CATEGORIES = [
     { id: 'prebenjamin', label: 'Prebenjamín' },
     { id: 'benjamin',    label: 'Benjamín' },
@@ -26,11 +22,8 @@ window._CRONOS_CATEGORIES = [
 ];
 window._CRONOS_SUBCATS = ['A', 'B', 'C'];
 
-window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSummary) {
-    const esc = (v) => typeof escapeHtml === 'function'
-        ? escapeHtml(v == null ? '' : String(v))
-        : (v == null ? '' : String(v));
-
+window._cronosRenderCatTree = function(items, renderItem, typeLabel) {
+    const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v == null ? '' : String(v)) : (v == null ? '' : String(v));
     const normCat = (cat) => {
         if (!cat) return null;
         const c = String(cat).toLowerCase();
@@ -46,7 +39,6 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
         const m = s.match(/([ABC])/);
         return m ? m[1] : null;
     };
-
     const byCatSub = new Map();
     const noCatItems = [];
     items.forEach(d => {
@@ -57,75 +49,24 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
             const subMap = byCatSub.get(catId);
             if (!subMap.has(subId)) subMap.set(subId, []);
             subMap.get(subId).push(d);
-        } else {
-            noCatItems.push(d);
-        }
+        } else { noCatItems.push(d); }
     });
-
-    const css = '<style>' +
-        '.ct-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem;}' +
-        '.ct-card-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:0.5rem;user-select:none;}' +
-        '.ct-card-title{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.85rem;color:white;}' +
-        '.ct-card-body{display:none;padding-top:0.5rem;margin-top:0.4rem;}' +
-        '.ct-card.expanded > .ct-card-body{display:block;}' +
-        '.ct-chevron{display:inline-block;transform:rotate(-90deg);transition:transform 0.2s;font-size:0.7rem;color:var(--text-muted);}' +
-        '.ct-card.expanded > .ct-card-head .ct-chevron{transform:rotate(0deg);}' +
-        '.ct-sub{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.4rem;}' +
-        '.ct-sub.expanded > .ct-card-body{display:block;}' +
-        '.ct-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.12);}' +
-        '.ct-dot.on{background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.7);}' +
-        '.ct-badge{display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:20px;font-size:0.68rem;font-weight:700;background:rgba(88,166,255,0.12);color:#58a6ff;}' +
-        '.ct-empty{font-size:0.72rem;color:#6e7681;padding:0.4rem 0.5rem;font-style:italic;}' +
-        '</style>';
-
+    const css = '<style>.ct-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem}.ct-card-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:0.5rem;user-select:none}.ct-card-title{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.85rem;color:white}.ct-card-body{display:none;padding-top:0.5rem;margin-top:0.4rem}.ct-card.expanded>.ct-card-body{display:block}.ct-chevron{display:inline-block;transform:rotate(-90deg);transition:transform 0.2s;font-size:0.7rem;color:var(--text-muted)}.ct-card.expanded>.ct-card-head .ct-chevron{transform:rotate(0deg)}.ct-sub{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.4rem}.ct-sub.expanded>.ct-card-body{display:block}.ct-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.12)}.ct-dot.on{background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.7)}.ct-badge{display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:20px;font-size:0.68rem;font-weight:700;background:rgba(88,166,255,0.12);color:#58a6ff}.ct-empty{font-size:0.72rem;color:#6e7681;padding:0.4rem 0.5rem;font-style:italic}</style>';
     const catsHtml = window._CRONOS_CATEGORIES.map(catDef => {
         const subMap = byCatSub.get(catDef.id) || new Map();
         const catCount = Array.from(subMap.values()).reduce((s, arr) => s + arr.length, 0);
         const catHas = catCount > 0;
-
         const subsHtml = window._CRONOS_SUBCATS.map(subId => {
             const subItems = subMap.get(subId) || [];
             const subHas = subItems.length > 0;
-            const body = subHas
-                ? (typeof renderSummary === 'function' ? renderSummary(subItems) : '') + subItems.map(renderItem).join('')
-                : '<div class="ct-empty">Sin ' + (typeLabel || 'registros') + ' en esta subcategoría.</div>';
-            return '<div class="ct-card ct-sub ' + (subHas ? 'expanded' : '') + '">' +
-                '<div class="ct-card-head" onclick="this.closest(\'.ct-sub\').classList.toggle(\'expanded\')">' +
-                '<div class="ct-card-title" style="font-size:0.78rem;">' +
-                '<span class="ct-chevron">▼</span>' +
-                '<span>Subcategoría ' + subId + '</span>' +
-                (subHas ? '<span class="ct-badge">' + subItems.length + '</span>' : '<span style="font-size:0.68rem;color:#6e7681;">vacía</span>') +
-                '</div></div>' +
-                '<div class="ct-card-body">' + body + '</div>' +
-                '</div>';
+            const body = subHas ? subItems.map(renderItem).join('') : '<div class="ct-empty">Sin ' + (typeLabel||'registros') + '.</div>';
+            return '<div class="ct-card ct-sub ' + (subHas?'expanded':'') + '"><div class="ct-card-head" onclick="this.closest(\'.ct-sub\').classList.toggle(\'expanded\')"><div class="ct-card-title" style="font-size:0.78rem"><span class="ct-chevron">&#9660;</span><span>Subcategoria ' + subId + '</span>' + (subHas?'<span class="ct-badge">'+subItems.length+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body">' + body + '</div></div>';
         }).join('');
-
         const dot = catHas ? '<span class="ct-dot on"></span>' : '<span class="ct-dot"></span>';
-        return '<div class="ct-card ' + (catHas ? 'expanded' : '') + '" style="border-color:rgba(88,166,255,0.2);">' +
-            '<div class="ct-card-head" onclick="this.closest(\'.ct-card\').classList.toggle(\'expanded\')">' +
-            '<div class="ct-card-title">' +
-            '<span class="ct-chevron">▼</span>' +
-            '<span>' + esc(catDef.label) + '</span>' +
-            dot +
-            (catHas ? '<span class="ct-badge">' + catCount + '</span>' : '<span style="font-size:0.68rem;color:#6e7681;">vacía</span>') +
-            '</div></div>' +
-            '<div class="ct-card-body">' + subsHtml + '</div>' +
-            '</div>';
+        return '<div class="ct-card ' + (catHas?'expanded':'') + '" style="border-color:rgba(88,166,255,0.2)"><div class="ct-card-head" onclick="this.closest(\'.ct-card\').classList.toggle(\'expanded\')"><div class="ct-card-title"><span class="ct-chevron">&#9660;</span><span>' + esc(catDef.label) + '</span>' + dot + (catHas?'<span class="ct-badge">'+catCount+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body">' + subsHtml + '</div></div>';
     }).join('');
-
-    const noCatHtml = noCatItems.length
-        ? '<div class="ct-card expanded" style="border-color:rgba(255,165,0,0.3);">' +
-            '<div class="ct-card-head" onclick="this.closest(\'.ct-card\').classList.toggle(\'expanded\')">' +
-            '<div class="ct-card-title">' +
-            '<span class="ct-chevron">▼</span>' +
-            '<span>📋 Sin categoría asignada</span>' +
-            '<span class="ct-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">' + noCatItems.length + '</span>' +
-            '</div></div>' +
-            '<div class="ct-card-body">' + noCatItems.map(renderItem).join('') + '</div>' +
-            '</div>'
-        : '';
-
-    return css + '<div style="margin-bottom:1rem;">' + catsHtml + noCatHtml + '</div>';
+    const noCatHtml = noCatItems.length ? '<div class="ct-card expanded" style="border-color:rgba(255,165,0,0.3)"><div class="ct-card-head" onclick="this.closest(\'.ct-card\').classList.toggle(\'expanded\')"><div class="ct-card-title"><span class="ct-chevron">&#9660;</span><span>Sin categoria asignada</span><span class="ct-badge" style="background:rgba(255,165,0,0.12);color:#ffa500">'+noCatItems.length+'</span></div></div><div class="ct-card-body">'+noCatItems.map(renderItem).join('')+'</div></div>' : '';
+    return css + '<div style="margin-bottom:1rem">' + catsHtml + noCatHtml + '</div>';
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -383,7 +324,6 @@ async function _sdLoadEvents(type) {
                 // Solo la pestaña actual (convocatoria o planificacion_semanal)
                 if (dat.type !== type) return;
                 // Omitir si este usuario ya lo descartó individualmente
-                // FIX (Error #23): comprobar dismissKey uid_role (y compatibilidad con uid solo)
                 const _dk = me.uid + '_' + (me?._activeRole || me?.role || 'staff');
                 const _db = Array.isArray(dat.dismissedBy) ? dat.dismissedBy : [];
                 if (_db.includes(_dk) || _db.includes(me.uid)) return;
@@ -401,24 +341,10 @@ async function _sdLoadEvents(type) {
             });
         }
 
-        // FIX (Error #23): aunque no haya items, mostrar el arbol de categorias
-        // vacio para que la estructura siempre este visible.
         if (!items.length) {
             const label = type === 'convocatoria' ? 'convocatorias' : 'avisos de entrenamiento';
-            const emptyTree = (typeof window._cronosRenderCatTree === 'function')
-                ? window._cronosRenderCatTree([], () => '', label)
-                : '';
-            container.innerHTML = `
-            <div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.8rem;text-align:right;">
-                0 registros
-            </div>
-            <div style="text-align:center;padding:1.5rem;color:var(--text-muted);margin-bottom:1rem;">
-                📭 Sin ${label} recibidos aún.<br>
-                <span style="font-size:0.78rem;margin-top:0.5rem;display:block;">
-                    El entrenador debe activar las palomillas en <strong>Gestión de Contactos</strong> y enviar via Envío Interno.
-                </span>
-            </div>
-            ${emptyTree}`;
+            const emptyTree = (typeof window._cronosRenderCatTree === 'function') ? window._cronosRenderCatTree([], () => '', label) : '';
+            container.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);">📭 Sin ' + label + ' recibidos aún.</div>' + emptyTree;
             return;
         }
 
@@ -430,9 +356,6 @@ async function _sdLoadEvents(type) {
             ${items.length} registros · máx. ${MAX_ITEMS} (los más antiguos se eliminan automáticamente)
         </div>`;
 
-        // FIX (Error #22): renderizar como árbol colapsable de categorías/subcategorías
-        // (igual que el panel del Administrador del Club)
-        const typeLabel = isConv ? 'convocatorias' : 'entrenamientos';
         const renderItemCard = (d) => {
             const date = d.createdAt
                 ? new Date(d.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})
@@ -451,8 +374,9 @@ async function _sdLoadEvents(type) {
                     ? (Array.isArray(d.days) ? d.days.filter(dy=>dy.time||dy.venue).map(dy=>dy.day+': '+[dy.time,dy.venue].filter(Boolean).join(' ')).slice(0,2).join(' | ') : (d.location ? '📍 ' + escapeHtml(d.location) : ''))
                     : (d.location ? ' · 📍 ' + escapeHtml(d.location) : '');
 
-            return `
-            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};margin-bottom:0.5rem;">
+            html += `
+            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};">
+                <!-- Botón eliminar -->
                 <button onclick="sdDeleteNotif('${escapeAttr(d._id)}')"
                     title="Eliminar" 
                     style="position:absolute;top:0.6rem;right:0.6rem;background:rgba(255,88,88,0.1);
@@ -479,11 +403,9 @@ async function _sdLoadEvents(type) {
                     👁 Ver</button>
             </div>`;
         };
-
         if (typeof window._cronosRenderCatTree === 'function') {
             html += window._cronosRenderCatTree(items, renderItemCard, typeLabel);
         } else {
-            // Fallback: lista plana si no existe el helper
             items.forEach(d => { html += renderItemCard(d); });
         }
         container.innerHTML = html;
@@ -576,8 +498,6 @@ async function _sdLoadEvents(type) {
         // FIX: "borrar" = marcar como descartado por este usuario (no borra para los demás)
         window.sdDeleteNotif = async (id) => {
             if (!confirm('¿Quitar este aviso de tu panel? Los demás roles seguirán viéndolo.')) return;
-            // FIX (Error #23): usar dismissKey = uid_role para que director y
-            // coordinador borren de forma INDEPENDIENTE aunque compartan uid.
             const activeRole = me?._activeRole || me?.role || 'staff';
             const dismissKey = me.uid + '_' + activeRole;
             try {
@@ -587,15 +507,16 @@ async function _sdLoadEvents(type) {
                 });
                 items = items.filter(it => it._id !== id);
                 await _sdLoadEvents(type);
-                if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel (' + activeRole + ')', 2000);
+                if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel', 2000);
             } catch(e) {
+                // Fallback: si el campo arrayUnion falla (doc sin el campo), intentar con set merge
                 try {
                     const { db: db3, doc: dRef3 } = await _sdFS();
                     const { updateDoc, arrayUnion } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    await updateDoc(dRef3(db3, 'cronos_notifications', id), { dismissedBy: arrayUnion(dismissKey) });
+                    await updateDoc(dRef3(db3, 'cronos_notifications', id), { dismissedBy: arrayUnion(me.uid) });
                     items = items.filter(it => it._id !== id);
                     await _sdLoadEvents(type);
-                    if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel (' + activeRole + ')', 2000);
+                    if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel', 2000);
                 } catch(e2) {
                     if (typeof showToast === 'function') showToast('⚠️ Error: ' + e2.message, 3000);
                 }
@@ -1594,19 +1515,8 @@ async function _sdLoadReports() {
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
         if (snap.empty) {
-            // FIX (Error #24): mostrar el arbol de categorias vacio aunque
-            // no haya informes, para que la estructura siempre este visible.
-            const emptyTree = (typeof window._cronosRenderCatTree === 'function')
-                ? window._cronosRenderCatTree([], () => '', 'informes')
-                : '';
-            container.innerHTML = `
-            <div style="text-align:center;padding:1.5rem;color:var(--text-muted);">
-                <div style="font-size:2rem;margin-bottom:0.5rem;">📊</div>
-                <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.3rem;">Sin informes de partido aún</div>
-                <div style="font-size:0.78rem;">Los informes aparecen aquí cuando un entrenador finaliza un partido
-                    y pulsa <strong>"Enviar Informe"</strong> en la app.</div>
-            </div>
-            ${emptyTree}`;
+            const emptyTree = (typeof window._cronosRenderCatTree === 'function') ? window._cronosRenderCatTree([], () => '', 'informes') : '';
+            container.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);"><div style="font-size:2rem;">📊</div><div style="font-size:0.9rem;font-weight:600;">Sin informes de partido aún</div></div>' + emptyTree;
             return;
         }
 
@@ -1679,7 +1589,7 @@ async function _sdLoadReports() {
                         name: pKey,
                         number: p.number || p.playerNumber || '',
                         matchKeys: new Set(),
-                        goals: 0, yCards: 0, rCards: 0, injured: 0, minutes: 0
+                        goals: 0, yCards: 0, rCards: 0, injured: 0
                     };
                 }
                 const ps = playerStats[pKey];
@@ -1688,15 +1598,6 @@ async function _sdLoadReports() {
                 if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
                 if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
                 if (p.injured) ps.injured++;
-                // FIX: acumular minutos jugados
-                if (p.minutesPlayed) {
-                    if (typeof p.minutesPlayed === 'number') {
-                        ps.minutes += p.minutesPlayed;
-                    } else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
-                        const parts = String(p.minutesPlayed).split(':');
-                        ps.minutes += parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                    }
-                }
             });
         });
         // Convertir Set a contador
@@ -1715,108 +1616,67 @@ async function _sdLoadReports() {
             </span>
         </div>
 
+        <!-- FIX (Error #20): RESUMEN DE TOTALES -->
+        <div style="background:linear-gradient(135deg,rgba(88,166,255,0.08),rgba(63,185,80,0.05));border:1px solid rgba(88,166,255,0.25);border-radius:12px;padding:1rem;margin-bottom:1rem;">
+            <div style="font-size:0.82rem;font-weight:700;color:var(--primary);margin-bottom:0.7rem;letter-spacing:0.3px;">📋 RESUMEN TOTAL (todos los informes)</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:0.6rem;">
+                <div style="text-align:center;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                    <div style="font-size:1.5rem;font-weight:800;color:#3fb950;">${totalGoals}</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">⚽ Goles</div>
+                </div>
+                <div style="text-align:center;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                    <div style="font-size:1.5rem;font-weight:800;color:#ffd700;">${totalYCards}</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟨 Tarj. Amarillas</div>
+                </div>
+                <div style="text-align:center;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                    <div style="font-size:1.5rem;font-weight:800;color:#ff5858;">${totalRCards}</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟥 Tarj. Rojas</div>
+                </div>
+                <div style="text-align:center;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
+                    <div style="font-size:1.5rem;font-weight:800;color:#f97316;">${totalInjured}</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🚑 Lesiones</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FIX (Error #20): INFORME INDIVIDUAL POR JUGADOR -->
+        ${playerList.length > 0 ? `
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1rem;margin-bottom:1rem;">
+            <div style="font-size:0.82rem;font-weight:700;color:#f0883e;margin-bottom:0.7rem;letter-spacing:0.3px;">👤 INFORME INDIVIDUAL POR JUGADOR</div>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                    <thead>
+                        <tr style="background:rgba(255,255,255,0.04);color:var(--text-muted);text-align:left;">
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">#</th>
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">Jugador</th>
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">Partidos</th>
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⚽ Goles</th>
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟨 TA</th>
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟥 TR</th>
+                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🚑 Les.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${playerList.map(p => `
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                <td style="padding:0.45rem 0.5rem;color:var(--text-muted);">${p.number || '—'}</td>
+                                <td style="padding:0.45rem 0.5rem;font-weight:600;">${escapeHtml(p.name)}</td>
+                                <td style="padding:0.45rem 0.5rem;text-align:center;">${p.matches}</td>
+                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#3fb950;font-weight:700;">${p.goals > 0 ? p.goals : '—'}</td>
+                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
+                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
+                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        ` : ''}
+
         <!-- LISTA DE INFORMES POR PARTIDO -->`;
 
-        // FIX (Error #22): el resumen y la tabla individual van DENTRO de cada
-        // subcategoria, no fuera del arbol. Cada subcategoria tiene su propio
-        // resumen de los informes de ese equipo en la temporada.
-        const renderSubSummary = (subItems) => {
-            if (!subItems || !subItems.length) return '';
-            // Calcular totales para esta subcategoria
-            let sGoals = 0, sYCards = 0, sRCards = 0, sInjured = 0;
-            const sPlayerStats = {};
-            const sSeen = new Set();
-            subItems.forEach(m => {
-                const mk = m.key;
-                m.players.forEach(p => {
-                    const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
-                    const dk = mk + '_' + dorsal;
-                    if (sSeen.has(dk)) return;
-                    sSeen.add(dk);
-                    sGoals += (p.goals || 0);
-                    if (p.cards === 'yellow' || p.cards === 'amarilla') sYCards++;
-                    if (p.cards === 'red' || p.cards === 'roja') sRCards++;
-                    if (p.injured) sInjured++;
-                    const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
-                    if (!sPlayerStats[pKey]) {
-                        sPlayerStats[pKey] = { name: pKey, number: p.number || p.playerNumber || '', matchKeys: new Set(), goals: 0, yCards: 0, rCards: 0, injured: 0, minutes: 0 };
-                    }
-                    const ps = sPlayerStats[pKey];
-                    ps.matchKeys.add(mk);
-                    ps.goals += (p.goals || 0);
-                    if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
-                    if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
-                    if (p.injured) ps.injured++;
-                    if (p.minutesPlayed) {
-                        if (typeof p.minutesPlayed === 'number') ps.minutes += p.minutesPlayed;
-                        else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
-                            const parts = String(p.minutesPlayed).split(':');
-                            ps.minutes += parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                        }
-                    }
-                });
-            });
-            const sPlayerList = Object.values(sPlayerStats).map(p => ({ ...p, matches: p.matchKeys.size }))
-                .sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
-
-            return `
-            <div style="background:linear-gradient(135deg,rgba(88,166,255,0.06),rgba(63,185,80,0.04));border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:0.8rem;margin-bottom:0.6rem;">
-                <div style="font-size:0.75rem;font-weight:700;color:var(--primary);margin-bottom:0.5rem;">📋 Resumen de la subcategoría (${subItems.length} encuentro${subItems.length !== 1 ? 's' : ''})</div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:0.4rem;margin-bottom:0.6rem;">
-                    <div style="text-align:center;background:rgba(63,185,80,0.1);border-radius:6px;padding:0.35rem;">
-                        <div style="font-size:1.1rem;font-weight:800;color:#3fb950;">${sGoals}</div>
-                        <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">⚽ Goles</div>
-                    </div>
-                    <div style="text-align:center;background:rgba(255,215,0,0.1);border-radius:6px;padding:0.35rem;">
-                        <div style="font-size:1.1rem;font-weight:800;color:#ffd700;">${sYCards}</div>
-                        <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">🟨 TA</div>
-                    </div>
-                    <div style="text-align:center;background:rgba(255,88,88,0.1);border-radius:6px;padding:0.35rem;">
-                        <div style="font-size:1.1rem;font-weight:800;color:#ff5858;">${sRCards}</div>
-                        <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">🟥 TR</div>
-                    </div>
-                    <div style="text-align:center;background:rgba(249,115,22,0.1);border-radius:6px;padding:0.35rem;">
-                        <div style="font-size:1.1rem;font-weight:800;color:#f97316;">${sInjured}</div>
-                        <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">🚑 Les.</div>
-                    </div>
-                </div>
-                ${sPlayerList.length > 0 ? `
-                <div style="overflow-x:auto;">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
-                        <thead>
-                            <tr style="color:var(--text-muted);text-align:left;">
-                                <th style="padding:0.3rem;">#</th>
-                                <th style="padding:0.3rem;">Jugador</th>
-                                <th style="padding:0.3rem;text-align:center;">P</th>
-                                <th style="padding:0.3rem;text-align:center;">⚽</th>
-                                <th style="padding:0.3rem;text-align:center;">🟨</th>
-                                <th style="padding:0.3rem;text-align:center;">🟥</th>
-                                <th style="padding:0.3rem;text-align:center;">🚑</th>
-                                <th style="padding:0.3rem;text-align:center;">⏱️</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${sPlayerList.map(p => `
-                                <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
-                                    <td style="padding:0.3rem;color:var(--text-muted);">${p.number || '—'}</td>
-                                    <td style="padding:0.3rem;font-weight:600;">${escapeHtml(p.name)}</td>
-                                    <td style="padding:0.3rem;text-align:center;">${p.matches}</td>
-                                    <td style="padding:0.3rem;text-align:center;color:#3fb950;">${p.goals > 0 ? p.goals : '—'}</td>
-                                    <td style="padding:0.3rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
-                                    <td style="padding:0.3rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
-                                    <td style="padding:0.3rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
-                                    <td style="padding:0.3rem;text-align:center;color:#58a6ff;">${p.minutes > 0 ? Math.floor(p.minutes / 60) + ':' + String(p.minutes % 60).padStart(2, '0') : '—'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                ` : ''}
-            </div>`;
-        };
-
-        // FIX (Error #22): renderizar como árbol colapsable de categorías/subcategorías
-        const renderReportCard = (m) => {
+        sorted.forEach(m => {
             const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
             const injured = m.players.filter(p => p.injured).length;
             const dateStr = m.matchDate
@@ -1824,16 +1684,18 @@ async function _sdLoadReports() {
                 : '—';
             const sh = m.scoreHome, sa = m.scoreAway;
             const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
+            // Resultado según myTeamRole; sin el campo (informes antiguos) → fallback 'home', comportamiento previo.
             const _mine   = m.myTeamRole === 'away' ? sa : sh;
             const _theirs = m.myTeamRole === 'away' ? sh : sa;
             const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
             const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
 
+            // Guardar datos del partido para renderizado lazy en el toggle
             window._sdMatchData[key64] = m;
 
-            return `
-            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')" style="margin-bottom:0.5rem;">
+            html += `
+            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
                 <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
@@ -1843,6 +1705,7 @@ async function _sdLoadReports() {
                         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
                             <span>📅 ${dateStr}</span>
                             ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
+                            ${m.category ? `<span style="color:#58a6ff;">${escapeHtml(m.category)}</span>` : ''}
                             <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
                         </div>
                     </div>
@@ -1862,17 +1725,12 @@ async function _sdLoadReports() {
                         </button>
                     </div>
                 </div>
+                <!-- Panel de detalle: vacío hasta el primer click (lazy render) -->
                 <div id="rdetail-${key64}"
                      style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
                 </div>
             </div>`;
-        };
-
-        if (typeof window._cronosRenderCatTree === 'function') {
-            html += window._cronosRenderCatTree(sorted, renderReportCard, 'informes', renderSubSummary);
-        } else {
-            sorted.forEach(m => { html += renderReportCard(m); });
-        }
+        });
 
         container.innerHTML = html;
 

@@ -293,25 +293,9 @@ function _cMatchSubcatFor(me, cat) {
         const hit = roles.find(r => isCoach(r) &&
             (r.category || '').toString().trim().toLowerCase() === c);
         if (hit && hit.subcategory) return hit.subcategory;
-        // FIX (Error #24): fallback a me.subcategory si no hay coincidencia
-        if (me && me.subcategory) return me.subcategory;
         return '';
     } catch (_) { return ''; }
 }
-
-// FIX (Error #24): funcion para obtener la categoria real del entrenador.
-// Prioriza me.category (asignada al entrar con el rol), luego el dropdown.
-window._cronosGetCoachCategory = function() {
-    const me = window._cronosCurrentUser;
-    if (me && me.category) return me.category;
-    const cat = document.getElementById('match-category')?.value || window._currentMatchCategory || '';
-    return cat;
-};
-window._cronosGetCoachSubcategory = function() {
-    const me = window._cronosCurrentUser;
-    if (me && me.subcategory) return me.subcategory;
-    return document.getElementById('match-subcategory')?.value || 'A';
-};
 
 async function _cGetStaff(db, clubId, fns, roles) {
     roles = roles || ['director', 'coordinator'];
@@ -1170,6 +1154,8 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                     // clubId + participants + staffUids hacen pasar las reglas
                     // sameClubAsDoc / participants para coach y staff.
                     clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     participants:  [me.uid, recipientUid],
                     staffUids:     [recipientUid],
                 });
@@ -1181,6 +1167,8 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                     unreadByParent: 1,
                     // FIX (v180): campos de identidad para consultas del director/coordinador
                     clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     participants:  [me.uid, recipientUid],
                 });
             }
@@ -1693,6 +1681,8 @@ window._executeReportsSend = async function(method) {
                     await setDoc(doc(db, 'cronos_notifications', `notif_matchsglobe_${uidToNotify}_${Date.now().toString(36)}`), {
                         type:      'aviso_partido_finalizado',
                         clubId:    me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         userId:    uidToNotify,            // ← FIX: campo que las reglas verifican
                         coachUid:  me.uid,                // ← FIX (C3): coachUid para reglas Firestore
                         parentUid: uidToNotify,
@@ -1728,6 +1718,8 @@ window._executeReportsSend = async function(method) {
                             parentUid:     uidToNotify,
                             participants:  arrayUnion(me.uid, uidToNotify),
                             clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                             recipientType: 'staff'
                         });
                     } catch(updateErr) {
@@ -1738,7 +1730,9 @@ window._executeReportsSend = async function(method) {
                                 threadId,
                                 coachUid:      me.uid,
                                 coachEmail:    me.email,
-                                clubId:        me.clubId || null,     // ← FIX: para reglas Firestore
+                                clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,     // ← FIX: para reglas Firestore
                                 participants:  [me.uid, uidToNotify], // ← FIX: para reglas Firestore
                                 staffUids:     [uidToNotify],         // ← FIX: lectura staff por array-contains
                                 staffUid:      uidToNotify,
@@ -1788,7 +1782,6 @@ window._executeReportsSend = async function(method) {
                                     staffReport:   true,
                                     staffUids:     _manualStaffUids, // ← FIX: UIDs para reglas Firestore
                                     clubId:        me.clubId || null,
-                    // FIX (Error #24): categoria/subcategoria del entrenador
                     category:    me.category    || null,
                     subcategory: me.subcategory || null,
                                     coachUid:      me.uid,
@@ -1797,8 +1790,7 @@ window._executeReportsSend = async function(method) {
                                     rival:         rivalName,
                                     scoreHome,
                                     scoreAway,
-                                    // FIX (Error #24 v2): category/subcategory ya fijadas arriba con me.category
-                                    // No sobrescribir con currentCategory que puede estar vacio
+                    // category ya fijada con me.category
                                     venue:         (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
                                     competition:   (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
                                     matchTime:     (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
@@ -1904,7 +1896,6 @@ window._executeReportsSend = async function(method) {
                     parentUid:      targetParentUid,
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
-                    // FIX (Error #24): categoria/subcategoria del entrenador
                     category:    me.category    || null,
                     subcategory: me.subcategory || null,
                     matchDate:      new Date().toISOString().split('T')[0],
@@ -1937,6 +1928,8 @@ window._executeReportsSend = async function(method) {
                         parentUid:    targetParentUid,
                         participants: arrayUnion(me.uid, targetParentUid),
                         clubId:       me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         recipientType: 'parent'
                     });
                 } catch(updateErr) {
@@ -1944,7 +1937,9 @@ window._executeReportsSend = async function(method) {
                     try {
                         await setDoc(doc(db, 'cronos_messages', threadId), {
                             threadId, coachUid: me.uid, coachEmail: me.email,
-                            clubId: me.clubId || null,                           // ← FIX: para reglas Firestore
+                            clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,                           // ← FIX: para reglas Firestore
                             participants: [me.uid, targetParentUid],              // ← FIX: para reglas Firestore
                             parentUid: targetParentUid, parentEmail: (target.contact && target.contact.email) || r.email || '',
                             messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
@@ -1963,6 +1958,8 @@ window._executeReportsSend = async function(method) {
                 try {
                     await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${dorsal}_${Date.now().toString(36)}`), {
                         type: 'informe_partido', clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
                         coachUid: me.uid,                                   // ← FIX (C3): coachUid para reglas Firestore
                         parentUid: targetParentUid, playerNumber: dorsal,
@@ -1992,14 +1989,14 @@ window._executeReportsSend = async function(method) {
                 const rptId = `${matchId}_coach_p${p.number}`;
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
                     matchId, type: 'collective_match_report', clubId: me.clubId || null,
-                    // FIX (Error #24): categoria/subcategoria del entrenador
                     category:    me.category    || null,
                     subcategory: me.subcategory || null,
                     coachUid: me.uid, coachEmail: me.email,
                     matchDate: new Date().toISOString().split('T')[0],
                     rival: rivalName, scoreHome, scoreAway,
                     myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                    // FIX (Error #24 v2): category/subcategory ya fijadas arriba con me.category
+                    category: (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
+                    // subcategory ya fijada con me.subcategory
                     createdAt: new Date().toISOString(),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
                     position: p.position || p.pos || '',
@@ -2012,6 +2009,8 @@ window._executeReportsSend = async function(method) {
             const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type: 'informe_colectivo', clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 userId: me.uid,    // FIX v177: campo que las reglas Firestore verifican
                 coachUid: me.uid,
                 parentUid: me.uid, staffUid: me.uid, coachEmail: me.email,
@@ -2203,7 +2202,6 @@ async function autoDispatchMatchReports() {
                 staffReport:   true,          // ← filtro exclusivo del panel staff
                 staffUids:     _allStaffUids, // ← FIX: UIDs de staff para reglas Firestore
                 clubId:        me.clubId || null,
-                    // FIX (Error #24): categoria/subcategoria del entrenador
                     category:    me.category    || null,
                     subcategory: me.subcategory || null,
                 coachUid:      me.uid,
@@ -2213,7 +2211,8 @@ async function autoDispatchMatchReports() {
                 scoreHome,
                 scoreAway,
                 myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                // category/subcategory ya fijadas arriba con me.category
+                    // category ya fijada con me.category
+                    // subcategory ya fijada con me.subcategory
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(p.number || ''),
                 playerAlias:   p.alias || p.name || '',
@@ -2241,6 +2240,8 @@ async function autoDispatchMatchReports() {
             await setDoc(doc(db, 'cronos_notifications', notifId), {
                 type: 'aviso_partido_finalizado',
                 clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 userId: staff.uid,           // ← FIX: campo que las reglas verifican
                 coachUid: me.uid,            // ← FIX (C2): coachUid para reglas Firestore
                 parentUid: staff.uid,
@@ -2273,6 +2274,8 @@ async function autoDispatchMatchReports() {
                     parentUid:     staff.uid,
                     participants:  arrayUnion(me.uid, staff.uid),
                     clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     recipientType: 'staff'
                 });
             } catch(updateErr) {
@@ -2283,6 +2286,8 @@ async function autoDispatchMatchReports() {
                         coachUid:      me.uid,
                         coachEmail:    me.email,
                         clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         participants:  [me.uid, staff.uid],
                         staffUids:     [staff.uid],
                         staffUid:      staff.uid,
@@ -2343,7 +2348,6 @@ async function autoDispatchMatchReports() {
                 type:          'parent_player_report',
                 parentUid:     parentUid,
                 clubId:        me.clubId || null,
-                    // FIX (Error #24): categoria/subcategoria del entrenador
                     category:    me.category    || null,
                     subcategory: me.subcategory || null,
                 coachUid:      me.uid,
@@ -2379,12 +2383,16 @@ async function autoDispatchMatchReports() {
                     parentUid:    parentUid,
                     participants: arrayUnion(me.uid, parentUid),
                     clubId:       me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     recipientType: 'parent'
                 });
             } catch(e) {
                 await setDoc(doc(db, 'cronos_messages', threadId), {
                     threadId, coachUid: me.uid, coachEmail: me.email,
-                    clubId: me.clubId || null,                        // ← FIX: para reglas Firestore
+                    clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,                        // ← FIX: para reglas Firestore
                     participants: [me.uid, parentUid],                // ← FIX: para reglas Firestore
                     parentUid: parentUid, messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
                     lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
@@ -2396,6 +2404,8 @@ async function autoDispatchMatchReports() {
             await setDoc(doc(db, 'cronos_notifications', notifId), {
                 type:         'informe_partido',
                 clubId:       me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 userId:       parentUid,                           // ← FIX: campo que las reglas verifican
                 coachUid:     me.uid,                              // ← FIX (C2): coachUid para reglas Firestore
                 parentUid:    parentUid,
@@ -2442,7 +2452,6 @@ async function autoDispatchMatchReports() {
                     staffReport:   false,         // no aparece en vista del staff (ya tiene staffReport=true)
                     _forCoach:     true,
                     clubId:        me.clubId || null,
-                    // FIX (Error #24): categoria/subcategoria del entrenador
                     category:    me.category    || null,
                     subcategory: me.subcategory || null,
                     coachUid:      me.uid,
@@ -2452,7 +2461,8 @@ async function autoDispatchMatchReports() {
                     scoreHome,
                     scoreAway,
                     myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                    // category/subcategory ya fijadas arriba con me.category
+                    // category ya fijada con me.category
+                    // subcategory ya fijada con me.subcategory
                     createdAt:     new Date().toISOString(),
                     playerNumber:  String(p.number||''),
                     playerAlias:   p.alias || p.name || '',
@@ -2477,6 +2487,8 @@ async function autoDispatchMatchReports() {
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type:      'informe_colectivo', // Usamos el tipo estándar para que aparezca en el feed
                 clubId:    me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 userId:    me.uid,              // FIX v177: campo que las reglas Firestore verifican (request.auth.uid == resource.data.userId)
                 coachUid:  me.uid,
                 parentUid: me.uid, // necesario para que el filtro de lectura lo encuentre
@@ -3377,6 +3389,8 @@ window._sendTrainingNotification = async function() {
         // si no, enviar solo la sesión única del formulario.
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
             userId: uid,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             datetime: _trHasWeek ? '' : (datetime || ''),
@@ -3502,12 +3516,11 @@ window._sendTrainingNotificationV2 = async function() {
 
         const notifPayload = (uid, role) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
             userId: uid,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             targetRole: role || null,
-            // FIX (Error #21): incluir categoria/subcategoria
-            category:    me.category    || null,
-            subcategory: me.subcategory || null,
             weekStartDate: _trWeekKey,
             days: _weekDays,
             weekText: _weekText,
@@ -3521,28 +3534,14 @@ window._sendTrainingNotificationV2 = async function() {
         const sinUidTr = [];
         const debugLogTr = [];
 
-        // FIX (Error #24 v2): dedup por email Y por uid normalizado.
-        const _normEmailTr = (e) => (e || '').toLowerCase().trim().replace(/\s+/g, '');
-        const notifiedEmailsTr = new Set();
         for (const r of selected) {
             let uid = r.uid;
-            const email = _normEmailTr(r.email);
             if (!uid) {
                 sinUidTr.push(r.label || r.email);
                 continue;
             }
-            if (notifiedUids.has(uid)) {
-                debugLogTr.push(`[skip ${r.label}] uid ya enviado: ${uid}`);
-                continue;
-            }
-            // Dedup por email
-            if (email && notifiedEmailsTr.has(email)) {
-                debugLogTr.push(`[skip ${r.label}] email ya enviado: ${email}`);
-                continue;
-            }
+            if (notifiedUids.has(uid)) continue;
             notifiedUids.add(uid);
-            if (email) notifiedEmailsTr.add(email);
-            console.log('[_sendTrainingNotificationV2] enviando a:', r.label, '| uid:', uid, '| email:', email);
             await setDoc(doc(db, 'cronos_notifications', 'tr_' + uid + '_' + Date.now().toString(36)), notifPayload(uid, _resolveRoleTr(r)));
             sentInternal++;
             debugLogTr.push(`[✓ ${r.label}] enviado a uid=${uid}`);
@@ -3774,6 +3773,8 @@ window._sendBulkMsgFirestore = async function() {
                     parentUid:    s.parentUid,
                     participants: arrayUnion(me.uid, s.parentUid),
                     clubId:       me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     recipientType: 'parent'
                 });
             } else {
@@ -3782,6 +3783,8 @@ window._sendBulkMsgFirestore = async function() {
                     parentUid: s.parentUid, parentEmail: s.parentEmail,
                     // FIX (v180): campos de identidad
                     clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                     participants: [me.uid, s.parentUid],
                     recipientType: 'parent',
                     messages: [newMsg], lastMessage: preview,
@@ -4146,7 +4149,6 @@ window._sendCollectiveReportNow = async function() {
                 // y la consulta fallback array-contains los encuentre.
                 staffUids:      staff.map(s => s.uid).filter(Boolean),
                 clubId:         me.clubId || null,
-                    // FIX (Error #24): categoria/subcategoria del entrenador
                     category:    me.category    || null,
                     subcategory: me.subcategory || null,
                 coachUid:       me.uid,
@@ -4156,15 +4158,7 @@ window._sendCollectiveReportNow = async function() {
                 scoreHome,
                 scoreAway,
                 myTeamRole:     _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto). CRÍTICO: este doc tiene staffReport:true y lo lee el Panel de Dirección.
-                // FIX (Error #24 v2): category/subcategory ya fijadas arriba con me.category
-                venue:          (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
-                competition:    (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
-                matchTime:      (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
-                duration:       (typeof window.matchDuration !== 'undefined' ? window.matchDuration : ''),
-                stoppageTime:   (typeof window.stoppageTime !== 'undefined' ? window.stoppageTime : 0),
-                createdAt,
-                // Datos del jugador con historial COMPLETO para el Gantt
-                playerNumber:   String(p.number || ''),
+                    // category ya fijada con me.category
                 playerAlias:    p.alias || p.name || '',
                 position:       p.position || p.pos || '',
                 goals:          p.goals  || 0,
@@ -4204,6 +4198,8 @@ window._sendCollectiveReportNow = async function() {
                         parentUid:     s.uid,
                         participants:  arrayUnion(me.uid, s.uid),
                         clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         recipientType: 'staff'
                     });
                 } catch(updErr) {
@@ -4211,6 +4207,8 @@ window._sendCollectiveReportNow = async function() {
                         await setDoc(doc(db,'cronos_messages',threadId), {
                             threadId, coachUid: me.uid, coachEmail: me.email,
                             clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                             participants: [me.uid, s.uid],
                             staffUids: [s.uid],
                             staffUid: s.uid,
@@ -4283,6 +4281,8 @@ window._sendCollectiveReportNow = async function() {
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type:      'informe_colectivo_entrenador',
                 clubId:    me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                 userId:    me.uid,          // FIX v177: campo que las reglas Firestore verifican
                 coachUid:  me.uid,
                 parentUid: me.uid,
@@ -4662,6 +4662,8 @@ window.openIndividualReports = async function openIndividualReports() {
                         parentPhone:  c.phone || '',
                         parentName:   c.name  || '',
                         clubId:       me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         _fromEmailConfig: true,
                     };
                 }
@@ -4822,6 +4824,8 @@ window._sendAllIndividualReports = async function() {
                         parentUid:     link.parentUid,
                         participants:  arrayUnion(me.uid, link.parentUid),
                         clubId:        me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         recipientType: 'parent'
                     });
                 } else {
@@ -4831,6 +4835,8 @@ window._sendAllIndividualReports = async function() {
                         recipientType:'parent',
                         // FIX (v180): campos de identidad
                         clubId: me.clubId || null,
+                    category:    me.category    || null,
+                    subcategory: me.subcategory || null,
                         participants: [me.uid, link.parentUid],
                         messages:[msgEntry],
                         lastMessage:`📊 Informe de ${p.name}`,

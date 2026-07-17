@@ -2975,7 +2975,7 @@ function _launchWithRole(role) {
     document.getElementById('role-selection-screen').style.display = 'none';
 
     // Detectar si es un rol individual (entrenador o padre bajo ente individual)
-    // FIX (Error #21): 'let' en vez de 'const' porque reasignamos me tras el spread
+    // FIX: 'let' para poder reasignar tras spread
     let me = window._cronosCurrentUser;
 
     // ══════════════════════════════════════════════════════════════════
@@ -3022,9 +3022,6 @@ function _launchWithRole(role) {
                     ...(roleEntry.clubName ? { clubName: roleEntry.clubName } : {}),
                 };
             }
-            // FIX (Error #21 CRÍTICO): despues del spread, 'me' apunta al objeto
-            // VIEJO. Hay que actualizar 'me' para que los cambios siguientes
-            // se apliquen a window._cronosCurrentUser (el objeto nuevo).
             me = window._cronosCurrentUser;
 
             // ── Campos exclusivos del rol 'parent' ──
@@ -3044,27 +3041,14 @@ function _launchWithRole(role) {
             if (role === 'user' || role === 'coach') {
                 if (roleEntry.category)    me.category    = roleEntry.category;
                 if (roleEntry.subcategory) me.subcategory = roleEntry.subcategory;
-                console.log('[auth] roleEntry entrenador:', {
-                    category: roleEntry.category,
-                    subcategory: roleEntry.subcategory,
-                    meCategory: me.category,
-                    meSubcategory: me.subcategory
-                });
-                // FIX (Error #21 CRÍTICO): forzar updateCategoryOptions DESPUES
-                // de asignar me.category/subcategory. Sin esto, el dropdown se
-                // rellenaba ANTES de que me.category estuviera disponible y
-                // siempre quedaba en Prebenjamín (primera opción).
+                console.log('[auth] entrenador category:', me.category, 'subcategory:', me.subcategory);
+                // FIX: forzar updateCategoryOptions despues de asignar category
                 setTimeout(function() {
                     if (typeof window.updateCategoryOptions === 'function') {
                         const mode = document.getElementById('setup-mode')?.value || 'f7';
                         window.updateCategoryOptions(mode);
-                        console.log('[auth] updateCategoryOptions re-llamado tras asignar category');
-                    } else if (typeof updateCategoryOptions === 'function') {
-                        const mode = document.getElementById('setup-mode')?.value || 'f7';
-                        updateCategoryOptions(mode);
-                        console.log('[auth] updateCategoryOptions (global) re-llamado tras asignar category');
                     }
-                }, 200);
+                }, 300);
             }
 
             // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──
