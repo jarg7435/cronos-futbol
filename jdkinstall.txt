@@ -1,0 +1,7 @@
+Encontrado Microsoft Build of OpenJDK with Hotspot 21 [Microsoft.OpenJDK.21] Versión 21.0.11.10
+El propietario de esta aplicación le concede una licencia.
+Microsoft no es responsable, ni tampoco concede ninguna licencia de paquetes de terceros.
+Descargando https://aka.ms/download-JDK/microsoft-JDK-21.0.11-windows-x64.msi#winget
+El hash del instalador se verificó correctamente
+Iniciando instalación de paquete...
+El instalador solicitará que se ejecute como administrador. Espere una indicación.
