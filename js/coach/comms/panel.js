@@ -4348,8 +4348,33 @@ window.openMisInformes = async function openMisInformes() {
             collection(db, 'cronos_player_reports'),
             where('coachUid', '==', me.uid)
         ));
-        // Filtrar en cliente: solo los del propio entrenador (_forCoach=true)
-        const snap = { forEach: (fn) => rawCoachSnap.forEach(d => { if (d.data()._forCoach === true) fn(d); }) };
+        // FIX (Error #25): Filtrar en cliente:
+        // 1. Solo los del propio entrenador (_forCoach=true)
+        // 2. Solo los de la categoria/subcategoria del entrenador (me.category/me.subcategory)
+        const _normCat = (c) => {
+            if (!c) return '';
+            const s = String(c).toLowerCase();
+            if (s.includes('alev')) return 'alevin';
+            if (s.includes('prebenj')) return 'prebenjamin';
+            if (s.includes('benj')) return 'benjamin';
+            if (s.includes('infant')) return 'infantil';
+            if (s.includes('cadet')) return 'cadete';
+            if (s.includes('juvenil')) return 'juvenil';
+            if (s.includes('regional')) return 'regional';
+            return s;
+        };
+        const myCat = _normCat(me.category);
+        const mySub = (me.subcategory || '').toUpperCase().trim();
+        const snap = { forEach: (fn) => rawCoachSnap.forEach(d => {
+            const data = d.data();
+            if (data._forCoach !== true) return;
+            // FIX: filtrar por categoria del entrenador
+            const rCat = _normCat(data.category);
+            const rSub = (data.subcategory || '').toUpperCase().trim();
+            if (myCat && rCat && rCat !== myCat) return;
+            if (mySub && rSub && rSub !== mySub) return;
+            fn(d);
+        }) };
 
         const reports = [];
         snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
@@ -4456,7 +4481,7 @@ window.openMisInformes = async function openMisInformes() {
         const body = document.getElementById('mis-informes-body');
         body.innerHTML = `
         <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.8rem;">
-            ${sorted.length} partido${sorted.length!==1?'s':''} · ${reports.length} informes de jugadores
+            ${sorted.length} partido${sorted.length!==1?'s':''} · Categoría: ${me.category || '—'} · Subcategoría: ${me.subcategory || '—'}
         </div>
 
         <!-- FIX: RESUMEN TOTAL DE TODOS LOS INFORMES DEL ENTRENADOR -->
