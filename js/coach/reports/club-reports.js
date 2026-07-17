@@ -1617,64 +1617,6 @@ async function _sdLoadReports() {
             </span>
         </div>
 
-        <!-- FIX (Error #20): RESUMEN DE TOTALES -->
-        <div style="background:linear-gradient(135deg,rgba(88,166,255,0.08),rgba(63,185,80,0.05));border:1px solid rgba(88,166,255,0.25);border-radius:12px;padding:1rem;margin-bottom:1rem;">
-            <div style="font-size:0.82rem;font-weight:700;color:var(--primary);margin-bottom:0.7rem;letter-spacing:0.3px;">📋 RESUMEN TOTAL (todos los informes)</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:0.6rem;">
-                <div style="text-align:center;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#3fb950;">${totalGoals}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">⚽ Goles</div>
-                </div>
-                <div style="text-align:center;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#ffd700;">${totalYCards}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟨 Tarj. Amarillas</div>
-                </div>
-                <div style="text-align:center;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#ff5858;">${totalRCards}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🟥 Tarj. Rojas</div>
-                </div>
-                <div style="text-align:center;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.25);border-radius:8px;padding:0.6rem 0.4rem;">
-                    <div style="font-size:1.5rem;font-weight:800;color:#f97316;">${totalInjured}</div>
-                    <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">🚑 Lesiones</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- FIX (Error #20): INFORME INDIVIDUAL POR JUGADOR -->
-        ${playerList.length > 0 ? `
-        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:1rem;margin-bottom:1rem;">
-            <div style="font-size:0.82rem;font-weight:700;color:#f0883e;margin-bottom:0.7rem;letter-spacing:0.3px;">👤 INFORME INDIVIDUAL POR JUGADOR</div>
-            <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
-                    <thead>
-                        <tr style="background:rgba(255,255,255,0.04);color:var(--text-muted);text-align:left;">
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">#</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);">Jugador</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">Partidos</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">⚽ Goles</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟨 TA</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🟥 TR</th>
-                            <th style="padding:0.5rem;border-bottom:1px solid rgba(255,255,255,0.1);text-align:center;">🚑 Les.</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${playerList.map(p => `
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                                <td style="padding:0.45rem 0.5rem;color:var(--text-muted);">${p.number || '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;font-weight:600;">${escapeHtml(p.name)}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;">${p.matches}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#3fb950;font-weight:700;">${p.goals > 0 ? p.goals : '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#ffd700;">${p.yCards > 0 ? p.yCards : '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#ff5858;">${p.rCards > 0 ? p.rCards : '—'}</td>
-                                <td style="padding:0.45rem 0.5rem;text-align:center;color:#f97316;">${p.injured > 0 ? p.injured : '—'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        ` : ''}
-
         <!-- LISTA DE INFORMES POR PARTIDO -->`;
 
         // FIX: renderizar informes con arbol colapsable + resumen por subcategoria
