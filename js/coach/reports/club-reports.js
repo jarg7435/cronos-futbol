@@ -22,7 +22,7 @@ window._CRONOS_CATEGORIES = [
 ];
 window._CRONOS_SUBCATS = ['A', 'B', 'C'];
 
-window._cronosRenderCatTree = function(items, renderItem, typeLabel) {
+window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSummary) {
     const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v == null ? '' : String(v)) : (v == null ? '' : String(v));
     const normCat = (cat) => {
         if (!cat) return null;
@@ -59,7 +59,7 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel) {
         const subsHtml = window._CRONOS_SUBCATS.map(subId => {
             const subItems = subMap.get(subId) || [];
             const subHas = subItems.length > 0;
-            const body = subHas ? subItems.map(renderItem).join('') : '<div class="ct-empty">Sin ' + (typeLabel||'registros') + '.</div>';
+            const body = subHas ? (typeof renderSummary === 'function' ? renderSummary(subItems) : '') + subItems.map(renderItem).join('') : '<div class="ct-empty">Sin ' + (typeLabel||'registros') + '.</div>';
             return '<div class="ct-card ct-sub ' + (subHas?'expanded':'') + '"><div class="ct-card-head" onclick="this.closest(\'.ct-sub\').classList.toggle(\'expanded\')"><div class="ct-card-title" style="font-size:0.78rem"><span class="ct-chevron">&#9660;</span><span>Subcategoria ' + subId + '</span>' + (subHas?'<span class="ct-badge">'+subItems.length+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body">' + body + '</div></div>';
         }).join('');
         const dot = catHas ? '<span class="ct-dot on"></span>' : '<span class="ct-dot"></span>';
@@ -1677,61 +1677,102 @@ async function _sdLoadReports() {
 
         <!-- LISTA DE INFORMES POR PARTIDO -->`;
 
-        sorted.forEach(m => {
+        // FIX: renderizar informes con arbol colapsable + resumen por subcategoria
+        const renderReportCard = (m) => {
             const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
             const injured = m.players.filter(p => p.injured).length;
             const dateStr = m.matchDate
                 ? new Date(m.matchDate).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' })
                 : '—';
             const sh = m.scoreHome, sa = m.scoreAway;
-            const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
-            // Resultado según myTeamRole; sin el campo (informes antiguos) → fallback 'home', comportamiento previo.
+            const score = (sh != null && sa != null) ? sh + ' - ' + sa : '—';
             const _mine   = m.myTeamRole === 'away' ? sa : sh;
             const _theirs = m.myTeamRole === 'away' ? sh : sa;
             const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
             const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
-
-            // Guardar datos del partido para renderizado lazy en el toggle
             window._sdMatchData[key64] = m;
+            return '<div class="sd-report-card" id="rcard-' + key64 + '" onclick="sdToggleReport(\'' + key64 + '\')" style="margin-bottom:0.5rem;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">' +
+                '<div style="flex:1;min-width:0;">' +
+                '<div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">' +
+                'vs <span style="color:var(--primary);">' + escapeHtml(m.rival||'Sin rival') + '</span>' +
+                (res ? '<span style="font-size:0.65rem;font-weight:700;color:' + rCol + ';">' + res + '</span>' : '') +
+                '</div>' +
+                '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">' + dateStr + ' · ' + score + ' · ' + escapeHtml(m.coachEmail||'') + '</div>' +
+                '</div>' +
+                '<div style="text-align:right;flex-shrink:0;">' +
+                '<span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">' + m.players.length + ' jugadores</span>' +
+                (goals > 0 ? ' <span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">' + goals + ' goles</span>' : '') +
+                '</div>' +
+                '</div>' +
+                '<div id="rdetail-' + key64 + '" style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;"></div>' +
+                '</div>';
+        };
 
-            html += `
-            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
-                <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
-                    <div style="flex:1;min-width:0;">
-                        <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                            🆚 vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>
-                            ${res ? `<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.5px;color:${rCol};">${res}</span>` : ''}
-                        </div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
-                            <span>📅 ${dateStr}</span>
-                            ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
-                            ${m.category ? `<span style="color:#58a6ff;">${escapeHtml(m.category)}</span>` : ''}
-                            <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
-                        </div>
-                    </div>
-                    <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                        <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">${m.players.length} jugadores</span>
-                        ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">⚽ ${goals} gol${goals !== 1 ? 'es' : ''}</span>` : ''}
-                        ${injured > 0 ? `<span class="sd-badge" style="background:rgba(249,115,22,0.12);color:#f97316;">🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
-                        <div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;">▼ Ver informe completo</div>
-                    </div>
-                    <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
-                        <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
-                                title="Eliminar este informe definitivamente"
-                                style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
-                                       color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
-                                       display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
-                            🗑️
-                        </button>
-                    </div>
-                </div>
-                <!-- Panel de detalle: vacío hasta el primer click (lazy render) -->
-                <div id="rdetail-${key64}"
-                     style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
-                </div>
-            </div>`;
-        });
+        // Resumen por subcategoria: totales + tabla de jugadores
+        const renderSubSummary = (subItems) => {
+            if (!subItems || !subItems.length) return '';
+            let sGoals = 0, sYCards = 0, sRCards = 0, sInjured = 0, sMinutes = 0;
+            const sPlayerStats = {};
+            const sSeen = new Set();
+            subItems.forEach(m => {
+                const mk = m.key;
+                m.players.forEach(p => {
+                    const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
+                    const dk = mk + '_' + dorsal;
+                    if (sSeen.has(dk)) return;
+                    sSeen.add(dk);
+                    sGoals += (p.goals || 0);
+                    if (p.cards === 'yellow' || p.cards === 'amarilla') sYCards++;
+                    if (p.cards === 'red' || p.cards === 'roja') sRCards++;
+                    if (p.injured) sInjured++;
+                    // FIX: acumular minutos totales de la subcategoria
+                    if (p.minutesPlayed) {
+                        if (typeof p.minutesPlayed === 'number') sMinutes += p.minutesPlayed;
+                        else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
+                            const _mp = String(p.minutesPlayed).split(':');
+                            sMinutes += parseInt(_mp[0]) * 60 + parseInt(_mp[1]);
+                        }
+                    }
+                    const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
+                    if (!sPlayerStats[pKey]) sPlayerStats[pKey] = { name: pKey, number: p.number || p.playerNumber || '', matchKeys: new Set(), goals: 0, yCards: 0, rCards: 0, injured: 0, minutes: 0 };
+                    const ps = sPlayerStats[pKey];
+                    ps.matchKeys.add(mk);
+                    ps.goals += (p.goals || 0);
+                    if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
+                    if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
+                    if (p.injured) ps.injured++;
+                    if (p.minutesPlayed) {
+                        if (typeof p.minutesPlayed === 'number') ps.minutes += p.minutesPlayed;
+                        else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
+                            const parts = String(p.minutesPlayed).split(':');
+                            ps.minutes += parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                        }
+                    }
+                });
+            });
+            const sPlayerList = Object.values(sPlayerStats).map(p => ({ ...p, matches: p.matchKeys.size })).sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
+            return '<div style="background:linear-gradient(135deg,rgba(88,166,255,0.06),rgba(63,185,80,0.04));border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:0.8rem;margin-bottom:0.6rem;">' +
+                '<div style="font-size:0.75rem;font-weight:700;color:var(--primary);margin-bottom:0.5rem;">Resumen (' + subItems.length + ' encuentro' + (subItems.length !== 1 ? 's' : '') + ')</div>' +
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:0.4rem;margin-bottom:0.6rem;">' +
+                '<div style="text-align:center;background:rgba(63,185,80,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#3fb950;">' + sGoals + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Goles</div></div>' +
+                '<div style="text-align:center;background:rgba(255,215,0,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#ffd700;">' + sYCards + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">TA</div></div>' +
+                '<div style="text-align:center;background:rgba(255,88,88,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#ff5858;">' + sRCards + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">TR</div></div>' +
+                '<div style="text-align:center;background:rgba(249,115,22,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#f97316;">' + sInjured + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Les</div></div>' +
+                '<div style="text-align:center;background:rgba(88,166,255,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#58a6ff;">' + (sMinutes > 0 ? Math.floor(sMinutes/60)+':'+String(sMinutes%60).padStart(2,'0') : '0') + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Min Total</div></div>' +
+                '</div>' +
+                (sPlayerList.length > 0 ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.72rem;"><thead><tr style="color:var(--text-muted);text-align:left;"><th style="padding:0.3rem;">#</th><th style="padding:0.3rem;">Jugador</th><th style="padding:0.3rem;text-align:center;">P</th><th style="padding:0.3rem;text-align:center;">G</th><th style="padding:0.3rem;text-align:center;">TA</th><th style="padding:0.3rem;text-align:center;">TR</th><th style="padding:0.3rem;text-align:center;">Les</th><th style="padding:0.3rem;text-align:center;">Min</th></tr></thead><tbody>' +
+                sPlayerList.map(p => '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);"><td style="padding:0.3rem;color:var(--text-muted);">' + (p.number||'—') + '</td><td style="padding:0.3rem;font-weight:600;">' + escapeHtml(p.name) + '</td><td style="padding:0.3rem;text-align:center;">' + p.matches + '</td><td style="padding:0.3rem;text-align:center;color:#3fb950;">' + (p.goals>0?p.goals:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#ffd700;">' + (p.yCards>0?p.yCards:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#ff5858;">' + (p.rCards>0?p.rCards:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#f97316;">' + (p.injured>0?p.injured:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#58a6ff;">' + (p.minutes>0?Math.floor(p.minutes/60)+':'+String(p.minutes%60).padStart(2,'0'):'—') + '</td></tr>').join('') +
+                '</tbody></table></div>' : '') +
+                '</div>';
+        };
+
+        if (typeof window._cronosRenderCatTree === 'function') {
+            html += window._cronosRenderCatTree(sorted, renderReportCard, 'informes', renderSubSummary);
+        } else {
+            sorted.forEach(m => { html += renderReportCard(m); });
+        }
 
         container.innerHTML = html;
 
