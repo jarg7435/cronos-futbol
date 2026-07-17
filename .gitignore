@@ -56,3 +56,4 @@ junit.xml
 # HERRAMIENTAS TEMPORALES DE VALIDACION DE REGLAS (no forma parte del build)
 rules_test/
 _*.txt
+bgout.txt 

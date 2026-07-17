@@ -12,6 +12,8 @@
       "firestore.indexes.json",
       "functions/**",
       "scripts/**",
+      "rules_test/**",
+      "*.txt",
       "package.json",
       "package-lock.json",
       "*.log",
