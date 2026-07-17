@@ -3053,26 +3053,28 @@ function _launchWithRole(role) {
 
             // FIX (Error #26): cargar extras del club para mostrar/ocultar opciones
             // del panel del entrenador segun el plan contratado.
-            try {
-                const { db, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                const clubId2 = roleEntry.clubId || me.clubId;
-                if (clubId2) {
-                    const clubDoc = await getDoc(doc(db, 'cronos_clubs', clubId2));
-                    if (clubDoc.exists()) {
-                        me.extras = clubDoc.data().extras || {};
-                    } else {
-                        // Probar en individuals
-                        const indDoc = await getDoc(doc(db, 'cronos_individuals', clubId2));
-                        if (indDoc.exists()) {
-                            me.extras = indDoc.data().extras || {};
+            // Usar funcion async autoejecutable porque _launchWithRole no es async.
+            (async () => {
+                try {
+                    const { db, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                    const clubId2 = roleEntry.clubId || me.clubId;
+                    if (clubId2) {
+                        const clubDoc = await getDoc(doc(db, 'cronos_clubs', clubId2));
+                        if (clubDoc.exists()) {
+                            me.extras = clubDoc.data().extras || {};
+                        } else {
+                            const indDoc = await getDoc(doc(db, 'cronos_individuals', clubId2));
+                            if (indDoc.exists()) {
+                                me.extras = indDoc.data().extras || {};
+                            }
                         }
+                        console.log('[auth] extras del club cargados:', me.extras);
                     }
-                    console.log('[auth] extras del club cargados:', me.extras);
+                } catch(extrasErr) {
+                    console.warn('[auth] error cargando extras:', extrasErr.message);
+                    me.extras = {};
                 }
-            } catch(extrasErr) {
-                console.warn('[auth] error cargando extras:', extrasErr.message);
-                me.extras = {}; // Por defecto todo activado
-            }
+            })();
 
             // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──
             if (role === 'coordinator') {
