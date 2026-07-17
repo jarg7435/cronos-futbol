@@ -227,30 +227,11 @@ function openSetupModal() {
             <div style="display:flex; flex-direction:column; gap:1.2rem;">
                 
                 <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:0.5rem; align-items:stretch; width:100%;">
-                    <button class="btn" onclick="saveSetupState(); openRosterManager()"
-                        style="background:rgba(88,166,255,0.12); color:#58a6ff; font-size:0.7rem; border:1px solid rgba(88,166,255,0.4); font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">
-                        GESTIONAR PLANTILLA
-                    </button>
-                    <button class="btn" onclick="saveSetupState(); Promise.resolve(openContactManager()).catch(function(e){ console.error('[Contactos] Error al abrir:', e); if(typeof hideSpinner==='function') hideSpinner(); if(typeof showToast==='function') showToast('⚠️ No se pudo abrir Contactos', 3000); });"
-                        title="Configurar teléfonos de padres y emails del club"
-                        style="background:rgba(255,165,0,0.12); color:#ffa500; font-size:0.7rem; border:1px solid rgba(255,165,0,0.4); font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">
-                        📱 CONTACTOS
-                    </button>
-                    <button class="btn" onclick="openConvocationModal()"
-                        title="Gestionar convocatoria del partido"
-                        style="background:rgba(63,185,80,0.12); color:#3fb950; font-size:0.7rem; border:1px solid rgba(63,185,80,0.5); font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">
-                        📋 CONVOCATORIA
-                    </button>
-                    <button class="btn" onclick="openTrainingPanel()"
-                        title="Gestionar entrenamientos"
-                        style="background:rgba(88,166,255,0.12); color:#58a6ff; font-size:0.7rem; border:1px solid rgba(88,166,255,0.4); font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">
-                        🏃 ENTRENAMIENTO
-                    </button>
-                    <button class="btn" onclick="typeof openMisInformes === 'function' ? openMisInformes() : alert('Módulo en mantenimiento')"
-                        title="Mis Informes de Partido"
-                        style="background:rgba(255,215,0,0.12); color:#ffd700; font-size:0.7rem; border:1px solid rgba(255,215,0,0.4); font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">
-                        📊 MIS INFORMES
-                    </button>
+                    ${_cronosExtraBtn('plantilla', 'GESTIONAR PLANTILLA', 'saveSetupState(); openRosterManager()', 'rgba(88,166,255,0.12); color:#58a6ff; border:1px solid rgba(88,166,255,0.4)')}
+                    ${_cronosExtraBtn('contactos', '📱 CONTACTOS', 'saveSetupState(); Promise.resolve(openContactManager()).catch(function(e){ console.error(\'[Contactos] Error al abrir:\', e); if(typeof hideSpinner===\'function\') hideSpinner(); if(typeof showToast===\'function\') showToast(\'⚠️ No se pudo abrir Contactos\', 3000); });', 'rgba(255,165,0,0.12); color:#ffa500; border:1px solid rgba(255,165,0,0.4)')}
+                    ${_cronosExtraBtn('convocatorias', '📋 CONVOCATORIA', 'openConvocationModal()', 'rgba(63,185,80,0.12); color:#3fb950; border:1px solid rgba(63,185,80,0.5)')}
+                    ${_cronosExtraBtn('entrenamientos', '🏃 ENTRENAMIENTO', 'openTrainingPanel()', 'rgba(88,166,255,0.12); color:#58a6ff; border:1px solid rgba(88,166,255,0.4)')}
+                    ${_cronosExtraBtn('informes', '📊 MIS INFORMES', 'typeof openMisInformes === \'function\' ? openMisInformes() : alert(\'Módulo en mantenimiento\')', 'rgba(255,215,0,0.12); color:#ffd700; border:1px solid rgba(255,215,0,0.4)')}
                 </div>
 
                 <!-- BOTONES PRINCIPALES: CONTINUAR + RECUPERAR + COMUNICACIONES -->
