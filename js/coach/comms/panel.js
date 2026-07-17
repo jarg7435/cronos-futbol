@@ -2213,8 +2213,7 @@ async function autoDispatchMatchReports() {
                 scoreHome,
                 scoreAway,
                 myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                category:      window._currentMatchCategory || '',
-                subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
+                // category/subcategory ya fijadas arriba con me.category
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(p.number || ''),
                 playerAlias:   p.alias || p.name || '',
@@ -2453,8 +2452,7 @@ async function autoDispatchMatchReports() {
                     scoreHome,
                     scoreAway,
                     myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                    category:      window._currentMatchCategory || '',
-                    subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
+                    // category/subcategory ya fijadas arriba con me.category
                     createdAt:     new Date().toISOString(),
                     playerNumber:  String(p.number||''),
                     playerAlias:   p.alias || p.name || '',
