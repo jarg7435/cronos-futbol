@@ -1994,8 +1994,8 @@ window._executeReportsSend = async function(method) {
                     coachUid: me.uid, coachEmail: me.email,
                     matchDate: new Date().toISOString().split('T')[0],
                     rival: rivalName, scoreHome, scoreAway,
-                    myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                    category: (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
+                    myTeamRole: _cMyTeamKey(),
+                    // category ya fijada arriba con me.category
                     // subcategory ya fijada con me.subcategory
                     createdAt: new Date().toISOString(),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
