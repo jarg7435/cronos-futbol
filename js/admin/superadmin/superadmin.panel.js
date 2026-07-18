@@ -3497,6 +3497,7 @@ window._CRONOS_EXTRAS_DEF = [
     { key: 'comunicaciones', icon: '💬', label: 'Comunicaciones',           desc: 'Mensajes, partidos terminados y retransmisión' },
     { key: 'semaforo',       icon: '🚦', label: 'Semáforo con Porcentajes', desc: 'Sistema de colores y umbrales de tiempos' },
     { key: 'informes_padres',icon: '📧', label: 'Enviar Informes a Padres', desc: 'Informes individuales por jugador enviados a padres' },
+    { key: 'actualizaciones', icon: '🔄', label: 'Actualizaciones de la App', desc: 'Permitir recibir actualizaciones automáticas' },
 ];
 
 window.saExtras = async function saExtras() {
