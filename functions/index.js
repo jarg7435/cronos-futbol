@@ -887,6 +887,22 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role);
     }
 
+    // BE-C1 (cierre escalada cross-club): NO basta con tener el rol en ALGUN
+    // club; hay que tenerlo EN EL clubId que se pretende registrar. Antes solo
+    // se validaba la presencia del rol (hasRole), asi que un director del club
+    // A podia pasar clubId=B y anadir su UID a clubs/B.directorUids. Se exige
+    // ahora que el rol este ligado a ESE clubId (raiz o allRoles autorizado).
+    const rootMatchesClub = userData.role === role &&
+      userData.clubId != null && userData.clubId === clubId;
+    const roleForClub = Array.isArray(userData.allRoles) && userData.allRoles.some(
+      (r) => r && r.role === role && r.clubId === clubId &&
+             r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed'
+    );
+
+    if (!rootMatchesClub && !roleForClub) {
+      throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role + ' en ese club (cross-club)');
+    }
+
     // Registrar UID en el documento del club
     const field = role === 'director' ? 'directorUids' : 'coordinatorUids';
     await admin.firestore().collection('clubs').doc(clubId).set({
@@ -1106,6 +1122,26 @@ exports.logAuditEntry = functions.https.onCall(async (data, context) => {
   const action  = typeof data.action === 'string' ? data.action.trim() : '';
   if (!matchId || !action) {
     throw new functions.https.HttpsError('invalid-argument', 'matchId y action son obligatorios');
+  }
+
+  // BE-C7 (whitelist de acciones + limites de tamano): antes se persistia
+  // CUALQUIER 'action' y 'matchId' del cliente sin validar. audit_logs solo lo
+  // lee el SuperAdmin (write:false en reglas -> solo Admin SDK/esta CF escribe),
+  // asi que el peor caso era polucion del log de auditoria con acciones
+  // arbitrarias (no hay escalada: userId/email vienen del TOKEN, no del cliente).
+  // Se restringe 'action' a la lista de eventos reales que emite el cliente
+  // (js/match/events/player-actions.js + js/services/audit-logger.js) y se acotan
+  // las longitudes para evitar entradas gigantes.
+  const ALLOWED_ACTIONS = [
+    'goal', 'goal_cancelled', 'card', 'yellow_card', 'red_card',
+    'red_card_reversed', 'injury', 'substitute', 'substitution',
+    'formation_change', 'actions_cleared'
+  ];
+  if (ALLOWED_ACTIONS.indexOf(action) === -1) {
+    throw new functions.https.HttpsError('invalid-argument', 'action no permitida');
+  }
+  if (matchId.length > 200) {
+    throw new functions.https.HttpsError('invalid-argument', 'matchId demasiado largo');
   }
 
   // 3) Identidad desde el token (no confiar en el cliente)
