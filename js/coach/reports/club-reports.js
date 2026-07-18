@@ -51,7 +51,21 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
             subMap.get(subId).push(d);
         } else { noCatItems.push(d); }
     });
-    const css = '<style>.ct-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem}.ct-card-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:0.5rem;user-select:none}.ct-card-title{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.85rem;color:white}.ct-card-body{display:none;padding-top:0.5rem;margin-top:0.4rem}.ct-card.expanded>.ct-card-body{display:block}.ct-chevron{display:inline-block;transform:rotate(-90deg);transition:transform 0.2s;font-size:0.7rem;color:var(--text-muted)}.ct-card.expanded>.ct-card-head .ct-chevron{transform:rotate(0deg)}.ct-sub{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.4rem}.ct-sub.expanded>.ct-card-body{display:block}.ct-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.12)}.ct-dot.on{background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.7)}.ct-badge{display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:20px;font-size:0.68rem;font-weight:700;background:rgba(88,166,255,0.12);color:#58a6ff}.ct-empty{font-size:0.72rem;color:#6e7681;padding:0.4rem 0.5rem;font-style:italic}</style>';
+    const css = '<style>' +
+        '.ct-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem}' +
+        '.ct-card-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:0.5rem;user-select:none}' +
+        '.ct-card-title{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.85rem;color:white}' +
+        '.ct-card-body{display:none;padding-top:0.5rem;margin-top:0.4rem}' +
+        '.ct-card.expanded .ct-card-body{display:block}' +
+        '.ct-chevron{display:inline-block;transform:rotate(-90deg);transition:transform 0.2s;font-size:0.7rem;color:var(--text-muted)}' +
+        '.ct-card.expanded .ct-card-head .ct-chevron{transform:rotate(0deg)}' +
+        '.ct-sub{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.4rem}' +
+        '.ct-sub.expanded .ct-card-body{display:block}' +
+        '.ct-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.12)}' +
+        '.ct-dot.on{background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.7)}' +
+        '.ct-badge{display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:20px;font-size:0.68rem;font-weight:700;background:rgba(88,166,255,0.12);color:#58a6ff}' +
+        '.ct-empty{font-size:0.72rem;color:#6e7681;padding:0.4rem 0.5rem;font-style:italic}' +
+        '</style>';
     const catsHtml = window._CRONOS_CATEGORIES.map(catDef => {
         const subMap = byCatSub.get(catDef.id) || new Map();
         const catCount = Array.from(subMap.values()).reduce((s, arr) => s + arr.length, 0);
@@ -2044,12 +2058,16 @@ async function _renderDirectorConfig() {
     const thresholds = clubData.timerThresholds || { red: 33, yellow: 50 };
     const sendReports = !!features.sendIndividualReports;
 
+    const extras = (me && me.extras) || {};
+    const semaforoEnabled = extras.semaforo !== false;
+    const informesPadresEnabled = extras.informes_padres !== false;
+
     container.innerHTML = `
     <div style="max-width:560px;">
       <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                  border-radius:12px;padding:1.2rem;margin-bottom:1rem;">
-        <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:0.3rem;">
-          Semaforo de tiempo de juego
+                  border-radius:12px;padding:1.2rem;margin-bottom:1rem;${semaforoEnabled ? '' : 'opacity:0.5;pointer-events:none;'}">
+        <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:0.3rem;display:flex;align-items:center;gap:0.5rem;">
+          ${semaforoEnabled ? '' : '<span style="font-size:1rem;">🔒</span>'} Semaforo de tiempo de juego
         </div>
         <div style="font-size:0.72rem;color:#7d8590;margin-bottom:1rem;">
           Porcentaje del tiempo total que determina el color de cada jugador en el planometro.
@@ -2086,8 +2104,11 @@ async function _renderDirectorConfig() {
       </div>
 
       <div style="background:rgba(210,168,255,0.06);border:1px solid rgba(210,168,255,0.2);
-                  border-radius:12px;padding:1.2rem;">
-        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                  border-radius:12px;padding:1.2rem;${informesPadresEnabled ? '' : 'opacity:0.5;pointer-events:none;'}">
+        <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;">
+          ${informesPadresEnabled ? '' : '<span style="font-size:1rem;">🔒</span>'} Informes individualizados a padres
+        </div>
+        <label style="display:flex;align-items:center;gap:0.5rem;${informesPadresEnabled ? 'cursor:pointer;' : 'cursor:not-allowed;'}">
           <input type="checkbox" id="dir-toggle-reports"
                  ${sendReports ? 'checked' : ''}
                  onchange="window._dirToggleReports('${clubId}', this.checked)"
