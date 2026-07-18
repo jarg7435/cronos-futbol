@@ -387,8 +387,8 @@ async function _sdLoadEvents(type) {
                     ? (Array.isArray(d.days) ? d.days.filter(dy=>dy.time||dy.venue).map(dy=>dy.day+': '+[dy.time,dy.venue].filter(Boolean).join(' ')).slice(0,2).join(' | ') : (d.location ? '📍 ' + escapeHtml(d.location) : ''))
                     : (d.location ? ' · 📍 ' + escapeHtml(d.location) : '');
 
-            html += `
-            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};">
+            return `
+            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};margin-bottom:0.5rem;">
                 <!-- Botón eliminar -->
                 <button onclick="sdDeleteNotif('${escapeAttr(d._id)}')"
                     title="Eliminar" 
