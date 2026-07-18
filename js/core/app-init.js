@@ -4179,6 +4179,12 @@ function updatePlayerUI(player) {
 // Rojo   → no ha llegado al tercio mínimo
 // Los umbrales se calculan desde half1MaxTime + half2MaxTime (segundos)
 function getTimerColor(timeSec) {
+    // FIX (Error #26): si el extra 'semaforo' esta desactivado, devolver celeste
+    const _me = window._cronosCurrentUser;
+    const _extras = (_me && _me.extras) || {};
+    if (_extras.semaforo === false) {
+        return { bg: '#79c0ff', text: '#000000', fontSize: '0.8rem' };
+    }
     // v220: fallback consistente con live.html. Antes el coach siempre caia
     // a 1800+1800=3600 aunque el modo fuese F11 (deberia ser 2400+2400=4800).
     // Esto causaba que un jugador con, p.ej., 1800s saliese VERDE en el

@@ -55,12 +55,10 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
         '.ct-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem}' +
         '.ct-card-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:0.5rem;user-select:none}' +
         '.ct-card-title{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.85rem;color:white}' +
-        '.ct-card-body{display:none;padding-top:0.5rem;margin-top:0.4rem}' +
-        '.ct-card.expanded .ct-card-body{display:block}' +
+        '.ct-card-body{padding-top:0.5rem;margin-top:0.4rem}' +
         '.ct-chevron{display:inline-block;transform:rotate(-90deg);transition:transform 0.2s;font-size:0.7rem;color:var(--text-muted)}' +
-        '.ct-card.expanded .ct-card-head .ct-chevron{transform:rotate(0deg)}' +
+        '.ct-card.expanded .ct-chevron{transform:rotate(0deg)}' +
         '.ct-sub{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.4rem}' +
-        '.ct-sub.expanded .ct-card-body{display:block}' +
         '.ct-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.12)}' +
         '.ct-dot.on{background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.7)}' +
         '.ct-badge{display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:20px;font-size:0.68rem;font-weight:700;background:rgba(88,166,255,0.12);color:#58a6ff}' +
@@ -74,12 +72,12 @@ window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSumma
             const subItems = subMap.get(subId) || [];
             const subHas = subItems.length > 0;
             const body = subHas ? (typeof renderSummary === 'function' ? renderSummary(subItems) : '') + subItems.map(renderItem).join('') : '<div class="ct-empty">Sin ' + (typeLabel||'registros') + '.</div>';
-            return '<div class="ct-card ct-sub ' + (subHas?'expanded':'') + '"><div class="ct-card-head" onclick="this.parentElement.classList.toggle(\'expanded\')"><div class="ct-card-title" style="font-size:0.78rem"><span class="ct-chevron">&#9660;</span><span>Subcategoria ' + subId + '</span>' + (subHas?'<span class="ct-badge">'+subItems.length+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body">' + body + '</div></div>';
+            return '<div class="ct-card ct-sub ' + (subHas?'expanded':'') + '"><div class="ct-card-head" onclick="var b=this.nextElementSibling;b.style.display=(b.style.display===\'none\'?\'block\':\'none\')"><div class="ct-card-title" style="font-size:0.78rem"><span class="ct-chevron">&#9660;</span><span>Subcategoria ' + subId + '</span>' + (subHas?'<span class="ct-badge">'+subItems.length+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body" style="display:' + (subHas?'block':'none') + '">' + body + '</div></div>';
         }).join('');
         const dot = catHas ? '<span class="ct-dot on"></span>' : '<span class="ct-dot"></span>';
-        return '<div class="ct-card ' + (catHas?'expanded':'') + '" style="border-color:rgba(88,166,255,0.2)"><div class="ct-card-head" onclick="this.parentElement.classList.toggle(\'expanded\')"><div class="ct-card-title"><span class="ct-chevron">&#9660;</span><span>' + esc(catDef.label) + '</span>' + dot + (catHas?'<span class="ct-badge">'+catCount+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body">' + subsHtml + '</div></div>';
+        return '<div class="ct-card ' + (catHas?'expanded':'') + '" style="border-color:rgba(88,166,255,0.2)"><div class="ct-card-head" onclick="var b=this.nextElementSibling;b.style.display=(b.style.display===\'none\'?\'block\':\'none\')"><div class="ct-card-title"><span class="ct-chevron">&#9660;</span><span>' + esc(catDef.label) + '</span>' + dot + (catHas?'<span class="ct-badge">'+catCount+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body" style="display:' + (catHas?'block':'none') + '">' + subsHtml + '</div></div>';
     }).join('');
-    const noCatHtml = noCatItems.length ? '<div class="ct-card expanded" style="border-color:rgba(255,165,0,0.3)"><div class="ct-card-head" onclick="this.parentElement.classList.toggle(\'expanded\')"><div class="ct-card-title"><span class="ct-chevron">&#9660;</span><span>Sin categoria asignada</span><span class="ct-badge" style="background:rgba(255,165,0,0.12);color:#ffa500">'+noCatItems.length+'</span></div></div><div class="ct-card-body">'+noCatItems.map(renderItem).join('')+'</div></div>' : '';
+    const noCatHtml = noCatItems.length ? '<div class="ct-card expanded" style="border-color:rgba(255,165,0,0.3)"><div class="ct-card-head" onclick="var b=this.nextElementSibling;b.style.display=(b.style.display===\'none\'?\'block\':\'none\')"><div class="ct-card-title"><span class="ct-chevron">&#9660;</span><span>Sin categoria asignada</span><span class="ct-badge" style="background:rgba(255,165,0,0.12);color:#ffa500">'+noCatItems.length+'</span></div></div><div class="ct-card-body" style="display:block">'+noCatItems.map(renderItem).join('')+'</div></div>' : '';
     return css + '<div style="margin-bottom:1rem">' + catsHtml + noCatHtml + '</div>';
 };
 
