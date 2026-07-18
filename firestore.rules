@@ -715,10 +715,18 @@ service cloud.firestore {
       //     del partido (entrenadores sin claim de clubId en el token)
       //   - el propio entrenador que creo el partido (createdBy == uid)
       //   - el entrenador cuyo email coincide con coachEmail
-      //   - cualquiera, si el partido no tiene clubId (huerfano legacy)
+      //
+      // SEC-C2 (re-cerrado): se ELIMINO de nuevo la rama standalone
+      // `resource.data.clubId == null`, que permitia a CUALQUIER usuario
+      // autenticado borrar un partido en vivo sin clubId (PII de menores:
+      // nombres, dorsales, colores). Un usuario del club B podia borrar el
+      // partido huerfano de un coach del club A. El caso legitimo (el coach
+      // limpia SU propio partido sin club) sigue cubierto por createdBy==uid
+      // y coachEmail==token.email, que NO llevan gate de clubId. Se reintrodujo
+      // en el commit c61eda0 (commit mixto que reescribio el bloque desde una
+      // base obsoleta y revirtio el cierre original 1d3fe3a); aqui se re-cierra.
       allow delete: if isAuth() && (
                        isSuperAdmin() ||
-                       resource.data.clubId == null ||
                        sameClub(resource.data.clubId) ||
                        userDocClubId(resource.data.clubId) ||
                        (resource.data.createdBy != null &&
