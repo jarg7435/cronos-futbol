@@ -3071,6 +3071,10 @@ function _launchWithRole(role) {
                             }
                         }
                         console.log('[auth] extras del club cargados:', me.extras);
+                        // FIX: re-renderizar el modal si esta abierto
+                        if (typeof window._cronosRefreshExtras === 'function') {
+                            setTimeout(window._cronosRefreshExtras, 100);
+                        }
                     }
                 } catch(extrasErr) {
                     console.warn('[auth] error cargando extras:', extrasErr.message);

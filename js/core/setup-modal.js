@@ -15,10 +15,19 @@ window._cronosExtraBtn = function(extraKey, label, onclickAction, styleStr) {
     const me = window._cronosCurrentUser;
     const extras = (me && me.extras) || {};
     const enabled = extras[extraKey] !== false;
+    // FIX: verificar en tiempo de click tambien (por si extras se cargo tarde)
+    const guard = "if(window._cronosCurrentUser && window._cronosCurrentUser.extras && window._cronosCurrentUser.extras['" + extraKey + "'] === false){if(typeof showToast==='function')showToast('🔒 No disponible en tu plan',3000);else alert('No disponible en tu plan');return;}";
     if (enabled) {
-        return '<button class="btn" onclick="' + onclickAction + '" style="background:' + styleStr + '; font-size:0.7rem; font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">' + label + '</button>';
+        return '<button class="btn" onclick="' + guard + onclickAction + '" style="background:' + styleStr + '; font-size:0.7rem; font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">' + label + '</button>';
     } else {
         return '<button class="btn" disabled title="No disponible en tu plan" style="background:rgba(255,255,255,0.03); color:#555; font-size:0.7rem; border:1px solid rgba(255,255,255,0.08); font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center; cursor:not-allowed; opacity:0.6;">🔒 ' + label + '</button>';
+    }
+};
+
+// FIX: re-renderizar el modal cuando los extras se carguen
+window._cronosRefreshExtras = function() {
+    if (typeof openSetupModal === 'function' && document.querySelector('.setup-mode')) {
+        openSetupModal();
     }
 };
 
