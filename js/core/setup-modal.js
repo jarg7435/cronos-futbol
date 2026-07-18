@@ -1206,15 +1206,15 @@ window._openCoachCommsMenu = function() {
                     </div>
                 </button>
 
-                <!-- RETRANSMISIÓN EN VIVO -->
-                <button onclick="(function(){ if(typeof showLiveShareModal==='function'){showLiveShareModal();}else{alert('Transmisión no iniciada');} })()"
+                <!-- PARTIDOS EN VIVO -->
+                <button onclick="_cronosOpenLiveMatchesPanel()"
                     style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
                            background:rgba(255,88,88,0.12);border:1px solid rgba(255,88,88,0.35);
                            border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
                     <span style="font-size:1.5rem;">🔴</span>
                     <div>
-                        <div style="font-weight:700;font-size:0.9rem;">Retransmisión en Vivo</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Copiar enlace para padres y directores</div>
+                        <div style="font-weight:700;font-size:0.9rem;">Partidos en Vivo</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Ver partidos del club en directo</div>
                     </div>
                 </button>
 
@@ -1226,4 +1226,123 @@ window._openCoachCommsMenu = function() {
                 style="color:var(--text-muted);width:100%;">← Volver</button>
         </div>
     </div>`;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// PARTIDOS EN VIVO — Panel para ver partidos del club en directo
+// ════════════════════════════════════════════════════════════════════
+window._cronosOpenLiveMatchesPanel = async function() {
+    const me = window._cronosCurrentUser;
+    if (!me) return;
+
+    // Verificar extra
+    const extras = (me && me.extras) || {};
+    if (extras.partidos_en_vivo === false) {
+        if (typeof showToast === 'function') showToast('🔒 No disponible en tu plan', 3000);
+        else alert('No disponible en tu plan');
+        return;
+    }
+
+    const modal = document.getElementById('setup-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+    <div class="modal-content" style="width:min(94vw,600px);max-height:90vh;
+         display:flex;flex-direction:column;overflow:hidden;padding:0;">
+
+        <div style="padding:1.2rem;border-bottom:1px solid var(--glass-border);
+                    display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <h3 style="margin:0;font-size:1.1rem;">🔴 Partidos en Vivo</h3>
+            <button onclick="openSetupModal()"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+        </div>
+
+        <div id="live-matches-body" style="padding:1.2rem;overflow-y:auto;flex:1;">
+            <div style="text-align:center;padding:2rem;color:var(--text-muted);">
+                <div style="font-size:1.6rem;animation:spin 1.2s linear infinite;">🔴</div>
+                <p style="margin-top:0.5rem;">Buscando partidos en vivo...</p>
+            </div>
+            <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
+        </div>
+
+        <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);flex-shrink:0;">
+            <button onclick="openSetupModal()" class="btn" style="color:var(--text-muted);width:100%;">← Volver</button>
+        </div>
+    </div>`;
+
+    try {
+        const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth?.db;
+        if (!db) { document.getElementById('live-matches-body').innerHTML = '<div style="color:#ff5858;">Firebase no disponible</div>'; return; }
+
+        // Buscar partidos activos del club
+        const snap = await getDocs(query(
+            collection(db, 'cronos_live_matches'),
+            where('clubId', '==', me.clubId || '')
+        )).catch(() => null);
+
+        const body = document.getElementById('live-matches-body');
+        if (!snap || snap.empty) {
+            body.innerHTML = `
+            <div style="text-align:center;padding:2rem;color:var(--text-muted);">
+                <div style="font-size:2rem;margin-bottom:0.5rem;">📭</div>
+                <div style="font-size:0.9rem;font-weight:600;">No hay partidos en vivo ahora mismo</div>
+                <div style="font-size:0.75rem;margin-top:0.3rem;">Los partidos activos aparecerán aquí cuando un entrenador inicie un partido.</div>
+            </div>`;
+            return;
+        }
+
+        const matches = [];
+        snap.forEach(d => {
+            const data = d.data();
+            // Solo mostrar partidos activos (no finalizados)
+            if (data.status !== 'finished' && data.status !== 'ended') {
+                matches.push({ id: d.id, ...data });
+            }
+        });
+
+        if (!matches.length) {
+            body.innerHTML = `
+            <div style="text-align:center;padding:2rem;color:var(--text-muted);">
+                <div style="font-size:2rem;margin-bottom:0.5rem;">📭</div>
+                <div style="font-size:0.9rem;font-weight:600;">No hay partidos en vivo ahora mismo</div>
+            </div>`;
+            return;
+        }
+
+        body.innerHTML = matches.map(m => {
+            const home = m.homeName || m.teamHome || 'Local';
+            const away = m.awayName || m.teamAway || m.rival || 'Visitante';
+            const score = (m.scoreHome != null && m.scoreAway != null) ? m.scoreHome + ' - ' + m.scoreAway : '0 - 0';
+            const half = m.currentHalf === 2 ? '2ª Parte' : (m.currentHalf === 1 ? '1ª Parte' : 'En juego');
+            const coach = m.coachEmail || '';
+            const cat = m.category || '';
+            return `
+            <div style="background:rgba(255,88,88,0.06);border:1px solid rgba(255,88,88,0.2);
+                        border-radius:10px;padding:0.9rem;margin-bottom:0.6rem;cursor:pointer;transition:all 0.15s;"
+                 onclick="window.open('./live.html?match=${m.id}', '_blank')"
+                 onmouseover="this.style.borderColor='rgba(255,88,88,0.5)'"
+                 onmouseout="this.style.borderColor='rgba(255,88,88,0.2)'">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="flex:1;">
+                        <div style="font-weight:700;font-size:0.95rem;">
+                            <span style="color:#58a6ff;">${typeof escapeHtml==='function'?escapeHtml(home):home}</span>
+                            <span style="color:var(--text-muted);margin:0 0.5rem;">${score}</span>
+                            <span style="color:#ff5858;">${typeof escapeHtml==='function'?escapeHtml(away):away}</span>
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;">
+                            🔴 ${half} ${cat ? '· ' + cat : ''} ${coach ? '· ' + coach : ''}
+                        </div>
+                    </div>
+                    <div style="font-size:0.7rem;color:#3fb950;font-weight:700;flex-shrink:0;">
+                        ▶ Ver
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+    } catch(e) {
+        const body = document.getElementById('live-matches-body');
+        if (body) body.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ Error: ' + e.message + '</div>';
+    }
 };
