@@ -10,7 +10,7 @@
     "lint:fix": "eslint js/ functions/ --ext .js --fix",
     "format": "prettier --write \"js/**/*.js\" \"functions/**/*.js\" \"*.json\" \"*.html\"",
     "format:check": "prettier --check \"js/**/*.js\" \"functions/**/*.js\"",
-    "test": "echo TODO && exit 0",
+    "test": "node scripts/run-tests.js",
     "deploy:staging": "firebase deploy --project cronos-futbol-staging",
     "deploy:prod": "firebase deploy --project cronos-futbol-app",
     "deploy:hosting": "firebase deploy --only hosting",
