@@ -1,0 +1,49 @@
+name: CI
+
+# Integración continua de CHRONOS FÚTBOL.
+# Corre en cada push y pull_request a CUALQUIER rama.
+#   - install (npm ci si hay lock, si no npm install)
+#   - lint    (si el script existe)
+#   - test    (scripts/run-tests.js: falla si cualquier test falla)
+# No requiere emulador ni secretos: los tests son puros de Node.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Lint + Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Lint (si existe el script; best-effort, no bloquea)
+        continue-on-error: true
+        run: |
+          if npm run 2>/dev/null | grep -qE '^\s*lint'; then
+            npm run lint
+          else
+            echo "No hay script lint; se omite."
+          fi
+
+      - name: Test suite (gate)
+        run: npm test
