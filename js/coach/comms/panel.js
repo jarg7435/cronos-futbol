@@ -1154,8 +1154,8 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                     // clubId + participants + staffUids hacen pasar las reglas
                     // sameClubAsDoc / participants para coach y staff.
                     clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     participants:  [me.uid, recipientUid],
                     staffUids:     [recipientUid],
                 });
@@ -1167,8 +1167,8 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                     unreadByParent: 1,
                     // FIX (v180): campos de identidad para consultas del director/coordinador
                     clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     participants:  [me.uid, recipientUid],
                 });
             }
@@ -1681,8 +1681,8 @@ window._executeReportsSend = async function(method) {
                     await setDoc(doc(db, 'cronos_notifications', `notif_matchsglobe_${uidToNotify}_${Date.now().toString(36)}`), {
                         type:      'aviso_partido_finalizado',
                         clubId:    me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         userId:    uidToNotify,            // ← FIX: campo que las reglas verifican
                         coachUid:  me.uid,                // ← FIX (C3): coachUid para reglas Firestore
                         parentUid: uidToNotify,
@@ -1718,8 +1718,8 @@ window._executeReportsSend = async function(method) {
                             parentUid:     uidToNotify,
                             participants:  arrayUnion(me.uid, uidToNotify),
                             clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                             recipientType: 'staff'
                         });
                     } catch(updateErr) {
@@ -1731,8 +1731,8 @@ window._executeReportsSend = async function(method) {
                                 coachUid:      me.uid,
                                 coachEmail:    me.email,
                                 clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,     // ← FIX: para reglas Firestore
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,     // ← FIX: para reglas Firestore
                                 participants:  [me.uid, uidToNotify], // ← FIX: para reglas Firestore
                                 staffUids:     [uidToNotify],         // ← FIX: lectura staff por array-contains
                                 staffUid:      uidToNotify,
@@ -1776,14 +1776,17 @@ window._executeReportsSend = async function(method) {
                         try {
                             for (const p of homePlayers) {
                                 const srId = `${_sharedMatchId}_staff_p${p.number}`;
+
+        // FIX (Error #28): log para depurar por qué los informes van a "Sin categoría"
+        console.log('[INFORME] me.category:', me.category, '| me.subcategory:', me.subcategory, '| dropdown cat:', document.getElementById('match-category')?.value, '| dropdown sub:', document.getElementById('match-subcategory')?.value);
                                 await setDoc(doc(db, 'cronos_player_reports', srId), {
                                     matchId:       _sharedMatchId,
                                     type:          'staff_match_report',
                                     staffReport:   true,
                                     staffUids:     _manualStaffUids, // ← FIX: UIDs para reglas Firestore
                                     clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                                     coachUid:      me.uid,
                                     coachEmail:    me.email,
                                     matchDate:     new Date().toISOString().split('T')[0],
@@ -1896,8 +1899,8 @@ window._executeReportsSend = async function(method) {
                     parentUid:      targetParentUid,
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     matchDate:      new Date().toISOString().split('T')[0],
                     rival:          rivalName,
                     scoreHome, scoreAway,
@@ -1928,8 +1931,8 @@ window._executeReportsSend = async function(method) {
                         parentUid:    targetParentUid,
                         participants: arrayUnion(me.uid, targetParentUid),
                         clubId:       me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         recipientType: 'parent'
                     });
                 } catch(updateErr) {
@@ -1938,8 +1941,8 @@ window._executeReportsSend = async function(method) {
                         await setDoc(doc(db, 'cronos_messages', threadId), {
                             threadId, coachUid: me.uid, coachEmail: me.email,
                             clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,                           // ← FIX: para reglas Firestore
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,                           // ← FIX: para reglas Firestore
                             participants: [me.uid, targetParentUid],              // ← FIX: para reglas Firestore
                             parentUid: targetParentUid, parentEmail: (target.contact && target.contact.email) || r.email || '',
                             messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
@@ -1958,8 +1961,8 @@ window._executeReportsSend = async function(method) {
                 try {
                     await setDoc(doc(db, 'cronos_notifications', `notif_rpt_${dorsal}_${Date.now().toString(36)}`), {
                         type: 'informe_partido', clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         userId: targetParentUid,                              // ← FIX: campo que las reglas verifican
                         coachUid: me.uid,                                   // ← FIX (C3): coachUid para reglas Firestore
                         parentUid: targetParentUid, playerNumber: dorsal,
@@ -1989,8 +1992,8 @@ window._executeReportsSend = async function(method) {
                 const rptId = `${matchId}_coach_p${p.number}`;
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
                     matchId, type: 'collective_match_report', clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     coachUid: me.uid, coachEmail: me.email,
                     matchDate: new Date().toISOString().split('T')[0],
                     rival: rivalName, scoreHome, scoreAway,
@@ -2009,8 +2012,8 @@ window._executeReportsSend = async function(method) {
             const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type: 'informe_colectivo', clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 userId: me.uid,    // FIX v177: campo que las reglas Firestore verifican
                 coachUid: me.uid,
                 parentUid: me.uid, staffUid: me.uid, coachEmail: me.email,
@@ -2202,8 +2205,8 @@ async function autoDispatchMatchReports() {
                 staffReport:   true,          // ← filtro exclusivo del panel staff
                 staffUids:     _allStaffUids, // ← FIX: UIDs de staff para reglas Firestore
                 clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
                 matchDate:     new Date().toISOString().split('T')[0],
@@ -2240,8 +2243,8 @@ async function autoDispatchMatchReports() {
             await setDoc(doc(db, 'cronos_notifications', notifId), {
                 type: 'aviso_partido_finalizado',
                 clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 userId: staff.uid,           // ← FIX: campo que las reglas verifican
                 coachUid: me.uid,            // ← FIX (C2): coachUid para reglas Firestore
                 parentUid: staff.uid,
@@ -2274,8 +2277,8 @@ async function autoDispatchMatchReports() {
                     parentUid:     staff.uid,
                     participants:  arrayUnion(me.uid, staff.uid),
                     clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     recipientType: 'staff'
                 });
             } catch(updateErr) {
@@ -2286,8 +2289,8 @@ async function autoDispatchMatchReports() {
                         coachUid:      me.uid,
                         coachEmail:    me.email,
                         clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         participants:  [me.uid, staff.uid],
                         staffUids:     [staff.uid],
                         staffUid:      staff.uid,
@@ -2348,8 +2351,8 @@ async function autoDispatchMatchReports() {
                 type:          'parent_player_report',
                 parentUid:     parentUid,
                 clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
                 matchDate:     new Date().toISOString().split('T')[0],
@@ -2383,16 +2386,16 @@ async function autoDispatchMatchReports() {
                     parentUid:    parentUid,
                     participants: arrayUnion(me.uid, parentUid),
                     clubId:       me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     recipientType: 'parent'
                 });
             } catch(e) {
                 await setDoc(doc(db, 'cronos_messages', threadId), {
                     threadId, coachUid: me.uid, coachEmail: me.email,
                     clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,                        // ← FIX: para reglas Firestore
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,                        // ← FIX: para reglas Firestore
                     participants: [me.uid, parentUid],                // ← FIX: para reglas Firestore
                     parentUid: parentUid, messages: [msgEntry], lastMessage: '📊 Informe de partido enviado',
                     lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
@@ -2404,8 +2407,8 @@ async function autoDispatchMatchReports() {
             await setDoc(doc(db, 'cronos_notifications', notifId), {
                 type:         'informe_partido',
                 clubId:       me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 userId:       parentUid,                           // ← FIX: campo que las reglas verifican
                 coachUid:     me.uid,                              // ← FIX (C2): coachUid para reglas Firestore
                 parentUid:    parentUid,
@@ -2446,14 +2449,17 @@ async function autoDispatchMatchReports() {
             for (const p of homePlayers) {
                 const rptId = `${matchId}_coach_p${p.number}`;
                 try {
+                var _rptCat4 = me.category || (typeof currentCategory !== 'undefined' ? currentCategory : '') || document.getElementById('match-category')?.value || null;
+                var _rptSub4 = me.subcategory || document.getElementById('match-subcategory')?.value || null;
+                console.log('[setDoc coach_report] category:', _rptCat4, 'subcategory:', _rptSub4, '| me.category:', me.category);
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
                     matchId,
                     type:          'collective_match_report',
                     staffReport:   false,         // no aparece en vista del staff (ya tiene staffReport=true)
                     _forCoach:     true,
                     clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     coachUid:      me.uid,
                     coachEmail:    me.email,
                     matchDate:     new Date().toISOString().split('T')[0],
@@ -2487,8 +2493,8 @@ async function autoDispatchMatchReports() {
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type:      'informe_colectivo', // Usamos el tipo estándar para que aparezca en el feed
                 clubId:    me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 userId:    me.uid,              // FIX v177: campo que las reglas Firestore verifican (request.auth.uid == resource.data.userId)
                 coachUid:  me.uid,
                 parentUid: me.uid, // necesario para que el filtro de lectura lo encuentre
@@ -3389,8 +3395,8 @@ window._sendTrainingNotification = async function() {
         // si no, enviar solo la sesión única del formulario.
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
             userId: uid,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             datetime: _trHasWeek ? '' : (datetime || ''),
@@ -3516,8 +3522,8 @@ window._sendTrainingNotificationV2 = async function() {
 
         const notifPayload = (uid, role) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
             userId: uid,
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
             targetRole: role || null,
@@ -3773,8 +3779,8 @@ window._sendBulkMsgFirestore = async function() {
                     parentUid:    s.parentUid,
                     participants: arrayUnion(me.uid, s.parentUid),
                     clubId:       me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     recipientType: 'parent'
                 });
             } else {
@@ -3783,8 +3789,8 @@ window._sendBulkMsgFirestore = async function() {
                     parentUid: s.parentUid, parentEmail: s.parentEmail,
                     // FIX (v180): campos de identidad
                     clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     participants: [me.uid, s.parentUid],
                     recipientType: 'parent',
                     messages: [newMsg], lastMessage: preview,
@@ -4149,8 +4155,8 @@ window._sendCollectiveReportNow = async function() {
                 // y la consulta fallback array-contains los encuentre.
                 staffUids:      staff.map(s => s.uid).filter(Boolean),
                 clubId:         me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,
                 matchDate:      matchDateISO,
@@ -4198,8 +4204,8 @@ window._sendCollectiveReportNow = async function() {
                         parentUid:     s.uid,
                         participants:  arrayUnion(me.uid, s.uid),
                         clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         recipientType: 'staff'
                     });
                 } catch(updErr) {
@@ -4207,8 +4213,8 @@ window._sendCollectiveReportNow = async function() {
                         await setDoc(doc(db,'cronos_messages',threadId), {
                             threadId, coachUid: me.uid, coachEmail: me.email,
                             clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                             participants: [me.uid, s.uid],
                             staffUids: [s.uid],
                             staffUid: s.uid,
@@ -4281,8 +4287,8 @@ window._sendCollectiveReportNow = async function() {
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type:      'informe_colectivo_entrenador',
                 clubId:    me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                 userId:    me.uid,          // FIX v177: campo que las reglas Firestore verifican
                 coachUid:  me.uid,
                 parentUid: me.uid,
@@ -4799,8 +4805,8 @@ window.openIndividualReports = async function openIndividualReports() {
                         parentPhone:  c.phone || '',
                         parentName:   c.name  || '',
                         clubId:       me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         _fromEmailConfig: true,
                     };
                 }
@@ -4961,8 +4967,8 @@ window._sendAllIndividualReports = async function() {
                         parentUid:     link.parentUid,
                         participants:  arrayUnion(me.uid, link.parentUid),
                         clubId:        me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         recipientType: 'parent'
                     });
                 } else {
@@ -4972,8 +4978,8 @@ window._sendAllIndividualReports = async function() {
                         recipientType:'parent',
                         // FIX (v180): campos de identidad
                         clubId: me.clubId || null,
-                    category:    me.category    || null,
-                    subcategory: me.subcategory || null,
+                    category:    me.category    || document.getElementById('match-category')?.value || null,
+                    subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                         participants: [me.uid, link.parentUid],
                         messages:[msgEntry],
                         lastMessage:`📊 Informe de ${p.name}`,
