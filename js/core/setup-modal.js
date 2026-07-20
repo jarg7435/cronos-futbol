@@ -230,6 +230,18 @@ function openSetupModal() {
                             <option value="C">C</option>
                         </select>
                     </div>
+                    <script>
+                    // FIX: bloquear categoria y subcategoria si el entrenador las tiene asignadas
+                    (function() {
+                        var me = window._cronosCurrentUser;
+                        if (me && me.category) {
+                            var cat = document.getElementById('match-category');
+                            var sub = document.getElementById('match-subcategory');
+                            if (cat) cat.disabled = true;
+                            if (sub) sub.disabled = true;
+                        }
+                    })();
+                    </script>
                 <div class="form-group" style="margin:0;">
                     <label style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; display:block;">Sistema táctico inicial</label>
                     <select id="setup-formation" style="width:100%; font-weight:700; background:var(--bg); border-color:var(--glass-border); padding:0.5rem; border-radius:8px; color:white;">
@@ -313,6 +325,52 @@ function openSetupModal() {
     const finalMode = document.getElementById('setup-mode')?.value || 'f7';
     if (typeof updateCategoryOptions  === 'function') updateCategoryOptions(finalMode);
     if (typeof updateFormationOptions === 'function') updateFormationOptions(finalMode);
+
+    // FIX (Error #27 CRÍTICO): forzar auto-seleccion de categoria/subcategoria
+    // con múltiples reintentos retardados. El problema es que me.category se
+    // asigna de forma asíncrona en _launchWithRole, y cuando openSetupModal
+    // se ejecuta, me.category puede no estar disponible aún.
+    function _forceCategorySelect() {
+        var _me = window._cronosCurrentUser;
+        if (!_me || !_me.category) return false;
+        var catSel = document.getElementById('match-category');
+        var subSel = document.getElementById('match-subcategory');
+        if (!catSel) return false;
+        var userCat = String(_me.category).toLowerCase();
+        var mode = document.getElementById('setup-mode')?.value || 'f7';
+        var targetValue = '';
+        if (userCat.includes('prebenj'))      targetValue = mode + '_prebenjamin';
+        else if (userCat.includes('benj'))    targetValue = mode + '_benjamin';
+        else if (userCat.includes('alev'))    targetValue = mode + '_alevin';
+        else if (userCat.includes('infant'))  targetValue = mode + '_infantil';
+        else if (userCat.includes('cadet'))   targetValue = mode + '_cadete';
+        else if (userCat.includes('juvenil')) targetValue = mode + '_juvenil';
+        else if (userCat.includes('regional'))targetValue = mode + '_regional';
+        if (targetValue) {
+            var opt = catSel.querySelector('option[value="' + targetValue + '"]');
+            if (opt) {
+                catSel.value = targetValue;
+                catSel.disabled = true;
+                console.log('[openSetupModal] categoria forzada:', targetValue);
+            }
+        }
+        if (subSel && _me.subcategory) {
+            var userSub = String(_me.subcategory).toUpperCase().trim();
+            if (['A','B','C'].includes(userSub)) {
+                subSel.value = userSub;
+                subSel.disabled = true;
+                console.log('[openSetupModal] subcategoria forzada:', userSub);
+            }
+        }
+        return true;
+    }
+    // Intentar inmediatamente, luego a 200ms, 500ms, 1000ms y 2000ms
+    if (!_forceCategorySelect()) {
+        setTimeout(_forceCategorySelect, 200);
+        setTimeout(_forceCategorySelect, 500);
+        setTimeout(_forceCategorySelect, 1000);
+        setTimeout(_forceCategorySelect, 2000);
+    }
 
     // ── Sincronizar categoría cuando se carga un equipo guardado ──
     // loadTeamFromDropdown() asigna modeEl.value programáticamente,
@@ -1275,9 +1333,11 @@ window._cronosOpenLiveMatchesPanel = async function() {
         const db = window._cronos_auth?.db;
         if (!db) { document.getElementById('live-matches-body').innerHTML = '<div style="color:#ff5858;">Firebase no disponible</div>'; return; }
 
-        // Buscar partidos activos del club
+        // FIX: la coleccion se llama 'live_matches' (NO 'cronos_live_matches')
+        // Buscar TODOS los partidos activos del club sin filtro de status
+        // (el filtro se hace en cliente porque Firestore no soporta != en queries)
         const snap = await getDocs(query(
-            collection(db, 'cronos_live_matches'),
+            collection(db, 'live_matches'),
             where('clubId', '==', me.clubId || '')
         )).catch(() => null);
 
@@ -1296,7 +1356,7 @@ window._cronosOpenLiveMatchesPanel = async function() {
         snap.forEach(d => {
             const data = d.data();
             // Solo mostrar partidos activos (no finalizados)
-            if (data.status !== 'finished' && data.status !== 'ended') {
+            if (data.status !== 'finished' && data.status !== 'ended' && data.phase !== 'finished') {
                 matches.push({ id: d.id, ...data });
             }
         });

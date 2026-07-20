@@ -252,6 +252,39 @@
             updateCategoryOptions(mode);
         }
 
+        // FIX (Error #27): forzar categoria/subcategoria del entrenador despues
+        // de que updateCategoryOptions haya rellenado el dropdown.
+        var _me = window._cronosCurrentUser;
+        if (_me && _me.category) {
+            var _catSel = document.getElementById('match-category');
+            var _subSel = document.getElementById('match-subcategory');
+            if (_catSel) {
+                var _userCat = String(_me.category).toLowerCase();
+                var _targetValue = '';
+                if (_userCat.includes('prebenj'))      _targetValue = mode + '_prebenjamin';
+                else if (_userCat.includes('benj'))    _targetValue = mode + '_benjamin';
+                else if (_userCat.includes('alev'))    _targetValue = mode + '_alevin';
+                else if (_userCat.includes('infant'))  _targetValue = mode + '_infantil';
+                else if (_userCat.includes('cadet'))   _targetValue = mode + '_cadete';
+                else if (_userCat.includes('juvenil')) _targetValue = mode + '_juvenil';
+                else if (_userCat.includes('regional'))_targetValue = mode + '_regional';
+                if (_targetValue) {
+                    var _opt = _catSel.querySelector('option[value="' + _targetValue + '"]');
+                    if (_opt) {
+                        _catSel.value = _targetValue;
+                        _catSel.disabled = true;
+                    }
+                }
+            }
+            if (_subSel && _me.subcategory) {
+                var _userSub = String(_me.subcategory).toUpperCase().trim();
+                if (['A','B','C'].includes(_userSub)) {
+                    _subSel.value = _userSub;
+                    _subSel.disabled = true;
+                }
+            }
+        }
+
         // Sincronizar currentMode global
         if (typeof currentMode !== 'undefined') {
             currentMode = mode;

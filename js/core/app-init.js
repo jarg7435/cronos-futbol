@@ -370,7 +370,9 @@ function updateCategoryOptions(forcedMode) {
     const mode = (forcedMode !== undefined && forcedMode) ? forcedMode
                 : (document.getElementById('setup-mode')?.value || 'f7');
     const sel = document.getElementById('match-category');
-    if (!sel) return; // El select existe solo en ciertos modales — no es un error
+    if (!sel) return;
+    const _me = window._cronosCurrentUser;
+    console.log('[updateCategoryOptions] mode:', mode, '| me.category:', _me?.category, '| me.subcategory:', _me?.subcategory, '| disabled:', sel.disabled);
 
     sel.innerHTML = '';
     if (mode === 'f7') {
