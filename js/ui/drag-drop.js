@@ -52,6 +52,30 @@ function closeDrawers() {
     document.querySelector('.sidebar-right')?.classList.remove('open');
 }
 
+let _lastTacticalLog = {};
+
+function logTacticalMove(player, x, y) {
+    if (!player || !player.id) return;
+    const now = Date.now();
+    const lastTs = _lastTacticalLog[player.id] || 0;
+    if (now - lastTs < 800) return; // Throttle 800ms
+    _lastTacticalLog[player.id] = now;
+
+    if (typeof _registerMatchEvent === 'function') {
+        const xPct = Math.round((x || 0) * 10) / 10;
+        const yPct = Math.round((y || 0) * 10) / 10;
+        _registerMatchEvent('tactical_move', JSON.stringify({
+            playerId: String(player.id),
+            playerName: player.name || '',
+            playerNumber: player.number || 0,
+            team: player.team || 'home',
+            status: player.status || 'field',
+            x: xPct,
+            y: yPct
+        }), '📍');
+    }
+}
+
 function dropToField(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId') || touchData.draggedPlayerId;
@@ -105,6 +129,7 @@ function dropToField(e) {
             player.status = 'field';
             player.x = xPct;
             player.y = yPct;
+            logTacticalMove(player, xPct, yPct);
             if (isRunning) {
                 if (player.history.length === 0 || !player.history[player.history.length - 1].includes('Entra')) {
                     logMovement(player);
@@ -234,8 +259,8 @@ function handleSmartSwap(dragged, target, forcedSubId) {
     if (target.status === 'bench') { target.x = 0; target.y = 0; }
 
     // Clamp posiciones en campo
-    if (dragged.status === 'field') { const c = clampToField(dragged.x, dragged.y); dragged.x = c.x; dragged.y = c.y; }
-    if (target.status === 'field') { const c = clampToField(target.x, target.y); target.x = c.x; target.y = c.y; }
+    if (dragged.status === 'field') { const c = clampToField(dragged.x, dragged.y); dragged.x = c.x; dragged.y = c.y; logTacticalMove(dragged, dragged.x, dragged.y); }
+    if (target.status === 'field') { const c = clampToField(target.x, target.y); target.x = c.x; target.y = c.y; logTacticalMove(target, target.x, target.y); }
 
     // v240: SIEMPRE registrar el cambio, no solo si isRunning.
     // Antes, si el partido estaba pausado o en descanso, los cambios no se
