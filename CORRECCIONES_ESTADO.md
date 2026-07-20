@@ -292,6 +292,20 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
 
 ## PENDIENTE (empezar por E6)
 
+- [ ] **P11-D (REGRESIÓN REAL EN PRODUCCIÓN, prioridad alta)**: el informe
+  colectivo NO se envía cuando el entrenador no tiene director/coordinador
+  asignado — y falla EN SILENCIO (sin error visible). Causa: `if (!staff.length)
+  { ...; return; }` en `js/coach/comms/panel.js` (`window._sendCollectiveReportNow`,
+  líneas 4110-4114) aborta ANTES de escribir los `cronos_player_reports`; el
+  Panel de Dirección se alimenta solo de esos docs, así que el partido no aparece
+  jamás. El fix P11-D (commit `e2189fb`) había quitado ese `return` (escribía los
+  informes igualmente, visibles por `clubId`) y forzaba `me.uid` en `staffUids`;
+  un "Add files via upload" posterior sobrescribió `panel.js` y lo revirtió.
+  Detectado al activar la suite (`scripts/test_p11d_collective_write.js`, hoy en
+  rojo/xfail). NO es solo un test obsoleto: hay que restaurar el comportamiento
+  del fix en el producto. Detalle completo en "Regresiones detectadas por la
+  suite de tests / P11-D" (más abajo). Ítem separado de la tarea de tests+CI.
+
 - [ ] **E6**: Crono live sin progreso segundo a segundo
 - [ ] **E7**: Tiempos con redondeo en informes
 - [ ] **E8**: Zoom deshabilitado
