@@ -3,23 +3,26 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = 'C:\\Users\\Asus\\OneDrive\\Escritorio\\JOS\u00c9 ALBERTO\\PROYECTOS IA\\APP CRONOS F\u00daTBOL';
-const fss = fs.readFileSync(path.join(ROOT, 'js', 'services', 'firestore-sync.js'), 'utf8');
+const ROOT = path.join(__dirname, '..');
+// FIX #1 se movio de js/services/firestore-sync.js a js/match/live/sync.js
+// en la unificacion de live-sync (commit 4db5527). Apuntamos a la ubicacion real.
+const fss = fs.readFileSync(path.join(ROOT, 'js', 'match', 'live', 'sync.js'), 'utf8');
 const cr  = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'reports', 'club-reports.js'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { (cond ? pass++ : fail++); console.log((cond ? 'PASS ' : 'FAIL ') + name); };
 
-// ── FIX #1: firestore-sync.js — un único ternario válido ──────────────
+// ── FIX #1: live/sync.js — un único ternario válido ───────────────────
 // (a) el archivo entero compila (node --check ya lo confirma), y
 // (b) el bloque liveMatchId no contiene la 3ª rama ':' redundante.
-const liveMatchBlock = fss.slice(fss.indexOf('liveMatchId        = (typeof window._cronosBuildLiveMatchId'),
-                                 fss.indexOf('liveIsActive       = true;'));
+const _blockStart = fss.search(/liveMatchId\s*=\s*\(typeof window\._cronosBuildLiveMatchId/);
+const _blockEnd = fss.indexOf('liveIsActive', _blockStart);
+const liveMatchBlock = _blockStart >= 0 ? fss.slice(_blockStart, _blockEnd) : '';
 const colonBranches = (liveMatchBlock.match(/^\s*: /gm) || []).length;
-ok('#1 firestore-sync.js: una sola rama ":" en el ternario liveMatchId', colonBranches === 1);
-ok('#1 firestore-sync.js: se conserva _hourSlug en la rama principal',
+ok('#1 live/sync.js: una sola rama ":" en el ternario liveMatchId', colonBranches === 1);
+ok('#1 live/sync.js: se conserva _hourSlug en la rama principal',
    /_cronosBuildLiveMatchId\([^)]*\)\s*\+\s*'-'\s*\+\s*_hourSlug/.test(liveMatchBlock));
-ok('#1 firestore-sync.js: se conserva _hourSlug en el fallback',
+ok('#1 live/sync.js: se conserva _hourSlug en el fallback',
    /\$\{_hourSlug\}`;/.test(liveMatchBlock));
 
 // ── FIX #2: dismissKey usa _activeRole (no me.currentRole) ────────────

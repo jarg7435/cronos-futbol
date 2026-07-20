@@ -18,19 +18,23 @@ const noopEl = () => ({
   style: {}, classList: { toggle(){}, add(){}, remove(){} },
   appendChild(){}, remove(){}, set innerHTML(v){}, set textContent(v){},
   get firstChild(){ return null; }, children: [], offsetWidth: 0,
+  // Necesarios para _showMomentOverlay (overlays de gol/tarjeta/etc.):
+  id: '', addEventListener(){}, removeEventListener(){}, parentNode: null, querySelector(){ return null; },
 });
 const sandbox = {
   console, localStorage: { _d:{}, getItem(k){return this._d[k]??null;}, setItem(k,v){this._d[k]=v;} },
   document: {
     getElementById(id){ if(id==='event-toast-stack') return { appendChild(){}, children:{length:0}, get firstChild(){return null;}, removeChild(){} }; return noopEl(); },
     createElement(){ return noopEl(); },
+    get body(){ return noopEl(); },
     addEventListener(){},
   },
   navigator: { vibrate(){} },
   window: {}, location: { search:'', pathname:'/live.html', origin:'http://x' },
   history: { pushState(){} },
-  setTimeout(){}, clearInterval(){}, setInterval(){ return 0; },
+  setTimeout(){ return 0; }, clearTimeout(){}, clearInterval(){}, setInterval(){ return 0; },
   URLSearchParams: function(){ return { get(){ return null; } }; },
+  escapeHtml(s){ return String(s == null ? '' : s); },
   AudioContext: function(){ return { state:'running', currentTime:0, resume(){}, createOscillator(){return {frequency:{},connect(){},start(){},stop(){}};}, createGain(){return {gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}};}, destination:{} }; },
   // Firebase stubs (no se usan en el test de detección):
   initializeApp(){return {};}, getAuth(){return {};}, getFirestore(){return {};},
@@ -47,7 +51,7 @@ vm.createContext(sandbox);
 js += '\n;globalThis.__exports = { detectAndAlert, _buildState, EVENT_META, showEventToast, _matchPrevState, _matchSeeded, _matchLastTs };';
 // Sustituir el cuerpo de showEventToast por un registrador.
 js = js.replace(
-  /function showEventToast\(type, line, sub\) \{[\s\S]*?\n\}/,
+  /function showEventToast\([^)]*\) \{[\s\S]*?\n\}/,
   'function showEventToast(type, line, sub){ globalThis.__fired.push({type,line,sub}); }'
 );
 sandbox.__fired = fired;
