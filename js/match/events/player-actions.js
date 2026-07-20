@@ -12,7 +12,7 @@
 // setDoc con merge crea el documento si no existe.
 // pushLiveSnapshot NUNCA incluye events en el snapshot (ver sync.js v246).
 window._cronosMatchEvents = window._cronosMatchEvents || [];
-function _registerMatchEvent(type, text, icon) {
+function _registerMatchEvent(type, text, icon, matchTimeOverride) {
     try {
         var now = new Date();
         var realTime = now.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
@@ -27,12 +27,20 @@ function _registerMatchEvent(type, text, icon) {
             var s = (total % 60).toString().padStart(2, '0');
             matchTime = part + ' ' + m + ':' + s;
         } catch(e) {}
+        // matchTimeOverride: minuto manual para eventos retroactivos (perdida
+        // de bateria/cobertura). Si se pasa, sustituye al calculo por cronometro.
+        if (typeof matchTimeOverride === 'string' && matchTimeOverride) {
+            matchTime = matchTimeOverride;
+        }
         var eventEntry = {
             type: type, text: text, icon: icon || '\u2022',
             realTime: realTime, matchTime: matchTime,
             timestamp: now.toISOString(),
             createdAt: now.getTime()
         };
+        if (typeof matchTimeOverride === 'string' && matchTimeOverride) {
+            eventEntry.isRetroactive = true;
+        }
         window._cronosMatchEvents.push(eventEntry);
         if (window._cronosMatchEvents.length > 200) {
             window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
