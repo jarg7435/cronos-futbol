@@ -1110,6 +1110,10 @@ function showFinishedMatches() {
                                border-radius:7px;color:#58a6ff;font-size:0.75rem;cursor:pointer;font-weight:700;">
                         VER
                     </button>
+                    <button onclick="window.openMatchReplay(JSON.parse(localStorage.getItem('cronos_finished_matches')||'[]')[${i}]);"
+                        style="padding:0.35rem 0.8rem;background:rgba(46,160,67,0.12);border:1px solid rgba(46,160,67,0.3);border-radius:7px;color:#2ea043;font-size:0.75rem;cursor:pointer;font-weight:700;">
+                        REPETICION
+                    </button>
                     <button onclick="deleteFinishedMatch(${i});"
                         style="padding:0.35rem 0.6rem;background:rgba(255,88,88,0.12);border:1px solid rgba(255,88,88,0.3);
                                border-radius:7px;color:#ff5858;font-size:0.75rem;cursor:pointer;font-weight:700;">
