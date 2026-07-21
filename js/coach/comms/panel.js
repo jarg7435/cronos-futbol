@@ -320,8 +320,8 @@ async function _cGetStaff(db, clubId, fns, roles) {
                     : null) || '{"contacts":[]}'
               ).contacts || [];
 
-        contacts.filter(c => c.type !== 'parent' && c.uid && (c.tags||[]).includes('rpt'))
-            .forEach(c => upsert(c.uid, c.role || 'staff', {
+        contacts.filter(c => c.type !== 'parent' && c.uid && (c.tags||[]).includes('rpt') && roles.includes(c.role))
+            .forEach(c => upsert(c.uid, c.role, {
                 email: c.email || '', phone: c.phone || '', displayName: c.name || '',
             }));
 
@@ -335,10 +335,10 @@ async function _cGetStaff(db, clubId, fns, roles) {
                 email: c.email || '', phone: c.phone || '', displayName: c.name || '',
             }));
 
-        // Si ninguno tiene tag 'rpt', tomar TODOS los staff con uid
+        // Si ninguno tiene tag 'rpt', tomar TODOS los staff con uid que tengan un rol requerido
         if (!byKey.size) {
-            contacts.filter(c => c.type !== 'parent' && c.uid)
-                .forEach(c => upsert(c.uid, c.role || 'staff', {
+            contacts.filter(c => c.type !== 'parent' && c.uid && roles.includes(c.role))
+                .forEach(c => upsert(c.uid, c.role, {
                     email: c.email || '', phone: c.phone || '', displayName: c.name || '',
                 }));
         }
@@ -546,7 +546,13 @@ async function _loadStaffList() {
     if (pBtn) { pBtn.style.borderBottomColor = 'transparent'; pBtn.style.color = 'var(--text-muted)'; }
     if (sBtn) { sBtn.style.borderBottomColor = '#f0883e';     sBtn.style.color = '#f0883e'; }
     const bar = document.getElementById('bulk-msg-bar');
-    if (bar) bar.style.display = 'none';   // sin selección múltiple para staff
+    if (bar) {
+        bar.style.display = 'flex';
+        const chkSelectAll = document.getElementById('chk-select-all');
+        if (chkSelectAll) chkSelectAll.checked = false;
+        const countEl = document.getElementById('bulk-count');
+        if (countEl) countEl.textContent = '0 seleccionados';
+    }
 
     body.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando dirección…</p>';
 
@@ -555,7 +561,6 @@ async function _loadStaffList() {
         const { db, collection, getDocs, query, where } = fns;
 
         // Buscar directores y coordinadores del mismo club
-        // _cGetStaff es compatible con usuarios mono-rol Y multi-rol (allRoles[])
         const staffList = await _cGetStaff(db, me.clubId || '', fns);
 
         if (!staffList.length) {
@@ -587,35 +592,47 @@ async function _loadStaffList() {
                 : '';
 
             return `
-            <div onclick="openThreadWithStaff('${typeof escapeAttr==='function'?escapeAttr(s.uid):s.uid}','${(typeof escapeAttr==='function'?escapeAttr(s.email||''):s.email||'').replace(/'/g,"\\'")}','${typeof escapeAttr==='function'?escapeAttr(s.role):s.role}')"
-                 style="display:flex;align-items:center;gap:0.8rem;margin-bottom:0.6rem;
-                        background:${unread?'rgba(240,136,62,0.06)':'var(--glass)'};
-                        border:1px solid ${unread?'rgba(240,136,62,0.45)':'var(--glass-border)'};
-                        border-radius:10px;padding:0.85rem 1rem;
-                        cursor:pointer;transition:all 0.15s;">
-                <div style="width:38px;height:38px;border-radius:50%;
-                            background:rgba(240,136,62,0.15);
-                            display:flex;align-items:center;justify-content:center;
-                            font-size:1.1rem;flex-shrink:0;">
-                    ${roleIcon[s.role]||'🏢'}
+            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
+                <!-- Checkbox de selección -->
+                <input type="checkbox" class="staff-select-chk"
+                    data-staff-uid="${typeof escapeAttr==='function'?escapeAttr(s.uid):s.uid}"
+                    data-staff-email="${typeof escapeAttr==='function'?escapeAttr(s.email||''):s.email||''}"
+                    data-staff-name="${typeof escapeAttr==='function'?escapeAttr(s.displayName || s.email || s.uid):s.displayName || s.email || s.uid}"
+                    data-staff-role="${typeof escapeAttr==='function'?escapeAttr(s.role):s.role}"
+                    style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);"
+                    onchange="updateBulkCount()">
+                
+                <!-- Fila del staff -->
+                <div onclick="openThreadWithStaff('${typeof escapeAttr==='function'?escapeAttr(s.uid):s.uid}','${(typeof escapeAttr==='function'?escapeAttr(s.email||''):s.email||'').replace(/'/g,"\\'")}','${typeof escapeAttr==='function'?escapeAttr(s.role):s.role}')"
+                     style="flex:1;display:flex;align-items:center;gap:0.8rem;
+                            background:${unread?'rgba(240,136,62,0.06)':'var(--glass)'};
+                            border:1px solid ${unread?'rgba(240,136,62,0.45)':'var(--glass-border)'};
+                            border-radius:10px;padding:0.85rem 1rem;
+                            cursor:pointer;transition:all 0.15s;">
+                    <div style="width:38px;height:38px;border-radius:50%;
+                                background:rgba(240,136,62,0.15);
+                                display:flex;align-items:center;justify-content:center;
+                                font-size:1.1rem;flex-shrink:0;">
+                        ${roleIcon[s.role]||'🏢'}
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.1rem;">
+                            ${typeof escapeHtml==='function'?escapeHtml(s.displayName || s.email || s.uid):s.displayName || s.email || s.uid}
+                            ${unread>0?`<span style="background:#f0883e;color:#0a0e14;border-radius:10px;
+                                padding:1px 7px;font-size:0.62rem;font-weight:700;margin-left:6px;">
+                                ${unread} nuevo${unread>1?'s':''}</span>`:''}
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-muted);">
+                            ${roleLabel[s.role]||s.role}
+                            ${s.email?' · '+(typeof escapeHtml==='function'?escapeHtml(s.email):s.email):''}
+                        </div>
+                        <div style="font-size:0.74rem;color:${unread?'#f0883e':'var(--text-muted)'};
+                                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.15rem;">
+                            ${unread?`<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>`:(typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg)}
+                        </div>
+                    </div>
+                    <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastTime}</span>
                 </div>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.1rem;">
-                        ${typeof escapeHtml==='function'?escapeHtml(s.displayName || s.email || s.uid):s.displayName || s.email || s.uid}
-                        ${unread>0?`<span style="background:#f0883e;color:#0a0e14;border-radius:10px;
-                            padding:1px 7px;font-size:0.62rem;font-weight:700;margin-left:6px;">
-                            ${unread} nuevo${unread>1?'s':''}</span>`:''}
-                    </div>
-                    <div style="font-size:0.7rem;color:var(--text-muted);">
-                        ${roleLabel[s.role]||s.role}
-                        ${s.email?' · '+(typeof escapeHtml==='function'?escapeHtml(s.email):s.email):''}
-                    </div>
-                    <div style="font-size:0.74rem;color:${unread?'#f0883e':'var(--text-muted)'};
-                                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.15rem;">
-                        ${unread?`<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>`:(typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg)}
-                    </div>
-                </div>
-                <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastTime}</span>
             </div>`;
         }).join('');
 
@@ -1109,14 +1126,13 @@ async function _loadThreadMessages(threadId, perspective) {
                         ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.25rem;gap:1.5rem;">
-                        ${isMine ? `
                         <span onclick="event.stopPropagation(); window.cDeleteSingleMessage('${threadId}', ${idx}, '${perspective}')"
                               title="Borrar mensaje"
                               style="font-size:0.7rem;color:#ff5858;cursor:pointer;opacity:0.6;transition:opacity 0.2s;"
                               onmouseover="this.style.opacity='1'"
                               onmouseout="this.style.opacity='0.6'">
                             🗑️ Borrar
-                        </span>` : '<span></span>'}
+                        </span>
                         <div style="font-size:0.64rem;color:var(--text-muted);text-align:right;">
                             ${date} ${time} ·
                             ${m.sender === 'coach' ? 'Entrenador' : 'Padre/Tutor'}
@@ -3643,34 +3659,54 @@ async function openUnifiedCommsMenu() {
 
 // ── Seleccionar / deseleccionar todos los padres ─────────────────────
 window.toggleSelectAllParents = function(checked) {
-    document.querySelectorAll('.parent-select-chk').forEach(chk => { chk.checked = checked; });
+    const selector = window._cmTab === 'staff' ? '.staff-select-chk' : '.parent-select-chk';
+    document.querySelectorAll(selector).forEach(chk => { chk.checked = checked; });
     updateBulkCount();
 };
 
 window.updateBulkCount = function() {
-    const total = document.querySelectorAll('.parent-select-chk:checked').length;
+    const selector = window._cmTab === 'staff' ? '.staff-select-chk:checked' : '.parent-select-chk:checked';
+    const total = document.querySelectorAll(selector).length;
     const countEl = document.getElementById('bulk-count');
     if (countEl) countEl.textContent = total + ' seleccionado' + (total !== 1 ? 's' : '');
 };
 
 // ── Compositor de mensaje grupal ──────────────────────────────────────
 window.openBulkMessageComposer = function() {
-    // Recopilar ABSOLUTAMENTE TODOS los que el usuario marcó con el checkbox
-    const allSelected = Array.from(document.querySelectorAll('.parent-select-chk:checked'))
+    const selector = window._cmTab === 'staff' ? '.staff-select-chk:checked' : '.parent-select-chk:checked';
+    const allSelected = Array.from(document.querySelectorAll(selector))
         .map(chk => {
-            // Intentar buscar el contacto original en emailConfig para saber su tipo real
-            const c = (emailConfig.contacts || []).find(x => x.id === chk.dataset.parentUid || x.email === chk.dataset.parentEmail);
-            return {
-                id:          chk.dataset.parentUid,
-                type:        c ? c.type : 'parent',
-                label:       chk.dataset.player + (chk.dataset.playerNum ? ` #${chk.dataset.playerNum}` : ''),
-                parentUid:   chk.dataset.parentUid,
-                parentEmail: chk.dataset.parentEmail,
-                parentWA:    chk.dataset.parentWa,
-                phone:       chk.dataset.parentWa,
-                email:       chk.dataset.parentEmail,
-            };
+            if (window._cmTab === 'staff') {
+                return {
+                    id:          chk.dataset.staffUid,
+                    type:        'staff',
+                    role:        chk.dataset.staffRole,
+                    label:       chk.dataset.staffName,
+                    parentUid:   chk.dataset.staffUid,
+                    parentEmail: chk.dataset.staffEmail,
+                    parentWA:    '',
+                    phone:       '',
+                    email:       chk.dataset.staffEmail,
+                };
+            } else {
+                const c = (emailConfig.contacts || []).find(x => x.id === chk.dataset.parentUid || x.email === chk.dataset.parentEmail);
+                return {
+                    id:          chk.dataset.parentUid,
+                    type:        c ? c.type : 'parent',
+                    label:       chk.dataset.player + (chk.dataset.playerNum ? ` #${chk.dataset.playerNum}` : ''),
+                    parentUid:   chk.dataset.parentUid,
+                    parentEmail: chk.dataset.parentEmail,
+                    parentWA:    chk.dataset.parentWa,
+                    phone:       chk.dataset.parentWa,
+                    email:       chk.dataset.parentEmail,
+                };
+            }
         });
+
+    if (!allSelected.length) {
+        showToast('⚠️ Selecciona al menos un destinatario.', 3000);
+        return;
+    }
 
     // Cargar preselección de mensajes guardada
     let savedMsgPresel = null;
@@ -3718,19 +3754,20 @@ window.openBulkMessageComposer = function() {
             </div>
 
             <div style="display:flex;flex-direction:column;gap:0.35rem;max-height:200px;overflow-y:auto;padding-right:4px;">
-                ${allContacts.length ? allContacts.map(c => {
+                ${allContacts.map(c => {
                     const isChecked = savedMsgPresel ? savedMsgPresel.includes(c.id) : true;
-                    const typeColor  = c.type === 'staff' ? 'rgba(88,166,255,0.12)' : 'rgba(63,185,80,0.08)';
-                    const typeBorder = c.type === 'staff' ? 'rgba(88,166,255,0.25)' : 'rgba(63,185,80,0.2)';
+                    const typeColor  = c.type === 'staff' ? 'rgba(240,136,62,0.08)' : 'rgba(63,185,80,0.08)';
+                    const typeBorder = c.type === 'staff' ? 'rgba(240,136,62,0.25)' : 'rgba(63,185,80,0.2)';
                     return `
                     <label style="display:flex;align-items:center;gap:0.55rem;
                                    background:${typeColor};border:1px solid ${typeBorder};
                                    border-radius:7px;padding:0.45rem 0.65rem;cursor:pointer;">
                         <input type="checkbox" class="msg-recipient-chk"
                             data-uid="${typeof escapeAttr==='function'?escapeAttr(c.parentUid||''):c.parentUid||''}"
-                            data-email="${typeof escapeAttr==='function'?escapeAttr(c.parentEmail):c.parentEmail}"
-                            data-wa="${typeof escapeAttr==='function'?escapeAttr(c.parentWA):c.parentWA}"
-                            data-id="${typeof escapeAttr==='function'?escapeAttr(c.id):c.id}"
+                            data-email="${typeof escapeAttr==='function'?escapeAttr(c.parentEmail||''):c.parentEmail||''}"
+                            data-wa="${typeof escapeAttr==='function'?escapeAttr(c.parentWA||''):c.parentWA||''}"
+                            data-id="${typeof escapeAttr==='function'?escapeAttr(c.id||''):c.id||''}"
+                            data-type="${typeof escapeAttr==='function'?escapeAttr(c.type||''):c.type||''}"
                             ${isChecked ? 'checked' : ''}
                             style="width:15px;height:15px;flex-shrink:0;accent-color:var(--primary);">
                         <div style="flex:1;min-width:0;">
@@ -3742,9 +3779,7 @@ window.openBulkMessageComposer = function() {
                         ${c.phone ? `<span style="font-size:0.58rem;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:3px;padding:1px 4px;color:#3fb950;">WA</span>` : ''}
                         ${c.email ? `<span style="font-size:0.58rem;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.25);border-radius:3px;padding:1px 4px;color:var(--primary);">Email</span>` : ''}
                     </label>`;
-                }).join('') : `<div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:0.8rem;">
-                    ⚠️ No hay contactos. Ve a Gestión de Contactos para configurarlos.
-                </div>`}
+                }).join('')}
             </div>
         </div>
 
@@ -3755,7 +3790,7 @@ window.openBulkMessageComposer = function() {
                 placeholder="Escribe aquí el mensaje para los destinatarios seleccionados…"
                 style="flex:1;padding:0.7rem;background:rgba(255,255,255,0.05);
                        border:1px solid var(--glass-border);border-radius:8px;
-                       color:white;font-size:0.88rem;resize:vertical;
+                       color:white;font-size:0.88rem;resize:none;
                        box-sizing:border-box;width:100%;"></textarea>
         </div>
 
@@ -3768,6 +3803,7 @@ window.openBulkMessageComposer = function() {
                        color:var(--primary);font-weight:700;font-size:0.78rem;flex:1.5;">
                 📱 Envío Interno
             </button>
+            ${window._cmTab !== 'staff' ? `
             <button onclick="_sendBulkMsgWA()" class="btn"
                 style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);
                        color:#25d366;font-weight:700;font-size:0.78rem;flex:1;">
@@ -3777,7 +3813,7 @@ window.openBulkMessageComposer = function() {
                 style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.25);
                        color:var(--primary);font-weight:700;font-size:0.78rem;flex:1;">
                 📧 Email
-            </button>
+            </button>` : ''}
         </div>
     </div>`;
 };
@@ -3795,6 +3831,7 @@ function _msgGetSelected() {
         parentUid:   chk.dataset.uid,
         parentEmail: chk.dataset.email,
         parentWA:    chk.dataset.wa,
+        type:        chk.dataset.type || 'parent',
     }));
 }
 
@@ -3814,7 +3851,10 @@ window._sendBulkMsgFirestore = async function() {
         const { db, doc, getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
         let sent = 0;
         for (const s of selected) {
-            const threadId = `${me.uid}_${s.parentUid}`;
+            const isStaff = s.type === 'staff';
+            const threadId = isStaff 
+                ? _cStaffThreadId(me.clubId, me.uid, s.parentUid) 
+                : `${me.uid}_${s.parentUid}`;
             const newMsg   = { sender: 'coach', text, timestamp: new Date().toISOString() };
             const preview  = text.length > 60 ? text.substring(0, 60) + '…' : text;
             const snap     = await getDoc(doc(db, 'cronos_messages', threadId));
@@ -3822,28 +3862,29 @@ window._sendBulkMsgFirestore = async function() {
                 await updateDoc(doc(db, 'cronos_messages', threadId), {
                     messages: arrayUnion(newMsg), lastMessage: preview,
                     lastMessageAt: newMsg.timestamp,
-                    unreadByParent: (snap.data().unreadByParent || 0) + 1,
-                    // FIX (v180): campos de identidad
+                    unreadByParent: isStaff ? 0 : (snap.data().unreadByParent || 0) + 1,
+                    unreadByStaff: isStaff ? (snap.data().unreadByStaff || 0) + 1 : 0,
                     parentUid:    s.parentUid,
                     participants: arrayUnion(me.uid, s.parentUid),
                     clubId:       me.clubId || null,
                     category:    me.category    || document.getElementById('match-category')?.value || null,
                     subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
-                    recipientType: 'parent'
+                    recipientType: isStaff ? 'staff' : 'parent'
                 });
             } else {
                 await setDoc(doc(db, 'cronos_messages', threadId), {
                     threadId, coachUid: me.uid, coachEmail: me.email,
                     parentUid: s.parentUid, parentEmail: s.parentEmail,
-                    // FIX (v180): campos de identidad
                     clubId: me.clubId || null,
                     category:    me.category    || document.getElementById('match-category')?.value || null,
                     subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
                     participants: [me.uid, s.parentUid],
-                    recipientType: 'parent',
+                    recipientType: isStaff ? 'staff' : 'parent',
                     messages: [newMsg], lastMessage: preview,
                     lastMessageAt: newMsg.timestamp,
-                    unreadByCoach: 0, unreadByParent: 1
+                    unreadByCoach: 0, 
+                    unreadByParent: isStaff ? 0 : 1,
+                    unreadByStaff: isStaff ? 1 : 0
                 });
             }
             sent++;

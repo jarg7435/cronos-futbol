@@ -2450,32 +2450,67 @@ async function _sdLoadMessages() {
                 const usersSnap = await gDocsComp(qComp(collComp(dbComp, 'users'), whComp('clubId', '==', clubId)));
                 const users = [];
                 usersSnap.forEach(d => {
-                    if (d.id !== me.uid) { // Excluirse a sí mismo
-                        const data = d.data();
-                        
-                        // Determinar los roles
-                        const roles = [data.role || '', ...(data.allRoles || []).map(r => r.role || '')];
-                        const isCoach = roles.some(r => ['user', 'coach', 'entrenador'].includes(r));
-                        const isDirector = roles.some(r => r === 'director');
-                        const isCoordinator = roles.some(r => r === 'coordinator');
+                    const data = d.data();
+                    
+                    // Determinar los roles
+                    const rolesOfUser = [data.role || '', ...(data.allRoles || []).map(r => r.role || '')];
+                    
+                    // Exclusión inteligente para cuentas del propio usuario con múltiples roles
+                    let isSelf = d.id === me.uid;
+                    let showAsDirector = rolesOfUser.some(r => r === 'director') && (!isSelf || activeRole !== 'director');
+                    let showAsCoordinator = rolesOfUser.some(r => r === 'coordinator') && (!isSelf || activeRole !== 'coordinator');
+                    let showAsCoach = rolesOfUser.some(r => ['user', 'coach', 'entrenador'].includes(r)) && (!isSelf || !['user', 'coach', 'entrenador'].includes(activeRole));
 
-                        if (isCoach || isDirector || isCoordinator) {
-                            let roleLabel = 'Personal';
-                            if (isDirector) roleLabel = 'Director Deportivo';
-                            else if (isCoordinator) roleLabel = 'Coordinador';
-                            else if (isCoach) {
-                                // Obtener categoria
+                    if (showAsDirector || showAsCoordinator || showAsCoach) {
+                        let roleLabel = 'Personal';
+                        let finalRole = '';
+                        if (activeRole === 'director') {
+                            if (showAsCoordinator) {
+                                roleLabel = 'Coordinador';
+                                finalRole = 'coordinator';
+                            } else if (showAsCoach) {
                                 const cat = data.category || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.category || '';
                                 const sub = data.subcategory || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.subcategory || '';
                                 roleLabel = `Entrenador (${cat} ${sub})`.trim();
+                                finalRole = 'user';
                             }
+                        } else if (activeRole === 'coordinator') {
+                            if (showAsDirector) {
+                                roleLabel = 'Director Deportivo';
+                                finalRole = 'director';
+                            } else if (showAsCoach) {
+                                const cat = data.category || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.category || '';
+                                const sub = data.subcategory || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.subcategory || '';
+                                roleLabel = `Entrenador (${cat} ${sub})`.trim();
+                                finalRole = 'user';
+                            }
+                        }
 
+                        if (!finalRole) {
+                            if (rolesOfUser.some(r => r === 'director')) {
+                                roleLabel = 'Director Deportivo';
+                                finalRole = 'director';
+                            } else if (rolesOfUser.some(r => r === 'coordinator')) {
+                                roleLabel = 'Coordinador';
+                                finalRole = 'coordinator';
+                            } else if (rolesOfUser.some(r => ['user', 'coach', 'entrenador'].includes(r))) {
+                                const cat = data.category || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.category || '';
+                                const sub = data.subcategory || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.subcategory || '';
+                                roleLabel = `Entrenador (${cat} ${sub})`.trim();
+                                finalRole = 'user';
+                            }
+                        }
+
+                        const isEligible = (activeRole === 'director' && (finalRole === 'coordinator' || finalRole === 'user')) ||
+                                           (activeRole === 'coordinator' && (finalRole === 'director' || finalRole === 'user'));
+
+                        if (isEligible) {
                             users.push({
                                 uid: d.id,
                                 email: data.email || '',
                                 displayName: data.displayName || data.email || 'Usuario',
                                 roleLabel,
-                                role: isCoach ? 'user' : (isDirector ? 'director' : 'coordinator')
+                                role: finalRole
                             });
                         }
                     }

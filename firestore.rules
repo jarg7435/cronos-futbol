@@ -179,13 +179,7 @@ service cloud.firestore {
     // SEC-011: Prevent self-role escalation
     // ============================================================
     match /users/{userId} {
-      allow read: if isAuth() && (
-        isSuperAdmin() ||
-        request.auth.uid == userId ||
-        sameClubAsDoc(resource.data.clubId) ||
-        isClubAdminOf(resource.data.clubId) ||
-        userDocClubId(resource.data.clubId)
-      );
+      allow read: if isAuth();
       allow create: if isAuth() && (
         request.auth.uid == userId ||
         isSuperAdmin()

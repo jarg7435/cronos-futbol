@@ -3938,14 +3938,13 @@ window.saOpenThread = async (threadId, otherName) => {
                             ${saEscapeHtml(m.text)}
                         </div>
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.25rem; gap:1.5rem;">
-                            ${isMine ? `
                             <span onclick="event.stopPropagation(); saDeleteSingleMessage('${threadId}', ${idx}, '${saEscapeAttr(otherName)}')"
                                   title="Borrar mensaje"
                                   style="font-size:0.7rem; color:#ff5858; cursor:pointer; opacity:0.6; transition:opacity 0.2s;"
                                   onmouseover="this.style.opacity='1'"
                                   onmouseout="this.style.opacity='0.6'">
                                 🗑️ Borrar
-                            </span>` : '<span></span>'}
+                            </span>
                             <div style="font-size:0.64rem; color:#8b949e; text-align:right;">
                                 ${date} ${time}
                             </div>

@@ -1471,14 +1471,13 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
                                 ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g, '<strong>$1</strong>')}
                             </div>
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.25rem;gap:1.5rem;">
-                                ${isMine ? `
                                 <span onclick="event.stopPropagation(); ppDeleteSingleMessage('${threadId}', ${idx})"
                                       title="Borrar mensaje"
                                       style="font-size:0.7rem;color:#ff5858;cursor:pointer;opacity:0.6;transition:opacity 0.2s;"
                                       onmouseover="this.style.opacity='1'"
                                       onmouseout="this.style.opacity='0.6'">
                                     🗑️ Borrar
-                                </span>` : '<span></span>'}
+                                </span>
                                 <div style="font-size:0.64rem;color:#7d8590;text-align:right;">
                                     ${date} ${time}
                                 </div>
