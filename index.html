@@ -637,6 +637,7 @@
                        color:#8b949e; font-size:0.6rem; padding:0.35rem 0.5rem;
                        border-radius:6px; cursor:pointer; white-space:nowrap;">← INICIO</button>
             <button id="btn-play-pause" class="btn primary">EMPEZAR</button>
+            <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal();" class="btn" title="Registrar evento por pérdida de batería o cobertura" style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:#58a6ff; font-weight:700; font-size:0.75rem;">⏱️ PERDIDOS</button>
             <button id="btn-reset" class="btn danger">REINICIAR</button>
             <button id="btn-save-team" class="btn">GUARDAR</button>
             <button id="btn-export" class="btn">DESCARGAR</button>
@@ -1304,6 +1305,8 @@
     <script src="js/match/events/movement-log.js?v=v348"></script>
     <script src="js/match/persistence/team-persistence.js?v=v348"></script>
     <script src="js/match/live/sync.js?v=v348"></script>
+    <script src="js/match/replay/replay-player.js?v=v348"></script>
+    <script src="js/match/events/retroactive-modal.js?v=v348"></script>
 
     <!-- ══ SERVICES: Firestore, cloud, offline ════════════════════════════════ -->
     <script src="js/services/firestore-sync.js?v=v348"></script>

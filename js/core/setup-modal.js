@@ -1264,6 +1264,19 @@ window._openCoachCommsMenu = function() {
                     </div>
                 </button>
 
+                <!-- REGISTRAR SUCESOS OFFLINE (retroactivos) -->
+                <button onclick="(function(){ if(typeof openRetroactiveEventModal==='function'){openRetroactiveEventModal();}else{alert('Módulo no disponible');} })()"
+                    title="Registrar goles, tarjetas o cambios que ocurrieron sin batería o cobertura"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">⏱️</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Registrar sucesos offline</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Añadir eventos perdidos por falta de batería o cobertura</div>
+                    </div>
+                </button>
+
                 <!-- PARTIDOS EN VIVO -->
                 <button onclick="_cronosOpenLiveMatchesPanel()"
                     style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
