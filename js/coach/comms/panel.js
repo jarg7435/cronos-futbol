@@ -299,10 +299,11 @@ function _cMatchSubcatFor(me, cat) {
 
 async function _cGetStaff(db, clubId, fns, roles) {
     roles = roles || ['director', 'coordinator'];
-    const byUid = new Map(); // deduplicar por uid
+    const byKey = new Map(); // deduplicar por uid + '_' + role
 
     const upsert = (uid, role, data) => {
-        if (!byUid.has(uid)) byUid.set(uid, { uid, role, ...data });
+        const key = `${uid}_${role}`;
+        if (!byKey.has(key)) byKey.set(key, { uid, role, ...data });
     };
 
     // FIX (v178): Log para diagnosticar por qué _cGetStaff puede devolver vacío
@@ -335,7 +336,7 @@ async function _cGetStaff(db, clubId, fns, roles) {
             }));
 
         // Si ninguno tiene tag 'rpt', tomar TODOS los staff con uid
-        if (!byUid.size) {
+        if (!byKey.size) {
             contacts.filter(c => c.type !== 'parent' && c.uid)
                 .forEach(c => upsert(c.uid, c.role || 'staff', {
                     email: c.email || '', phone: c.phone || '', displayName: c.name || '',
@@ -386,7 +387,7 @@ async function _cGetStaff(db, clubId, fns, roles) {
     // Si los pasos 2-3 fallaron (clubId vacío o incorrecto), buscar TODOS los
     // usuarios y filtrar en cliente por allRoles que contengan el mismo clubId
     // que el coach tiene en SU documento de usuario.
-    if (!byUid.size) {
+    if (!byKey.size) {
         console.warn('[_cGetStaff] Pasos 2-3 no encontraron staff. Intentando búsqueda amplia...');
         try {
             const me = window._cronosCurrentUser;
@@ -442,7 +443,7 @@ async function _cGetStaff(db, clubId, fns, roles) {
         } catch(e4b) { console.warn('[_cGetStaff] Paso 4 (búsqueda amplia) falló:', e4b.message); }
     }
 
-    const result = Array.from(byUid.values());
+    const result = Array.from(byKey.values());
     return result;
 }
 
@@ -694,11 +695,7 @@ async function openThreadWithStaff(staffUid, staffEmail, staffRole) {
 
 // ════════════════════════════════════════════════════════════════════
 //  CATEGORÍA — helpers para filtrar contactos por categoría del entrenador
-//  (Fase 4). Un entrenador con categoría asignada (me.category) solo debe
-//  ver/contactar a los padres de su misma categoría.
 // ════════════════════════════════════════════════════════════════════
-// Normaliza una categoría para comparar: minúsculas, sin tildes, sin
-// espacios/guiones redundantes. "Alevín A" ≈ "alevin-a" ≈ "ALEVÍN  A".
 function _normCat(raw) {
     if (raw == null) return '';
     return String(raw)
@@ -708,30 +705,45 @@ function _normCat(raw) {
         .trim();
 }
 
-// Devuelve la categoría efectiva de un link/contacto, mirando varios campos
-// por compatibilidad con datos antiguos (category, categoryLabel, teamName).
 function _linkCategory(link) {
     if (!link) return '';
     return link.category || link.categoryLabel || link.teamName || '';
 }
 
-// ¿Coincide la categoría del coach con la del link? Tolerante a datos
-// incompletos: si el coach no tiene categoría, ve todo; si el link no tiene
-// categoría (datos legacy sin backfill), también se muestra para no ocultar
-// contactos durante la migración. El staff nunca se filtra por categoría.
-function _catMatches(coachCat, link) {
+function _catMatches(coachCat, coachSub, link) {
     const cc = _normCat(coachCat);
     if (!cc) return true;                       // coach sin categoría → ve todo
     if (link && link.type === 'staff') return true; // staff siempre visible
     const lc = _normCat(_linkCategory(link));
     if (!lc) return true;                        // link legacy sin categoría → mostrar
-    return lc === cc;
+    if (lc !== cc) return false;
+    
+    // Si la categoría coincide, verificar subcategoría
+    const cs = _normCat(coachSub);
+    const ls = _normCat(link.subcategory);
+    if (cs && ls) {
+        return cs === ls;
+    }
+    return true;
 }
 
-// Categoría activa del entrenador (o '' si no aplica filtro).
 function _coachCategory() {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     return (me && me.category) ? me.category : '';
+}
+
+function _coachSubcategory() {
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
+    if (!me) return '';
+    if (me.subcategory) return me.subcategory;
+    // Buscar en allRoles
+    if (Array.isArray(me.allRoles)) {
+        const coachCat = _coachCategory();
+        const coachRole = me.allRoles.find(r => (r.role === 'user' || r.role === 'coach' || r.role === 'entrenador') && 
+            _normCat(r.category) === _normCat(coachCat));
+        if (coachRole && coachRole.subcategory) return coachRole.subcategory;
+    }
+    return '';
 }
 
 async function _loadParentList() {
@@ -756,6 +768,20 @@ async function _loadParentList() {
         const links = [];
         linksSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
 
+        // Cargar usuarios del club para enriquecer información de categorías/subcategorías de los padres
+        const usersSnap = await getDocs(query(
+            collection(db, 'users'),
+            where('clubId', '==', me.clubId || '')
+        ));
+        const usersMap = {};
+        usersSnap.forEach(d => {
+            const uData = d.data();
+            usersMap[d.id] = uData;
+            if (uData.email) {
+                usersMap[uData.email.toLowerCase().trim()] = uData;
+            }
+        });
+
         if (!links.length && (!emailConfig.contacts || !emailConfig.contacts.length)) {
             body.innerHTML = `
             <div style="text-align:center;color:var(--text-muted);padding:3rem 1rem;">
@@ -768,11 +794,9 @@ async function _loadParentList() {
         }
 
         // --- FUSIÓN CON CONTACTOS MANUALES Y STAFF ---
-        // Obtenemos los contactos de la "Fuente de la Verdad" (emailConfig)
         const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
 
         contacts.forEach(c => {
-            // Buscamos si ya existe en los links de Firestore para no duplicar
             const exists = links.find(l => 
                 (c.email && l.parentEmail === c.email) || 
                 (c.phone && (l.parentPhone === c.phone || l.parentWA === c.phone || l.phone === c.phone)) ||
@@ -793,12 +817,24 @@ async function _loadParentList() {
                     playerNumber:   c.type === 'staff' ? 'STAFF' : '—'
                 });
             } else {
-                // Si ya existe en Firestore, le aseguramos el tipo para que salga su icono correcto
                 if (c.type) exists.type = c.type;
             }
         });
 
-        // Obtener hilos de mensajes existentes (aquí sí mantenemos coachUid para que el chat sea privado entrenador-padre)
+        // Enriquecer los links con la categoría/subcategoría del perfil del padre si faltan
+        links.forEach(l => {
+            const u = (l.parentUid && usersMap[l.parentUid]) || 
+                      (l.parentEmail && usersMap[l.parentEmail.toLowerCase().trim()]);
+            if (u) {
+                const pRole = (Array.isArray(u.allRoles)
+                    ? u.allRoles.find(r => r && (r.role === 'parent' || r.role === 'parent_individual'))
+                    : null);
+                l.category = l.category || u.category || pRole?.category || '';
+                l.subcategory = l.subcategory || u.subcategory || pRole?.subcategory || '';
+            }
+        });
+
+        // Obtener hilos de mensajes existentes
         const threadsSnap = await getDocs(query(
             collection(db, 'cronos_messages'),
             where('coachUid', '==', me.uid)
@@ -806,15 +842,18 @@ async function _loadParentList() {
         const threadsMap = {};
         threadsSnap.forEach(d => { threadsMap[d.id] = { _id: d.id, ...d.data() }; });
 
+        // Filtrar para excluir cualquier contacto de tipo 'staff' (los cuales van a la pestaña de dirección)
+        let filteredLinks = links.filter(l => l.type !== 'staff');
+
         // ── FASE 4: filtrar contactos por categoría del entrenador ──────────
         // Si el entrenador tiene una categoría asignada, solo ve a los padres
-        // de su misma categoría. El staff y los links legacy sin categoría se
+        // de su misma categoría y subcategoría. El staff y los links legacy sin categoría se
         // conservan (ver _catMatches). Guardamos el total para informar al coach.
         const coachCat   = _coachCategory();
-        const totalLinks = links.length;
-        let filteredLinks = links;
+        const coachSub   = _coachSubcategory();
+        const totalLinks = filteredLinks.length;
         if (_normCat(coachCat)) {
-            filteredLinks = links.filter(l => _catMatches(coachCat, l));
+            filteredLinks = filteredLinks.filter(l => _catMatches(coachCat, coachSub, l));
         }
         const hiddenCount = totalLinks - filteredLinks.length;
 
