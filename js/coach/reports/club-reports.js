@@ -143,15 +143,13 @@ async function openTestRolePicker(targetRole) {
             document.getElementById('main-header').style.display    = 'flex';
         } else if (role === 'parent') {
             if (typeof openParentPanel === 'function') openParentPanel();
-        } else if (role === 'club_admin') {
-            if (typeof openClubAdminPanel === 'function') openClubAdminPanel(clubId);
         }
     };
 }
 window.openTestRolePicker = openTestRolePicker;
 
 // ════════════════════════════════════════════════════════════════════
-//  PANEL PRINCIPAL DE DIRECCIÓN
+//  PANEL PRINCIPAL DE DIRECCIÓN / STAFF
 // ════════════════════════════════════════════════════════════════════
 async function openStaffDashboard() {
     const me         = window._cronosCurrentUser;
@@ -163,8 +161,8 @@ async function openStaffDashboard() {
         return;
     }
 
-    if (!me || (!isSA && !['director','coordinator'].includes(activeRole))) {
-        showToast('⚠️ No tienes permisos para acceder al panel de dirección.', 4000);
+    if (!me || (!isSA && !['director','coordinator','coach','user'].includes(activeRole))) {
+        showToast('⚠️ No tienes permisos para acceder al panel del club.', 4000);
         return;
     }
 
@@ -200,14 +198,14 @@ async function openStaffDashboard() {
                     border-bottom:1px solid var(--glass-border);flex-shrink:0;">
             <div>
                 <h2 style="margin:0;font-size:1.15rem;display:flex;align-items:center;gap:0.7rem;">
-                    🏢 Panel de Dirección:
+                    🏢 ${activeRole === 'coordinator' ? 'Panel de Coordinación' : 'Panel de Dirección'}:
                     <span style="color:var(--primary);">${escapeHtml(me.clubName||'Mi Club')}</span>
                     ${isSA ? `<span style="font-size:0.65rem;background:rgba(255,215,0,0.12);
                         border:1px solid rgba(255,215,0,0.3);color:#ffd700;
                         padding:2px 7px;border-radius:5px;font-weight:700;">🧪 PRUEBA</span>` : ''}
                 </h2>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">
-                    ${activeRole === 'director' ? '📋 Director Deportivo' : '🎯 Coordinador'}
+                    ${activeRole === 'director' ? '📋 Director Deportivo' : activeRole === 'coordinator' ? '🎯 Coordinador' : '⚽ Entrenador'}
                     ${isSA ? ' · SuperAdmin en modo prueba' : ''}
                 </div>
             </div>
@@ -238,6 +236,9 @@ async function openStaffDashboard() {
             <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
             <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
             <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
+            ${((window._cronosCurrentUser?.extras?.partidos_terminados ?? true) !== false)
+                ? `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#79c0ff;">🎬 Partidos Terminados</button>`
+                : `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#555;cursor:not-allowed;opacity:0.5;" title="Extra no activado">🔒 Partidos Terminados</button>`}
             ${activeRole === 'director' ? `<button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>` : ''}
             <button onclick="openLiveMatchesView()" class="staff-tab"
                 style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
@@ -297,8 +298,401 @@ window.switchStaffTab = async (tab) => {
     if (tab === 'entrenamientos') await _sdLoadEvents('planificacion_semanal');
     if (tab === 'informes')       await _sdLoadReports();
     if (tab === 'mensajes')       await _sdLoadMessages();
+    if (tab === 'partidos_terminados') {
+        const _ptExtras = (window._cronosCurrentUser?.extras) || {};
+        if (_ptExtras.partidos_terminados === false) {
+            const _ptCont = document.getElementById('staff-dashboard-content');
+            if (_ptCont) _ptCont.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;gap:1rem;">
+                    <div style="font-size:3.5rem;">🔒</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:white;">Partidos Terminados no disponible</div>
+                    <div style="font-size:0.85rem;color:#8b949e;max-width:320px;">Este extra no está activado para tu club. Contacta con el administrador para habilitarlo.</div>
+                </div>`;
+        } else {
+            await _renderFinishedMatchesTab();
+        }
+    }
     if (tab === 'config')         await _renderDirectorConfig();
 };
+
+async function _renderFinishedMatchesTab() {
+    const container = document.getElementById('staff-dashboard-content');
+    const me = window._cronosCurrentUser;
+    const activeRole = me?._activeRole || me?.role;
+    const clubId = me?.clubId;
+
+    try {
+        const { db, collection, getDocs } = await _sdFS();
+        if (!db) {
+            container.innerHTML = '<p style="color:#7d8590;padding:2rem;">Error de conexión.</p>';
+            return;
+        }
+
+        const finishedMap = new Map(); // id -> matchData
+
+        // 1. Cargar desde live_matches
+        try {
+            const snapLive = await getDocs(collection(db, 'live_matches'));
+            snapLive.forEach(d => {
+                const data = d.data() || {};
+                const isMyClub = !clubId || data.clubId === clubId || data.createdBy === me?.uid;
+                if (isMyClub && (data.status === 'finished' || data.phase === 'finished' || data.matchPhase === 'finished')) {
+                    finishedMap.set(d.id, { id: d.id, source: 'live_matches', ...data });
+                }
+            });
+        } catch(e1) {
+            console.warn('[FinishedMatches] Error leyendo live_matches:', e1);
+        }
+
+        // 2. Cargar desde cronos_player_reports (informes colectivos del staff)
+        try {
+            const snapReports = await getDocs(collection(db, 'cronos_player_reports'));
+            snapReports.forEach(d => {
+                const data = d.data() || {};
+                const isMyClub = !clubId || data.clubId === clubId || data.coachUid === me?.uid;
+                const isCollective = data.staffReport === true || data.type === 'collective_match_report' || data.reportType === 'collective';
+                if (isMyClub && isCollective) {
+                    const idKey = data.liveMatchId || d.id;
+                    if (!finishedMap.has(idKey)) {
+                        finishedMap.set(idKey, {
+                            id: idKey,
+                            docId: d.id,
+                            source: 'cronos_player_reports',
+                            homeTeam: typeof data.homeTeam === 'object' && data.homeTeam ? {
+                                name: data.homeTeam.name || data.homeName || 'LOCAL',
+                                score: data.homeTeam.score ?? data.scoreHome ?? data.goalsHome ?? 0,
+                                color: data.homeTeam.color || data.homeColor || '#58a6ff',
+                                shorts: data.homeTeam.shorts || data.homeShorts || '#1a4e99',
+                                textColor: data.homeTeam.textColor || data.homeText || '#000000'
+                            } : {
+                                name: data.homeName || (typeof data.homeTeam === 'string' ? data.homeTeam : 'LOCAL'),
+                                score: data.scoreHome ?? data.goalsHome ?? 0,
+                                color: data.homeColor || '#58a6ff',
+                                shorts: data.homeShorts || '#1a4e99',
+                                textColor: data.homeText || '#000000'
+                            },
+                            awayTeam: typeof data.awayTeam === 'object' && data.awayTeam ? {
+                                name: data.awayTeam.name || data.awayName || 'VISITANTE',
+                                score: data.awayTeam.score ?? data.scoreAway ?? data.goalsAway ?? 0,
+                                color: data.awayTeam.color || data.awayColor || '#ff5858',
+                                shorts: data.awayTeam.shorts || data.awayShorts || '#b22222',
+                                textColor: data.awayTeam.textColor || data.awayText || '#ffffff'
+                            } : {
+                                name: data.awayName || (typeof data.awayTeam === 'string' ? data.awayTeam : 'VISITANTE'),
+                                score: data.scoreAway ?? data.goalsAway ?? 0,
+                                color: data.awayColor || '#ff5858',
+                                shorts: data.awayShorts || '#b22222',
+                                textColor: data.awayText || '#ffffff'
+                            },
+                            category: data.category || '',
+                            subcategory: data.subcategory || '',
+                            createdAt: data.createdAt || data.timestamp || 0,
+                            events: data.events || data.timeline || [],
+                            players: data.players || [],
+                            mode: data.mode || 'f7',
+                            ...data
+                        });
+                    }
+                }
+            });
+        } catch(e2) {
+            console.warn('[FinishedMatches] Error leyendo cronos_player_reports:', e2);
+        }
+
+        let finishedMatches = Array.from(finishedMap.values());
+
+        // ── ENRIQUECIMIENTO RETROACTIVO DE CATEGORÍA Y SUBCATEGORÍA ─────────────
+        // Si un partido no tiene categoría/subcategoría registrada, buscamos en los
+        // datos del entrenador creador (por UID, email o me) y actualizamos Firestore.
+        try {
+            const coachCatMap = new Map();
+            if (me) {
+                const meCat = me.category || me._activeRoleData?.category || me.categoryLabel || '';
+                const meSub = me.subcategory || me._activeRoleData?.subcategory || '';
+                if (meCat || meSub) {
+                    if (me.uid) coachCatMap.set(me.uid, { category: meCat, subcategory: meSub });
+                    if (me.email) coachCatMap.set(me.email, { category: meCat, subcategory: meSub });
+                }
+            }
+
+            // Cargar perfiles de usuarios del club si hay partidos sin categoría
+            const unassignedMatches = finishedMatches.filter(m => !m.category);
+            if (unassignedMatches.length > 0) {
+                const usersSnap = await getDocs(collection(db, 'users')).catch(() => null);
+                if (usersSnap) {
+                    usersSnap.forEach(ud => {
+                        const uData = ud.data() || {};
+                        const cat = uData.category || uData._activeRoleData?.category || uData.categoryLabel || '';
+                        const sub = uData.subcategory || uData._activeRoleData?.subcategory || '';
+                        if (cat || sub) {
+                            coachCatMap.set(ud.id, { category: cat, subcategory: sub });
+                            if (uData.email) coachCatMap.set(uData.email, { category: cat, subcategory: sub });
+                            if (uData.uid) coachCatMap.set(uData.uid, { category: cat, subcategory: sub });
+                        }
+                    });
+                }
+
+                // Asignar categoría encontrada y actualizar Firestore
+                const { doc, updateDoc } = await _sdFS();
+                unassignedMatches.forEach(m => {
+                    const info = coachCatMap.get(m.createdBy) || coachCatMap.get(m.coachUid) || coachCatMap.get(m.coachEmail);
+                    if (info && (info.category || info.subcategory)) {
+                        m.category = m.category || info.category;
+                        m.subcategory = m.subcategory || info.subcategory;
+
+                        // Guardar en Firestore de forma silenciosa e instantánea
+                        const colName = m.source === 'live_matches' ? 'live_matches' : 'cronos_player_reports';
+                        const targetId = m.docId || m.id;
+                        if (targetId && updateDoc && doc) {
+                            updateDoc(doc(db, colName, targetId), {
+                                category: m.category,
+                                subcategory: m.subcategory
+                            }).catch(() => {});
+                        }
+                    }
+                });
+            }
+        } catch(catErr) {
+            console.warn('[FinishedMatches] Error en enriquecimiento retroactivo:', catErr);
+        }
+
+        finishedMatches.sort((a, b) => {
+            const tsA = typeof a.createdAt === 'number' ? a.createdAt : (a.createdAt?.toMillis?.() || 0);
+            const tsB = typeof b.createdAt === 'number' ? b.createdAt : (b.createdAt?.toMillis?.() || 0);
+            return tsB - tsA;
+        });
+
+        // ── Normalizadores de Categoría y Subcategoría ────────────────────
+        const _normCat = (c) => {
+            if (!c) return '';
+            let str = String(c).toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (str.includes('prebenj')) return 'prebenjamin';
+            if (str.includes('benj')) return 'benjamin';
+            if (str.includes('alev')) return 'alevin';
+            if (str.includes('infant')) return 'infantil';
+            if (str.includes('cadet')) return 'cadete';
+            if (str.includes('juven')) return 'juvenil';
+            if (str.includes('region')) return 'regional';
+            return str.replace(/_[abc]$/, '');
+        };
+        const _normSub = (s, c) => {
+            let sub = String(s || '').trim().toUpperCase();
+            if (!sub && c) {
+                const m = String(c).match(/_([abc])$/i);
+                if (m) sub = m[1].toUpperCase();
+            }
+            return sub;
+        };
+
+        const isCoach = (activeRole === 'user' || activeRole === 'coach');
+
+        // ── FILTRO EXCLUSIVO PARA ENTRENADOR ──────────────────────────────
+        if (isCoach) {
+            const coachCat = _normCat(me?.category || me?._activeRoleData?.category || me?.categoryLabel);
+            const coachSub = _normSub(me?.subcategory || me?._activeRoleData?.subcategory, me?.category);
+
+            finishedMatches = finishedMatches.filter(m => {
+                const isMyDoc = m.createdBy === me?.uid || m.coachUid === me?.uid || m.coachEmail === me?.email;
+                if (isMyDoc) return true;
+                const mCat = _normCat(m.category);
+                const mSub = _normSub(m.subcategory, m.category);
+                if (coachCat && mCat === coachCat) {
+                    if (!coachSub || !mSub || mSub === coachSub) return true;
+                }
+                return false;
+            });
+        }
+
+        if (finishedMatches.length === 0) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:3rem 1rem;">
+                    <div style="font-size:3rem; margin-bottom:0.8rem;">🎬</div>
+                    <h3 style="color:white; margin-bottom:0.4rem;">No hay partidos terminados guardados</h3>
+                    <p style="color:#7d8590; font-size:0.85rem;">
+                        ${isCoach ? 'Solo se muestran los partidos de tu categoría y subcategoría asignada.' : 'En cuanto finalice un partido o se genere su informe, aparecerá aquí organizados por categoría.'}
+                    </p>
+                </div>`;
+            return;
+        }
+
+        // Helper renderizado de tarjeta de partido
+        const _renderMatchItem = (m) => {
+            const homeName = m.homeTeam?.name || m.homeName || (typeof m.homeTeam === 'string' ? m.homeTeam : 'LOCAL');
+            const awayName = m.awayTeam?.name || m.awayName || (typeof m.awayTeam === 'string' ? m.awayTeam : 'VISITANTE');
+            const scoreHome = m.homeTeam?.score ?? m.scoreHome ?? m.goalsHome ?? 0;
+            const scoreAway = m.awayTeam?.score ?? m.scoreAway ?? m.goalsAway ?? 0;
+            const cat = (m.category || 'Fútbol').toUpperCase();
+            const sub = m.subcategory ? `Grupo ${m.subcategory}` : '';
+            const eventsCount = Array.isArray(m.events) ? m.events.length : 0;
+            const dateStr = m.matchDate || (m.createdAt ? (typeof m.createdAt === 'number' ? new Date(m.createdAt).toLocaleDateString('es-ES') : new Date(m.createdAt.seconds * 1000).toLocaleDateString('es-ES')) : '—');
+
+            return `
+                <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(121,192,255,0.2); border-radius:12px; padding:0.9rem 1.1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:0.7rem; transition:border-color 0.2s;"
+                     onmouseover="this.style.borderColor='rgba(121,192,255,0.45)'" onmouseout="this.style.borderColor='rgba(121,192,255,0.2)'">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.3rem;">
+                            <span style="font-size:0.92rem; font-weight:800; color:white;">${escapeHtml(homeName)} vs ${escapeHtml(awayName)}</span>
+                            <span style="background:rgba(121,192,255,0.12); border:1px solid rgba(121,192,255,0.3); color:#79c0ff; font-size:0.65rem; font-weight:700; padding:2px 6px; border-radius:5px;">
+                                ${escapeHtml(cat)} ${escapeHtml(sub)}
+                            </span>
+                        </div>
+                        <div style="font-size:0.75rem; color:#7d8590; display:flex; align-items:center; gap:0.8rem;">
+                            <span>📅 ${escapeHtml(dateStr)}</span>
+                            <span>⚽ Marcador: <strong>${scoreHome} - ${scoreAway}</strong></span>
+                            ${eventsCount > 0 ? `<span>📍 ${eventsCount} eventos</span>` : ''}
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.4rem; align-items:center;">
+                        <button onclick="window.openMatchReplay('${m.id}')"
+                            style="background:linear-gradient(135deg,#58a6ff,#1f6beb); border:none; color:white; padding:0.5rem 1.1rem; border-radius:8px; font-weight:800; font-size:0.8rem; cursor:pointer; box-shadow:0 4px 12px rgba(88,166,255,0.3); display:flex; align-items:center; gap:0.4rem;">
+                            ▶️ Revivir Partido
+                        </button>
+                        <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal('${m.id}');" title="Añadir evento retroactivo (batería/cobertura)"
+                            style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:#58a6ff; padding:0.5rem 0.65rem; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;"
+                            onmouseover="this.style.background='rgba(88,166,255,0.3)'" onmouseout="this.style.background='rgba(88,166,255,0.15)'">
+                            ⏱️
+                        </button>
+                        <button onclick="deleteFinishedMatchFromCloud('${m.id}', '${m.docId || ''}', event);" title="Eliminar partido"
+                            style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.4); color:#ff5858; padding:0.5rem 0.65rem; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;"
+                            onmouseover="this.style.background='rgba(255,88,88,0.3)'" onmouseout="this.style.background='rgba(255,88,88,0.15)'">
+                            🗑️
+                        </button>
+                    </div>
+                </div>`;
+        };
+
+        // Si es ENTRENADOR: mostrar la lista filtrada de su propia categoría
+        if (isCoach) {
+            let html = `
+                <div style="max-width:850px;">
+                    <div style="margin-bottom:1.2rem;">
+                        <h3 style="margin:0; font-size:1.1rem; color:white;">🎬 Mis Partidos Terminados (${finishedMatches.length})</h3>
+                        <div style="font-size:0.75rem; color:#7d8590; margin-top:3px;">
+                            Revive los encuentros finalizados de tu categoría asignada.
+                        </div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:0.3rem;">
+                        ${finishedMatches.map(_renderMatchItem).join('')}
+                    </div>
+                </div>`;
+            container.innerHTML = html;
+            return;
+        }
+
+        // ── ÁRBOLES DE CATEGORÍAS Y SUBCATEGORÍAS PARA DIRECTOR / COORDINADOR ──
+        const CAT_DEFINITIONS = [
+            { id: 'prebenjamin', label: 'Prebenjamín', icon: '⚽' },
+            { id: 'benjamin',    label: 'Benjamín', icon: '⚡' },
+            { id: 'alevin',      label: 'Alevín', icon: '🌟' },
+            { id: 'infantil',    label: 'Infantil', icon: '🔥' },
+            { id: 'cadete',      label: 'Cadete', icon: '🏆' },
+            { id: 'juvenil',     label: 'Juvenil', icon: '👑' },
+            { id: 'regional',    label: 'Regional', icon: '🥇' }
+        ];
+        const SUB_LIST = ['A', 'B', 'C'];
+
+        const byCatSub = new Map(); // catId -> (subId -> [matches])
+        const unassigned = [];
+
+        finishedMatches.forEach(m => {
+            const cId = _normCat(m.category);
+            const sId = _normSub(m.subcategory, m.category);
+            if (!cId || !CAT_DEFINITIONS.some(c => c.id === cId)) {
+                unassigned.push(m);
+                return;
+            }
+            const subKey = SUB_LIST.includes(sId) ? sId : 'A';
+            if (!byCatSub.has(cId)) byCatSub.set(cId, new Map());
+            const subMap = byCatSub.get(cId);
+            if (!subMap.has(subKey)) subMap.set(subKey, []);
+            subMap.get(subKey).push(m);
+        });
+
+        let html = `
+            <div style="max-width:850px;">
+                <div style="margin-bottom:1.2rem;">
+                    <h3 style="margin:0; font-size:1.1rem; color:white;">🎬 Partidos Terminados del Club (${finishedMatches.length})</h3>
+                    <div style="font-size:0.75rem; color:#7d8590; margin-top:3px;">
+                        Organizados jerárquicamente por Categoría y Subcategoría. Haz clic en cualquier grupo para desplegar sus partidos.
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:0.8rem;">
+        `;
+
+        CAT_DEFINITIONS.forEach((catDef, catIdx) => {
+            const subMap = byCatSub.get(catDef.id) || new Map();
+            let catTotalMatches = 0;
+            subMap.forEach(arr => { catTotalMatches += arr.length; });
+
+            const isExpanded = catTotalMatches > 0;
+
+            html += `
+                <div style="background:rgba(255,255,255,0.02); border:1px solid ${catTotalMatches > 0 ? 'rgba(88,166,255,0.3)' : 'rgba(255,255,255,0.08)'}; border-radius:14px; overflow:hidden;">
+                    <div onclick="const b=this.nextElementSibling; b.style.display=(b.style.display==='none'?'block':'none'); this.querySelector('.arrow').textContent=(b.style.display==='none'?'►':'▼');"
+                         style="padding:0.8rem 1.1rem; background:rgba(255,255,255,0.03); cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none;">
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            <span class="arrow" style="font-size:0.75rem; color:#79c0ff;">${isExpanded ? '▼' : '►'}</span>
+                            <span style="font-size:1rem;">${catDef.icon}</span>
+                            <span style="font-weight:800; color:white; font-size:0.95rem;">${catDef.label}</span>
+                            <span style="background:${catTotalMatches > 0 ? 'rgba(63,185,80,0.18)' : 'rgba(255,255,255,0.06)'}; color:${catTotalMatches > 0 ? '#3fb950' : '#7d8590'}; font-size:0.7rem; font-weight:800; padding:2px 8px; border-radius:12px;">
+                                ${catTotalMatches} ${catTotalMatches === 1 ? 'partido' : 'partidos'}
+                            </span>
+                        </div>
+                    </div>
+                    <div style="display:${isExpanded ? 'block' : 'none'}; padding:0.8rem; border-top:1px solid rgba(255,255,255,0.05);">
+            `;
+
+            SUB_LIST.forEach(subId => {
+                const subMatches = subMap.get(subId) || [];
+                const hasSubMatches = subMatches.length > 0;
+
+                html += `
+                    <div style="margin-bottom:0.6rem; border:1px solid ${hasSubMatches ? 'rgba(121,192,255,0.2)' : 'rgba(255,255,255,0.05)'}; border-radius:10px; overflow:hidden;">
+                        <div onclick="const b=this.nextElementSibling; if(b){ b.style.display=(b.style.display==='none'?'block':'none'); this.querySelector('.sub-arrow').textContent=(b.style.display==='none'?'►':'▼'); }"
+                             style="padding:0.55rem 0.9rem; background:rgba(0,0,0,0.2); cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none;">
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <span class="sub-arrow" style="font-size:0.7rem; color:#58a6ff;">${hasSubMatches ? '▼' : '►'}</span>
+                                <span style="font-size:0.85rem; font-weight:700; color:white;">Subcategoría ${subId}</span>
+                                <span style="font-size:0.68rem; color:${hasSubMatches ? '#79c0ff' : '#4d5566'}; font-weight:700;">
+                                    (${subMatches.length})
+                                </span>
+                            </div>
+                        </div>
+                        <div style="display:${hasSubMatches ? 'block' : 'none'}; padding:0.6rem 0.6rem 0.1rem 0.6rem;">
+                            ${hasSubMatches ? subMatches.map(_renderMatchItem).join('') : '<div style="font-size:0.75rem; color:#4d5566; padding:0.4rem 0.6rem;">Sin partidos en esta subcategoría.</div>'}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+
+        // ── Sección para Partidos sin categoría asignada ──────────────────
+        if (unassigned.length > 0) {
+            html += `
+                <div style="margin-top:0.6rem; border:1px solid rgba(255,215,0,0.25); border-radius:14px; overflow:hidden;">
+                    <div style="padding:0.8rem 1.1rem; background:rgba(255,215,0,0.06); display:flex; align-items:center; gap:0.6rem;">
+                        <span style="font-size:0.95rem; font-weight:800; color:#ffd700;">⚠️ Sin categoría asignada (${unassigned.length})</span>
+                    </div>
+                    <div style="padding:0.8rem;">
+                        ${unassigned.map(_renderMatchItem).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        html += `</div></div>`;
+        container.innerHTML = html;
+    } catch(e) {
+        container.innerHTML = `<div style="color:#ff5858;padding:2rem;">⚠️ Error cargando partidos terminados: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+window._renderFinishedMatchesTab = _renderFinishedMatchesTab;
 
 // ════════════════════════════════════════════════════════════════════
 //  TAB: CONVOCATORIAS / ENTRENAMIENTOS
@@ -351,6 +745,43 @@ async function _sdLoadEvents(type) {
             toDelete.forEach(it => {
                 if (it._id) deleteDoc(firestoreDoc(db,'cronos_notifications',it._id)).catch(()=>{});
             });
+        }
+
+        // Enriquecimiento retroactivo para notificaciones creadas sin categoría/subcategoría
+        const unassigned = items.filter(it => !it.category || !it.subcategory);
+        if (unassigned.length > 0) {
+            try {
+                const coachCatMap = new Map();
+                const usersSnap = await getDocs(collection(db, 'users')).catch(() => null);
+                if (usersSnap) {
+                    usersSnap.forEach(ud => {
+                        const uData = ud.data() || {};
+                        const cat = uData.category || uData._activeRoleData?.category || uData.categoryLabel || '';
+                        const sub = uData.subcategory || uData._activeRoleData?.subcategory || '';
+                        if (cat || sub) {
+                            coachCatMap.set(ud.id, { category: cat, subcategory: sub });
+                            if (uData.email) coachCatMap.set(uData.email, { category: cat, subcategory: sub });
+                            if (uData.uid) coachCatMap.set(uData.uid, { category: cat, subcategory: sub });
+                        }
+                    });
+                }
+                const { updateDoc: updNotif, doc: docNotif } = await _sdFS();
+                unassigned.forEach(it => {
+                    const info = coachCatMap.get(it.coachUid) || coachCatMap.get(it.coachEmail) || coachCatMap.get(it.parentUid) || (me ? { category: me.category || me._activeRoleData?.category, subcategory: me.subcategory || me._activeRoleData?.subcategory } : null);
+                    if (info && (info.category || info.subcategory)) {
+                        it.category = it.category || info.category;
+                        it.subcategory = it.subcategory || info.subcategory;
+                        if (it._id && updNotif && docNotif) {
+                            updNotif(docNotif(db, 'cronos_notifications', it._id), {
+                                category: it.category,
+                                subcategory: it.subcategory
+                            }).catch(() => {});
+                        }
+                    }
+                });
+            } catch(eNotifEnrich) {
+                console.warn('[club-reports] Error enriqueciendo notificaciones:', eNotifEnrich);
+            }
         }
 
         if (!items.length) {
@@ -869,9 +1300,9 @@ const _RP = (() => {
 
         // FIX (Error #20b): aumentar tamano de fila y etiquetas para que
         // las sustituciones (quien entra/sale) se vean claras y legibles.
-        const W = 500, Hrow = 90;
-        const TRACK_Y = 32, TRACK_H = 18;
-        const EVT_Y   = 15;  // centro de zona de eventos (sobre la barra)
+        const W = 500, Hrow = 100;
+        const TRACK_Y = 38, TRACK_H = 18;
+        const EVT_Y   = 21;  // centro de zona de eventos (sobre la barra)
         const LBL_Y   = Hrow - 3; // etiquetas de minutos
         const sc      = W / totMin;
 
@@ -917,10 +1348,27 @@ const _RP = (() => {
                 }
             });
 
+            // v273: Sistema anti-colisión de etiquetas.
+            const MIN_GAP_PX = 75; 
+            const greenLabels = []; 
+            const redLabels   = []; 
+
+            const Y_GREEN = [TRACK_Y + TRACK_H + 13, TRACK_Y + TRACK_H + 24, TRACK_Y + TRACK_H + 35];
+            const Y_RED   = [TRACK_Y - 8, TRACK_Y - 19, TRACK_Y - 30];
+
+            function getLabelLevel(registry, xPos) {
+                for (let lvl = 0; lvl < 3; lvl++) {
+                    const collision = registry.some(r => r.level === lvl && Math.abs(r.x - xPos) < MIN_GAP_PX);
+                    if (!collision) {
+                        registry.push({ x: xPos, level: lvl });
+                        return lvl;
+                    }
+                }
+                registry.push({ x: xPos, level: 2 });
+                return 2;
+            }
+
             // Barras de tiempo en campo (azul) + etiquetas de cambio
-            // v271: Renderizar períodos con etiquetas de sustitución NO superpuestas.
-            // Cuando hay cambios grupales (mismo minuto), alternar las posiciones Y
-            // de las etiquetas para que no se sobrepongan.
             periods.forEach(([a, b], periodIdx) => {
                 const px = a * sc, pw = Math.max(2, (b - a) * sc);
                 svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${pw.toFixed(1)}"
@@ -938,17 +1386,17 @@ const _RP = (() => {
                     const outPlayer = findNear(subInMap, aliasKey, a);
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-6}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#3fb950" stroke-width="2.2"/>`;
                     
-                    // Verde abajo: ENTRA este jugador
-                    const yGreen = TRACK_Y + TRACK_H + 14;
-                    svg += `<text x="${(px+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${alias} (${Math.floor(a)}')</text>`;
+                    // Verde abajo: ENTRA este jugador — nivel anti-colisión
+                    const gLvlIn = getLabelLevel(greenLabels, px);
+                    svg += `<text x="${(px+4).toFixed(1)}" y="${Y_GREEN[gLvlIn]}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${alias} (${Math.floor(a)}')</text>`;
                     
                     // Rojo arriba: SALE el jugador reemplazado (debe ser DISTINTO)
                     if (outPlayer) {
                         // outPlayer viene como "NOMBRE min'" — extraer el nombre
                         const outName = outPlayer.split(' ')[0];
                         if (outName && outName !== alias.substring(0, outName.length)) {
-                            const yRed = TRACK_Y - 8;
-                            svg += `<text x="${(px-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${outName}</text>`;
+                            const rLvlIn = getLabelLevel(redLabels, px);
+                            svg += `<text x="${(px-4).toFixed(1)}" y="${Y_RED[rLvlIn]}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${outName}</text>`;
                         }
                     }
                 }
@@ -960,16 +1408,16 @@ const _RP = (() => {
                     const ex = px + pw;
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-6}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#ff5858" stroke-width="2.2"/>`;
                     
-                    // Rojo arriba: SALE este jugador
-                    const yRed = TRACK_Y - 8;
-                    svg += `<text x="${(ex-4).toFixed(1)}" y="${yRed}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${alias} (${Math.floor(b)}')</text>`;
+                    // Rojo arriba: SALE este jugador — nivel anti-colisión
+                    const rLvlOut = getLabelLevel(redLabels, ex);
+                    svg += `<text x="${(ex-4).toFixed(1)}" y="${Y_RED[rLvlOut]}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${alias} (${Math.floor(b)}')</text>`;
                     
                     // Verde abajo: ENTRA el reemplazo (debe ser DISTINTO)
                     if (inPlayer) {
                         const inName = inPlayer.split(' ')[0];
                         if (inName && inName !== alias.substring(0, inName.length)) {
-                            const yGreen = TRACK_Y + TRACK_H + 14;
-                            svg += `<text x="${(ex+4).toFixed(1)}" y="${yGreen}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${inName}</text>`;
+                            const gLvlOut = getLabelLevel(greenLabels, ex);
+                            svg += `<text x="${(ex+4).toFixed(1)}" y="${Y_GREEN[gLvlOut]}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${inName}</text>`;
                         }
                     }
                 }
@@ -1552,6 +2000,7 @@ async function _sdLoadReports() {
                     createdAt:     r.createdAt,
                     // Campos opcionales (enriquecen la cabecera)
                     category:      r.category,
+                    subcategory:   r.subcategory,   // FIX: campo necesario para _cronosRenderCatTree
                     venue:         r.venue,
                     competition:   r.competition,
                     matchTime:     r.matchTime,
@@ -1566,6 +2015,40 @@ async function _sdLoadReports() {
             if (matches[key].myTeamRole == null && r.myTeamRole != null) {
                 matches[key].myTeamRole = r.myTeamRole;
             }
+            // FIX: igual para subcategory (puede ser null en el primer doc pero presente en otros)
+            if (!matches[key].subcategory && r.subcategory) {
+                matches[key].subcategory = r.subcategory;
+            }
+            // FIX: igual para category
+            if (!matches[key].category && r.category) {
+                matches[key].category = r.category;
+            }
+        });
+
+        // ── FIX: Deduplicar jugadores por partido ────────────────────────────
+        // Cada partido puede tener múltiples documentos Firestore para el mismo
+        // jugador (por re-envíos, distintos tipos de doc, etc.). Se conserva solo
+        // el documento más reciente para cada jugador (identificado por dorsal,
+        // alias o nombre) dentro del mismo partido.
+        // Límites reales: F7 → máx 14 jugadores · F11 → máx 25 jugadores.
+        Object.values(matches).forEach(m => {
+            const seen = new Map(); // clave → índice preferido
+            m.players.forEach(p => {
+                const dorsal  = String(p.playerNumber || p.number || '').trim();
+                const alias   = String(p.playerAlias  || p.alias  || p.name || '').trim().toLowerCase();
+                const dedupKey = dorsal || alias || p._id || '';
+                if (!dedupKey) return;
+                if (!seen.has(dedupKey)) {
+                    seen.set(dedupKey, p);
+                } else {
+                    // Conservar el documento con más datos (el más reciente suele tener más campos)
+                    const prev = seen.get(dedupKey);
+                    const prevScore = Object.keys(prev).length;
+                    const currScore = Object.keys(p).length;
+                    if (currScore > prevScore) seen.set(dedupKey, p);
+                }
+            });
+            m.players = Array.from(seen.values());
         });
 
         // Ordenar por fecha descendente
@@ -1646,7 +2129,7 @@ async function _sdLoadReports() {
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
             const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
             window._sdMatchData[key64] = m;
-            return '<div class="sd-report-card" id="rcard-' + key64 + '" onclick="sdToggleReport(\'' + key64 + '\')" style="margin-bottom:0.5rem;">' +
+            return '<div class="sd-report-card" id="rcard-' + key64 + '" onclick="sdToggleReport(\'' + key64 + '\')" style="margin-bottom:0.5rem;position:relative;">' +
                 '<div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">' +
                 '<div style="flex:1;min-width:0;">' +
                 '<div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">' +
@@ -1655,9 +2138,16 @@ async function _sdLoadReports() {
                 '</div>' +
                 '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">' + dateStr + ' · ' + score + ' · ' + escapeHtml(m.coachEmail||'') + '</div>' +
                 '</div>' +
-                '<div style="text-align:right;flex-shrink:0;">' +
+                '<div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0;">' +
                 '<span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">' + m.players.length + ' jugadores</span>' +
                 (goals > 0 ? ' <span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">' + goals + ' goles</span>' : '') +
+                '<button onclick="event.stopPropagation();sdDeleteReport(\'' + key64 + '\')" ' +
+                'title="Ocultar este informe solo de tu panel (el otro rol seguirá viéndolo)" ' +
+                'style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;' +
+                'border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.75rem;line-height:1.4;' +
+                'transition:background 0.15s;flex-shrink:0;" ' +
+                'onmouseover="this.style.background=\'rgba(255,88,88,0.25)\'" ' +
+                'onmouseout="this.style.background=\'rgba(255,88,88,0.1)\'">🗑️</button>' +
                 '</div>' +
                 '</div>' +
                 '<div id="rdetail-' + key64 + '" style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;"></div>' +
@@ -1897,55 +2387,260 @@ async function _sdLoadMessages() {
                 threadsMap[d.id] = { _id:d.id, ...d.data() };
             }
         });
-
         const threads = Object.values(threadsMap)
             .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
 
+        let html = `
+        <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+            <button onclick="sdOpenNewMessageComposer()" class="btn primary" style="padding:0.45rem 0.9rem; font-size:0.78rem; font-weight:700;">
+                ✉️ Nuevo Mensaje
+            </button>
+            <span style="font-size:0.78rem;color:var(--text-muted);">
+                ${threads.length} conversación${threads.length!==1?'es':''}
+            </span>
+        </div>`;
+
         if (!threads.length) {
-            container.innerHTML = `
-            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
+            html += `
+            <div style="text-align:center;padding:4rem;color:var(--text-muted); background:rgba(255,255,255,0.02); border:1px solid var(--glass-border); border-radius:12px; width:100%;">
                 <div style="font-size:2rem;margin-bottom:0.8rem;">💬</div>
                 Sin mensajes recibidos aún.<br>
                 <span style="font-size:0.78rem;">Los mensajes de los entrenadores aparecerán aquí.</span>
             </div>`;
-            return;
+            container.innerHTML = html;
+        } else {
+            threads.forEach(t => {
+                const unread    = (t.unreadByStaff || t.unreadByParent || 0);
+                const lastMsg   = t.lastMessage   || '—';
+                const lastT     = t.lastMessageAt
+                    ? new Date(t.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
+                    : '';
+                const isReport  = lastMsg.includes('📊');
+                const isCollective = t.recipientType === 'staff' || (t.messages||[]).some(m=>m.type==='collective_report');
+
+                html += `
+                <div class="sd-card ${unread>0?'sd-report-unread':''}"
+                     onclick="sdOpenStaffThread('${t._id}','${t.coachUid||''}','${(t.coachEmail||'').replace(/'/g,"\\'")}')"
+                     style="cursor:pointer; width:100%; box-sizing:border-box; margin-bottom:0.6rem;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
+                            ${isCollective?'📊':'✉️'} ${escapeHtml(t.coachEmail||'Entrenador')}
+                            ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
+                                border-radius:10px;padding:1px 7px;font-size:0.62rem;
+                                font-weight:700;margin-left:6px;">
+                                ${unread} nuevo${unread>1?'s':''}</span>`:''}
+                        </div>
+                        <div style="font-size:0.76rem;
+                                    color:${unread?'#58a6ff':'var(--text-muted)'};
+                                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                            ${unread?`<strong>🔵 ${escapeHtml(lastMsg)}</strong>`:escapeHtml(lastMsg)}
+                        </div>
+                    </div>
+                    <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
+                </div>`;
+            });
+            container.innerHTML = html;
         }
 
-        let html = `<div style="margin-bottom:0.8rem;font-size:0.78rem;color:var(--text-muted);">
-            ${threads.length} conversación${threads.length!==1?'es':''}</div>`;
+        window.sdOpenNewMessageComposer = async () => {
+            container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando usuarios del club…</p>`;
+            try {
+                const { db: dbComp, collection: collComp, getDocs: gDocsComp, query: qComp, where: whComp } = await _sdFS();
+                // 1. Obtener todos los usuarios del club
+                const usersSnap = await gDocsComp(qComp(collComp(dbComp, 'users'), whComp('clubId', '==', clubId)));
+                const users = [];
+                usersSnap.forEach(d => {
+                    if (d.id !== me.uid) { // Excluirse a sí mismo
+                        const data = d.data();
+                        
+                        // Determinar los roles
+                        const roles = [data.role || '', ...(data.allRoles || []).map(r => r.role || '')];
+                        const isCoach = roles.some(r => ['user', 'coach', 'entrenador'].includes(r));
+                        const isDirector = roles.some(r => r === 'director');
+                        const isCoordinator = roles.some(r => r === 'coordinator');
 
-        threads.forEach(t => {
-            const unread    = (t.unreadByStaff || t.unreadByParent || 0);
-            const lastMsg   = t.lastMessage   || '—';
-            const lastT     = t.lastMessageAt
-                ? new Date(t.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
-                : '';
-            const isReport  = lastMsg.includes('📊');
-            const isCollective = t.recipientType === 'staff' || (t.messages||[]).some(m=>m.type==='collective_report');
+                        if (isCoach || isDirector || isCoordinator) {
+                            let roleLabel = 'Personal';
+                            if (isDirector) roleLabel = 'Director Deportivo';
+                            else if (isCoordinator) roleLabel = 'Coordinador';
+                            else if (isCoach) {
+                                // Obtener categoria
+                                const cat = data.category || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.category || '';
+                                const sub = data.subcategory || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.subcategory || '';
+                                roleLabel = `Entrenador (${cat} ${sub})`.trim();
+                            }
 
-            html += `
-            <div class="sd-card ${unread>0?'sd-report-unread':''}"
-                 onclick="sdOpenStaffThread('${t._id}','${t.coachUid||''}','${(t.coachEmail||'').replace(/'/g,"\\'")}')"
-                 style="cursor:pointer;">
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                        ${isCollective?'📊':'✉️'} ${escapeHtml(t.coachEmail||'Entrenador')}
-                        ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
-                            border-radius:10px;padding:1px 7px;font-size:0.62rem;
-                            font-weight:700;margin-left:6px;">
-                            ${unread} nuevo${unread>1?'s':''}</span>`:''}
+                            users.push({
+                                uid: d.id,
+                                email: data.email || '',
+                                displayName: data.displayName || data.email || 'Usuario',
+                                roleLabel,
+                                role: isCoach ? 'user' : (isDirector ? 'director' : 'coordinator')
+                            });
+                        }
+                    }
+                });
+
+                // Ordenar por tipo de rol y luego nombre
+                users.sort((a,b) => a.roleLabel.localeCompare(b.roleLabel) || a.displayName.localeCompare(b.displayName));
+
+                container.innerHTML = `
+                <div style="display:flex;flex-direction:column;height:100%;">
+                    <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;flex-shrink:0;">
+                        <button onclick="switchStaffTab('mensajes')"
+                            style="padding:0.35rem 0.7rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid var(--glass-border);border-radius:7px;
+                                   color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
+                            ← Volver
+                        </button>
+                        <div style="font-weight:700;font-size:0.88rem;">✉️ Nuevo Mensaje</div>
                     </div>
-                    <div style="font-size:0.76rem;
-                                color:${unread?'#58a6ff':'var(--text-muted)'};
-                                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${unread?`<strong>🔵 ${escapeHtml(lastMsg)}</strong>`:escapeHtml(lastMsg)}
-                    </div>
-                </div>
-                <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
-            </div>`;
-        });
+                    
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
+                                border-radius:10px;padding:0.8rem;margin-bottom:1rem;display:flex;flex-direction:column;gap:0.5rem;flex:1;overflow-y:auto;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
+                            <span style="font-size:0.75rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
+                                DESTINATARIOS
+                            </span>
+                            <div style="display:flex;gap:0.4rem;">
+                                <button onclick="document.querySelectorAll('.sd-msg-recipient-chk').forEach(c=>c.checked=true); sdUpdateBulkCount();"
+                                    style="font-size:0.62rem;padding:0.18rem 0.55rem;background:rgba(88,166,255,0.1);
+                                           border:1px solid rgba(88,166,255,0.3);border-radius:4px;color:var(--primary);cursor:pointer;">
+                                    ✓ Todos
+                                </button>
+                                <button onclick="document.querySelectorAll('.sd-msg-recipient-chk').forEach(c=>c.checked=false); sdUpdateBulkCount();"
+                                    style="font-size:0.62rem;padding:0.18rem 0.55rem;background:rgba(255,255,255,0.05);
+                                           border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:var(--text-muted);cursor:pointer;">
+                                    ✗ Ninguno
+                                </button>
+                            </div>
+                        </div>
 
-        container.innerHTML = html;
+                        <div style="display:flex;flex-direction:column;gap:0.35rem;overflow-y:auto;max-height:240px;padding-right:4px;">
+                            ${users.length ? users.map(u => `
+                            <label style="display:flex;align-items:center;gap:0.55rem;
+                                           background:rgba(255,255,255,0.02);border:1px solid var(--glass-border);
+                                           border-radius:7px;padding:0.45rem 0.65rem;cursor:pointer;">
+                                <input type="checkbox" class="sd-msg-recipient-chk"
+                                    data-uid="${escapeAttr(u.uid)}"
+                                    data-email="${escapeAttr(u.email)}"
+                                    data-role="${escapeAttr(u.role)}"
+                                    onchange="sdUpdateBulkCount()"
+                                    style="width:15px;height:15px;flex-shrink:0;accent-color:var(--primary);">
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-size:0.78rem;font-weight:600;color:white;">
+                                        ${escapeHtml(u.displayName)}
+                                    </div>
+                                    <div style="font-size:0.63rem;color:var(--text-muted);">
+                                        ${escapeHtml(u.roleLabel)} · ${escapeHtml(u.email)}
+                                    </div>
+                                </div>
+                            </label>`).join('') : '<p style="color:var(--text-muted);text-align:center;font-size:0.8rem;padding:1rem;">No se encontraron otros usuarios de personal en este club.</p>'}
+                        </div>
+                    </div>
+
+                    <div style="flex-shrink:0;display:flex;flex-direction:column;gap:0.5rem;margin-top:auto;">
+                        <textarea id="sd-bulk-msg-text" rows="3"
+                            placeholder="Escribe aquí el mensaje..."
+                            style="padding:0.7rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid var(--glass-border);border-radius:8px;
+                                   color:white;font-size:0.85rem;resize:none;
+                                   box-sizing:border-box;width:100%;"></textarea>
+                        <button onclick="sdSendBulkMsg()" class="btn primary" id="sd-send-bulk-btn"
+                            style="width:100%;font-weight:700;font-size:0.85rem;padding:0.65rem;">
+                            Enviar mensaje (<span id="sd-bulk-count">0</span> seleccionados)
+                        </button>
+                    </div>
+                </div>`;
+            } catch(e) {
+                container.innerHTML = `<p style="color:#ff5858;text-align:center;padding:2rem;">⚠️ Error al cargar usuarios: ${escapeHtml(e.message)}</p>`;
+            }
+        };
+
+        window.sdUpdateBulkCount = () => {
+            const count = document.querySelectorAll('.sd-msg-recipient-chk:checked').length;
+            const countEl = document.getElementById('sd-bulk-count');
+            if (countEl) countEl.textContent = count;
+        };
+
+        window.sdSendBulkMsg = async () => {
+            const text = (document.getElementById('sd-bulk-msg-text')?.value || '').trim();
+            if (!text) {
+                if (typeof showToast === 'function') showToast('⚠️ Por favor escribe un mensaje', 3000);
+                return;
+            }
+            
+            const selected = Array.from(document.querySelectorAll('.sd-msg-recipient-chk:checked')).map(chk => ({
+                uid: chk.dataset.uid,
+                email: chk.dataset.email,
+                role: chk.dataset.role
+            }));
+
+            if (!selected.length) {
+                if (typeof showToast === 'function') showToast('⚠️ Selecciona al menos un destinatario', 3000);
+                return;
+            }
+
+            const btn = document.getElementById('sd-send-bulk-btn');
+            if (btn) btn.disabled = true;
+
+            try {
+                const { db: dbSend, doc: docSend, getDoc: gDocSend, setDoc: sDocSend, updateDoc: uDocSend, arrayUnion: arrUnionSend } = await _sdFS();
+                const newMsg = {
+                    sender: 'parent',
+                    senderUid: me.uid,
+                    text,
+                    timestamp: new Date().toISOString()
+                };
+
+                const preview = text.length > 60 ? text.substring(0, 60) + '…' : text;
+
+                for (const u of selected) {
+                    let threadId;
+                    if (u.role === 'user') {
+                        threadId = clubId ? `${clubId}_${me.uid}` : `${u.uid}_${me.uid}`;
+                    } else {
+                        threadId = [me.uid, u.uid].sort().join('_');
+                    }
+
+                    const snap = await gDocSend(docSend(dbSend, 'cronos_messages', threadId));
+                    if (snap.exists()) {
+                        const updateData = {
+                            messages: arrUnionSend(newMsg),
+                            lastMessage: preview,
+                            lastMessageAt: newMsg.timestamp,
+                            unreadByCoach: (snap.data().unreadByCoach || 0) + 1,
+                            unreadByStaff: 0
+                        };
+                        await uDocSend(docSend(dbSend, 'cronos_messages', threadId), updateData);
+                    } else {
+                        const baseDoc = {
+                            threadId,
+                            coachUid: u.role === 'user' ? u.uid : me.uid,
+                            coachEmail: u.role === 'user' ? u.email : me.email,
+                            staffUid: u.role === 'user' ? me.uid : u.uid,
+                            staffEmail: u.role === 'user' ? me.email : u.email,
+                            recipientType: 'staff',
+                            clubId: clubId || null,
+                            participants: [me.uid, u.uid],
+                            messages: [newMsg],
+                            lastMessage: preview,
+                            lastMessageAt: newMsg.timestamp,
+                            unreadByCoach: 1,
+                            unreadByStaff: 0,
+                            unreadByParent: 0
+                        };
+                        await sDocSend(docSend(dbSend, 'cronos_messages', threadId), baseDoc);
+                    }
+                }
+
+                if (typeof showToast === 'function') showToast('✅ Mensajes enviados correctamente', 3000);
+                switchStaffTab('mensajes');
+            } catch(err) {
+                if (btn) btn.disabled = false;
+                if (typeof showToast === 'function') showToast('⚠️ Error: ' + err.message, 4000);
+            }
+        };
 
         window.sdOpenStaffThread = async (threadId, coachUid, coachEmail) => {
             if (typeof _loadThreadMessages === 'function') {
@@ -2053,97 +2748,189 @@ async function _renderDirectorConfig() {
     const clubSnap = await getDoc(doc(db, 'clubs', clubId));
     const clubData = clubSnap.exists() ? clubSnap.data() : {};
     const features = clubData.features || {};
-    const thresholds = clubData.timerThresholds || { red: 33, yellow: 50 };
-    const sendReports = !!features.sendIndividualReports;
+    const legacyThresholds = clubData.timerThresholds || { red: 33, yellow: 50 };
+    const legacySendReports = features.sendIndividualReports !== false;
+    const categoryConfigs = clubData.categoryConfigs || {};
 
     const extras = (me && me.extras) || {};
     const semaforoEnabled = extras.semaforo !== false;
     const informesPadresEnabled = extras.informes_padres !== false;
 
-    container.innerHTML = `
-    <div style="max-width:560px;">
-      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                  border-radius:12px;padding:1.2rem;margin-bottom:1rem;${semaforoEnabled ? '' : 'opacity:0.5;pointer-events:none;'}">
-        <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:0.3rem;display:flex;align-items:center;gap:0.5rem;">
-          ${semaforoEnabled ? '' : '<span style="font-size:1rem;">🔒</span>'} Semaforo de tiempo de juego
+    // Definición de las 9 categorías/subcategorías exigidas
+    const GROUPS = [
+        { key: 'f7',          label: '⚽ Fútbol 7',                  sub: 'Prebenjamín, Benjamín y Alevín', hasSemaforo: true },
+        { key: 'infantil_a',  label: '🏆 Infantil — Subcategoría A', sub: 'Categoría Infantil A',           hasSemaforo: true },
+        { key: 'infantil_b',  label: '🏆 Infantil — Subcategoría B', sub: 'Categoría Infantil B',           hasSemaforo: true },
+        { key: 'infantil_c',  label: '🏆 Infantil — Subcategoría C', sub: 'Categoría Infantil C',           hasSemaforo: true },
+        { key: 'cadete_a',    label: '🥇 Cadete — Subcategoría A',   sub: 'Categoría Cadete A',             hasSemaforo: true },
+        { key: 'cadete_b',    label: '🥇 Cadete — Subcategoría B',   sub: 'Categoría Cadete B',             hasSemaforo: true },
+        { key: 'cadete_c',    label: '🥇 Cadete — Subcategoría C',   sub: 'Categoría Cadete C',             hasSemaforo: true },
+        { key: 'juvenil',     label: '🔥 Juveniles',                 sub: 'Todas las subcategorías (A, B, C)', hasSemaforo: false },
+        { key: 'regional',    label: '⭐ Regional / Senior',          sub: 'Todas las subcategorías (A, B, C)', hasSemaforo: false },
+    ];
+
+    let html = `
+    <div style="max-width:780px; padding-bottom:2rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem; flex-wrap:wrap; gap:0.8rem;">
+        <div>
+          <h3 style="margin:0; font-size:1.1rem; color:white;">⚙️ Configuración de Semáforos e Informes</h3>
+          <div style="font-size:0.75rem; color:#7d8590; margin-top:3px;">
+            Ajusta los límites del semáforo y los permisos de informes a padres según las exigencias de cada grupo de edad.
+          </div>
         </div>
-        <div style="font-size:0.72rem;color:#7d8590;margin-bottom:1rem;">
-          Porcentaje del tiempo total que determina el color de cada jugador en el planometro.
-        </div>
-        <label style="display:flex;align-items:center;gap:1rem;margin-bottom:0.8rem;">
-          <span style="width:90px;font-size:0.8rem;color:#da3633;font-weight:700;">Rojo hasta</span>
-          <input type="range" id="dir-threshold-red" min="10" max="45" step="1"
-                 value="${thresholds.red}"
-                 oninput="document.getElementById('dir-red-val').textContent=this.value+'%'"
-                 style="flex:1;accent-color:#da3633;">
-          <span id="dir-red-val" style="width:38px;text-align:right;font-weight:700;color:#da3633;">
-            ${thresholds.red}%
-          </span>
-        </label>
-        <label style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;">
-          <span style="width:90px;font-size:0.8rem;color:#e3b341;font-weight:700;">Amarillo hasta</span>
-          <input type="range" id="dir-threshold-yellow" min="30" max="70" step="1"
-                 value="${thresholds.yellow}"
-                 oninput="document.getElementById('dir-yellow-val').textContent=this.value+'%'"
-                 style="flex:1;accent-color:#e3b341;">
-          <span id="dir-yellow-val" style="width:38px;text-align:right;font-weight:700;color:#e3b341;">
-            ${thresholds.yellow}%
-          </span>
-        </label>
-        <div style="font-size:0.7rem;color:#7d8590;margin-bottom:0.8rem;">
-          Verde: del umbral amarillo hasta el final del partido.
-        </div>
-        <button onclick="window._dirSaveThresholds('${clubId}')"
-            style="background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);
-                   color:#58a6ff;padding:0.45rem 1.2rem;border-radius:7px;
-                   font-size:0.82rem;font-weight:700;cursor:pointer;">
-          Guardar semaforo
+        <button onclick="window._dirSaveCategoryConfigs('${clubId}')"
+            style="background:linear-gradient(135deg,#58a6ff,#1f6beb); border:none;
+                   color:white; padding:0.6rem 1.4rem; border-radius:8px;
+                   font-size:0.85rem; font-weight:800; cursor:pointer; box-shadow:0 4px 12px rgba(88,166,255,0.3);">
+          💾 Guardar Configuración
         </button>
       </div>
 
-      <div style="background:rgba(210,168,255,0.06);border:1px solid rgba(210,168,255,0.2);
-                  border-radius:12px;padding:1.2rem;${informesPadresEnabled ? '' : 'opacity:0.5;pointer-events:none;'}">
-        <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;">
-          ${informesPadresEnabled ? '' : '<span style="font-size:1rem;">🔒</span>'} Informes individualizados a padres
-        </div>
-        <label style="display:flex;align-items:center;gap:0.5rem;${informesPadresEnabled ? 'cursor:pointer;' : 'cursor:not-allowed;'}">
-          <input type="checkbox" id="dir-toggle-reports"
-                 ${sendReports ? 'checked' : ''}
-                 onchange="window._dirToggleReports('${clubId}', this.checked)"
-                 style="width:20px;height:20px;accent-color:#d2a8ff;">
-          <div>
-            <div style="font-size:0.85rem;font-weight:700;color:white;">
-              Enviar informes individualizados a padres
+      <div style="display:flex; flex-direction:column; gap:1rem;">
+    `;
+
+    GROUPS.forEach(g => {
+        const cfg = categoryConfigs[g.key] || {};
+        const semActive = g.hasSemaforo ? (cfg.semaforoActive !== false) : false;
+        const redVal    = cfg.red    ?? legacyThresholds.red    ?? 33;
+        const yellowVal = cfg.yellow ?? legacyThresholds.yellow ?? 50;
+        const parentActive = cfg.sendIndividualReports !== undefined ? cfg.sendIndividualReports : legacySendReports;
+
+        html += `
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09); border-radius:14px; padding:1.1rem; transition:border-color 0.2s;"
+             onmouseover="this.style.borderColor='rgba(88,166,255,0.3)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.09)'">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:0.6rem;">
+            <div>
+              <div style="font-size:0.95rem; font-weight:800; color:white;">${escapeHtml(g.label)}</div>
+              <div style="font-size:0.72rem; color:#7d8590; margin-top:2px;">${escapeHtml(g.sub)}</div>
             </div>
-            <div style="font-size:0.72rem;color:#7d8590;margin-top:0.15rem;">
-              Cuando esta activo, los entrenadores pueden enviar el informe de cada jugador al padre vinculado.
+            ${g.hasSemaforo ? `
+            <label style="display:flex; align-items:center; gap:0.5rem; background:rgba(255,255,255,0.05); padding:0.35rem 0.7rem; border-radius:8px; cursor:pointer; ${semaforoEnabled ? '' : 'opacity:0.5;pointer-events:none;'}">
+              <input type="checkbox" id="sem-active-${g.key}" ${semActive ? 'checked' : ''}
+                     onchange="document.getElementById('sem-sliders-${g.key}').style.opacity = this.checked ? '1' : '0.4'; document.getElementById('sem-sliders-${g.key}').style.pointerEvents = this.checked ? 'auto' : 'none';"
+                     style="width:17px; height:17px; accent-color:#58a6ff;">
+              <span style="font-size:0.78rem; font-weight:700; color:white;">Semáforo Activo</span>
+            </label>` : `
+            <span style="font-size:0.72rem; font-weight:700; color:#79c0ff; background:rgba(121,192,255,0.1); border:1px solid rgba(121,192,255,0.25); padding:3px 8px; border-radius:6px;">
+              ℹ️ Sin Semáforo (Celeste)
+            </span>`}
+          </div>
+
+          <div style="display:grid; grid-template-columns:${g.hasSemaforo ? '1fr 1fr' : '1fr'}; gap:1.2rem; align-items:center;">
+            ${g.hasSemaforo ? `
+            <!-- Bloque Semáforo -->
+            <div id="sem-sliders-${g.key}" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:0.8rem; transition:all 0.2s; ${semActive && semaforoEnabled ? 'opacity:1; pointer-events:auto;' : 'opacity:0.4; pointer-events:none;'}">
+              <div style="font-size:0.75rem; font-weight:700; color:#58a6ff; margin-bottom:0.6rem;">⏱️ Umbrales de Tiempo (%)</div>
+              <label style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.5rem;">
+                <span style="width:75px; font-size:0.72rem; color:#da3633; font-weight:700;">Rojo hasta</span>
+                <input type="range" id="sem-red-${g.key}" min="10" max="45" step="1" value="${redVal}"
+                       oninput="document.getElementById('sem-red-val-${g.key}').textContent=this.value+'%'"
+                       style="flex:1; accent-color:#da3633;">
+                <span id="sem-red-val-${g.key}" style="width:34px; text-align:right; font-weight:700; font-size:0.75rem; color:#da3633;">${redVal}%</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:0.6rem;">
+                <span style="width:75px; font-size:0.72rem; color:#e3b341; font-weight:700;">Amarillo</span>
+                <input type="range" id="sem-yellow-${g.key}" min="30" max="70" step="1" value="${yellowVal}"
+                       oninput="document.getElementById('sem-yellow-val-${g.key}').textContent=this.value+'%'"
+                       style="flex:1; accent-color:#e3b341;">
+                <span id="sem-yellow-val-${g.key}" style="width:34px; text-align:right; font-weight:700; font-size:0.75rem; color:#e3b341;">${yellowVal}%</span>
+              </label>
+              <div style="font-size:0.65rem; color:#7d8590; margin-top:0.4rem; text-align:right;">
+                Verde: de ${yellowVal}% a 100%
+              </div>
+            </div>` : `
+            <div style="background:rgba(121,192,255,0.05); border:1px solid rgba(121,192,255,0.15); border-radius:10px; padding:0.8rem; font-size:0.75rem; color:#7d8590; display:flex; align-items:center; gap:0.6rem;">
+              <span style="font-size:1.2rem;">🩵</span>
+              <div>En Juvenil y Regional no se aplica semáforo. Las tarjetas de cronómetro se muestran en <strong>celeste</strong>.</div>
+            </div>`}
+
+            <!-- Bloque Informes a Padres -->
+            <div style="background:rgba(210,168,255,0.05); border:1px solid rgba(210,168,255,0.15); border-radius:10px; padding:0.8rem; ${informesPadresEnabled ? '' : 'opacity:0.5;pointer-events:none;'}">
+              <div style="font-size:0.75rem; font-weight:700; color:#d2a8ff; margin-bottom:0.4rem;">👨‍👩‍👧 Informes a Padres</div>
+              <label style="display:flex; align-items:center; gap:0.6rem; cursor:pointer;">
+                <input type="checkbox" id="parent-rep-${g.key}" ${parentActive ? 'checked' : ''} style="width:18px; height:18px; accent-color:#d2a8ff;">
+                <span style="font-size:0.78rem; font-weight:700; color:white;">Activar informes individualizados a padres</span>
+              </label>
+              <div style="font-size:0.68rem; color:#7d8590; margin-top:0.3rem;">
+                Permite enviar el informe individual del jugador al padre/madre vinculado en esta categoría.
+              </div>
             </div>
           </div>
-        </label>
+        </div>`;
+    });
+
+    html += `
+      </div>
+      <div style="margin-top:1.5rem; text-align:right;">
+        <button onclick="window._dirSaveCategoryConfigs('${clubId}')"
+            style="background:linear-gradient(135deg,#58a6ff,#1f6beb); border:none;
+                   color:white; padding:0.7rem 1.8rem; border-radius:9px;
+                   font-size:0.9rem; font-weight:800; cursor:pointer; box-shadow:0 4px 14px rgba(88,166,255,0.35);">
+          💾 Guardar Toda la Configuración
+        </button>
       </div>
     </div>`;
+
+    container.innerHTML = html;
 }
 
-window._dirSaveThresholds = async function(clubId) {
-    const red    = parseInt(document.getElementById('dir-threshold-red')?.value)    || 33;
-    const yellow = parseInt(document.getElementById('dir-threshold-yellow')?.value) || 50;
-    if (red >= yellow) { showToast('El umbral rojo debe ser menor que el amarillo.', 3000); return; }
-    try {
-        const { doc, updateDoc } = await _sdFS();
-        const db = window._cronos_auth?.db;
-        await updateDoc(doc(db, 'clubs', clubId), { timerThresholds: { red, yellow } });
-        window._clubTimerThresholds = { red, yellow };
-        showToast('Semaforo actualizado', 2500);
-    } catch(e) { showToast('Error: ' + e.message, 4000); }
-};
+window._dirSaveCategoryConfigs = async function(clubId) {
+    const GROUPS = ['f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c', 'juvenil', 'regional'];
+    const categoryConfigs = {};
 
-window._dirToggleReports = async function(clubId, value) {
+    let hasError = false;
+    GROUPS.forEach(key => {
+        const semActiveEl = document.getElementById(`sem-active-${key}`);
+        const redEl       = document.getElementById(`sem-red-${key}`);
+        const yellowEl    = document.getElementById(`sem-yellow-${key}`);
+        const parentRepEl = document.getElementById(`parent-rep-${key}`);
+
+        const semaforoActive = semActiveEl ? semActiveEl.checked : false;
+        const red = redEl ? parseInt(redEl.value) || 33 : 33;
+        const yellow = yellowEl ? parseInt(yellowEl.value) || 50 : 50;
+
+        if (semActiveEl && semActiveEl.checked && red >= yellow) {
+            hasError = true;
+        }
+
+        categoryConfigs[key] = {
+            semaforoActive,
+            red,
+            yellow,
+            sendIndividualReports: parentRepEl ? parentRepEl.checked : true
+        };
+    });
+
+    if (hasError) {
+        showToast('⚠️ En algunas categorías el umbral rojo debe ser menor que el amarillo.', 4000);
+        return;
+    }
+
     try {
+        if (typeof showSpinner === 'function') showSpinner('Guardando configuración…');
         const { doc, updateDoc } = await _sdFS();
         const db = window._cronos_auth?.db;
-        await updateDoc(doc(db, 'clubs', clubId), { 'features.sendIndividualReports': value });
-        showToast('Informes a padres ' + (value ? 'activados' : 'desactivados'), 3000);
-    } catch(e) { showToast('Error: ' + e.message, 4000); }
+
+        const f7Red = categoryConfigs.f7?.red || 33;
+        const f7Yellow = categoryConfigs.f7?.yellow || 50;
+        const anyReportsActive = Object.values(categoryConfigs).some(c => c.sendIndividualReports);
+
+        await updateDoc(doc(db, 'clubs', clubId), {
+            categoryConfigs: categoryConfigs,
+            timerThresholds: { red: f7Red, yellow: f7Yellow },
+            'features.sendIndividualReports': anyReportsActive
+        });
+
+        window._clubCategoryConfigs = categoryConfigs;
+        window._clubTimerThresholds = { red: f7Red, yellow: f7Yellow };
+
+        if (typeof hideSpinner === 'function') hideSpinner();
+        showToast('✅ Configuración del club guardada correctamente', 3000);
+    } catch(e) {
+        if (typeof hideSpinner === 'function') hideSpinner();
+        console.error('[Config] Error guardando:', e);
+        showToast('⚠️ Error al guardar: ' + e.message, 4000);
+    }
 };
 
 window._renderDirectorConfig = _renderDirectorConfig;

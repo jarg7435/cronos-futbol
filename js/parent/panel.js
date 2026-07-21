@@ -117,7 +117,7 @@ async function openParentPanel() {
         <button class="pp-tab active" onclick="ppTab('conv',this)" title="Convocatorias">📋 Convoc.</button>
         <button class="pp-tab"        onclick="ppTab('train',this)" title="Entrenamientos">📅 Entreno.</button>
         <button class="pp-tab"        onclick="ppTab('player',this)" title="Informes del jugador">📊 Informes</button>
-        <button class="pp-tab"        onclick="ppTab('chat',this)" title="Chat con el entrenador">💬 Chat</button>
+        <button class="pp-tab"        onclick="ppTab('chat',this)" title="Mensajes con el entrenador">💬 Mensajes</button>
         <button class="pp-tab"        onclick="ppTab('live',this)" title="Partidos en vivo">🔴 En Vivo</button>
     </div>
 
@@ -1241,8 +1241,17 @@ window.ppChat = async () => {
         const { collection, getDocs, query, where, doc, getDoc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
+        // Obtener datos del perfil del padre para saber categoría, subcategoría y clubId
+        const myDoc = await getDoc(doc(fa.db, 'users', me.uid));
+        const myData = myDoc.exists() ? myDoc.data() : {};
+        const _roleParent = (Array.isArray(myData.allRoles)
+            ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
+            : {});
+        const pCat = myData.category || _roleParent.category || me.category || '';
+        const pSub = myData.subcategory || _roleParent.subcategory || me.subcategory || '';
+        const clubId = myData.clubId || _roleParent.clubId || me.clubId || '';
+
         // Buscar hilos donde el padre es participante
-        // Los thread IDs son {coachUid}_{parentUid}
         const threadsSnap = await getDocs(query(
             collection(fa.db, 'cronos_messages'),
             where('parentUid', '==', me.uid)
@@ -1251,16 +1260,72 @@ window.ppChat = async () => {
         const threads = [];
         threadsSnap.forEach(d => threads.push({ _id: d.id, ...d.data() }));
 
-        // También buscar hilos donde el threadId contiene el uid del padre
-        const allMsgsSnap = await getDocs(collection(fa.db, 'cronos_messages'));
-        allMsgsSnap.forEach(d => {
-            const data = d.data();
-            if (data.parentUid === me.uid && !threads.find(t => t._id === d.id)) {
-                threads.push({ _id: d.id, ...data });
-            }
-        });
+        // Intentar buscar al entrenador de la misma categoría y subcategoría para iniciar conversación si no existe hilo
+        let coach = null;
+        if (clubId && pCat) {
+            const coachesSnap = await getDocs(query(
+                collection(fa.db, 'users'),
+                where('clubId', '==', clubId)
+            ));
+            coachesSnap.forEach(d => {
+                const data = d.data();
+                const roles = [data.role, ...(data.allRoles || []).map(r => r.role)];
+                const isCoach = roles.some(r => ['user', 'coach', 'entrenador'].includes(r));
+                
+                let catMatch = false;
+                if (data.category && (data.category.toLowerCase() === pCat.toLowerCase())) {
+                    if (!pSub || (data.subcategory && data.subcategory.toLowerCase() === pSub.toLowerCase())) {
+                        catMatch = true;
+                    }
+                }
+                if (!catMatch && Array.isArray(data.allRoles)) {
+                    data.allRoles.forEach(r => {
+                        if (['user', 'coach', 'entrenador'].includes(r.role) && 
+                            r.category && r.category.toLowerCase() === pCat.toLowerCase()) {
+                            if (!pSub || (r.subcategory && r.subcategory.toLowerCase() === pSub.toLowerCase())) {
+                                catMatch = true;
+                            }
+                        }
+                    });
+                }
+                
+                if (isCoach && catMatch) {
+                    coach = { uid: d.id, ...data };
+                }
+            });
+        }
 
-        if (!threads.length) {
+        let html = '';
+        
+        // Si hay un entrenador identificado pero no hay un hilo activo con él, mostrar la opción de iniciar chat
+        if (coach && !threads.some(t => t.coachUid === coach.uid)) {
+            const newThreadId = `${coach.uid}_${me.uid}`;
+            const coachName = coach.displayName || coach.email || 'Entrenador';
+            html += `
+            <div onclick="ppOpenChatThread('${newThreadId}','${typeof escapeAttr==='function'?escapeAttr(coachName):coachName}')"
+                 style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;
+                        background:rgba(63,185,80,0.06);
+                        border:1px solid rgba(63,185,80,0.3);
+                        border-radius:10px;padding:0.85rem 1rem;
+                        cursor:pointer;transition:all 0.15s;">
+                <div style="width:42px;height:42px;border-radius:50%;
+                            background:rgba(63,185,80,0.15);
+                            display:flex;align-items:center;justify-content:center;
+                            font-size:1.2rem;flex-shrink:0;">
+                    🟢
+                </div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.1rem;color:white;">
+                        Iniciar chat con el entrenador: ${typeof escapeHtml==='function'?escapeHtml(coachName):coachName}
+                    </div>
+                    <div style="font-size:0.72rem;color:var(--text-muted);">
+                        Categoría: ${pCat} ${pSub} · Pulsa para enviar tu primer mensaje
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        if (!threads.length && !coach) {
             body.innerHTML = `<div class="pp-empty">
                 💬 Aún no hay conversaciones con el entrenador.<br>
                 <span style="font-size:0.8rem;color:#555;">
@@ -1274,7 +1339,7 @@ window.ppChat = async () => {
         // Ordenar por último mensaje
         threads.sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
 
-        body.innerHTML = threads.map(t => {
+        html += threads.map(t => {
             const unread = t.unreadByParent || 0;
             const lastMsg = t.lastMessage || '— Sin mensajes —';
             const lastTime = t.lastMessageAt
@@ -1310,6 +1375,8 @@ window.ppChat = async () => {
                 <span style="font-size:0.68rem;color:#7d8590;flex-shrink:0;">${lastTime}</span>
             </div>`;
         }).join('');
+
+        body.innerHTML = html;
 
     } catch (e) {
         body.innerHTML = `<div class="pp-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
@@ -1405,7 +1472,7 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
                             </div>
                             <div style="font-size:0.64rem;color:#7d8590;text-align:right;margin-top:0.25rem;">
                                 ${date} ${time}
-                            </div>
+                             </div>
                         </div>
                     </div>`;
                 }).join('');
@@ -1457,14 +1524,26 @@ window.ppSendChatMessage = async (threadId) => {
                 unreadByCoach: (snap.data().unreadByCoach || 0) + 1,
             });
         } else {
-            // Crear nuevo hilo (caso raro)
+            // Crear nuevo hilo
+            const coachUid = threadId.split('_')[0];
+            
+            // Buscar datos del club y categoría
+            const myDoc = await getDoc(doc(fa.db, 'users', me.uid));
+            const myData = myDoc.exists() ? myDoc.data() : {};
+            const _roleParent = (Array.isArray(myData.allRoles)
+                ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
+                : {});
+            
             await setDoc(doc(fa.db, 'cronos_messages', threadId), {
                 threadId,
-                coachUid: threadId.split('_')[0],
+                coachUid: coachUid,
                 coachEmail: '',
                 parentUid: me.uid,
                 parentEmail: me.email,
                 recipientType: 'parent',
+                clubId: myData.clubId || _roleParent.clubId || me.clubId || null,
+                category: myData.category || _roleParent.category || me.category || null,
+                subcategory: myData.subcategory || _roleParent.subcategory || me.subcategory || null,
                 messages: [newMsg],
                 lastMessage: preview,
                 lastMessageAt: newMsg.timestamp,
