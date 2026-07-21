@@ -1077,7 +1077,7 @@ async function _loadThreadMessages(threadId, perspective) {
         }
 
         const messages = snap.data().messages || [];
-        container.innerHTML = messages.map(m => {
+        container.innerHTML = messages.map((m, idx) => {
             // perspective 'coach': coach = derecha (azul), padre = izquierda
             // perspective 'parent': padre = derecha (violeta), coach = izquierda
             const isMine = (perspective === 'coach' && m.sender === 'coach') ||
@@ -1108,10 +1108,19 @@ async function _loadThreadMessages(threadId, perspective) {
                     <div style="font-size:0.84rem;line-height:1.55;white-space:pre-wrap;">
                         ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
                     </div>
-                    <div style="font-size:0.64rem;color:var(--text-muted);
-                                text-align:right;margin-top:0.25rem;">
-                        ${date} ${time} ·
-                        ${m.sender === 'coach' ? 'Entrenador' : 'Padre/Tutor'}
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.25rem;gap:1.5rem;">
+                        ${isMine ? `
+                        <span onclick="event.stopPropagation(); window.cDeleteSingleMessage('${threadId}', ${idx}, '${perspective}')"
+                              title="Borrar mensaje"
+                              style="font-size:0.7rem;color:#ff5858;cursor:pointer;opacity:0.6;transition:opacity 0.2s;"
+                              onmouseover="this.style.opacity='1'"
+                              onmouseout="this.style.opacity='0.6'">
+                            🗑️ Borrar
+                        </span>` : '<span></span>'}
+                        <div style="font-size:0.64rem;color:var(--text-muted);text-align:right;">
+                            ${date} ${time} ·
+                            ${m.sender === 'coach' ? 'Entrenador' : 'Padre/Tutor'}
+                        </div>
                     </div>
                 </div>
             </div>`;
@@ -5101,6 +5110,38 @@ window._cronosForceRedispatch = async function() {
         await autoDispatchMatchReports();
     } catch(e) {
         console.error('❌ Force re-dispatch falló:', e);
+    }
+};
+
+window.cDeleteSingleMessage = async (threadId, index, perspective) => {
+    if (!confirm('¿Estás seguro de que deseas borrar este mensaje?')) return;
+    try {
+        const { db, doc, getDoc, updateDoc } = await _cFS();
+        const docRef = doc(db, 'cronos_messages', threadId);
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) return;
+        
+        const data = snap.data();
+        const messages = data.messages || [];
+        if (index < 0 || index >= messages.length) return;
+        
+        messages.splice(index, 1);
+        
+        let lastMessage = data.lastMessage || '';
+        let lastMessageAt = data.lastMessageAt || '';
+        if (messages.length > 0) {
+            const last = messages[messages.length - 1];
+            lastMessage = last.text.length > 60 ? last.text.substring(0, 60) + '…' : last.text;
+            lastMessageAt = last.timestamp || '';
+        } else {
+            lastMessage = '— Sin mensajes —';
+            lastMessageAt = '';
+        }
+        
+        await updateDoc(docRef, { messages, lastMessage, lastMessageAt });
+        _loadThreadMessages(threadId, perspective);
+    } catch(err) {
+        alert('Error al borrar: ' + err.message);
     }
 };
 

@@ -3922,7 +3922,7 @@ window.saOpenThread = async (threadId, otherName) => {
             container.innerHTML = `<p style="color:#8b949e; text-align:center; padding:2rem;">Sin mensajes aún.</p>`;
         } else {
             const messages = snap.data().messages || [];
-            container.innerHTML = messages.map(m => {
+            container.innerHTML = messages.map((m, idx) => {
                 const isMine = m.sender === 'superadmin';
                 const time = m.timestamp
                     ? new Date(m.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
@@ -3937,8 +3937,18 @@ window.saOpenThread = async (threadId, otherName) => {
                         <div style="font-size:0.84rem; line-height:1.55; white-space:pre-wrap; color:white;">
                             ${saEscapeHtml(m.text)}
                         </div>
-                        <div style="font-size:0.64rem; color:#8b949e; text-align:right; margin-top:0.25rem;">
-                            ${date} ${time}
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.25rem; gap:1.5rem;">
+                            ${isMine ? `
+                            <span onclick="event.stopPropagation(); saDeleteSingleMessage('${threadId}', ${idx}, '${saEscapeAttr(otherName)}')"
+                                  title="Borrar mensaje"
+                                  style="font-size:0.7rem; color:#ff5858; cursor:pointer; opacity:0.6; transition:opacity 0.2s;"
+                                  onmouseover="this.style.opacity='1'"
+                                  onmouseout="this.style.opacity='0.6'">
+                                🗑️ Borrar
+                            </span>` : '<span></span>'}
+                            <div style="font-size:0.64rem; color:#8b949e; text-align:right;">
+                                ${date} ${time}
+                            </div>
                         </div>
                     </div>
                 </div>`;
@@ -3988,6 +3998,40 @@ window.saSendReply = async (threadId, otherName) => {
     } catch(err) {
         if (btn) btn.disabled = false;
         alert('Error al responder: ' + err.message);
+    }
+};
+
+window.saDeleteSingleMessage = async (threadId, index, otherName) => {
+    if (!confirm('¿Estás seguro de que deseas borrar este mensaje?')) return;
+    const fa = window._cronos_auth;
+    try {
+        const { doc, getDoc, updateDoc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const docRef = doc(fa.db, 'cronos_messages', threadId);
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) return;
+        
+        const data = snap.data();
+        const messages = data.messages || [];
+        if (index < 0 || index >= messages.length) return;
+        
+        messages.splice(index, 1);
+        
+        let lastMessage = data.lastMessage || '';
+        let lastMessageAt = data.lastMessageAt || '';
+        if (messages.length > 0) {
+            const last = messages[messages.length - 1];
+            lastMessage = last.text.length > 60 ? last.text.substring(0, 60) + '…' : last.text;
+            lastMessageAt = last.timestamp || '';
+        } else {
+            lastMessage = '— Sin mensajes —';
+            lastMessageAt = '';
+        }
+        
+        await updateDoc(docRef, { messages, lastMessage, lastMessageAt });
+        saOpenThread(threadId, otherName);
+    } catch(err) {
+        alert('Error al borrar: ' + err.message);
     }
 };
 

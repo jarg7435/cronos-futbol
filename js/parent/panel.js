@@ -1452,7 +1452,7 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
         } else {
             const messages = snap.data().messages || [];
             if (container) {
-                container.innerHTML = messages.map(m => {
+                container.innerHTML = messages.map((m, idx) => {
                     const isMine = m.sender === 'parent';
                     const time = m.timestamp
                         ? new Date(m.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
@@ -1470,9 +1470,19 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
                             <div style="font-size:0.84rem;line-height:1.55;white-space:pre-wrap;">
                                 ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g, '<strong>$1</strong>')}
                             </div>
-                            <div style="font-size:0.64rem;color:#7d8590;text-align:right;margin-top:0.25rem;">
-                                ${date} ${time}
-                             </div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.25rem;gap:1.5rem;">
+                                ${isMine ? `
+                                <span onclick="event.stopPropagation(); ppDeleteSingleMessage('${threadId}', ${idx})"
+                                      title="Borrar mensaje"
+                                      style="font-size:0.7rem;color:#ff5858;cursor:pointer;opacity:0.6;transition:opacity 0.2s;"
+                                      onmouseover="this.style.opacity='1'"
+                                      onmouseout="this.style.opacity='0.6'">
+                                    🗑️ Borrar
+                                </span>` : '<span></span>'}
+                                <div style="font-size:0.64rem;color:#7d8590;text-align:right;">
+                                    ${date} ${time}
+                                </div>
+                            </div>
                         </div>
                     </div>`;
                 }).join('');
@@ -2077,3 +2087,39 @@ window.ppNotifsByType = async function(type) {
         body.innerHTML = `<div class="pp-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 };
+
+window.ppDeleteSingleMessage = async (threadId, index) => {
+    if (!confirm('¿Estás seguro de que deseas borrar este mensaje?')) return;
+    const fa = window._cronos_auth;
+    try {
+        const { doc, getDoc, updateDoc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const docRef = doc(fa.db, 'cronos_messages', threadId);
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) return;
+        
+        const data = snap.data();
+        const messages = data.messages || [];
+        if (index < 0 || index >= messages.length) return;
+        
+        messages.splice(index, 1);
+        
+        let lastMessage = data.lastMessage || '';
+        let lastMessageAt = data.lastMessageAt || '';
+        if (messages.length > 0) {
+            const last = messages[messages.length - 1];
+            lastMessage = last.text.length > 60 ? last.text.substring(0, 60) + '…' : last.text;
+            lastMessageAt = last.timestamp || '';
+        } else {
+            lastMessage = '— Sin mensajes —';
+            lastMessageAt = '';
+        }
+        
+        await updateDoc(docRef, { messages, lastMessage, lastMessageAt });
+        const coachLabel = document.querySelector('#pp-body div[style*="font-weight:700"]')?.textContent || 'Entrenador';
+        ppOpenChatThread(threadId, coachLabel);
+    } catch(err) {
+        alert('Error al borrar: ' + err.message);
+    }
+};
+
