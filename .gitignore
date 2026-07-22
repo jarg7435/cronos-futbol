@@ -56,4 +56,9 @@ junit.xml
 # HERRAMIENTAS TEMPORALES DE VALIDACION DE REGLAS (no forma parte del build)
 rules_test/
 _*.txt
-bgout.txt 
+bgout.txt
+
+# SCRIPTS DE INVESTIGACION/DEBUG PUNTUAL CONTRA PRODUCCION (Admin SDK)
+# Nunca deben vivir en functions/ (se empaqueta en cada deploy) ni commitearse:
+# acceden a produccion directamente y no forman parte del producto.
+scripts/ops/
