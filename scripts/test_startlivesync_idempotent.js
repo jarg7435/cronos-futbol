@@ -45,7 +45,10 @@ ok('1c · [FIX] el calculo de _hourSlug queda DENTRO del guard if (_isNewMatch)'
    /if\s*\(_isNewMatch\)\s*\{[^}]*_hourSlug/s.test(fnBody));
 ok('1d · [FIX] el borrado de events queda DENTRO del guard if (_isNewMatch)',
    /if\s*\(_isNewMatch\)\s*\{[^]*?_cronosMatchEvents\s*=\s*\[\]/.test(fnBody));
-const fnBodyNoComments = fnBody.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+// normalizar CRLF->LF antes de partir por linea: sin esto, la linea queda
+// con un \r colgando al final y `$` (sin flag multiline) nunca casa tras
+// `.*`, asi que el comentario NUNCA se recorta (falso positivo).
+const fnBodyNoComments = fnBody.replace(/\r\n/g, '\n').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
 ok('1e · sigue sin reintroducirse Math.random() en el id (código real, no en comentarios)',
    !/Math\.random\(\)/.test(fnBodyNoComments));
 

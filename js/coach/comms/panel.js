@@ -447,18 +447,47 @@ async function _cGetStaff(db, clubId, fns, roles) {
     return result;
 }
 
-// ════════════════════════════════════════════════════════════════════
-//  PANEL PRINCIPAL DE MENSAJES (vista entrenador)
-// ════════════════════════════════════════════════════════════════════
 async function openCoachMessaging(tab) {
     tab = tab || 'parents';
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     if (!me) return;
 
+    // Inyectar CSS responsivo para el split pane si no existe
+    const styleId = 'cm-messages-split-css';
+    if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+            .cm-split-container {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+                gap: 1.2rem;
+            }
+            @media (max-width: 767px) {
+                .cm-split-container {
+                    flex-direction: column !important;
+                }
+                .cm-split-container > div:first-child {
+                    width: 100% !important;
+                    border-right: none !important;
+                    border-bottom: 1px solid var(--glass-border) !important;
+                    padding-right: 0 !important;
+                    padding-bottom: 1rem !important;
+                    height: 280px !important;
+                }
+                #cm-chat-thread-pane {
+                    height: 380px !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-    <div class="modal-content" style="width:min(96vw,720px);max-height:92vh;
+    <div class="modal-content" style="width:min(96vw,860px);max-height:92vh;
          display:flex;flex-direction:column;overflow:hidden;">
 
         <!-- Header -->
@@ -476,57 +505,80 @@ async function openCoachMessaging(tab) {
             </div>
         </div>
 
-        <!-- Tabs: Padres / Staff -->
-        <div style="display:flex;border-bottom:1px solid var(--glass-border);
-                    margin-bottom:0.7rem;flex-shrink:0;">
-            <button id="cm-tab-parents"
-                    onclick="window._cmTab='parents'; _loadParentList();"
-                    style="padding:0.5rem 1rem;background:none;border:none;
-                           border-bottom:2px solid ${tab==='parents'?'var(--primary)':'transparent'};
-                           color:${tab==='parents'?'var(--primary)':'var(--text-muted)'};
-                           font-size:0.82rem;font-weight:700;cursor:pointer;">
-                👨‍👩‍👧 Padres / Tutores
-            </button>
-            <button id="cm-tab-staff"
-                    onclick="window._cmTab='staff'; _loadStaffList();"
-                    style="padding:0.5rem 1rem;background:none;border:none;
-                           border-bottom:2px solid ${tab==='staff'?'#f0883e':'transparent'};
-                           color:${tab==='staff'?'#f0883e':'var(--text-muted)'};
-                           font-size:0.82rem;font-weight:700;cursor:pointer;">
-                🏢 Dirección / Coordinación
-            </button>
-        </div>
+        <!-- Split body -->
+        <div class="cm-split-container">
+            
+            <!-- PANEL IZQUIERDO: Tabs, listado de contactos con checkboxes y mensaje grupal -->
+            <div style="width:330px;display:flex;flex-direction:column;border-right:1px solid var(--glass-border);padding-right:1rem;height:100%;overflow:hidden;box-sizing:border-box;flex-shrink:0;">
+                
+                <!-- Tabs: Padres / Director / Coordinador -->
+                <div style="display:flex;border-bottom:1px solid var(--glass-border);
+                             margin-bottom:0.7rem;flex-shrink:0;gap:0.2rem;">
+                    <button id="cm-tab-parents"
+                            onclick="window._cmTab='parents'; _loadParentList();"
+                            style="padding:0.5rem 0.4rem;background:none;border:none;
+                                   border-bottom:2px solid ${tab==='parents'?'var(--primary)':'transparent'};
+                                   color:${tab==='parents'?'var(--primary)':'var(--text-muted)'};
+                                   font-size:0.75rem;font-weight:700;cursor:pointer;flex:1;white-space:nowrap;">
+                        👨‍👩‍👧 Padres
+                    </button>
+                    <button id="cm-tab-director"
+                            onclick="window._cmTab='director'; _loadStaffList('director');"
+                            style="padding:0.5rem 0.4rem;background:none;border:none;
+                                   border-bottom:2px solid ${tab==='director'?'#f0883e':'transparent'};
+                                   color:${tab==='director'?'#f0883e':'var(--text-muted)'};
+                                   font-size:0.75rem;font-weight:700;cursor:pointer;flex:1;white-space:nowrap;">
+                        📋 Director
+                    </button>
+                    <button id="cm-tab-coordinator"
+                            onclick="window._cmTab='coordinator'; _loadStaffList('coordinator');"
+                            style="padding:0.5rem 0.4rem;background:none;border:none;
+                                   border-bottom:2px solid ${tab==='coordinator'?'#3fb950':'transparent'};
+                                   color:${tab==='coordinator'?'#3fb950':'var(--text-muted)'};
+                                   font-size:0.75rem;font-weight:700;cursor:pointer;flex:1;white-space:nowrap;">
+                        🎯 Coordinador
+                    </button>
+                </div>
 
-        <!-- Barra selección múltiple (solo padres) -->
-        <div id="bulk-msg-bar" style="display:none;background:rgba(88,166,255,0.08);
-             border:1px solid rgba(88,166,255,0.25);border-radius:10px;
-             padding:0.6rem 0.9rem;margin-bottom:0.7rem;flex-shrink:0;
-             align-items:center;gap:0.7rem;flex-wrap:wrap;">
-            <label style="display:flex;align-items:center;gap:0.4rem;
-                          font-size:0.8rem;font-weight:700;cursor:pointer;color:var(--primary);">
-                <input type="checkbox" id="chk-select-all" style="width:17px;height:17px;"
-                    onchange="toggleSelectAllParents(this.checked)">
-                Seleccionar todos
-            </label>
-            <span id="bulk-count" style="font-size:0.75rem;color:var(--text-muted);flex:1;">
-                0 seleccionados
-            </span>
-            <button onclick="openBulkMessageComposer()"
-                style="padding:0.4rem 0.9rem;background:var(--primary);border:none;
-                       border-radius:7px;color:#0a0e14;font-weight:700;
-                       font-size:0.78rem;cursor:pointer;">
-                ✉️ Mensaje grupal
-            </button>
-        </div>
+                <!-- Barra selección múltiple -->
+                <div id="bulk-msg-bar" style="display:none;background:rgba(88,166,255,0.08);
+                     border:1px solid rgba(88,166,255,0.25);border-radius:10px;
+                     padding:0.5rem 0.7rem;margin-bottom:0.7rem;flex-shrink:0;
+                     align-items:center;gap:0.5rem;flex-wrap:wrap;justify-content:space-between;">
+                    <label style="display:flex;align-items:center;gap:0.4rem;
+                                  font-size:0.75rem;font-weight:700;cursor:pointer;color:var(--primary);">
+                        <input type="checkbox" id="chk-select-all" style="width:16px;height:16px;"
+                            onchange="toggleSelectAllParents(this.checked)">
+                        Todos
+                    </label>
+                    <span id="bulk-count" style="font-size:0.72rem;color:var(--text-muted);">
+                        0 seleccionados
+                    </span>
+                    <button onclick="openBulkMessageComposer()"
+                        style="padding:0.35rem 0.7rem;background:var(--primary);border:none;
+                               border-radius:6px;color:#0a0e14;font-weight:700;
+                               font-size:0.72rem;cursor:pointer;">
+                        ✉️ Enviar grupal
+                    </button>
+                </div>
 
-        <div id="coach-parent-list" style="flex:1;overflow-y:auto;">
-            <p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando…</p>
+                <div id="coach-parent-list" style="flex:1;overflow-y:auto;padding-right:4px;">
+                    <p style="color:var(--text-muted);text-align:center;padding:3rem;">⏳ Cargando…</p>
+                </div>
+            </div>
+
+            <!-- PANEL DERECHO: Historial de la conversación activa -->
+            <div id="cm-chat-thread-pane" style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,255,255,0.015);border-radius:12px;padding:1rem;box-sizing:border-box;height:100%;overflow:hidden;">
+                <span style="font-size:2.8rem;margin-bottom:0.5rem;">💬</span>
+                <span style="color:var(--text-muted);font-size:0.82rem;text-align:center;max-width:280px;">Selecciona un contacto de la lista para ver el historial de mensajes con fecha y hora</span>
+            </div>
+
         </div>
     </div>`;
 
     window._cmTab = tab;
-    if (tab === 'staff') {
-        await _loadStaffList();
+    if (tab === 'director' || tab === 'coordinator' || tab === 'staff') {
+        await _loadStaffList(tab === 'staff' ? 'director' : tab);
     } else {
         await _loadParentList();
     }
@@ -535,16 +587,26 @@ async function openCoachMessaging(tab) {
 // ════════════════════════════════════════════════════════════════════
 //  LISTA DE STAFF PARA MENSAJES (Directores / Coordinadores)
 // ════════════════════════════════════════════════════════════════════
-async function _loadStaffList() {
+async function _loadStaffList(selectedRole) {
+    selectedRole = selectedRole || 'director';
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     const body = document.getElementById('coach-parent-list');
     if (!body || !me) return;
 
     // Marcar tab activo visualmente
     const pBtn = document.getElementById('cm-tab-parents');
-    const sBtn = document.getElementById('cm-tab-staff');
+    const dBtn = document.getElementById('cm-tab-director');
+    const cBtn = document.getElementById('cm-tab-coordinator');
     if (pBtn) { pBtn.style.borderBottomColor = 'transparent'; pBtn.style.color = 'var(--text-muted)'; }
-    if (sBtn) { sBtn.style.borderBottomColor = '#f0883e';     sBtn.style.color = '#f0883e'; }
+    if (dBtn) {
+        dBtn.style.borderBottomColor = selectedRole === 'director' ? '#f0883e' : 'transparent';
+        dBtn.style.color = selectedRole === 'director' ? '#f0883e' : 'var(--text-muted)';
+    }
+    if (cBtn) {
+        cBtn.style.borderBottomColor = selectedRole === 'coordinator' ? '#3fb950' : 'transparent';
+        cBtn.style.color = selectedRole === 'coordinator' ? '#3fb950' : 'var(--text-muted)';
+    }
+    
     const bar = document.getElementById('bulk-msg-bar');
     if (bar) {
         bar.style.display = 'flex';
@@ -554,19 +616,20 @@ async function _loadStaffList() {
         if (countEl) countEl.textContent = '0 seleccionados';
     }
 
-    body.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando dirección…</p>';
+    const labelMsg = selectedRole === 'coordinator' ? 'coordinadores' : 'director';
+    body.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando ${labelMsg}…</p>`;
 
     try {
         const fns = await _cFS();
         const { db, collection, getDocs, query, where } = fns;
 
-        // Buscar directores y coordinadores del mismo club
-        const staffList = await _cGetStaff(db, me.clubId || '', fns);
+        // Buscar directores o coordinadores del mismo club
+        const staffList = await _cGetStaff(db, me.clubId || '', fns, [selectedRole]);
 
         if (!staffList.length) {
             body.innerHTML = `
             <div style="text-align:center;color:var(--text-muted);padding:3rem 1rem;">
-                🏢 No hay directores ni coordinadores asignados al club aún.
+                🏢 No hay ${selectedRole === 'coordinator' ? 'coordinadores asignados' : 'directores asignados'} al club aún.
             </div>`;
             return;
         }
@@ -636,6 +699,12 @@ async function _loadStaffList() {
             </div>`;
         }).join('');
 
+        if (staffList.length > 0) {
+            const first = staffList[0];
+            setTimeout(() => {
+                openThreadWithStaff(first.uid, first.email, first.role);
+            }, 150);
+        }
     } catch(e) {
         body.innerHTML = `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
@@ -652,35 +721,44 @@ async function openThreadWithStaff(staffUid, staffEmail, staffRole) {
     const roleLabel = { director:'Director Deportivo', coordinator:'Coordinador' };
     const roleIcon  = { director:'📋', coordinator:'🎯' };
 
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = `
-    <div class="modal-content" style="width:min(96vw,660px);max-height:92vh;
-         display:flex;flex-direction:column;overflow:hidden;">
-        <div style="display:flex;align-items:center;gap:0.7rem;
-                    margin-bottom:0.8rem;flex-shrink:0;flex-wrap:wrap;">
+    const pane = document.getElementById('cm-chat-thread-pane');
+    const target = pane || document.getElementById('setup-modal');
+    const isPane = !!pane;
+
+    target.innerHTML = `
+    <div class="modal-content" style="width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;background:${isPane ? 'transparent' : 'var(--glass)'};border:${isPane ? 'none' : '1px solid var(--glass-border)'};padding:${isPane ? '0' : '1.2rem'};border-radius:${isPane ? '0' : '12px'};box-sizing:border-box;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;flex-shrink:0;flex-wrap:wrap;border-bottom:1px solid var(--glass-border);padding-bottom:0.5rem;">
+            ${!isPane ? `
             <button onclick="openCoachMessaging('staff')" class="btn"
                 style="font-size:0.78rem;padding:0.3rem 0.7rem;color:var(--text-muted);">
                 ← Volver
-            </button>
+            </button>` : ''}
             <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:0.9rem;">
+                <div style="font-weight:700;font-size:0.88rem;color:white;">
                     ${roleIcon[staffRole]||'🏢'} ${typeof escapeHtml==='function'?escapeHtml(staffEmail):staffEmail}
                 </div>
-                <div style="font-size:0.7rem;color:var(--text-muted);">
+                <div style="font-size:0.68rem;color:var(--text-muted);">
                     ${roleLabel[staffRole]||staffRole}
                 </div>
             </div>
-            <a href="mailto:${typeof escapeAttr==='function'?escapeAttr(staffEmail):staffEmail}"
-               style="padding:0.32rem 0.65rem;background:rgba(88,166,255,0.1);
-                      border:1px solid rgba(88,166,255,0.3);border-radius:6px;
-                      color:var(--primary);font-size:0.72rem;text-decoration:none;font-weight:700;">
-                📧 Email
-            </a>
+            <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;">
+                <button onclick="coachDeleteAllMessages('${threadId}')"
+                    style="padding:0.25rem 0.55rem;background:rgba(255,88,88,0.1);
+                           border:1px solid rgba(255,88,88,0.3);border-radius:6px;
+                           color:#ff5858;font-size:0.7rem;cursor:pointer;font-weight:700;flex-shrink:0;">
+                    🗑️ Vaciar
+                </button>
+                <a href="mailto:${typeof escapeAttr==='function'?escapeAttr(staffEmail):staffEmail}"
+                   style="padding:0.3rem 0.6rem;background:rgba(88,166,255,0.1);
+                          border:1px solid rgba(88,166,255,0.3);border-radius:6px;
+                          color:var(--primary);font-size:0.7rem;text-decoration:none;font-weight:700;flex-shrink:0;">
+                    📧 Email
+                </a>
+            </div>
         </div>
         <div id="thread-messages"
              style="flex:1;overflow-y:auto;padding:0.4rem 0;
-                    display:flex;flex-direction:column;gap:0.5rem;min-height:200px;">
+                    display:flex;flex-direction:column;gap:0.5rem;min-height:220px;max-height:380px;padding-right:4px;">
             <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
         </div>
         <div style="margin-top:0.8rem;flex-shrink:0;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
@@ -690,21 +768,23 @@ async function openThreadWithStaff(staffUid, staffEmail, staffRole) {
                     rows="2"
                     style="flex:1;padding:0.6rem 0.8rem;background:rgba(255,255,255,0.06);
                            border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.88rem;resize:none;box-sizing:border-box;"
+                           color:white;font-size:0.85rem;resize:none;box-sizing:border-box;outline:none;"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){
                         event.preventDefault();
                         sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(staffUid):staffUid}','${typeof escapeAttr==='function'?escapeAttr(staffEmail):staffEmail}','','staff');
                     }">
                 </textarea>
                 <button onclick="sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(staffUid):staffUid}','${typeof escapeAttr==='function'?escapeAttr(staffEmail):staffEmail}','','staff')"
-                    class="btn primary" style="padding:0.6rem 1rem;flex-shrink:0;">
-                    Enviar ›
+                    class="btn primary" style="padding:0.55rem 0.9rem;flex-shrink:0;font-weight:700;font-size:0.78rem;">
+                    Enviar
                 </button>
             </div>
         </div>
     </div>`;
 
     await _loadThreadMessages(threadId, 'coach');
+    const msgDiv = document.getElementById('thread-messages');
+    if (msgDiv) msgDiv.scrollTop = msgDiv.scrollHeight;
     try {
         await updateDoc(doc(db,'cronos_messages',threadId), { unreadByCoach: 0 });
     } catch(_) {}
@@ -746,7 +826,8 @@ function _catMatches(coachCat, coachSub, link) {
 
 function _coachCategory() {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
-    return (me && me.category) ? me.category : '';
+    if (!me) return '';
+    return me.category || me._activeRoleData?.category || '';
 }
 
 function _coachSubcategory() {
@@ -998,82 +1079,81 @@ async function openThreadWithParent(parentUid, parentEmail, playerNumber, player
     const threadId = `${me.uid}_${parentUid}`;
     const { db, doc, updateDoc } = await _cFS();
 
-    const modal = document.getElementById('setup-modal');
-    modal.style.display = 'flex';
-    modal.innerHTML = `
-    <div class="modal-content" style="width:min(96vw,660px);max-height:92vh;
-         display:flex;flex-direction:column;overflow:hidden;">
+    const pane = document.getElementById('cm-chat-thread-pane');
+    const target = pane || document.getElementById('setup-modal');
+    const isPane = !!pane;
 
-        <!-- Header del hilo -->
-        <div style="display:flex;align-items:center;gap:0.7rem;
-                    margin-bottom:0.8rem;flex-shrink:0;flex-wrap:wrap;">
+    target.innerHTML = `
+    <div class="modal-content" style="width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;background:${isPane ? 'transparent' : 'var(--glass)'};border:${isPane ? 'none' : '1px solid var(--glass-border)'};padding:${isPane ? '0' : '1.2rem'};border-radius:${isPane ? '0' : '12px'};box-sizing:border-box;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;flex-shrink:0;flex-wrap:wrap;border-bottom:1px solid var(--glass-border);padding-bottom:0.5rem;">
+            ${!isPane ? `
             <button onclick="openCoachMessaging()" class="btn"
                 style="font-size:0.78rem;padding:0.3rem 0.7rem;color:var(--text-muted);">
                 ← Volver
-            </button>
+            </button>` : ''}
             <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:0.9rem;">
+                <div style="font-weight:700;font-size:0.88rem;color:white;">
                     ⚽ ${typeof escapeHtml==='function'?escapeHtml(playerAlias||'Jugador'):playerAlias||'Jugador'}
                     <span style="color:var(--primary);">#${typeof escapeAttr==='function'?escapeAttr(playerNumber):playerNumber}</span>
                 </div>
-                <div style="font-size:0.73rem;color:var(--text-muted);
-                            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                <div style="font-size:0.68rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                     👨‍👩‍👧 ${typeof escapeHtml==='function'?escapeHtml(parentEmail):parentEmail}
                 </div>
             </div>
-            <!-- Botones rápidos WhatsApp / Email -->
-            <div style="display:flex;gap:0.4rem;flex-shrink:0;">
+            <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;">
+                <button onclick="coachDeleteAllMessages('${threadId}')"
+                    style="padding:0.25rem 0.55rem;background:rgba(255,88,88,0.1);
+                           border:1px solid rgba(255,88,88,0.3);border-radius:6px;
+                           color:#ff5858;font-size:0.7rem;cursor:pointer;font-weight:700;flex-shrink:0;">
+                    🗑️ Vaciar
+                </button>
                 ${parentWA ? `
                 <a href="https://wa.me/${typeof escapeAttr==='function'?escapeAttr(parentWA):parentWA}" target="_blank"
-                    style="padding:0.35rem 0.7rem;background:rgba(37,211,102,0.12);
+                    style="padding:0.3rem 0.6rem;background:rgba(37,211,102,0.12);
                            border:1px solid rgba(37,211,102,0.4);border-radius:6px;
-                           color:#25d366;font-size:0.72rem;text-decoration:none;font-weight:700;">
+                           color:#25d366;font-size:0.7rem;text-decoration:none;font-weight:700;">
                     📱 WA
                 </a>` : ''}
                 <a href="mailto:${typeof escapeAttr==='function'?escapeAttr(parentEmail):parentEmail}"
-                    style="padding:0.35rem 0.7rem;background:rgba(88,166,255,0.1);
+                    style="padding:0.3rem 0.6rem;background:rgba(88,166,255,0.1);
                            border:1px solid rgba(88,166,255,0.3);border-radius:6px;
-                           color:var(--primary);font-size:0.72rem;text-decoration:none;font-weight:700;">
+                           color:var(--primary);font-size:0.7rem;text-decoration:none;font-weight:700;">
                     📧 Email
                 </a>
             </div>
         </div>
-
-        <!-- Mensajes -->
         <div id="thread-messages"
              style="flex:1;overflow-y:auto;padding:0.4rem 0;
-                    display:flex;flex-direction:column;gap:0.5rem;min-height:200px;">
+                    display:flex;flex-direction:column;gap:0.5rem;min-height:220px;max-height:380px;padding-right:4px;">
             <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
         </div>
-
-        <!-- Input envío -->
-        <div style="margin-top:0.8rem;flex-shrink:0;border-top:1px solid var(--glass-border);
-                    padding-top:0.8rem;">
+        <div style="margin-top:0.8rem;flex-shrink:0;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
             <div style="display:flex;gap:0.5rem;align-items:flex-end;">
                 <textarea id="coach-msg-input"
-                    placeholder="Escribe un mensaje… (Enter para enviar, Shift+Enter nueva línea)"
+                    placeholder="Escribe un mensaje… (Enter para enviar)"
                     rows="2"
                     style="flex:1;padding:0.6rem 0.8rem;background:rgba(255,255,255,0.06);
                            border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.88rem;resize:none;box-sizing:border-box;"
+                           color:white;font-size:0.85rem;resize:none;box-sizing:border-box;outline:none;"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){
                         event.preventDefault();
                         sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(parentUid):parentUid}','${typeof escapeAttr==='function'?escapeAttr(parentEmail):parentEmail}','${typeof escapeAttr==='function'?escapeAttr(parentWA||''):parentWA||''}');
                     }">
                 </textarea>
                 <button onclick="sendCoachMessage('${typeof escapeAttr==='function'?escapeAttr(threadId):threadId}','${typeof escapeAttr==='function'?escapeAttr(parentUid):parentUid}','${typeof escapeAttr==='function'?escapeAttr(parentEmail):parentEmail}','${typeof escapeAttr==='function'?escapeAttr(parentWA||''):parentWA||''}')"
-                    class="btn primary" style="padding:0.6rem 1rem;flex-shrink:0;">
-                    Enviar ›
+                    class="btn primary" style="padding:0.55rem 0.9rem;flex-shrink:0;font-weight:700;font-size:0.78rem;">
+                    Enviar
                 </button>
             </div>
         </div>
     </div>`;
 
-    // Cargar mensajes y marcar como leídos
     await _loadThreadMessages(threadId, 'coach');
+    const msgDiv = document.getElementById('thread-messages');
+    if (msgDiv) msgDiv.scrollTop = msgDiv.scrollHeight;
     try {
         await updateDoc(doc(db, 'cronos_messages', threadId), { unreadByCoach: 0 });
-    } catch(e) { /* El hilo puede no existir aún */ }
+    } catch(e) { /* ... */ }
 }
 
 // ── Cargar mensajes de un hilo (reutilizable para coach y padre) ─────────
@@ -1185,7 +1265,6 @@ window.sendCoachMessage = async function(threadId, recipientUid, recipientEmail,
                 updateData.unreadByStaff = (snap.data().unreadByStaff || 0) + 1;
                 // FIX (v180): campos de identidad para consultas del director/coordinador
                 updateData.staffUid      = recipientUid;
-                updateData.parentUid     = recipientUid;
                 updateData.participants  = arrayUnion(me.uid, recipientUid);
                 updateData.clubId        = me.clubId || null;
                 updateData.recipientType = 'staff';
@@ -2222,7 +2301,11 @@ async function autoDispatchMatchReports() {
                     _before + ' → ' + staffToNotify.length);
             }
         }
-        const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+        // FIX (P11-D): igual que en _sendCollectiveReportNow, _allStaffUids
+        // SIEMPRE incluye al propio entrenador (me.uid) como red de
+        // seguridad, para que la query array-contains del Panel de Dirección
+        // nunca quede vacía aunque no haya staff resuelto.
+        const _allStaffUids = Array.from(new Set([...staffToNotify.map(s => s.uid).filter(Boolean), me.uid,].filter(Boolean)));
 
         // FIX (v217): aplicar pre-seleccion per-partido al staff TAMBIEN.
         // Si preSelectionIds esta presente (modal de convocatoria usado),
@@ -2291,6 +2374,7 @@ async function autoDispatchMatchReports() {
                 history:       _parseHistoryForFirestore(p.history || []),
             });
         }
+        console.log(`[StaffReport] TOTAL informes staff escritos en cronos_player_reports: ${homePlayers.length} (matchId=${sharedMatchId}, staffToNotify=${staffToNotify.length}, staffUids=${_allStaffUids.length})`);
 
         // ── Notificar al staff (coordinador + director) ──────────────────
         // Los destinatarios ya fueron resueltos arriba (antes de los reports).
@@ -4202,10 +4286,19 @@ window._sendCollectiveReportNow = async function() {
                 staff = window._cronosResolveStaffForMatch(staff, _matchCat, _matchMode);
             }
         }
+        // FIX (P11-D, auditoría 2026-07-22): NO abortar cuando no hay staff
+        // asignado. El `return` que había aquí impedía llegar al bucle que
+        // escribe los documentos cronos_player_reports (más abajo), así que
+        // el Panel de Dirección nunca veía el partido si el club no tenía
+        // director/coordinador asignado — un fallo SILENCIOSO (el único
+        // aviso era un toast que el entrenador podía no relacionar con "el
+        // partido no aparecerá en Dirección"). Los informes se escriben
+        // SIEMPRE (quedan visibles por clubId en el Panel de Dirección);
+        // solo cambia a quién se envía mensaje/notificación directa (bucle
+        // de la sección 2, que con staff vacío simplemente no itera).
         if (!staff.length) {
-            if (typeof hideSpinner==='function') hideSpinner();
-            if (typeof showToast==='function') showToast('⚠️ Sin directores/coordinadores asignados', 3000);
-            return;
+            console.warn('[StaffReport] Lista de staff vacía: se escriben los informes igualmente (visibles por clubId en el Panel de Dirección).');
+            if (typeof showToast==='function') showToast('⚠️ Sin destinatarios directos; el informe se guardará para Dirección', 3500);
         }
         const now       = new Date();
         const matchDate = now.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
@@ -4229,6 +4322,12 @@ window._sendCollectiveReportNow = async function() {
         const matchId = window._cronosLastAutoDispatchMatchId
             || `match_${me.uid}_${matchDateISO}_${_rivalSlug2}_${scoreHome}x${scoreAway}`;
 
+        // FIX (P11-D): staffUids SIEMPRE incluye al propio entrenador (me.uid)
+        // como red de seguridad, para que la query array-contains del Panel
+        // de Dirección nunca quede vacía y el informe sea localizable aunque
+        // el club no tenga director/coordinador asignado todavía.
+        const _collStaffUids = Array.from(new Set([...staff.map(s => s.uid).filter(Boolean), me.uid,].filter(Boolean)));
+
         for (const p of homePlayers) {
             const rptId = `${matchId}_p${p.number}`;
             await setDoc(doc(db, 'cronos_player_reports', rptId), {
@@ -4242,7 +4341,7 @@ window._sendCollectiveReportNow = async function() {
                 // FIX (v178): staffUids para que las reglas Firestore permitan leer
                 // a directores/coordinadores (request.auth.uid in resource.data.staffUids)
                 // y la consulta fallback array-contains los encuentre.
-                staffUids:      staff.map(s => s.uid).filter(Boolean),
+                staffUids:      _collStaffUids,
                 clubId:         me.clubId || null,
                     category:    me.category    || document.getElementById('match-category')?.value || null,
                     subcategory: me.subcategory || document.getElementById('match-subcategory')?.value || null,
@@ -4366,8 +4465,11 @@ window._sendCollectiveReportNow = async function() {
         });
 
         if (typeof hideSpinner==='function') hideSpinner();
+        console.log(`[StaffReport] TOTAL informes colectivos escritos en cronos_player_reports: ${homePlayers.length} (matchId=${matchId}, staff=${staff.length}, staffUids=${_collStaffUids.length})`);
         if (typeof showToast==='function')
-            showToast(`✅ Informe colectivo enviado a ${staff.length} persona(s) de la dirección`, 5000);
+            showToast(staff.length
+                ? `✅ Informe colectivo enviado a ${staff.length} persona(s) de la dirección`
+                : '✅ Informe colectivo guardado (visible en el Panel de Dirección)', 5000);
 
         // ── Guardar copia para el entrenador (registro propio) ──────────
         // Esto alimenta la pestaña "Mis Informes" del menú de Comunicaciones.
@@ -5183,6 +5285,23 @@ window.cDeleteSingleMessage = async (threadId, index, perspective) => {
         _loadThreadMessages(threadId, perspective);
     } catch(err) {
         alert('Error al borrar: ' + err.message);
+    }
+};
+
+window.coachDeleteAllMessages = async (threadId, perspective) => {
+    perspective = perspective || 'coach';
+    if (!confirm('¿Estás seguro de que deseas vaciar toda la conversación? Esta acción no se puede deshacer.')) return;
+    try {
+        const { db, doc, updateDoc } = await _cFS();
+        await updateDoc(doc(db, 'cronos_messages', threadId), {
+            messages: [],
+            lastMessage: '— Sin mensajes —',
+            lastMessageAt: new Date().toISOString()
+        });
+        if (typeof showToast==='function') showToast('✅ Conversación vaciada.', 3000);
+        await _loadThreadMessages(threadId, perspective);
+    } catch(e) {
+        if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 3000);
     }
 };
 

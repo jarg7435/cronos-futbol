@@ -10,9 +10,9 @@
  * corregir en el producto. Se ejecutan y se reportan (para que la regresión siga
  * VISIBLE), pero su fallo NO tumba CI. Si un XFAIL empieza a pasar, el runner lo
  * marca como "XPASS" y FALLA, para obligar a sacarlo de la lista.
- *   · test_p11d_collective_write.js → ver "Regresiones detectadas por la suite de
- *     tests / P11-D" en CORRECCIONES_ESTADO.md (guard de staff vacío reintroducido
- *     en un "Add files via upload" posterior al fix e2189fb).
+ *   · (vacía) — P11-D (guard de staff vacío en el informe colectivo/auto-despacho)
+ *     se corrigió el 2026-07-22; test_p11d_collective_write.js retirado de aquí
+ *     tras confirmar que pasa. Ver CORRECCIONES_ESTADO.md.
  *
  * Se ejecuta desde la raíz del repo (varios tests leen ficheros con rutas
  * relativas a la raíz). No requiere emulador ni red: son tests puros de Node.
@@ -30,7 +30,7 @@ const ROOT = path.join(__dirname, '..');
 
 // Regresiones reales conocidas (documentadas en CORRECCIONES_ESTADO.md). No
 // bloquean CI, pero deben corregirse y retirarse de aquí.
-const XFAIL = new Set(['test_p11d_collective_write.js']);
+const XFAIL = new Set([]);
 
 const testFiles = fs
     .readdirSync(SCRIPTS_DIR)
