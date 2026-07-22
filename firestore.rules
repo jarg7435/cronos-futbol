@@ -85,33 +85,70 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // ELIMINADO: transitionalRead() / hasClaims()  (Opción A · SEC)
+    // NOTA (Opcion B - ventana de gracia NO renovable):
     // ------------------------------------------------------------
-    // transitionalRead(clubId) concedía acceso de lectura/escritura a
-    // cualquier usuario autenticado SIN custom claims cuya única condición
-    // efectiva era clubId != null: NO verificaba que el clubId le perteneciera,
-    // y su ventana se basaba en auth_time (el instante de AUTENTICACIÓN). Eso
-    // la hacía RENOVABLE indefinidamente: un usuario pendiente de aprobación
-    // podía repetir logout+login para refrescar auth_time y prolongar el
-    // acceso sin límite. Era un backdoor por diseño.
-    //
-    // Se ELIMINA por completo. Los flujos legítimos que dependían de ella se
-    // cubren ahora con predicados NO renovables y verificables server-side:
-    //   · userDocClubId(clubId): users/{uid}.clubId (RAÍZ) == clubId. La raíz
-    //     la escribe EXCLUSIVAMENTE el Admin SDK (trigger autoSetClaimsOnApproval
-    //     / CF syncRootClubId), que valida que el clubId pertenece al usuario.
-    //   · sameClubAsDoc(clubId): request.auth.token.clubId == clubId (claim).
-    //   · Ramas de propiedad por email/uid (p.ej. individuals: resource.data
-    //     .email == request.auth.token.email; links: isLinkOwner()).
-    // Ninguno se puede renovar con logout+login: dependen del ESTADO APROBADO
-    // del usuario, no del momento de autenticación.
-    //
-    // Verificado con el emulador de reglas (rules_test/): la vinculación de
-    // padres (cronos_player_links) NO dependía de transitionalRead (usa
-    // userDocClubId), y trainingPlans/weeks se migra de transitionalRead a
-    // userDocClubId/sameClubAsDoc (además arregla que un director CON claims no
-    // pudiera escribir tras expirar la ventana de 5 min).
+    // transitionalRead() se RESTAURA (ver definicion mas abajo) pero
+    // medida desde users/{uid}.createdAt (creacion de la cuenta), NO desde
+    // auth_time. Deja de ser renovable con logout+login. Se mantiene como
+    // rama ADICIONAL (OR) junto a los predicados no renovables ya
+    // existentes (userDocClubId / sameClubAsDoc / propiedad por email-uid),
+    // que siguen cubriendo a los usuarios ya aprobados.
     // ============================================================
+
+    // ============================================================
+    // transitionalRead() / hasClaims()  -  ventana de gracia NO renovable
+    // ------------------------------------------------------------
+    // hasClaims(): comprueba la PRESENCIA de los custom claims 'role' y
+    // 'clubId' con el operador `in` (acceder a una clave AUSENTE del token NO
+    // devuelve null en Firestore Rules: lanza un error de evaluacion que haria
+    // fallar toda la condicion). transitionalRead() solo aplica a usuarios SIN
+    // claims, asi que esta comprobacion null-safe es imprescindible.
+    //
+    // transitionalRead(clubId): concede una BREVE ventana de gracia (5 min) a
+    // un usuario recien registrado y aun SIN custom claims, mientras el trigger
+    // autoSetClaimsOnApproval / syncRootClubId (Admin SDK) propaga sus claims.
+    //
+    // CLAVE DE SEGURIDAD - NO RENOVABLE:
+    //   La ventana se mide desde users/{uid}.createdAt (instante de CREACION de
+    //   la cuenta, campo INMUTABLE escrito UNA sola vez con serverTimestamp),
+    //   NO desde auth_time (instante de AUTENTICACION). Con auth_time el acceso
+    //   era RENOVABLE indefinidamente: bastaba repetir logout+login para
+    //   refrescar auth_time y prolongar la ventana sin limite (backdoor). Con
+    //   createdAt la ventana es FIJA por cuenta: caduca 5 min despues del alta y
+    //   NO se puede prolongar con logout+login ni de ninguna otra forma.
+    //   Se exige `createdAt is timestamp` (fail-closed): documentos sin ese
+    //   campo, o con un createdAt string legacy (ISO), NO obtienen acceso.
+    //
+    // CLAVE DE SEGURIDAD - PROPIEDAD DE CLUB (AUDITORIA 2026-07-22):
+    //   Ademas de la ventana temporal, se exige que users/{uid}.clubId (el club
+    //   con el que el usuario se registro, escrito por el propio alta) coincida
+    //   con el clubId del documento al que se pide acceso. Sin este check, la
+    //   version anterior de transitionalRead() solo exigia clubId != null en el
+    //   documento objetivo: CUALQUIER cuenta recien creada (de cualquier club, o
+    //   de ninguno) podia leer/escribir documentos de CUALQUIER OTRO club durante
+    //   la ventana de 5 min, sin relacion alguna con su propio club. Con este
+    //   check, la ventana de gracia solo cubre el club al que el usuario dice
+    //   pertenecer (mismo campo que usa userDocClubId para usuarios ya
+    //   aprobados) - no amplia el acceso mas alla de lo que tendria en cuanto
+    //   sus claims se propaguen.
+    //
+    //   Nota: los get() a users/{uid} se resuelven a UNA sola lectura facturada
+    //   (Firestore memoiza el acceso al mismo documento dentro de una misma
+    //   evaluacion de reglas), por lo que no hace falta cachear con let.
+    // ============================================================
+    function hasClaims() {
+      return isAuth() &&
+             ('role' in request.auth.token) &&
+             ('clubId' in request.auth.token);
+    }
+
+    function transitionalRead(clubId) {
+      return isAuth() && !hasClaims() && clubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clubId == clubId
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.createdAt is timestamp
+             && (request.time - get(/databases/$(database)/documents/users/$(request.auth.uid)).data.createdAt) < duration.value(5, 'm');
+    }
 
     function isIndividualEntity(resourceData) {
       return resourceData.type == 'individual';
@@ -257,7 +294,8 @@ service cloud.firestore {
         // Propiedad por email: el admin individual (aún sin claims tras el alta)
         // lee SU propia entidad. No renovable: depende del email verificado del
         // token, no del momento de autenticación.
-        resource.data.email == request.auth.token.email
+        resource.data.email == request.auth.token.email ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isSuperAdmin();
       allow update: if isSuperAdmin() ||
@@ -291,15 +329,18 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId)
+        sameClub(request.resource.data.clubId) ||
+        transitionalRead(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(resource.data.clubId)
+        sameClub(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow delete: if isSuperAdmin();
     }
@@ -311,15 +352,18 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId)
+        sameClub(request.resource.data.clubId) ||
+        transitionalRead(request.resource.data.clubId)
       ) && isValidPlayerData(request.resource.data);
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(resource.data.clubId)
+        sameClub(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       ) && isValidPlayerData(request.resource.data);
       allow delete: if isSuperAdmin();
     }
@@ -331,15 +375,18 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId)
+        sameClub(request.resource.data.clubId) ||
+        transitionalRead(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(resource.data.clubId)
+        sameClub(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow delete: if isSuperAdmin();
     }
@@ -351,15 +398,18 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId)
+        sameClub(request.resource.data.clubId) ||
+        transitionalRead(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(resource.data.clubId)
+        sameClub(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow delete: if isSuperAdmin();
     }
@@ -371,15 +421,18 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId)
+        sameClub(request.resource.data.clubId) ||
+        transitionalRead(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(resource.data.clubId)
+        sameClub(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow delete: if isSuperAdmin();
     }
@@ -391,15 +444,18 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
-        sameClubAsDoc(resource.data.clubId)
+        sameClubAsDoc(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId)
+        sameClub(request.resource.data.clubId) ||
+        transitionalRead(request.resource.data.clubId)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(resource.data.clubId)
+        sameClub(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow delete: if isSuperAdmin();
     }
@@ -414,26 +470,29 @@ service cloud.firestore {
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid in resource.data.participants ||
         request.auth.uid == resource.data.coachUid ||
-        userDocClubId(resource.data.clubId)
+        request.auth.uid == resource.data.parentUid ||
+        userDocClubId(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
         sameClub(request.resource.data.clubId) ||
         request.auth.uid in request.resource.data.participants ||
-        // FIX (entrenador sin claim): el entrenador es autor del hilo
-        // (coachUid) y debe poder crearlo aunque su token no tenga clubId.
-        request.auth.uid == request.resource.data.coachUid
+        request.auth.uid == request.resource.data.coachUid ||
+        request.auth.uid == request.resource.data.parentUid
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.clubId) ||
         request.auth.uid in resource.data.participants ||
         request.auth.uid == resource.data.coachUid ||
+        request.auth.uid == resource.data.parentUid ||
         userDocClubId(resource.data.clubId)
       );
       allow delete: if isAuth() &&
                     (request.auth.uid in resource.data.participants ||
                      request.auth.uid == resource.data.coachUid ||
+                     request.auth.uid == resource.data.parentUid ||
                      isSuperAdmin());
     }
 
@@ -495,7 +554,8 @@ service cloud.firestore {
         (resource.data.staffUids != null &&
          request.auth.uid in resource.data.staffUids) ||
         // FIX (entrenador sin claim): miembros del club según users/{uid}.clubId.
-        userDocClubId(resource.data.clubId)
+        userDocClubId(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
@@ -575,7 +635,8 @@ service cloud.firestore {
         isLinkOwner() ||
         isLinkClubMember() ||
         // FIX (C2): fallback para entrenador sin custom claim clubId
-        userDocClubId(resource.data.clubId)
+        userDocClubId(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
@@ -775,7 +836,8 @@ service cloud.firestore {
         isSuperAdmin() ||
         sameClub(resource.data.clubId) ||
         sameClubAsDoc(resource.data.clubId) ||
-        userDocClubId(resource.data.clubId)
+        userDocClubId(resource.data.clubId) ||
+        transitionalRead(resource.data.clubId)
       );
       allow write: if false;
     }
@@ -898,13 +960,15 @@ service cloud.firestore {
         isSuperAdmin() ||
         sameClub(clubId) ||
         sameClubAsDoc(clubId) ||
-        userDocClubId(clubId)
+        userDocClubId(clubId) ||
+        transitionalRead(clubId)
       );
       allow create, update: if isAuth() && (
         isSuperAdmin() ||
         sameClub(clubId) ||
         sameClubAsDoc(clubId) ||
-        userDocClubId(clubId)
+        userDocClubId(clubId) ||
+        transitionalRead(clubId)
       );
       allow delete: if isAuth() && (isSuperAdmin() || sameClub(clubId) || userDocClubId(clubId));
     }
