@@ -54,53 +54,76 @@ async function startLiveSync() {
     const fa = window._cronos_auth;
     if (!fa || !fa.db) return;
 
-    // Generar ID legible: nombre-equipo-fecha  (ej: atletico-20032026-a3f)
-    // Así en el historial y en los enlaces se identifica el equipo de un vistazo
-    const slugify = (str) => (str || 'equipo')
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar acentos
-        .replace(/[^a-z0-9]+/g, '-')                        // solo letras y números
-        .replace(/^-+|-+$/g, '')                            // sin guiones al inicio/fin
-        .substring(0, 20);                                   // máximo 20 chars
+    // FIX (auditoría 2026-07-22): startLiveSync() debe ser IDEMPOTENTE para el
+    // MISMO partido. v266B recalculaba el sufijo de hora (_hourSlug) en CADA
+    // llamada, así que reiniciar el sync de un partido YA EN CURSO (reconexión,
+    // doble disparo desde goToTitularSelection()+startMatchWithConvocation(), o
+    // cualquier futura ruta de "resume tras pérdida de cobertura/batería")
+    // generaba un liveMatchId DISTINTO al de la primera llamada → el matchId
+    // de los informes dejaba de ser estable → reaparece el bug de informes
+    // duplicados al padre (P1 v167/v168, ya corregido dos veces antes).
+    // liveMatchId solo se resetea a null cuando arranca un partido NUEVO de
+    // verdad (startMatchWithConvocation lo hace antes de llamar aquí), así que
+    // "ya tiene valor" == "mismo partido en curso": se reutiliza TAL CUAL
+    // (incluida la hora ya fijada la primera vez) y se evita repetir el
+    // borrado de events / el reset del guard de despacho, que solo deben
+    // ocurrir UNA vez, al empezar el partido.
+    const _isNewMatch = !liveMatchId;
 
-    const teamSlug = slugify(TEAM_NAMES.home);
-    const now      = new Date();
-    const dateSlug = String(now.getDate()).padStart(2,'0') +
-                     String(now.getMonth()+1).padStart(2,'0') +
-                     now.getFullYear();
-    // v266: Añadir la HORA de creación al matchId para que cada partido
-    // tenga un ID Único. Antes, dos partidos el mismo día con el mismo
-    // equipo y rival tenían el mismo matchId, lo que hacía que los eventos
-    // del partido anterior se mezclaran con los del nuevo.
-    const _hourSlug = String(now.getHours()).padStart(2,'0') +
-                      String(now.getMinutes()).padStart(2,'0');
-    // FIX (Problema 1): ID DETERMINISTA — SIN Math.random(). Reutiliza el id
-    // existente o deriva el sufijo de uid+fecha+equipo (+rival+convocatoria).
-    const _uidSlug = (window._cronosCurrentUser && window._cronosCurrentUser.uid) || 'u';
-    liveMatchId    = (typeof window._cronosBuildLiveMatchId === 'function')
-        ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, existing: liveMatchId, uid: _uidSlug }) + '-' + _hourSlug
-        : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}-${_hourSlug}`;
+    if (_isNewMatch) {
+        // Generar ID legible: nombre-equipo-fecha  (ej: atletico-20032026-a3f)
+        // Así en el historial y en los enlaces se identifica el equipo de un vistazo
+        const slugify = (str) => (str || 'equipo')
+            .toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '') // quitar acentos
+            .replace(/[^a-z0-9]+/g, '-')                        // solo letras y números
+            .replace(/^-+|-+$/g, '')                            // sin guiones al inicio/fin
+            .substring(0, 20);                                   // máximo 20 chars
+
+        const teamSlug = slugify(TEAM_NAMES.home);
+        const now      = new Date();
+        const dateSlug = String(now.getDate()).padStart(2,'0') +
+                         String(now.getMonth()+1).padStart(2,'0') +
+                         now.getFullYear();
+        // v266: Añadir la HORA de creación al matchId para que cada partido
+        // tenga un ID Único. Antes, dos partidos el mismo día con el mismo
+        // equipo y rival tenían el mismo matchId, lo que hacía que los eventos
+        // del partido anterior se mezclaran con los del nuevo. Se calcula UNA
+        // sola vez aquí (solo al arrancar un partido nuevo de verdad), nunca
+        // en cada llamada.
+        const _hourSlug = String(now.getHours()).padStart(2,'0') +
+                          String(now.getMinutes()).padStart(2,'0');
+        // FIX (Problema 1): ID DETERMINISTA — SIN Math.random(). Deriva el
+        // sufijo de uid+fecha+equipo (+rival+convocatoria).
+        const _uidSlug = (window._cronosCurrentUser && window._cronosCurrentUser.uid) || 'u';
+        liveMatchId = (typeof window._cronosBuildLiveMatchId === 'function')
+            ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, uid: _uidSlug }) + '-' + _hourSlug
+            : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}-${_hourSlug}`;
+    }
     liveIsActive = true;
-    // E4: nuevo partido en vivo → liberar el guard de despacho de informes.
-    window._cronosLastDispatchedMatch = null;
 
-    // v265: Limpiar el array events del documento en Firestore al empezar
-    // un partido nuevo. Usar updateDoc (NO setDoc merge) porque merge: true
-    // NO sobrescribe arrays — los combina. updateDoc SÍ reemplaza el array.
-    window._cronosMatchEvents = [];
-    _eventsLoadedFromFirestore = false;
-    try {
-        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        await updateDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] });
-        console.log('[v265] Array events limpiado para nuevo partido:', liveMatchId);
-    } catch(e) {
-        // Si el documento no existe, updateDoc falla. Crearlo con setDoc.
+    if (_isNewMatch) {
+        // E4: nuevo partido en vivo → liberar el guard de despacho de informes.
+        window._cronosLastDispatchedMatch = null;
+
+        // v265: Limpiar el array events del documento en Firestore al empezar
+        // un partido nuevo. Usar updateDoc (NO setDoc merge) porque merge: true
+        // NO sobrescribe arrays — los combina. updateDoc SÍ reemplaza el array.
+        window._cronosMatchEvents = [];
+        _eventsLoadedFromFirestore = false;
         try {
-            const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-            await setDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] }, { merge: true });
-            console.log('[v265] Array events limpiado (setDoc fallback):', liveMatchId);
-        } catch(e2) {
-            console.warn('[v265] Error limpiando events:', e2);
+            const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            await updateDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] });
+            console.log('[v265] Array events limpiado para nuevo partido:', liveMatchId);
+        } catch(e) {
+            // Si el documento no existe, updateDoc falla. Crearlo con setDoc.
+            try {
+                const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                await setDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] }, { merge: true });
+                console.log('[v265] Array events limpiado (setDoc fallback):', liveMatchId);
+            } catch(e2) {
+                console.warn('[v265] Error limpiando events:', e2);
+            }
         }
     }
 
@@ -151,12 +174,14 @@ async function _fetchClubTimerThresholds(db, clubId) {
             const t = data.timerThresholds || {};
             const value = {
                 red:    (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33,
-                yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50
+                yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50,
+                categoryConfigs: data.categoryConfigs || null,
+                extras: data.extras || null
             };
-            // Actualizar TAMBIÉN window._clubTimerThresholds para que el coach
-            // aplique los mismos umbrales en sus propios cronómetros.
+            // Actualizar TAMBIÉN window._clubTimerThresholds y window._clubCategoryConfigs
             window._clubTimerThresholds = value;
-            _clubThresholdsCache = { value, fetchedAt: now, clubId };
+            if (data.categoryConfigs) window._clubCategoryConfigs = data.categoryConfigs;
+            _clubThresholdsCache = { value, fetchedAt: now, clubId, fullData: data };
             // v224: log silenciado en producción (era de diagnóstico v221).
             // console.log('[sync v221] Umbrales leídos de Firestore para club', clubId, ':', value);
             return value;
@@ -223,12 +248,32 @@ async function pushLiveSnapshot(status = 'active') {
         const scoreHome = document.getElementById('score-home')?.textContent || '0';
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
 
-        // v221: SIEMPRE leer los umbrales frescos del club (con caché 60s).
-        // Antes dependíamos de window._clubTimerThresholds que podía ser null
-        // o estar desactualizado si el Director cambió los umbrales después
-        // de que el coach abriera el partido.
         const _clubId = window._cronosCurrentUser?.clubId;
         const _thresholds = await _fetchClubTimerThresholds(fa.db, _clubId);
+
+        const snapCat = window._cronosCurrentUser?.category || window._cronosCurrentUser?._activeRoleData?.category || window._cronosCurrentUser?.categoryLabel || null;
+        const snapSub = window._cronosCurrentUser?.subcategory || window._cronosCurrentUser?._activeRoleData?.subcategory || null;
+
+        const _me = window._cronosCurrentUser;
+        const _extras = (_me && _me.extras) || (_thresholds && _thresholds.extras) || {};
+        let _semaforoActive = true;
+        if (_extras.semaforo === false) {
+            _semaforoActive = false;
+        } else {
+            const getGroupFn = (typeof window.getCategoryGroupKey === 'function')
+                ? window.getCategoryGroupKey
+                : function(c, s) { return 'f7'; };
+            const groupKey = getGroupFn(snapCat, snapSub);
+            if (groupKey === 'juvenil' || groupKey === 'regional') {
+                _semaforoActive = false;
+            } else {
+                const configs = window._clubCategoryConfigs || (_thresholds && _thresholds.categoryConfigs) || {};
+                const groupCfg = configs[groupKey];
+                if (groupCfg && groupCfg.semaforoActive === false) {
+                    _semaforoActive = false;
+                }
+            }
+        }
 
         const snapshot = {
             id:          liveMatchId,
@@ -236,12 +281,12 @@ async function pushLiveSnapshot(status = 'active') {
             updatedAt:   serverTimestamp(),
             createdBy:   window._cronosCurrentUser?.uid   || '',
             coachEmail:  window._cronosCurrentUser?.email || '',
-            // clubId/clubName son IMPRESCINDIBLES: live.html filtra los partidos
-            // visibles para director/coordinador/padre comparando m.clubId con
-            // userData.clubId. Sin este campo, ningún miembro del club (salvo
-            // superadmin/admin) podía ver el partido en vivo.
             clubId:      window._cronosCurrentUser?.clubId   || null,
             clubName:    window._cronosCurrentUser?.clubName || null,
+
+            // Categoría y Subcategoría del Entrenador
+            category:    window._cronosCurrentUser?.category || window._cronosCurrentUser?._activeRoleData?.category || window._cronosCurrentUser?.categoryLabel || null,
+            subcategory: window._cronosCurrentUser?.subcategory || window._cronosCurrentUser?._activeRoleData?.subcategory || null,
 
             // Partido
             mode:        currentMode,
