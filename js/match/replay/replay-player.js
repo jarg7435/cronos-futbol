@@ -272,6 +272,39 @@
         `;
     }
 
+    // FIX (auditoría 2026-07-22): los eventos de partido solo llevan `text`
+    // libre (p.ej. `'GOL · ' + p.name`, ver js/match/events/player-actions.js
+    // `_registerMatchEvent`) — no hay playerId/playerNumber en el evento. El
+    // código anterior comparaba el texto contra el nombre con "includes",
+    // así que un nombre que
+    // fuera subcadena de otro (p.ej. "Ana" dentro de "Anabel") o dos jugadores
+    // homónimos misatribuían el evento, y como el `forEach` no paraba al
+    // primer match, un solo evento podía aplicarse a VARIOS jugadores a la
+    // vez (tarjetas/entradas-salidas/lesiones). Estas dos funciones extraen el
+    // nombre EXACTO tras el separador ' · ' (con el sufijo entre paréntesis,
+    // p.ej. "(doble amarilla)", recortado) y buscan por IGUALDAD normalizada
+    // (no por subcadena), devolviendo como mucho UN jugador.
+    function _extractPlayerNameFromEventText(text) {
+        if (typeof text !== 'string') return null;
+        const parts = text.split(' · ');
+        if (parts.length < 2) return null;
+        // El nombre es SIEMPRE el ÚLTIMO segmento (algunos formatos tienen más
+        // de un separador, p.ej. 'CAMBIO · Entra · ' + nombre) — tomar todo lo
+        // posterior al primer separador incluiría "Entra" como si fuera parte
+        // del nombre.
+        let name = parts[parts.length - 1].trim();
+        name = name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+        return name || null;
+    }
+
+    function _findPlayerByEventText(playersMap, text) {
+        const name = _extractPlayerNameFromEventText(text);
+        if (!name) return null;
+        const norm = (s) => String(s || '').trim().toLowerCase();
+        const target = norm(name);
+        return Object.values(playersMap).find(p => norm(p.name) === target) || null;
+    }
+
     // ── Actualizar el Estado Visual para un Minuto Concreto ──────────
     function _updateReplayFrame(timeSec) {
         _replayState.currentTimeSec = timeSec;
@@ -329,11 +362,7 @@
 
             // Goles
             if (ev.type === 'goal') {
-                const matchName = ev.text || '';
-                let foundP = null;
-                Object.values(playersMap).forEach(p => {
-                    if (matchName.includes(p.name)) foundP = p;
-                });
+                const foundP = _findPlayerByEventText(playersMap, ev.text);
                 if (foundP) {
                     foundP.goals = (foundP.goals || 0) + 1;
                     if (foundP.team === 'home') homeScore++;
@@ -345,37 +374,32 @@
 
             // Tarjetas
             if (ev.type === 'yellow') {
-                Object.values(playersMap).forEach(p => {
-                    if (ev.text && ev.text.includes(p.name)) {
-                        p.yellowCards = (p.yellowCards || 0) + 1;
-                        if (p.yellowCards >= 2) p.cards = 'roja';
-                        else p.cards = 'amarilla';
-                    }
-                });
+                const p = _findPlayerByEventText(playersMap, ev.text);
+                if (p) {
+                    p.yellowCards = (p.yellowCards || 0) + 1;
+                    if (p.yellowCards >= 2) p.cards = 'roja';
+                    else p.cards = 'amarilla';
+                }
             }
             if (ev.type === 'red') {
-                Object.values(playersMap).forEach(p => {
-                    if (ev.text && ev.text.includes(p.name)) p.cards = 'roja';
-                });
+                const p = _findPlayerByEventText(playersMap, ev.text);
+                if (p) p.cards = 'roja';
             }
 
             // Sustituciones
             if (ev.type === 'sub_in') {
-                Object.values(playersMap).forEach(p => {
-                    if (ev.text && ev.text.includes(p.name)) p.status = 'field';
-                });
+                const p = _findPlayerByEventText(playersMap, ev.text);
+                if (p) p.status = 'field';
             }
             if (ev.type === 'sub_out') {
-                Object.values(playersMap).forEach(p => {
-                    if (ev.text && ev.text.includes(p.name)) p.status = 'bench';
-                });
+                const p = _findPlayerByEventText(playersMap, ev.text);
+                if (p) p.status = 'bench';
             }
 
             // Lesiones
             if (ev.type === 'injury') {
-                Object.values(playersMap).forEach(p => {
-                    if (ev.text && ev.text.includes(p.name)) p.injured = true;
-                });
+                const p = _findPlayerByEventText(playersMap, ev.text);
+                if (p) p.injured = true;
             }
         });
 

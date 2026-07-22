@@ -1,6 +1,6 @@
 # Cronos Fútbol — Estado de correcciones
 
-_Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Próxima sesión: empezar por E6._
+_Última actualización: 2026-07-22 — cerrado el hueco cross-club de `transitionalRead()` (ver más abajo). Próxima sesión: empezar por E6._
 
 ## COMPLETADO
 
@@ -290,21 +290,141 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
     ya lo almacenaba como LF), por lo que el diff del commit son +297 líneas puras
     de contenido sin ruido de fin de línea.
 
-## PENDIENTE (empezar por E6)
+## COMPLETADO (auditoría 2026-07-22 — liveMatchId vuelve a ser estable a mitad de partido)
 
-- [ ] **P11-D (REGRESIÓN REAL EN PRODUCCIÓN, prioridad alta)**: el informe
-  colectivo NO se envía cuando el entrenador no tiene director/coordinador
-  asignado — y falla EN SILENCIO (sin error visible). Causa: `if (!staff.length)
-  { ...; return; }` en `js/coach/comms/panel.js` (`window._sendCollectiveReportNow`,
-  líneas 4110-4114) aborta ANTES de escribir los `cronos_player_reports`; el
-  Panel de Dirección se alimenta solo de esos docs, así que el partido no aparece
-  jamás. El fix P11-D (commit `e2189fb`) había quitado ese `return` (escribía los
-  informes igualmente, visibles por `clubId`) y forzaba `me.uid` en `staffUids`;
-  un "Add files via upload" posterior sobrescribió `panel.js` y lo revirtió.
-  Detectado al activar la suite (`scripts/test_p11d_collective_write.js`, hoy en
-  rojo/xfail). NO es solo un test obsoleto: hay que restaurar el comportamiento
-  del fix en el producto. Detalle completo en "Regresiones detectadas por la
-  suite de tests / P11-D" (más abajo). Ítem separado de la tarea de tests+CI.
+- [x] **P1 (v266C)**: `startLiveSync()` recalculaba el liveMatchId en cada llamada
+  para el MISMO partido, reabriendo el riesgo de informes duplicados al padre
+  - Causa: el commit `7b0a1f2` ("v266B") quitó la reutilización del `liveMatchId`
+    existente en `_cronosBuildLiveMatchId` (`js/core/utils.js`) para que dos
+    partidos DISTINTOS el mismo día/equipo/rival no compartieran id (mezclaban
+    eventos). El fix era legítimo en la intención, pero el **llamador**
+    (`js/match/live/sync.js` → `startLiveSync`) seguía añadiendo un sufijo de
+    HORA (`_hourSlug`, calculado con `new Date()`) **en cada invocación**,
+    independientemente de si el partido era nuevo o el mismo de antes. Si
+    `startLiveSync()` se invocaba dos veces para el mismo partido (reconexión,
+    doble disparo entre `goToTitularSelection()`/`startMatchWithConvocation()`,
+    o cualquier ruta futura de "resume tras pérdida de cobertura/batería" —
+    justo la feature en desarrollo, `retroactive-modal.js`/"PERDIDOS"), el
+    `liveMatchId` cambiaba de un minuto a otro dentro del MISMO partido, y con
+    él el `matchId` de los informes (derivado de `liveMatchId`) → vuelve el bug
+    de informes duplicados al padre, ya corregido dos veces antes (P1 v167/v168).
+  - Fix (`js/match/live/sync.js`, función `startLiveSync`): se añade el guard
+    `const _isNewMatch = !liveMatchId;`. La construcción del id (con su
+    `_hourSlug`), el borrado del array `events` en Firestore y el reset del
+    guard de despacho de informes (`_cronosLastDispatchedMatch = null`) quedan
+    dentro de `if (_isNewMatch)` — solo ocurren la PRIMERA vez que arranca un
+    partido. Si `liveMatchId` ya tiene valor (mismo partido en curso, sync
+    reiniciándose), se reutiliza tal cual, sin recalcular nada.
+    `_cronosBuildLiveMatchId` (`js/core/utils.js`) se dejó intacto: ya era
+    determinista y el problema real estaba en el llamador, no en el builder.
+  - Verificado: (1) `node --check` OK; (2) nuevo
+    `scripts/test_startlivesync_idempotent.js` (8/8 PASS) — ejecuta el código
+    REAL de `startLiveSync` en sandbox: dos llamadas para el mismo partido en
+    minutos distintos → mismo `liveMatchId`; tras resetear `liveMatchId=null`
+    (partido nuevo de verdad) → id distinto; confirma estructuralmente que el
+    guard existe y que el borrado de `events`/`_hourSlug` quedan dentro de él;
+    (3) `scripts/test_livematchid_idempotency.js` (ya existente, 10/10 PASS)
+    sigue en verde sin cambios — el builder de `utils.js` no se tocó; (4) los
+    3 fallos preexistentes de la suite (`test_parent_report_targets.js`,
+    `test_timer_color_dom.js`, `test_timer_color_semaforo.js`) se confirmaron
+    NO relacionados con este fix: revirtiendo SOLO `js/match/live/sync.js` a
+    HEAD (dejando el resto del WIP intacto) siguen fallando igual.
+  - Pendiente: commit/deploy — el fix vive en el working tree.
+
+## COMPLETADO (auditoría 2026-07-22 — P11-D: informe colectivo con staff vacío)
+
+- [x] **P11-D (REGRESIÓN REAL EN PRODUCCIÓN, restaurada 2026-07-22)**: el informe
+  colectivo NO se enviaba cuando el entrenador no tenía director/coordinador
+  asignado — y fallaba EN SILENCIO (sin error visible). Causa: `if (!staff.length)
+  { ...; return; }` en `js/coach/comms/panel.js` (`window._sendCollectiveReportNow`)
+  abortaba ANTES de escribir los `cronos_player_reports`; el Panel de Dirección se
+  alimenta solo de esos docs, así que el partido no aparecía jamás. El fix P11-D
+  original (commit `e2189fb`) había quitado ese `return`, pero un "Add files via
+  upload" posterior sobrescribió `panel.js` y lo revirtió (detectado al activar
+  la suite: `scripts/test_p11d_collective_write.js` llevaba tiempo en rojo/xfail).
+  - Fix restaurado (`js/coach/comms/panel.js`):
+    1. `window._sendCollectiveReportNow`: eliminado el `return` temprano cuando
+       `!staff.length` — ahora solo avisa (`console.warn` + toast distinto) y
+       sigue escribiendo los `cronos_player_reports` (visibles por `clubId`).
+    2. `_collStaffUids` (colectivo) y `_allStaffUids` (`autoDispatchMatchReports`):
+       ambos incluyen SIEMPRE `me.uid` además del staff resuelto (dedupe con
+       `Set`), para que la query `array-contains` del Panel de Dirección nunca
+       quede vacía aunque el club no tenga staff asignado todavía.
+    3. Toast final ajustado para el caso sin staff ("informe guardado, visible
+       en el Panel de Dirección" en vez de "enviado a 0 personas").
+    4. Logs de diagnóstico `[StaffReport] TOTAL informes ... escritos en
+       cronos_player_reports` en ambos caminos (colectivo y auto-despacho).
+  - Verificado: `scripts/test_p11d_collective_write.js` pasa 9/9 (antes en rojo
+    permanente); retirado de la lista `XFAIL` de `scripts/run-tests.js` (el propio
+    runner obliga a esto cuando un XFAIL empieza a pasar — XPASS). Suite completa:
+    24/27 activos OK, sin XFAIL ni XPASS pendientes; los 3 fallos restantes
+    (`test_parent_report_targets.js`, `test_timer_color_dom.js`,
+    `test_timer_color_semaforo.js`) son preexistentes en otras partes del WIP, no
+    relacionados con este fix. De paso se corrigió un falso negativo en
+    `scripts/test_startlivesync_idempotent.js` (la comparación de "sin
+    Math.random()" no normalizaba CRLF antes de quitar comentarios, así que el
+    comentario que MENCIONA "Math.random()" como código eliminado nunca se
+    recortaba y el test fallaba en falso tras un `git stash`/`pop` que dejó el
+    archivo con CRLF).
+  - Pendiente: commit/deploy — el fix vive en el working tree.
+
+## COMPLETADO (auditoría 2026-07-22 — borrado masivo de mensajes con auditoría)
+
+- [x] **Borrado sin rastro en `coachDeleteAllMessages`/`ppDeleteAllMessages`**
+  - Causa: ambas funciones (nuevas en el WIP de comunicaciones) vaciaban el hilo
+    completo de `cronos_messages/{threadId}` con `updateDoc({ messages: [] })`,
+    incluidos los mensajes escritos por la OTRA parte (familia↔entrenador de un
+    menor), sin `auditLogger` y sin posibilidad de recuperación. Única
+    salvaguarda: un `confirm()` de cliente. `window.auditLogger` (clase
+    `AuditLogger`, `js/services/audit-logger.js`) no encajaba tal cual: exige
+    `matchId` (vía `init(matchId)`) y la Cloud Function `logAuditEntry` valida
+    `matchId`+`action` como obligatorios — un hilo de mensajes no tiene
+    `matchId`, así que se optó por un registro propio en el propio documento.
+  - Fix (`js/coach/comms/panel.js` → `coachDeleteAllMessages`, `js/parent/panel.js`
+    → `ppDeleteAllMessages`): antes de vaciar, se lee el hilo (`getDoc`) y se
+    archiva su contenido en `deletedMessagesLog` (`arrayUnion`) con
+    `deletedBy`/`deletedByEmail`/`deletedByRole`/`deletedAt`/`messageCount`/
+    `messages` (los mensajes archivados, no destruidos) — borrado LÓGICO, no
+    destructivo. Las reglas de `cronos_messages` (`allow update`) no restringen
+    los campos escribibles, así que no hizo falta tocar `firestore.rules`.
+  - Verificado con nuevo `scripts/test_delete_all_messages_audit.js` (15/15
+    PASS): ejecuta el código REAL de ambas funciones en sandbox — confirma que
+    `deletedMessagesLog` archiva los mensajes previos con el conteo correcto y
+    la identidad de quien borró, en ambos lados (entrenador y padre).
+  - Pendiente: commit/deploy — el fix vive en el working tree.
+
+## COMPLETADO (auditoría 2026-07-22 — replay-player.js: emparejamiento por nombre exacto)
+
+- [x] **Misatribución de eventos en el reproductor de repeticiones**
+  - Causa: `js/match/replay/replay-player.js` reconstruía goles/tarjetas/
+    entradas-salidas/lesiones emparejando `ev.text.includes(p.name)`. Los
+    eventos de partido (`_registerMatchEvent`, `js/match/events/player-actions.js`)
+    solo llevan texto libre (p.ej. `'GOL · ' + p.name`), sin `playerId`. Con
+    `includes()`, un nombre que fuera subcadena de otro (p.ej. "Ana" dentro de
+    "Anabel") misatribuía el evento, y el `forEach` sin `break` aplicaba el
+    evento a TODOS los jugadores cuyo nombre encajara a la vez (no solo a uno)
+    en tarjetas/cambios/lesiones.
+  - Fix (`js/match/replay/replay-player.js`): nuevas `_extractPlayerNameFromEventText`
+    (toma el ÚLTIMO segmento tras ' · ' — necesario porque el formato de
+    cambio tiene DOS separadores, `'CAMBIO · Entra · ' + nombre`; recorta el
+    sufijo entre paréntesis, p.ej. "(doble amarilla)") y `_findPlayerByEventText`
+    (busca por IGUALDAD normalizada, no por subcadena, devolviendo como mucho
+    un jugador). Los 6 tipos de evento (goal/yellow/red/sub_in/sub_out/injury)
+    usan ahora este helper.
+  - Verificado con nuevo `scripts/test_replay_player_name_match.js` (13/13
+    PASS): ejecuta las funciones REALES en sandbox — confirma que "Anabel" y
+    "Ana" ya no se confunden entre sí, que los 4 formatos reales de texto
+    (gol, tarjeta con sufijo, cambio con doble separador, lesión) extraen el
+    nombre correcto, y que ya no queda ningún `.includes(p.name)` en el código.
+  - Limitación residual conocida (no resoluble solo con texto): si dos
+    jugadores del mismo partido tienen el nombre COMPLETO idéntico, el emparejamiento
+    por igualdad de nombre no puede distinguirlos (ambigüedad real de datos,
+    no un bug de este fix). Solución de fondo: que `_registerMatchEvent`
+    incluya `playerId`/`playerNumber` en el evento — fuera del alcance de este
+    fix puntual (tocaría 4 archivos adicionales que escriben eventos).
+  - Pendiente: commit/deploy — el fix vive en el working tree.
+
+## PENDIENTE (empezar por E6)
 
 - [ ] **E6**: Crono live sin progreso segundo a segundo
 - [ ] **E7**: Tiempos con redondeo en informes
@@ -318,6 +438,33 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
 - Entorno Windows: cmd requiere `chcp 65001` por acentos en la ruta del proyecto.
 
 ## Deuda de seguridad (preexistente, a revisar)
+
+- [x] **SEC-C4 — `transitionalRead()` sin comprobar propiedad de club: CERRADO (2026-07-22, sin desplegar todavía)**.
+  Detectado en la auditoría general de 2026-07-22 (`AUDITORIA_GENERAL_2026-07-22.md`, hallazgo #1),
+  mientras `transitionalRead()` estaba siendo RESTAURADA en el WIP sin commitear (había sido
+  eliminada antes por ser "un backdoor por diseño", ver nota histórica más abajo en este mismo
+  archivo). La restauración ("Opción B") arregló que la ventana de gracia fuera renovable con
+  logout+login (mide desde `users/{uid}.createdAt` en vez de `auth_time`), pero **no comprobaba
+  que el `clubId` del documento objetivo perteneciera al propio usuario** — solo exigía `clubId !=
+  null` en el documento. Durante los 5 minutos posteriores a CUALQUIER registro nuevo, esa cuenta
+  podía leer/escribir documentos de **cualquier otro club** (equipos, jugadores, entrenamientos,
+  partidos, mensajes, `cronos_player_links`, `individuals`...) en las ~15 colecciones donde esta
+  rama se usa como `OR`. Afecta datos de menores (nombres, dorsales, fotos).
+  **Fix** (`firestore.rules`, función `transitionalRead(clubId)`): se añade
+  `get(users/{uid}).data.clubId == clubId`, el mismo check que ya usa `userDocClubId()` para
+  usuarios con claims. La ventana de gracia ahora solo cubre el club al que el usuario dice
+  pertenecer (su propio `users/{uid}.clubId`), nunca uno ajeno. Los tres `get()` a `users/{uid}`
+  dentro de la función se resuelven a una sola lectura facturada (mismo documento, memoizado por
+  Firestore dentro de una misma evaluación de reglas).
+  **Verificado**: (1) `firebase deploy --only firestore:rules --dry-run` → "rules file
+  firestore.rules compiled successfully"; (2) `scripts/test_sec_transitionalread_clubid.js` —
+  16/16 PASS: estructura de la función (clubId propio exigido, resto de guards intactos) +
+  simulación del predicado en 8 escenarios (hueco cross-club cerrado con/sin club propio, flujo
+  legítimo del usuario recién registrado intacto, ventana expirada deniega, usuario con claims no
+  depende de este helper, `users/{uid}` inexistente deniega, `createdAt` legacy no-timestamp
+  deniega, `clubId` de documento null deniega).
+  **Pendiente**: desplegar (`firebase deploy --only firestore:rules`) — el fix vive en el working
+  tree, todavía sin commitear ni desplegar a producción.
 
 - [x] **SEC-C2 — `live_matches` borrable por cualquier autenticado si `clubId == null`: CERRADO Y VERIFICADO EN PRODUCCIÓN (2026-07-16)**.
   La regla `allow delete` de `match /live_matches/{matchId}` incluía la rama
@@ -424,8 +571,9 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
 
 ## Regresiones detectadas por la suite de tests
 
-- [ ] **P11-D — informe colectivo con staff vacío ABORTA la escritura de
-  `cronos_player_reports` (REGRESIÓN REAL PENDIENTE, detectada al activar `npm test`)**.
+- [x] **P11-D — informe colectivo con staff vacío ABORTA la escritura de
+  `cronos_player_reports` — CORREGIDO 2026-07-22 (ver "COMPLETADO (auditoría
+  2026-07-22 — P11-D...)" más arriba; detalle histórico de la regresión abajo)**.
 
   **Qué falla**: `scripts/test_p11d_collective_write.js` (exit 1). El test NO se ha
   tocado a propósito: refleja un bug real, no una aserción obsoleta.
@@ -477,10 +625,14 @@ _Última actualización: 2026-06-29 — feature silbato+overlay en live.html. Pr
   `return` + `_collStaffUids` + logs TOTAL; el archivo actual (líneas 4110-4114 y
   4150) contiene el `return` y el `staffUids` sin `me.uid`.
 
-  **Decisión**: NO se fuerza el pase del test ni se parchea el producto en esta
-  tanda (el fix toca el flujo de escritura de informes y merece su propia
-  revisión). Queda como regresión abierta. El runner `scripts/run-tests.js` marca
-  este test como `xfail` conocido (lo ejecuta y reporta, pero no tumba CI) para
-  que la regresión siga VISIBLE sin bloquear el resto de la suite; al corregir el
-  producto, quitar `test_p11d_collective_write.js` de la lista `XFAIL` del runner
-  y confirmar que pasa.
+  **Decisión histórica** (tanda anterior): NO se forzó el pase del test ni se
+  parcheó el producto en su momento; quedó como regresión abierta con el test
+  marcado `xfail` en `scripts/run-tests.js` para que siguiera VISIBLE sin
+  bloquear el resto de la suite.
+
+  **Cierre (2026-07-22)**: restaurados los 3 puntos que perdió el "Add files via
+  upload" (guard sin `return`, `_collStaffUids`/`_allStaffUids` con `me.uid`,
+  logs TOTAL) — más el mismo tratamiento aplicado también a `_allStaffUids` en
+  `autoDispatchMatchReports` (que el fix original `e2189fb` no cubría, pero el
+  test sí lo exige). `test_p11d_collective_write.js` pasa 9/9 y se retiró de
+  `XFAIL` en `scripts/run-tests.js`.
