@@ -5290,13 +5290,32 @@ window.cDeleteSingleMessage = async (threadId, index, perspective) => {
 
 window.coachDeleteAllMessages = async (threadId, perspective) => {
     perspective = perspective || 'coach';
-    if (!confirm('¿Estás seguro de que deseas vaciar toda la conversación? Esta acción no se puede deshacer.')) return;
+    // FIX (auditoría 2026-07-22): vaciar un hilo es irreversible y borra
+    // también los mensajes escritos por la OTRA parte (familia del menor).
+    // Antes se sobrescribía `messages: []` sin dejar rastro de quién lo hizo
+    // ni cuándo, y sin posibilidad de recuperación. Ahora: (1) se archiva el
+    // contenido borrado en `deletedMessagesLog` (borrado LÓGICO, no destructivo
+    // — el SuperAdmin puede consultarlo si hace falta reconstruir el hilo) y
+    // (2) se registra quién lo hizo y cuándo.
+    if (!confirm('¿Estás seguro de que deseas vaciar toda la conversación? Esta acción no se puede deshacer para ti, pero queda registrada.')) return;
     try {
-        const { db, doc, updateDoc } = await _cFS();
-        await updateDoc(doc(db, 'cronos_messages', threadId), {
+        const { db, doc, getDoc, updateDoc, arrayUnion } = await _cFS();
+        const me = window._cronosCurrentUser || {};
+        const docRef = doc(db, 'cronos_messages', threadId);
+        const snap = await getDoc(docRef);
+        const prevMessages = (snap.exists() && Array.isArray(snap.data().messages)) ? snap.data().messages : [];
+        await updateDoc(docRef, {
             messages: [],
             lastMessage: '— Sin mensajes —',
-            lastMessageAt: new Date().toISOString()
+            lastMessageAt: new Date().toISOString(),
+            deletedMessagesLog: arrayUnion({
+                deletedBy:      me.uid   || null,
+                deletedByEmail: me.email || null,
+                deletedByRole:  perspective,
+                deletedAt:      new Date().toISOString(),
+                messageCount:   prevMessages.length,
+                messages:       prevMessages,
+            }),
         });
         if (typeof showToast==='function') showToast('✅ Conversación vaciada.', 3000);
         await _loadThreadMessages(threadId, perspective);

@@ -536,8 +536,8 @@ async function openParentPanel() {
                         const _roleCat = (Array.isArray(myData.allRoles)
                             ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
                             : {});
-                        const pCat = myData.category || myData.categoryLabel
-                            || _roleCat.category || _roleCat.categoryLabel
+                        const pCat = _roleCat.category || _roleCat.categoryLabel
+                            || myData.category || myData.categoryLabel
                             || (me && me.category) || '';
                         const linkId = `${clubId}_${pNum}`;
                         const existingLink = await getDoc(doc(fa.db, 'cronos_player_links', linkId));
@@ -1241,14 +1241,47 @@ window.ppChat = async () => {
         const { collection, getDocs, query, where, doc, getDoc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
+        // Inyectar estilos responsivos del chat padre
+        const styleId = 'pp-messages-split-css';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                .pp-split-container {
+                    display: flex;
+                    flex: 1;
+                    overflow: hidden;
+                    gap: 1.2rem;
+                    height: 100%;
+                }
+                @media (max-width: 767px) {
+                    .pp-split-container {
+                        flex-direction: column !important;
+                    }
+                    .pp-split-container > div:first-child {
+                        width: 100% !important;
+                        border-right: none !important;
+                        border-bottom: 1px solid var(--glass-border) !important;
+                        padding-right: 0 !important;
+                        padding-bottom: 1rem !important;
+                        height: 180px !important;
+                    }
+                    #pp-chat-thread-pane {
+                        height: 380px !important;
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
         // Obtener datos del perfil del padre para saber categoría, subcategoría y clubId
         const myDoc = await getDoc(doc(fa.db, 'users', me.uid));
         const myData = myDoc.exists() ? myDoc.data() : {};
         const _roleParent = (Array.isArray(myData.allRoles)
             ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
             : {});
-        const pCat = myData.category || _roleParent.category || me.category || '';
-        const pSub = myData.subcategory || _roleParent.subcategory || me.subcategory || '';
+        const pCat = _roleParent.category || myData.category || me.category || '';
+        const pSub = _roleParent.subcategory || myData.subcategory || me.subcategory || '';
         const clubId = myData.clubId || _roleParent.clubId || me.clubId || '';
 
         // Buscar hilos donde el padre es participante
@@ -1258,7 +1291,11 @@ window.ppChat = async () => {
         ));
 
         const threads = [];
-        threadsSnap.forEach(d => threads.push({ _id: d.id, ...d.data() }));
+        threadsSnap.forEach(d => {
+            const data = d.data();
+            if (data.recipientType === 'staff') return; // Ignorar hilos de staff cruzados por error previo
+            threads.push({ _id: d.id, ...data });
+        });
 
         // Intentar buscar al entrenador de la misma categoría y subcategoría para iniciar conversación si no existe hilo
         let coach = null;
@@ -1295,120 +1332,149 @@ window.ppChat = async () => {
             });
         }
 
-        let html = '';
-        
-        // Si hay un entrenador identificado pero no hay un hilo activo con él, mostrar la opción de iniciar chat
-        if (coach && !threads.some(t => t.coachUid === coach.uid)) {
-            const newThreadId = `${coach.uid}_${me.uid}`;
-            const coachName = coach.displayName || coach.email || 'Entrenador';
-            html += `
-            <div onclick="ppOpenChatThread('${newThreadId}','${typeof escapeAttr==='function'?escapeAttr(coachName):coachName}')"
-                 style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;
-                        background:rgba(63,185,80,0.06);
-                        border:1px solid rgba(63,185,80,0.3);
-                        border-radius:10px;padding:0.85rem 1rem;
-                        cursor:pointer;transition:all 0.15s;">
-                <div style="width:42px;height:42px;border-radius:50%;
-                            background:rgba(63,185,80,0.15);
-                            display:flex;align-items:center;justify-content:center;
-                            font-size:1.2rem;flex-shrink:0;">
-                    🟢
+        body.innerHTML = `
+        <div class="pp-split-container" style="display:flex;height:100%;gap:1rem;">
+            <!-- Panel izquierdo: Checklist del Entrenador -->
+            <div style="width:290px;display:flex;flex-direction:column;border-right:1px solid var(--glass-border);padding-right:1rem;height:100%;overflow-y:auto;box-sizing:border-box;flex-shrink:0;">
+                <div style="font-weight:700;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:0.7rem;">
+                    📬 Tu Entrenador
                 </div>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.1rem;color:white;">
-                        Iniciar chat con el entrenador: ${typeof escapeHtml==='function'?escapeHtml(coachName):coachName}
-                    </div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);">
-                        Categoría: ${pCat} ${pSub} · Pulsa para enviar tu primer mensaje
-                    </div>
+                <div id="pp-coach-list-pane" style="flex:1;">
+                    <!-- Se cargará la lista de entrenadores aquí -->
                 </div>
-            </div>`;
-        }
+                <div style="margin-top:auto;font-size:0.72rem;color:var(--text-muted);background:rgba(255,255,255,0.02);padding:0.6rem;border-radius:6px;border:1px solid var(--glass-border);">
+                    💡 <strong>Nota:</strong> Tu canal de comunicación es directo con el entrenador asignado a la categoría <strong>${escapeHtml(pCat)} ${escapeHtml(pSub)}</strong>.
+                </div>
+            </div>
 
+            <!-- Panel derecho: Historial del Chat -->
+            <div id="pp-chat-thread-pane" style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,255,255,0.015);border-radius:12px;padding:1rem;box-sizing:border-box;height:100%;overflow:hidden;">
+                <span style="font-size:2.8rem;margin-bottom:0.5rem;">💬</span>
+                <span style="color:var(--text-muted);font-size:0.82rem;text-align:center;">Selecciona un entrenador para ver el historial de chat con fecha y hora</span>
+            </div>
+        </div>`;
+
+        const listPane = document.getElementById('pp-coach-list-pane');
         if (!threads.length && !coach) {
-            body.innerHTML = `<div class="pp-empty">
-                💬 Aún no hay conversaciones con el entrenador.<br>
-                <span style="font-size:0.8rem;color:#555;">
-                    Cuando el entrenador te envíe un mensaje o informe,
-                    aparecerá aquí para que puedas responder.
-                </span>
-            </div>`;
+            listPane.innerHTML = `<div style="color:var(--text-muted);font-size:0.78rem;padding:1rem;text-align:center;">⚠️ Sin entrenador asignado en tu categoría.</div>`;
             return;
         }
 
-        // Ordenar por último mensaje
-        threads.sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
+        let coachCardHtml = '';
+        let activeThreadId = null;
+        let activeCoachLabel = '';
 
-        html += threads.map(t => {
-            const unread = t.unreadByParent || 0;
-            const lastMsg = t.lastMessage || '— Sin mensajes —';
-            const lastTime = t.lastMessageAt
-                ? new Date(t.lastMessageAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
-                : '';
-            const coachLabel = t.coachEmail || 'Entrenador';
+        if (coach) {
+            const existingThread = threads.find(t => t.coachUid === coach.uid);
+            const targetThreadId = existingThread ? existingThread._id : `${coach.uid}_${me.uid}`;
+            const coachName = coach.displayName || coach.email || 'Entrenador';
+            
+            activeThreadId = targetThreadId;
+            activeCoachLabel = coachName;
 
-            return `
-            <div onclick="ppOpenChatThread('${t._id}','${typeof escapeAttr==='function'?escapeAttr(coachLabel):coachLabel}')"
-                 style="display:flex;align-items:center;gap:0.8rem;margin-bottom:0.6rem;
-                        background:${unread ? 'rgba(88,166,255,0.06)' : 'var(--glass)'};
-                        border:1px solid ${unread ? 'rgba(88,166,255,0.5)' : 'var(--glass-border)'};
-                        border-radius:10px;padding:0.85rem 1rem;
-                        cursor:pointer;transition:all 0.15s;">
-                <div style="width:42px;height:42px;border-radius:50%;
-                            background:rgba(63,185,80,0.15);
-                            display:flex;align-items:center;justify-content:center;
-                            font-size:1.2rem;flex-shrink:0;">
-                    ⚽
-                </div>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.1rem;">
-                        ${typeof escapeHtml==='function'?escapeHtml(coachLabel):coachLabel}
-                        ${unread > 0 ? `<span style="background:#58a6ff;color:#0a0e14;border-radius:10px;
-                            padding:1px 7px;font-size:0.62rem;font-weight:700;margin-left:6px;">
-                            ${unread} nuevo${unread > 1 ? 's' : ''}</span>` : ''}
+            coachCardHtml += `
+            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
+                <input type="checkbox" checked disabled style="width:18px;height:18px;accent-color:var(--primary);cursor:not-allowed;">
+                <div onclick="ppOpenChatThread('${targetThreadId}','${typeof escapeAttr==='function'?escapeAttr(coachName):coachName}')"
+                     style="flex:1;display:flex;align-items:center;gap:0.8rem;
+                            background:var(--glass);border:1px solid var(--glass-border);
+                            border-radius:10px;padding:0.75rem 0.85rem;cursor:pointer;transition:all 0.15s;">
+                    <div style="width:36px;height:36px;border-radius:50%;
+                                background:rgba(63,185,80,0.12);display:flex;
+                                align-items:center;justify-content:center;font-size:1.1rem;">
+                        ⚽
                     </div>
-                    <div style="font-size:0.76rem;color:${unread ? '#58a6ff' : '#7d8590'};
-                                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${unread ? `<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>` : (typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg)}
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:0.82rem;color:white;">
+                            ${escapeHtml(coachName)}
+                        </div>
+                        <div style="font-size:0.68rem;color:var(--text-muted);">
+                            Entrenador asignado
+                        </div>
                     </div>
                 </div>
-                <span style="font-size:0.68rem;color:#7d8590;flex-shrink:0;">${lastTime}</span>
             </div>`;
-        }).join('');
+        }
 
-        body.innerHTML = html;
+        threads.forEach(t => {
+            if (coach && t.coachUid === coach.uid) return;
+            const coachLabel = t.coachEmail || 'Entrenador';
+            if (!activeThreadId) {
+                activeThreadId = t._id;
+                activeCoachLabel = coachLabel;
+            }
+            coachCardHtml += `
+            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
+                <input type="checkbox" checked disabled style="width:18px;height:18px;accent-color:var(--primary);cursor:not-allowed;">
+                <div onclick="ppOpenChatThread('${t._id}','${typeof escapeAttr==='function'?escapeAttr(coachLabel):coachLabel}')"
+                     style="flex:1;display:flex;align-items:center;gap:0.8rem;
+                            background:var(--glass);border:1px solid var(--glass-border);
+                            border-radius:10px;padding:0.75rem 0.85rem;cursor:pointer;transition:all 0.15s;">
+                    <div style="width:36px;height:36px;border-radius:50%;
+                                background:rgba(63,185,80,0.12);display:flex;
+                                align-items:center;justify-content:center;font-size:1.1rem;">
+                        ⚽
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:0.82rem;color:white;">
+                            ${escapeHtml(coachLabel)}
+                        </div>
+                        <div style="font-size:0.68rem;color:var(--text-muted);">
+                            Histórico
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        listPane.innerHTML = coachCardHtml;
+
+        if (activeThreadId) {
+            setTimeout(() => {
+                ppOpenChatThread(activeThreadId, activeCoachLabel);
+            }, 150);
+        }
 
     } catch (e) {
         body.innerHTML = `<div class="pp-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
-};
+};;
 
 // ── Abrir hilo de chat (vista padre) ──
 window.ppOpenChatThread = async (threadId, coachLabel) => {
     const me = window._cronosCurrentUser;
     if (!me) return;
     const fa = window._cronos_auth;
-    const body = document.getElementById('pp-body');
+    const pane = document.getElementById('pp-chat-thread-pane');
+    const target = pane || document.getElementById('pp-body');
+    const isPane = !!pane;
 
-    body.innerHTML = `
-    <div style="display:flex;flex-direction:column;height:100%;">
+    target.innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100%;width:100%;box-sizing:border-box;justify-content:space-between;background:${isPane ? 'transparent' : 'var(--glass)'};padding:${isPane ? '0' : '1rem'};border-radius:${isPane ? '0' : '10px'};">
         <!-- Header del chat -->
-        <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;flex-shrink:0;border-bottom:1px solid var(--glass-border);padding-bottom:0.5rem;">
+            ${!isPane ? `
             <button onclick="ppChat()" class="pp-tab" style="padding:0.3rem 0.7rem;font-size:0.78rem;">
                 ← Volver
-            </button>
+            </button>` : ''}
             <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:0.9rem;">
+                <div style="font-weight:700;font-size:0.88rem;color:white;">
                     ⚽ ${typeof escapeHtml==='function'?escapeHtml(coachLabel):coachLabel}
                 </div>
-                <div style="font-size:0.7rem;color:#7d8590;">Entrenador</div>
+                <div style="font-size:0.68rem;color:var(--text-muted);">Entrenador asignado</div>
             </div>
+            <button onclick="ppDeleteAllMessages('${threadId}','${typeof escapeAttr==='function'?escapeAttr(coachLabel):coachLabel}')"
+                style="padding:0.25rem 0.55rem;background:rgba(255,88,88,0.1);
+                       border:1px solid rgba(255,88,88,0.3);border-radius:6px;
+                       color:#ff5858;font-size:0.7rem;cursor:pointer;font-weight:700;flex-shrink:0;">
+                🗑️ Vaciar
+            </button>
         </div>
 
         <!-- Mensajes -->
         <div id="pp-chat-messages"
              style="flex:1;overflow-y:auto;padding:0.4rem 0;
-                    display:flex;flex-direction:column;gap:0.5rem;min-height:200px;">
+                    display:flex;flex-direction:column;gap:0.5rem;min-height:220px;max-height:380px;padding-right:4px;">
             <p style="color:#7d8590;text-align:center;padding:2rem;">⏳ Cargando mensajes…</p>
         </div>
 
@@ -1421,16 +1487,16 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
                     rows="2"
                     style="flex:1;padding:0.6rem 0.8rem;background:rgba(255,255,255,0.06);
                            border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.88rem;resize:none;box-sizing:border-box;"
+                           color:white;font-size:0.85rem;resize:none;box-sizing:border-box;outline:none;"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){
                         event.preventDefault();
                         ppSendChatMessage('${threadId}');
                     }"></textarea>
                 <button onclick="ppSendChatMessage('${threadId}')"
-                    style="padding:0.6rem 1rem;background:rgba(88,166,255,0.2);
+                    style="padding:0.55rem 0.9rem;background:rgba(88,166,255,0.2);
                            border:1px solid rgba(88,166,255,0.4);border-radius:8px;
-                           color:#58a6ff;font-weight:700;cursor:pointer;flex-shrink:0;">
-                    Enviar ›
+                           color:#58a6ff;font-weight:700;cursor:pointer;flex-shrink:0;font-size:0.78rem;">
+                    Enviar
                 </button>
             </div>
         </div>
@@ -1551,8 +1617,9 @@ window.ppSendChatMessage = async (threadId) => {
                 parentEmail: me.email,
                 recipientType: 'parent',
                 clubId: myData.clubId || _roleParent.clubId || me.clubId || null,
-                category: myData.category || _roleParent.category || me.category || null,
-                subcategory: myData.subcategory || _roleParent.subcategory || me.subcategory || null,
+                category: _roleParent.category || myData.category || me.category || null,
+                subcategory: _roleParent.subcategory || myData.subcategory || me.subcategory || null,
+                participants: [me.uid, coachUid],
                 messages: [newMsg],
                 lastMessage: preview,
                 lastMessageAt: newMsg.timestamp,
@@ -2119,6 +2186,42 @@ window.ppDeleteSingleMessage = async (threadId, index) => {
         ppOpenChatThread(threadId, coachLabel);
     } catch(err) {
         alert('Error al borrar: ' + err.message);
+    }
+};
+
+window.ppDeleteAllMessages = async (threadId, coachLabel) => {
+    // FIX (auditoría 2026-07-22): vaciar un hilo es irreversible y borra
+    // también los mensajes escritos por la OTRA parte (el entrenador). Antes
+    // se sobrescribía `messages: []` sin dejar rastro de quién lo hizo ni
+    // cuándo, y sin posibilidad de recuperación. Ahora: (1) se archiva el
+    // contenido borrado en `deletedMessagesLog` (borrado LÓGICO, no
+    // destructivo) y (2) se registra quién lo hizo y cuándo.
+    if (!confirm('¿Estás seguro de que deseas vaciar toda la conversación? Esta acción no se puede deshacer para ti, pero queda registrada.')) return;
+    const fa = window._cronos_auth;
+    try {
+        const { doc, getDoc, updateDoc, arrayUnion } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const me = window._cronosCurrentUser || {};
+        const docRef = doc(fa.db, 'cronos_messages', threadId);
+        const snap = await getDoc(docRef);
+        const prevMessages = (snap.exists() && Array.isArray(snap.data().messages)) ? snap.data().messages : [];
+        await updateDoc(docRef, {
+            messages: [],
+            lastMessage: '— Sin mensajes —',
+            lastMessageAt: new Date().toISOString(),
+            deletedMessagesLog: arrayUnion({
+                deletedBy:      me.uid   || null,
+                deletedByEmail: me.email || null,
+                deletedByRole:  'parent',
+                deletedAt:      new Date().toISOString(),
+                messageCount:   prevMessages.length,
+                messages:       prevMessages,
+            }),
+        });
+        if (typeof showToast==='function') showToast('✅ Conversación vaciada.', 3000);
+        ppOpenChatThread(threadId, coachLabel);
+    } catch(err) {
+        if (typeof showToast==='function') showToast('⚠️ Error: '+err.message, 3000);
     }
 };
 
