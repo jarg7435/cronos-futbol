@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CHRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v3.0
+//  CRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v3.0
 //  ADDED: Motor de Informes Visual — Gantt + Panel de Rotaciones +
 //         Cabecera completa con logo, marcador, fecha, venue, tiempo
 // ════════════════════════════════════════════════════════════════════
@@ -9,77 +9,6 @@ async function _sdFS() {
     const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     return { ...m, db: window._cronos_auth?.db };
 }
-
-// FIX: Arbol colapsable de categorias
-window._CRONOS_CATEGORIES = [
-    { id: 'prebenjamin', label: 'Prebenjamín' },
-    { id: 'benjamin',    label: 'Benjamín' },
-    { id: 'alevin',      label: 'Alevín' },
-    { id: 'infantil',    label: 'Infantil' },
-    { id: 'cadete',      label: 'Cadete' },
-    { id: 'juvenil',     label: 'Juvenil' },
-    { id: 'regional',    label: 'Regional' },
-];
-window._CRONOS_SUBCATS = ['A', 'B', 'C'];
-
-window._cronosRenderCatTree = function(items, renderItem, typeLabel, renderSummary) {
-    const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v == null ? '' : String(v)) : (v == null ? '' : String(v));
-    const normCat = (cat) => {
-        if (!cat) return null;
-        const c = String(cat).toLowerCase();
-        for (const def of window._CRONOS_CATEGORIES) {
-            if (c.includes(def.id) || c.includes(def.label.toLowerCase())) return def.id;
-        }
-        return null;
-    };
-    const normSub = (sub) => {
-        if (!sub) return null;
-        const s = String(sub).toUpperCase().trim();
-        if (window._CRONOS_SUBCATS.includes(s)) return s;
-        const m = s.match(/([ABC])/);
-        return m ? m[1] : null;
-    };
-    const byCatSub = new Map();
-    const noCatItems = [];
-    items.forEach(d => {
-        const catId = normCat(d.category);
-        const subId = normSub(d.subcategory);
-        if (catId && subId) {
-            if (!byCatSub.has(catId)) byCatSub.set(catId, new Map());
-            const subMap = byCatSub.get(catId);
-            if (!subMap.has(subId)) subMap.set(subId, []);
-            subMap.get(subId).push(d);
-        } else { noCatItems.push(d); }
-    });
-    const css = '<style>' +
-        '.ct-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem}' +
-        '.ct-card-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:0.5rem;user-select:none}' +
-        '.ct-card-title{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.85rem;color:white}' +
-        '.ct-card-body{padding-top:0.5rem;margin-top:0.4rem}' +
-        '.ct-chevron{display:inline-block;transform:rotate(-90deg);transition:transform 0.2s;font-size:0.7rem;color:var(--text-muted)}' +
-        '.ct-card.expanded .ct-chevron{transform:rotate(0deg)}' +
-        '.ct-sub{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.4rem}' +
-        '.ct-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.12)}' +
-        '.ct-dot.on{background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.7)}' +
-        '.ct-badge{display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:20px;font-size:0.68rem;font-weight:700;background:rgba(88,166,255,0.12);color:#58a6ff}' +
-        '.ct-empty{font-size:0.72rem;color:#6e7681;padding:0.4rem 0.5rem;font-style:italic}' +
-        '</style>';
-    const catsHtml = window._CRONOS_CATEGORIES.map(catDef => {
-        const subMap = byCatSub.get(catDef.id) || new Map();
-        const catCount = Array.from(subMap.values()).reduce((s, arr) => s + arr.length, 0);
-        const catHas = catCount > 0;
-        const subsHtml = window._CRONOS_SUBCATS.map(subId => {
-            const subItems = subMap.get(subId) || [];
-            const subHas = subItems.length > 0;
-            const body = subHas ? (typeof renderSummary === 'function' ? renderSummary(subItems) : '') + subItems.map(renderItem).join('') : '<div class="ct-empty">Sin ' + (typeLabel||'registros') + '.</div>';
-            return '<div class="ct-card ct-sub expanded" style="' + (subHas?'':'opacity:0.5;') + '"><div class="ct-card-head" onclick="var b=this.nextElementSibling; if(b) b.style.display=(b.style.display==\'none\'?\'block\':\'none\')" style="cursor:pointer"><div class="ct-card-title" style="font-size:0.78rem"><span class="ct-chevron" style="transform:rotate(0deg)">&#9660;</span><span>Subcategoria ' + subId + '</span>' + (subHas?'<span class="ct-badge">'+subItems.length+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body" style="display:block">' + body + '</div></div>';
-        }).join('');
-        const dot = catHas ? '<span class="ct-dot on"></span>' : '<span class="ct-dot"></span>';
-        return '<div class="ct-card expanded" style="border-color:rgba(88,166,255,0.2);' + (catHas?'':'opacity:0.5;') + '"><div class="ct-card-head" onclick="var b=this.nextElementSibling; if(b) b.style.display=(b.style.display==\'none\'?\'block\':\'none\')" style="cursor:pointer"><div class="ct-card-title"><span class="ct-chevron" style="transform:rotate(0deg)">&#9660;</span><span>' + esc(catDef.label) + '</span>' + dot + (catHas?'<span class="ct-badge">'+catCount+'</span>':'<span style="font-size:0.68rem;color:#6e7681">vacia</span>') + '</div></div><div class="ct-card-body" style="display:block">' + subsHtml + '</div></div>';
-    }).join('');
-    const noCatHtml = noCatItems.length ? '<div class="ct-card expanded" style="border-color:rgba(255,165,0,0.3)"><div class="ct-card-head" onclick="var b=this.nextElementSibling;b.style.display=(b.style.display===\'none\'?\'block\':\'none\')"><div class="ct-card-title"><span class="ct-chevron">&#9660;</span><span>Sin categoria asignada</span><span class="ct-badge" style="background:rgba(255,165,0,0.12);color:#ffa500">'+noCatItems.length+'</span></div></div><div class="ct-card-body" style="display:block">'+noCatItems.map(renderItem).join('')+'</div></div>' : '';
-    return css + '<div style="margin-bottom:1rem">' + catsHtml + noCatHtml + '</div>';
-};
 
 // ════════════════════════════════════════════════════════════════════
 //  MODO PRUEBA MULTI-ROL — Solo SuperAdmin
@@ -143,13 +72,15 @@ async function openTestRolePicker(targetRole) {
             document.getElementById('main-header').style.display    = 'flex';
         } else if (role === 'parent') {
             if (typeof openParentPanel === 'function') openParentPanel();
+        } else if (role === 'club_admin') {
+            if (typeof openClubAdminPanel === 'function') openClubAdminPanel(clubId);
         }
     };
 }
 window.openTestRolePicker = openTestRolePicker;
 
 // ════════════════════════════════════════════════════════════════════
-//  PANEL PRINCIPAL DE DIRECCIÓN / STAFF
+//  PANEL PRINCIPAL DE DIRECCIÓN
 // ════════════════════════════════════════════════════════════════════
 async function openStaffDashboard() {
     const me         = window._cronosCurrentUser;
@@ -161,8 +92,8 @@ async function openStaffDashboard() {
         return;
     }
 
-    if (!me || (!isSA && !['director','coordinator','coach','user'].includes(activeRole))) {
-        showToast('⚠️ No tienes permisos para acceder al panel del club.', 4000);
+    if (!me || (!isSA && !['director','coordinator'].includes(activeRole))) {
+        showToast('⚠️ No tienes permisos para acceder al panel de dirección.', 4000);
         return;
     }
 
@@ -172,12 +103,10 @@ async function openStaffDashboard() {
     // _cResolveClubId migra clubId al campo raíz para que las reglas funcionen.
     try {
         if (typeof window._cResolveClubId === 'function' && me && me.uid && !me.clubId) {
-            const { doc, getDoc } = await _sdFS();
+            const { doc, getDoc, updateDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                // SEC-C1: _cResolveClubId ya no escribe clubId directamente; la
-                // migración a la raíz la hace la Cloud Function syncRootClubId.
-                const resolvedId = await window._cResolveClubId(db, me, { doc, getDoc });
+                const resolvedId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
                 if (resolvedId) {
                     me.clubId = resolvedId;
                 }
@@ -198,14 +127,14 @@ async function openStaffDashboard() {
                     border-bottom:1px solid var(--glass-border);flex-shrink:0;">
             <div>
                 <h2 style="margin:0;font-size:1.15rem;display:flex;align-items:center;gap:0.7rem;">
-                    🏢 ${activeRole === 'coordinator' ? 'Panel de Coordinación' : 'Panel de Dirección'}:
+                    ${activeRole === 'coordinator' ? '🎯 Panel de Coordinación:' : '🏢 Panel de Dirección:'}
                     <span style="color:var(--primary);">${escapeHtml(me.clubName||'Mi Club')}</span>
                     ${isSA ? `<span style="font-size:0.65rem;background:rgba(255,215,0,0.12);
                         border:1px solid rgba(255,215,0,0.3);color:#ffd700;
                         padding:2px 7px;border-radius:5px;font-weight:700;">🧪 PRUEBA</span>` : ''}
                 </h2>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">
-                    ${activeRole === 'director' ? '📋 Director Deportivo' : activeRole === 'coordinator' ? '🎯 Coordinador' : '⚽ Entrenador'}
+                    ${activeRole === 'director' ? '📋 Director Deportivo' : '🎯 Coordinador'}
                     ${isSA ? ' · SuperAdmin en modo prueba' : ''}
                 </div>
             </div>
@@ -239,7 +168,7 @@ async function openStaffDashboard() {
             ${((window._cronosCurrentUser?.extras?.partidos_terminados ?? true) !== false)
                 ? `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#79c0ff;">🎬 Partidos Terminados</button>`
                 : `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#555;cursor:not-allowed;opacity:0.5;" title="Extra no activado">🔒 Partidos Terminados</button>`}
-            ${activeRole === 'director' ? `<button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>` : ''}
+            <button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>
             <button onclick="openLiveMatchesView()" class="staff-tab"
                 style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
                 🔴 En Vivo</button>
@@ -315,6 +244,9 @@ window.switchStaffTab = async (tab) => {
     if (tab === 'config')         await _renderDirectorConfig();
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  TAB: PARTIDOS TERMINADOS
+// ════════════════════════════════════════════════════════════════════
 async function _renderFinishedMatchesTab() {
     const container = document.getElementById('staff-dashboard-content');
     const me = window._cronosCurrentUser;
@@ -705,19 +637,12 @@ async function _sdLoadEvents(type) {
         const { db, collection, getDocs, query, where, orderBy, deleteDoc, doc: firestoreDoc, limit } = await _sdFS();
         const clubId = me.clubId || '';
 
-        // Receptor: solo lo dirigido al usuario (parentUid) o lo que él envió (coachUid).
+        // Buscar por clubId O por parentUid (para coordinadores/directores)
         // FIX: filtrar docs donde me.uid está en dismissedBy (borrado "personal" sin afectar a otros)
         let items = [];
-        // FIX (bug A/B): el panel de staff (director/coordinador/entrenador) YA NO hace
-        // broadcast por clubId. Solo ve lo que va dirigido a él (parentUid) o lo que él
-        // mismo envió (coachUid). Antes, el broadcast por clubId hacía que un envío a UNA
-        // sola persona llegara a TODO el staff del club.
-        // Consultas de CAMPO ÚNICO (sin 'type' en servidor) para usar los índices
-        // automáticos de campo único y no depender de un índice compuesto (parentUid,type)
-        // que no existe. El filtro por 'type' se hace en cliente (abajo) por pestaña.
         const queries = [
-            getDocs(query(collection(db,'cronos_notifications'), where('parentUid','==',me.uid))).catch(()=>null),
-            getDocs(query(collection(db,'cronos_notifications'), where('coachUid','==',me.uid))).catch(()=>null),
+            getDocs(query(collection(db,'cronos_notifications'), where('clubId','==',clubId), where('type','==',type))).catch(()=>null),
+            getDocs(query(collection(db,'cronos_notifications'), where('parentUid','==',me.uid), where('type','==',type))).catch(()=>null),
         ];
         const snaps = await Promise.all(queries);
         const seen  = new Set();
@@ -727,12 +652,8 @@ async function _sdLoadEvents(type) {
                 if (seen.has(d.id)) return;
                 seen.add(d.id);
                 const dat = d.data();
-                // Solo la pestaña actual (convocatoria o planificacion_semanal)
-                if (dat.type !== type) return;
                 // Omitir si este usuario ya lo descartó individualmente
-                const _dk = me.uid + '_' + (me?._activeRole || me?.role || 'staff');
-                const _db = Array.isArray(dat.dismissedBy) ? dat.dismissedBy : [];
-                if (_db.includes(_dk) || _db.includes(me.uid)) return;
+                if (Array.isArray(dat.dismissedBy) && dat.dismissedBy.includes(me.uid)) return;
                 items.push({ _id: d.id, ...dat });
             });
         });
@@ -747,60 +668,25 @@ async function _sdLoadEvents(type) {
             });
         }
 
-        // Enriquecimiento retroactivo para notificaciones creadas sin categoría/subcategoría
-        const unassigned = items.filter(it => !it.category || !it.subcategory);
-        if (unassigned.length > 0) {
-            try {
-                const coachCatMap = new Map();
-                const usersSnap = await getDocs(collection(db, 'users')).catch(() => null);
-                if (usersSnap) {
-                    usersSnap.forEach(ud => {
-                        const uData = ud.data() || {};
-                        const cat = uData.category || uData._activeRoleData?.category || uData.categoryLabel || '';
-                        const sub = uData.subcategory || uData._activeRoleData?.subcategory || '';
-                        if (cat || sub) {
-                            coachCatMap.set(ud.id, { category: cat, subcategory: sub });
-                            if (uData.email) coachCatMap.set(uData.email, { category: cat, subcategory: sub });
-                            if (uData.uid) coachCatMap.set(uData.uid, { category: cat, subcategory: sub });
-                        }
-                    });
-                }
-                const { updateDoc: updNotif, doc: docNotif } = await _sdFS();
-                unassigned.forEach(it => {
-                    const info = coachCatMap.get(it.coachUid) || coachCatMap.get(it.coachEmail) || coachCatMap.get(it.parentUid) || (me ? { category: me.category || me._activeRoleData?.category, subcategory: me.subcategory || me._activeRoleData?.subcategory } : null);
-                    if (info && (info.category || info.subcategory)) {
-                        it.category = it.category || info.category;
-                        it.subcategory = it.subcategory || info.subcategory;
-                        if (it._id && updNotif && docNotif) {
-                            updNotif(docNotif(db, 'cronos_notifications', it._id), {
-                                category: it.category,
-                                subcategory: it.subcategory
-                            }).catch(() => {});
-                        }
-                    }
-                });
-            } catch(eNotifEnrich) {
-                console.warn('[club-reports] Error enriqueciendo notificaciones:', eNotifEnrich);
-            }
-        }
-
         if (!items.length) {
             const label = type === 'convocatoria' ? 'convocatorias' : 'avisos de entrenamiento';
-            const emptyTree = (typeof window._cronosRenderCatTree === 'function') ? window._cronosRenderCatTree([], () => '', label) : '';
-            container.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);">📭 Sin ' + label + ' recibidos aún.</div>' + emptyTree;
+            container.innerHTML = `<div style="text-align:center;padding:4rem;color:var(--text-muted);">
+                📭 Sin ${label} recibidos aún.<br>
+                <span style="font-size:0.78rem;margin-top:0.5rem;display:block;">
+                    El entrenador debe activar las palomillas en <strong>Gestión de Contactos</strong> y enviar via Envío Interno.
+                </span></div>`;
             return;
         }
 
         const isConv = type === 'convocatoria';
         const accent = isConv ? 'var(--primary)' : '#f0883e';
         const icon   = isConv ? '📋' : '📅';
-        const typeLabel = isConv ? 'convocatorias' : 'entrenamientos';
 
         let html = `<div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.8rem;text-align:right;">
             ${items.length} registros · máx. ${MAX_ITEMS} (los más antiguos se eliminan automáticamente)
         </div>`;
 
-        const renderItemCard = (d) => {
+        items.forEach(d => {
             const date = d.createdAt
                 ? new Date(d.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})
                 : '—';
@@ -818,8 +704,8 @@ async function _sdLoadEvents(type) {
                     ? (Array.isArray(d.days) ? d.days.filter(dy=>dy.time||dy.venue).map(dy=>dy.day+': '+[dy.time,dy.venue].filter(Boolean).join(' ')).slice(0,2).join(' | ') : (d.location ? '📍 ' + escapeHtml(d.location) : ''))
                     : (d.location ? ' · 📍 ' + escapeHtml(d.location) : '');
 
-            return `
-            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};margin-bottom:0.5rem;">
+            html += `
+            <div class="sd-card" style="position:relative;border-left:3px solid ${accent};">
                 <!-- Botón eliminar -->
                 <button onclick="sdDeleteNotif('${escapeAttr(d._id)}')"
                     title="Eliminar" 
@@ -846,12 +732,7 @@ async function _sdLoadEvents(type) {
                            border-color:rgba(88,166,255,0.3);color:var(--primary);">
                     👁 Ver</button>
             </div>`;
-        };
-        if (typeof window._cronosRenderCatTree === 'function') {
-            html += window._cronosRenderCatTree(items, renderItemCard, typeLabel);
-        } else {
-            items.forEach(d => { html += renderItemCard(d); });
-        }
+        });
         container.innerHTML = html;
 
         // ── Detalle completo sin alert() ────────────────────────────────
@@ -871,7 +752,7 @@ async function _sdLoadEvents(type) {
             const logo = `<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;justify-content:center;">
                 <span style="font-size:1.8rem;">${isC?'📋':'📅'}</span>
                 <div>
-                    <div style="font-size:1.1rem;font-weight:900;color:${isC?'var(--primary)':'#f0883e'};">CHRONOS FÚTBOL</div>
+                    <div style="font-size:1.1rem;font-weight:900;color:${isC?'var(--primary)':'#f0883e'};">CRONOS FÚTBOL</div>
                     <div style="font-size:0.75rem;color:var(--text-muted);">${isC?'CONVOCATORIA':isPlan?'PLANIFICACIÓN SEMANAL':'AVISO DE ENTRENAMIENTO'}</div>
                 </div>
             </div>`;
@@ -895,19 +776,25 @@ async function _sdLoadEvents(type) {
                 </div>`:''}
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:8px;font-style:italic;">💬 ${escapeHtml(d.extra)}</div>`:''}`;
             } else if (isPlan && (Array.isArray(d.days) || d.weekStartDate)) {
-                // FIX (Error #16): Planificación Semanal con tarjetas HORIZONTALES
-                // y scroll lateral. Render UNIFICADO via helper compartido
-                // (_cronosRenderTrainingWeekCards en whatsapp-email.js) para que
-                // esta vista y la del padre no se desincronicen.
-                const weekDaysHTML = (typeof _cronosRenderTrainingWeekCards === 'function')
-                    ? _cronosRenderTrainingWeekCards(d.days)
-                    : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem;text-align:center;">No hay días en esta planificación.</div>';
+                // Planificación Semanal con tabla de días
+                const weekDaysHTML = Array.isArray(d.days)
+                    ? d.days.map(dy => {
+                        const hasData = dy.time || dy.venue || dy.note;
+                        return '<div style="display:flex;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+                            + '<div style="font-weight:700;color:#f0883e;min-width:80px;font-size:0.82rem;">' + escapeHtml(dy.day||'') + '</div>'
+                            + '<div style="font-size:0.8rem;color:' + (hasData?'var(--text)':'#555') + ';">'
+                            + (hasData
+                                ? [dy.time?'🕐 '+dy.time:'', dy.venue?'📍 '+escapeHtml(dy.venue):'', dy.note?'📝 '+escapeHtml(dy.note):''].filter(Boolean).join(' &nbsp;·&nbsp; ')
+                                : '_Descanso_')
+                            + '</div></div>';
+                    }).join('')
+                    : '';
                 body = `
-                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:12px;padding:1rem;margin-bottom:0.8rem;">
-                    ${d.weekStartDate?`<div style="font-size:1rem;font-weight:800;color:#f0883e;margin-bottom:0.3rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                    ${weekDaysHTML}
-                    ${d.location?`<div style="font-size:0.85rem;margin-top:0.6rem;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.1);">📍 ${escapeHtml(d.location)}</div>`:''}
-                    ${d.notes?`<div style="font-size:0.82rem;margin-top:0.5rem;padding:0.6rem;background:rgba(240,136,62,0.1);border-radius:8px;border:1px solid rgba(240,136,62,0.2);">💬 ${escapeHtml(d.notes)}</div>`:''}
+                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
+                    ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
+                    <div style="display:flex;flex-direction:column;gap:0;">${weekDaysHTML}</div>
+                    ${d.location?`<div style="font-size:0.85rem;margin-top:0.5rem;">📍 ${escapeHtml(d.location)}</div>`:''}
+                    ${d.notes?`<div style="font-size:0.82rem;margin-top:0.4rem;padding:0.5rem;background:rgba(255,255,255,0.04);border-radius:6px;">📝 ${escapeHtml(d.notes)}</div>`:''}
                 </div>`;
             } else {
                 const dtFmt = d.datetime
@@ -922,7 +809,7 @@ async function _sdLoadEvents(type) {
             }
 
             overlay.innerHTML = `
-            <div style="width:min(96vw,${isPlan?'800px':'540px'});background:var(--surface,#161b22);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:1.4rem;margin:auto;">
+            <div style="width:min(92vw,540px);background:var(--surface,#161b22);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:1.4rem;margin:auto;">
                 ${logo}
                 ${body}
                 <div style="text-align:right;margin-top:1rem;">
@@ -942,12 +829,10 @@ async function _sdLoadEvents(type) {
         // FIX: "borrar" = marcar como descartado por este usuario (no borra para los demás)
         window.sdDeleteNotif = async (id) => {
             if (!confirm('¿Quitar este aviso de tu panel? Los demás roles seguirán viéndolo.')) return;
-            const activeRole = me?._activeRole || me?.role || 'staff';
-            const dismissKey = me.uid + '_' + activeRole;
             try {
                 const { db: db2, doc: dRef, updateDoc: upd, arrayUnion: au } = await _sdFS();
                 await upd(dRef(db2, 'cronos_notifications', id), {
-                    dismissedBy: au(dismissKey)
+                    dismissedBy: au(me.uid)
                 });
                 items = items.filter(it => it._id !== id);
                 await _sdLoadEvents(type);
@@ -1190,13 +1075,13 @@ const _RP = (() => {
             `<div style="background:linear-gradient(135deg,#0d1117,#161b22);` +
             `border:1px solid rgba(88,166,255,0.22);border-radius:14px;padding:1.1rem 1.3rem;margin-bottom:0.85rem;">` +
 
-            // Chronos header row
+            // Cronos header row
             `<div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.85rem;` +
             `padding-bottom:0.7rem;border-bottom:1px solid rgba(255,255,255,0.07);">` +
             `<div style="width:30px;height:30px;border-radius:50%;background:#0d1117;border:2px solid #3fb950;` +
             `display:flex;align-items:center;justify-content:center;flex-shrink:0;">${logoSVG}</div>` +
             `<div style="flex:1;">` +
-            `<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.7px;color:#3fb950;">CHRONOS FÚTBOL</div>` +
+            `<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.7px;color:#3fb950;">CRONOS FÚTBOL</div>` +
             `<div style="font-size:0.64rem;color:var(--text-muted);">Informe oficial post-partido · Generado automáticamente · No editable</div>` +
             `</div>` +
             `<div style="text-align:right;font-size:0.67rem;">` +
@@ -1290,19 +1175,16 @@ const _RP = (() => {
             (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${ia.substring(0, 9)} ${minStr}` });
             (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${oa.substring(0, 9)} ${minStr}` });
         });
-        // FIX (Error #20c): aumentar tolerancia a 0.5 min para encontrar sustituciones
         const findNear = (map, alias, t) => {
             const arr = map[alias];
             if (!arr) return null;
-            const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.5);
+            const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.12);
             return hit ? hit.name : null;
         };
 
-        // FIX (Error #20b): aumentar tamano de fila y etiquetas para que
-        // las sustituciones (quien entra/sale) se vean claras y legibles.
-        const W = 500, Hrow = 100;
-        const TRACK_Y = 38, TRACK_H = 18;
-        const EVT_Y   = 21;  // centro de zona de eventos (sobre la barra)
+        const W = 500, Hrow = 62;
+        const TRACK_Y = 20, TRACK_H = 16;
+        const EVT_Y   = 10;  // centro de zona de eventos (sobre la barra)
         const LBL_Y   = Hrow - 3; // etiquetas de minutos
         const sc      = W / totMin;
 
@@ -1340,85 +1222,46 @@ const _RP = (() => {
 
             gaps.forEach(([ga, gb]) => {
                 const gW = (gb - ga) * sc;
-                if (gW > 25) {
+                if (gW > 30) {
                     const cx = (ga + (gb - ga)/2) * sc;
-                    svg += `<text x="${cx.toFixed(1)}" y="${TRACK_Y + TRACK_H/2 + 4}"
-                        text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.25)"
-                        font-weight="700" letter-spacing="1">BANQUILLO</text>`;
+                    svg += `<text x="${cx.toFixed(1)}" y="${TRACK_Y + TRACK_H/2 + 3.5}"
+                        text-anchor="middle" font-size="6" fill="rgba(255,255,255,0.18)"
+                        font-weight="700" letter-spacing="0.8">BANQUILLO</text>`;
                 }
             });
 
-            // v273: Sistema anti-colisión de etiquetas.
-            const MIN_GAP_PX = 75; 
-            const greenLabels = []; 
-            const redLabels   = []; 
-
-            const Y_GREEN = [TRACK_Y + TRACK_H + 13, TRACK_Y + TRACK_H + 24, TRACK_Y + TRACK_H + 35];
-            const Y_RED   = [TRACK_Y - 8, TRACK_Y - 19, TRACK_Y - 30];
-
-            function getLabelLevel(registry, xPos) {
-                for (let lvl = 0; lvl < 3; lvl++) {
-                    const collision = registry.some(r => r.level === lvl && Math.abs(r.x - xPos) < MIN_GAP_PX);
-                    if (!collision) {
-                        registry.push({ x: xPos, level: lvl });
-                        return lvl;
-                    }
-                }
-                registry.push({ x: xPos, level: 2 });
-                return 2;
-            }
-
             // Barras de tiempo en campo (azul) + etiquetas de cambio
-            periods.forEach(([a, b], periodIdx) => {
+            periods.forEach(([a, b]) => {
                 const px = a * sc, pw = Math.max(2, (b - a) * sc);
                 svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${pw.toFixed(1)}"
                     height="${TRACK_H}" rx="3" fill="#58a6ff" fill-opacity="0.82"/>`;
 
-                // FIX (Error #20c): etiquetas de sustitucion claras y NO superpuestas.
-                // Cuando un jugador ENTRA (sub_in): verde abajo con su nombre,
-                // y rojo arriba con quien reemplazo. NUNCA el mismo nombre.
-                // Cuando un jugador SALE (sub_out): rojo arriba con su nombre,
-                // y verde abajo con quien le reemplazo.
+                // Inicio de barra desde banquillo (sub_in)
                 if (a > 0.15) {
-                    // FIX (Error #20d): cuando un jugador ENTRA, el que SALE es el
-                    // jugador que estaba en su lugar. subInMap[aliasKey] contiene
-                    // a quien reemplazo al entrar (el que salio).
-                    const outPlayer = findNear(subInMap, aliasKey, a);
-                    svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-6}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#3fb950" stroke-width="2.2"/>`;
+                    const outName = findNear(subInMap, aliasKey, a); // Nombre del que salió
+                    svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#3fb950" stroke-width="1.8"/>`;
                     
-                    // Verde abajo: ENTRA este jugador — nivel anti-colisión
-                    const gLvlIn = getLabelLevel(greenLabels, px);
-                    svg += `<text x="${(px+4).toFixed(1)}" y="${Y_GREEN[gLvlIn]}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${alias} (${Math.floor(a)}')</text>`;
+                    // v219: Texto Verde (el que entra, alias) abajo — ▼ hacia el campo
+                    svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${alias} ${Math.floor(a)}'</text>`;
                     
-                    // Rojo arriba: SALE el jugador reemplazado (debe ser DISTINTO)
-                    if (outPlayer) {
-                        // outPlayer viene como "NOMBRE min'" — extraer el nombre
-                        const outName = outPlayer.split(' ')[0];
-                        if (outName && outName !== alias.substring(0, outName.length)) {
-                            const rLvlIn = getLabelLevel(redLabels, px);
-                            svg += `<text x="${(px-4).toFixed(1)}" y="${Y_RED[rLvlIn]}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${outName}</text>`;
-                        }
+                    // v219: Texto Rojo (el que sale, outName) arriba — ▲ hacia fuera
+                    if (outName) {
+                        svg += `<text x="${(px-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${outName} ▲</text>`;
                     }
                 }
 
+                // Fin de barra antes del final (sub_out)
                 if (b < totMin - 0.3) {
-                    // FIX (Error #20d): cuando un jugador SALE, el que ENTRA es
-                    // el reemplazo. subOutMap[aliasKey] contiene a quien entro.
-                    const inPlayer = findNear(subOutMap, aliasKey, b);
+                    const inpName = findNear(subOutMap, aliasKey, b); // Nombre del que entró
                     const ex = px + pw;
-                    svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-6}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+4}" stroke="#ff5858" stroke-width="2.2"/>`;
+                    svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#ff5858" stroke-width="1.8"/>`;
                     
-                    // Rojo arriba: SALE este jugador — nivel anti-colisión
-                    const rLvlOut = getLabelLevel(redLabels, ex);
-                    svg += `<text x="${(ex-4).toFixed(1)}" y="${Y_RED[rLvlOut]}" text-anchor="end" font-size="9" fill="#ff5858" font-weight="700">▲ SALE ${alias} (${Math.floor(b)}')</text>`;
+                    // v219: Texto Rojo (el que sale, alias) arriba — ▲ hacia fuera
+                    svg += `<text x="${(ex-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▲</text>`;
                     
-                    // Verde abajo: ENTRA el reemplazo (debe ser DISTINTO)
-                    if (inPlayer) {
-                        const inName = inPlayer.split(' ')[0];
-                        if (inName && inName !== alias.substring(0, inName.length)) {
-                            const gLvlOut = getLabelLevel(greenLabels, ex);
-                            svg += `<text x="${(ex+4).toFixed(1)}" y="${Y_GREEN[gLvlOut]}" font-size="9" fill="#3fb950" font-weight="700">▼ ENTRA ${inName}</text>`;
-                        }
+                    // v219: Texto Verde (el que entra, inpName) abajo — ▼ hacia el campo
+                    if (inpName) {
+                        svg += `<text x="${(ex+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${inpName}</text>`;
                     }
                 }
             });
@@ -1433,21 +1276,9 @@ const _RP = (() => {
                     text-anchor="${mn===0?'start':mn===totMin?'end':'middle'}">${mn}'</text>`;
             });
 
-            // v272: Eventos sobre la barra (goles, tarjetas, lesiones).
-            // Los goles SOLO se muestran si el jugador estaba en el campo (azul)
-            // en el momento del evento. Las tarjetas y lesiones se muestran
-            // siempre (pueden ocurrir en el banquillo).
+            // Eventos sobre la barra (goles, tarjetas, lesiones) con tiempo exacto
             (p.history || [])
                 .filter(e => ['goal','yellow','red','injury'].includes(e.type))
-                .filter(e => {
-                    // v272: Si es un gol, verificar que el jugador estaba en el campo.
-                    if (e.type === 'goal') {
-                        const ef = (e.minute||0) + (e.second||0)/60;
-                        const wasOnField = periods.some(([a, b]) => ef >= a && ef <= b);
-                        if (!wasOnField) return false; // No mostrar gol si estaba en banquillo
-                    }
-                    return true; // Tarjetas y lesiones se muestran siempre
-                })
                 .forEach(ev => {
                     const ef = (ev.minute||0) + (ev.second||0)/60;
                     const ex = ef * sc;
@@ -1727,11 +1558,10 @@ async function _sdLoadReports() {
     let clubId = me.clubId;
     if (!clubId && me && me.uid && typeof window._cResolveClubId === 'function') {
         try {
-            const { doc, getDoc } = await _sdFS();
+            const { doc, getDoc, updateDoc } = await _sdFS();
             const db = window._cronos_auth?.db;
             if (db) {
-                // SEC-C1: migración de clubId a la raíz vía syncRootClubId (CF).
-                clubId = await window._cResolveClubId(db, me, { doc, getDoc });
+                clubId = await window._cResolveClubId(db, me, { doc, getDoc, updateDoc });
                 if (clubId) me.clubId = clubId;
             }
         } catch(e) {
@@ -1955,7 +1785,7 @@ async function _sdLoadReports() {
         // IMPORTANTE: NO filtrar por me.uid a secas porque si dos roles
         // comparten el mismo uid (o versiones antiguas lo guardaron sin rol)
         // se borraría para ambos.
-        const currentRole = me._activeRole || me.role || 'staff'; // v269: usar rol ACTIVO (no me.currentRole) para que Director/Coordinador borren informes de forma independiente
+        const currentRole = me.currentRole || me.role || 'staff';
         const dismissKey = `${me.uid}_${currentRole}`;
 
         const snap = { empty: true, forEach: (fn) => {
@@ -1976,8 +1806,13 @@ async function _sdLoadReports() {
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
         if (snap.empty) {
-            const emptyTree = (typeof window._cronosRenderCatTree === 'function') ? window._cronosRenderCatTree([], () => '', 'informes') : '';
-            container.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);"><div style="font-size:2rem;">📊</div><div style="font-size:0.9rem;font-weight:600;">Sin informes de partido aún</div></div>' + emptyTree;
+            container.innerHTML = `
+            <div style="text-align:center;padding:4rem;color:var(--text-muted);">
+                <div style="font-size:2.5rem;margin-bottom:1rem;">📊</div>
+                <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">Sin informes de partido aún</div>
+                <div style="font-size:0.8rem;">Los informes aparecen aquí cuando un entrenador finaliza un partido
+                    y pulsa <strong>"Enviar Informe"</strong> en la app.</div>
+            </div>`;
             return;
         }
 
@@ -2000,7 +1835,6 @@ async function _sdLoadReports() {
                     createdAt:     r.createdAt,
                     // Campos opcionales (enriquecen la cabecera)
                     category:      r.category,
-                    subcategory:   r.subcategory,   // FIX: campo necesario para _cronosRenderCatTree
                     venue:         r.venue,
                     competition:   r.competition,
                     matchTime:     r.matchTime,
@@ -2015,40 +1849,6 @@ async function _sdLoadReports() {
             if (matches[key].myTeamRole == null && r.myTeamRole != null) {
                 matches[key].myTeamRole = r.myTeamRole;
             }
-            // FIX: igual para subcategory (puede ser null en el primer doc pero presente en otros)
-            if (!matches[key].subcategory && r.subcategory) {
-                matches[key].subcategory = r.subcategory;
-            }
-            // FIX: igual para category
-            if (!matches[key].category && r.category) {
-                matches[key].category = r.category;
-            }
-        });
-
-        // ── FIX: Deduplicar jugadores por partido ────────────────────────────
-        // Cada partido puede tener múltiples documentos Firestore para el mismo
-        // jugador (por re-envíos, distintos tipos de doc, etc.). Se conserva solo
-        // el documento más reciente para cada jugador (identificado por dorsal,
-        // alias o nombre) dentro del mismo partido.
-        // Límites reales: F7 → máx 14 jugadores · F11 → máx 25 jugadores.
-        Object.values(matches).forEach(m => {
-            const seen = new Map(); // clave → índice preferido
-            m.players.forEach(p => {
-                const dorsal  = String(p.playerNumber || p.number || '').trim();
-                const alias   = String(p.playerAlias  || p.alias  || p.name || '').trim().toLowerCase();
-                const dedupKey = dorsal || alias || p._id || '';
-                if (!dedupKey) return;
-                if (!seen.has(dedupKey)) {
-                    seen.set(dedupKey, p);
-                } else {
-                    // Conservar el documento con más datos (el más reciente suele tener más campos)
-                    const prev = seen.get(dedupKey);
-                    const prevScore = Object.keys(prev).length;
-                    const currScore = Object.keys(p).length;
-                    if (currScore > prevScore) seen.set(dedupKey, p);
-                }
-            });
-            m.players = Array.from(seen.values());
         });
 
         // Ordenar por fecha descendente
@@ -2058,50 +1858,6 @@ async function _sdLoadReports() {
         // Mapa global de datos de partido para renderizado lazy
         window._sdMatchData = {};
 
-        // FIX (Error #20 v2): calcular TOTALES de todos los informes.
-        // NO contar faltas ni corners (no se usan en esta app).
-        // FIX (Error #20 v3): deduplicar por (matchKey + dorsal) antes de sumar.
-        // Hay multiples tipos de documentos por jugador y partido
-        // (parent_player_report, staff_report, etc.) que DUPLICAN los datos.
-        let totalGoals = 0, totalYCards = 0, totalRCards = 0, totalInjured = 0;
-        const playerStats = {};
-        const seenPlayerMatch = new Set();
-        sorted.forEach(m => {
-            const matchKey = m.key;
-            m.players.forEach(p => {
-                const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
-                const dedupKey = matchKey + '_' + dorsal;
-                if (seenPlayerMatch.has(dedupKey)) return;
-                seenPlayerMatch.add(dedupKey);
-
-                totalGoals += (p.goals || 0);
-                if (p.cards === 'yellow' || p.cards === 'amarilla') totalYCards++;
-                if (p.cards === 'red' || p.cards === 'roja') totalRCards++;
-                if (p.injured) totalInjured++;
-
-                const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
-                if (!playerStats[pKey]) {
-                    playerStats[pKey] = {
-                        name: pKey,
-                        number: p.number || p.playerNumber || '',
-                        matchKeys: new Set(),
-                        goals: 0, yCards: 0, rCards: 0, injured: 0
-                    };
-                }
-                const ps = playerStats[pKey];
-                ps.matchKeys.add(matchKey);
-                ps.goals += (p.goals || 0);
-                if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
-                if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
-                if (p.injured) ps.injured++;
-            });
-        });
-        // Convertir Set a contador
-        const playerList = Object.values(playerStats).map(p => ({
-            ...p,
-            matches: p.matchKeys.size  // FIX: numero de partidos unicos
-        })).sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
-
         let html = `
         <div style="margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
             <h3 style="margin:0;font-size:0.95rem;color:white;">
@@ -2110,113 +1866,63 @@ async function _sdLoadReports() {
             <span style="font-size:0.73rem;color:var(--text-muted);">
                 Club: <strong style="color:var(--primary);">${escapeHtml(me.clubName||clubId)}</strong>
             </span>
-        </div>
+        </div>`;
 
-        <!-- LISTA DE INFORMES POR PARTIDO -->`;
-
-        // FIX: renderizar informes con arbol colapsable + resumen por subcategoria
-        const renderReportCard = (m) => {
+        sorted.forEach(m => {
             const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
             const injured = m.players.filter(p => p.injured).length;
             const dateStr = m.matchDate
                 ? new Date(m.matchDate).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' })
                 : '—';
             const sh = m.scoreHome, sa = m.scoreAway;
-            const score = (sh != null && sa != null) ? sh + ' - ' + sa : '—';
+            const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
+            // Resultado según myTeamRole; sin el campo (informes antiguos) → fallback 'home', comportamiento previo.
             const _mine   = m.myTeamRole === 'away' ? sa : sh;
             const _theirs = m.myTeamRole === 'away' ? sh : sa;
             const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
             const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
+
+            // Guardar datos del partido para renderizado lazy en el toggle
             window._sdMatchData[key64] = m;
-            return '<div class="sd-report-card" id="rcard-' + key64 + '" onclick="sdToggleReport(\'' + key64 + '\')" style="margin-bottom:0.5rem;position:relative;">' +
-                '<div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">' +
-                '<div style="flex:1;min-width:0;">' +
-                '<div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">' +
-                'vs <span style="color:var(--primary);">' + escapeHtml(m.rival||'Sin rival') + '</span>' +
-                (res ? '<span style="font-size:0.65rem;font-weight:700;color:' + rCol + ';">' + res + '</span>' : '') +
-                '</div>' +
-                '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">' + dateStr + ' · ' + score + ' · ' + escapeHtml(m.coachEmail||'') + '</div>' +
-                '</div>' +
-                '<div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0;">' +
-                '<span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">' + m.players.length + ' jugadores</span>' +
-                (goals > 0 ? ' <span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">' + goals + ' goles</span>' : '') +
-                '<button onclick="event.stopPropagation();sdDeleteReport(\'' + key64 + '\')" ' +
-                'title="Ocultar este informe solo de tu panel (el otro rol seguirá viéndolo)" ' +
-                'style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;' +
-                'border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.75rem;line-height:1.4;' +
-                'transition:background 0.15s;flex-shrink:0;" ' +
-                'onmouseover="this.style.background=\'rgba(255,88,88,0.25)\'" ' +
-                'onmouseout="this.style.background=\'rgba(255,88,88,0.1)\'">🗑️</button>' +
-                '</div>' +
-                '</div>' +
-                '<div id="rdetail-' + key64 + '" style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;"></div>' +
-                '</div>';
-        };
 
-        // Resumen por subcategoria: totales + tabla de jugadores
-        const renderSubSummary = (subItems) => {
-            if (!subItems || !subItems.length) return '';
-            let sGoals = 0, sYCards = 0, sRCards = 0, sInjured = 0, sMinutes = 0;
-            const sPlayerStats = {};
-            const sSeen = new Set();
-            subItems.forEach(m => {
-                const mk = m.key;
-                m.players.forEach(p => {
-                    const dorsal = p.playerNumber || p.number || p.playerAlias || p.alias || '?';
-                    const dk = mk + '_' + dorsal;
-                    if (sSeen.has(dk)) return;
-                    sSeen.add(dk);
-                    sGoals += (p.goals || 0);
-                    if (p.cards === 'yellow' || p.cards === 'amarilla') sYCards++;
-                    if (p.cards === 'red' || p.cards === 'roja') sRCards++;
-                    if (p.injured) sInjured++;
-                    // FIX: acumular minutos totales de la subcategoria
-                    if (p.minutesPlayed) {
-                        if (typeof p.minutesPlayed === 'number') sMinutes += p.minutesPlayed;
-                        else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
-                            const _mp = String(p.minutesPlayed).split(':');
-                            sMinutes += parseInt(_mp[0]) * 60 + parseInt(_mp[1]);
-                        }
-                    }
-                    const pKey = p.playerAlias || p.alias || p.name || ('#' + dorsal);
-                    if (!sPlayerStats[pKey]) sPlayerStats[pKey] = { name: pKey, number: p.number || p.playerNumber || '', matchKeys: new Set(), goals: 0, yCards: 0, rCards: 0, injured: 0, minutes: 0 };
-                    const ps = sPlayerStats[pKey];
-                    ps.matchKeys.add(mk);
-                    ps.goals += (p.goals || 0);
-                    if (p.cards === 'yellow' || p.cards === 'amarilla') ps.yCards++;
-                    if (p.cards === 'red' || p.cards === 'roja') ps.rCards++;
-                    if (p.injured) ps.injured++;
-                    if (p.minutesPlayed) {
-                        if (typeof p.minutesPlayed === 'number') ps.minutes += p.minutesPlayed;
-                        else if (/^\d{1,3}:\d{2}$/.test(String(p.minutesPlayed))) {
-                            const parts = String(p.minutesPlayed).split(':');
-                            ps.minutes += parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                        }
-                    }
-                });
-            });
-            const sPlayerList = Object.values(sPlayerStats).map(p => ({ ...p, matches: p.matchKeys.size })).sort((a, b) => (b.goals - a.goals) || (b.matches - a.matches));
-            return '<div style="background:linear-gradient(135deg,rgba(88,166,255,0.06),rgba(63,185,80,0.04));border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:0.8rem;margin-bottom:0.6rem;">' +
-                '<div style="font-size:0.75rem;font-weight:700;color:var(--primary);margin-bottom:0.5rem;">Resumen (' + subItems.length + ' encuentro' + (subItems.length !== 1 ? 's' : '') + ')</div>' +
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:0.4rem;margin-bottom:0.6rem;">' +
-                '<div style="text-align:center;background:rgba(63,185,80,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#3fb950;">' + sGoals + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Goles</div></div>' +
-                '<div style="text-align:center;background:rgba(255,215,0,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#ffd700;">' + sYCards + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">TA</div></div>' +
-                '<div style="text-align:center;background:rgba(255,88,88,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#ff5858;">' + sRCards + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">TR</div></div>' +
-                '<div style="text-align:center;background:rgba(249,115,22,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#f97316;">' + sInjured + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Les</div></div>' +
-                '<div style="text-align:center;background:rgba(88,166,255,0.1);border-radius:6px;padding:0.35rem;"><div style="font-size:1.1rem;font-weight:800;color:#58a6ff;">' + (sMinutes > 0 ? Math.floor(sMinutes/60)+':'+String(sMinutes%60).padStart(2,'0') : '0') + '</div><div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Min Total</div></div>' +
-                '</div>' +
-                (sPlayerList.length > 0 ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.72rem;"><thead><tr style="color:var(--text-muted);text-align:left;"><th style="padding:0.3rem;">#</th><th style="padding:0.3rem;">Jugador</th><th style="padding:0.3rem;text-align:center;">P</th><th style="padding:0.3rem;text-align:center;">G</th><th style="padding:0.3rem;text-align:center;">TA</th><th style="padding:0.3rem;text-align:center;">TR</th><th style="padding:0.3rem;text-align:center;">Les</th><th style="padding:0.3rem;text-align:center;">Min</th></tr></thead><tbody>' +
-                sPlayerList.map(p => '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);"><td style="padding:0.3rem;color:var(--text-muted);">' + (p.number||'—') + '</td><td style="padding:0.3rem;font-weight:600;">' + escapeHtml(p.name) + '</td><td style="padding:0.3rem;text-align:center;">' + p.matches + '</td><td style="padding:0.3rem;text-align:center;color:#3fb950;">' + (p.goals>0?p.goals:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#ffd700;">' + (p.yCards>0?p.yCards:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#ff5858;">' + (p.rCards>0?p.rCards:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#f97316;">' + (p.injured>0?p.injured:'—') + '</td><td style="padding:0.3rem;text-align:center;color:#58a6ff;">' + (p.minutes>0?Math.floor(p.minutes/60)+':'+String(p.minutes%60).padStart(2,'0'):'—') + '</td></tr>').join('') +
-                '</tbody></table></div>' : '') +
-                '</div>';
-        };
-
-        if (typeof window._cronosRenderCatTree === 'function') {
-            html += window._cronosRenderCatTree(sorted, renderReportCard, 'informes', renderSubSummary);
-        } else {
-            sorted.forEach(m => { html += renderReportCard(m); });
-        }
+            html += `
+            <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
+                <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                            🆚 vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>
+                            ${res ? `<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.5px;color:${rCol};">${res}</span>` : ''}
+                        </div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
+                            <span>📅 ${dateStr}</span>
+                            ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
+                            ${m.category ? `<span style="color:#58a6ff;">${escapeHtml(m.category)}</span>` : ''}
+                            <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
+                        </div>
+                    </div>
+                    <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                        <span class="sd-badge" style="background:rgba(63,185,80,0.12);color:#3fb950;">${m.players.length} jugadores</span>
+                        ${goals > 0 ? `<span class="sd-badge" style="background:rgba(255,165,0,0.12);color:#ffa500;">⚽ ${goals} gol${goals !== 1 ? 'es' : ''}</span>` : ''}
+                        ${injured > 0 ? `<span class="sd-badge" style="background:rgba(249,115,22,0.12);color:#f97316;">🩹 ${injured} lesión${injured > 1 ? 'es' : ''}</span>` : ''}
+                        <div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;">▼ Ver informe completo</div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
+                        <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
+                                title="Eliminar este informe definitivamente"
+                                style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
+                                       color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
+                                       display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+                <!-- Panel de detalle: vacío hasta el primer click (lazy render) -->
+                <div id="rdetail-${key64}"
+                     style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
+                </div>
+            </div>`;
+        });
 
         container.innerHTML = html;
 
@@ -2250,7 +1956,7 @@ async function _sdLoadReports() {
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
             
-            const currentRole = me._activeRole || me.role || 'staff'; // v269: usar rol ACTIVO (no me.currentRole) para que Director/Coordinador borren informes de forma independiente
+            const currentRole = me.currentRole || me.role || 'staff';
             const dismissKey = `${me.uid}_${currentRole}`;
 
             const match = window._sdMatchData[key64];
@@ -2318,446 +2024,18 @@ async function _sdLoadReports() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  TAB: MENSAJES (mensajes recibidos desde entrenadores)
+//  TAB: MENSAJES (vista Director Deportivo / Coordinador)
 // ════════════════════════════════════════════════════════════════════
 async function _sdLoadMessages() {
-    const me        = window._cronosCurrentUser;
-    const container = document.getElementById('staff-dashboard-content');
-    if (!container) return;
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
+    const role = me?._activeRole || me?.role || 'director';
 
-    // FIX (v179): Intentar resolver clubId si no está disponible.
-    let clubId = me.clubId;
-    if (!clubId && me && me.uid && typeof window._cResolveClubId === 'function') {
-        try {
-            const { doc, getDoc } = await _sdFS();
-            const db = window._cronos_auth?.db;
-            if (db) {
-                // SEC-C1: migración de clubId a la raíz vía syncRootClubId (CF).
-                clubId = await window._cResolveClubId(db, me, { doc, getDoc });
-                if (clubId) me.clubId = clubId;
-            }
-        } catch(e) {
-            if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][_sdLoadMessages] clubId resolution falló:', e.message);
-        }
-    }
-
-    if (!clubId) {
-        container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⚠️ Sin club asignado.</div>`;
-        return;
-    }
-
-    try {
-        const { db, collection, getDocs, query, where, doc, updateDoc } = await _sdFS();
-
-        // FIX (v179): Cuatro consultas para máxima cobertura de hilos de mensajes.
-        // Consulta A: staffUid == me.uid (hilos donde soy staff)
-        // Consulta B: parentUid == me.uid (hilos donde soy padre/destinatario legacy)
-        // Consulta C: participants array-contains me.uid (fallback si A y B fallan)
-        // Consulta D: clubId == me.clubId (fallback para hilos antiguos sin
-        //   staffUid/parentUid/participants pero con clubId; el director puede
-        //   leerlos si userDocClubId funciona en las reglas Firestore)
-        // FIX (v178): Log diagnóstico para mensajes
-
-        const [snapStaff, snapParent, snapParticipants, snapClub] = await Promise.all([
-            getDocs(query(collection(db,'cronos_messages'), where('staffUid','==',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query staffUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
-            getDocs(query(collection(db,'cronos_messages'), where('parentUid','==',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query parentUid falló:', e.code||e.message); return {forEach:()=>{}}; }),
-            // FIX (v178): consulta fallback por participants — siempre funciona
-            // porque las reglas de Firestore siempre han verificado uid in participants
-            getDocs(query(collection(db,'cronos_messages'), where('participants','array-contains',me.uid))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query participants falló:', e.code||e.message); return {forEach:()=>{}}; }),
-            // FIX (v179): consulta fallback por clubId — cubre hilos antiguos
-            // que no tienen staffUid/parentUid/participants pero sí clubId
-            getDocs(query(collection(db,'cronos_messages'), where('clubId','==',clubId))).catch((e)=>{ if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG-MSG] Query clubId falló:', e.code||e.message); return {forEach:()=>{}}; }),
-        ]);
-
-        // FIX (v179): Contar resultados de cada query para diagnóstico
-        let _staffMsgCount = 0, _parentMsgCount = 0, _participantsMsgCount = 0, _clubMsgCount = 0;
-        snapStaff.forEach(() => _staffMsgCount++);
-        snapParent.forEach(() => _parentMsgCount++);
-        snapParticipants.forEach(() => _participantsMsgCount++);
-        snapClub.forEach(() => _clubMsgCount++);
-
-        const threadsMap = {};
-        snapStaff.forEach(d  => { threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        snapParent.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        // FIX (v178): fusionar resultados de participants
-        snapParticipants.forEach(d => { if (!threadsMap[d.id]) threadsMap[d.id] = { _id:d.id, ...d.data() }; });
-        // FIX (v179): fusionar resultados de clubId (solo hilos de staff)
-        snapClub.forEach(d => {
-            if (!threadsMap[d.id] && d.data().recipientType === 'staff') {
-                threadsMap[d.id] = { _id:d.id, ...d.data() };
-            }
-        });
-        const threads = Object.values(threadsMap)
-            .sort((a,b) => (b.lastMessageAt||'').localeCompare(a.lastMessageAt||''));
-
-        let html = `
-        <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
-            <button onclick="sdOpenNewMessageComposer()" class="btn primary" style="padding:0.45rem 0.9rem; font-size:0.78rem; font-weight:700;">
-                ✉️ Nuevo Mensaje
-            </button>
-            <span style="font-size:0.78rem;color:var(--text-muted);">
-                ${threads.length} conversación${threads.length!==1?'es':''}
-            </span>
-        </div>`;
-
-        if (!threads.length) {
-            html += `
-            <div style="text-align:center;padding:4rem;color:var(--text-muted); background:rgba(255,255,255,0.02); border:1px solid var(--glass-border); border-radius:12px; width:100%;">
-                <div style="font-size:2rem;margin-bottom:0.8rem;">💬</div>
-                Sin mensajes recibidos aún.<br>
-                <span style="font-size:0.78rem;">Los mensajes de los entrenadores aparecerán aquí.</span>
-            </div>`;
-            container.innerHTML = html;
-        } else {
-            threads.forEach(t => {
-                const unread    = (t.unreadByStaff || t.unreadByParent || 0);
-                const lastMsg   = t.lastMessage   || '—';
-                const lastT     = t.lastMessageAt
-                    ? new Date(t.lastMessageAt).toLocaleDateString('es-ES',{day:'numeric',month:'short'})
-                    : '';
-                const isReport  = lastMsg.includes('📊');
-                const isCollective = t.recipientType === 'staff' || (t.messages||[]).some(m=>m.type==='collective_report');
-
-                html += `
-                <div class="sd-card ${unread>0?'sd-report-unread':''}"
-                     onclick="sdOpenStaffThread('${t._id}','${t.coachUid||''}','${(t.coachEmail||'').replace(/'/g,"\\'")}')"
-                     style="cursor:pointer; width:100%; box-sizing:border-box; margin-bottom:0.6rem;">
-                    <div style="flex:1;min-width:0;">
-                        <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.15rem;">
-                            ${isCollective?'📊':'✉️'} ${escapeHtml(t.coachEmail||'Entrenador')}
-                            ${unread>0?`<span style="background:${isReport?'#ffa500':'#58a6ff'};color:#0a0e14;
-                                border-radius:10px;padding:1px 7px;font-size:0.62rem;
-                                font-weight:700;margin-left:6px;">
-                                ${unread} nuevo${unread>1?'s':''}</span>`:''}
-                        </div>
-                        <div style="font-size:0.76rem;
-                                    color:${unread?'#58a6ff':'var(--text-muted)'};
-                                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                            ${unread?`<strong>🔵 ${escapeHtml(lastMsg)}</strong>`:escapeHtml(lastMsg)}
-                        </div>
-                    </div>
-                    <span style="font-size:0.68rem;color:var(--text-muted);flex-shrink:0;">${lastT}</span>
-                </div>`;
-            });
-            container.innerHTML = html;
-        }
-
-        window.sdOpenNewMessageComposer = async () => {
-            container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando usuarios del club…</p>`;
-            try {
-                const { db: dbComp, collection: collComp, getDocs: gDocsComp, query: qComp, where: whComp } = await _sdFS();
-                // 1. Obtener todos los usuarios del club
-                const usersSnap = await gDocsComp(qComp(collComp(dbComp, 'users'), whComp('clubId', '==', clubId)));
-                const users = [];
-                usersSnap.forEach(d => {
-                    const data = d.data();
-                    
-                    // Determinar los roles
-                    const rolesOfUser = [data.role || '', ...(data.allRoles || []).map(r => r.role || '')];
-                    
-                    // Exclusión inteligente para cuentas del propio usuario con múltiples roles
-                    let isSelf = d.id === me.uid;
-                    let showAsDirector = rolesOfUser.some(r => r === 'director') && (!isSelf || activeRole !== 'director');
-                    let showAsCoordinator = rolesOfUser.some(r => r === 'coordinator') && (!isSelf || activeRole !== 'coordinator');
-                    let showAsCoach = rolesOfUser.some(r => ['user', 'coach', 'entrenador'].includes(r)) && (!isSelf || !['user', 'coach', 'entrenador'].includes(activeRole));
-
-                    if (showAsDirector || showAsCoordinator || showAsCoach) {
-                        let roleLabel = 'Personal';
-                        let finalRole = '';
-                        if (activeRole === 'director') {
-                            if (showAsCoordinator) {
-                                roleLabel = 'Coordinador';
-                                finalRole = 'coordinator';
-                            } else if (showAsCoach) {
-                                const cat = data.category || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.category || '';
-                                const sub = data.subcategory || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.subcategory || '';
-                                roleLabel = `Entrenador (${cat} ${sub})`.trim();
-                                finalRole = 'user';
-                            }
-                        } else if (activeRole === 'coordinator') {
-                            if (showAsDirector) {
-                                roleLabel = 'Director Deportivo';
-                                finalRole = 'director';
-                            } else if (showAsCoach) {
-                                const cat = data.category || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.category || '';
-                                const sub = data.subcategory || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.subcategory || '';
-                                roleLabel = `Entrenador (${cat} ${sub})`.trim();
-                                finalRole = 'user';
-                            }
-                        }
-
-                        if (!finalRole) {
-                            if (rolesOfUser.some(r => r === 'director')) {
-                                roleLabel = 'Director Deportivo';
-                                finalRole = 'director';
-                            } else if (rolesOfUser.some(r => r === 'coordinator')) {
-                                roleLabel = 'Coordinador';
-                                finalRole = 'coordinator';
-                            } else if (rolesOfUser.some(r => ['user', 'coach', 'entrenador'].includes(r))) {
-                                const cat = data.category || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.category || '';
-                                const sub = data.subcategory || (data.allRoles || []).find(r => ['user', 'coach', 'entrenador'].includes(r.role))?.subcategory || '';
-                                roleLabel = `Entrenador (${cat} ${sub})`.trim();
-                                finalRole = 'user';
-                            }
-                        }
-
-                        const isEligible = (activeRole === 'director' && (finalRole === 'coordinator' || finalRole === 'user')) ||
-                                           (activeRole === 'coordinator' && (finalRole === 'director' || finalRole === 'user'));
-
-                        if (isEligible) {
-                            users.push({
-                                uid: d.id,
-                                email: data.email || '',
-                                displayName: data.displayName || data.email || 'Usuario',
-                                roleLabel,
-                                role: finalRole
-                            });
-                        }
-                    }
-                });
-
-                // Ordenar por tipo de rol y luego nombre
-                users.sort((a,b) => a.roleLabel.localeCompare(b.roleLabel) || a.displayName.localeCompare(b.displayName));
-
-                container.innerHTML = `
-                <div style="display:flex;flex-direction:column;height:100%;">
-                    <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;flex-shrink:0;">
-                        <button onclick="switchStaffTab('mensajes')"
-                            style="padding:0.35rem 0.7rem;background:rgba(255,255,255,0.05);
-                                   border:1px solid var(--glass-border);border-radius:7px;
-                                   color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
-                            ← Volver
-                        </button>
-                        <div style="font-weight:700;font-size:0.88rem;">✉️ Nuevo Mensaje</div>
-                    </div>
-                    
-                    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
-                                border-radius:10px;padding:0.8rem;margin-bottom:1rem;display:flex;flex-direction:column;gap:0.5rem;flex:1;overflow-y:auto;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
-                            <span style="font-size:0.75rem;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">
-                                DESTINATARIOS
-                            </span>
-                            <div style="display:flex;gap:0.4rem;">
-                                <button onclick="document.querySelectorAll('.sd-msg-recipient-chk').forEach(c=>c.checked=true); sdUpdateBulkCount();"
-                                    style="font-size:0.62rem;padding:0.18rem 0.55rem;background:rgba(88,166,255,0.1);
-                                           border:1px solid rgba(88,166,255,0.3);border-radius:4px;color:var(--primary);cursor:pointer;">
-                                    ✓ Todos
-                                </button>
-                                <button onclick="document.querySelectorAll('.sd-msg-recipient-chk').forEach(c=>c.checked=false); sdUpdateBulkCount();"
-                                    style="font-size:0.62rem;padding:0.18rem 0.55rem;background:rgba(255,255,255,0.05);
-                                           border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:var(--text-muted);cursor:pointer;">
-                                    ✗ Ninguno
-                                </button>
-                            </div>
-                        </div>
-
-                        <div style="display:flex;flex-direction:column;gap:0.35rem;overflow-y:auto;max-height:240px;padding-right:4px;">
-                            ${users.length ? users.map(u => `
-                            <label style="display:flex;align-items:center;gap:0.55rem;
-                                           background:rgba(255,255,255,0.02);border:1px solid var(--glass-border);
-                                           border-radius:7px;padding:0.45rem 0.65rem;cursor:pointer;">
-                                <input type="checkbox" class="sd-msg-recipient-chk"
-                                    data-uid="${escapeAttr(u.uid)}"
-                                    data-email="${escapeAttr(u.email)}"
-                                    data-role="${escapeAttr(u.role)}"
-                                    onchange="sdUpdateBulkCount()"
-                                    style="width:15px;height:15px;flex-shrink:0;accent-color:var(--primary);">
-                                <div style="flex:1;min-width:0;">
-                                    <div style="font-size:0.78rem;font-weight:600;color:white;">
-                                        ${escapeHtml(u.displayName)}
-                                    </div>
-                                    <div style="font-size:0.63rem;color:var(--text-muted);">
-                                        ${escapeHtml(u.roleLabel)} · ${escapeHtml(u.email)}
-                                    </div>
-                                </div>
-                            </label>`).join('') : '<p style="color:var(--text-muted);text-align:center;font-size:0.8rem;padding:1rem;">No se encontraron otros usuarios de personal en este club.</p>'}
-                        </div>
-                    </div>
-
-                    <div style="flex-shrink:0;display:flex;flex-direction:column;gap:0.5rem;margin-top:auto;">
-                        <textarea id="sd-bulk-msg-text" rows="3"
-                            placeholder="Escribe aquí el mensaje..."
-                            style="padding:0.7rem;background:rgba(255,255,255,0.05);
-                                   border:1px solid var(--glass-border);border-radius:8px;
-                                   color:white;font-size:0.85rem;resize:none;
-                                   box-sizing:border-box;width:100%;"></textarea>
-                        <button onclick="sdSendBulkMsg()" class="btn primary" id="sd-send-bulk-btn"
-                            style="width:100%;font-weight:700;font-size:0.85rem;padding:0.65rem;">
-                            Enviar mensaje (<span id="sd-bulk-count">0</span> seleccionados)
-                        </button>
-                    </div>
-                </div>`;
-            } catch(e) {
-                container.innerHTML = `<p style="color:#ff5858;text-align:center;padding:2rem;">⚠️ Error al cargar usuarios: ${escapeHtml(e.message)}</p>`;
-            }
-        };
-
-        window.sdUpdateBulkCount = () => {
-            const count = document.querySelectorAll('.sd-msg-recipient-chk:checked').length;
-            const countEl = document.getElementById('sd-bulk-count');
-            if (countEl) countEl.textContent = count;
-        };
-
-        window.sdSendBulkMsg = async () => {
-            const text = (document.getElementById('sd-bulk-msg-text')?.value || '').trim();
-            if (!text) {
-                if (typeof showToast === 'function') showToast('⚠️ Por favor escribe un mensaje', 3000);
-                return;
-            }
-            
-            const selected = Array.from(document.querySelectorAll('.sd-msg-recipient-chk:checked')).map(chk => ({
-                uid: chk.dataset.uid,
-                email: chk.dataset.email,
-                role: chk.dataset.role
-            }));
-
-            if (!selected.length) {
-                if (typeof showToast === 'function') showToast('⚠️ Selecciona al menos un destinatario', 3000);
-                return;
-            }
-
-            const btn = document.getElementById('sd-send-bulk-btn');
-            if (btn) btn.disabled = true;
-
-            try {
-                const { db: dbSend, doc: docSend, getDoc: gDocSend, setDoc: sDocSend, updateDoc: uDocSend, arrayUnion: arrUnionSend } = await _sdFS();
-                const newMsg = {
-                    sender: 'parent',
-                    senderUid: me.uid,
-                    text,
-                    timestamp: new Date().toISOString()
-                };
-
-                const preview = text.length > 60 ? text.substring(0, 60) + '…' : text;
-
-                for (const u of selected) {
-                    let threadId;
-                    if (u.role === 'user') {
-                        threadId = clubId ? `${clubId}_${me.uid}` : `${u.uid}_${me.uid}`;
-                    } else {
-                        threadId = [me.uid, u.uid].sort().join('_');
-                    }
-
-                    const snap = await gDocSend(docSend(dbSend, 'cronos_messages', threadId));
-                    if (snap.exists()) {
-                        const updateData = {
-                            messages: arrUnionSend(newMsg),
-                            lastMessage: preview,
-                            lastMessageAt: newMsg.timestamp,
-                            unreadByCoach: (snap.data().unreadByCoach || 0) + 1,
-                            unreadByStaff: 0
-                        };
-                        await uDocSend(docSend(dbSend, 'cronos_messages', threadId), updateData);
-                    } else {
-                        const baseDoc = {
-                            threadId,
-                            coachUid: u.role === 'user' ? u.uid : me.uid,
-                            coachEmail: u.role === 'user' ? u.email : me.email,
-                            staffUid: u.role === 'user' ? me.uid : u.uid,
-                            staffEmail: u.role === 'user' ? me.email : u.email,
-                            recipientType: 'staff',
-                            clubId: clubId || null,
-                            participants: [me.uid, u.uid],
-                            messages: [newMsg],
-                            lastMessage: preview,
-                            lastMessageAt: newMsg.timestamp,
-                            unreadByCoach: 1,
-                            unreadByStaff: 0,
-                            unreadByParent: 0
-                        };
-                        await sDocSend(docSend(dbSend, 'cronos_messages', threadId), baseDoc);
-                    }
-                }
-
-                if (typeof showToast === 'function') showToast('✅ Mensajes enviados correctamente', 3000);
-                switchStaffTab('mensajes');
-            } catch(err) {
-                if (btn) btn.disabled = false;
-                if (typeof showToast === 'function') showToast('⚠️ Error: ' + err.message, 4000);
-            }
-        };
-
-        window.sdOpenStaffThread = async (threadId, coachUid, coachEmail) => {
-            if (typeof _loadThreadMessages === 'function') {
-                const { db:db2, doc:doc2, updateDoc:upd } = await _sdFS();
-                container.innerHTML = `
-                <div style="display:flex;flex-direction:column;height:100%;">
-                    <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;flex-shrink:0;">
-                        <button onclick="switchStaffTab('mensajes')"
-                            style="padding:0.35rem 0.7rem;background:rgba(255,255,255,0.05);
-                                   border:1px solid var(--glass-border);border-radius:7px;
-                                   color:var(--text-muted);font-size:0.74rem;cursor:pointer;">
-                            ← Volver
-                        </button>
-                        <div style="font-weight:700;font-size:0.88rem;">💬 ${escapeHtml(coachEmail)}</div>
-                    </div>
-                    <div id="thread-messages"
-                         style="flex:1;overflow-y:auto;display:flex;
-                                flex-direction:column;gap:0.5rem;min-height:200px;">
-                        <p style="color:var(--text-muted);text-align:center;padding:2rem;">⏳ Cargando…</p>
-                    </div>
-                    <div style="margin-top:0.7rem;border-top:1px solid var(--glass-border);
-                                padding-top:0.7rem;flex-shrink:0;">
-                        <div style="display:flex;gap:0.5rem;align-items:flex-end;">
-                            <textarea id="staff-reply-input"
-                                placeholder="Responder al entrenador… (Enter para enviar)"
-                                rows="2"
-                                style="flex:1;padding:0.55rem 0.75rem;
-                                       background:rgba(255,255,255,0.06);
-                                       border:1px solid var(--glass-border);border-radius:8px;
-                                       color:white;font-size:0.85rem;resize:none;"
-                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){
-                                    event.preventDefault();
-                                    sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}');
-                                }">
-                            </textarea>
-                            <button onclick="sdSendReplyToCoach('${threadId}','${coachUid}','${coachEmail}')"
-                                class="btn primary" style="padding:0.55rem 0.9rem;flex-shrink:0;">
-                                Enviar ›
-                            </button>
-                        </div>
-                    </div>
-                </div>`;
-
-                await _loadThreadMessages(threadId, 'parent');
-                try {
-                    const data = {};
-                    data['unreadByStaff']  = 0;
-                    data['unreadByParent'] = 0;
-                    await upd(doc2(db2,'cronos_messages',threadId), data);
-                } catch(_) {}
-            } else {
-                if (typeof showToast==='function') showToast('ℹ️ Módulo de mensajería no cargado.', 3000);
-            }
-        };
-
-        window.sdSendReplyToCoach = async (threadId, coachUid, coachEmail) => {
-            const input = document.getElementById('staff-reply-input');
-            const text  = (input?.value||'').trim();
-            if (!text) return;
-
-            const { db:db2, doc:doc2, getDoc, updateDoc:upd, arrayUnion } = await _sdFS();
-            const newMsg = { sender:'parent', text, timestamp:new Date().toISOString() };
-
-            try {
-                const snap = await getDoc(doc2(db2,'cronos_messages',threadId));
-                const preview = text.length>60 ? text.substring(0,60)+'…' : text;
-                if (snap.exists()) {
-                    await upd(doc2(db2,'cronos_messages',threadId), {
-                        messages: arrayUnion(newMsg),
-                        lastMessage: preview, lastMessageAt: newMsg.timestamp,
-                        unreadByCoach: (snap.data().unreadByCoach||0) + 1,
-                    });
-                }
-                if (input) input.value = '';
-                await _loadThreadMessages(threadId, 'parent');
-            } catch(e) {
-                if (typeof showToast==='function') showToast('⚠️ Error: '+e.message, 3000);
-            }
-        };
-
-    } catch(e) {
-        container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${escapeHtml(e.message)}</div>`;
+    if (role === 'director' && typeof openDirectorMessaging === 'function') {
+        await openDirectorMessaging('coordinators', 'staff-dashboard-content');
+    } else if (role === 'coordinator' && typeof openCoordinatorMessaging === 'function') {
+        await openCoordinatorMessaging('director', 'staff-dashboard-content');
+    } else if (typeof openCoachMessaging === 'function') {
+        await openCoachMessaging('parents', 'staff-dashboard-content');
     }
 }
 
