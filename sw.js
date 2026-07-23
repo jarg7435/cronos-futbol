@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v350: restaurada auditoria de borrado en _clearUnifiedThread (panel.js) +
+//        restaurada pestana Partidos Terminados y config por categoria del
+//        Director (club-reports.js). Bump para forzar recarga del JS.
 //  v349: fix threadId canonico entre roles (coach/comms/panel.js) +
 //        restaurada red de seguridad me.uid en staffUids (regresion P11-D).
 //        Bump para forzar recarga del JS cacheado.
@@ -474,8 +477,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v349';
-const CACHE_NAME = 'cronos-cache-v349';
+const VERSION = 'v350';
+const CACHE_NAME = 'cronos-cache-v350';
 
 const ASSETS = [
     './',
