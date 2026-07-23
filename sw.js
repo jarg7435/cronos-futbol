@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v349: fix threadId canonico entre roles (coach/comms/panel.js) +
+//        restaurada red de seguridad me.uid en staffUids (regresion P11-D).
+//        Bump para forzar recarga del JS cacheado.
 //  v299 (cache): Unificado el render del aviso de entrenamiento
 //        (planificacion_semanal) en un helper compartido
 //        _cronosRenderTrainingWeekCards (js/shared/whatsapp-email.js).
@@ -471,8 +474,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v276';
-const CACHE_NAME = 'cronos-cache-v348';
+const VERSION = 'v349';
+const CACHE_NAME = 'cronos-cache-v349';
 
 const ASSETS = [
     './',
