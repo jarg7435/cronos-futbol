@@ -1,6 +1,6 @@
 # Cronos Fútbol — Estado de correcciones
 
-_Última actualización: 2026-07-22 — cerrado el hueco cross-club de `transitionalRead()` (ver más abajo). Próxima sesión: empezar por E6._
+_Última actualización: 2026-07-22 — unificados los chats entrenador/director/coordinador (ver más abajo). Próxima sesión: empezar por E6._
 
 ## COMPLETADO
 
@@ -422,6 +422,318 @@ _Última actualización: 2026-07-22 — cerrado el hueco cross-club de `transiti
     no un bug de este fix). Solución de fondo: que `_registerMatchEvent`
     incluya `playerId`/`playerNumber` en el evento — fuera del alcance de este
     fix puntual (tocaría 4 archivos adicionales que escriben eventos).
+  - Pendiente: commit/deploy — el fix vive en el working tree.
+
+## COMPLETADO (2026-07-22 — chats entrenador↔director/coordinador: permisos + estructura)
+
+- [x] **Chat interno roto entre entrenador, director y coordinador**
+  ("Missing or insufficient permissions" / "Error al cargar", conversaciones
+  que no se veían o se mezclaban entre sí).
+  - Logística exigida: Padre↔solo su entrenador; Entrenador↔director+
+    coordinador+padres; Coordinador↔director+entrenadores; Director↔
+    coordinador+entrenadores; cada destinatario en un chat independiente.
+  - **Causa A (estructura/mezcla)**: `js/coach/comms/panel.js` calculaba el
+    `threadId` de un hilo entrenador↔staff como `${clubId}_${staffUid}` —
+    SIN el uid del propio entrenador, así que TODOS los entrenadores de un
+    club que hablaran con el MISMO director/coordinador acababan
+    compartiendo un único hilo (mensajes de distintos entrenadores
+    mezclados). Además, `js/coach/reports/club-reports.js` (Panel de
+    Dirección) calculaba la MISMA relación con una fórmula DISTINTA
+    (`${clubId}_${coachUid}`): cada lado escribía en un documento de
+    Firestore diferente y la conversación nunca se reconciliaba (el otro
+    lado veía "sin mensajes" aunque sí se hubieran enviado).
+  - **Causa B (visualización)**: `club-reports.js` reutilizaba (copia-pega)
+    la perspectiva `'parent'` y `sender:'parent'` del compositor de padres
+    para TODOS los mensajes de staff. Funcionaba por accidente en una
+    conversación de 2 partes (entrenador↔un staff), pero: (1) etiquetaba
+    SIEMPRE "Padre/Tutor" bajo los mensajes del director/coordinador; (2) en
+    una conversación staff↔staff (director↔coordinador) AMBOS lados
+    escribían `sender:'parent'`, así que era imposible distinguir quién
+    había escrito qué (todo se mostraba como "mío" para ambos).
+  - **Causa C (permisos)**: `firestore.rules` → `cronos_messages` no tenía
+    ninguna rama que comprobara el campo `staffUid` (solo `coachUid`,
+    `parentUid`, `participants` y claims de club), así que el acceso del
+    staff dependía enteramente de que `participants` ya incluyera su uid o
+    de que sus custom claims (`role`+`clubId`) estuvieran propagados — ambos
+    con historial de fallos parciales en este proyecto.
+  - **Fix**:
+    1. Dos helpers ÚNICOS y compartidos en `js/core/utils.js` (carga antes
+       que ambos paneles): `window._cronosStaffChatThreadId(clubId, coachUid,
+       staffUid)` (incluye SIEMPRE ambos uids — no colisiona entre
+       entrenadores ni diverge entre paneles) y
+       `window._cronosPeerChatThreadId(clubId, uidA, uidB)` (par ordenado,
+       simétrico, para conversaciones director↔coordinador).
+    2. `_cStaffThreadId` (comms/panel.js) y las 2 fórmulas ad-hoc de
+       `club-reports.js` (lista de destinatarios + `sdSendBulkMsg`) ahora
+       delegan en esos mismos helpers.
+    3. `sender`/`senderUid` reales: `sdSendBulkMsg` y `sdSendReplyToCoach`
+       (club-reports.js) usan `sender: activeRole` ('director'|'coordinator')
+       + `senderUid: me.uid` en vez de `'parent'` hardcodeado. `sendCoachMessage`
+       (comms/panel.js) añade `senderUid: me.uid` también.
+    4. `_loadThreadMessages` (comms/panel.js, compartida) generalizada:
+       `perspective` admite ahora el UID del propio visor (usado por el Panel
+       de Dirección) además de los literales clásicos `'coach'`/`'parent'`;
+       compara por `senderUid` cuando está disponible, y el label de cada
+       burbuja usa un mapa de roles (`Entrenador`/`Padre-Tutor`/`Director
+       Deportivo`/`Coordinador`) en vez de la dicotomía binaria anterior.
+    5. `firestore.rules` → `cronos_messages`: nueva rama explícita
+       `resource.data.staffUid != null && request.auth.uid == resource.data.staffUid`
+       en `read`/`create`/`update`/`delete` (mismo patrón ya usado en
+       `cronos_player_reports.staffUids`) — respaldo directo que no depende
+       de `participants` ni de claims propagados.
+    6. Contadores de no-leído (`unreadByStaff`/`unreadByCoach`) corregidos
+       para no confundirse en hilos staff↔staff (antes asumían siempre "el
+       remitente es staff, el destinatario es coach").
+  - Verificado con nuevo `scripts/test_staff_chat_unification.js` (27/27
+    PASS): orden de carga en `index.html`, ambos paneles delegan en el mismo
+    helper, ejecución REAL de los helpers confirmando que coach y staff
+    calculan el MISMO id para su conversación, que dos entrenadores distintos
+    con el mismo staff obtienen hilos independientes, y que el hilo
+    director↔coordinador es simétrico. `firebase deploy --only
+    firestore:rules --dry-run` compila OK.
+  - **Aviso importante**: este fix corrige la escritura de mensajes NUEVOS.
+    Las conversaciones YA partidas en producción (docs bajo los IDs viejos e
+    incompatibles) NO se migran automáticamente — quedan huérfanas en
+    Firestore (no se pierden, pero tampoco aparecen ya en la UI). Si hace
+    falta recuperar histórico de esos hilos rotos, requiere un script de
+    migración aparte (no incluido en este fix).
+  - Pendiente: commit/deploy — el fix vive en el working tree.
+
+## COMPLETADO (2026-07-22 — chats: 2ª y 3ª ronda de fixes tras pruebas del usuario)
+
+- [x] **"Missing or insufficient permissions" al abrir una conversación NUEVA**
+  (persistía tras desplegar la 1ª ronda de reglas). Causa: `getDoc()` sobre un
+  `threadId` que aún no existe (primera vez que dos personas van a hablar)
+  hace que `resource` sea `null` en la evaluación de la regla; cualquier rama
+  que lea `resource.data.X` (todas, salvo `isSuperAdmin()`) genera un ERROR de
+  evaluación, no `false`, y Firestore deniega por defecto. Afectaba a los 4
+  roles por igual porque el patrón "leer para comprobar si existe" lo usan
+  todas las funciones de envío. Fix: `resource == null ||` añadido al `allow
+  read` de `cronos_messages` (seguro: un doc inexistente no tiene datos que
+  proteger). Verificado con `scripts/test_staff_chat_unification.js` (28/28
+  PASS) y desplegado a producción (confirmado byte a byte contra el ruleset
+  activo).
+
+- [x] **Crash "Cannot read properties of undefined (reading 'push')" al abrir
+  el Gestor de Contactos (botón CONTACTOS)**
+  - Causa: `openContactManager()` (`js/coach/comms/panel.js`) usa en TODO su
+    cuerpo la variable GLOBAL `emailConfig` (sin `window.`), declarada con
+    `let emailConfig = {...}` en `js/core/app-init.js` **sin** campo
+    `contacts`. Los dos guards defensivos al principio de la función solo
+    inicializaban `window.emailConfig` — una variable DISTINTA que el resto
+    de la función nunca lee (`let` a nivel de script NO cuelga de `window`).
+    La ganadora de las 3 copias de `loadEmailConfig`
+    (`js/services/firestore-storage.js`) solo rellena `.contacts` si YA hay
+    algo guardado en `localStorage`; en cualquier navegador/cuenta que nunca
+    haya guardado contactos antes, `emailConfig.contacts` es `undefined` y el
+    primer `.push()` (al fusionar los usuarios del club: director,
+    coordinador, padres) revienta — por eso el entrenador no podía ver ni
+    contactar con ellos.
+  - Fix: `if (typeof emailConfig === 'undefined') emailConfig = { contacts: [] };`
+    + `if (!emailConfig.contacts) emailConfig.contacts = [];` en la variable
+    REAL que usa la función, antes del primer uso.
+  - Verificado con nuevo `scripts/test_contact_manager_crash.js` (7/7 PASS):
+    ejecuta el código REAL de `openContactManager` en sandbox reproduciendo
+    exactamente la condición del bug (sin localStorage previo) y confirma que
+    ya no crashea y que director/coordinador se añaden correctamente a la
+    lista de contactos.
+
+- [x] **"Los mensajes cruzados siguen sin llegar" — CAUSA CONFIRMADA Y CORREGIDA
+  (caso real, no solo de test): una misma cuenta puede tener VARIOS roles a
+  la vez** (admin de club que también es director, coordinador, entrenador y
+  padre — confirmado por el usuario probando en producción con la cuenta
+  arinagazone@..., mismo uid de Firebase Auth para los 4 roles). El threadId
+  de `_cronosStaffChatThreadId(clubId, coachUid, staffUid)` dependía solo del
+  PAR de uids; en cuanto director y coordinador son la MISMA cuenta,
+  "entrenador habla con X-como-director" y "...con X-como-coordinador"
+  calculaban el MISMO id (coachUid+staffUid coincidían) → los mensajes de
+  ambas conversaciones se mezclaban en un único hilo. Confirmado por el
+  propio usuario con un script de diagnóstico contra Firestore real: "los IDs
+  calculados se solapan".
+  - Fix: 4º parámetro `staffRole` en `_cronosStaffChatThreadId` (y en
+    `_cStaffThreadId`) — el id incluye el rol del destinatario staff
+    (`_role_director` / `_role_coordinator`), así que aunque coachUid+staffUid
+    coincidan, roles distintos generan hilos distintos. Propagado en los 6
+    call-sites de `js/coach/comms/panel.js` (incluida una extensión de
+    `_msgGetSelected()`/el checkbox de destinatarios masivos para leer
+    `data-role`, que antes no existía) y los 2 de `js/coach/reports/club-
+    reports.js` (usando `activeRole`, el rol con el que el staff está
+    actuando).
+  - Verificado con `scripts/test_staff_chat_unification.js` ampliado (36/36
+    PASS): confirma que la MISMA cuenta actuando como director vs como
+    coordinador produce hilos DISTINTOS, que el caso normal (roles = personas
+    distintas) sigue funcionando igual que antes, y que los 8 call-sites
+    reales pasan el rol correctamente.
+  - **Aviso**: los 2 hilos de prueba ya creados en Firestore por el usuario
+    (bajo el ID viejo, sin rol) quedan huérfanos — hay que enviar mensajes
+    NUEVOS tras este fix para que se cree el hilo correcto por rol. Es JS
+    puro (sin cambios en `firestore.rules`), así que no requiere un nuevo
+    `firebase deploy --only firestore:rules` — basta recargar la app.
+
+- [ ] **(histórico) "Los mensajes cruzados siguen sin llegar" — en investigación**. Tras
+  las correcciones de ID/sender/permisos (rondas anteriores), la lógica de
+  enrutamiento se verificó consistente por análisis estático completo
+  (mismo threadId desde ambos lados, mismo campo `senderUid`, misma regla).
+  Hallazgo relevante: **ningún panel de mensajería usa `onSnapshot`** (0
+  listeners en tiempo real en comms/panel.js, club-reports.js, parent/panel.js
+  — confirmado por grep) — todo son lecturas puntuales (`getDoc`/`getDocs`).
+  Si el usuario prueba con dos sesiones abiertas simultáneamente esperando
+  entrega en vivo, o sin recargar/reabrir la conversación tras que la otra
+  parte envíe, el síntoma sería exactamente "el mensaje no llega" sin ser un
+  bug de enrutamiento. Pendiente de confirmar con el usuario la metodología
+  de prueba antes de decidir si hace falta añadir listeners en tiempo real
+  (cambio mayor, no incluido en este fix) o si el bug persiste incluso
+  recargando.
+
+## COMPLETADO (2026-07-23 — chats: 4ª ronda, auto-open con uno mismo bajo otro rol)
+
+- [x] **"No hay conexión ni se cruzan los mensajes" entre Entrenador↔Director,
+  Entrenador↔Coordinador, Director↔Coordinador — CAUSA REAL: auto-open roto,
+  NO enrutamiento**. El propio usuario confirmó con un diagnóstico contra
+  Firestore real que los documentos SÍ se creaban correctamente (sender,
+  senderUid y rol correctos en los 7 hilos de su cuenta) — el problema estaba
+  en la INTERFAZ, no en los datos.
+  - Causa: el auto-open del primer hilo en `_sdLoadMessages`
+    (`js/coach/reports/club-reports.js`) buscaba "el otro participante" con
+    `first.participants.find(p => p !== me.uid) || ''`. El usuario prueba con
+    UNA cuenta que tiene VARIOS roles (director, coordinador, entrenador,
+    padre — mismo uid de Firebase Auth para todos, ver ronda anterior sobre
+    `staffRole`). Un hilo "consigo mismo bajo otro rol" tiene
+    `participants=[uid, uid]` (ambos el MISMO valor) — `.find(p => p !== me.uid)`
+    no encuentra nada, `otherUser` sale `undefined`, y el auto-open no muestra
+    ningún hilo por defecto. Si el usuario no hace clic manual en el contacto
+    (esperando que se abra solo, como con conversaciones normales entre dos
+    personas distintas), ve el placeholder vacío y parece que "el mensaje no
+    llegó" aunque el documento existe y está bien formado.
+  - Fix: fallback a `me.uid` (uno mismo) en vez de cadena vacía —
+    `first.participants.find(p => p !== me.uid) || me.uid`. Con eso,
+    `otherUser` encuentra la entrada "yo mismo, etiquetado con el otro rol"
+    (ya presente en la lista gracias al manejo `isSelf` de `_sdLoadMessages`)
+    y el auto-open funciona igual que con dos personas distintas.
+  - Verificado con nuevo `scripts/test_selfmessage_autoopen.js` (4/4 PASS).
+  - **Nota para el usuario**: aunque el auto-open ahora funciona, sigue
+    siendo buena práctica hacer clic manual en el contacto concreto tras
+    cambiar de rol, ya que el auto-open solo abre el hilo MÁS RECIENTE
+    (`threads[0]`), no necesariamente el que se acaba de comprobar.
+  - Pendiente: commit — el fix vive en el working tree (es JS puro, sin
+    cambios en `firestore.rules`, no requiere nuevo deploy).
+
+## COMPLETADO (2026-07-23 — chats: 5ª ronda, panel de conversación no se reseteaba al cambiar de pestaña)
+
+- [x] **"Los mensajes al director y al coordinador se mezclan en el mismo hilo"
+  — CAUSA REAL CONFIRMADA (fallo de ESCRITURA, no de lectura)**. El usuario
+  confirmó con un diagnóstico contra Firestore real que "hola señor director"
+  y "hola señor coordinador" (enviados desde el rol de entrenador, a
+  destinatarios distintos) acababan literalmente en el MISMO documento
+  (`..._role_director`).
+  - Causa: `js/coach/comms/panel.js` tiene pestañas (Padres/Director/
+    Coordinador) en el panel de mensajería del entrenador. Cambiar de
+    pestaña (`_loadStaffList('coordinator')` tras haber estado en
+    `'director'`) refresca la LISTA de contactos de la izquierda
+    (`#coach-parent-list`), pero **nunca reseteaba el panel de conversación
+    de la derecha** (`#cm-chat-thread-pane`). Si el entrenador abría la
+    conversación con el Director, enviaba un mensaje, cambiaba a la pestaña
+    Coordinador SIN hacer clic en el contacto del coordinador, y escribía
+    directamente en el textarea que seguía visible (de la conversación con
+    el director), el mensaje se enviaba con el `threadId` VIEJO — incrustado
+    en ese textarea desde que se abrió la conversación con el director — sin
+    que el cambio de pestaña lo actualizara.
+  - Fix: nueva función `_resetChatThreadPane()` — vuelve al placeholder
+    "Selecciona un contacto..." cada vez que se cambia de pestaña
+    (`_loadStaffList` y `_loadParentList`), obligando a un clic explícito en
+    el contacto correcto antes de poder escribir. Así es estructuralmente
+    imposible enviar un mensaje al destinatario equivocado por tener el
+    textarea de otra conversación todavía abierto.
+  - Verificado con nuevo `scripts/test_stale_chat_pane_reset.js` (7/7 PASS):
+    ejecuta el código real y confirma que, tras el reset, el pane ya no
+    contiene el `threadId` antiguo ni ningún `<textarea>`/`onkeydown` activo.
+  - Pendiente: commit — el fix vive en el working tree (JS puro, sin cambios
+    en `firestore.rules`).
+
+## COMPLETADO (2026-07-23 — chats: 6ª ronda, `_cGetStaff` ignoraba el rol pedido por pestaña)
+
+- [x] **"Los mensajes al director y al coordinador se cruzan y mezclan" —
+  CAUSA RAÍZ REAL, confirmada tras descartar caché del navegador** (el
+  usuario verificó con un script de consola que su navegador ejecutaba el
+  código v349 correcto — SW activo, `_resetChatThreadPane` presente, fetch
+  directo al servidor con el fix por rol — así que las rondas anteriores
+  quedaron correctamente desplegadas, pero no eran la causa completa).
+  - Causa: `_cGetStaff(db, clubId, fns, roles)` (`js/coach/comms/panel.js`)
+    tiene 3 fuentes que alimentan la lista de staff. La "REGLA 1" (director/
+    coordinador reciben SIEMPRE el informe colectivo) filtraba
+    `emailConfig.contacts` con `c.role === 'director' || c.role === 'coordinator'`
+    **sin comprobar `roles.includes(c.role)`** — a diferencia de las otras 2
+    fuentes, que sí lo hacían. `_cGetStaff` se llama de dos formas: (a) SIN
+    roles (por defecto `['director','coordinator']`, para el despacho de
+    informes colectivos — ahí REGLA 1 es correcta tal cual, quieres AMBOS
+    roles); (b) con `roles=[selectedRole]` desde cada pestaña de mensajería
+    1:1 del entrenador (SOLO 'director' o SOLO 'coordinator'). Una cuenta con
+    VARIOS roles a la vez (director Y coordinador, MISMO uid — caso real del
+    usuario) tiene UNA sola ficha en Gestión de Contactos (una fila por
+    documento `users/{uid}`, no una por rol) con un ÚNICO campo `role`
+    guardado. REGLA 1 colaba esa ficha en la pestaña "Director" igualmente
+    (o en la de "Coordinador"), etiquetada con el rol EQUIVOCADO (el que
+    tuviera guardado en Contactos, no el de la pestaña activa) — el mensaje
+    se enviaba entonces con el `threadId` de ese rol incorrecto.
+  - Fix: añadido `&& roles.includes(c.role)` a REGLA 1, igual que ya tenían
+    las otras 2 fuentes de `_cGetStaff`. El caso por defecto (informes
+    colectivos, sin filtro de rol) sigue trayendo ambos roles sin cambios.
+  - Verificado con nuevo `scripts/test_cgetstaff_role_filter.js` (6/6 PASS):
+    ejecuta el código REAL de `_cGetStaff` reproduciendo el escenario exacto
+    (una cuenta con `allRoles` = [director, coordinator] y una ficha de
+    contacto con un único rol guardado) — confirma que la pestaña Director ya
+    NO cuela la etiqueta 'coordinator' (ni viceversa), y que el despacho de
+    informes colectivos sigue trayendo ambos roles correctamente.
+  - Pendiente: commit — el fix vive en el working tree (JS puro).
+
+## COMPLETADO (2026-07-23 — chats: 7ª ronda, threadId calculado con la pestaña cruda en vez del contexto canónico)
+
+- [x] **"Los mensajes entre roles no llegan/se cruzan" — CAUSA REAL: el sistema de
+  mensajería unificado (`_umState`/`_resolveThreadDoc`/`_cThreadId`, que reemplazó
+  la arquitectura de las rondas 1-6 documentadas más abajo) ya implementaba casi
+  todo lo pedido en `mensajes.txt` (pestañas por rol, filtro estricto de
+  categoría/subcategoría para padres, ámbito F7/F11 para coordinadores vía
+  `_coordinatorCoversModality`), pero el camino ACTIVO de lectura/escritura tenía
+  un bug estructural que fragmentaba cada conversación en varios documentos.**
+  - Causa: `_selectUnifiedContact`, `_loadUnifiedThreadMessages` (indirectamente,
+    vía el `threadId` que recibe) y `_sendUnifiedMessage`/`_openUnifiedBulkComposer`
+    (`js/coach/comms/panel.js`) calculaban el `threadId` con
+    `_cThreadId(uidA, uidB, window._umState.activeTab)` usando la pestaña CRUDA
+    de quien mira — pero la MISMA relación se ve desde pestañas con nombres
+    distintos según el rol: el entrenador ve la pestaña `'director'` para hablar
+    con el director, mientras que el propio director ve la pestaña `'coaches'`
+    para hablar con entrenadores. Con la pestaña cruda, `_cThreadId(C,U,'director')`
+    (lado del entrenador) y `_cThreadId(U,C,'coaches')` (lado del director) daban
+    IDs distintos para la MISMA conversación → cada lado escribía/leía un
+    documento de Firestore diferente, y el otro no encontraba los mensajes. La
+    función `_getCanonicalContext(role, tab)` que resuelve esto YA EXISTÍA en el
+    archivo (usada dentro de `_resolveThreadDoc`), pero el camino activo de
+    enviar/abrir un hilo no la llamaba — `_resolveThreadDoc` estaba prácticamente
+    muerto (solo lo usa `_clearUnifiedThread`).
+  - Fix (`js/coach/comms/panel.js`, 4 puntos): `_loadUnifiedContactList` (preview
+    de la lista de contactos), `_selectUnifiedContact` (abrir el hilo),
+    `_sendUnifiedMessage` y `_openUnifiedBulkComposer` (envío individual y
+    grupal) ahora calculan `tabContext`/`threadId` con
+    `_getCanonicalContext(window._umState.role, tab)` antes de pasarlo a
+    `_cThreadId`, en vez de la pestaña cruda.
+  - Verificado con nuevo `scripts/test_role_thread_canonical.js` (11/11 PASS):
+    confirma en el código real que los 4 call-sites canonicalizan, y ejecuta
+    `_getCanonicalContext`+`_cThreadId` extraídos del archivo real simulando:
+    entrenador↔director, entrenador↔coordinador, director↔coordinador y
+    padre↔entrenador calculan el MISMO id visto desde ambos lados; el caso real
+    reportado (una cuenta con el mismo uid actuando de director Y de coordinador
+    con el mismo entrenador) sigue dando hilos DISTINTOS; dos entrenadores
+    distintos con el mismo director siguen aislados entre sí. Suite completa:
+    22/36 activos OK (mismo conjunto de 14 fallos preexistentes que ya fallaban
+    antes de este fix, correspondientes a tests de la arquitectura de
+    mensajería ANTERIOR —tabs con `_msgGetSelected`/`_cStaffThreadId`,
+    `sdSendBulkMsg`, etc.— que ya no existe en el código: fue sustituida por
+    este sistema unificado `_umState`. Esos tests quedan obsoletos, no
+    reflejan una regresión de este fix).
+  - **Aviso**: igual que en rondas anteriores, los hilos YA creados en Firestore
+    con el id "de pestaña cruda" (antes de este fix) quedan huérfanos — hace
+    falta enviar un mensaje NUEVO en cada conversación para que se cree bajo el
+    id canónico correcto. Es JS puro, sin cambios en `firestore.rules`.
   - Pendiente: commit/deploy — el fix vive en el working tree.
 
 ## PENDIENTE (empezar por E6)
