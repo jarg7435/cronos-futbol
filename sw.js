@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v352: fix canal Entrenador<->Padre (comms/panel.js) -- resuelve el uid
+//        real del padre por email en clubUsers cuando cronos_player_links
+//        no tiene parentUid. Bump para forzar recarga del JS.
 //  v351: fix enrutamiento de mensajes entre roles (comms/panel.js) --
 //        excluidos documentos "secundarios" de users (categoria vacia
 //        actuando de comodin) + reconciliacion multi-clubId en la lista
@@ -482,8 +485,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v351';
-const CACHE_NAME = 'cronos-cache-v351';
+const VERSION = 'v352';
+const CACHE_NAME = 'cronos-cache-v352';
 
 const ASSETS = [
     './',
