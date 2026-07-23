@@ -3019,7 +3019,10 @@ async function autoDispatchMatchReports() {
                     _before + ' → ' + staffToNotify.length);
             }
         }
-        const _allStaffUids = staffToNotify.map(s => s.uid).filter(Boolean);
+        // FIX (P11-D): incluir SIEMPRE me.uid (el propio entrenador) como red de
+        // seguridad, para que la query array-contains del Panel de Dirección
+        // nunca quede vacía aunque el club no tenga staff asignado todavía.
+        const _allStaffUids = Array.from(new Set([...staffToNotify.map(s => s.uid).filter(Boolean), me.uid].filter(Boolean)));
 
         // FIX (v217): aplicar pre-seleccion per-partido al staff TAMBIEN.
         // Si preSelectionIds esta presente (modal de convocatoria usado),
@@ -3086,6 +3089,7 @@ async function autoDispatchMatchReports() {
                 history:       _parseHistoryForFirestore(p.history || []),
             });
         }
+        console.log(`[StaffReport] TOTAL informes staff escritos en cronos_player_reports: ${homePlayers.length} (matchId=${sharedMatchId}, staffToNotify=${staffToNotify.length}, staffUids=${_allStaffUids.length})`);
 
         // ── Notificar al staff (coordinador + director) ──────────────────
         // Los destinatarios ya fueron resueltos arriba (antes de los reports).
@@ -4877,10 +4881,14 @@ window._sendCollectiveReportNow = async function() {
                 staff = window._cronosResolveStaffForMatch(staff, _matchCat, _matchMode);
             }
         }
+        // FIX (P11-D): NO abortar con staff vacío — el Panel de Dirección se
+        // alimenta exclusivamente de los cronos_player_reports que este mismo
+        // bloque escribe más abajo; si hacemos return aquí el partido no
+        // aparece nunca aunque el club aún no tenga director/coordinador
+        // asignado. Solo avisamos y seguimos (los reports quedan visibles por
+        // clubId de todos modos).
         if (!staff.length) {
-            if (typeof hideSpinner==='function') hideSpinner();
-            if (typeof showToast==='function') showToast('⚠️ Sin directores/coordinadores asignados', 3000);
-            return;
+            console.warn('[StaffReport] Lista de staff vacía: se escriben los informes igualmente (visibles por clubId en el Panel de Dirección).');
         }
         const now       = new Date();
         const matchDate = now.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
@@ -4896,6 +4904,11 @@ window._sendCollectiveReportNow = async function() {
         const homePlayers = window.players
             ? window.players.filter(p => p.team === _cMyTeamKey())
             : [];
+
+        // FIX (P11-D): incluir SIEMPRE me.uid como red de seguridad, igual que
+        // _allStaffUids en autoDispatchMatchReports, para que la query
+        // array-contains del Panel de Dirección nunca quede vacía.
+        const _collStaffUids = Array.from(new Set([...staff.map(s => s.uid).filter(Boolean), me.uid,].filter(Boolean)));
 
         // matchId DETERMINISTA: reutiliza el de autoDispatch si ya se ejecutó,
         // o construye uno basado en fecha+rival+marcador (igual que autoDispatch).
@@ -4917,7 +4930,7 @@ window._sendCollectiveReportNow = async function() {
                 // FIX (v178): staffUids para que las reglas Firestore permitan leer
                 // a directores/coordinadores (request.auth.uid in resource.data.staffUids)
                 // y la consulta fallback array-contains los encuentre.
-                staffUids:      staff.map(s => s.uid).filter(Boolean),
+                staffUids:      _collStaffUids,
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,
@@ -4949,6 +4962,7 @@ window._sendCollectiveReportNow = async function() {
                 history: _parseHistoryForFirestore(p.history || []),
             });
         }
+        console.log(`[StaffReport] TOTAL informes colectivos escritos en cronos_player_reports: ${homePlayers.length} (matchId=${matchId}, staff=${staff.length}, staffUids=${_collStaffUids.length})`);
 
         // ── 2. Enviar mensaje de hilo a cada miembro del staff ───────────
         for (const s of staff) {
@@ -5046,8 +5060,13 @@ window._sendCollectiveReportNow = async function() {
         });
 
         if (typeof hideSpinner==='function') hideSpinner();
-        if (typeof showToast==='function')
-            showToast(`✅ Informe colectivo enviado a ${staff.length} persona(s) de la dirección`, 5000);
+        if (typeof showToast==='function') {
+            if (staff.length) {
+                showToast(`✅ Informe colectivo enviado a ${staff.length} persona(s) de la dirección`, 5000);
+            } else {
+                showToast('✅ Informe colectivo guardado — visible en el Panel de Dirección', 5000);
+            }
+        }
 
         // ── Guardar copia para el entrenador (registro propio) ──────────
         // Esto alimenta la pestaña "Mis Informes" del menú de Comunicaciones.
