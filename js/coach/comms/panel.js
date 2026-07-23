@@ -741,7 +741,23 @@ async function _loadUnifiedContactList(tabId) {
         if (clubId) {
             try {
                 const snap = await getDocs(query(collection(db, 'users'), where('clubId', '==', clubId)));
-                snap.forEach(d => clubUsers.push({ uid: d.id, ...d.data() }));
+                snap.forEach(d => {
+                    const data = d.data();
+                    // FIX (conexión entre roles): 'users' contiene tanto el documento
+                    // PRIMARIO de cada cuenta (id === su propio uid, con allRoles/
+                    // category/subcategory reales) como documentos "secundarios" que
+                    // auth.js crea al añadir un rol adicional (id compuesto
+                    // `${uid}_${role}_${clubId}`, SIN category/subcategory/allRoles).
+                    // Esos secundarios pasaban el filtro isCoach (role:'user'/'coach')
+                    // con categoría vacía; _catAndSubcatMatch trata una categoría vacía
+                    // como comodín, así que aparecían como "el entrenador" de CUALQUIER
+                    // padre del club (aunque el uid resuelto fuera el correcto), y el
+                    // mensaje podía acabar viéndose donde no correspondía. Solo el
+                    // documento primario (id === su propio campo uid) es la fuente de
+                    // verdad para listar contactos.
+                    if (data.uid && data.uid !== d.id) return;
+                    clubUsers.push({ uid: d.id, ...data });
+                });
             } catch(e) { console.warn('[_loadUnifiedContactList] Error usuarios:', e); }
         }
 
@@ -1182,7 +1198,10 @@ async function _sendUnifiedMessage(recipientUid) {
         if (input) input.value = '';
         const contact = window._umState.contacts.find(c => c.uid === recipientUid) || { uid: recipientUid, name: 'Contacto' };
         await _loadUnifiedThreadMessages(threadId, contact);
-        _loadUnifiedContactList(tabContext);
+        // FIX: refrescar la lista con la pestaña CRUDA (window._umState.activeTab),
+        // no con tabContext (contexto canónico usado para el threadId) — _loadUnifiedContactList
+        // espera el id de pestaña real ('parents'/'director'/'coordinator'/'coaches'/'coach'...).
+        _loadUnifiedContactList(window._umState.activeTab);
 
     } catch(e) {
         console.error('Error enviando mensaje:', e);
@@ -1246,16 +1265,96 @@ async function _loadUnifiedContactList(tabId) {
 
     try {
         const fns = await _cFS();
-        const { db, collection, getDocs, query, where } = fns;
-        const clubId = me.clubId || '';
+        const { db, collection, getDocs, query, where, doc, getDoc } = fns;
+        let clubId = me.clubId || '';
+
+        // FIX (v174, mismo patrón que _sdLoadReports en club-reports.js): si
+        // me.clubId no está disponible en el token, resolverlo desde Firestore.
+        if (!clubId && me.uid && typeof window._cResolveClubId === 'function') {
+            try {
+                clubId = await window._cResolveClubId(db, me, { doc, getDoc });
+                if (clubId) me.clubId = clubId;
+            } catch(_) {}
+        }
 
         // Obtener todos los usuarios del club desde Firestore
         let clubUsers = [];
         if (clubId) {
+            // FIX (conexión entre roles — Director/Coordinador↔Entrenador "sin
+            // conexión"): el clubId del entrenador y el del director/coordinador
+            // pueden ser DIFERENTES por inconsistencias históricas en users/{uid}
+            // (mismo problema ya identificado y corregido en _sdLoadReports,
+            // club-reports.js, v179). Una query ingenua por un único clubId deja
+            // la lista de "Entrenadores" vacía para el director/coordinador
+            // aunque el entrenador exista y esté en el mismo club real.
+            // Misma estrategia: descubrir TODOS los clubIds asociados (propio
+            // doc + allRoles + usuarios ya encontrados + búsqueda por email) y
+            // consultar 'users' por cada uno, fusionando resultados sin duplicar.
+            const _allClubIds = new Set([clubId]);
             try {
-                const snap = await getDocs(query(collection(db, 'users'), where('clubId', '==', clubId)));
-                snap.forEach(d => clubUsers.push({ uid: d.id, ...d.data() }));
-            } catch(e) { console.warn('[_loadUnifiedContactList] Error cargando usuarios del club:', e); }
+                const myDoc = await getDoc(doc(db, 'users', me.uid));
+                if (myDoc.exists()) {
+                    const myData = myDoc.data();
+                    if (myData.clubId) _allClubIds.add(myData.clubId);
+                    if (Array.isArray(myData.allRoles)) {
+                        myData.allRoles.forEach(r => { if (r && r.clubId) _allClubIds.add(r.clubId); });
+                    }
+                }
+            } catch(_) {}
+
+            const seenUserIds = new Set();
+            const queriedClubIds = new Set();
+            const _queryUsersForClub = async (cid) => {
+                if (queriedClubIds.has(cid)) return;
+                queriedClubIds.add(cid);
+                try {
+                    const snap = await getDocs(query(collection(db, 'users'), where('clubId', '==', cid)));
+                    snap.forEach(d => {
+                        if (seenUserIds.has(d.id)) return;
+                        seenUserIds.add(d.id);
+                        const data = d.data();
+                        if (data.clubId) _allClubIds.add(data.clubId);
+                        if (Array.isArray(data.allRoles)) {
+                            data.allRoles.forEach(r => { if (r && r.clubId) _allClubIds.add(r.clubId); });
+                        }
+                        // FIX (conexión entre roles): 'users' contiene tanto el documento
+                        // PRIMARIO de cada cuenta (id === su propio uid, con allRoles/
+                        // category/subcategory reales) como documentos "secundarios" que
+                        // auth.js crea al añadir un rol adicional (id compuesto
+                        // `${uid}_${role}_${clubId}`, SIN category/subcategory/allRoles).
+                        // Esos secundarios pasaban el filtro isCoach (role:'user'/'coach')
+                        // con categoría vacía; _catAndSubcatMatch trata una categoría vacía
+                        // como comodín, así que aparecían como "el entrenador" de CUALQUIER
+                        // padre del club (aunque el uid resuelto fuera el correcto), y el
+                        // mensaje podía acabar viéndose donde no correspondía. Solo el
+                        // documento primario (id === su propio campo uid) es la fuente de
+                        // verdad para listar contactos.
+                        if (data.uid && data.uid !== d.id) return;
+                        clubUsers.push({ uid: d.id, ...data });
+                    });
+                } catch(e) { console.warn('[_loadUnifiedContactList] Error cargando usuarios del club', cid, ':', e.message); }
+            };
+
+            // Ronda 1: clubIds ya conocidos (propio doc + allRoles).
+            for (const cid of [..._allClubIds]) {
+                await _queryUsersForClub(cid);
+            }
+            // Ronda 2: clubIds NUEVOS descubiertos en la ronda 1 (vía allRoles
+            // de otros usuarios encontrados) que aún no se consultaron.
+            for (const cid of [..._allClubIds]) {
+                await _queryUsersForClub(cid);
+            }
+
+            // Búsqueda por email propio (caso multi-rol: mismo email, clubId distinto).
+            try {
+                if (me.email) {
+                    const emailSnap = await getDocs(query(collection(db, 'users'), where('email', '==', me.email)));
+                    for (const d of emailSnap.docs) {
+                        const data = d.data();
+                        if (data.clubId) await _queryUsersForClub(data.clubId);
+                    }
+                }
+            } catch(_) {}
         }
 
         // Obtener hilos de mensajes existentes para badge de no leídos e historial
@@ -1851,7 +1950,10 @@ async function _sendUnifiedMessage(recipientUid) {
         if (input) input.value = '';
         const contact = window._umState.contacts.find(c => c.uid === recipientUid) || { uid: recipientUid, name: 'Contacto' };
         await _loadUnifiedThreadMessages(threadId, contact);
-        _loadUnifiedContactList(tabContext);
+        // FIX: refrescar la lista con la pestaña CRUDA (window._umState.activeTab),
+        // no con tabContext (contexto canónico usado para el threadId) — _loadUnifiedContactList
+        // espera el id de pestaña real ('parents'/'director'/'coordinator'/'coaches'/'coach'...).
+        _loadUnifiedContactList(window._umState.activeTab);
 
     } catch(e) {
         console.error('Error enviando mensaje:', e);
