@@ -1403,18 +1403,36 @@ async function _loadUnifiedContactList(tabId) {
                     const cat = l.category || l.categoryLabel || l.teamName || '';
                     const sub = l.subcategory || '';
                     return _catAndSubcatMatch(coachCategory, coachSubcategory, cat, sub);
-                }).map(l => ({
-                    id: l.parentUid || l._id,
-                    uid: l.parentUid || l._id,
-                    name: l.playerAlias || l.playerName || l.parentEmail || 'Padre/Tutor',
-                    subtitle: `${l.parentEmail || 'Sin email'} ${l.playerNumber && l.playerNumber !== '—' ? '· #' + l.playerNumber : ''}`,
-                    email: l.parentEmail || '',
-                    phone: l.parentPhone || l.parentWA || '',
-                    roleTag: 'parent',
-                    icon: '👨‍👩‍👧',
-                    category: l.category || coachCategory,
-                    subcategory: l.subcategory || coachSubcategory
-                }));
+                }).map(l => {
+                    // FIX (conexión entre roles Entrenador<->Padre): l.parentUid puede
+                    // faltar o quedar sin rellenar si el enlace (cronos_player_links) se
+                    // creó antes de que el padre completara su registro, o si la
+                    // vinculación automática por inviteCode falló. Sin el uid REAL del
+                    // padre, _cThreadId calcula un id distinto en cada panel (el
+                    // entrenador usa l._id, el padre usa su propio uid real) y ninguno
+                    // de los dos ve los mensajes del otro. Recurso (mismo patrón ya
+                    // probado en _cronosResolveParentReportTargets para informes):
+                    // si falta parentUid, buscar por email en clubUsers (ya reconciliado
+                    // por clubId/allRoles más arriba) una cuenta de padre real.
+                    let resolvedUid = l.parentUid || '';
+                    if (!resolvedUid && l.parentEmail) {
+                        const match = clubUsers.find(u => u.email && String(u.email).toLowerCase() === String(l.parentEmail).toLowerCase());
+                        if (match) resolvedUid = match.uid;
+                    }
+                    resolvedUid = resolvedUid || l._id;
+                    return {
+                        id: resolvedUid,
+                        uid: resolvedUid,
+                        name: l.playerAlias || l.playerName || l.parentEmail || 'Padre/Tutor',
+                        subtitle: `${l.parentEmail || 'Sin email'} ${l.playerNumber && l.playerNumber !== '—' ? '· #' + l.playerNumber : ''}`,
+                        email: l.parentEmail || '',
+                        phone: l.parentPhone || l.parentWA || '',
+                        roleTag: 'parent',
+                        icon: '👨‍👩‍👧',
+                        category: l.category || coachCategory,
+                        subcategory: l.subcategory || coachSubcategory
+                    };
+                });
 
                 if (coachCategory) {
                     filterText = `🏷️ Filtro activo: <strong style="color:#58a6ff;">${_normCat(coachCategory).toUpperCase()} ${coachSubcategory}</strong>`;
