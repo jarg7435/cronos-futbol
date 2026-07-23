@@ -1960,33 +1960,53 @@ async function _openUnifiedBulkComposer() {
 
 // ── Vaciar Hilo Completo ──────────────────────────────────────────────
 async function _clearUnifiedThread(threadId) {
-    if (!confirm('¿Seguro que quieres borrar todo el historial de mensajes de esta conversación?')) return;
+    // FIX (auditoría): vaciar un hilo es irreversible y borra también los
+    // mensajes escritos por la OTRA parte (p.ej. familia<->entrenador de un
+    // menor). Antes se sobrescribía `messages: []` sin dejar rastro de quién
+    // lo hizo ni cuándo. Ahora se archiva el contenido en deletedMessagesLog
+    // (borrado LÓGICO, no destructivo) antes de vaciar.
+    if (!confirm('¿Seguro que quieres borrar todo el historial de mensajes de esta conversación? Esta acción no se puede deshacer para ti, pero queda registrada.')) return;
     try {
-        const { db, doc, setDoc, updateDoc } = await _cFS();
+        const { db, doc, getDoc, setDoc, updateDoc, arrayUnion } = await _cFS();
         const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
         const contact = window._umState.selectedContact;
-        
+
         let targetId = threadId;
         if (contact && me) {
             const res = await _resolveThreadDoc(db, me.uid, contact.uid, window._umState.role, window._umState.activeTab, me.clubId);
             if (res && res.id) targetId = res.id;
         }
 
+        const docRef = doc(db, 'cronos_messages', targetId);
+        let prevMessages = [];
         try {
-            await updateDoc(doc(db, 'cronos_messages', targetId), {
-                messages: [],
-                lastMessage: '',
-                lastMessageAt: ''
-            });
+            const snap = await getDoc(docRef);
+            if (snap.exists() && Array.isArray(snap.data().messages)) prevMessages = snap.data().messages;
+        } catch(_) {}
+
+        const clearPayload = {
+            messages: [],
+            lastMessage: '',
+            lastMessageAt: '',
+            deletedMessagesLog: arrayUnion({
+                deletedBy:      (me && me.uid)   || null,
+                deletedByEmail: (me && me.email) || null,
+                deletedByRole:  window._umState.role,
+                deletedAt:      new Date().toISOString(),
+                messageCount:   prevMessages.length,
+                messages:       prevMessages,
+            }),
+        };
+
+        try {
+            await updateDoc(docRef, clearPayload);
         } catch (updErr) {
             if (contact && me) {
-                await setDoc(doc(db, 'cronos_messages', targetId), {
+                await setDoc(docRef, {
                     threadId: targetId,
                     clubId: me.clubId || null,
                     participants: [me.uid, contact.uid],
-                    messages: [],
-                    lastMessage: '',
-                    lastMessageAt: ''
+                    ...clearPayload,
                 }, { merge: true });
             } else {
                 throw updErr;
