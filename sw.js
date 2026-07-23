@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v351: fix enrutamiento de mensajes entre roles (comms/panel.js) --
+//        excluidos documentos "secundarios" de users (categoria vacia
+//        actuando de comodin) + reconciliacion multi-clubId en la lista
+//        de contactos (Director/Coordinador<->Entrenador). Bump para
+//        forzar recarga del JS.
 //  v350: restaurada auditoria de borrado en _clearUnifiedThread (panel.js) +
 //        restaurada pestana Partidos Terminados y config por categoria del
 //        Director (club-reports.js). Bump para forzar recarga del JS.
@@ -477,8 +482,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v350';
-const CACHE_NAME = 'cronos-cache-v350';
+const VERSION = 'v351';
+const CACHE_NAME = 'cronos-cache-v351';
 
 const ASSETS = [
     './',
