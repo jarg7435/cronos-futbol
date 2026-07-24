@@ -788,7 +788,7 @@ async function _loadUnifiedContactList(tabId) {
                         if (!exists) {
                             rawLinks.push({
                                 _id: c.id || ('m_' + Math.random().toString(36).substr(2,5)),
-                                parentUid: c.uid || c.id, parentEmail: c.email || '', parentPhone: c.phone || '',
+                                parentUid: c.uid || '', parentEmail: c.email || '', parentPhone: c.phone || '',
                                 playerAlias: c.player || c.name || 'Familiar', category: c.category || '', subcategory: c.subcategory || ''
                             });
                         }
@@ -1386,8 +1386,16 @@ async function _loadUnifiedContactList(tabId) {
                         const exists = rawLinks.find(l => (c.email && l.parentEmail === c.email) || (c.uid && (l.parentUid === c.uid || l.uid === c.uid)));
                         if (!exists) {
                             rawLinks.push({
+                                // FIX (conexión Entrenador<->Padre): NO usar c.id (identificador
+                                // local del contacto manual, p.ej. "new_1784759436505") como
+                                // parentUid — no es un uid real de Firebase. Si lo hiciéramos, el
+                                // resolvedUid de más abajo lo daría por "ya resuelto" y JAMÁS
+                                // intentaría el fallback por email contra clubUsers, dejando el
+                                // threadId apuntando a un id inventado que el padre real nunca lee.
+                                // Dejar parentUid vacío cuando no hay uid real permite que ese
+                                // fallback por email encuentre la cuenta real del padre.
                                 _id: c.id || ('m_' + Math.random().toString(36).substr(2,5)),
-                                parentUid: c.uid || c.id,
+                                parentUid: c.uid || '',
                                 parentEmail: c.email || '',
                                 parentPhone: c.phone || c.wa || '',
                                 playerAlias: c.player || c.name || 'Familiar',
