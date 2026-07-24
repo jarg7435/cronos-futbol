@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v357: deuda "endMatch duplicado" (auditoria 2026-07-22) -- eliminada la
+//        definicion muerta de window.endMatch en player-actions.js (siempre
+//        quedaba eclipsada por la de active-match.js, cargada despues); una
+//        sola fuente de verdad ahora. Bump para forzar recarga del JS.
 //  v356: SEC-C1 (comms/panel.js, club-reports.js) -- _cResolveClubId ya no
 //        escribe clubId con updateDoc directo desde el cliente (bloqueado
 //        por firestore.rules, fallaba en silencio); ahora delega la
@@ -504,8 +508,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v356';
-const CACHE_NAME = 'cronos-cache-v356';
+const VERSION = 'v357';
+const CACHE_NAME = 'cronos-cache-v357';
 
 const ASSETS = [
     './',

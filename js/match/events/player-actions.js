@@ -508,33 +508,13 @@ function terminateMatch(reason) {
     alert(`🏁 PARTIDO FINALIZADO: ${reason}\nResultado final: ${TEAM_NAMES.home} ${document.getElementById('score-home').textContent} - ${document.getElementById('score-away').textContent} ${TEAM_NAMES.away}`);
 }
 
-window.endMatch = function endMatch(skipConfirm = false) {
-    if (matchPhase === 'finished') return; // E5: guard idempotencia (evita Sale FIN duplicado por rutas multiples de fin)
-    if (!skipConfirm && !confirm('¿Finalizar el partido?')) return;
-
-    // Detener cronómetro
-    isRunning = false;
-    clearInterval(timerInterval);
-    matchPhase = 'finished';
-
-    // Registrar salida de todos los jugadores en campo
-    const finalTime = formatTime((masterTimeH1 || 0) + (masterTimeH2 || 0));
-    (players || []).filter(p => p.status === 'field').forEach(p => {
-        p.history.push('Sale a las ' + finalTime + ' (FIN)');
-    });
-
-    updateMasterUI();
-
-    // Detener sincronización en vivo
-    if (typeof stopLiveSync === 'function') {
-        stopLiveSync();
-    }
-
-    // NOTA: este endMatch queda eclipsado por window.endMatch de active-match.js
-    // (cargado despues). El envio de informes se dispara desde la ruta activa.
-
-    _showPostMatchOptions();
-};
+// NOTA (auditoría 2026-07-22, deuda "endMatch duplicado"): la definición de
+// window.endMatch vivía aquí también, pero index.html carga active-match.js
+// DESPUÉS de este archivo, así que esa versión (más completa: limpia
+// localStorage, empuja el snapshot 'finished' a Firestore, dispara el triple
+// silbato) siempre ganaba y esta quedaba muerta. Eliminada para no depender
+// del orden de <script> — la única definición real vive ahora en
+// js/match/persistence/active-match.js.
 
 function changeGoals(amount) {
     if (!activeActionPlayerId) return;
