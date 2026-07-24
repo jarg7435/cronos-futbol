@@ -1,0 +1,16 @@
+# Normaliza los finales de línea a LF en el repositorio para todos los
+# archivos de texto — evita los avisos "LF will be replaced by CRLF" en cada
+# archivo tocado (AUDITORIA_GENERAL_2026-07-22.md, hallazgo #16). No afecta
+# a la ejecución de HTML/JS/CSS (los finales de línea son irrelevantes para
+# el navegador); solo normaliza cómo se guardan en git.
+* text=auto eol=lf
+
+# Binarios: sin conversión de finales de línea.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.svg binary

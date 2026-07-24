@@ -13,6 +13,24 @@
  *   · (vacía) — P11-D (guard de staff vacío en el informe colectivo/auto-despacho)
  *     se corrigió el 2026-07-22; test_p11d_collective_write.js retirado de aquí
  *     tras confirmar que pasa. Ver CORRECCIONES_ESTADO.md.
+ *   · 2026-07-24 (auditoría, hallazgo CI #15): se añaden 11 tests que ya
+ *     fallaban antes de cualquier cambio de esta ronda — `npm test` estaba en
+ *     rojo permanente sin que ninguno de ellos estuviera documentado aquí, lo
+ *     que dejaba el gate de CI inútil para detectar regresiones NUEVAS.
+ *     9 de ellos (test_cgetstaff_role_filter, test_contact_manager_crash,
+ *     test_delete_all_messages_audit, test_parent_report_targets,
+ *     test_sdsendreplytocoach_creates_thread, test_selfmessage_autoopen,
+ *     test_staff_chat_unification, test_stale_chat_pane_reset,
+ *     test_v269_fixes) referencian la arquitectura de mensajería POR PESTAÑAS
+ *     anterior (`_msgGetSelected`, `_cStaffThreadId` con staffRole,
+ *     `sdSendBulkMsg`, `sdSendReplyToCoach`, `coachDeleteAllMessages`,
+ *     `ppDeleteAllMessages`, `_resetChatThreadPane`...) que ya NO existe en
+ *     el código: fue sustituida por el sistema unificado `_umState`
+ *     (js/coach/comms/panel.js). Ver CORRECCIONES_ESTADO.md. 2 de ellos
+ *     (test_timer_color_dom, test_timer_color_semaforo) fallan por
+ *     incompatibilidad del arnés de test con Node 24 (`ReferenceError:
+ *     window is not defined` dentro de vm.runInContext), no por un bug de
+ *     producto.
  *
  * Se ejecuta desde la raíz del repo (varios tests leen ficheros con rutas
  * relativas a la raíz). No requiere emulador ni red: son tests puros de Node.
@@ -30,7 +48,27 @@ const ROOT = path.join(__dirname, '..');
 
 // Regresiones reales conocidas (documentadas en CORRECCIONES_ESTADO.md). No
 // bloquean CI, pero deben corregirse y retirarse de aquí.
-const XFAIL = new Set([]);
+const XFAIL = new Set([
+    // Arquitectura de mensajería por pestañas anterior, sustituida por el
+    // sistema unificado _umState (js/coach/comms/panel.js). Las funciones que
+    // estos tests ejercitan ya no existen en el código.
+    'test_cgetstaff_role_filter.js',
+    'test_contact_manager_crash.js',
+    'test_delete_all_messages_audit.js',
+    'test_parent_report_targets.js',
+    'test_sdsendreplytocoach_creates_thread.js',
+    'test_selfmessage_autoopen.js',
+    'test_staff_chat_unification.js',
+    'test_stale_chat_pane_reset.js',
+    // Aserción desactualizada sobre el patrón EXACTO de código fuente de la
+    // pestaña "config" en club-reports.js; el comportamiento real que prueba
+    // (Director la ve, Coordinador no) sigue en verde.
+    'test_v269_fixes.js',
+    // Incompatibilidad del arnés de test con Node 24 (vm.runInContext no
+    // expone `window`), no un bug de producto.
+    'test_timer_color_dom.js',
+    'test_timer_color_semaforo.js',
+]);
 
 const testFiles = fs
     .readdirSync(SCRIPTS_DIR)
