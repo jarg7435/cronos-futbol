@@ -1100,7 +1100,9 @@ async function _loadUnifiedThreadMessages(threadId, contact) {
 
         const messages = snap.data().messages || [];
         container.innerHTML = messages.map(m => {
-            const isMine = (m.senderUid && m.senderUid === me.uid) || (m.sender && m.sender === window._umState.role) || (m.senderRole && m.senderRole === window._umState.role);
+            const isMine = m.senderUid
+                ? (m.senderUid === me.uid && (!m.senderRole || m.senderRole === window._umState.role))
+                : ((m.sender && m.sender === window._umState.role) || (m.senderRole && m.senderRole === window._umState.role));
             const time = m.timestamp ? new Date(m.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
             const date = m.timestamp ? new Date(m.timestamp).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '';
             const isReport = m.type === 'report' || (m.text && m.text.includes('📊'));
@@ -1881,7 +1883,14 @@ async function _loadUnifiedThreadMessages(threadId, contact) {
 
         const messages = snap.data().messages || [];
         container.innerHTML = messages.map(m => {
-            const isMine = m.senderUid ? (m.senderUid === me.uid) : (m.sender === window._umState.role);
+            // FIX (cuentas multi-rol, mismo uid físico p.ej. Entrenador=Padre):
+            // comparar solo por uid marca TODOS los mensajes del hilo como "míos",
+            // porque el uid coincide en ambos roles. Si el mensaje trae senderRole,
+            // debe coincidir también con el rol ACTIVO desde el que se está viendo
+            // el hilo para diferenciar quién envió qué.
+            const isMine = m.senderUid
+                ? (m.senderUid === me.uid && (!m.senderRole || m.senderRole === window._umState.role))
+                : (m.sender === window._umState.role);
             const time = m.timestamp ? new Date(m.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
             const date = m.timestamp ? new Date(m.timestamp).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '';
             const isReport = m.type === 'report' || (m.text && m.text.includes('📊'));

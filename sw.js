@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v355: fix isMine en burbujas de chat (comms/panel.js) -- cuentas
+//        multi-rol con el mismo uid (ej. Entrenador=Padre) marcaban TODOS
+//        los mensajes del hilo como "míos" al comparar solo por uid. Ahora
+//        también exige que coincida senderRole con el rol activo. Bump
+//        para forzar recarga del JS.
 //  v354: burbujas de chat (comms/panel.js) -- enviados en azul, recibidos
 //        en naranja, para diferenciar de un vistazo en el mismo hilo.
 //        Bump para forzar recarga del JS.
@@ -494,8 +499,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v354';
-const CACHE_NAME = 'cronos-cache-v354';
+const VERSION = 'v355';
+const CACHE_NAME = 'cronos-cache-v355';
 
 const ASSETS = [
     './',
