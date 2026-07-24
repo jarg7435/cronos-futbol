@@ -589,6 +589,7 @@ const ASSETS = [
     './js/admin/superadmin/extras-toggle.js',
     './js/admin/superadmin/delete-club.js',
     './js/admin/superadmin/create-direct.js',
+    './js/admin/superadmin/individual-entity.js',
     './js/admin/superadmin/extras.js',
     './js/admin/superadmin/billing.js',
     './js/admin/shared/category-tree.js',
