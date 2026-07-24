@@ -1,5 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v358: refactor monolitos (auditoria 2026-07-22), paso 1 -- extraida la
+//        Papelera del SuperAdmin (saTrash/saReactivateAsIndividual/
+//        saPurgeUser) de superadmin.panel.js a su propio archivo
+//        (admin/superadmin/trash.js). Movimiento mecanico, sin cambios de
+//        comportamiento (verificado con test dedicado antes y despues).
+//        Bump para forzar recarga del JS.
 //  v357: deuda "endMatch duplicado" (auditoria 2026-07-22) -- eliminada la
 //        definicion muerta de window.endMatch en player-actions.js (siempre
 //        quedaba eclipsada por la de active-match.js, cargada despues); una
@@ -508,8 +514,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v357';
-const CACHE_NAME = 'cronos-cache-v357';
+const VERSION = 'v358';
+const CACHE_NAME = 'cronos-cache-v358';
 
 const ASSETS = [
     './',
@@ -552,6 +558,7 @@ const ASSETS = [
     './js/shared/admin-shared.js',
     './js/ai/import.js',
     './js/admin/superadmin/superadmin.panel.js',
+    './js/admin/superadmin/trash.js',
     './js/admin/superadmin/extras.js',
     './js/admin/superadmin/billing.js',
     './js/admin/shared/category-tree.js',
