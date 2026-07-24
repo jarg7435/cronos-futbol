@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v360: refactor monolitos (auditoria 2026-07-22), paso 3 -- extraido
+//        "Extras por Club" (_CRONOS_EXTRAS_DEF/saExtras/saSaveExtras) de
+//        superadmin.panel.js a su propio archivo
+//        (admin/superadmin/extras-toggle.js, nombrado asi para no chocar
+//        con extras.js ya existente). Movimiento mecanico, sin cambios de
+//        comportamiento (test dedicado antes y despues). Bump para forzar
+//        recarga del JS.
 //  v359: refactor monolitos (auditoria 2026-07-22), paso 2 -- extraido
 //        "Editar Slots y Plan de Club" (saEditClubSlots/
 //        saEditClubSlotsConfirm) de superadmin.panel.js a su propio
@@ -520,8 +527,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v359';
-const CACHE_NAME = 'cronos-cache-v359';
+const VERSION = 'v360';
+const CACHE_NAME = 'cronos-cache-v360';
 
 const ASSETS = [
     './',
@@ -566,6 +573,7 @@ const ASSETS = [
     './js/admin/superadmin/superadmin.panel.js',
     './js/admin/superadmin/trash.js',
     './js/admin/superadmin/club-slots.js',
+    './js/admin/superadmin/extras-toggle.js',
     './js/admin/superadmin/extras.js',
     './js/admin/superadmin/billing.js',
     './js/admin/shared/category-tree.js',
