@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v354: burbujas de chat (comms/panel.js) -- enviados en azul, recibidos
+//        en naranja, para diferenciar de un vistazo en el mismo hilo.
+//        Bump para forzar recarga del JS.
 //  v353: fix canal Entrenador<->Padre (comms/panel.js) -- contactos MANUALES
 //        (emailConfig.contacts, sin enlace real en cronos_player_links)
 //        sintetizaban parentUid = c.uid || c.id, usando el id LOCAL del
@@ -491,8 +494,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v353';
-const CACHE_NAME = 'cronos-cache-v353';
+const VERSION = 'v354';
+const CACHE_NAME = 'cronos-cache-v354';
 
 const ASSETS = [
     './',

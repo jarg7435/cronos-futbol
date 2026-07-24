@@ -1107,8 +1107,8 @@ async function _loadUnifiedThreadMessages(threadId, contact) {
 
             return `
             <div style="display:flex;justify-content:${isMine ? 'flex-end' : 'flex-start'};padding:0 0.2rem;">
-                <div style="max-width:78%;background:${isReport ? 'rgba(63,185,80,0.12)' : isMine ? 'rgba(88,166,255,0.18)' : 'rgba(255,255,255,0.07)'};
-                            border:1px solid ${isReport ? 'rgba(63,185,80,0.3)' : isMine ? 'rgba(88,166,255,0.3)' : 'rgba(255,255,255,0.1)'};
+                <div style="max-width:78%;background:${isReport ? 'rgba(63,185,80,0.12)' : isMine ? 'rgba(88,166,255,0.18)' : 'rgba(255,159,67,0.16)'};
+                            border:1px solid ${isReport ? 'rgba(63,185,80,0.3)' : isMine ? 'rgba(88,166,255,0.3)' : 'rgba(255,159,67,0.4)'};
                             border-radius:12px;padding:0.55rem 0.85rem;position:relative;">
                     <div style="font-size:0.85rem;line-height:1.5;white-space:pre-wrap;color:white;">
                         ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
@@ -1888,8 +1888,8 @@ async function _loadUnifiedThreadMessages(threadId, contact) {
 
             return `
             <div style="display:flex;justify-content:${isMine ? 'flex-end' : 'flex-start'};padding:0 0.2rem;">
-                <div style="max-width:78%;background:${isReport ? 'rgba(63,185,80,0.12)' : isMine ? 'rgba(88,166,255,0.18)' : 'rgba(255,255,255,0.07)'};
-                            border:1px solid ${isReport ? 'rgba(63,185,80,0.3)' : isMine ? 'rgba(88,166,255,0.3)' : 'rgba(255,255,255,0.1)'};
+                <div style="max-width:78%;background:${isReport ? 'rgba(63,185,80,0.12)' : isMine ? 'rgba(88,166,255,0.18)' : 'rgba(255,159,67,0.16)'};
+                            border:1px solid ${isReport ? 'rgba(63,185,80,0.3)' : isMine ? 'rgba(88,166,255,0.3)' : 'rgba(255,159,67,0.4)'};
                             border-radius:12px;padding:0.55rem 0.85rem;position:relative;">
                     <div style="font-size:0.85rem;line-height:1.5;white-space:pre-wrap;color:white;">
                         ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
