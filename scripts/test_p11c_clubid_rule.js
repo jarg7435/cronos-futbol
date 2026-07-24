@@ -35,11 +35,14 @@ const callSitesPassingUpdate =
     (creports.match(/_cResolveClubId\(db, me, \{ doc, getDoc, updateDoc \}\)/g) || []).length;
 assert(callSitesPassingUpdate === 0, 'ningún call-site pasa updateDoc a _cResolveClubId (encontrados: ' + callSitesPassingUpdate + ')');
 
-// 4) Siguen existiendo los 5 call-sites (2 comms + 3 reports) y aún resuelven clubId.
+// 4) Siguen existiendo los 4 call-sites (2 comms + 2 reports) y aún resuelven
+//    clubId. (La auditoría 2026-07-22 referenciaba también sdSendBulkMsg en
+//    club-reports.js, pero esa función ya no existe: fue sustituida por el
+//    sistema de mensajería unificado _umState — ver CORRECCIONES_ESTADO.md.)
 const callsPanel   = (panel.match(/await _cResolveClubId\(db, me,/g) || []).length;
 const callsReports = (creports.match(/_cResolveClubId\(db, me,/g) || []).length;
 assert(callsPanel === 2, '2 llamadas en comms/panel.js (encontradas: ' + callsPanel + ')');
-assert(callsReports === 3, '3 llamadas en club-reports.js (encontradas: ' + callsReports + ')');
+assert(callsReports === 2, '2 llamadas en club-reports.js (encontradas: ' + callsReports + ')');
 
 // 5) Simulación de la resolución: sigue resolviendo clubId desde allRoles[] y
 //    cacheándolo en memoria (me.clubId) aunque la raíz esté vacía.

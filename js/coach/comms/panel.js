@@ -223,13 +223,24 @@ async function _cResolveClubId(db, me, fns) {
                 || null;
             // Cachear en el usuario en memoria para futuras llamadas de la sesión.
             if (cid && window._cronosCurrentUser) window._cronosCurrentUser.clubId = cid;
-            // FIX v176: Si se resolvió clubId desde allRoles pero el campo raíz
-            // clubId del documento users/{uid} está vacío, escribirlo para que
-            // las reglas Firestore (userDocClubId) puedan verificarlo sin necesidad
-            // de parsear allRoles (las reglas NO pueden iterar arrays arbitrarios).
-            if (cid && !d.clubId && fns.updateDoc) {
+            // FIX v176 → FIX SEC-C1 (auditoría 2026-07-22): si se resolvió clubId
+            // desde allRoles pero el campo raíz clubId del documento users/{uid}
+            // está vacío, migrarlo para que las reglas Firestore (userDocClubId)
+            // puedan verificarlo sin necesidad de parsear allRoles (las reglas NO
+            // pueden iterar arrays arbitrarios). Antes se escribía con un update
+            // directo desde el cliente — firestore.rules ya prohíbe que el
+            // cliente escriba 'clubId' en users/{uid} (hasAny()), así que esa
+            // escritura fallaba en silencio en cada sesión sin migrar nunca la
+            // raíz. Ahora se delega en la Cloud Function syncRootClubId,
+            // que valida server-side que el clubId pertenece de verdad al usuario
+            // (vía allRoles) antes de escribirlo.
+            if (cid && !d.clubId) {
                 try {
-                    await fns.updateDoc(fns.doc(db, 'users', me.uid), { clubId: cid });
+                    const fa = window._cronos_auth;
+                    if (fa && fa.functions) {
+                        const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+                        await httpsCallable(fa.functions, 'syncRootClubId')({ clubId: cid });
+                    }
                 } catch (migrateErr) {
                     if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
                 }
@@ -2573,9 +2584,9 @@ window._executeReportsSend = async function(method) {
     // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
     // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
     // el envío al staff y a los padres. Se cachea en me.clubId para esta sesión.
-    const _clubId = await _cResolveClubId(db, me, { doc, getDoc, updateDoc });
+    const _clubId = await _cResolveClubId(db, me, { doc, getDoc });
     if (_clubId && !me.clubId) me.clubId = _clubId;
-    
+
     // Obtener vínculos con timeout de seguridad y soporte para Admin Individual
     const links = [];
     try {
@@ -3081,7 +3092,7 @@ async function autoDispatchMatchReports() {
         // Bug 1 (v174): resolver el clubId desde Firestore si el token no lo trae.
         // Sin clubId, las reglas de cronos_messages/notifications/reports rechazan
         // el envío al staff (director/coordinador) y a los padres.
-        const _clubId = await _cResolveClubId(db, me, { doc, getDoc, updateDoc });
+        const _clubId = await _cResolveClubId(db, me, { doc, getDoc });
         if (_clubId && !me.clubId) me.clubId = _clubId;
 
         // E3 (punto 2): sin clubId válido, las reglas Firestore

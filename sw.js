@@ -1,5 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v356: SEC-C1 (comms/panel.js, club-reports.js) -- _cResolveClubId ya no
+//        escribe clubId con updateDoc directo desde el cliente (bloqueado
+//        por firestore.rules, fallaba en silencio); ahora delega la
+//        migracion de la raiz en la Cloud Function syncRootClubId. Bump
+//        para forzar recarga del JS.
 //  v355: fix isMine en burbujas de chat (comms/panel.js) -- cuentas
 //        multi-rol con el mismo uid (ej. Entrenador=Padre) marcaban TODOS
 //        los mensajes del hilo como "míos" al comparar solo por uid. Ahora
@@ -499,8 +504,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v355';
-const CACHE_NAME = 'cronos-cache-v355';
+const VERSION = 'v356';
+const CACHE_NAME = 'cronos-cache-v356';
 
 const ASSETS = [
     './',

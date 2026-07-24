@@ -5,7 +5,13 @@
 //   · La Cloud Function syncRootClubId (functions/index.js).
 //   · El trigger autoSetClaimsOnApproval ampliado (functions/index.js).
 //   · La regla `allow update` de users/{userId} endurecida (firestore.rules).
-//   · Los 5 call-sites cliente de _cResolveClubId (ya no escriben clubId).
+//   · Los 4 call-sites cliente de _cResolveClubId (ya no escriben clubId con
+//     updateDoc directo; delegan la migración de la raíz en la CF
+//     syncRootClubId). 2 en comms/panel.js + 2 en club-reports.js.
+//     (auditoría 2026-07-22: se referenciaba también un 5º sitio en
+//     club-reports.js, `sdSendBulkMsg` — esa función ya no existe en el
+//     código: fue sustituida por el sistema de mensajería unificado
+//     `_umState` (ver CORRECCIONES_ESTADO.md). No es un hueco real.)
 //
 // No reimplementa la lógica: carga functions/index.js en un sandbox con
 // firebase-functions/firebase-admin MOCKEADOS, de modo que onCall/onWrite
@@ -279,7 +285,7 @@ async function callSync(userDoc, data, ctxAuth) {
     const callsPanel = (panel.match(/await _cResolveClubId\(db, me,/g) || []).length;
     const callsReports = (creports.match(/_cResolveClubId\(db, me,/g) || []).length;
     ok('4d · 2 llamadas en comms/panel.js', callsPanel === 2, 'encontradas: ' + callsPanel);
-    ok('4e · 3 llamadas en club-reports.js', callsReports === 3, 'encontradas: ' + callsReports);
+    ok('4e · 2 llamadas en club-reports.js', callsReports === 2, 'encontradas: ' + callsReports);
 
     console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'} (${pass} passed)`);
     process.exit(fail ? 1 : 0);
