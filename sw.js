@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v362: refactor monolitos (auditoria 2026-07-22), paso 5 -- extraido
+//        "Crear club/individual directo" (saShowCreateClub/
+//        saCreateClubConfirm/saShowCreateIndividual/
+//        saCreateIndividualConfirm) de superadmin.panel.js a su propio
+//        archivo (admin/superadmin/create-direct.js). Movimiento
+//        mecanico, sin cambios de comportamiento (test dedicado antes y
+//        despues). Bump para forzar recarga del JS.
 //  v361: refactor monolitos (auditoria 2026-07-22), paso 4 -- extraido
 //        "Borrado completo de club" (saDeleteClubComplete) de
 //        superadmin.panel.js a su propio archivo
@@ -533,8 +540,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v361';
-const CACHE_NAME = 'cronos-cache-v361';
+const VERSION = 'v362';
+const CACHE_NAME = 'cronos-cache-v362';
 
 const ASSETS = [
     './',
