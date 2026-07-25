@@ -1,5 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v365: refactor monolitos (auditoria 2026-07-22), paso 8 -- extraido
+//        "Individuales tab" (saIndividuals/saActivateIndividual/
+//        saAssignOrphanToEntity) de superadmin.panel.js a su propio
+//        archivo (admin/superadmin/individuals-tab.js). Movimiento
+//        mecanico, sin cambios de comportamiento (test dedicado antes y
+//        despues). Bump para forzar recarga del JS.
 //  v364: refactor monolitos (auditoria 2026-07-22), paso 7 -- extraido
 //        "Secretaria/invites" (saSecretary/saToggleMethod/
 //        saUpdateInviteTemplate/saResetInviteTemplate/saSendInvite/
@@ -557,8 +563,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v364';
-const CACHE_NAME = 'cronos-cache-v364';
+const VERSION = 'v365';
+const CACHE_NAME = 'cronos-cache-v365';
 
 const ASSETS = [
     './',
