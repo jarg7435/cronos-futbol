@@ -9,6 +9,7 @@ const root = path.join(__dirname, '..');
 const argFiles = process.argv.slice(2);
 const files = (argFiles.length ? argFiles : [
   'js/services/firestore-sync.js',
+  'js/coach/reports/report-engine.js',
   'js/coach/reports/club-reports.js',
   'js/coach/reports/director-config.js',
   'js/coach/reports/events-tab.js',

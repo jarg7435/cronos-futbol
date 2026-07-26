@@ -688,6 +688,7 @@ const ASSETS = [
     './js/admin/billing/payments.js',
     './js/admin/billing/ui.js',
     './js/coach/comms/panel.js',
+    './js/coach/reports/report-engine.js',
     './js/coach/reports/club-reports.js',
     './js/coach/reports/director-config.js',
     './js/coach/reports/events-tab.js',
