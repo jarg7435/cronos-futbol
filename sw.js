@@ -1,5 +1,15 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v370: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 2 de 6
+//        -- extraida "TAB: Convocatorias/Entrenamientos" (_sdLoadEvents, con
+//        sdViewEventDetail y sdDeleteNotif anidados dentro, 227 lineas) a
+//        coach/reports/events-tab.js. Primer corte INTERMEDIO del refactor.
+//        Movimiento mecanico, sin cambios de comportamiento (test dedicado en
+//        verde antes y despues). Fan-in externo cero; el orden de <script> es
+//        indiferente. OJO: esta pestaña BORRA de Firestore los avisos mas
+//        antiguos cuando pasan de 40, para todos los roles, de forma
+//        irreversible y con el error silenciado. club-reports.js queda en
+//        1828 lineas. Bump para forzar recarga.
 //  v369: refactor monolitos (auditoria 2026-07-22). Arranca el MONOLITO #2,
 //        js/coach/reports/club-reports.js (2249 lineas): paso 1 de 6 --
 //        extraida "TAB: Configuracion del Club" (_renderDirectorConfig/
@@ -604,8 +614,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v369';
-const CACHE_NAME = 'cronos-cache-v369';
+const VERSION = 'v370';
+const CACHE_NAME = 'cronos-cache-v370';
 
 const ASSETS = [
     './',
