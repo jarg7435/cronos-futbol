@@ -1,5 +1,13 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v366: refactor monolitos (auditoria 2026-07-22), paso 9 -- extraida
+//        "Pestana Clubes" (saClubs/saQuickApprove/setupClubsSyncListener)
+//        de superadmin.panel.js a su propio archivo
+//        (admin/superadmin/clubs-tab.js). Movimiento mecanico, bloques
+//        byte a byte identicos, sin cambios de comportamiento (test
+//        dedicado en verde antes y despues). OJO: clubs-tab.js debe
+//        cargarse DESPUES de app-init.js, que tiene un saClubs legacy
+//        duplicado. Bump para forzar recarga del JS.
 //  v365: refactor monolitos (auditoria 2026-07-22), paso 8 -- extraido
 //        "Individuales tab" (saIndividuals/saActivateIndividual/
 //        saAssignOrphanToEntity) de superadmin.panel.js a su propio
@@ -563,8 +571,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v365';
-const CACHE_NAME = 'cronos-cache-v365';
+const VERSION = 'v366';
+const CACHE_NAME = 'cronos-cache-v366';
 
 const ASSETS = [
     './',
