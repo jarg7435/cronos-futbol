@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v367: refactor monolitos (auditoria 2026-07-22), paso 10 -- extraida
+//        "Solicitudes/Aprobacion" (saCountPendingRequests/saRequests/
+//        saApproveRequest, 844 lineas) de superadmin.panel.js a su propio
+//        archivo (admin/superadmin/requests-tab.js). Movimiento mecanico,
+//        bloque byte a byte identico, sin cambios de comportamiento (test
+//        dedicado en verde antes y despues). OJO: requests-tab.js debe
+//        cargarse DESPUES de app-init.js (saRequests legacy) y ANTES de
+//        extras.js (que la reemplaza pero exige que exista). Bump para
+//        forzar recarga del JS.
 //  v366: refactor monolitos (auditoria 2026-07-22), paso 9 -- extraida
 //        "Pestana Clubes" (saClubs/saQuickApprove/setupClubsSyncListener)
 //        de superadmin.panel.js a su propio archivo
@@ -571,8 +580,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v366';
-const CACHE_NAME = 'cronos-cache-v366';
+const VERSION = 'v367';
+const CACHE_NAME = 'cronos-cache-v367';
 
 const ASSETS = [
     './',
