@@ -1,5 +1,16 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v371: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 3 de 6
+//        -- extraida "TAB: Partidos Terminados" (_renderFinishedMatchesTab,
+//        378 lineas) a coach/reports/finished-matches-tab.js. Movimiento
+//        mecanico, sin cambios de comportamiento (test dedicado en verde antes
+//        y despues). OJO: este archivo NO es autonomo, tiene un CICLO con
+//        app-init.js (su HTML llama a deleteFinishedMatchFromCloud y esa
+//        llama de vuelta al render). Ademas app-init.js:1086 mantiene un
+//        renderizador PARALELO del mismo listado (showFinishedMatches) y el
+//        borrado refresca los dos. La pestaña ESCRIBE en Firestore durante el
+//        render (enriquecimiento retroactivo de categoria).
+//        club-reports.js queda en 1454 lineas. Bump para forzar recarga.
 //  v370: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 2 de 6
 //        -- extraida "TAB: Convocatorias/Entrenamientos" (_sdLoadEvents, con
 //        sdViewEventDetail y sdDeleteNotif anidados dentro, 227 lineas) a
@@ -614,8 +625,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v370';
-const CACHE_NAME = 'cronos-cache-v370';
+const VERSION = 'v371';
+const CACHE_NAME = 'cronos-cache-v371';
 
 const ASSETS = [
     './',
