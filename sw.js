@@ -1,5 +1,16 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v373: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 5 de 6
+//        -- extraida "TAB: Informes de partido" (_sdLoadReports, con
+//        sdToggleReport/sdDeleteReport/_sdMatchData anidados, 474 lineas) a
+//        coach/reports/reports-tab.js. Movimiento mecanico, sin cambios de
+//        comportamiento (test dedicado en verde antes y despues).
+//        club-reports.js queda en 305 lineas, desde las 2249 del inicio.
+//        Este paso ademas actualiza tres tests que contaban ocurrencias sobre
+//        el monolito: los dos de SEC-C1 (call-sites de _cResolveClubId, ahora
+//        repartidos 1+1) y test_v269_fixes, que habria dado un FALSO VERDE al
+//        irse el codigo contado; ahora lee los dos archivos y sigue en rojo,
+//        senalando la regresion real del dismissKey. Bump para forzar recarga.
 //  v372: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 4 de 6
 //        -- extraido el MOTOR DE INFORMES VISUAL (_RP, 682 lineas, el bloque
 //        mas grande del refactor) a coach/reports/report-engine.js. Funcion
@@ -637,8 +648,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v372';
-const CACHE_NAME = 'cronos-cache-v372';
+const VERSION = 'v373';
+const CACHE_NAME = 'cronos-cache-v373';
 
 const ASSETS = [
     './',
