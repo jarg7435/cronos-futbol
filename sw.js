@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v375: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 1 de 6
+//        -- extraida "Notificacion de entrenamiento" (openTrainingNotification/
+//        _sendTrainingNotification, 213 lineas) a comms/training-notify.js.
+//        Movimiento mecanico, sin cambios de comportamiento (test dedicado en
+//        verde antes y despues). Es la seccion mas desacoplada del monolito:
+//        no usa _cFS() sino su propio import() dinamico. OJO: NO es autonoma,
+//        llama a openUnifiedCommsMenu(), que sigue en panel.js y se ira a
+//        bulk-messaging.js en el paso 5 (resuelve via window, da igual el
+//        orden). panel.js queda en 5181 lineas. Bump para forzar recarga.
 //  v374: refactor monolitos (auditoria 2026-07-22). Arranca el MONOLITO #3,
 //        js/coach/comms/panel.js (5879 lineas), con un PASO 0 de limpieza:
 //        eliminadas 487 lineas de CODIGO MUERTO por doble declaracion.
@@ -660,8 +669,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v374';
-const CACHE_NAME = 'cronos-cache-v374';
+const VERSION = 'v375';
+const CACHE_NAME = 'cronos-cache-v375';
 
 const ASSETS = [
     './',
