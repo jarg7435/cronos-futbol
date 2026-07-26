@@ -656,6 +656,7 @@ const ASSETS = [
     './js/admin/billing/ui.js',
     './js/coach/comms/panel.js',
     './js/coach/reports/club-reports.js',
+    './js/coach/reports/director-config.js',
     './js/coach/training/panel.js',
     './js/parent/panel.js',
     // SPRINT 4: Iconos locales para PWA
