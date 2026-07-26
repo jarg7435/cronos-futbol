@@ -1,5 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v369: refactor monolitos (auditoria 2026-07-22). Arranca el MONOLITO #2,
+//        js/coach/reports/club-reports.js (2249 lineas): paso 1 de 6 --
+//        extraida "TAB: Configuracion del Club" (_renderDirectorConfig/
+//        _dirSaveCategoryConfigs, 200 lineas) a
+//        coach/reports/director-config.js. Movimiento mecanico, sin cambios
+//        de comportamiento (test dedicado en verde antes y despues). Punto de
+//        entrada unico switchStaffTab('config'), fan-in externo cero, y el
+//        orden de <script> es indiferente porque todo se resuelve en tiempo
+//        de llamada. OJO: _dirSaveCategoryConfigs publica
+//        window._clubCategoryConfigs y window._clubTimerThresholds, que
+//        deciden el color del semaforo del cronometro en partido.
+//        club-reports.js queda en 2052 lineas. Bump para forzar recarga.
 //  v368: refactor monolitos (auditoria 2026-07-22), paso 11 y ULTIMO de
 //        superadmin.panel.js -- extraida "Mensajeria SA" (saEscapeHtml/
 //        saEscapeAttr/saMessages/saUpdateCount/saSendMessages/saOpenThread/
@@ -592,8 +604,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v368';
-const CACHE_NAME = 'cronos-cache-v368';
+const VERSION = 'v369';
+const CACHE_NAME = 'cronos-cache-v369';
 
 const ASSETS = [
     './',
