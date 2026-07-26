@@ -615,6 +615,7 @@ const ASSETS = [
     './js/admin/superadmin/individual-entity.js',
     './js/admin/superadmin/secretary.js',
     './js/admin/superadmin/individuals-tab.js',
+    './js/admin/superadmin/clubs-tab.js',
     './js/admin/superadmin/extras.js',
     './js/admin/superadmin/billing.js',
     './js/admin/shared/category-tree.js',
