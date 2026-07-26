@@ -1,5 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v368: refactor monolitos (auditoria 2026-07-22), paso 11 y ULTIMO de
+//        superadmin.panel.js -- extraida "Mensajeria SA" (saEscapeHtml/
+//        saEscapeAttr/saMessages/saUpdateCount/saSendMessages/saOpenThread/
+//        saSendReply/saDeleteSingleMessage/saDeleteAllMessages, 409 lineas)
+//        a su propio archivo (admin/superadmin/messaging.js). Movimiento
+//        mecanico, bloque byte a byte identico, sin cambios de
+//        comportamiento (test dedicado en verde antes y despues). Es la
+//        seccion mas aislada: fan-in y fan-out externos cero, asi que su
+//        orden de carga NO es critico. superadmin.panel.js queda en 548
+//        lineas (desde 4122). Este bump ademas publica el boton "Vaciar
+//        hilo" (saDeleteAllMessages) commiteado en 3ef5a49, aun no
+//        desplegado. Bump para forzar recarga del JS.
 //  v367: refactor monolitos (auditoria 2026-07-22), paso 10 -- extraida
 //        "Solicitudes/Aprobacion" (saCountPendingRequests/saRequests/
 //        saApproveRequest, 844 lineas) de superadmin.panel.js a su propio
@@ -580,8 +592,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v367';
-const CACHE_NAME = 'cronos-cache-v367';
+const VERSION = 'v368';
+const CACHE_NAME = 'cronos-cache-v368';
 
 const ASSETS = [
     './',

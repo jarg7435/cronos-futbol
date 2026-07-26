@@ -231,7 +231,10 @@ function walk(dir, out) {
         const NAMES = ['saMessages', 'saUpdateCount', 'saSendMessages', 'saOpenThread',
             'saSendReply', 'saDeleteSingleMessage', 'saDeleteAllMessages',
             'saEscapeHtml', 'saEscapeAttr'];
-        const skip = new Set([SOURCE, PANEL].map(p => path.resolve(p)));
+        // sw.js queda fuera: es manifiesto de precache + historial de versiones,
+        // y su changelog NOMBRA estas funciones en comentarios (falso positivo).
+        // Un service worker no tiene DOM, así que no puede invocarlas jamás.
+        const skip = new Set([SOURCE, PANEL, path.join(ROOT, 'sw.js')].map(p => path.resolve(p)));
         const offenders = [];
         for (const f of walk(ROOT, [])) {
             const abs = path.resolve(f);
