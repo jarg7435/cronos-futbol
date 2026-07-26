@@ -778,11 +778,19 @@ window.saOpenThread = async (threadId, otherName) => {
 
     body.innerHTML = `
     <div style="display:flex; flex-direction:column; height:500px; max-width:800px; margin:0 auto; background:rgba(255,255,255,0.02); border:1px solid var(--glass-border); border-radius:12px; padding:1.2rem;">
-        <div style="display:flex; align-items:center; gap:0.7rem; margin-bottom:1rem; flex-shrink:0;">
-            <button onclick="saMessages()" class="sa-btn" style="padding:0.35rem 0.7rem; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); border-radius:7px; color:#8b949e; font-size:0.74rem; cursor:pointer;">
-                ← Volver
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:0.7rem;">
+                <button onclick="saMessages()" class="sa-btn" style="padding:0.35rem 0.7rem; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); border-radius:7px; color:#8b949e; font-size:0.74rem; cursor:pointer;">
+                    ← Volver
+                </button>
+                <div style="font-weight:700; font-size:0.95rem; color:white;">💬 ${saEscapeHtml(otherName)}</div>
+            </div>
+            <button onclick="saDeleteAllMessages('${threadId}', '${saEscapeAttr(otherName)}')"
+                style="padding:0.25rem 0.55rem;background:rgba(255,88,88,0.1);
+                       border:1px solid rgba(255,88,88,0.3);border-radius:6px;
+                       color:#ff5858;font-size:0.7rem;cursor:pointer;font-weight:700;flex-shrink:0;">
+                🗑️ Vaciar
             </button>
-            <div style="font-weight:700; font-size:0.95rem; color:white;">💬 ${saEscapeHtml(otherName)}</div>
         </div>
         
         <div id="sa-thread-messages" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:0.5rem; padding-right:5px; margin-bottom:1rem;">
@@ -919,6 +927,24 @@ window.saDeleteSingleMessage = async (threadId, index, otherName) => {
         saOpenThread(threadId, otherName);
     } catch(err) {
         alert('Error al borrar: ' + err.message);
+    }
+};
+
+window.saDeleteAllMessages = async (threadId, otherName) => {
+    if (!confirm('¿Estás seguro de que deseas vaciar toda la conversación? Esta acción no se puede deshacer.')) return;
+    const fa = window._cronos_auth;
+    try {
+        const { doc, updateDoc } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const docRef = doc(fa.db, 'cronos_messages', threadId);
+        await updateDoc(docRef, {
+            messages: [],
+            lastMessage: '— Sin mensajes —',
+            lastMessageAt: new Date().toISOString()
+        });
+        saOpenThread(threadId, otherName);
+    } catch(err) {
+        alert('Error al vaciar: ' + err.message);
     }
 };
 
