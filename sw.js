@@ -1,5 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v374: refactor monolitos (auditoria 2026-07-22). Arranca el MONOLITO #3,
+//        js/coach/comms/panel.js (5879 lineas), con un PASO 0 de limpieza:
+//        eliminadas 487 lineas de CODIGO MUERTO por doble declaracion.
+//        _loadUnifiedContactList, _selectUnifiedContact,
+//        _loadUnifiedThreadMessages y _sendUnifiedMessage estaban declaradas
+//        DOS VECES en el mismo archivo; con declaraciones de funcion gana la
+//        ultima, asi que las cuatro primeras nunca se ejecutaban (y diferian
+//        de las vivas en 443, 9, 17 y 20 lineas). La muerta de
+//        _sendUnifiedMessage ni siquiera podia funcionar: usaba db y
+//        tabContext sin declararlos. Borrado PURO, sin una sola linea
+//        modificada, con test que lo demuestra en sandbox.
+//        panel.js queda en 5392 lineas. Bump para forzar recarga.
 //  v373: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 5 de 6
 //        -- extraida "TAB: Informes de partido" (_sdLoadReports, con
 //        sdToggleReport/sdDeleteReport/_sdMatchData anidados, 474 lineas) a
@@ -648,8 +660,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v373';
-const CACHE_NAME = 'cronos-cache-v373';
+const VERSION = 'v374';
+const CACHE_NAME = 'cronos-cache-v374';
 
 const ASSETS = [
     './',
