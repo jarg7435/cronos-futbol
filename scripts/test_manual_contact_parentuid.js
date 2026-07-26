@@ -43,11 +43,14 @@ const commsSrc = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'panel.
 console.log('── PARTE 1 · estructura del código real ──');
 ok('1a · [FIX] ya no queda `parentUid: c.uid || c.id` al sintetizar contactos manuales',
    !/parentUid:\s*c\.uid \|\| c\.id/.test(commsSrc));
-// Debe existir al menos una vez la forma corregida (aparece 2 veces: bloque
-// activo y bloque duplicado legacy del mismo archivo).
+// Debe existir al menos una vez la forma corregida.
+// (Antes se exigían 2: el bloque activo y un bloque duplicado legacy del mismo
+//  archivo. Ese duplicado era CÓDIGO MUERTO —cuatro funciones declaradas dos
+//  veces, ganando siempre la última— y se eliminó el 2026-07-27 en el paso 0
+//  de la descomposición de comms/panel.js. Ver scripts/test_dead_duplicates_removed.js.)
 const fixedOccurrences = (commsSrc.match(/parentUid:\s*c\.uid \|\| ''/g) || []).length;
 ok('1b · [FIX] sintetiza parentUid vacío cuando el contacto manual no trae un uid real',
-   fixedOccurrences >= 2, 'ocurrencias encontradas: ' + fixedOccurrences);
+   fixedOccurrences >= 1, 'ocurrencias encontradas: ' + fixedOccurrences);
 
 // ═══════════ PARTE 2 · simulación del algoritmo completo ═══════════
 console.log('\n── PARTE 2 · simulación con el caso real reportado (contacto manual "Bruno") ──');

@@ -32,9 +32,14 @@ const commsSrc = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'panel.
 console.log('── PARTE 1 · estructura del código real ──');
 ok('1a · [FIX] ya no queda `isMine = m.senderUid ? (m.senderUid === me.uid) :` sin comprobar senderRole',
    !/m\.senderUid \? \(m\.senderUid === me\.uid\) :/.test(commsSrc));
+// (Antes se exigían 2 ocurrencias: la del bloque activo y la del bloque
+//  duplicado legacy del mismo archivo. Ese duplicado era CÓDIGO MUERTO —cuatro
+//  funciones declaradas dos veces, ganando siempre la última— y se eliminó el
+//  2026-07-27 en el paso 0 de la descomposición de comms/panel.js.
+//  Ver scripts/test_dead_duplicates_removed.js.)
 const roleCheckOccurrences = (commsSrc.match(/m\.senderUid === me\.uid && \(!m\.senderRole \|\| m\.senderRole === window\._umState\.role\)/g) || []).length;
 ok('1b · [FIX] exige que senderRole coincida con el rol activo cuando hay senderUid',
-   roleCheckOccurrences >= 2, 'ocurrencias encontradas: ' + roleCheckOccurrences);
+   roleCheckOccurrences >= 1, 'ocurrencias encontradas: ' + roleCheckOccurrences);
 
 // ═══════════ PARTE 2 · simulación con el caso real (mismo uid, 2 roles) ═══════════
 console.log('\n── PARTE 2 · simulación: Entrenador y Padre son la misma cuenta ──');
