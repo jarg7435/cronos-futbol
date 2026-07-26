@@ -266,7 +266,14 @@ async function callSync(userDoc, data, ctxAuth) {
     console.log('\n── PARTE 4 · call-sites cliente (ya no escriben clubId directo) ──');
 
     const panel = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'panel.js'), 'utf8');
-    const creports = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'reports', 'club-reports.js'), 'utf8');
+    // El monolito club-reports.js se descompuso (auditoría 2026-07-22, paso 5
+    // de 6 el 2026-07-26): uno de los dos call-sites de _cResolveClubId se
+    // quedó en club-reports.js (openStaffDashboard) y el otro se fue a
+    // reports-tab.js (_sdLoadReports). Se leen LOS DOS y se cuentan juntos.
+    const creports = [
+        ['js', 'coach', 'reports', 'club-reports.js'],
+        ['js', 'coach', 'reports', 'reports-tab.js'],
+    ].map(p => fs.readFileSync(path.join(ROOT, ...p), 'utf8')).join('\n');
 
     // 4a. _cResolveClubId ya NO hace updateDoc; usa la CF syncRootClubId.
     const resolveFn = panel.slice(panel.indexOf('async function _cResolveClubId'),

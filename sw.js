@@ -705,6 +705,7 @@ const ASSETS = [
     './js/coach/reports/director-config.js',
     './js/coach/reports/events-tab.js',
     './js/coach/reports/finished-matches-tab.js',
+    './js/coach/reports/reports-tab.js',
     './js/coach/training/panel.js',
     './js/parent/panel.js',
     // SPRINT 4: Iconos locales para PWA

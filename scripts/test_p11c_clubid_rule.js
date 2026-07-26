@@ -16,7 +16,15 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const panel    = fs.readFileSync(path.join(ROOT, 'js/coach/comms/panel.js'), 'utf8');
-const creports = fs.readFileSync(path.join(ROOT, 'js/coach/reports/club-reports.js'), 'utf8');
+// El monolito club-reports.js se descompuso (auditoría 2026-07-22, paso 5 de 6
+// el 2026-07-26): uno de los dos call-sites de _cResolveClubId se quedó en
+// club-reports.js (openStaffDashboard) y el otro se fue a reports-tab.js
+// (_sdLoadReports). Se leen LOS DOS y se cuentan juntos, para que el recuento
+// siga describiendo la misma superficie de código que antes del refactor.
+const creports = [
+  'js/coach/reports/club-reports.js',
+  'js/coach/reports/reports-tab.js',
+].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 
 let pass = true;
 const assert = (c, m) => { if (!c) { pass = false; console.error('FAIL:', m); } else console.log('ok:', m); };

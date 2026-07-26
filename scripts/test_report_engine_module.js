@@ -153,13 +153,27 @@ function walk(dir, out) {
             const txt = fs.readFileSync(f, 'utf8');
             const rel = path.relative(ROOT, f).replace(/\\/g, '/');
             if (/(^|\n)\s*(const|let|var)\s+_RP\s*=/.test(txt)) decls.push(rel);
-            if (!skip.has(abs) && /\b_RP\b/.test(txt)) users.push(rel);
+            // Sólo cuenta como CONSUMIDOR quien lo nombra en código. Los
+            // comentarios-puntero que dejó el refactor (p. ej. el de
+            // club-reports.js apuntando a report-engine.js) mencionan _RP.build()
+            // y no deben contar. OJO: .trim() antes de recortar el comentario,
+            // porque los ficheros son CRLF y en una regex el punto no consume
+            // el retorno de carro.
+            const code = txt.split('\n')
+                .map(l => l.trim().replace(/\/\/.*$/, ''))
+                .join('\n');
+            if (!skip.has(abs) && /\b_RP\b/.test(code)) users.push(rel);
         }
         // ⚠️ EL ASSERT CRÍTICO: dos declaraciones = SyntaxError que aborta el script.
         ok('1g · ⚠️ existe EXACTAMENTE UNA declaración de _RP en todo el repo',
             decls.length === 1, decls);
+        // Tras el paso 5 el consumidor de club-reports.js (_sdLoadReports) se
+        // mudó a reports-tab.js; en club-reports.js sólo queda el puntero.
+        const consumer = fs.existsSync(path.join(ROOT, 'js', 'coach', 'reports', 'reports-tab.js'))
+            ? 'js/coach/reports/reports-tab.js'
+            : 'js/coach/reports/club-reports.js';
         const expected = IS_EXTRACTED
-            ? ['js/coach/comms/panel.js', 'js/coach/reports/club-reports.js']
+            ? ['js/coach/comms/panel.js', consumer]
             : ['js/coach/comms/panel.js'];
         ok('1e · los consumidores son los esperados',
             JSON.stringify(users.sort()) === JSON.stringify(expected.sort()), users);

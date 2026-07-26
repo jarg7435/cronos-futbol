@@ -7,7 +7,16 @@ const ROOT = path.join(__dirname, '..');
 // FIX #1 se movio de js/services/firestore-sync.js a js/match/live/sync.js
 // en la unificacion de live-sync (commit 4db5527). Apuntamos a la ubicacion real.
 const fss = fs.readFileSync(path.join(ROOT, 'js', 'match', 'live', 'sync.js'), 'utf8');
-const cr  = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'reports', 'club-reports.js'), 'utf8');
+// ⚠️ IMPORTANTE: el monolito club-reports.js se descompuso (auditoría
+// 2026-07-22, paso 5 de 6 el 2026-07-26) y el dismissKey del FIX #2 se fue a
+// reports-tab.js. Si este test siguiera leyendo SOLO club-reports.js, su
+// contador de me.currentRole bajaría a 0 y la aserción #2 se volvería VERDE
+// sin que nada se hubiera arreglado: un falso verde que ocultaría la
+// regresión. Se leen LOS DOS archivos para que siga describiendo la realidad.
+const cr  = [
+  ['js', 'coach', 'reports', 'club-reports.js'],
+  ['js', 'coach', 'reports', 'reports-tab.js'],
+].map(p => fs.readFileSync(path.join(ROOT, ...p), 'utf8')).join('\n');
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { (cond ? pass++ : fail++); console.log((cond ? 'PASS ' : 'FAIL ') + name); };
