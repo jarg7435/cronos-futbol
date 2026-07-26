@@ -1,5 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v372: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 4 de 6
+//        -- extraido el MOTOR DE INFORMES VISUAL (_RP, 682 lineas, el bloque
+//        mas grande del refactor) a coach/reports/report-engine.js. Funcion
+//        PURA: sin window, document, console ni try/catch; el test la carga en
+//        un sandbox desnudo para demostrarlo. Movimiento mecanico, sin cambios
+//        de comportamiento. OJO: report-engine.js va ANTES de club-reports.js
+//        en index.html (al contrario que los tres modulos de los pasos 1-3),
+//        porque _RP es un `const` en el ambito lexico global y la guarda
+//        `typeof _RP` de comms/panel.js es ilusoria en zona muerta temporal.
+//        NO declarar `const _RP` en otro archivo: seria SyntaxError y abortaria
+//        el script entero. club-reports.js queda en 775 lineas.
+//        Bump para forzar recarga.
 //  v371: refactor monolitos (auditoria 2026-07-22), monolito #2, paso 3 de 6
 //        -- extraida "TAB: Partidos Terminados" (_renderFinishedMatchesTab,
 //        378 lineas) a coach/reports/finished-matches-tab.js. Movimiento
@@ -625,8 +637,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v371';
-const CACHE_NAME = 'cronos-cache-v371';
+const VERSION = 'v372';
+const CACHE_NAME = 'cronos-cache-v372';
 
 const ASSETS = [
     './',
