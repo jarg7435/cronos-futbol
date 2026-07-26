@@ -11,6 +11,7 @@ const files = (argFiles.length ? argFiles : [
   'js/services/firestore-sync.js',
   'js/coach/reports/club-reports.js',
   'js/coach/reports/director-config.js',
+  'js/coach/reports/events-tab.js',
 ]).map(f => path.isAbsolute(f) ? f : path.join(root, f));
 let anyErr = false;
 for (const f of files) {
