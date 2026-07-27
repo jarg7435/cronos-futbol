@@ -1,5 +1,29 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v384: DOS correcciones de la auditoria 2026-07-22, ambas de datos que ve
+//        el usuario final.
+//        1) DURACION REGLAMENTARIA EN LOS INFORMES (report-engine.js). La
+//        auditoria decia que prebenjamin salia a 50 min en vez de 40; al
+//        medirlo contra el cronometro resulto que la tabla estaba mal en 5 de
+//        las 7 categorias (benjamin -20, prebenjamin/alevin/infantil -10,
+//        cadete +10) y que "arreglar" prebenjamin a 40 lo habria dejado a -20.
+//        Duracion oficial = 2 x los minutos por tiempo: prebenjamin 60,
+//        benjamin 70, alevin 70, infantil 80, cadete 80, juvenil 90,
+//        regional 90. El margen del cronometro (+10 F7 / +15 F11) es
+//        prolongacion y proteccion ante cortes, va aparte como +N'.
+//        OJO: window.matchDuration no se asigna en ningun sitio, asi que esa
+//        tabla se usa SIEMPRE; y no decide solo la escala del Gantt, sino los
+//        minutos atribuidos a cada jugador. Los informes ya existentes pasan a
+//        mostrar la duracion correcta (el Gantt se regenera al abrirlos; no se
+//        reescribe nada en Firestore).
+//        2) VOLCADO DE AUDITORIA AL TERMINAR EL PARTIDO (sprint3-init.js,
+//        hallazgo #11). Se perdia EN SILENCIO en conexiones lentas: el
+//        envoltorio corria dentro de un setInterval y capturaba un no-op si
+//        active-match.js aun no habia bajado; despues ese script sobrescribia
+//        window.endMatch y tiraba el envoltorio. Ahora espera a que exista, con
+//        guarda de idempotencia. Se elimina ademas el envoltorio fantasma de
+//        window.startMatch, funcion que no existe en el proyecto.
+//        Bump para forzar recarga.
 //  v383: FIX del boton "Rol" del panel SuperAdmin, que expulsaba al usuario a
 //        la PANTALLA DE LOGIN en vez de abrir el selector de roles. La rama
 //        que abria el selector nunca se ejecutaba y el `else` borraba la
@@ -800,8 +824,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v383';
-const CACHE_NAME = 'cronos-cache-v383';
+const VERSION = 'v384';
+const CACHE_NAME = 'cronos-cache-v384';
 
 const ASSETS = [
     './',
