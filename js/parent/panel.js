@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CHRONOS FÚTBOL — Panel de Padres/Madres v3
+//  CRONOS FÚTBOL — Panel de Padres/Madres v3
 //  3 pestañas: 🔴 En Vivo · 📬 Mensajes · 👤 Mi Jugador
 // ════════════════════════════════════════════════════════════════════
 
@@ -229,16 +229,13 @@ async function openParentPanel() {
             const { collection, getDocs, query, where } = await import(
                 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-            // FIX: cada usuario solo ve las notificaciones dirigidas a él (parentUid),
-            // no todas las del club. Antes se leía por clubId y cualquier envío
-            // llegaba a todos los padres y a todo el staff del club.
             let snap;
-                    if (me && me.uid) {
-            // Campo único: usa el índice automático de 'parentId' (NO exige
-            // índice compuesto). Cada padre ve solo lo dirigido a él.
-            snap = await getDocs(query(collection(fa.db, 'cronos_notifications'), where('parentUid', '==', me.uid)));
-        } else {
-
+            if (clubId) {
+                snap = await getDocs(query(
+                    collection(fa.db,'cronos_notifications'),
+                    where('clubId','==',clubId)
+                ));
+            } else {
                 snap = await getDocs(collection(fa.db,'cronos_notifications'));
             }
 
@@ -326,19 +323,35 @@ async function openParentPanel() {
                             color:#7d8590;font-style:italic;">💬 ${typeof escapeHtml==='function'?escapeHtml(n.extra):n.extra}</div>` : ''}
                     `;
                 } else if (n.type === 'planificacion_semanal') {
-                    // Render UNIFICADO con coordinador/director via helper
-                    // compartido (_cronosRenderTrainingWeekCards en whatsapp-email.js):
-                    // tarjetas HORIZONTALES con scroll lateral, una por día.
                     const d = new Date(n.weekStartDate + 'T12:00:00');
-                    const weekStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long', year:'numeric' });
-                    const weekCards = (typeof _cronosRenderTrainingWeekCards === 'function')
-                        ? _cronosRenderTrainingWeekCards(n.days)
-                        : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem;text-align:center;">No hay días en esta planificación.</div>';
+                    const weekStr = d.toLocaleDateString('es-ES', { day:'numeric', month:'long' });
                     inner = `
-                        <div style="font-size:1rem;font-weight:800;margin-bottom:0.3rem;color:#f0883e;">
-                            📅 Semana del ${weekStr}
+                        <div style="font-size:0.85rem;font-weight:700;margin-bottom:0.6rem;color:#58a6ff;">
+                            🗓️ Semana del ${weekStr}
                         </div>
-                        ${weekCards}
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%;font-size:0.78rem;border-collapse:collapse;border:1px solid rgba(255,255,255,0.08);">
+                                <thead>
+                                    <tr style="background:rgba(88,166,255,0.08);color:#7d8590;">
+                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">DÍA</th>
+                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">HORA</th>
+                                        <th style="padding:5px;border:1px solid rgba(255,255,255,0.08);text-align:left;">NOTA</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${n.days.map(day => `
+                                        <tr>
+                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);font-weight:700;color:var(--primary);">${typeof escapeHtml==='function'?escapeHtml(day.day):day.day}</td>
+                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);">${typeof escapeHtml==='function'?escapeHtml(day.time||'—'):day.time||'—'}</td>
+                                            <td style="padding:5px;border:1px solid rgba(255,255,255,0.05);color:#7d8590;">
+                                                ${typeof escapeHtml==='function'?escapeHtml(day.note||(day.time?'':'Descanso')):day.note||(day.time?'':'Descanso')}
+                                                ${day.venue ? `<br><small>📍 ${typeof escapeHtml==='function'?escapeHtml(day.venue):day.venue}</small>` : ''}
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
                     `;
                 } else {
                     inner = `
@@ -536,8 +549,8 @@ async function openParentPanel() {
                         const _roleCat = (Array.isArray(myData.allRoles)
                             ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
                             : {});
-                        const pCat = _roleCat.category || _roleCat.categoryLabel
-                            || myData.category || myData.categoryLabel
+                        const pCat = myData.category || myData.categoryLabel
+                            || _roleCat.category || _roleCat.categoryLabel
                             || (me && me.category) || '';
                         const linkId = `${clubId}_${pNum}`;
                         const existingLink = await getDoc(doc(fa.db, 'cronos_player_links', linkId));
@@ -1229,252 +1242,41 @@ async function openParentPanel() {
 }
 
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // TAB 4 · CHAT — Mensajería interna padre ↔ entrenador
 // ══════════════════════════════════════════════════════════════
 window.ppChat = async () => {
-    const body = document.getElementById('pp-body');
-    const me = window._cronosCurrentUser;
-    if (!me) return;
-
-    const fa = window._cronos_auth;
-    try {
-        const { collection, getDocs, query, where, doc, getDoc } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-
-        // Inyectar estilos responsivos del chat padre
-        const styleId = 'pp-messages-split-css';
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.textContent = `
-                .pp-split-container {
-                    display: flex;
-                    flex: 1;
-                    overflow: hidden;
-                    gap: 1.2rem;
-                    height: 100%;
-                }
-                @media (max-width: 767px) {
-                    .pp-split-container {
-                        flex-direction: column !important;
-                    }
-                    .pp-split-container > div:first-child {
-                        width: 100% !important;
-                        border-right: none !important;
-                        border-bottom: 1px solid var(--glass-border) !important;
-                        padding-right: 0 !important;
-                        padding-bottom: 1rem !important;
-                        height: 180px !important;
-                    }
-                    #pp-chat-thread-pane {
-                        height: 380px !important;
-                    }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-
-        // Obtener datos del perfil del padre para saber categoría, subcategoría y clubId
-        const myDoc = await getDoc(doc(fa.db, 'users', me.uid));
-        const myData = myDoc.exists() ? myDoc.data() : {};
-        const _roleParent = (Array.isArray(myData.allRoles)
-            ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
-            : {});
-        const pCat = _roleParent.category || myData.category || me.category || '';
-        const pSub = _roleParent.subcategory || myData.subcategory || me.subcategory || '';
-        const clubId = myData.clubId || _roleParent.clubId || me.clubId || '';
-
-        // Buscar hilos donde el padre es participante
-        const threadsSnap = await getDocs(query(
-            collection(fa.db, 'cronos_messages'),
-            where('parentUid', '==', me.uid)
-        ));
-
-        const threads = [];
-        threadsSnap.forEach(d => {
-            const data = d.data();
-            if (data.recipientType === 'staff') return; // Ignorar hilos de staff cruzados por error previo
-            threads.push({ _id: d.id, ...data });
-        });
-
-        // Intentar buscar al entrenador de la misma categoría y subcategoría para iniciar conversación si no existe hilo
-        let coach = null;
-        if (clubId && pCat) {
-            const coachesSnap = await getDocs(query(
-                collection(fa.db, 'users'),
-                where('clubId', '==', clubId)
-            ));
-            coachesSnap.forEach(d => {
-                const data = d.data();
-                const roles = [data.role, ...(data.allRoles || []).map(r => r.role)];
-                const isCoach = roles.some(r => ['user', 'coach', 'entrenador'].includes(r));
-                
-                let catMatch = false;
-                if (data.category && (data.category.toLowerCase() === pCat.toLowerCase())) {
-                    if (!pSub || (data.subcategory && data.subcategory.toLowerCase() === pSub.toLowerCase())) {
-                        catMatch = true;
-                    }
-                }
-                if (!catMatch && Array.isArray(data.allRoles)) {
-                    data.allRoles.forEach(r => {
-                        if (['user', 'coach', 'entrenador'].includes(r.role) && 
-                            r.category && r.category.toLowerCase() === pCat.toLowerCase()) {
-                            if (!pSub || (r.subcategory && r.subcategory.toLowerCase() === pSub.toLowerCase())) {
-                                catMatch = true;
-                            }
-                        }
-                    });
-                }
-                
-                if (isCoach && catMatch) {
-                    coach = { uid: d.id, ...data };
-                }
-            });
-        }
-
-        body.innerHTML = `
-        <div class="pp-split-container" style="display:flex;height:100%;gap:1rem;">
-            <!-- Panel izquierdo: Checklist del Entrenador -->
-            <div style="width:290px;display:flex;flex-direction:column;border-right:1px solid var(--glass-border);padding-right:1rem;height:100%;overflow-y:auto;box-sizing:border-box;flex-shrink:0;">
-                <div style="font-weight:700;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:0.7rem;">
-                    📬 Tu Entrenador
-                </div>
-                <div id="pp-coach-list-pane" style="flex:1;">
-                    <!-- Se cargará la lista de entrenadores aquí -->
-                </div>
-                <div style="margin-top:auto;font-size:0.72rem;color:var(--text-muted);background:rgba(255,255,255,0.02);padding:0.6rem;border-radius:6px;border:1px solid var(--glass-border);">
-                    💡 <strong>Nota:</strong> Tu canal de comunicación es directo con el entrenador asignado a la categoría <strong>${escapeHtml(pCat)} ${escapeHtml(pSub)}</strong>.
-                </div>
-            </div>
-
-            <!-- Panel derecho: Historial del Chat -->
-            <div id="pp-chat-thread-pane" style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,255,255,0.015);border-radius:12px;padding:1rem;box-sizing:border-box;height:100%;overflow:hidden;">
-                <span style="font-size:2.8rem;margin-bottom:0.5rem;">💬</span>
-                <span style="color:var(--text-muted);font-size:0.82rem;text-align:center;">Selecciona un entrenador para ver el historial de chat con fecha y hora</span>
-            </div>
-        </div>`;
-
-        const listPane = document.getElementById('pp-coach-list-pane');
-        if (!threads.length && !coach) {
-            listPane.innerHTML = `<div style="color:var(--text-muted);font-size:0.78rem;padding:1rem;text-align:center;">⚠️ Sin entrenador asignado en tu categoría.</div>`;
-            return;
-        }
-
-        let coachCardHtml = '';
-        let activeThreadId = null;
-        let activeCoachLabel = '';
-
-        if (coach) {
-            const existingThread = threads.find(t => t.coachUid === coach.uid);
-            const targetThreadId = existingThread ? existingThread._id : `${coach.uid}_${me.uid}`;
-            const coachName = coach.displayName || coach.email || 'Entrenador';
-            
-            activeThreadId = targetThreadId;
-            activeCoachLabel = coachName;
-
-            coachCardHtml += `
-            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
-                <input type="checkbox" checked disabled style="width:18px;height:18px;accent-color:var(--primary);cursor:not-allowed;">
-                <div onclick="ppOpenChatThread('${targetThreadId}','${typeof escapeAttr==='function'?escapeAttr(coachName):coachName}')"
-                     style="flex:1;display:flex;align-items:center;gap:0.8rem;
-                            background:var(--glass);border:1px solid var(--glass-border);
-                            border-radius:10px;padding:0.75rem 0.85rem;cursor:pointer;transition:all 0.15s;">
-                    <div style="width:36px;height:36px;border-radius:50%;
-                                background:rgba(63,185,80,0.12);display:flex;
-                                align-items:center;justify-content:center;font-size:1.1rem;">
-                        ⚽
-                    </div>
-                    <div style="flex:1;min-width:0;">
-                        <div style="font-weight:700;font-size:0.82rem;color:white;">
-                            ${escapeHtml(coachName)}
-                        </div>
-                        <div style="font-size:0.68rem;color:var(--text-muted);">
-                            Entrenador asignado
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-        }
-
-        threads.forEach(t => {
-            if (coach && t.coachUid === coach.uid) return;
-            const coachLabel = t.coachEmail || 'Entrenador';
-            if (!activeThreadId) {
-                activeThreadId = t._id;
-                activeCoachLabel = coachLabel;
-            }
-            coachCardHtml += `
-            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
-                <input type="checkbox" checked disabled style="width:18px;height:18px;accent-color:var(--primary);cursor:not-allowed;">
-                <div onclick="ppOpenChatThread('${t._id}','${typeof escapeAttr==='function'?escapeAttr(coachLabel):coachLabel}')"
-                     style="flex:1;display:flex;align-items:center;gap:0.8rem;
-                            background:var(--glass);border:1px solid var(--glass-border);
-                            border-radius:10px;padding:0.75rem 0.85rem;cursor:pointer;transition:all 0.15s;">
-                    <div style="width:36px;height:36px;border-radius:50%;
-                                background:rgba(63,185,80,0.12);display:flex;
-                                align-items:center;justify-content:center;font-size:1.1rem;">
-                        ⚽
-                    </div>
-                    <div style="flex:1;min-width:0;">
-                        <div style="font-weight:700;font-size:0.82rem;color:white;">
-                            ${escapeHtml(coachLabel)}
-                        </div>
-                        <div style="font-size:0.68rem;color:var(--text-muted);">
-                            Histórico
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-        });
-
-        listPane.innerHTML = coachCardHtml;
-
-        if (activeThreadId) {
-            setTimeout(() => {
-                ppOpenChatThread(activeThreadId, activeCoachLabel);
-            }, 150);
-        }
-
-    } catch (e) {
-        body.innerHTML = `<div class="pp-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
+    if (typeof openParentMessaging === 'function') {
+        await openParentMessaging('coach', 'pp-body');
     }
-};;
+};
 
 // ── Abrir hilo de chat (vista padre) ──
 window.ppOpenChatThread = async (threadId, coachLabel) => {
     const me = window._cronosCurrentUser;
     if (!me) return;
     const fa = window._cronos_auth;
-    const pane = document.getElementById('pp-chat-thread-pane');
-    const target = pane || document.getElementById('pp-body');
-    const isPane = !!pane;
+    const body = document.getElementById('pp-body');
 
-    target.innerHTML = `
-    <div style="display:flex;flex-direction:column;height:100%;width:100%;box-sizing:border-box;justify-content:space-between;background:${isPane ? 'transparent' : 'var(--glass)'};padding:${isPane ? '0' : '1rem'};border-radius:${isPane ? '0' : '10px'};">
+    body.innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100%;">
         <!-- Header del chat -->
-        <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;flex-shrink:0;border-bottom:1px solid var(--glass-border);padding-bottom:0.5rem;">
-            ${!isPane ? `
+        <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;flex-shrink:0;">
             <button onclick="ppChat()" class="pp-tab" style="padding:0.3rem 0.7rem;font-size:0.78rem;">
                 ← Volver
-            </button>` : ''}
+            </button>
             <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:0.88rem;color:white;">
+                <div style="font-weight:700;font-size:0.9rem;">
                     ⚽ ${typeof escapeHtml==='function'?escapeHtml(coachLabel):coachLabel}
                 </div>
-                <div style="font-size:0.68rem;color:var(--text-muted);">Entrenador asignado</div>
+                <div style="font-size:0.7rem;color:#7d8590;">Entrenador</div>
             </div>
-            <button onclick="ppDeleteAllMessages('${threadId}','${typeof escapeAttr==='function'?escapeAttr(coachLabel):coachLabel}')"
-                style="padding:0.25rem 0.55rem;background:rgba(255,88,88,0.1);
-                       border:1px solid rgba(255,88,88,0.3);border-radius:6px;
-                       color:#ff5858;font-size:0.7rem;cursor:pointer;font-weight:700;flex-shrink:0;">
-                🗑️ Vaciar
-            </button>
         </div>
 
         <!-- Mensajes -->
         <div id="pp-chat-messages"
              style="flex:1;overflow-y:auto;padding:0.4rem 0;
-                    display:flex;flex-direction:column;gap:0.5rem;min-height:220px;max-height:380px;padding-right:4px;">
+                    display:flex;flex-direction:column;gap:0.5rem;min-height:200px;">
             <p style="color:#7d8590;text-align:center;padding:2rem;">⏳ Cargando mensajes…</p>
         </div>
 
@@ -1487,16 +1289,16 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
                     rows="2"
                     style="flex:1;padding:0.6rem 0.8rem;background:rgba(255,255,255,0.06);
                            border:1px solid var(--glass-border);border-radius:8px;
-                           color:white;font-size:0.85rem;resize:none;box-sizing:border-box;outline:none;"
+                           color:white;font-size:0.88rem;resize:none;box-sizing:border-box;"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){
                         event.preventDefault();
                         ppSendChatMessage('${threadId}');
                     }"></textarea>
                 <button onclick="ppSendChatMessage('${threadId}')"
-                    style="padding:0.55rem 0.9rem;background:rgba(88,166,255,0.2);
+                    style="padding:0.6rem 1rem;background:rgba(88,166,255,0.2);
                            border:1px solid rgba(88,166,255,0.4);border-radius:8px;
-                           color:#58a6ff;font-weight:700;cursor:pointer;flex-shrink:0;font-size:0.78rem;">
-                    Enviar
+                           color:#58a6ff;font-weight:700;cursor:pointer;flex-shrink:0;">
+                    Enviar ›
                 </button>
             </div>
         </div>
@@ -1518,7 +1320,7 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
         } else {
             const messages = snap.data().messages || [];
             if (container) {
-                container.innerHTML = messages.map((m, idx) => {
+                container.innerHTML = messages.map(m => {
                     const isMine = m.sender === 'parent';
                     const time = m.timestamp
                         ? new Date(m.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
@@ -1536,17 +1338,8 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
                             <div style="font-size:0.84rem;line-height:1.55;white-space:pre-wrap;">
                                 ${(typeof escapeHtml==='function'?escapeHtml(m.text):m.text).replace(/\*(.*?)\*/g, '<strong>$1</strong>')}
                             </div>
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.25rem;gap:1.5rem;">
-                                <span onclick="event.stopPropagation(); ppDeleteSingleMessage('${threadId}', ${idx})"
-                                      title="Borrar mensaje"
-                                      style="font-size:0.7rem;color:#ff5858;cursor:pointer;opacity:0.6;transition:opacity 0.2s;"
-                                      onmouseover="this.style.opacity='1'"
-                                      onmouseout="this.style.opacity='0.6'">
-                                    🗑️ Borrar
-                                </span>
-                                <div style="font-size:0.64rem;color:#7d8590;text-align:right;">
-                                    ${date} ${time}
-                                </div>
+                            <div style="font-size:0.64rem;color:#7d8590;text-align:right;margin-top:0.25rem;">
+                                ${date} ${time}
                             </div>
                         </div>
                     </div>`;
@@ -1599,27 +1392,14 @@ window.ppSendChatMessage = async (threadId) => {
                 unreadByCoach: (snap.data().unreadByCoach || 0) + 1,
             });
         } else {
-            // Crear nuevo hilo
-            const coachUid = threadId.split('_')[0];
-            
-            // Buscar datos del club y categoría
-            const myDoc = await getDoc(doc(fa.db, 'users', me.uid));
-            const myData = myDoc.exists() ? myDoc.data() : {};
-            const _roleParent = (Array.isArray(myData.allRoles)
-                ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
-                : {});
-            
+            // Crear nuevo hilo (caso raro)
             await setDoc(doc(fa.db, 'cronos_messages', threadId), {
                 threadId,
-                coachUid: coachUid,
+                coachUid: threadId.split('_')[0],
                 coachEmail: '',
                 parentUid: me.uid,
                 parentEmail: me.email,
                 recipientType: 'parent',
-                clubId: myData.clubId || _roleParent.clubId || me.clubId || null,
-                category: _roleParent.category || myData.category || me.category || null,
-                subcategory: _roleParent.subcategory || myData.subcategory || me.subcategory || null,
-                participants: [me.uid, coachUid],
                 messages: [newMsg],
                 lastMessage: preview,
                 lastMessageAt: newMsg.timestamp,
@@ -1649,7 +1429,7 @@ function openWeeklyPlanModal() {
     // Obtener el lunes de la semana actual
     const dayOfWeek = today.getDay(); // 0: domingo, 1: lunes...
     const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    const startOfWeek = _cronosLocalDateKey(new Date(today.setDate(diff)));
+    const startOfWeek = new Date(today.setDate(diff)).toISOString().substring(0,10);
 
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -1761,7 +1541,7 @@ function openWeeklyPlanModal() {
                 mon.setHours(0,0,0,0);
                 return mon;
             })();
-        const weekKey = _cronosLocalDateKey(getMon);
+        const weekKey = getMon.toISOString().substring(0, 10);
         // Actualizar el date input para reflejar la semana activa en el panel
         const dateInput = document.getElementById('wp-start-date');
         if (dateInput) dateInput.value = weekKey;
@@ -1772,7 +1552,7 @@ function openWeeklyPlanModal() {
         document.querySelectorAll('.wp-day-row').forEach((row) => {
             const idx = parseInt(row.dataset.idx || '0');
             const ms = getMon.getTime() + idx * 86400000;
-            const dateKey = _cronosLocalDateKey(new Date(ms));
+            const dateKey = new Date(ms).toISOString().substring(0, 10);
             const dd = weekData[dateKey] || {};
             if (dd.hora)  row.querySelector('.wp-time').value = dd.hora;
             if (dd.lugar) row.querySelector('.wp-venue').value = dd.lugar;
@@ -1879,7 +1659,7 @@ function _buildWeeklyPlanText() {
         }
     });
 
-    text += `⚽ _Enviado desde Chronos Fútbol_`;
+    text += `⚽ _Enviado desde Cronos Fútbol_`;
     return text;
 }
 
@@ -1962,16 +1742,12 @@ window.ppNotifsByType = async function(type) {
 
         // Buscar por parentUid (enviadas personalmente) + clubId como fallback
         const clubId = me.clubId || me.individualId || '';
-        // FIX: leer solo lo dirigido a este usuario (parentUid). Sin el fallback de
-        // clubId, que volvía broadcast cualquier envío del club a todo el staff/padres.
-        // Campo único 'parentUid' (índice automático). El filtro por 'type' se
-        // hace en cliente para no precisar un índice compuesto (parentUid,type).
-           // Campo único 'parentId' (índice automático). El filtro por 'type' se
-    // hace en cliente para no precisar un índice compuesto (parentId,type).
-    const queries = [
-        getDocs(query(collection(fa.db, 'cronos_notifications'), where('parentUid','==',me.uid))).catch(()=>null),
-    ];
-
+        const queries = [
+            getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==',me.uid), where('type','==',type))).catch(()=>null),
+        ];
+        if (clubId) {
+            queries.push(getDocs(query(collection(fa.db,'cronos_notifications'), where('clubId','==',clubId), where('type','==',type))).catch(()=>null));
+        }
         const snaps = await Promise.all(queries);
         const seen  = new Set();
         let items   = [];
@@ -1981,7 +1757,6 @@ window.ppNotifsByType = async function(type) {
                 if (seen.has(d.id)) return;
                 seen.add(d.id);
                 const dat = d.data();
-                if (dat.type !== type) return;   // filtro por tipo en cliente
                 // FIX: omitir si este usuario ya lo descartó individualmente
                 if (Array.isArray(dat.dismissedBy) && dat.dismissedBy.includes(me.uid)) return;
                 items.push({ _id: d.id, ...dat });
@@ -2067,22 +1842,28 @@ window.ppNotifsByType = async function(type) {
                 ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
                 : '';
 
-            // Build weekly schedule HTML for planificacion_semanal via helper
-            // compartido (_cronosRenderTrainingWeekCards en whatsapp-email.js):
-            // tarjetas HORIZONTALES con scroll lateral, una por día. Idéntico al
-            // modal de coordinador/director para no desincronizarse.
-            const weekPlanHTML = isPlan && (typeof _cronosRenderTrainingWeekCards === 'function')
-                ? _cronosRenderTrainingWeekCards(d.days)
+            // Build weekly schedule HTML for planificacion_semanal
+            const weekPlanHTML = isPlan && Array.isArray(d.days)
+                ? d.days.map(dy => {
+                    const hasData = dy.time || dy.venue || dy.note;
+                    return '<div style="display:flex;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+                        + '<div style="font-weight:700;color:#f0883e;min-width:80px;font-size:0.85rem;">' + (typeof escapeHtml==='function'?escapeHtml(dy.day):dy.day) + '</div>'
+                        + '<div style="font-size:0.82rem;color:' + (hasData?'var(--text)':'#555') + ';">'
+                        + (hasData
+                            ? [dy.time?'🕐 '+dy.time:'', dy.venue?'📍 '+(typeof escapeHtml==='function'?escapeHtml(dy.venue):dy.venue):'', dy.note?'📝 '+(typeof escapeHtml==='function'?escapeHtml(dy.note):dy.note):''].filter(Boolean).join(' &nbsp;·&nbsp; ')
+                            : '_Descanso_')
+                        + '</div></div>';
+                }).join('')
                 : '';
 
             overlay.innerHTML = `
-            <div style="width:min(92vw,${isPlan?'800px':'520px'});background:#161b22;border:1px solid rgba(255,255,255,0.1);
+            <div style="width:min(92vw,520px);background:#161b22;border:1px solid rgba(255,255,255,0.1);
                         border-radius:16px;padding:1.5rem;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
                 <!-- Cabecera con logo -->
                 <div style="text-align:center;margin-bottom:1.2rem;padding-bottom:1rem;border-bottom:1px solid rgba(255,255,255,0.08);">
                     <div style="font-size:2.2rem;margin-bottom:0.3rem;">${isC?'📋':'📅'}</div>
                     <div style="font-size:1.1rem;font-weight:900;letter-spacing:1px;color:${isC?'var(--primary)':'#f0883e'};">
-                        CHRONOS FÚTBOL
+                        CRONOS FÚTBOL
                     </div>
                     <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">
                         ${isC ? 'CONVOCATORIA OFICIAL' : isPlan ? 'PLANIFICACIÓN SEMANAL' : 'AVISO DE ENTRENAMIENTO'}
@@ -2098,8 +1879,8 @@ window.ppNotifsByType = async function(type) {
                         ${d.meettime?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">🕐 Presentación: <strong>${typeof escapeHtml==='function'?escapeHtml(d.meettime):d.meettime}h</strong></div>`:''}
                         ${d.kickoff ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">⚽ Inicio: <strong>${typeof escapeHtml==='function'?escapeHtml(d.kickoff):d.kickoff}h</strong></div>`:''}
                     ` : isPlan ? `
-                        ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.3rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                        ${weekPlanHTML}
+                        ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
+                        <div style="display:flex;flex-direction:column;gap:0;">${weekPlanHTML}</div>
                     ` : `
                         <div style="font-size:0.95rem;margin-bottom:0.5rem;">📅 <strong>${typeof escapeHtml==='function'?escapeHtml(dtFmt):dtFmt}</strong></div>
                         ${d.location||d.venue?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">📍 ${typeof escapeHtml==='function'?escapeHtml(d.location||d.venue):d.location||d.venue}</div>`:''}
@@ -2153,75 +1934,3 @@ window.ppNotifsByType = async function(type) {
         body.innerHTML = `<div class="pp-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
     }
 };
-
-window.ppDeleteSingleMessage = async (threadId, index) => {
-    if (!confirm('¿Estás seguro de que deseas borrar este mensaje?')) return;
-    const fa = window._cronos_auth;
-    try {
-        const { doc, getDoc, updateDoc } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const docRef = doc(fa.db, 'cronos_messages', threadId);
-        const snap = await getDoc(docRef);
-        if (!snap.exists()) return;
-        
-        const data = snap.data();
-        const messages = data.messages || [];
-        if (index < 0 || index >= messages.length) return;
-        
-        messages.splice(index, 1);
-        
-        let lastMessage = data.lastMessage || '';
-        let lastMessageAt = data.lastMessageAt || '';
-        if (messages.length > 0) {
-            const last = messages[messages.length - 1];
-            lastMessage = last.text.length > 60 ? last.text.substring(0, 60) + '…' : last.text;
-            lastMessageAt = last.timestamp || '';
-        } else {
-            lastMessage = '— Sin mensajes —';
-            lastMessageAt = '';
-        }
-        
-        await updateDoc(docRef, { messages, lastMessage, lastMessageAt });
-        const coachLabel = document.querySelector('#pp-body div[style*="font-weight:700"]')?.textContent || 'Entrenador';
-        ppOpenChatThread(threadId, coachLabel);
-    } catch(err) {
-        alert('Error al borrar: ' + err.message);
-    }
-};
-
-window.ppDeleteAllMessages = async (threadId, coachLabel) => {
-    // FIX (auditoría 2026-07-22): vaciar un hilo es irreversible y borra
-    // también los mensajes escritos por la OTRA parte (el entrenador). Antes
-    // se sobrescribía `messages: []` sin dejar rastro de quién lo hizo ni
-    // cuándo, y sin posibilidad de recuperación. Ahora: (1) se archiva el
-    // contenido borrado en `deletedMessagesLog` (borrado LÓGICO, no
-    // destructivo) y (2) se registra quién lo hizo y cuándo.
-    if (!confirm('¿Estás seguro de que deseas vaciar toda la conversación? Esta acción no se puede deshacer para ti, pero queda registrada.')) return;
-    const fa = window._cronos_auth;
-    try {
-        const { doc, getDoc, updateDoc, arrayUnion } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const me = window._cronosCurrentUser || {};
-        const docRef = doc(fa.db, 'cronos_messages', threadId);
-        const snap = await getDoc(docRef);
-        const prevMessages = (snap.exists() && Array.isArray(snap.data().messages)) ? snap.data().messages : [];
-        await updateDoc(docRef, {
-            messages: [],
-            lastMessage: '— Sin mensajes —',
-            lastMessageAt: new Date().toISOString(),
-            deletedMessagesLog: arrayUnion({
-                deletedBy:      me.uid   || null,
-                deletedByEmail: me.email || null,
-                deletedByRole:  'parent',
-                deletedAt:      new Date().toISOString(),
-                messageCount:   prevMessages.length,
-                messages:       prevMessages,
-            }),
-        });
-        if (typeof showToast==='function') showToast('✅ Conversación vaciada.', 3000);
-        ppOpenChatThread(threadId, coachLabel);
-    } catch(err) {
-        if (typeof showToast==='function') showToast('⚠️ Error: '+err.message, 3000);
-    }
-};
-
