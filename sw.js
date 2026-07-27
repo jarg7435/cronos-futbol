@@ -1,5 +1,22 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v382: refactor monolitos (auditoria 2026-07-22). Arranca el MONOLITO #4,
+//        js/services/auth.js (3235 lineas): paso 1 -- extraida "seleccion de
+//        rol y arranque de la app" (enterApp, showRoleSelection, selectOption,
+//        _saPickTestClub, _launchWithRole y _renderCoordinatorTypePill, 456
+//        lineas) a js/services/auth/role-launch.js. Movimiento mecanico, sin
+//        cambios de comportamiento (test dedicado en verde antes y despues:
+//        34/34 -> 39/39). auth.js queda en 2792 lineas.
+//        ⚠️ OJO, ESTE MONOLITO ES UN MODULO ES, no un script clasico: el
+//        archivo nuevo NO se enlaza con <script> en index.html, entra por un
+//        `import` estatico en la cabecera de auth.js. Anadirlo ademas como
+//        <script> suelto lo ejecutaria DOS VECES. Si va al precache porque el
+//        navegador lo pide como recurso aparte.
+//        FAN-OUT CERO: el bloque no usa nada de lo que se queda en auth.js.
+//        Se amplia el guard test_extracted_modules_load.js con una parte 3
+//        para modulos: comprueba que cada `import { X }` resuelve a un export
+//        real del destino, un error de enlace que `node --check` NO ve.
+//        Bump para forzar recarga.
 //  v381: refactor monolitos (auditoria 2026-07-22), monolito #3, pasos 6a y 6b
 //        -- FIN DEL MONOLITO #3. El §8 "Envio de informes de partido" eran
 //        1359 lineas en DOS CAMINOS INDEPENDIENTES (cero referencias cruzadas,
@@ -764,8 +781,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v381';
-const CACHE_NAME = 'cronos-cache-v381';
+const VERSION = 'v382';
+const CACHE_NAME = 'cronos-cache-v382';
 
 const ASSETS = [
     './',
