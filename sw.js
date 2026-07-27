@@ -1,5 +1,18 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v378: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 4 de 6
+//        -- extraido el "Gestor de Contactos" (openContactManager,
+//        saveContactManagerData, renderContactRowMarkup, renderParentRowMarkup,
+//        addNewContactRow y addNewParentRow, 631 lineas) a
+//        comms/contact-manager.js. Movimiento mecanico, sin cambios de
+//        comportamiento (test dedicado en verde antes y despues: 62/62 -> 66/66).
+//        Depende de cinco helpers que SE QUEDAN en panel.js: _cFS, _cGetStaff,
+//        _catAndSubcatMatch, _loadParentList y openUnifiedCommsMenu. Escribe
+//        window._cronos_squad_cache, que lee comms/individual-reports.js.
+//        Se reapunta test_contact_manager_crash.js al archivo nuevo (localizaba
+//        la funcion por indexOf sobre panel.js; al estar en XFAIL su rotura
+//        habria sido invisible). Sigue en 3 PASS/4 FAIL exactos.
+//        panel.js queda en 3524 lineas. Bump para forzar recarga.
 //  v377: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 3 de 6
 //        -- extraido "Mis informes / Informes individuales" (openMisInformes,
 //        openIndividualReports y _sendAllIndividualReports, 575 lineas) a
@@ -693,8 +706,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v377';
-const CACHE_NAME = 'cronos-cache-v377';
+const VERSION = 'v378';
+const CACHE_NAME = 'cronos-cache-v378';
 
 const ASSETS = [
     './',
