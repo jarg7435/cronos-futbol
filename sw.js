@@ -1,5 +1,24 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v383: FIX del boton "Rol" del panel SuperAdmin, que expulsaba al usuario a
+//        la PANTALLA DE LOGIN en vez de abrir el selector de roles. La rama
+//        que abria el selector nunca se ejecutaba y el `else` borraba la
+//        sesion en memoria y saltaba a 'auth-screen'.
+//        CAUSA (clase de fallo, no despiste puntual): extras.js es un script
+//        CLASICO y comprobaba con typeof el nombre PELADO del selector
+//        multi-rol, que vive en el ambito de un MODULO ES (auth.js). El ambito
+//        de modulo NO cuelga de window, asi que ese typeof es SIEMPRE
+//        'undefined'. saGoBackToRoles tenia el mismo problema y funcionaba de
+//        casualidad por su reserva.
+//        NO se resucita el selector antiguo: al elegir rol reescribe
+//        _cronosCurrentUser con un objeto minimo que pierde allRoles,
+//        isAuthorized y status, y el showRoleSelection posterior se queda EN
+//        BLANCO (verificado ejecutando el codigo real). Ahora saCambiarRol
+//        delega en saGoBackToRoles, que abre el selector real de cada login.
+//        Guard permanente nuevo (asercion 3c de test_extracted_modules_load):
+//        ningun script clasico puede referenciar por nombre pelado algo del
+//        ambito de modulo. Verificado que caza el fallo original.
+//        Bump para forzar recarga.
 //  v382: refactor monolitos (auditoria 2026-07-22). Arranca el MONOLITO #4,
 //        js/services/auth.js (3235 lineas): paso 1 -- extraida "seleccion de
 //        rol y arranque de la app" (enterApp, showRoleSelection, selectOption,
@@ -781,8 +800,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v382';
-const CACHE_NAME = 'cronos-cache-v382';
+const VERSION = 'v383';
+const CACHE_NAME = 'cronos-cache-v383';
 
 const ASSETS = [
     './',
