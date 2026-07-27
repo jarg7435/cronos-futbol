@@ -307,17 +307,81 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                 allRoles = uData.allRoles;
             }
 
-            // ── Multi-rol: solo eliminar la cuenta Auth si el usuario NO conserva
-            //    roles activos en OTRO club/entidad distinto al que se está dando
-            //    de baja. Si los tiene, se borra de este ámbito pero la cuenta
-            //    de Firebase Auth se preserva.
-            var _otherActiveRoles = allRoles.filter(function(r) {
+            // ── Determinar alcance del borrado (multi-rol) ──────────────
+            var rolesRemovidos = allRoles.filter(function(r) {
                 var sameScope = String(r.clubId || r.individualEntityId || '') === String(clubId || '');
-                var isActive = r.isAuthorized === true && r.status !== 'removed' && r.status !== 'rejected';
-                return !sameScope && isActive;
+                return sameScope;
             });
-            var _shouldDeleteAuth = _otherActiveRoles.length === 0;
+            var rolesRestantes = allRoles.filter(function(r) {
+                var sameScope = String(r.clubId || r.individualEntityId || '') === String(clubId || '');
+                return !sameScope;
+            });
+            var _shouldDeleteAuth = rolesRestantes.length === 0;
 
+            // ── CAMINO A: quitar SOLO los roles de este club (conservar cuenta + otros roles)
+            if (rolesRestantes.length > 0) {
+                // A1. Liberar slots en el club
+                var _sk = function(role) {
+                    if (role === 'director') return 'usedSlots.directors';
+                    if (role === 'coordinator') return 'usedSlots.coordinators';
+                    if (role === 'parent') return 'usedSlots.parents';
+                    return 'usedSlots.users';
+                };
+                for (var ri = 0; ri < rolesRemovidos.length; ri++) {
+                    var rcid = rolesRemovidos[ri].clubId || clubId;
+                    if (rcid) {
+                        var rk = _sk(rolesRemovidos[ri].role);
+                        try {
+                            var cs = await getDoc(doc(db, 'clubs', rcid));
+                            if (cs.exists()) {
+                                var sub = rk.split('.')[1];
+                                var cur = ((cs.data().usedSlots || {})[sub]) || 1;
+                                var upd = {}; upd[rk] = Math.max(0, cur - 1);
+                                await updateDoc(doc(db, 'clubs', rcid), upd);
+                            }
+                        } catch (_) {}
+                    }
+                }
+                // A2. Quitar roles de allRoles del doc primario (NO borrar el doc)
+                try {
+                    await updateDoc(doc(db, 'users', realUid), { allRoles: rolesRestantes });
+                } catch (_) {}
+                // A3. Eliminar docs secundarios
+                for (var si2 = 0; si2 < rolesRemovidos.length; si2++) {
+                    var secId = realUid + '_' + rolesRemovidos[si2].role + '_' + (rolesRemovidos[si2].clubId || 'global');
+                    if (secId !== realUid) {
+                        try { await deleteDoc(doc(db, 'users', secId)); } catch (_) {}
+                    }
+                }
+                // Si el documento clickeado era secundario, eliminarlo
+                if (uid !== realUid) {
+                    try { await deleteDoc(doc(db, 'users', uid)); } catch (_) {}
+                }
+                // A4. Eliminar enlaces de jugador (solo si eliminamos el rol de 'parent')
+                var tieneParentRemovido = rolesRemovidos.some(function(r) { return r.role === 'parent'; });
+                if (tieneParentRemovido) {
+                    try {
+                        var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
+                        var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
+                        for (var li = 0; li < linksArr.length; li++) {
+                            try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
+                        }
+                    } catch (_) {}
+                    try {
+                        var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
+                        var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
+                        for (var li2 = 0; li2 < linksArr2.length; li2++) {
+                            try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
+                        }
+                    } catch (_) {}
+                }
+
+                _saToast('➖ Usuario removido de este club. Conserva sus roles en otros clubes.', 4000);
+                setTimeout(function() { openSuperAdminPanel(); }, 1200);
+                return;
+            }
+
+            // ── CAMINO B: borrado TOTAL del usuario ──────
             // 2. Actualizar slots del club para CADA rol
             var _sk = function(role) {
                 if (role === 'director') return 'usedSlots.directors';
@@ -342,8 +406,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
             }
 
             // 3. Eliminar cuenta de Firebase Auth ANTES de borrar docs
-            // (la Cloud Function necesita leer el doc del caller para verificar permisos)
-            // Multi-rol: solo si no quedan roles activos en otro club/entidad.
             if (_shouldDeleteAuth && httpsCallable && fa.functions) {
                 try {
                     await httpsCallable(fa.functions,'deleteAuthUser')({uid:realUid,email:realEmail});
@@ -351,7 +413,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                     console.warn('[saSetClubUserStatus] deleteAuthUser:', cfErr && cfErr.code, cfErr && cfErr.message);
                     var codeB = (cfErr.details && cfErr.details.code) || cfErr.code || '';
                     if (codeB !== 'auth/user-not-found') {
-                        // Registrar el fallo de forma persistente para revisión manual, pero CONTINUAR
                         try {
                             var _meSA = window._cronosCurrentUser || {};
                             await setDoc(doc(db, 'auth_deletion_failures', realUid + '_' + Date.now()), {
@@ -362,7 +423,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                                 createdAt: new Date().toISOString()
                             });
                         } catch(_) {}
-                        // Continuar con el borrado de Firestore aunque falle Auth
                         _saToast('⚠️ Email no liberado en Auth (pendiente revisión), pero se han eliminado los datos del usuario.', 6000);
                     }
                 }
@@ -517,9 +577,10 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
 // Extraída a js/admin/superadmin/clubs-tab.js (auditoría 2026-07-22, 2026-07-26).
 // ═══════════════════════════════════════════════════════════════════
 
+
+
 // saDeleteClubComplete()
 // Extraída a js/admin/superadmin/delete-club.js (auditoría 2026-07-22, 2026-07-24).
-
 
 
 // ═══════════════════════════════════════════════════════════════════

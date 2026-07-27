@@ -576,7 +576,7 @@ async function openClubAdminPanel(preClubId = null) {
                         <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${erole}')"
                             title="Quitar este rol (conserva la cuenta y los demás roles)"
                             class="sa-btn" style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Rol</button>
-                        <button onclick="caDeleteUserComplete('${euid}','${email}','${ecid}')"
+                        <button onclick="caDeleteUserComplete('${euid}','${email}','${ecid}','${erole}')"
                             title="Eliminar usuario completamente (borra la cuenta Auth y todos sus roles)"
                             class="sa-btn" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.3); font-weight:700;">🗑️ Usuario</button>
                     </div>
@@ -1544,7 +1544,7 @@ async function openClubAdminPanel(preClubId = null) {
     // ── Cambiar estado de un usuario (activo / bloqueado / baja total) ──
 
     // ── Eliminar usuario completo (sin preguntar motivo, borrado total) ──
-    window.caDeleteUserComplete = async (userId, userEmail, cid) => {
+    window.caDeleteUserComplete = async (userId, userEmail, cid, targetRole) => {
         if (!confirm(
             '🗑️ ELIMINAR USUARIO COMPLETAMENTE\n\n' +
             'Email: ' + userEmail + '\n\n' +
@@ -1557,7 +1557,7 @@ async function openClubAdminPanel(preClubId = null) {
             '¿Confirmar BORRADO TOTAL?'
         )) return;
         // Reutilizar caSetUserStatus con 'removed' que ya hace el borrado completo
-        await window.caSetUserStatus(userId, userEmail, 'removed', cid);
+        await window.caSetUserStatus(userId, userEmail, 'removed', cid, targetRole);
     };
 
     // ── GESTIONAR EQUIPO (Categoría/Subcategoría) ────────────────────
@@ -1653,52 +1653,82 @@ async function openClubAdminPanel(preClubId = null) {
                 // Si se especifica targetRole y el usuario tiene OTROS roles
                 // activos, solo se elimina ESE rol; la cuenta Auth y los demás
                 // roles se conservan. Sin targetRole = borrado total del usuario.
-                var rolesRestantes = allRoles.filter(function(r) {
-                    var sameRole = r.role === targetRole;
+                var rolesRemovidos = allRoles.filter(function(r) {
                     var sameClub = String(r.clubId || '') === String(cid || '');
-                    return !(sameRole && sameClub);
+                    if (!sameClub) return false;
+                    if (targetRole && r.role !== targetRole) return false;
+                    return true;
                 });
-                var deleteAllRoles  = !targetRole || allRoles.length <= 1 || rolesRestantes.length === 0;
+                var rolesRestantes = allRoles.filter(function(r) {
+                    var sameClub = String(r.clubId || '') === String(cid || '');
+                    if (!sameClub) return true;
+                    if (targetRole && r.role !== targetRole) return true;
+                    return false;
+                });
+                var deleteAllRoles = rolesRestantes.length === 0;
                 var shouldDeleteAuth = deleteAllRoles;
 
-                // ── CAMINO A: quitar SOLO un rol (conservar cuenta + otros roles)
+                // ── CAMINO A: quitar SOLO los roles de este club/rol (conservar cuenta + otros roles)
                 if (!deleteAllRoles) {
-                    // A1. Liberar el slot de ese rol en el club
-                    if (cid) {
-                        try {
-                            var csR = await getDoc(doc(db, 'clubs', cid));
-                            if (csR.exists()) {
-                                var rkR  = _slotKey(targetRole);
-                                var subR = rkR.split('.')[1];
-                                var curR = ((csR.data().usedSlots || {})[subR]) || 1;
-                                var updR = {}; updR[rkR] = Math.max(0, curR - 1);
-                                await updateDoc(doc(db, 'clubs', cid), updR);
-                            }
-                        } catch (_) {}
+                    // A1. Liberar slots en el club
+                    for (var rIdx = 0; rIdx < rolesRemovidos.length; rIdx++) {
+                        var rolRem = rolesRemovidos[rIdx].role;
+                        if (cid) {
+                            try {
+                                var csR = await getDoc(doc(db, 'clubs', cid));
+                                if (csR.exists()) {
+                                    var rkR  = _slotKey(rolRem);
+                                    var subR = rkR.split('.')[1];
+                                    var curR = ((csR.data().usedSlots || {})[subR]) || 1;
+                                    var updR = {}; updR[rkR] = Math.max(0, curR - 1);
+                                    await updateDoc(doc(db, 'clubs', cid), updR);
+                                }
+                            } catch (_) {}
+                        }
                     }
-                    // A2. Quitar el rol de allRoles del doc primario (NO borrar el doc)
+                    // A2. Quitar roles de allRoles del doc primario (NO borrar el doc)
                     try {
                         await updateDoc(doc(db, 'users', realUid), { allRoles: rolesRestantes });
                     } catch (_) {}
-                    // A3. Eliminar SOLO el doc secundario de ese rol (si existe)
-                    var secOne = realUid + '_' + targetRole + '_' + (cid || 'global');
-                    if (secOne !== realUid) {
-                        try { await deleteDoc(doc(db, 'users', secOne)); } catch (_) {}
+                    // A3. Eliminar docs secundarios
+                    for (var rIdx2 = 0; rIdx2 < rolesRemovidos.length; rIdx2++) {
+                        var rolRem2 = rolesRemovidos[rIdx2].role;
+                        var secOne = realUid + '_' + rolRem2 + '_' + (cid || 'global');
+                        if (secOne !== realUid) {
+                            try { await deleteDoc(doc(db, 'users', secOne)); } catch (_) {}
+                        }
                     }
-                    // A4. Registrar la baja de rol (sin tocar Firebase Auth)
+                    // A4. Eliminar enlaces de jugador (solo si eliminamos el rol de 'parent')
+                    var tieneParentRemovido = rolesRemovidos.some(function(r) { return r.role === 'parent'; });
+                    if (tieneParentRemovido) {
+                        try {
+                            var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
+                            var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
+                            for (var li = 0; li < linksArr.length; li++) {
+                                try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
+                            }
+                        } catch (_) {}
+                        try {
+                            var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
+                            var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
+                            for (var li2 = 0; li2 < linksArr2.length; li2++) {
+                                try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
+                            }
+                        } catch (_) {}
+                    }
+                    // A5. Registrar la baja de rol (sin tocar Firebase Auth)
                     await setDoc(doc(db, 'deletion_requests', realUid + '_role_' + Date.now()), {
                         userId: realUid, userEmail: realEmail, clubId: cid,
                         requestedBy: me.uid, requestedByEmail: me.email,
                         reason: (reason || '').trim() || 'Baja de rol',
-                        roleDeleted: targetRole,
+                        rolesDeleted: rolesRemovidos.map(function(r) { return r.role; }),
                         remainingRoles: rolesRestantes.map(function(r) { return r.role; }),
                         status: 'completed',
                         resolvedAt: new Date().toISOString(),
                         createdAt: new Date().toISOString()
                     }).catch(function() {});
 
-                    showToast('➖ Rol "' + targetRole + '" de ' + userEmail +
-                              ' eliminado. El usuario conserva sus otros roles.', 4000);
+                    showToast('➖ Rol/Roles de ' + userEmail + ' removidos. El usuario conserva sus otros roles.', 4000);
                     openClubAdminPanel();
                     return; // NO continúa al borrado total ni llama a deleteAuthUser
                 }
