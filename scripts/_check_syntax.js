@@ -18,6 +18,7 @@ const files = (argFiles.length ? argFiles : [
   'js/coach/comms/panel.js',
   'js/coach/comms/training-notify.js',
   'js/coach/comms/collective-report.js',
+  'js/coach/comms/individual-reports.js',
 ]).map(f => path.isAbsolute(f) ? f : path.join(root, f));
 let anyErr = false;
 for (const f of files) {

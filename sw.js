@@ -745,6 +745,7 @@ const ASSETS = [
     './js/coach/comms/panel.js',
     './js/coach/comms/training-notify.js',
     './js/coach/comms/collective-report.js',
+    './js/coach/comms/individual-reports.js',
     './js/coach/reports/report-engine.js',
     './js/coach/reports/club-reports.js',
     './js/coach/reports/director-config.js',

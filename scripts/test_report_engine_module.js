@@ -23,7 +23,8 @@
 //
 // ── ORDEN DE CARGA: AL CONTRARIO QUE LOS PASOS 1-3 ──
 // report-engine.js se carga ANTES de club-reports.js, no después. Motivo:
-// comms/panel.js:5435 comprueba `typeof _RP !== 'undefined'`, y para un const
+// el consumidor de comms/ (miToggleInforme, hoy en comms/individual-reports.js
+// tras el paso 3 del monolito #3) comprueba `typeof _RP !== 'undefined'`, y para un const
 // en su zona muerta temporal `typeof` LANZA ReferenceError en lugar de
 // devolver 'undefined' — la guarda es ilusoria. Hoy es inocuo porque sólo
 // corre al hacer click, cuando ya está inicializado; cargar el motor antes
@@ -172,13 +173,20 @@ function walk(dir, out) {
         const consumer = fs.existsSync(path.join(ROOT, 'js', 'coach', 'reports', 'reports-tab.js'))
             ? 'js/coach/reports/reports-tab.js'
             : 'js/coach/reports/club-reports.js';
+        // Y tras el paso 3 del monolito #3, el consumidor de comms/panel.js
+        // (miToggleInforme, dentro de openMisInformes) se mudó a
+        // comms/individual-reports.js; en panel.js sólo queda el puntero, que
+        // deliberadamente NO nombra _RP para no falsear este barrido.
+        const commsConsumer = fs.existsSync(path.join(ROOT, 'js', 'coach', 'comms', 'individual-reports.js'))
+            ? 'js/coach/comms/individual-reports.js'
+            : 'js/coach/comms/panel.js';
         const expected = IS_EXTRACTED
-            ? ['js/coach/comms/panel.js', consumer]
-            : ['js/coach/comms/panel.js'];
+            ? [commsConsumer, consumer]
+            : [commsConsumer];
         ok('1e · los consumidores son los esperados',
             JSON.stringify(users.sort()) === JSON.stringify(expected.sort()), users);
-        const cp = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'panel.js'), 'utf8');
-        ok('1f · comms/panel.js usa la guarda typeof (ilusoria para un const en TDZ)',
+        const cp = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', commsConsumer.split('/').pop()), 'utf8');
+        ok('1f · el consumidor de comms/ usa la guarda typeof (ilusoria para un const en TDZ)',
             /typeof _RP !== 'undefined' && typeof _RP\.build === 'function'/.test(cp));
     }
     if (IS_EXTRACTED) {
