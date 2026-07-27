@@ -17,10 +17,16 @@ const ROOT = path.join(__dirname, '..');
 // describiendo la misma superficie de código que antes del refactor.
 // (Antes se usaba la ruta relativa 'js/coach/comms/panel.js', que dependía del
 //  directorio de trabajo; ahora se resuelve desde __dirname.)
+// Y en el paso 6b (2026-07-27) autoDispatchMatchReports —donde viven las otras
+// dos aserciones— se fue a match-reports-auto.js. Se leen todos y se
+// concatenan. Los que aún no existan se ignoran, para que el archivo sirva
+// antes y después de cada extracción.
 const src = [
   'js/coach/comms/panel.js',
   'js/coach/comms/collective-report.js',
-].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  'js/coach/comms/match-reports-auto.js',
+].filter(f => fs.existsSync(path.join(ROOT, f)))
+ .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 
 let pass = true;
 const assert = (c, m) => { if (!c) { pass = false; console.error('FAIL:', m); } else console.log('ok:', m); };
@@ -40,7 +46,14 @@ assert(/staffUids:\s+_collStaffUids,/.test(src),
   'colectivo: el doc usa staffUids: _collStaffUids');
 
 // 4) autoDispatchMatchReports tambien fuerza me.uid en _allStaffUids.
-assert(/const _allStaffUids = Array\.from\(new Set\(\[[\s\S]*?me\.uid,[\s\S]*?\]\.filter\(Boolean\)\)\);/.test(src),
+// ⚠️ La regex anterior usaba [\s\S]*? y exigia "me.uid," CON COMA. En el codigo
+// real me.uid es el ULTIMO elemento del array, asi que va seguido de "]", no de
+// una coma: lo que casaba era texto de OTRAS funciones situadas mas abajo en el
+// mismo archivo. Es decir, la asercion pasaba por el motivo equivocado y no
+// habria detectado la perdida de me.uid. Al partir el §8 en dos archivos dejo
+// de haber codigo detras que la sostuviera y salio a la luz.
+// Ahora se acota con [^\]]* para que no pueda salirse del propio array.
+assert(/const _allStaffUids = Array\.from\(new Set\(\[[^\]]*me\.uid\]\.filter\(Boolean\)\)\);/.test(src),
   'autoDispatch: _allStaffUids incluye me.uid');
 
 // 5) Logs de diagnostico [StaffReport] con conteo TOTAL en ambos caminos.

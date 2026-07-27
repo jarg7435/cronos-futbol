@@ -165,7 +165,14 @@ const inCol = (written, col) => written.filter(w => w.col === col);
     ok('1d · emailConfig se lee con guarda typeof (es un let de app-init.js)',
         /typeof emailConfig !== 'undefined'/.test(BLOCK));
     {
-        const panel = fs.readFileSync(ORIGIN, 'utf8');
+        // autoDispatchMatchReports se mudo a comms/match-reports-auto.js en el
+        // paso 6b (2026-07-27). Se busca alli si existe; si no, en panel.js.
+        // OJO: son DOS fuentes distintas. El cuerpo de autoDispatchMatchReports
+        // esta ahora en el archivo nuevo, pero la autoasignacion que comprueba
+        // 1f sigue en panel.js. Mezclarlas romperia 1f.
+        const _AUTO = path.join(ROOT, 'js', 'coach', 'comms', 'match-reports-auto.js');
+        const panel = fs.readFileSync(fs.existsSync(_AUTO) ? _AUTO : ORIGIN, 'utf8');
+        const panelOrigen = fs.readFileSync(ORIGIN, 'utf8');
         // Se acota el CUERPO de autoDispatchMatchReports y se comprueba ahi
         // dentro. (Un [\s\S]*? sobre el archivo entero no probaria nada: casaria
         // con cualquier aparicion posterior en cualquier otra funcion.)
@@ -184,7 +191,7 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             && !/_sendCollectiveReportNow\s*\(/.test(cuerpo),
             { largoCuerpo: cuerpo.length });
         ok('1f · la autoasignación window.openCollectiveReport = window.openCollectiveReport sigue en panel.js',
-            /window\.openCollectiveReport\s+= window\.openCollectiveReport;/.test(panel));
+            /window\.openCollectiveReport\s+= window\.openCollectiveReport;/.test(panelOrigen));
     }
     if (IS_EXTRACTED) {
         const idxHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
