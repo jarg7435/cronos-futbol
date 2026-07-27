@@ -3493,8 +3493,14 @@ window.openCoachMessaging      = openCoachMessaging;
 window.openThreadWithParent    = openThreadWithParent;
 window.sendMatchReportsToParents = sendMatchReportsToParents;
 window._loadThreadMessages     = _loadThreadMessages;
-window.openContactManager      = openContactManager;
-window.saveContactManagerData  = saveContactManagerData;
+// Estas dos viven ahora en js/coach/comms/contact-manager.js, que se carga
+// DESPUES de este archivo. Referenciarlas por su nombre pelado aqui lanzaba
+// ReferenceError en tiempo de carga y abortaba el resto de panel.js. Se dejan
+// como autoasignacion inocua, igual que las dos de arriba: no hace falta
+// exportarlas, porque son declaraciones de funcion y ya cuelgan de window en
+// cuanto su archivo se ejecuta.
+window.openContactManager      = window.openContactManager;
+window.saveContactManagerData  = window.saveContactManagerData;
 window.saveAllMatchReportsInternal = saveAllMatchReportsInternal;
 window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
 
