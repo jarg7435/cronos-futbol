@@ -8,7 +8,19 @@
 //   el Panel de Informes (que se alimenta exclusivamente de esos docs).
 
 const fs = require('fs');
-const src = fs.readFileSync('js/coach/comms/panel.js', 'utf8');
+const path = require('path');
+const ROOT = path.join(__dirname, '..');
+// El monolito comms/panel.js se está descomponiendo (auditoría 2026-07-22,
+// paso 2 de 6 el 2026-07-27): _sendCollectiveReportNow se fue a
+// collective-report.js, mientras que autoDispatchMatchReports sigue en
+// panel.js. Se leen LOS DOS y se concatenan, para que las 6 aserciones sigan
+// describiendo la misma superficie de código que antes del refactor.
+// (Antes se usaba la ruta relativa 'js/coach/comms/panel.js', que dependía del
+//  directorio de trabajo; ahora se resuelve desde __dirname.)
+const src = [
+  'js/coach/comms/panel.js',
+  'js/coach/comms/collective-report.js',
+].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 
 let pass = true;
 const assert = (c, m) => { if (!c) { pass = false; console.error('FAIL:', m); } else console.log('ok:', m); };
