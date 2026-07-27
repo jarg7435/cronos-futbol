@@ -33,18 +33,28 @@
 // La parte 1h aserta el orden en ESA dirección; no "corregirlo" por simetría
 // con los otros tres módulos.
 //
-// ── ⚠️ BUG PREEXISTENTE ENCONTRADO AL ESCRIBIR ESTE TEST (no corregido) ──
-// getTotMin decide la duración por categoría en este orden:
-//     cadete/juvenil/regional/senior -> 90
-//     infantil                       -> 70
-//     benjamin|benjamín              -> 50
-//     prebenjamin|prebenjamín        -> 40   <-- INALCANZABLE
-// 'prebenjamín' CONTIENE 'benjamín', así que la rama anterior gana siempre y
-// un partido prebenjamín se calcula a 50 minutos, no a 40. La rama de la
-// última línea es código muerto. Afecta a la escala del Gantt y a los minutos
-// calculados cuando el informe no trae `duration` explícito. La parte 2f fija
-// el comportamiento REAL (50) para demostrar que el movimiento es mecánico; si
-// algún día se corrige, es ESA aserción la que hay que actualizar.
+// ── ✅ BUG DE DURACIONES: ENCONTRADO AQUÍ, CORREGIDO EL 2026-07-27 ──
+// Al escribir este test se descubrió que la rama de prebenjamín era
+// INALCANZABLE ('prebenjamin' contiene 'benjamin' y se comprobaba después).
+// Al ir a corregirlo se vio que el problema era mayor: la tabla entera estaba
+// mal en 5 de las 7 categorías, medido contra la duración real que usa el
+// cronómetro (js/core/setup-modal.js, half1MaxTime/half2MaxTime):
+//     prebenjamín −10   benjamín −20   alevín −10   infantil −10   cadete +10
+// Sólo juvenil y regional acertaban, por casualidad. Es decir: "arreglar"
+// prebenjamín a 40, como suponía la auditoría, lo habría dejado a −20.
+// La duración oficial confirmada por el autor es 2 × los minutos por tiempo:
+//     prebenjamín 60 · benjamín 70 · alevín 70 · infantil 80 · cadete 80 ·
+//     juvenil 90 · regional 90.
+// El margen del cronómetro (+10 F7 / +15 F11) es prolongación y protección
+// ante cortes de conexión: no entra en la base reglamentaria y ya se muestra
+// aparte como +N' (parte 2h).
+// ESTO NO ES SÓLO LA ESCALA DEL GANTT: un jugador sin cambios se acredita el
+// intervalo [0, totMin] entero, así que la tabla fija los minutos que se
+// muestran a cada jugador. Y `window.matchDuration` no se asigna en ningún
+// sitio del proyecto, así que `m.duration` viene siempre vacío y esta tabla se
+// usa SIEMPRE. La parte 2b recorre las siete categorías con los slugs reales
+// ('f7_prebenjamin'…) y con las etiquetas acentuadas; 2d/2e son el cortafuegos
+// contra reordenar las comprobaciones y reintroducir el bug.
 //
 // ── OTRO DETALLE QUE CONVIENE SABER ──
 // `esc` (el escapador propio del motor) NO coincide con el escapeHtml global:
@@ -217,20 +227,45 @@ function walk(dir, out) {
     };
     ok('2a · m.duration manda sobre la categoría',
         headerDur({ duration: 45, category: 'Cadete' }) === 45, headerDur({ duration: 45, category: 'Cadete' }));
-    ok('2b · cadete / juvenil / regional / senior → 90',
-        ['Cadete', 'Juvenil', 'Regional', 'Senior'].every(c => headerDur({ category: c }) === 90),
-        ['Cadete', 'Juvenil', 'Regional', 'Senior'].map(c => headerDur({ category: c })));
-    ok('2c · infantil → 70', headerDur({ category: 'Infantil A' }) === 70);
-    ok('2d · benjamín → 50', headerDur({ category: 'Benjamín' }) === 50);
-    ok('2e · alevín y categoría desconocida → 60',
-        headerDur({ category: 'Alevín' }) === 60 && headerDur({ category: 'Veteranos' }) === 60
-        && headerDur({}) === 60);
-    // ⚠️ BUG PREEXISTENTE CONFIRMADO: 'prebenjamín' CONTIENE 'benjamín', así que
-    // gana la rama de 50 y la de 40 nunca se alcanza, con ninguna grafía.
-    ok('2f · ⚠️ prebenjamín devuelve 50, NO 40 (la rama de 40 es inalcanzable)',
-        headerDur({ category: 'Prebenjamín' }) === 50
-        && headerDur({ category: 'prebenjamin' }) === 50
-        && headerDur({ category: 'PREBENJAMIN' }) === 50,
+    // ── La tabla oficial: 2 × los minutos por tiempo del cronómetro ──────
+    // Confirmada por el autor 2026-07-27. Estos valores TIENEN que coincidir
+    // con js/core/setup-modal.js, donde se fijan half1MaxTime/half2MaxTime; si
+    // alguien cambia una de las dos tablas, tiene que cambiar la otra.
+    // Se prueban los SLUGS que de verdad se guardan en los informes
+    // (window._currentMatchCategory = el value del <select>, p.ej.
+    // 'f7_prebenjamin') Y las etiquetas acentuadas, porque los informes
+    // antiguos o importados pueden traerlas.
+    {
+        const OFICIAL = [
+            ['f7_prebenjamin', 60], ['Prebenjamín', 60], ['prebenjamin', 60], ['PREBENJAMIN', 60],
+            ['f7_benjamin', 70],    ['Benjamín', 70],
+            ['f7_alevin', 70],      ['Alevín', 70],
+            ['f11_infantil', 80],   ['Infantil A', 80],
+            ['f11_cadete', 80],     ['Cadete', 80],
+            ['f11_juvenil', 90],    ['Juvenil', 90],
+            ['f11_regional', 90],   ['Regional', 90],  ['Senior', 90],
+        ];
+        const malos = OFICIAL.filter(([c, esperado]) => headerDur({ category: c }) !== esperado)
+                             .map(([c, esperado]) => c + ': ' + headerDur({ category: c }) + ' (esperado ' + esperado + ')');
+        ok('2b · la duración de las 7 categorías coincide con la oficial (2 × tiempo)',
+            malos.length === 0, malos);
+    }
+    ok('2c · una categoría desconocida o ausente cae a 60',
+        headerDur({ category: 'Veteranos' }) === 60 && headerDur({}) === 60);
+    // ⚠️ LA TRAMPA QUE CAUSÓ EL BUG: 'prebenjamin' CONTIENE 'benjamin'. Si
+    // alguien reordena las comprobaciones, prebenjamín vuelve a resolverse como
+    // benjamín (70 en vez de 60). Esta aserción es el cortafuegos.
+    ok('2d · ⚠️ prebenjamín NO se resuelve como benjamín pese a contener su nombre',
+        headerDur({ category: 'f7_prebenjamin' }) === 60
+        && headerDur({ category: 'f7_benjamin' }) === 70
+        && headerDur({ category: 'f7_prebenjamin' }) !== headerDur({ category: 'f7_benjamin' }),
+        { pre: headerDur({ category: 'f7_prebenjamin' }), ben: headerDur({ category: 'f7_benjamin' }) });
+    ok('2e · y el orden de las comprobaciones lo garantiza en el propio código',
+        BLOCK.indexOf("cat.includes('prebenjamin')") < BLOCK.indexOf("cat.includes('benjamin')"));
+    ok('2f · las tres grafías de prebenjamín dan lo mismo',
+        headerDur({ category: 'Prebenjamín' }) === 60
+        && headerDur({ category: 'prebenjamin' }) === 60
+        && headerDur({ category: 'PREBENJAMIN' }) === 60,
         ['Prebenjamín', 'prebenjamin', 'PREBENJAMIN'].map(c => headerDur({ category: c })));
     // OJO: si m.duration es truthy pero no parseable, devuelve 60 DIRECTAMENTE;
     // no cae a la categoría (el `return parseInt(...) || 60` corta ahí).
@@ -238,7 +273,7 @@ function walk(dir, out) {
         headerDur({ duration: 'abc', category: 'Infantil' }) === 60,
         headerDur({ duration: 'abc', category: 'Infantil' }));
     ok('2g-bis · duration 0 sí cae a la categoría (0 es falsy)',
-        headerDur({ duration: 0, category: 'Cadete' }) === 90,
+        headerDur({ duration: 0, category: 'Cadete' }) === 80,
         headerDur({ duration: 0, category: 'Cadete' }));
     const htmlOf = (m) => build([titular('Solo', 9)], m).html;
     ok('2h · el tiempo de descuento se muestra aparte',

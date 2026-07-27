@@ -46,15 +46,20 @@
 //   · js/coach/comms/panel.js — reutiliza el mismo motor para el informe que
 //     se envía por mensajería.
 //
-//  ⚠️ BUG PREEXISTENTE, DELIBERADAMENTE NO CORREGIDO: getTotMin resuelve la
-//  duración por categoría en este orden: cadete/juvenil/regional/senior → 90,
-//  infantil → 70, benjamin|benjamín → 50, y sólo después prebenjamin|
-//  prebenjamín → 40. Como 'prebenjamín' CONTIENE 'benjamín', la rama anterior
-//  gana siempre y la de 40 es INALCANZABLE: un partido prebenjamín se calcula
-//  a 50 minutos. Afecta a la escala del Gantt y a los minutos atribuidos
-//  cuando el informe no trae `duration` explícito. Corregirlo es mover una
-//  línea, pero cambia el comportamiento; la aserción 2f del test fija el
-//  valor REAL (50) y es la que habría que actualizar al arreglarlo.
+//  ✅ CORREGIDO 2026-07-27 — getTotMin devolvía duraciones equivocadas en 5 de
+//  las 7 categorías, no sólo en prebenjamín. La tabla anterior codificaba otra
+//  cosa (¿medias partes? ¿un reglamento antiguo?) y sólo acertaba en juvenil y
+//  regional, por casualidad. Desvíos medidos contra la duración real:
+//    prebenjamín −10, benjamín −20, alevín −10, infantil −10, cadete +10.
+//  Además la rama de prebenjamín era INALCANZABLE, porque se comprobaba
+//  después de benjamín y 'prebenjamin' contiene 'benjamin'.
+//  Ahora la tabla es 2 × los minutos por tiempo del cronómetro
+//  (js/core/setup-modal.js). Ojo: `window.matchDuration` NO se asigna en
+//  ningún sitio del proyecto, así que el `if (m.duration)` nunca se cumple y
+//  esta tabla se usa SIEMPRE. Y no decide sólo la escala del Gantt: un jugador
+//  sin cambios se acredita el intervalo [0, totMin] entero, así que fija los
+//  minutos que se muestran a cada jugador. La parte 2f del test recorre las
+//  siete categorías.
 //
 //  OTROS DETALLES QUE EL TEST FIJA:
 //   · `esc` NO coincide con el escapeHtml global de app-init.js: usa &#39;
@@ -232,15 +237,33 @@ const _RP = (() => {
         });
     };
 
-    // ── Determinar duración según categoría ───────────────────────────
+    // ── Determinar duración reglamentaria según categoría ─────────────
+    //  Duración OFICIAL del encuentro = 2 × los minutos por tiempo que usa el
+    //  cronómetro (js/core/setup-modal.js, donde se fijan half1MaxTime y
+    //  half2MaxTime). Las dos tablas TIENEN que decir lo mismo: ésta atribuye
+    //  los minutos que se muestran a cada jugador, no sólo la escala del Gantt.
+    //    prebenjamín  2×30 = 60      infantil  2×40 = 80
+    //    benjamín     2×35 = 70      cadete    2×40 = 80
+    //    alevín       2×35 = 70      juvenil   2×45 = 90
+    //                                regional  2×45 = 90
+    //  El margen que permite el cronómetro (+10 min en F7, +15 en F11) es
+    //  prolongación y protección ante cortes de conexión: NO forma parte de la
+    //  base reglamentaria y se muestra aparte, como `+N'` (ver buildHeader).
+    //
+    //  ⚠️ EL ORDEN DE ESTAS COMPROBACIONES IMPORTA: 'prebenjamin' CONTIENE
+    //  'benjamin'. Si se invierten, prebenjamín vuelve a resolverse como
+    //  benjamín — que es exactamente el bug que esto corrige. La parte 2f del
+    //  test recorre las siete categorías para impedir que vuelva.
     const getTotMin = m => {
         if (m.duration) return parseInt(m.duration) || 60;
         const cat = (m.category || '').toLowerCase();
-        if (cat.includes('cadete') || cat.includes('juvenil') || cat.includes('regional') || cat.includes('senior')) return 90;
-        if (cat.includes('infantil')) return 70;
-        if (cat.includes('benjamin') || cat.includes('benjamín')) return 50;
-        if (cat.includes('prebenjamin') || cat.includes('prebenjamín')) return 40;
-        return 60; // alevín y genérico
+        if (cat.includes('prebenjamin') || cat.includes('prebenjamín')) return 60;
+        if (cat.includes('benjamin')    || cat.includes('benjamín'))    return 70;
+        if (cat.includes('alevin')      || cat.includes('alevín'))      return 70;
+        if (cat.includes('infantil'))                                   return 80;
+        if (cat.includes('cadete'))                                     return 80;
+        if (cat.includes('juvenil') || cat.includes('regional') || cat.includes('senior')) return 90;
+        return 60; // genérico
     };
 
     // ════════════════════════════════════════════════════════════════
