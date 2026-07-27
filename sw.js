@@ -1,5 +1,22 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v380: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 5 de 6
+//        -- extraido el COMPOSITOR DE MENSAJERIA MASIVA LEGACY
+//        (toggleSelectAllParents, updateBulkCount, openBulkMessageComposer,
+//        _msgSavePreselection, _msgGetSelected y los tres _sendBulkMsg*,
+//        252 lineas) a comms/bulk-messaging.js. Movimiento mecanico, sin
+//        cambios de comportamiento (test dedicado en verde antes y despues:
+//        46/46 -> 50/50). Solo depende de _cFS y openCoachMessaging, que SE
+//        QUEDAN en panel.js.
+//        ALCANCE REDUCIDO A PROPOSITO: openUnifiedCommsMenu NO se mueve. Es
+//        el router del area (25 referencias externas en 8 archivos, entre
+//        ellas los cuatro modulos ya extraidos) y dejarla quieta evita tocar
+//        su alias del bloque de exports, que es justo lo que rompio en v378.
+//        OJO: el compositor extraido NO SE EJECUTA HOY. Nadie lo invoca, y
+//        ademas lee la clase .parent-select-chk, que ningun archivo pinta.
+//        Su sustituta viva es la familia _um* de panel.js. Se movio tal cual,
+//        sin borrar nada; si algun dia se retira, ese archivo es la unidad.
+//        panel.js queda en 3288 lineas. Bump para forzar recarga.
 //  v379: FIX de la regresion introducida en v378. Al extraer
 //        comms/contact-manager.js, panel.js seguia referenciando
 //        openContactManager y saveContactManagerData por su NOMBRE PELADO en
@@ -722,8 +739,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v379';
-const CACHE_NAME = 'cronos-cache-v379';
+const VERSION = 'v380';
+const CACHE_NAME = 'cronos-cache-v380';
 
 const ASSETS = [
     './',
