@@ -37,56 +37,58 @@
       }
       
       // ══════════════════════════════════════════════════════════════════
-      // Hook para inicializar AuditLogger cuando inicia el partido
+      // Inicialización del AuditLogger para el partido en curso
       // ══════════════════════════════════════════════════════════════════
-      const origStartMatch = window.startMatch || (() => {});
-      window.startMatch = function(...args) {
-        
-        // Esperar a que liveMatchId esté disponible
-        setTimeout(() => {
-          if (window.liveMatchId && !window.auditLogger) {
-            window.auditLogger = new AuditLogger();
-            window.auditLogger.init(window.liveMatchId);
-            
-            // Flush any pending logs from offline queue
-            window.auditLogger.flushQueue().catch(err => {
-              if(window._CRONOS_DEBUG) console.warn('[Sprint 3 Init] Error flushing audit queue:', err);
-            });
-          }
-        }, 100);
-        
-        return origStartMatch.apply(this, args);
-      };
-      
-      // ══════════════════════════════════════════════════════════════════
-      // Inicialización fallback si startMatch no existe
-      // ══════════════════════════════════════════════════════════════════
+      // NOTA (2026-07-27): aquí había un envoltorio de `window.startMatch`.
+      // Se ha eliminado porque `startMatch` NO EXISTE en ningún archivo del
+      // proyecto: el envoltorio capturaba `window.startMatch || (() => {})`,
+      // es decir un no-op, y creaba un global fantasma que nadie invocaba
+      // jamás. El partido arranca por goToTitularSelection(), no por ahí.
+      // La inicialización real del auditor es la de abajo, que es la que
+      // siempre ha funcionado.
       if (typeof window.liveMatchId !== 'undefined' && window.liveMatchId && !window.auditLogger) {
         window.auditLogger = new AuditLogger();
         window.auditLogger.init(window.liveMatchId);
       }
-      
+
       // ══════════════════════════════════════════════════════════════════
       // Limpiar RenderOptimizer y auditor cuando termina el partido
       // ══════════════════════════════════════════════════════════════════
-      const origEndMatch = window.endMatch || (() => {});
-      window.endMatch = function(...args) {
-        
-        // Flush audit logs
-        if (window.auditLogger) {
-          window.auditLogger.flushQueue().then(() => {
-          }).catch(err => {
-            if(window._CRONOS_DEBUG) console.warn('[Sprint 3 Init] Error flushing logs before end:', err);
-          });
+      // ⚠️ FIX (2026-07-27) — hallazgo #11 de la auditoría 2026-07-22.
+      // Este envoltorio se PERDÍA en conexiones lentas. Corre dentro de un
+      // setInterval, y `window.endMatch` lo define active-match.js, que es un
+      // <script> posterior: si el intervalo disparaba antes de que ese script
+      // terminara de descargarse, se envolvía un no-op y acto seguido
+      // active-match.js sobrescribía window.endMatch, tirando este envoltorio
+      // a la basura. Resultado: el volcado de la auditoría al terminar el
+      // partido no ocurría, en silencio y justo en el escenario más probable
+      // (entrenador en el campo con mala cobertura).
+      //
+      // Ahora se espera a que endMatch exista DE VERDAD antes de envolverlo,
+      // con guarda de idempotencia — el mismo patrón que ya usaba
+      // js/core/patches.js (patchEndMatchCleanup). Los dos envoltorios
+      // conviven sin pisarse: cada uno comprueba su propia marca.
+      function wrapEndMatchForAudit() {
+        if (typeof window.endMatch !== 'function') {
+          setTimeout(wrapEndMatchForAudit, 300);
+          return;
         }
-        
-        // Limpiar estadísticas de render
-        if (window.renderOptimizer) {
-          const stats = window.renderOptimizer.getStats();
-        }
-        
-        return origEndMatch.apply(this, args);
-      };
+        if (window.endMatch._cronosAuditWrapped) return;   // idempotente
+        const origEndMatch = window.endMatch;
+        window.endMatch = function(...args) {
+
+          // Flush audit logs
+          if (window.auditLogger) {
+            window.auditLogger.flushQueue().catch(err => {
+              if(window._CRONOS_DEBUG) console.warn('[Sprint 3 Init] Error flushing logs before end:', err);
+            });
+          }
+
+          return origEndMatch.apply(this, args);
+        };
+        window.endMatch._cronosAuditWrapped = true;
+      }
+      wrapEndMatchForAudit();
       
       
     } else if (hasAuditLogger && !hasRenderOptimizer) {
