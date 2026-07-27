@@ -50,6 +50,7 @@ const FILES = [
     'js/coach/comms/collective-report.js',
     'js/coach/comms/individual-reports.js',
     'js/coach/comms/contact-manager.js',
+    'js/coach/comms/bulk-messaging.js',
     'js/coach/reports/club-reports.js',
     'js/coach/reports/report-engine.js',
     'js/coach/reports/director-config.js',
@@ -115,7 +116,11 @@ console.log('\n── PARTE 2 · la cadena de coach/comms se carga entera sin la
         .filter(x => x.at !== -1)
         .sort((a, b) => a.at - b.at)
         .map(x => x.f);
-    ok('2a · los cinco archivos de comms estan enlazados en index.html', chain.length === 5, chain);
+    // 5 tras el paso 4, 6 tras el paso 5. Se deriva de FILES para que anadir
+    // un modulo nuevo a la lista de arriba baste.
+    const expectedChain = FILES.filter(f => f.startsWith('js/coach/comms/')).length;
+    ok('2a · todos los archivos de comms estan enlazados en index.html',
+        chain.length === expectedChain, { chain, expectedChain });
 
     const noop = () => {};
     const stubEl = () => ({ style: {}, dataset: {}, innerHTML: '', value: '', checked: false,
