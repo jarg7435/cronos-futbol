@@ -15,7 +15,18 @@
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
-const panel    = fs.readFileSync(path.join(ROOT, 'js/coach/comms/panel.js'), 'utf8');
+// El monolito comms/panel.js se descompuso igual (auditoría 2026-07-22, pasos
+// 6a/6b, 2026-07-27): sus dos call-sites de _cResolveClubId estaban en el §8
+// de envío de informes, uno en el camino MANUAL (que se fue a
+// match-reports-send.js) y otro en el AUTOMÁTICO (match-reports-auto.js).
+// Se leen todos y se cuentan juntos, para que el recuento siga describiendo la
+// misma superficie de código. Los archivos aún no extraídos se ignoran.
+const panel = [
+  'js/coach/comms/panel.js',
+  'js/coach/comms/match-reports-send.js',
+  'js/coach/comms/match-reports-auto.js',
+].filter(f => fs.existsSync(path.join(ROOT, f)))
+ .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 // El monolito club-reports.js se descompuso (auditoría 2026-07-22, paso 5 de 6
 // el 2026-07-26): uno de los dos call-sites de _cResolveClubId se quedó en
 // club-reports.js (openStaffDashboard) y el otro se fue a reports-tab.js

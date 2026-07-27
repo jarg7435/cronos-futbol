@@ -265,7 +265,18 @@ async function callSync(userDoc, data, ctxAuth) {
     // ═══════════════════ PARTE 4 · call-sites cliente ═════════════════════
     console.log('\n── PARTE 4 · call-sites cliente (ya no escriben clubId directo) ──');
 
-    const panel = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'panel.js'), 'utf8');
+    // Los dos call-sites de _cResolveClubId de comms/panel.js vivían en el §8
+    // de envío de informes, que se partió en dos al descomponer el monolito
+    // (auditoría 2026-07-22, pasos 6a/6b, 2026-07-27): uno se fue al camino
+    // MANUAL y otro al AUTOMÁTICO. Se leen todos y se cuentan juntos, para que
+    // el recuento siga describiendo la misma superficie de código. Los que aún
+    // no estén extraídos se ignoran.
+    const panel = [
+        'js/coach/comms/panel.js',
+        'js/coach/comms/match-reports-send.js',
+        'js/coach/comms/match-reports-auto.js',
+    ].filter(f => fs.existsSync(path.join(ROOT, f)))
+     .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
     // El monolito club-reports.js se descompuso (auditoría 2026-07-22, paso 5
     // de 6 el 2026-07-26): uno de los dos call-sites de _cResolveClubId se
     // quedó en club-reports.js (openStaffDashboard) y el otro se fue a

@@ -51,6 +51,7 @@ const FILES = [
     'js/coach/comms/individual-reports.js',
     'js/coach/comms/contact-manager.js',
     'js/coach/comms/bulk-messaging.js',
+    'js/coach/comms/match-reports-send.js',
     'js/coach/reports/club-reports.js',
     'js/coach/reports/report-engine.js',
     'js/coach/reports/director-config.js',
