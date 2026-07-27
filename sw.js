@@ -785,6 +785,7 @@ const ASSETS = [
     './js/core/event-listeners.js',
     './js/services/firebase-init.js',
     './js/services/auth.js',
+    './js/services/auth/role-launch.js',
     './js/services/auth-improvements.js',
     './js/services/firestore-sync.js',
     './js/services/firestore-storage.js',

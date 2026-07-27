@@ -13,7 +13,14 @@ const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const appInit = fs.readFileSync(path.join(root, 'js', 'core', 'app-init.js'), 'utf8');
-const auth    = fs.readFileSync(path.join(root, 'js', 'services', 'auth.js'), 'utf8');
+// _launchWithRole se extrajo a js/services/auth/role-launch.js en el paso 1 del
+// monolito #4 (auditoría 2026-07-22, 2026-07-27). Se leen auth.js y el archivo
+// nuevo concatenados, para que extractFn siga encontrando la función donde
+// quiera que viva. Los que aún no existan se ignoran.
+const auth    = [
+    path.join(root, 'js', 'services', 'auth.js'),
+    path.join(root, 'js', 'services', 'auth', 'role-launch.js'),
+].filter(p => fs.existsSync(p)).map(p => fs.readFileSync(p, 'utf8')).join('\n');
 const panel   = fs.readFileSync(path.join(root, 'js', 'admin', 'club', 'panel.js'), 'utf8');
 const importJs = fs.readFileSync(path.join(root, 'js', 'ai', 'import.js'), 'utf8');
 

@@ -176,6 +176,43 @@ console.log('\n── PARTE 2 · la cadena de coach/comms se carga entera sin la
         typeof sb.window._cronosForceRedispatch === 'function');
 }
 
+console.log('\n── PARTE 3 · modulos ES: cada `import` resuelve a un `export` real ──');
+// El monolito #4 (js/services/auth.js) es un MODULO ES, no un script clasico:
+// la parte 2 no le aplica. Su riesgo equivalente es un `import { X }` cuyo
+// nombre no exista en el archivo de origen — un error de ENLACE que node
+// --check NO detecta (parsea cada archivo por separado) y que en el navegador
+// tumba el modulo entero al arrancar. Esto lo cubre.
+{
+    const MODULES = ['js/services/auth.js', 'js/services/auth/role-launch.js']
+        .filter(f => fs.existsSync(path.join(ROOT, f)));
+    const exportsOf = (src) => new Set([
+        ...[...src.matchAll(/^export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]),
+        ...[...src.matchAll(/^export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]),
+    ]);
+    const rotos = [];
+    let comprobados = 0;
+    for (const rel of MODULES) {
+        const abs = path.join(ROOT, rel);
+        const src = fs.readFileSync(abs, 'utf8');
+        for (const m of src.matchAll(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g)) {
+            const spec = m[2];
+            if (!spec.startsWith('.')) continue;               // sólo rutas locales
+            const target = path.resolve(path.dirname(abs), spec);
+            if (!fs.existsSync(target)) { rotos.push(rel + ' -> ' + spec + ' (archivo inexistente)'); continue; }
+            const disponibles = exportsOf(fs.readFileSync(target, 'utf8'));
+            for (const raw of m[1].split(',')) {
+                const n = raw.trim().split(/\s+as\s+/)[0].trim();
+                if (!n) continue;
+                comprobados++;
+                if (!disponibles.has(n)) rotos.push(rel + ': importa `' + n + '` de ' + spec + ', que no lo exporta');
+            }
+        }
+    }
+    ok('3a · ⚠️ todo `import { X } from "./y.js"` encuentra su export (node --check NO ve esto)',
+        rotos.length === 0, rotos);
+    ok('3b · y la comprobacion ha mirado algo de verdad', comprobados > 0, { nombres: comprobados });
+}
+
 console.log('\n────────────────────────────────────────────');
 console.log('Resultado: ' + pass + '/' + (pass + fail) + (fail ? '  ❌ ' + fail + ' FALLOS' : '  ✅'));
 process.exit(fail ? 1 : 0);
