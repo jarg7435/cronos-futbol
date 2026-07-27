@@ -1253,7 +1253,15 @@ window._openCoachCommsMenu = function() {
                 </button>
 
                 <!-- PARTIDOS TERMINADOS -->
-                <button onclick="(function(){ if(typeof showFinishedMatches==='function'){showFinishedMatches();}else{alert('Módulo no disponible');} })()"
+                <button onclick="(function(){
+                    const _extras = (window._cronosCurrentUser?.extras) || {};
+                    if (_extras.partidos_terminados === false) {
+                        if(typeof showToast==='function') showToast('🔒 Partidos Terminados no disponible en tu plan', 3500);
+                        else alert('No disponible en tu plan');
+                        return;
+                    }
+                    if(typeof showFinishedMatches==='function'){showFinishedMatches();}else{alert('Módulo no disponible');}
+                })()"
                     style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
                            background:rgba(255,88,88,0.08);border:1px solid rgba(255,88,88,0.3);
                            border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
