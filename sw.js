@@ -1,5 +1,30 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v381: refactor monolitos (auditoria 2026-07-22), monolito #3, pasos 6a y 6b
+//        -- FIN DEL MONOLITO #3. El §8 "Envio de informes de partido" eran
+//        1359 lineas en DOS CAMINOS INDEPENDIENTES (cero referencias cruzadas,
+//        verificado en ambos sentidos) y se extraen por separado:
+//          · comms/match-reports-send.js (846 lineas) -- camino MANUAL: el
+//            entrenador abre la modal, elige destinatarios y envia.
+//            Entrada: match/persistence/team-persistence.js.
+//          · comms/match-reports-auto.js (510 lineas) -- camino AUTOMATICO:
+//            autoDispatchMatchReports + saveAllMatchReportsInternal, que se
+//            disparan al terminar el partido y en cada accion de jugador.
+//            Entradas: match/events/player-actions.js y
+//            match/persistence/active-match.js.
+//        Movimiento mecanico en ambos, sin cambios de comportamiento (tests
+//        dedicados en verde antes y despues: 49->53 y 33->38).
+//        Los dos aliases del bloque de exports (sendMatchReportsToParents y
+//        saveAllMatchReportsInternal) se convierten a autoasignacion en el
+//        mismo movimiento: referenciarlos por nombre pelado desde panel.js
+//        habria repetido el ReferenceError de carga de v378.
+//        panel.js queda en 1953 lineas, desde las 5879 del inicio: un 67%
+//        menos. Lo que queda es el nucleo de mensajeria unificada, sus helpers
+//        y openUnifiedCommsMenu como router.
+//        Se corrige ademas una asercion de test_p11d_collective_write.js que
+//        llevaba tiempo verde por el motivo equivocado: su regex del FIX P11-D
+//        casaba con codigo de otras funciones y no habria detectado la perdida
+//        de me.uid. Bump para forzar recarga.
 //  v380: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 5 de 6
 //        -- extraido el COMPOSITOR DE MENSAJERIA MASIVA LEGACY
 //        (toggleSelectAllParents, updateBulkCount, openBulkMessageComposer,
@@ -739,8 +764,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v380';
-const CACHE_NAME = 'cronos-cache-v380';
+const VERSION = 'v381';
+const CACHE_NAME = 'cronos-cache-v381';
 
 const ASSETS = [
     './',
