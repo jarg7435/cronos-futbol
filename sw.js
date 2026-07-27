@@ -1,5 +1,16 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v376: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 2 de 6
+//        -- extraido "Informe colectivo" (openCollectiveReport/
+//        _sendCollectiveReportNow, 472 lineas) a comms/collective-report.js.
+//        Movimiento mecanico, sin cambios de comportamiento (test dedicado en
+//        verde antes y despues). OJO: el despacho automatico de informes al
+//        terminar un partido es autoDispatchMatchReports, que SE QUEDA en
+//        panel.js y es una implementacion DISTINTA de la de este archivo.
+//        Se actualiza test_p11d_collective_write.js para que lea los dos
+//        ficheros: vigila que staffUids incluya siempre me.uid, sin lo cual
+//        el partido no aparece en el Panel de Informes.
+//        panel.js queda en 4715 lineas. Bump para forzar recarga.
 //  v375: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 1 de 6
 //        -- extraida "Notificacion de entrenamiento" (openTrainingNotification/
 //        _sendTrainingNotification, 213 lineas) a comms/training-notify.js.
@@ -669,8 +680,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v375';
-const CACHE_NAME = 'cronos-cache-v375';
+const VERSION = 'v376';
+const CACHE_NAME = 'cronos-cache-v376';
 
 const ASSETS = [
     './',
