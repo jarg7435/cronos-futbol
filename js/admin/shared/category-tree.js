@@ -85,10 +85,11 @@
 
     // ── Índice O(n): staff + (catId → subId → [usuarios]) ────────────────
     function _buildIndex(eUsers, mode) {
-        const staff     = [];          // {u, role, coordType}  (solo modo 'club')
-        const byCatSub  = new Map();   // catId -> (subId -> [usuarios])
-        const catHasAny = new Set();
-        const subHasAny = new Set();
+        const staff      = [];          // {u, role, coordType}  (solo modo 'club')
+        const byCatSub   = new Map();   // catId -> (subId -> [usuarios])
+        const catHasAny  = new Set();
+        const subHasAny  = new Set();
+        const unassigned = [];          // entrenadores/padres sin categoría válida
 
         (eUsers || []).forEach(u => {
             const r = u._activeRoleData || {};
@@ -113,8 +114,11 @@
             if (!_COACH_ROLES.has(role) && !_PARENT_ROLES.has(role)) return;
             const cat = _normCat(r);
             const sub = _normSub(r);
-            if (!_validCatIds.has(cat)) return;      // sin categoría válida → excluir
-            if (!CT_SUBCATS.includes(sub)) return;   // sin subcategoría válida → excluir
+            // Si no tiene categoría/subcategoría válida, va a 'unassigned' (visible en el panel)
+            if (!_validCatIds.has(cat) || !CT_SUBCATS.includes(sub)) {
+                unassigned.push(u);
+                return;
+            }
             if (!byCatSub.has(cat)) byCatSub.set(cat, new Map());
             const subMap = byCatSub.get(cat);
             if (!subMap.has(sub)) subMap.set(sub, []);
@@ -122,24 +126,45 @@
             catHasAny.add(cat);
             subHasAny.add(cat + '|' + sub);
         });
-        return { staff, byCatSub, catHasAny, subHasAny };
+        return { staff, byCatSub, catHasAny, subHasAny, unassigned };
     }
 
     // ── Fila plana de un usuario (Entrenador/Padre) — SIN acciones ───────
     function _userRowHtml(u) {
         const r = u._activeRoleData || {};
         const roleMeta = (window.ROLE_META || {})[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' };
-        let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
-        name = _eH(String(name).split(' ')[0]);
+
+        // Nombre completo: busca en varios campos para cubrir todos los formatos de registro
+        const _firstName = u.firstName || u.nombre || '';
+        const _lastName  = u.lastName  || u.surname || u.apellidos || u.apellido || '';
+        let fullName = [_firstName, _lastName].filter(Boolean).join(' ').trim();
+        if (!fullName) fullName = u.fullName || u.name || u.displayName || '';
+        if (!fullName && u.email) fullName = u.email.split('@')[0];  // último recurso
+        if (!fullName) fullName = 'Usuario';
+        fullName = _eH(fullName);
+
         const pending = (r.isAuthorized === false || r.status === 'pending_individual' || r.status === 'pending_club_admin' || r.status === 'pending_sa' || r.status === 'pending')
             ? '<span style="font-size:0.62rem;color:#ffa500;margin-left:0.3rem;">⏳</span>' : '';
+
+        // ID completo en fuente monospace pequeña — totalmente visible y copiable
+        const fullId = _eH(String(u.id || u.uid || ''));
+        const idEl = fullId
+            ? '<span style="font-size:0.6rem;color:#58a6ff;background:rgba(88,166,255,0.06);' +
+              'padding:2px 5px;border-radius:4px;font-family:monospace;cursor:pointer;word-break:break-all;" ' +
+              'title="Copiar ID" onclick="navigator.clipboard.writeText(\'' + fullId + '\').then(()=>{this.style.color=\'#3fb950\';setTimeout(()=>this.style.color=\'#58a6ff\',1500);})">' +
+              fullId + '</span>'
+            : '<span style="color:#4d5566;font-size:0.6rem;">—</span>';
+
         return '' +
-            '<div style="display:grid; grid-template-columns:minmax(96px,auto) minmax(80px,1fr) minmax(0,2fr) auto;' +
-            ' align-items:center; gap:0.6rem; padding:0.55rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05);">' +
-            '<div style="font-size:0.7rem; color:' + roleMeta.color + '; font-weight:600; white-space:nowrap;">' + roleMeta.icon + ' ' + _eH(roleMeta.label) + pending + '</div>' +
-            '<div style="font-weight:600; color:white; font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + name + '</div>' +
+            '<div style="display:grid; grid-template-columns:minmax(96px,auto) minmax(100px,1fr) minmax(0,2fr) auto;' +
+            ' align-items:start; gap:0.6rem; padding:0.55rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05);">' +
+            '<div style="font-size:0.7rem; color:' + roleMeta.color + '; font-weight:600; white-space:nowrap; padding-top:2px;">' + roleMeta.icon + ' ' + _eH(roleMeta.label) + pending + '</div>' +
+            '<div style="font-weight:600; color:white; font-size:0.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + fullName + '</div>' +
             '<div style="font-size:0.74rem; color:#8b949e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + _eH(u.email || '') + '">' + _eH(u.email || '') + '</div>' +
-            '<div style="font-size:0.72rem; color:#8b949e; white-space:nowrap;">' + _eH(_regDate(u)) + '</div>' +
+            '<div style="font-size:0.68rem; color:#8b949e; white-space:nowrap;">' + _eH(_regDate(u)) + '</div>' +
+            '</div>' +
+            '<div style="padding:0 0.6rem 0.45rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05); margin-top:-0.3rem;">' +
+            '<span style="font-size:0.6rem;color:#4d5566;margin-right:4px;">ID:</span>' + idEl +
             '</div>';
     }
 
@@ -147,9 +172,22 @@
     function _rowHeaderHtml() {
         const th = (t) => '<div style="font-size:0.62rem; font-weight:700; color:#79c0ff; text-transform:uppercase; letter-spacing:0.6px;">' + t + '</div>';
         return '' +
-            '<div style="display:grid; grid-template-columns:minmax(96px,auto) minmax(80px,1fr) minmax(0,2fr) auto;' +
+            '<div style="display:grid; grid-template-columns:minmax(96px,auto) minmax(100px,1fr) minmax(0,2fr) auto;' +
             ' align-items:center; gap:0.6rem; padding:0.4rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.1);">' +
             th('Rol') + th('Nombre') + th('Email') + th('Fecha') +
+            '</div>';
+    }
+
+    // ── Sección usuarios sin categoría asignada ──────────────────────────
+    function _unassignedBlockHtml(unassigned) {
+        if (!unassigned || !unassigned.length) return '';
+        const rows = _rowHeaderHtml() + unassigned.map(_userRowHtml).join('');
+        return '' +
+            '<div style="margin-bottom:0.6rem; border:1px solid rgba(255,215,0,0.2); border-radius:10px; overflow:hidden;">' +
+            '<div style="background:rgba(255,215,0,0.06); padding:0.45rem 0.9rem; display:flex; align-items:center; gap:0.5rem;">' +
+            '<span style="font-size:0.78rem; font-weight:700; color:#ffd700;">⚠️ Sin categoría/subcategoría asignada (' + unassigned.length + ')</span>' +
+            '</div>' +
+            '<div>' + rows + '</div>' +
             '</div>';
     }
 
@@ -238,9 +276,10 @@
         const mode = (opts && opts.mode) || 'club';
         const idx = _buildIndex(expandedUsers, mode);
         const treeHtml = CT_CATEGORIES.map(function (c) { return _categoryCardHtml(c, idx); }).join('');
-        const staffHtml = (mode === 'club') ? _staffBlockHtml(idx.staff) : '';
+        const staffHtml    = (mode === 'club') ? _staffBlockHtml(idx.staff) : '';
+        const unassignedHtml = _unassignedBlockHtml(idx.unassigned);
         return _SCOPED_STYLE +
-            '<div style="margin-bottom:0.5rem;">' + staffHtml + treeHtml + '</div>';
+            '<div style="margin-bottom:0.5rem;">' + staffHtml + unassignedHtml + treeHtml + '</div>';
     }
 
     window.renderCategoryTreeReadOnly = renderCategoryTreeReadOnly;
