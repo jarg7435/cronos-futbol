@@ -1039,6 +1039,28 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
             }
         } catch (_) {}
 
+        // If they have roles in other entities/clubs, preserve document & auth account
+        const rolesRemovidos = _allRoles.filter(r => {
+            const sameEntity = String(r.clubId || r.individualEntityId || '') === String(_entityId || '');
+            return sameEntity;
+        });
+
+        if (_otherActiveRoles.length > 0) {
+            // Update allRoles in primary document
+            await updateDoc(doc(db, 'users', parentUid), { allRoles: _otherActiveRoles });
+            // Delete secondary documents for removed roles
+            for (const r of rolesRemovidos) {
+                const secId = parentUid + '_' + r.role + '_' + (r.clubId || r.individualEntityId || 'global');
+                if (secId !== parentUid) {
+                    try { await deleteDoc(doc(db, 'users', secId)); } catch (_) {}
+                }
+            }
+            if (typeof _saToast === 'function') _saToast('➖ Usuario removido de esta entidad. Conserva sus roles en otros clubes.', 4000);
+            if (typeof _saHideSpinner === 'function') _saHideSpinner();
+            openIndividualAdminPanel();
+            return;
+        }
+
         // Delete from Firestore completely (allows email reuse)
         await deleteDoc(doc(db, 'users', parentUid));
 
