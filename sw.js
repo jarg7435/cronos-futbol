@@ -1,5 +1,21 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v379: FIX de la regresion introducida en v378. Al extraer
+//        comms/contact-manager.js, panel.js seguia referenciando
+//        openContactManager y saveContactManagerData por su NOMBRE PELADO en
+//        su bloque de exports final. Ese archivo se carga DESPUES, asi que
+//        era un ReferenceError EN TIEMPO DE CARGA que abortaba el resto de
+//        panel.js: error no capturado en consola en cada arranque y
+//        window._cronosForceRedispatch sin definir. El resto del archivo, y
+//        el nucleo de mensajeria entero, se ejecutaban con normalidad, y las
+//        funciones afectadas seguian publicandose desde su propio archivo,
+//        por eso no se noto en la interfaz. Pasan a autoasignacion inocua.
+//        Se anade scripts/test_extracted_modules_load.js: comprueba de forma
+//        ESTATICA que ningun alias cuelgue de un nombre ausente y carga en
+//        RUNTIME los cinco archivos de comms en el orden real de index.html
+//        exigiendo que ninguno lance. Era el hueco que dejaban los tests
+//        dedicados, que solo cargan el bloque movido y nunca el origen
+//        entero. Bump para forzar recarga.
 //  v378: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 4 de 6
 //        -- extraido el "Gestor de Contactos" (openContactManager,
 //        saveContactManagerData, renderContactRowMarkup, renderParentRowMarkup,
@@ -706,8 +722,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v378';
-const CACHE_NAME = 'cronos-cache-v378';
+const VERSION = 'v379';
+const CACHE_NAME = 'cronos-cache-v379';
 
 const ASSETS = [
     './',
