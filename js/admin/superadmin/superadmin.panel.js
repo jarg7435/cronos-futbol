@@ -154,8 +154,11 @@ window.saGoBackToRoles = function saGoBackToRoles() {
     document.body.style.background = '#0d1117';
     document.body.classList.remove('locked');
     // Mostrar selector de roles (compatible con ambos nombres)
-    if (typeof showRoleSelection === 'function') showRoleSelection();
-    else if (typeof showRoleSelector === 'function') showRoleSelector();
+    // OJO: showRoleSelection vive en el ámbito de un módulo ES (auth.js) y NO
+    // cuelga de window, así que desde este script clásico su `typeof` era
+    // siempre 'undefined' y esta rama estaba muerta. Funcionaba de casualidad
+    // por la reserva de abajo. Se deja sólo el alias, que sí está publicado.
+    if (typeof window.showRoleSelector === 'function') window.showRoleSelector();
 };
 
 window.openSuperAdminPanel = async function openSuperAdminPanel() {

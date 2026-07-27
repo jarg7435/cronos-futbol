@@ -16,18 +16,34 @@
     // 1. BOTONES ROL Y SALIR
     // ════════════════════════════════════════════════════════════════
 
+    // FIX (2026-07-27): el botón "Rol" devolvía al usuario a la PANTALLA DE
+    // LOGIN en vez de abrir el selector de roles.
+    //
+    // Causa: la guarda `typeof` sobre el selector multi-rol de auth.js era
+    // SIEMPRE false. Esa función vive en el ámbito de un MÓDULO ES
+    // (js/services/auth.js) y el ámbito de módulo NO cuelga de window, así que
+    // un script clásico como éste no puede verla por su nombre pelado. La rama
+    // nunca se ejecutaba y caía al `else`, que borra la sesión en memoria y
+    // salta a 'auth-screen'.
+    //
+    // Por qué NO se resucita ese selector: al elegir un rol, aquella función
+    // reescribe window._cronosCurrentUser con un objeto MÍNIMO que
+    // pierde allRoles, isAuthorized y status. El showRoleSelection posterior
+    // entonces no encuentra ningún rol confirmado y no pinta ningún panel: la
+    // pantalla se queda EN BLANCO. Verificado ejecutando el código real.
+    //
+    // saGoBackToRoles (superadmin.panel.js) ya hace justo lo que este botón
+    // promete: cierra los paneles abiertos, restaura el body y abre el selector
+    // de roles real, que es el mismo que se usa en cada login.
     window.saCambiarRol = function () {
         var modal = document.getElementById('sa-root-modal');
         if (modal) modal.style.display = 'none';
         var me = window._cronosCurrentUser;
         if (!me) { location.reload(); return; }
-        var allRoles = me._allAuthorizedRoles || me.allRoles || [];
-        if (allRoles.length > 1 && typeof _showMultiRolePicker === 'function') {
-            _showMultiRolePicker({ uid: me.uid, email: me.email }, allRoles);
-        } else if (typeof showScreen === 'function') {
-            window._cronosCurrentUser = null;
-            showScreen('auth-screen');
-        } else { location.reload(); }
+        if (typeof window.saGoBackToRoles === 'function') { window.saGoBackToRoles(); return; }
+        // Reserva: el alias sí está publicado en window por auth.js.
+        if (typeof window.showRoleSelector === 'function') { window.showRoleSelector(); return; }
+        location.reload();
     };
 
     window.saSalir = function () {

@@ -212,6 +212,53 @@ console.log('\n── PARTE 3 · modulos ES: cada `import` resuelve a un `export
         rotos.length === 0, rotos);
     ok('3b · y la comprobacion ha mirado algo de verdad', comprobados > 0, { nombres: comprobados });
 }
+{
+    // ⚠️ LA OTRA CARA DEL MISMO PROBLEMA, y la que causo un fallo REAL:
+    // un SCRIPT CLASICO que referencia por NOMBRE PELADO algo que solo existe
+    // en el ambito de un MODULO ES. El ambito de modulo no cuelga de window,
+    // asi que `typeof loQueSea === 'function'` es SIEMPRE 'undefined' y la
+    // rama muere en silencio. Asi es como el boton "Rol" del panel SuperAdmin
+    // acabo devolviendo al usuario a la pantalla de login (arreglado 2026-07-27).
+    const MODULES = ['js/services/auth.js', 'js/services/auth/role-launch.js']
+        .filter(f => fs.existsSync(path.join(ROOT, f)));
+    const declarados = new Set(), expuestos = new Set();
+    for (const rel of MODULES) {
+        const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        for (const m of src.matchAll(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm)) declarados.add(m[1]);
+        for (const m of src.matchAll(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) declarados.add(m[1]);
+        for (const m of src.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=(?!=)/g)) expuestos.add(m[1]);
+    }
+    // Nombres que otro archivo NO puede ver por su nombre pelado.
+    const invisibles = [...declarados].filter(n => !expuestos.has(n)
+        // firebase-init.js declara su PROPIA checkAuthorization; no es esta.
+        && n !== 'checkAuthorization');
+    const modAbs = new Set(MODULES.map(f => path.resolve(ROOT, f)));
+    const recorrer = (dir, out) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (e.name === 'node_modules' || e.name === '.git') continue;
+            const p = path.join(dir, e.name);
+            if (e.isDirectory()) recorrer(p, out); else if (/\.js$/.test(e.name)) out.push(p);
+        }
+        return out;
+    };
+    const fugas = [];
+    for (const f of recorrer(path.join(ROOT, 'js'), [])) {
+        if (modAbs.has(path.resolve(f))) continue;
+        const rel = path.relative(ROOT, f).replace(/\\/g, '/');
+        fs.readFileSync(f, 'utf8').split('\n').forEach((l, i) => {
+            const code = l.trim();
+            if (!code || code.startsWith('//') || code.startsWith('*')) return;
+            // se ignora lo que vaya dentro de comillas (plantillas de HTML)
+            const sinCadenas = code.replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '""');
+            for (const n of invisibles) {
+                if (new RegExp('(?<![.\\w$])' + n.replace(/[$]/g, '\\$') + '\\b').test(sinCadenas))
+                    fugas.push(rel + ':' + (i + 1) + '  [' + n + ']  ' + code.slice(0, 70));
+            }
+        });
+    }
+    ok('3c · ⚠️ ningun script clasico referencia por nombre pelado algo del ambito de modulo',
+        fugas.length === 0, fugas);
+}
 
 console.log('\n────────────────────────────────────────────');
 console.log('Resultado: ' + pass + '/' + (pass + fail) + (fail ? '  ❌ ' + fail + ' FALLOS' : '  ✅'));
