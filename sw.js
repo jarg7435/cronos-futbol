@@ -1,5 +1,18 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v377: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 3 de 6
+//        -- extraido "Mis informes / Informes individuales" (openMisInformes,
+//        openIndividualReports y _sendAllIndividualReports, 575 lineas) a
+//        comms/individual-reports.js. Movimiento mecanico, sin cambios de
+//        comportamiento (test dedicado en verde antes y despues: 66/66 -> 71/71).
+//        El bloque solo depende de tres helpers de panel.js: _cFS, _cMyTeamKey
+//        y openUnifiedCommsMenu, que SE QUEDAN alli y resuelven via window en
+//        tiempo de click. Se actualiza test_report_engine_module.js, porque el
+//        consumidor de _RP que vivia en comms/panel.js se mudo con el bloque.
+//        OJO: openIndividualReports y _sendAllIndividualReports no tienen
+//        ningun punto de entrada localizable en el repositorio; se movieron tal
+//        cual, sin borrar nada.
+//        panel.js queda en 4147 lineas. Bump para forzar recarga.
 //  v376: refactor monolitos (auditoria 2026-07-22), monolito #3, paso 2 de 6
 //        -- extraido "Informe colectivo" (openCollectiveReport/
 //        _sendCollectiveReportNow, 472 lineas) a comms/collective-report.js.
@@ -680,8 +693,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v376';
-const CACHE_NAME = 'cronos-cache-v376';
+const VERSION = 'v377';
+const CACHE_NAME = 'cronos-cache-v377';
 
 const ASSETS = [
     './',
