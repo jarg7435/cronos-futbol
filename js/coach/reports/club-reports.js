@@ -82,6 +82,31 @@ window.openTestRolePicker = openTestRolePicker;
 // ════════════════════════════════════════════════════════════════════
 //  PANEL PRINCIPAL DE DIRECCIÓN
 // ════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────
+//  PERMISO DE LA PESTAÑA "Config."  —  Director Deportivo y SuperAdmin
+//
+//  Regla de producto (2026-07-28): el COORDINADOR no debe ver la pestaña ni
+//  poder llegar a ella. El coordinador ejecuta; el director decide.
+//
+//  Una sola funcion para las DOS puertas —el boton y la ruta— a proposito: si
+//  cada una calculase el permiso por su cuenta, podrian divergir y volveria el
+//  defecto. Ocultar el boton NO basta: switchStaffTab('config') es invocable
+//  desde la consola o desde un onclick reutilizado.
+//
+//  Ojo con el rol que se mira: el resto del archivo usa `_activeRole || role`
+//  porque un usuario puede tener varios roles y estar actuando con uno de
+//  ellos; el superadmin, en cambio, se reconoce por `role` (cuando prueba como
+//  director, su `_activeRole` es 'director' pero su `role` sigue siendo
+//  'superadmin'). Se respeta esa distincion tal cual la usa openStaffDashboard.
+// ────────────────────────────────────────────────────────────────────
+function _sdCanSeeConfigTab(user) {
+    const me = user || window._cronosCurrentUser;
+    if (!me) return false;
+    if (['superadmin', 'admin'].includes(me.role)) return true;
+    return (me._activeRole || me.role) === 'director';
+}
+window._sdCanSeeConfigTab = _sdCanSeeConfigTab;
+
 async function openStaffDashboard() {
     const me         = window._cronosCurrentUser;
     const activeRole = me?._activeRole || me?.role;
@@ -168,7 +193,9 @@ async function openStaffDashboard() {
             ${((window._cronosCurrentUser?.extras?.partidos_terminados ?? true) !== false)
                 ? `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#79c0ff;">🎬 Partidos Terminados</button>`
                 : `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#555;cursor:not-allowed;opacity:0.5;" title="Extra no activado">🔒 Partidos Terminados</button>`}
-            <button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>
+            ${_sdCanSeeConfigTab(me)
+                ? `<button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>`
+                : ''}
             <button onclick="openLiveMatchesView()" class="staff-tab"
                 style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
                 🔴 En Vivo</button>
@@ -241,7 +268,20 @@ window.switchStaffTab = async (tab) => {
             await _renderFinishedMatchesTab();
         }
     }
-    if (tab === 'config')         await _renderDirectorConfig();
+    if (tab === 'config') {
+        // ⚠️ SEGUNDA PUERTA, y la que de verdad cierra el acceso: ocultar el
+        // boton no impide llamar a switchStaffTab('config') desde la consola.
+        if (!_sdCanSeeConfigTab()) {
+            container.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;gap:1rem;">
+                    <div style="font-size:3.5rem;">🔒</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:white;">Configuración no disponible</div>
+                    <div style="font-size:0.85rem;color:#8b949e;max-width:340px;">La configuración del club es competencia del Director Deportivo. Contacta con él si necesitas cambiar algo.</div>
+                </div>`;
+            return;
+        }
+        await _renderDirectorConfig();
+    }
 };
 
 // ════════════════════════════════════════════════════════════════════

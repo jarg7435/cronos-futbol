@@ -45,6 +45,19 @@
 async function _renderDirectorConfig() {
     const container = document.getElementById('staff-dashboard-content');
     const me = window._cronosCurrentUser;
+
+    // TERCERA PUERTA (defensa en profundidad). La vista es exclusiva del
+    // Director Deportivo y del SuperAdmin: el Coordinador no debe llegar aqui.
+    // El permiso lo decide _sdCanSeeConfigTab (club-reports.js), la MISMA
+    // funcion que pinta el boton y que filtra la ruta, para que las tres
+    // puertas no puedan discrepar. Esta se comprueba igualmente porque
+    // window._renderDirectorConfig es invocable por su cuenta.
+    // El `typeof` no es decorativo: club-reports.js podria no haber cargado.
+    if (typeof window._sdCanSeeConfigTab === 'function' && !window._sdCanSeeConfigTab()) {
+        container.innerHTML = '<p style="color:var(--text-muted);padding:2rem;">La configuración del club es competencia del Director Deportivo.</p>';
+        return;
+    }
+
     const clubId = me?.clubId;
     if (!clubId) {
         container.innerHTML = '<p style="color:var(--text-muted);padding:2rem;">Sin club asignado.</p>';

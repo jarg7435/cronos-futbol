@@ -149,6 +149,46 @@ service cloud.firestore {
       return resourceData.type == 'individual';
     }
 
+    // ============================================================
+    // DIRECTOR DEPORTIVO DE **ESTE** CLUB  (pestanya "Config.", 2026-07-29)
+    //
+    // Se resuelve por el DOCUMENTO users/{uid} y no por el token, igual que
+    // isStaffRoleByDoc y transitionalRead: el claim de rol puede no estar
+    // presente. Los campos RAIZ role/clubId son los correctos aqui — la app los
+    // mantiene a proposito para que las reglas puedan verificarlos (ver el FIX
+    // v179 de openStaffDashboard, que migra clubId a la raiz, y la Cloud
+    // Function syncRootClubId).
+    //
+    // Atar el clubId del director al {clubId} del documento es lo que impide la
+    // escalada cross-club que motivo la retirada de la rama de v188.
+    // ============================================================
+    function isClubDirectorOf(clubId) {
+      return isAuth() && clubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'director'
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == clubId
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', '') == 'active';
+    }
+
+    // Los TRES unicos campos que escribe la pestanya "Config." del Director
+    // (js/coach/reports/director-config.js): categoryConfigs, timerThresholds y
+    // features.sendIndividualReports.
+    //
+    // ⚠️ EL SEGUNDO diff NO ES REDUNDANTE: `features` es un MAPA que contiene
+    // ademas `live_view`, que gestiona el club_admin desde su panel. Permitir
+    // 'features' entero dejaria al director activarse esa funcion. Por eso se
+    // acota tambien DENTRO del mapa, a la unica clave que la pestanya toca.
+    // Quedan fuera, por tanto: directorUids, coordinatorUids, adminUid, plan,
+    // status, expiresAt y features.live_view.
+    function isClubConfigOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['categoryConfigs', 'timerThresholds', 'features'])
+             && request.resource.data.get('features', {})
+                  .diff(resource.data.get('features', {})).affectedKeys()
+                  .hasOnly(['sendIndividualReports']);
+    }
+
     // Mismo club por campo del documento
     function sameClubAsDoc(docClubId) {
       return isAuth() && ('clubId' in request.auth.token) && request.auth.token.clubId == docClubId;
@@ -252,7 +292,8 @@ service cloud.firestore {
       allow update: if isSuperAdmin() ||
                        isClubAdmin(clubId) ||
                        (isIndividualAdmin(clubId) &&
-                        isIndividualEntity(resource.data));
+                        isIndividualEntity(resource.data)) ||
+                       (isClubDirectorOf(clubId) && isClubConfigOnlyUpdate());
                        // NOTA (refactor v188): se ELIMINO la rama que permitia a
                        // director/coordinador escribir directorUids/coordinatorUids
                        // desde el cliente. Ese registro lo hace EXCLUSIVAMENTE la
@@ -260,6 +301,25 @@ service cloud.firestore {
                        // rol server-side. La regla cliente permitia escalada
                        // cross-club (un director del club A podia anadirse al
                        // directorUids del club B) y era innecesaria.
+                       //
+                       // NUEVO (pestanya "Config." del Director, 2026-07-29): el
+                       // DIRECTOR de ESTE club puede actualizar la configuracion
+                       // deportiva, y NADA MAS. Sin esta rama la pestanya no
+                       // tenia duenyo funcional: se le mostraba al director pero
+                       // su guardado siempre fallaba con permission-denied.
+                       //
+                       // POR QUE ESTO NO REABRE EL AGUJERO DE v188: aquella rama
+                       // era ABIERTA (cualquier campo, y el director se resolvia
+                       // sin atar al club, de ahi la escalada cross-club). Esta:
+                       //   1. exige que el club del director sea ESTE (isClubDirectorOf
+                       //      compara users/{uid}.clubId con {clubId}), asi que no
+                       //      puede tocar otro club;
+                       //   2. limita la escritura con hasOnly a TRES campos de
+                       //      configuracion deportiva. directorUids, coordinatorUids,
+                       //      adminUid, plan, status y expiresAt quedan FUERA, asi que
+                       //      no hay forma de escalar privilegios ni de tocar el plan.
+                       // El registro de UIDs de staff sigue siendo exclusivo de la
+                       // Cloud Function registerStaffUid.
       allow delete: if isSuperAdmin();
     }
 
