@@ -1,5 +1,30 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v385: FIX de la tabla de roles del panel Admin de Club, que mostraba datos
+//        erroneos en pantalla. Una declaracion lexica de nivel superior en un
+//        script clasico no crea propiedad de window: vive en el registro
+//        DECLARATIVO del ambito global, que se resuelve ANTES que window. Como
+//        app-init.js es el PRIMER script de index.html, sus constantes
+//        ensombrecian a las de admin-shared.js en toda lectura por nombre
+//        pelado, y las dos tablas de roles coexistian con contenidos
+//        distintos. club/panel.js mezcla las dos formas en el mismo archivo,
+//        asi que se veia: el rol Entrenador con el emoji DUPLICADO, el rol
+//        'parent' sin traducir (salia el codigo crudo en vez de "Padre /
+//        Madre / Tutor"), las solicitudes de acceso degradadas a "Usuario" y
+//        un literal "<span>undefined</span>" por cada usuario activo.
+//        Las guardas `typeof window.X === 'undefined'` nunca saltaban: miran
+//        window, que si existe, mientras las lecturas peladas cogian la const.
+//        SA_CONFIG, ROLE_META, PLAN_META, STATUS_META y SA_CSS pasan a
+//        js/shared/admin-shared.js como window.*; app-init.js solo conserva un
+//        comentario puntero. SA_CSS se movio VERBATIM y no se sustituyo: las
+//        dos versiones definen las mismas 18 clases pero con valores distintos
+//        (.sa-modal 1060px frente a 860px), y la que se aplicaba de verdad era
+//        la de app-init, asi que borrarla habria encogido en silencio los
+//        paneles de Admin de Club y de Individual.
+//        Guard permanente: scripts/test_admin_shared_constants.js (31/31),
+//        visto ROJO antes del cambio. Barre todos los scripts clasicos en el
+//        orden real de carga y prohibe la clase de bug entera.
+//        Bump para forzar recarga.
 //  v384: DOS correcciones de la auditoria 2026-07-22, ambas de datos que ve
 //        el usuario final.
 //        1) DURACION REGLAMENTARIA EN LOS INFORMES (report-engine.js). La
@@ -824,8 +849,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v384';
-const CACHE_NAME = 'cronos-cache-v384';
+const VERSION = 'v385';
+const CACHE_NAME = 'cronos-cache-v385';
 
 const ASSETS = [
     './',
