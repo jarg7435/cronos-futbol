@@ -1,5 +1,25 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v391: La pestanya "Config." pasa a ser exclusiva del DIRECTOR DEPORTIVO y
+//        del SUPERADMIN. El COORDINADOR ya no la ve ni puede llegar a ella.
+//        Antes no habia NINGUNA comprobacion de rol: el boton se pintaba
+//        siempre y switchStaffTab enrutaba sin mirar nada.
+//        Tres puertas con UNA sola funcion de permiso (_sdCanSeeConfigTab):
+//        el boton, la ruta switchStaffTab('config') y la propia vista
+//        _renderDirectorConfig (invocable suelta desde window). Una sola
+//        funcion a proposito: si cada puerta lo calculase por su cuenta
+//        podrian divergir.
+//        ⚠️ Y LA OTRA MITAD, sin la cual esto seria cosmetico: el DIRECTOR NO
+//        PODIA GUARDAR. La pestanya escribe en clubs/{clubId} y esa regla solo
+//        admitia superadmin, club_admin e individual_admin, asi que la
+//        pestanya se quedaba SIN DUENYO FUNCIONAL. Se anyade una rama acotada
+//        (requiere desplegar tambien firestore:rules): el director de ESTE
+//        club puede escribir SOLO categoryConfigs, timerThresholds y
+//        features.sendIndividualReports. No reabre el agujero de v188: aquella
+//        rama era abierta y permitia escalada cross-club; esta ata al director
+//        a su club y deja fuera directorUids, coordinatorUids, adminUid, plan,
+//        status, expiresAt y features.live_view (que gestiona el club_admin).
+//        Test 40/40 visto ROJO antes (14 fallos). Suite 63/63 + 11 xfail.
 //  v390: FASE D del monolito #5 — fuera el PANEL SUPERADMIN LEGACY v3.
 //        app-init.js 2941 -> 1710 lineas. Acumulado A+B+C+D: 6407 -> 1710,
 //        un 73% menos. 20 funciones (1172 lineas) + 3 alias + 23 lineas de
@@ -964,8 +984,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v390';
-const CACHE_NAME = 'cronos-cache-v390';
+const VERSION = 'v391';
+const CACHE_NAME = 'cronos-cache-v391';
 
 const ASSETS = [
     './',
