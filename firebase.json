@@ -15,6 +15,7 @@
       "scripts/**",
       "rules_test/**",
       "*.txt",
+      "INFORME_TECNICO_CRONOS_FUTBOL.html",
       "package.json",
       "package-lock.json",
       "*.log",
