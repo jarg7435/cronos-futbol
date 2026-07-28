@@ -31,11 +31,14 @@
 //  borrar nada y sin declararlos código muerto. Misma situación que
 //  openCollectiveReport en el paso 2.
 //
-//  ⚠️ DOS DEFECTOS PREEXISTENTES QUE SE PRESERVAN A PROPÓSITO:
-//   1. window.sdDownloadInforme NO existe en ningún archivo del proyecto,
-//      así que "Descargar TXT" siempre sale por el toast de "no disponible"
-//      y nunca descarga nada.
-//   2. `miDismissed` se lee de localStorage y no se usa jamás, mientras que
+//  ✅ ARREGLADO 2026-07-29: "Descargar TXT" ya funciona. Antes delegaba en
+//  window.sdDownloadInforme, que vivía en js/23_staff_dashboard.js y
+//  desapareció al refactorizar ese archivo, así que la guarda `typeof`
+//  nunca se cumplía y el botón siempre salía por el toast de "no
+//  disponible". miDescargarInforme es ahora autocontenido.
+//
+//  ⚠️ DEFECTO PREEXISTENTE QUE SE PRESERVA A PROPÓSITO:
+//   1. `miDismissed` se lee de localStorage y no se usa jamás, mientras que
 //      el catch de miEliminarInforme sí escribe esa clave: lo ocultado en
 //      local cuando falla Firestore no se vuelve a filtrar al recargar.
 //  Y `realDelete` se declara y nunca se lee: el borrado es SIEMPRE lógico
@@ -242,18 +245,94 @@ window.openMisInformes = async function openMisInformes() {
             if (card) card.style.borderColor = isOpen ? 'rgba(63,185,80,0.15)' : 'rgba(63,185,80,0.55)';
         };
 
-        // Exportar informe del entrenador como TXT
+        // ── Exportar informe del entrenador como TXT ──────────────────────
+        //  ARREGLADO 2026-07-29. Antes delegaba en `window.sdDownloadInforme`,
+        //  que vivia en js/23_staff_dashboard.js y desaparecio al refactorizar
+        //  ese archivo: la guarda `typeof` nunca se cumplia y el boton SIEMPRE
+        //  salia por el toast de "no disponible". Nunca descargo nada.
+        //
+        //  Ahora es autocontenido: esta funcion ya tiene el informe en la mano
+        //  (`_misInformesData[key]`), asi que el rodeo por `window._sdMatches`
+        //  —que solo existia para alimentar a la otra funcion— sobraba.
+        //
+        //  ⚠️ El TXT NO se genero copiando el de 23_staff_dashboard.js: aquel
+        //  imprimia `m.teamName`, campo que ESTE objeto no tiene (se construye
+        //  arriba, en openMisInformes), asi que habria escrito siempre
+        //  "Equipo". Se usan los campos que el objeto lleva de verdad.
         window.miDescargarInforme = (key64) => {
             const key = decodeURIComponent(escape(atob(key64)));
             const m   = window._misInformesData?.[key];
-            if (!m || typeof window.sdDownloadInforme !== 'function') {
-                if (typeof showToast==='function') showToast('⚠️ Función de descarga no disponible', 2000);
+            if (!m) {
+                if (typeof showToast==='function') showToast('⚠️ No se encontró el informe', 2500);
                 return;
             }
-            // Reutilizar sdDownloadInforme de 23_staff_dashboard.js
-            if (!window._sdMatches) window._sdMatches = {};
-            window._sdMatches[key64] = m;
-            window.sdDownloadInforme(key64);
+
+            const sh = m.scoreHome, sa = m.scoreAway;
+            const hayResultado = sh != null && sa != null;
+            // MISMA semantica que la tarjeta (mas arriba en este archivo): el
+            // resultado depende de myTeamRole, y los informes antiguos que no
+            // lo llevan caen a 'home'. Si esto divergiera, el archivo
+            // descargado contradiria a la pantalla.
+            const mios  = m.myTeamRole === 'away' ? sa : sh;
+            const suyos = m.myTeamRole === 'away' ? sh : sa;
+            const veredicto = !hayResultado ? ''
+                : mios > suyos ? 'VICTORIA' : mios < suyos ? 'DERROTA' : 'EMPATE';
+            const fecha = m.matchDate
+                ? new Date(m.matchDate + 'T12:00:00').toLocaleDateString('es-ES',
+                    { day: '2-digit', month: 'long', year: 'numeric' })
+                : '—';
+
+            const L = [];
+            L.push('INFORME DE PARTIDO');
+            L.push('='.repeat(46));
+            L.push(`Rival:        ${m.rival || '—'}`);
+            L.push(`Fecha:        ${fecha}${m.matchTime ? ' · ' + m.matchTime : ''}`);
+            if (m.competition) L.push(`Competición:  ${m.competition}`);
+            if (m.category)    L.push(`Categoría:    ${m.category}`);
+            if (m.venue)       L.push(`Campo:        ${m.venue}`);
+            L.push(`Localía:      ${m.myTeamRole === 'away' ? 'Visitante' : 'Local'}`);
+            L.push(`Resultado:    ${hayResultado ? `${sh} - ${sa}` : '—'}${veredicto ? '  (' + veredicto + ')' : ''}`);
+            if (m.coachEmail) L.push(`Entrenador:   ${m.coachEmail}`);
+            L.push('');
+
+            const jug = [...m.players].sort((a, b) =>
+                (parseInt(a.playerNumber) || 99) - (parseInt(b.playerNumber) || 99));
+            const golesTotales = jug.reduce((s, p) => s + (p.goals || 0), 0);
+            L.push(`JUGADORES (${jug.length})${golesTotales ? ` · ${golesTotales} goles` : ''}`);
+            L.push('-'.repeat(46));
+            jug.forEach(p => {
+                const tarjeta = p.cards && p.cards !== 'ninguna' ? p.cards : 'ninguna';
+                L.push(`#${String(p.playerNumber || '?').padStart(2)} ${(p.playerAlias || 'Jugador')}`);
+                L.push(`     Minutos: ${p.minutesPlayed || '0'} | Goles: ${p.goals || 0}`
+                     + ` | Tarjeta: ${tarjeta} | Lesión: ${p.injured ? 'sí' : 'no'}`);
+                // el historial lleva los eventos con su minuto (gol, tarjeta,
+                // lesion), que es justo lo que un TXT puede aportar y el Gantt
+                // de la pantalla no deja copiar.
+                if (Array.isArray(p.history) && p.history.length) {
+                    p.history.forEach(h => L.push(`     · ${h}`));
+                }
+            });
+
+            L.push('');
+            L.push('-'.repeat(46));
+            L.push(`Generado por Chronos Fútbol · ${new Date().toLocaleDateString('es-ES')}`);
+
+            // El BOM es el estilo de la casa (ver movement-log.js) y aqui hace
+            // falta de verdad: el informe lleva acentos y el Bloc de notas de
+            // Windows los rompe sin el.
+            const blob = new Blob(['﻿' + L.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            const limpio = s => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().replace(/\s+/g, '_');
+            a.href = url;
+            a.download = `informe_${limpio(m.rival) || 'partido'}_${m.matchDate || 'sin-fecha'}.txt`;
+            // ⚠️ adjuntar al DOM antes del click: un `a.click()` suelto —como
+            // hacia la version original— no dispara la descarga en Firefox.
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            if (typeof showToast === 'function') showToast('📥 Informe descargado', 2000);
         };
 
         // Eliminar informe — FIX v2: SIEMPRE soft delete (dismissedBy)

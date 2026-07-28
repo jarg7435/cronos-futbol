@@ -133,6 +133,8 @@ function buildSandbox({
     const logs = [];
     const menuCalls = [];
     const opened = [];
+    const blobs = [];        // contenido de cada TXT generado
+    const descargas = [];    // { download, href, adjuntado } por cada click de descarga
     const rpCalls = [];
     const els = {};
 
@@ -202,7 +204,23 @@ function buildSandbox({
                 if (id === 'setup-modal' && noModal) return null;
                 return el(id);
             },
+            // Descarga del TXT: se captura el <a> que se crea, se comprueba que
+            // se ADJUNTA al DOM antes del click (un a.click() suelto no dispara
+            // la descarga en Firefox) y se guarda el archivo resultante.
+            createElement: (tag) => {
+                const node = { tagName: String(tag).toUpperCase(), href: '', download: '',
+                    click() { descargas.push({ download: node.download, href: node.href,
+                                               adjuntado: node._adjuntado === true }); } };
+                return node;
+            },
+            body: {
+                appendChild: (n) => { n._adjuntado = true; return n; },
+                removeChild: (n) => { n._quitado = true; return n; },
+            },
         },
+        // Blob/URL no existen en Node: se capturan para poder leer el TXT.
+        Blob: function (partes) { this.partes = partes; blobs.push(partes.join('')); },
+        URL: { createObjectURL: () => 'blob:fake', revokeObjectURL: () => {} },
         console: {
             log: (...a) => logs.push(a.join(' ')),
             warn: (...a) => logs.push(a.join(' ')),
@@ -241,7 +259,7 @@ function buildSandbox({
 
     return {
         g: sandbox, w: sandbox.window,
-        written, toasts, spinners, logs, menuCalls, opened, rpCalls, store,
+        written, toasts, spinners, logs, menuCalls, opened, rpCalls, store, blobs, descargas,
         el: (id) => els[id],
         body: () => els['mis-informes-body'],
         indivBody: () => els['indiv-rpt-body'],
@@ -445,33 +463,66 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             t.el('mi-rp-detail-' + k).innerHTML.includes('Motor de informes no disponible'),
             t.el('mi-rp-detail-' + k).innerHTML.slice(0, 90));
     }
+    // ── "Descargar TXT" · ARREGLADO 2026-07-29 ──────────────────────────
+    // ESTAS ASERCIONES ESTABAN INVERTIDAS: 3f y 3g fijaban el DEFECTO (que la
+    // descarga no hacia nada) y 3h describia lo que pasaria "si algun dia
+    // existiera" sdDownloadInforme. El boton delegaba en esa funcion, que vivia
+    // en js/23_staff_dashboard.js y desaparecio al refactorizar ese archivo.
+    // Ahora miDescargarInforme es autocontenido y las tres afirman lo contrario.
     {
         const t = buildSandbox({ reports: [rep()] });
         await t.w.openMisInformes();
         t.w.miDescargarInforme(key64of('M1'));
-        ok('3f · ⚠️ sdDownloadInforme NO existe en el repo: descargar siempre avisa y no hace nada',
-            t.toasts.some(x => x.includes('descarga no disponible')) && t.opened.length === 0,
-            { toasts: t.toasts, opened: t.opened });
+        ok('3f · ⚠️ "Descargar TXT" GENERA el archivo y avisa (antes nunca descargaba nada)',
+            t.blobs.length === 1 && t.descargas.length === 1
+            && t.toasts.some(x => x.includes('descargado')),
+            { blobs: t.blobs.length, descargas: t.descargas, toasts: t.toasts });
+        ok('3f2 · el <a> se ADJUNTA al DOM antes del click (sin eso Firefox no descarga)',
+            t.descargas[0] && t.descargas[0].adjuntado === true, t.descargas[0]);
+        ok('3f3 · el nombre del archivo lleva rival y fecha, sin caracteres ilegales',
+            t.descargas[0] && /^informe_.+_\d{4}-\d{2}-\d{2}\.txt$/.test(t.descargas[0].download)
+            && !/[\\/:*?"<>|]/.test(t.descargas[0].download), t.descargas[0] && t.descargas[0].download);
+
+        const txt = t.blobs[0] || '';
+        ok('3f4 · el TXT empieza por el BOM (si no, el Bloc de notas rompe los acentos)',
+            txt.charCodeAt(0) === 0xFEFF, txt.charCodeAt(0));
+        ok('3f5 · el TXT lleva cabecera, rival, resultado y la lista de jugadores',
+            txt.includes('INFORME DE PARTIDO') && txt.includes('Rival:')
+            && txt.includes('Resultado:') && txt.includes('JUGADORES'), txt.slice(0, 160));
+        ok('3f6 · incluye al jugador con su dorsal, minutos y goles',
+            /#\s*7 /.test(txt) && /Minutos:/.test(txt) && /Goles:/.test(txt), txt);
+        // ⚠️ el TXT NO puede contradecir a la pantalla: la tarjeta calcula el
+        // veredicto con myTeamRole y sin el cae a 'home' (ver 2h/2i).
+        ok('3f7 · ⚠️ el veredicto usa la MISMA regla que la tarjeta (sin myTeamRole, 2-1 = VICTORIA)',
+            txt.includes('VICTORIA'), (txt.match(/Resultado:.*/) || [''])[0]);
     }
     {
-        let defs = 0;
-        for (const f of walk(ROOT, [])) {
-            const rel = path.relative(ROOT, f).replace(/\\/g, '/');
-            if (rel.startsWith('scripts/')) continue;
-            const txt = fs.readFileSync(f, 'utf8');
-            if (/(window\.)?sdDownloadInforme\s*=(?!=)/.test(txt)
-                || /function\s+sdDownloadInforme\b/.test(txt)) defs++;
-        }
-        ok('3g · ⚠️ confirmado: sdDownloadInforme no esta definido en ningun fichero', defs === 0, defs);
-    }
-    {
-        const t = buildSandbox({ reports: [rep()], withDownloader: true });
+        const t = buildSandbox({ reports: [rep({ myTeamRole: 'away' })] });
         await t.w.openMisInformes();
-        const k = key64of('M1');
-        t.w.miDescargarInforme(k);
-        ok('3h · si algun dia existiera, le pasaria el partido via window._sdMatches',
-            t.w._sdMatches && t.w._sdMatches[k] && t.opened.includes('download:' + k),
-            { sd: !!t.w._sdMatches, opened: t.opened });
+        t.w.miDescargarInforme(key64of('M1'));
+        const txt = t.blobs[0] || '';
+        ok('3g · ⚠️ con myTeamRole="away" el mismo 2-1 es DERROTA, como en la tarjeta',
+            txt.includes('DERROTA') && txt.includes('Visitante'),
+            (txt.match(/Resultado:.*/) || [''])[0]);
+    }
+    {
+        // Ya no puede quedar ninguna dependencia de la funcion desaparecida.
+        // ⚠️ HAY QUE QUITAR LOS COMENTARIOS ANTES DE BUSCAR: el codigo explica
+        // en un comentario de que dependia y por que se quito, y sin esto mi
+        // propia explicacion dispara mi propia asercion. Es la tercera vez que
+        // caigo en esta trampa, ya registrada.
+        const codigo = BLOCK.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n');
+        ok('3h · ⚠️ miDescargarInforme ya NO depende de sdDownloadInforme ni de _sdMatches',
+            !/sdDownloadInforme/.test(codigo) && !/_sdMatches/.test(codigo));
+        // ojo: con reports:[] openMisInformes sale por el estado vacio ANTES de
+        // definir los manejadores, asi que se pide una clave inexistente sobre
+        // un panel que si tiene informes.
+        const t = buildSandbox({ reports: [rep()] });
+        await t.w.openMisInformes();
+        t.w.miDescargarInforme(key64of('NO_EXISTE'));
+        ok('3h2 · si el informe no existe avisa y no genera archivo',
+            t.blobs.length === 0 && t.toasts.some(x => x.includes('No se encontró')),
+            { blobs: t.blobs.length, toasts: t.toasts });
     }
     ok('3i · ⚠️ realDelete se declara y NUNCA se lee: el borrado es SIEMPRE logico',
         /miEliminarInforme = async \(key64, realDelete = false\)/.test(BLOCK)
