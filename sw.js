@@ -1,5 +1,28 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v388: FASE B del monolito #5 — app-init.js 5203 -> 3689 lineas. Otras 41
+//        copias duplicadas MUERTAS fuera (1539 lineas). Borrado puro, ninguna
+//        linea modificada. Acumulado con la Fase A: 6407 -> 3689, un 42% menos.
+//        Misma clase que la Fase A: codigo que nunca se ejecuta porque un
+//        script POSTERIOR declara el mismo nombre y gana. Cada nombre queda ya
+//        con UNA SOLA declaracion en toda la cadena:
+//          nube + emailjs + SW    -> services/firestore-storage.js
+//          transmision en vivo    -> match/live/sync.js
+//          tutorial               -> match/demo-tutorial.js
+//          acciones de jugador    -> match/events/player-actions.js
+//          importacion, convocatoria e ir al partido -> ai/import.js
+//        HUECO DEL INVENTARIO que encontro el propio guard: solo se buscaba
+//        `function NOMBRE(` en columna 0 y no las publicadas como
+//        `window.NOMBRE = function`. notifyAllLiveContacts era un duplicado de
+//        esa segunda forma y se habia escapado.
+//        La parte 4 del guard pasa a fijar 27 declaraciones de estado
+//        compartido (antes 3). Estan INTERCALADAS entre las funciones muertas,
+//        que es por que se borra funcion a funcion y nunca por rangos: un
+//        borrado por rangos habria dejado un ReferenceError en produccion.
+//        CERO cambio de comportamiento, medido: los 72 scripts clasicos
+//        cargados dos veces, antes y despues, y las 41 funciones resuelven a
+//        codigo BYTE-IDENTICO, con el mismo estado global.
+//        Bump para forzar recarga.
 //  v387: FASE A del monolito #5 — app-init.js 6285 -> 5203 lineas. Borrado
 //        PURO de 30 funciones duplicadas MUERTAS (1107 lineas fuera, 25
 //        comentarios puntero dentro). Ninguna linea modificada.
@@ -889,8 +912,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v387';
-const CACHE_NAME = 'cronos-cache-v387';
+const VERSION = 'v388';
+const CACHE_NAME = 'cronos-cache-v388';
 
 const ASSETS = [
     './',
