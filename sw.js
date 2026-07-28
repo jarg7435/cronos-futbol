@@ -1,5 +1,21 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v386: FIX de staffConfig (cuerpo tecnico), sexto caso de la misma clase de
+//        bug que v385 y encontrado por el guard que se anyadio alli.
+//        app-init.js declaraba un `let staffConfig` y staff-and-comms.js creaba
+//        ADEMAS un window.staffConfig. Como app-init.js carga el primero y una
+//        declaracion lexica de nivel superior se resuelve ANTES que window,
+//        todas las lecturas y escrituras por nombre pelado del archivo vivo
+//        caian sobre el `let` y el objeto de window se quedaba VACIO PARA
+//        SIEMPRE. Sin dano visible (el archivo vivo usa el nombre pelado de
+//        punta a punta), pero era una mina: quien escribiera
+//        window.staffConfig.coach1 leia el objeto vacio.
+//        El duenyo pasa a ser staff-and-comms.js, que es quien lo lee y lo
+//        escribe de verdad; app-init.js solo conserva un comentario puntero.
+//        Prueba de regresion: parte 6 de test_admin_shared_constants.js, que
+//        carga la CADENA REAL de los dos archivos y comprueba que son el mismo
+//        objeto. Verificada ROJA sobre el codigo anterior.
+//        Bump para forzar recarga.
 //  v385: FIX de la tabla de roles del panel Admin de Club, que mostraba datos
 //        erroneos en pantalla. Una declaracion lexica de nivel superior en un
 //        script clasico no crea propiedad de window: vive en el registro
@@ -849,8 +865,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v385';
-const CACHE_NAME = 'cronos-cache-v385';
+const VERSION = 'v386';
+const CACHE_NAME = 'cronos-cache-v386';
 
 const ASSETS = [
     './',
