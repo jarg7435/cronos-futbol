@@ -61,10 +61,16 @@ const rd = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 console.log('── Constantes compartidas de administracion ──\n');
 
 // Sin comentarios: varias plantillas HTML contienen estos nombres como texto.
-// ⚠️ Los saltos de linea de los bloques /* */ se CONSERVAN: si se colapsan, los
-// numeros de linea que reporta el detector se desplazan y apuntan a otro sitio.
+// ⚠️ DOS trampas, las dos me mordieron al escribir este archivo:
+//   1. Los saltos de linea de los bloques /* */ se CONSERVAN. Si se colapsan,
+//      los numeros de linea que reporta el detector se desplazan.
+//   2. Hay que partir por /\r?\n/ y NO por '\n'. En un regex de JavaScript
+//      `.` NO casa con `\r`, porque `\r` es un terminador de linea; sobre un
+//      archivo CRLF (todos los de este repo) el `//.*$` no llega nunca al `$`
+//      y NO borra ni un comentario. Se detecto porque la asercion 6c daba
+//      rojo por un comentario que hablaba del propio patron que vigila.
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ''))
-    .split('\n').map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+    .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
 
 // Orden real de carga de los scripts CLASICOS (los type="module" no comparten
 // el registro declarativo global, no participan en este solapamiento).
@@ -126,17 +132,9 @@ function detectarSolapamientos(files, leer) {
 // EXCEPCIONES CONOCIDAS Y ANALIZADAS. Solo se tolera lo que este aqui: asi el
 // barrido sigue cazando cualquier caso NUEVO.
 //
-//   staffConfig — `let` en app-init.js:128 vs `window.staffConfig` en
-//   staff-and-comms.js:7. Analizado el 2026-07-28 y NO corregido a proposito.
-//   Es el mismo mecanismo, pero HOY no rompe nada: staff-and-comms.js lee y
-//   escribe SIEMPRE por nombre pelado (L17, L23-26, L38, L247-274), o sea
-//   siempre sobre el `let` de app-init. Lo que crea su guarda de L6-8 es un
-//   `window.staffConfig` FANTASMA que se queda vacio para siempre
-//   (verificado: tras `staffConfig.coach1 = 'X'`, `window.staffConfig.coach1`
-//   sigue siendo ''). Es una mina, no un fallo: en cuanto alguien escriba
-//   `window.staffConfig.coach1` leera el objeto vacio. Corregirlo toca el
-//   estado global mutable de §1 y merece su propio paso.
-const EXCEPCIONES = new Set(['staffConfig']);
+// (vacia) — `staffConfig` estuvo aqui el 2026-07-28 y se corrigio ese mismo
+// dia; su prueba de regresion es la PARTE 6.
+const EXCEPCIONES = new Set([]);
 
 // 1c · el barrido real sobre todo el repo
 {
@@ -256,6 +254,87 @@ function cargarShared() {
     const pay = strip(rd('js/admin/billing/payments.js'));
     ok('5g · payments.js sigue leyendo SA_CONFIG', /\bSA_CONFIG\./.test(pay));
     ok('5h · payments.js sigue leyendo PLAN_META', /\bPLAN_META\b/.test(pay));
+}
+
+// ─────────── PARTE 6 · staffConfig: UN SOLO objeto, no dos ───────────
+// El sexto caso de la misma clase de bug, encontrado por la parte 1 de este
+// mismo test el 2026-07-28. app-init.js:128 declaraba `let staffConfig` y
+// staff-and-comms.js:6-8 creaba ADEMAS un `window.staffConfig`. Como el
+// archivo vivo leia y escribia por nombre PELADO, todo caia sobre el `let` y
+// el de window se quedaba VACIO PARA SIEMPRE: una mina, porque quien
+// escribiera `window.staffConfig.coach1` leia el objeto vacio.
+// Ahora el duenyo es staff-and-comms.js (el archivo VIVO; la §9 de app-init.js
+// es su duplicado muerto, pisado por este mismo archivo al cargar despues).
+{
+    const AI = 'js/core/app-init.js';
+    const SC = 'js/core/staff-and-comms.js';
+
+    ok('6a · app-init.js ya no declara staffConfig',
+        !/^\s*(?:const|let|var)\s+staffConfig\s*=/m.test(strip(rd(AI))));
+    ok('6b · staff-and-comms.js es el duenyo (window.staffConfig)',
+        windowAssigns(rd(SC)).has('staffConfig'));
+    // El merge de loadStaffConfig NO puede reasignar por nombre pelado: creaba
+    // un global implicito y era justo lo que partia el objeto en dos.
+    // ⚠️ El regex tiene que ir anclado por lookbehind y NO por `^\s*`: la linea
+    // real es `try { staffConfig = {...} }`, asi que un `^\s*staffConfig` da
+    // VERDE POR LA RAZON EQUIVOCADA (me paso al escribir este test).
+    ok('6c · loadStaffConfig reasigna window.staffConfig, no el nombre pelado',
+        !/(?<![.\w$])staffConfig\s*=(?!=)/.test(strip(rd(SC))));
+
+    // ── prueba de RUNTIME con la CADENA REAL, window === global ──
+    // ⚠️ Hay que cargar app-init.js ANTES que staff-and-comms.js. Un sandbox
+    // que cargue solo el archivo vivo NO reproduce el fallo: sin la
+    // declaracion lexica rival, el nombre pelado ya resuelve contra window y
+    // todo pasa aunque el bug siga ahi.
+    const sb = {};
+    vm.createContext(sb);
+    sb.window = sb;
+    let guardado = null;
+    const almacen = { cronos_staff: JSON.stringify({ coach1: 'ANA', delegate: 'LUIS' }) };
+    sb.localStorage = { getItem: k => (k in almacen ? almacen[k] : null), setItem() {}, removeItem() {} };
+    sb.console = { log() {}, warn() {}, error() {} };
+    sb.cloudSet = (k, v) => { guardado = v; };
+    const campos = { 'staff-coach1': 'PEDRO', 'staff-coach2': '', 'staff-delegate': 'LUIS', 'staff-field-delegate': '' };
+    sb.document = {
+        getElementById: id => (id in campos ? { value: campos[id] } : null),
+        addEventListener() {}, querySelector: () => null,
+        createElement: () => ({ style: {}, classList: { add() {}, remove() {} } }),
+    };
+    sb.navigator = { userAgent: 'node', serviceWorker: { register: () => Promise.resolve() } };
+    sb.location = { href: 'https://x/', hostname: 'x' };
+    sb.setTimeout = () => 0; sb.setInterval = () => 0; sb.clearInterval = () => {};
+    sb.fetch = () => Promise.resolve({ json: () => Promise.resolve({}) });
+
+    let cargo = true, err = '';
+    try {
+        vm.runInContext(rd(AI), sb, { timeout: 15000 });   // 1º, como en index.html
+        vm.runInContext(rd(SC), sb, { timeout: 5000 });    // 2º
+    } catch (e) { cargo = false; err = e.message; }
+    ok('6d · la cadena app-init.js -> staff-and-comms.js carga sin lanzar', cargo, err);
+
+    // ⚠️ El stub de cloudSet va DESPUES de cargar la cadena: app-init.js
+    // declara `function cloudSet`, que pisaria cualquier stub previo.
+    sb.cloudSet = (k, v) => { guardado = v; };
+
+    if (cargo) {
+        vm.runInContext('loadStaffConfig()', sb);
+        // ESTA es la asercion que fallaba antes: lo leido de localStorage tenia
+        // que quedar visible en window.staffConfig, y se quedaba en el `let`.
+        ok('6e · ⚠️ lo que carga loadStaffConfig es visible en window.staffConfig',
+            vm.runInContext('window.staffConfig.coach1', sb) === 'ANA',
+            vm.runInContext('JSON.stringify(window.staffConfig)', sb));
+        ok('6f · el nombre pelado y window son EL MISMO objeto',
+            vm.runInContext('staffConfig === window.staffConfig', sb));
+
+        vm.runInContext('saveStaffConfig()', sb);
+        ok('6g · lo que escribe saveStaffConfig es visible en window.staffConfig',
+            vm.runInContext('window.staffConfig.coach1', sb) === 'PEDRO',
+            vm.runInContext('JSON.stringify(window.staffConfig)', sb));
+        ok('6h · sigue siendo el mismo objeto tras guardar',
+            vm.runInContext('staffConfig === window.staffConfig', sb));
+        ok('6i · lo persistido en cloudSet coincide con window.staffConfig',
+            guardado === vm.runInContext('JSON.stringify(window.staffConfig)', sb), guardado);
+    }
 }
 
 console.log('\n────────────────────────────────────────────');

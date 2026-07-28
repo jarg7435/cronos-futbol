@@ -125,12 +125,12 @@ let liveSyncTimer  = null;   // Intervalo de sincronización del cronómetro
 let liveIsActive   = false;  // true cuando hay partido en vivo activo
 
 // --- CUERPO TÉCNICO (persiste en localStorage) ---
-let staffConfig = {
-    coach1:    '',   // Primer entrenador
-    coach2:    '',   // Segundo entrenador
-    delegate:  '',   // Delegado de equipo
-    fieldDelegate: '' // Delegado de campo (opcional, solo en casa)
-};
+// El estado lo declara js/core/staff-and-comms.js como window.staffConfig, que
+// es quien lo lee y lo escribe de verdad. NO redeclararlo aqui con const/let:
+// app-init.js carga el PRIMERO y una declaracion lexica de nivel superior vive
+// en el registro DECLARATIVO del ambito global, que se resuelve ANTES que
+// window; el resultado serian DOS objetos distintos y el de window se quedaria
+// vacio para siempre. Guardado por scripts/test_admin_shared_constants.js.
 
 // --- CONFIGURACIÓN DE EMAIL Y WHATSAPP (persiste en localStorage) ---
 let emailConfig = {

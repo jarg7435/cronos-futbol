@@ -2,7 +2,12 @@
 //  CUERPO TÉCNICO
 // ══════════════════════════════════════════════════════════════════
 
-// Inicialización segura — evita TypeError si app.js aún no declaró staffConfig
+// Este archivo es el DUEÑO de staffConfig. app-init.js declaraba además un
+// `let staffConfig` propio; como carga el primero y una declaración léxica de
+// nivel superior se resuelve ANTES que window, todas las lecturas y escrituras
+// por nombre pelado de aquí abajo caían sobre AQUEL objeto y este se quedaba
+// vacío para siempre. Ya no lo declara. No volver a declararlo en ningún
+// script que cargue antes que este.
 if (typeof window.staffConfig === 'undefined') {
     window.staffConfig = { coach1: '', coach2: '', delegate: '', fieldDelegate: '' };
 }
@@ -14,7 +19,9 @@ function loadStaffConfig() {
     }
     const saved = localStorage.getItem('cronos_staff');
     if (saved) {
-        try { staffConfig = { ...staffConfig, ...JSON.parse(saved) }; }
+        // Reasignación explícita sobre window: un `staffConfig = …` pelado
+        // crearía un global implícito y volvería a partir el objeto en dos.
+        try { window.staffConfig = { ...window.staffConfig, ...JSON.parse(saved) }; }
         catch(e) { console.warn('[Staff] Error leyendo staffConfig:', e); }
     }
 }
