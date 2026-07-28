@@ -339,140 +339,15 @@ const FIELD_MARGIN = {
     maxY: 87,  // margen inferior (espacio para el nombre)
 };
 
-function clampToField(x, y) {
-    return {
-        x: Math.max(FIELD_MARGIN.minX, Math.min(FIELD_MARGIN.maxX, x)),
-        y: Math.max(FIELD_MARGIN.minY, Math.min(FIELD_MARGIN.maxY, y)),
-    };
-}
+// clampToField() -> js/roster/formations.js (fuente canonica)
 
 // Actualiza el <select> de formación según la modalidad elegida
-function updateFormationOptions(forcedMode) {
-    const mode = (forcedMode !== undefined && forcedMode) ? forcedMode
-                : (document.getElementById('setup-mode')?.value || 'f7');
-    const sel  = document.getElementById('setup-formation');
-    if (!sel) return;
-    const presets = FORMATION_PRESETS[mode];
-    if (!presets) return;
-    sel.innerHTML = '<option value="">-- Sin formación predefinida --</option>';
-    Object.entries(presets).forEach(([key, val]) => {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = val.label;
-        sel.appendChild(opt);
-    });
-    // Pasar el modo EXPLÍCITAMENTE para evitar cualquier lectura stale del DOM
-    updateCategoryOptions(mode);
-}
+// updateFormationOptions() -> js/roster/formations.js (fuente canonica)
 
-function updateCategoryOptions(forcedMode) {
-    // Siempre usar forcedMode si se proporciona; si no, leer del DOM
-    const mode = (forcedMode !== undefined && forcedMode) ? forcedMode
-                : (document.getElementById('setup-mode')?.value || 'f7');
-    const sel = document.getElementById('match-category');
-    if (!sel) return;
-    const _me = window._cronosCurrentUser;
-    console.log('[updateCategoryOptions] mode:', mode, '| me.category:', _me?.category, '| me.subcategory:', _me?.subcategory, '| disabled:', sel.disabled);
-
-    sel.innerHTML = '';
-    if (mode === 'f7') {
-        sel.innerHTML = `
-            <option value="f7_prebenjamin">Prebenjamín (2T x 30')</option>
-            <option value="f7_benjamin">Benjamín (2T x 35')</option>
-            <option value="f7_alevin">Alevín (2T x 35')</option>
-        `;
-    } else {
-        sel.innerHTML = `
-            <option value="f11_infantil">Infantil (2T x 40')</option>
-            <option value="f11_cadete">Cadete (2T x 40')</option>
-            <option value="f11_juvenil">Juvenil (2T x 45')</option>
-            <option value="f11_regional">Regional (2T x 45')</option>
-        `;
-    }
-
-    // FIX: auto-seleccionar categoria y subcategoria del entrenador
-    const me = window._cronosCurrentUser;
-    if (me && me.category) {
-        const userCat = String(me.category).toLowerCase();
-        let targetValue = '';
-        if (userCat.includes('prebenj'))      targetValue = mode + '_prebenjamin';
-        else if (userCat.includes('benj'))    targetValue = mode + '_benjamin';
-        else if (userCat.includes('alev'))    targetValue = mode + '_alevin';
-        else if (userCat.includes('infant'))  targetValue = mode + '_infantil';
-        else if (userCat.includes('cadet'))   targetValue = mode + '_cadete';
-        else if (userCat.includes('juvenil')) targetValue = mode + '_juvenil';
-        else if (userCat.includes('regional'))targetValue = mode + '_regional';
-        if (targetValue) {
-            const opt = sel.querySelector('option[value="' + targetValue + '"]');
-            if (opt) { sel.value = targetValue; console.log('[updateCategoryOptions] auto:', targetValue); }
-        }
-    }
-    const subSel = document.getElementById('match-subcategory');
-    if (subSel && me && me.subcategory) {
-        const userSub = String(me.subcategory).toUpperCase().trim();
-        if (['A','B','C'].includes(userSub)) subSel.value = userSub;
-    }
-    // NO dispatchEvent — elimina bucles y efectos secundarios indeseados
-}
-window.updateCategoryOptions = updateCategoryOptions;
+// updateCategoryOptions() -> js/roster/formations.js (fuente canonica)
 
 // --- APLICAR FORMACIÓN ---
-function applyFormationPreset(key) {
-
-    const presets = FORMATION_PRESETS[currentMode];
-    if (!presets) { console.warn('[FORMACIÓN] No presets para modo:', currentMode); return; }
-    if (!presets[key]) { console.warn('[FORMACIÓN] No preset para key:', key, '| disponibles:', Object.keys(presets)); return; }
-
-    const preset = presets[key];
-    const useFullField = !analyzeAway; // solo local → campo completo
-
-    // CRÍTICO: Ordenar por selección para asignar posiciones correctas de la formación.
-    // Sin esto, los jugadores se colocan en orden de adición al array, no por dorsal ni por selección.
-    const sortedPlayers = [...players].sort((a, b) => {
-        if (a.titularOrder !== undefined && b.titularOrder !== undefined) return a.titularOrder - b.titularOrder;
-        return (a.number || 0) - (b.number || 0);
-    });
-
-    let homeIdx = 0, awayIdx = 0;
-    sortedPlayers.forEach(p => {
-        if (p.status !== 'field') return;
-        if (p.team === 'home') {
-            const positions = useFullField ? preset.full : preset.home;
-            if (positions[homeIdx]) {
-                const pos = clampToField(positions[homeIdx].x, positions[homeIdx].y);
-                p.x = pos.x; p.y = pos.y;
-                homeIdx++;
-            }
-        } else if (p.team === 'away') {
-            const positions = preset.away;
-            if (positions && positions[awayIdx]) {
-                const pos = clampToField(positions[awayIdx].x, positions[awayIdx].y);
-                p.x = pos.x; p.y = pos.y;
-                awayIdx++;
-            }
-        }
-    });
-
-    // Actualizar botones activos
-    activeFormationKey = key;
-    document.querySelectorAll('.formation-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.fkey === key);
-    });
-
-    // ACTUALIZAR POSICIONES DIRECTAMENTE EN EL DOM (sin depender de renderPlayers)
-    players.forEach(p => {
-        if (p.status !== 'field') return;
-        const chip = document.getElementById(`player-${p.id}`);
-        if (chip) {
-            chip.style.left = `${p.x}%`;
-            chip.style.top = `${p.y}%`;
-            chip.style.transform = 'translate(-50%, -50%)';
-        }
-    });
-
-    // Re-renderizar completo como respaldo
-    renderPlayers();
-}
+// applyFormationPreset() -> js/roster/formations.js (fuente canonica)
 
 // --- PLAYER ACTION MODAL ---
 let activeActionPlayerId = null;
@@ -1521,258 +1396,31 @@ window._guardAgainstMatchReset = _guardAgainstMatchReset;
 
 
 // --- BOTONES DE SCROLL EN BANQUILLO ---
-function injectBenchScrollButtons(containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    const section = container.closest('.bench-section');
-    if (!section || section.querySelector('.bench-scroll-btn')) return;
-
-    const STEP = 120; // px por pulsación
-
-    // Botón ▲ arriba
-    const btnUp = document.createElement('button');
-    btnUp.className = 'bench-scroll-btn';
-    btnUp.innerHTML = '▲ subir';
-    btnUp.title = 'Scroll arriba';
-
-    // Scroll continuo al mantener pulsado
-    let scrollInterval = null;
-    const startScroll = (dir) => {
-        container.scrollBy({ top: dir * STEP, behavior: 'smooth' });
-        scrollInterval = setInterval(() => {
-            container.scrollBy({ top: dir * STEP, behavior: 'auto' });
-        }, 300);
-    };
-    const stopScroll = () => clearInterval(scrollInterval);
-
-    btnUp.addEventListener('pointerdown', (e) => { e.preventDefault(); startScroll(-1); });
-    btnUp.addEventListener('pointerup',   stopScroll);
-    btnUp.addEventListener('pointerleave', stopScroll);
-    btnUp.addEventListener('click', () => container.scrollBy({ top: -STEP, behavior: 'smooth' }));
-
-    // Botón ▼ abajo
-    const btnDown = document.createElement('button');
-    btnDown.className = 'bench-scroll-btn bottom';
-    btnDown.innerHTML = '▼ bajar';
-    btnDown.title = 'Scroll abajo';
-
-    btnDown.addEventListener('pointerdown', (e) => { e.preventDefault(); startScroll(1); });
-    btnDown.addEventListener('pointerup',   stopScroll);
-    btnDown.addEventListener('pointerleave', stopScroll);
-    btnDown.addEventListener('click', () => container.scrollBy({ top: STEP, behavior: 'smooth' }));
-
-    // Insertar: ▲ antes del container, ▼ después
-    section.insertBefore(btnUp, container);
-    section.appendChild(btnDown);
-}
+// injectBenchScrollButtons() -> js/ui/bench-scroll.js (fuente canonica)
 
 // --- PERSISTENCE ---
 
-function populateSavedTeams(teamKey) {
-    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
-    if (!dropdown) return;
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    dropdown.innerHTML = '<option value="">-- Cargar --</option>';
-    teams.forEach((team, index) => {
-        const opt = document.createElement('option');
-        opt.value = index;
-        opt.textContent = team.name;
-        dropdown.appendChild(opt);
-    });
-}
+// populateSavedTeams() -> js/ai/import.js (fuente canonica)
 
-function loadTeamFromDropdown(teamKey) {
-    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
-    const index = dropdown.value;
-    if (index === "") return;
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const team = teams[index];
-    if (team) {
-        document.getElementById(`setup-${teamKey}-name`).value = team.name;
-        document.getElementById(`setup-${teamKey}-color`).value = team.color;
-        document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
-        document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
+// loadTeamFromDropdown() -> js/ai/import.js (fuente canonica)
 
-        // Restaurar color secundario si existe
-        if (team.secondaryColor) {
-            const secEl = document.getElementById(`setup-${teamKey}-secondary`);
-            if (secEl) secEl.value = team.secondaryColor;
-            // Guardarlo también en COLORS para que esté disponible al iniciar
-            if (COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
-        }
-
-        // Cargar modalidad y actualizar formaciones/categorías con el modo correcto
-        const teamMode = team.mode || 'f7';
-        const modeEl = document.getElementById('setup-mode');
-        if (modeEl) {
-            modeEl.value = teamMode;
-            currentMode = teamMode;
-        }
-        // Actualizar formaciones Y categorías con el modo del equipo guardado
-        updateFormationOptions(teamMode);
-        if (typeof updateCategoryOptions === 'function') updateCategoryOptions(teamMode);
-
-        // Restaurar categoría guardada con el equipo
-        if (team.category) {
-            const catEl = document.getElementById('match-category');
-            if (catEl) catEl.value = team.category;
-        }
-
-        if (team.formation) {
-            const formEl = document.getElementById('setup-formation');
-            if (formEl) formEl.value = team.formation;
-        }
-
-        // Guardar los jugadores de este equipo para restaurar convocatoria, titulares y suplentes
-        // Guardar el objeto equipo completo (con flag hasMatchData)
-        if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
-        window.loadedTeamPlayers[teamKey] = team;
-    }
-}
-
-function saveCurrentTeam() {
-    const choice = prompt("¿Qué equipo quieres guardar?\nEscribe '1' para Local\nEscribe '2' para Visitante");
-    if (!choice) return;
-    let teamKey = '';
-    if (choice === '1' || choice.toLowerCase() === 'local') teamKey = 'home';
-    else if (choice === '2' || choice.toLowerCase() === 'visitante') teamKey = 'away';
-    else return;
-
-    const teamName = TEAM_NAMES[teamKey];
-    // Guardar jugadores: número, nombre, alias, status (titular=field / suplente=bench) y posición en campo
-    const currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
-        id: p.id,
-        number: p.number,
-        name: p.name,
-        status: p.status,   // 'field' = titular  |  'bench' = suplente
-        x: p.x,
-        y: p.y
-    }));
-    const newTeam = {
-        name: teamName,
-        color: COLORS[teamKey].primary,
-        secondaryColor: COLORS[teamKey].secondary,
-        shortsColor: COLORS[teamKey].shorts,
-        textColor: COLORS[teamKey].text,
-        players: currentPlayers,          // convocatoria completa con titulares y suplentes
-        mode: currentMode,                // 'f7' o 'f11'
-        formation: activeFormationKey,    // sistema de juego activo
-        hasMatchData: true                // Indica que esta es una convocatoria guardada
-    };
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const existingIndex = teams.findIndex(t => t.name === teamName);
-    if (existingIndex >= 0) {
-        if (confirm(`¿Sobrescribir equipo "${teamName}"?`)) teams[existingIndex] = newTeam;
-        else return;
-    } else {
-        if (teams.length >= 20) { alert('Memoria llena (20 equipos).'); return; }
-        teams.push(newTeam);
-    }
-    showSpinner('Guardando equipo…');
-    setTimeout(() => {
-        cloudSet('cronos_teams', JSON.stringify(teams));
-        const titulares = currentPlayers.filter(p => p.status === 'field').length;
-        const suplentes = currentPlayers.filter(p => p.status === 'bench').length;
-        const formationDisplay = activeFormationKey ? '1-' + activeFormationKey : 'sin definir';
-        hideSpinner();
-        showToast('✅ ' + teamName + ' guardado · ' + (currentMode === 'f7' ? 'F7' : 'F11') + ' · ' + formationDisplay + ' · ' + titulares + 'T + ' + suplentes + 'S');
-    }, 300);
-}
+// saveCurrentTeam() -> js/ai/import.js (fuente canonica)
 
 // ═══════════════════════════════════════════════════════════════════
 // saveTeamSetup(teamKey) — Guardar equipo desde el panel de configuración
 // ═══════════════════════════════════════════════════════════════════
-function saveTeamSetup(teamKey) {
-    const nameEl = document.getElementById('setup-' + teamKey + '-name');
-    const colorEl = document.getElementById('setup-' + teamKey + '-color');
-    const shortsEl = document.getElementById('setup-' + teamKey + '-shorts');
-    const textEl = document.getElementById('setup-' + teamKey + '-text');
-    if (!nameEl) return;
-
-    const teamName = (nameEl.value || '').trim();
-    if (!teamName || teamName === 'LOCAL' || teamName === 'VISITANTE') {
-        showToast('⚠️ Escribe un nombre para el equipo antes de guardar.', 3000);
-        nameEl.focus();
-        return;
-    }
-
-    const newTeam = {
-        name:         teamName,
-        color:        colorEl ? colorEl.value : '#58a6ff',
-        shortsColor:  shortsEl ? shortsEl.value : '#ffffff',
-        textColor:    textEl ? textEl.value : '#ffffff',
-        mode:         (typeof currentMode !== 'undefined') ? currentMode : 'f7',
-        category:     document.getElementById('match-category')?.value || '',
-        players:      [],
-        savedAt:      new Date().toISOString(),
-    };
-
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const existingIdx = teams.findIndex(t => t.name === teamName);
-
-    if (existingIdx >= 0) {
-        if (!confirm('Ya existe el equipo «' + teamName + '». ¿Sobrescribir?')) return;
-        teams[existingIdx] = { ...teams[existingIdx], ...newTeam };
-    } else {
-        if (teams.length >= 20) { showToast('⚠️ Límite de 20 equipos guardados.', 3000); return; }
-        teams.push(newTeam);
-    }
-
-    cloudSet('cronos_teams', JSON.stringify(teams));
-    populateSavedTeams('home');
-    populateSavedTeams('away');
-    showToast('✅ Equipo «' + teamName + '» guardado correctamente.', 3000);
-}
+// saveTeamSetup() -> js/match/persistence/team-persistence.js (fuente canonica)
 
 // ═══════════════════════════════════════════════════════════════════
 // deleteTeamSetup(teamKey) — Eliminar el equipo actualmente cargado
 // ═══════════════════════════════════════════════════════════════════
-function deleteTeamSetup(teamKey) {
-    const nameEl = document.getElementById('setup-' + teamKey + '-name');
-    const teamName = (nameEl ? nameEl.value : '').trim();
-    if (!teamName || teamName === 'LOCAL' || teamName === 'VISITANTE') {
-        showToast('⚠️ Primero carga un equipo guardado para poder eliminarlo.', 3000);
-        return;
-    }
-    if (!confirm('¿Eliminar el equipo «' + teamName + '» de los equipos guardados?')) return;
-
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const idx = teams.findIndex(t => t.name === teamName);
-    if (idx < 0) { showToast('⚠️ Equipo no encontrado en los guardados.', 3000); return; }
-
-    teams.splice(idx, 1);
-    cloudSet('cronos_teams', JSON.stringify(teams));
-    populateSavedTeams('home');
-    populateSavedTeams('away');
-
-    // Limpiar el campo nombre
-    if (nameEl) nameEl.value = teamKey === 'home' ? 'LOCAL' : 'VISITANTE';
-    showToast('🗑️ Equipo «' + teamName + '» eliminado.', 3000);
-}
+// deleteTeamSetup() -> js/match/persistence/team-persistence.js (fuente canonica)
 
 // ═══════════════════════════════════════════════════════════════════
 // deleteTeamFromDropdown(teamKey) — Eliminar el equipo seleccionado
 //   en el desplegable "Cargar Guardado" (botón ✕ junto al select)
 // ═══════════════════════════════════════════════════════════════════
-function deleteTeamFromDropdown(teamKey) {
-    const dropdown = document.getElementById('saved-teams-' + teamKey);
-    if (!dropdown || dropdown.value === '') {
-        showToast('⚠️ Selecciona un equipo del desplegable para eliminarlo.', 3000);
-        return;
-    }
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const idx = parseInt(dropdown.value);
-    if (isNaN(idx) || !teams[idx]) { showToast('⚠️ Equipo no encontrado.', 3000); return; }
-
-    const teamName = teams[idx].name;
-    if (!confirm('¿Eliminar el equipo «' + teamName + '»?')) return;
-
-    teams.splice(idx, 1);
-    cloudSet('cronos_teams', JSON.stringify(teams));
-    populateSavedTeams('home');
-    populateSavedTeams('away');
-    showToast('🗑️ Equipo «' + teamName + '» eliminado.', 3000);
-}
+// deleteTeamFromDropdown() -> js/match/persistence/team-persistence.js (fuente canonica)
 
 // -- setupEventListeners y spawnInitialPlayers ELIMINADAS --------
 // C-19/C-20: definidas CANONICAMENTE en js/core/event-listeners.js.
@@ -1796,229 +1444,20 @@ function deleteTeamFromDropdown(teamKey) {
 
 // --- RENDER ---
 
-function renderPlayers() {
-    const pitch = document.getElementById('football-pitch');
-    const benchHome = document.getElementById('bench-list');
-    const benchAway = document.getElementById('bench-list-away');
+// renderPlayers() -> js/ui/render.js (fuente canonica)
 
-    if (!pitch || !benchHome) return;
+// sortBenchUI() -> js/ui/render.js (fuente canonica)
 
-    pitch.querySelectorAll('.player-chip').forEach(c => c.remove());
-    benchHome.innerHTML = '';
-    if (benchAway) benchAway.innerHTML = '';
-
-    players.forEach(p => {
-        const chip = createPlayerChip(p);
-        if (p.status === 'field') {
-            pitch.appendChild(chip);
-            placeOnField(chip, p);
-        } else {
-            if (p.team === 'home') benchHome.appendChild(chip);
-            else if (benchAway) benchAway.appendChild(chip);
-        }
-    });
-
-    sortBenchUI('home');
-    if (analyzeAway) sortBenchUI('away');
-}
-
-function sortBenchUI(team) {
-    const listId = team === 'home' ? 'bench-list' : 'bench-list-away';
-    const list = document.getElementById(listId);
-    if (!list) return;
-    const chips = Array.from(list.children);
-    players.filter(p => p.team === team && p.status === 'bench').forEach((p, idx) => {
-        if (p.benchOrder === undefined) p.benchOrder = idx;
-    });
-    chips.sort((a, b) => {
-        const pA = players.find(p => `player-${p.id}` === a.id);
-        const pB = players.find(p => `player-${p.id}` === b.id);
-        return (pA?.benchOrder || 0) - (pB?.benchOrder || 0);
-    });
-    chips.forEach(chip => list.appendChild(chip));
-}
-
-function createPlayerChip(player) {
-    const div = document.createElement('div');
-    div.className = 'player-chip' + (player.cards === 'roja' ? ' expelled' : '');
-    div.id = `player-${player.id}`;
-    div.draggable = (player.cards !== 'roja' || player.status === 'field');
-    div.style.background = `linear-gradient(to bottom, ${player.color} 50%, ${player.shortsColor} 50%)`;
-
-    let indicatorsHTML = '';
-    if (player.goals > 0)           indicatorsHTML += `<div class="player-goal-indicator">${player.goals} ⚽</div>`;
-    if (player.cards === 'amarilla') {
-        const yNum = (player.yellowCards || 1);
-        indicatorsHTML += `<div class="player-card-indicator amarilla" style="position:relative;">` +
-            `<span style="position:absolute;top:-5px;right:-5px;background:#e67e22;color:#fff;` +
-            `border-radius:50%;font-size:0.5rem;font-weight:900;width:13px;height:13px;` +
-            `line-height:13px;text-align:center;border:1px solid #fff;">${yNum}</span></div>`;
-    } else if (player.cards === 'roja') {
-        const expReason = (player.yellowCards === 2) ? '2🟨' : '🟥';
-        indicatorsHTML += `<div class="player-card-indicator roja" style="position:relative;">` +
-            `<span style="position:absolute;top:-5px;right:-5px;background:#c0392b;color:#fff;` +
-            `border-radius:50%;font-size:0.45rem;font-weight:900;width:13px;height:13px;` +
-            `line-height:13px;text-align:center;border:1px solid #fff;">${expReason}</span></div>`;
-    }
-
-    // Lesión: borde rojo en chip + ✚ en la etiqueta del nombre (siempre visible)
-    if (player.injured) {
-        div.style.border = '3px solid #e74c3c';
-        div.style.boxShadow = '0 0 10px rgba(231,76,60,0.9), 0 4px 6px rgba(0,0,0,0.3)';
-    } else {
-        div.style.border = '';
-        div.style.boxShadow = '';
-    }
-
-    const injuredLabel = player.injured
-        ? `<span style="color:#ff4040;font-weight:900;margin-left:2px;">✚</span>`
-        : '';
-
-    div.innerHTML = `
-        <div class="player-timer ${player.status === 'field' ? 'timer-active' : 'timer-bench'}">${formatTime(player.time)}</div>
-        <div class="player-number" style="color: ${escapeAttr(player.textColor || '#ffffff')}; pointer-events: none;">${escapeHtml(player.number)}</div>
-        <div class="player-name" style="pointer-events: none;">${escapeHtml(player.name)}${injuredLabel}</div>
-        ${indicatorsHTML}
-    `;
-
-    // Aplicar color semáforo al cronómetro desde el primer render
-    const _timerEl = div.querySelector('.player-timer');
-    if (_timerEl && typeof getTimerColor === 'function') {
-        const _col = getTimerColor(player.time || 0);
-        _timerEl.style.background = _col.bg;
-        _timerEl.style.color      = _col.text;
-        _timerEl.style.fontWeight = '800';
-        _timerEl.style.fontSize   = _col.fontSize || '0.8rem';
-        _timerEl.style.minWidth   = '46px';
-        _timerEl.style.padding    = '1px 4px';
-        _timerEl.style.borderRadius = '4px';
-    }
-
-    div.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('playerId', player.id);
-        div.classList.add('dragging');
-        cancelPendingSubstitution();
-    });
-    div.addEventListener('dragend', () => div.classList.remove('dragging'));
-    div.addEventListener('touchstart', (e) => handleTouchStart(e, player), { passive: false });
-    div.addEventListener('touchmove',  (e) => handleTouchMove(e, player),  { passive: false });
-    div.addEventListener('touchend',   (e) => handleTouchEnd(e, player),   { passive: false });
-
-    let lastTap = 0;
-    let tapTimer = null;
-
-    div.addEventListener('click', (e) => {
-        if (div.classList.contains('dragging')) return;
-        if (player.cards === 'roja' && player.status === 'bench') return;
-        e.stopPropagation();
-        const currentTime = new Date().getTime();
-        const tapLength = currentTime - lastTap;
-        lastTap = currentTime;
-        if (tapLength < 400 && tapLength > 0) {
-            e.preventDefault();
-            clearTimeout(tapTimer);
-            lastTap = 0;
-            openPlayerActionModal(player);
-            return;
-        }
-        tapTimer = setTimeout(() => {
-            if (player.status === 'bench') selectForSubstitution(player);
-            else if (player.status === 'field' && pendingSubstitution) confirmSubstitutionWith(player);
-        }, 450);
-    });
-
-    div.addEventListener('dblclick', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        lastTap = 0; clearTimeout(tapTimer);
-        openPlayerActionModal(player);
-    });
-
-    return div;
-}
+// createPlayerChip() -> js/ui/render.js (fuente canonica)
 
 let touchData = { draggedPlayerId: null, hasMoved: false, clone: null };
 let lastTouchTime = 0;
 
-function handleTouchStart(e, player) {
-    const now = new Date().getTime();
-    const timeSince = now - lastTouchTime;
-    if (timeSince < 400 && timeSince > 0) {
-        e.preventDefault(); e.stopPropagation();
-        lastTouchTime = 0;
-        touchData.draggedPlayerId = null;
-        openPlayerActionModal(player);
-        return;
-    }
-    lastTouchTime = now;
-    touchData.draggedPlayerId = player.id;
-    touchData.hasMoved = false;
+// handleTouchStart() -> js/ui/render.js (fuente canonica)
 
-    // Crear CLON visual para el arrastre — la ficha original queda en su sitio
-    const original = document.getElementById(`player-${player.id}`);
-    const clone = original.cloneNode(true);
-    clone.id = `drag-clone-${player.id}`;
-    clone.style.position = 'fixed';
-    clone.style.pointerEvents = 'none';
-    clone.style.zIndex = '9999';
-    clone.style.opacity = '0.85';
-    clone.style.transform = 'translate(-50%, -50%) scale(1.15)';
-    clone.style.transition = 'none';
-    const rect = original.getBoundingClientRect();
-    clone.style.left = `${rect.left + rect.width / 2}px`;
-    clone.style.top  = `${rect.top  + rect.height / 2}px`;
-    document.body.appendChild(clone);
-    touchData.clone = clone;
+// handleTouchMove() -> js/ui/render.js (fuente canonica)
 
-    // Atenuar la ficha original para indicar que se está moviendo
-    original.style.opacity = '0.3';
-}
-
-function handleTouchMove(e, player) {
-    if (!touchData.draggedPlayerId) return;
-    if (e.cancelable) e.preventDefault();
-    touchData.hasMoved = true;
-    const touch = e.touches[0];
-    if (touchData.clone) {
-        touchData.clone.style.left = `${touch.clientX}px`;
-        touchData.clone.style.top  = `${touch.clientY}px`;
-    }
-}
-
-function handleTouchEnd(e, player) {
-    if (!touchData.draggedPlayerId) return;
-
-    // Eliminar el clon y restaurar opacidad de la ficha original
-    if (touchData.clone) {
-        touchData.clone.remove();
-        touchData.clone = null;
-    }
-    const original = document.getElementById(`player-${player.id}`);
-    if (original) original.style.opacity = '';
-
-    const touch = e.changedTouches[0];
-    const clientX = touch.clientX;
-    const clientY = touch.clientY;
-
-    const pitchRect = document.getElementById('football-pitch').getBoundingClientRect();
-    const homeBenchRect = document.querySelector('.sidebar').getBoundingClientRect();
-    const awayBenchEl = document.querySelector('.sidebar-right');
-    const awayBenchRect = awayBenchEl ? awayBenchEl.getBoundingClientRect() : null;
-    const margin = player.cards === 'roja' ? 80 : 0;
-
-    const isInside = (rect, x, y) => rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-
-    if (isInside(pitchRect, clientX, clientY)) {
-        dropToField({ preventDefault: () => {}, clientX, clientY, dataTransfer: { getData: () => player.id } });
-    } else if (clientX < homeBenchRect.right + margin) {
-        dropToBench({ preventDefault: () => {}, clientX, clientY, dataTransfer: { getData: () => player.id } });
-    } else if (awayBenchRect && clientX > awayBenchRect.left - margin) {
-        dropToAwayBench({ preventDefault: () => {}, clientX, clientY, dataTransfer: { getData: () => player.id } });
-    } else {
-        renderPlayers();
-    }
-    touchData.draggedPlayerId = null;
-    touchData.hasMoved = false;
-}
+// handleTouchEnd() -> js/ui/render.js (fuente canonica)
 
 // --- FORMACIONES HEREDADAS (para posicionamiento inicial si no se usa preset) ---
 const FORMATIONS = {
@@ -2055,29 +1494,7 @@ const FORMATIONS_FULL = {
     ]}
 };
 
-function placeOnField(chip, player) {
-    if (player.x === 0 && player.y === 0) {
-        // CRÍTICO: Ordenar por selección o dorsal para asignar posiciones correctas de la formación.
-        const fieldPlayers = players
-            .filter(p => p.status === 'field' && p.team === player.team)
-            .sort((a, b) => {
-                if (a.titularOrder !== undefined && b.titularOrder !== undefined) return a.titularOrder - b.titularOrder;
-                return (a.number || 0) - (b.number || 0);
-            });
-        const index = fieldPlayers.indexOf(player);
-        const formationSet = (!analyzeAway && player.team === 'home') ? FORMATIONS_FULL : FORMATIONS;
-        const formation = formationSet[currentMode]?.[player.team];
-        if (formation && formation[index]) {
-            const pos = clampToField(formation[index].x, formation[index].y);
-            player.x = pos.x; player.y = pos.y;
-        } else {
-            player.x = 50; player.y = 50;
-        }
-    }
-    chip.style.left = `${player.x}%`;
-    chip.style.top = `${player.y}%`;
-    chip.style.transform = `translate(-50%, -50%)`;
-}
+// placeOnField() -> js/roster/legacy-formations.js (fuente canonica)
 
 function updatePlayerUI(player) {
     const chip = document.getElementById(`player-${player.id}`);
@@ -2153,178 +1570,19 @@ function getTimerColor(timeSec, matchCategory, matchSubcategory) {
 
 // allowDrop() → drag-drop.js
 
-function resolveOverlaps(ox, oy, excludeId) {
-    const PUSH_DIST = 10;
-    players.forEach(p => {
-        if (p.status !== 'field' || p.id == excludeId) return;
-        let dx = p.x - ox;
-        let dy = p.y - oy;
-        let dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < PUSH_DIST) {
-            if (dist === 0) { dx = (Math.random() - 0.5) * 0.1; dy = (Math.random() - 0.5) * 0.1; dist = 0.05; }
-            const pushFactor = (PUSH_DIST - dist) / dist;
-            const newX = p.x + dx * pushFactor * 0.4;
-            const newY = p.y + dy * pushFactor * 0.4;
-            const clamped = clampToField(newX, newY);
-            p.x = clamped.x; p.y = clamped.y;
-        }
-    });
-}
+// resolveOverlaps() -> js/ui/drag-drop.js (fuente canonica)
 
 // toggleBench() → drag-drop.js
 
-function closeDrawers() {
-    document.querySelector('.sidebar')?.classList.remove('open');
-    document.querySelector('.sidebar-right')?.classList.remove('open');
-}
+// closeDrawers() -> js/ui/drag-drop.js (fuente canonica)
 
-function dropToField(e) {
-    e.preventDefault();
-    const playerId = e.dataTransfer.getData('playerId') || touchData.draggedPlayerId;
-    const player = players.find(p => p.id == playerId);
-    if (!player) return;
+// dropToField() -> js/ui/drag-drop.js (fuente canonica)
 
-    const pitch = document.getElementById('football-pitch');
-    const rect = pitch.getBoundingClientRect();
-    const clientX = e.clientX;
-    const clientY = e.clientY;
+// dropToBench() -> js/ui/drag-drop.js (fuente canonica)
 
-    // Calcular porcentajes ANTES del clamp
-    const rawX = ((clientX - rect.left) / rect.width) * 100;
-    const rawY = ((clientY - rect.top) / rect.height) * 100;
-    // Clamp para que nombre y crono nunca salgan del campo
-    const clamped = clampToField(rawX, rawY);
-    const xPct = clamped.x;
-    const yPct = clamped.y;
+// dropToAwayBench() -> js/ui/drag-drop.js (fuente canonica)
 
-    const teamFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
-    const fieldLimit = currentMode === 'f7' ? 7 : 11;
-
-    // Buscar swap con jugador del mismo equipo cercano
-    let targetPlayer = null;
-    let minDistance = 8;
-    teamFieldPlayers.forEach(p => {
-        if (p.id == player.id) return;
-        const dx = xPct - p.x;
-        const dy = yPct - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < minDistance) { minDistance = dist; targetPlayer = p; }
-    });
-
-    if (!targetPlayer && player.status === 'bench' && teamFieldPlayers.length >= fieldLimit) {
-        let absMinDist = 999;
-        teamFieldPlayers.forEach(p => {
-            const dx = xPct - p.x;
-            const dy = yPct - p.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < absMinDist) { absMinDist = dist; targetPlayer = p; }
-        });
-    }
-
-    if (targetPlayer) {
-        handleSmartSwap(player, targetPlayer);
-    } else {
-        const currentFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
-        if (player.status === 'field' || currentFieldPlayers.length < fieldLimit) {
-            resolveOverlaps(xPct, yPct, player.id);
-            player.status = 'field';
-            player.x = xPct;
-            player.y = yPct;
-            if (player.history.length === 0 || !player.history[player.history.length - 1].includes('Entra')) {
-                logMovement(player);
-            }
-        }
-    }
-
-    renderPlayers();
-}
-
-function dropToBench(e) {
-    e.preventDefault();
-    const playerId = e.dataTransfer.getData('playerId');
-    const actualId = playerId || touchData.draggedPlayerId;
-    const player = players.find(p => p.id == actualId);
-    if (!player || player.team !== 'home') return;
-    handleBenchDrop(e, player);
-}
-
-function dropToAwayBench(e) {
-    e.preventDefault();
-    const playerId = e.dataTransfer.getData('playerId');
-    const actualId = playerId || touchData.draggedPlayerId;
-    const player = players.find(p => p.id == actualId);
-    if (!player || player.team !== 'away') return;
-    handleBenchDrop(e, player);
-}
-
-function handleBenchDrop(e, player) {
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-    const potentialTargets = players.filter(p => p.team === player.team && p.status === 'bench' && p.id !== player.id);
-
-    if (player.cards === 'roja' && player.status === 'field') {
-        player.status = 'bench'; player.x = 0; player.y = 0;
-        if (isRunning) logMovement(player);
-        renderPlayers(); sortBenchUI(player.team); return;
-    }
-
-    if (potentialTargets.length === 0) {
-        if (player.status !== 'bench' || player.cards === 'roja') {
-            player.status = 'bench'; player.x = 0; player.y = 0;
-            if (isRunning) logMovement(player);
-        }
-        renderPlayers(); return;
-    }
-
-    let targetPlayer = null;
-    let minDistance = 9999;
-    const directHitMargin = 40;
-
-    potentialTargets.forEach(tp => {
-        const chip = document.getElementById(`player-${tp.id}`);
-        if (chip) {
-            const rect = chip.getBoundingClientRect();
-            const isInside = (
-                clientX >= rect.left - directHitMargin && clientX <= rect.right + directHitMargin &&
-                clientY >= rect.top - directHitMargin && clientY <= rect.bottom + directHitMargin
-            );
-            if (isInside) {
-                const dx = clientX - (rect.left + rect.width / 2);
-                const dy = clientY - (rect.top + rect.height / 2);
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < minDistance) { minDistance = dist; targetPlayer = tp; }
-            }
-        }
-    });
-
-    if (!targetPlayer && player.status === 'field') {
-        minDistance = 9999;
-        potentialTargets.forEach(tp => {
-            const chip = document.getElementById(`player-${tp.id}`);
-            if (chip) {
-                const rect = chip.getBoundingClientRect();
-                const dx = clientX - (rect.left + rect.width / 2);
-                const dy = clientY - (rect.top + rect.height / 2);
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < minDistance) { minDistance = dist; targetPlayer = tp; }
-            }
-        });
-    }
-
-    if (targetPlayer) {
-        handleSmartSwap(player, targetPlayer);
-    } else {
-        if (player.status !== 'bench') {
-            const teamBench = players.filter(p => p.team === player.team && p.status === 'bench').sort((a, b) => (a.benchOrder || 0) - (b.benchOrder || 0));
-            player.status = 'bench'; player.x = 0; player.y = 0;
-            teamBench.push(player);
-            teamBench.forEach((p, i) => p.benchOrder = i);
-            if (isRunning) logMovement(player);
-        }
-    }
-
-    renderPlayers();
-}
+// handleBenchDrop() -> js/ui/drag-drop.js (fuente canonica)
 
 // handleSmartSwap() → js/ui/drag-drop.js (fuente canónica)
 // logMovement()     → js/ui/drag-drop.js (fuente canónica)
@@ -2335,13 +1593,7 @@ function handleBenchDrop(e, player) {
 // cosas que estas copias NO hacían. Eliminadas para evitar que un
 // reordenamiento de <script> reactivara la versión vieja e incompleta.
 
-function logEvent(player, eventType) {
-    // Registra gol, tarjeta o lesión con el minuto exacto
-    const elapsed = matchPhase === '2nd_half' ? (masterTimeH1 + masterTimeH2) : masterTimeH1;
-    const timestamp = formatTime(elapsed);
-    const halfLabel = matchPhase === '1st_half' ? '1ªP' : matchPhase === '2nd_half' ? '2ªP' : 'DESC';
-    player.history.push(`${eventType} a las ${timestamp} (${halfLabel})`);
-}
+// logEvent() -> js/match/events/movement-log.js (fuente canonica)
 
 // exportData() → movement-log.js
 

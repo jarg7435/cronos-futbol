@@ -85,8 +85,36 @@ const BORRADAS = {
         'notifyAllLiveContacts'],
     'js/match/demo-tutorial.js': [               // §7 tutorial (Fase B)
         'renderTutorialStep', 'tutorialNext', 'tutorialPrev', 'closeTutorial'],
+
+    // ───────────────── FASE C (20 con duenyo unico) ─────────────────
+    'js/ui/render.js': [                         // §13 pintado de plantilla y chips
+        'renderPlayers', 'sortBenchUI', 'createPlayerChip',
+        'handleTouchStart', 'handleTouchMove', 'handleTouchEnd'],
+    'js/ui/drag-drop.js': [                      // §13 arrastrar y soltar
+        'resolveOverlaps', 'closeDrawers', 'dropToField', 'dropToBench',
+        'dropToAwayBench', 'handleBenchDrop'],
+    'js/roster/formations.js': [                 // §2 formaciones predefinidas
+        'clampToField', 'updateFormationOptions', 'updateCategoryOptions', 'applyFormationPreset'],
+    'js/roster/legacy-formations.js': ['placeOnField'],
+    'js/match/events/movement-log.js': ['logEvent'],
+    'js/match/persistence/team-persistence.js': ['saveTeamSetup', 'deleteTeamSetup'],
 };
 const TODAS = Object.entries(BORRADAS).flatMap(([f, ns]) => ns.map(n => [n, f]));
+
+// ⚠️ FASE C · las 5 que SIGUEN teniendo varias declaraciones fuera de app-init.js.
+// No es algo que introduzca la Fase C: `active-match.js` y `team-persistence.js`
+// son dos archivos casi identicos que ya declaraban lo mismo antes de tocar nada,
+// y `ai/import.js` vuelve a declarar el trio de persistencia. Borrar la copia de
+// app-init.js no lo arregla ni lo empeora, pero SI conviene fijar cual gana para
+// que reordenar las etiquetas <script> deje de ser un cambio invisible (misma
+// idea que test_endmatch_writers.js). Limpiar esa duplicacion es trabajo aparte.
+const BORRADAS_MULTI = {
+    populateSavedTeams: { gana: 'js/ai/import.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js', 'js/ai/import.js'] },
+    loadTeamFromDropdown: { gana: 'js/ai/import.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js', 'js/ai/import.js'] },
+    saveCurrentTeam: { gana: 'js/ai/import.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js', 'js/ai/import.js'] },
+    deleteTeamFromDropdown: { gana: 'js/match/persistence/team-persistence.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js'] },
+    injectBenchScrollButtons: { gana: 'js/ui/bench-scroll.js', todos: ['js/ai/import.js', 'js/ui/bench-scroll.js'] },
+};
 
 // Declaraciones de nivel superior (columna 0 = incondicional; una asignacion
 // indentada podria estar dentro de un `if` y no cuenta como duenyo).
@@ -111,17 +139,32 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
         else if (donde.length > 1) duplicados.push(nombre + ' -> ' + donde.join(', '));
         else if (donde[0] !== duenyo) mal.push(nombre + ' esperado en ' + duenyo + ' pero esta en ' + donde[0]);
     });
-    ok('1a · ninguna de las 30 se quedo sin declaracion (seria un ReferenceError)', huerfanas.length === 0, huerfanas);
+    ok('1a · ninguna se quedo sin declaracion (seria un ReferenceError)', huerfanas.length === 0, huerfanas);
     ok('1b · ⚠️ ninguna conserva DOS declaraciones (la copia muerta se fue)', duplicados.length === 0, duplicados);
     ok('1c · cada una vive en el archivo que se espera', mal.length === 0, mal);
-    ok('1d · el recuento cuadra: 71 funciones (30 de la Fase A + 41 de la B)', TODAS.length === 71, TODAS.length);
+    ok('1d · el recuento cuadra: 91 funciones (30 de la Fase A + 41 de la B + 20 de la C)',
+        TODAS.length === 91, TODAS.length);
+
+    // ── las 5 multi-declaradas de la Fase C: se fija QUIEN gana, no que sea unica
+    const malGanador = [], malConjunto = [];
+    Object.entries(BORRADAS_MULTI).forEach(([nombre, { gana, todos }]) => {
+        const donde = ORDER.filter(f => decl[f].has(nombre));
+        // gana el ultimo en el orden de carga de index.html
+        if (donde[donde.length - 1] !== gana) malGanador.push(nombre + ' gana ' + donde[donde.length - 1] + ', esperado ' + gana);
+        if (donde.join('|') !== todos.join('|')) malConjunto.push(nombre + ' -> ' + donde.join(', '));
+    });
+    ok('1e · ⚠️ las 5 multi-declaradas las sigue ganando el archivo esperado', malGanador.length === 0, malGanador);
+    ok('1f · el conjunto de archivos que las declara no ha cambiado (ni una copia nueva ni una menos)',
+        malConjunto.length === 0, malConjunto);
+    ok('1g · el recuento total de la Fase C cuadra: 25 funciones',
+        Object.keys(BORRADAS_MULTI).length + 20 === 25);
 }
 
 // ────────── PARTE 2 · app-init.js ya no las declara ──────────
 {
     const aiDecl = declaraciones(rd(AI));
-    const quedan = TODAS.map(([n]) => n).filter(n => aiDecl.has(n));
-    ok('2a · ⚠️ app-init.js no declara ninguna de las 71', quedan.length === 0, quedan);
+    const quedan = [...TODAS.map(([n]) => n), ...Object.keys(BORRADAS_MULTI)].filter(n => aiDecl.has(n));
+    ok('2a · ⚠️ app-init.js no declara ninguna de las 96', quedan.length === 0, quedan);
 
     // y sigue cargando el PRIMERO, que es lo que hacia perder a sus copias
     ok('2b · app-init.js sigue siendo el primer script clasico', ORDER[0] === AI, ORDER[0]);
@@ -187,6 +230,18 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
         TUTORIAL_STEPS: ['js/match/demo-tutorial.js'], tutorialStep: ['js/match/demo-tutorial.js'],
         _realtimeUnsubscribe: ['js/services/firestore-storage.js'],
         _tesseractLoaded: ['js/ai/import.js'],
+        // ── FASE C · estado INTERCALADO entre las funciones muertas de §2 y §13.
+        // `FIELD_MARGIN` esta justo encima de clampToField, `touchData` y
+        // `lastTouchTime` entre createPlayerChip y handleTouchStart, y
+        // `FORMATIONS`/`FORMATIONS_FULL` entre handleTouchEnd y placeOnField.
+        // Un borrado por rangos se los habria llevado y ningun archivo duenyo los
+        // declara: seria un ReferenceError en produccion.
+        FIELD_MARGIN: ['js/roster/formations.js', 'js/core/security-and-state.js'],
+        touchData: ['js/ui/render.js', 'js/ui/drag-drop.js'],
+        lastTouchTime: ['js/ui/render.js'],
+        FORMATIONS: ['js/roster/formations.js', 'js/roster/legacy-formations.js'],
+        FORMATIONS_FULL: ['js/roster/legacy-formations.js'],
+        FORMATION_PRESETS: ['js/roster/formations.js', 'js/core/security-and-state.js'],
     };
     const nombres = Object.keys(COMPARTIDO);
     const perdidas = nombres.filter(n => !declara(aiSrc, n));
@@ -234,6 +289,93 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
             const v = (() => { try { return vm.runInContext('typeof ' + n, sb); } catch (_) { return 'ERROR'; } })();
             ok('5' + 'bcdefgh'[k] + ' · el estado global `' + n + '` sigue declarado', v !== 'undefined' && v !== 'ERROR', v);
         });
+}
+
+// ────────── PARTE 6 · ⚠️ FASE C · LA TRAMPA v378: EL ALIAS COLGANTE ──────────
+// De las 25 funciones de la Fase C, `updateCategoryOptions` era la unica con un
+// alias explicito en app-init.js:
+//
+//     window.updateCategoryOptions = updateCategoryOptions;   // linea 417
+//
+// Esa linea es una sentencia de NIVEL SUPERIOR: se ejecuta al cargar el archivo,
+// cuando `js/roster/formations.js` todavia no se ha cargado. Borrar la funcion y
+// dejar el alias habria sido un ReferenceError en el PRIMER script de index.html
+// —es decir, la aplicacion entera en blanco—, que es exactamente la regresion
+// v378. Por eso el alias se borro CON la funcion.
+//
+// Y no era decorativo: `js/services/auth/role-launch.js` (un ES module) lee
+// `window.updateCategoryOptions` de verdad, en las lineas 335 y 337. Lo que
+// mantiene vivo ese consumidor es que en un script CLASICO una declaracion
+// `function X(` en columna 0 ya crea la propiedad en el objeto global; el alias
+// era redundante. Eso es lo que comprueba 6c cargando la CADENA REAL: un sandbox
+// que cargase solo el archivo vivo no probaria nada (leccion de `staffConfig`).
+{
+    const aiSrc = rd(AI);
+    ok('6a · ⚠️ el alias colgante `window.updateCategoryOptions = updateCategoryOptions` ya no esta',
+        !/^window\.updateCategoryOptions\s*=/m.test(aiSrc));
+
+    // barrido general: ningun alias de nivel superior en app-init.js puede
+    // apuntar por nombre pelado a una funcion que ya no vive en este archivo.
+    const aiDecl2 = declaraciones(aiSrc);
+    // ⚠️ los literales `false`/`true`/`null`/`undefined` encajan en la forma de un
+    // identificador: sin excluirlos, `window._CRONOS_DEBUG = false;` (linea 1) se
+    // cuenta como alias colgante y la asercion da rojo por la razon equivocada.
+    // Misma familia que las trampas de regex ya registradas.
+    const LITERALES = new Set(['false', 'true', 'null', 'undefined', 'NaN', 'Infinity']);
+    const colgantes = [];
+    aiSrc.split(/\r?\n/).forEach((l, i) => {
+        const m = l.match(/^window\.([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*;/);
+        if (m && !LITERALES.has(m[2]) && !aiDecl2.has(m[2])) colgantes.push('L' + (i + 1) + ': ' + l.trim());
+    });
+    ok('6b · ningun alias de nivel superior apunta a una funcion que ya no esta aqui',
+        colgantes.length === 0, colgantes);
+
+    // el consumidor real sigue existiendo (si desaparece, 6c deja de importar)
+    ok('6c · role-launch.js sigue leyendo window.updateCategoryOptions',
+        /window\.updateCategoryOptions/.test(rd('js/services/auth/role-launch.js')));
+
+    // 6d · LA PRUEBA DE VERDAD: cargar la cadena real app-init.js -> formations.js
+    // en un sandbox con window === global y comprobar que la propiedad existe y
+    // es la de formations.js, no la borrada.
+    const sb = {};
+    vm.createContext(sb);
+    sb.window = sb;
+    sb.document = { addEventListener() {}, getElementById: () => null, querySelector: () => null,
+        querySelectorAll: () => [], createElement: () => ({ style: {}, classList: { add() {}, remove() {} } }) };
+    sb.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+    sb.navigator = { userAgent: 'node', serviceWorker: { register: () => Promise.resolve() } };
+    sb.location = { href: 'https://x/', hostname: 'x' };
+    sb.setTimeout = () => 0; sb.setInterval = () => 0; sb.clearInterval = () => {};
+    sb.console = { log() {}, warn() {}, error() {} };
+    sb.fetch = () => Promise.resolve({ json: () => Promise.resolve({}) });
+
+    let errCadena = '';
+    [AI, 'js/roster/formations.js'].forEach(f => {
+        try { vm.runInContext(rd(f), sb, { timeout: 15000 }); } catch (e) { errCadena += f + ': ' + e.message + '; '; }
+    });
+    ok('6d · la cadena app-init.js -> formations.js carga sin lanzar', !errCadena, errCadena);
+
+    const tipo = (() => { try { return vm.runInContext('typeof window.updateCategoryOptions', sb); } catch (_) { return 'ERROR'; } })();
+    ok('6e · ⚠️ `window.updateCategoryOptions` SIGUE siendo funcion sin el alias (lo publica la declaracion de formations.js)',
+        tipo === 'function', tipo);
+
+    const mismo = (() => { try { return vm.runInContext('window.updateCategoryOptions === updateCategoryOptions', sb); } catch (e) { return 'ERROR: ' + e.message; } })();
+    ok('6f · y el nombre pelado y `window.X` resuelven a la MISMA funcion (sin sombra)', mismo === true, mismo);
+
+    // las otras 24 tampoco pueden haber perdido su publicacion en window
+    const perdidasWin = [];
+    [['js/ui/render.js', ['renderPlayers', 'sortBenchUI', 'createPlayerChip']],
+     ['js/ui/drag-drop.js', ['dropToField', 'dropToBench', 'handleBenchDrop']],
+     ['js/roster/legacy-formations.js', ['placeOnField']],
+     ['js/match/events/movement-log.js', ['logEvent']]].forEach(([f, ns]) => {
+        try { vm.runInContext(rd(f), sb, { timeout: 15000 }); } catch (_) { /* dependencias ausentes en el sandbox */ }
+        ns.forEach(n => {
+            const t = (() => { try { return vm.runInContext('typeof window.' + n, sb); } catch (_) { return 'ERROR'; } })();
+            if (t !== 'function') perdidasWin.push(n + '=' + t);
+        });
+    });
+    ok('6g · las funciones supervivientes siguen publicadas en window por su archivo duenyo',
+        perdidasWin.length === 0, perdidasWin);
 }
 
 console.log('\n────────────────────────────────────────────');
