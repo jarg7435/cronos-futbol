@@ -4629,140 +4629,17 @@ function logEvent(player, eventType) {
 // ══════════════════════════════════════════════════════════════════
 //  CHRONOS FÚTBOL — Panel SuperAdmin v3
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  ✏️  DATOS DEL SUPERADMINISTRADOR — Rellenar antes de publicar
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SA_CONFIG = {
-    nombre:      'TU_NOMBRE_O_NOMBRE_COMERCIAL',   // ej: "José · Chronos Fútbol"
-    bizum:       'TU_NUMERO_BIZUM',                // ej: "612 345 678"
-    iban:        'TU_IBAN',                        // ej: "ES12 3456 7890 1234 5678 9012"
-    whatsapp:    'TU_NUMERO_WHATSAPP',             // ej: "34612345678" (sin + ni espacios)
-    email:       'TU_EMAIL_COMERCIAL',             // ej: "cronos@tudominio.com"
-    appUrl:      'https://jarg7435.github.io/cronos-futbol/',
-};
+// -- Constantes del panel movidas a js/shared/admin-shared.js (2026-07-28):
+//    SA_CONFIG, ROLE_META, PLAN_META, STATUS_META y SA_CSS.
+//    Se leen por nombre pelado y resuelven contra window. NO redeclararlas
+//    aqui con const/let: app-init.js carga el PRIMERO y las ensombreceria
+//    en TODA la app sin que ninguna guarda `typeof window.X` lo note.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Tarjetas expandibles · Notificaciones · Usuarios individuales
 // ══════════════════════════════════════════════════════════════════
 
 const LIVE_ROLES  = ['superadmin','admin','club_admin','director','coordinator'];
-const ROLE_META   = {
-    superadmin:  { label:'👑 SuperAdmin',    color:'#ffd700' },
-    admin:       { label:'👑 SuperAdmin',    color:'#ffd700' },
-    club_admin:  { label:'🏟️ Admin Club',   color:'#58a6ff' },
-    director:    { label:'📋 Director Dep.', color:'#f0883e' },
-    coordinator: { label:'🎯 Coordinador',  color:'#d2a8ff' },
-    user:        { label:'⚽ Entrenador',   color:'#3fb950' },
-    individual:  { label:'👤 Individual',   color:'#79c0ff' },
-};
-const PLAN_META   = {
-    free:     { label:'🆓 Gratis',   color:'#7d8590' },
-    trial:    { label:'⏳ Prueba',   color:'#f0883e' },
-    basic:    { label:'📦 Básico',   color:'#58a6ff' },
-    pro:      { label:'🚀 Pro',      color:'#3fb950' },
-    premium:  { label:'💎 Premium',  color:'#ffd700' },
-    custom:   { label:'⚙️ Custom',   color:'#d2a8ff' },
-    monthly:  { label:'📅 Mensual',  color:'#58a6ff' },
-    annual:   { label:'📆 Anual',    color:'#3fb950' },
-};
-const STATUS_META = {
-    active:   { label:'✅ Activo',    color:'#3fb950' },
-    trial:    { label:'⏳ Prueba',    color:'#f0883e' },
-    overdue:  { label:'⚠️ Vencido',  color:'#ffa500' },
-    blocked:  { label:'🔒 Bloqueado', color:'#ff5858' },
-};
 
-// ── Estilos del panel ────────────────────────────────────────────────
-const SA_CSS = `
-<style id="sa-styles">
-.sa-modal{width:1060px;max-width:99vw;max-height:96vh;overflow:hidden;
-  display:flex;flex-direction:column;padding:0;}
-.sa-topbar{display:flex;justify-content:space-between;align-items:center;
-  padding:1rem 1.4rem;border-bottom:1px solid var(--glass-border);flex-shrink:0;}
-.sa-tabs{display:flex;gap:0.3rem;padding:0.6rem 1.4rem;
-  border-bottom:1px solid var(--glass-border);flex-shrink:0;flex-wrap:wrap;}
-.sa-tab{padding:0.42rem 1rem;background:var(--glass);border:1px solid var(--glass-border);
-  border-radius:8px;color:var(--text-muted);font-size:0.82rem;cursor:pointer;
-  transition:all 0.15s;}
-.sa-tab:hover{border-color:rgba(88,166,255,0.4);color:var(--primary);}
-.sa-tab.active{background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.5);
-  color:var(--primary);font-weight:700;}
-.sa-body{flex:1;overflow-y:auto;padding:1.2rem 1.4rem;}
-.sa-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
-  gap:0.6rem;margin-bottom:1.4rem;}
-.sa-stat{background:var(--glass);border:1px solid var(--glass-border);
-  border-radius:10px;padding:0.8rem 1rem;text-align:center;}
-.sa-stat-n{font-size:1.8rem;font-weight:700;line-height:1;}
-.sa-stat-l{font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;}
-
-/* ─ Tarjeta expandible ─ */
-.sa-card{background:var(--glass);border:1px solid var(--glass-border);
-  border-radius:11px;margin-bottom:0.65rem;overflow:hidden;transition:border-color 0.2s;}
-.sa-card:hover{border-color:rgba(88,166,255,0.35);}
-.sa-card.blocked{border-color:rgba(255,88,88,0.4);background:rgba(255,88,88,0.03);}
-.sa-card.overdue{border-color:rgba(255,165,0,0.45);}
-.sa-card.expanded{border-color:rgba(88,166,255,0.45);}
-.sa-card-head{display:flex;justify-content:space-between;align-items:center;
-  padding:0.85rem 1.1rem;cursor:pointer;user-select:none;flex-wrap:wrap;gap:0.4rem;}
-.sa-card-head:hover{background:rgba(255,255,255,0.02);}
-.sa-card-title{font-weight:700;font-size:0.95rem;display:flex;align-items:center;gap:0.5rem;}
-.sa-card-meta{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;}
-.sa-card-body{display:none;padding:0 1.1rem 1rem;border-top:1px solid var(--glass-border);}
-.sa-card.expanded .sa-card-body{display:block;}
-.sa-chevron{font-size:0.75rem;transition:transform 0.2s;color:var(--text-muted);}
-.sa-card.expanded .sa-chevron{transform:rotate(180deg);}
-
-/* ─ Badge ─ */
-.sa-badge{display:inline-block;padding:0.14rem 0.55rem;border-radius:4px;
-  font-size:0.7rem;font-weight:700;white-space:nowrap;}
-
-/* ─ User row inside card ─ */
-.sa-urow{display:flex;justify-content:space-between;align-items:center;
-  padding:0.45rem 0.5rem;border-radius:7px;margin-bottom:0.3rem;
-  background:rgba(255,255,255,0.03);}
-.sa-urow:hover{background:rgba(255,255,255,0.06);}
-
-/* ─ Botones ─ */
-.sa-btn{padding:0.3rem 0.7rem;border-radius:6px;font-size:0.76rem;
-  cursor:pointer;border:1px solid;font-weight:600;white-space:nowrap;}
-
-/* ─ Input / Select ─ */
-.sa-input{width:100%;padding:0.45rem 0.65rem;background:rgba(255,255,255,0.06);
-  border:1px solid var(--glass-border);border-radius:7px;
-  color:var(--text);font-size:0.85rem;}
-.sa-label{font-size:0.73rem;color:var(--text-muted);margin-bottom:0.22rem;display:block;}
-
-/* ─ Grid ─ */
-.sa-g2{display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;}
-.sa-g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.7rem;}
-.sa-g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0.7rem;}
-
-/* ─ Notificación banner ─ */
-.sa-notif{padding:0.65rem 1rem;border-radius:8px;font-size:0.82rem;
-  margin-bottom:0.5rem;display:flex;align-items:center;gap:0.6rem;}
-
-/* ─ Slot bar ─ */
-.sa-slotbar{height:5px;background:rgba(255,255,255,0.08);
-  border-radius:3px;overflow:hidden;margin-top:0.2rem;}
-.sa-slotfill{height:100%;border-radius:3px;transition:width 0.3s;}
-
-/* ─ Flag toggle ─ */
-.sa-flag{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.65rem;
-  background:var(--glass);border:1px solid var(--glass-border);
-  border-radius:6px;cursor:pointer;font-size:0.82rem;transition:all 0.15s;}
-.sa-flag.on{border-color:rgba(63,185,80,0.5);background:rgba(63,185,80,0.08);}
-.sa-flag.off{opacity:0.5;}
-
-/* ─ Tabla de pagos ─ */
-.sa-table{width:100%;border-collapse:collapse;font-size:0.82rem;}
-.sa-table th{text-align:left;padding:0.5rem 0.7rem;color:var(--text-muted);
-  border-bottom:1px solid var(--glass-border);font-weight:600;}
-.sa-table td{padding:0.5rem 0.7rem;border-bottom:1px solid rgba(255,255,255,0.04);}
-.sa-table tr:hover td{background:rgba(255,255,255,0.02);}
-
-/* ─ Scrollbar ─ */
-.sa-body::-webkit-scrollbar{width:5px;}
-.sa-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:3px;}
-</style>`;
 
 // ── Entrada al panel ─────────────────────────────────────────────────
 function openAdminPanel() {
