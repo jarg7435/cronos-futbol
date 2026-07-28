@@ -1,5 +1,22 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v392: "Descargar TXT" de Mis Informes vuelve a descargar. No habia
+//        descargado NUNCA nada: miDescargarInforme delegaba en
+//        window.sdDownloadInforme, que vivia en js/23_staff_dashboard.js y
+//        desaparecio al refactorizar ese archivo, asi que la guarda typeof no
+//        se cumplia jamas y el boton salia siempre por el toast de "no
+//        disponible". Ahora es autocontenido (ya tenia el informe en la mano,
+//        el rodeo por window._sdMatches sobraba).
+//        No se resucito la version antigua tal cual: imprimia m.teamName, un
+//        campo que este objeto NO tiene, asi que habria puesto "Equipo"
+//        siempre. Se usan los campos reales — competicion, categoria, campo,
+//        hora y el historial de eventos con su minuto.
+//        Dos arreglos de robustez del estilo de la casa: BOM al principio (sin
+//        el, el Bloc de notas de Windows rompe los acentos) y adjuntar el <a>
+//        al DOM antes del click (un a.click() suelto no descarga en Firefox).
+//        El veredicto V/D/E usa la MISMA regla que la tarjeta en pantalla, con
+//        el respaldo a 'home' para informes antiguos sin myTeamRole.
+//        Test 78/78 visto ROJO antes (10 fallos). Suite 63/63 + 11 xfail.
 //  v391: La pestanya "Config." pasa a ser exclusiva del DIRECTOR DEPORTIVO y
 //        del SUPERADMIN. El COORDINADOR ya no la ve ni puede llegar a ella.
 //        Antes no habia NINGUNA comprobacion de rol: el boton se pintaba
@@ -984,8 +1001,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v391';
-const CACHE_NAME = 'cronos-cache-v391';
+const VERSION = 'v392';
+const CACHE_NAME = 'cronos-cache-v392';
 
 const ASSETS = [
     './',
