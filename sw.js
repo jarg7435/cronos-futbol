@@ -1,5 +1,32 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v390: FASE D del monolito #5 — fuera el PANEL SUPERADMIN LEGACY v3.
+//        app-init.js 2941 -> 1710 lineas. Acumulado A+B+C+D: 6407 -> 1710,
+//        un 73% menos. 20 funciones (1172 lineas) + 3 alias + 23 lineas de
+//        cabeceras que ya no encabezaban nada.
+//          openSuperAdminPanel, saFS, saGet -> superadmin/superadmin.panel.js
+//          saClubs                          -> superadmin/clubs-tab.js
+//          saRequests                       -> superadmin/requests-tab.js
+//          saSendPaymentEmail               -> billing/payments.js
+//          y las 14 del panel legacy (saOverview, saOpenEditor, saIndividual,
+//          saPayments, saNewClub y ayudantes) ELIMINADAS sin destino.
+//        No se borraron por "no encontrarles consumidores": colgaban todas de
+//        openSuperAdminPanel, muerta porque superadmin.panel.js la redeclara y
+//        carga despues. Ademas openAdminPanel llamaba a openSuperAdminPanel()
+//        por nombre pelado, o sea que incluso invocandolo se abria el panel
+//        MODERNO. El panel vivo es el de js/admin/superadmin/*.
+//        SOBREVIVEN saWrite, saOpenIndividualEditor y checkClubAccess, que si
+//        tienen consumidores reales.
+//        ⚠️ Trampa v378 POR TRIPLICADO: window.openAdminPanel,
+//        window.openSuperAdminPanel y window.saSendPaymentEmail eran alias de
+//        NIVEL SUPERIOR; dejarlos tras borrar sus funciones habria sido un
+//        ReferenceError al cargar el primer script, o sea la app en blanco.
+//        Borrado FUNCION A FUNCION: saWrite estaba entre saGetAll y saUpd, y
+//        saOpenIndividualEditor entre saIndividual y saPayments — las vivas
+//        intercaladas entre las muertas. Guard 45/45 visto ROJO antes;
+//        equivalencia en runtime: 544 globales comunes sin un solo cambio y
+//        los unicos que desaparecen son exactamente los 14.
+//        Suite 62/62 + 11 xfail.
 //  v389: FASE C del monolito #5 — app-init.js 3689 -> 2941 lineas. Otras 25
 //        copias duplicadas MUERTAS fuera (773 lineas, 25 comentarios puntero
 //        en su hueco). Acumulado A+B+C: 6407 -> 2941, un 54% menos.
@@ -937,8 +964,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v389';
-const CACHE_NAME = 'cronos-cache-v389';
+const VERSION = 'v390';
+const CACHE_NAME = 'cronos-cache-v390';
 
 const ASSETS = [
     './',
