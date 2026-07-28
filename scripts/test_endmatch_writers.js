@@ -25,15 +25,20 @@
 // Además de endMatch hay otras dos funciones declaradas DOS VECES, y las dos
 // veces como `function` de nivel superior en scripts clásicos, así que gana la
 // última cargada:
-//   · startMatchWithConvocation — js/ai/import.js Y js/core/app-init.js.
-//     Gana import.js... pero da igual: NADIE la llama. Las dos copias están
-//     muertas. El partido arranca por goToTitularSelection().
-//   · goToTitularSelection — js/ai/import.js Y js/core/app-init.js. Gana
-//     import.js, y ÉSTA SÍ se usa (onclick de #btn-go-titulares).
-// No se borra ninguna: app-init.js es el monolito #5, todavía sin descomponer,
-// y sacarle código sin su propio ciclo de extracción rompería la disciplina
-// que ha sostenido los 21 pasos anteriores. Lo que sí se hace es FIJAR quién
-// gana, para que reordenar los <script> deje de ser un cambio invisible.
+//   · startMatchWithConvocation — estaba en js/ai/import.js Y en
+//     js/core/app-init.js. Ganaba import.js... pero da igual: NADIE la llama.
+//     El partido arranca por goToTitularSelection().
+//   · goToTitularSelection — mismo par. Ganaba import.js, y ÉSTA SÍ se usa
+//     (onclick de #btn-go-titulares).
+//
+// ACTUALIZADO EL 2026-07-28: la copia muerta de app-init.js ya NO existe. Se
+// borró en la Fase B del monolito #5, que resultó no ser un monolito que
+// descomponer sino una CAPA FÓSIL: 102 de sus 133 funciones estaban muertas
+// porque un script posterior declaraba el mismo nombre y ganaba. La parte 3
+// conserva su propósito —que reordenar los <script> no sea un cambio
+// invisible— pero ahora fija el invariante FUERTE: import.js es el único que
+// las declara, así que ya no hay dos copias que puedan intercambiarse.
+// Ver scripts/test_app_init_dead_duplicates.js.
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
@@ -153,13 +158,17 @@ console.log('\n── PARTE 3 · funciones duplicadas: quién gana (hallazgo #10
 
     const imp = fs.readFileSync(path.join(ROOT, 'js', 'ai', 'import.js'), 'utf8');
     const app = fs.readFileSync(path.join(ROOT, 'js', 'core', 'app-init.js'), 'utf8');
+    // ACTUALIZADO EL 2026-07-28, tal y como avisaba el recordatorio que había
+    // aquí: la copia muerta de app-init.js se borró en la Fase B del monolito
+    // #5. Ya no hay dos declaraciones que puedan ganarse una a otra según el
+    // orden de carga, así que el invariante deja de ser "gana import.js" y pasa
+    // a ser el más fuerte: import.js es el ÚNICO que la declara. 3a sigue
+    // comprobando el orden de carga, que es lo que hacía falta cuando había dos.
     for (const fn of ['startMatchWithConvocation', 'goToTitularSelection']) {
         const re = new RegExp('^(?:async )?function ' + fn + '\\(', 'm');
-        ok('3b · ' + fn + ' está declarada en los DOS archivos (gana import.js)',
-            re.test(imp) && re.test(app));
+        ok('3b · ' + fn + ' la declara SOLO js/ai/import.js (la copia muerta de app-init.js se borró)',
+            re.test(imp) && !re.test(app));
     }
-    // Ojo: si algún día se borra la copia muerta de app-init.js, esta aserción
-    // se pondrá roja y habrá que actualizarla — es su recordatorio.
     ok('3c · ⚠️ nadie invoca startMatchWithConvocation: las DOS copias están muertas',
         (() => {
             let llamadas = 0;

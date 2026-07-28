@@ -46,22 +46,45 @@ const idxHtml = rd('index.html');
 const ORDER = [...idxHtml.matchAll(/<script src="(js\/[^"?]+)/g)]
     .map(m => m[1]).filter(f => fs.existsSync(path.join(ROOT, f)));
 
-// Las 30 funciones borradas en la Fase A, con el archivo que se queda como
-// unico duenyo. Agrupadas por la seccion de app-init.js de la que salieron.
+// Las funciones borradas de app-init.js, con el archivo que se queda como unico
+// duenyo. FASE A (30) + FASE B (40) = 70.
 const BORRADAS = {
-    'js/match/events/player-actions.js': [       // §3 acciones de jugador
-        'openPlayerActionModal', 'closePlayerActionModal', 'assignCard', 'terminateMatch'],
-    'js/coach/training/panel.js': [              // §8 entrenamiento semanal
+    'js/match/events/player-actions.js': [
+        // §3 acciones de jugador (Fase A)
+        'openPlayerActionModal', 'closePlayerActionModal', 'assignCard', 'terminateMatch',
+        // resto de acciones de jugador (Fase B)
+        'changeGoals', 'syncScoreFromPlayers', 'clearPlayerActions', 'editNameFromModal',
+        'editNumberFromModal', 'selectForSubstitution', 'confirmSubstitutionWith',
+        'cancelPendingSubstitution'],
+    'js/coach/training/panel.js': [              // §8 entrenamiento semanal (Fase A)
         '_getWeekMonday', 'renderTrainingWeek', 'saveTrainingWeek', 'clearTrainingWeek',
         '_getTrainingWeekText', 'updateTrainingPreview', 'sendTrainingWA', 'sendTrainingEmail'],
-    'js/core/staff-and-comms.js': [              // §9 cuerpo tecnico
-        'loadStaffConfig', 'saveStaffConfig', 'renderStaffInBench', 'openRosterManager'],
-    'js/ai/import.js': [                         // §10 importacion de plantilla con IA
+    'js/core/staff-and-comms.js': [              // §9 cuerpo tecnico (Fase A) + Fase B
+        'loadStaffConfig', 'saveStaffConfig', 'renderStaffInBench', 'openRosterManager',
+        'clearMasterRoster'],
+    'js/ai/import.js': [
+        // §10 importacion de plantilla con IA (Fase A)
         'triggerRosterPhoto', 'processRosterPhoto', 'compressImageToBase64', 'callGeminiVision',
-        'callTesseract', 'parsePlayersFromText', 'updateUsageCounter', 'showOCRError'],
-    'js/shared/whatsapp-email.js': [             // §15 envio de convocatoria
+        'callTesseract', 'parsePlayersFromText', 'updateUsageCounter', 'showOCRError',
+        // §11 importacion, convocatoria e ir al partido (Fase B)
+        'showRosterPreview', 'confirmRosterImport', 'saveMasterRoster', 'openConvocationModal',
+        'saveConvData', 'saveConvPlayers', 'goToTitularSelection', 'startMatchWithConvocation'],
+    'js/shared/whatsapp-email.js': [             // §15 envio de convocatoria (Fase A)
         'openConvocationMessage', 'buildConvocationText', 'saveConvConfig',
         'previewConvocationMsg', 'sendConvocationWA', 'sendConvocationEmail'],
+    'js/services/firestore-storage.js': [        // §7 nube + emailjs + SW (Fase B)
+        'cloudSet', 'cloudGet', 'syncFromCloud', 'startRealtimeSync', 'migrateLocalToCloud',
+        'loadEmailConfig', 'initEmailJS', 'sendReportByEmail', 'registerServiceWorker', 'forceUpdate'],
+    'js/match/live/sync.js': [                   // §7 transmision en vivo (Fase B)
+        'cleanupStaleMatches', 'updateLiveButton', 'openLiveView', 'showLiveShareModal',
+        'copyLiveUrl', 'shareLiveWhatsApp', 'shareLiveEmail', 'confirmStopLive', 'liveSyncOnAction',
+        // ⚠️ este se publicaba como `window.X = function` en columna 0, no como
+        // `function X(`, y el inventario inicial —que solo buscaba la segunda
+        // forma— no lo vio. Lo destapo la asercion 4b al detectar que un archivo
+        // duenyo ya declaraba un nombre de la lista de estado compartido.
+        'notifyAllLiveContacts'],
+    'js/match/demo-tutorial.js': [               // §7 tutorial (Fase B)
+        'renderTutorialStep', 'tutorialNext', 'tutorialPrev', 'closeTutorial'],
 };
 const TODAS = Object.entries(BORRADAS).flatMap(([f, ns]) => ns.map(n => [n, f]));
 
@@ -91,14 +114,14 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     ok('1a · ninguna de las 30 se quedo sin declaracion (seria un ReferenceError)', huerfanas.length === 0, huerfanas);
     ok('1b · ⚠️ ninguna conserva DOS declaraciones (la copia muerta se fue)', duplicados.length === 0, duplicados);
     ok('1c · cada una vive en el archivo que se espera', mal.length === 0, mal);
-    ok('1d · el recuento cuadra: 30 funciones', TODAS.length === 30, TODAS.length);
+    ok('1d · el recuento cuadra: 71 funciones (30 de la Fase A + 41 de la B)', TODAS.length === 71, TODAS.length);
 }
 
 // ────────── PARTE 2 · app-init.js ya no las declara ──────────
 {
     const aiDecl = declaraciones(rd(AI));
     const quedan = TODAS.map(([n]) => n).filter(n => aiDecl.has(n));
-    ok('2a · ⚠️ app-init.js no declara ninguna de las 30', quedan.length === 0, quedan);
+    ok('2a · ⚠️ app-init.js no declara ninguna de las 71', quedan.length === 0, quedan);
 
     // y sigue cargando el PRIMERO, que es lo que hacia perder a sus copias
     ok('2b · app-init.js sigue siendo el primer script clasico', ORDER[0] === AI, ORDER[0]);
@@ -131,31 +154,60 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     ok('3c · el detector ve la MISMA funcion declarada en dos archivos', donde.length === 2, donde);
 }
 
-// ────────── PARTE 4 · ⚠️ el estado que SOBREVIVE dentro de las secciones ──────────
-// Estas declaraciones estan dentro de los rangos borrados pero NO se borran:
-// otro archivo las lee por nombre pelado y no las declara. Borrarlas seria un
-// ReferenceError en produccion. Por eso la Fase A borra funcion a funcion.
+// ────────── PARTE 4 · ⚠️ EL ESTADO COMPARTIDO QUE NO SE PUEDE BORRAR ──────────
+// ESTA ES LA PARTE QUE HACE QUE EL BORRADO SEA SEGURO, y la razon por la que se
+// borra FUNCION A FUNCION y nunca por rangos de lineas.
+//
+// app-init.js declara el estado global que los archivos duenyos leen por nombre
+// PELADO sin declararlo ellos. Esas declaraciones estan intercaladas entre las
+// funciones muertas — `_realtimeUnsubscribe` vive entre syncFromCloud y
+// startRealtimeSync, `tutorialStep` justo encima de renderTutorialStep — asi que
+// un borrado por rangos se las habria llevado y habria dejado un ReferenceError
+// en produccion. Cada nombre de esta lista se comprobo midiendo: lo usa al menos
+// un archivo duenyo y NINGUNO lo declara.
 {
     const aiSrc = rd(AI);
-    const lex = n => new RegExp('^\\s*(?:const|let|var)\\s+' + n + '\\s*=', 'm').test(aiSrc);
+    const declara = (src, n) => new RegExp('^\\s*(?:const|let|var)\\s+' + n.replace(/[$]/g, '\\$') + '\\s*=', 'm').test(src)
+        || new RegExp('^window\\.' + n.replace(/[$]/g, '\\$') + '\\s*=', 'm').test(src);
 
-    // activeActionPlayerId: lo usa js/match/events/player-actions.js (17 veces)
-    // y NO lo declara en ningun sitio.
-    ok('4a · ⚠️ app-init.js CONSERVA `activeActionPlayerId` (player-actions.js lo lee y no lo declara)',
-        lex('activeActionPlayerId'));
-    const declaraAAP = ORDER.filter(f => new RegExp('^\\s*(?:const|let|var)\\s+activeActionPlayerId\\s*=', 'm').test(rd(f)));
-    ok('4b · `activeActionPlayerId` sigue teniendo UN solo declarante', declaraAAP.length === 1, declaraAAP);
+    // nombre -> archivos que lo leen sin declararlo (medido el 2026-07-28)
+    const COMPARTIDO = {
+        escapeHtml: ['js/shared/whatsapp-email.js'], escapeAttr: ['js/shared/whatsapp-email.js'],
+        players: ['js/match/events/player-actions.js'], isRunning: ['js/match/live/sync.js'],
+        timerInterval: ['js/match/events/player-actions.js'], lastTickTime: ['js/match/live/sync.js'],
+        currentMode: ['js/match/live/sync.js'], matchPhase: ['js/match/live/sync.js'],
+        analyzeAway: ['js/ai/import.js'], activeFormationKey: ['js/ai/import.js'],
+        selectedFormationOnStart: ['js/ai/import.js'], half1MaxTime: ['js/match/live/sync.js'],
+        half2MaxTime: ['js/match/live/sync.js'], masterTimeH1: ['js/match/live/sync.js'],
+        masterTimeH2: ['js/match/live/sync.js'], pendingSubstitution: ['js/match/events/player-actions.js'],
+        liveMatchId: ['js/match/live/sync.js'], liveSyncTimer: ['js/match/live/sync.js'],
+        liveIsActive: ['js/match/live/sync.js'], emailConfig: ['js/services/firestore-storage.js'],
+        COLORS: ['js/match/live/sync.js'], TEAM_NAMES: ['js/match/live/sync.js'],
+        activeActionPlayerId: ['js/match/events/player-actions.js'],
+        TUTORIAL_STEPS: ['js/match/demo-tutorial.js'], tutorialStep: ['js/match/demo-tutorial.js'],
+        _realtimeUnsubscribe: ['js/services/firestore-storage.js'],
+        _tesseractLoaded: ['js/ai/import.js'],
+    };
+    const nombres = Object.keys(COMPARTIDO);
+    const perdidas = nombres.filter(n => !declara(aiSrc, n));
+    ok('4a · ⚠️ app-init.js CONSERVA las ' + nombres.length + ' declaraciones de estado compartido',
+        perdidas.length === 0, perdidas);
 
-    // _tesseractLoaded: js/ai/import.js lo usa en callTesseract y su propio
-    // comentario de L159 dice "ya declarado en app.js".
-    ok('4c · ⚠️ app-init.js CONSERVA `_tesseractLoaded` (ai/import.js depende de el)',
-        lex('_tesseractLoaded'));
-    ok('4d · ai/import.js sigue SIN declararlo (por eso no se puede borrar)',
-        !/^\s*(?:const|let|var)\s+_tesseractLoaded\s*=/m.test(rd('js/ai/import.js')));
-    ok('4e · ai/import.js lo sigue usando', /_tesseractLoaded/.test(rd('js/ai/import.js')));
+    const yaDeclarado = nombres.filter(n => COMPARTIDO[n].some(f => declara(rd(f), n)));
+    ok('4b · ningun duenyo ha empezado a declararlas por su cuenta (seria un duplicado nuevo)',
+        yaDeclarado.length === 0, yaDeclarado);
 
+    const noUsadas = nombres.filter(n => !COMPARTIDO[n].some(f =>
+        new RegExp('(?<![.\\w$])' + n.replace(/[$]/g, '\\$') + '\\b').test(rd(f))));
+    ok('4c · todas siguen siendo realmente necesarias (si no, sacarlas de la lista)',
+        noUsadas.length === 0, noUsadas);
+
+    // `_tesseractLoaded` merece mencion aparte: el propio ai/import.js lo
+    // documenta ("ya declarado en app.js"), asi que la dependencia es deliberada.
+    ok('4d · ai/import.js sigue documentando su dependencia de _tesseractLoaded',
+        /_tesseractLoaded/.test(rd('js/ai/import.js')));
     // window._trWeekOffset: inicializacion del panel de entrenamiento
-    ok('4f · app-init.js CONSERVA la inicializacion de window._trWeekOffset',
+    ok('4e · app-init.js CONSERVA la inicializacion de window._trWeekOffset',
         /^window\._trWeekOffset\s*=/m.test(aiSrc));
 }
 
