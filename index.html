@@ -65,31 +65,37 @@
         navigator.serviceWorker.addEventListener('controllerchange', function() {
             window.location.reload();
         });
-        // FIX: verificar actualización inmediatamente al cargar la pagina
+
+        function checkExtraAndShowBanner(worker) {
+            _newWorker = worker;
+            var _me = window._cronosCurrentUser;
+            var _extras = (_me && _me.extras) || {};
+            if (_extras.actualizaciones === false) return; // Si el SuperAdmin desactivó el extra para este usuario
+
+            var banner = document.getElementById('update-banner');
+            if (banner) banner.style.display = 'flex';
+        }
+
         navigator.serviceWorker.getRegistration().then(function(reg) {
             if (!reg) return;
-            // Forzar verificación de actualización
             reg.update().catch(function(){});
             reg.addEventListener('updatefound', function() {
                 _newWorker = reg.installing;
                 if (!_newWorker) return;
                 _newWorker.addEventListener('statechange', function() {
                     if (_newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                        var banner = document.getElementById('update-banner');
-                        if (banner) banner.style.display = 'flex';
+                        checkExtraAndShowBanner(_newWorker);
                     }
                 });
             });
-            // FIX: también verificar si ya hay un worker esperando
             if (reg.waiting) {
-                _newWorker = reg.waiting;
-                var banner = document.getElementById('update-banner');
-                if (banner) banner.style.display = 'flex';
+                checkExtraAndShowBanner(reg.waiting);
             }
         });
+
         document.addEventListener('click', function(e) {
             if (e.target && e.target.id === 'update-now') {
-                if (_newWorker && _newWorker.state === 'installed') {
+                if (_newWorker && typeof _newWorker.postMessage === 'function') {
                     _newWorker.postMessage({ action: 'skipWaiting' });
                 } else {
                     window.location.reload();
@@ -101,7 +107,8 @@
             }
         });
     })();
-    // FIX: verificar actualizaciones cada 60 segundos
+
+    // Verificar actualizaciones automáticamente cada 60 segundos
     setInterval(function() {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistration().then(function(reg) {
@@ -135,7 +142,7 @@
 
             <!-- Cabecera sticky -->
             <div id="ob-header">
-                <div id="ob-logo-text" style="padding:0;"><img src="public/assets/img_8cb8ccdc.png" alt="Chronos Fútbol" style="height:38px;width:auto;object-fit:contain;display:block;"></div>
+                <div id="ob-logo-text" style="padding:0;"><img src="public/assets/logo.png" alt="Chronos Fútbol" style="height:38px;width:auto;object-fit:contain;display:block;"></div>
                 <div id="ob-progress-wrap">
                     <div id="ob-progress-bar"><div id="ob-progress-fill" style="width:11%"></div></div>
                     <div id="ob-counter">1 / 9</div>
@@ -146,7 +153,7 @@
             <!-- Contenido scrollable -->
             <div id="ob-content">
                 <div id="ob-hero">
-                    <div id="ob-hero-icon" style="display:flex;justify-content:center;"><img src="public/assets/img_9fb78c0a.png" alt="Chronos Fútbol" style="width:160px;height:136px;object-fit:contain;display:block;"></div>
+                    <div id="ob-hero-icon" style="display:flex;justify-content:center;"><img src="public/assets/logo.png" alt="Chronos Fútbol" style="width:160px;height:136px;object-fit:contain;display:block;"></div>
                     <h2 id="ob-hero-title" style="display:none;"></h2>
                     <p id="ob-hero-sub">Coach Assistant · v7.0</p>
                 </div>
@@ -176,7 +183,7 @@
                     margin:auto 0; flex-shrink:0;">
 
             <div style="display:flex;justify-content:center;margin-bottom:0.3rem;padding:0.3rem;">
-                <img src="public/assets/img_7a937812.png" alt="Chronos Fútbol" 
+                <img src="public/assets/logo.png" alt="Chronos Fútbol"
                      style="width:160px;height:auto;max-height:130px;object-fit:contain;display:block;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5));">
             </div>
             <p style="color:#7d8590; font-size:0.82rem; text-align:center; margin:0 0 1.5rem; letter-spacing:1px;">
@@ -438,7 +445,7 @@
          flex-direction:column; align-items:center; justify-content:center; padding:2rem; overflow-y:auto;">
         
         <div style="text-align:center; margin-bottom:3rem; animation: fadeIn 0.8s ease-out;">
-            <img src="public/assets/img_0f3942d4.png" alt="Chronos Fútbol" style="height:120px; width:auto; margin-bottom:1rem; filter:drop-shadow(0 8px 16px rgba(0,0,0,0.6));">
+            <img src="public/assets/logo.png" alt="Chronos Fútbol" style="height:120px; width:auto; margin-bottom:1rem; filter:drop-shadow(0 8px 16px rgba(0,0,0,0.6));">
             <h1 style="font-family:'Outfit',sans-serif; color:white; font-size:1.8rem; margin:0;">Bienvenido a Chronos</h1>
             <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.5rem;">Selecciona una opción para continuar</p>
         </div>
@@ -628,7 +635,7 @@
 
         <!-- Logo independiente — lado derecho del eje del campo -->
         <div class="logo-header">
-            <img src="public/assets/img_0f3942d4.png" alt="Chronos">
+            <img src="public/assets/logo.png" alt="Chronos">
         </div>
 
         <div class="header-actions">
@@ -1273,91 +1280,115 @@
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
     <!-- ══ CORE: app.js (lógica principal, carga primero) ══════════════════════ -->
-    <script src="js/core/app-init.js?v=v348"></script>
+    <script src="js/core/app-init.js?v=v384"></script>
 
     <!-- ══ CORE: configuración y parches ══════════════════════════════════════ -->
-    <script src="js/core/setup-modal.js?v=v348"></script>
-    <script src="js/core/patches.js?v=v348"></script>
+    <script src="js/core/setup-modal.js?v=v384"></script>
+    <script src="js/core/patches.js?v=v384"></script>
 
     <!-- ══ SERVICES: Firebase + Auth ══════════════════════════════════════════ -->
-    <script type="module" src="js/services/firebase-init.js?v=v348"></script>
-    <script type="module" src="js/services/auth.js?v=v348"></script>
-    <script src="js/services/auth-improvements.js?v=v348"></script>
+    <script type="module" src="js/services/firebase-init.js?v=v384"></script>
+    <script type="module" src="js/services/auth.js?v=v384"></script>
+    <script src="js/services/auth-improvements.js?v=v384"></script>
 
     <!-- ══ CORE: seguridad, utilidades, seudonimizador ═══════════════════════ -->
-    <script src="js/core/security-and-state.js?v=v348"></script>
-    <script src="js/core/utils.js?v=v348"></script>
-    <script src="js/core/pseudonymizer.js?v=v348"></script>
+    <script src="js/core/security-and-state.js?v=v384"></script>
+    <script src="js/core/utils.js?v=v384"></script>
+    <script src="js/core/pseudonymizer.js?v=v384"></script>
     <!-- SPRINT 4: Accesibilidad WCAG 2.1 básica (debe cargar temprano) -->
-    <script src="js/core/accessibility-wcag.js?v=v348"></script>
+    <script src="js/core/accessibility-wcag.js?v=v384"></script>
 
     <!-- ══ SPRINT 3: Auditoría y Optimización de Renders ════════════════════ -->
-    <script src="js/services/audit-logger.js?v=v348"></script>
-    <script src="js/core/render-optimizer.js?v=v348"></script>
-    <script src="js/core/sprint3-init.js?v=v348"></script>
-    <script src="js/core/sprint3-tests.js?v=v348"></script>
+    <script src="js/services/audit-logger.js?v=v384"></script>
+    <script src="js/core/render-optimizer.js?v=v384"></script>
+    <script src="js/core/sprint3-init.js?v=v384"></script>
+    <script src="js/core/sprint3-tests.js?v=v384"></script>
 
     <!-- ══ MATCH: eventos del partido ═════════════════════════════════════════ -->
-    <script src="js/match/events/player-actions.js?v=v348"></script>
-    <script src="js/match/demo-tutorial.js?v=v348"></script>
-    <script src="js/match/timer/core.js?v=v348"></script>
-    <script src="js/match/persistence/active-match.js?v=v348"></script>
-    <script src="js/match/events/movement-log.js?v=v348"></script>
-    <script src="js/match/persistence/team-persistence.js?v=v348"></script>
-    <script src="js/match/live/sync.js?v=v348"></script>
-    <script src="js/match/replay/replay-player.js?v=v348"></script>
-    <script src="js/match/events/retroactive-modal.js?v=v348"></script>
+    <script src="js/match/events/player-actions.js?v=v384"></script>
+    <script src="js/match/demo-tutorial.js?v=v384"></script>
+    <script src="js/match/timer/core.js?v=v384"></script>
+    <script src="js/match/persistence/active-match.js?v=v384"></script>
+    <script src="js/match/events/movement-log.js?v=v384"></script>
+    <script src="js/match/persistence/team-persistence.js?v=v384"></script>
+    <script src="js/match/live/sync.js?v=v384"></script>
+    <script src="js/match/replay/replay-player.js?v=v384"></script>
+    <script src="js/match/events/retroactive-modal.js?v=v384"></script>
 
     <!-- ══ SERVICES: Firestore, cloud, offline ════════════════════════════════ -->
-    <script src="js/services/firestore-sync.js?v=v348"></script>
-    <script src="js/services/firestore-storage.js?v=v348"></script>
-    <script src="js/services/offline-manager.js?v=v348"></script>
+    <script src="js/services/firestore-sync.js?v=v384"></script>
+    <script src="js/services/firestore-storage.js?v=v384"></script>
+    <script src="js/services/offline-manager.js?v=v384"></script>
     <!-- SPRINT 4: Notificaciones y Training Plans sincronizados -->
-    <script src="js/services/notification-dismiss-sync.js?v=v348"></script>
-    <script src="js/services/user-management.js?v=v348"></script>
+    <script src="js/services/notification-dismiss-sync.js?v=v384"></script>
+    <script src="js/services/user-management.js?v=v384"></script>
 
     <!-- ══ STAFF & COMMS ══════════════════════════════════════════════════════ -->
-    <script src="js/core/staff-and-comms.js?v=v348"></script>
+    <script src="js/core/staff-and-comms.js?v=v384"></script>
 
     <!-- ══ AI: importación de jugadores ════════════════════════════════════════ -->
-    <script src="js/ai/import.js?v=v348"></script>
+    <script src="js/ai/import.js?v=v384"></script>
 
     <!-- ══ ROSTER: plantilla y formaciones ═════════════════════════════════════ -->
-    <script src="js/roster/formations.js?v=v348"></script>
-    <script src="js/roster/legacy-formations.js?v=v348"></script>
+    <script src="js/roster/formations.js?v=v384"></script>
+    <script src="js/roster/legacy-formations.js?v=v384"></script>
 
     <!-- ══ UI: render, drag-drop, scroll ══════════════════════════════════════ -->
-    <script src="js/ui/bench-scroll.js?v=v348"></script>
-    <script src="js/ui/render.js?v=v348"></script>
-    <script src="js/ui/drag-drop.js?v=v348"></script>
+    <script src="js/ui/bench-scroll.js?v=v384"></script>
+    <script src="js/ui/render.js?v=v384"></script>
+    <script src="js/ui/drag-drop.js?v=v384"></script>
 
     <!-- ══ SHARED: WhatsApp, email, admin constants ═══════════════════════════ -->
-    <script src="js/shared/whatsapp-email.js?v=v348"></script>
-        <script src="js/shared/admin-shared.js?v=v348"></script>
+    <script src="js/shared/whatsapp-email.js?v=v384"></script>
+        <script src="js/shared/admin-shared.js?v=v384"></script>
 
     <!-- ══ ADMIN: SuperAdmin, Club, Individual, Billing ═══════════════════════ -->
-    <script src="js/admin/shared/category-tree.js?v=v348"></script>
-    <script src="js/admin/superadmin/superadmin.panel.js?v=v348"></script>
-    <script src="js/admin/superadmin/extras.js?v=v348"></script>
-    <script src="js/admin/superadmin/billing.js?v=v348"></script>
-    <script src="js/admin/club/panel.js?v=v348"></script>
-    <script src="js/admin/individual/panel.js?v=v348"></script>
-    <script src="js/admin/billing/payments.js?v=v348"></script>
-    <script src="js/admin/billing/ui.js?v=v348"></script>
+    <script src="js/admin/shared/category-tree.js?v=v384"></script>
+    <script src="js/admin/superadmin/superadmin.panel.js?v=v384"></script>
+    <script src="js/admin/superadmin/trash.js?v=v384"></script>
+    <script src="js/admin/superadmin/club-slots.js?v=v384"></script>
+    <script src="js/admin/superadmin/extras-toggle.js?v=v384"></script>
+    <script src="js/admin/superadmin/delete-club.js?v=v384"></script>
+    <script src="js/admin/superadmin/create-direct.js?v=v384"></script>
+    <script src="js/admin/superadmin/individual-entity.js?v=v384"></script>
+    <script src="js/admin/superadmin/secretary.js?v=v384"></script>
+    <script src="js/admin/superadmin/individuals-tab.js?v=v384"></script>
+    <script src="js/admin/superadmin/clubs-tab.js?v=v384"></script>
+    <script src="js/admin/superadmin/requests-tab.js?v=v384"></script>
+    <script src="js/admin/superadmin/messaging.js?v=v384"></script>
+    <script src="js/admin/superadmin/extras.js?v=v384"></script>
+    <script src="js/admin/superadmin/billing.js?v=v384"></script>
+    <script src="js/admin/club/panel.js?v=v384"></script>
+    <script src="js/admin/individual/panel.js?v=v384"></script>
+    <script src="js/admin/billing/payments.js?v=v384"></script>
+    <script src="js/admin/billing/ui.js?v=v384"></script>
 
     <!-- ══ COACH: comunicaciones, reportes, entrenamiento ════════════════════ -->
-    <script src="js/coach/comms/panel.js?v=v348"></script>
-    <script src="js/coach/reports/club-reports.js?v=v348"></script>
-    <script src="js/coach/reports/generator.js?v=v348"></script>
+    <script src="js/coach/comms/panel.js?v=v384"></script>
+    <script src="js/coach/comms/training-notify.js?v=v384"></script>
+    <script src="js/coach/comms/collective-report.js?v=v384"></script>
+    <script src="js/coach/comms/individual-reports.js?v=v384"></script>
+    <script src="js/coach/comms/contact-manager.js?v=v384"></script>
+    <script src="js/coach/comms/bulk-messaging.js?v=v384"></script>
+    <script src="js/coach/comms/match-reports-send.js?v=v384"></script>
+    <script src="js/coach/comms/match-reports-auto.js?v=v384"></script>
+    <!-- report-engine.js define `const _RP` y debe ir ANTES de club-reports.js
+         (que lo consume). No mover después: ver cabecera de report-engine.js. -->
+    <script src="js/coach/reports/report-engine.js?v=v384"></script>
+    <script src="js/coach/reports/club-reports.js?v=v384"></script>
+    <script src="js/coach/reports/director-config.js?v=v384"></script>
+    <script src="js/coach/reports/events-tab.js?v=v384"></script>
+    <script src="js/coach/reports/finished-matches-tab.js?v=v384"></script>
+    <script src="js/coach/reports/reports-tab.js?v=v384"></script>
     <!-- SPRINT 4: Training Plans sync con Firestore (debe ir ANTES de panel.js) -->
-    <script src="js/services/training-firestore-sync.js?v=v348"></script>
-    <script src="js/coach/training/panel.js?v=v348"></script>
+    <script src="js/services/training-firestore-sync.js?v=v384"></script>
+    <script src="js/coach/training/panel.js?v=v384"></script>
 
     <!-- ══ PARENT: portal de padres ═══════════════════════════════════════════ -->
-    <script src="js/parent/panel.js?v=v348"></script>
+    <script src="js/parent/panel.js?v=v384"></script>
 
     <!-- ══ CORE: event listeners (debe ir al final) ══════════════════════════ -->
-    <script src="js/core/event-listeners.js?v=v348"></script>
+    <script src="js/core/event-listeners.js?v=v384"></script>
 
     <!-- ══ BANNER: nueva versión disponible (aparece automáticamente) ══ -->
 
