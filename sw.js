@@ -1,5 +1,30 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v389: FASE C del monolito #5 — app-init.js 3689 -> 2941 lineas. Otras 25
+//        copias duplicadas MUERTAS fuera (773 lineas, 25 comentarios puntero
+//        en su hueco). Acumulado A+B+C: 6407 -> 2941, un 54% menos.
+//        Cada nombre queda con su fuente canonica:
+//          pintado de plantilla y chips -> ui/render.js
+//          arrastrar y soltar           -> ui/drag-drop.js
+//          formaciones predefinidas     -> roster/formations.js
+//          guardado de alineaciones     -> match/persistence/team-persistence.js
+//          plantillas guardadas         -> ai/import.js
+//          placeOnField                 -> roster/legacy-formations.js
+//          injectBenchScrollButtons     -> ui/bench-scroll.js
+//          logEvent                     -> match/events/movement-log.js
+//        ⚠️ Esta vez SI aplicaba la trampa v378: el alias de nivel superior
+//        window.updateCategoryOptions se ejecutaba al cargar el PRIMER script
+//        de index.html, cuando formations.js aun no existe. Dejarlo tras
+//        borrar la funcion habria sido un ReferenceError, o sea la app en
+//        blanco. Se borro con la funcion; su consumidor real
+//        (services/auth/role-launch.js) sigue servido porque la declaracion
+//        clasica de formations.js ya publica la propiedad en el global.
+//        Borrado FUNCION A FUNCION: entre las muertas sobreviven 6
+//        declaraciones load-bearing (FIELD_MARGIN, touchData, lastTouchTime,
+//        FORMATIONS, FORMATIONS_FULL, FORMATION_PRESETS) que ningun archivo
+//        duenyo declara. Guard 33/33 visto ROJO antes; equivalencia en
+//        runtime con los 72 scripts: las 25 resuelven a codigo byte-identico.
+//        Suite 62/62 + 11 xfail.
 //  v388: FASE B del monolito #5 — app-init.js 5203 -> 3689 lineas. Otras 41
 //        copias duplicadas MUERTAS fuera (1539 lineas). Borrado puro, ninguna
 //        linea modificada. Acumulado con la Fase A: 6407 -> 3689, un 42% menos.
@@ -912,8 +937,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v388';
-const CACHE_NAME = 'cronos-cache-v388';
+const VERSION = 'v389';
+const CACHE_NAME = 'cronos-cache-v389';
 
 const ASSETS = [
     './',
