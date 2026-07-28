@@ -164,9 +164,18 @@ const idxOf = (s, sub) => s.indexOf(sub);
     {
         const ai = fs.readFileSync(path.join(ROOT, 'js', 'core', 'app-init.js'), 'utf8');
         const tp = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'training', 'panel.js'), 'utf8');
-        ok('1e · app-init.js la invoca con guarda typeof',
-            /typeof openTrainingNotification==='function'\?openTrainingNotification\(\)/.test(ai));
-        ok('1f · training/panel.js también la referencia', /openTrainingNotification/.test(tp));
+        // 1e · Hasta el 2026-07-28 esto comprobaba un onclick de app-init.js.
+        // Ese onclick vivía dentro de renderTrainingWeek, que era una COPIA
+        // MUERTA: coach/training/panel.js declara la misma función y carga
+        // después, así que la de app-init.js no se ejecutaba nunca. Se borró en
+        // la Fase A del monolito #5, y con ella su onclick. El invariante útil
+        // ahora es el contrario: que la copia muerta no vuelva.
+        ok('1e · app-init.js ya NO contiene la copia muerta del botón ENVIAR',
+            !/openTrainingNotification/.test(ai) && !/^function renderTrainingWeek\s*\(/m.test(ai));
+        // 1f · el punto de entrada VIVO, que es el que hay que proteger: el
+        // botón real está en coach/training/panel.js y llama con guarda typeof.
+        ok('1f · training/panel.js la invoca con guarda typeof (punto de entrada vivo)',
+            /typeof openTrainingNotification==='function'\)\s*\{\s*openTrainingNotification\(\)/.test(tp));
     }
     {
         // Ningún test (salvo éste) toca la sección.
