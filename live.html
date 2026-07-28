@@ -807,7 +807,7 @@
 <div id="auth-overlay" style="display:none;">
     <div class="auth-card">
         <div style="display:flex;justify-content:center;margin-bottom:1.5rem;">
-            <img src="public/assets/img_29448ebf.png" alt="Chronos Fútbol" 
+            <img src="public/assets/logo.png" alt="Chronos Fútbol"
                  style="width:220px;height:auto;object-fit:contain;display:block;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5));">
         </div>
         <p>Seguimiento en directo · Director Deportivo</p>
@@ -2535,18 +2535,49 @@ function safeColor(value, fallback) {
 // rojo <33% · ámbar 33-50% · verde ≥50%.
 // total = half1Max + half2Max, con fallback f7=1800/parte, f11=2400/parte.
 function _timerColorFor(timeSec, data) {
+    // 0. Si el semáforo está desactivado para este partido -> Celeste (#79c0ff)
+    if (data && (data.semaforo === false || data.semaforoEnabled === false || data.semaforoActive === false)) {
+        return { bg: '#79c0ff', text: '#000000' };
+    }
+
+    if (typeof window !== 'undefined' && window._liveClubExtras && window._liveClubExtras.semaforo === false) {
+        return { bg: '#79c0ff', text: '#000000' };
+    }
+
     const half1Max = data.half1MaxTime || (data.mode === 'f7' ? 1800 : 2400);
     const half2Max = data.half2MaxTime || (data.mode === 'f7' ? 1800 : 2400);
     const totalSec = half1Max + half2Max;
     const t = timeSec || 0;
-    // v221: usar window._liveCachedThresholds si el snapshot no trae thresholds.
-    // Esto se carga asincrónicamente en _fetchClubThresholdsForLive() a partir
-    // del clubId del snapshot, como fallback cuando el coach no los incluyó.
-    // (typeof window check para entornos sandbox sin window, p.ej. tests VM).
+
+    const cat = data.category || '';
+    const sub = data.subcategory || 'A';
+    const getGroupFn = (typeof window.getCategoryGroupKey === 'function') ? window.getCategoryGroupKey : function(c,s) {
+        const raw = String(c||'').toLowerCase();
+        if (raw.includes('f7') || raw.includes('prebenj') || raw.includes('benj') || raw.includes('alev')) return 'f7';
+        if (raw.includes('infant')) return s === 'B' ? 'infantil_b' : s === 'C' ? 'infantil_c' : 'infantil_a';
+        if (raw.includes('cadet')) return s === 'B' ? 'cadete_b' : s === 'C' ? 'cadete_c' : 'cadete_a';
+        if (raw.includes('juvenil')) return 'juvenil';
+        if (raw.includes('regional') || raw.includes('senior') || raw.includes('aficionad')) return 'regional';
+        return 'f7';
+    };
+    const groupKey = getGroupFn(cat, sub);
+
+    // Juvenil o Regional -> Sin semáforo -> Celeste
+    if (groupKey === 'juvenil' || groupKey === 'regional') {
+        return { bg: '#79c0ff', text: '#000000' };
+    }
+
+    const configs = (data && data.categoryConfigs) || (typeof window !== 'undefined' && window._liveCategoryConfigs) || {};
     const _cached = (typeof window !== 'undefined' && window._liveCachedThresholds) || null;
-    const th = data.timerThresholds || _cached || {};
-    const redPct    = (typeof th.red    === 'number' && !isNaN(th.red))    ? th.red    : 33;
-    const yellowPct = (typeof th.yellow === 'number' && !isNaN(th.yellow)) ? th.yellow : 50;
+    const groupCfg = configs[groupKey] || (data.timerThresholds ? { semaforoActive: true, red: data.timerThresholds.red, yellow: data.timerThresholds.yellow } : (_cached ? { semaforoActive: true, red: _cached.red, yellow: _cached.yellow } : { semaforoActive: true, red: 33, yellow: 50 }));
+
+    // Si el Director Deportivo desactivó el semáforo para este grupo -> Celeste
+    if (groupCfg.semaforoActive === false) {
+        return { bg: '#79c0ff', text: '#000000' };
+    }
+
+    const redPct    = (typeof groupCfg.red    === 'number' && !isNaN(groupCfg.red))    ? groupCfg.red    : 33;
+    const yellowPct = (typeof groupCfg.yellow === 'number' && !isNaN(groupCfg.yellow)) ? groupCfg.yellow : 50;
     const redSec    = totalSec * (redPct    / 100);
     const yellowSec = totalSec * (yellowPct / 100);
     if (t >= yellowSec) return { bg: '#2ea043', text: '#000000' };
@@ -2554,66 +2585,43 @@ function _timerColorFor(timeSec, data) {
     return { bg: '#da3633', text: '#ffffff' };
 }
 
-// v221: fallback asincrónico — si el snapshot no trae timerThresholds (p.ej.
-// porque el coach no tiene clubId configurado), leer directamente clubs/{clubId}
-// desde Firestore usando el clubId del snapshot. Se cachea en window._liveCachedThresholds.
-// v222: ahora se llama SIEMPRE (no solo si el snapshot viene sin thresholds),
-// con caché TTL 60s. Esto garantiza que el live SIEMPRE aplique los umbrales
-// frescos del Director Deportivo, aunque el coach los haya cargado stale.
 window._liveCachedThresholds = null;
+window._liveCategoryConfigs = null;
 let _liveThresholdsFetchInFlight = false;
 let _liveThresholdsLastFetch = 0;
-const _LIVE_THRESHOLDS_TTL_MS = 60_000; // 60 segundos
+const _LIVE_THRESHOLDS_TTL_MS = 60_000;
 
 async function _fetchClubThresholdsForLive(clubId) {
-    if (!clubId) {
-        console.warn('[live v222] _fetchClubThresholdsForLive: clubId vacío. No se pueden leer umbrales.');
-        return;
-    }
-    // No saltar el fetch si ya hay caché — solo respetar TTL de 60s.
+    if (!clubId) return;
     const now = Date.now();
     const cacheFresh = (now - _liveThresholdsLastFetch) < _LIVE_THRESHOLDS_TTL_MS;
     if (_liveThresholdsFetchInFlight) return;
-    if (window._liveCachedThresholds && cacheFresh) return; // caché fresco
+    if (window._liveCategoryConfigs && cacheFresh) return;
 
     _liveThresholdsFetchInFlight = true;
     try {
-        // v222: en live.html la instancia de Firestore es `db` (variable local
-        // del módulo ES, declarada con `const db = getFirestore(app)` en la
-        // inicialización). Antes (v221) usábamos window._cronos_auth.db que
-        // solo existe en el coach app, no en live.html. Por eso el fallback
-        // siempre fallaba con "window._cronos_auth.db no disponible".
         if (typeof db === 'undefined' || !db) {
-            console.warn('[live v222] db no disponible en este contexto.');
             _liveThresholdsFetchInFlight = false;
             return;
         }
-        // v224: log silenciado en producción (era de diagnóstico v222).
-        // console.log('[live v222] Fallback: leyendo clubs/' + clubId + '/timerThresholds de Firestore...');
         const snap = await getDoc(doc(db, 'clubs', clubId));
         if (snap.exists()) {
             const data = snap.data() || {};
             const t = data.timerThresholds || {};
-            const newValue = {
+            window._liveCachedThresholds = {
                 red:    (typeof t.red    === 'number' && !isNaN(t.red))    ? t.red    : 33,
                 yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50
             };
+            window._liveCategoryConfigs = data.categoryConfigs || {};
             _liveThresholdsLastFetch = now;
-            const oldValue = window._liveCachedThresholds;
-            window._liveCachedThresholds = newValue;
-            // v224: log silenciado en producción (era de diagnóstico v222).
-            // console.log('[live v222] Umbrales cacheados del club', clubId, ':', newValue,
-            //             oldValue ? '(antes: ' + JSON.stringify(oldValue) + ')' : '');
-            // Forzar re-render del campo y banquillo para aplicar los nuevos umbrales.
+
             if (window._liveLastData) {
                 renderField(window._liveLastData);
                 renderBench(window._liveLastData);
             }
-        } else {
-            console.warn('[live v222] clubs/' + clubId + ' NO existe en Firestore');
         }
     } catch(e) {
-        console.warn('[live v222] Fallback fetch club thresholds ERROR:', e);
+        console.warn('[live] Error leyendo thresholds de club:', e);
     } finally {
         _liveThresholdsFetchInFlight = false;
     }
@@ -3324,6 +3332,12 @@ window.showHistory = async function() {
                             ${(m.coachEmail && (userData.role==='superadmin' || userData.role==='admin'))?'<br>Entrenador: '+escapeHtml(m.coachEmail):''}
                         </div>
                         <div style="display:flex;gap:0.4rem;align-items:center;">
+                            <button onclick="window.openMatchReplay('${m.id}')" title="Revivir partido"
+                                style="padding:0.3rem 0.6rem;background:rgba(88,166,255,0.15);
+                                       border:1px solid rgba(88,166,255,0.4);border-radius:6px;
+                                       color:#58a6ff;font-size:0.75rem;cursor:pointer;font-weight:700;">
+                                ▶️ Revivir
+                            </button>
                             <button onclick="toggleKeepMatch('${m.id}', event)" title="${m.keep ? 'Dejar de guardar' : 'Guardar permanentemente'}"
                                 style="padding:0.3rem 0.6rem;background:${m.keep ? 'rgba(63,185,80,0.15)' : 'rgba(255,255,255,0.05)'};
                                        border:1px solid ${m.keep ? 'rgba(63,185,80,0.4)' : 'var(--border)'};border-radius:6px;
@@ -3396,27 +3410,39 @@ function showLoadingScreen(msg) {
     if (!('serviceWorker' in navigator)) return;
     let _newWorker = null;
     navigator.serviceWorker.addEventListener('controllerchange', function() {
-        // El nuevo SW ha tomado el control — recargar para usar la nueva versión.
         window.location.reload();
     });
+
+    function checkExtraAndShowBanner(worker) {
+        _newWorker = worker;
+        const _me = window._cronosCurrentUser;
+        const _extras = (_me && _me.extras) || {};
+        if (_extras.actualizaciones === false) return;
+
+        const banner = document.getElementById('update-banner');
+        if (banner) banner.style.display = 'flex';
+    }
+
     navigator.serviceWorker.getRegistration().then(function(reg) {
         if (!reg) return;
+        reg.update().catch(function(){});
         reg.addEventListener('updatefound', function() {
             _newWorker = reg.installing;
             if (!_newWorker) return;
             _newWorker.addEventListener('statechange', function() {
                 if (_newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    // Nueva versión instalada y esperando — mostrar banner.
-                    const banner = document.getElementById('update-banner');
-                    if (banner) banner.style.display = 'flex';
+                    checkExtraAndShowBanner(_newWorker);
                 }
             });
         });
+        if (reg.waiting) {
+            checkExtraAndShowBanner(reg.waiting);
+        }
     });
-    // Botón "Actualizar" — activar el nuevo SW y recargar.
+
     document.addEventListener('click', function(e) {
         if (e.target && e.target.id === 'update-now') {
-            if (_newWorker && _newWorker.state === 'installed') {
+            if (_newWorker && typeof _newWorker.postMessage === 'function') {
                 _newWorker.postMessage({ action: 'skipWaiting' });
             } else {
                 window.location.reload();
@@ -3428,6 +3454,14 @@ function showLoadingScreen(msg) {
         }
     });
 })();
+
+setInterval(function() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(function(reg) {
+            if (reg) reg.update().catch(function(){});
+        });
+    }
+}, 60000);
 </script>
 
 <!-- ── v228: PANEL HISTORIAL DEL PARTIDO (franja fina + auto-expand) ──
@@ -3618,5 +3652,7 @@ function showLoadingScreen(msg) {
     #sound-activate-banner { display: none !important; }
 }
 </style>
+<script src="js/match/replay/replay-player.js?v=v348"></script>
+<script src="js/match/events/retroactive-modal.js?v=v348"></script>
 </body>
 </html>
