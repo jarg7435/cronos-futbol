@@ -1896,7 +1896,7 @@ export async function doAuth() {
                         playerAlias: playerName || null,
                         clubId: _entityId, clubName: null,
                         allRoles: [_newIndivRole],
-                        createdAt: new Date().toISOString(),
+                        createdAt: _m.serverTimestamp(),
                         ..._gdprConsentFields,
                     }, { merge: false });
                 }

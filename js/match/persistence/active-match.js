@@ -393,7 +393,10 @@ window.endMatch = function endMatch(skipConfirm = false) {
 
     updateMasterUI();
 
-    // Detener sincronización en vivo
+    // Detener sincronización en vivo y empujar estado 'finished' a Firestore
+    if (typeof pushLiveSnapshot === 'function') {
+        pushLiveSnapshot('finished').catch(e => console.warn('[endMatch] Error pushing finished snapshot:', e));
+    }
     if (typeof stopLiveSync === 'function') {
         stopLiveSync();
     }

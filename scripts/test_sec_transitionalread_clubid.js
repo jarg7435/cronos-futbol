@@ -47,13 +47,18 @@ ok('1a · existe function transitionalRead(clubId)', fnStart !== -1);
 const fnEnd = rules.indexOf('\n    }', fnStart);
 const fnBody = rules.slice(fnStart, fnEnd + 6);
 
+// Tolerante a ambos estilos: acceso directo `.data.clubId` o el estilo
+// defensivo null-safe `.data.get('clubId', default)` (aplicado externamente
+// al archivo tras este fix) — lo que importa es la PROPIEDAD de seguridad
+// (se compara contra el clubId del propio usuario), no la sintaxis exacta.
 ok('1b · [FIX] exige que el clubId del documento coincida con users/{uid}.clubId',
-   /users\/\$\(request\.auth\.uid\)\)\.data\.clubId\s*==\s*clubId/.test(fnBody),
+   /users\/\$\(request\.auth\.uid\)\)\.data(?:\.clubId|\.get\(\s*'clubId'[^)]*\))\s*==\s*clubId/.test(fnBody),
    fnBody.replace(/\s+/g, ' '));
 ok('1c · conserva isAuth() && !hasClaims()', /isAuth\(\)\s*&&\s*!hasClaims\(\)/.test(fnBody));
 ok('1d · conserva el guard clubId != null', /clubId\s*!=\s*null/.test(fnBody));
 ok('1e · conserva exists(users/{uid}) antes de leerlo', /exists\(\/databases\/\$\(database\)\/documents\/users\/\$\(request\.auth\.uid\)\)/.test(fnBody));
-ok('1f · conserva fail-closed sobre createdAt is timestamp', /createdAt\s+is\s+timestamp/.test(fnBody));
+ok('1f · conserva fail-closed sobre createdAt is timestamp',
+   /createdAt[\s\S]{0,25}is\s+timestamp/.test(fnBody));
 ok('1g · conserva la ventana de 5 minutos', /duration\.value\(5,\s*'m'\)/.test(fnBody));
 ok('1h · el fix quedo documentado en el comentario', /PROPIEDAD DE CLUB/.test(rules.slice(Math.max(0, fnStart - 2000), fnStart)));
 
