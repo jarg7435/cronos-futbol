@@ -98,6 +98,12 @@ const BORRADAS = {
     'js/roster/legacy-formations.js': ['placeOnField'],
     'js/match/events/movement-log.js': ['logEvent'],
     'js/match/persistence/team-persistence.js': ['saveTeamSetup', 'deleteTeamSetup'],
+
+    // ───────────── FASE D · grupo B (6) · panel SA, copia muerta ─────────────
+    'js/admin/superadmin/superadmin.panel.js': ['openSuperAdminPanel', 'saFS', 'saGet'],
+    'js/admin/superadmin/clubs-tab.js': ['saClubs'],
+    'js/admin/superadmin/requests-tab.js': ['saRequests'],
+    'js/admin/billing/payments.js': ['saSendPaymentEmail'],
 };
 const TODAS = Object.entries(BORRADAS).flatMap(([f, ns]) => ns.map(n => [n, f]));
 
@@ -114,6 +120,32 @@ const BORRADAS_MULTI = {
     saveCurrentTeam: { gana: 'js/ai/import.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js', 'js/ai/import.js'] },
     deleteTeamFromDropdown: { gana: 'js/match/persistence/team-persistence.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js'] },
     injectBenchScrollButtons: { gana: 'js/ui/bench-scroll.js', todos: ['js/ai/import.js', 'js/ui/bench-scroll.js'] },
+};
+
+// ⚠️ FASE D · grupo C · EL PANEL SUPERADMIN LEGACY v3 (14 funciones, 762 lineas).
+// Estas NO tienen archivo duenyo: desaparecen del repo entero. Por eso llevan
+// aserciones propias (PARTE 7) en vez de entrar en BORRADAS.
+//
+// POR QUE SE PUDIERON BORRAR, que es lo que hay que seguir cumpliendo: no es un
+// "no le encuentro consumidores" (argumento debil), es la MISMA prueba por
+// shadowing de las fases A/B/C. Todo el grupo cuelga de `openSuperAdminPanel`,
+// que estaba MUERTA porque superadmin.panel.js la redeclara y gana. Ninguna de
+// las 3 funciones vivas del bloque (saWrite, saOpenIndividualEditor,
+// checkClubAccess) alcanzaba nada de aqui: solo llaman a saFS y saGet —que
+// resuelven al panel moderno— y a saWrite. Y el remate: `openAdminPanel`
+// llamaba a `openSuperAdminPanel()` por nombre pelado, o sea que incluso
+// invocandolo se abria el panel MODERNO. Estaba doblemente inalcanzable.
+const FASE_D_ELIMINADAS = ['openAdminPanel', 'saGetAll', 'saUpd', 'saBadge', 'saSlotBar', 'saExpireLabel',
+    'saOverview', 'saOpenEditor', 'saIndividual', 'saPayments', 'saPaymentCard', 'saOpenPaymentForm',
+    'saOpenPaymentHistory', 'saNewClub'];
+
+// Las 3 que SOBREVIVEN en el bloque SA de app-init.js, con su consumidor real.
+// Si alguna pierde su consumidor, deja de haber razon para que siga aqui; si
+// alguien la redeclara en otro archivo, vuelve el problema de las fases A-C.
+const FASE_D_VIVAS = {
+    saWrite: 'js/admin/billing/payments.js',
+    saOpenIndividualEditor: 'js/admin/superadmin/extras.js',
+    checkClubAccess: 'js/services/auth/role-launch.js',
 };
 
 // Declaraciones de nivel superior (columna 0 = incondicional; una asignacion
@@ -142,8 +174,8 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     ok('1a · ninguna se quedo sin declaracion (seria un ReferenceError)', huerfanas.length === 0, huerfanas);
     ok('1b · ⚠️ ninguna conserva DOS declaraciones (la copia muerta se fue)', duplicados.length === 0, duplicados);
     ok('1c · cada una vive en el archivo que se espera', mal.length === 0, mal);
-    ok('1d · el recuento cuadra: 91 funciones (30 de la Fase A + 41 de la B + 20 de la C)',
-        TODAS.length === 91, TODAS.length);
+    ok('1d · el recuento cuadra: 97 funciones (30 A + 41 B + 20 C + 6 del grupo B de la D)',
+        TODAS.length === 97, TODAS.length);
 
     // ── las 5 multi-declaradas de la Fase C: se fija QUIEN gana, no que sea unica
     const malGanador = [], malConjunto = [];
@@ -163,8 +195,9 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
 // ────────── PARTE 2 · app-init.js ya no las declara ──────────
 {
     const aiDecl = declaraciones(rd(AI));
-    const quedan = [...TODAS.map(([n]) => n), ...Object.keys(BORRADAS_MULTI)].filter(n => aiDecl.has(n));
-    ok('2a · ⚠️ app-init.js no declara ninguna de las 96', quedan.length === 0, quedan);
+    const quedan = [...TODAS.map(([n]) => n), ...Object.keys(BORRADAS_MULTI), ...FASE_D_ELIMINADAS]
+        .filter(n => aiDecl.has(n));
+    ok('2a · ⚠️ app-init.js no declara ninguna de las 116', quedan.length === 0, quedan);
 
     // y sigue cargando el PRIMERO, que es lo que hacia perder a sus copias
     ok('2b · app-init.js sigue siendo el primer script clasico', ORDER[0] === AI, ORDER[0]);
@@ -376,6 +409,86 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     });
     ok('6g · las funciones supervivientes siguen publicadas en window por su archivo duenyo',
         perdidasWin.length === 0, perdidasWin);
+}
+
+// ────── PARTE 7 · ⚠️ FASE D · EL PANEL SUPERADMIN LEGACY v3, BORRADO ENTERO ──────
+// A diferencia de todo lo anterior, estas 14 funciones no se mudaron a ningun
+// sitio: se eliminaron. Por eso lo que se fija es distinto — que no vuelvan, que
+// sigan sin consumidor, y que lo que SI se quedo siga teniendo su razon de ser.
+{
+    const aiSrc = rd(AI);
+    const aiDecl = declaraciones(aiSrc);
+    const declaraEn = (src, n) => new RegExp('^(?:async\\s+)?function\\s+' + n.replace(/[$]/g, '\\$') + '\\s*\\(', 'm').test(src)
+        || new RegExp('^window\\.' + n.replace(/[$]/g, '\\$') + '\\s*=', 'm').test(src);
+
+    const siguen = FASE_D_ELIMINADAS.filter(n => aiDecl.has(n));
+    ok('7a · ⚠️ app-init.js no declara ninguna de las 14 del panel legacy', siguen.length === 0, siguen);
+
+    // no han reaparecido en NINGUN archivo de la cadena
+    const revivio = FASE_D_ELIMINADAS.filter(n => ORDER.some(f => declaraEn(rd(f), n)));
+    ok('7b · ninguna ha reaparecido en otro archivo de la cadena', revivio.length === 0, revivio);
+
+    // y siguen sin consumidor: es la condicion que hizo legitimo borrarlas. Si
+    // alguien escribe una llamada nueva, es un ReferenceError y hay que saberlo.
+    const RAIZ = fs.readdirSync(ROOT).filter(f => f.endsWith('.html'));
+    const universo = [...ORDER, ...RAIZ];
+    const conConsumidor = [];
+    FASE_D_ELIMINADAS.forEach(n => {
+        const esc = n.replace(/[$]/g, '\\$');
+        universo.forEach(f => {
+            let src; try { src = rd(f); } catch (_) { return; }
+            const limpio = src.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n');
+            if (new RegExp('(?<![.\\w$])' + esc + '\\s*\\(').test(limpio)
+                || new RegExp('window\\.' + esc + '\\b').test(limpio)) conConsumidor.push(n + ' <- ' + f);
+        });
+    });
+    ok('7c · ⚠️ ninguna tiene consumidor nuevo (seria un ReferenceError)', conConsumidor.length === 0, conConsumidor);
+
+    // ── los 3 alias de nivel superior de la trampa v378 (openAdminPanel,
+    // openSuperAdminPanel y saSendPaymentEmail se ejecutaban al CARGAR)
+    ['openAdminPanel', 'openSuperAdminPanel', 'saSendPaymentEmail'].forEach((n, k) => {
+        ok('7d' + k + ' · ⚠️ el alias colgante `window.' + n + ' = ' + n + '` ya no esta',
+            !new RegExp('^window\\.' + n + '\\s*=', 'm').test(aiSrc));
+    });
+
+    // ── lo que SOBREVIVE del bloque SA, y por que
+    const faltan = Object.keys(FASE_D_VIVAS).filter(n => !aiDecl.has(n));
+    ok('7e · ⚠️ app-init.js CONSERVA las 3 funciones vivas del bloque SA', faltan.length === 0, faltan);
+
+    const sinConsumidor = Object.entries(FASE_D_VIVAS).filter(([n, f]) => {
+        const src = rd(f);
+        const esc = n.replace(/[$]/g, '\\$');
+        return !new RegExp('(?<![.\\w$])' + esc + '\\s*\\(').test(src) && !new RegExp('window\\.' + esc + '\\b').test(src);
+    }).map(([n, f]) => n + ' ya no lo usa ' + f);
+    ok('7f · las 3 vivas siguen teniendo su consumidor real', sinConsumidor.length === 0, sinConsumidor);
+
+    // nadie las redeclara: si pasara, volveriamos al problema de las fases A-C
+    const redeclaradas = Object.keys(FASE_D_VIVAS).filter(n => ORDER.some(f => f !== AI && declaraEn(rd(f), n)));
+    ok('7g · nadie ha empezado a redeclarar las 3 vivas (volveria el shadowing)', redeclaradas.length === 0, redeclaradas);
+
+    // checkClubAccess conserva SU alias, que es legitimo: role-launch.js (un ES
+    // module) lo lee como window.checkClubAccess y la funcion sigue aqui.
+    ok('7h · checkClubAccess CONSERVA su alias window (lo lee role-launch.js)',
+        /^window\.checkClubAccess\s*=\s*checkClubAccess\s*;/m.test(aiSrc));
+
+    // ── saWrite y checkClubAccess llaman a saFS/saGet por nombre PELADO, y esas
+    // copias se han borrado de app-init. Tienen que seguir resolviendo a las de
+    // superadmin.panel.js, que las publica como `window.saFS = async function`.
+    // ⚠️ Esto solo funciona porque una declaracion `function X(){}` global crea
+    // la propiedad en el OBJETO global, que un `window.X = ...` posterior puede
+    // sobrescribir. No seria asi con `const` (ese es el bug de ROLE_META/v385).
+    const sp = rd('js/admin/superadmin/superadmin.panel.js');
+    ok('7i · superadmin.panel.js publica saFS y saGet en window (es lo que hace que saWrite/checkClubAccess sigan funcionando)',
+        /^window\.saFS\s*=/m.test(sp) && /^window\.saGet\s*=/m.test(sp));
+
+    // ── los window.X que nacian DENTRO de funciones ya borradas: otro archivo
+    // tiene que seguir creandolos o quedan huerfanos para sus consumidores.
+    const HUERFANOS = { saTab: 'js/admin/superadmin/superadmin.panel.js',
+        saAddIndividual: 'js/admin/superadmin/extras.js',
+        saMarkNoticeSent: 'js/admin/billing/payments.js' };
+    const sinCreador = Object.entries(HUERFANOS).filter(([n, f]) =>
+        !new RegExp('window\\.' + n + '\\s*=').test(rd(f))).map(([n, f]) => n + ' ya no lo crea ' + f);
+    ok('7j · ⚠️ saTab, saAddIndividual y saMarkNoticeSent los sigue creando otro archivo', sinCreador.length === 0, sinCreador);
 }
 
 console.log('\n────────────────────────────────────────────');
