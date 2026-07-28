@@ -1,5 +1,29 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v387: FASE A del monolito #5 — app-init.js 6285 -> 5203 lineas. Borrado
+//        PURO de 30 funciones duplicadas MUERTAS (1107 lineas fuera, 25
+//        comentarios puntero dentro). Ninguna linea modificada.
+//        app-init.js no es un monolito que descomponer, es una CAPA FOSIL:
+//        102 de sus 133 funciones estaban muertas porque un script POSTERIOR
+//        declara el mismo nombre y gana (los scripts clasicos comparten el
+//        ambito global y la ULTIMA declaracion de funcion es la que queda).
+//        Los extractos de epocas anteriores se hicieron COPIANDO, no moviendo,
+//        y app-init.js carga el primero, asi que su copia siempre perdia.
+//        Lo peligroso era que 62 de esas copias han DIVERGIDO: app-init.js
+//        guardaba versiones viejas de codigo que parecia vivo (su assignCard
+//        tenia 88 lineas; la que se ejecuta, en player-actions.js, 158).
+//        Fuera las cinco secciones con mas del 90% muerto: acciones de
+//        jugador, entrenamiento semanal, cuerpo tecnico, importacion con IA y
+//        envio de convocatoria. Cada una tiene ya un unico duenyo.
+//        CERO cambio de comportamiento, medido y no supuesto: se cargan los 72
+//        scripts clasicos en el orden real de index.html dos veces, con el
+//        app-init.js de antes y el de despues, y las 30 funciones resuelven a
+//        codigo BYTE-IDENTICO, con el mismo estado global.
+//        Guard: scripts/test_app_init_dead_duplicates.js (24/24, visto rojo
+//        antes). Se borra funcion a funcion y nunca por rangos: dentro de esas
+//        secciones sobrevive estado load-bearing (activeActionPlayerId,
+//        _tesseractLoaded) que otros archivos leen sin declararlo.
+//        Bump para forzar recarga.
 //  v386: FIX de staffConfig (cuerpo tecnico), sexto caso de la misma clase de
 //        bug que v385 y encontrado por el guard que se anyadio alli.
 //        app-init.js declaraba un `let staffConfig` y staff-and-comms.js creaba
@@ -865,8 +889,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v386';
-const CACHE_NAME = 'cronos-cache-v386';
+const VERSION = 'v387';
+const CACHE_NAME = 'cronos-cache-v387';
 
 const ASSETS = [
     './',
