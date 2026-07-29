@@ -843,9 +843,22 @@ async function showFinishedMatches() {
             <h2 style="margin:0;color:white;font-size:1.1rem;display:flex;align-items:center;gap:0.5rem;">
                 🎬 Partidos Terminados
             </h2>
-            <button onclick="navBack()"
-                style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;"
-                title="Volver">✕</button>
+            <!-- LAS DOS VIAS DE SALIDA del requisito original: "Volver" deshace el
+                 camino, la ✕ abandona el area. Antes solo habia ✕, y hacía lo que
+                 le tocaba a "Volver". Si la ✕ fuera navBack() a secas (v402) te
+                 dejaría igualmente DENTRO del partido, que es lo que el autor
+                 reportó del menú de Comunicaciones: debajo está #main-container. -->
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0;">
+                <button onclick="navBack()"
+                    style="font-size:0.75rem;padding:0.35rem 0.8rem;background:rgba(255,255,255,0.05);
+                           border:1px solid rgba(255,255,255,0.1);color:var(--text-muted);
+                           border-radius:6px;cursor:pointer;">
+                    ← Volver
+                </button>
+                <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();"
+                    style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;"
+                    title="Salir al selector de roles">✕</button>
+            </div>
         </div>
         <div id="finished-matches-modal-list" style="flex:1;overflow-y:auto;">
             <div style="text-align:center;padding:2rem;color:#7d8590;">⏳ Cargando partidos finalizados…</div>

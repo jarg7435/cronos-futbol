@@ -1844,17 +1844,17 @@ async function openUnifiedCommsMenu() {
                 </div>
             </div>
             <div style="display:flex;gap:0.4rem;align-items:center;">
-                <!-- ⚠️ ERA navExit() (ronda 2) y el autor lo revirtió al probarlo:
-                     navExit() oculta #setup-modal, y como a este menú se entra
-                     desde el POST-PARTIDO, debajo está la pantalla del partido en
-                     vivo — o sea que cerrar dejaba el campo de fútbol al aire.
-                     navBack() repinta el origen, así que el campo nunca se ve.
-                     El respaldo también REPINTA (openSetupModal) en vez de dejar
-                     caer navBack en navExit: con la pila en un solo nivel, navBack
-                     llama a navExit y volveríamos al mismo síntoma. -->
-                <button onclick="if(typeof navCanGoBack==='function' && navCanGoBack()) navBack(); else if(typeof openSetupModal==='function') openSetupModal(); else navExit();"
+                <!-- ⚠️ TERCERA FORMA DE ESTE BOTÓN, y la definitiva según el autor.
+                     Ni navExit() (ronda 2) ni navBack() (v403) servían: los dos
+                     dejaban al usuario DENTRO del partido, porque a este menú se
+                     entra desde el post-partido y debajo está #main-container con
+                     el campo. Lo que pidió es SALIR de ahí, no volver un paso.
+                     navExitToRoles() oculta también los contenedores del campo y
+                     lleva al selector de roles. No destruye el partido: se oculta,
+                     no se vacía, y se recupera con "🔄 RECUPERAR PARTIDO". -->
+                <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();"
                     style="background:none;border:none;color:var(--text-muted);font-size:1.7rem;cursor:pointer;line-height:1;padding:0 0.2rem;"
-                    title="Volver">✕</button>
+                    title="Salir al selector de roles">✕</button>
             </div>
         </div>
 

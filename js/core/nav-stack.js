@@ -132,6 +132,39 @@
         if (el) el.style.display = 'none';
     };
 
+    // ── Salir del ÁREA DE TRABAJO y volver al selector de roles ──────
+    // POR QUÉ EXISTE (reportado DOS veces por el autor probando en navegador):
+    // navExit() sólo oculta #setup-modal, y debajo queda lo que hubiera. En el
+    // panel del Entrenador debajo está la pantalla del partido (#main-container),
+    // así que "cerrar" el modal te dejaba mirando el campo de fútbol, atrapado
+    // en el partido. Y navBack() tampoco vale para eso: con la pila en un solo
+    // nivel cae en navExit() y reproduce el mismo síntoma.
+    // Esta salida oculta TAMBIÉN los contenedores del campo y pinta el selector
+    // de roles. Es el mismo procedimiento que saGoBackToRoles (el "⏻ Salir" del
+    // SuperAdmin), que ya lo hacía bien desde antes de la pila.
+    // ⚠️ NO DESTRUYE EL PARTIDO: #main-container se OCULTA, no se vacía, así que
+    // jugadores, cronómetro y goles se conservan. Se recupera con el botón
+    // "🔄 RECUPERAR PARTIDO" del modal de setup.
+    window.navExitToRoles = function() {
+        var show = (typeof window.showRoleSelector === 'function')  ? window.showRoleSelector
+                 : (typeof window.showRoleSelection === 'function') ? window.showRoleSelection
+                 : null;
+        // Sin selector NO se oculta nada: dejar la pantalla en negro sería peor
+        // que el defecto que venimos a arreglar. Se degrada a la salida de siempre.
+        if (!show) return window.navExit();
+
+        _stack = [];
+        ['setup-modal', 'main-header', 'main-container'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        if (document.body) {
+            document.body.style.background = '#0d1117';
+            if (document.body.classList) document.body.classList.remove('locked');
+        }
+        show();
+    };
+
     // ── Consultas (las usan las vistas y el guard) ────────────────────
     window.navCanGoBack = function() { return _stack.length > 1; };
     window.navDepth     = function() { return _stack.length; };

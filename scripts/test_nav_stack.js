@@ -41,9 +41,18 @@ const navSrc = fs.readFileSync(NAV, 'utf8');
 // ── sandbox con el modulo real y pantallas de mentira ──
 function build() {
     const pintadas = [];
+    // Los elementos se CACHEAN por id: asi se puede comprobar despues cual quedo
+    // oculto. Sin esto no habia forma de medir el sintoma que reporto el autor
+    // —"se ve el campo de futbol detras"—, que es exactamente que #main-container
+    // sigue visible. Antes getElementById devolvia un objeto nuevo cada vez y el
+    // display se perdia.
+    const els = {};
     const sb = {
         console: { log() {}, warn() {}, error() {} },
-        document: { getElementById: () => ({ style: {}, innerHTML: '' }) },
+        document: {
+            getElementById: (id) => (els[id] = els[id] || { id, style: {}, innerHTML: '' }),
+            body: { style: {}, classList: { remove() {} } },
+        },
         showToast() {},
     };
     sb.window = sb;
@@ -60,7 +69,8 @@ function build() {
     hija('openMisInformesColectivos');
     hija('openContactManager');
 
-    return { sb, pintadas, ultima: () => pintadas[pintadas.length - 1] };
+    return { sb, pintadas, els, ultima: () => pintadas[pintadas.length - 1],
+             visible: (id) => (els[id] ? els[id].style.display : undefined) !== 'none' };
 }
 
 // ═══════ PARTE 1 · el caso verificado: dos entradas, un "Volver" ═══════
@@ -212,13 +222,13 @@ console.log('\n── PARTE 6 · resto del panel del Entrenador migrado ──')
     const cuerpoMenu = iMenu > -1
         ? comms.slice(iMenu, iFinMenu > -1 ? iMenu + 1 + iFinMenu : comms.length)
         : comms;
-    // ⚠️ ACTUALIZADA: la ronda 2 exigia aqui navExit(), y el AUTOR lo revirtio al
-    // probarlo en el navegador (v403). A este menu se entra desde el POST-PARTIDO,
-    // asi que debajo esta la pantalla del partido en vivo y "salir limpio" dejaba
-    // el campo de futbol al descubierto. Ahora las DOS salidas repintan. La
-    // intencion original —que la ✕ no fuera un destino cableado— se conserva.
-    ok('6·el menu de Comunicaciones usa navBack() en sus dos salidas',
-       /onclick="navBack\(\)"/.test(cuerpoMenu) && /navCanGoBack\(\)\) navBack\(\)/.test(cuerpoMenu));
+    // ⚠️ ESTA ASERCION HA CAMBIADO TRES VECES, una por cada forma que ha tenido la
+    // ✕ de este menu: navExit() (ronda 2), navBack() con respaldo (v403) y
+    // navExitToRoles() (v404, la definitiva). Las dos primeras dejaban al usuario
+    // dentro del partido. Lo que se conserva en las tres es la INTENCION original:
+    // que ninguna de las dos salidas sea un destino cableado a mano.
+    ok('6·el menu de Comunicaciones: "Volver" navega y la ✕ sale del area',
+       /onclick="navBack\(\)"/.test(cuerpoMenu) && /navExitToRoles\(\)/.test(cuerpoMenu));
     ok('6·y su ✕ ya no llama a openSetupModal cableado',
        !/openSetupModal==='function'\?openSetupModal\(\)/.test(cuerpoMenu));
 
@@ -1052,10 +1062,18 @@ console.log('\n── PARTE 18 · Partidos Terminados ──');
            return iReg > -1 && (iAwait === -1 || iReg < iAwait);
        })());
 
-    ok('18d · [FIX] la ✕ usa navBack(), que repinta el origen',
-       /onclick="navBack\(\)"[\s\S]{0,200}?✕/.test(cuerpo));
-    ok('18e · [FIX] y ya no oculta #setup-modal a pelo desde la ✕',
+    // ⚠️ v404: esta pantalla tenia UNA sola salida (la ✕) que ademas hacia el
+    // trabajo de "Volver". Ahora tiene las DOS del requisito original del autor:
+    // "Volver" deshace el camino y la ✕ abandona el area. La ✕ NO puede ser
+    // navBack() —forma de v402— porque eso te deja dentro del partido.
+    ok('18d · [FIX] tiene un "← Volver" con navBack()',
+       /onclick="navBack\(\)"[\s\S]{0,300}?← Volver/.test(cuerpo));
+    ok('18e · [FIX] y la ✕ sale del area con navExitToRoles()',
+       /onclick="if\(typeof navExitToRoles==='function'\) navExitToRoles\(\)[\s\S]{0,200}?✕/.test(cuerpo));
+    ok('18j · la ✕ ya no oculta #setup-modal a pelo (forma original)',
        !/onclick="document\.getElementById\('setup-modal'\)\.style\.display='none';"[\s\S]{0,200}?✕/.test(cuerpo));
+    ok('18k · ni es navBack() a secas (forma de v402, dejaba dentro del partido)',
+       !/onclick="navBack\(\)"[\s\S]{0,80}?title="Volver">✕/.test(cuerpo));
 
     // Las DOS vias de entrada reales tienen que estar apiladas, o navBack no
     // tendria a donde volver. Las dos se migraron en la ronda 2.
@@ -1147,6 +1165,31 @@ console.log('\n── PARTE 19 · recorridos de Partidos Terminados ──');
        e.ultima() === 'openUnifiedCommsMenu' && e.sb.navDepth() === 2,
        'ultima=' + e.ultima() + ' d=' + e.sb.navDepth());
 
+    // ── v404 · las DOS salidas hacen cosas DISTINTAS ──────────────────────
+    // Mismo modelo de capas que la PARTE 21: el campo esta en #main-container.
+    const h = ptSandbox();
+    h.sb.document.getElementById('main-container').style.display = 'flex';
+    h.sb.showRoleSelector = function() { h.pintadas.push('selector'); };
+    h.sb.openSetupModal();
+    h.sb.openUnifiedCommsMenu();
+    h.sb.showFinishedMatches();
+    ok('19h · control · el campo se ve mientras estas en Partidos Terminados',
+       h.visible('main-container'));
+    h.sb.navBack();
+    ok('19i · "← Volver" devuelve a Comunicaciones y NO te saca del partido',
+       h.ultima() === 'openUnifiedCommsMenu' && h.visible('main-container'));
+
+    const j = ptSandbox();
+    j.sb.document.getElementById('main-container').style.display = 'flex';
+    j.sb.showRoleSelector = function() { j.pintadas.push('selector'); };
+    j.sb.openSetupModal();
+    j.sb.openUnifiedCommsMenu();
+    j.sb.showFinishedMatches();
+    j.sb.navExitToRoles();
+    ok('19j · [FIX] la ✕ SI oculta el campo y lleva al selector',
+       j.visible('main-container') === false && j.ultima() === 'selector' &&
+       j.sb.navDepth() === 0);
+
     // Auto-verificacion: SIN registrar la pantalla, navBack se salta un nivel.
     const g = build();
     g.sb.showFinishedMatchesSinRegistrar = function() { g.pintadas.push('terminados'); };
@@ -1181,19 +1224,41 @@ console.log('\n── PARTE 20 · la ✕ del menu de Comunicaciones ──');
     const menu = i > -1 ? cp.slice(i, f > -1 ? i + 1 + f : cp.length) : '';
     ok('20·control · la region del menu se acota', menu.length > 1000, 'len=' + menu.length);
 
-    ok('20a · [FIX] la ✕ ya no es navExit() a pelo',
+    // ⚠️ TERCERA FORMA DE ESTE BOTON. navExit() (ronda 2) y navBack() (v403) se
+    // probaron los dos en produccion y NINGUNO valia: los dos dejan al usuario
+    // DENTRO del partido. El autor pidio salir del area, no volver un paso.
+    ok('20a · [FIX] la ✕ usa navExitToRoles()',
+       /onclick="if\(typeof navExitToRoles==='function'\) navExitToRoles\(\)/.test(menu));
+    ok('20b · y ya no es navExit() a pelo (forma de la ronda 2)',
        !/onclick="navExit\(\)"/.test(menu));
-    ok('20b · [FIX] usa navBack() cuando hay a donde volver',
-       /navCanGoBack\(\)\) navBack\(\)/.test(menu));
-    // 🔑 EL ESLABON: con la pila en UN nivel, navBack() llama internamente a
-    // navExit() (nav-stack.js: `if (_stack.length <= 1) return window.navExit()`),
-    // o sea que sin respaldo volveriamos al MISMO sintoma. El respaldo tiene que
-    // REPINTAR algo, no ocultar.
-    ok('20c · 🔑 y su respaldo REPINTA (openSetupModal), no oculta',
-       /else if\(typeof openSetupModal==='function'\) openSetupModal\(\)/.test(menu));
-    ok('20d · el "← Volver" de abajo sigue siendo navBack()',
+    ok('20c · ni navBack() con respaldo (forma de v403)',
+       !/navCanGoBack\(\)\) navBack\(\)/.test(menu));
+    // Ahora los DOS botones se diferencian de verdad, que es lo que no pasaba en
+    // v403: alli la ✕ y el "Volver" hacian lo mismo.
+    ok('20d · el "← Volver" de abajo SIGUE siendo navBack() (ya no son gemelos)',
        /onclick="navBack\(\)"/.test(menu));
-    ok('20e · y el title ya no promete salir', !/title="Cerrar y salir"/.test(menu));
+    ok('20e · y el title dice a donde va', /title="Salir al selector de roles"/.test(menu));
+
+    // La primitiva nueva, en el modulo.
+    const nav = sinCom(leer('js/core/nav-stack.js'));
+    ok('20h · nav-stack expone navExitToRoles', /window\.navExitToRoles = function/.test(nav));
+    ok('20i · 🔑 que oculta TAMBIEN los contenedores del campo',
+       /\['setup-modal', 'main-header', 'main-container'\]/.test(nav));
+    ok('20j · y lleva al selector de roles', /show\(\);/.test(nav));
+    ok('20k · ⚠️ oculta el partido, NO lo destruye (display, nunca innerHTML)',
+       /el\.style\.display = 'none'/.test(nav) && !/main-container[\s\S]{0,120}innerHTML/.test(nav));
+    ok('20l · y si no hubiera selector NO oculta nada (evita la pantalla en negro)',
+       /if \(!show\) return window\.navExit\(\);/.test(nav));
+    // El procedimiento sale de saGoBackToRoles, que ya lo hacia bien. Si alguien
+    // cambia aquel, esta asercion obliga a mirar este.
+    ok('20m · mismo procedimiento que el "⏻ Salir" del SuperAdmin',
+       /getElementById\('main-container'\)[\s\S]{0,120}display = 'none'/
+           .test(sinCom(leer('js/admin/superadmin/superadmin.panel.js'))));
+    // Y la via de recuperacion tiene que seguir existiendo, o la salida seria
+    // irreversible para un partido en curso.
+    ok('20n · ⚠️ el partido se puede recuperar despues',
+       /_postMatchReturn/.test(sinCom(leer('js/match/persistence/team-persistence.js'))) &&
+       /RECUPERAR PARTIDO/.test(leer('js/core/setup-modal.js')));
 
     // La via de entrada que explica el sintoma: el post-partido, que es RAIZ y se
     // registra CON el marcador, asi que repintarlo devuelve la pantalla exacta.
@@ -1213,17 +1278,27 @@ console.log('\n── PARTE 20 · la ✕ del menu de Comunicaciones ──');
 
 // ═══════ PARTE 21 · recorridos de la ✕ de Comunicaciones ═══════
 console.log('\n── PARTE 21 · recorridos de la ✕ de Comunicaciones ──');
-{
+// Sin la primitiva, llamarla lanzaria y el guard MORIRIA sin imprimir el total:
+// se quedaria a medias y con exit 1, que parece un fallo de otra cosa. Un guard
+// tiene que dar ROJO, no reventar. (Detectado haciendo la prueba de rojo de v404.)
+if (typeof build().sb.navExitToRoles !== 'function') {
+    ok('21 · nav-stack debe exponer navExitToRoles (sin ella no hay nada que medir)', false);
+} else {
+    // Modela las TRES capas reales: #main-container es el campo, #setup-modal la
+    // capa de modales por encima, y #role-selection-screen el selector. El sintoma
+    // del autor es, exactamente, que main-container siga visible.
     function ccSandbox() {
         const t = build();
         t.sb.showPostMatchOptions = function(h, a) {
             t.sb.navRootScreen('showPostMatchOptions', h, a);
             t.pintadas.push('postpartido:' + h + '-' + a);
         };
-        // La ✕ tal como queda cableada: navBack con respaldo que REPINTA.
-        t.sb._equisComms = function() {
-            if (t.sb.navCanGoBack()) t.sb.navBack();
-            else t.sb.openSetupModal();
+        // El partido esta en marcha: el campo se ve.
+        t.sb.document.getElementById('main-container').style.display = 'flex';
+        t.sb.document.getElementById('main-header').style.display = 'flex';
+        t.sb.showRoleSelector = function() {
+            t.sb.document.getElementById('role-selection-screen').style.display = 'flex';
+            t.pintadas.push('selector');
         };
         return t;
     }
@@ -1233,29 +1308,41 @@ console.log('\n── PARTE 21 · recorridos de la ✕ de Comunicaciones ──'
     a.sb.openUnifiedCommsMenu();
     ok('21a · el menu se apila sobre el post-partido', a.sb.navDepth() === 2,
        'profundidad ' + a.sb.navDepth());
-    a.sb._equisComms();
-    ok('21b · [FIX] la ✕ repinta EL POST-PARTIDO con su marcador (el campo no se ve)',
-       a.ultima() === 'postpartido:3-1', a.ultima());
+    ok('21b · control · con el partido en marcha, el campo SE VE', a.visible('main-container'));
 
-    // 🔑 El caso que justifica el respaldo: el menu como UNICA pantalla.
+    a.sb.navExitToRoles();
+    ok('21c · [FIX] 🔑 la ✕ OCULTA el campo (era justo el sintoma reportado)',
+       a.visible('main-container') === false);
+    ok('21d · y tambien la cabecera del partido y la capa de modales',
+       a.visible('main-header') === false && a.visible('setup-modal') === false);
+    ok('21e · [FIX] y deja al usuario en el SELECTOR DE ROLES, no atrapado',
+       a.ultima() === 'selector' && a.visible('role-selection-screen'));
+    ok('21f · la pila queda vacia', a.sb.navDepth() === 0 && a.sb.navCanGoBack() === false);
+
+    // ── 🔑 AUTO-VERIFICACION: por que fallaron los DOS intentos anteriores ──
+    // Esto es lo que ninguna asercion medía hasta ahora: las dos salidas viejas
+    // dejan #main-container VISIBLE, o sea el campo de futbol a la vista.
     const b = ccSandbox();
+    b.sb.showPostMatchOptions(3, 1);
     b.sb.openUnifiedCommsMenu();
-    ok('21c · control · con el menu como unica pantalla, no hay a donde volver',
-       b.sb.navCanGoBack() === false);
-    b.sb._equisComms();
-    ok('21d · 🔑 y el respaldo REPINTA el modal de setup, no deja el campo al aire',
-       b.ultima() === 'openSetupModal' && b.sb.navDepth() === 1,
-       b.ultima() + ' d=' + b.sb.navDepth());
+    b.sb.navExit();                       // la forma de la ronda 2
+    ok('21g · auto-verificacion: navExit() dejaba el campo VISIBLE',
+       b.visible('main-container') === true && b.visible('setup-modal') === false);
 
-    // Auto-verificacion: navBack A SECAS en ese caso cae en navExit y no repinta
-    // nada — exactamente el sintoma que reporto el autor.
     const c = ccSandbox();
+    c.sb.showPostMatchOptions(3, 1);
     c.sb.openUnifiedCommsMenu();
-    const antes = c.ultima();
-    c.sb.navBack();
-    ok('21e · auto-verificacion: navBack a secas con 1 nivel NO repinta (cae en navExit)',
-       c.ultima() === antes && c.sb.navDepth() === 0,
-       'ultima=' + c.ultima() + ' d=' + c.sb.navDepth());
+    c.sb.navBack();                       // la forma de v403
+    ok('21h · auto-verificacion: navBack() tambien (repinta encima, pero sigues en el partido)',
+       c.visible('main-container') === true && c.ultima() === 'postpartido:3-1');
+
+    // Degradacion: sin selector NO se oculta nada, para no dejar pantalla en negro.
+    const d = build();
+    d.sb.document.getElementById('main-container').style.display = 'flex';
+    d.sb.openSetupModal();
+    d.sb.navExitToRoles();                // sin showRoleSelector definido
+    ok('21i · 🔑 sin selector disponible no oculta el campo (nada de pantalla en negro)',
+       d.visible('main-container') === true);
 }
 
 // ═══════ PARTE 5 · el modulo esta servido ═══════
