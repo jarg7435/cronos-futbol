@@ -3,6 +3,18 @@
 // ════════════════════════════════════════════════════════════════════
 
 async function saSendPaymentEmail(id, type) {
+    // Pila de navegación (js/core/nav-stack.js) — primera sentencia, antes del
+    // await (ver la nota en superadmin.panel.js).
+    //
+    // 🐛 ESTA PANTALLA TENÍA EL "VOLVER" ROTO: llamaba a saTab('payments'), y
+    // 'payments' NO ES UNA PESTAÑA. saTab sólo enruta clubs/individuals/
+    // requests/secretary/trash/billing/extras/messages, así que ninguna rama
+    // se cumplía: no repintaba nada, dejaba el cuerpo del aviso en pantalla y
+    // apagaba el subrayado de todas las pestañas. El botón no hacía nada.
+    // (La pestaña se llama 'billing'; 'payments' fue un panel legacy que se
+    // eliminó en la Fase D del refactor.) Ahora vuelve con navBack().
+    if (typeof navScreen === 'function') navScreen('saSendPaymentEmail', id, type);
+
     const item = await saGet(type === 'club' ? 'clubs' : 'users', id);
     if (!item) return;
 
@@ -82,7 +94,7 @@ Gracias! ${SA_CONFIG.nombre}`
     body_el.innerHTML = `
         <div style="max-width:520px;">
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.2rem;">
-                <button onclick="saTab('payments')" class="sa-btn"
+                <button onclick="navBack()" class="sa-btn"
                     style="color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
                     ← Volver</button>
                 <h3 style="margin:0;font-size:1rem;">📧 Enviar aviso de pago — ${name}</h3>
@@ -165,7 +177,10 @@ Destinatario: ${adminEmail || '⚠️ Sin email de admin definido'}
             }
         });
         showToast('✅ Aviso registrado correctamente', 3000);
-        saTab('payments');
+        // Igual que el botón Volver: saTab('payments') tampoco existía aquí,
+        // así que tras registrar el aviso NO pasaba nada y el usuario se
+        // quedaba en la pantalla del aviso. Ahora vuelve a la pestaña real.
+        if (typeof navBack === 'function') navBack(); else saTab('billing');
     };
 }
 window.saSendPaymentEmail = saSendPaymentEmail;

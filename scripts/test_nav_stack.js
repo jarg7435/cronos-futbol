@@ -288,6 +288,155 @@ console.log('\n── PARTE 7 · recorridos completos del panel del Entrenador �
        v.ultima() === 'openSetupModal', v.ultima());
 }
 
+// ═══════ PARTE 8 · panel del SuperAdmin ═══════
+console.log('\n── PARTE 8 · panel del SuperAdmin ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    // ⚠️ Quitar los comentarios ANTES de medir. Mis propios comentarios
+    // explicativos contienen literalmente `saTab('payments')` y la palabra
+    // `await`, y hacian fallar tres aserciones por la razon equivocada — el
+    // defecto medía el comentario, no el codigo. Se divide por /\r?\n/ y no
+    // por '\n': en una regex de JS el `.` NO casa `\r`, asi que `//.*$` nunca
+    // llega al `$` en un archivo CRLF y el stripper no borraria nada.
+    const sinComentarios = (s) => s.split(/\r?\n/)
+        .map(l => l.replace(/\/\/.*$/, ''))
+        .join('\n');
+    const SA = [
+        ['openSuperAdminPanel',            'js/admin/superadmin/superadmin.panel.js', 'navRootScreen'],
+        ['saTab',                          'js/admin/superadmin/superadmin.panel.js', 'navScreen'],
+        ['saShowCreateIndividualEntity',   'js/admin/superadmin/individual-entity.js','navScreen'],
+        ['saEditIndividualEntity',         'js/admin/superadmin/individual-entity.js','navScreen'],
+        ['saShowEntityUsers',              'js/admin/superadmin/individual-entity.js','navScreen'],
+        ['saShowCreateIndividualForEntity','js/admin/superadmin/individual-entity.js','navScreen'],
+        ['saShowCreateClub',               'js/admin/superadmin/create-direct.js',    'navScreen'],
+        ['saShowCreateIndividual',         'js/admin/superadmin/create-direct.js',    'navScreen'],
+        ['saEditClubSlots',                'js/admin/superadmin/club-slots.js',       'navScreen'],
+        ['saSendPaymentEmail',             'js/admin/billing/payments.js',            'navScreen'],
+        ['saOpenIndividualEditor',         'js/core/app-init.js',                     'navScreen'],
+    ];
+    for (const [nombre, archivo, fn] of SA) {
+        ok(`8·${nombre} se registra con ${fn}`,
+           new RegExp(fn + "\\(\\s*['\"]" + nombre + "['\"]").test(leer(archivo)), archivo);
+    }
+
+    ok('8·saTab se registra CON la pestaña (para volver a la pestaña exacta)',
+       /navScreen\(\s*['"]saTab['"]\s*,\s*tab\s*\)/.test(leer('js/admin/superadmin/superadmin.panel.js')));
+
+    // Ya no debe quedar ningun "Volver" cableado a saTab en el panel.
+    for (const archivo of ['js/admin/superadmin/individual-entity.js',
+                           'js/admin/superadmin/create-direct.js',
+                           'js/admin/superadmin/club-slots.js',
+                           'js/admin/billing/payments.js']) {
+        ok(`8·${archivo}: ningun boton llama ya a saTab(...)`,
+           !/onclick="saTab\(/.test(leer(archivo)));
+    }
+
+    // 🐛 El boton roto: saTab('payments') no existia como pestaña.
+    const pay = sinComentarios(leer('js/admin/billing/payments.js'));
+    const panel = sinComentarios(leer('js/admin/superadmin/superadmin.panel.js'));
+    ok("8·[FIX] ya no queda ninguna llamada a saTab('payments')",
+       !/saTab\(\s*['"]payments['"]\s*\)/.test(pay));
+    ok("8·y se confirma que 'payments' NUNCA fue una pestaña de saTab",
+       !/tab\s*===\s*['"]payments['"]/.test(panel));
+
+    // 🐛 El SEGUNDO boton roto: saTab('individual') EN SINGULAR (la pestaña es
+    // 'individuals'), en saOpenIndividualEditor. Mismo sintoma: no repintaba
+    // nada y apagaba el subrayado de todas las pestañas.
+    const appInit = sinComentarios(leer('js/core/app-init.js'));
+    ok("8·[FIX] ya no queda saTab('individual') en singular",
+       !/saTab\(\s*['"]individual['"]\s*\)/.test(appInit));
+    ok("8·y se confirma que 'individual' en singular NUNCA fue una pestaña",
+       !/tab\s*===\s*['"]individual['"]\s*\)/.test(panel));
+
+    // Las 8 pestañas REALES, fijadas: si alguien añade o renombra una, este
+    // censo se pone rojo y obliga a revisar los destinos.
+    const TABS = ['clubs','individuals','requests','secretary','trash','billing','extras','messages'];
+    for (const t of TABS) {
+        ok(`8·la pestaña '${t}' sigue existiendo en saTab`,
+           new RegExp("tab\\s*===\\s*['\"]" + t + "['\"]").test(panel));
+    }
+
+    // ⚠️ INVARIANTE DEL ASYNC: el registro tiene que ir ANTES del primer
+    // `await`. navBack limpia su flag de restauracion cuando f.apply()
+    // DEVUELVE — o sea al primer await, no al acabar el cuerpo. Un navScreen
+    // posterior a un await correria con el flag ya limpio y volveria a apilar
+    // la pantalla que se esta restaurando, dejando el "Volver" en bucle.
+    const ASYNC = [
+        ['openSuperAdminPanel',    'js/admin/superadmin/superadmin.panel.js'],
+        ['saEditIndividualEntity', 'js/admin/superadmin/individual-entity.js'],
+        ['saShowEntityUsers',      'js/admin/superadmin/individual-entity.js'],
+        ['saEditClubSlots',        'js/admin/superadmin/club-slots.js'],
+        ['saSendPaymentEmail',     'js/admin/billing/payments.js'],
+        ['openMisInformes',        'js/coach/comms/individual-reports.js'],
+        ['openContactManager',     'js/coach/comms/contact-manager.js'],
+        ['openUnifiedCommsMenu',   'js/coach/comms/panel.js'],
+    ];
+    for (const [nombre, archivo] of ASYNC) {
+        const src = sinComentarios(leer(archivo));
+        const i = src.search(new RegExp('(?:window\\.)?' + nombre + '\\s*=\\s*async function|async function ' + nombre + '\\b'));
+        if (i < 0) { ok(`8·${nombre}: localizada para el invariante async`, false, archivo); continue; }
+        const cuerpo = src.slice(i, i + 4000);
+        const iNav = cuerpo.search(/nav(?:Root)?Screen\(/);
+        const iAwait = cuerpo.search(/\bawait\b/);
+        ok(`8·[invariante async] ${nombre} registra ANTES del primer await`,
+           iNav > -1 && (iAwait === -1 || iNav < iAwait),
+           'nav=' + iNav + ' await=' + iAwait);
+    }
+}
+
+// ═══════ PARTE 9 · recorridos del SuperAdmin ═══════
+console.log('\n── PARTE 9 · recorridos del SuperAdmin ──');
+{
+    function saSandbox() {
+        const t = build();
+        t.sb.openSuperAdminPanel = function(){ t.sb.navRootScreen('openSuperAdminPanel'); t.pintadas.push('openSuperAdminPanel'); t.sb.saTab('clubs'); };
+        t.sb.saTab = function(tab){ t.sb.navScreen('saTab', tab); t.pintadas.push('saTab:' + tab); };
+        ['saShowCreateClub','saShowCreateIndividualEntity','saEditClubSlots'].forEach(n => {
+            t.sb[n] = function(...a){ t.sb.navScreen(n, ...a); t.pintadas.push(n); };
+        });
+        return t;
+    }
+
+    const t = saSandbox();
+    t.sb.openSuperAdminPanel();
+    ok('9a · al abrir, la pila es [panel, saTab(clubs)]',
+       JSON.stringify(t.sb._navTrail()) === '["openSuperAdminPanel","saTab"]',
+       JSON.stringify(t.sb._navTrail()));
+
+    // 🔑 Las pestañas son HERMANAS: cambiar de pestaña NO apila.
+    t.sb.saTab('individuals');
+    t.sb.saTab('requests');
+    t.sb.saTab('individuals');
+    ok('9b · cambiar de pestaña NO apila (siguen 2 niveles, no 5)', t.sb.navDepth() === 2,
+       'profundidad: ' + t.sb.navDepth());
+
+    t.sb.saShowCreateIndividualEntity();
+    t.sb.navBack();
+    ok('9c · Volver desde "Crear Ente" devuelve a la pestaña INDIVIDUALES',
+       t.ultima() === 'saTab:individuals', t.ultima());
+
+    // Y desde otra pestaña, el MISMO boton devuelve a ESA otra pestaña.
+    const u = saSandbox();
+    u.sb.openSuperAdminPanel();
+    u.sb.saTab('billing');
+    u.sb.saEditClubSlots('c1', 'Club Uno');
+    u.sb.navBack();
+    ok('9d · el MISMO Volver devuelve a FACTURACION si se entro desde ahi',
+       u.ultima() === 'saTab:billing', u.ultima());
+
+    // Repintado con argumentos: volver a una subpantalla con id.
+    const v = saSandbox();
+    v.sb.openSuperAdminPanel();
+    v.sb.saTab('clubs');
+    v.sb.saEditClubSlots('c9', 'Club Nueve');
+    ok('9e · la subpantalla guarda sus argumentos en la pila',
+       JSON.stringify(v.sb._navTrail()) === '["openSuperAdminPanel","saTab","saEditClubSlots"]',
+       JSON.stringify(v.sb._navTrail()));
+    v.sb.navBack();
+    ok('9f · y al volver se repinta la pestaña, no el panel entero',
+       v.ultima() === 'saTab:clubs' && v.sb.navDepth() === 2, v.ultima());
+}
+
 // ═══════ PARTE 5 · el modulo esta servido ═══════
 console.log('\n── PARTE 5 · nav-stack.js entra en la app ──');
 {

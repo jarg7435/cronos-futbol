@@ -1607,12 +1607,22 @@ async function saWrite(col, id, data, merge=true) {
 // ════════════════════════════════════════════════════════════════════
 
 async function saOpenIndividualEditor(uid) {
+    // Pila de navegacion (js/core/nav-stack.js) — primera sentencia, antes del
+    // await (ver la nota del invariante async en superadmin.panel.js).
+    //
+    // 🐛 SEGUNDO BOTON "VOLVER" ROTO DEL PANEL SUPERADMIN, del mismo tipo que
+    // el de saSendPaymentEmail: llamaba a saTab('individual'), EN SINGULAR, y
+    // la pestaña se llama 'individuals'. Ninguna rama de saTab se cumplia, asi
+    // que no repintaba nada y apagaba el subrayado de todas las pestañas: el
+    // boton no hacia nada. Ahora vuelve con navBack().
+    if (typeof navScreen === 'function') navScreen('saOpenIndividualEditor', uid);
+
     const u    = uid ? await saGet('users', uid) : {};
     const body = document.getElementById('sa-body');
     body.innerHTML = `
         <div style="max-width:520px;">
           <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;">
-            <button onclick="saTab('individual')" class="sa-btn"
+            <button onclick="navBack()" class="sa-btn"
                 style="color:var(--primary);border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.07);">
                 ← Volver</button>
             <h3 style="margin:0;font-size:1rem;">${uid ? '✏️ Editar administrador individual' : '➕ Nuevo administrador individual'}</h3>
@@ -1669,7 +1679,9 @@ async function saOpenIndividualEditor(uid) {
             createdAt:   u.createdAt || new Date().toISOString(),
         });
         msg.style.color='#3fb950'; msg.textContent='✅ Guardado';
-        setTimeout(() => saTab('individual'), 1000);
+        // Mismo singular roto que el boton Volver: tras guardar tampoco pasaba
+        // nada y el usuario se quedaba en el editor con el "Guardado" puesto.
+        setTimeout(() => { if (typeof navBack === 'function') navBack(); else saTab('individuals'); }, 1000);
     };
 }
 

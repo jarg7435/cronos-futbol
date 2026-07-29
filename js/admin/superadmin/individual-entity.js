@@ -20,12 +20,16 @@
 // ═══════════════════════════════════════════════════════════════════
 
 window.saShowCreateIndividualEntity = function() {
+    // Pila de navegación (js/core/nav-stack.js) — primera sentencia, ver la
+    // nota sobre `await` en superadmin.panel.js.
+    if (typeof navScreen === 'function') navScreen('saShowCreateIndividualEntity');
+
     const body = document.getElementById('sa-body');
     if (!body) return;
     body.innerHTML = `
         <div style="max-width:520px;">
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.5rem;">
-                <button onclick="saTab('individuals')" class="sa-btn"
+                <button onclick="navBack()" class="sa-btn"
                     style="color:#79c0ff;border-color:rgba(121,192,255,0.3);">← Volver</button>
                 <h3 style="margin:0;font-size:1rem;">👤 Crear Ente Individual</h3>
             </div>
@@ -126,6 +130,9 @@ window.saCreateIndividualEntityConfirm = async function() {
 
 // Editar ente individual (slots y plan)
 window.saEditIndividualEntity = async function(entityId) {
+    // Pila de navegación — con el id, para poder repintarse igual al volver.
+    if (typeof navScreen === 'function') navScreen('saEditIndividualEntity', entityId);
+
     const { db, doc, getDoc } = await saFS();
     const snap = await getDoc(doc(db,'clubs',entityId));
     if (!snap.exists()) { _saToast('Ente no encontrado', 3000); return; }
@@ -137,7 +144,7 @@ window.saEditIndividualEntity = async function(entityId) {
     body.innerHTML = `
         <div style="max-width:520px;">
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.5rem;">
-                <button onclick="saTab('individuals')" class="sa-btn"
+                <button onclick="navBack()" class="sa-btn"
                     style="color:#79c0ff;border-color:rgba(121,192,255,0.3);">← Volver</button>
                 <h3 style="margin:0;font-size:1rem;">✏️ Editar Ente Individual: ${_escH(c.name||entityId)}</h3>
             </div>
@@ -240,6 +247,9 @@ window.saDeleteIndividualEntity = async function(entityId, entityName) {
 
 // Ver usuarios de un ente individual
 window.saShowEntityUsers = async function(entityId) {
+    // Pila de navegación — con el id, para poder repintarse igual al volver.
+    if (typeof navScreen === 'function') navScreen('saShowEntityUsers', entityId);
+
     const body = document.getElementById('sa-body');
     if (!body) return;
     body.innerHTML = `<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando usuarios…</div>`;
@@ -261,7 +271,7 @@ window.saShowEntityUsers = async function(entityId) {
 
         let html = `
         <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;">
-            <button onclick="saTab('individuals')" class="sa-btn" style="color:#79c0ff;border-color:rgba(121,192,255,0.3);">← Volver</button>
+            <button onclick="navBack()" class="sa-btn" style="color:#79c0ff;border-color:rgba(121,192,255,0.3);">← Volver</button>
             <h3 style="margin:0;font-size:1rem;">📋 Usuarios del Ente (${users.length})</h3>
         </div>`;
 
@@ -310,12 +320,15 @@ window.saShowEntityUsers = async function(entityId) {
 
 // Crear usuario individual para un ente específico
 window.saShowCreateIndividualForEntity = function(entityId) {
+    // Pila de navegación — con el id, para poder repintarse igual al volver.
+    if (typeof navScreen === 'function') navScreen('saShowCreateIndividualForEntity', entityId);
+
     const body = document.getElementById('sa-body');
     if (!body) return;
     body.innerHTML = `
         <div style="max-width:480px;">
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.5rem;">
-                <button onclick="saTab('individuals')" class="sa-btn"
+                <button onclick="navBack()" class="sa-btn"
                     style="color:#79c0ff;border-color:rgba(121,192,255,0.3);">← Volver</button>
                 <h3 style="margin:0;font-size:1rem;">👤 Anadir Usuario al Ente</h3>
             </div>

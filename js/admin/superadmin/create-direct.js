@@ -15,12 +15,15 @@
 // CREAR CLUB directamente desde SA
 // ═══════════════════════════════════════════════════════════════════
 window.saShowCreateClub = function() {
+    // Pila de navegación (js/core/nav-stack.js).
+    if (typeof navScreen === 'function') navScreen('saShowCreateClub');
+
     const body = document.getElementById('sa-body');
     if (!body) return;
     body.innerHTML = `
         <div style="max-width:520px;">
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.5rem;">
-                <button onclick="saTab('clubs')" class="sa-btn"
+                <button onclick="navBack()" class="sa-btn"
                     style="color:#58a6ff;border-color:rgba(88,166,255,0.3);">← Volver</button>
                 <h3 style="margin:0;font-size:1rem;">🏟️ Crear Nuevo Club</h3>
             </div>
@@ -132,12 +135,15 @@ window.saCreateClubConfirm = async function() {
 // CREAR USUARIO INDIVIDUAL directamente desde SA
 // ═══════════════════════════════════════════════════════════════════
 window.saShowCreateIndividual = function() {
+    // Pila de navegación (js/core/nav-stack.js).
+    if (typeof navScreen === 'function') navScreen('saShowCreateIndividual');
+
     const body = document.getElementById('sa-body');
     if (!body) return;
     body.innerHTML = `
         <div style="max-width:480px;">
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.5rem;">
-                <button onclick="saTab('individuals')" class="sa-btn"
+                <button onclick="navBack()" class="sa-btn"
                     style="color:#3fb950;border-color:rgba(63,185,80,0.3);">← Volver</button>
                 <h3 style="margin:0;font-size:1rem;">👤 Crear Usuario Individual</h3>
             </div>

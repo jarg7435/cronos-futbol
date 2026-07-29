@@ -162,6 +162,19 @@ window.saGoBackToRoles = function saGoBackToRoles() {
 };
 
 window.openSuperAdminPanel = async function openSuperAdminPanel() {
+    // Pila de navegación (js/core/nav-stack.js): RAÍZ del panel SuperAdmin.
+    // ⚠️ TIENE QUE SER LA PRIMERA SENTENCIA, antes de cualquier `await`. Esta
+    // función es async, y navBack limpia su flag de restauración en cuanto
+    // f.apply() DEVUELVE — o sea al primer await, no al terminar el cuerpo.
+    // Un navRootScreen/navScreen colocado después de un await se ejecutaría
+    // con el flag ya limpio y volvería a apilar la pantalla que se está
+    // restaurando, dejando el "Volver" en bucle. Lo fija la PARTE 8 del guard.
+    //
+    // La SALIDA de este panel no es navExit(): es su propio botón "⏻ Salir"
+    // (cerrarSesion), porque el panel vive en su overlay #sa-panel y no en
+    // #setup-modal. navExit() sólo cierra el contenedor modal.
+    if (typeof navRootScreen === 'function') navRootScreen('openSuperAdminPanel');
+
     ['main-header','role-selection-screen','install-screen','auth-screen'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -221,6 +234,17 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
 // ═══════════════════════════════════════════════════════════════════
 
 window.saTab = function saTab(tab) {
+    // Pila de navegación (js/core/nav-stack.js). Se registra CON la pestaña,
+    // así que volver desde una subpantalla devuelve a la pestaña EXACTA desde
+    // la que se entró, no a una fija.
+    //
+    // 🔑 Las pestañas son HERMANAS, no niveles: cambiar de pestaña NO debe
+    // apilar. Sale gratis — navScreen reemplaza los argumentos cuando la
+    // función del tope es la misma, y todas las pestañas son `saTab`. Así la
+    // pila queda [openSuperAdminPanel, saTab(actual), subpantalla…] y "Volver"
+    // no recorre hacia atrás ocho clics de pestaña.
+    if (typeof navScreen === 'function') navScreen('saTab', tab);
+
     ['clubs','individuals','requests','secretary','trash','billing','extras','messages'].forEach(t => {
         const b = document.getElementById('sa-tab-'+t);
         if (!b) return;

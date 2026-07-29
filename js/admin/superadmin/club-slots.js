@@ -10,6 +10,9 @@
 // ════════════════════════════════════════════════════════════════════
 
 window.saEditClubSlots = async function(clubId, clubName) {
+    // Pila de navegación — con sus argumentos, para repintarse igual al volver.
+    if (typeof navScreen === 'function') navScreen('saEditClubSlots', clubId, clubName);
+
     const { db, doc, getDoc, updateDoc } = await saFS();
     const snap = await getDoc(doc(db,'clubs',clubId));
     if (!snap.exists()) { _saToast('Club no encontrado', 3000); return; }
@@ -19,7 +22,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
     body.innerHTML = `
         <div style="max-width:520px;">
             <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1.5rem;">
-                <button onclick="saTab('clubs')" class="sa-btn"
+                <button onclick="navBack()" class="sa-btn"
                     style="color:#58a6ff;border-color:rgba(88,166,255,0.3);">← Volver</button>
                 <h3 style="margin:0;font-size:1rem;">✏️ Editar Club: ${typeof escapeHtml==='function'?escapeHtml(clubName):clubName}</h3>
             </div>
