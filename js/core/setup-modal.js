@@ -1245,7 +1245,7 @@ window._openCoachCommsMenu = function() {
             <div style="display:flex;align-items:center;gap:0.5rem;">
                 <button onclick="navBack()" class="btn"
                     style="padding:0.3rem 0.7rem;font-size:0.72rem;color:var(--text-muted);">← Volver</button>
-                <button onclick="navExit()" title="Cerrar y salir"
+                <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" title="Salir al selector de roles"
                     style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
             </div>
         </div>
@@ -1364,7 +1364,7 @@ window._cronosOpenLiveMatchesPanel = async function() {
         <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);flex-shrink:0;">
             <div style="display:flex;gap:0.5rem;">
                 <button onclick="navBack()" class="btn" style="color:var(--text-muted);flex:1;">← Volver</button>
-                <button onclick="navExit()" class="btn" title="Cerrar y salir"
+                <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" class="btn" title="Salir al selector de roles"
                     style="color:var(--text-muted);flex:0 0 auto;">✕</button>
             </div>
         </div>

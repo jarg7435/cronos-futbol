@@ -96,7 +96,7 @@ async function openTrainingNotification() {
         <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--glass-border);
                     display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
             <h3 style="margin:0;font-size:1rem;color:#f0883e;">📅 Aviso de Entrenamiento</h3>
-            <button onclick="navExit()" title="Cerrar y salir"
+            <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" title="Salir al selector de roles"
                 style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
         </div>
 

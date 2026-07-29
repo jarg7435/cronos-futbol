@@ -86,7 +86,7 @@ window.openMisInformes = async function openMisInformes() {
                     style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
                            color:var(--text-muted);padding:0.35rem 0.8rem;border-radius:6px;
                            cursor:pointer;font-size:0.74rem;font-weight:600;">← Volver</button>
-                <button onclick="navExit()" title="Cerrar y salir"
+                <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" title="Salir al selector de roles"
                     style="background:none;border:none;color:var(--text-muted);
                            font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.2rem;">✕</button>
             </div>

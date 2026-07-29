@@ -198,7 +198,7 @@ function openRosterManager() {
                                font-weight:600; cursor:pointer; white-space:nowrap;">
                         ← Volver
                     </button>
-                    <button onclick="navExit()" title="Cerrar y salir"
+                    <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" title="Salir al selector de roles"
                         style="background:none; border:none; color:var(--text-muted);
                                font-size:1.2rem; cursor:pointer; line-height:1; padding:0 0.2rem;">✕</button>
                     <h2 style="margin:0;">Gestionar Plantilla - ${mode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}</h2>

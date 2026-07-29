@@ -177,8 +177,11 @@ console.log('\n── PARTE 4 · migracion del panel del Entrenador ──');
        !/onclick="openUnifiedCommsMenu\(\)"/.test(cuerpoMis));
     ok('4f · el "Volver" de Mis Informes usa navBack()',
        /onclick="navBack\(\)"[\s\S]{0,400}?Volver/.test(cuerpoMis));
-    ok('4g · y su ✕ SALE (navExit), que no es lo mismo que volver',
-       /onclick="navExit\(\)"/.test(cuerpoMis));
+    // ⚠️ v405: la ✕ ya no es navExit() sino navExitToRoles(). La INTENCION no
+    // cambia —salir no es lo mismo que volver—, pero navExit() solo ocultaba
+    // #setup-modal y dejaba al usuario mirando el campo. Ver PARTE 24.
+    ok('4g · y su ✕ SALE del area (navExitToRoles), que no es lo mismo que volver',
+       /navExitToRoles\(\)/.test(cuerpoMis));
 }
 
 // ═══════ PARTE 6 · el RESTO del panel del Entrenador ═══════
@@ -881,8 +884,11 @@ console.log('\n── PARTE 16 · motor de mensajeria unificada ──');
        /onclick="navBack\(\)"/.test(cuerpoRender));
     ok('16m · y solo se pinta en modo MODAL (embebido lo posee el anfitrion)',
        /role === 'coach' && isModalMode \?/.test(cuerpoRender));
-    ok('16n · la ✕ es una salida de verdad (navExit)',
-       /onclick="navExit\(\)"/.test(cuerpoRender));
+    // ⚠️ v405: era navExit(). El autor eligio esa forma en la ronda 7, pero bajo
+    // MI premisa de que navExit() era "salida limpia" — y resulto ser lo que
+    // dejaba el campo a la vista. Corregida la premisa, corregida la eleccion.
+    ok('16n · la ✕ es una salida de verdad (navExitToRoles)',
+       /navExitToRoles\(\)/.test(cuerpoRender));
     ok('16o · y desaparece la cadena de 4 ramas, 3 de ellas muertas',
        !/else if\(typeof openStaffDashboard==='function'\)/.test(cuerpoRender));
     ok('16p · la seleccion de contacto sigue pintando en el div interno',
@@ -1272,8 +1278,13 @@ console.log('\n── PARTE 20 · la ✕ del menu de Comunicaciones ──');
     const iM = cp.indexOf('async function _renderUnifiedMessagingView');
     const fM = cp.slice(iM + 1).search(/\n(?:async )?function \w+\s*\(|\nwindow\.\w+\s*=/);
     const motor = iM > -1 ? cp.slice(iM, fM > -1 ? iM + 1 + fM : cp.length) : '';
-    ok('20g · la ✕ del MOTOR sigue siendo navExit() (decision distinta, a proposito)',
-       /onclick="navExit\(\)"/.test(motor));
+    // ⚠️ v405: YA NO HAY DECISION DISTINTA. Esta asercion fijaba que la ✕ del
+    // motor siguiera siendo navExit() mientras las otras dos volvian. Al aparecer
+    // el DECIMO boton con el mismo defecto quedo claro que no eran tres casos:
+    // era UN patron aplicado diez veces. Ahora TODAS las ✕ del area del
+    // Entrenador salen igual. Ver PARTE 24, que las censa una a una.
+    ok('20g · la ✕ del MOTOR tambien sale al selector (ya no es un caso aparte)',
+       /navExitToRoles\(\)/.test(motor));
 }
 
 // ═══════ PARTE 21 · recorridos de la ✕ de Comunicaciones ═══════
@@ -1343,6 +1354,110 @@ if (typeof build().sb.navExitToRoles !== 'function') {
     d.sb.navExitToRoles();                // sin showRoleSelector definido
     ok('21i · 🔑 sin selector disponible no oculta el campo (nada de pantalla en negro)',
        d.visible('main-container') === true);
+}
+
+// ═══════ PARTE 24 · CENSO: ninguna ✕ del area del Entrenador puede ocultar y ya ═══════
+// 🔑 LA LECCION DE TODA ESTA SERIE. El autor reporto el mismo sintoma CUATRO
+// veces sobre botones distintos, y cada vez arregle UNO. No eran cuatro casos:
+// era UN PATRON aplicado a DIEZ botones. La ronda 2 puso navExit() en todas las ✕
+// del area del Entrenador creyendo que era "la salida limpia" — y en esa area
+// SIEMPRE hay un partido debajo (#main-container), asi que ocultar #setup-modal
+// deja el campo al aire, sin excepcion.
+//
+// Este censo es lo que habria evitado las cuatro rondas: en vez de fijar boton a
+// boton, prohibe la FORMA en todos los ficheros del area a la vez.
+console.log('\n── PARTE 24 · censo de todas las ✕ del area del Entrenador ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    const sinCom = (s) => s.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n')
+                           .replace(/<!--[\s\S]*?-->/g, '');
+
+    // Todo lo que se pinta ENCIMA del partido. Si se anade un fichero al area,
+    // anadirlo aqui: es la unica forma de que el censo siga siendo completo.
+    const AREA = [
+        'js/coach/comms/panel.js',
+        'js/coach/comms/contact-manager.js',
+        'js/coach/comms/individual-reports.js',
+        'js/coach/comms/collective-report.js',
+        'js/coach/comms/training-notify.js',
+        'js/coach/training/panel.js',
+        'js/core/setup-modal.js',
+        'js/core/staff-and-comms.js',
+        'js/core/app-init.js',
+        'js/ai/import.js',
+    ];
+
+    // ⚠️ Se miden los botones cuya ETIQUETA es exactamente "✕", no cualquier
+    // onclick que oculte el modal. La primera version de este censo daba dos
+    // rojos por la razon equivocada: marcaba "⚽ CONTINUAR PARTIDO"
+    // (app-init.js:799), que oculta el modal A PROPOSITO para volver al partido,
+    // y habria marcado "✕ Cancelar partido", que es una accion, no un cierre.
+    // Un ✕ suelto es un cierre; un ✕ con texto al lado es otra cosa.
+    const cerrar = (src) => {
+        const out = [];
+        const re = /<button([^>]*)>([\s\S]*?)<\/button>/g;
+        let m;
+        while ((m = re.exec(src)) !== null) {
+            if (m[2].replace(/\s/g, '') !== '✕') continue;      // solo la ✕ sola
+            const on = (m[1].match(/onclick="([^"]*)"/) || [])[1] || '';
+            out.push(on);
+        }
+        return out;
+    };
+
+    let totalSalidas = 0, totalEquis = 0;
+    for (const archivo of AREA) {
+        const src = sinCom(leer(archivo));
+        const equis = cerrar(src);
+        totalEquis += equis.length;
+        // 🔑 LA REGLA, y SOLO esa: ninguna ✕ puede LIMITARSE A OCULTAR, que es
+        // lo que descubria el campo. No se exige un destino concreto.
+        // ⚠️ La version anterior de este censo exigia navExitToRoles|navBack y
+        // daba CINCO rojos por la razon equivocada, mezclando tres cosas:
+        //   · ai/import.js -> remove() de una fila de vista previa (no es cierre)
+        //   · training/panel.js -> renderTrainingWeek(), ✕ de borrar una franja
+        //   · individual-reports / collective-report -> ✕ cableadas a
+        //     openUnifiedCommsMenu, que son las pantallas SIN punto de entrada ya
+        //     declaradas en la PARTE 6.
+        // Ninguna de esas deja el campo al aire. Medir de mas es tan malo como
+        // medir de menos: obliga a "arreglar" lo que no esta roto.
+        const soloOculta = (on) => {
+            const s = on.replace(/\s/g, '');
+            return s === 'navExit()' || s === 'navExit();' ||
+                   /^document\.getElementById\('setup-modal'\)\.style\.display='none';?$/.test(s);
+        };
+        const malas = equis.filter(soloOculta);
+        ok(`24·${archivo}: sus ${equis.length} ✕ no se limitan a ocultar`,
+           malas.length === 0, malas.join(' | '));
+        totalSalidas += (src.match(/navExitToRoles\(\)/g) || []).length;
+    }
+
+    // Cuentas globales como alambre trampa: si alguien anade una ✕ nueva
+    // copiando el patron viejo, el censo de arriba salta. Si la anade bien,
+    // estas cuentas suben y hay que actualizarlas A MANO — que es justo el
+    // momento de pensar si esa ✕ debe sacar al selector o volver.
+    ok('24·total · 12 salidas al selector en el area (subir esto es DELIBERADO)',
+       totalSalidas === 12, 'encontradas: ' + totalSalidas);
+    ok('24·total · y 17 botones ✕ censados en el area', totalEquis === 17,
+       'encontrados: ' + totalEquis);
+
+    // ⚠️ HALLAZGO DE ESTE CENSO, DECLARADO Y NO TOCADO: quedan 3 ✕ cableadas a
+    // openUnifiedCommsMenu() en las dos pantallas SIN punto de entrada
+    // (openIndividualReports y openCollectiveReport, PARTE 6). No dejan el campo
+    // al aire —navegan, no ocultan—, asi que no son este defecto; son la familia
+    // de la ronda 1. Si algun dia se cablea su entrada, hay que revisarlas.
+    const cableadasMuertas =
+        cerrar(sinCom(leer('js/coach/comms/individual-reports.js'))).filter(o => /openUnifiedCommsMenu/.test(o)).length +
+        cerrar(sinCom(leer('js/coach/comms/collective-report.js'))).filter(o => /openUnifiedCommsMenu/.test(o)).length;
+    ok('24·declarado · 2 ✕ cableadas siguen en las pantallas sin entrada',
+       cableadasMuertas === 2, 'encontradas: ' + cableadasMuertas);
+
+    // Y el contraste: fuera del area del Entrenador NO hay partido debajo, asi
+    // que alli navExit() sigue siendo correcto. El panel del SuperAdmin usa su
+    // propio "⏻ Salir", que ya ocultaba main-container antes de la pila.
+    ok('24·fuera del area · el SuperAdmin conserva su propia salida',
+       /getElementById\('main-container'\)[\s\S]{0,120}display = 'none'/
+           .test(sinCom(leer('js/admin/superadmin/superadmin.panel.js'))));
 }
 
 // ═══════ PARTE 5 · el modulo esta servido ═══════

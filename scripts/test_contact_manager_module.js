@@ -538,8 +538,15 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         // encima a un destino fijo, aunque a Contactos se entra tambien desde
         // el modal de setup. Con la pila de navegacion (js/core/nav-stack.js)
         // la X SALE y el Volver deshace la via real. Ver test_nav_stack.js.
-        ok('3f · la X SALE (navExit), no navega a un destino fijo',
-            /onclick="navExit\(\)"/.test(h) && !/onclick="openUnifiedCommsMenu\(\)"/.test(h));
+        // ⚠️ SEGUNDA INVERSIÓN de esta aserción. La primera (ronda 2) cambió
+        // "la X navega a un destino fijo" por "la X sale con navExit()". Ahora
+        // navExit() tampoco vale: sólo oculta #setup-modal y debajo queda la
+        // pantalla del partido, así que el usuario veía el campo de fútbol y se
+        // quedaba atrapado. La X usa navExitToRoles(), que además oculta
+        // #main-container y lleva al selector de roles.
+        // La INTENCIÓN es la misma en las tres versiones: salir no es navegar.
+        ok('3f · la X SALE del área (navExitToRoles), no navega a un destino fijo',
+            /navExitToRoles\(\)/.test(h) && !/onclick="openUnifiedCommsMenu\(\)"/.test(h));
         ok('3f2 · y el boton Volver usa navBack()', /onclick="navBack\(\)"/.test(h));
         ok('3g · los inputs de telefono del padre llevan la clase que lee el guardado',
             h.includes('class="contact-phone"'));

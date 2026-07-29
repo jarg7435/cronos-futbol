@@ -59,7 +59,7 @@ function renderTrainingWeek() {
                     <button class="btn" onclick="window._trWeekOffset=(window._trWeekOffset||0)+1; renderTrainingWeek();" style="padding:0.35rem 0.6rem; font-size:0.85rem; line-height:1;">▶</button>
                     <button class="btn" onclick="window._trWeekOffset=0; renderTrainingWeek();" style="padding:0.35rem 0.7rem; font-size:0.68rem; background:rgba(88,166,255,0.12); border-color:rgba(88,166,255,0.3); color:#58a6ff;">HOY</button>
                     <button class="btn" onclick="navBack()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>
-                    <button class="btn" onclick="navExit()" title="Cerrar y salir" style="padding:0.35rem 0.6rem; font-size:0.8rem; color:var(--text-muted);">✕</button>
+                    <button class="btn" onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" title="Salir al selector de roles" style="padding:0.35rem 0.6rem; font-size:0.8rem; color:var(--text-muted);">✕</button>
                 </div>
             </div>
 

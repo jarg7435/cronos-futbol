@@ -547,7 +547,7 @@ function openConvocationModal() {
                     <div id="conv-count" style="font-size:0.95rem; font-weight:bold; color:var(--primary);">0 convocados · 0 titulares</div>
                     <div style="display:flex; align-items:center; gap:0.4rem;">
                         <button class="btn" onclick="navBack()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">\u2190 VOLVER</button>
-                        <button class="btn" onclick="navExit()" title="Cerrar y salir"
+                        <button class="btn" onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" title="Salir al selector de roles"
                             style="padding:0.4rem 0.6rem; font-size:0.8rem; color:var(--text-muted);">\u2715</button>
                     </div>
                 </div>

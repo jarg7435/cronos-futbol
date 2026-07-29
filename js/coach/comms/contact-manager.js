@@ -256,9 +256,9 @@ async function openContactManager() {
                             Gestión de Contactos
                         </h2>
                     </div>
-                    <button onclick="navExit()"
+                    <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();"
                         style="background:none;border:none;color:var(--text-muted);
-                               font-size:1.6rem;cursor:pointer;line-height:1;" title="Cerrar y salir">✕</button>
+                               font-size:1.6rem;cursor:pointer;line-height:1;" title="Salir al selector de roles">✕</button>
                 </div>
                 <p style="font-size:0.72rem;color:var(--text-muted);margin:0.3rem 0 0;">
                     Define quién recibe informes, convocatorias y avisos. Secciones independientes.
@@ -427,7 +427,7 @@ async function openContactManager() {
             <div style="padding:0.8rem 1rem;border-top:1px solid var(--glass-border);
                         display:flex;gap:0.7rem;flex-shrink:0;background:var(--surface);">
                 <button onclick="navBack()" class="btn" style="flex:1;">← VOLVER</button>
-                <button onclick="navExit()" class="btn" title="Cerrar y salir"
+                <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" class="btn" title="Salir al selector de roles"
                     style="flex:0 0 auto;color:var(--text-muted);">✕</button>
                 <button onclick="saveContactManagerData()" class="btn primary"
                     style="flex:2;font-weight:bold;">

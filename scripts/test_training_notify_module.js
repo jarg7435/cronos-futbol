@@ -239,8 +239,13 @@ const idxOf = (s, sub) => s.indexOf(sub);
         // los dos a openUnifiedCommsMenu(): un destino FIJO, y una X que
         // navegaba en vez de cerrar. Ahora Volver deshace la via real y la X
         // sale. Ver scripts/test_nav_stack.js.
-        ok('2g · el botón de volver usa navBack() y la X sale con navExit()',
-            /onclick="navBack\(\)"/.test(h) && /onclick="navExit\(\)"/.test(h)
+        // ⚠️ SEGUNDA INVERSIÓN. La primera (ronda 2) cambió "Volver y X van al
+        // mismo destino fijo" por "Volver navega y la X sale con navExit()".
+        // navExit() sólo oculta #setup-modal y debajo queda el partido: el
+        // usuario veía el campo. Ahora la X usa navExitToRoles(). Misma
+        // intención que en la inversión anterior: los dos botones NO son lo mismo.
+        ok('2g · el botón de volver usa navBack() y la X sale con navExitToRoles()',
+            /onclick="navBack\(\)"/.test(h) && /navExitToRoles\(\)/.test(h)
             && (h.match(/openUnifiedCommsMenu\(\)/g) || []).length === 0);
         ok('2h · inserta el HTML de destinatarios de sharedBuildRecipientsHTML',
             h.includes('RECIPIENTS-OK') && h.includes('id="tr-recipients-list"'));

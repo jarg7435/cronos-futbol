@@ -677,7 +677,7 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
                     🔄 Actualizar
                 </button>
                 ${isModalMode ? `
-                <button onclick="navExit()"
+                <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();"
                     style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 0.3rem;"
                     title="Cerrar">✕</button>
                 ` : ''}
