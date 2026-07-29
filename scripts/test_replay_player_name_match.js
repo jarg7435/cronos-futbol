@@ -53,9 +53,19 @@ function extractFn(name) {
     return src.slice(start, end + 6);
 }
 
+// 2026-07-29: _findPlayerByEventText delega la comparacion normalizada en
+// _findPlayerByName (compartida con la reconstruccion del once inicial y con
+// los cambios retroactivos, ver scripts/test_replay_fidelity.js). Hay que
+// extraer tambien esa tercera funcion o el sandbox lanza ReferenceError.
+// El COMPORTAMIENTO que fija este test no cambia: solo la lista de funciones
+// que hay que llevarse al sandbox.
 const sandbox = { console: { log(){}, warn(){} } };
 vm.createContext(sandbox);
-vm.runInContext(extractFn('_extractPlayerNameFromEventText') + '\n' + extractFn('_findPlayerByEventText'), sandbox);
+vm.runInContext([
+    extractFn('_extractPlayerNameFromEventText'),
+    extractFn('_findPlayerByEventText'),
+    extractFn('_findPlayerByName'),
+].join('\n'), sandbox);
 
 const { _extractPlayerNameFromEventText: extractName, _findPlayerByEventText: findPlayer } = sandbox;
 

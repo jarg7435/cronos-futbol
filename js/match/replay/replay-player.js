@@ -111,10 +111,25 @@
             if (typeof ev.matchTime === 'string') {
                 const matchM = ev.matchTime.match(/(1T|2T)\s+(\d+):(\d+)/);
                 if (matchM) {
-                    const half = matchM[1];
+                    // FIX (fidelidad de "Revivir", 2026-07-29): el minuto ya viene
+                    // ACUMULADO desde el principio del partido, tambien en la 2a
+                    // parte. Lo escriben asi los DOS productores:
+                    //   · js/match/events/player-actions.js:24 — en 2a parte usa
+                    //     `masterTimeH1 + masterTimeH2`, o sea el total del partido;
+                    //   · js/match/events/retroactive-modal.js:151 — el modal pide
+                    //     "Minuto Exacto (1'-90')", tambien absoluto.
+                    // El prefijo 1T/2T es solo una ETIQUETA, no un origen de
+                    // coordenadas. Aqui se le sumaban ademas 1800 s fijos, con dos
+                    // consecuencias: (1) TODO evento de la 2a parte se iba +30:00, y
+                    // como la barra llega solo hasta half1MaxTime+half2MaxTime, casi
+                    // toda la 2a parte caia FUERA y no se reproducia jamas (en
+                    // prebenjamin, 1 de cada 61 instantes era visible); (2) el 1800
+                    // estaba fijo, y las partes duran 30/35/40/45 min segun categoria
+                    // (js/core/setup-modal.js:509-521), asi que ni siquiera era el
+                    // desplazamiento correcto para la mayoria de los partidos.
                     const m = parseInt(matchM[2]) || 0;
                     const s = parseInt(matchM[3]) || 0;
-                    timeSec = (half === '2T' ? 1800 : 0) + m * 60 + s;
+                    timeSec = m * 60 + s;
                 }
             } else if (ev.createdAt) {
                 timeSec = Math.floor((ev.createdAt - (data.createdAt || ev.createdAt)) / 1000);
@@ -300,9 +315,81 @@
     function _findPlayerByEventText(playersMap, text) {
         const name = _extractPlayerNameFromEventText(text);
         if (!name) return null;
+        return _findPlayerByName(playersMap, name);
+    }
+
+    function _findPlayerByName(playersMap, name) {
+        if (!name) return null;
         const norm = (s) => String(s || '').trim().toLowerCase();
         const target = norm(name);
         return Object.values(playersMap).find(p => norm(p.name) === target) || null;
+    }
+
+    // FIX (fidelidad de "Revivir", 2026-07-29, defecto D): el modal de eventos
+    // retroactivos NO emite 'sub_in'/'sub_out'. Emite UN SOLO evento de tipo
+    // 'sub' con los dos jugadores dentro del texto
+    // (js/match/events/retroactive-modal.js:173):
+    //     'CAMBIO · Sale <sale>, Entra <entra> (Retroactivo)'
+    // El visor solo entendia el par sub_in/sub_out, asi que estos cambios —
+    // justamente los que anota el entrenador cuando se quedo sin bateria o sin
+    // cobertura — no se reproducian. Ademas _extractPlayerNameFromEventText no
+    // sirve aqui: al haber un unico ' · ' devolveria el segmento entero
+    // ("Sale Diego, Entra Bruno"), que no es el nombre de nadie.
+    function _parseRetroSubText(text) {
+        if (typeof text !== 'string') return null;
+        const m = text.match(/Sale\s+(.+?),\s*Entra\s+(.+?)(?:\s*\([^)]*\))?\s*$/);
+        if (!m) return null;
+        return { sale: m[1].trim(), entra: m[2].trim() };
+    }
+
+    // ── Alineación con la que EMPEZÓ el partido ──────────────────────
+    // FIX (fidelidad de "Revivir", 2026-07-29, defectos A y C).
+    //
+    // `data.players` NO es el once inicial: pushLiveSnapshot (js/match/live/
+    // sync.js) lo reescribe en cada latido de 5 s con el estado ACTUAL, así que
+    // el documento solo conserva la ÚLTIMA foto. Sembrar el minuto 0 con eso
+    // hacía que el visor pintase el once FINAL al empezar (el que entró en el
+    // 60' aparecía en el campo desde el segundo 0, el que salió en el banquillo
+    // desde el segundo 0) y luego aplicase los cambios ENCIMA de un estado que
+    // ya los tenía aplicados.
+    //
+    // Desde hoy los partidos nuevos guardan `initialPlayers`. Para los ya
+    // grabados se reconstruye el once recorriendo los eventos HACIA ATRÁS e
+    // invirtiendo cada cambio: como la última inversión aplicada corresponde al
+    // evento más antiguo de ese jugador, se recupera con exactitud quién era
+    // titular y quién suplente. Las posiciones exactas del minuto 0 no son
+    // recuperables por esta vía (solo se registran los arrastres posteriores),
+    // así que esos partidos conservan las coordenadas finales.
+    function _resolveInitialLineup(data, events) {
+        const finalPlayers = Array.isArray(data.players) ? data.players : [];
+
+        if (Array.isArray(data.initialPlayers) && data.initialPlayers.length) {
+            return { players: data.initialPlayers, exact: true };
+        }
+
+        const rebuilt = finalPlayers.map(p => ({ ...p }));
+        const byName = {};
+        rebuilt.forEach(p => { byName[String(p.id)] = p; });
+
+        for (let i = events.length - 1; i >= 0; i--) {
+            const ev = events[i];
+            if (ev.type === 'sub_in') {
+                const p = _findPlayerByEventText(byName, ev.text);
+                if (p) p.status = 'bench';       // si entró, empezó fuera
+            } else if (ev.type === 'sub_out') {
+                const p = _findPlayerByEventText(byName, ev.text);
+                if (p) p.status = 'field';       // si salió, empezó dentro
+            } else if (ev.type === 'sub') {
+                const par = _parseRetroSubText(ev.text);
+                if (par) {
+                    const sale  = _findPlayerByName(byName, par.sale);
+                    const entra = _findPlayerByName(byName, par.entra);
+                    if (sale)  sale.status  = 'field';
+                    if (entra) entra.status = 'bench';
+                }
+            }
+        }
+        return { players: rebuilt, exact: false };
     }
 
     // ── Actualizar el Estado Visual para un Minuto Concreto ──────────
@@ -328,14 +415,19 @@
         }
 
         // 2. Reconstruir estado de jugadores a partir del snapshot inicial + eventos hasta timeSec
+        // El minuto 0 se siembra con la alineación INICIAL (ver
+        // _resolveInitialLineup), nunca con `data.players`, que es el estado
+        // final del partido.
         const playersMap = {};
-        const initialPlayers = Array.isArray(data.players) ? data.players : [];
+        const initialPlayers = _resolveInitialLineup(data, events).players;
         initialPlayers.forEach(p => {
             playersMap[String(p.id)] = {
                 ...p,
                 status: p.status || 'field',
-                x: p.x || 50,
-                y: p.y || 50,
+                // Un suplente tiene x=0/y=0 legítimamente; `|| 50` los movía al
+                // centro del campo. Solo se recentra si la coordenada falta.
+                x: (typeof p.x === 'number') ? p.x : 50,
+                y: (typeof p.y === 'number') ? p.y : 50,
                 goals: 0,
                 cards: 'ninguna',
                 yellowCards: 0,
@@ -394,6 +486,16 @@
             if (ev.type === 'sub_out') {
                 const p = _findPlayerByEventText(playersMap, ev.text);
                 if (p) p.status = 'bench';
+            }
+            // Cambio RETROACTIVO: un solo evento con los dos jugadores.
+            if (ev.type === 'sub') {
+                const par = _parseRetroSubText(ev.text);
+                if (par) {
+                    const sale  = _findPlayerByName(playersMap, par.sale);
+                    const entra = _findPlayerByName(playersMap, par.entra);
+                    if (sale)  sale.status  = 'bench';
+                    if (entra) entra.status = 'field';
+                }
             }
 
             // Lesiones

@@ -181,6 +181,32 @@ function casos() {
                  resource: { data: { clubId: CLUB_A, createdBy: COACH_A, events: [] } } },
           mocks: mocksUsuario(COACH_A, docCoachA) },
 
+        // ── (m/n) FIDELIDAD DE "REVIVIR" (2026-07-29): el snapshot que lleva la
+        //     ALINEACION INICIAL (`initialPlayers`/`initialFormation`) tiene que
+        //     pasar las reglas, o el campo no llegaria nunca y la repeticion
+        //     seguiria arrancando desde el once FINAL.
+        //     ⚠️ POR ESTO SE COMPRUEBA: el primer intento de guardarla iba en el
+        //     setDoc de respaldo de startLiveSync, que escribe un doc SIN clubId
+        //     ni createdBy — o sea el caso (h3) de aqui abajo, DENEGADO. Se
+        //     habria perdido en silencio justo en los partidos nuevos. Ahora
+        //     viaja con pushLiveSnapshot, que sí manda clubId/createdBy.
+        { n: 'm · el snapshot con initialPlayers SI se puede crear (lleva clubId y createdBy)',
+          exp: 'ALLOW',
+          req: { auth: { uid: COACH_A, token: { email: 'a@club.es', firebase: { sign_in_provider: 'password' } } },
+                 path: `${DB}/live_matches/M_NUEVO`, method: 'create',
+                 resource: { data: { clubId: CLUB_A, createdBy: COACH_A, coachEmail: 'a@club.es',
+                                     players: [], initialPlayers: [{ id: 1, name: 'Alba', status: 'field' }],
+                                     initialFormation: '1-3-3' } } },
+          mocks: mocksUsuario(COACH_A, docCoachA) },
+
+        { n: 'n · y tambien actualizarse (los latidos siguientes no la reescriben)',
+          exp: 'ALLOW',
+          req: { auth: { uid: COACH_A, token: { email: 'a@club.es', firebase: { sign_in_provider: 'password' } } },
+                 path: `${DB}/live_matches/M_A`, method: 'update',
+                 resource: { data: { ...partidoDeA, initialPlayers: [{ id: 1, name: 'Alba', status: 'field' }] } } },
+          mocks: mocksUsuario(COACH_A, docCoachA),
+          existing: partidoDeA },
+
         // ── (j) SEC-C2, ya cerrado: nadie ajeno borra un partido huerfano
         { n: 'j · SEC-C2 sigue cerrado: un usuario ajeno NO puede borrar un partido sin clubId',
           exp: 'DENY',

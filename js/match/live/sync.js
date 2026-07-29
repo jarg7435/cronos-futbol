@@ -50,6 +50,35 @@ async function cleanupStaleMatches() {
     } catch(e) { if(window._CRONOS_DEBUG) console.warn('cleanupStaleMatches:', e.message); }
 }
 
+// Alineación inicial pendiente de escribir. La rellena startLiveSync al
+// empezar un partido NUEVO y la consume el primer pushLiveSnapshot, que es la
+// escritura que sí lleva clubId/createdBy y por tanto pasa las reglas. Se
+// vacía en cuanto se manda, para no reescribirla en los latidos siguientes.
+let _pendingInitialLineup = null;
+
+// FIX (fidelidad de "Revivir", 2026-07-29): forma canónica con la que un
+// jugador viaja a Firestore. Antes esta proyección estaba escrita a mano
+// dentro de pushLiveSnapshot; ahora la comparten el snapshot de cada latido
+// y el de la ALINEACIÓN INICIAL, para que no puedan divergir.
+function _mapPlayerForSnapshot(p) {
+    return {
+        id:      p.id,
+        number:  p.number,
+        name:    p.name,
+        team:    p.team,
+        status:  p.status,    // 'field' | 'bench'
+        time:    p.time,
+        goals:   p.goals   || 0,
+        cards:   p.cards   || 'ninguna',
+        injured: p.injured || false,
+        x:       p.x       || 0,
+        y:       p.y       || 0,
+        color:       p.color       || (p.team === 'home' ? COLORS.home.primary : COLORS.away.primary),
+        shortsColor: p.shortsColor || (p.team === 'home' ? COLORS.home.shorts  : COLORS.away.shorts),
+        textColor:   p.textColor   || (p.team === 'home' ? COLORS.home.text    : COLORS.away.text)
+    };
+}
+
 async function startLiveSync() {
     const fa = window._cronos_auth;
     if (!fa || !fa.db) return;
@@ -111,6 +140,44 @@ async function startLiveSync() {
         // NO sobrescribe arrays — los combina. updateDoc SÍ reemplaza el array.
         window._cronosMatchEvents = [];
         _eventsLoadedFromFirestore = false;
+
+        // FIX (fidelidad de "Revivir", 2026-07-29): la ALINEACIÓN INICIAL se
+        // guarda AQUÍ y en ningún otro sitio. `players` se reescribe en cada
+        // latido de 5 s con el estado ACTUAL, así que el documento solo
+        // conserva la ÚLTIMA foto del partido; el visor de repetición la usaba
+        // como punto de partida y por eso pintaba el once FINAL en el minuto 0
+        // (el que entró en el 60' aparecía en el campo desde el segundo 0).
+        // Este bloque solo se ejecuta con `_isNewMatch`, o sea una vez por
+        // partido: reabrir la app o reconectar NO lo sobrescribe.
+        // Momento correcto: startLiveSync() se invoca 800 ms DESPUÉS de
+        // renderPlayers() (ai/import.js:799,889), con las posiciones ya
+        // asignadas por applyFormationPreset.
+        //
+        // Guarda `typeof`: `players` y `activeFormationKey` son globales de
+        // app-init.js (que carga el PRIMERO, así que en el navegador existen
+        // siempre). Leerlos por nombre pelado sin guarda haría que, si alguna
+        // vez no estuvieran declarados, un ReferenceError abortase
+        // startLiveSync ENTERA — sin limpiar eventos, sin snapshot y sin
+        // partido en vivo. Guardar la alineación es una mejora: nunca debe
+        // poder tumbar el arranque del partido.
+        //
+        // ⚠️ NO se escribe aquí, se DEJA EN ESPERA para el primer
+        // pushLiveSnapshot. Motivo, medido contra las reglas: en un partido
+        // nuevo el documento todavía NO existe, así que el updateDoc de abajo
+        // falla y cae al setDoc de respaldo... que escribe un doc SIN clubId ni
+        // createdBy, y eso lo DENIEGA `allow create` de live_matches (el mismo
+        // caso h3 que fija scripts/test_sec_c3_live_matches_rules.js). La
+        // alineación se habría perdido en silencio justo en los partidos
+        // nuevos, que son todos. pushLiveSnapshot sí manda clubId/createdBy/
+        // coachEmail, así que su escritura pasa las reglas y además crea el
+        // documento; se ejecuta inmediatamente después (unas líneas más abajo).
+        _pendingInitialLineup = {
+            initialPlayers: (typeof players !== 'undefined' && Array.isArray(players))
+                ? players.map(_mapPlayerForSnapshot)
+                : [],
+            initialFormation: (typeof activeFormationKey !== 'undefined' && activeFormationKey) || ''
+        };
+
         try {
             const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
             await updateDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] });
@@ -353,22 +420,7 @@ async function pushLiveSnapshot(status = 'active') {
             // emitía la copia de firestore-sync.js; live.html los consume con
             // fallback a los colores del equipo (safeColor), así que es una mejora
             // con degradación elegante.
-            players: players.map(p => ({
-                id:      p.id,
-                number:  p.number,
-                name:    p.name,
-                team:    p.team,
-                status:  p.status,    // 'field' | 'bench'
-                time:    p.time,
-                goals:   p.goals   || 0,
-                cards:   p.cards   || 'ninguna',
-                injured: p.injured || false,
-                x:       p.x       || 0,
-                y:       p.y       || 0,
-                color:       p.color       || (p.team === 'home' ? COLORS.home.primary : COLORS.away.primary),
-                shortsColor: p.shortsColor || (p.team === 'home' ? COLORS.home.shorts  : COLORS.away.shorts),
-                textColor:   p.textColor   || (p.team === 'home' ? COLORS.home.text    : COLORS.away.text)
-            })),
+            players: players.map(_mapPlayerForSnapshot),
 
             // v234: historial de eventos del partido persistente en Firestore.
             // Permite que un usuario que entre tarde al partido pueda ver todos
@@ -403,6 +455,18 @@ async function pushLiveSnapshot(status = 'active') {
         // console.log('[sync v221] Snapshot enviado. timerThresholds=', snapshot.timerThresholds,
         //             '| half1Max=', snapshot.half1MaxTime, '| half2Max=', snapshot.half2MaxTime,
         //             '| mode=', snapshot.mode);
+
+        // FIX (fidelidad de "Revivir", 2026-07-29): la ALINEACIÓN INICIAL viaja
+        // con este snapshot, que sí lleva clubId/createdBy/coachEmail y por eso
+        // pasa `allow create`/`allow update` de live_matches. Se adjunta UNA
+        // sola vez (el stash se vacía justo después), así que los latidos
+        // posteriores no la tocan: `players` seguirá reflejando el estado
+        // actual, e `initialPlayers` se queda congelada en el once de salida.
+        if (_pendingInitialLineup) {
+            snapshot.initialPlayers   = _pendingInitialLineup.initialPlayers;
+            snapshot.initialFormation = _pendingInitialLineup.initialFormation;
+            _pendingInitialLineup = null;
+        }
 
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
     } catch (err) {
