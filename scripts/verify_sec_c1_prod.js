@@ -23,12 +23,18 @@ const ok = (name, cond, extra) => {
   else { fail++; console.log('FAIL ' + name); if (extra !== undefined) console.log('       ' + extra); }
 };
 
+// ⚠️ Las respuestas se acumulan como BUFFERS y se decodifican una sola vez al
+// final. Con `d += chunk` Node decodifica cada trozo por separado y un carácter
+// multibyte partido entre dos chunks se corrompe (un `í` -> 2 bytes de
+// reemplazo): eso hacía fallar SIEMPRE la comparación 4a con una discrepancia
+// que no existía. No volver a concatenar strings aquí.
 function getJson(url, token) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { Authorization: 'Bearer ' + token } }, (res) => {
-      let d = '';
-      res.on('data', (c) => (d += c));
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
+        const d = Buffer.concat(chunks).toString('utf8');
         if (res.statusCode >= 200 && res.statusCode < 300) {
           try { resolve(JSON.parse(d)); } catch (e) { reject(new Error('parse: ' + d.slice(0, 300))); }
         } else reject(new Error('HTTP ' + res.statusCode + ': ' + d.slice(0, 300)));
@@ -55,9 +61,10 @@ function getAccessToken(refreshToken) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
     }, (res) => {
-      let d = '';
-      res.on('data', (c) => (d += c));
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
+        const d = Buffer.concat(chunks).toString('utf8');
         try { const j = JSON.parse(d); j.access_token ? resolve(j.access_token) : reject(new Error(d.slice(0, 300))); }
         catch (e) { reject(new Error('parse token: ' + d.slice(0, 300))); }
       });
@@ -105,7 +112,7 @@ function getAccessToken(refreshToken) {
     const files = (rs.source && rs.source.files) || [];
     deployed = files.map((f) => f.content).join('\n');
     ok('2 · fuente del ruleset descargada', deployed.length > 0, 'files: ' + files.length);
-    console.log('       tamaño: ' + deployed.length + ' bytes, archivos: ' + files.map((f) => f.name).join(', '));
+    console.log('       tamaño: ' + Buffer.byteLength(deployed, 'utf8') + ' bytes, archivos: ' + files.map((f) => f.name).join(', '));
   } catch (e) {
     console.log('FAIL 2 · no se pudo descargar la fuente: ' + e.message);
     process.exit(1);
@@ -132,14 +139,28 @@ function getAccessToken(refreshToken) {
      norm(deployed) === norm(local),
      'difieren: revisa si hay cambios locales sin desplegar (firebase deploy --only firestore:rules)');
 
-  // 5. Estado del create (documentado como pendiente): informar, no fallar.
+  // 5. Vector CREATE — CERRADO el 2026-07-29 (commit 6fdf1fc). Ya no se informa:
+  // se AFIRMA, para que revertirlo ponga este script en rojo.
+  //
+  // ⚠️ La heurística anterior buscaba `'clubId' in request.resource.data` o
+  // `request.resource.data.clubId == null` y por eso decía "pendiente" con el
+  // arreglo ya desplegado: el cierre NO se hizo prohibiendo campos (eso habría
+  // roto el alta individual), sino FIJANDO sus valores en el create y exigiendo
+  // cuenta autorizada en userDocClubId(). Mismas formas que las aserciones
+  // 2a/2b/2c de scripts/test_sec_c1_create_escalation.js, pero contra el texto
+  // DESPLEGADO en vez de contra el local.
   const createBlock = block.slice(block.indexOf('allow create:'), block.indexOf('allow update:'));
-  const createHardened = /clubId'?\s*(in|==)/.test(createBlock) &&
-                         (createBlock.includes("'clubId' in request.resource.data") ||
-                          createBlock.includes('request.resource.data.clubId == null'));
-  console.log('\n── Estado del vector CREATE (documentado como pendiente) ──');
-  console.log('  [PROD] create endurecido (bloquea clubId en el alta): ' + (createHardened ? 'SÍ' : 'NO (pendiente, según CORRECCIONES_ESTADO.md)'));
+  console.log('\n── Estado del vector CREATE (SEC-C1, cerrado 2026-07-29) ──');
+  ok("5a · [PROD] el create de users/{userId} fija isAuthorized == false",
+     /request\.resource\.data\.get\('isAuthorized', false\) == false/.test(createBlock),
+     'la escalada al registrarse volvería a estar abierta');
+  ok("5b · [PROD] y veta status == 'active'",
+     /request\.resource\.data\.get\('status', ''\) != 'active'/.test(createBlock),
+     'un usuario podría auto-activarse en el alta');
+  ok('5c · [PROD] userDocClubId() exige cuenta autorizada',
+     /function userDocClubId[\s\S]{0,500}?get\('isAuthorized', false\) == true/.test(deployed),
+     'la vía del clubId ajeno volvería a estar abierta en sus 28 usos');
 
-  console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'} (${pass} passed) · UPDATE cerrado en producción`);
+  console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'} (${pass} passed) · SEC-C1 cerrado en producción (create + update)`);
   process.exit(fail ? 1 : 0);
 })();
