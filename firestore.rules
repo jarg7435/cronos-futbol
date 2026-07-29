@@ -223,10 +223,23 @@ service cloud.firestore {
     // leyendo el DOCUMENTO de Firestore del propio usuario (users/{uid}.clubId),
     // no el token. No amplía la superficie: solo concede acceso a documentos del
     // mismo club en el que el usuario está realmente registrado y autorizado.
+    // ⚠️ SEC-C1 (2026-07-29): este predicado exige ademas que la cuenta este
+    // AUTORIZADA. Antes bastaba con que users/{uid}.clubId coincidiera, y como
+    // el `create` de users/{userId} no restringia campos, cualquiera podia
+    // ponerse un clubId AJENO al registrarse y obtener escritura cross-club por
+    // esta via — sin necesidad siquiera de autoconcederse isAuthorized.
+    // Verificado ejecutandolo contra la Rules API (caso A4 del test).
+    //
+    // Es el predicado de pertenencia mas usado del archivo (28 sitios), asi que
+    // el cambio tiene radio amplio A PROPOSITO: cierra la escalada en todos a la
+    // vez. Solo deja fuera a cuentas NO autorizadas, que no deberian poder
+    // escribir nada; los flujos legitimos (coach aprobado leyendo/escribiendo en
+    // su club) se comprobaron uno a uno antes de aplicarlo.
     function userDocClubId(docClubId) {
       return isAuth() && docClubId != null
              && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == docClubId;
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == docClubId
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true;
     }
 
     // El usuario tiene acceso al club de este enlace
@@ -252,9 +265,32 @@ service cloud.firestore {
     // ============================================================
     match /users/{userId} {
       allow read: if isAuth();
+      // ⚠️ SEC-C1 (create) — CERRADO 2026-07-29. Antes esta regla NO restringia
+      // NINGUN campo, asi que un usuario recien registrado podia crear SU PROPIO
+      // documento con `isAuthorized: true` y `status: 'active'` y, con eso,
+      // pasar isRegisteredUser() y userDocClubId(): leer y ESCRIBIR en los
+      // partidos en vivo de OTRO club (PII de menores). No hacia falta usar la
+      // app: basta el SDK con el token de una cuenta nueva, antes de que exista
+      // su documento. Verificado ejecutandolo contra la Rules API, no deducido.
+      //
+      // CORRECCIONES_ESTADO.md daba esto por "riesgo residual BAJO" alegando que
+      // isAuthorized/status "siguen prohibidos en create+update". Eso era cierto
+      // solo del update: la lista de campos prohibidos (hasAny) vive abajo, en
+      // `allow update`, y el create no tenia ninguna.
+      //
+      // POR QUE SE FIJAN LOS VALORES EN VEZ DE PROHIBIR LOS CAMPOS: prohibirlos
+      // se intento antes (commit f3444df) y se REVIRTIO porque el alta de
+      // usuarios individuales escribe legitimamente clubId, role y status en el
+      // propio create (services/auth.js), y nulificarlos exigia rediseniar antes
+      // el descubrimiento de pendientes por club_admin. Fijar los VALORES
+      // permitidos deja intacto ese alta —que escribe isAuthorized:false y
+      // status:'pending_individual'— y cierra la escalada igual.
+      // La concesion real la sigue haciendo EXCLUSIVAMENTE el Admin SDK.
       allow create: if isAuth() && (
-        request.auth.uid == userId ||
-        isSuperAdmin()
+        isSuperAdmin() ||
+        (request.auth.uid == userId
+         && request.resource.data.get('isAuthorized', false) == false
+         && request.resource.data.get('status', '') != 'active')
       );
       // FIX (multi-rol): se permite que el usuario actualice su propio
       // 'allRoles' para AÑADIR roles PENDIENTES (necesario para el flujo
@@ -816,10 +852,21 @@ service cloud.firestore {
       // clubId; por eso se admite tambien al coach autor exigiendo que el
       // createdBy/coachEmail entrantes sean los del propio usuario (no puede
       // suplantar a otro entrenador ni escribir en el partido de otro club).
+      // ⚠️ TODAS las lecturas del documento ENTRANTE usan .get(campo, null) y NO
+      // el acceso directo .campo. NO es cosmetico: en el lenguaje de reglas,
+      // leer una clave AUSENTE de un mapa LANZA, y un error en la condicion
+      // equivale a DENY. El acceso directo hacia que este `create` fallara
+      // SIEMPRE para el "bootstrap del coach" que el propio comentario de abajo
+      // dice permitir — el doc minimo que escriben match/live/sync.js (setDoc
+      // {events: []} con merge) y match/events/player-actions.js NO lleva la
+      // clave clubId, asi que `request.resource.data.clubId` no era null: era un
+      // ERROR. Detectado el 2026-07-29 al ejecutar por fin el test de
+      // comportamiento de SEC-C3 (scripts/test_sec_c3_live_matches_rules.js),
+      // que es justo la clase de fallo que una lectura estatica no ve.
       allow create: if isAuth() && (
                        isSuperAdmin() ||
-                       sameClub(request.resource.data.clubId) ||
-                       userDocClubId(request.resource.data.clubId) ||
+                       sameClub(request.resource.data.get('clubId', null)) ||
+                       userDocClubId(request.resource.data.get('clubId', null)) ||
                        // MATIZ CERRADO (createdBy/coachEmail): estas ramas SOLO
                        // autorizan cuando el doc NO lleva clubId (huerfano legacy
                        // o coach SIN club). Antes autorizaban con CUALQUIER clubId,
@@ -829,12 +876,13 @@ service cloud.firestore {
                        // un clubId ajeno, sameClub()/userDocClubId() fallan y, al
                        // exigir clubId == null aqui, la rama queda vetada: solo el
                        // creador de un partido SIN club puede crearlo por esta via.
-                       (request.resource.data.clubId == null && (
-                         (request.resource.data.createdBy != null &&
-                          request.resource.data.createdBy == request.auth.uid) ||
-                         (request.resource.data.coachEmail != null &&
+                       // VERIFICADO ejecutandolo: los casos f y g del test.
+                       (request.resource.data.get('clubId', null) == null && (
+                         (request.resource.data.get('createdBy', null) != null &&
+                          request.resource.data.get('createdBy', null) == request.auth.uid) ||
+                         (request.resource.data.get('coachEmail', null) != null &&
                           ('email' in request.auth.token) && request.auth.token.email != null &&
-                          request.resource.data.coachEmail == request.auth.token.email)
+                          request.resource.data.get('coachEmail', null) == request.auth.token.email)
                        ))
                     );
       // UPDATE: se valida contra el clubId YA EXISTENTE en el documento
