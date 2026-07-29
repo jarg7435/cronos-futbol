@@ -219,16 +219,18 @@ console.log('\n── PARTE 6 · resto del panel del Entrenador migrado ──')
 
     // ⚠️ LO QUE QUEDA CABLEADO A PROPOSITO. Este censo fija el limite exacto
     // de la migracion, para que no se cuele ninguno nuevo por descuido.
-    //   · panel.js            -> _renderUnifiedMessagingView, el motor de
-    //     mensajeria unificada que el autor pidio proteger: se migra aparte y
-    //     con guard propio (tiene 4 vias de entrada).
+    //   · panel.js YA NO ESTA EN ESTA LISTA. Era el motor de mensajeria, que se
+    //     migro en la RONDA 7 (PARTES 16 y 17): su "Volver" es navBack() y su ✕
+    //     navExit(). Al migrarlo esta asercion se puso ROJA exigiendo el defecto
+    //     —igual que paso en la ronda 2 con contact-manager y training-notify—,
+    //     asi que el fichero PASA a la lista TODOS de abajo: de "queda 1
+    //     cableado" a "no puede tener ninguno".
     //   · individual-reports  -> openIndividualReports, SIN punto de entrada
     //     localizable en el repo (lo documenta su propia cabecera).
     //   · collective-report   -> openCollectiveReport, tambien SIN invocador:
     //     el boton "INFORMES COLECTIVOS" del post-partido llama a
     //     openMisInformesColectivos, que NO EXISTE en el proyecto.
     const PENDIENTES = {
-        'js/coach/comms/panel.js': 1,
         'js/coach/comms/individual-reports.js': 2,
         'js/coach/comms/collective-report.js': 2,
     };
@@ -242,7 +244,9 @@ console.log('\n── PARTE 6 · resto del panel del Entrenador migrado ──')
     // Ningun OTRO archivo del panel del Entrenador puede tener uno.
     const TODOS = ['js/coach/comms/contact-manager.js', 'js/coach/comms/training-notify.js',
                    'js/core/staff-and-comms.js', 'js/coach/training/panel.js', 'js/ai/import.js',
-                   'js/core/setup-modal.js'];
+                   'js/core/setup-modal.js',
+                   // Asciende desde PENDIENTES al migrarse el motor (ronda 7).
+                   'js/coach/comms/panel.js'];
     for (const archivo of TODOS) {
         ok(`6·${archivo}: sin destinos cableados a Comunicaciones`,
            !/onclick="openUnifiedCommsMenu\(\)"/.test(leer(archivo)));
@@ -564,8 +568,17 @@ console.log('\n── PARTE 12 · panel de Direccion ──');
     ok('12k · la mensajeria del Director se pinta EMBEBIDA en ese div',
        /openDirectorMessaging\(\s*['"]coordinators['"]\s*,\s*['"]staff-dashboard-content['"]\s*\)/.test(sd));
     const comms = sinCom(leer('js/coach/comms/panel.js'));
-    ok('12l · y su boton "Volver" sigue siendo solo para el COACH',
-       /role === 'coach' \? `[\s\S]{0,200}?onclick="openUnifiedCommsMenu\(\)"/.test(comms));
+    // ⚠️ ACTUALIZADA EN LA RONDA 7 (misma familia que las dos inversiones de la
+    // ronda 2). Fijaba la forma vieja —`role === 'coach' ?` con destino cableado
+    // a openUnifiedCommsMenu()— y al migrar el motor se puso roja exigiendo el
+    // defecto. La INTENCION no cambia: el Director/Coordinador sigue sin
+    // "Volver". La condicion es ahora ESTRICTAMENTE mas estrecha, porque ademas
+    // exige modo modal: el coach EMBEBIDO tampoco lo pinta, y asi no puede
+    // destruir el panel anfitrion si algun dia se cablea esa via (hoy muerta,
+    // declarada en 16q/16r/16s).
+    ok('12l · y su boton "Volver" sigue siendo solo para el COACH, y solo en modal',
+       /role === 'coach' && isModalMode \?/.test(comms) &&
+       !/role === 'coach' \? `[\s\S]{0,200}?onclick="openUnifiedCommsMenu\(\)"/.test(comms));
 }
 
 // ═══════ PARTE 13 · recorridos del panel de Direccion ═══════
@@ -767,6 +780,229 @@ console.log('\n── PARTE 15 · recorridos del panel de Padres ──');
     for (let i = 0; i < 3; i++) u.sb.ppOpenChatThread('t1', u.sb._cabecera);
     ok('15g · auto-verificacion: el repintado VIEJO si acumulaba un emoji por envio',
        u.sb._cabecera === '⚽ ⚽ ⚽ ⚽ Pedro Ruiz', u.sb._cabecera);
+}
+
+// ═══════ PARTE 16 · el MOTOR de mensajeria unificada ═══════
+// La zona que el autor pidio proteger. QUINTA forma distinta: el motor es de
+// DOBLE MODO —modal en #setup-modal, o embebido en el contenedor que le pasa el
+// anfitrion— y lo decide en tiempo de ejecucion segun si ese contenedor existe.
+//
+// 🔑 LA REGLA QUE HACE SEGURA LA MIGRACION: es pantalla de la pila SOLO en modo
+// modal. Embebido, la RAIZ del anfitrion ya lo posee (openStaffDashboard para
+// Director/Coordinador, openParentPanel para Padres); registrarlo ahi haria que
+// navBack lo repintase en un contenedor ya destruido — la misma trampa que la
+// ronda 5 documento para switchStaffTab.
+console.log('\n── PARTE 16 · motor de mensajeria unificada ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    const sinCom = (s) => s.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n')
+                           .replace(/<!--[\s\S]*?-->/g, '');
+    const um = sinCom(leer('js/coach/comms/panel.js'));
+
+    // Acotar por la siguiente declaracion en columna 0 (leccion de la ronda 2):
+    // este fichero tiene OTRO navBack() y OTRO navExit() legitimos, los de
+    // openUnifiedCommsMenu migrado en la ronda 2. Sin acotar, 16g/16i darian
+    // verde midiendo el menu en vez del motor.
+    const acotar = (src, decl) => {
+        const i = src.indexOf(decl);
+        if (i < 0) return '';
+        const fin = src.slice(i + 1).search(/\n(?:async )?function \w+\s*\(|\nwindow\.\w+\s*=/);
+        return src.slice(i, fin > -1 ? i + 1 + fin : src.length);
+    };
+    const cuerpoRender = acotar(um, 'async function _renderUnifiedMessagingView');
+    const cuerpoSwitch = acotar(um, 'async function _switchUnifiedTab');
+    ok('16·control · las dos regiones se acotan (si no, todo lo demas miente)',
+       cuerpoRender.length > 500 && cuerpoSwitch.length > 300,
+       'render=' + cuerpoRender.length + ' switch=' + cuerpoSwitch.length);
+
+    // ── el mapa rol -> funcion de entrada ──
+    for (const [rol, fn] of [['coach', 'openCoachMessaging'], ['director', 'openDirectorMessaging'],
+                             ['coordinator', 'openCoordinatorMessaging'], ['parent', 'openParentMessaging']]) {
+        ok(`16a·${rol} · el mapa rol->entrada cubre ${rol}`,
+           new RegExp(rol + ":\\s*'" + fn + "'").test(um));
+    }
+
+    // ── 🔑 el registro, condicionado al modo modal ──
+    ok('16b · el motor se registra SOLO en modo modal',
+       /if \(isModalMode && typeof navScreen === 'function'\)/.test(cuerpoRender));
+    ok('16c · y lo hace con la pestaña, por la entrada del rol',
+       /navScreen\(_UM_ENTRY_BY_ROLE\[role\] \|\| 'openCoachMessaging', tab\)/.test(cuerpoRender));
+    ok('16d · el registro va ANTES del primer await (invariante async de la ronda 3)',
+       (() => {
+           const iReg = cuerpoRender.indexOf('navScreen(_UM_ENTRY_BY_ROLE');
+           const iAwait = cuerpoRender.indexOf('await ');
+           return iReg > -1 && (iAwait === -1 || iReg < iAwait);
+       })(), 'reg=' + cuerpoRender.indexOf('navScreen(_UM_ENTRY_BY_ROLE') + ' await=' + cuerpoRender.indexOf('await '));
+
+    // ── las pestañas son INTERNAS: actualizan el argumento, no se apilan ──
+    ok('16e · _switchUnifiedTab actualiza la pestaña guardada, solo en modal',
+       /if \(!window\._umState\.containerId && typeof navScreen === 'function'\)/.test(cuerpoSwitch));
+    ok('16f · y sigue SIN repintar el motor (las pestañas no son pantallas)',
+       !/_renderUnifiedMessagingView\(/.test(cuerpoSwitch));
+    ok('16g · el primer LECTOR de _umState.containerId, que antes no se leia nunca',
+       /window\._umState\.containerId/.test(cuerpoSwitch));
+
+    // ── 🐛 EL BUG DE DATOS DE ESTA RONDA ────────────────────────────────
+    // "🔄 Actualizar" cocia la pestaña en el onclick al pintar el header, y el
+    // header NO se vuelve a pintar nunca. Tras cambiar de pestaña, el boton
+    // recargaba la lista de la pestaña VIEJA mientras el subrayado y
+    // _umState.activeTab decian la nueva. Y con la lista desincronizada,
+    // _selectUnifiedContact compone el threadId con _getCanonicalContext(role,
+    // activeTab), o sea el contexto EQUIVOCADO para ese contacto: el mensaje
+    // cae en un hilo que el destinatario no lee.
+    ok('16h · [FIX] "Actualizar" lee la pestaña ACTIVA del estado',
+       /_loadUnifiedContactList\(\(window\._umState&&window\._umState\.activeTab\)/.test(cuerpoRender));
+    ok('16i · [FIX] y ya no queda la pestaña cocida en el onclick',
+       !/_loadUnifiedContactList\('\$\{tab\}'\)/.test(cuerpoRender));
+    // El eslabon que convierte la observacion en bug: que la lista se
+    // desincronice solo importa si el threadId depende de activeTab.
+    ok('16j · el threadId depende de activeTab (por eso desincronizar es grave)',
+       /_getCanonicalContext\(window\._umState\.role, window\._umState\.activeTab\)/.test(um));
+    ok('16k · y _loadUnifiedContactList NO escribe activeTab (por eso no se auto-cura)',
+       !/activeTab\s*=/.test(acotar(um, 'async function _loadUnifiedContactList')));
+
+    // ── Volver y ✕: dos botones, dos funciones ──
+    ok('16l · el "Volver" del coach usa navBack()',
+       /onclick="navBack\(\)"/.test(cuerpoRender));
+    ok('16m · y solo se pinta en modo MODAL (embebido lo posee el anfitrion)',
+       /role === 'coach' && isModalMode \?/.test(cuerpoRender));
+    ok('16n · la ✕ es una salida de verdad (navExit)',
+       /onclick="navExit\(\)"/.test(cuerpoRender));
+    ok('16o · y desaparece la cadena de 4 ramas, 3 de ellas muertas',
+       !/else if\(typeof openStaffDashboard==='function'\)/.test(cuerpoRender));
+    ok('16p · la seleccion de contacto sigue pintando en el div interno',
+       /getElementById\('um-chat-view'\)/.test(um));
+
+    // ⚠️ RAMAS MUERTAS DECLARADAS, NO TOCADAS (decision del autor, 2026-07-29).
+    // Se fija su forma exacta: si alguien las cablea, el guard se pone rojo y
+    // obliga a revisar destinos. Misma politica que openIndividualReports /
+    // openCollectiveReport en la PARTE 6.
+    //  · club-reports.js:368 embebe el motor con rol COACH, pero la rama else
+    //    de _sdLoadMessages es INALCANZABLE: las dos unicas entradas a
+    //    openStaffDashboard garantizan _activeRole director|coordinator.
+    const sd = sinCom(leer('js/coach/reports/club-reports.js'));
+    const rl = sinCom(leer('js/services/auth/role-launch.js'));
+    ok('16q · la rama else que embeberia el motor como COACH sigue ahi',
+       /openCoachMessaging\('parents', 'staff-dashboard-content'\)/.test(sd));
+    ok('16r · pero role-launch solo deja entrar a director|coordinator',
+       /\['director', 'coordinator'\]\.includes\(activeRole\)/.test(rl));
+    ok('16s · y el modo prueba fuerza _activeRole a uno de esos dos',
+       /_activeRole = role === 'director' \? 'director' : 'coordinator'/.test(sd));
+
+    //  · openBulkMessageComposer y sus 3 vueltas: sin invocador en todo el repo.
+    const walk = (dir, acc) => {
+        for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+            const rel = dir + '/' + e.name;
+            if (e.isDirectory()) walk(rel, acc);
+            else if (e.name.endsWith('.js')) acc.push(rel);
+        }
+        return acc;
+    };
+    const invocadores = walk('js', []).filter(f =>
+        f !== 'js/coach/comms/bulk-messaging.js' && /openBulkMessageComposer/.test(sinCom(leer(f))));
+    ok('16t · openBulkMessageComposer sigue SIN invocador (flujo muerto declarado)',
+       invocadores.length === 0, invocadores.join(', '));
+}
+
+// ═══════ PARTE 17 · recorridos del motor ═══════
+console.log('\n── PARTE 17 · recorridos del motor de mensajeria ──');
+{
+    // Modela las DOS formas del motor con la misma funcion, que es lo que hace
+    // el codigo real: si le pasan contenedor es embebido y NO se apila.
+    function motorSandbox() {
+        const t = build();
+        t.sb._umState = { role: 'coach', activeTab: 'parents', containerId: null };
+        t.sb.openStaffDashboard = function(tab) {
+            t.sb.navRootScreen('openStaffDashboard', tab || 'convocatorias');
+            t.pintadas.push('sd:' + (tab || 'convocatorias'));
+        };
+        t.sb.openParentPanel = function(tab) {
+            t.sb.navRootScreen('openParentPanel', tab || 'conv');
+            t.pintadas.push('pp:' + (tab || 'conv'));
+        };
+        t.sb.openCoachMessaging = function(tab, cont) {
+            tab = tab || 'parents';
+            t.sb._umState.role = 'coach';
+            t.sb._umState.activeTab = tab;
+            t.sb._umState.containerId = cont || null;
+            if (!cont) t.sb.navScreen('openCoachMessaging', tab);
+            t.pintadas.push('motor:' + tab + (cont ? '@' + cont : '@modal'));
+        };
+        t.sb._switchUnifiedTab = function(tabId) {
+            t.sb._umState.activeTab = tabId;
+            if (!t.sb._umState.containerId) t.sb.navScreen('openCoachMessaging', tabId);
+            t.pintadas.push('tab:' + tabId);
+        };
+        return t;
+    }
+
+    // ── MODAL · el caso live: dos entradas, un "Volver" ──
+    // Hoy el "Volver" esta cableado a openUnifiedCommsMenu(), asi que entrar
+    // desde el modal de setup te dejaba en el menu de Comunicaciones, una
+    // pantalla por la que no habias pasado.
+    const a = motorSandbox();
+    a.sb.openSetupModal();
+    a.sb.openCoachMessaging('parents');
+    ok('17a · modal: el motor se apila encima de su entrada', a.sb.navDepth() === 2,
+       'profundidad ' + a.sb.navDepth());
+    a.sb.navBack();
+    ok('17b · [FIX] entrando desde el modal de setup, Volver devuelve AL MODAL',
+       a.ultima() === 'openSetupModal', a.ultima());
+
+    const b = motorSandbox();
+    b.sb.openSetupModal();
+    b.sb.openUnifiedCommsMenu();
+    b.sb.openCoachMessaging('parents');
+    b.sb.navBack();
+    ok('17c · y entrando desde Comunicaciones, devuelve al MENU',
+       b.ultima() === 'openUnifiedCommsMenu', b.ultima());
+
+    // ── MODAL · las pestañas son hermanas, no niveles ──
+    const c = motorSandbox();
+    c.sb.openSetupModal();
+    c.sb.openCoachMessaging('parents');
+    c.sb._switchUnifiedTab('director');
+    c.sb._switchUnifiedTab('coordinator');
+    ok('17d · cambiar de pestaña NO apila (sigue en 2 niveles)', c.sb.navDepth() === 2,
+       'profundidad ' + c.sb.navDepth());
+    c.sb.navReload();
+    ok('17e · y "recargar" repinta la pestaña ACTIVA, no la de entrada',
+       c.ultima() === 'motor:coordinator@modal', c.ultima());
+    c.sb.navBack();
+    ok('17f · y Volver sigue saliendo a la entrada real, no a la pestaña anterior',
+       c.ultima() === 'openSetupModal', c.ultima());
+
+    // ── EMBEBIDO · el motor NO es pantalla ──
+    const d = motorSandbox();
+    d.sb.openStaffDashboard('mensajes');
+    d.sb.openCoachMessaging('parents', 'staff-dashboard-content');
+    ok('17g · embebido: el motor NO se apila (la raiz del anfitrion sigue al mando)',
+       d.sb.navDepth() === 1 && d.sb.navCurrent() === 'openStaffDashboard',
+       d.sb.navCurrent() + ' d=' + d.sb.navDepth());
+    d.sb._switchUnifiedTab('director');
+    ok('17h · y cambiar su pestaña embebida tampoco toca la pila',
+       d.sb.navDepth() === 1 && d.sb.navCurrent() === 'openStaffDashboard',
+       d.sb.navCurrent() + ' d=' + d.sb.navDepth());
+    d.sb.navReload();
+    ok('17i · 🔑 recargar repinta EL ANFITRION en su pestaña, no el motor',
+       d.ultima() === 'sd:mensajes', d.ultima());
+
+    // Lo mismo con Padres, que es el otro anfitrion embebido
+    const e = motorSandbox();
+    e.sb.openParentPanel('chat');
+    e.sb.openCoachMessaging('parents', 'pp-body');
+    ok('17j · embebido en el panel de Padres: tampoco se apila',
+       e.sb.navDepth() === 1 && e.sb.navCurrent() === 'openParentPanel',
+       e.sb.navCurrent() + ' d=' + e.sb.navDepth());
+
+    // ── la ✕ sale de verdad ──
+    const f = motorSandbox();
+    f.sb.openSetupModal();
+    f.sb.openCoachMessaging('parents');
+    f.sb.navExit();
+    ok('17k · la ✕ (navExit) vacia la pila: salida limpia, no un Volver disfrazado',
+       f.sb.navDepth() === 0 && f.sb.navCanGoBack() === false,
+       'profundidad ' + f.sb.navDepth());
 }
 
 // ═══════ PARTE 5 · el modulo esta servido ═══════

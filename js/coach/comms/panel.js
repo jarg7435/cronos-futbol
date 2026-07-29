@@ -553,6 +553,17 @@ window._umState = {
     containerId: null
 };
 
+// Pila de navegación (js/core/nav-stack.js): qué función hay que volver a
+// invocar para repintar el motor con cada rol. Las 4 son las vías de entrada
+// reales; el motor en sí (_renderUnifiedMessagingView) no se registra nunca
+// directamente, porque no es lo que llama nadie desde un onclick.
+const _UM_ENTRY_BY_ROLE = {
+    coach:       'openCoachMessaging',
+    director:    'openDirectorMessaging',
+    coordinator: 'openCoordinatorMessaging',
+    parent:      'openParentMessaging'
+};
+
 // ── Entrada: Panel del Entrenador ────────────────────────────────────
 async function openCoachMessaging(tab, targetContainerId) {
     tab = tab || 'parents';
@@ -630,6 +641,19 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
         isModalMode = true;
     }
 
+    // ── Pila de navegación ────────────────────────────────────────────────
+    // 🔑 SOLO EN MODO MODAL. Embebido, la RAÍZ del anfitrión ya posee esta
+    // vista (openStaffDashboard para Director/Coordinador, openParentPanel para
+    // Padres) y la pinta en un div interno suyo. Registrar el motor ahí haría
+    // que navBack lo repintase en un contenedor que ya no existe — la misma
+    // trampa que la ronda 5 documentó para switchStaffTab.
+    // Va ANTES del primer await (invariante async de la ronda 3): si no, navBack
+    // correría con el flag de restauración ya limpio y volvería a apilar la
+    // pantalla que está restaurando, dejando "Volver" en bucle.
+    if (isModalMode && typeof navScreen === 'function') {
+        navScreen(_UM_ENTRY_BY_ROLE[role] || 'openCoachMessaging', tab);
+    }
+
     const innerHTML = `
     <div class="${isModalMode ? 'modal-content' : 'embedded-comms'}" style="width:100%;height:${isModalMode ? '86vh' : '100%'};max-height:${isModalMode ? '850px' : '100%'};
          display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;
@@ -643,19 +667,19 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
                 <h2 style="margin:0;font-size:1.05rem;color:white;font-weight:700;">Mensajes</h2>
             </div>
             <div style="display:flex;gap:0.5rem;align-items:center;">
-                ${role === 'coach' ? `
-                <button onclick="openUnifiedCommsMenu()" class="btn"
+                ${role === 'coach' && isModalMode ? `
+                <button onclick="navBack()" class="btn"
                     style="font-size:0.75rem;padding:0.35rem 0.8rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:6px;">
                     ← Volver
                 </button>` : ''}
-                <button onclick="_loadUnifiedContactList('${tab}')" class="btn"
+                <button onclick="_loadUnifiedContactList((window._umState&&window._umState.activeTab)||'${tab}')" class="btn"
                     style="font-size:0.75rem;padding:0.35rem 0.8rem;background:var(--glass);color:var(--text-muted);border-radius:6px;">
                     🔄 Actualizar
                 </button>
                 ${isModalMode ? `
-                <button onclick="if(window._umState && window._umState.role==='coach'){ openUnifiedCommsMenu(); } else if(typeof openStaffDashboard==='function'){ openStaffDashboard(); } else if(typeof openSetupModal==='function'){ openSetupModal(); } else { document.getElementById('setup-modal').style.display='none'; }"
+                <button onclick="navExit()"
                     style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 0.3rem;"
-                    title="Volver al menú de Comunicaciones">✕</button>
+                    title="Cerrar">✕</button>
                 ` : ''}
             </div>
         </div>
@@ -740,6 +764,18 @@ async function _switchUnifiedTab(tabId) {
     window._umState.activeTab = tabId;
     window._umState.selectedContact = null;
     window._umState.checkedUids.clear();
+
+    // Las pestañas son INTERNAS: no repintan el motor, solo la lista y el panel
+    // derecho. Así que no son pantallas propias — la pestaña activa viaja como
+    // ARGUMENTO de la pantalla del motor, igual que en Dirección y en Padres.
+    // navScreen reemplaza los argumentos cuando la función del tope es la misma,
+    // así que cambiar de pestaña no apila (ronda 3).
+    // Solo en modal: embebido, la pestaña la posee la raíz del anfitrión. Este
+    // es el primer LECTOR de _umState.containerId, que hasta ahora se escribía
+    // en cada render y no se leía en ningún sitio.
+    if (!window._umState.containerId && typeof navScreen === 'function') {
+        navScreen(_UM_ENTRY_BY_ROLE[window._umState.role] || 'openCoachMessaging', tabId);
+    }
 
     const role = window._umState.role;
     let tabs = [];
