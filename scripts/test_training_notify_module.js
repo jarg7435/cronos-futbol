@@ -155,11 +155,13 @@ const idxOf = (s, sub) => s.indexOf(sub);
         /^window\._sendTrainingNotification = async function\(\)/m.test(BLOCK));
     ok('1c · NO usa _cFS(); hace su propio import() dinámico',
         !/_cFS\(\)/.test(BLOCK) && (BLOCK.match(FIRESTORE_IMPORT) || []).length === 1);
-    // 3 llamadas: los dos onclick de la modal (X y Volver) más la de
-    // _sendTrainingNotification al terminar el envío. La parte 2g cuenta
-    // por separado las 2 que quedan en el HTML renderizado.
-    ok('1d · su única dependencia interna del monolito es openUnifiedCommsMenu() (×3)',
-        (BLOCK.match(/openUnifiedCommsMenu\(\)/g) || []).length === 3,
+    // 2026-07-29 · ACTUALIZADA. Eran 3 llamadas: los dos onclick de la modal
+    // (X y Volver) más la de _sendTrainingNotification al terminar el envío.
+    // Con la pila de navegación (js/core/nav-stack.js) los dos onclick pasan a
+    // navExit()/navBack(), así que sólo queda la del final del envío — que NO
+    // es navegación de salida, sino "a dónde ir después de enviar".
+    ok('1d · su única dependencia interna del monolito es openUnifiedCommsMenu() (×1, tras el envío)',
+        (BLOCK.match(/openUnifiedCommsMenu\(\)/g) || []).length === 1,
         (BLOCK.match(/openUnifiedCommsMenu\(\)/g) || []).length);
     {
         const ai = fs.readFileSync(path.join(ROOT, 'js', 'core', 'app-init.js'), 'utf8');
@@ -181,10 +183,19 @@ const idxOf = (s, sub) => s.indexOf(sub);
         // Ningún test (salvo éste) toca la sección.
         const SC = path.join(ROOT, 'scripts');
         const NAMES = /openTrainingNotification|_sendTrainingNotification|cronos_last_training|tr-recipient-chk|cronos_tr_preselection/;
+        // 2026-07-29 · test_nav_stack.js se declara EXPLICITAMENTE. No duplica
+        // la cobertura de esta seccion: sólo comprueba que la pantalla se
+        // registra en la pila de navegación (js/core/nav-stack.js), que es
+        // otra propiedad. Se lista aquí en vez de relajar el barrido, para que
+        // cualquier OTRO test que empiece a depender de la sección siga dando
+        // rojo. Misma familia que el barrido que contaba los .bak_* del repo.
+        const PERMITIDOS = new Set(['test_nav_stack.js']);
         const offenders = fs.readdirSync(SC).filter(f =>
             /^test_.*\.js$/.test(f) && f !== path.basename(__filename)
+            && !PERMITIDOS.has(f)
             && NAMES.test(fs.readFileSync(path.join(SC, f), 'utf8')));
-        ok('1g · ningún otro test depende de esta sección', offenders.length === 0, offenders);
+        ok('1g · ningún otro test depende de esta sección (salvo el de navegación)',
+            offenders.length === 0, offenders);
     }
     {
         const idxHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -224,8 +235,13 @@ const idxOf = (s, sub) => s.indexOf(sub);
             h.includes('id="tr-datetime"') && h.includes('id="tr-location"') && h.includes('id="tr-notes"'));
         ok('2f · el botón de envío llama a _sendTrainingNotification()',
             h.includes('onclick="_sendTrainingNotification()"'));
-        ok('2g · el botón de volver y la X llaman a openUnifiedCommsMenu()',
-            (h.match(/openUnifiedCommsMenu\(\)/g) || []).length === 2);
+        // 2026-07-29 · ASERCION INVERTIDA. Antes exigia que Volver y X fueran
+        // los dos a openUnifiedCommsMenu(): un destino FIJO, y una X que
+        // navegaba en vez de cerrar. Ahora Volver deshace la via real y la X
+        // sale. Ver scripts/test_nav_stack.js.
+        ok('2g · el botón de volver usa navBack() y la X sale con navExit()',
+            /onclick="navBack\(\)"/.test(h) && /onclick="navExit\(\)"/.test(h)
+            && (h.match(/openUnifiedCommsMenu\(\)/g) || []).length === 0);
         ok('2h · inserta el HTML de destinatarios de sharedBuildRecipientsHTML',
             h.includes('RECIPIENTS-OK') && h.includes('id="tr-recipients-list"'));
         ok('2i · los tres botones de selección usan el prefijo "tr"',

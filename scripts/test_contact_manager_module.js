@@ -533,7 +533,14 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         ok('3d · muestra el codigo de invitacion del padre', h.includes('J7'));
         ok('3e · el boton de guardar llama a saveContactManagerData',
             /saveContactManagerData\(\)/.test(h));
-        ok('3f · la X vuelve al menu unificado', /onclick="openUnifiedCommsMenu\(\)"/.test(h));
+        // 2026-07-29 · ASERCION INVERTIDA. Antes exigia que la X llamase a
+        // openUnifiedCommsMenu(), o sea que la X NAVEGABA en vez de cerrar — y
+        // encima a un destino fijo, aunque a Contactos se entra tambien desde
+        // el modal de setup. Con la pila de navegacion (js/core/nav-stack.js)
+        // la X SALE y el Volver deshace la via real. Ver test_nav_stack.js.
+        ok('3f · la X SALE (navExit), no navega a un destino fijo',
+            /onclick="navExit\(\)"/.test(h) && !/onclick="openUnifiedCommsMenu\(\)"/.test(h));
+        ok('3f2 · y el boton Volver usa navBack()', /onclick="navBack\(\)"/.test(h));
         ok('3g · los inputs de telefono del padre llevan la clase que lee el guardado',
             h.includes('class="contact-phone"'));
     }

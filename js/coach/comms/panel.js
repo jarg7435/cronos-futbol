@@ -1786,6 +1786,13 @@ window.sendCoachMessage = (threadId, recipientUid) => _sendUnifiedMessage(recipi
 // ════════════════════════════════════════════════════════════════════
 
 async function openUnifiedCommsMenu() {
+    // Pila de navegación (js/core/nav-stack.js). Este menú es el ROUTER de
+    // área de Comunicaciones, no el motor de mensajería: se apila como una
+    // pantalla más. Se entra desde el modal de setup (botón COMUNICACIONES) y
+    // desde el post-partido (botón ENVIAR INFORMES), así que su vuelta NO
+    // puede ser fija — antes iba siempre a openSetupModal().
+    if (typeof navScreen === 'function') navScreen('openUnifiedCommsMenu');
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -1801,9 +1808,9 @@ async function openUnifiedCommsMenu() {
                 </div>
             </div>
             <div style="display:flex;gap:0.4rem;align-items:center;">
-                <button onclick="typeof openSetupModal==='function'?openSetupModal():(document.getElementById('setup-modal').style.display='none');" 
+                <button onclick="navExit()"
                     style="background:none;border:none;color:var(--text-muted);font-size:1.7rem;cursor:pointer;line-height:1;padding:0 0.2rem;"
-                    title="Volver al Panel del Entrenador">✕</button>
+                    title="Cerrar y salir">✕</button>
             </div>
         </div>
 
@@ -1849,11 +1856,11 @@ async function openUnifiedCommsMenu() {
         </div>
 
         <!-- Botón Volver Inferior -->
-        <button onclick="typeof openSetupModal==='function'?openSetupModal():(document.getElementById('setup-modal').style.display='none');"
+        <button onclick="navBack()"
             style="width:100%;padding:0.75rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);
                    border-radius:10px;color:white;font-weight:700;font-size:0.9rem;cursor:pointer;
                    display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.3rem;">
-            — Volver
+            ← Volver
         </button>
 
     </div>

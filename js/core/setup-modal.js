@@ -570,6 +570,9 @@ function _setMyTeamRole(role) {
 //  y status === 'active'. Muestra un panel para retomar el partido.
 // ════════════════════════════════════════════════════════════════════
 async function openLiveMatchRecovery() {
+    // Pila de navegación (js/core/nav-stack.js).
+    if (typeof navScreen === 'function') navScreen('openLiveMatchRecovery');
+
     const me = window._cronosCurrentUser;
     const fa = window._cronos_auth;
     if (!me || !fa || !fa.db) {
@@ -1226,6 +1229,9 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
 // Abre un modal con 3 opciones: Mensajes, Partidos Terminados, Retransmisión
 // ════════════════════════════════════════════════════════════════════
 window._openCoachCommsMenu = function() {
+    // Pila de navegación (js/core/nav-stack.js).
+    if (typeof navScreen === 'function') navScreen('_openCoachCommsMenu');
+
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
     modal.style.display = 'flex';
@@ -1236,8 +1242,12 @@ window._openCoachCommsMenu = function() {
         <div style="padding:1.2rem;border-bottom:1px solid var(--glass-border);
                     display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
             <h3 style="margin:0;font-size:1.1rem;">💬 Comunicaciones</h3>
-            <button onclick="openSetupModal()"
-                style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <button onclick="navBack()" class="btn"
+                    style="padding:0.3rem 0.7rem;font-size:0.72rem;color:var(--text-muted);">← Volver</button>
+                <button onclick="navExit()" title="Cerrar y salir"
+                    style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
+            </div>
         </div>
 
         <div style="padding:1.2rem;overflow-y:auto;flex:1;">
@@ -1352,7 +1362,11 @@ window._cronosOpenLiveMatchesPanel = async function() {
         </div>
 
         <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);flex-shrink:0;">
-            <button onclick="openSetupModal()" class="btn" style="color:var(--text-muted);width:100%;">← Volver</button>
+            <div style="display:flex;gap:0.5rem;">
+                <button onclick="navBack()" class="btn" style="color:var(--text-muted);flex:1;">← Volver</button>
+                <button onclick="navExit()" class="btn" title="Cerrar y salir"
+                    style="color:var(--text-muted);flex:0 0 auto;">✕</button>
+            </div>
         </div>
     </div>`;
 

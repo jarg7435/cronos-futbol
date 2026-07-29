@@ -157,6 +157,9 @@ window._cronosGeneratePlayerId = function(index) {
 };
 
 function openRosterManager() {
+    // Pila de navegación (js/core/nav-stack.js).
+    if (typeof navScreen === 'function') navScreen('openRosterManager');
+
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const mode = document.getElementById('setup-mode').value;
     const limit = mode === 'f7' ? 18 : 25;
@@ -187,14 +190,17 @@ function openRosterManager() {
         <div class="modal-content" style="width: 800px; max-width: 95%;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.3rem;">
                 <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
-                    <button onclick="openSetupModal()"
-                        title="Volver a la configuración del partido"
+                    <button onclick="navBack()"
+                        title="Volver a la pantalla anterior"
                         style="display:flex; align-items:center; gap:0.4rem; padding:0.45rem 0.9rem;
                                background:var(--glass); border:1px solid var(--glass-border);
                                border-radius:8px; color:var(--text-muted); font-size:0.85rem;
                                font-weight:600; cursor:pointer; white-space:nowrap;">
                         ← Volver
                     </button>
+                    <button onclick="navExit()" title="Cerrar y salir"
+                        style="background:none; border:none; color:var(--text-muted);
+                               font-size:1.2rem; cursor:pointer; line-height:1; padding:0 0.2rem;">✕</button>
                     <h2 style="margin:0;">Gestionar Plantilla - ${mode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}</h2>
                 </div>
                 <button onclick="triggerRosterPhoto()"

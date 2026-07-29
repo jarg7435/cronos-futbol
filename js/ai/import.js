@@ -428,6 +428,9 @@ function saveMasterRoster(mode) {
 }
 
 function openConvocationModal() {
+    // Pila de navegación (js/core/nav-stack.js).
+    if (typeof navScreen === 'function') navScreen('openConvocationModal');
+
     document.body.classList.add('setup-mode');
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
@@ -542,7 +545,11 @@ function openConvocationModal() {
 
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div id="conv-count" style="font-size:0.95rem; font-weight:bold; color:var(--primary);">0 convocados · 0 titulares</div>
-                    <button class="btn" onclick="openSetupModal()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">\u2190 VOLVER</button>
+                    <div style="display:flex; align-items:center; gap:0.4rem;">
+                        <button class="btn" onclick="navBack()" style="padding:0.4rem 0.8rem; font-size:0.7rem;">\u2190 VOLVER</button>
+                        <button class="btn" onclick="navExit()" title="Cerrar y salir"
+                            style="padding:0.4rem 0.6rem; font-size:0.8rem; color:var(--text-muted);">\u2715</button>
+                    </div>
                 </div>
 
                 <div style="display:flex; gap:0.4rem;">

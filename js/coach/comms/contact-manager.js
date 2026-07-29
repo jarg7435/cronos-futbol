@@ -55,6 +55,11 @@
 
 // ── Gestión de Contactos (Teléfonos WhatsApp) ─────────────────────────
 async function openContactManager() {
+    // Pila de navegación (js/core/nav-stack.js). Mismo caso que Mis Informes:
+    // se entra desde el modal de setup (core/setup-modal.js) Y desde el menú
+    // de Comunicaciones, pero su "Volver" iba cableado a openUnifiedCommsMenu.
+    if (typeof navScreen === 'function') navScreen('openContactManager');
+
     const me = window._cronosCurrentUser;
     if (!me) { if(typeof showToast==='function') showToast('⚠️ No hay sesión activa',3000); return; }
     const fa = window._cronos_auth;
@@ -251,9 +256,9 @@ async function openContactManager() {
                             Gestión de Contactos
                         </h2>
                     </div>
-                    <button onclick="openUnifiedCommsMenu()"
+                    <button onclick="navExit()"
                         style="background:none;border:none;color:var(--text-muted);
-                               font-size:1.6rem;cursor:pointer;line-height:1;" title="Volver a Comunicaciones">✕</button>
+                               font-size:1.6rem;cursor:pointer;line-height:1;" title="Cerrar y salir">✕</button>
                 </div>
                 <p style="font-size:0.72rem;color:var(--text-muted);margin:0.3rem 0 0;">
                     Define quién recibe informes, convocatorias y avisos. Secciones independientes.
@@ -421,7 +426,9 @@ async function openContactManager() {
             <!-- ── BOTONES FIJOS ABAJO ── -->
             <div style="padding:0.8rem 1rem;border-top:1px solid var(--glass-border);
                         display:flex;gap:0.7rem;flex-shrink:0;background:var(--surface);">
-                <button onclick="openUnifiedCommsMenu()" class="btn" style="flex:1;">← VOLVER</button>
+                <button onclick="navBack()" class="btn" style="flex:1;">← VOLVER</button>
+                <button onclick="navExit()" class="btn" title="Cerrar y salir"
+                    style="flex:0 0 auto;color:var(--text-muted);">✕</button>
                 <button onclick="saveContactManagerData()" class="btn primary"
                     style="flex:2;font-weight:bold;">
                     💾 GUARDAR CAMBIOS

@@ -45,6 +45,9 @@
 // ════════════════════════════════════════════════════════════════════
 
 async function openTrainingNotification() {
+    // Pila de navegación (js/core/nav-stack.js).
+    if (typeof navScreen === 'function') navScreen('openTrainingNotification');
+
     const me    = window._cronosCurrentUser;
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
@@ -93,7 +96,7 @@ async function openTrainingNotification() {
         <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--glass-border);
                     display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
             <h3 style="margin:0;font-size:1rem;color:#f0883e;">📅 Aviso de Entrenamiento</h3>
-            <button onclick="openUnifiedCommsMenu()"
+            <button onclick="navExit()" title="Cerrar y salir"
                 style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
         </div>
 
@@ -163,7 +166,7 @@ async function openTrainingNotification() {
         <!-- FOOTER — igual que convocatoria -->
         <div style="padding:0.9rem 1.2rem;border-top:1px solid var(--glass-border);
                     display:flex;gap:0.5rem;flex-shrink:0;">
-            <button onclick="openUnifiedCommsMenu()" class="btn"
+            <button onclick="navBack()" class="btn"
                 style="color:var(--text-muted);padding:0.5rem 0.9rem;">← Volver</button>
             <button onclick="_sendTrainingNotification()"
                 style="flex:1;padding:0.5rem;background:rgba(240,136,62,0.15);

@@ -171,6 +171,123 @@ console.log('\n── PARTE 4 · migracion del panel del Entrenador ──');
        /onclick="navExit\(\)"/.test(cuerpoMis));
 }
 
+// ═══════ PARTE 6 · el RESTO del panel del Entrenador ═══════
+console.log('\n── PARTE 6 · resto del panel del Entrenador migrado ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    // pantalla -> [archivo, si su "Volver" debe usar navBack]
+    const PANTALLAS = [
+        ['openRosterManager',      'js/core/staff-and-comms.js'],
+        ['openContactManager',     'js/coach/comms/contact-manager.js'],
+        ['openConvocationModal',   'js/ai/import.js'],
+        ['openTrainingPanel',      'js/coach/training/panel.js'],
+        ['openUnifiedCommsMenu',   'js/coach/comms/panel.js'],
+        ['openLiveMatchRecovery',  'js/core/setup-modal.js'],
+        ['_openCoachCommsMenu',    'js/core/setup-modal.js'],
+        ['openTrainingNotification','js/coach/comms/training-notify.js'],
+    ];
+    for (const [nombre, archivo] of PANTALLAS) {
+        const src = leer(archivo);
+        ok(`6·${nombre} se auto-registra`,
+           new RegExp("navScreen\\(\\s*['\"]" + nombre + "['\"]").test(src), archivo);
+    }
+
+    // Ya no debe quedar ningun "Volver"/✕ cableado en los archivos migrados.
+    const CABLEADOS = [
+        ['js/core/staff-and-comms.js',       /onclick="openSetupModal\(\)"[\s\S]{0,400}?←\s*Volver/],
+        ['js/coach/comms/contact-manager.js',/onclick="openUnifiedCommsMenu\(\)"[\s\S]{0,200}?VOLVER/],
+        ['js/coach/training/panel.js',       /onclick="openSetupModal\(\)"[\s\S]{0,200}?VOLVER/],
+    ];
+    for (const [archivo, re] of CABLEADOS) {
+        ok(`6·${archivo} ya no tiene "Volver" cableado`, !re.test(leer(archivo)));
+    }
+
+    const comms = leer('js/coach/comms/panel.js');
+    // Acotar por el FINAL REAL de la funcion (la siguiente declaracion en
+    // columna 0), no por un numero fijo de caracteres: el innerHTML de este
+    // menu ocupa mas de 4000 y el "Volver" de abajo se quedaba fuera del
+    // corte, dando rojo por la razon equivocada.
+    const iMenu = comms.indexOf('async function openUnifiedCommsMenu');
+    const iFinMenu = comms.slice(iMenu + 1).search(/\n(?:async )?function \w+\s*\(|\nwindow\.\w+\s*=/);
+    const cuerpoMenu = iMenu > -1
+        ? comms.slice(iMenu, iFinMenu > -1 ? iMenu + 1 + iFinMenu : comms.length)
+        : comms;
+    ok('6·el menu de Comunicaciones usa navBack() y navExit()',
+       /onclick="navBack\(\)"/.test(cuerpoMenu) && /onclick="navExit\(\)"/.test(cuerpoMenu));
+    ok('6·y su ✕ ya no llama a openSetupModal cableado',
+       !/openSetupModal==='function'\?openSetupModal\(\)/.test(cuerpoMenu));
+
+    // ⚠️ LO QUE QUEDA CABLEADO A PROPOSITO. Este censo fija el limite exacto
+    // de la migracion, para que no se cuele ninguno nuevo por descuido.
+    //   · panel.js            -> _renderUnifiedMessagingView, el motor de
+    //     mensajeria unificada que el autor pidio proteger: se migra aparte y
+    //     con guard propio (tiene 4 vias de entrada).
+    //   · individual-reports  -> openIndividualReports, SIN punto de entrada
+    //     localizable en el repo (lo documenta su propia cabecera).
+    //   · collective-report   -> openCollectiveReport, tambien SIN invocador:
+    //     el boton "INFORMES COLECTIVOS" del post-partido llama a
+    //     openMisInformesColectivos, que NO EXISTE en el proyecto.
+    const PENDIENTES = {
+        'js/coach/comms/panel.js': 1,
+        'js/coach/comms/individual-reports.js': 2,
+        'js/coach/comms/collective-report.js': 2,
+    };
+    let restantes = 0;
+    for (const [archivo, esperados] of Object.entries(PENDIENTES)) {
+        const n = (leer(archivo).match(/onclick="openUnifiedCommsMenu\(\)"/g) || []).length;
+        restantes += n;
+        ok(`6·${archivo}: quedan ${esperados} cableados (pendientes conocidos)`, n === esperados,
+           'encontrados: ' + n);
+    }
+    // Ningun OTRO archivo del panel del Entrenador puede tener uno.
+    const TODOS = ['js/coach/comms/contact-manager.js', 'js/coach/comms/training-notify.js',
+                   'js/core/staff-and-comms.js', 'js/coach/training/panel.js', 'js/ai/import.js',
+                   'js/core/setup-modal.js'];
+    for (const archivo of TODOS) {
+        ok(`6·${archivo}: sin destinos cableados a Comunicaciones`,
+           !/onclick="openUnifiedCommsMenu\(\)"/.test(leer(archivo)));
+    }
+}
+
+// ═══════ PARTE 7 · recorridos reales de dos niveles ═══════
+console.log('\n── PARTE 7 · recorridos completos del panel del Entrenador ──');
+{
+    function esc() {
+        const t = build();
+        ['openRosterManager','openContactManager','openConvocationModal','openTrainingPanel',
+         'openLiveMatchRecovery','_openCoachCommsMenu'].forEach(n => {
+            t.sb[n] = function(...a){ t.sb.navScreen(n, ...a); t.pintadas.push(n); };
+        });
+        return t;
+    }
+    // setup -> Comunicaciones -> Contactos -> Volver -> Volver
+    const t = esc();
+    t.sb.openSetupModal();
+    t.sb.openUnifiedCommsMenu();
+    t.sb.openContactManager();
+    t.sb.navBack();
+    ok('7a · Contactos -> Volver -> menu de Comunicaciones',
+       t.ultima() === 'openUnifiedCommsMenu', t.ultima());
+    t.sb.navBack();
+    ok('7b · y otro Volver -> modal de setup', t.ultima() === 'openSetupModal', t.ultima());
+
+    // post-partido -> Comunicaciones -> Volver debe volver AL POST-PARTIDO
+    const u = esc();
+    u.sb.showPostMatchOptions(3, 0);
+    u.sb.openUnifiedCommsMenu();
+    u.sb.navBack();
+    ok('7c · [caso nuevo] Comunicaciones abierto desde el post-partido vuelve AL POST-PARTIDO',
+       u.ultima() === 'showPostMatchOptions', u.ultima());
+
+    // setup -> Contactos (entrada directa desde el modal, sin pasar por Comunicaciones)
+    const v = esc();
+    v.sb.openSetupModal();
+    v.sb.openContactManager();
+    v.sb.navBack();
+    ok('7d · [caso nuevo] Contactos abierto desde el modal de setup vuelve AL MODAL, no a Comunicaciones',
+       v.ultima() === 'openSetupModal', v.ultima());
+}
+
 // ═══════ PARTE 5 · el modulo esta servido ═══════
 console.log('\n── PARTE 5 · nav-stack.js entra en la app ──');
 {
