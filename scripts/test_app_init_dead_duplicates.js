@@ -97,7 +97,10 @@ const BORRADAS = {
         'clampToField', 'updateFormationOptions', 'updateCategoryOptions', 'applyFormationPreset'],
     'js/roster/legacy-formations.js': ['placeOnField'],
     'js/match/events/movement-log.js': ['logEvent'],
-    'js/match/persistence/team-persistence.js': ['saveTeamSetup', 'deleteTeamSetup'],
+    // saveTeamSetup/deleteTeamSetup ya eran suyas; las otras cuatro pasaron a
+    // tener duenyo unico el 2026-07-29 al limpiar la duplicacion de persistencia.
+    'js/match/persistence/team-persistence.js': ['saveTeamSetup', 'deleteTeamSetup',
+        'populateSavedTeams', 'loadTeamFromDropdown', 'saveCurrentTeam', 'deleteTeamFromDropdown'],
 
     // ───────────── FASE D · grupo B (6) · panel SA, copia muerta ─────────────
     'js/admin/superadmin/superadmin.panel.js': ['openSuperAdminPanel', 'saFS', 'saGet'],
@@ -107,18 +110,16 @@ const BORRADAS = {
 };
 const TODAS = Object.entries(BORRADAS).flatMap(([f, ns]) => ns.map(n => [n, f]));
 
-// ⚠️ FASE C · las 5 que SIGUEN teniendo varias declaraciones fuera de app-init.js.
-// No es algo que introduzca la Fase C: `active-match.js` y `team-persistence.js`
-// son dos archivos casi identicos que ya declaraban lo mismo antes de tocar nada,
-// y `ai/import.js` vuelve a declarar el trio de persistencia. Borrar la copia de
-// app-init.js no lo arregla ni lo empeora, pero SI conviene fijar cual gana para
-// que reordenar las etiquetas <script> deje de ser un cambio invisible (misma
-// idea que test_endmatch_writers.js). Limpiar esa duplicacion es trabajo aparte.
+// Nombres que TODAVIA tienen varias declaraciones fuera de app-init.js. Aqui no
+// se puede exigir duenyo unico, asi que se fija CUAL gana (el ultimo en el orden
+// de carga) para que reordenar las etiquetas <script> deje de ser un cambio
+// invisible — misma idea que test_endmatch_writers.js.
+//
+// ⚠️ ESTA LISTA TENIA 5 ENTRADAS Y AHORA TIENE 1. La duplicacion de
+// active-match.js / team-persistence.js / ai/import.js se limpio el 2026-07-29 y
+// las otras cuatro pasaron a tener duenyo unico (team-persistence.js), asi que
+// viven en BORRADAS. El detalle esta en scripts/test_persistence_duplication.js.
 const BORRADAS_MULTI = {
-    populateSavedTeams: { gana: 'js/ai/import.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js', 'js/ai/import.js'] },
-    loadTeamFromDropdown: { gana: 'js/ai/import.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js', 'js/ai/import.js'] },
-    saveCurrentTeam: { gana: 'js/ai/import.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js', 'js/ai/import.js'] },
-    deleteTeamFromDropdown: { gana: 'js/match/persistence/team-persistence.js', todos: ['js/match/persistence/active-match.js', 'js/match/persistence/team-persistence.js'] },
     injectBenchScrollButtons: { gana: 'js/ui/bench-scroll.js', todos: ['js/ai/import.js', 'js/ui/bench-scroll.js'] },
 };
 
@@ -174,8 +175,10 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     ok('1a · ninguna se quedo sin declaracion (seria un ReferenceError)', huerfanas.length === 0, huerfanas);
     ok('1b · ⚠️ ninguna conserva DOS declaraciones (la copia muerta se fue)', duplicados.length === 0, duplicados);
     ok('1c · cada una vive en el archivo que se espera', mal.length === 0, mal);
-    ok('1d · el recuento cuadra: 97 funciones (30 A + 41 B + 20 C + 6 del grupo B de la D)',
-        TODAS.length === 97, TODAS.length);
+    // 97 = 30 (A) + 41 (B) + 20 (C) + 6 (grupo B de la D). Las 4 que subieron de
+    // BORRADAS_MULTI a BORRADAS el 2026-07-29 ya se contaban en la Fase C.
+    ok('1d · el recuento cuadra: 101 funciones con duenyo unico',
+        TODAS.length === 101, TODAS.length);
 
     // ── las 5 multi-declaradas de la Fase C: se fija QUIEN gana, no que sea unica
     const malGanador = [], malConjunto = [];
@@ -188,8 +191,10 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     ok('1e · ⚠️ las 5 multi-declaradas las sigue ganando el archivo esperado', malGanador.length === 0, malGanador);
     ok('1f · el conjunto de archivos que las declara no ha cambiado (ni una copia nueva ni una menos)',
         malConjunto.length === 0, malConjunto);
-    ok('1g · el recuento total de la Fase C cuadra: 25 funciones',
-        Object.keys(BORRADAS_MULTI).length + 20 === 25);
+    // la Fase C saco 25 nombres de app-init.js; hoy 24 tienen duenyo unico y
+    // solo injectBenchScrollButtons sigue declarado en dos archivos.
+    ok('1g · solo queda 1 nombre multi-declarado (eran 5 antes de limpiar la persistencia)',
+        Object.keys(BORRADAS_MULTI).length === 1, Object.keys(BORRADAS_MULTI));
 }
 
 // ────────── PARTE 2 · app-init.js ya no las declara ──────────
@@ -252,7 +257,13 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
         players: ['js/match/events/player-actions.js'], isRunning: ['js/match/live/sync.js'],
         timerInterval: ['js/match/events/player-actions.js'], lastTickTime: ['js/match/live/sync.js'],
         currentMode: ['js/match/live/sync.js'], matchPhase: ['js/match/live/sync.js'],
-        analyzeAway: ['js/ai/import.js'], activeFormationKey: ['js/ai/import.js'],
+        analyzeAway: ['js/ai/import.js'],
+        // ⚠️ el lector de activeFormationKey ERA ai/import.js; al limpiar la
+        // duplicacion de persistencia (2026-07-29) esa copia se fue y la
+        // asercion 4c se puso roja, que es exactamente su trabajo. Sigue siendo
+        // load-bearing: lo leen team-persistence.js (299 y 315), sync.js,
+        // setup-modal.js, movement-log.js y formations.js.
+        activeFormationKey: ['js/match/persistence/team-persistence.js'],
         selectedFormationOnStart: ['js/ai/import.js'], half1MaxTime: ['js/match/live/sync.js'],
         half2MaxTime: ['js/match/live/sync.js'], masterTimeH1: ['js/match/live/sync.js'],
         masterTimeH2: ['js/match/live/sync.js'], pendingSubstitution: ['js/match/events/player-actions.js'],

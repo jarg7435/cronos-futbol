@@ -1360,11 +1360,11 @@ window._guardAgainstMatchReset = _guardAgainstMatchReset;
 
 // --- PERSISTENCE ---
 
-// populateSavedTeams() -> js/ai/import.js (fuente canonica)
+// populateSavedTeams() -> js/match/persistence/team-persistence.js (fuente canonica)
 
-// loadTeamFromDropdown() -> js/ai/import.js (fuente canonica)
+// loadTeamFromDropdown() -> js/match/persistence/team-persistence.js (fuente canonica)
 
-// saveCurrentTeam() -> js/ai/import.js (fuente canonica)
+// saveCurrentTeam() -> js/match/persistence/team-persistence.js (fuente canonica)
 
 // ═══════════════════════════════════════════════════════════════════
 // saveTeamSetup(teamKey) — Guardar equipo desde el panel de configuración

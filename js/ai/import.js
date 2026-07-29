@@ -949,101 +949,25 @@ function injectBenchScrollButtons(containerId) {
 
 // --- PERSISTENCE ---
 
-function populateSavedTeams(teamKey) {
-    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
-    if (!dropdown) return;
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    dropdown.innerHTML = '<option value="">-- Cargar --</option>';
-    teams.forEach((team, index) => {
-        const opt = document.createElement('option');
-        opt.value = index;
-        opt.textContent = team.name;
-        dropdown.appendChild(opt);
-    });
-}
+// -- BLOQUE DE PLANTILLAS GUARDADAS ELIMINADO (2026-07-29) ------------
+//    Estas tres funciones eran copias FOSILES heredadas de cuando este
+//    archivo se llamaba js/08_ai_import.js. Como import.js carga el
+//    ULTIMO de los tres, sus versiones GANABAN pese a ser peores, y eso
+//    tenia consecuencias visibles:
+//      · su populateSavedTeams (12 lineas) no rellenaba la lista visual
+//        de plantillas —los <div id="saved-teams-list-home|away"> que
+//        pinta core/setup-modal.js— asi que los botones de borrado por
+//        plantilla NO existian, y ademas no filtraba por modalidad;
+//      · su loadTeamFromDropdown duplicaba en linea una version parcial
+//        de loadTeamData, saltandose la sincronizacion de categoria y la
+//        de _pendingSetupState (que existe para evitar sobreescrituras).
+//    Ninguna de las tres se llamaba desde este archivo: eran huerfanas.
+//    Guard: scripts/test_persistence_duplication.js
+// populateSavedTeams() -> js/match/persistence/team-persistence.js (fuente canonica)
 
-function loadTeamFromDropdown(teamKey) {
-    const dropdown = document.getElementById(`saved-teams-${teamKey}`);
-    const index = dropdown.value;
-    if (index === "") return;
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const team = teams[index];
-    if (team) {
-        document.getElementById(`setup-${teamKey}-name`).value = team.name;
-        document.getElementById(`setup-${teamKey}-color`).value = team.color;
-        document.getElementById(`setup-${teamKey}-shorts`).value = team.shortsColor || '#ffffff';
-        document.getElementById(`setup-${teamKey}-text`).value = team.textColor || '#ffffff';
+// loadTeamFromDropdown() -> js/match/persistence/team-persistence.js (fuente canonica)
 
-        // Restaurar color secundario si existe
-        if (team.secondaryColor) {
-            const secEl = document.getElementById(`setup-${teamKey}-secondary`);
-            if (secEl) secEl.value = team.secondaryColor;
-            // Guardarlo también en COLORS para que esté disponible al iniciar
-            if (COLORS[teamKey]) COLORS[teamKey].secondary = team.secondaryColor;
-        }
-
-        // Cargar modalidad y formación si están guardadas
-        if (team.mode) {
-            document.getElementById('setup-mode').value = team.mode;
-            updateFormationOptions();
-        }
-        if (team.formation) {
-            document.getElementById('setup-formation').value = team.formation;
-        }
-
-        // Guardar los jugadores de este equipo para restaurar convocatoria, titulares y suplentes
-        if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
-        window.loadedTeamPlayers[teamKey] = team.players;
-    }
-}
-
-function saveCurrentTeam() {
-    const choice = prompt("¿Qué equipo quieres guardar?\nEscribe '1' para Local\nEscribe '2' para Visitante");
-    if (!choice) return;
-    let teamKey = '';
-    if (choice === '1' || choice.toLowerCase() === 'local') teamKey = 'home';
-    else if (choice === '2' || choice.toLowerCase() === 'visitante') teamKey = 'away';
-    else return;
-
-    const teamName = TEAM_NAMES[teamKey];
-    // Guardar jugadores: número, nombre, alias, status (titular=field / suplente=bench) y posición en campo
-    const currentPlayers = players.filter(p => p.team === teamKey).map(p => ({
-        id: p.id,
-        number: p.number,
-        name: p.name,
-        status: p.status,   // 'field' = titular  |  'bench' = suplente
-        x: p.x,
-        y: p.y
-    }));
-    const newTeam = {
-        name: teamName,
-        color: COLORS[teamKey].primary,
-        secondaryColor: COLORS[teamKey].secondary,
-        shortsColor: COLORS[teamKey].shorts,
-        textColor: COLORS[teamKey].text,
-        players: currentPlayers,          // convocatoria completa con titulares y suplentes
-        mode: currentMode,                // 'f7' o 'f11'
-        formation: activeFormationKey     // sistema de juego activo
-    };
-    const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
-    const existingIndex = teams.findIndex(t => t.name === teamName);
-    if (existingIndex >= 0) {
-        if (confirm(`¿Sobrescribir equipo "${teamName}"?`)) teams[existingIndex] = newTeam;
-        else return;
-    } else {
-        if (teams.length >= 20) { alert('Memoria llena (20 equipos).'); return; }
-        teams.push(newTeam);
-    }
-    showSpinner('Guardando equipo…');
-    setTimeout(() => {
-        cloudSet('cronos_teams', JSON.stringify(teams));
-        const titulares = currentPlayers.filter(p => p.status === 'field').length;
-        const suplentes = currentPlayers.filter(p => p.status === 'bench').length;
-        const formationDisplay = activeFormationKey ? '1-' + activeFormationKey : 'sin definir';
-        hideSpinner();
-        showToast('✅ ' + teamName + ' guardado · ' + (currentMode === 'f7' ? 'F7' : 'F11') + ' · ' + formationDisplay + ' · ' + titulares + 'T + ' + suplentes + 'S');
-    }, 300);
-}
+// saveCurrentTeam() -> js/match/persistence/team-persistence.js (fuente canonica)
 
 // -- setupEventListeners ELIMINADA (C-19/C-20) -------------------
 // Copia obsoleta que existia aqui en js/ai/import.js. La definicion
