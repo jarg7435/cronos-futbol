@@ -437,6 +437,94 @@ console.log('\n── PARTE 9 · recorridos del SuperAdmin ──');
        v.ultima() === 'saTab:clubs' && v.sb.navDepth() === 2, v.ultima());
 }
 
+// ═══════ PARTE 10 · navReload() y panel del Admin de Club ═══════
+console.log('\n── PARTE 10 · Admin de Club ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    const sinCom = (s) => s.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n');
+    const club = sinCom(leer('js/admin/club/panel.js'));
+
+    ok('10a · openClubAdminPanel se registra como RAIZ CON el clubId',
+       /navRootScreen\(\s*['"]openClubAdminPanel['"]\s*,\s*clubId\s*\)/.test(club));
+    ok('10b · y el selector de clubes se registra como raiz SIN argumentos',
+       /navRootScreen\(\s*['"]openClubAdminPanel['"]\s*\)/.test(club));
+
+    // 🐛 EL BUG DE LA RONDA: 10 refrescos escritos como openClubAdminPanel()
+    // SIN el clubId. Para un SuperAdmin, que entra por el selector de clubes,
+    // CADA accion de gestion (autorizar, rechazar, reenviar al SA, editar
+    // equipo, quitar rol, dar de baja, bloquear/activar…) le devolvia al
+    // LISTADO DE CLUBES en vez de al club que estaba gestionando.
+    const sinArg = (club.match(/openClubAdminPanel\(\s*\)/g) || []).length;
+    ok('10c · [FIX] ya no queda ningun refresco openClubAdminPanel() sin clubId',
+       sinArg === 0, 'quedan: ' + sinArg);
+    const reloads = (club.match(/navReload\(\)/g) || []).length;
+    ok('10d · y hay 10 navReload() en su lugar', reloads === 10, 'encontrados: ' + reloads);
+    ok('10e · cada uno con respaldo explicito al clubId si nav-stack no cargara',
+       (club.match(/else openClubAdminPanel\(clubId\)/g) || []).length === 10,
+       (club.match(/else openClubAdminPanel\(clubId\)/g) || []).length);
+
+    // navReload existe y no apila
+    ok('10f · nav-stack.js exporta navReload',
+       /window\.navReload\s*=/.test(sinCom(leer('js/core/nav-stack.js'))));
+
+    // 🔑 EL ESLABON QUE CIERRA EL DIAGNOSTICO. Que los refrescos fueran sin
+    // argumento solo es un BUG si llamar sin clubId lleva a otra pantalla.
+    // Se fija aqui: clubId sale de `preClubId || me.clubId`, y la rama del
+    // SELECTOR es exactamente `!clubId && isSA`. O sea que para un SuperAdmin
+    // —que no tiene clubId propio— openClubAdminPanel() SIN argumento cae
+    // siempre en el selector de clubes. Si alguien cambia esa condicion, este
+    // test se pone rojo y obliga a revisar los navReload.
+    ok('10g · clubId se deriva de preClubId || me.clubId',
+       /let\s+clubId\s*=\s*preClubId\s*\|\|\s*me\.clubId/.test(club));
+    ok('10h · y la rama del SELECTOR de clubes es exactamente `!clubId && isSA`',
+       /if\s*\(\s*!clubId\s*&&\s*isSA\s*\)/.test(club));
+    ok('10i · el selector es una pantalla DISTINTA: pinta "Seleccionar Club"',
+       /Seleccionar Club/.test(club));
+
+    // Las salidas que YA eran correctas y NO se tocan (para que no se
+    // "arreglen" por descuido en una ronda futura):
+    //   · el ✕ del selector y el "Volver" del estado "sin club asignado" van a
+    //     showRoleSelector(): no hay pantalla anterior, la salida correcta es
+    //     el selector de rol.
+    //   · caShowSuccession crea su PROPIO overlay y su ✕ lo elimina sin
+    //     destruir el panel de debajo, asi que ya se comporta como un modal
+    //     de verdad y no necesita la pila.
+    ok('10j · el panel conserva su salida por cierre de sesion',
+       /cerrarSesion\(\)/.test(club));
+    ok('10k · caShowSuccession sigue con su overlay propio y su ✕ que lo elimina',
+       /overlay\.remove\(\)/.test(club));
+}
+
+// ═══════ PARTE 11 · comportamiento de navReload ═══════
+console.log('\n── PARTE 11 · navReload repinta sin apilar ──');
+{
+    const t = build();
+    const pintadas = t.pintadas;
+    t.sb.openClubAdminPanel = function(cid){ t.sb.navRootScreen('openClubAdminPanel', cid); pintadas.push('club:' + cid); };
+    t.sb.caShowSuccession   = function(cid){ t.sb.navScreen('caShowSuccession', cid); pintadas.push('succession'); };
+
+    t.sb.openClubAdminPanel('clubA');
+    ok('11a · la raiz guarda el clubId', JSON.stringify(t.sb._navTrail()) === '["openClubAdminPanel"]');
+
+    t.sb.navReload();
+    ok('11b · [FIX] recargar repinta EL MISMO club, no el selector',
+       t.ultima() === 'club:clubA', t.ultima());
+    ok('11c · y no apila (sigue en 1 nivel)', t.sb.navDepth() === 1, 'profundidad ' + t.sb.navDepth());
+
+    // Con una subpantalla encima, navReload repinta LA SUBPANTALLA
+    t.sb.caShowSuccession('clubA');
+    t.sb.navReload();
+    ok('11d · con una subpantalla encima, recarga la subpantalla',
+       t.ultima() === 'succession' && t.sb.navDepth() === 2, t.ultima() + ' d=' + t.sb.navDepth());
+    t.sb.navBack();
+    ok('11e · y Volver sigue devolviendo al club correcto',
+       t.ultima() === 'club:clubA', t.ultima());
+
+    // Con la pila vacia no debe romperse
+    const u = build();
+    ok('11f · navReload con la pila vacia no rompe', (u.sb.navReload(), true));
+}
+
 // ═══════ PARTE 5 · el modulo esta servido ═══════
 console.log('\n── PARTE 5 · nav-stack.js entra en la app ──');
 {

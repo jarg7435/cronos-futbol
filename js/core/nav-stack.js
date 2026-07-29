@@ -104,6 +104,27 @@
         }
     };
 
+    // ── Repintar la pantalla ACTUAL con sus mismos argumentos ────────
+    // Para los refrescos de después de una acción ("guardar y recargar la
+    // lista"). Antes cada pantalla se refrescaba llamándose a sí misma A PELO,
+    // y si la función llevaba argumentos había que acordarse de repetirlos: en
+    // el panel del Admin de Club había DIEZ refrescos escritos como
+    // `openClubAdminPanel()` SIN el clubId, lo que devolvía al SuperAdmin al
+    // selector de clubes después de cada acción. navReload() reutiliza los
+    // argumentos guardados en la pila, así que no se pueden olvidar.
+    window.navReload = function() {
+        var top = _stack[_stack.length - 1];
+        if (!top) return;
+        var f = _resolve(top.fn);
+        if (!f) return;
+        _restoring = true;                 // repintar no debe volver a apilar
+        try {
+            return f.apply(window, top.args || []);
+        } finally {
+            _restoring = false;
+        }
+    };
+
     // ── Salir del panel: vacía la pila y cierra el contenedor ────────
     window.navExit = function() {
         _stack = [];

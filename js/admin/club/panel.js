@@ -108,6 +108,11 @@ async function openClubAdminPanel(preClubId = null) {
         if (!clubs.length) { showToast('⚠️ No hay clubes creados aún', 3000); return; }
         window._sa_clubs_cache = clubs;
 
+        // Pila de navegación: el selector de clubes del SuperAdmin es la OTRA
+        // raíz de este panel (se llega aquí cuando no hay clubId). Se registra
+        // SIN argumentos, para distinguirlo del panel de un club concreto.
+        if (typeof navRootScreen === 'function') navRootScreen('openClubAdminPanel');
+
         const modal = document.getElementById('setup-modal');
         if (!modal) { showToast('⚠️ Error: modal no encontrado en la página', 5000); return; }
         modal.style.display = 'flex';
@@ -1101,6 +1106,20 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
+    // Pila de navegación (js/core/nav-stack.js): RAÍZ del panel del Admin de
+    // Club, registrada CON el clubId ya resuelto. Ese argumento es todo el
+    // arreglo: sin él, refrescar el panel devolvía al SuperAdmin al selector
+    // de clubes (ver los navReload() de más abajo).
+    //
+    // ⚠️ Aquí el registro va DESPUÉS de varios `await`, al revés que en las
+    // demás pantallas, porque el clubId no se conoce antes. Es seguro
+    // PORQUE ES UNA RAÍZ: si navBack la re-invoca, el flag de restauración ya
+    // estará limpio y navRootScreen reseteará la pila a [openClubAdminPanel],
+    // que es exactamente donde debe quedar. El invariante "registrar antes del
+    // primer await" sólo es crítico para navScreen (una pantalla intermedia sí
+    // se re-apilaría y dejaría el "Volver" en bucle).
+    if (typeof navRootScreen === 'function') navRootScreen('openClubAdminPanel', clubId);
+
     const modal = document.getElementById('setup-modal');
     if (!modal) {
         console.error('[ClubAdmin] setup-modal no encontrado. Creando modal temporal...');
@@ -1240,7 +1259,7 @@ async function openClubAdminPanel(preClubId = null) {
         msgEl.textContent = `✅ ${email} dado de alta. Debe registrarse con ese email.`;
         document.getElementById('nu-email').value = '';
         document.getElementById('nu-name').value  = '';
-        setTimeout(() => openClubAdminPanel(), 1800);
+        setTimeout(() => { if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId); }, 1800);
     };
 
     // ── Confirmar acceso (paso 2: club admin confirma tras SA) ──────────
@@ -1307,7 +1326,9 @@ async function openClubAdminPanel(preClubId = null) {
                 await updateDoc(prRef, { status: 'approved', approvedAt: new Date().toISOString() }).catch(()=>{});
             } catch(prErr) {}
 
-            openClubAdminPanel();
+            // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
         } catch(e) {
             showToast('❌ Error: ' + e.message, 3000);
         }
@@ -1362,7 +1383,9 @@ async function openClubAdminPanel(preClubId = null) {
             const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
             await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used || 0) + 1 });
             showToast(`✅ ${email} autorizado correctamente.`, 3000);
-            openClubAdminPanel();
+            // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
         } catch(e) {
             showToast('❌ Error al autorizar usuario: ' + e.message, 3000);
         }
@@ -1404,7 +1427,9 @@ async function openClubAdminPanel(preClubId = null) {
                 } catch(_) {}
             }
             showToast('❌ Solicitud de ' + email + ' rechazada.', 3000);
-            openClubAdminPanel();
+            // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
         } catch(e) { showToast('❌ Error al rechazar: ' + e.message, 3000); }
     };
 
@@ -1432,7 +1457,9 @@ async function openClubAdminPanel(preClubId = null) {
                 console.warn('[caRejectMultiRole] Could not update user doc:', updErr.message);
             }
             showToast('❌ Rol ' + (ROLE_LABELS[role]||role) + ' rechazado para ' + email, 3000);
-            openClubAdminPanel();
+            // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
         } catch(e) { showToast('❌ Error al rechazar: ' + e.message, 3000); }
     };
 
@@ -1535,7 +1562,9 @@ async function openClubAdminPanel(preClubId = null) {
             } catch(_) {}
 
             showToast('✅ Solicitud de ' + email + ' reenviada al SuperAdmin.', 4000);
-            openClubAdminPanel();
+            // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
         } catch(e) {
             showToast('❌ Error al reenviar: ' + e.message, 3000);
         }
@@ -1597,8 +1626,9 @@ async function openClubAdminPanel(preClubId = null) {
             await updateDoc(userRef, updates);
             if (typeof showToast === 'function') showToast('✅ Equipo actualizado correctamente', 3000);
             
-            // Refrescar panel tras 1 segundo
-            setTimeout(() => openClubAdminPanel(), 1000);
+            // Refrescar panel tras 1 segundo (antes SIN clubId: al SuperAdmin
+            // le devolvía al selector de clubes en vez de al club editado).
+            setTimeout(() => { if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId); }, 1000);
         } catch(e) {
             console.error('[caEditUserCategory] Error:', e);
             alert('Error: ' + e.message);
@@ -1729,7 +1759,9 @@ async function openClubAdminPanel(preClubId = null) {
                     }).catch(function() {});
 
                     showToast('➖ Rol/Roles de ' + userEmail + ' removidos. El usuario conserva sus otros roles.', 4000);
-                    openClubAdminPanel();
+                    // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
                     return; // NO continúa al borrado total ni llama a deleteAuthUser
                 }
 
@@ -1823,7 +1855,9 @@ async function openClubAdminPanel(preClubId = null) {
                 }).catch(function() {});
 
                 showToast('\uD83D\uDDD1\uFE0F ' + userEmail + ' dado de baja. Todos los rastros eliminados.', 4000);
-                openClubAdminPanel();
+                // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
                 return;
             }
 
@@ -1890,7 +1924,9 @@ async function openClubAdminPanel(preClubId = null) {
             }
 
             showToast(isActive ? '\u2705 Usuario activado' : '\uD83D\uDD12 Usuario bloqueado', 3000);
-            openClubAdminPanel();
+            // Refresco tras la acción. Antes iba SIN clubId, así que al
+            // SuperAdmin le devolvía al selector de clubes.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
         } catch(e) {
             showToast('\u274C Error: ' + e.message, 4000);
             console.error(e);
