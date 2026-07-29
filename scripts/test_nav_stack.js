@@ -525,6 +525,96 @@ console.log('\n── PARTE 11 · navReload repinta sin apilar ──');
     ok('11f · navReload con la pila vacia no rompe', (u.sb.navReload(), true));
 }
 
+// ═══════ PARTE 12 · panel de Direccion (Director / Coordinador) ═══════
+console.log('\n── PARTE 12 · panel de Direccion ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    const sinCom = (s) => s.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n');
+    const sd = sinCom(leer('js/coach/reports/club-reports.js'));
+
+    ok('12a · openStaffDashboard acepta la pestaña inicial',
+       /async function openStaffDashboard\(initialTab\)/.test(sd));
+    ok('12b · y se registra como RAIZ con esa pestaña',
+       /navRootScreen\(\s*['"]openStaffDashboard['"]\s*,\s*_tab\s*\)/.test(sd));
+    ok('12c · switchStaffTab actualiza la pestaña de la RAIZ (no se apila aparte)',
+       /navRootScreen\(\s*['"]openStaffDashboard['"]\s*,\s*tab\s*\)/.test(sd));
+    ok('12d · openTestRolePicker SI se apila (destruye el panel)',
+       /navScreen\(\s*['"]openTestRolePicker['"]\s*,\s*targetRole\s*\)/.test(sd));
+    ok('12e · [FIX] cancelar el cambio de club vuelve atras si hay a donde',
+       /navCanGoBack\(\)\)\s*navBack\(\)/.test(sd));
+    ok('12f · y conserva showRoleSelector como salida cuando NO hay nada detras',
+       /else if\s*\(typeof showRoleSelector==='function'\)\s*showRoleSelector\(\)/.test(sd));
+    ok('12g · [FIX] "Recargar" conserva la pestaña activa (navReload)',
+       /onclick="if\(typeof navReload==='function'\) navReload\(\)/.test(sd));
+    ok('12h · el panel arranca en la pestaña registrada, no en una fija',
+       /switchStaffTab\(_tab\);/.test(sd) && !/switchStaffTab\('convocatorias'\);/.test(sd));
+    ok('12i · conserva su salida por cierre de sesion', /logoutUser\(\)/.test(sd));
+
+    // ⚠️ LO QUE NO SE TOCA, Y POR QUE — para que no se "arregle" por descuido:
+    //  · las pestañas pintan en el div interno #staff-dashboard-content, asi
+    //    que NO destruyen el panel y no necesitan ser pantallas propias.
+    //  · la mensajeria del Director/Coordinador se pinta EMBEBIDA en ese mismo
+    //    div (_sdLoadMessages pasa 'staff-dashboard-content'), y en
+    //    _renderUnifiedMessagingView el boton "Volver" solo se pinta para el
+    //    COACH y la ✕ solo en modo modal. O sea que el motor de mensajeria
+    //    —el que el autor pidio proteger— NO esta roto para estos roles y no
+    //    hace falta tocarlo aqui.
+    ok('12j · las pestañas siguen pintando en el div interno del panel',
+       /getElementById\(['"]staff-dashboard-content['"]\)/.test(sd));
+    ok('12k · la mensajeria del Director se pinta EMBEBIDA en ese div',
+       /openDirectorMessaging\(\s*['"]coordinators['"]\s*,\s*['"]staff-dashboard-content['"]\s*\)/.test(sd));
+    const comms = sinCom(leer('js/coach/comms/panel.js'));
+    ok('12l · y su boton "Volver" sigue siendo solo para el COACH',
+       /role === 'coach' \? `[\s\S]{0,200}?onclick="openUnifiedCommsMenu\(\)"/.test(comms));
+}
+
+// ═══════ PARTE 13 · recorridos del panel de Direccion ═══════
+console.log('\n── PARTE 13 · recorridos del panel de Direccion ──');
+{
+    function sdSandbox() {
+        const t = build();
+        t.sb.openStaffDashboard = function(tab){
+            const _t = tab || 'convocatorias';
+            t.sb.navRootScreen('openStaffDashboard', _t);
+            t.pintadas.push('panel:' + _t);
+        };
+        t.sb.switchStaffTab = function(tab){
+            t.sb.navRootScreen('openStaffDashboard', tab);
+            t.pintadas.push('tab:' + tab);
+        };
+        t.sb.openTestRolePicker = function(role){
+            t.sb.navScreen('openTestRolePicker', role);
+            t.pintadas.push('picker');
+        };
+        return t;
+    }
+
+    const t = sdSandbox();
+    t.sb.openStaffDashboard();
+    t.sb.switchStaffTab('informes');
+    t.sb.switchStaffTab('partidos_terminados');
+    ok('13a · cambiar de pestaña NO apila (sigue 1 nivel)', t.sb.navDepth() === 1,
+       'profundidad ' + t.sb.navDepth());
+
+    t.sb.navReload();
+    ok('13b · [FIX] "Recargar" vuelve a la MISMA pestaña, no a Convocatorias',
+       t.ultima() === 'panel:partidos_terminados', t.ultima());
+
+    // Cambiar club y cancelar: debe volver AL PANEL, en su pestaña
+    t.sb.openTestRolePicker('director');
+    ok('13c · el selector de club se apila encima', t.sb.navDepth() === 2);
+    t.sb.navBack();
+    ok('13d · [FIX] cancelar devuelve al panel EN SU PESTAÑA, no al selector de rol',
+       t.ultima() === 'panel:partidos_terminados', t.ultima());
+
+    // Si el picker es la ENTRADA (SuperAdmin sin club), no hay a donde volver
+    const u = build();
+    u.sb.openTestRolePicker = function(role){ u.sb.navScreen('openTestRolePicker', role); u.pintadas.push('picker'); };
+    u.sb.openTestRolePicker('director');
+    ok('13e · si el selector fue la ENTRADA, no hay a donde volver',
+       u.sb.navCanGoBack() === false);
+}
+
 // ═══════ PARTE 5 · el modulo esta servido ═══════
 console.log('\n── PARTE 5 · nav-stack.js entra en la app ──');
 {

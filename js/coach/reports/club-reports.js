@@ -24,6 +24,10 @@ async function openTestRolePicker(targetRole) {
     const clubs = [];
     snap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
 
+    // Pila de navegación: esta pantalla SÍ destruye el panel de Dirección, así
+    // que se apila encima para poder volver.
+    if (typeof navScreen === 'function') navScreen('openTestRolePicker', targetRole);
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -35,7 +39,13 @@ async function openTestRolePicker(targetRole) {
                     Selecciona el club en el que quieres actuar como <strong>${targetRole}</strong>
                 </p>
             </div>
-            <button onclick="if(typeof showRoleSelector==='function') showRoleSelector();"
+            <!-- Cancelar el cambio de club: si se llegó aquí DESDE el panel,
+                 vuelve al panel; si esta pantalla fue la entrada (SuperAdmin
+                 todavía sin club), no hay nada detrás y la salida correcta
+                 sigue siendo el selector de rol. Antes iba SIEMPRE al selector
+                 de rol: cancelar te echaba del panel entero. -->
+            <button onclick="if(typeof navCanGoBack==='function' && navCanGoBack()) navBack(); else if(typeof showRoleSelector==='function') showRoleSelector();"
+                title="Cancelar"
                 style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer;">✕</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:0.5rem;max-height:380px;overflow-y:auto;">
@@ -107,7 +117,7 @@ function _sdCanSeeConfigTab(user) {
 }
 window._sdCanSeeConfigTab = _sdCanSeeConfigTab;
 
-async function openStaffDashboard() {
+async function openStaffDashboard(initialTab) {
     const me         = window._cronosCurrentUser;
     const activeRole = me?._activeRole || me?.role;
     const isSA       = ['superadmin','admin'].includes(me?.role);
@@ -141,6 +151,23 @@ async function openStaffDashboard() {
         if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard] No se pudo resolver clubId:', e.message);
     }
 
+    // Pila de navegación (js/core/nav-stack.js): RAÍZ del panel de Dirección
+    // (lo comparten Director y Coordinador), registrada CON la pestaña activa.
+    //
+    // 🔑 POR QUÉ LA PESTAÑA VA EN LA RAÍZ Y NO ES UNA PANTALLA APARTE: aquí las
+    // pestañas NO repintan el modal, sólo el div interno
+    // #staff-dashboard-content, así que el marco del panel sobrevive. Si se
+    // apilaran como pantallas propias, volver a una de ellas invocaría
+    // switchStaffTab con el panel ya destruido y #staff-dashboard-content no
+    // existiría. Guardando la pestaña como ARGUMENTO de la raíz, volver
+    // reconstruye el panel entero y lo deja en la pestaña correcta.
+    //
+    // Como en openClubAdminPanel, el registro va después de varios `await`
+    // porque antes no se conocen ni el rol ni el clubId. Es seguro por ser
+    // RAÍZ (ver la nota del invariante async en superadmin.panel.js).
+    const _tab = initialTab || 'convocatorias';
+    if (typeof navRootScreen === 'function') navRootScreen('openStaffDashboard', _tab);
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -170,7 +197,11 @@ async function openStaffDashboard() {
                            border:1px solid rgba(255,215,0,0.3);border-radius:6px;
                            color:#ffd700;font-size:0.73rem;font-weight:700;cursor:pointer;">
                     🔄 Cambiar Club</button>` : ''}
-                <button onclick="openStaffDashboard()"
+                <!-- Recargar CONSERVANDO la pestaña activa: navReload repinta
+                     la raíz con sus argumentos guardados. Antes llamaba a
+                     openStaffDashboard() sin argumentos y devolvía siempre a
+                     "Convocatorias", perdiendo la pestaña en la que estabas. -->
+                <button onclick="if(typeof navReload==='function') navReload(); else openStaffDashboard();"
                     style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
                            color:var(--text-muted);padding:0.35rem 0.7rem;border-radius:6px;
                            cursor:pointer;font-size:0.74rem;font-weight:600;" title="Recargar panel">
@@ -238,11 +269,17 @@ async function openStaffDashboard() {
         .sd-report-unread { border-color:rgba(255,165,0,0.5);background:rgba(255,165,0,0.04); }
     </style>`;
 
-    switchStaffTab('convocatorias');
+    switchStaffTab(_tab);
 }
 
 // ── Cambiar tab ──────────────────────────────────────────────────────
 window.switchStaffTab = async (tab) => {
+    // Pila de navegación: la pestaña activa se guarda como ARGUMENTO de la
+    // raíz, no como una pantalla propia (ver la nota en openStaffDashboard).
+    // Reiniciar la raíz aquí es seguro: switchStaffTab sólo puede ejecutarse
+    // con el panel visible, o sea cuando la raíz ya es la cima de la pila.
+    if (typeof navRootScreen === 'function') navRootScreen('openStaffDashboard', tab);
+
     document.querySelectorAll('.staff-tab').forEach(b => b.classList.remove('active'));
     const btn = document.getElementById(`tab-${tab}`);
     if (btn) btn.classList.add('active');
