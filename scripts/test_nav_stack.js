@@ -212,8 +212,13 @@ console.log('\n── PARTE 6 · resto del panel del Entrenador migrado ──')
     const cuerpoMenu = iMenu > -1
         ? comms.slice(iMenu, iFinMenu > -1 ? iMenu + 1 + iFinMenu : comms.length)
         : comms;
-    ok('6·el menu de Comunicaciones usa navBack() y navExit()',
-       /onclick="navBack\(\)"/.test(cuerpoMenu) && /onclick="navExit\(\)"/.test(cuerpoMenu));
+    // ⚠️ ACTUALIZADA: la ronda 2 exigia aqui navExit(), y el AUTOR lo revirtio al
+    // probarlo en el navegador (v403). A este menu se entra desde el POST-PARTIDO,
+    // asi que debajo esta la pantalla del partido en vivo y "salir limpio" dejaba
+    // el campo de futbol al descubierto. Ahora las DOS salidas repintan. La
+    // intencion original —que la ✕ no fuera un destino cableado— se conserva.
+    ok('6·el menu de Comunicaciones usa navBack() en sus dos salidas',
+       /onclick="navBack\(\)"/.test(cuerpoMenu) && /navCanGoBack\(\)\) navBack\(\)/.test(cuerpoMenu));
     ok('6·y su ✕ ya no llama a openSetupModal cableado',
        !/openSetupModal==='function'\?openSetupModal\(\)/.test(cuerpoMenu));
 
@@ -1151,6 +1156,106 @@ console.log('\n── PARTE 19 · recorridos de Partidos Terminados ──');
     g.sb.navBack();
     ok('19g · auto-verificacion: sin auto-registrarse, navBack se salta un nivel',
        g.ultima() === 'openSetupModal', g.ultima());
+}
+
+// ═══════ PARTE 20 · la ✕ del menu de Comunicaciones (reportado por el autor) ═══════
+// Segundo hallazgo del autor probando en navegador, misma causa que el de
+// "Partidos Terminados": ocultar #setup-modal descubre lo que hay DEBAJO, y a
+// este menu se entra desde el POST-PARTIDO, o sea que debajo esta la pantalla
+// del partido en vivo (el campo).
+//
+// 🔑 REVIERTE UNA DECISION DE LA RONDA 2, que puso ahi navExit() a proposito para
+// que el motor tuviera "una ✕ que sale de verdad". Medido contra la app real, esa
+// salida limpia era el sintoma. La leccion: navExit() solo sirve cuando lo que
+// queda debajo es aceptable; si debajo hay una pantalla de trabajo, la salida
+// tiene que REPINTAR.
+console.log('\n── PARTE 20 · la ✕ del menu de Comunicaciones ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    const sinCom = (s) => s.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n')
+                           .replace(/<!--[\s\S]*?-->/g, '');
+    const cp = sinCom(leer('js/coach/comms/panel.js'));
+
+    const i = cp.indexOf('async function openUnifiedCommsMenu');
+    const f = cp.slice(i + 1).search(/\n(?:async )?function \w+\s*\(|\nwindow\.\w+\s*=/);
+    const menu = i > -1 ? cp.slice(i, f > -1 ? i + 1 + f : cp.length) : '';
+    ok('20·control · la region del menu se acota', menu.length > 1000, 'len=' + menu.length);
+
+    ok('20a · [FIX] la ✕ ya no es navExit() a pelo',
+       !/onclick="navExit\(\)"/.test(menu));
+    ok('20b · [FIX] usa navBack() cuando hay a donde volver',
+       /navCanGoBack\(\)\) navBack\(\)/.test(menu));
+    // 🔑 EL ESLABON: con la pila en UN nivel, navBack() llama internamente a
+    // navExit() (nav-stack.js: `if (_stack.length <= 1) return window.navExit()`),
+    // o sea que sin respaldo volveriamos al MISMO sintoma. El respaldo tiene que
+    // REPINTAR algo, no ocultar.
+    ok('20c · 🔑 y su respaldo REPINTA (openSetupModal), no oculta',
+       /else if\(typeof openSetupModal==='function'\) openSetupModal\(\)/.test(menu));
+    ok('20d · el "← Volver" de abajo sigue siendo navBack()',
+       /onclick="navBack\(\)"/.test(menu));
+    ok('20e · y el title ya no promete salir', !/title="Cerrar y salir"/.test(menu));
+
+    // La via de entrada que explica el sintoma: el post-partido, que es RAIZ y se
+    // registra CON el marcador, asi que repintarlo devuelve la pantalla exacta.
+    const ai = sinCom(leer('js/core/app-init.js'));
+    ok('20f · se entra desde el post-partido, que es RAIZ con su marcador',
+       /navRootScreen\('showPostMatchOptions', scoreHome, scoreAway\)/.test(ai) &&
+       /openUnifiedCommsMenu\(\)/.test(ai));
+
+    // Contraste: la ✕ del MOTOR sigue siendo navExit y debe seguir siendolo. Ahi
+    // debajo no hay pantalla de trabajo, y es lo que el autor eligio en la ronda 7.
+    const iM = cp.indexOf('async function _renderUnifiedMessagingView');
+    const fM = cp.slice(iM + 1).search(/\n(?:async )?function \w+\s*\(|\nwindow\.\w+\s*=/);
+    const motor = iM > -1 ? cp.slice(iM, fM > -1 ? iM + 1 + fM : cp.length) : '';
+    ok('20g · la ✕ del MOTOR sigue siendo navExit() (decision distinta, a proposito)',
+       /onclick="navExit\(\)"/.test(motor));
+}
+
+// ═══════ PARTE 21 · recorridos de la ✕ de Comunicaciones ═══════
+console.log('\n── PARTE 21 · recorridos de la ✕ de Comunicaciones ──');
+{
+    function ccSandbox() {
+        const t = build();
+        t.sb.showPostMatchOptions = function(h, a) {
+            t.sb.navRootScreen('showPostMatchOptions', h, a);
+            t.pintadas.push('postpartido:' + h + '-' + a);
+        };
+        // La ✕ tal como queda cableada: navBack con respaldo que REPINTA.
+        t.sb._equisComms = function() {
+            if (t.sb.navCanGoBack()) t.sb.navBack();
+            else t.sb.openSetupModal();
+        };
+        return t;
+    }
+
+    const a = ccSandbox();
+    a.sb.showPostMatchOptions(3, 1);
+    a.sb.openUnifiedCommsMenu();
+    ok('21a · el menu se apila sobre el post-partido', a.sb.navDepth() === 2,
+       'profundidad ' + a.sb.navDepth());
+    a.sb._equisComms();
+    ok('21b · [FIX] la ✕ repinta EL POST-PARTIDO con su marcador (el campo no se ve)',
+       a.ultima() === 'postpartido:3-1', a.ultima());
+
+    // 🔑 El caso que justifica el respaldo: el menu como UNICA pantalla.
+    const b = ccSandbox();
+    b.sb.openUnifiedCommsMenu();
+    ok('21c · control · con el menu como unica pantalla, no hay a donde volver',
+       b.sb.navCanGoBack() === false);
+    b.sb._equisComms();
+    ok('21d · 🔑 y el respaldo REPINTA el modal de setup, no deja el campo al aire',
+       b.ultima() === 'openSetupModal' && b.sb.navDepth() === 1,
+       b.ultima() + ' d=' + b.sb.navDepth());
+
+    // Auto-verificacion: navBack A SECAS en ese caso cae en navExit y no repinta
+    // nada — exactamente el sintoma que reporto el autor.
+    const c = ccSandbox();
+    c.sb.openUnifiedCommsMenu();
+    const antes = c.ultima();
+    c.sb.navBack();
+    ok('21e · auto-verificacion: navBack a secas con 1 nivel NO repinta (cae en navExit)',
+       c.ultima() === antes && c.sb.navDepth() === 0,
+       'ultima=' + c.ultima() + ' d=' + c.sb.navDepth());
 }
 
 // ═══════ PARTE 5 · el modulo esta servido ═══════

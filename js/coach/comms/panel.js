@@ -1844,9 +1844,17 @@ async function openUnifiedCommsMenu() {
                 </div>
             </div>
             <div style="display:flex;gap:0.4rem;align-items:center;">
-                <button onclick="navExit()"
+                <!-- ⚠️ ERA navExit() (ronda 2) y el autor lo revirtió al probarlo:
+                     navExit() oculta #setup-modal, y como a este menú se entra
+                     desde el POST-PARTIDO, debajo está la pantalla del partido en
+                     vivo — o sea que cerrar dejaba el campo de fútbol al aire.
+                     navBack() repinta el origen, así que el campo nunca se ve.
+                     El respaldo también REPINTA (openSetupModal) en vez de dejar
+                     caer navBack en navExit: con la pila en un solo nivel, navBack
+                     llama a navExit y volveríamos al mismo síntoma. -->
+                <button onclick="if(typeof navCanGoBack==='function' && navCanGoBack()) navBack(); else if(typeof openSetupModal==='function') openSetupModal(); else navExit();"
                     style="background:none;border:none;color:var(--text-muted);font-size:1.7rem;cursor:pointer;line-height:1;padding:0 0.2rem;"
-                    title="Cerrar y salir">✕</button>
+                    title="Volver">✕</button>
             </div>
         </div>
 
