@@ -32,6 +32,13 @@ window._cronosRefreshExtras = function() {
 };
 
 function openSetupModal() {
+    // Pila de navegación (js/core/nav-stack.js): esta pantalla es la RAÍZ del
+    // panel del Entrenador, así que al pintarse resetea la pila. Eso es lo que
+    // permite migrar el resto por partes: cualquier "Volver" antiguo que
+    // todavía llame a openSetupModal() directamente deja la pila coherente en
+    // vez de dejarla describiendo una pantalla ya destruida.
+    if (typeof navRootScreen === 'function') navRootScreen('openSetupModal');
+
     document.body.classList.add('setup-mode');
     const modal = document.getElementById('setup-modal');
     if (!modal) return;

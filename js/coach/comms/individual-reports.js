@@ -55,6 +55,14 @@
 //  (se auto-guardan al finalizar cada encuentro en ambos roles)
 // ════════════════════════════════════════════════════════════════════
 window.openMisInformes = async function openMisInformes() {
+    // Pila de navegación (js/core/nav-stack.js). Esta pantalla tiene DOS vías
+    // de entrada — el modal de setup (core/setup-modal.js) y el post-partido
+    // (core/app-init.js, showPostMatchOptions) — y su "Volver" iba cableado a
+    // openUnifiedCommsMenu(), que no es ninguna de las dos: terminabas un
+    // partido, entrabas aquí, pulsabas Volver y aparecías en Comunicaciones.
+    // Ahora se auto-registra y el botón usa navBack(), que deshace la vía real.
+    if (typeof navScreen === 'function') navScreen('openMisInformes');
+
     const me = window._cronosCurrentUser;
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
@@ -73,10 +81,15 @@ window.openMisInformes = async function openMisInformes() {
                     </div>
                 </div>
             </div>
-            <button onclick="openUnifiedCommsMenu()"
-                style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
-                       color:var(--text-muted);padding:0.35rem 0.8rem;border-radius:6px;
-                       cursor:pointer;font-size:0.74rem;font-weight:600;">← Volver</button>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <button onclick="navBack()"
+                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                           color:var(--text-muted);padding:0.35rem 0.8rem;border-radius:6px;
+                           cursor:pointer;font-size:0.74rem;font-weight:600;">← Volver</button>
+                <button onclick="navExit()" title="Cerrar y salir"
+                    style="background:none;border:none;color:var(--text-muted);
+                           font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.2rem;">✕</button>
+            </div>
         </div>
 
         <div id="mis-informes-body" style="flex:1;overflow-y:auto;padding:1.2rem;">

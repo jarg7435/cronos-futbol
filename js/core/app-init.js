@@ -750,6 +750,11 @@ window._restoreActiveMatch = function() {
 
 
 function showPostMatchOptions(scoreHome, scoreAway) {
+    // Pila de navegación (js/core/nav-stack.js): el post-partido es la OTRA
+    // raiz del panel del Entrenador. Se registra CON el marcador para poder
+    // repintarse identico cuando se vuelva aqui desde una subpantalla.
+    if (typeof navRootScreen === 'function') navRootScreen('showPostMatchOptions', scoreHome, scoreAway);
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
