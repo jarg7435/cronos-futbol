@@ -829,6 +829,13 @@ async function showFinishedMatches() {
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
 
+    // Pila de navegación (js/core/nav-stack.js). Se registra AQUÍ y no en la
+    // primera línea, a propósito: las dos salidas tempranas de arriba (plan sin
+    // el extra `partidos_terminados`, y modal ausente) no pintan nada, y apilar
+    // una pantalla que no se pinta haría que el siguiente navBack restaurase un
+    // modal invisible. Y antes del primer await, por el invariante async.
+    if (typeof navScreen === 'function') navScreen('showFinishedMatches');
+
     modal.style.display = 'flex';
     modal.innerHTML = `
     <div class="modal-content" style="width:min(95vw,600px);max-height:90vh;display:flex;flex-direction:column;padding:1.2rem;background:#0d1117;color:white;">
@@ -836,8 +843,9 @@ async function showFinishedMatches() {
             <h2 style="margin:0;color:white;font-size:1.1rem;display:flex;align-items:center;gap:0.5rem;">
                 🎬 Partidos Terminados
             </h2>
-            <button onclick="document.getElementById('setup-modal').style.display='none';"
-                style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
+            <button onclick="navBack()"
+                style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;"
+                title="Volver">✕</button>
         </div>
         <div id="finished-matches-modal-list" style="flex:1;overflow-y:auto;">
             <div style="text-align:center;padding:2rem;color:#7d8590;">⏳ Cargando partidos finalizados…</div>

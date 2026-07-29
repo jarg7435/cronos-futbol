@@ -1005,6 +1005,154 @@ console.log('\n── PARTE 17 · recorridos del motor de mensajeria ──');
        'profundidad ' + f.sb.navDepth());
 }
 
+// ═══════ PARTE 18 · "Partidos Terminados" (reportado por el autor) ═══════
+// Sintoma que dio el autor: la ✕ "destruye la capa del modal dejando visible de
+// fondo la pantalla del partido en directo (campo de futbol)".
+//
+// ⚠️ Y PIDIO navExit(), QUE NO LO ARREGLA. navExit() hace `_stack = []` mas
+// `setup-modal.style.display = 'none'`, y el onclick de hoy ya hace exactamente
+// ese display='none'. Ocultar #setup-modal es LA CAUSA de que se vea el campo,
+// no la cura. Lo que quita el sintoma es navBack(), que REPINTA la pantalla de
+// origen dentro de #setup-modal. La asercion 19e lo demuestra midiendo las dos.
+console.log('\n── PARTE 18 · Partidos Terminados ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    const sinCom = (s) => s.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n')
+                           .replace(/<!--[\s\S]*?-->/g, '');
+    const ai = sinCom(leer('js/core/app-init.js'));
+
+    const i = ai.indexOf('async function showFinishedMatches');
+    const f = ai.slice(i + 1).search(/\n(?:async )?function \w+\s*\(|\nwindow\.\w+\s*=/);
+    const cuerpo = i > -1 ? ai.slice(i, f > -1 ? i + 1 + f : ai.length) : '';
+    ok('18·control · la region de showFinishedMatches se acota', cuerpo.length > 800,
+       'len=' + cuerpo.length);
+
+    ok('18a · showFinishedMatches se auto-registra en la pila',
+       /navScreen\('showFinishedMatches'\)/.test(cuerpo));
+
+    // 🔑 El registro va DESPUES de las dos salidas tempranas. Si fuera lo primero,
+    // un plan sin el extra `partidos_terminados` apilaria una pantalla que NUNCA
+    // se pinta, y el siguiente navBack restauraria un modal invisible.
+    ok('18b · y va DESPUES de las dos salidas tempranas (extra y modal ausente)',
+       (() => {
+           const iReg = cuerpo.indexOf("navScreen('showFinishedMatches')");
+           const iExtra = cuerpo.indexOf("_ptExtras.partidos_terminados === false");
+           const iModal = cuerpo.indexOf('if (!modal) return;');
+           return iReg > -1 && iExtra > -1 && iModal > -1 && iReg > iExtra && iReg > iModal;
+       })());
+    ok('18c · y ANTES del primer await (invariante async de la ronda 3)',
+       (() => {
+           const iReg = cuerpo.indexOf("navScreen('showFinishedMatches')");
+           const iAwait = cuerpo.indexOf('await ');
+           return iReg > -1 && (iAwait === -1 || iReg < iAwait);
+       })());
+
+    ok('18d · [FIX] la ✕ usa navBack(), que repinta el origen',
+       /onclick="navBack\(\)"[\s\S]{0,200}?✕/.test(cuerpo));
+    ok('18e · [FIX] y ya no oculta #setup-modal a pelo desde la ✕',
+       !/onclick="document\.getElementById\('setup-modal'\)\.style\.display='none';"[\s\S]{0,200}?✕/.test(cuerpo));
+
+    // Las DOS vias de entrada reales tienen que estar apiladas, o navBack no
+    // tendria a donde volver. Las dos se migraron en la ronda 2.
+    ok('18f · la via del menu de Comunicaciones sigue existiendo',
+       /showFinishedMatches\(\)/.test(sinCom(leer('js/coach/comms/panel.js'))));
+    ok('18g · y la del modal de 3 opciones, que SI se apila',
+       /navScreen\('_openCoachCommsMenu'\)/.test(sinCom(leer('js/core/setup-modal.js'))));
+
+    // ⚠️ LO QUE NO SE TOCA, Y POR QUE:
+    //  · el boton de cada partido oculta el modal a proposito para lanzar el
+    //    reproductor, que toma la pantalla entera. NO es una ✕.
+    //  · openPastMatchesModal es un respaldo MUERTO: no existe en el proyecto
+    //    (misma familia que openMisInformesColectivos). Gana siempre la primera
+    //    rama porque showFinishedMatches si existe.
+    ok('18h · el boton de repeticion sigue ocultando el modal a proposito',
+       /style\.display='none'; window\.openMatchReplay/.test(cuerpo));
+    // ⚠️ `openPastMatchesModal\s*=` casaba con `openPastMatchesModal==='function'`
+    // del propio typeof —el primer `=` de `===`—, o sea que media la GUARDA en vez
+    // de una definicion y daba rojo por la razon equivocada. El `[^=]` lo excluye.
+    const invocado = ['js/core/app-init.js', 'js/core/setup-modal.js', 'js/coach/comms/panel.js']
+        .some(p => /function openPastMatchesModal|openPastMatchesModal\s*=[^=]/.test(sinCom(leer(p))));
+    ok('18i · openPastMatchesModal sigue sin existir (respaldo muerto declarado)',
+       invocado === false);
+}
+
+// ═══════ PARTE 19 · recorridos de Partidos Terminados ═══════
+console.log('\n── PARTE 19 · recorridos de Partidos Terminados ──');
+{
+    function ptSandbox() {
+        const t = build();
+        t.sb._openCoachCommsMenu = function() {
+            t.sb.navScreen('_openCoachCommsMenu'); t.pintadas.push('menu3');
+        };
+        t.sb.showFinishedMatches = function() {
+            t.sb.navScreen('showFinishedMatches'); t.pintadas.push('terminados');
+        };
+        return t;
+    }
+
+    // Via 1: menu de Comunicaciones
+    const a = ptSandbox();
+    a.sb.openSetupModal();
+    a.sb.openUnifiedCommsMenu();
+    a.sb.showFinishedMatches();
+    ok('19a · se apila encima de su entrada', a.sb.navDepth() === 3,
+       'profundidad ' + a.sb.navDepth());
+    a.sb.navBack();
+    ok('19b · [FIX] entrando por Comunicaciones, la ✕ devuelve AL MENU',
+       a.ultima() === 'openUnifiedCommsMenu', a.ultima());
+
+    // Via 2: modal de 3 opciones
+    const b = ptSandbox();
+    b.sb.openSetupModal();
+    b.sb._openCoachCommsMenu();
+    b.sb.showFinishedMatches();
+    b.sb.navBack();
+    ok('19c · [FIX] y entrando por el modal de 3 opciones, devuelve A ESE MODAL',
+       b.ultima() === 'menu3', b.ultima());
+
+    // El refresco tras borrar un partido se llama a si mismo: no debe apilar.
+    const c = ptSandbox();
+    c.sb.openSetupModal();
+    c.sb.openUnifiedCommsMenu();
+    c.sb.showFinishedMatches();
+    c.sb.showFinishedMatches();   // deleteFinishedMatch -> showFinishedMatches()
+    ok('19d · el refresco tras borrar NO apila un nivel mas', c.sb.navDepth() === 3,
+       'profundidad ' + c.sb.navDepth());
+
+    // ── 🔑 LA MEDIDA QUE COMPARA LAS DOS SALIDAS ──────────────────────────
+    // Con navExit no se repinta NADA: la ultima pantalla pintada sigue siendo
+    // "terminados", el modal se oculta y debajo aparece lo que hubiera — el campo
+    // de futbol. Con navBack se repinta el origen, asi que el campo no se ve.
+    const d = ptSandbox();
+    d.sb.openSetupModal();
+    d.sb.openUnifiedCommsMenu();
+    d.sb.showFinishedMatches();
+    const antes = d.ultima();
+    d.sb.navExit();
+    ok('19e · 🔑 navExit NO repinta nada (de ahi que se viera el campo detras)',
+       d.ultima() === antes && d.sb.navDepth() === 0,
+       'ultima=' + d.ultima() + ' d=' + d.sb.navDepth());
+
+    const e = ptSandbox();
+    e.sb.openSetupModal();
+    e.sb.openUnifiedCommsMenu();
+    e.sb.showFinishedMatches();
+    e.sb.navBack();
+    ok('19f · 🔑 navBack SI repinta el origen: es lo que tapa el campo',
+       e.ultima() === 'openUnifiedCommsMenu' && e.sb.navDepth() === 2,
+       'ultima=' + e.ultima() + ' d=' + e.sb.navDepth());
+
+    // Auto-verificacion: SIN registrar la pantalla, navBack se salta un nivel.
+    const g = build();
+    g.sb.showFinishedMatchesSinRegistrar = function() { g.pintadas.push('terminados'); };
+    g.sb.openSetupModal();
+    g.sb.openUnifiedCommsMenu();
+    g.sb.showFinishedMatchesSinRegistrar();
+    g.sb.navBack();
+    ok('19g · auto-verificacion: sin auto-registrarse, navBack se salta un nivel',
+       g.ultima() === 'openSetupModal', g.ultima());
+}
+
 // ═══════ PARTE 5 · el modulo esta servido ═══════
 console.log('\n── PARTE 5 · nav-stack.js entra en la app ──');
 {
