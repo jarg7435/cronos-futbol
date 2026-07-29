@@ -1,5 +1,30 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v393: VUELVE LA LISTA DE PLANTILLAS GUARDADAS, con sus botones de borrado
+//        y filtrada por modalidad. Tres archivos declaraban el mismo bloque de
+//        persistencia y ganaba el que carga el ULTIMO, ai/import.js, con unas
+//        copias FOSILES peores heredadas de cuando se llamaba 08_ai_import.js.
+//        Lo que el usuario nota:
+//          · los <div saved-teams-list-home|away> que pinta setup-modal.js
+//            NUNCA se rellenaban -> los botones de borrado por plantilla no
+//            existian. Ahora si;
+//          · el desplegable ofrecia TODAS las plantillas, tambien las de otra
+//            modalidad (en F7 salian las de F11). Ahora filtra;
+//          · cargar una plantilla no pasaba por loadTeamData, asi que se
+//            perdian la sincronizacion de CATEGORIA y la de _pendingSetupState
+//            (que existe para evitar sobreescrituras). Ahora si pasa.
+//        Medido ejecutando la cadena real con 3 plantillas (2 F7, 1 F11):
+//        antes 0 filas y 3 opciones sin filtrar; despues 2 filas y 2 opciones.
+//        Limpieza que lo acompanya: active-match.js 609 -> 125 lineas, se queda
+//        SOLO con endMatch (es su unico duenyo); sus otras 11 funciones eran
+//        copias que ya perdian, dos de ellas la version VIEJA de la pantalla de
+//        post-partido. team-persistence.js es la fuente canonica del bloque.
+//        ⚠️ `diff` decia que los dos archivos diferian entero: era la trampa
+//        CRLF-vs-LF. Normalizando, 9 de 11 cuerpos eran identicos.
+//        Equivalencia global con los 72 scripts: cambian EXACTAMENTE las 2
+//        funciones buscadas, ni un global perdido ni uno nuevo.
+//        Guard nuevo test_persistence_duplication.js 18/18, visto ROJO antes
+//        (9 fallos). Suite 64/64 + 11 xfail.
 //  v392: "Descargar TXT" de Mis Informes vuelve a descargar. No habia
 //        descargado NUNCA nada: miDescargarInforme delegaba en
 //        window.sdDownloadInforme, que vivia en js/23_staff_dashboard.js y
@@ -1001,8 +1026,8 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
-const VERSION = 'v392';
-const CACHE_NAME = 'cronos-cache-v392';
+const VERSION = 'v393';
+const CACHE_NAME = 'cronos-cache-v393';
 
 const ASSETS = [
     './',
