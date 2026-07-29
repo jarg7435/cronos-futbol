@@ -615,6 +615,160 @@ console.log('\n── PARTE 13 · recorridos del panel de Direccion ──');
        u.sb.navCanGoBack() === false);
 }
 
+// ═══════ PARTE 14 · panel de Padres ═══════
+console.log('\n── PARTE 14 · panel de Padres ──');
+{
+    const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+    // Filtra comentarios // Y comentarios HTML: este fichero tiene <!-- --> DENTRO
+    // de los template literals, y uno de ellos nombra data-coach-label. Sin este
+    // segundo filtro una asercion podria medir el comentario en vez del codigo.
+    const sinCom = (s) => s.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n')
+                           .replace(/<!--[\s\S]*?-->/g, '');
+    const pp = sinCom(leer('js/parent/panel.js'));
+
+    ok('14a · openParentPanel acepta la pestaña inicial',
+       /async function openParentPanel\(initialTab\)/.test(pp));
+    ok('14b · y se registra como RAIZ con esa pestaña',
+       /navRootScreen\(\s*['"]openParentPanel['"]\s*,\s*_tab\s*\)/.test(pp));
+    ok('14c · ppTab actualiza la pestaña de la RAIZ (no se apila aparte)',
+       /navRootScreen\(\s*['"]openParentPanel['"]\s*,\s*tab\s*\)/.test(pp));
+    // El arranque fijo era `ppNotifsByType('convocatoria');` como SENTENCIA.
+    // Acotado con ; al final de linea: la misma llamada sigue existiendo dentro
+    // del router (`conv: () => ppNotifsByType('convocatoria'),`, con coma) y
+    // prohibirla del todo daria rojo por la razon equivocada.
+    ok('14d · el panel arranca en la pestaña registrada, no en una fija',
+       /ppTab\(_tab\);/.test(pp) && !/^\s*ppNotifsByType\('convocatoria'\);\s*$/m.test(pp));
+
+    for (const tab of ['conv', 'train', 'player', 'chat', 'live']) {
+        ok(`14e·${tab} · el boton de pestaña lleva id para reactivarse sin \`this\``,
+           new RegExp('id="pp-tab-' + tab + '"').test(pp));
+    }
+    ok('14f · y ppTab localiza el boton por ese id cuando no hay `this`',
+       /panel\.querySelector\('#pp-tab-' \+ tab\)/.test(pp));
+
+    ok('14g · el hilo de chat SI se apila, con sus argumentos',
+       /navScreen\(\s*['"]ppOpenChatThread['"]\s*,\s*threadId\s*,\s*coachLabel\s*\)/.test(pp));
+
+    // ── EL DEFECTO DEL EMOJI ──────────────────────────────────────────────
+    // Acotar por la siguiente declaracion en columna 0, NUNCA por un numero
+    // fijo de caracteres (leccion de la ronda 2).
+    const iSend = pp.indexOf('window.ppSendChatMessage');
+    const iFinSend = pp.slice(iSend + 1).search(/\n(?:async )?function \w+\s*\(|\nwindow\.\w+\s*=/);
+    const cuerpoSend = iSend > -1
+        ? pp.slice(iSend, iFinSend > -1 ? iSend + 1 + iFinSend : pp.length)
+        : pp;
+    ok('14h · [FIX] tras enviar, el hilo se repinta con navReload()',
+       /if \(typeof navReload === 'function'\) navReload\(\)/.test(cuerpoSend));
+    ok('14i · [FIX] y ya no se raspa el label del TEXTO VISIBLE de la cabecera',
+       !/font-weight:700"\]/.test(cuerpoSend) && !/\?\.textContent/.test(cuerpoSend));
+    ok('14j · el respaldo lee el label CRUDO del data-attribute',
+       /dataset\.coachLabel/.test(cuerpoSend));
+    ok('14k · y la cabecera del hilo publica ese label crudo',
+       /data-coach-label="\$\{/.test(pp) && /id="pp-chat-title"/.test(pp));
+
+    // ⚠️ LO QUE NO SE TOCA, Y POR QUE — para que no se "arregle" por descuido:
+    //  · las pestañas pintan en el div interno #pp-body, asi que NO destruyen el
+    //    panel y no pueden ser pantallas propias (misma forma que el panel de
+    //    Direccion): la pestaña activa viaja como ARGUMENTO de la raiz.
+    //  · el panel no tiene ✕: su unica salida es "⏻ Salir" con cierre de sesion,
+    //    igual que el del SuperAdmin, asi que navExit() no aplica aqui.
+    //  · el "← Volver" del hilo sigue llamando a ppChat() a proposito: repinta
+    //    solo el cuerpo en vez de reconstruir el panel entero, y como ppChat
+    //    re-registra la RAIZ la pila queda igual de coherente que con navBack.
+    //  · la pestaña de Mensajes entra en el MOTOR de mensajeria unificada, que
+    //    sigue fuera de alcance (se migra aparte y con guard propio).
+    ok('14l · las pestañas siguen pintando en el div interno del panel',
+       /getElementById\('pp-body'\)/.test(pp));
+    ok('14m · el panel conserva su salida por cierre de sesion',
+       /logoutUser\(\)/.test(pp));
+    ok('14n · la pestaña de Mensajes sigue delegando en el motor unificado',
+       /openParentMessaging\(\s*['"]coach['"]\s*,\s*['"]pp-body['"]\s*\)/.test(pp));
+    ok('14o · y la lista de hilos re-registra la RAIZ (no deja la pila en el hilo)',
+       /navRootScreen\(\s*['"]openParentPanel['"]\s*,\s*['"]chat['"]\s*\)/.test(pp));
+
+    // ⚠️ 14p · EL FICHERO TIENE QUE PARSEAR. Esta ronda introdujo un comentario
+    // HTML DENTRO del template literal del innerHTML con backticks alrededor de
+    // "this": el primer backtick CIERRA el template y rompe el fichero completo,
+    // dejando openParentPanel sin definir y el panel de Padres muerto en el
+    // navegador. Ni la suite ni las 15 aserciones de texto de arriba lo vieron,
+    // porque todas leen el fichero como TEXTO y ninguna lo parsea.
+    // Se comprueban los ficheros migrados que se pintan con template literals.
+    const PARSEA = ['js/parent/panel.js', 'js/core/nav-stack.js',
+                    'js/coach/reports/club-reports.js', 'js/coach/comms/panel.js'];
+    for (const archivo of PARSEA) {
+        let err = null;
+        try { new vm.Script(leer(archivo), { filename: archivo }); }
+        catch (e) { err = e.message; }
+        ok(`14p·${archivo} · parsea como JavaScript valido`, err === null, err);
+    }
+}
+
+// ═══════ PARTE 15 · recorridos del panel de Padres ═══════
+console.log('\n── PARTE 15 · recorridos del panel de Padres ──');
+{
+    function ppSandbox() {
+        const t = build();
+        t.sb._cabecera = '';
+        t.sb.openParentPanel = function(tab) {
+            const _t = tab || 'conv';
+            t.sb.navRootScreen('openParentPanel', _t);
+            t.pintadas.push('panel:' + _t);
+        };
+        t.sb.ppTab = function(tab) {
+            t.sb.navRootScreen('openParentPanel', tab);
+            t.pintadas.push('tab:' + tab);
+        };
+        t.sb.ppChat = function() {
+            t.sb.navRootScreen('openParentPanel', 'chat');
+            t.pintadas.push('lista');
+        };
+        // La cabecera real pinta "⚽ " + label. Modelarla es lo que permite
+        // MEDIR el defecto del emoji en vez de deducirlo.
+        t.sb.ppOpenChatThread = function(id, label) {
+            t.sb.navScreen('ppOpenChatThread', id, label);
+            t.sb._cabecera = '⚽ ' + label;
+            t.pintadas.push('hilo:' + label);
+        };
+        return t;
+    }
+
+    const t = ppSandbox();
+    t.sb.openParentPanel();
+    ok('15a · el panel arranca en Convocatorias con la pila en 1 nivel',
+       t.ultima() === 'panel:conv' && t.sb.navDepth() === 1, t.ultima());
+
+    t.sb.ppTab('train'); t.sb.ppTab('live'); t.sb.ppTab('chat');
+    ok('15b · cambiar de pestaña NO apila (sigue 1 nivel)', t.sb.navDepth() === 1,
+       'profundidad ' + t.sb.navDepth());
+
+    t.sb.ppOpenChatThread('t1', 'Pedro Ruiz');
+    ok('15c · el hilo de chat SI se apila encima', t.sb.navDepth() === 2,
+       'profundidad ' + t.sb.navDepth());
+
+    // "Enviar" tres veces: navReload repinta con los argumentos de la pila
+    t.sb.navReload(); t.sb.navReload(); t.sb.navReload();
+    ok('15d · [FIX] enviar tres veces NO acumula emojis en el titulo del chat',
+       t.sb._cabecera === '⚽ Pedro Ruiz', t.sb._cabecera);
+    ok('15e · y el repintado no apila (sigue en el hilo, 2 niveles)',
+       t.sb.navDepth() === 2 && t.sb.navCurrent() === 'ppOpenChatThread',
+       t.sb.navCurrent() + ' d=' + t.sb.navDepth());
+
+    t.sb.ppChat();
+    ok('15f · el "Volver" del hilo deja la pila en la RAIZ, no en una pantalla ya destruida',
+       t.sb.navDepth() === 1 && t.sb.navCurrent() === 'openParentPanel',
+       t.sb.navCurrent() + ' d=' + t.sb.navDepth());
+
+    // AUTO-VERIFICACION: con el repintado VIEJO —volver a pasar como label el
+    // texto visible de la cabecera— 15d daria rojo. Si esto no acumulase, 15d
+    // no estaria midiendo nada.
+    const u = ppSandbox();
+    u.sb.openParentPanel(); u.sb.ppTab('chat');
+    u.sb.ppOpenChatThread('t1', 'Pedro Ruiz');
+    for (let i = 0; i < 3; i++) u.sb.ppOpenChatThread('t1', u.sb._cabecera);
+    ok('15g · auto-verificacion: el repintado VIEJO si acumulaba un emoji por envio',
+       u.sb._cabecera === '⚽ ⚽ ⚽ ⚽ Pedro Ruiz', u.sb._cabecera);
+}
+
 // ═══════ PARTE 5 · el modulo esta servido ═══════
 console.log('\n── PARTE 5 · nav-stack.js entra en la app ──');
 {

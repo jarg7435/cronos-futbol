@@ -3,7 +3,7 @@
 //  3 pestañas: 🔴 En Vivo · 📬 Mensajes · 👤 Mi Jugador
 // ════════════════════════════════════════════════════════════════════
 
-async function openParentPanel() {
+async function openParentPanel(initialTab) {
     const me = window._cronosCurrentUser;
     const activeRole = me?._activeRole || me?.role;
     const isSA = me?.role === 'superadmin' || me?.role === 'admin';
@@ -31,6 +31,16 @@ async function openParentPanel() {
             if (cs.exists()) clubName = cs.data().name || '';
         } catch(e) {}
     }
+
+    // Pila de navegación (js/core/nav-stack.js): RAÍZ del panel de Padres,
+    // registrada CON la pestaña activa. Igual que en el panel de Dirección,
+    // las pestañas pintan en un div interno (#pp-body) y NO destruyen el
+    // panel, así que no pueden ser pantallas propias: se guardan como
+    // ARGUMENTO de la raíz. Ver la nota larga en club-reports.js.
+    // El registro va tras varios `await`; es seguro por ser RAÍZ (invariante
+    // async documentado en superadmin.panel.js).
+    const _tab = initialTab || 'conv';
+    if (typeof navRootScreen === 'function') navRootScreen('openParentPanel', _tab);
 
     // Crear / reutilizar contenedor
     let panel = document.getElementById('parent-panel');
@@ -114,11 +124,16 @@ async function openParentPanel() {
     <div style="display:flex;gap:0.4rem;padding:0.7rem 1.2rem;
                 border-bottom:1px solid rgba(255,255,255,0.08);
                 flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;">
-        <button class="pp-tab active" onclick="ppTab('conv',this)" title="Convocatorias">📋 Convoc.</button>
-        <button class="pp-tab"        onclick="ppTab('train',this)" title="Entrenamientos">📅 Entreno.</button>
-        <button class="pp-tab"        onclick="ppTab('player',this)" title="Informes del jugador">📊 Informes</button>
-        <button class="pp-tab"        onclick="ppTab('chat',this)" title="Mensajes con el entrenador">💬 Mensajes</button>
-        <button class="pp-tab"        onclick="ppTab('live',this)" title="Partidos en vivo">🔴 En Vivo</button>
+        <!-- Los id permiten que ppTab reactive la pestaña correcta cuando la
+             pila repinta el panel y no hay un "this" que pasarle.
+             ⚠️ SIN BACKTICKS: este comentario va DENTRO del template literal
+             del innerHTML, y un backtick aquí lo cierra y rompe el fichero
+             entero. Lo fija la aserción 14p. -->
+        <button id="pp-tab-conv"   class="pp-tab${_tab === 'conv'   ? ' active' : ''}" onclick="ppTab('conv',this)" title="Convocatorias">📋 Convoc.</button>
+        <button id="pp-tab-train"  class="pp-tab${_tab === 'train'  ? ' active' : ''}" onclick="ppTab('train',this)" title="Entrenamientos">📅 Entreno.</button>
+        <button id="pp-tab-player" class="pp-tab${_tab === 'player' ? ' active' : ''}" onclick="ppTab('player',this)" title="Informes del jugador">📊 Informes</button>
+        <button id="pp-tab-chat"   class="pp-tab${_tab === 'chat'   ? ' active' : ''}" onclick="ppTab('chat',this)" title="Mensajes con el entrenador">💬 Mensajes</button>
+        <button id="pp-tab-live"   class="pp-tab${_tab === 'live'   ? ' active' : ''}" onclick="ppTab('live',this)" title="Partidos en vivo">🔴 En Vivo</button>
     </div>
 
     <!-- CUERPO -->
@@ -128,8 +143,16 @@ async function openParentPanel() {
 
     // ── Router ────────────────────────────────────────────────────
     window.ppTab = (tab, btn) => {
+        // La pestaña activa se guarda como argumento de la RAÍZ, no como una
+        // pantalla propia. ⚠️ Se registra SOLO el nombre: el segundo argumento
+        // `btn` es un NODO DEL DOM y guardarlo en la pila sería inútil —al
+        // repintar el panel ese nodo ya no existe— además de no serializable.
+        if (typeof navRootScreen === 'function') navRootScreen('openParentPanel', tab);
+
         panel.querySelectorAll('.pp-tab').forEach(b => b.classList.remove('active'));
-        if (btn) btn.classList.add('active');
+        // Sin `btn` (repintado desde la pila) se localiza el botón por su id.
+        const _btn = btn || panel.querySelector('#pp-tab-' + tab);
+        if (_btn) _btn.classList.add('active');
         document.getElementById('pp-body').innerHTML =
             '<p style="color:#7d8590;text-align:center;padding:3rem;">⏳ Cargando…</p>';
         ({
@@ -1237,8 +1260,9 @@ async function openParentPanel() {
         document.head.appendChild(s);
     }
 
-    // Cargar pestaña inicial
-    ppNotifsByType('convocatoria');
+    // Cargar la pestaña inicial: la registrada en la pila, no una fija. Así,
+    // al volver al panel desde otra pantalla se reabre donde estabas.
+    ppTab(_tab);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1246,6 +1270,12 @@ async function openParentPanel() {
 // TAB 4 · CHAT — Mensajería interna padre ↔ entrenador
 // ══════════════════════════════════════════════════════════════
 window.ppChat = async () => {
+    // Auto-registración: la lista de hilos ES el contenido de la pestaña, o sea
+    // la RAÍZ. Hace falta aquí y no sólo en ppTab porque el "← Volver" del hilo
+    // llama a ppChat() directamente; sin esto el tope de la pila seguiría
+    // describiendo el hilo, una pantalla ya destruida.
+    if (typeof navRootScreen === 'function') navRootScreen('openParentPanel', 'chat');
+
     if (typeof openParentMessaging === 'function') {
         await openParentMessaging('coach', 'pp-body');
     }
@@ -1253,6 +1283,16 @@ window.ppChat = async () => {
 
 // ── Abrir hilo de chat (vista padre) ──
 window.ppOpenChatThread = async (threadId, coachLabel) => {
+    // Pila de navegación: el hilo SÍ sustituye el contenido de #pp-body, así
+    // que se apila con sus argumentos. Guardar `coachLabel` es lo que arregla
+    // el defecto del emoji (ver el navReload() del final de ppSendChatMessage).
+    // ⚠️ Hoy esta pantalla NO tiene punto de entrada desde la UI: la pestaña de
+    // Mensajes va por ppChat() → openParentMessaging(), el motor unificado, que
+    // pinta sus propios hilos. Su único invocador es el repintado de
+    // ppSendChatMessage. Se deja registrada para que quede coherente si alguna
+    // vez se cablea, pero el valor real de Padres está en migrar ese motor.
+    if (typeof navScreen === 'function') navScreen('ppOpenChatThread', threadId, coachLabel);
+
     const me = window._cronosCurrentUser;
     if (!me) return;
     const fa = window._cronos_auth;
@@ -1266,7 +1306,12 @@ window.ppOpenChatThread = async (threadId, coachLabel) => {
                 ← Volver
             </button>
             <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:0.9rem;">
+                <!-- data-coach-label guarda el label CRUDO. El texto visible va
+                     con "⚽ " delante, y raspar ESE texto para repintar era lo
+                     que acumulaba un emoji más en cada envío. -->
+                <div id="pp-chat-title"
+                     data-coach-label="${typeof escapeAttr==='function'?escapeAttr(coachLabel):coachLabel}"
+                     style="font-weight:700;font-size:0.9rem;">
                     ⚽ ${typeof escapeHtml==='function'?escapeHtml(coachLabel):coachLabel}
                 </div>
                 <div style="font-size:0.7rem;color:#7d8590;">Entrenador</div>
@@ -1409,8 +1454,14 @@ window.ppSendChatMessage = async (threadId) => {
         }
 
         if (input) input.value = '';
-        // Recargar chat
-        ppOpenChatThread(threadId, document.querySelector('#pp-body div[style*="font-weight:700"]')?.textContent || 'Entrenador');
+        // Recargar el hilo. navReload() lo repinta con los MISMOS argumentos
+        // guardados en la pila —incluido coachLabel—, así que ya no hay que
+        // recuperarlo de ningún sitio. Antes se raspaba del DOM el texto de la
+        // cabecera, que es "⚽ ${coachLabel}", y se volvía a pasar como label:
+        // cada mensaje enviado añadía otro "⚽" al título del chat.
+        if (typeof navReload === 'function') navReload();
+        else ppOpenChatThread(threadId,
+            document.getElementById('pp-chat-title')?.dataset.coachLabel || 'Entrenador');
 
     } catch (e) {
         if (typeof showToast === 'function') showToast('⚠️ Error: ' + e.message, 4000);
