@@ -478,6 +478,104 @@ function walk(dir, out) {
         ok('5h · los días sin datos se marcan como descanso', h.includes('_Descanso_'));
         ok('5i · muestra las notas de la semana', h.includes('Semana de carga'));
     }
+    // ═══ Planificación semanal: tarjetas en HORIZONTAL y partidos en verde ═══
+    // Rediseño pedido por el autor (2026-07-30): los días salían apilados en
+    // vertical y apretados; ahora son tarjetas en fila con scroll horizontal, y
+    // el día que tiene partido se destaca en verde.
+    //
+    // ⚠️ CÓMO SE SABE QUE UN DÍA TIENE PARTIDO, y es la limitación de esta
+    // función: un día es { day, time, venue, note } y NO HAY NINGÚN CAMPO que lo
+    // marque (lo escribe js/parent/panel.js leyendo tres inputs de texto). Así
+    // que se detecta por el TEXTO de la nota o el sitio ("partido", "liga",
+    // "amistoso"). Se respeta además un campo estructurado `kind` si algún día
+    // se añade al compositor, que es la solución buena; mientras no exista, la
+    // heurística es lo único que funciona sobre los datos ya guardados.
+    {
+        const { g, w, appended } = buildSandbox({
+            notifs: {
+                p2: { clubId: 'club1', type: 'planificacion_semanal', weekStartDate: '2026-03-02',
+                      days: [
+                          { day: 'Lunes',     time: '18:00', venue: 'Anexo',   note: 'Físico' },
+                          { day: 'Martes' },
+                          { day: 'Miércoles', time: '19:00', venue: 'Campo 1', note: 'Partido vs CD Rival' },
+                          { day: 'Jueves',    time: '18:00', venue: 'Anexo',   note: 'Táctica' },
+                          { day: 'Viernes',   time: '11:00', venue: 'Municipal', note: 'Amistoso' },
+                          { day: 'Sábado',    time: '10:00', venue: 'Casa',    note: 'Jornada de Liga' },
+                          { day: 'Domingo' },
+                      ],
+                      createdAt: iso(1) },
+            },
+        });
+        await g._sdLoadEvents('planificacion_semanal');
+        await w.sdViewEventDetail('p2');
+        const h = appended[0].innerHTML;
+
+        // — Layout horizontal —
+        ok('5j · 🔑 los días van en fila con scroll horizontal',
+            /overflow-x:\s*auto/.test(h) && /display:\s*flex/.test(h));
+        ok('5k · una tarjeta por día (7)',
+            (h.match(/data-day="/g) || []).length === 7,
+            (h.match(/data-day="/g) || []).length);
+        ok('5l · 🔑 las tarjetas no se encogen (flex-shrink:0), o el scroll no serviría',
+            /flex-shrink:\s*0/.test(h) || /flex:\s*0 0/.test(h));
+
+        // — Verde sólo en los días con partido —
+        // ⚠️ Se localiza la tarjeta por su atributo data-day, NO partiendo el
+        // HTML por 'class="wp-day': eso también casa con el wp-day-head de
+        // dentro, y la primera versión de este helper daba rojo con el código ya
+        // correcto. Se leen las CLASES de la tarjeta de ese día concreto.
+        const clasesDe = (html, dia) => {
+            const m = String(html).match(new RegExp('class="([^"]*)" data-day="' + dia + '"'));
+            return m ? m[1] : '';
+        };
+        const tarjeta = (dia) => clasesDe(h, dia);
+        ok('5m · 🔑 el día con "Partido vs …" se marca como partido',
+            /wp-day-match/.test(tarjeta('Miércoles')), tarjeta('Miércoles').slice(0, 120));
+        ok('5n · 🔑 y el "Amistoso" también', /wp-day-match/.test(tarjeta('Viernes')));
+        ok('5o · 🔑 y la "Jornada de Liga" también', /wp-day-match/.test(tarjeta('Sábado')));
+        ok('5p · 🔑 un entrenamiento normal NO se marca en verde',
+            !/wp-day-match/.test(tarjeta('Lunes')) && !/wp-day-match/.test(tarjeta('Jueves')),
+            tarjeta('Jueves').slice(0, 120));
+        ok('5q · ni un día de descanso', !/wp-day-match/.test(tarjeta('Martes')));
+        // ⚠️ Sin quitar el <style>, esto cuenta las REGLAS CSS .wp-day-match
+        // además de las tarjetas y siempre da de más. Misma trampa ya pagada en
+        // la PARTE 5 de test_category_tree.js.
+        const soloMarcado = (html) => String(html).replace(/<style>[\s\S]*?<\/style>/g, '');
+        ok('5r · exactamente 3 días marcados, ni uno más',
+            (soloMarcado(h).match(/wp-day-match/g) || []).length === 3,
+            (soloMarcado(h).match(/wp-day-match/g) || []).length);
+        ok('5s · el verde del proyecto (#3fb950) está en el CSS del modal',
+            /#3fb950/i.test(h));
+
+        // — Se respeta un campo estructurado si existe —
+        const { g: g3, w: w3, appended: ap3 } = buildSandbox({
+            notifs: {
+                p3: { clubId: 'club1', type: 'planificacion_semanal', weekStartDate: '2026-03-09',
+                      days: [{ day: 'Lunes', time: '18:00', venue: 'Anexo', note: 'Sesión', kind: 'partido' },
+                             { day: 'Martes', time: '18:00', venue: 'Anexo', note: 'Sesión' }],
+                      createdAt: iso(1) },
+            },
+        });
+        await g3._sdLoadEvents('planificacion_semanal');
+        await w3.sdViewEventDetail('p3');
+        const h3 = ap3[0].innerHTML;
+        ok('5t · 🔑 un campo kind:"partido" manda aunque la nota no lo diga',
+            (soloMarcado(h3).match(/wp-day-match/g) || []).length === 1,
+            (soloMarcado(h3).match(/wp-day-match/g) || []).length);
+
+        // — Escapado: la nota es texto libre del entrenador —
+        const { g: g4, w: w4, appended: ap4 } = buildSandbox({
+            notifs: {
+                p4: { clubId: 'club1', type: 'planificacion_semanal', weekStartDate: '2026-03-16',
+                      days: [{ day: 'Lunes', time: '18:00', venue: 'X', note: '<img src=x onerror=alert(1)> partido' }],
+                      createdAt: iso(1) },
+            },
+        });
+        await g4._sdLoadEvents('planificacion_semanal');
+        await w4.sdViewEventDetail('p4');
+        ok('5u · 🔑 la nota va escapada aunque active el verde',
+            !/<img/.test(ap4[0].innerHTML) && /wp-day-match/.test(ap4[0].innerHTML));
+    }
     {
         // id que no está en `items`: cae al fallback de Firestore
         const { g, w, appended } = buildSandbox({

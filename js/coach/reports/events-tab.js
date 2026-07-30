@@ -250,23 +250,81 @@ async function _sdLoadEvents(type) {
                 </div>`:''}
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:8px;font-style:italic;">💬 ${escapeHtml(d.extra)}</div>`:''}`;
             } else if (isPlan && (Array.isArray(d.days) || d.weekStartDate)) {
-                // Planificación Semanal con tabla de días
+                // ── Planificación Semanal: tarjetas EN FILA con scroll ───────
+                // Rediseño pedido por el autor (2026-07-30). Antes los siete
+                // días se apilaban en vertical y quedaban ilegibles en el móvil.
+                //
+                // ⚠️ CÓMO SE DETECTA UN DÍA DE PARTIDO, y es la limitación real
+                // de esto: un día es { day, time, venue, note } y NO HAY NINGÚN
+                // CAMPO que diga si hay partido — js/parent/panel.js lo compone
+                // leyendo tres inputs de texto libre. Así que se mira el TEXTO
+                // de la nota y del sitio. Se respeta además un `kind`
+                // estructurado por si algún día se añade al compositor, que es
+                // la solución buena; mientras no exista, la heurística es lo
+                // único que funciona sobre los planes YA guardados.
+                const _esPartido = (dy) => {
+                    const k = String(dy.kind || dy.type || '').trim().toLowerCase();
+                    if (k) return k === 'partido' || k === 'liga' || k === 'amistoso' || k === 'match';
+                    const txt = (String(dy.note || '') + ' ' + String(dy.venue || '')).toLowerCase();
+                    return /\b(partido|amistoso|liga)\b/.test(txt);
+                };
+
                 const weekDaysHTML = Array.isArray(d.days)
                     ? d.days.map(dy => {
                         const hasData = dy.time || dy.venue || dy.note;
-                        return '<div style="display:flex;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
-                            + '<div style="font-weight:700;color:#f0883e;min-width:80px;font-size:0.82rem;">' + escapeHtml(dy.day||'') + '</div>'
-                            + '<div style="font-size:0.8rem;color:' + (hasData?'var(--text)':'#555') + ';">'
-                            + (hasData
-                                ? [dy.time?'🕐 '+dy.time:'', dy.venue?'📍 '+escapeHtml(dy.venue):'', dy.note?'📝 '+escapeHtml(dy.note):''].filter(Boolean).join(' &nbsp;·&nbsp; ')
-                                : '_Descanso_')
-                            + '</div></div>';
+                        const match   = hasData && _esPartido(dy);
+                        // Las líneas de detalle conservan los mismos emojis y el
+                        // mismo "_Descanso_" que la versión vertical: hay guards
+                        // que los fijan y el contenido no es lo que se rediseña.
+                        const detalle = hasData
+                            ? [dy.time  ? '🕐 ' + escapeHtml(dy.time)  : '',
+                               dy.venue ? '📍 ' + escapeHtml(dy.venue) : '',
+                               dy.note  ? '📝 ' + escapeHtml(dy.note)  : '']
+                              .filter(Boolean).map(l => '<div class="wp-line">' + l + '</div>').join('')
+                            : '<div class="wp-line wp-rest">_Descanso_</div>';
+                        // data-day identifica la tarjeta sin depender del texto
+                        // de dentro: es lo que permite comprobar en el guard qué
+                        // día concreto se ha marcado en verde.
+                        return '<div class="wp-day' + (match ? ' wp-day-match' : '') + '"'
+                            + ' data-day="' + escapeAttr(dy.day || '') + '">'
+                            + '<div class="wp-day-head">' + escapeHtml(dy.day || '')
+                            + (match ? '<span class="wp-badge">⚽ PARTIDO</span>' : '')
+                            + '</div>'
+                            + '<div class="wp-day-body">' + detalle + '</div>'
+                            + '</div>';
                     }).join('')
                     : '';
+
+                // CSS propio del modal: no hay hoja de estilos que cubra esto y
+                // el overlay se cuelga suelto del body.
+                const wpCss = '<style>'
+                    + '.wp-week{display:flex;flex-direction:row;gap:0.5rem;overflow-x:auto;'
+                        + 'padding-bottom:0.5rem;-webkit-overflow-scrolling:touch;}'
+                    + '.wp-week::-webkit-scrollbar{height:6px;}'
+                    + '.wp-week::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.18);border-radius:3px;}'
+                    // flex-shrink:0 es lo que hace que el scroll exista: sin esto
+                    // los siete días se comprimen y no hay nada que desplazar.
+                    + '.wp-day{flex:0 0 auto;flex-shrink:0;min-width:132px;max-width:170px;'
+                        + 'border:1px solid rgba(255,255,255,0.10);border-radius:9px;'
+                        + 'background:rgba(255,255,255,0.03);overflow:hidden;}'
+                    + '.wp-day-head{font-weight:700;font-size:0.78rem;color:#f0883e;'
+                        + 'padding:0.4rem 0.55rem;background:rgba(240,136,62,0.10);'
+                        + 'border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;}'
+                    + '.wp-day-body{padding:0.45rem 0.55rem;display:flex;flex-direction:column;gap:0.25rem;}'
+                    + '.wp-line{font-size:0.76rem;color:var(--text,#c9d1d9);word-break:break-word;}'
+                    + '.wp-rest{color:#555;font-style:italic;}'
+                    // Día con partido: verde del proyecto, en el borde y en la cabecera.
+                    + '.wp-day-match{border-color:#3fb950;box-shadow:0 0 0 1px rgba(63,185,80,0.35);}'
+                    + '.wp-day-match .wp-day-head{color:#3fb950;background:rgba(63,185,80,0.16);}'
+                    + '.wp-badge{display:block;font-size:0.6rem;font-weight:800;letter-spacing:0.5px;'
+                        + 'color:#3fb950;margin-top:2px;}'
+                    + '</style>';
+
                 body = `
+                ${wpCss}
                 <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
                     ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                    <div style="display:flex;flex-direction:column;gap:0;">${weekDaysHTML}</div>
+                    <div class="wp-week">${weekDaysHTML}</div>
                     ${d.location?`<div style="font-size:0.85rem;margin-top:0.5rem;">📍 ${escapeHtml(d.location)}</div>`:''}
                     ${d.notes?`<div style="font-size:0.82rem;margin-top:0.4rem;padding:0.5rem;background:rgba(255,255,255,0.04);border-radius:6px;">📝 ${escapeHtml(d.notes)}</div>`:''}
                 </div>`;
