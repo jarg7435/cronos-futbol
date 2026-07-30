@@ -468,18 +468,40 @@ function _getCanonicalContext(role, tabId) {
     } else if (role === 'director') {
         if (tabId === 'coordinators') return 'director_coordinator';
         if (tabId === 'coaches') return 'coach_director';
+        // Simétrico con la pestaña 'director' del Administrador de Club.
+        if (tabId === 'clubadmin') return 'clubadmin_director';
     } else if (role === 'coordinator') {
         if (tabId === 'director') return 'director_coordinator';
         if (tabId === 'coaches') return 'coach_coordinator';
     } else if (role === 'parent') {
         if (tabId === 'coach') return 'coach_parent';
+    } else if (role === 'club_admin') {
+        // 🔑 Canal con el Director: contexto propio, simétrico con la pestaña
+        // 'clubadmin' que el Director tiene al otro lado.
+        if (tabId === 'director') return 'clubadmin_director';
+    } else if (role === 'admin_individual') {
+        // 🔑 DECISIÓN DEL AUTOR: el Administrador Individual habla con su
+        // Entrenador por el contexto que el ENTRENADOR YA USA en su pestaña
+        // "Director" (que lista también a club_admin/admin). Reutilizarlo es lo
+        // que permite que el Entrenador responda sin tocar su panel; inventar
+        // un canal nuevo habría obligado a añadirle una pestaña.
+        if (tabId === 'coaches') return 'coach_director';
     }
+    // El canal con el SuperAdmin es común a los dos tipos de administrador.
+    if (tabId === 'superadmin') return 'sa';
     return `${role}_${tabId}`;
 }
 
 function _cThreadId(senderUid, recipientUid, tabContext) {
     if (!senderUid || !recipientUid) return '';
     const sorted = [senderUid, recipientUid].sort();
+    // 🔑 DECISIÓN DEL AUTOR: el canal con el SuperAdmin respeta la convención de
+    // SU bandeja (js/admin/superadmin/messaging.js), que construye los hilos
+    // como `sa_<uidA>_<uidB>` y los localiza filtrando por
+    // threadId.includes('sa_'). Sin esta excepción, los mensajes que inicia un
+    // administrador crearían un documento aparte y NO aparecerían en su bandeja
+    // — sin error visible por ningún lado.
+    if (tabContext === 'sa') return `sa_${sorted[0]}_${sorted[1]}`;
     return `${sorted[0]}_${sorted[1]}_${tabContext || 'gen'}`;
 }
 
@@ -558,10 +580,12 @@ window._umState = {
 // reales; el motor en sí (_renderUnifiedMessagingView) no se registra nunca
 // directamente, porque no es lo que llama nadie desde un onclick.
 const _UM_ENTRY_BY_ROLE = {
-    coach:       'openCoachMessaging',
-    director:    'openDirectorMessaging',
-    coordinator: 'openCoordinatorMessaging',
-    parent:      'openParentMessaging'
+    coach:            'openCoachMessaging',
+    director:         'openDirectorMessaging',
+    coordinator:      'openCoordinatorMessaging',
+    parent:           'openParentMessaging',
+    club_admin:       'openClubAdminMessaging',
+    admin_individual: 'openIndividualAdminMessaging'
 };
 
 // ── Entrada: Panel del Entrenador ────────────────────────────────────
@@ -592,6 +616,22 @@ async function openParentMessaging(tab, targetContainerId) {
 }
 window.openParentMessaging = openParentMessaging;
 
+// ── Entrada: Panel del Administrador de Club ─────────────────────────
+//  Canales: SuperAdmin (hacia arriba) y Director Deportivo (hacia abajo).
+async function openClubAdminMessaging(tab, targetContainerId) {
+    tab = tab || 'director';
+    await _renderUnifiedMessagingView('club_admin', tab, targetContainerId);
+}
+window.openClubAdminMessaging = openClubAdminMessaging;
+
+// ── Entrada: Panel del Administrador Individual ──────────────────────
+//  Canales: SuperAdmin (hacia arriba) y su Entrenador.
+async function openIndividualAdminMessaging(tab, targetContainerId) {
+    tab = tab || 'coaches';
+    await _renderUnifiedMessagingView('admin_individual', tab, targetContainerId);
+}
+window.openIndividualAdminMessaging = openIndividualAdminMessaging;
+
 // ── MOTOR PRINCIPAL: Renderizado de la Interfaz Unificada ─────────────
 async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
@@ -611,7 +651,18 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     } else if (role === 'director') {
         tabs = [
             { id: 'coordinators', label: 'Coordinadores', icon: '🎯' },
-            { id: 'coaches', label: 'Entrenadores', icon: '⚽' }
+            { id: 'coaches', label: 'Entrenadores', icon: '⚽' },
+            { id: 'clubadmin', label: 'Admin. Club', icon: '🏛️' }
+        ];
+    } else if (role === 'club_admin') {
+        tabs = [
+            { id: 'director', label: 'Director', icon: '📋' },
+            { id: 'superadmin', label: 'SuperAdmin', icon: '👑' }
+        ];
+    } else if (role === 'admin_individual') {
+        tabs = [
+            { id: 'coaches', label: 'Entrenador', icon: '⚽' },
+            { id: 'superadmin', label: 'SuperAdmin', icon: '👑' }
         ];
     } else if (role === 'coordinator') {
         tabs = [
@@ -779,10 +830,15 @@ async function _switchUnifiedTab(tabId) {
 
     const role = window._umState.role;
     let tabs = [];
+    // ⚠️ SEGUNDA LISTA DE PESTAÑAS: tiene que decir lo mismo que la de
+    // _renderUnifiedMessagingView. Si se añade una pestaña allí y no aquí, el
+    // botón se pinta pero al pulsarlo no cambia nada.
     if (role === 'coach') tabs = ['parents', 'director', 'coordinator'];
-    else if (role === 'director') tabs = ['coordinators', 'coaches'];
+    else if (role === 'director') tabs = ['coordinators', 'coaches', 'clubadmin'];
     else if (role === 'coordinator') tabs = ['director', 'coaches'];
     else if (role === 'parent') tabs = ['coach'];
+    else if (role === 'club_admin') tabs = ['director', 'superadmin'];
+    else if (role === 'admin_individual') tabs = ['coaches', 'superadmin'];
 
     tabs.forEach(t => {
         const btn = document.getElementById(`um-tab-${t}`);
@@ -1149,6 +1205,30 @@ async function _loadUnifiedContactList(tabId) {
         // ════════════════════════════════════════════════════════════
         // CASO 3: COORDINADOR (tabs: director, coaches)
         // ════════════════════════════════════════════════════════════
+        else if (window._umState.role === 'director' && tabId === 'clubadmin') {
+            // Pestaña nueva (implementar.txt 2026-07-30): el Director habla con
+            // el Administrador de Club. Simétrica de la pestaña 'director' del
+            // Administrador de Club — las dos usan el contexto
+            // 'clubadmin_director', que es lo que hace que compartan hilo.
+            const byUid = new Map();
+            const staffList = await _cGetStaff(db, clubId, fns, ['club_admin', 'admin']);
+            const firestoreAdmins = clubUsers.filter(u =>
+                u.role === 'club_admin' || u.role === 'admin' || u._activeRole === 'club_admin' ||
+                (Array.isArray(u.allRoles) && u.allRoles.some(r => r && (r.role === 'club_admin' || r.role === 'admin') && r.status !== 'rejected')));
+            [...staffList, ...firestoreAdmins].forEach(u => {
+                const uid = u.uid || u.id;
+                if (uid && !byUid.has(uid)) {
+                    byUid.set(uid, {
+                        id: uid, uid,
+                        name: u.displayName || u.name || u.email || 'Administrador de Club',
+                        subtitle: `Administrador de Club · ${u.email || ''}`,
+                        email: u.email || '', phone: u.phone || '',
+                        roleTag: 'club_admin', icon: '🏛️'
+                    });
+                }
+            });
+            contacts = Array.from(byUid.values());
+        }
         else if (window._umState.role === 'coordinator') {
             if (tabId === 'director') {
                 if (typeof loadEmailConfig === 'function') await loadEmailConfig();
@@ -1265,6 +1345,75 @@ async function _loadUnifiedContactList(tabId) {
                 if (parentCat) {
                     filterText = `⚽ Entrenador asignado a tu equipo: <strong style="color:#58a6ff;">${_normCat(parentCat).toUpperCase()} ${parentSub.toUpperCase()}</strong>`;
                 }
+            }
+        }
+        // ════════════════════════════════════════════════════════════
+        // CASO 5 y 6: ADMINISTRADOR DE CLUB / ADMINISTRADOR INDIVIDUAL
+        //  (implementar.txt 2026-07-30 — cerrar la red de comunicación)
+        //  club_admin:       tabs director   + superadmin
+        //  admin_individual: tabs coaches    + superadmin
+        // ════════════════════════════════════════════════════════════
+        else if (window._umState.role === 'club_admin' || window._umState.role === 'admin_individual') {
+            // El SuperAdmin NO pertenece al club, así que no sale de clubUsers:
+            // hay que buscarlo por rol en toda la colección.
+            if (tabId === 'superadmin') {
+                const byUid = new Map();
+                try {
+                    const saSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'superadmin')));
+                    saSnap.forEach(d => {
+                        const u = d.data();
+                        byUid.set(d.id, {
+                            id: d.id, uid: d.id,
+                            name: u.displayName || u.email || 'SuperAdmin',
+                            subtitle: `SuperAdmin · ${u.email || ''}`,
+                            email: u.email || '', phone: u.phone || '',
+                            roleTag: 'superadmin', icon: '👑'
+                        });
+                    });
+                } catch (_) { /* sin permiso o sin red: lista vacía, no se rompe */ }
+                contacts = Array.from(byUid.values());
+                filterText = '👑 Canal directo con el SuperAdmin de la plataforma';
+            }
+            // Director Deportivo del club (sólo Administrador de Club).
+            else if (tabId === 'director') {
+                const byUid = new Map();
+                const staffList = await _cGetStaff(db, clubId, fns, ['director']);
+                const firestoreDirs = clubUsers.filter(u =>
+                    u.role === 'director' || u._activeRole === 'director' ||
+                    (Array.isArray(u.allRoles) && u.allRoles.some(r => r && r.role === 'director' && r.status !== 'rejected')));
+                [...staffList, ...firestoreDirs].forEach(u => {
+                    const uid = u.uid || u.id;
+                    if (uid && !byUid.has(uid)) {
+                        byUid.set(uid, {
+                            id: uid, uid,
+                            name: u.displayName || u.name || u.email || 'Director Deportivo',
+                            subtitle: `Director Deportivo · ${u.email || ''}`,
+                            email: u.email || '', phone: u.phone || '',
+                            roleTag: 'director', icon: '📋'
+                        });
+                    }
+                });
+                contacts = Array.from(byUid.values());
+            }
+            // Entrenador (sólo Administrador Individual: es su ente técnico).
+            else if (tabId === 'coaches') {
+                const byUid = new Map();
+                clubUsers.filter(u =>
+                    u.role === 'user' || u.role === 'coach' || u._activeRole === 'coach' ||
+                    (Array.isArray(u.allRoles) && u.allRoles.some(r => r && (r.role === 'user' || r.role === 'coach' || r.role === 'entrenador_individual') && r.status !== 'rejected'))
+                ).forEach(u => {
+                    const uid = u.uid || u.id;
+                    if (uid && !byUid.has(uid)) {
+                        byUid.set(uid, {
+                            id: uid, uid,
+                            name: u.displayName || u.name || u.email || 'Entrenador',
+                            subtitle: `Entrenador · ${u.email || ''}`,
+                            email: u.email || '', phone: u.phone || '',
+                            roleTag: 'coach', icon: '⚽'
+                        });
+                    }
+                });
+                contacts = Array.from(byUid.values());
             }
         }
 

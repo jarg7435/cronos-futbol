@@ -721,6 +721,15 @@ async function openClubAdminPanel(preClubId = null) {
           <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador del Club</div>
         </div>
         <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+          <!-- Mensajes internos (implementar.txt 2026-07-30): canales con el
+               SuperAdmin y con el Director Deportivo del club. Se invoca AL
+               PULSAR, no al cargar: comms/panel.js se carga después que este
+               fichero en index.html y llamarlo en carga rompería por orden. -->
+          <button onclick="if(typeof openClubAdminMessaging==='function') openClubAdminMessaging('director'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);"
+              style="padding:0.45rem 1rem;background:rgba(63,185,80,0.15);
+                     border:1px solid rgba(63,185,80,0.45);border-radius:10px;
+                     color:#3fb950;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              💬 Mensajes</button>
           <button onclick="caNotifySuperAdmin('${clubId}')"
               style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
                      border:1px solid rgba(88,166,255,0.4);border-radius:10px;

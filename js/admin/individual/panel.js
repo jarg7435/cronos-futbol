@@ -698,6 +698,15 @@ async function openIndividualAdminPanel() {
                      border:1px solid rgba(63,185,80,0.5);border-radius:10px;
                      color:#3fb950;font-size:0.85rem;font-weight:700;cursor:pointer;">
               ⚽ Crear Partido</button>
+          <!-- Mensajes internos (implementar.txt 2026-07-30): canales con el
+               SuperAdmin y con su Entrenador. Se invoca AL PULSAR, no al
+               cargar: comms/panel.js va después que este fichero en
+               index.html y llamarlo en carga rompería por orden. -->
+          <button onclick="if(typeof openIndividualAdminMessaging==='function') openIndividualAdminMessaging('coaches'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);"
+              style="padding:0.45rem 1rem;background:rgba(63,185,80,0.15);
+                     border:1px solid rgba(63,185,80,0.45);border-radius:10px;
+                     color:#3fb950;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              💬 Mensajes</button>
           <button onclick="indNotifySuperAdmin()"
               style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
                      border:1px solid rgba(88,166,255,0.4);border-radius:10px;
