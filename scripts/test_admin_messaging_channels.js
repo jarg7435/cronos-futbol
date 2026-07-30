@@ -216,5 +216,74 @@ console.log('\n── PARTE 5 · 🔑 participants, que es lo que permiten las r
        /participants:\s*\[/.test(s));
 }
 
+// ═══════ PARTE 6 · los dos fallos vistos en el navegador ═══════
+// El autor probó los canales nuevos en producción (2026-07-30) y encontró dos
+// destinatarios que NO se resolvían. Las dos causas son de IDENTIDAD, no de
+// hilo: el contexto era correcto, pero la lista de destinatarios salía vacía.
+//
+//  1. DIRECTOR → ADMIN DE CLUB: "No se encontraron destinatarios". El vínculo
+//     autoritativo del administrador NO está en users/{uid}.role sino en el
+//     DOCUMENTO DEL CLUB (clubs/{clubId}.adminUid / .adminEmail / .createdBy) —
+//     es lo que usa el propio openClubAdminPanel para saber qué club abrir.
+//     Buscar sólo por rol en `users` deja la pestaña vacía en cuanto el doc de
+//     usuario no lleva el rol propagado, que es el caso normal.
+//
+//  2. ENTRENADOR → ADMIN INDIVIDUAL: el Entrenador no tenía por dónde
+//     escribirle. La pestaña "Director" del Entrenador acepta
+//     director/club_admin/admin, pero un administrador individual tiene rol
+//     `individual` o `admin_individual` — nombres distintos, así que quedaba
+//     fuera del filtro. (El contexto `coach_director` ya era el correcto: lo que
+//     faltaba era que apareciese en la lista.)
+console.log('\n── PARTE 6 · resolución de destinatarios (fallos de producción) ──');
+{
+    const s = sinCom(SRC);
+    const bloque = (marca, fin) => {
+        const i = s.indexOf(marca);
+        return i === -1 ? '' : s.slice(i, fin ? s.indexOf(fin, i) : i + 2600);
+    };
+
+    // — Fallo 1 —
+    const tabClubAdmin = bloque("role === 'director' && tabId === 'clubadmin'", "else if (window._umState.role === 'coordinator')");
+    ok('6a · 🔑 el Director busca al Admin de Club en el DOCUMENTO del club',
+       /'clubs'/.test(tabClubAdmin), tabClubAdmin.slice(0, 200));
+    ok('6b · 🔑 y lo resuelve por adminUid, adminEmail o createdBy',
+       /adminUid/.test(tabClubAdmin) && /adminEmail/.test(tabClubAdmin) &&
+       /createdBy/.test(tabClubAdmin), tabClubAdmin.slice(0, 200));
+    ok('6c · sin perder la búsqueda por rol, que sigue como respaldo',
+       /club_admin/.test(tabClubAdmin));
+    // Se comprueba que la lectura del club esté ENVUELTA en un try/catch, no
+    // por distancia en caracteres: el bloque es largo y una ventana fija daba
+    // rojo con el código ya correcto.
+    ok('6d · 🔑 y tolera que la lectura del club falle, sin dejar la pestaña rota',
+       /try\s*\{[\s\S]*?'clubs'[\s\S]*?\}\s*catch/.test(tabClubAdmin));
+
+    // — Fallo 2 —
+    const tabDirCoach = bloque("else if (tabId === 'director')", "else if (tabId === 'coordinator')");
+    // ⚠️ Estas dos son CENSOS DE FUENTE, no pruebas de comportamiento: montar un
+    // sandbox de _loadUnifiedContactList exige simular Firestore y el DOM
+    // enteros. Por eso se fijan los CONSTRUCTOS exactos y no la mera presencia
+    // de un identificador: con `/admin_individual/` a secas, vaciar la lista o
+    // cambiar la etiqueta dejaba el guard en verde — lo destapó la prueba de rojo.
+    ok('6e · 🔑 la lista de destinatarios del Entrenador INCLUYE a los admins individuales',
+       /const firestoreIndAdmins = clubUsers\.filter\(_esAdminIndividual\)/.test(tabDirCoach) &&
+       /\[\.\.\.staffList, \.\.\.firestoreDirs, \.\.\.firestoreIndAdmins\]/.test(tabDirCoach),
+       tabDirCoach.slice(0, 300));
+    ok('6f · 🔑 y se etiqueta según lo que es, no siempre como Director',
+       /subtitle: `\$\{esInd \? 'Administrador Individual' : 'Director Deportivo'\}/.test(tabDirCoach),
+       (tabDirCoach.match(/subtitle:[^\n]*/) || ['(no aparece)'])[0]);
+    ok('6g · sin dejar de listar a los directores de siempre',
+       /'director'/.test(tabDirCoach));
+
+    // 🔑 El contexto NO cambia: el hilo del Admin Individual con su Entrenador
+    // sigue siendo el mismo que ya calculaba la PARTE 2. Esto era un fallo de
+    // LISTA, no de hilo, y confundirlos habría roto los hilos ya creados.
+    if (API_OK) {
+        const { ctx } = cargarPuras();
+        ok('6h · 🔑 el contexto Admin Individual ↔ Entrenador NO se ha tocado',
+           ctx('admin_individual', 'coaches') === 'coach_director' &&
+           ctx('coach', 'director') === 'coach_director');
+    } else { ok('6h · omitida: no se pudieron extraer las funciones', false); }
+}
+
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

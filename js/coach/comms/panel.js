@@ -1068,20 +1068,38 @@ async function _loadUnifiedContactList(tabId) {
                 if (typeof loadEmailConfig === 'function') await loadEmailConfig();
                 const manualContacts = (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts)) ? emailConfig.contacts : [];
                 const staffList = await _cGetStaff(db, clubId, fns, ['director', 'club_admin', 'admin']);
-                
+
                 const byUid = new Map();
                 const firestoreDirs = clubUsers.filter(u => {
                     return u.role === 'director' || u._activeRole === 'director' || (Array.isArray(u.allRoles) && u.allRoles.some(r => r && (r.role === 'director' || r.role === 'club_admin' || r.role === 'admin') && r.status !== 'rejected'));
                 });
-                [...staffList, ...firestoreDirs].forEach(u => {
+                // 🔑 ADMINISTRADOR INDIVIDUAL (fallo visto en producción
+                // 2026-07-30 — el Entrenador no tenía por dónde escribirle).
+                // Su rol se llama 'individual' o 'admin_individual', NO
+                // 'club_admin', así que el filtro de arriba lo dejaba fuera.
+                // El contexto del hilo ya era el correcto (coach_director): esto
+                // era un fallo de LISTA, no de hilo, y por eso se arregla aquí y
+                // NO tocando _getCanonicalContext — cambiar el contexto dejaría
+                // huérfanos los hilos ya creados.
+                // Sólo en la pestaña del ENTRENADOR: en un ente individual no
+                // hay coordinador, así que su pestaña equivalente no se toca.
+                const _esAdminIndividual = (u) =>
+                    u.role === 'individual' || u.role === 'admin_individual' ||
+                    u._activeRole === 'individual' ||
+                    (Array.isArray(u.allRoles) && u.allRoles.some(r => r &&
+                        (r.role === 'individual' || r.role === 'admin_individual') && r.status !== 'rejected'));
+                const firestoreIndAdmins = clubUsers.filter(_esAdminIndividual);
+                [...staffList, ...firestoreDirs, ...firestoreIndAdmins].forEach(u => {
                     const uid = u.uid || u.id;
                     if (uid && !byUid.has(uid)) {
+                        const esInd = _esAdminIndividual(u);
                         byUid.set(uid, {
                             id: uid, uid,
-                            name: u.displayName || u.name || u.email || 'Director Deportivo',
-                            subtitle: `Director Deportivo · ${u.email || ''}`,
+                            name: u.displayName || u.name || u.email || (esInd ? 'Administrador Individual' : 'Director Deportivo'),
+                            subtitle: `${esInd ? 'Administrador Individual' : 'Director Deportivo'} · ${u.email || ''}`,
                             email: u.email || '', phone: u.phone || '',
-                            roleTag: 'director', icon: '📋'
+                            roleTag: esInd ? 'admin_individual' : 'director',
+                            icon: esInd ? '👤' : '📋'
                         });
                     }
                 });
@@ -1211,6 +1229,42 @@ async function _loadUnifiedContactList(tabId) {
             // Administrador de Club — las dos usan el contexto
             // 'clubadmin_director', que es lo que hace que compartan hilo.
             const byUid = new Map();
+
+            // 🔑 FUENTE PRIMARIA: EL DOCUMENTO DEL CLUB (fallo visto en
+            // producción 2026-07-30 — la pestaña salía "sin destinatarios").
+            // El vínculo autoritativo del administrador NO está en
+            // users/{uid}.role sino en clubs/{clubId}: adminUid / adminEmail /
+            // createdBy. Es exactamente lo que usa openClubAdminPanel para
+            // decidir qué club abrir. Buscar sólo por rol deja la pestaña vacía
+            // en cuanto el doc de usuario no lleva el rol propagado, que es el
+            // caso normal.
+            if (clubId) {
+                try {
+                    const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+                    if (clubSnap.exists()) {
+                        const c = clubSnap.data() || {};
+                        const adminUid = c.adminUid || c.createdBy || '';
+                        const adminEmail = c.adminEmail || '';
+                        // Se completa el nombre desde users si ese doc está a mano.
+                        let ficha = null;
+                        if (adminUid) ficha = clubUsers.find(u => (u.uid || u.id) === adminUid) || null;
+                        if (!ficha && adminEmail) ficha = clubUsers.find(u => u.email === adminEmail) || null;
+                        const uid = adminUid || (ficha && (ficha.uid || ficha.id)) || '';
+                        if (uid) {
+                            byUid.set(uid, {
+                                id: uid, uid,
+                                name: (ficha && (ficha.displayName || ficha.name)) || adminEmail || 'Administrador de Club',
+                                subtitle: `Administrador de Club · ${adminEmail || (ficha && ficha.email) || ''}`,
+                                email: adminEmail || (ficha && ficha.email) || '',
+                                phone: (ficha && ficha.phone) || '',
+                                roleTag: 'club_admin', icon: '🏛️'
+                            });
+                        }
+                    }
+                } catch (_) { /* sin permiso o sin red: quedan los respaldos por rol */ }
+            }
+
+            // RESPALDO: búsqueda por rol, como estaba.
             const staffList = await _cGetStaff(db, clubId, fns, ['club_admin', 'admin']);
             const firestoreAdmins = clubUsers.filter(u =>
                 u.role === 'club_admin' || u.role === 'admin' || u._activeRole === 'club_admin' ||
