@@ -1332,7 +1332,15 @@ async function _loadUnifiedContactList(tabId) {
                     const clubSnap = await getDoc(doc(db, 'clubs', clubId));
                     if (clubSnap.exists()) {
                         const c = clubSnap.data() || {};
-                        const adminUid = c.adminUid || c.createdBy || '';
+                        // 🔑 SIN `createdBy`, Y ES DELIBERADO: ese campo es QUIEN
+                        // CREÓ el club, no quién lo administra — y los clubes los
+                        // crea el SuperAdmin (js/admin/club/panel.js escribe
+                        // `createdBy: me.uid`). Usarlo metía al SuperAdmin en esta
+                        // lista etiquetado como Administrador de Club, y el
+                        // Director NO debe tener canal con él.
+                        // ⚠️ En el ENTE INDIVIDUAL sí se usa createdBy: allí el
+                        // creador ES el administrador individual.
+                        const adminUid = c.adminUid || '';
                         const adminEmail = c.adminEmail || '';
                         // Se completa el nombre desde users si ese doc está a mano.
                         let ficha = null;
@@ -1352,16 +1360,10 @@ async function _loadUnifiedContactList(tabId) {
                             } catch (_) {}
                         }
                         const uid = adminUid || (ficha && (ficha.uid || ficha.id)) || '';
-                        if (uid) {
-                            byUid.set(uid, {
-                                id: uid, uid,
-                                name: (ficha && (ficha.displayName || ficha.name)) || adminEmail || 'Administrador de Club',
-                                subtitle: `Administrador de Club · ${adminEmail || (ficha && ficha.email) || ''}`,
-                                email: adminEmail || (ficha && ficha.email) || '',
-                                phone: (ficha && ficha.phone) || '',
-                                roleTag: 'club_admin', icon: '🏛️'
-                            });
-                        }
+                        // Vía _addAdmin para que el filtro de SuperAdmin se
+                        // aplique TAMBIÉN aquí: construir el contacto a mano se
+                        // saltaba la única puerta que lo excluye.
+                        _addAdmin(uid, Object.assign({ email: adminEmail }, ficha || {}));
                     }
                 } catch (_) { /* sin permiso o sin red: quedan los respaldos por rol */ }
             }
@@ -1374,8 +1376,17 @@ async function _loadUnifiedContactList(tabId) {
             // y contaminaban otras pestañas. Pero el rol `club_admin` vive
             // justamente ahí en muchas cuentas, así que el administrador era
             // invisible POR DISEÑO. Esta consulta no pasa por ese filtro.
+            // 🔑 REGLA DE NEGOCIO (autor, 2026-07-30): el Director NO tiene
+            // canal con el SuperAdmin — eso es competencia exclusiva del
+            // Administrador de Club. Se excluye en TODOS los caminos, incluido
+            // el respaldo por hilos, mirando el rol raíz y también allRoles.
+            const _esSuperAdmin = (u) => !!u && (
+                u.role === 'superadmin' || u._activeRole === 'superadmin' ||
+                (Array.isArray(u.allRoles) && u.allRoles.some(r => r && r.role === 'superadmin')));
+
             const _addAdmin = (uid, u) => {
                 if (!uid || byUid.has(uid)) return;
+                if (_esSuperAdmin(u)) return;
                 byUid.set(uid, {
                     id: uid, uid,
                     name: (u && (u.displayName || u.name)) || (u && u.email) || 'Administrador de Club',
@@ -1438,18 +1449,9 @@ async function _loadUnifiedContactList(tabId) {
             const firestoreAdmins = clubUsers.filter(u =>
                 u.role === 'club_admin' || u.role === 'admin' || u._activeRole === 'club_admin' ||
                 (Array.isArray(u.allRoles) && u.allRoles.some(r => r && (r.role === 'club_admin' || r.role === 'admin') && r.status !== 'rejected')));
-            [...staffList, ...firestoreAdmins].forEach(u => {
-                const uid = u.uid || u.id;
-                if (uid && !byUid.has(uid)) {
-                    byUid.set(uid, {
-                        id: uid, uid,
-                        name: u.displayName || u.name || u.email || 'Administrador de Club',
-                        subtitle: `Administrador de Club · ${u.email || ''}`,
-                        email: u.email || '', phone: u.phone || '',
-                        roleTag: 'club_admin', icon: '🏛️'
-                    });
-                }
-            });
+            // También por _addAdmin: es la ÚNICA puerta donde se filtra al
+            // SuperAdmin, y _cGetStaff lo incluye si figura como staff del club.
+            [...staffList, ...firestoreAdmins].forEach(u => _addAdmin(u.uid || u.id, u));
             contacts = Array.from(byUid.values());
             }
         }

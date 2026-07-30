@@ -248,9 +248,13 @@ console.log('\n── PARTE 6 · resolución de destinatarios (fallos de producc
     const tabClubAdmin = bloque("else if (tabId === 'clubadmin')", "else if (window._umState.role === 'coordinator')");
     ok('6a · 🔑 el Director busca al Admin de Club en el DOCUMENTO del club',
        /'clubs'/.test(tabClubAdmin), tabClubAdmin.slice(0, 200));
-    ok('6b · 🔑 y lo resuelve por adminUid, adminEmail o createdBy',
-       /adminUid/.test(tabClubAdmin) && /adminEmail/.test(tabClubAdmin) &&
-       /createdBy/.test(tabClubAdmin), tabClubAdmin.slice(0, 200));
+    // ⚠️ ESTA ASERCIÓN PEDÍA `createdBy` Y ERA ELLA LA QUE FIJABA EL FALLO:
+    // el creador de un club es el SUPERADMIN (js/admin/club/panel.js escribe
+    // createdBy: me.uid), así que resolver por ahí metía al SuperAdmin en la
+    // lista del Director etiquetado como Administrador de Club. Ver PARTE 10.
+    ok('6b · 🔑 y lo resuelve por adminUid o adminEmail (NO por createdBy)',
+       /adminUid/.test(tabClubAdmin) && /adminEmail/.test(tabClubAdmin),
+       tabClubAdmin.slice(0, 200));
     ok('6c · sin perder la búsqueda por rol, que sigue como respaldo',
        /club_admin/.test(tabClubAdmin));
     // Se comprueba que la lectura del club esté ENVUELTA en un try/catch, no
@@ -495,6 +499,57 @@ console.log('\n── PARTE 9 · 🔑 ninguna rama de rol queda inalcanzable ─
     const sinResolver = tabsDir.filter(t => !new RegExp(`tabId === '${t}'`).test(ramaDir));
     ok('9e · 🔑 todas las pestañas del Director tienen resolución dentro de su rama',
        sinResolver.length === 0, JSON.stringify(sinResolver));
+}
+
+// ═══════ PARTE 10 · 🔑 el SuperAdmin NO es un Administrador de Club ═══════
+// Fallo visto en producción (2026-07-30, ya con el canal funcionando): en la
+// pestaña "Admin. Club" del Director aparecía el email del SUPERADMIN,
+// etiquetado como Administrador de Club.
+//
+// 🔑 CAUSA: la resolución usaba `adminUid || createdBy`, y `createdBy` es QUIEN
+// CREÓ EL CLUB — que es el SuperAdmin (js/admin/club/panel.js escribe
+// `createdBy: me.uid` al crearlo). O sea: el campo no significa "administrador",
+// significa "creador", y confundirlos metía al SuperAdmin en la lista.
+//
+// REGLA DE NEGOCIO DEL AUTOR: el Director NO tiene canal con el SuperAdmin —
+// eso es competencia exclusiva del Administrador de Club. Así que además de
+// quitar `createdBy` se excluye al SuperAdmin en TODOS los caminos, incluido el
+// respaldo por hilos existentes.
+console.log('\n── PARTE 10 · 🔑 el SuperAdmin fuera de la pestaña del Director ──');
+{
+    const s = sinCom(SRC);
+    const i = s.indexOf("else if (tabId === 'clubadmin')");
+    const tab = i === -1 ? '' : s.slice(i, s.indexOf("else if (window._umState.role === 'coordinator')", i));
+
+    ok('10a · 🔑 la pestaña del Director NO resuelve por createdBy (= el creador, el SuperAdmin)',
+       !/createdBy/.test(tab), (tab.match(/createdBy[^\n]*/) || [''])[0]);
+    // Se fija la GUARDA dentro del helper, no la mera presencia del nombre:
+    // borrar el `return` dejaba el guard en verde.
+    ok('10b · 🔑 y excluye explícitamente a los SuperAdmin al añadir el contacto',
+       /_addAdmin = \([\s\S]{0,220}?if \(_esSuperAdmin\(u\)\) return;/.test(tab),
+       (tab.match(/_addAdmin = [\s\S]{0,160}/) || ['(no aparece)'])[0]);
+
+    // 🔑 INVARIANTE FUERTE: TODA creación de contacto de esta pestaña pasa por
+    // _addAdmin, que es la única puerta donde se filtra al SuperAdmin. Si algún
+    // camino construye el contacto a mano con byUid.set, se salta el filtro —
+    // y eso es exactamente lo que hacía el camino del documento del club.
+    ok('10f · 🔑 un solo punto de alta de contactos (byUid.set sólo dentro de _addAdmin)',
+       (tab.match(/byUid\.set\(/g) || []).length === 1,
+       'apariciones de byUid.set: ' + (tab.match(/byUid\.set\(/g) || []).length);
+    ok('10c · la exclusión mira el rol raíz y también allRoles',
+       /_esSuperAdmin = [\s\S]{0,240}allRoles/.test(s));
+    ok('10d · 🔑 se aplica también al respaldo por hilos, no sólo a la búsqueda por rol',
+       (() => {
+           const j = tab.indexOf('cronos_messages');
+           return j > -1 && /_esSuperAdmin|_addAdmin/.test(tab.slice(j));
+       })(), 'el respaldo por hilos debe pasar por el mismo filtro');
+
+    // 🔑 En un ENTE INDIVIDUAL sí vale createdBy: ahí el creador ES el
+    // administrador individual, no el SuperAdmin. La distinción importa.
+    const k = s.indexOf("const _entId = me.individualEntityId");
+    const tabEnte = k === -1 ? '' : s.slice(k, k + 2200);
+    ok('10e · 🔑 en el ente individual SÍ se conserva createdBy: allí el creador ES el admin',
+       /createdBy/.test(tabEnte), tabEnte.slice(0, 200));
 }
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);
