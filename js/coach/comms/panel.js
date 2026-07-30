@@ -1303,15 +1303,20 @@ async function _loadUnifiedContactList(tabId) {
                     };
                 });
             }
-        }
-        // ════════════════════════════════════════════════════════════
-        // CASO 3: COORDINADOR (tabs: director, coaches)
-        // ════════════════════════════════════════════════════════════
-        else if (window._umState.role === 'director' && tabId === 'clubadmin') {
-            // Pestaña nueva (implementar.txt 2026-07-30): el Director habla con
-            // el Administrador de Club. Simétrica de la pestaña 'director' del
-            // Administrador de Club — las dos usan el contexto
-            // 'clubadmin_director', que es lo que hace que compartan hilo.
+            // ⚠️⚠️ ESTA PESTAÑA VA **DENTRO** DE LA RAMA DEL DIRECTOR ⚠️⚠️
+            // Estuvo tres versiones (v412-v415) como un `else if` HERMANO
+            // —`else if (role === 'director' && tabId === 'clubadmin')`— colocado
+            // DESPUÉS del `else if (role === 'director')` de arriba. Ese `else if`
+            // genérico captura TODAS las pestañas del Director, así que la rama
+            // hermana era INALCANZABLE y `contacts` se quedaba vacío: "No se
+            // encontraron destinatarios". Tres rondas de correcciones dentro de
+            // ella no cambiaron nada porque el código NUNCA SE EJECUTÓ.
+            // El guard no lo veía porque censaba que el código EXISTIERA, no que
+            // fuese ALCANZABLE; ahora lo vigila la aserción 9a.
+            else if (tabId === 'clubadmin') {
+                // El Director habla con el Administrador de Club. Simétrica de la
+                // pestaña 'director' del Administrador de Club — las dos usan el
+                // contexto 'clubadmin_director', que es lo que les hace compartir hilo.
             const byUid = new Map();
 
             // 🔑 FUENTE PRIMARIA: EL DOCUMENTO DEL CLUB (fallo visto en
@@ -1446,7 +1451,11 @@ async function _loadUnifiedContactList(tabId) {
                 }
             });
             contacts = Array.from(byUid.values());
+            }
         }
+        // ════════════════════════════════════════════════════════════
+        // CASO 3: COORDINADOR (tabs: director, coaches)
+        // ════════════════════════════════════════════════════════════
         else if (window._umState.role === 'coordinator') {
             if (tabId === 'director') {
                 if (typeof loadEmailConfig === 'function') await loadEmailConfig();

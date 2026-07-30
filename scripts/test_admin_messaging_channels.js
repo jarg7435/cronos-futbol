@@ -243,7 +243,9 @@ console.log('\n── PARTE 6 · resolución de destinatarios (fallos de producc
     };
 
     // — Fallo 1 —
-    const tabClubAdmin = bloque("role === 'director' && tabId === 'clubadmin'", "else if (window._umState.role === 'coordinator')");
+    // ⚠️ Ancla actualizada: la pestaña pasó a estar ANIDADA dentro de la rama del
+    // Director (antes era un `else if` hermano, y por eso era inalcanzable).
+    const tabClubAdmin = bloque("else if (tabId === 'clubadmin')", "else if (window._umState.role === 'coordinator')");
     ok('6a · 🔑 el Director busca al Admin de Club en el DOCUMENTO del club',
        /'clubs'/.test(tabClubAdmin), tabClubAdmin.slice(0, 200));
     ok('6b · 🔑 y lo resuelve por adminUid, adminEmail o createdBy',
@@ -309,7 +311,9 @@ console.log('\n── PARTE 7 · consulta directa (segunda ronda de producción)
         const i = s.indexOf(marca);
         return i === -1 ? '' : s.slice(i, fin ? s.indexOf(fin, i) : i + 3200);
     };
-    const tabClubAdmin = bloque("role === 'director' && tabId === 'clubadmin'", "else if (window._umState.role === 'coordinator')");
+    // ⚠️ Ancla actualizada: la pestaña pasó a estar ANIDADA dentro de la rama del
+    // Director (antes era un `else if` hermano, y por eso era inalcanzable).
+    const tabClubAdmin = bloque("else if (tabId === 'clubadmin')", "else if (window._umState.role === 'coordinator')");
     const tabDirCoach  = bloque("else if (tabId === 'director')", "else if (tabId === 'coordinator')");
 
     // La consulta pasó a recorrer TODOS los clubIds descubiertos (PARTE 8), así
@@ -391,7 +395,7 @@ console.log('\n── PARTE 7 · consulta directa (segunda ronda de producción)
 console.log('\n── PARTE 8 · el Director ve a quien ya le escribió ──');
 {
     const s = sinCom(SRC);
-    const i = s.indexOf("role === 'director' && tabId === 'clubadmin'");
+    const i = s.indexOf("else if (tabId === 'clubadmin')");
     const tab = i === -1 ? '' : s.slice(i, s.indexOf("else if (window._umState.role === 'coordinator')", i));
 
     ok('8a · 🔑 busca en TODOS los clubIds descubiertos, no sólo en el propio',
@@ -426,6 +430,71 @@ console.log('\n── PARTE 8 · el Director ve a quien ya le escribió ──')
         ok('8h · y coincide con el que deriva el Admin de Club',
            esperado === tid(A, D, ctx('club_admin', 'director')), esperado);
     } else { ok('8g · omitida', false); }
+}
+
+// ═══════ PARTE 9 · 🔑 NINGUNA RAMA INALCANZABLE ═══════
+// LA CAUSA RAÍZ DE LAS TRES RONDAS (v412-v415), y no se parecía a nada de lo
+// que se investigó: la pestaña 'clubadmin' estaba escrita como un `else if`
+// HERMANO —`else if (role === 'director' && tabId === 'clubadmin')`— colocado
+// DESPUÉS del `else if (role === 'director')` genérico. Ese genérico captura
+// TODAS las pestañas del Director, así que la rama hermana era INALCANZABLE y
+// `contacts` se quedaba en []: "No se encontraron destinatarios".
+//
+// 🔑 TRES RONDAS DE CORRECCIONES DENTRO DE ESA RAMA NO CAMBIARON NADA PORQUE EL
+// CÓDIGO NUNCA SE EJECUTÓ. Y el guard no lo veía: censaba que el código
+// EXISTIERA en el fuente, no que fuese ALCANZABLE. Es la diferencia entre
+// "está escrito" y "se ejecuta", y es exactamente el punto ciego de un censo.
+console.log('\n── PARTE 9 · 🔑 ninguna rama de rol queda inalcanzable ──');
+{
+    const s = sinCom(SRC);
+    const i = s.indexOf("if (window._umState.role === 'coach')");
+    const despacho = i === -1 ? '' : s.slice(i, s.indexOf('window._umState.contacts = contacts;', i));
+
+    // Todas las ramas de PRIMER nivel del despacho, en orden.
+    // ⚠️ `\s+` y no una indentación fija: la primera versión exigía exactamente
+    // 8 espacios y NO detectaba la rama inalcanzable cuando venía indentada de
+    // otra forma — que es como estaba en el bug real. Lo destapó la prueba de
+    // rojo, donde 9a se quedó callada y sólo saltó 9c.
+    const ramas = [...despacho.matchAll(/\n\s+(?:else )?if \(window\._umState\.role === '(\w+)'([^)]*)\)/g)]
+        .map(m => ({ rol: m[1], extra: (m[2] || '').trim() }));
+
+    // Una rama con condición EXTRA (p. ej. `&& tabId === 'x'`) que llegue
+    // DESPUÉS de otra rama del MISMO rol sin condición extra es inalcanzable.
+    const inalcanzables = [];
+    const vistosSinExtra = new Set();
+    ramas.forEach(r => {
+        if (r.extra && vistosSinExtra.has(r.rol)) inalcanzables.push(r.rol + ' ' + r.extra);
+        if (!r.extra) vistosSinExtra.add(r.rol);
+    });
+    ok('9a · 🔑 ninguna rama queda tras un else-if del MISMO rol sin condición',
+       inalcanzables.length === 0, JSON.stringify(inalcanzables));
+
+    // Y cada rol con pestañas tiene UNA sola rama de primer nivel.
+    const cuenta = {};
+    ramas.forEach(r => { cuenta[r.rol] = (cuenta[r.rol] || 0) + 1; });
+    const duplicados = Object.keys(cuenta).filter(k => cuenta[k] > 1);
+    ok('9b · 🔑 un rol, una sola rama de despacho',
+       duplicados.length === 0, JSON.stringify(cuenta));
+
+    // 🔑 Y la pestaña 'clubadmin' se resuelve DENTRO de la rama del Director.
+    const ramaDir = despacho.slice(despacho.indexOf("else if (window._umState.role === 'director')"),
+                                   despacho.indexOf("else if (window._umState.role === 'coordinator')"));
+    ok('9c · 🔑 la pestaña clubadmin vive DENTRO de la rama del Director',
+       /else if \(tabId === 'clubadmin'\)/.test(ramaDir), ramaDir.slice(0, 160));
+    ok('9d · y ahí dentro están las consultas que la resuelven',
+       /'clubs'/.test(ramaDir) && /cronos_messages/.test(ramaDir) && /_umAllClubIds/.test(ramaDir));
+
+    // Cada pestaña declarada para un rol debe tener resolución alcanzable.
+    const tabsBlock2 = SRC.slice(SRC.indexOf('let tabs = [];'),
+                                 SRC.indexOf("if (!tabs.find(t => t.id === tab))"));
+    const tabsDir = (() => {
+        const j = tabsBlock2.indexOf("role === 'director'");
+        const t = tabsBlock2.slice(j, tabsBlock2.indexOf('];', j));
+        return (t.match(/id: '(\w+)'/g) || []).map(x => x.replace(/id: '|'/g, ''));
+    })();
+    const sinResolver = tabsDir.filter(t => !new RegExp(`tabId === '${t}'`).test(ramaDir));
+    ok('9e · 🔑 todas las pestañas del Director tienen resolución dentro de su rama',
+       sinResolver.length === 0, JSON.stringify(sinResolver));
 }
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);
