@@ -315,6 +315,123 @@ console.log('\n── PARTE 6 · el código ──');
        /js\/coach\/reports\/reports-tab\.js/.test(leer('sw.js')));
 }
 
+// ═══════ PARTE 7 · 🔑 un jugador, UNA vez por partido ═══════
+// FALLO REAL VISTO EN PRODUCCIÓN (2026-07-30, reportado por el autor): las
+// tarjetas mostraban "42 JUGADORES", "84 JUGADORES".
+//
+// CAUSA: DOS escritores distintos crean documentos con staffReport:true para el
+// MISMO jugador y el MISMO partido, con ids distintos:
+//     ${matchId}_staff_p${n}   · match-reports-auto.js y match-reports-send.js
+//     ${matchId}_p${n}         · collective-report.js
+// La deduplicación por id de documento que ya había no los ve —son ids
+// distintos— y los dos caen en la misma clave de agrupación (fecha_rival_coach),
+// así que cada jugador se contaba tantas veces como vías de envío se usaran.
+//
+// ⚠️ Y NO ERA SÓLO EL CONTADOR: el mismo doble conteo inflaba los goles y las
+// lesiones de la tarjeta, y TODA la tabla resumen (un jugador con un partido
+// aparecía con PJ 2 y el doble de minutos). Por eso la deduplicación va en la
+// AGREGACIÓN y no en el badge: arreglar sólo el número habría dejado el resto
+// mintiendo, que es peor porque ya no se nota a simple vista.
+console.log('\n── PARTE 7 · 🔑 deduplicación de jugadores por partido ──');
+{
+    // Mismo jugador (dorsal 7) por las dos vías, mismo partido. Más un segundo
+    // jugador con una sola vía, para comprobar que no se pierde a nadie.
+    const dupes = {
+        'm1_staff_p7': R({ playerNumber: '7', playerAlias: 'Martín', goals: 2,
+                           injured: true, minutesPlayed: '90:00',
+                           createdAt: '2026-03-02T10:00:00Z' }),
+        'm1_p7':       R({ playerNumber: '7', playerAlias: 'Martín', goals: 2,
+                           injured: true, minutesPlayed: '90:00',
+                           createdAt: '2026-03-02T11:00:00Z' }),
+        'm1_staff_p10': R({ playerNumber: '10', playerAlias: 'Lucas', goals: 1,
+                            minutesPlayed: '45:00', createdAt: '2026-03-02T10:00:00Z' }),
+    };
+
+    const t = buildSandbox({ users: USERS, reports: dupes });
+    await t.g._sdLoadReports();
+    const h = t.container.innerHTML;
+
+    // ⚠️ Se extrae del BADGE concreto, no de un "\d+ jugadores" suelto: la
+    // <caption> de la tabla resumen también dice "N jugadores con informes", así
+    // que una búsqueda laxa podía dar verde leyendo el número equivocado.
+    const badge = (html) => ((String(html).match(/sd-badge[^>]*>(\d+) jugadores<\/span>/) || [])[1] || '(no aparece)');
+
+    ok('7a · 🔑 el badge cuenta JUGADORES ÚNICOS, no documentos (2, no 3)',
+       badge(h) === '2', badge(h));
+
+    ok('7b · 🔑 los goles de la tarjeta tampoco se duplican (2+1 = 3, no 5)',
+       /⚽ 3 gol/.test(h), (h.match(/⚽ \d+ gol\w*/) || ['(no aparece)'])[0]);
+
+    ok('7c · 🔑 ni las lesiones (1, no 2)',
+       /🩹 1 lesión/.test(h), (h.match(/🩹 \d+ lesi\w*/) || ['(no aparece)'])[0]);
+
+    // La tabla resumen sale del mismo array de players: si no se deduplica ahí,
+    // el jugador 7 aparece con PJ 2 y 180 minutos.
+    const totales = (h.match(/Total equipo<\/td>((?:<td>\d+<\/td>){6})/) || [])[1] || '';
+    const t7 = totales.replace(/<\/?td>/g, ' ').trim().replace(/\s+/g, ',');
+    // PJ, Min, Goles, Amarillas, Rojas, Lesiones → 2 jugadores, 90+45=135 min, 3 goles, 1 lesión
+    ok('7d · 🔑 la tabla resumen tampoco se infla (PJ 2, 135 min, 3 goles, 1 lesión)',
+       t7 === '2,135,3,0,0,1', t7);
+
+    // ⚠️ Acotado al <tbody>: la fila de "Total equipo" del <tfoot> usa la MISMA
+    // clase ct-stats-name, así que contarlas en todo el HTML daba 3 y la
+    // aserción fallaba por la razón equivocada, con el código ya correcto.
+    const filasCuerpo = (html) => (((String(html).match(/<tbody>([\s\S]*?)<\/tbody>/) || [])[1] || '')
+        .match(/<td class="ct-stats-name">/g) || []).length;
+    ok('7e · sigue habiendo UNA fila por jugador en el cuerpo de la tabla',
+       filasCuerpo(h) === 2, filasCuerpo(h));
+
+    // 🔑 Que no se pase de frenada: dos partidos distintos del mismo jugador
+    // SIGUEN contando como dos.
+    const dosPartidos = buildSandbox({ users: USERS, reports: {
+        a_staff_p7: R({ rival: 'Uno', matchDate: '2026-03-01', createdAt: '2026-03-01T10:00:00Z',
+                        goals: 1, minutesPlayed: '90:00' }),
+        b_staff_p7: R({ rival: 'Dos', matchDate: '2026-03-08', createdAt: '2026-03-08T10:00:00Z',
+                        goals: 1, minutesPlayed: '90:00' }),
+    } });
+    await dosPartidos.g._sdLoadReports();
+    const hd = dosPartidos.container.innerHTML;
+    const td = ((hd.match(/Total equipo<\/td>((?:<td>\d+<\/td>){6})/) || [])[1] || '')
+        .replace(/<\/?td>/g, ' ').trim().replace(/\s+/g, ',');
+    ok('7f · 🔑 NO deduplica de más: dos partidos distintos siguen siendo PJ 2 y 180 min',
+       td === '2,180,2,0,0,0', td);
+    ok('7g · y son dos tarjetas de informe',
+       (hd.match(/class="sd-report-card"/g) || []).length === 2);
+
+    // Jugadores sin dorsal: se distinguen por alias y no se colapsan entre sí.
+    const sinDorsal = buildSandbox({ users: USERS, reports: {
+        x1: R({ playerNumber: '', playerAlias: 'Iván' }),
+        x2: R({ playerNumber: '', playerAlias: 'Nico' }),
+        x3: R({ playerNumber: '', playerAlias: 'Iván' }),   // duplicado real
+    } });
+    await sinDorsal.g._sdLoadReports();
+    ok('7h · 🔑 sin dorsal se deduplica por alias, sin colapsar a jugadores distintos',
+       badge(sinDorsal.container.innerHTML) === '2', badge(sinDorsal.container.innerHTML));
+
+    // 🔑 El arreglo va en la agregación, así que tiene que valer TAMBIÉN en el
+    // camino plano (sin el módulo cargado).
+    const plano = buildSandbox({ withModule: false, users: USERS, reports: dupes });
+    await plano.g._sdLoadReports();
+    ok('7i · 🔑 también deduplica en la lista plana, sin el módulo',
+       badge(plano.container.innerHTML) === '2', badge(plano.container.innerHTML));
+
+    // 🔑 El índice de deduplicación es un ANDAMIO y tiene que desaparecer: estos
+    // objetos se cachean en window._sdMatchData y de ahí van al motor de
+    // informes _RP.build(). Un Map colado ahí no da error visible, que es
+    // justamente por lo que hay que fijarlo. (Sin esta aserción, la mutación
+    // "andamio-visible" pasaba el guard entero en verde.)
+    ok('7k · 🔑 el índice de deduplicación no se cuela en _sdMatchData',
+       Object.values(t.w._sdMatchData || {}).every(m => !('_byPlayer' in m)),
+       Object.keys(Object.values(t.w._sdMatchData || {})[0] || {}).join(','));
+
+    // Censo: la deduplicación existe en el fuente y no es un parche en el badge.
+    const sinCom = SRC_REPORTS.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n');
+    ok('7j · 🔑 se deduplica al AGRUPAR, no maquillando m.players.length',
+       /_sdPlayerKey|_sdDedup/.test(sinCom) &&
+       /\$\{m\.players\.length\} jugadores/.test(sinCom),
+       'el badge debe seguir leyendo players.length, ya deduplicado');
+}
+
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);
 

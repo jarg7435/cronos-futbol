@@ -338,6 +338,24 @@ async function _sdLoadReports() {
         }
 
         // ── Agrupar documentos por partido (fecha + rival + coach) ───
+
+        // Identidad de un jugador dentro de un partido: el dorsal si lo hay, si
+        // no el alias. El prefijo evita que un alias que parezca un número se
+        // mezcle con el dorsal de otro. Sin ninguno de los dos, el propio id del
+        // documento — así un doc raro nunca se traga a otro jugador.
+        const _sdPlayerKey = (r) => {
+            const num = String(r.playerNumber == null ? '' : r.playerNumber).trim();
+            if (num) return 'n:' + num;
+            const alias = String(r.playerAlias || r.playerName || '').trim().toLowerCase();
+            return alias ? 'a:' + alias : 'id:' + r._id;
+        };
+        // Gana el createdAt más reciente; a igualdad, el _id menor (determinista).
+        const _sdPreferDoc = (a, b) => {
+            const ca = String(a.createdAt || ''), cb = String(b.createdAt || '');
+            if (ca !== cb) return ca > cb ? a : b;
+            return String(a._id) < String(b._id) ? a : b;
+        };
+
         const matches = {};
         snap.forEach(docSnap => {
             const r   = { _id: docSnap.id, ...docSnap.data() };
@@ -369,15 +387,51 @@ async function _sdLoadReports() {
                     duration:      r.duration,
                     stoppageTime:  r.stoppageTime,
                     players:       [],
+                    // Índice de deduplicación por jugador. Se elimina antes de
+                    // renderizar: no forma parte de los datos del partido y no
+                    // debe acabar en window._sdMatchData ni en el motor _RP.
+                    _byPlayer:     new Map(),
                 };
             }
-            matches[key].players.push(r);
+            // 🔑 UN JUGADOR, UNA VEZ POR PARTIDO (fix 2026-07-30).
+            // El panel mostraba "42 JUGADORES", "84 JUGADORES". La causa NO era
+            // la deduplicación por id de documento —que ya existe y funciona—
+            // sino que DOS escritores distintos crean documentos staffReport:true
+            // para el MISMO jugador y partido, con ids que nunca coinciden:
+            //     ${matchId}_staff_p${n}  · match-reports-auto.js, match-reports-send.js
+            //     ${matchId}_p${n}        · collective-report.js
+            // Los dos caen en esta misma clave (fecha_rival_coachUid), así que
+            // cada jugador se contaba tantas veces como vías de envío se usaran.
+            //
+            // ⚠️ SE DEDUPLICA AQUÍ, EN LA AGREGACIÓN, NO EN EL BADGE: de este
+            // array salen también los goles y las lesiones de la tarjeta y TODA
+            // la tabla resumen de temporada. Arreglar sólo el número visible
+            // habría dejado el resto mintiendo, y eso es peor porque ya no se
+            // nota a simple vista.
+            //
+            // Desempate: gana el documento con createdAt más reciente (un
+            // reenvío refleja el estado final del partido); a igualdad, el de
+            // _id menor, para que el resultado no dependa del orden de llegada
+            // de las consultas.
+            const _pKey = _sdPlayerKey(r);
+            const _prev = matches[key]._byPlayer.get(_pKey);
+            if (!_prev) {
+                matches[key]._byPlayer.set(_pKey, r);
+                matches[key].players.push(r);
+            } else if (_sdPreferDoc(r, _prev) === r) {
+                matches[key]._byPlayer.set(_pKey, r);
+                matches[key].players[matches[key].players.indexOf(_prev)] = r;
+            }
             // FIX: si el objeto agrupado aún no tiene myTeamRole pero este doc sí,
             // adoptarlo (algunos docs antiguos del mismo partido pueden no llevarlo).
             if (matches[key].myTeamRole == null && r.myTeamRole != null) {
                 matches[key].myTeamRole = r.myTeamRole;
             }
         });
+
+        // El índice de deduplicación era un andamio: fuera antes de que estos
+        // objetos lleguen a window._sdMatchData y al motor de informes _RP.
+        Object.values(matches).forEach(m => { delete m._byPlayer; });
 
         // Ordenar por fecha descendente
         const sorted = Object.values(matches).sort((a, b) =>
