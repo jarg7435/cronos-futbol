@@ -718,9 +718,12 @@
         '.ct-stats-empty{padding:0.8rem;font-size:0.76rem;color:#8b949e;}' +
         '</style>';
 
-    // ctRenderStatsTable(filas) → HTML de la tabla resumen acumulada.
-    window.ctRenderStatsTable = function (filas) {
+    // ctRenderStatsTable(filas[, opts]) → HTML de la tabla resumen acumulada.
+    //   opts.matchCount: partidos que ha disputado el EQUIPO. Va a la celda PJ
+    //   de la fila de totales; sin él, esa celda queda con un guion.
+    window.ctRenderStatsTable = function (filas, opts) {
         filas = Array.isArray(filas) ? filas : [];
+        opts = opts || {};
         if (!filas.length) {
             return window.CT_STATS_CSS +
                 '<div class="ct-stats-wrap"><div class="ct-stats-empty">' +
@@ -728,11 +731,25 @@
                 '</div></div>';
         }
         const cel = (n) => '<td' + (n ? '' : ' class="ct-stats-zero"') + '>' + n + '</td>';
+
+        // 🔑 LA FILA DE TOTALES NO SUMA LO QUE NO SE PUEDE SUMAR (ajuste del
+        // autor, 2026-07-30, tras verlo en producción).
+        //  · PJ: sumar los partidos de cada jugador daba 71 en un equipo que
+        //    había jugado 14 — es la suma de PARTICIPACIONES, y leída bajo la
+        //    columna "PJ" sólo confunde. Va el número de partidos del EQUIPO,
+        //    que llega en opts.matchCount; si no se sabe, un guion.
+        //  · Min: sumar los minutos de toda la plantilla no significa nada
+        //    (11 jugadores × 90' = 990' por partido). Guion siempre.
+        //  · Goles, tarjetas y lesiones SÍ son magnitudes del equipo: se suman.
+        // En las filas de CADA JUGADOR, PJ y minutos no se tocan: ahí sí
+        // significan lo que dicen.
         const tot = filas.reduce(function (t, f) {
-            t.pj += f.pj; t.seconds += f.seconds; t.goals += f.goals;
-            t.yellow += f.yellow; t.red += f.red; t.injuries += f.injuries;
+            t.goals += f.goals; t.yellow += f.yellow;
+            t.red += f.red; t.injuries += f.injuries;
             return t;
-        }, { pj: 0, seconds: 0, goals: 0, yellow: 0, red: 0, injuries: 0 });
+        }, { goals: 0, yellow: 0, red: 0, injuries: 0 });
+        const totPj = (typeof opts.matchCount === 'number' && isFinite(opts.matchCount))
+            ? String(opts.matchCount) : '-';
 
         const cuerpo = filas.map(function (f) {
             return '<tr>' +
@@ -765,8 +782,8 @@
             '<tbody>' + cuerpo + '</tbody>' +
             '<tfoot><tr class="ct-stats-total">' +
                 '<td class="ct-stats-name">Total equipo</td>' +
-                '<td>' + tot.pj + '</td>' +
-                '<td>' + Math.floor(tot.seconds / 60) + '</td>' +
+                '<td title="Partidos disputados por el equipo">' + totPj + '</td>' +
+                '<td title="No se suman: los minutos son de cada jugador">-</td>' +
                 '<td>' + tot.goals + '</td>' +
                 '<td>' + tot.yellow + '</td>' +
                 '<td>' + tot.red + '</td>' +

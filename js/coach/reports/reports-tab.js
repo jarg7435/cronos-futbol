@@ -541,8 +541,13 @@ async function _sdLoadReports() {
                 getSub:     (x) => x.r.sub,
                 // 🔑 La tabla es POR EQUIPO, así que va en renderSubHeader y no en
                 // renderLeaf: se calcula con TODOS los partidos de esa rama.
+                // arr.length son los PARTIDOS de esa rama (un elemento = un
+                // partido ya agrupado), que es justo lo que va en la celda PJ de
+                // la fila de totales. Sin pasarlo, esa celda saldría con guion.
                 renderSubHeader: (arr) =>
-                    window.ctRenderStatsTable(window.ctAccumulatePlayerStats(arr.map(x => x.m))),
+                    window.ctRenderStatsTable(
+                        window.ctAccumulatePlayerStats(arr.map(x => x.m)),
+                        { matchCount: arr.length }),
                 renderLeaf: (x) => _sdReportCard(x.m),
                 emptyText:  'Sin informes de este equipo todavía.',
             });

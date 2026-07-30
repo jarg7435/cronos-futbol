@@ -257,6 +257,54 @@ if (!API_OK) { ok('5 · omitida: falta la API', false); } else {
     })());
     ok('5j · incluye una fila de totales del equipo',
        /total/i.test(html));
+
+    // ── 🔑 LA FILA DE TOTALES NO SUMA LO QUE NO SE PUEDE SUMAR ──────────
+    // Ajuste pedido por el autor (2026-07-30) tras verlo en producción: sumar
+    // los PJ de cada jugador daba 71 en un equipo que habia jugado 14 partidos,
+    // y sumar los minutos de toda la plantilla da un numero sin significado.
+    // Goles, tarjetas y lesiones SI son magnitudes del equipo y se siguen
+    // sumando.
+    // ⚠️ `<td[^>]*>` y no `<td>`: las celdas de PJ y minutos del total llevan un
+    // atributo title que explica por qué no se suman. Con el regex estricto el
+    // parser no casaba NADA y fallaban hasta las aserciones de goles, que sí
+    // estaban bien — rojo por la razón equivocada.
+    const celdasTotal = (h) => {
+        const m = String(h).match(/Total equipo<\/td>((?:<td[^>]*>[^<]*<\/td>){6})/);
+        return m ? m[1].replace(/<td[^>]*>/g, ' ').replace(/<\/td>/g, ' ').trim().split(/\s+/) : [];
+    };
+
+    const filas2 = sb.ctAccumulatePlayerStats([
+        { players: [P({ playerNumber: '7',  playerAlias: 'Martín', goals: 2, minutesPlayed: '90:00',
+                        cards: 'amarilla', history: [EV('yellow')], injured: true }),
+                    P({ playerNumber: '10', playerAlias: 'Lucas',  goals: 1, minutesPlayed: '45:00' })] },
+        { players: [P({ playerNumber: '7',  playerAlias: 'Martín', goals: 3, minutesPlayed: '90:00' })] },
+    ]);
+    // Dos jugadores, 3 participaciones, 2 partidos de equipo.
+    const conCuenta = celdasTotal(sb.ctRenderStatsTable(filas2, { matchCount: 2 }));
+    ok('5k · 🔑 PJ del total = partidos del EQUIPO (2), no la suma de PJ (3)',
+       conCuenta[0] === '2', JSON.stringify(conCuenta));
+    ok('5l · 🔑 los minutos del total NO se suman: celda con guion',
+       conCuenta[1] === '-', JSON.stringify(conCuenta));
+    ok('5m · 🔑 los goles SI se suman (2+1+3 = 6)', conCuenta[2] === '6',
+       JSON.stringify(conCuenta));
+    ok('5n · y las amarillas, rojas y lesiones también',
+       conCuenta[3] === '1' && conCuenta[4] === '0' && conCuenta[5] === '1',
+       JSON.stringify(conCuenta));
+
+    // Sin saber los partidos del equipo, la celda queda con guion — nunca con
+    // la suma, que es justo el numero confuso que habia que quitar.
+    const sinCuenta = celdasTotal(sb.ctRenderStatsTable(filas2));
+    ok('5o · 🔑 sin matchCount, PJ del total es "-" y NUNCA la suma',
+       sinCuenta[0] === '-', JSON.stringify(sinCuenta));
+    ok('5p · y los goles se siguen sumando igual', sinCuenta[2] === '6',
+       JSON.stringify(sinCuenta));
+
+    // Las filas de cada jugador NO cambian: ahí PJ y minutos sí significan algo.
+    ok('5q · 🔑 la fila de cada jugador conserva SUS partidos y SUS minutos',
+       /<td class="ct-stats-name">[\s\S]*?Martín[\s\S]*?<td>2<\/td><td>180<\/td><td>5<\/td>/.test(
+           sb.ctRenderStatsTable(filas2, { matchCount: 2 })),
+       (sb.ctRenderStatsTable(filas2, { matchCount: 2 })
+           .match(/Martín[\s\S]{0,160}/) || [''])[0]);
 }
 
 // ═══════ PARTE 6 · el módulo sigue limpio ═══════

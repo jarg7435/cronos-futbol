@@ -221,13 +221,16 @@ console.log('\n── PARTE 3 · 🔑 no se mezclan los equipos ──');
     // para probar que los 7 goles de Sergio no se colaban. Era un FALSO
     // POSITIVO: ">7<" casa con el DORSAL de Martín, que es el 7. Se compara la
     // fila de totales entera, que además es mucho más estricta.
-    const totalDe = (rama) => ((rama.match(/Total equipo<\/td>((?:<td>\d+<\/td>){6})/) || [])[1] || '')
-        .replace(/<\/?td>/g, ' ').trim().replace(/\s+/g, ',');
-    // Orden de columnas: PJ, Min, Goles, Amarillas, Rojas, Lesiones.
-    ok('3d · 🔑 el total de Alevín es el suyo (1 partido, 45 min, 2 goles)',
-       totalDe(ramaAlevin) === '1,45,2,0,0,0', totalDe(ramaAlevin));
+    // ⚠️ La celda de minutos del total es "-" desde el ajuste del autor
+    // (2026-07-30): sumar los minutos de toda la plantilla no significaba nada.
+    // Por eso el parser acepta [^<]* y no \d+.
+    const totalDe = (rama) => ((rama.match(/Total equipo<\/td>((?:<td[^>]*>[^<]*<\/td>){6})/) || [])[1] || '')
+        .replace(/<td[^>]*>/g, ' ').replace(/<\/td>/g, ' ').trim().replace(/\s+/g, ',');
+    // Orden de columnas: PJ (partidos del EQUIPO), Min (-), Goles, Amarillas, Rojas, Lesiones.
+    ok('3d · 🔑 el total de Alevín es el suyo (1 partido de equipo, 2 goles)',
+       totalDe(ramaAlevin) === '1,-,2,0,0,0', totalDe(ramaAlevin));
     ok('3e · 🔑 y el de Cadete el suyo (7 goles), sin contaminar al otro',
-       totalDe(ramaCadete) === '1,45,7,0,0,0', totalDe(ramaCadete));
+       totalDe(ramaCadete) === '1,-,7,0,0,0', totalDe(ramaCadete));
 }
 
 // ═══════ PARTE 4 · la caché de partidos y el histórico ═══════
@@ -367,11 +370,11 @@ console.log('\n── PARTE 7 · 🔑 deduplicación de jugadores por partido �
 
     // La tabla resumen sale del mismo array de players: si no se deduplica ahí,
     // el jugador 7 aparece con PJ 2 y 180 minutos.
-    const totales = (h.match(/Total equipo<\/td>((?:<td>\d+<\/td>){6})/) || [])[1] || '';
-    const t7 = totales.replace(/<\/?td>/g, ' ').trim().replace(/\s+/g, ',');
-    // PJ, Min, Goles, Amarillas, Rojas, Lesiones → 2 jugadores, 90+45=135 min, 3 goles, 1 lesión
-    ok('7d · 🔑 la tabla resumen tampoco se infla (PJ 2, 135 min, 3 goles, 1 lesión)',
-       t7 === '2,135,3,0,0,1', t7);
+    const totales = (h.match(/Total equipo<\/td>((?:<td[^>]*>[^<]*<\/td>){6})/) || [])[1] || '';
+    const t7 = totales.replace(/<td[^>]*>/g, ' ').replace(/<\/td>/g, ' ').trim().replace(/\s+/g, ',');
+    // PJ = 1 partido de equipo · Min = "-" · 3 goles · 1 lesión (sin duplicar).
+    ok('7d · 🔑 la tabla resumen tampoco se infla (1 partido, 3 goles, 1 lesión)',
+       t7 === '1,-,3,0,0,1', t7);
 
     // ⚠️ Acotado al <tbody>: la fila de "Total equipo" del <tfoot> usa la MISMA
     // clase ct-stats-name, así que contarlas en todo el HTML daba 3 y la
@@ -391,10 +394,15 @@ console.log('\n── PARTE 7 · 🔑 deduplicación de jugadores por partido �
     } });
     await dosPartidos.g._sdLoadReports();
     const hd = dosPartidos.container.innerHTML;
-    const td = ((hd.match(/Total equipo<\/td>((?:<td>\d+<\/td>){6})/) || [])[1] || '')
-        .replace(/<\/?td>/g, ' ').trim().replace(/\s+/g, ',');
-    ok('7f · 🔑 NO deduplica de más: dos partidos distintos siguen siendo PJ 2 y 180 min',
-       td === '2,180,2,0,0,0', td);
+    const td = ((hd.match(/Total equipo<\/td>((?:<td[^>]*>[^<]*<\/td>){6})/) || [])[1] || '')
+        .replace(/<td[^>]*>/g, ' ').replace(/<\/td>/g, ' ').trim().replace(/\s+/g, ',');
+    ok('7f · 🔑 NO deduplica de más: dos partidos distintos siguen contando 2',
+       td === '2,-,2,0,0,0', td);
+    // Y en la fila del jugador sí se ven sus 2 partidos y sus 180 minutos: es
+    // ahí donde esos números significan algo.
+    ok('7f-bis · el jugador conserva sus 2 partidos y 180 minutos',
+       /<td>2<\/td><td>180<\/td>/.test(hd),
+       (hd.match(/ct-stats-name[\s\S]{0,200}/) || [''])[0]);
     ok('7g · y son dos tarjetas de informe',
        (hd.match(/class="sd-report-card"/g) || []).length === 2);
 
