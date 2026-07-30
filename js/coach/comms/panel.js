@@ -897,6 +897,11 @@ async function _loadUnifiedContactList(tabId) {
         const fns = await _cFS();
         const { db, collection, getDocs, query, where, doc, getDoc } = fns;
         let clubId = me.clubId || '';
+        // Todos los clubIds asociados que se descubran más abajo. Declarado
+        // AQUÍ, en el ámbito de la función, para que las pestañas de
+        // administradores puedan consultarlos: antes vivía dentro del bloque
+        // `if (clubId)` y no llegaba hasta ellas.
+        let _umAllClubIds = new Set(clubId ? [clubId] : []);
 
         // FIX (v174, mismo patrón que _sdLoadReports en club-reports.js): si
         // me.clubId no está disponible en el token, resolverlo desde Firestore.
@@ -931,6 +936,17 @@ async function _loadUnifiedContactList(tabId) {
                     }
                 }
             } catch(_) {}
+
+            // 🔑 Se comparte el MISMO Set fuera de este bloque: las pestañas de
+            // administradores lo necesitan para no consultar por un único
+            // clubId. Está documentado arriba que el clubId del Director puede
+            // diferir del de los demás miembros del mismo club real, y consultar
+            // sólo por el suyo dejaba su pestaña vacía. Al ser una referencia,
+            // todo lo que se añada después también les llega.
+            // ⚠️ Va AQUÍ y no justo tras crear el Set: test_messaging_multiclubid.js
+            // (1b) exige que la creación del Set y la lectura de users/{uid}
+            // sigan a menos de 300 caracteres, y meter esto en medio lo rompía.
+            _umAllClubIds = _allClubIds;
 
             const seenUserIds = new Set();
             const queriedClubIds = new Set();
@@ -1317,6 +1333,19 @@ async function _loadUnifiedContactList(tabId) {
                         let ficha = null;
                         if (adminUid) ficha = clubUsers.find(u => (u.uid || u.id) === adminUid) || null;
                         if (!ficha && adminEmail) ficha = clubUsers.find(u => u.email === adminEmail) || null;
+                        // 🔑 El documento del club puede traer SÓLO adminEmail.
+                        // Sin resolverlo a un uid no hay con quién abrir hilo, y
+                        // la pestaña se quedaba vacía teniendo el dato delante.
+                        // Consulta de un solo campo: siempre indexada.
+                        if (!adminUid && !ficha && adminEmail) {
+                            try {
+                                const byEmail = await getDocs(query(
+                                    collection(db, 'users'),
+                                    where('email', '==', adminEmail)
+                                ));
+                                byEmail.forEach(d => { if (!ficha) ficha = { id: d.id, ...d.data() }; });
+                            } catch (_) {}
+                        }
                         const uid = adminUid || (ficha && (ficha.uid || ficha.id)) || '';
                         if (uid) {
                             byUid.set(uid, {
@@ -1340,30 +1369,64 @@ async function _loadUnifiedContactList(tabId) {
             // y contaminaban otras pestañas. Pero el rol `club_admin` vive
             // justamente ahí en muchas cuentas, así que el administrador era
             // invisible POR DISEÑO. Esta consulta no pasa por ese filtro.
-            if (clubId) {
+            const _addAdmin = (uid, u) => {
+                if (!uid || byUid.has(uid)) return;
+                byUid.set(uid, {
+                    id: uid, uid,
+                    name: (u && (u.displayName || u.name)) || (u && u.email) || 'Administrador de Club',
+                    subtitle: `Administrador de Club · ${(u && u.email) || ''}`,
+                    email: (u && u.email) || '', phone: (u && u.phone) || '',
+                    roleTag: 'club_admin', icon: '🏛️'
+                });
+            };
+
+            // 🔑 POR TODOS LOS clubIds DESCUBIERTOS, no sólo el propio: está
+            // documentado en este mismo fichero que el clubId del Director puede
+            // diferir del de los demás miembros del mismo club real.
+            for (const cid of [..._umAllClubIds]) {
+                if (!cid) continue;
                 try {
                     const admSnap = await getDocs(query(
                         collection(db, 'users'),
-                        where('clubId', '==', clubId),
+                        where('clubId', '==', cid),
                         where('role', 'in', ['club_admin', 'admin'])
                     ));
                     admSnap.forEach(d => {
                         const u = d.data() || {};
                         // En un doc secundario el uid real está en el campo uid,
                         // no en el id del documento (que es compuesto).
-                        const uid = u.uid || d.id;
-                        if (uid && !byUid.has(uid)) {
-                            byUid.set(uid, {
-                                id: uid, uid,
-                                name: u.displayName || u.name || u.email || 'Administrador de Club',
-                                subtitle: `Administrador de Club · ${u.email || ''}`,
-                                email: u.email || '', phone: u.phone || '',
-                                roleTag: 'club_admin', icon: '🏛️'
-                            });
-                        }
+                        _addAdmin(u.uid || d.id, u);
                     });
                 } catch (_) { /* índice ausente o sin permiso: quedan los otros caminos */ }
             }
+
+            // 🔑 RESPALDO QUE CIERRA EL CASO: los HILOS QUE YA EXISTEN. Si el
+            // Administrador ya escribió al Director, ese documento lo tiene como
+            // participante. Leerlo garantiza que el mensaje aparezca aunque los
+            // roles o los clubId estén mal poblados — que es exactamente lo que
+            // pasaba: el hilo existía y el Director no tenía a quién pulsar.
+            try {
+                const ctxCanal = _getCanonicalContext('director', 'clubadmin');
+                const thSnap = await getDocs(query(
+                    collection(db, 'cronos_messages'),
+                    where('participants', 'array-contains', me.uid)
+                ));
+                const pendientes = [];
+                thSnap.forEach(d => {
+                    if (!d.id.endsWith('_' + ctxCanal)) return;
+                    const t = d.data() || {};
+                    const otro = (t.participants || []).find(p => p && p !== me.uid);
+                    if (otro && !byUid.has(otro)) pendientes.push(otro);
+                });
+                for (const uid of pendientes) {
+                    let u = null;
+                    try {
+                        const uSnap = await getDoc(doc(db, 'users', uid));
+                        if (uSnap.exists()) u = uSnap.data();
+                    } catch (_) {}
+                    _addAdmin(uid, u);
+                }
+            } catch (_) { /* sin permiso o sin red: quedan los caminos por rol */ }
 
             // RESPALDO: búsqueda por rol, como estaba.
             const staffList = await _cGetStaff(db, clubId, fns, ['club_admin', 'admin']);

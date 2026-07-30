@@ -312,8 +312,10 @@ console.log('\n── PARTE 7 · consulta directa (segunda ronda de producción)
     const tabClubAdmin = bloque("role === 'director' && tabId === 'clubadmin'", "else if (window._umState.role === 'coordinator')");
     const tabDirCoach  = bloque("else if (tabId === 'director')", "else if (tabId === 'coordinator')");
 
+    // La consulta pasó a recorrer TODOS los clubIds descubiertos (PARTE 8), así
+    // que el filtro es por la variable del bucle, no por `clubId` a secas.
     ok('7a · 🔑 el Director consulta users DIRECTAMENTE por clubId y rol de admin',
-       /where\('clubId', '==', clubId\)/.test(tabClubAdmin) &&
+       /where\('clubId', '==', (clubId|cid)\)/.test(tabClubAdmin) &&
        /where\('role', 'in', \[/.test(tabClubAdmin), tabClubAdmin.slice(0, 260));
     ok('7b · y esa consulta cubre club_admin y admin',
        /'club_admin'/.test(tabClubAdmin) && /'admin'/.test(tabClubAdmin));
@@ -361,6 +363,69 @@ console.log('\n── PARTE 7 · consulta directa (segunda ronda de producción)
        !tieneIndice('individualEntityId', 'role') &&
        !/where\('individualEntityId'[\s\S]{0,120}where\('role'/.test(tabDirCoach),
        'si algún día se declara ese índice, esta aserción avisa de que ya se puede simplificar');
+}
+
+// ═══════ PARTE 8 · el Director TIENE que ver a quien ya le escribió ═══════
+// Tercera ronda (2026-07-30): Entrenador ↔ Admin Individual YA FUNCIONA, pero
+// Director ↔ Admin de Club no. El Admin ve al Director y le escribe; al
+// Director no le llega y su pestaña sigue diciendo "sin destinatarios".
+//
+// ⚠️ EL DIAGNÓSTICO DEL INFORME APUNTA AL CONTEXTO, PERO NO ES ESO: las
+// aserciones 2a/2b ya prueban que los dos lados derivan 'clubadmin_director' y
+// el MISMO threadId. El problema es que la LISTA del Director sale vacía, y sin
+// una fila que pulsar no hay hilo que abrir aunque exista el documento.
+//
+// 🔑 LAS DOS CAUSAS REALES:
+//  1. `_allClubIds` —el descubrimiento de TODOS los clubIds asociados, que este
+//     fichero ya hacía para otras pestañas— se declaraba dentro de otro bloque
+//     y NO estaba en el alcance de esta pestaña. La consulta usaba un único
+//     clubId, y en este proyecto está documentado que el del Director puede
+//     diferir del de los demás miembros del mismo club real.
+//  2. El documento del club puede traer sólo `adminEmail` (sin adminUid), y sin
+//     resolver ese email a un uid no hay con quién abrir hilo.
+//
+// 🔑 Y EL RESPALDO QUE CIERRA EL CASO: descubrir contactos desde los HILOS QUE
+// YA EXISTEN. Si alguien ya escribió al Director, ese documento lo tiene como
+// participante; leerlo garantiza que el mensaje aparezca aunque los roles o los
+// clubId estén mal poblados. Es lo que convierte "no me llega" en imposible.
+console.log('\n── PARTE 8 · el Director ve a quien ya le escribió ──');
+{
+    const s = sinCom(SRC);
+    const i = s.indexOf("role === 'director' && tabId === 'clubadmin'");
+    const tab = i === -1 ? '' : s.slice(i, s.indexOf("else if (window._umState.role === 'coordinator')", i));
+
+    ok('8a · 🔑 busca en TODOS los clubIds descubiertos, no sólo en el propio',
+       /_umAllClubIds/.test(tab), tab.slice(0, 200));
+    ok('8b · y ese conjunto se rellena donde ya se descubrían los clubIds',
+       /_umAllClubIds/.test(s.slice(s.indexOf('const _allClubIds = new Set'),
+                                   s.indexOf('const _allClubIds = new Set') + 1400)));
+    ok('8c · 🔑 resuelve adminEmail a un uid consultando users por email',
+       /where\('email', '==', /.test(tab), tab.slice(0, 300));
+
+    ok('8d · 🔑 descubre contactos desde los HILOS ya existentes',
+       /'cronos_messages'/.test(tab) &&
+       /array-contains/.test(tab), tab.slice(0, 300));
+    // Mejor que el literal: el filtro deriva el contexto de la MISMA función que
+    // construye los hilos, así que no pueden desincronizarse.
+    ok('8e · 🔑 y filtra esos hilos por el contexto canónico del canal',
+       /_getCanonicalContext\('director', 'clubadmin'\)/.test(tab) &&
+       /endsWith\('_' \+ ctxCanal\)/.test(tab),
+       (tab.match(/ctxCanal[^\n]*/) || ['(no aparece)'])[0]);
+    ok('8f · esa búsqueda tolera su propio fallo',
+       /'cronos_messages'[\s\S]{0,900}?catch/.test(tab));
+
+    // 🔑 El id que se deriva del hilo encontrado tiene que ser el MISMO que
+    // calcula _cThreadId: si no, se abriría un documento distinto del que trae
+    // el mensaje.
+    if (API_OK) {
+        const { ctx, tid } = cargarPuras();
+        const D = 'uid_dir', A = 'uid_adm';
+        const esperado = tid(D, A, ctx('director', 'clubadmin'));
+        ok('8g · 🔑 el hilo del canal termina en el contexto que se busca',
+           esperado.endsWith('_clubadmin_director'), esperado);
+        ok('8h · y coincide con el que deriva el Admin de Club',
+           esperado === tid(A, D, ctx('club_admin', 'director')), esperado);
+    } else { ok('8g · omitida', false); }
 }
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);
