@@ -643,9 +643,21 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     // Definición de pestañas por rol
     let tabs = [];
     if (role === 'coach') {
+        // 🔑 EN UN ENTE INDIVIDUAL NO HAY DIRECTOR: la pestaña se ETIQUETA como
+        // "Admin. Individual" (petición del autor tras probarlo), pero conserva
+        // el id 'director' A PROPÓSITO. El id es lo que alimenta
+        // _getCanonicalContext → contexto `coach_director`, que es el que ya
+        // comparten el Entrenador y el Administrador Individual: cambiarlo
+        // dejaría huérfanos todos los hilos ya creados.
+        const _esEnteIndividual = !!me.individualEntityId ||
+            me.role === 'entrenador_individual' ||
+            (Array.isArray(me.allRoles) && me.allRoles.some(r => r &&
+                (r.role === 'entrenador_individual' || r.role === 'padre_individual')));
         tabs = [
             { id: 'parents', label: 'Padres', icon: '👨‍👩‍👧' },
-            { id: 'director', label: 'Director', icon: '📋' },
+            { id: 'director',
+              label: _esEnteIndividual ? 'Admin. Individual' : 'Director',
+              icon:  _esEnteIndividual ? '👤' : '📋' },
             { id: 'coordinator', label: 'Coordinador', icon: '🎯' }
         ];
     } else if (role === 'director') {
@@ -1089,6 +1101,62 @@ async function _loadUnifiedContactList(tabId) {
                     (Array.isArray(u.allRoles) && u.allRoles.some(r => r &&
                         (r.role === 'individual' || r.role === 'admin_individual') && r.status !== 'rejected'));
                 const firestoreIndAdmins = clubUsers.filter(_esAdminIndividual);
+
+                // 🔑 CONSULTA DIRECTA DEL ADMINISTRADOR DEL ENTE (segunda ronda
+                // de producción). Los entes individuales viven en la MISMA
+                // colección `clubs` con type:'individual', y su administrador se
+                // enlaza por users.individualEntityId — no por clubId, así que
+                // `clubUsers` no lo traía. Se prueban las dos vías: el enlace por
+                // entidad y el adminUid del propio documento del ente.
+                const _entId = me.individualEntityId || clubId || '';
+                if (_entId) {
+                    try {
+                        // ⚠️ CONSULTA DE UN SOLO CAMPO, Y EL ROL SE FILTRA EN
+                        // CLIENTE, A PROPÓSITO: firestore.indexes.json declara
+                        // `individualEntityId + status` pero NO
+                        // `individualEntityId + role`, así que una consulta
+                        // compuesta fallaría con failed-precondition y este
+                        // catch la silenciaría — el administrador volvería a no
+                        // aparecer, que es justo el bucle que hay que cortar.
+                        // Un campo suelto siempre está indexado automáticamente.
+                        const indSnap = await getDocs(query(
+                            collection(db, 'users'),
+                            where('individualEntityId', '==', _entId)
+                        ));
+                        indSnap.forEach(d => {
+                            const u = d.data() || {};
+                            if (!_esAdminIndividual(u)) return;
+                            const uid = u.uid || d.id;
+                            if (uid && !byUid.has(uid)) {
+                                byUid.set(uid, {
+                                    id: uid, uid,
+                                    name: u.displayName || u.name || u.email || 'Administrador Individual',
+                                    subtitle: `Administrador Individual · ${u.email || ''}`,
+                                    email: u.email || '', phone: u.phone || '',
+                                    roleTag: 'admin_individual', icon: '👤'
+                                });
+                            }
+                        });
+                    } catch (_) { /* índice ausente o sin permiso: queda el doc del ente */ }
+
+                    try {
+                        const entSnap = await getDoc(doc(db, 'clubs', _entId));
+                        if (entSnap.exists()) {
+                            const e = entSnap.data() || {};
+                            const uid = e.adminUid || e.createdBy || '';
+                            if (uid && !byUid.has(uid)) {
+                                byUid.set(uid, {
+                                    id: uid, uid,
+                                    name: e.adminEmail || 'Administrador Individual',
+                                    subtitle: `Administrador Individual · ${e.adminEmail || ''}`,
+                                    email: e.adminEmail || '', phone: '',
+                                    roleTag: 'admin_individual', icon: '👤'
+                                });
+                            }
+                        }
+                    } catch (_) { /* sin permiso o sin red: quedan los otros caminos */ }
+                }
+
                 [...staffList, ...firestoreDirs, ...firestoreIndAdmins].forEach(u => {
                     const uid = u.uid || u.id;
                     if (uid && !byUid.has(uid)) {
@@ -1262,6 +1330,39 @@ async function _loadUnifiedContactList(tabId) {
                         }
                     }
                 } catch (_) { /* sin permiso o sin red: quedan los respaldos por rol */ }
+            }
+
+            // 🔑 CONSULTA DIRECTA A `users` (segunda ronda de producción,
+            // 2026-07-30: con el documento del club ya leído seguía saliendo
+            // vacía). `clubUsers` DESCARTA A PROPÓSITO los documentos
+            // SECUNDARIOS —los que auth.js crea al añadir un rol extra, con id
+            // `${uid}_${role}_${clubId}`— porque no llevan category/subcategory
+            // y contaminaban otras pestañas. Pero el rol `club_admin` vive
+            // justamente ahí en muchas cuentas, así que el administrador era
+            // invisible POR DISEÑO. Esta consulta no pasa por ese filtro.
+            if (clubId) {
+                try {
+                    const admSnap = await getDocs(query(
+                        collection(db, 'users'),
+                        where('clubId', '==', clubId),
+                        where('role', 'in', ['club_admin', 'admin'])
+                    ));
+                    admSnap.forEach(d => {
+                        const u = d.data() || {};
+                        // En un doc secundario el uid real está en el campo uid,
+                        // no en el id del documento (que es compuesto).
+                        const uid = u.uid || d.id;
+                        if (uid && !byUid.has(uid)) {
+                            byUid.set(uid, {
+                                id: uid, uid,
+                                name: u.displayName || u.name || u.email || 'Administrador de Club',
+                                subtitle: `Administrador de Club · ${u.email || ''}`,
+                                email: u.email || '', phone: u.phone || '',
+                                roleTag: 'club_admin', icon: '🏛️'
+                            });
+                        }
+                    });
+                } catch (_) { /* índice ausente o sin permiso: quedan los otros caminos */ }
             }
 
             // RESPALDO: búsqueda por rol, como estaba.

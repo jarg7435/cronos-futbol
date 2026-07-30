@@ -285,5 +285,83 @@ console.log('\n── PARTE 6 · resolución de destinatarios (fallos de producc
     } else { ok('6h · omitida: no se pudieron extraer las funciones', false); }
 }
 
+// ═══════ PARTE 7 · consulta DIRECTA de administradores ═══════
+// Segunda ronda de pruebas del autor (2026-07-30): con v413 los destinatarios
+// SEGUÍAN sin aparecer.
+//
+// 🔑 POR QUÉ NO BASTABA CON clubUsers NI CON _cGetStaff: la lista `clubUsers`
+// descarta A PROPÓSITO los documentos SECUNDARIOS de usuario —los que auth.js
+// crea al añadir un rol extra, con id `${uid}_${role}_${clubId}`— porque no
+// llevan category/subcategory y contaminaban otras pestañas. Pero el rol
+// `club_admin` vive justamente ahí en muchas cuentas, así que el administrador
+// quedaba invisible por diseño. La solución es una consulta DIRECTA a `users`
+// por clubId + rol, que no pasa por ese filtro.
+//
+// 🔑 Y LOS ENTES INDIVIDUALES viven en la MISMA colección `clubs` con
+// type:'individual'; su administrador se enlaza por users.individualEntityId.
+// Ahí no hay Director, así que la pestaña del Entrenador se ETIQUETA como
+// "Admin. Individual" — pero conserva el id 'director' para no cambiar el
+// contexto del hilo (ver 7f).
+console.log('\n── PARTE 7 · consulta directa (segunda ronda de producción) ──');
+{
+    const s = sinCom(SRC);
+    const bloque = (marca, fin) => {
+        const i = s.indexOf(marca);
+        return i === -1 ? '' : s.slice(i, fin ? s.indexOf(fin, i) : i + 3200);
+    };
+    const tabClubAdmin = bloque("role === 'director' && tabId === 'clubadmin'", "else if (window._umState.role === 'coordinator')");
+    const tabDirCoach  = bloque("else if (tabId === 'director')", "else if (tabId === 'coordinator')");
+
+    ok('7a · 🔑 el Director consulta users DIRECTAMENTE por clubId y rol de admin',
+       /where\('clubId', '==', clubId\)/.test(tabClubAdmin) &&
+       /where\('role', 'in', \[/.test(tabClubAdmin), tabClubAdmin.slice(0, 260));
+    ok('7b · y esa consulta cubre club_admin y admin',
+       /'club_admin'/.test(tabClubAdmin) && /'admin'/.test(tabClubAdmin));
+    ok('7c · 🔑 no depende de clubUsers, que descarta los documentos secundarios',
+       /getDocs\(/.test(tabClubAdmin));
+
+    ok('7d · 🔑 el Entrenador localiza al admin del ente por individualEntityId',
+       /const _entId = me\.individualEntityId \|\| clubId/.test(tabDirCoach) &&
+       /where\('individualEntityId', '==', _entId\)/.test(tabDirCoach),
+       (tabDirCoach.match(/const _entId[^\n]*/) || ['(no aparece)'])[0]);
+    ok('7e · y también acepta el adminUid del documento del ente',
+       /adminUid/.test(tabDirCoach));
+
+    // 🔑 La pestaña se RENOMBRA, pero su id sigue siendo 'director': el contexto
+    // del hilo (coach_director) NO puede cambiar o se quedan huérfanos los hilos
+    // ya creados.
+    const tabsBlock = SRC.slice(SRC.indexOf('let tabs = [];'),
+                                SRC.indexOf("if (!tabs.find(t => t.id === tab))"));
+    ok('7f · 🔑 en ente individual la pestaña se llama "Admin. Individual"…',
+       /label: _esEnteIndividual \? 'Admin\. Individual' : 'Director'/.test(tabsBlock),
+       (tabsBlock.match(/label:[^\n]*Director[^\n]*/) || ['(no aparece)'])[0]);
+    ok('7g · 🔑 …pero conserva el id "director", para no romper los hilos ya creados',
+       /id: 'director'/.test(tabsBlock));
+    if (API_OK) {
+        const { ctx } = cargarPuras();
+        ok('7h · 🔑 y el contexto sigue siendo coach_director',
+           ctx('coach', 'director') === 'coach_director' &&
+           ctx('admin_individual', 'coaches') === 'coach_director');
+    } else { ok('7h · omitida', false); }
+
+    ok('7i · las consultas nuevas toleran su propio fallo',
+       /catch/.test(tabClubAdmin) && /catch/.test(tabDirCoach));
+
+    // 🔑 ÍNDICES: una consulta compuesta sin índice declarado falla con
+    // failed-precondition, y como va dentro de un catch el fallo sería MUDO —
+    // el destinatario volvería a no aparecer. Se comprueba contra el fichero de
+    // índices real, no de memoria.
+    const idx = JSON.parse(fs.readFileSync(path.join(ROOT, 'firestore.indexes.json'), 'utf8'));
+    const tieneIndice = (a, b) => (idx.indexes || []).some(i =>
+        i.collectionGroup === 'users' && i.fields.length === 2 &&
+        i.fields[0].fieldPath === a && i.fields[1].fieldPath === b);
+    ok('7j · 🔑 la consulta clubId+role del Director SÍ tiene índice declarado',
+       tieneIndice('clubId', 'role'));
+    ok('7k · 🔑 y la del ente NO usa consulta compuesta, porque individualEntityId+role NO existe',
+       !tieneIndice('individualEntityId', 'role') &&
+       !/where\('individualEntityId'[\s\S]{0,120}where\('role'/.test(tabDirCoach),
+       'si algún día se declara ese índice, esta aserción avisa de que ya se puede simplificar');
+}
+
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);
