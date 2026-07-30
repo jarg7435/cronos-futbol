@@ -496,16 +496,18 @@ async function openClubAdminPanel(preClubId = null) {
         //    · byCatSub: Map<catId, Map<subId, user[]>> solo Entrenador/Padre
         //      con category Y subcategory válidas. Los registros incompletos
         //      (históricos) se EXCLUYEN por completo (decisión de diseño).
-        const CLUB_CATEGORIES = [
-            { id: 'prebenjamin', label: 'Prebenjamín' },
-            { id: 'benjamin',    label: 'Benjamín' },
-            { id: 'alevin',      label: 'Alevín' },
-            { id: 'infantil',    label: 'Infantil' },
-            { id: 'cadete',      label: 'Cadete' },
-            { id: 'juvenil',     label: 'Juvenil' },
-            { id: 'regional',    label: 'Regional' },
-        ];
-        const CLUB_SUBCATS = ['A', 'B', 'C'];
+        // ⚠️ EL VOCABULARIO YA NO SE DECLARA AQUÍ (2026-07-30, fase 1 del árbol
+        // del panel de Dirección). Vive en js/admin/shared/category-tree.js, porque el
+        // panel del Director necesita EXACTAMENTE las mismas categorías para
+        // agrupar informes, convocatorias y entrenamientos: dos copias acabarían
+        // desincronizándose y cada panel mostraría un árbol distinto.
+        // Se leen de window.* y NO se re-declaran con `const` de nivel superior
+        // (ver la nota de admin-shared.js y test_admin_shared_constants.js).
+        // Se leen DENTRO de la función, no al cargar el fichero, así que el
+        // orden de los <script> no puede dejarlas vacías por sorpresa.
+        // El respaldo mantiene el panel en pie si el módulo no cargara.
+        const CLUB_CATEGORIES = window.CT_CATEGORIES || [];
+        const CLUB_SUBCATS    = window.CT_SUBCATS    || ['A', 'B', 'C'];
         const _validCatIds = new Set(CLUB_CATEGORIES.map(c => c.id));
         const _coordLabel = { f7: 'F7', f11: 'F11', f711: 'F7&11' };
 

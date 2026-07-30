@@ -110,7 +110,12 @@ async function _sdLoadEvents(type) {
             ${items.length} registros · máx. ${MAX_ITEMS} (los más antiguos se eliminan automáticamente)
         </div>`;
 
-        items.forEach(d => {
+        // ⚠️ LA TARJETA DE UN AVISO, EN UN SOLO SITIO (fase 3 del árbol del panel
+        // de Dirección, 2026-07-30). Antes este marcado estaba dentro del
+        // items.forEach; ahora lo consumen DOS caminos —la lista plana y las hojas
+        // del árbol— y tenerlo duplicado garantizaría que las dos vistas se
+        // fuesen separando. El contenido no ha cambiado ni un carácter.
+        const _sdEventCard = (d) => {
             const date = d.createdAt
                 ? new Date(d.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})
                 : '—';
@@ -128,7 +133,7 @@ async function _sdLoadEvents(type) {
                     ? (Array.isArray(d.days) ? d.days.filter(dy=>dy.time||dy.venue).map(dy=>dy.day+': '+[dy.time,dy.venue].filter(Boolean).join(' ')).slice(0,2).join(' | ') : (d.location ? '📍 ' + escapeHtml(d.location) : ''))
                     : (d.location ? ' · 📍 ' + escapeHtml(d.location) : '');
 
-            html += `
+            return `
             <div class="sd-card" style="position:relative;border-left:3px solid ${accent};">
                 <!-- Botón eliminar -->
                 <button onclick="sdDeleteNotif('${escapeAttr(d._id)}')"
@@ -156,7 +161,52 @@ async function _sdLoadEvents(type) {
                            border-color:rgba(88,166,255,0.3);color:var(--primary);">
                     👁 Ver</button>
             </div>`;
-        });
+        };
+
+        // ── ÁRBOL Categoría → Subcategoría (las DOS pestañas) ────────────────
+        // Fase 3 (2026-07-30): Entrenamientos. Fase 4: Convocatorias.
+        //
+        // ⚠️ CONDICIONADO A QUE EL MÓDULO ESTÉ CARGADO, y no por prudencia
+        // decorativa: si no lo estuviera, esta pestaña se quedaría en blanco en
+        // vez de degradar a la lista de siempre. Es el mismo respaldo que el
+        // Admin Individual (ver la aserción 2f de test_category_tree.js), y es
+        // además lo que mantiene en verde test_events_tab_module.js, cuyo
+        // sandbox NO carga el módulo: quitar este typeof rompe 2 de sus
+        // aserciones además de las de test_events_tab_tree.js.
+        //
+        // ⚠️ NO añadir aquí un filtro por `type`. Las dos pestañas usan el
+        // árbol; un filtro dejaría una plana sin que nadie se enterase, y eso
+        // es justo lo que fija la aserción 7b del guard.
+        const _sdUsaArbol = typeof window.ctRenderTree === 'function' &&
+                            typeof window.ctResolveCatSub === 'function';
+
+        if (_sdUsaArbol) {
+            // Índice de entrenadores del club: es SÓLO el respaldo para el
+            // histórico. Los avisos nuevos ya traen category/subcategory en el
+            // documento (fase 2), así que si esta consulta falla —permisos, o un
+            // club con más usuarios que el limit— el árbol se pinta igual y lo
+            // que no se pueda clasificar cae en "Sin clasificar".
+            let _sdCoachIndex = new Map();
+            try {
+                const uSnap = await getDocs(query(collection(db, 'users'),
+                    where('clubId', '==', clubId), limit(200)));
+                const uDocs = [];
+                uSnap.forEach(ud => uDocs.push({ id: ud.id, ...ud.data() }));
+                _sdCoachIndex = window.ctBuildCoachIndex(uDocs);
+            } catch (_) { /* respaldo ausente: se resuelve con lo que traiga el doc */ }
+
+            const _sdResueltos = items.map(it => ({ it: it, r: window.ctResolveCatSub(it, _sdCoachIndex) }));
+            html += window.ctRenderTree({
+                items:      _sdResueltos,
+                getCat:     (x) => x.r.cat,
+                getSub:     (x) => x.r.sub,
+                renderLeaf: (x) => _sdEventCard(x.it),
+                emptyText:  isConv ? 'Sin convocatorias en esta subcategoría.'
+                                   : 'Sin avisos de entrenamiento en esta subcategoría.',
+            });
+        } else {
+            items.forEach(d => { html += _sdEventCard(d); });
+        }
         container.innerHTML = html;
 
         // ── Detalle completo sin alert() ────────────────────────────────

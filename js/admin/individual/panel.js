@@ -66,16 +66,17 @@ if (typeof window.ROLE_META === 'undefined') {
 // CONSTANTES DE CATEGORÍAS
 // ═══════════════════════════════════════════════════════════════════
 
-const IND_CATEGORIES = [
-    { id: 'prebenjamin', label: 'Prebenjamín' },
-    { id: 'benjamin',    label: 'Benjamín' },
-    { id: 'alevin',      label: 'Alevín' },
-    { id: 'infantil',    label: 'Infantil' },
-    { id: 'cadete',      label: 'Cadete' },
-    { id: 'juvenil',     label: 'Juvenil' },
-    { id: 'regional',    label: 'Regional' },
-];
-const IND_SUB_CATS = ['A', 'B', 'C'];
+// ⚠️ EL VOCABULARIO YA NO SE DECLARA AQUÍ (2026-07-30). Era la TERCERA copia de
+// las mismas 7 categorías —las otras estaban en admin/club/panel.js y en
+// admin/shared/category-tree.js—, y tres copias acaban desincronizándose: añadir
+// una categoría obligaba a acordarse de tres sitios. La fuente única es
+// window.CT_CATEGORIES, que publica js/admin/shared/category-tree.js.
+// ⚠️ ESTO SE EVALÚA AL CARGAR EL FICHERO, no al usarlo, así que DEPENDE DEL
+// ORDEN de los <script>: category-tree.js (index.html:1349) va antes que este
+// (1365). Si alguien los reordena, aquí quedaría el respaldo y el panel
+// mostraría un árbol vacío sin que nada falle a gritos. Lo fija el guard.
+const IND_CATEGORIES = window.CT_CATEGORIES || [];
+const IND_SUB_CATS   = window.CT_SUBCATS    || ['A', 'B', 'C'];
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS

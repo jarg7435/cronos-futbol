@@ -127,6 +127,12 @@ async function _sdLoadReports() {
             }
         } catch(_) {}
 
+        // Documentos de usuario que ya se leen aquí abajo. Antes se usaban SÓLO
+        // para recopilar clubIds y se tiraban; ahora alimentan también el índice
+        // de entrenadores del árbol (fase 5), así que NO hace falta una consulta
+        // nueva para eso.
+        const _sdUserDocs = [];
+
         // Paso 2: Para cada clubId, buscar usuarios y recopilar SUS clubIds
         const _initialClubIds = [..._allClubIds];
         for (const cid of _initialClubIds) {
@@ -138,6 +144,7 @@ async function _sdLoadReports() {
                 ));
                 usersSnap.forEach(d => {
                     const data = d.data();
+                    _sdUserDocs.push({ id: d.id, ...data });
                     if (data.clubId) _allClubIds.add(data.clubId);
                     if (data.allRoles && Array.isArray(data.allRoles)) {
                         data.allRoles.forEach(r => {
@@ -349,6 +356,13 @@ async function _sdLoadReports() {
                     createdAt:     r.createdAt,
                     // Campos opcionales (enriquecen la cabecera)
                     category:      r.category,
+                    // ⚠️ subcategory se PERDÍA aquí (fase 2 del árbol del panel
+                    // de Dirección, 2026-07-30). El dato SÍ está en Firestore
+                    // —lo escriben collective-report.js y match-reports-*.js—
+                    // pero este objeto agrupado por partido no lo copiaba, así
+                    // que al agrupar por el árbol TODOS los informes habrían
+                    // caído en "Sin clasificar" pareciendo un fallo del árbol.
+                    subcategory:   r.subcategory,
                     venue:         r.venue,
                     competition:   r.competition,
                     matchTime:     r.matchTime,
@@ -382,7 +396,17 @@ async function _sdLoadReports() {
             </span>
         </div>`;
 
-        sorted.forEach(m => {
+        // ⚠️ _sdMatchData se rellena en SU PROPIA pasada, antes de pintar (fase 5).
+        // Antes se rellenaba dentro del bucle de render; ahora hay dos caminos de
+        // render (árbol y lista plana) y sdToggleReport / sdDeleteReport dependen
+        // de este mapa, así que no puede quedar a merced de por dónde se pinte.
+        const _sdKey64 = (m) => btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
+        sorted.forEach(m => { window._sdMatchData[_sdKey64(m)] = m; });
+
+        // ⚠️ LA TARJETA DE UN INFORME, EN UN SOLO SITIO (fase 5). La consumen la
+        // lista plana y las hojas del árbol; duplicarla haría que las dos vistas
+        // se fueran separando. El contenido no ha cambiado.
+        const _sdReportCard = (m) => {
             const goals   = m.players.reduce((s, p) => s + (p.goals || 0), 0);
             const injured = m.players.filter(p => p.injured).length;
             const dateStr = m.matchDate
@@ -395,12 +419,9 @@ async function _sdLoadReports() {
             const _theirs = m.myTeamRole === 'away' ? sh : sa;
             const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
-            const key64 = btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
+            const key64 = _sdKey64(m);
 
-            // Guardar datos del partido para renderizado lazy en el toggle
-            window._sdMatchData[key64] = m;
-
-            html += `
+            return `
             <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
                 <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
                     <div style="flex:1;min-width:0;">
@@ -436,7 +457,44 @@ async function _sdLoadReports() {
                      style="display:none;margin-top:0.8rem;border-top:1px solid var(--glass-border);padding-top:0.8rem;">
                 </div>
             </div>`;
-        });
+        };
+
+        // ── ÁRBOL Categoría → Subcategoría, con la TABLA RESUMEN arriba ──────
+        // Fase 5 (2026-07-30). Dentro de cada subcategoría, y en este orden:
+        //   1. el resumen acumulado de temporada de ese equipo (ctRenderStatsTable)
+        //   2. el listado de informes partido a partido, que es el de siempre
+        //
+        // ⚠️ CONDICIONADO A QUE EL MÓDULO ESTÉ CARGADO: si no, se pinta la lista
+        // plana de siempre en vez de dejar la pestaña en blanco. Mismo respaldo
+        // que en events-tab.js, y por la misma razón — hay guards cuyo sandbox
+        // no carga el módulo.
+        const _sdUsaArbol = typeof window.ctRenderTree === 'function' &&
+                            typeof window.ctResolveCatSub === 'function' &&
+                            typeof window.ctAccumulatePlayerStats === 'function' &&
+                            typeof window.ctRenderStatsTable === 'function';
+
+        if (_sdUsaArbol) {
+            // Índice de entrenadores para completar los informes históricos a los
+            // que _cMatchSubcatFor dejó la subcategoría vacía. Sale de los
+            // documentos de usuario que ya se leyeron arriba: sin consulta nueva.
+            let _sdCoachIndex = new Map();
+            try { _sdCoachIndex = window.ctBuildCoachIndex(_sdUserDocs); } catch (_) {}
+
+            const _sdResueltos = sorted.map(m => ({ m: m, r: window.ctResolveCatSub(m, _sdCoachIndex) }));
+            html += window.ctRenderTree({
+                items:      _sdResueltos,
+                getCat:     (x) => x.r.cat,
+                getSub:     (x) => x.r.sub,
+                // 🔑 La tabla es POR EQUIPO, así que va en renderSubHeader y no en
+                // renderLeaf: se calcula con TODOS los partidos de esa rama.
+                renderSubHeader: (arr) =>
+                    window.ctRenderStatsTable(window.ctAccumulatePlayerStats(arr.map(x => x.m))),
+                renderLeaf: (x) => _sdReportCard(x.m),
+                emptyText:  'Sin informes de este equipo todavía.',
+            });
+        } else {
+            sorted.forEach(m => { html += _sdReportCard(m); });
+        }
 
         container.innerHTML = html;
 

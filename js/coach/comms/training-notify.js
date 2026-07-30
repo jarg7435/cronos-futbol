@@ -205,10 +205,24 @@ window._sendTrainingNotification = async function() {
             ? new Date(datetime).toLocaleString('es-ES', {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
             : '—';
 
+        // ⚠️ category/subcategory (fase 2 del árbol del panel de Dirección,
+        // 2026-07-30): SIN ellas, el panel del Director tenía que deducir la
+        // categoría del entrenamiento a partir del autor, y eso NO se puede
+        // resolver cuando el entrenador lleva dos equipos — el aviso acababa en
+        // "Sin clasificar". Guardándolas aquí, los avisos nuevos ya vienen
+        // clasificados y el resolutor por autor queda sólo como respaldo del
+        // histórico. Mismos campos y mismo orden de respaldo que usa la
+        // convocatoria en js/shared/whatsapp-email.js.
+        // ⚠️ userId/parentUid son el DESTINATARIO: la categoría es la del
+        // ENTRENADOR que envía (me), nunca la del padre que recibe.
+        const _trCat = me.category || me._activeRoleData?.category || me.categoryLabel || null;
+        const _trSub = me.subcategory || me._activeRoleData?.subcategory || null;
+
         const notifPayload = (uid) => ({
             type: 'planificacion_semanal', clubId: me.clubId || null,
             userId: uid,                                  // ← FIX (C3): campo que las reglas verifican
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
+            category: _trCat, subcategory: _trSub,
             datetime, location, notes,
             createdAt: new Date().toISOString(),
         });
