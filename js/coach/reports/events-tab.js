@@ -263,24 +263,66 @@ async function _sdLoadEvents(type) {
                 // la solución buena; mientras no exista, la heurística es lo
                 // único que funciona sobre los planes YA guardados.
                 const _esPartido = (dy) => {
-                    const k = String(dy.kind || dy.type || '').trim().toLowerCase();
+                    const k = String(dy.kind || '').trim().toLowerCase();
                     if (k) return k === 'partido' || k === 'liga' || k === 'amistoso' || k === 'match';
-                    const txt = (String(dy.note || '') + ' ' + String(dy.venue || '')).toLowerCase();
+                    const txt = (String(dy.note || '') + ' ' + String(dy.venue || '') + ' ' +
+                                 String(dy.tipo || '')).toLowerCase();
                     return /\b(partido|amistoso|liga)\b/.test(txt);
+                };
+
+                // ⚠️ UN DATO POR LÍNEA: de dónde salen TIPO, MINUTOS y EQUIPACIÓN.
+                // El compositor de js/parent/panel.js sólo tiene UN input de texto
+                // libre por día, así que esos tres datos viajan juntos dentro de
+                // `note` separados por viñetas ("Partido liga • 90 MINUTOS •
+                // EQUIP. AZUL"). Por eso hora y lugar ya salían en su línea y
+                // estos tres no: no era el layout, era el dato.
+                // Se parte por • · | y se clasifica cada trozo por su contenido.
+                // Los campos ESTRUCTURADOS que ya usa js/coach/training/panel.js
+                // (tipo / duracion / equipaciones) mandan sobre el texto libre.
+                const _lineasDe = (dy) => {
+                    const out = [];
+                    if (dy.time)  out.push('🕐 ' + escapeHtml(dy.time));
+                    if (dy.venue) out.push('📍 ' + escapeHtml(dy.venue));
+
+                    const estructurado = dy.tipo || dy.duracion || dy.minutos || dy.equipaciones;
+                    if (estructurado) {
+                        if (dy.tipo)      out.push('📋 ' + escapeHtml(dy.tipo));
+                        const dur = dy.duracion || dy.minutos;
+                        if (dur)          out.push('⏱️ ' + escapeHtml(dur));
+                        if (dy.equipaciones) out.push('👕 ' + escapeHtml(dy.equipaciones));
+                        if (dy.note)      out.push('📝 ' + escapeHtml(dy.note));
+                        return out;
+                    }
+
+                    const trozos = String(dy.note || '').split(/\s*[•·|]\s*/)
+                        .map(s => s.trim()).filter(Boolean);
+                    // Una nota suelta es sólo una nota: se deja con 📝 y sin
+                    // interpretar (lo fija la aserción 5ac).
+                    if (trozos.length === 1) {
+                        out.push('📝 ' + escapeHtml(trozos[0]));
+                        return out;
+                    }
+                    trozos.forEach((t, i) => {
+                        const low = t.toLowerCase();
+                        const icono = /\bmin\w*\b|\bminutos?\b/.test(low) ? '⏱️'
+                                    : /equip/.test(low)                   ? '👕'
+                                    : i === 0                             ? '📋'
+                                    :                                       '📝';
+                        out.push(icono + ' ' + escapeHtml(t));
+                    });
+                    return out;
                 };
 
                 const weekDaysHTML = Array.isArray(d.days)
                     ? d.days.map(dy => {
-                        const hasData = dy.time || dy.venue || dy.note;
+                        const hasData = dy.time || dy.venue || dy.note ||
+                                        dy.tipo || dy.duracion || dy.minutos || dy.equipaciones;
                         const match   = hasData && _esPartido(dy);
-                        // Las líneas de detalle conservan los mismos emojis y el
-                        // mismo "_Descanso_" que la versión vertical: hay guards
-                        // que los fijan y el contenido no es lo que se rediseña.
+                        // Cada dato en SU línea. Se conservan los mismos emojis y
+                        // el mismo "_Descanso_" de siempre: hay guards que los
+                        // fijan y el contenido no es lo que se rediseña.
                         const detalle = hasData
-                            ? [dy.time  ? '🕐 ' + escapeHtml(dy.time)  : '',
-                               dy.venue ? '📍 ' + escapeHtml(dy.venue) : '',
-                               dy.note  ? '📝 ' + escapeHtml(dy.note)  : '']
-                              .filter(Boolean).map(l => '<div class="wp-line">' + l + '</div>').join('')
+                            ? _lineasDe(dy).map(l => '<div class="wp-line">' + l + '</div>').join('')
                             : '<div class="wp-line wp-rest">_Descanso_</div>';
                         // data-day identifica la tarjeta sin depender del texto
                         // de dentro: es lo que permite comprobar en el guard qué
@@ -304,14 +346,19 @@ async function _sdLoadEvents(type) {
                     + '.wp-week::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.18);border-radius:3px;}'
                     // flex-shrink:0 es lo que hace que el scroll exista: sin esto
                     // los siete días se comprimen y no hay nada que desplazar.
-                    + '.wp-day{flex:0 0 auto;flex-shrink:0;min-width:132px;max-width:170px;'
+                    + '.wp-day{flex:0 0 auto;flex-shrink:0;min-width:152px;max-width:200px;'
                         + 'border:1px solid rgba(255,255,255,0.10);border-radius:9px;'
                         + 'background:rgba(255,255,255,0.03);overflow:hidden;}'
                     + '.wp-day-head{font-weight:700;font-size:0.78rem;color:#f0883e;'
                         + 'padding:0.4rem 0.55rem;background:rgba(240,136,62,0.10);'
                         + 'border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;}'
-                    + '.wp-day-body{padding:0.45rem 0.55rem;display:flex;flex-direction:column;gap:0.25rem;}'
-                    + '.wp-line{font-size:0.76rem;color:var(--text,#c9d1d9);word-break:break-word;}'
+                    // Un dato por línea, pegados al borde izquierdo: align-items
+                    // flex-start es lo que impide que las líneas cortas se
+                    // centren dentro de la tarjeta.
+                    + '.wp-day-body{padding:0.45rem 0.55rem;display:flex;flex-direction:column;'
+                        + 'align-items:flex-start;text-align:left;gap:0.28rem;}'
+                    + '.wp-line{font-size:0.76rem;color:var(--text,#c9d1d9);word-break:break-word;'
+                        + 'text-align:left;width:100%;}'
                     + '.wp-rest{color:#555;font-style:italic;}'
                     // Día con partido: verde del proyecto, en el borde y en la cabecera.
                     + '.wp-day-match{border-color:#3fb950;box-shadow:0 0 0 1px rgba(63,185,80,0.35);}'

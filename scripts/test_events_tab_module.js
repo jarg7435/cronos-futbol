@@ -576,6 +576,91 @@ function walk(dir, out) {
         ok('5u · 🔑 la nota va escapada aunque active el verde',
             !/<img/.test(ap4[0].innerHTML) && /wp-day-match/.test(ap4[0].innerHTML));
     }
+    // ═══ Un dato por línea dentro de la tarjeta del día ═══
+    // Segundo ajuste del autor (2026-07-30): dentro de la tarjeta seguía todo
+    // apelotonado. La causa NO era el layout —hora y lugar ya iban en su línea—
+    // sino que TIPO, MINUTOS y EQUIPACIÓN viajan los tres dentro del campo
+    // `note`, separados por viñetas ("Partido liga • 90 MINUTOS • EQUIP. AZUL"),
+    // porque el compositor de js/parent/panel.js sólo tiene un input de texto
+    // libre. Se parte la nota por los separadores y cada trozo va a su línea.
+    //
+    // Orden pedido: Hora · Lugar · Tipo · Minutos · Equipación.
+    {
+        const { g: g5, w: w5, appended: ap5 } = buildSandbox({
+            notifs: {
+                p5: { clubId: 'club1', type: 'planificacion_semanal', weekStartDate: '2026-03-23',
+                      days: [{ day: 'Lunes', time: '18:00', venue: 'Campo 1',
+                               note: 'Partido liga • 90 MINUTOS • EQUIP. AZUL' }],
+                      createdAt: iso(1) },
+            },
+        });
+        await g5._sdLoadEvents('planificacion_semanal');
+        await w5.sdViewEventDetail('p5');
+        const h5 = ap5[0].innerHTML;
+        const lineas = (html) => (String(html).match(/<div class="wp-line[^"]*">([\s\S]*?)<\/div>/g) || [])
+            .map(s => s.replace(/<[^>]*>/g, '').trim());
+        const L = lineas(h5);
+
+        ok('5v · 🔑 la nota con viñetas se parte en LÍNEAS, no queda en una',
+            L.length === 5, JSON.stringify(L));
+        ok('5w · 🔑 y en el orden pedido: hora, lugar, tipo, minutos, equipación',
+            /🕐/.test(L[0]) && /Campo 1/.test(L[1]) &&
+            /Partido liga/.test(L[2]) && /90/.test(L[3]) && /AZUL/.test(L[4]),
+            JSON.stringify(L));
+        ok('5x · cada dato lleva su icono: 📋 tipo, ⏱️ minutos, 👕 equipación',
+            /📋/.test(L[2]) && /⏱/.test(L[3]) && /👕/.test(L[4]), JSON.stringify(L));
+        // ⚠️ Se comprueba align-items:flex-start y NO sólo text-align:left: en
+        // una columna flex es align-items lo que pega las líneas CORTAS al borde
+        // izquierdo. Con sólo text-align, poner align-items:center dejaba el
+        // guard en verde con las líneas centradas — lo destapó la prueba de rojo.
+        ok('5y · 🔑 las líneas se apilan en columna y pegadas a la izquierda',
+            /flex-direction:\s*column/.test(h5) && /align-items:\s*flex-start/.test(h5) &&
+            /text-align:\s*left/.test(h5));
+        ok('5z · el día con "Partido liga" sigue marcándose en verde',
+            /wp-day-match/.test(h5));
+
+        // Otros separadores que aparecen en las notas reales.
+        const sep = async (nota) => {
+            const { g: gx, w: wx, appended: apx } = buildSandbox({
+                notifs: { px: { clubId: 'club1', type: 'planificacion_semanal',
+                                days: [{ day: 'Lunes', note: nota }], createdAt: iso(1) } },
+            });
+            await gx._sdLoadEvents('planificacion_semanal');
+            await wx.sdViewEventDetail('px');
+            return lineas(apx[0].innerHTML);
+        };
+        ok('5aa · también parte por "·"', (await sep('Entrenamiento · 60 min')).length === 2);
+        ok('5ab · y por "|"',            (await sep('Entrenamiento | 60 min')).length === 2);
+        ok('5ac · 🔑 una nota SIN separadores se queda en UNA línea, como nota',
+            (await sep('Sesión de recuperación')).length === 1);
+
+        // 🔑 Los campos estructurados del panel del entrenador
+        // (js/coach/training/panel.js: tipo/duracion/equipaciones) mandan sobre
+        // el texto libre. Es la forma buena de traer estos datos.
+        const { g: g6, w: w6, appended: ap6 } = buildSandbox({
+            notifs: {
+                p6: { clubId: 'club1', type: 'planificacion_semanal',
+                      days: [{ day: 'Lunes', time: '19:00', venue: 'Anexo',
+                               tipo: 'Partido liga', duracion: '90 min',
+                               equipaciones: '1a equipación' }],
+                      createdAt: iso(1) },
+            },
+        });
+        await g6._sdLoadEvents('planificacion_semanal');
+        await w6.sdViewEventDetail('p6');
+        const L6 = lineas(ap6[0].innerHTML);
+        ok('5ad · 🔑 usa tipo/duracion/equipaciones si vienen estructurados',
+            L6.length === 5 && /Partido liga/.test(L6[2]) && /90 min/.test(L6[3]) &&
+            /1a equipación/.test(L6[4]), JSON.stringify(L6));
+        ok('5ae · 🔑 y un tipo "Partido liga" estructurado también pinta el verde',
+            /wp-day-match/.test(ap6[0].innerHTML));
+
+        // Escapado de cada trozo por separado.
+        const L7 = await sep('<b>x</b> • 90 min');
+        ok('5af · 🔑 cada trozo va escapado',
+            L7.length === 2 && !/</.test(L7[0].replace(/^[^\w<]*/, '')) &&
+            /b>x<\/b>|&lt;b&gt;/.test(JSON.stringify(L7)), JSON.stringify(L7));
+    }
     {
         // id que no está en `items`: cae al fallback de Firestore
         const { g, w, appended } = buildSandbox({
