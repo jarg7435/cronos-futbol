@@ -482,6 +482,162 @@ function walk(dir, out) {
             html.includes('3') && html.includes('2') && html.length > 1000);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  PARTE 8 · CRONOGRAMA POR JUGADOR: banquillo, flechas y cambios en bloque
+    //  (requisito del autor, implementar.txt 2026-07-30)
+    //
+    //  Las tres cosas que fija, y por qué cada una:
+    //   1. BANQUILLO en gris mientras el jugador no está en el campo.
+    //   2. 🔑 CADA FLECHA NOMBRA AL OTRO, no a sí misma. En la fila de Ana, el
+    //      momento en que sale debe decir QUIÉN ENTRA por ella; poner "Ana" ahí
+    //      es información redundante —la fila ya es suya— y además duplicaba el
+    //      número de etiquetas, que es lo que provocaba el amontonamiento.
+    //   3. 🔑 CAMBIOS EN BLOQUE 1 a 1. Con N cambios en el mismo minuto, cada
+    //      salida se empareja con UNA entrada y ninguna entrada se reutiliza.
+    //      Y las etiquetas NO pueden solaparse: se apilan en carriles.
+    // ═══════════════════════════════════════════════════════════════════
+    const tlOf = (players, m) => {
+        const { html } = build(players, m);
+        return html.slice(idxOf(html, MARK.timelines), idxOf(html, MARK.summary));
+    };
+    // Etiquetas del SVG: <text ... >contenido</text>
+    const textos = (svg) => (String(svg).match(/<text[^>]*>[\s\S]*?<\/text>/g) || []);
+    const conFlecha = (svg, flecha) => textos(svg).filter(t => t.includes(flecha));
+    // x, y y anchor de una etiqueta, para poder razonar sobre solapes.
+    const cajaDe = (t) => ({
+        x: parseFloat((t.match(/x="([-\d.]+)"/) || [])[1]),
+        y: parseFloat((t.match(/y="([-\d.]+)"/) || [])[1]),
+        anchor: (t.match(/text-anchor="(\w+)"/) || [])[1] || 'start',
+        txt: t.replace(/<[^>]*>/g, '').trim(),
+    });
+
+    {
+        const tl = tlOf([
+            titular('Ana', 5, { history: [ev('sub_out', 20, { subId: 1, timeStr: '20:00' })] }),
+            suplente('Bea', 12, { history: [ev('sub_in', 20, { subId: 1, timeStr: '20:00' })] }),
+        ], { category: 'juvenil' });
+
+        ok('8a · el banquillo se marca en gris con su etiqueta', /BANQUILLO/.test(tl));
+
+        // 🔑 En la fila de Ana (que sale) la etiqueta roja debe nombrar a BEA.
+        const rojas = conFlecha(tl, '▼');
+        const verdes = conFlecha(tl, '▲');
+        ok('8b · 🔑 la flecha de SALIDA es roja ▼ y nombra a quien ENTRA',
+            rojas.some(t => /Bea/.test(t) && /#ff5858/.test(t)),
+            JSON.stringify(rojas.map(t => cajaDe(t).txt)));
+        ok('8c · 🔑 la flecha de ENTRADA es verde ▲ y nombra a quien SALE',
+            verdes.some(t => /Ana/.test(t) && /#3fb950/.test(t)),
+            JSON.stringify(verdes.map(t => cajaDe(t).txt)));
+
+        // 🔑 Una etiqueta por transición, no dos: la fila de Ana no se nombra a
+        // sí misma en su propia salida.
+        const filaAna = tl.slice(0, idxOf(tl, 'Bea') > -1 ? idxOf(tl, 'Bea') : tl.length);
+        ok('8d · 🔑 la fila de un jugador NO repite su propio nombre en su flecha',
+            !conFlecha(filaAna, '▼').some(t => /Ana/.test(cajaDe(t).txt)),
+            JSON.stringify(conFlecha(filaAna, '▼').map(t => cajaDe(t).txt)));
+
+        ok('8e · la leyenda dice lo mismo que el cronograma',
+            /▲[\s\S]{0,80}Entra/.test(tl + build([titular('T',1)],{}).html) ||
+            /Entra[\s\S]{0,80}▲/.test(build([titular('T',1)],{}).html));
+    }
+
+    {
+        // 🔑 SIETE CAMBIOS EN EL MISMO MINUTO, sin subId (cambios grupales: el
+        // compositor los guarda como 'C1'/'C2' y el subId queda a null).
+        const salen = ['S1','S2','S3','S4','S5','S6','S7'];
+        const entran = ['E1','E2','E3','E4','E5','E6','E7'];
+        const plantilla = salen.map((n, i) => titular(n, i + 1, { history: [ev('sub_out', 30, { timeStr: '30:00' })] }))
+            .concat(entran.map((n, i) => suplente(n, i + 20, { history: [ev('sub_in', 30, { timeStr: '30:00' })] })));
+        const tl7 = tlOf(plantilla, { category: 'juvenil' });
+
+        // Cada uno de los 7 que salen debe nombrar a UNO de los que entran, y
+        // cada entrante debe aparecer UNA sola vez como pareja.
+        const nombrados = conFlecha(tl7, '▼').map(t => cajaDe(t).txt)
+            .map(s => (s.match(/E\d/) || [])[0]).filter(Boolean);
+        ok('8f · 🔑 los 7 que salen nombran a un entrante cada uno',
+            nombrados.length === 7, JSON.stringify(nombrados));
+        ok('8g · 🔑 EMPAREJADO 1 A 1: ningún entrante se repite',
+            new Set(nombrados).size === nombrados.length, JSON.stringify(nombrados));
+        ok('8h · 🔑 y se usan los 7 entrantes, no una lista parcial',
+            new Set(nombrados).size === 7, JSON.stringify([...new Set(nombrados)].sort()));
+
+        // Lo simétrico: los 7 que entran nombran a los 7 que salen, 1 a 1.
+        const nombrados2 = conFlecha(tl7, '▲').map(t => cajaDe(t).txt)
+            .map(s => (s.match(/S\d/) || [])[0]).filter(Boolean);
+        ok('8i · 🔑 y los 7 que entran nombran a un saliente cada uno, sin repetir',
+            nombrados2.length === 7 && new Set(nombrados2).size === 7,
+            JSON.stringify(nombrados2));
+
+        ok('8j · 🔑 ninguna etiqueta lista varios nombres a la vez',
+            !textos(tl7).some(t => (cajaDe(t).txt.match(/[SE]\d/g) || []).length > 1),
+            JSON.stringify(textos(tl7).map(t => cajaDe(t).txt).filter(s => (s.match(/[SE]\d/g)||[]).length > 1)));
+    }
+
+    {
+        // 🔑 SOLAPE: un jugador que entra y sale varias veces muy seguidas deja
+        // sus etiquetas casi en la misma x. Deben apilarse en carriles, no
+        // encimarse. Se comprueba geométricamente sobre el SVG.
+        const tlx = tlOf([
+            titular('Ana', 5, { history: [
+                ev('sub_out', 20, { timeStr: '20:00' }),
+                ev('sub_in',  22, { timeStr: '22:00' }),
+                ev('sub_out', 24, { timeStr: '24:00' }),
+                ev('sub_in',  26, { timeStr: '26:00' }),
+            ] }),
+            suplente('Bea', 12, { history: [
+                ev('sub_in',  20, { timeStr: '20:00' }),
+                ev('sub_out', 22, { timeStr: '22:00' }),
+                ev('sub_in',  24, { timeStr: '24:00' }),
+                ev('sub_out', 26, { timeStr: '26:00' }),
+            ] }),
+        ], { category: 'juvenil' });
+
+        // ⚠️ EL SOLAPE SE MIDE DENTRO DE CADA FILA, no en todo el bloque: cada
+        // jugador es un <svg> con SU PROPIO sistema de coordenadas, así que dos
+        // etiquetas con la misma `y` en filas distintas no se enciman. La
+        // primera versión de esta aserción las comparaba todas juntas y daba
+        // rojo con el código ya correcto.
+        const filas = tlx.split('<svg').slice(1);
+        // Se aproxima el ancho por número de caracteres (font-size 7 ≈ 3.7px).
+        const cajasDe = (fila) => textos(fila).filter(t => /▲|▼/.test(t)).map(t => {
+            const c = cajaDe(t);
+            const w = c.txt.length * 3.7 + 4;
+            const x1 = c.anchor === 'end' ? c.x - w : c.x;
+            return { x1, x2: x1 + w, y: c.y, txt: c.txt };
+        });
+        const solapan = [];
+        let todas = [];
+        filas.forEach(fila => {
+            const cajas = cajasDe(fila);
+            todas = todas.concat(cajas);
+            for (let i = 0; i < cajas.length; i++) {
+                for (let j = i + 1; j < cajas.length; j++) {
+                    const a = cajas[i], b = cajas[j];
+                    // Misma línea de texto (misma y) y rangos de x que se cruzan.
+                    if (Math.abs(a.y - b.y) < 4 && a.x1 < b.x2 && b.x1 < a.x2) {
+                        solapan.push(a.txt + ' ↔ ' + b.txt);
+                    }
+                }
+            }
+        });
+        ok('8k · 🔑 dentro de una fila, las etiquetas NO se solapan: van en carriles',
+            solapan.length === 0, JSON.stringify(solapan));
+        ok('8l · y para apilarlas hay más de una altura de texto en uso',
+            new Set(todas.map(c => Math.round(c.y))).size > 1,
+            JSON.stringify([...new Set(todas.map(c => Math.round(c.y)))]));
+
+        // 🔑 LA FILA TIENE QUE CRECER con los carriles. Si la altura se queda
+        // fija, las etiquetas apiladas se salen del <svg> —que va con
+        // overflow:visible— y se meten encima de la fila del jugador siguiente:
+        // el solape vuelve, pero entre filas y sin que 8k lo vea. Sin esta
+        // aserción, fijar la altura pasaba el guard entero en verde.
+        const altoDe = (fila) => parseFloat((String(fila).match(/viewBox="0 0 \d+ ([\d.]+)"/) || [])[1]);
+        const altoSimple = altoDe(tlOf([titular('Solo', 1)], { category: 'juvenil' }).split('<svg')[1]);
+        const altoApilado = Math.max(...filas.map(altoDe));
+        ok('8m · 🔑 la fila crece cuando hay etiquetas apiladas',
+            altoApilado > altoSimple, 'simple=' + altoSimple + ' apilado=' + altoApilado);
+    }
+
     console.log('\n────────────────────────────────────────────');
     console.log('Resultado: ' + pass + '/' + (pass + fail) + (fail ? '  ❌ ' + fail + ' FALLOS' : '  ✅'));
     process.exit(fail ? 1 : 0);

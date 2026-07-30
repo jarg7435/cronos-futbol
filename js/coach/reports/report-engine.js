@@ -398,8 +398,10 @@ const _RP = (() => {
             const oa = s.out.playerAlias  || ('#' + s.out.playerNumber);
             const ia = s.inp.playerAlias  || ('#' + s.inp.playerNumber);
             const minStr = Math.floor(s.min) + "'";
-            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${ia.substring(0, 9)} ${minStr}` });
-            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${oa.substring(0, 9)} ${minStr}` });
+            // esc(): estos nombres vienen del alias que teclea el entrenador y
+            // acaban dentro de un <text> del SVG.
+            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${esc(ia.substring(0, 9))} ${minStr}` });
+            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${esc(oa.substring(0, 9))} ${minStr}` });
         });
         const findNear = (map, alias, t) => {
             const arr = map[alias];
@@ -408,11 +410,31 @@ const _RP = (() => {
             return hit ? hit.name : null;
         };
 
-        const W = 500, Hrow = 62;
-        const TRACK_Y = 20, TRACK_H = 16;
-        const EVT_Y   = 10;  // centro de zona de eventos (sobre la barra)
-        const LBL_Y   = Hrow - 3; // etiquetas de minutos
+        const W = 500;
+        const TRACK_H = 16;
+        const LANE_H  = 8.5;   // separación entre carriles de etiquetas apiladas
         const sc      = W / totMin;
+
+        // ── Reparto de etiquetas en CARRILES para que no se solapen ──────────
+        //  Con cambios en bloque (4, 5, 7 a la vez) y con jugadores que entran y
+        //  salen varias veces seguidas, las etiquetas caen casi en la misma x y
+        //  se encimaban. Se estima el ancho por número de caracteres (font-size 7
+        //  ≈ 3.7 px por carácter) y cada etiqueta baja al primer carril libre.
+        //  Devuelve el número de carriles usados, que es lo que define la altura
+        //  de la fila.
+        const asignarCarriles = (items) => {
+            const lanes = [];   // lane -> [[x1,x2], …]
+            items.forEach(it => {
+                const w  = it.txt.length * 3.7 + 4;
+                const x1 = it.anchor === 'end' ? it.x - w : it.x;
+                const x2 = x1 + w;
+                let lane = 0;
+                while (lanes[lane] && lanes[lane].some(r => x1 < r[1] && r[0] < x2)) lane++;
+                (lanes[lane] = lanes[lane] || []).push([x1, x2]);
+                it.lane = lane;
+            });
+            return lanes.length;
+        };
 
         // Marcas de tiempo según duración
         const step = totMin <= 50 ? 10 : 15;
@@ -429,6 +451,38 @@ const _RP = (() => {
             const num     = p.playerNumber || '?';
             const aliasKey = p.playerAlias || ('#' + num);
             const periods  = p._ivs || [];
+
+            // ── Etiquetas de cambio: UNA por transición, y nombra AL OTRO ──
+            //  🔑 Antes se pintaban DOS textos en cada extremo de barra: el
+            //  nombre del propio jugador y el de su pareja de cambio. El propio
+            //  nombre es redundante —la fila ya es suya— y duplicar etiquetas
+            //  era justo lo que las amontonaba con cambios en bloque.
+            //  Convención (requisito del autor): ▲ verde al ENTRAR, con el
+            //  nombre de a quién sustituye; ▼ roja al SALIR, con el nombre de
+            //  quién entra por él.
+            const arriba = [];   // salidas  (rojas ▼), sobre la barra
+            const abajo  = [];   // entradas (verdes ▲), bajo la barra
+            periods.forEach(([a, b]) => {
+                if (a > 0.15) {
+                    const outName = findNear(subInMap, aliasKey, a); // a quién sustituye
+                    abajo.push({ x: a * sc + 3, anchor: 'start', color: '#3fb950',
+                                 txt: '▲ ' + (outName || (Math.floor(a) + "'")) });
+                }
+                if (b < totMin - 0.3) {
+                    const inpName = findNear(subOutMap, aliasKey, b); // quién entra por él
+                    arriba.push({ x: b * sc - 3, anchor: 'end', color: '#ff5858',
+                                  txt: (inpName || (Math.floor(b) + "'")) + ' ▼' });
+                }
+            });
+            const nArriba = asignarCarriles(arriba);
+            const nAbajo  = asignarCarriles(abajo);
+
+            // La fila crece según los carriles que hagan falta: así apilar
+            // etiquetas nunca las saca de su fila ni las mete en la siguiente.
+            const TRACK_Y = 20 + Math.max(0, nArriba - 1) * LANE_H;
+            const Hrow    = TRACK_Y + TRACK_H + 14 + Math.max(0, nAbajo - 1) * LANE_H + 12;
+            const EVT_Y   = Math.max(6, TRACK_Y - 10); // zona de eventos, sobre la barra
+            const LBL_Y   = Hrow - 3;                  // etiquetas de minutos
 
             // ── SVG por jugador ─────────────────────────────────────────
             let svg = `<svg viewBox="0 0 ${W} ${Hrow}" width="100%" style="display:block;overflow:visible;">`;
@@ -462,34 +516,24 @@ const _RP = (() => {
                 svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${pw.toFixed(1)}"
                     height="${TRACK_H}" rx="3" fill="#58a6ff" fill-opacity="0.82"/>`;
 
-                // Inicio de barra desde banquillo (sub_in)
+                // Marcas verticales de entrada (verde) y salida (roja).
                 if (a > 0.15) {
-                    const outName = findNear(subInMap, aliasKey, a); // Nombre del que salió
                     svg += `<line x1="${px.toFixed(1)}" y1="${TRACK_Y-4}" x2="${px.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#3fb950" stroke-width="1.8"/>`;
-                    
-                    // v219: Texto Verde (el que entra, alias) abajo — ▼ hacia el campo
-                    svg += `<text x="${(px+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${alias} ${Math.floor(a)}'</text>`;
-                    
-                    // v219: Texto Rojo (el que sale, outName) arriba — ▲ hacia fuera
-                    if (outName) {
-                        svg += `<text x="${(px-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${outName} ▲</text>`;
-                    }
                 }
-
-                // Fin de barra antes del final (sub_out)
                 if (b < totMin - 0.3) {
-                    const inpName = findNear(subOutMap, aliasKey, b); // Nombre del que entró
                     const ex = px + pw;
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}" stroke="#ff5858" stroke-width="1.8"/>`;
-                    
-                    // v219: Texto Rojo (el que sale, alias) arriba — ▲ hacia fuera
-                    svg += `<text x="${(ex-3).toFixed(1)}" y="${TRACK_Y-7}" text-anchor="end" font-size="7" fill="#ff5858" font-weight="700">${alias} ${Math.floor(b)}' ▲</text>`;
-                    
-                    // v219: Texto Verde (el que entra, inpName) abajo — ▼ hacia el campo
-                    if (inpName) {
-                        svg += `<text x="${(ex+3).toFixed(1)}" y="${TRACK_Y+TRACK_H+11}" font-size="7" fill="#3fb950" font-weight="700">▼ ${inpName}</text>`;
-                    }
                 }
+            });
+
+            // Etiquetas ya repartidas en carriles (ver asignarCarriles).
+            arriba.forEach(l => {
+                const y = TRACK_Y - 7 - l.lane * LANE_H;
+                svg += `<text x="${l.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${l.anchor}" font-size="7" fill="${l.color}" font-weight="700">${l.txt}</text>`;
+            });
+            abajo.forEach(l => {
+                const y = TRACK_Y + TRACK_H + 11 + l.lane * LANE_H;
+                svg += `<text x="${l.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${l.anchor}" font-size="7" fill="${l.color}" font-weight="700">${l.txt}</text>`;
             });
 
             // Ticks de tiempo
@@ -550,8 +594,8 @@ const _RP = (() => {
         `<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin:6px 0 0.85rem;font-size:0.66rem;color:var(--text-muted);">` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:#58a6ff;border-radius:2px;opacity:0.82;"></span>En campo</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:rgba(255,255,255,0.07);border:0.5px solid rgba(255,255,255,0.15);border-radius:2px;"></span>Banquillo</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#3fb950;"></span><span style="color:#3fb950;font-weight:700;font-size:0.62rem;">▼ NOMBRE</span> Entra (reemplaza a)</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▲</span> Sale (relevado por)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#3fb950;"></span><span style="color:#3fb950;font-weight:700;font-size:0.62rem;">▲ NOMBRE</span> Entra (sustituye a)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▼</span> Sale (entra por él)</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:9px;height:9px;border-radius:50%;background:white;border:1.5px solid #3fb950;display:inline-block;"></span>Gol</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;"></span>Amarilla</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;"></span>Roja</span>` +
