@@ -1051,6 +1051,51 @@ const _matchPrevPhase = {};
 // app (sin emitir snapshots).
 const _matchLastData = {};
 
+// ════════════════════════════════════════════════════════════════════
+// 🔑 EVENTOS YA PROCESADOS, POR matchId  (fix 2026-07-31)
+//
+// EL BUCLE INFINITO DE GOLES: los avisos se deducían comparando el estado del
+// snapshot anterior con el nuevo. El emisor reescribe el documento cada ~5 s
+// (latido), así que en cuanto el estado previo se perdía por cualquier vía,
+// CADA LATIDO parecía un gol nuevo: se cantaba el gol y se añadía la línea al
+// historial indefinidamente. Con identidad de evento eso es imposible: cada
+// eventId se procesa UNA vez y punto.
+//
+// ⚠️ CLAVE POR PARTIDO Y NO GLOBAL: dos partidos simultáneos tienen ids de
+// evento distintos, pero un registro global se vaciaría al cambiar de partido y
+// volvería a anunciar lo ya visto. Un Set por matchId aísla los dos.
+//
+// RESPALDO PARA EVENTOS ANTIGUOS (decisión del autor): los eventos escritos
+// antes de este fix NO llevan eventId. Para ellos se deriva una clave estable
+// de timestamp+texto, y si tampoco la hay se deja pasar la detección por delta
+// de siempre — así los partidos ya en curso no pierden avisos.
+const _matchSeenEvents = {};   // matchId -> Set(eventKey)
+
+function _eventKey(ev) {
+    if (!ev) return '';
+    if (ev.eventId) return ev.eventId;
+    // Legado: sin eventId, la pareja timestamp+texto identifica el evento con
+    // suficiente fiabilidad (dos eventos distintos del mismo partido no
+    // comparten ambos).
+    const ts = ev.timestamp || ev.createdAt || '';
+    const tx = ev.text || '';
+    return (ts || tx) ? ('legacy|' + ts + '|' + tx) : '';
+}
+
+function _seenSetFor(matchId) {
+    if (!_matchSeenEvents[matchId]) _matchSeenEvents[matchId] = new Set();
+    return _matchSeenEvents[matchId];
+}
+
+// ¿Es este evento del partido que se está mostrando? Los eventos nuevos llevan
+// su matchId; los antiguos no, y para ésos se confía en que vienen dentro del
+// documento de ese partido.
+function _eventBelongsTo(ev, matchId) {
+    if (!ev) return false;
+    if (!ev.matchId) return true;
+    return ev.matchId === matchId;
+}
+
 window.toggleMute = function() {
     _alertsMuted = !_alertsMuted;
     window._alertsMuted = _alertsMuted;   // v222: mantener window._alertsMuted sincronizado
@@ -1891,6 +1936,25 @@ function detectAndAlert(matchId, matchData, fromCache) {
     // autónomo y siembra/compara _matchPrevPhase con su propia lógica.
     _handlePhaseTransition(matchId, matchData);
 
+    // ── 🔑 EVENTOS CON IDENTIDAD (ver _matchSeenEvents) ──────────────────
+    // Se recorre el array de eventos del snapshot y se apunta cuáles son NUEVOS
+    // para este partido. En la primera pasada (siembra) se marcan todos como
+    // vistos SIN anunciar, para no cantar el historial al abrir el visor.
+    const _evArr   = Array.isArray(matchData.events) ? matchData.events : [];
+    const _evConId = _evArr.some(e => e && e.eventId);
+    const _vistos  = _seenSetFor(matchId);
+    const _siembra = !_matchSeeded[matchId] || !_matchPrevState[matchId];
+    const _evNuevos = [];
+    _evArr.forEach(ev => {
+        // 🔑 AISLAMIENTO: un evento que declare otro matchId no se procesa aquí
+        // jamás, aunque llegue dentro de este documento.
+        if (!_eventBelongsTo(ev, matchId)) return;
+        const k = _eventKey(ev);
+        if (!k || _vistos.has(k)) return;
+        _vistos.add(k);
+        if (!_siembra) _evNuevos.push(ev);
+    });
+
     const next = _buildState(matchData);
     const prev = _matchPrevState[matchId];
     _matchPrevState[matchId] = next;
@@ -1914,6 +1978,25 @@ function detectAndAlert(matchId, matchData, fromCache) {
             return part + ' ' + m + ':' + s;
         } catch(e) { return ''; }
     })();
+    // ── 🔑 ANUNCIO DIRIGIDO POR EVENTO ───────────────────────────────────
+    // Si el partido emite eventos con eventId, el visor se guía EXCLUSIVAMENTE
+    // por ellos y NO por el delta de estado: cada evento se anuncia una sola vez
+    // y el bucle infinito es imposible. Todos los tipos pasan por
+    // _registerMatchEvent (goal, yellow, red, injury, sub_in, sub_out,
+    // tactical_move), así que el flujo de eventos es completo y no se pierde
+    // ningún aviso al saltarse el delta.
+    //
+    // RESPALDO (decisión del autor): si NINGÚN evento trae eventId —partidos
+    // empezados antes de este fix— se continúa con la detección por delta de
+    // siempre, para no dejar sin avisos a un partido ya en curso.
+    if (_evConId) {
+        _evNuevos.forEach(ev => {
+            const _t = ev.type || 'sub';
+            showEventToast(_t, ev.text || '', matchLabel, ev.matchTime || _matchTime);
+        });
+        return;
+    }
+
     // v230: meta extendido con matchTime para que _appendEventToHistoryPanel
     // lo muestre en naranja junto a la hora real.
     const _metaWithTime = (type) => {
@@ -2137,6 +2220,7 @@ async function refreshBackgroundWatchers() {
                 delete _matchPrevState[id];
                 delete _matchSeeded[id];
                 delete _matchLastTs[id];
+                delete _matchSeenEvents[id];
                 delete _matchPrevPhase[id];
                 delete _matchLastData[id];
             }
@@ -2187,6 +2271,11 @@ window.loadMatch = function(matchId) {
     delete _matchSeeded[matchId];
     delete _matchLastTs[matchId];
     delete _matchPrevState[matchId];
+    // También el registro de eventos vistos: al reabrir un partido la pasada de
+    // siembra vuelve a marcarlos todos SIN anunciar, así que el historial no se
+    // canta de nuevo. Si no se borrase, un partido reabierto tras un cambio de
+    // pestaña arrastraría el Set del anterior.
+    delete _matchSeenEvents[matchId];
 
     if (unsubscribeMatch) unsubscribeMatch();
 

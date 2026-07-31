@@ -32,7 +32,24 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride) {
         if (typeof matchTimeOverride === 'string' && matchTimeOverride) {
             matchTime = matchTimeOverride;
         }
+        // \ud83d\udd11 eventId \u00daNICO POR EVENTO (fix del bucle infinito de goles en el
+        // visor en vivo, 2026-07-31). Sin identidad, live.html s\u00f3lo pod\u00eda
+        // deducir "ha habido gol" comparando estados entre snapshots, y como el
+        // emisor reescribe el documento cada ~5 s, cualquier p\u00e9rdida del estado
+        // previo convert\u00eda CADA LATIDO en un gol nuevo: se cantaba el gol y se
+        // a\u00f1ad\u00eda la l\u00ednea al historial indefinidamente.
+        // Con id, el visor procesa cada evento UNA sola vez y el bucle es
+        // imposible por construcci\u00f3n.
+        // \u26a0\ufe0f Aqu\u00ed el sufijo aleatorio es CORRECTO, al contrario que en
+        // liveMatchId (donde Math.random() caus\u00f3 el bug de ids inestables): el
+        // evento se escribe UNA vez con su id y nunca se vuelve a derivar.
+        // Tambi\u00e9n lleva el matchId, para que el visor pueda descartar de ra\u00edz
+        // cualquier evento que no sea del partido que est\u00e1 mostrando.
+        var _evMatchId = (typeof liveMatchId !== 'undefined' && liveMatchId) ? liveMatchId : '';
         var eventEntry = {
+            eventId: 'ev_' + now.getTime().toString(36) + '_' +
+                     Math.random().toString(36).slice(2, 8),
+            matchId: _evMatchId,
             type: type, text: text, icon: icon || '\u2022',
             realTime: realTime, matchTime: matchTime,
             timestamp: now.toISOString(),
