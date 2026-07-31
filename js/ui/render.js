@@ -131,11 +131,15 @@ function executeGroupSubstitution(team) {
             handleSmartSwap(outPlayer, inPlayer, forcedSubId);
             // v240: registrar el cambio directamente en el historial, sin
             // depender de logMovement (que solo funciona si isRunning es true).
-            // 2026-07-31: UN solo evento por cambio. Aquí se conocen las dos
-            // mitades, así que se emite directamente sin pasar por el emparejado.
-            if (typeof window._registerSubstitution === 'function') {
-                window._registerSubstitution(outPlayer, inPlayer);
-            }
+            // ⚠️ AQUÍ NO SE EMITE NADA, Y ES DELIBERADO (fix 2026-07-31: cada
+            // cambio se notificaba DOS veces, en el toast y en el historial).
+            // handleSmartSwap(), llamado justo arriba, YA registra el cambio:
+            // llama a logMovement con el mismo subId para las dos mitades y de
+            // ahí sale el evento unificado. Emitir también aquí lo duplicaba.
+            // La llamada explícita se añadió en v240 porque entonces
+            // logMovement sólo corría con el reloj en marcha; ese caso ya lo
+            // arregló el propio handleSmartSwap ("v240: SIEMPRE registrar el
+            // cambio, no solo si isRunning"), así que esta llamada sobraba.
         }
     }
     // v240: flush inmediato tras el cambio grupal para que llegue a Firestore YA.

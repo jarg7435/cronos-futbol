@@ -172,8 +172,14 @@ console.log('\n── PARTE 4 · el delta sólo para partidos sin eventId ──
        /const _evConId = _evArr\.some\(e => e && e\.eventId\)/.test(l));
     ok('4c · el delta de siempre sigue ahí, detrás, para el caso heredado',
        /_metaWithTime/.test(l) && /const subPending = \[\]/.test(l));
+    // El texto pasa por _coloreaSustitucion cuando es un cambio (verde ENTRA /
+    // rojo SALE); el minuto sigue saliendo del propio evento.
     ok('4d · 🔑 el aviso por evento usa el texto y el minuto del propio evento',
-       /showEventToast\(_t, ev\.text \|\| '', matchLabel, ev\.matchTime \|\| _matchTime\)/.test(l));
+       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime\)/.test(l) &&
+       /_coloreaSustitucion\(ev\.text \|\| ''\)/.test(l),
+       (l.match(/showEventToast\(_t[^\n]*/) || ['(no aparece)'])[0]);
+    ok('4e · 🔑 y las sustituciones se colorean: verde ENTRA, rojo SALE',
+       /ENTRA:\[\^\|\]\*\)/.test(l.replace(/\\/g, '')) || /_coloreaSustitucion/.test(l));
 }
 
 // ═══════ PARTE 5 · aislamiento por partido, lo que ya existía ═══════
@@ -188,6 +194,36 @@ console.log('\n── PARTE 5 · aislamiento por matchId ──');
        /const _matchPrevState = \{\}/.test(l) && /const _matchLastTs = \{\}/.test(l));
     ok('5d · la suscripción principal escucha un ÚNICO documento',
        /onSnapshot\(\s*doc\(db, 'live_matches', matchId\)/.test(l));
+}
+
+// ═══════ PARTE 6 · el panel de historial se cierra solo ═══════
+// El autor pidió que el panel inferior, cuando emerge por un suceso, se cierre
+// SOLO a los pocos segundos, y que únicamente permanezca abierto si lo abre él
+// a mano.
+//
+// ⚠️ ESTO YA ESTABA IMPLEMENTADO (v228) y en el camino de ejecución: no se
+// reescribió nada. Lo que hacía que PARECIERA roto era la DUPLICACIÓN de
+// sustituciones —cada cambio disparaba dos veces la expansión— corregida al
+// quitar la emisión redundante de render.js. Se fija aquí para que el
+// comportamiento no se pierda en un refactor futuro.
+console.log('\n── PARTE 6 · auto-cierre del panel de historial ──');
+{
+    const l = sinCom(LIVE);
+    ok('6a · 🔑 al llegar un suceso el panel se auto-expande…',
+       /_setMatchEventsPanelMode\('auto-expanded'\)/.test(l));
+    ok('6b · 🔑 …y se programa su cierre automático a los 5 segundos',
+       /_matchEventsAutoCollapseTimer = setTimeout\([\s\S]{0,220}?_setMatchEventsPanelMode\('collapsed'\)[\s\S]{0,60}?\}, 5000\)/.test(l),
+       (l.match(/_matchEventsAutoCollapseTimer = setTimeout[\s\S]{0,200}/) || ['(no aparece)'])[0]);
+    ok('6c · 🔑 sólo se auto-expande si el usuario NO lo abrió a mano',
+       /if \(_matchEventsPanelMode !== 'manual-expanded'\) \{/.test(l));
+    ok('6d · 🔑 y sólo se cierra si sigue en modo automático (no pisa al usuario)',
+       /if \(_matchEventsPanelMode === 'auto-expanded'\) \{\s*_setMatchEventsPanelMode\('collapsed'\);/.test(l));
+    ok('6e · un clic manual cancela el cierre automático',
+       /clearTimeout\(_matchEventsAutoCollapseTimer\);[\s\S]{0,120}?_matchEventsAutoCollapseTimer = null;/.test(l));
+    ok('6f · y deja el panel en modo manual, que ya no se auto-cierra',
+       /_setMatchEventsPanelMode\('manual-expanded'\)/.test(l));
+    ok('6g · cada suceso nuevo reinicia la cuenta atrás',
+       /if \(_matchEventsAutoCollapseTimer\) clearTimeout\(_matchEventsAutoCollapseTimer\);\s*_matchEventsAutoCollapseTimer = setTimeout/.test(l));
 }
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);

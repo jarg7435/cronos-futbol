@@ -39,8 +39,13 @@ window._registerSubstitution = function (outPlayer, inPlayer) {
     var outName = (outPlayer && outPlayer.name) || 'Jugador';
     var inName  = (inPlayer  && inPlayer.name)  || 'Jugador';
     var equipo  = _nombreEquipoDe(outPlayer || inPlayer);
+    // ⚠️ 🟥 / 🟩 Y NO 🔺 / 🔻: los dos triángulos de Unicode (U+1F53A y U+1F53B)
+    // son AMBOS ROJOS — sólo cambia hacia dónde apuntan. Con ellos la entrada y
+    // la salida eran indistinguibles de un vistazo, que es justo lo que el autor
+    // pedía poder distinguir. El cuadrado verde y el rojo sí contrastan en
+    // cualquier plataforma. El visor además colorea el texto (live.html).
     _registerMatchEvent('sub',
-        equipo + ' | 🔺 SALE: ' + outName + ' | 🔻 ENTRA: ' + inName, '🔄');
+        equipo + ' | 🟥 SALE: ' + outName + ' | 🟩 ENTRA: ' + inName, '🔄');
 };
 
 // Emparejado para logMovement, que se invoca UNA VEZ POR JUGADOR y por tanto

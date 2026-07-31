@@ -148,18 +148,30 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
 
     ok('3a · 🔑 existe el emisor unificado de sustitución',
        /window\._registerSubstitution = function \(outPlayer, inPlayer\)/.test(a));
+    // ⚠️ 🟥/🟩 y NO 🔺/🔻: los dos triángulos de Unicode son AMBOS ROJOS, así
+    // que con ellos la entrada y la salida eran indistinguibles de un vistazo.
     ok('3b · 🔑 con el formato pedido: equipo, SALE y ENTRA en una línea',
-       /equipo \+ ' \| 🔺 SALE: ' \+ outName \+ ' \| 🔻 ENTRA: ' \+ inName/.test(a),
+       /equipo \+ ' \| 🟥 SALE: ' \+ outName \+ ' \| 🟩 ENTRA: ' \+ inName/.test(a),
        (a.match(/SALE[^\n]*/) || ['(no aparece)'])[0]);
     ok('3c · y se emite como UN evento de tipo sub',
        /_registerMatchEvent\('sub',/.test(a));
     ok('3d · el nombre del equipo sale de TEAM_NAMES, con respaldo',
        /TEAM_NAMES\[t\]/.test(a) && /VISITANTE/.test(a) && /LOCAL/.test(a));
 
-    ok('3e · 🔑 el cambio en grupo emite UNO solo, no dos',
-       /window\._registerSubstitution\(outPlayer, inPlayer\)/.test(r) &&
-       !/_registerMatchEvent\('sub_in'/.test(r) && !/_registerMatchEvent\('sub_out'/.test(r),
-       (r.match(/_registerSub[^\n]*/) || ['(no aparece)'])[0]);
+    // 🔑 ESTA ASERCIÓN DECÍA LO CONTRARIO Y ERA ELLA LA QUE FIJABA LA
+    // DUPLICACIÓN: exigía que render.js emitiera la sustitución. Pero
+    // handleSmartSwap(), que se llama justo antes, YA la registra vía
+    // logMovement con el mismo subId — así que emitir aquí la duplicaba, y el
+    // autor veía cada cambio dos veces en el toast y dos en el historial.
+    // Ahora se exige justo lo contrario: render.js NO emite.
+    ok('3e · 🔑 el cambio en grupo NO emite: handleSmartSwap ya lo registra',
+       !/_registerSubstitution\(/.test(r) &&
+       !/_registerMatchEvent\('sub/.test(r) &&
+       /handleSmartSwap\(outPlayer, inPlayer, forcedSubId\)/.test(r),
+       (r.match(/_register[^\n]*/) || ['(no emite: correcto)'])[0]);
+    ok('3e-bis · 🔑 y handleSmartSwap registra las dos mitades con el MISMO subId',
+       /const subId = forcedSubId \|\| Date\.now\(\);[\s\S]{0,160}?logMovement\(dragged, subId\);[\s\S]{0,80}?logMovement\(target,  subId\);/.test(sinCom(DRAG)),
+       (sinCom(DRAG).match(/const subId = forcedSubId[\s\S]{0,200}/) || ['(no aparece)'])[0]);
     ok('3f · 🔑 y el arrastre empareja las dos mitades por subId',
        /window\._registerSubHalf\(player, subId, action\)/.test(d) &&
        !/_registerMatchEvent\('sub_in'/.test(d));
@@ -193,7 +205,7 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
     ok('3j · 🔑 al llegar la segunda mitad se emite UN evento', emitidos.length === 1,
        JSON.stringify(emitidos));
     ok('3k · 🔑 con el formato exacto pedido por el autor',
-       emitidos[0] && emitidos[0].text === 'ARINAGA | 🔺 SALE: IVÁN | 🔻 ENTRA: LUIS',
+       emitidos[0] && emitidos[0].text === 'ARINAGA | 🟥 SALE: IVÁN | 🟩 ENTRA: LUIS',
        emitidos[0] && emitidos[0].text);
     ok('3l · y de tipo sub', emitidos[0] && emitidos[0].type === 'sub');
 

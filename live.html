@@ -1082,6 +1082,21 @@ function _esEventoVisible(ev) {
     return !!ev && !_TIPOS_NO_VISIBLES.has(ev.type);
 }
 
+// 🔑 COLOREADO DE LAS SUSTITUCIONES (2026-07-31).
+// El texto del evento llega plano: "EQUIPO | 🟥 SALE: X | 🟩 ENTRA: Y". Aquí se
+// pinta SALE en rojo y ENTRA en VERDE Y EN NEGRITA, para que la entrada se
+// identifique al instante, que es lo que pidió el autor.
+// Se aplica también a los eventos ya guardados con los triángulos antiguos
+// (🔺/🔻, que en Unicode son AMBOS ROJOS y por eso no se distinguían).
+function _coloreaSustitucion(texto) {
+    let t = escapeHtml(String(texto || ''));
+    t = t.replace(/([🟥🔺]\s*SALE:[^|]*)/g,
+        '<span style="color:#ff5858;font-weight:700;">$1</span>');
+    t = t.replace(/([🟩🔻]\s*ENTRA:[^|]*)/g,
+        '<span style="color:#3fb950;font-weight:800;">$1</span>');
+    return t;
+}
+
 function _eventKey(ev) {
     if (!ev) return '';
     if (ev.eventId) return ev.eventId;
@@ -1532,7 +1547,8 @@ window._loadMatchEventsFromSnapshot = function(events) {
         // Misma criba que en el anuncio: la telemetría táctica no se lista.
         if (!_esEventoVisible(ev)) return;
         const titleText = ev.text || '';
-        const titleHTML = escapeHtml(titleText);
+        const _esSub = ev.type === 'sub' || ev.type === 'sub_in' || ev.type === 'sub_out';
+        const titleHTML = _esSub ? _coloreaSustitucion(titleText) : escapeHtml(titleText);
         const realTime = ev.realTime || '';
         const matchTime = ev.matchTime || '';
         const evIcon = ev.icon || '•';
@@ -2006,7 +2022,12 @@ function detectAndAlert(matchId, matchData, fromCache) {
     if (_evConId) {
         _evNuevos.forEach(ev => {
             const _t = ev.type || 'sub';
-            showEventToast(_t, ev.text || '', matchLabel, ev.matchTime || _matchTime);
+            // Las sustituciones se pintan coloreadas (verde ENTRA / rojo SALE);
+            // el resto conserva su texto tal cual.
+            const _linea = (_t === 'sub' || _t === 'sub_in' || _t === 'sub_out')
+                ? _coloreaSustitucion(ev.text || '')
+                : (ev.text || '');
+            showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime);
         });
         return;
     }
