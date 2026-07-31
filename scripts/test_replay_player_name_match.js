@@ -40,9 +40,25 @@ ok('1b · existe _findPlayerByEventText', /function _findPlayerByEventText/.test
 const srcNoComments = src.replace(/\r\n/g, '\n').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
 ok('1c · [FIX] ya NO queda ningún `.includes(p.name)` (matching por subcadena) en código real',
    !/\.includes\(p\.name\)/.test(srcNoComments));
-ok('1d · [FIX] goal/yellow/red/sub_in/sub_out/injury (6 tipos) usan _findPlayerByEventText',
-   (src.match(/_findPlayerByEventText\(playersMap, ev\.text\)/g) || []).length === 6,
+// ⚠️ ACTUALIZADA (2026-07-31). Antes exigía que los SEIS tipos resolvieran el
+// jugador con _findPlayerByEventText, o sea PARSEANDO EL TEXTO del evento. Al
+// reformatear las sustituciones para el visor (un solo suceso, "EQUIPO | 🟥
+// SALE: X | 🟩 ENTRA: Y") ese parseo dejaba de encontrarlas: el texto de
+// presentación estaba haciendo de contrato de datos.
+// Ahora sub_in/sub_out van por _playerNameFromEvent, que prefiere el campo
+// ESTRUCTURADO playerName y sólo cae al texto para eventos antiguos. Los otros
+// cuatro tipos conservan el formato ' · ' y su resolución por texto.
+ok('1d · [FIX] goal/yellow/red/injury (4 tipos) siguen resolviendo por texto',
+   (src.match(/_findPlayerByEventText\(playersMap, ev\.text\)/g) || []).length === 4,
    'ocurrencias: ' + ((src.match(/_findPlayerByEventText\(playersMap, ev\.text\)/g) || []).length));
+ok('1d-bis · 🔑 y las sustituciones prefieren el campo estructurado, no el texto',
+   /function _playerNameFromEvent\(ev\)[\s\S]{0,200}?if \(ev && ev\.playerName\) return/.test(src) &&
+   // Se excluye la DECLARACIÓN de la función, que también casa con el patrón:
+   // contarla daba 5 y la aserción fallaba con el código ya correcto.
+   (src.match(/(?<!function )_playerNameFromEvent\(ev\)/g) || []).length === 4,
+   'llamadas a _playerNameFromEvent: ' + ((src.match(/(?<!function )_playerNameFromEvent\(ev\)/g) || []).length));
+ok('1d-ter · 🔑 y el cambio unificado saca los DOS nombres de sus campos',
+   /function _subNamesFromEvent\(ev\)[\s\S]{0,220}?ev\.subOutName && ev\.subInName/.test(src));
 
 // ═══════════════════ PARTE 2 · ejecución REAL en sandbox ═══════════════════
 console.log('\n── PARTE 2 · ejecución de las funciones reales ──');

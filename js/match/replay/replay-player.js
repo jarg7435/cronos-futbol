@@ -337,9 +337,32 @@
     // ("Sale Diego, Entra Bruno"), que no es el nombre de nadie.
     function _parseRetroSubText(text) {
         if (typeof text !== 'string') return null;
-        const m = text.match(/Sale\s+(.+?),\s*Entra\s+(.+?)(?:\s*\([^)]*\))?\s*$/);
-        if (!m) return null;
-        return { sale: m[1].trim(), entra: m[2].trim() };
+        // Formato del modal retroactivo: "CAMBIO · Sale X, Entra Y (Retroactivo)".
+        let m = text.match(/Sale\s+(.+?),\s*Entra\s+(.+?)(?:\s*\([^)]*\))?\s*$/);
+        if (m) return { sale: m[1].trim(), entra: m[2].trim() };
+        // Formato unificado del visor: "EQUIPO | 🟥 SALE: X | 🟩 ENTRA: Y".
+        m = text.match(/SALE:\s*(.+?)\s*\|\s*[^|]*ENTRA:\s*(.+?)\s*$/);
+        if (m) return { sale: m[1].trim(), entra: m[2].trim() };
+        return null;
+    }
+
+    // ⚠️ EL TEXTO NO ES EL CONTRATO DE DATOS. Estas dos funciones prefieren los
+    // campos ESTRUCTURADOS del evento (subOutName/subInName/playerName, que
+    // añade _registerMatchEvent) y sólo caen al parseo del texto para los
+    // eventos ANTIGUOS, que no los llevan. Antes el replay sacaba el nombre
+    // partiendo el texto por ' · ', así que reformatear las sustituciones —algo
+    // puramente visual— le dejaba de encontrar los jugadores y las
+    // sustituciones desaparecían de la repetición sin error alguno.
+    function _subNamesFromEvent(ev) {
+        if (ev && ev.subOutName && ev.subInName) {
+            return { sale: String(ev.subOutName).trim(), entra: String(ev.subInName).trim() };
+        }
+        return _parseRetroSubText(ev && ev.text);
+    }
+
+    function _playerNameFromEvent(ev) {
+        if (ev && ev.playerName) return String(ev.playerName).trim();
+        return _extractPlayerNameFromEventText(ev && ev.text);
     }
 
     // ── Alineación con la que EMPEZÓ el partido ──────────────────────
@@ -374,13 +397,13 @@
         for (let i = events.length - 1; i >= 0; i--) {
             const ev = events[i];
             if (ev.type === 'sub_in') {
-                const p = _findPlayerByEventText(byName, ev.text);
+                const p = _findPlayerByName(byName, _playerNameFromEvent(ev));
                 if (p) p.status = 'bench';       // si entró, empezó fuera
             } else if (ev.type === 'sub_out') {
-                const p = _findPlayerByEventText(byName, ev.text);
+                const p = _findPlayerByName(byName, _playerNameFromEvent(ev));
                 if (p) p.status = 'field';       // si salió, empezó dentro
             } else if (ev.type === 'sub') {
-                const par = _parseRetroSubText(ev.text);
+                const par = _subNamesFromEvent(ev);
                 if (par) {
                     const sale  = _findPlayerByName(byName, par.sale);
                     const entra = _findPlayerByName(byName, par.entra);
@@ -480,16 +503,17 @@
 
             // Sustituciones
             if (ev.type === 'sub_in') {
-                const p = _findPlayerByEventText(playersMap, ev.text);
+                const p = _findPlayerByName(playersMap, _playerNameFromEvent(ev));
                 if (p) p.status = 'field';
             }
             if (ev.type === 'sub_out') {
-                const p = _findPlayerByEventText(playersMap, ev.text);
+                const p = _findPlayerByName(playersMap, _playerNameFromEvent(ev));
                 if (p) p.status = 'bench';
             }
-            // Cambio RETROACTIVO: un solo evento con los dos jugadores.
+            // Cambio de UN solo evento con los dos jugadores: el retroactivo y
+            // también el unificado del visor (ver _subNamesFromEvent).
             if (ev.type === 'sub') {
-                const par = _parseRetroSubText(ev.text);
+                const par = _subNamesFromEvent(ev);
                 if (par) {
                     const sale  = _findPlayerByName(playersMap, par.sale);
                     const entra = _findPlayerByName(playersMap, par.entra);

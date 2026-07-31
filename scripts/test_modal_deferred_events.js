@@ -126,8 +126,10 @@ console.log('── PARTE 1 · 🔑 sólo se emite la diferencia neta ──');
 console.log('\n── PARTE 2 · nada sale del modal hasta HECHO ──');
 {
     const a = sinCom(ACT);
+    // El buffer arrastra también `extra` (los campos estructurados), o al
+    // confirmar se perderían y el replay volvería a depender del texto.
     ok('2a · 🔑 con el modal abierto, _registerMatchEvent aparca en vez de emitir',
-       /if \(_modalStaging\) \{\s*_modalBuffer\.push\(\[type, text, icon, matchTimeOverride\]\);\s*return;\s*\}/.test(a),
+       /if \(_modalStaging\) \{\s*_modalBuffer\.push\(\[type, text, icon, matchTimeOverride, extra\]\);\s*return;\s*\}/.test(a),
        (a.match(/if \(_modalStaging\)[\s\S]{0,160}/) || ['(no aparece)'])[0]);
     ok('2b · 🔑 abrir el modal fotografía el estado inicial',
        /_modalBaseline = \{[\s\S]{0,200}?goals: player\.goals[\s\S]{0,120}?cards: player\.cards/.test(a));
@@ -175,8 +177,19 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
     ok('3f · 🔑 y el arrastre empareja las dos mitades por subId',
        /window\._registerSubHalf\(player, subId, action\)/.test(d) &&
        !/_registerMatchEvent\('sub_in'/.test(d));
-    ok('3g · sin subId no se pierde el suceso: se emite suelto como antes',
-       /if \(!subId\) \{[\s\S]{0,300}?_registerMatchEvent\(/.test(a));
+    // 🔑 EL MOVIMIENTO SUELTO ES LA MAYORÍA DE LOS CASOS: sólo 3 de las 9
+    // llamadas a logMovement pasan subId. Si ésas emitieran el formato viejo
+    // ('CAMBIO · Sale · X'), el historial mezclaría dos estilos y seguirían
+    // viéndose las líneas desarticuladas que el autor pidió eliminar.
+    ok('3g · sin subId no se pierde el suceso: se emite suelto',
+       /if \(!subId\) \{[\s\S]{0,700}?_registerMatchEvent\(/.test(a));
+    ok('3g-bis · 🔑 y con el MISMO formato limpio, no el "CAMBIO · Sale ·" de antes',
+       /eq \+ ' \| 🟩 ENTRA: ' \+ nombre/.test(a) &&
+       /eq \+ ' \| 🟥 SALE: ' \+ nombre/.test(a),
+       (a.match(/if \(!subId\)[\s\S]{0,400}/) || ['(no aparece)'])[0]);
+    ok('3g-ter · 🔑 ya no queda NINGÚN "CAMBIO · Entra/Sale ·" en el emisor',
+       !/'CAMBIO · ' \+ action/.test(a) && !/CAMBIO · Entra/.test(a) && !/CAMBIO · Sale/.test(a),
+       (a.match(/CAMBIO ·[^\n]*/) || ['(limpio)'])[0]);
     ok('3h · el emparejado sólo emite cuando tiene las DOS mitades',
        /if \(slot\.in && slot\.out\)/.test(a));
 
@@ -187,7 +200,7 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
     const sb = {
         console: { log() {}, warn() {} },
         TEAM_NAMES: { home: 'ARINAGA', away: 'RIVAL' },
-        _registerMatchEvent: (type, text) => emitidos.push({ type, text }),
+        _registerMatchEvent: (type, text, icon, mt, extra) => emitidos.push({ type, text, extra }),
         window: {}
     };
     sb.window._registerSubstitution = null;
@@ -208,6 +221,26 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
        emitidos[0] && emitidos[0].text === 'ARINAGA | 🟥 SALE: IVÁN | 🟩 ENTRA: LUIS',
        emitidos[0] && emitidos[0].text);
     ok('3l · y de tipo sub', emitidos[0] && emitidos[0].type === 'sub');
+
+    // 🔑 CAMPOS ESTRUCTURADOS: el reproductor de repeticiones sacaba el nombre
+    // del jugador PARSEANDO el texto del evento. Reformatear las sustituciones
+    // —algo puramente visual— le dejaba de encontrar los jugadores y las
+    // sustituciones desaparecían de la repetición sin error alguno. Con estos
+    // campos, el texto puede cambiar sin romper nada que dependa de los datos.
+    ok('3l-bis · 🔑 el evento unificado lleva los DOS nombres en campos propios',
+       emitidos[0] && emitidos[0].extra &&
+       emitidos[0].extra.subOutName === 'IVÁN' && emitidos[0].extra.subInName === 'LUIS',
+       JSON.stringify(emitidos[0] && emitidos[0].extra));
+
+    // Y el movimiento suelto lleva el suyo.
+    emitidos.length = 0;
+    sb.window._registerSubHalf({ name: 'SOLO', team: 'away' }, null, 'Sale');
+    ok('3l-ter · 🔑 el movimiento suelto también lleva su playerName',
+       emitidos.length === 1 && emitidos[0].extra && emitidos[0].extra.playerName === 'SOLO',
+       JSON.stringify(emitidos[0]));
+    ok('3l-quater · y con el formato limpio, no el "CAMBIO ·" de antes',
+       emitidos[0] && emitidos[0].text === 'RIVAL | 🟥 SALE: SOLO',
+       emitidos[0] && emitidos[0].text);
 
     // Dos cambios simultáneos no se mezclan entre sí.
     emitidos.length = 0;

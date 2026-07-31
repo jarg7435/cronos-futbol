@@ -44,8 +44,11 @@ window._registerSubstitution = function (outPlayer, inPlayer) {
     // la salida eran indistinguibles de un vistazo, que es justo lo que el autor
     // pedía poder distinguir. El cuadrado verde y el rojo sí contrastan en
     // cualquier plataforma. El visor además colorea el texto (live.html).
+    // subOutName/subInName: los nombres en campos propios, para que el replay
+    // no dependa de parsear el texto visible.
     _registerMatchEvent('sub',
-        equipo + ' | 🟥 SALE: ' + outName + ' | 🟩 ENTRA: ' + inName, '🔄');
+        equipo + ' | 🟥 SALE: ' + outName + ' | 🟩 ENTRA: ' + inName, '🔄', undefined,
+        { subOutName: outName, subInName: inName });
 };
 
 // Emparejado para logMovement, que se invoca UNA VEZ POR JUGADOR y por tanto
@@ -57,10 +60,26 @@ window._registerSubHalf = function (player, subId, action) {
     if (!player) return;
     // Sin subId no hay forma fiable de emparejar: se emite suelto, como antes,
     // en vez de perder el suceso.
+    // ⚠️ MOVIMIENTO SUELTO, SIN PAREJA — y son la MAYORÍA de las llamadas.
+    // Sólo los intercambios por arrastre pasan subId (3 de 9 llamadas a
+    // logMovement). Mandar a un jugador al banquillo sin traer a otro —jugar con
+    // uno menos, una expulsión— es un movimiento real de UN solo jugador: no hay
+    // a quién emparejarlo, y esperar una pareja que nunca llegará perdería el
+    // suceso. Así que se emite suelto.
+    // 🔑 PERO CON EL MISMO FORMATO LIMPIO que la sustitución (equipo + cuadro de
+    // color + nombre). Antes salía 'CAMBIO · Sale · X', que es justo la línea
+    // desarticulada que el autor pidió eliminar: unificar sólo los cambios por
+    // arrastre habría dejado el historial mezclando dos estilos.
+    // 🟥/🟩 y no 🔺/🔻: los dos triángulos de Unicode son AMBOS ROJOS.
     if (!subId) {
-        _registerMatchEvent(action === 'Entra' ? 'sub_in' : 'sub_out',
-            'CAMBIO · ' + action + ' · ' + (player.name || 'Jugador'),
-            action === 'Entra' ? '🔻' : '🔺');
+        var eq = _nombreEquipoDe(player);
+        var nombre = player.name || 'Jugador';
+        _registerMatchEvent(
+            action === 'Entra' ? 'sub_in' : 'sub_out',
+            action === 'Entra' ? (eq + ' | 🟩 ENTRA: ' + nombre)
+                               : (eq + ' | 🟥 SALE: ' + nombre),
+            action === 'Entra' ? '🟩' : '🟥', undefined,
+            { playerName: nombre });
         return;
     }
     var slot = _subsPendientes[subId] || (_subsPendientes[subId] = {});
@@ -71,14 +90,21 @@ window._registerSubHalf = function (player, subId, action) {
     }
 };
 
-function _registerMatchEvent(type, text, icon, matchTimeOverride) {
+// `extra`: campos ESTRUCTURADOS que se mezclan en el evento.
+// 🔑 EXISTE PORQUE EL TEXTO NO PUEDE SER EL CONTRATO DE DATOS: el reproductor
+// de repeticiones (js/match/replay/replay-player.js) sacaba el nombre del
+// jugador PARSEANDO el texto del evento (partiendo por ' · ' y tomando el
+// último trozo). Al reformatear las sustituciones ese parseo dejaba de
+// encontrarlo. Con campos propios, el formato visible puede cambiar sin romper
+// nada que dependa de los datos.
+function _registerMatchEvent(type, text, icon, matchTimeOverride, extra) {
     // 🔑 CONFIRMACIÓN DIFERIDA: con el modal abierto NADA sale de aquí. Se aparca
     // y se decide en HECHO (_confirmarEventosModal), para que una rectificación
     // o un doble clic no manden un aviso falso que ya no se puede retirar.
     // Los cambios de jugador no pasan por aquí con el modal abierto —es un modal
     // bloqueante—, así que no se aparca nada ajeno al propio modal.
     if (_modalStaging) {
-        _modalBuffer.push([type, text, icon, matchTimeOverride]);
+        _modalBuffer.push([type, text, icon, matchTimeOverride, extra]);
         return;
     }
     try {
@@ -123,6 +149,11 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride) {
             timestamp: now.toISOString(),
             createdAt: now.getTime()
         };
+        if (extra && typeof extra === 'object') {
+            Object.keys(extra).forEach(function (k) {
+                if (extra[k] !== undefined && extra[k] !== null) eventEntry[k] = extra[k];
+            });
+        }
         if (typeof matchTimeOverride === 'string' && matchTimeOverride) {
             eventEntry.isRetroactive = true;
         }
