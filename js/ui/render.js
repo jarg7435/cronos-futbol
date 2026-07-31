@@ -131,9 +131,10 @@ function executeGroupSubstitution(team) {
             handleSmartSwap(outPlayer, inPlayer, forcedSubId);
             // v240: registrar el cambio directamente en el historial, sin
             // depender de logMovement (que solo funciona si isRunning es true).
-            if (typeof _registerMatchEvent === 'function') {
-                _registerMatchEvent('sub_in', 'CAMBIO · Entra · ' + (inPlayer.name || 'Jugador'), '▼');
-                _registerMatchEvent('sub_out', 'CAMBIO · Sale · ' + (outPlayer.name || 'Jugador'), '▲');
+            // 2026-07-31: UN solo evento por cambio. Aquí se conocen las dos
+            // mitades, así que se emite directamente sin pasar por el emparejado.
+            if (typeof window._registerSubstitution === 'function') {
+                window._registerSubstitution(outPlayer, inPlayer);
             }
         }
     }

@@ -12,7 +12,70 @@
 // setDoc con merge crea el documento si no existe.
 // pushLiveSnapshot NUNCA incluye events en el snapshot (ver sync.js v246).
 window._cronosMatchEvents = window._cronosMatchEvents || [];
+// ════════════════════════════════════════════════════════════════════
+//  SUSTITUCIÓN COMO UN ÚNICO SUCESO  (implementar.txt, 2026-07-31)
+//
+//  Antes cada cambio emitía DOS eventos sueltos —'CAMBIO · Entra · X' y
+//  'CAMBIO · Sale · Y'— que llegaban al visor como dos líneas desarticuladas,
+//  a veces ni siquiera consecutivas. Ahora un cambio es UN evento con las dos
+//  mitades y el equipo, tal como lo pidió el autor:
+//      [Equipo] | 🔺 SALE: [saliente] | 🔻 ENTRA: [entrante]
+//
+//  ⚠️ CONVENCIÓN DE FLECHAS: aquí 🔺 (roja, arriba) = SALE y 🔻 (verde, abajo)
+//  = ENTRA. Es la INVERSA de la del cronograma de informes (report-engine.js,
+//  donde ▲ verde = entra). Son dos superficies distintas y así lo pidió el
+//  autor en cada una; si algún día se unifican, hay que tocar las dos.
+// ════════════════════════════════════════════════════════════════════
+function _nombreEquipoDe(player) {
+    var t = (player && player.team) || 'home';
+    try {
+        if (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES && TEAM_NAMES[t]) return TEAM_NAMES[t];
+    } catch (e) {}
+    return t === 'away' ? 'VISITANTE' : 'LOCAL';
+}
+
+window._registerSubstitution = function (outPlayer, inPlayer) {
+    if (typeof _registerMatchEvent !== 'function') return;
+    var outName = (outPlayer && outPlayer.name) || 'Jugador';
+    var inName  = (inPlayer  && inPlayer.name)  || 'Jugador';
+    var equipo  = _nombreEquipoDe(outPlayer || inPlayer);
+    _registerMatchEvent('sub',
+        equipo + ' | 🔺 SALE: ' + outName + ' | 🔻 ENTRA: ' + inName, '🔄');
+};
+
+// Emparejado para logMovement, que se invoca UNA VEZ POR JUGADOR y por tanto
+// sólo conoce una mitad del cambio. El subId lo comparten la entrada y la
+// salida del mismo cambio, así que se guarda la primera mitad y se emite el
+// evento unificado cuando llega la segunda.
+var _subsPendientes = {};
+window._registerSubHalf = function (player, subId, action) {
+    if (!player) return;
+    // Sin subId no hay forma fiable de emparejar: se emite suelto, como antes,
+    // en vez de perder el suceso.
+    if (!subId) {
+        _registerMatchEvent(action === 'Entra' ? 'sub_in' : 'sub_out',
+            'CAMBIO · ' + action + ' · ' + (player.name || 'Jugador'),
+            action === 'Entra' ? '🔻' : '🔺');
+        return;
+    }
+    var slot = _subsPendientes[subId] || (_subsPendientes[subId] = {});
+    if (action === 'Entra') slot.in = player; else slot.out = player;
+    if (slot.in && slot.out) {
+        window._registerSubstitution(slot.out, slot.in);
+        delete _subsPendientes[subId];
+    }
+};
+
 function _registerMatchEvent(type, text, icon, matchTimeOverride) {
+    // 🔑 CONFIRMACIÓN DIFERIDA: con el modal abierto NADA sale de aquí. Se aparca
+    // y se decide en HECHO (_confirmarEventosModal), para que una rectificación
+    // o un doble clic no manden un aviso falso que ya no se puede retirar.
+    // Los cambios de jugador no pasan por aquí con el modal abierto —es un modal
+    // bloqueante—, así que no se aparca nada ajeno al propio modal.
+    if (_modalStaging) {
+        _modalBuffer.push([type, text, icon, matchTimeOverride]);
+        return;
+    }
     try {
         var now = new Date();
         var realTime = now.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
@@ -101,7 +164,81 @@ function _requireOnField(p, accionLabel) {
     return true;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  CONFIRMACIÓN DIFERIDA DEL MODAL  (implementar.txt, 2026-07-31)
+//
+//  Antes, cada pulsación dentro del modal (gol, tarjeta, lesión) emitía su
+//  aviso AL INSTANTE. Un doble clic o una rectificación mandaban avisos falsos
+//  que ya no se podían retirar del visor en vivo.
+//
+//  AHORA: mientras el modal está abierto, los eventos se APARCAN. Al pulsar
+//  HECHO se emite únicamente la DIFERENCIA NETA respecto al estado que tenía el
+//  jugador al abrirlo. Así:
+//    · +1 y luego −1 gol  → no se emite nada
+//    · +1 +1 −1           → se emite UN gol
+//    · roja y luego revertirla → no se emite nada
+//  El estado local y la interfaz siguen respondiendo al instante: lo único que
+//  se aplaza es el AVISO, que es lo que el autor pidió.
+//
+//  ⚠️ HECHO es la ÚNICA salida del modal (index.html no tiene ✕ ni cierre por
+//  fondo), así que "cerrar sin confirmar" es en la práctica rectificar. Si algún
+//  día se añade otra salida, debe llamar a _descartarEventosModal().
+// ════════════════════════════════════════════════════════════════════
+var _modalStaging  = false;
+var _modalBuffer   = [];
+var _modalBaseline = null;
+
+function _descartarEventosModal() {
+    _modalStaging = false;
+    _modalBuffer = [];
+    _modalBaseline = null;
+}
+
+// Emite del buffer SÓLO lo que sobrevive al diff contra el estado inicial.
+function _confirmarEventosModal() {
+    var buffer = _modalBuffer;
+    var base = _modalBaseline || {};
+    _modalStaging = false;          // desde aquí, _registerMatchEvent vuelve a emitir
+    _modalBuffer = [];
+    _modalBaseline = null;
+
+    var p = null;
+    try { p = players.find(function (x) { return x.id === base.id; }) || null; } catch (e) {}
+    if (!p) return;
+
+    var netGoles     = (p.goals || 0) - (base.goals || 0);
+    var cambioTarjeta = p.cards !== base.cards;
+    var lesionNueva   = p.injured === true && base.injured !== true;
+    var golesEmitidos = 0;
+
+    buffer.forEach(function (ev) {
+        var type = ev[0];
+        if (type === 'goal') {
+            if (golesEmitidos < netGoles) { golesEmitidos++; _registerMatchEvent.apply(null, ev); }
+            return;
+        }
+        if (type === 'yellow' || type === 'red') {
+            if (cambioTarjeta) _registerMatchEvent.apply(null, ev);
+            return;
+        }
+        if (type === 'injury') {
+            if (lesionNueva) _registerMatchEvent.apply(null, ev);
+            return;
+        }
+        _registerMatchEvent.apply(null, ev);
+    });
+}
+
 function openPlayerActionModal(player) {
+    // Foto del estado al abrir: es contra esto contra lo que se diffea en HECHO.
+    _modalBuffer = [];
+    _modalBaseline = {
+        id: player.id,
+        goals: player.goals || 0,
+        cards: player.cards,
+        injured: player.injured === true
+    };
+    _modalStaging = true;
     activeActionPlayerId = player.id;
     document.getElementById('action-player-name').innerHTML =
         `${escapeHtml(player.name)} <span style="font-size:0.8rem">✏️</span>`;
@@ -201,6 +338,9 @@ function _syncRevertRedCardButton(player) {
 }
 
 function closePlayerActionModal() {
+    // HECHO: aquí y sólo aquí se emiten los avisos aparcados, ya filtrados por
+    // la diferencia neta contra el estado inicial.
+    _confirmarEventosModal();
     activeActionPlayerId = null;
     document.getElementById('player-action-modal').style.display = 'none';
     renderPlayers(); // redibujar para mostrar cambios (lesión, tarjeta, goles)

@@ -281,10 +281,11 @@ function logMovement(player, subId) {
     // subId permite emparejar la entrada con la salida en el informe
     player.history.push(`${action} a las ${timestamp} (${halfLabel})${subId ? ' #' + subId : ''}`);
     // v230: registrar cambio en el historial del partido para Firestore.
-    if (action === 'Entra' && typeof _registerMatchEvent === 'function') {
-        _registerMatchEvent('sub_in', 'CAMBIO · Entra · ' + (player.name || 'Jugador'), '▼');
-    } else if (action === 'Sale' && typeof _registerMatchEvent === 'function') {
-        _registerMatchEvent('sub_out', 'CAMBIO · Sale · ' + (player.name || 'Jugador'), '▲');
+    // 2026-07-31: se emite UN ÚNICO evento por sustitución. logMovement se
+    // llama una vez por jugador, así que se entrega la mitad y _registerSubHalf
+    // empareja por subId; el evento sale cuando llegan las dos.
+    if (typeof window._registerSubHalf === 'function') {
+        window._registerSubHalf(player, subId, action);
     }
 }
 

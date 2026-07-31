@@ -1071,6 +1071,17 @@ const _matchLastData = {};
 // de siempre — así los partidos ya en curso no pierden avisos.
 const _matchSeenEvents = {};   // matchId -> Set(eventKey)
 
+// 🔑 EVENTOS QUE NO SON SUCESOS PARA EL ESPECTADOR.
+// `tactical_move` guarda JSON.stringify({playerId, x, y, …}) como texto: es
+// TELEMETRÍA de posiciones (throttled a 800 ms) que alimenta el replay táctico,
+// no un suceso del partido. Al pintarse tal cual, el historial mostraba volcados
+// de JSON crudo. Se siguen EMITIENDO —el replay depende de ellos— pero no se
+// anuncian ni se listan.
+const _TIPOS_NO_VISIBLES = new Set(['tactical_move']);
+function _esEventoVisible(ev) {
+    return !!ev && !_TIPOS_NO_VISIBLES.has(ev.type);
+}
+
 function _eventKey(ev) {
     if (!ev) return '';
     if (ev.eventId) return ev.eventId;
@@ -1518,6 +1529,8 @@ window._loadMatchEventsFromSnapshot = function(events) {
 
     events.forEach(ev => {
         if (!ev) return;
+        // Misma criba que en el anuncio: la telemetría táctica no se lista.
+        if (!_esEventoVisible(ev)) return;
         const titleText = ev.text || '';
         const titleHTML = escapeHtml(titleText);
         const realTime = ev.realTime || '';
@@ -1949,6 +1962,7 @@ function detectAndAlert(matchId, matchData, fromCache) {
         // 🔑 AISLAMIENTO: un evento que declare otro matchId no se procesa aquí
         // jamás, aunque llegue dentro de este documento.
         if (!_eventBelongsTo(ev, matchId)) return;
+        if (!_esEventoVisible(ev)) return;   // telemetría táctica: no se anuncia
         const k = _eventKey(ev);
         if (!k || _vistos.has(k)) return;
         _vistos.add(k);
