@@ -1412,4 +1412,165 @@ input, select {
         }
         .ob-sidebar-item.active .ob-sidebar-num { background: #58a6ff; color: #0a0e14; }
         .ob-sidebar-item.done  .ob-sidebar-num { background: rgba(88,166,255,0.3); color: #58a6ff; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MENSAJERÍA RESPONSIVE (tablet + móvil)
+   ═══════════════════════════════════════════════════════════════════════════
+   ⚠️ POR QUÉ ESTE BLOQUE USA !important EN CASI TODO
+   El motor de mensajería (js/coach/comms/panel.js) se pinta con style="" INLINE
+   en cada nodo. Una declaración inline gana a cualquier regla de hoja de estilos
+   por especificidad; lo ÚNICO que la vence es !important desde la hoja. Por eso
+   aquí no se puede "escribir CSS normal": o lleva !important, o no se aplica.
+   Los ganchos (.um-split / .um-sidebar / .um-chat / .um-tabbar / .um-tab /
+   .um-back-btn / .um-input) se añaden en panel.js SIN tocar ni un valor inline,
+   de modo que en PC el panel queda exactamente igual que antes.
+
+   EL PROBLEMA QUE ARREGLA
+   El split era fijo: lista 340px con min-width:260px + chat flex:1. En un móvil
+   de 390px eso daba 260px de lista y ~130px de chat — inservible. Aquí el split
+   se convierte en maestro-detalle: se ve la lista O el chat, nunca los dos.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* iOS/iPadOS hace ZOOM automático al enfocar un campo con font-size < 16px, y
+   al hacerlo descoloca todo el layout (y no vuelve solo). Vale para tablet
+   también, por eso va por tipo de puntero y no por ancho. */
+@media (pointer: coarse) {
+    .um-input { font-size: 16px !important; }
+
+    /* Objetivos táctiles del panel. Todo esto se pintaba con paddings pensados
+       para ratón (0.32rem => ~28px de alto): con el dedo se falla. Se sube el
+       mínimo sin tocar la tipografía, para que la maqueta no se descoloque. */
+    .um-chat .btn,
+    .um-chat a[href] {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        touch-action: manipulation;
+    }
+    .um-chat .btn.primary { min-height: 44px; }           /* Enviar */
+    .um-sidebar input[type="checkbox"] {
+        width: 20px !important;
+        height: 20px !important;
+    }
+    .um-sidebar #um-bulk-bar button { min-height: 38px; touch-action: manipulation; }
+}
+
+@media (max-width: 760px) {
+    /* El panel en MODO MODAL medía 86vh + los 2rem de padding de .modal = se
+       salía por abajo en móviles. dvh además absorbe la barra del navegador. */
+    .modal-content.um-root {
+        width: 100% !important;
+        height: calc(100dvh - 4rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+        max-height: none !important;
+    }
+
+    /* La cabecera del panel ("💬 Mensajes" + Volver + Actualizar + ✕) es un flex
+       SIN wrap: en 360px de ancho los textos de los botones se salían. */
+    .um-root > div:first-child {
+        padding: 0.6rem 0.7rem !important;
+        flex-wrap: wrap;
+        row-gap: 0.4rem;
+    }
+    .um-root > div:first-child h2 { font-size: 0.95rem !important; }
+    .um-root > div:first-child button { min-height: 38px; touch-action: manipulation; }
+
+    /* Una sola columna a ancho completo (el min-width:260px inline es justo lo
+       que rompía el chat: hay que anularlo explícitamente). */
+    .um-split > .um-sidebar {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        border-right: none !important;
+    }
+    .um-split > .um-chat { width: 100% !important; }
+
+    /* El intercambio. La clase la pone/quita _umSetShowingChat() en panel.js. */
+    .um-split.um-showing-chat > .um-sidebar { display: none !important; }
+    .um-split:not(.um-showing-chat) > .um-chat { display: none !important; }
+
+    /* El "←" del hilo nace con display:none inline: existe pero solo se enciende
+       aquí. Así en PC no depende de que este CSS haya cargado. */
+    .um-back-btn {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Pestañas: antes se repartían el ancho con flex:1 y white-space:nowrap, así
+       que con 3 pestañas el texto se salía del botón. Ahora cada una conserva su
+       tamaño y la barra se desliza. */
+    .um-tabbar {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .um-tabbar::-webkit-scrollbar { display: none; }
+    .um-tab {
+        flex: 1 0 auto !important;
+        min-width: 33% !important;
+        min-height: 44px !important;      /* objetivo táctil */
+        padding: 0.7rem 0.7rem !important;
+        touch-action: manipulation;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODAL DE ACCIONES DE JUGADOR (el de la confirmación diferida con "HECHO")
+   ═══════════════════════════════════════════════════════════════════════════
+   HECHO es la ÚNICA salida del modal (no hay ✕ ni cierre por fondo): si en
+   móvil quedara fuera de alcance o fuese difícil de acertar, el usuario se
+   queda encerrado y los eventos aparcados no se confirman nunca. De ahí que
+   aquí se garantice tamaño táctil y que el pie quede siempre visible.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (pointer: coarse) {
+    /* El ancho inline es 320px fijo; .modal-content ya aporta max-width:95%,
+       pero en pantallas de 320-360px conviene el mínimo de los dos. */
+    #player-action-modal .modal-content {
+        width: min(320px, 95vw) !important;
+    }
+
+    /* Los ±1 de goles llevaban padding:0.5rem 1rem inline → ~36px de alto,
+       por debajo del objetivo táctil recomendado (44px). Se pulsan en marcha,
+       con el partido corriendo: fallar el toque cuesta un gol mal anotado. */
+    #player-action-modal .btn.danger,
+    #player-action-modal .btn.success {
+        min-width: 52px !important;
+        min-height: 44px !important;
+        touch-action: manipulation;
+    }
+
+    /* Tarjetas, LIMPIAR y HECHO. */
+    #player-action-modal .btn {
+        min-height: 46px;
+        touch-action: manipulation;
+    }
+    #player-action-modal .btn.primary {
+        min-height: 52px;                 /* HECHO, la única salida: el más grande */
+        font-size: 1rem;
+    }
+    #player-action-modal #btn-injury {
+        min-height: 46px;
+        touch-action: manipulation;
+    }
+}
+
+/* Móvil en horizontal (el caso real: el móvil apaisado en la banda). El modal
+   pasa a poder desplazarse y el pie con LIMPIAR/HECHO se queda pegado abajo,
+   de forma que HECHO está SIEMPRE a la vista aunque el contenido no quepa. */
+@media (max-height: 500px) {
+    #player-action-modal .modal-content {
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+        gap: 0.6rem;
+    }
+    #player-action-modal .modal-content > div:last-child {
+        position: sticky;
+        bottom: 0;
+        background: var(--bg-card);
+        padding-top: 0.5rem;
+        margin-top: 0 !important;
+        z-index: 2;
+    }
+}
     

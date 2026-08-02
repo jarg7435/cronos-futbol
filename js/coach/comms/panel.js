@@ -718,7 +718,7 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     }
 
     const innerHTML = `
-    <div class="${isModalMode ? 'modal-content' : 'embedded-comms'}" style="width:100%;height:${isModalMode ? '86vh' : '100%'};max-height:${isModalMode ? '850px' : '100%'};
+    <div class="${isModalMode ? 'modal-content' : 'embedded-comms'} um-root" style="width:100%;height:${isModalMode ? '86vh' : '100%'};max-height:${isModalMode ? '850px' : '100%'};
          display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;
          border:1px solid rgba(255,255,255,0.1);border-radius:${isModalMode ? '12px' : '8px'};box-shadow:0 20px 40px rgba(0,0,0,0.6);">
 
@@ -748,16 +748,23 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
         </div>
 
         <!-- Split View Layout -->
-        <div style="flex:1;display:flex;min-height:0;overflow:hidden;">
+        <!-- 📱 RESPONSIVE: en pantallas estrechas (<=760px) este split deja de ser
+             de dos columnas y pasa a maestro-detalle: se ve la lista O el chat, y
+             el intercambio lo hace la clase 'um-showing-chat' sobre este mismo
+             contenedor (ver bloque "MENSAJERÍA RESPONSIVE" en style.css). Las
+             clases um-split / um-sidebar / um-chat son los ÚNICOS ganchos que
+             tiene el CSS para vencer a los style="" inline de abajo: si se
+             renombran aquí, el móvil vuelve a 260px de lista y 130px de chat. -->
+        <div id="um-split" class="um-split" style="flex:1;display:flex;min-height:0;overflow:hidden;">
 
             <!-- Columna Izquierda: Pestañas + Contactos (340px) -->
-            <div style="width:340px;min-width:260px;max-width:40%;border-right:1px solid var(--glass-border);
+            <div class="um-sidebar" style="width:340px;min-width:260px;max-width:40%;border-right:1px solid var(--glass-border);
                         display:flex;flex-direction:column;background:rgba(22,27,34,0.4);">
-                
+
                 <!-- Pestañas superior izquierda -->
-                <div style="display:flex;border-bottom:1px solid var(--glass-border);background:#161b22;flex-shrink:0;">
+                <div class="um-tabbar" style="display:flex;border-bottom:1px solid var(--glass-border);background:#161b22;flex-shrink:0;">
                     ${tabs.map(t => `
-                        <button onclick="_switchUnifiedTab('${t.id}')" id="um-tab-${t.id}"
+                        <button onclick="_switchUnifiedTab('${t.id}')" id="um-tab-${t.id}" class="um-tab"
                             style="flex:1;padding:0.6rem 0.4rem;background:none;border:none;
                                    border-bottom:2.5px solid ${t.id === tab ? 'var(--primary)' : 'transparent'};
                                    color:${t.id === tab ? 'var(--primary)' : 'var(--text-muted)'};
@@ -799,7 +806,7 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
             </div>
 
             <!-- Columna Derecha: Conversación Activa -->
-            <div id="um-chat-view" style="flex:1;display:flex;flex-direction:column;background:#0d1117;min-width:0;">
+            <div id="um-chat-view" class="um-chat" style="flex:1;display:flex;flex-direction:column;background:#0d1117;min-width:0;">
                 <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
                             color:var(--text-muted);padding:3rem;text-align:center;">
                     <div style="font-size:3rem;margin-bottom:1rem;opacity:0.6;">💬</div>
@@ -863,6 +870,12 @@ async function _switchUnifiedTab(tabId) {
     const chkAll = document.getElementById('um-chk-all');
     if (chkAll) chkAll.checked = false;
     _updateUnifiedBulkCount();
+
+    // 📱 Al cambiar de pestaña ya no hay contacto abierto: en móvil hay que
+    // volver a enseñar la LISTA, o el usuario se quedaría mirando el panel
+    // "Selecciona un contacto" sin ninguna forma de llegar a los contactos
+    // (el botón "←" vive dentro del hilo, que aquí se acaba de borrar).
+    _umSetShowingChat(false);
 
     // Reset vista chat derecha
     const chatView = document.getElementById('um-chat-view');
@@ -1715,11 +1728,33 @@ async function _loadUnifiedContactList(tabId) {
     }
 }
 
+// ── Maestro-detalle móvil: lista <-> chat ────────────────────────────
+// Un único punto que pone/quita la clase, para que no se abra un segundo sitio
+// que la escriba y se descoordinen (la lección del "solo punto de alta").
+function _umSetShowingChat(on) {
+    const split = document.getElementById('um-split');
+    if (!split) return;
+    split.classList.toggle('um-showing-chat', !!on);
+}
+
+// Botón "← Contactos" del chat: SOLO visible en móvil (lo esconde el CSS en
+// pantallas anchas). No toca la pila de navegación de la app: es un movimiento
+// interno del panel, no una pantalla, igual que cambiar de pestaña.
+function _umBackToList() {
+    _umSetShowingChat(false);
+}
+
 // ── Seleccionar contacto y cargar hilo en columna derecha ────────────
 async function _selectUnifiedContact(uid) {
     const contact = window._umState.contacts.find(c => c.uid === uid);
     if (!contact) return;
     window._umState.selectedContact = contact;
+
+    // 📱 Maestro-detalle en móvil: al abrir un contacto se muestra el chat y se
+    // esconde la lista. En pantallas anchas la clase no hace NADA (el CSS solo
+    // la mira dentro del @media <=760px), así que el split de dos columnas del
+    // PC/iPad no cambia ni un píxel.
+    _umSetShowingChat(true);
 
     // Recargar lista izquierda para resaltar fila seleccionada
     _loadUnifiedContactList(window._umState.activeTab);
@@ -1736,6 +1771,10 @@ async function _selectUnifiedContact(uid) {
     <div style="padding:0.8rem 1.2rem;background:#161b22;border-bottom:1px solid var(--glass-border);
                 display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:0.5rem;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:0.7rem;min-width:0;">
+            <button class="um-back-btn" onclick="_umBackToList()" title="Volver a la lista de contactos"
+                style="display:none;flex-shrink:0;background:rgba(255,255,255,0.06);border:1px solid var(--glass-border);
+                       border-radius:8px;color:var(--primary);font-size:0.95rem;font-weight:700;
+                       min-width:44px;min-height:44px;cursor:pointer;padding:0 0.6rem;">←</button>
             <div style="width:38px;height:38px;border-radius:50%;background:rgba(88,166,255,0.15);
                         display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">
                 ${contact.icon}
@@ -1778,7 +1817,7 @@ async function _selectUnifiedContact(uid) {
     <!-- Redactor de Envío -->
     <div style="padding:0.8rem 1.2rem;background:#161b22;border-top:1px solid var(--glass-border);flex-shrink:0;">
         <div style="display:flex;gap:0.6rem;align-items:flex-end;">
-            <textarea id="um-msg-input" placeholder="Escribe un mensaje… (Enter para enviar, Shift+Enter para nueva línea)"
+            <textarea id="um-msg-input" class="um-input" placeholder="Escribe un mensaje… (Enter para enviar, Shift+Enter para nueva línea)"
                 rows="2"
                 style="flex:1;padding:0.6rem 0.8rem;background:rgba(255,255,255,0.06);border:1px solid var(--glass-border);
                        border-radius:8px;color:white;font-size:0.88rem;resize:none;box-sizing:border-box;"
@@ -2144,6 +2183,7 @@ async function _deleteUnifiedMessage(threadId, timestamp) {
 window._switchUnifiedTab = _switchUnifiedTab;
 window._loadUnifiedContactList = _loadUnifiedContactList;
 window._selectUnifiedContact = _selectUnifiedContact;
+window._umBackToList = _umBackToList;
 window._toggleCheckContact = _toggleCheckContact;
 window._toggleSelectAllUnified = _toggleSelectAllUnified;
 window._openUnifiedBulkComposer = _openUnifiedBulkComposer;
