@@ -13,10 +13,12 @@
 // 2. SUSTITUCIONES UNIFICADAS. Cada cambio emitía DOS eventos sueltos
 //    ('CAMBIO · Entra · X' y 'CAMBIO · Sale · Y') que llegaban al visor como
 //    líneas desarticuladas. Ahora es UN evento:
-//        [Equipo] | 🔺 SALE: [saliente] | 🔻 ENTRA: [entrante]
-//    ⚠️ Aquí 🔺 roja = SALE y 🔻 verde = ENTRA, la INVERSA del cronograma de
-//    informes (report-engine.js, ▲ verde = entra). Así lo pidió el autor en
-//    cada superficie; si se unifican, hay que tocar las dos.
+//        [Equipo] | ▲ SALE: [saliente] | ▼ ENTRA: [entrante]
+//    ⚠️ ▲ ROJA = SALE y ▼ VERDE = ENTRA. Desde v424 es la convención ÚNICA de
+//    toda la app: hasta v423 el cronograma de informes (report-engine.js) usaba
+//    la contraria y el autor decidió unificar con ésta. Si se vuelve a tocar,
+//    hay que tocar también report-engine.js, individual-reports.js y
+//    collective-report.js — y este test lo comprueba en 3b-bis.
 //
 // 3. Y el volcado de JSON crudo del historial: los eventos `tactical_move`
 //    guardan JSON.stringify({playerId, x, y, …}) como texto. Son TELEMETRÍA de
@@ -150,11 +152,19 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
 
     ok('3a · 🔑 existe el emisor unificado de sustitución',
        /window\._registerSubstitution = function \(outPlayer, inPlayer\)/.test(a));
-    // ⚠️ 🟥/🟩 y NO 🔺/🔻: los dos triángulos de Unicode son AMBOS ROJOS, así
-    // que con ellos la entrada y la salida eran indistinguibles de un vistazo.
+    // ⚠️ CONVENCIÓN v424: ▲ = SALE, ▼ = ENTRA, unificada en TODA la app.
+    // Es el tercer juego de glifos que se prueba y el definitivo:
+    //   🔺🔻 (hasta v417) — AMBOS ROJOS en Unicode, no se distinguían.
+    //   🟥🟩 (v418-v423)  — contrastan, pero son Unicode 12 (2019) y en móviles
+    //                       con fuentes anteriores salían como rombo negro y '?'.
+    //   ▲▼   (v424)      — Unicode 1.1, existen en todas las fuentes, y al ser
+    //                       neutros el color lo pone el CSS del visor.
     ok('3b · 🔑 con el formato pedido: equipo, SALE y ENTRA en una línea',
-       /equipo \+ ' \| 🟥 SALE: ' \+ outName \+ ' \| 🟩 ENTRA: ' \+ inName/.test(a),
+       /equipo \+ ' \| ▲ SALE: ' \+ outName \+ ' \| ▼ ENTRA: ' \+ inName/.test(a),
        (a.match(/SALE[^\n]*/) || ['(no aparece)'])[0]);
+    // Y que NO vuelvan los glifos que ya se descartaron.
+    ok('3b-bis · 🔑 no quedan 🟥/🟩 ni 🔺/🔻 en el emisor de sustituciones',
+       !/[🟥🟩🔺🔻]\s*(SALE|ENTRA):/.test(a));
     ok('3c · y se emite como UN evento de tipo sub',
        /_registerMatchEvent\('sub',/.test(a));
     ok('3d · el nombre del equipo sale de TEAM_NAMES, con respaldo',
@@ -184,8 +194,8 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
     ok('3g · sin subId no se pierde el suceso: se emite suelto',
        /if \(!subId\) \{[\s\S]{0,700}?_registerMatchEvent\(/.test(a));
     ok('3g-bis · 🔑 y con el MISMO formato limpio, no el "CAMBIO · Sale ·" de antes',
-       /eq \+ ' \| 🟩 ENTRA: ' \+ nombre/.test(a) &&
-       /eq \+ ' \| 🟥 SALE: ' \+ nombre/.test(a),
+       /eq \+ ' \| ▼ ENTRA: ' \+ nombre/.test(a) &&
+       /eq \+ ' \| ▲ SALE: ' \+ nombre/.test(a),
        (a.match(/if \(!subId\)[\s\S]{0,400}/) || ['(no aparece)'])[0]);
     ok('3g-ter · 🔑 ya no queda NINGÚN "CAMBIO · Entra/Sale ·" en el emisor',
        !/'CAMBIO · ' \+ action/.test(a) && !/CAMBIO · Entra/.test(a) && !/CAMBIO · Sale/.test(a),
@@ -218,7 +228,7 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
     ok('3j · 🔑 al llegar la segunda mitad se emite UN evento', emitidos.length === 1,
        JSON.stringify(emitidos));
     ok('3k · 🔑 con el formato exacto pedido por el autor',
-       emitidos[0] && emitidos[0].text === 'ARINAGA | 🟥 SALE: IVÁN | 🟩 ENTRA: LUIS',
+       emitidos[0] && emitidos[0].text === 'ARINAGA | ▲ SALE: IVÁN | ▼ ENTRA: LUIS',
        emitidos[0] && emitidos[0].text);
     ok('3l · y de tipo sub', emitidos[0] && emitidos[0].type === 'sub');
 
@@ -239,7 +249,7 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
        emitidos.length === 1 && emitidos[0].extra && emitidos[0].extra.playerName === 'SOLO',
        JSON.stringify(emitidos[0]));
     ok('3l-quater · y con el formato limpio, no el "CAMBIO ·" de antes',
-       emitidos[0] && emitidos[0].text === 'RIVAL | 🟥 SALE: SOLO',
+       emitidos[0] && emitidos[0].text === 'RIVAL | ▲ SALE: SOLO',
        emitidos[0] && emitidos[0].text);
 
     // Dos cambios simultáneos no se mezclan entre sí.

@@ -340,7 +340,10 @@
         // Formato del modal retroactivo: "CAMBIO · Sale X, Entra Y (Retroactivo)".
         let m = text.match(/Sale\s+(.+?),\s*Entra\s+(.+?)(?:\s*\([^)]*\))?\s*$/);
         if (m) return { sale: m[1].trim(), entra: m[2].trim() };
-        // Formato unificado del visor: "EQUIPO | 🟥 SALE: X | 🟩 ENTRA: Y".
+        // Formato unificado del visor: "EQUIPO | ▲ SALE: X | ▼ ENTRA: Y".
+        // El glifo cambió tres veces (🔺🔻 → 🟥🟩 → ▲▼, ver player-actions.js) y
+        // este parseo sobrevivió a las tres porque NO mira el símbolo, sólo las
+        // palabras SALE:/ENTRA:. No meter el glifo en la expresión.
         m = text.match(/SALE:\s*(.+?)\s*\|\s*[^|]*ENTRA:\s*(.+?)\s*$/);
         if (m) return { sale: m[1].trim(), entra: m[2].trim() };
         return null;

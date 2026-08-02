@@ -172,11 +172,14 @@ console.log('\n── PARTE 4 · el delta sólo para partidos sin eventId ──
        /const _evConId = _evArr\.some\(e => e && e\.eventId\)/.test(l));
     ok('4c · el delta de siempre sigue ahí, detrás, para el caso heredado',
        /_metaWithTime/.test(l) && /const subPending = \[\]/.test(l));
-    // El texto pasa por _coloreaSustitucion cuando es un cambio (verde ENTRA /
-    // rojo SALE); el minuto sigue saliendo del propio evento.
+    // v424: el texto pasa por _formateaLineaEvento —el formateador ÚNICO— y ya
+    // no sólo cuando es un cambio. Antes aquí sólo se coloreaban las
+    // sustituciones y el resto salía con el texto crudo; ese "texto crudo" era
+    // justo el segundo formato con el que el mismo gol aparecía repetido en el
+    // historial. El minuto sigue saliendo del propio evento.
     ok('4d · 🔑 el aviso por evento usa el texto y el minuto del propio evento',
        /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime\)/.test(l) &&
-       /_coloreaSustitucion\(ev\.text \|\| ''\)/.test(l),
+       /_linea = _formateaLineaEvento\(_t, ev\.text \|\| ''\)/.test(l),
        (l.match(/showEventToast\(_t[^\n]*/) || ['(no aparece)'])[0]);
     ok('4e · 🔑 y las sustituciones se colorean: verde ENTRA, rojo SALE',
        /ENTRA:\[\^\|\]\*\)/.test(l.replace(/\\/g, '')) || /_coloreaSustitucion/.test(l));

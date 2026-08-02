@@ -109,7 +109,7 @@ fired.length=0;
 detectAndAlert(MID, mk(roster({1:{goals:2}, 3:{cards:'amarilla'}}), 2, 0));
 check('Amarilla detectada', fired.some(f=>f.type==='yellow'));
 // v218: TARJETA en MAYÚSCULAS, color amarillo.
-check('v218: TARJETA amarilla con color', fired.some(f=>f.type==='yellow' && /color:#eab308[^>]*>TARJETA</.test(f.line||'')));
+check('v424: TARJETA AMARILLA con color', fired.some(f=>f.type==='yellow' && /color:#eab308[^>]*>TARJETA AMARILLA</.test(f.line||'')));
 
 // 4. Roja en P2 (de amarilla a roja).
 fired.length=0;
@@ -117,7 +117,7 @@ detectAndAlert(MID, mk(roster({1:{goals:2}, 2:{cards:'roja'}, 3:{cards:'amarilla
 check('Roja detectada', fired.some(f=>f.type==='red'));
 check('No re-avisa amarilla previa', !fired.some(f=>f.type==='yellow'));
 // v218: TARJETA en MAYÚSCULAS, color rojo.
-check('v218: TARJETA roja con color', fired.some(f=>f.type==='red' && /color:#ef4444[^>]*>TARJETA</.test(f.line||'')));
+check('v424: TARJETA ROJA con color', fired.some(f=>f.type==='red' && /color:#ef4444[^>]*>TARJETA ROJA</.test(f.line||'')));
 
 // 5. Lesión en P1.
 fired.length=0;
@@ -133,11 +133,20 @@ check('Cambio detectado', fired.some(f=>f.type==='sub'));
 check('Solo 1 evento de cambio', fired.filter(f=>f.type==='sub').length===1);
 const subAlert = fired.find(f=>f.type==='sub');
 check('Cambio empareja entra/sale', subAlert && /▲/.test(subAlert.line) && /▼/.test(subAlert.line));
-// v218: CAMBIO en MAYÚSCULAS, color azul.
-check('v218: CAMBIO con color azul', subAlert && /color:#58a6ff[^>]*>CAMBIO</.test(subAlert.line||''));
-// v218: ▲ verde (entra) y ▼ roja (sale).
-check('v219: ▼ verde (entra)', subAlert && /color:#3fb950[^>]*>▼</.test(subAlert.line||''));
-check('v219: ▲ roja (sale)', subAlert && /color:#ef4444[^>]*>▲</.test(subAlert.line||''));
+// ⚠️ v424: esta vía de RESPALDO ya no construye su propio formato ("CAMBIO ·
+// ▼X ▲Y" con un span por trozo). Ahora emite el MISMO texto canónico que graba
+// _registerMatchEvent —"EQUIPO | ▲ SALE: X | ▼ ENTRA: Y"— y lo colorea
+// _coloreaSustitucion, que envuelve cada mitad entera en un span. Tenía que
+// dejar de tener formato propio: con dos textos distintos para el mismo cambio,
+// el dedup del historial no podía emparejarlos y la fila salía repetida.
+check('v424: la mitad de SALIDA va en rojo, con ▲',
+      subAlert && /color:#ff5858[^>]*>▲ SALE:/.test(subAlert.line||''));
+check('v424: la mitad de ENTRADA va en verde, con ▼',
+      subAlert && /color:#3fb950[^>]*>▼ ENTRA:/.test(subAlert.line||''));
+// Y el texto plano que queda al quitar el HTML es el canónico, que es lo que
+// permite emparejarlo con el que llega por Firestore.
+check('v424: el texto plano del cambio es el canónico',
+      subAlert && /\|\s*▲ SALE: .+\|\s*▼ ENTRA: /.test((subAlert.line||'').replace(/<[^>]+>/g,'')));
 // v218: no debe haber '#' antes del dorsal en el mensaje de cambio.
 check('v218: CAMBIO sin "#" del dorsal', subAlert && !/#\d(?!\d|[a-fA-F])/.test(subAlert.line||''));
 

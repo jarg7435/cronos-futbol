@@ -82,13 +82,20 @@
             display: flex; align-items: center; gap: 0.4rem;
         }
         #live-header .logo span { color: var(--secondary); }
+        /* v424: es un <button>, no un <div> — el indicador y la acción son ya el
+           mismo elemento, para que "EN VIVO" no aparezca dos veces. Hay que
+           reponer a mano lo que el navegador cambia en un botón (font, cursor). */
         #live-badge {
             display: flex; align-items: center; gap: 0.4rem;
             background: rgba(255,88,88,0.15);
             border: 1px solid rgba(255,88,88,0.4);
             border-radius: 20px; padding: 3px 12px;
             font-size: 0.72rem; font-weight: 700; color: #ff5858;
+            font-family: inherit; cursor: pointer;
+            min-height: 30px; touch-action: manipulation;
+            transition: background 0.15s;
         }
+        #live-badge:hover { background: rgba(255,88,88,0.28); }
         #live-dot {
             width: 8px; height: 8px; border-radius: 50%;
             background: #ff5858;
@@ -405,13 +412,24 @@
         }
 
         /* ── ALERTAS DE EVENTO (sonoras + visuales) ──
-           Posicionamiento responsive:
-           - Desktop/tablet (>950px): top-right clásico
-           - Móvil landscape: debajo del scoreboard, a la derecha
-           - Móvil portrait: debajo del scoreboard, a la derecha
-           Nunca dentro del campo ni tapados por la notch del móvil. */
+           v424 · POSICIÓN MEDIDA, NO CLAVADA A MANO.
+           Requisito del autor: en PC, tablet y móvil los avisos van JUSTO DEBAJO
+           DEL MARCADOR, sin tapar nunca la cabecera.
+
+           Antes cada formato llevaba su `top` a ojo (1rem en PC, 100px en móvil,
+           130px en tablet) calculado sobre la altura que tenía la cabecera aquel
+           día. Eso es frágil: en v422 se compactó la cabecera del móvil vertical
+           y esos números se quedaron mal al instante, sin que nada fallara. Y con
+           la cabecera envolviendo a 2-3 filas según el ancho, no hay número que
+           valga para todos los casos.
+
+           Ahora el borde inferior del marcador se MIDE en tiempo real y se
+           publica en --toast-top (ver _posicionaAvisos()). El valor de reserva
+           sólo se usa el instante anterior a la primera medición. */
         #event-toast-stack {
-            position: fixed; top: 1rem; right: 1rem;
+            position: fixed;
+            top: var(--toast-top, 6rem);
+            right: 1rem;
             z-index: 1200; display: flex; flex-direction: column;
             gap: 0.55rem; max-width: min(380px, 92vw);
             pointer-events: none;
@@ -419,11 +437,11 @@
         /* En móvil, los toasts se reposicionan a la altura del marcador */
         @media (max-width: 950px) {
             #event-toast-stack {
-                /* top dinámico: header + scoreboard + pequeño margen.
-                   En portrait: header (~48px) + scoreboard (~50px) = ~100px
-                   En landscape móvil: header (~47px) + scoreboard (~40px) = ~90px
-                   Usamos calc con env(safe-area-inset-top) para evitar la notch. */
-                top: calc(env(safe-area-inset-top, 0px) + 100px);
+                /* v424: el `top` ya no se declara aquí. Lo hereda de la regla
+                   base, que usa --toast-top, medido en tiempo real sobre el
+                   borde inferior del marcador. La notch la absorbe la propia
+                   medición (getBoundingClientRect ya la incluye), así que
+                   tampoco hace falta el env(safe-area-inset-top). */
                 right: 0.5rem;
                 /* v422: antes esto era `left: 0.5rem; max-width: none`, o sea una
                    franja del ANCHO COMPLETO de la pantalla. Como el contenedor
@@ -512,20 +530,24 @@
         }
         #event-flash.fire { animation: flashFx 0.65s ease-out; }
         @keyframes flashFx { 0%{opacity:0} 15%{opacity:1} 100%{opacity:0} }
+        /* v424 · CONTROL DE SONIDO ÚNICO, TRES ESTADOS.
+           Los estilos del desaparecido #btn-activate-sound viven ahora en
+           .needs-unlock: el verde y el latido son lo que hace que el usuario lo
+           pulse nada más entrar, que es de lo que depende que haya sonido en
+           móvil (sin gesto no hay AudioContext). */
         #btn-mute {
             padding: 0.4rem 0.7rem; background: var(--glass);
             border: 1px solid var(--border); border-radius: 6px;
             color: var(--muted); font-size: 0.82rem; cursor: pointer;
+            font-family: inherit; min-height: 32px; touch-action: manipulation;
         }
         #btn-mute.muted { color: var(--danger); border-color: rgba(255,88,88,0.4); }
-        #btn-activate-sound {
-            padding: 0.4rem 0.7rem; background: rgba(63,185,80,0.15);
-            border: 1px solid rgba(63,185,80,0.5); border-radius: 6px;
-            color: #3fb950; font-size: 0.82rem; cursor: pointer; font-weight: 700;
+        #btn-mute.needs-unlock {
+            background: rgba(63,185,80,0.15);
+            border-color: rgba(63,185,80,0.5);
+            color: #3fb950; font-weight: 700;
             animation: pulseSound 1.6s ease-in-out infinite;
         }
-        #btn-activate-sound.ready { animation: none; background: var(--glass);
-            border-color: var(--border); color: var(--muted); font-weight: 400; }
         @keyframes pulseSound {
             0%,100% { box-shadow: 0 0 0 0 rgba(63,185,80,0.4); }
             50%     { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
@@ -603,18 +625,15 @@
                 flex-wrap: nowrap;
                 overflow: hidden;
             }
-            /* Header más compacto: ocultar botones no esenciales en landscape móvil.
-               PERO mantenemos visibles: btn-mute, btn-activate-sound (clave para
-               activar el audio de las alertas en móvil) y Salir. */
-            #live-header > div:last-child > button:not(#btn-mute):not(#btn-activate-sound):not([onclick*="doSignOut"]) {
-                display: none;
-            }
-            /* Resaltar el botón de activar sonido en móvil para que el usuario
-               lo pulse en cuanto entre a la vista en vivo (sin él, no hay audio
-               de goles/tarjetas/lesiones porque iOS/Android requieren un gesto
-               del usuario para desbloquear el AudioContext). */
-            #btn-activate-sound {
-                display: inline-block !important;
+            /* v424: este bloque escondía los botones "no esenciales" del grupo
+               de la derecha salvo btn-mute, btn-activate-sound y Salir. Tras la
+               limpieza de la cabecera ese grupo SOLO tiene ya esos dos (sonido y
+               Salir), así que la regla no tenía a quién esconder y se ha
+               retirado. Lo que sí se conserva es el resalte del control de
+               sonido cuando el audio está bloqueado: en móvil es de lo que
+               depende que se oigan las alertas, porque iOS/Android exigen un
+               gesto del usuario para desbloquear el AudioContext. */
+            #btn-mute.needs-unlock {
                 font-size: 0.6rem !important;
                 padding: 0.25rem 0.5rem !important;
                 animation: pulseSound 1.2s ease-in-out infinite !important;
@@ -958,10 +977,9 @@
             .bench-num  { font-size: 0.58rem; }
             .bench-time { font-size: 0.62rem; padding: 1px 5px; margin-top: 2px; }
 
-            /* Los avisos, más abajo: aquí la cabecera y el marcador son de
-               tamaño completo, no los compactos del móvil. */
+            /* v424: el `top` lo pone --toast-top (medido). Aquí sólo el ancho,
+               que en tablet admite algo más que en el móvil. */
             #event-toast-stack {
-                top: calc(env(safe-area-inset-top, 0px) + 130px);
                 width: min(380px, calc(100vw - 1.5rem));
                 right: 0.75rem;
             }
@@ -1001,20 +1019,32 @@
         <img src="public/assets/img_9801cc2f.jpeg" alt="Chronos Fútbol" 
              style="height:60px;width:auto;object-fit:contain;display:block;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4));">
     </div>
-    <div id="live-badge"><div id="live-dot"></div><span id="badge-text">EN VIVO</span></div>
+    <!-- ═══ v424 · CABECERA LIMPIA ═══════════════════════════════════════
+         Antes había SIETE controles con tres duplicidades:
+           · "EN VIVO" aparecía DOS veces: este indicador y un botón idéntico.
+           · Salir de aquí se podía por TRES sitios: 🏠 INICIO, ← MI PARTIDO y
+             ⏻ Salir (que en realidad es cerrar sesión, no salir).
+           · El sonido tenía DOS botones: 🔔 silenciar y 🔊 activar.
+         Ahora:
+           · El indicador ES el botón (un solo "EN VIVO", que además lleva a la
+             lista de partidos en directo). No se pudo borrar sin más porque
+             #badge-text también muestra FINALIZADO — es información, no adorno.
+           · Un único "← VOLVER" (el antiguo MI PARTIDO, que conserva su
+             función: cierra la pestaña y devuelve el foco a la ventana que la
+             abrió, y si no la abrió nadie, va a index.html — con lo que
+             absorbe entero lo que hacía 🏠 INICIO).
+           · Un único control de sonido (ver toggleSound()).
+         ══════════════════════════════════════════════════════════════════ -->
+    <button id="live-badge" onclick="showLiveNow()" title="Ver los partidos en directo">
+        <div id="live-dot"></div><span id="badge-text">EN VIVO</span>
+    </button>
     <span id="last-update"></span>
     <div style="display:flex;gap:0.5rem;align-items:center;">
-        <button onclick="window.location.href='index.html'"
-            style="padding:0.4rem 0.9rem;background:rgba(88,166,255,0.1);
-                   border:1px solid rgba(88,166,255,0.3);border-radius:6px;
-                   color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
-            🏠 INICIO
-        </button>
-        <button onclick="showLiveNow()"
-            style="padding:0.4rem 0.9rem;background:rgba(255,88,88,0.15);
-                   border:1px solid rgba(255,88,88,0.4);border-radius:6px;
-                   color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
-            🔴 EN VIVO
+        <button id="btn-back-to-match" onclick="backToMatch()"
+            style="padding:0.4rem 0.9rem;background:rgba(63,185,80,0.12);
+                   border:1px solid rgba(63,185,80,0.4);border-radius:6px;
+                   color:#3fb950;font-size:0.75rem;font-weight:700;cursor:pointer;">
+            ← VOLVER
         </button>
         <button id="btn-history" onclick="showHistory()"
             style="padding:0.4rem 0.9rem;background:var(--glass);
@@ -1034,18 +1064,14 @@
         </div>
     </div>
     <div style="display:flex;gap:0.4rem;align-items:center;">
-        <button id="btn-back-to-match" onclick="backToMatch()" style="display:none;
-            padding:0.4rem 0.9rem;background:rgba(63,185,80,0.12);
-            border:1px solid rgba(63,185,80,0.4);border-radius:6px;
-            color:#3fb950;font-size:0.75rem;font-weight:700;cursor:pointer;">
-            ← MI PARTIDO
-        </button>
+        <!-- v424: control de sonido ÚNICO. Antes eran dos botones (🔔 silenciar
+             y 🔊 activar) que además decían cosas distintas sobre el mismo
+             estado. Conserva el id #btn-mute para no romper _initMuteBtn ni las
+             reglas de CSS que lo nombran. -->
+        <button id="btn-mute" onclick="toggleSound()" title="Sonido de alertas">🔔</button>
         <button onclick="doSignOut()"
             style="padding:0.4rem 0.8rem;background:none;border:1px solid rgba(255,255,255,0.12);
                    color:var(--muted);font-size:0.72rem;border-radius:6px;cursor:pointer;">⏻ Salir</button>
-        <button id="btn-mute" onclick="toggleMute()" title="Silenciar alertas">🔔</button>
-        <button id="btn-activate-sound" onclick="activateSound()"
-                title="Toca para activar el sonido de alertas en este dispositivo">🔊 Activar sonido</button>
     </div>
 </header>
 
@@ -1165,11 +1191,11 @@ window.backToMatch = function() {
     }
 };
 
-// Mostrar botón ← MI PARTIDO si venimos desde la app
-if (window.opener && !window.opener.closed) {
-    const btn = document.getElementById('btn-back-to-match');
-    if (btn) btn.style.display = 'inline-block';
-}
+// v424: el botón "← VOLVER" (antes "← MI PARTIDO") ya NO se muestra sólo cuando
+// hay window.opener. Ahora está siempre visible porque es la única salida de la
+// cabecera hacia la app: backToMatch() ya distingue los dos casos —cierra la
+// pestaña si la abrió la app, y si no navega a index.html—, que es exactamente
+// lo que hacía el botón "🏠 INICIO" que se ha retirado por duplicado.
 
 // Cancela TODOS los listeners de fondo y detiene el polling de la lista.
 // Idempotente: seguro llamarla varias veces.
@@ -1259,17 +1285,27 @@ function _esEventoVisible(ev) {
     return !!ev && !_TIPOS_NO_VISIBLES.has(ev.type);
 }
 
-// 🔑 COLOREADO DE LAS SUSTITUCIONES (2026-07-31).
-// El texto del evento llega plano: "EQUIPO | 🟥 SALE: X | 🟩 ENTRA: Y". Aquí se
-// pinta SALE en rojo y ENTRA en VERDE Y EN NEGRITA, para que la entrada se
+// 🔑 COLOREADO DE LAS SUSTITUCIONES (2026-07-31, glifos unificados en v424).
+// El texto del evento llega plano: "EQUIPO | ▲ SALE: X | ▼ ENTRA: Y". Aquí se
+// pinta SALE en ROJO y ENTRA en VERDE Y EN NEGRITA, para que la entrada se
 // identifique al instante, que es lo que pidió el autor.
-// Se aplica también a los eventos ya guardados con los triángulos antiguos
-// (🔺/🔻, que en Unicode son AMBOS ROJOS y por eso no se distinguían).
+//
+// ⚠️ LOS TRES JUEGOS DE GLIFOS TIENEN QUE SEGUIR ENTRANDO AQUÍ. Un partido que
+// ya esté en Firestore conserva el texto con el que se guardó, y el historial se
+// reconstruye desde ahí (_loadMatchEventsFromSnapshot). Si esta clase de
+// caracteres se recorta a los actuales, los partidos viejos dejan de colorearse
+// y vuelven a ser indistinguibles:
+//    ▲▼   v424 en adelante — universales (Unicode 1.1), color por CSS
+//    🟥🟩  v418-v423        — contrastan, pero son Unicode 12 (2019) y en
+//                            fuentes viejas salen como rombo negro con '?'
+//    🔺🔻  hasta v417       — AMBOS ROJOS en Unicode; no se distinguían
+// El color lo pone SIEMPRE este span, nunca el glifo: por eso ▲/▼ neutros
+// funcionan igual de bien en PC, tablet y móvil.
 function _coloreaSustitucion(texto) {
     let t = escapeHtml(String(texto || ''));
-    t = t.replace(/([🟥🔺]\s*SALE:[^|]*)/g,
+    t = t.replace(/([▲🟥🔺]\s*SALE:[^|]*)/g,
         '<span style="color:#ff5858;font-weight:700;">$1</span>');
-    t = t.replace(/([🟩🔻]\s*ENTRA:[^|]*)/g,
+    t = t.replace(/([▼🟩🔻]\s*ENTRA:[^|]*)/g,
         '<span style="color:#3fb950;font-weight:800;">$1</span>');
     return t;
 }
@@ -1303,9 +1339,43 @@ window.toggleMute = function() {
     _alertsMuted = !_alertsMuted;
     window._alertsMuted = _alertsMuted;   // v222: mantener window._alertsMuted sincronizado
     localStorage.setItem("cronos_live_muted", _alertsMuted ? "1" : "0");
-    const btn = document.getElementById("btn-mute");
-    if (btn) { btn.textContent = _alertsMuted ? "🔕" : "🔔"; btn.classList.toggle("muted", _alertsMuted); btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas"; }
     if (!_alertsMuted) unlockAudio(); else _stopKeepAlive();
+    _refreshSoundBtn();
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔑 CONTROL DE SONIDO ÚNICO (v424)
+// ═══════════════════════════════════════════════════════════════════════════
+// Antes había DOS botones en la cabecera para el mismo asunto: 🔔 (silenciar) y
+// 🔊 "Activar sonido". Confundían, porque podías tener el 🔔 sin silenciar y aun
+// así no oír nada, si el AudioContext seguía bloqueado.
+//
+// ⚠️ NO SE PODÍAN FUNDIR SIN MÁS: son DOS ESTADOS DISTINTOS y sólo uno depende
+// de la voluntad del usuario.
+//   · _alertsMuted        → el usuario ha silenciado (persiste en localStorage)
+//   · AudioContext running → el navegador ha DESBLOQUEADO el audio, y eso exige
+//     un gesto del usuario dentro de ESTE documento. En iPhone con la PWA en
+//     standalone, live.html se abre con window.open y no hereda el gesto de la
+//     página padre, así que arranca bloqueado siempre.
+// Por eso el primer toque tiene que DESBLOQUEAR (y sonar, para confirmarlo), y
+// sólo a partir de ahí el botón alterna silencio. Si se fundiera en un simple
+// toggle de _alertsMuted, el iPhone se quedaría mudo para siempre sin que nada
+// lo indicara: es justo el fallo que motivó el segundo botón en su día.
+window.toggleSound = function() {
+    const desbloqueado = !!(_audioCtx && _audioCtx.state === "running");
+    if (!desbloqueado) {
+        // 1er toque: desbloquear. Si además estaba silenciado, quitar el
+        // silencio — el usuario está pidiendo oír.
+        if (_alertsMuted) {
+            _alertsMuted = false;
+            window._alertsMuted = false;
+            localStorage.setItem("cronos_live_muted", "0");
+        }
+        window.activateSound();     // unlock + bip de confirmación + refresco
+        return;
+    }
+    // Ya desbloqueado: el botón es un silenciador normal.
+    window.toggleMute();
 };
 
 // Boton explicito de "Activar sonido". En iPhone con la PWA en pantalla de
@@ -1336,29 +1406,36 @@ window.activateSound = function() {
     _refreshSoundBtn();
 };
 
-// Refresca el estado visual del boton de activar sonido segun el AudioContext.
+// v424: refresca el ÚNICO botón de sonido. Los tres estados posibles, en el
+// orden en que se comprueban (el bloqueo manda sobre el silencio: de nada sirve
+// decir "sonando" si el navegador no ha desbloqueado el audio todavía).
+//   BLOQUEADO   → "🔊 Activar sonido" + clase .needs-unlock (parpadea)
+//   SILENCIADO  → "🔕" + clase .muted
+//   SONANDO     → "🔔"
 function _refreshSoundBtn() {
-    const btn = document.getElementById("btn-activate-sound");
+    const btn = document.getElementById("btn-mute");
     if (!btn) return;
     const running = !!(_audioCtx && _audioCtx.state === "running");
-    if (running) {
-        btn.textContent = "🔊 Sonido activo";
-        btn.classList.add("ready");
-        btn.title = "El sonido de alertas esta activo en este dispositivo";
-    } else {
+    btn.classList.toggle("needs-unlock", !running);
+    btn.classList.toggle("muted", running && _alertsMuted);
+    if (!running) {
         btn.textContent = "🔊 Activar sonido";
-        btn.classList.remove("ready");
-        btn.title = "Toca para activar el sonido de alertas en este dispositivo";
+        btn.title = "Toca para activar el sonido de las alertas en este dispositivo";
+    } else if (_alertsMuted) {
+        btn.textContent = "🔕";
+        btn.title = "Alertas silenciadas · toca para volver a oírlas";
+    } else {
+        btn.textContent = "🔔";
+        btn.title = "Alertas con sonido · toca para silenciar";
     }
 }
 
 function _initMuteBtn() {
-    const btn = document.getElementById("btn-mute");
-    if (!btn) return;
-    btn.textContent = _alertsMuted ? "🔕" : "🔔";
-    btn.classList.toggle("muted", _alertsMuted);
-    btn.title = _alertsMuted ? "Activar alertas" : "Silenciar alertas";
+    _refreshSoundBtn();
 }
+// v424: el banner de activación vive en un <script> normal (no módulo) y
+// necesita poder refrescar el botón tras desbloquear el audio.
+window._refreshSoundBtn = _refreshSoundBtn;
 
 // El audio del navegador requiere un gesto del usuario. El login (clic) ya
 // cuenta como gesto, pero re-desbloqueamos en el primer toque por seguridad.
@@ -1399,12 +1476,9 @@ function _autoUnlockOnFirstGesture() {
     try {
         if (!_alertsMuted) {
             unlockAudio();
-            // Ocultar el botón "Activar sonido" si el auto-unlock funcionó
-            const btn = document.getElementById('btn-activate-sound');
-            if (btn && _audioCtx && _audioCtx.state === 'running') {
-                btn.classList.add('ready');
-                btn.textContent = '🔊 Sonido activo';
-            }
+            // v424: un solo botón de sonido — se refresca solo según el estado
+            // real del AudioContext, sin tocar texto ni clases a mano.
+            _refreshSoundBtn();
             console.log('[LIVE] Audio auto-desbloqueado por gesto del usuario');
         }
     } catch(e) { /* sin audio */ }
@@ -1552,6 +1626,48 @@ const EVENT_KEYWORD_COLOR = {
     CAMBIO:      '#58a6ff'  // azul
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔑 FORMATEADOR ÚNICO DE LÍNEA DE EVENTO (v424)
+// ═══════════════════════════════════════════════════════════════════════════
+// EL BUG QUE ARREGLA: el historial tenía DOS escritores que pintaban el MISMO
+// suceso con formatos distintos —_appendEventToHistoryPanel con la palabra clave
+// coloreada, y _loadMatchEventsFromSnapshot con el `ev.text` plano—, así que un
+// gol aparecía dos veces y con dos aspectos. Ahora los dos pasan por aquí y
+// producen exactamente el mismo HTML, que es la mitad del arreglo (la otra
+// mitad es el dedup de _appendEventToHistoryPanel).
+//
+// Trabaja SIEMPRE desde el texto plano, que es lo que se guarda en Firestore y
+// por tanto la única versión que sobrevive a una recarga. Si alguien vuelve a
+// construir HTML a mano en una de las dos vías, el bug regresa.
+function _formateaLineaEvento(type, texto) {
+    const t = String(texto || '');
+    if (type === 'sub' || type === 'sub_in' || type === 'sub_out') {
+        return _coloreaSustitucion(t);
+    }
+    const color =
+        type === 'goal'   ? EVENT_KEYWORD_COLOR.GOL :
+        type === 'yellow' ? EVENT_KEYWORD_COLOR.TARJETA_AMR :
+        type === 'red'    ? EVENT_KEYWORD_COLOR.TARJETA_ROJ :
+        type === 'injury' ? EVENT_KEYWORD_COLOR.LESION : null;
+    // El texto canónico es "PALABRA CLAVE · Nombre" ("GOL · X",
+    // "TARJETA AMARILLA · X", "LESIÓN · X"). Se colorea todo lo anterior al
+    // primer ' · '; si no hay separador, se escapa entero y no se colorea nada.
+    const sep = t.indexOf(' · ');
+    if (color && sep > 0) {
+        return '<span style="color:' + color + ';font-weight:800;letter-spacing:0.5px;">' +
+               escapeHtml(t.slice(0, sep)) + '</span>' + escapeHtml(t.slice(sep));
+    }
+    return escapeHtml(t);
+}
+
+// Identidad de una fila del historial. Dos filas con la misma clave son el mismo
+// suceso, venga por la vía que venga. Se usa el TEXTO PLANO a propósito: es lo
+// único que las dos vías comparten palabra por palabra.
+function _claveHistorial(type, textoPlano, matchTime) {
+    return String(type || '') + '|' + String(textoPlano || '') + '|' + String(matchTime || '');
+}
+let _histVistos = new Set();
+
 // v218: construye el HTML del título con la palabra clave en MAYÚSCULAS y color,
 // seguida del nombre del jugador (sin #). Acepta tanto texto plano como HTML.
 // Si `line` ya viene como HTML (contiene '<'), se inserta tal cual; si no, se escapa.
@@ -1563,10 +1679,80 @@ function _buildEventTitleHTML(line) {
     return escapeHtml(line || '');
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔑 POSICIÓN DE LOS AVISOS FLOTANTES — MEDIDA, NO CLAVADA (v424)
+// ═══════════════════════════════════════════════════════════════════════════
+// Requisito del autor: en PC, tablet y móvil los avisos van justo debajo del
+// marcador, sin tapar nunca la cabecera.
+//
+// Se mide el borde inferior REAL del marcador y se publica en --toast-top. Con
+// un número fijo por formato esto se rompía en cuanto cambiaba la cabecera —y
+// cambió en v422, al compactarla—, y además la cabecera envuelve a 2 o 3 filas
+// según el ancho, así que no existe un número que valga para todos los casos.
+//
+// Se usa el MARCADOR como referencia y no la cabecera porque el marcador está
+// debajo: su borde inferior garantiza las dos condiciones a la vez (a la altura
+// del marcador Y sin tapar la cabecera). Si el marcador está oculto (pantalla de
+// historial o de lista) se cae a la cabecera, y si tampoco, al valor de reserva.
+function _posicionaAvisos() {
+    try {
+        const sb  = document.getElementById('scoreboard');
+        const hdr = document.getElementById('live-header');
+        const visible = el => el && el.offsetParent !== null && el.getBoundingClientRect().height > 0;
+        let top = null;
+        if (visible(sb))       top = sb.getBoundingClientRect().bottom;
+        else if (visible(hdr)) top = hdr.getBoundingClientRect().bottom;
+        if (top === null) return;   // nada visible: se deja el valor anterior
+        // +8px de aire para que el aviso no quede pegado al borde del marcador.
+        document.documentElement.style.setProperty('--toast-top', Math.max(0, Math.round(top) + 8) + 'px');
+    } catch (e) { /* nunca debe tumbar el visor por una medición */ }
+}
+window._posicionaAvisos = _posicionaAvisos;
+
+// Re-medir cuando algo pueda haber cambiado la altura de la cabecera o del
+// marcador: giro de pantalla, cambio de tamaño de ventana, y cualquier cambio
+// de caja de esos dos elementos (que es lo que pilla el envolver de los botones
+// o el paso de EN VIVO a FINALIZADO).
+(function _observaAlturaCabecera() {
+    // ⚠️ Todo lo de aquí va con guarda de existencia A PROPÓSITO. Este bloque se
+    // ejecuta al cargar el módulo: si algo de esto no existiera, lanzaría y se
+    // llevaría por delante el resto del <script> —o sea, el visor entero— por
+    // una simple colocación de avisos. requestAnimationFrame no está, por
+    // ejemplo, cuando la suite ejecuta este código en un contexto de vm.
+    const remedir = () => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(_posicionaAvisos);
+        else _posicionaAvisos();
+    };
+    if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('resize', remedir);
+        window.addEventListener('orientationchange', remedir);
+    }
+    if (typeof document !== 'undefined' && document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', remedir);
+    }
+    if (typeof ResizeObserver === 'function' && typeof document !== 'undefined' && document.getElementById) {
+        const ro = new ResizeObserver(remedir);
+        const enganchar = () => {
+            const sb  = document.getElementById('scoreboard');
+            const hdr = document.getElementById('live-header');
+            if (sb)  ro.observe(sb);
+            if (hdr) ro.observe(hdr);
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', enganchar);
+        else enganchar();
+    }
+    remedir();
+})();
+
 function showEventToast(type, line, sub, matchTime) {
     const meta  = EVENT_META[type] || EVENT_META.sub;
     const stack = document.getElementById("event-toast-stack");
     if (!stack) return;
+    // v424: medir justo antes de enseñar el aviso. El marcador puede acabar de
+    // hacerse visible (se entra a un partido) y en ese instante todavía no ha
+    // saltado ningún resize ni ResizeObserver, así que el primer aviso saldría
+    // con la posición de reserva.
+    _posicionaAvisos();
     const el = document.createElement("div");
     el.className = "event-toast " + meta.cls;
     // v218: `line` puede ser HTML (con spans de color para la palabra clave).
@@ -1658,6 +1844,19 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         const titleText = (typeof line === 'string' && line.indexOf('<') >= 0)
             ? line.replace(/<[^>]+>/g, '')
             : (line || (meta ? meta.title : ''));
+
+        // 🔑 DEDUP (v424) — la otra mitad del arreglo de la duplicación.
+        // El historial lo alimentan DOS vías que corren sobre el mismo snapshot:
+        // ésta (una fila por suceso nuevo) y _loadMatchEventsFromSnapshot (que
+        // reconstruye la lista entera desde Firestore). Al marcar un gol llegaba
+        // el snapshot, la reconstrucción pintaba N+1 filas, y acto seguido
+        // detectAndAlert volvía a añadir la última → el gol, dos veces.
+        // Se compara por TEXTO PLANO porque es lo único idéntico en ambas vías;
+        // el HTML no lo es (una lo trae ya formateado y la otra no).
+        const _k = _claveHistorial(type, titleText, (meta && meta.matchTime) || '');
+        if (_histVistos.has(_k)) return;
+        _histVistos.add(_k);
+
         const ts = new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
         const evIcon = meta ? meta.icon : '•';
 
@@ -1718,18 +1917,30 @@ window._loadMatchEventsFromSnapshot = function(events) {
     // Limpiar el log actual y reemplazarlo con los eventos del snapshot.
     window._matchEventsLog = [];
     listEl.innerHTML = '';
+    // 🔑 v424: la lista se reconstruye entera, así que el registro de claves
+    // tiene que RESETEARSE aquí y volver a sembrarse con lo que se pinte. Si no
+    // se resetea, una reconstrucción posterior se auto-deduplicaría y saldría
+    // vacía; si no se siembra, detectAndAlert añadiría otra vez el último
+    // suceso y volvería la fila duplicada, que es el bug que se está cerrando.
+    _histVistos = new Set();
 
     events.forEach(ev => {
         if (!ev) return;
         // Misma criba que en el anuncio: la telemetría táctica no se lista.
         if (!_esEventoVisible(ev)) return;
         const titleText = ev.text || '';
-        const _esSub = ev.type === 'sub' || ev.type === 'sub_in' || ev.type === 'sub_out';
-        const titleHTML = _esSub ? _coloreaSustitucion(titleText) : escapeHtml(titleText);
         const realTime = ev.realTime || '';
         const matchTime = ev.matchTime || '';
         const evIcon = ev.icon || '•';
         const type = ev.type || 'event';
+        // v424: MISMO formateador que la vía en vivo. Antes aquí se escapaba el
+        // texto sin colorear la palabra clave, y por eso el gol duplicado salía
+        // "con formatos distintos".
+        const titleHTML = _formateaLineaEvento(type, titleText);
+
+        const _k = _claveHistorial(type, titleText, matchTime);
+        if (_histVistos.has(_k)) return;   // el propio snapshot puede traer repes
+        _histVistos.add(_k);
 
         window._matchEventsLog.push({ type, titleHTML, titleText, sub: '', ts: realTime, realTime, matchTime, icon: evIcon });
 
@@ -2199,11 +2410,10 @@ function detectAndAlert(matchId, matchData, fromCache) {
     if (_evConId) {
         _evNuevos.forEach(ev => {
             const _t = ev.type || 'sub';
-            // Las sustituciones se pintan coloreadas (verde ENTRA / rojo SALE);
-            // el resto conserva su texto tal cual.
-            const _linea = (_t === 'sub' || _t === 'sub_in' || _t === 'sub_out')
-                ? _coloreaSustitucion(ev.text || '')
-                : (ev.text || '');
+            // v424: TODO pasa por el formateador único, no sólo las
+            // sustituciones. Antes el resto se mostraba con el texto crudo, y
+            // ése era justo el "otro formato" del gol duplicado.
+            const _linea = _formateaLineaEvento(_t, ev.text || '');
             showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime);
         });
         return;
@@ -2217,6 +2427,10 @@ function detectAndAlert(matchId, matchData, fromCache) {
     };
     const subPending = []; // jugadores que pasaron a banquillo (posible "sale")
     const subIn      = []; // jugadores que entraron al campo
+    // v424: el equipo de cada uno, en paralelo, para poder nombrarlo en el texto
+    // canónico del cambio ("EQUIPO | ▲ SALE: ..."). Antes esta vía no lo ponía.
+    const subOutTeam = [];
+    const subInTeam  = [];
     // Goles ya atribuidos a un jugador concreto en ESTE recorrido, por equipo.
     // Sirve para restar del delta del marcador agregado (home/away en el estado,
     // derivado de homeTeam.score / awayTeam.score) los goles que ya provocaron
@@ -2233,45 +2447,43 @@ function detectAndAlert(matchId, matchData, fromCache) {
         if (!pp) return;
         // v218: NO usar "#<num>"; solo el nombre del jugador.
         const playerName = np.name || "Jugador";
-        const safeName = escapeHtml(playerName);
+
+        // ⚠️ v424: esta vía de RESPALDO construía el HTML a mano y con OTRAS
+        // palabras ("TARJETA" a secas donde el evento guardado dice "TARJETA
+        // AMARILLA"). Con dos textos distintos para el mismo suceso, el dedup
+        // del historial no podía emparejarlos y la fila salía repetida. Ahora
+        // se emite el MISMO texto canónico que graba _registerMatchEvent y se
+        // deja que _formateaLineaEvento le ponga el color.
 
         // GOL — los goles del jugador aumentaron
         if (np.goals > pp.goals) {
             const n = np.goals - pp.goals;
             if (np.team === "away") playerGoalsAway += n; else playerGoalsHome += n;
-            // v218: "GOL" en MAYÚSCULAS, color verde, seguido del nombre (sin #).
-            const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
-                         ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + safeName;
+            const line = _formateaLineaEvento("goal", 'GOL · ' + playerName);
             showEventToast("goal", line, matchLabel + (n > 1 ? " · +" + n : ""), _matchTime);
         }
         // TARJETAS — cambio de estado de tarjeta
         if (np.cards !== pp.cards) {
             if (np.cards === "amarilla" && pp.cards !== "amarilla") {
-                // v218: "TARJETA" en MAYÚSCULAS, color amarillo.
-                const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_AMR +
-                             ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
+                const line = _formateaLineaEvento("yellow", 'TARJETA AMARILLA · ' + playerName);
                 showEventToast("yellow", line, matchLabel, _matchTime);
             }
             else if (np.cards === "roja" && pp.cards !== "roja") {
-                // v218: "TARJETA" en MAYÚSCULAS, color rojo.
-                const line = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
-                             ';font-weight:800;letter-spacing:0.5px;">TARJETA</span> · ' + safeName;
+                const line = _formateaLineaEvento("red", 'TARJETA ROJA · ' + playerName);
                 showEventToast("red", line, matchLabel, _matchTime);
             }
         }
         // LESIÓN — pasó a lesionado
         if (np.injured && !pp.injured) {
-            // v218: "LESIÓN" en MAYÚSCULAS, color rojo.
-            const line = '<span style="color:' + EVENT_KEYWORD_COLOR.LESION +
-                         ';font-weight:800;letter-spacing:0.5px;">LESIÓN</span> · ' + safeName;
+            const line = _formateaLineaEvento("injury", 'LESIÓN · ' + playerName);
             showEventToast("injury", line, matchLabel, _matchTime);
         }
         // CAMBIO — transiciones field<->bench (no por expulsión roja)
         if (np.status !== pp.status && np.cards !== "roja" && pp.cards !== "roja") {
             // v218: guardamos el NOMBRE (sin #) para construir el HTML del toast
             // después con flechas verdes/rojas según entre/sale.
-            if (pp.status === "field" && np.status === "bench") subPending.push(playerName);
-            else if (pp.status === "bench" && np.status === "field") subIn.push(playerName);
+            if (pp.status === "field" && np.status === "bench") { subPending.push(playerName); subOutTeam.push(np.team); }
+            else if (pp.status === "bench" && np.status === "field") { subIn.push(playerName); subInTeam.push(np.team); }
         }
     });
 
@@ -2298,13 +2510,11 @@ function detectAndAlert(matchId, matchData, fromCache) {
     const extraAway = Math.max(0, deltaAway - playerGoalsAway);
     for (let i = 0; i < extraHome; i++) {
         // v218: "GOL" en MAYÚSCULAS verde, seguido del nombre del equipo.
-        const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
-                     ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(homeName);
+        const line = _formateaLineaEvento("goal", 'GOL · ' + homeName);
         showEventToast("goal", line, matchLabel, _matchTime);
     }
     for (let i = 0; i < extraAway; i++) {
-        const line = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
-                     ';font-weight:800;letter-spacing:0.5px;">GOL</span> · ' + escapeHtml(awayName);
+        const line = _formateaLineaEvento("goal", 'GOL · ' + awayName);
         showEventToast("goal", line, matchLabel, _matchTime);
     }
 
@@ -2314,29 +2524,20 @@ function detectAndAlert(matchId, matchData, fromCache) {
         for (let i = 0; i < pairs; i++) {
             const inP  = subIn[i];     // nombre del jugador que ENTRA
             const outP = subPending[i]; // nombre del jugador que SALE
-            // v219: "CAMBIO" en MAYÚSCULAS azul.
-            // Flecha verde ▼ para el jugador que ENTRA (señala el campo, hacia abajo).
-            // Flecha roja ▲ para el jugador que SALE (señala hacia fuera, hacia arriba).
+            // v424: MISMO texto canónico que graba _registerSubstitution
+            // ("EQUIPO | ▲ SALE: X | ▼ ENTRA: Y") en vez del formato propio que
+            // tenía esta vía. Con dos textos distintos para el mismo cambio, el
+            // dedup del historial no podía emparejarlos.
+            // ▲ = SALE (rojo), ▼ = ENTRA (verde); el color lo pone
+            // _coloreaSustitucion dentro de _formateaLineaEvento.
             // NO se muestra el # del dorsal, solo el nombre.
-            const kwColor = EVENT_KEYWORD_COLOR.CAMBIO;
-            const greenArr = '<span style="color:' + EVENT_KEYWORD_COLOR.GOL +
-                             ';font-weight:800;font-size:1.05em;">▼</span>';
-            const redArr   = '<span style="color:' + EVENT_KEYWORD_COLOR.TARJETA_ROJ +
-                             ';font-weight:800;font-size:1.05em;">▲</span>';
-            const kwSpan   = '<span style="color:' + kwColor +
-                             ';font-weight:800;letter-spacing:0.5px;">CAMBIO</span>';
-            let line;
-            if (inP && outP) {
-                // v219: Jugador que ENTRA (verde ▼) + jugador que SALE (roja ▲).
-                line = kwSpan + ' · ' + greenArr + ' ' + escapeHtml(inP) +
-                       '   ' + redArr + ' ' + escapeHtml(outP);
-            } else if (inP) {
-                line = kwSpan + ' · ' + greenArr + ' ' + escapeHtml(inP);
-            } else if (outP) {
-                line = kwSpan + ' · ' + redArr + ' ' + escapeHtml(outP);
-            } else {
-                line = kwSpan;
-            }
+            const eqNom = (subInTeam[i] === 'away' || subOutTeam[i] === 'away') ? awayName : homeName;
+            let texto;
+            if (inP && outP)      texto = eqNom + ' | ▲ SALE: ' + outP + ' | ▼ ENTRA: ' + inP;
+            else if (inP)         texto = eqNom + ' | ▼ ENTRA: ' + inP;
+            else if (outP)        texto = eqNom + ' | ▲ SALE: ' + outP;
+            else                  texto = eqNom + ' | CAMBIO';
+            const line = _formateaLineaEvento("sub", texto);
             showEventToast("sub", line, matchLabel, _matchTime);
         }
     }
@@ -3864,11 +4065,9 @@ setInterval(function() {
             if (typeof window.unlockAudio === 'function') {
                 window.unlockAudio();
             }
-            const btn = document.getElementById('btn-activate-sound');
-            if (btn && _audioCtx && _audioCtx.state === 'running') {
-                btn.classList.add('ready');
-                btn.textContent = '🔊 Sonido activo';
-            }
+            // v424: el banner vive en un <script> normal, fuera del módulo, así
+            // que refresca el botón por window (_refreshSoundBtn no es global).
+            if (typeof window._refreshSoundBtn === 'function') window._refreshSoundBtn();
             console.log('[LIVE] Audio desbloqueado por click en banner');
         } catch(e) { console.warn('[LIVE] Error desbloqueando audio:', e); }
         hideBanner();

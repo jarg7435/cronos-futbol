@@ -519,13 +519,18 @@ function walk(dir, out) {
 
         ok('8a · el banquillo se marca en gris con su etiqueta', /BANQUILLO/.test(tl));
 
+        // ⚠️ CONVENCIÓN UNIFICADA EN v424: ▲ ROJA = SALE, ▼ VERDE = ENTRA.
+        // Hasta v423 este cronograma usaba la INVERSA (▲ verde al entrar) y así
+        // estaba fijado aquí. El autor decidió unificar toda la app con la
+        // convención del visor en vivo, así que las flechas se invirtieron.
+        // Los COLORES no cambiaron: verde sigue siendo entrar y rojo salir.
         // 🔑 En la fila de Ana (que sale) la etiqueta roja debe nombrar a BEA.
-        const rojas = conFlecha(tl, '▼');
-        const verdes = conFlecha(tl, '▲');
-        ok('8b · 🔑 la flecha de SALIDA es roja ▼ y nombra a quien ENTRA',
+        const rojas = conFlecha(tl, '▲');
+        const verdes = conFlecha(tl, '▼');
+        ok('8b · 🔑 la flecha de SALIDA es roja ▲ y nombra a quien ENTRA',
             rojas.some(t => /Bea/.test(t) && /#ff5858/.test(t)),
             JSON.stringify(rojas.map(t => cajaDe(t).txt)));
-        ok('8c · 🔑 la flecha de ENTRADA es verde ▲ y nombra a quien SALE',
+        ok('8c · 🔑 la flecha de ENTRADA es verde ▼ y nombra a quien SALE',
             verdes.some(t => /Ana/.test(t) && /#3fb950/.test(t)),
             JSON.stringify(verdes.map(t => cajaDe(t).txt)));
 
@@ -533,12 +538,12 @@ function walk(dir, out) {
         // sí misma en su propia salida.
         const filaAna = tl.slice(0, idxOf(tl, 'Bea') > -1 ? idxOf(tl, 'Bea') : tl.length);
         ok('8d · 🔑 la fila de un jugador NO repite su propio nombre en su flecha',
-            !conFlecha(filaAna, '▼').some(t => /Ana/.test(cajaDe(t).txt)),
-            JSON.stringify(conFlecha(filaAna, '▼').map(t => cajaDe(t).txt)));
+            !conFlecha(filaAna, '▲').some(t => /Ana/.test(cajaDe(t).txt)),
+            JSON.stringify(conFlecha(filaAna, '▲').map(t => cajaDe(t).txt)));
 
         ok('8e · la leyenda dice lo mismo que el cronograma',
-            /▲[\s\S]{0,80}Entra/.test(tl + build([titular('T',1)],{}).html) ||
-            /Entra[\s\S]{0,80}▲/.test(build([titular('T',1)],{}).html));
+            /▼[\s\S]{0,80}Entra/.test(tl + build([titular('T',1)],{}).html) ||
+            /Entra[\s\S]{0,80}▼/.test(build([titular('T',1)],{}).html));
     }
 
     {
@@ -552,7 +557,7 @@ function walk(dir, out) {
 
         // Cada uno de los 7 que salen debe nombrar a UNO de los que entran, y
         // cada entrante debe aparecer UNA sola vez como pareja.
-        const nombrados = conFlecha(tl7, '▼').map(t => cajaDe(t).txt)
+        const nombrados = conFlecha(tl7, '▲').map(t => cajaDe(t).txt)   // ▲ = salen (v424)
             .map(s => (s.match(/E\d/) || [])[0]).filter(Boolean);
         ok('8f · 🔑 los 7 que salen nombran a un entrante cada uno',
             nombrados.length === 7, JSON.stringify(nombrados));
@@ -562,7 +567,7 @@ function walk(dir, out) {
             new Set(nombrados).size === 7, JSON.stringify([...new Set(nombrados)].sort()));
 
         // Lo simétrico: los 7 que entran nombran a los 7 que salen, 1 a 1.
-        const nombrados2 = conFlecha(tl7, '▲').map(t => cajaDe(t).txt)
+        const nombrados2 = conFlecha(tl7, '▼').map(t => cajaDe(t).txt)   // ▼ = entran (v424)
             .map(s => (s.match(/S\d/) || [])[0]).filter(Boolean);
         ok('8i · 🔑 y los 7 que entran nombran a un saliente cada uno, sin repetir',
             nombrados2.length === 7 && new Set(nombrados2).size === 7,

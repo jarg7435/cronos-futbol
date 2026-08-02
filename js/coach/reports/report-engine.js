@@ -457,21 +457,28 @@ const _RP = (() => {
             //  nombre del propio jugador y el de su pareja de cambio. El propio
             //  nombre es redundante —la fila ya es suya— y duplicar etiquetas
             //  era justo lo que las amontonaba con cambios en bloque.
-            //  Convención (requisito del autor): ▲ verde al ENTRAR, con el
-            //  nombre de a quién sustituye; ▼ roja al SALIR, con el nombre de
-            //  quién entra por él.
-            const arriba = [];   // salidas  (rojas ▼), sobre la barra
-            const abajo  = [];   // entradas (verdes ▲), bajo la barra
+            //  ⚠️ CONVENCIÓN DE FLECHAS UNIFICADA (v424, 2026-08-02):
+            //      ▼ VERDE = ENTRA        ▲ ROJO = SALE
+            //  Hasta v423 este cronograma usaba la convención CONTRARIA (▲ verde
+            //  al entrar) que la del visor en vivo, y así estaba documentado como
+            //  requisito. El autor decidió unificar toda la app con el criterio
+            //  del visor, así que aquí se invirtieron los glifos. Los COLORES no
+            //  cambian —verde entra, rojo sale—, sólo hacia dónde apunta la
+            //  flecha. La fuente única de la convención está en
+            //  js/match/events/player-actions.js; si se cambia, hay que tocar
+            //  también individual-reports.js y collective-report.js.
+            const arriba = [];   // salidas  (rojas ▲), sobre la barra
+            const abajo  = [];   // entradas (verdes ▼), bajo la barra
             periods.forEach(([a, b]) => {
                 if (a > 0.15) {
                     const outName = findNear(subInMap, aliasKey, a); // a quién sustituye
                     abajo.push({ x: a * sc + 3, anchor: 'start', color: '#3fb950',
-                                 txt: '▲ ' + (outName || (Math.floor(a) + "'")) });
+                                 txt: '▼ ' + (outName || (Math.floor(a) + "'")) });
                 }
                 if (b < totMin - 0.3) {
                     const inpName = findNear(subOutMap, aliasKey, b); // quién entra por él
                     arriba.push({ x: b * sc - 3, anchor: 'end', color: '#ff5858',
-                                  txt: (inpName || (Math.floor(b) + "'")) + ' ▼' });
+                                  txt: (inpName || (Math.floor(b) + "'")) + ' ▲' });
                 }
             });
             const nArriba = asignarCarriles(arriba);
@@ -594,8 +601,8 @@ const _RP = (() => {
         `<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin:6px 0 0.85rem;font-size:0.66rem;color:var(--text-muted);">` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:#58a6ff;border-radius:2px;opacity:0.82;"></span>En campo</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:7px;background:rgba(255,255,255,0.07);border:0.5px solid rgba(255,255,255,0.15);border-radius:2px;"></span>Banquillo</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#3fb950;"></span><span style="color:#3fb950;font-weight:700;font-size:0.62rem;">▲ NOMBRE</span> Entra (sustituye a)</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▼</span> Sale (entra por él)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#3fb950;"></span><span style="color:#3fb950;font-weight:700;font-size:0.62rem;">▼ NOMBRE</span> Entra (sustituye a)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:1.5px;height:12px;background:#ff5858;"></span><span style="color:#ff5858;font-weight:700;font-size:0.62rem;">NOMBRE ▲</span> Sale (entra por él)</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:9px;height:9px;border-radius:50%;background:white;border:1.5px solid #3fb950;display:inline-block;"></span>Gol</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;"></span>Amarilla</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;"></span>Roja</span>` +

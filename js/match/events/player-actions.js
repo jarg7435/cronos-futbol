@@ -19,12 +19,25 @@ window._cronosMatchEvents = window._cronosMatchEvents || [];
 //  'CAMBIO · Sale · Y'— que llegaban al visor como dos líneas desarticuladas,
 //  a veces ni siquiera consecutivas. Ahora un cambio es UN evento con las dos
 //  mitades y el equipo, tal como lo pidió el autor:
-//      [Equipo] | 🔺 SALE: [saliente] | 🔻 ENTRA: [entrante]
+//      [Equipo] | ▲ SALE: [saliente] | ▼ ENTRA: [entrante]
 //
-//  ⚠️ CONVENCIÓN DE FLECHAS: aquí 🔺 (roja, arriba) = SALE y 🔻 (verde, abajo)
-//  = ENTRA. Es la INVERSA de la del cronograma de informes (report-engine.js,
-//  donde ▲ verde = entra). Son dos superficies distintas y así lo pidió el
-//  autor en cada una; si algún día se unifican, hay que tocar las dos.
+//  ⚠️ CONVENCIÓN DE FLECHAS — ÚNICA EN TODA LA APP (v424, 2026-08-02):
+//      ▲ ROJO  = SALE      ▼ VERDE = ENTRA
+//  Hasta v423 había DOS convenciones opuestas: ésta y la del cronograma de
+//  informes (report-engine.js, donde ▲ verde = ENTRA). El autor decidió
+//  unificarlas con este criterio, así que report-engine.js, individual-reports.js
+//  y collective-report.js se cambiaron a la vez. Si se vuelve a tocar, hay que
+//  tocar las CUATRO o vuelve la incoherencia.
+//
+//  ⚠️ Y POR QUÉ ▲/▼ Y NO 🟥/🟩 NI 🔺/🔻 (las dos formas que ya se probaron):
+//    · 🔺/🔻 (U+1F53A/B) son AMBOS ROJOS en Unicode: sólo cambia hacia dónde
+//      apuntan, así que entrada y salida no se distinguían de un vistazo.
+//    · 🟥/🟩 (U+1F7E5/E9) sí contrastan, PERO son de Unicode 12 (2019) y en
+//      móviles y fuentes anteriores salen como el rombo negro con '?'
+//      (U+FFFD). Es lo que el autor vio en sus capturas.
+//    · ▲/▼ (U+25B2/U+25BC) son de Unicode 1.1 (1993): existen en TODAS las
+//      fuentes, y al ser glifos neutros el COLOR lo pone el CSS, no la fuente.
+//      Por eso se colorean en el visor (_coloreaSustitucion en live.html).
 // ════════════════════════════════════════════════════════════════════
 function _nombreEquipoDe(player) {
     var t = (player && player.team) || 'home';
@@ -39,15 +52,12 @@ window._registerSubstitution = function (outPlayer, inPlayer) {
     var outName = (outPlayer && outPlayer.name) || 'Jugador';
     var inName  = (inPlayer  && inPlayer.name)  || 'Jugador';
     var equipo  = _nombreEquipoDe(outPlayer || inPlayer);
-    // ⚠️ 🟥 / 🟩 Y NO 🔺 / 🔻: los dos triángulos de Unicode (U+1F53A y U+1F53B)
-    // son AMBOS ROJOS — sólo cambia hacia dónde apuntan. Con ellos la entrada y
-    // la salida eran indistinguibles de un vistazo, que es justo lo que el autor
-    // pedía poder distinguir. El cuadrado verde y el rojo sí contrastan en
-    // cualquier plataforma. El visor además colorea el texto (live.html).
+    // ▲ = SALE, ▼ = ENTRA (ver la convención al principio del fichero). El color
+    // lo pone el visor con _coloreaSustitucion, porque ▲/▼ son glifos neutros.
     // subOutName/subInName: los nombres en campos propios, para que el replay
     // no dependa de parsear el texto visible.
     _registerMatchEvent('sub',
-        equipo + ' | 🟥 SALE: ' + outName + ' | 🟩 ENTRA: ' + inName, '🔄', undefined,
+        equipo + ' | ▲ SALE: ' + outName + ' | ▼ ENTRA: ' + inName, '🔄', undefined,
         { subOutName: outName, subInName: inName });
 };
 
@@ -70,15 +80,15 @@ window._registerSubHalf = function (player, subId, action) {
     // color + nombre). Antes salía 'CAMBIO · Sale · X', que es justo la línea
     // desarticulada que el autor pidió eliminar: unificar sólo los cambios por
     // arrastre habría dejado el historial mezclando dos estilos.
-    // 🟥/🟩 y no 🔺/🔻: los dos triángulos de Unicode son AMBOS ROJOS.
+    // ▲ = SALE, ▼ = ENTRA (ver la convención al principio del fichero).
     if (!subId) {
         var eq = _nombreEquipoDe(player);
         var nombre = player.name || 'Jugador';
         _registerMatchEvent(
             action === 'Entra' ? 'sub_in' : 'sub_out',
-            action === 'Entra' ? (eq + ' | 🟩 ENTRA: ' + nombre)
-                               : (eq + ' | 🟥 SALE: ' + nombre),
-            action === 'Entra' ? '🟩' : '🟥', undefined,
+            action === 'Entra' ? (eq + ' | ▼ ENTRA: ' + nombre)
+                               : (eq + ' | ▲ SALE: ' + nombre),
+            action === 'Entra' ? '▼' : '▲', undefined,
             { playerName: nombre });
         return;
     }
