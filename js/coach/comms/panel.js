@@ -43,8 +43,12 @@ function _parseHistoryForFirestore(raw) {
     };
     raw.forEach(e => {
         if (typeof e === 'object' && e !== null && e.type) {
-            // Ya es objeto — solo limpiar (preservando subId si el doc ya lo trae)
-            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', subId: e.subId || null, note: e.note || '' });
+            // Ya es objeto — solo limpiar (preservando subId si el doc ya lo trae).
+            // v426: `phase` tiene que sobrevivir a un re-parseo. Si el objeto no
+            // lo trae (informe guardado antes de v426) se re-deduce del `note`,
+            // que es donde quedó el texto original.
+            const _fase = (e.phase === true) || /\((?:DESCANSO|FIN)\)/i.test(String(e.note || ''));
+            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', subId: e.subId || null, note: e.note || '', phase: _fase });
             return;
         }
         if (typeof e !== 'string') return;
@@ -68,7 +72,24 @@ function _parseHistoryForFirestore(raw) {
         else if (low.includes('amarilla'))                        type = 'yellow';
         else if (low.includes('roja'))                            type = 'red';
         else if (low.includes('lesión') || low.includes('lesion')) type = 'injury';
-        if (type) pushEvent({ type, minute, second, timeStr, subId, note: e });
+        // 🔑 v426 — APUNTES DE FASE, NO SUSTITUCIONES.
+        // Al cerrar la 1ª parte la app apunta "Sale a las MM:SS (DESCANSO)" a
+        // TODOS los que están en el campo, y al terminar un "Sale (FIN)". Son
+        // contabilidad interna de fase, no cambios: el reglamento no gasta una
+        // sustitución por pasar por el descanso. Se marcan con un campo propio
+        // para que los informes puedan descartarlos sin releer el texto.
+        //
+        // ⚠️ SÓLO SE MARCAN LAS INEQUÍVOCAS. El "Entra a las MM:SS (2ªP)" que
+        // apunta startSecondHalf NO se puede distinguir aquí de un cambio real
+        // de la segunda parte sin subId: logMovement escribe exactamente la
+        // misma forma. Esa ambigüedad la resuelve report-engine por PAREJA (la
+        // automática comparte sello de tiempo con el "Sale (DESCANSO)" del mismo
+        // jugador). Marcarla aquí a ciegas se comería sustituciones de verdad.
+        //
+        // Ojo: (DESC) ≠ (DESCANSO). La primera es un cambio hecho DURANTE el
+        // descanso y es real; la segunda es el apunte automático.
+        const esFase = /\((?:DESCANSO|FIN)\)/i.test(e);
+        if (type) pushEvent({ type, minute, second, timeStr, subId, note: e, phase: esFase });
     });
     return result;
 }

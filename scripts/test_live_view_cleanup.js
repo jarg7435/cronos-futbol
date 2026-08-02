@@ -67,10 +67,12 @@ ok('1c · 🔑 no queda NINGÚN glifo descartado en el emisor',
    (ACTC.match(/[🟥🟩🔺🔻][^\n]*/) || ['(limpio)'])[0]);
 
 // El cronograma de informes usaba la convención CONTRARIA hasta v423.
+// v426: el formato de la etiqueta pasó a llevar la pareja explícita
+// ("▼ ENTRA: X (por Y) 30'"), pero la CONVENCIÓN de flecha y color es la misma.
 ok('1d · el cronograma pinta la ENTRADA en verde con ▼',
-   /abajo\.push\(\{[^}]*color: '#3fb950'[\s\S]{0,120}?txt: '▼ '/.test(REPOC));
+   /abajo\.push\(\{[^}]*color: '#3fb950'[\s\S]{0,200}?txt: `▼ ENTRA:/.test(REPOC));
 ok('1e · y la SALIDA en rojo con ▲',
-   /arriba\.push\(\{[^}]*color: '#ff5858'[\s\S]{0,160}?\+ ' ▲'/.test(REPOC));
+   /arriba\.push\(\{[^}]*color: '#ff5858'[\s\S]{0,200}?txt: `▲ SALE:/.test(REPOC));
 ok('1f · 🔑 y la leyenda dice lo mismo que el cronograma (no al revés)',
    /#3fb950[^<]*>▼ NOMBRE<\/span> Entra/.test(REPO) &&
    /#ff5858[^<]*>NOMBRE ▲<\/span> Sale/.test(REPO));

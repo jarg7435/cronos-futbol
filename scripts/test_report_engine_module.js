@@ -573,9 +573,18 @@ function walk(dir, out) {
             nombrados2.length === 7 && new Set(nombrados2).size === 7,
             JSON.stringify(nombrados2));
 
-        ok('8j · 🔑 ninguna etiqueta lista varios nombres a la vez',
-            !textos(tl7).some(t => (cajaDe(t).txt.match(/[SE]\d/g) || []).length > 1),
-            JSON.stringify(textos(tl7).map(t => cajaDe(t).txt).filter(s => (s.match(/[SE]\d/g)||[]).length > 1)));
+        // v426: la etiqueta lleva ahora DOS nombres a propósito —el del propio
+        // jugador y el de su pareja— porque el autor pidió el emparejamiento
+        // explícito ("▼ ENTRA: X (por Y) 30'"). Lo que sigue prohibido es que
+        // una etiqueta liste VARIAS parejas: ése era el bug de los cambios en
+        // bloque, donde una sola etiqueta acababa diciendo "E1 E2 E3".
+        ok('8j · 🔑 ninguna etiqueta lista más de UNA pareja',
+            !textos(tl7).some(t => (cajaDe(t).txt.match(/[SE]\d/g) || []).length > 2),
+            JSON.stringify(textos(tl7).map(t => cajaDe(t).txt).filter(s => (s.match(/[SE]\d/g)||[]).length > 2)));
+        ok('8j-bis · 🔑 y cada una nombra exactamente al jugador Y a su pareja',
+            textos(tl7).filter(t => /ENTRA:|SALE:/.test(cajaDe(t).txt))
+                       .every(t => (cajaDe(t).txt.match(/[SE]\d/g) || []).length === 2),
+            JSON.stringify(textos(tl7).map(t => cajaDe(t).txt).slice(0, 4)));
     }
 
     {

@@ -174,8 +174,16 @@ console.log('\n── PARTE 3 · cronograma: barra exacta y sin solapes (ejecuta
 // ═══════════════════════════════════════════════════════════════════════════
 {
     // Se ejecuta buildIvs de verdad, extrayéndolo del módulo.
-    const ini = REPO.indexOf('const buildIvs = (player, totMin) =>');
+    // ⚠️ El corte empieza en los ayudantes de fase, no en buildIvs: desde v426
+    // buildIvs se apoya en ellos, y recortarlos fuera dejaba el trozo extraído
+    // llamando a funciones que no existían (ReferenceError, no un fallo de
+    // aserción — el test entero se caía sin decir qué se había roto).
+    // Si este anclaje deja de encontrarse, `indexOf` devuelve -1 y el slice sale
+    // vacío, así que se comprueba explícitamente en vez de fallar en cascada.
+    const ini = REPO.indexOf('const _claveT = e =>');
     const fin = REPO.indexOf('const calcTot', ini);
+    ok('3-ancla · el corte de buildIvs sigue encontrando sus dependencias',
+       ini > -1 && fin > ini, `ini=${ini}, fin=${fin}`);
     const sb = { console };
     vm.createContext(sb);
     vm.runInContext(REPO.slice(ini, fin) + '\nthis.__b = buildIvs;', sb);

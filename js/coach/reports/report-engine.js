@@ -93,10 +93,78 @@ const _RP = (() => {
         return (String(p.playerNumber) === '1') ? 'POR' : 'MED';
     };
 
+    // ═══════════════════════════════════════════════════════════════════
+    // 🔑 v426 — EL PASO POR EL DESCANSO NO ES UNA SUSTITUCIÓN
+    // ═══════════════════════════════════════════════════════════════════
+    // Al cerrar la 1ª parte, la app apunta "Sale a las MM:SS (DESCANSO)" a TODOS
+    // los que están en el campo (js/core/event-listeners.js), un "Entra (2ªP)" a
+    // los que salen a la segunda, y un "Sale (FIN)" al terminar
+    // (js/match/persistence/active-match.js). Es contabilidad interna de fase.
+    //
+    // El reglamento no gasta un cambio por pasar por el descanso, así que estos
+    // apuntes NO pueden entrar ni en el cómputo de sustituciones ni en el
+    // emparejado ni en las etiquetas de la gráfica.
+    //
+    // ⚠️ POR QUÉ NO BASTABA CON LO QUE YA HABÍA: el "Sale (DESCANSO)" y el
+    // "Entra (2ªP)" se apuntan con el MISMO sello de tiempo (los dos usan
+    // masterTimeH1), así que la criba de sucesos simultáneos los anulaba... pero
+    // SÓLO para quien seguía en el campo tras el descanso. A quien se le hacía
+    // el cambio EN el descanso le quedaba el "Sale (DESCANSO)" suelto, y ése sí
+    // se contaba como sustitución y se etiquetaba como tal. Los cambios reales
+    // hechos durante el descanso no se pierden: los registra handleSmartSwap con
+    // su propio subId (v240, "SIEMPRE registrar el cambio, no sólo si isRunning").
+    //
+    // ⚠️ NO SE PUEDE DECIDIR MIRANDO CADA APUNTE POR SEPARADO, y ésta es la
+    // trampa de todo esto. Las etiquetas de fase que escribe logMovement son:
+    //    (1ªP) (2ªP) (DESC)   → movimientos REALES, con su fase entre paréntesis
+    // y las automáticas:
+    //    (DESCANSO) (FIN)     → contabilidad, sólo las escriben endFirstHalf y
+    //                           el cierre del partido
+    //    (2ªP)                → ¡AMBIGUA! startSecondHalf apunta "Entra (2ªP)" a
+    //                           todos los del campo, pero un cambio de verdad en
+    //                           la segunda parte SIN subId se escribe igual.
+    //
+    // (DESCANSO) y (FIN) son inequívocas. La (2ªP) se resuelve por PAREJA: la
+    // automática se escribe con el MISMO sello de tiempo que el "Sale
+    // (DESCANSO)" del mismo jugador, porque las dos usan masterTimeH1. Si ese
+    // "Sale (DESCANSO)" no está, el jugador estaba en el banquillo y su entrada
+    // al empezar la segunda parte es una entrada de VERDAD, que sí cuenta.
+    //
+    // Ojo con (DESC) ≠ (DESCANSO): la primera es un cambio hecho DURANTE el
+    // descanso —real, y hay que conservarlo—; la segunda es el apunte automático.
+    const _claveT = e => (((e.minute || 0) + (e.second || 0) / 60)).toFixed(3);
+    const _esFaseInequivoca = e =>
+        e.phase === true || /\((?:DESCANSO|FIN)\)/i.test(String(e.note || ''));
+    const _esEntraSegundaParte = e =>
+        e.type === 'sub_in' && /\(2[ªº]\s*P\)/i.test(String(e.note || ''));
+
+    // Devuelve el Set de índices del historial de UN jugador que son apuntes
+    // automáticos de fase y por tanto NO cuentan como sustitución.
+    const indicesDeFase = (hist) => {
+        const fuera = new Set();
+        const tDescanso = new Set();
+        hist.forEach((e, i) => {
+            if (!_esFaseInequivoca(e)) return;
+            fuera.add(i);
+            if (/\(DESCANSO\)/i.test(String(e.note || '')) || e.phase === true) tDescanso.add(_claveT(e));
+        });
+        hist.forEach((e, i) => {
+            if (_esEntraSegundaParte(e) && tDescanso.has(_claveT(e))) fuera.add(i);
+        });
+        return fuera;
+    };
+
+    // Filtra un historial dejando SOLO las sustituciones reales.
+    const soloCambiosReales = (hist) => {
+        const evs = (hist || []).filter(e => e && (e.type === 'sub_in' || e.type === 'sub_out'));
+        const fuera = indicesDeFase(evs);
+        return evs.filter((_, i) => !fuera.has(i));
+    };
+
     // ── Reconstruir intervalos en campo desde el historial ────────────
     // history contiene eventos {type:'sub_in'|'sub_out'|'goal'|..., minute:N, second:S, timeStr:"MM:SS"}
     const buildIvs = (player, totMin) => {
-        const rawHist = (player.history || []).filter(e => e.type === 'sub_in' || e.type === 'sub_out');
+        const rawHist = soloCambiosReales(player.history);
         
         // Agrupar por tiempo exacto para eliminar intercambios de posición (sub_in y sub_out simultáneos del mismo jugador)
         const timeMap = {};
@@ -188,11 +256,13 @@ const _RP = (() => {
     const buildSubs = players => {
         const outs = [], ins = [];
         players.forEach(p => {
-            const evs = (p.history || []);
+            // v426: los apuntes automáticos de fase (DESCANSO / la 2ªP
+            // emparejada / FIN) no son sustituciones, así que no entran ni en el
+            // emparejado ni en el cómputo de cambios. Ver soloCambiosReales.
+            const evs = soloCambiosReales(p.history);
             // Filtrar eventos simultáneos (cambios de posición)
             const timeMap = {};
             evs.forEach(ev => {
-                if (ev.type !== 'sub_in' && ev.type !== 'sub_out') return;
                 const exact = (ev.minute || 0) + (ev.second || 0) / 60;
                 const tKey = exact.toFixed(3);
                 if (!timeMap[tKey]) timeMap[tKey] = { in: false, out: false, eIn: null, eOut: null };
@@ -406,22 +476,24 @@ const _RP = (() => {
         // ── Mapas de sustitución para etiquetar los extremos de barra ──
         // subOutMap[alias] = [{timeFrac, name}]  → quién entró cuando salió
         // subInMap[alias]  = [{timeFrac, name}]  → a quién reemplazó al entrar
+        // v426: se guardan el compañero y el minuto POR SEPARADO. Antes iban
+        // pegados en una sola cadena ("LOLO 30'"), y con eso no se podía componer
+        // el formato que pide el autor —"▼ ENTRA: BRUNO (por LOLO) 30'"—, que
+        // necesita intercalar el nombre del propio jugador entre medias.
         const subOutMap = {}, subInMap = {};
         subs.forEach(s => {
             if (!s.out || !s.inp) return;
             const oa = s.out.playerAlias  || ('#' + s.out.playerNumber);
             const ia = s.inp.playerAlias  || ('#' + s.inp.playerNumber);
-            const minStr = Math.floor(s.min) + "'";
             // esc(): estos nombres vienen del alias que teclea el entrenador y
             // acaban dentro de un <text> del SVG.
-            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, name: `${esc(ia.substring(0, 9))} ${minStr}` });
-            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, name: `${esc(oa.substring(0, 9))} ${minStr}` });
+            (subOutMap[oa] = subOutMap[oa] || []).push({ timeFrac: s.min, pareja: esc(ia.substring(0, 10)), min: Math.floor(s.min) });
+            (subInMap[ia]  = subInMap[ia]  || []).push({ timeFrac: s.min, pareja: esc(oa.substring(0, 10)), min: Math.floor(s.min) });
         });
         const findNear = (map, alias, t) => {
             const arr = map[alias];
             if (!arr) return null;
-            const hit = arr.find(e => Math.abs(e.timeFrac - t) <= 0.12);
-            return hit ? hit.name : null;
+            return arr.find(e => Math.abs(e.timeFrac - t) <= 0.12) || null;
         };
 
         const W = 500;
@@ -449,8 +521,20 @@ const _RP = (() => {
             items.slice().sort((a, b) => a.x - b.x).forEach(it => {
                 const fs = it.fs || 7;
                 const w  = it.txt.length * fs * 0.53 + 4;
-                const x1 = it.anchor === 'end' ? it.x - w : (it.anchor === 'middle' ? it.x - w / 2 : it.x);
+                let x1 = it.anchor === 'end' ? it.x - w : (it.anchor === 'middle' ? it.x - w / 2 : it.x);
+                // v426: ACOTAR AL ANCHO DE LA FILA. Con las etiquetas largas que
+                // pide el autor ("▼ ENTRA: X (por Y) 30'"), un cambio en el
+                // minuto 5 o en el 85 se salía del SVG. El <svg> lleva
+                // overflow:visible, así que no se recortaba: se derramaba sobre
+                // la fila de al lado y se leía como un solapamiento más.
+                if (x1 + w > W) x1 = W - w;
+                if (x1 < 0)     x1 = 0;
                 const x2 = x1 + w;
+                // Se devuelve la x YA CORREGIDA para dibujar, siempre anclada a
+                // la izquierda: así la caja que se reparte en carriles y la que
+                // se pinta son la misma. Si se repartiera una y se pintase otra,
+                // el reparto no serviría de nada.
+                it.xDibujo = x1;
                 let lane = 0;
                 while (lanes[lane] && lanes[lane].some(r => x1 < r[1] && r[0] < x2)) lane++;
                 (lanes[lane] = lanes[lane] || []).push([x1, x2]);
@@ -475,11 +559,20 @@ const _RP = (() => {
             const aliasKey = p.playerAlias || ('#' + num);
             const periods  = p._ivs || [];
 
-            // ── Etiquetas de cambio: UNA por transición, y nombra AL OTRO ──
-            //  🔑 Antes se pintaban DOS textos en cada extremo de barra: el
-            //  nombre del propio jugador y el de su pareja de cambio. El propio
-            //  nombre es redundante —la fila ya es suya— y duplicar etiquetas
-            //  era justo lo que las amontonaba con cambios en bloque.
+            // ── Etiquetas de cambio: UNA por transición, con la pareja EXPLÍCITA ──
+            //  🔑 v426 · FORMATO PEDIDO POR EL AUTOR:
+            //      ▼ ENTRA: [Nombre] (por [quien sale]) [Min]'
+            //      ▲ SALE:  [Nombre] (entra [quien entra]) [Min]'
+            //  Hasta v425 la etiqueta sólo llevaba el nombre del COMPAÑERO, con
+            //  el argumento de que el propio nombre es redundante porque la fila
+            //  ya es suya. El autor prefiere el emparejamiento explícito, aunque
+            //  se repita el nombre: en el informe impreso y en el colectivo la
+            //  fila no siempre se lee junto a su etiqueta.
+            //  ⚠️ CONSECUENCIA ASUMIDA: la etiqueta pasa de ~8 a ~30 caracteres,
+            //  así que en cambios en bloque hará falta más de un carril y las
+            //  filas crecerán a lo alto. Es exactamente para eso que existe
+            //  asignarCarriles, y el punto 3 del encargo lo pide expresamente.
+            //
             //  ⚠️ CONVENCIÓN DE FLECHAS UNIFICADA (v424, 2026-08-02):
             //      ▼ VERDE = ENTRA        ▲ ROJO = SALE
             //  Hasta v423 este cronograma usaba la convención CONTRARIA (▲ verde
@@ -490,18 +583,26 @@ const _RP = (() => {
             //  flecha. La fuente única de la convención está en
             //  js/match/events/player-actions.js; si se cambia, hay que tocar
             //  también individual-reports.js y collective-report.js.
+            //
+            //  "(sin pareja)" cuando el emparejado no encuentra relevo: pasa de
+            //  verdad —una expulsión deja al equipo con uno menos y nadie entra—
+            //  y decirlo es más honrado que dejar el nombre suelto, que es justo
+            //  lo que el autor pide evitar ("no pueden quedar nombres huérfanos").
+            const yo = esc((p.playerAlias || ('#' + num)).substring(0, 10));
             const arriba = [];   // salidas  (rojas ▲), sobre la barra
             const abajo  = [];   // entradas (verdes ▼), bajo la barra
             periods.forEach(([a, b]) => {
                 if (a > 0.15) {
-                    const outName = findNear(subInMap, aliasKey, a); // a quién sustituye
+                    const par = findNear(subInMap, aliasKey, a);   // a quién sustituye
+                    const min = par ? par.min : Math.floor(a);
                     abajo.push({ x: a * sc + 3, anchor: 'start', color: '#3fb950',
-                                 txt: '▼ ' + (outName || (Math.floor(a) + "'")) });
+                                 txt: `▼ ENTRA: ${yo} (${par ? 'por ' + par.pareja : 'sin pareja'}) ${min}'` });
                 }
                 if (b < totMin - 0.3) {
-                    const inpName = findNear(subOutMap, aliasKey, b); // quién entra por él
+                    const par = findNear(subOutMap, aliasKey, b);  // quién entra por él
+                    const min = par ? par.min : Math.floor(b);
                     arriba.push({ x: b * sc - 3, anchor: 'end', color: '#ff5858',
-                                  txt: (inpName || (Math.floor(b) + "'")) + ' ▲' });
+                                  txt: `▲ SALE: ${yo} (${par ? 'entra ' + par.pareja : 'sin pareja'}) ${min}'` });
                 }
             });
             // ── 🔑 v425 · LAS HORAS DE LOS EVENTOS ENTRAN EN EL MISMO REPARTO ──
@@ -548,9 +649,13 @@ const _RP = (() => {
             // ── SVG por jugador ─────────────────────────────────────────
             let svg = `<svg viewBox="0 0 ${W} ${Hrow}" width="100%" style="display:block;overflow:visible;">`;
 
-            // Fondo gris (banquillo completo)
+            // Fondo del BANQUILLO. v426: gris neutro de verdad y visible.
+            // Antes era blanco al 5% sobre fondo oscuro: se leía como "vacío",
+            // no como "banquillo", y en el informe impreso (fondo claro)
+            // desaparecía del todo. Ahora es el gris de la paleta, con
+            // suficiente contraste para distinguirse del azul de "en campo".
             svg += `<rect x="0" y="${TRACK_Y}" width="${W}" height="${TRACK_H}" rx="4"
-                fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.07)" stroke-width="0.5"/>`;
+                fill="rgba(139,148,158,0.22)" stroke="rgba(139,148,158,0.38)" stroke-width="0.6"/>`;
 
             // Calcular huecos (banquillo) y etiquetarlos
             const gaps = [];
@@ -566,7 +671,7 @@ const _RP = (() => {
                 if (gW > 30) {
                     const cx = (ga + (gb - ga)/2) * sc;
                     svg += `<text x="${cx.toFixed(1)}" y="${TRACK_Y + TRACK_H/2 + 3.5}"
-                        text-anchor="middle" font-size="6" fill="rgba(255,255,255,0.18)"
+                        text-anchor="middle" font-size="6" fill="rgba(230,237,243,0.55)"
                         font-weight="700" letter-spacing="0.8">BANQUILLO</text>`;
                 }
             });
@@ -590,15 +695,20 @@ const _RP = (() => {
             // Etiquetas ya repartidas en carriles (ver asignarCarriles).
             // v425: `arriba` incluye ahora también las horas de los eventos, con
             // su propio tamaño de fuente y sin negrita (l.fs las distingue).
+            // v426: se pinta en `xDibujo` —la x YA ACOTADA al ancho de la fila
+            // por asignarCarriles— y siempre con anchor "start", que es la caja
+            // que ese reparto midió. Pintar en `l.x` con el anchor original
+            // dejaría el texto en un sitio distinto del que se repartió, y el
+            // reparto de carriles no serviría para nada.
             arriba.forEach(l => {
                 const y = TRACK_Y - 7 - l.lane * LANE_H;
                 const fs = l.fs || 7;
                 const peso = l.fs ? '400' : '700';
-                svg += `<text x="${l.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${l.anchor}" font-size="${fs}" fill="${l.color}" font-weight="${peso}">${l.txt}</text>`;
+                svg += `<text x="${(l.xDibujo != null ? l.xDibujo : l.x).toFixed(1)}" y="${y.toFixed(1)}" text-anchor="start" font-size="${fs}" fill="${l.color}" font-weight="${peso}">${l.txt}</text>`;
             });
             abajo.forEach(l => {
                 const y = TRACK_Y + TRACK_H + 11 + l.lane * LANE_H;
-                svg += `<text x="${l.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${l.anchor}" font-size="7" fill="${l.color}" font-weight="700">${l.txt}</text>`;
+                svg += `<text x="${(l.xDibujo != null ? l.xDibujo : l.x).toFixed(1)}" y="${y.toFixed(1)}" text-anchor="start" font-size="7" fill="${l.color}" font-weight="700">${l.txt}</text>`;
             });
 
             // Ticks de tiempo
