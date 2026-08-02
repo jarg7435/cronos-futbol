@@ -23,5 +23,18 @@ html = html.replace(re, (_full, pre, path, _old, post) => {
   return `${pre}${path}?v=${VERSION}${post}`;
 });
 
+// ⚠️ LA HOJA DE ESTILOS TAMBIEN. En firebase.json, **/*.css se sirve con
+// "Cache-Control: public, max-age=86400": el navegador se queda con style.css
+// DURANTE 24 HORAS. Sin este marcador, un despliegue que solo cambie CSS es
+// invisible para quien ya haya entrado, y ni el service worker lo salva (es
+// network-first, pero su fetch tambien pasa por la cache HTTP del navegador).
+// Se descubrio en v422, el primer despliegue solo-CSS del proyecto.
+const reCss = /(<link\b[^>]*\bhref=")(style\.css)(\?v=[^"]*)?(")/g;
+let countCss = 0;
+html = html.replace(reCss, (_full, pre, path, _old, post) => {
+  countCss++;
+  return `${pre}${path}?v=${VERSION}${post}`;
+});
+
 fs.writeFileSync(file, html);
-console.log(`cache-bust: ${count} scripts -> ?v=${VERSION} en ${file}`);
+console.log(`cache-bust: ${count} scripts + ${countCss} hoja(s) de estilo -> ?v=${VERSION} en ${file}`);
