@@ -1328,6 +1328,19 @@ window._openCoachCommsMenu = function() {
 // PARTIDOS EN VIVO — Panel para ver partidos del club en directo
 // ════════════════════════════════════════════════════════════════════
 window._cronosOpenLiveMatchesPanel = async function() {
+    // 🔑 v425 — ESTA PANTALLA NO SE REGISTRABA EN LA PILA DE NAVEGACIÓN.
+    // Es la única de las que pintan sobre #setup-modal que se lo saltaba, y su
+    // pie llama a navBack(). Como nunca llegó a estar en la pila, ese navBack()
+    // desapilaba la pantalla que la había ABIERTO y repintaba la anterior a
+    // ésa: se volvía un nivel de más, a una pantalla por la que el usuario no
+    // había pasado. Es exactamente el fallo que el módulo nav-stack vino a
+    // eliminar, y su cabecera lo advierte: una pantalla sin registrar deja la
+    // pila describiendo algo que ya no está en el DOM.
+    //
+    // Va ANTES del primer await (invariante de la ronda 3 del módulo): después
+    // del await, navBack podría haber corrido ya con la pila vieja.
+    if (typeof navScreen === 'function') navScreen('_cronosOpenLiveMatchesPanel');
+
     const me = window._cronosCurrentUser;
     if (!me) return;
 

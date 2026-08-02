@@ -181,9 +181,12 @@ console.log('\n── PARTE 3 · un cambio, un evento ──');
        !/_registerMatchEvent\('sub/.test(r) &&
        /handleSmartSwap\(outPlayer, inPlayer, forcedSubId\)/.test(r),
        (r.match(/_register[^\n]*/) || ['(no emite: correcto)'])[0]);
+    // v425: las dos mitades siguen compartiendo subId, pero ahora cada llamada
+    // lleva ADEMÁS el estado previo del jugador (3er argumento), para que
+    // logMovement pueda descartar un movimiento que no cambia nada.
     ok('3e-bis · 🔑 y handleSmartSwap registra las dos mitades con el MISMO subId',
-       /const subId = forcedSubId \|\| Date\.now\(\);[\s\S]{0,160}?logMovement\(dragged, subId\);[\s\S]{0,80}?logMovement\(target,  subId\);/.test(sinCom(DRAG)),
-       (sinCom(DRAG).match(/const subId = forcedSubId[\s\S]{0,200}/) || ['(no aparece)'])[0]);
+       /const subId = forcedSubId \|\| Date\.now\(\);[\s\S]{0,200}?logMovement\(dragged, subId, [^)]+\);[\s\S]{0,120}?logMovement\(target,  subId, [^)]+\);/.test(sinCom(DRAG)),
+       (sinCom(DRAG).match(/const subId = forcedSubId[\s\S]{0,240}/) || ['(no aparece)'])[0]);
     ok('3f · 🔑 y el arrastre empareja las dos mitades por subId',
        /window\._registerSubHalf\(player, subId, action\)/.test(d) &&
        !/_registerMatchEvent\('sub_in'/.test(d));

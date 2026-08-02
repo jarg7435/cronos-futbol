@@ -125,15 +125,24 @@ function dropToField(e) {
     } else {
         const currentFieldPlayers = players.filter(p => p.team === player.team && p.status === 'field');
         if (player.status === 'field' || currentFieldPlayers.length < fieldLimit) {
+            // 🔑 v425 — EL FALSO "ENTRA" DE LOS MOVIMIENTOS TÁCTICOS.
+            // Hay que quedarse con el estado ANTES de mutarlo: "entra" describe
+            // una TRANSICIÓN (banquillo → campo), no el estado final. Mover por
+            // el campo a alguien que ya estaba en el campo no es una entrada.
+            const estabaEnCampo = (player.status === 'field');
             resolveOverlaps(xPct, yPct, player.id);
             player.status = 'field';
             player.x = xPct;
             player.y = yPct;
             logTacticalMove(player, xPct, yPct);
-            if (isRunning) {
-                if (player.history.length === 0 || !player.history[player.history.length - 1].includes('Entra')) {
-                    logMovement(player);
-                }
+            // ⚠️ LO QUE HABÍA AQUÍ ERA UNA HEURÍSTICA SOBRE EL TEXTO DEL
+            // HISTORIAL: "registra si history está vacío o si la última línea no
+            // dice 'Entra'". Fallaba justo con los TITULARES —history vacío—, y
+            // por eso el autor veía "▼ ENTRA: BRUNO" al recolocar a un titular.
+            // Es otra vez la misma trampa: el TEXTO no puede ser el contrato de
+            // datos. Ahora se mira la transición real del estado.
+            if (isRunning && !estabaEnCampo) {
+                logMovement(player, undefined, 'bench');
             }
         }
     }
@@ -168,14 +177,19 @@ function handleBenchDrop(e, player) {
 
     if (player.cards === 'roja' && player.status === 'field') {
         player.status = 'bench'; player.x = 0; player.y = 0;
-        if (isRunning) logMovement(player);
+        if (isRunning) logMovement(player, undefined, 'field');
         renderPlayers(); sortBenchUI(player.team); return;
     }
 
     if (potentialTargets.length === 0) {
+        // v425: el `|| player.cards === 'roja'` deja entrar aquí a un expulsado
+        // que YA estaba en el banquillo; sin el estado previo, eso registraba un
+        // "Sale" de alguien que no estaba en el campo. Misma familia que el
+        // falso "Entra" de los movimientos tácticos.
+        const _prev = player.status;
         if (player.status !== 'bench' || player.cards === 'roja') {
             player.status = 'bench'; player.x = 0; player.y = 0;
-            if (isRunning) logMovement(player);
+            if (isRunning) logMovement(player, undefined, _prev);
         }
         renderPlayers(); return;
     }
@@ -223,7 +237,7 @@ function handleBenchDrop(e, player) {
             player.status = 'bench'; player.x = 0; player.y = 0;
             teamBench.push(player);
             teamBench.forEach((p, i) => p.benchOrder = i);
-            if (isRunning) logMovement(player);
+            if (isRunning) logMovement(player, undefined, 'field');
         }
     }
 
@@ -233,8 +247,9 @@ function handleBenchDrop(e, player) {
 function handleSmartSwap(dragged, target, forcedSubId) {
     if (dragged.cards === 'roja') {
         if (target.status === 'bench') {
+            const _prevDrag = dragged.status;   // v425: no registrar si ya estaba en la banca
             dragged.status = 'bench'; dragged.x = 0; dragged.y = 0;
-            if (isRunning) logMovement(dragged, forcedSubId);
+            if (isRunning) logMovement(dragged, forcedSubId, _prevDrag);
             renderPlayers(); sortBenchUI(dragged.team); return;
         } else {
             alert("Un jugador expulsado no puede volver al campo."); return;
@@ -265,15 +280,42 @@ function handleSmartSwap(dragged, target, forcedSubId) {
     // v240: SIEMPRE registrar el cambio, no solo si isRunning.
     // Antes, si el partido estaba pausado o en descanso, los cambios no se
     // registraban y el historial se perdía al salir y volver a entrar.
+    //
+    // 🔑 v425 — PERO SÓLO SI ES UNA SUSTITUCIÓN DE VERDAD.
+    // Intercambiar dos jugadores que YA ESTÁN LOS DOS EN EL CAMPO es una
+    // permuta de posiciones, no un cambio: nadie entra y nadie sale. Como
+    // logMovement deduce la acción del estado FINAL, y el estado final de los
+    // dos sigue siendo 'field', registraba DOS "Entra" falsos — uno por
+    // jugador. Ése es el segundo origen del "▼ ENTRA" que veía el autor, y
+    // además ensuciaba el historial del que sale el cronograma de informes
+    // (las cadenas se convierten en sub_in/sub_out en _parseHistoryForFirestore).
+    // El caso banquillo↔banquillo (reordenar la banca) tampoco es un cambio.
     {
-        const subId = forcedSubId || Date.now();
-        logMovement(dragged, subId);
-        logMovement(target,  subId);
+        const permutaEnCampo   = (oldDraggedStatus === 'field'  && dragged.status === 'field');
+        const permutaEnBanca   = (oldDraggedStatus === 'bench'  && dragged.status === 'bench');
+        if (!permutaEnCampo && !permutaEnBanca) {
+            const subId = forcedSubId || Date.now();
+            logMovement(dragged, subId, oldDraggedStatus);
+            logMovement(target,  subId, dragged.status);   // el target recibió el estado viejo del dragged
+        }
     }
     if (dragged.status === 'bench' || target.status === 'bench') sortBenchUI(dragged.team);
 }
 
-function logMovement(player, subId) {
+// `prevStatus`: el estado del jugador ANTES del movimiento que se está
+// registrando. Opcional por compatibilidad con las llamadas que no lo pasan.
+//
+// 🔑 v425 — POR QUÉ HACE FALTA. "Entra"/"Sale" describen una TRANSICIÓN, pero
+// esta función sólo veía el estado FINAL (`player.status === 'field' ?
+// 'Entra' : 'Sale'`). Cualquier movimiento que no cambiara el estado —recolocar
+// a un titular por el campo, permutar dos jugadores del campo— se registraba
+// igualmente como "Entra". Y esa cadena falsa no se queda en el visor: la
+// convierte en un sub_in falso _parseHistoryForFirestore, y con él el
+// cronograma de informes cree que el jugador entró al campo en ese minuto.
+// Cuando el llamante sabe de dónde venía el jugador, aquí se descarta el
+// no-movimiento en vez de confiar en que cada sitio se acuerde de filtrar.
+function logMovement(player, subId, prevStatus) {
+    if (prevStatus !== undefined && prevStatus === player.status) return;
     const elapsed = matchPhase === '2nd_half' ? (masterTimeH1 + masterTimeH2) : masterTimeH1;
     const timestamp = formatTime(elapsed);
     const halfLabel = matchPhase === '1st_half' ? '1ªP' : matchPhase === '2nd_half' ? '2ªP' : 'DESC';

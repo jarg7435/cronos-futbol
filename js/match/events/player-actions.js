@@ -492,7 +492,7 @@ function assignCard(type) {
         const limit = currentMode === 'f7' ? 3 : 5;
         if (p.status === 'field') {
             p.status = 'bench'; p.x = 0; p.y = 0;
-            if (isRunning) logMovement(p);
+            if (isRunning) logMovement(p, undefined, 'field');   // v425: transicion real campo->banquillo
         }
 
         const teamReds = players.filter(x => x.team === p.team && x.cards === 'roja').length;
@@ -537,7 +537,7 @@ function assignCard(type) {
 
             if (p.status === 'field') {
                 p.status = 'bench'; p.x = 0; p.y = 0;
-                if (isRunning) logMovement(p);
+                if (isRunning) logMovement(p, undefined, 'field');   // v425: transicion real campo->banquillo
             }
 
             const limit2 = currentMode === 'f7' ? 3 : 5;

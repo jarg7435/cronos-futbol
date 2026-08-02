@@ -127,7 +127,21 @@ const _RP = (() => {
         }
         
         const ivs = [];
-        let on = (player.status === 'field' || player.initialStatus === 'field' || player.titular === true) || hist[0].type === 'sub_out';
+        // 🔑 v425 — LA BARRA MOSTRABA EL PARTIDO ENTERO A LOS SUPLENTES.
+        // La semilla era `player.status === 'field' || ...`, pero `player.status`
+        // es el estado AL TERMINAR el partido, no al empezarlo. Un suplente que
+        // entró en el minuto 30 y acabó jugando tiene status 'field', así que
+        // `on` arrancaba en true con at=0; su sub_in del minuto 30 ya no cambiaba
+        // nada (`if (type==='sub_in' && !on)`) y al cerrar se empujaba
+        // [0, totMin]: la barra decía que había jugado los 90.
+        //
+        // Se deduce del PRIMER suceso, que es información airtight y además
+        // repara los informes ya guardados: si tu primera transición registrada
+        // es una SALIDA, forzosamente estabas en el campo; si es una ENTRADA,
+        // forzosamente estabas fuera. Los marcadores explícitos (initialStatus /
+        // titular) sólo se consultan si no hay historial, y de eso se encarga la
+        // rama de arriba (`if (!hist.length)`).
+        let on = hist[0].type === 'sub_out';
         let at = on ? 0 : null;
         
         hist.forEach(ev => {
@@ -422,11 +436,20 @@ const _RP = (() => {
         //  ≈ 3.7 px por carácter) y cada etiqueta baja al primer carril libre.
         //  Devuelve el número de carriles usados, que es lo que define la altura
         //  de la fila.
+        // v425: el ancho se estima con el tamaño de fuente REAL de cada etiqueta
+        // (≈0.53 px por carácter y punto de fuente), no con un 3.7 fijo. Las
+        // horas de los eventos se pintan a font-size 5.5 y las de cambio a 7:
+        // con un único factor, o se sobreestimaba unas o se subestimaba otras, y
+        // subestimar es lo que deja dos textos encima.
         const asignarCarriles = (items) => {
             const lanes = [];   // lane -> [[x1,x2], …]
-            items.forEach(it => {
-                const w  = it.txt.length * 3.7 + 4;
-                const x1 = it.anchor === 'end' ? it.x - w : it.x;
+            // De izquierda a derecha: con el reparto voraz, ir en orden hace que
+            // las etiquetas cercanas caigan en carriles consecutivos en vez de
+            // saltar, que es lo que se lee bien.
+            items.slice().sort((a, b) => a.x - b.x).forEach(it => {
+                const fs = it.fs || 7;
+                const w  = it.txt.length * fs * 0.53 + 4;
+                const x1 = it.anchor === 'end' ? it.x - w : (it.anchor === 'middle' ? it.x - w / 2 : it.x);
                 const x2 = x1 + w;
                 let lane = 0;
                 while (lanes[lane] && lanes[lane].some(r => x1 < r[1] && r[0] < x2)) lane++;
@@ -481,14 +504,45 @@ const _RP = (() => {
                                   txt: (inpName || (Math.floor(b) + "'")) + ' ▲' });
                 }
             });
+            // ── 🔑 v425 · LAS HORAS DE LOS EVENTOS ENTRAN EN EL MISMO REPARTO ──
+            //  Aquí estaba la colisión que veía el autor. Las etiquetas de cambio
+            //  se pintaban en TRACK_Y-7 y las horas de los goles/tarjetas en
+            //  TRACK_Y-8: A UN PÍXEL. asignarCarriles sólo desconflictaba las
+            //  etiquetas ENTRE SÍ y no sabía siquiera que las horas existían, así
+            //  que un gol cerca de un cambio se pisaba con él sin remedio.
+            //  Ahora los dos tipos de texto van a la MISMA repartición, y por eso
+            //  cada elemento lleva su propio tamaño de fuente.
+            const eventos = (p.history || [])
+                .filter(e => ['goal','yellow','red','injury'].includes(e.type))
+                .map(ev => {
+                    const ef = (ev.minute||0) + (ev.second||0)/60;
+                    return {
+                        tipo: ev.type,
+                        ex: ef * sc,
+                        ts: ev.timeStr || `${ev.minute||0}'${ev.second>0?String(ev.second).padStart(2,'0')+'"':''}`
+                    };
+                });
+            eventos.forEach(e => {
+                arriba.push({ x: e.ex, anchor: 'middle', color: 'rgba(255,255,255,0.38)',
+                              txt: e.ts, fs: 5.5 });
+            });
+
             const nArriba = asignarCarriles(arriba);
             const nAbajo  = asignarCarriles(abajo);
 
             // La fila crece según los carriles que hagan falta: así apilar
             // etiquetas nunca las saca de su fila ni las mete en la siguiente.
-            const TRACK_Y = 20 + Math.max(0, nArriba - 1) * LANE_H;
+            // Los ICONOS (balón, tarjeta, lesión) no se pueden repartir en
+            // carriles —tienen que quedar sobre su minuto exacto—, así que se
+            // reserva una banda para ellos POR ENCIMA de todos los carriles de
+            // texto. Sin esa reserva, con dos o más carriles el icono caía justo
+            // encima de la etiqueta más alta.
+            const ALTO_ICONOS = eventos.length ? 13 : 0;
+            const TRACK_Y = 20 + Math.max(0, nArriba - 1) * LANE_H + ALTO_ICONOS;
             const Hrow    = TRACK_Y + TRACK_H + 14 + Math.max(0, nAbajo - 1) * LANE_H + 12;
-            const EVT_Y   = Math.max(6, TRACK_Y - 10); // zona de eventos, sobre la barra
+            // Línea de base del carril más alto de texto.
+            const TOP_LBL_Y = TRACK_Y - 7 - Math.max(0, nArriba - 1) * LANE_H;
+            const EVT_Y   = Math.max(7, TOP_LBL_Y - 11); // iconos, por encima de todo el texto
             const LBL_Y   = Hrow - 3;                  // etiquetas de minutos
 
             // ── SVG por jugador ─────────────────────────────────────────
@@ -534,9 +588,13 @@ const _RP = (() => {
             });
 
             // Etiquetas ya repartidas en carriles (ver asignarCarriles).
+            // v425: `arriba` incluye ahora también las horas de los eventos, con
+            // su propio tamaño de fuente y sin negrita (l.fs las distingue).
             arriba.forEach(l => {
                 const y = TRACK_Y - 7 - l.lane * LANE_H;
-                svg += `<text x="${l.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${l.anchor}" font-size="7" fill="${l.color}" font-weight="700">${l.txt}</text>`;
+                const fs = l.fs || 7;
+                const peso = l.fs ? '400' : '700';
+                svg += `<text x="${l.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${l.anchor}" font-size="${fs}" fill="${l.color}" font-weight="${peso}">${l.txt}</text>`;
             });
             abajo.forEach(l => {
                 const y = TRACK_Y + TRACK_H + 11 + l.lane * LANE_H;
@@ -553,26 +611,23 @@ const _RP = (() => {
                     text-anchor="${mn===0?'start':mn===totMin?'end':'middle'}">${mn}'</text>`;
             });
 
-            // Eventos sobre la barra (goles, tarjetas, lesiones) con tiempo exacto
-            (p.history || [])
-                .filter(e => ['goal','yellow','red','injury'].includes(e.type))
-                .forEach(ev => {
-                    const ef = (ev.minute||0) + (ev.second||0)/60;
-                    const ex = ef * sc;
-                    const ts = ev.timeStr || `${ev.minute||0}'${ev.second>0?String(ev.second).padStart(2,'0')+'"':''}`;
-                    if (ev.type === 'goal') {
-                        svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="5.5" fill="white" stroke="#3fb950" stroke-width="1.5"/>`;
-                        svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="2.2" fill="#3fb950"/>`;
-                    } else if (ev.type === 'yellow') {
-                        svg += `<rect x="${(ex-3.5).toFixed(1)}" y="${EVT_Y-6}" width="7" height="10" rx="1.5" fill="#eab308"/>`;
-                    } else if (ev.type === 'red') {
-                        svg += `<rect x="${(ex-3.5).toFixed(1)}" y="${EVT_Y-6}" width="7" height="10" rx="1.5" fill="#ef4444"/>`;
-                    } else if (ev.type === 'injury') {
-                        svg += `<polygon points="${ex},${EVT_Y-7} ${(ex-5)},${EVT_Y+4} ${(ex+5)},${EVT_Y+4}" fill="#f97316"/>`;
-                    }
-                    svg += `<text x="${ex.toFixed(1)}" y="${TRACK_Y-8}"
-                        text-anchor="middle" font-size="5.5" fill="rgba(255,255,255,0.38)">${ts}</text>`;
-                });
+            // Iconos de evento (goles, tarjetas, lesiones) sobre su minuto exacto.
+            // v425: aquí ya SOLO va el icono. Su hora se pinta arriba, con el
+            // resto de etiquetas y repartida en carriles, porque dibujarla aquí a
+            // TRACK_Y-8 la ponía a un píxel de las etiquetas de cambio.
+            eventos.forEach(e => {
+                const ex = e.ex;
+                if (e.tipo === 'goal') {
+                    svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="5.5" fill="white" stroke="#3fb950" stroke-width="1.5"/>`;
+                    svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="2.2" fill="#3fb950"/>`;
+                } else if (e.tipo === 'yellow') {
+                    svg += `<rect x="${(ex-3.5).toFixed(1)}" y="${EVT_Y-6}" width="7" height="10" rx="1.5" fill="#eab308"/>`;
+                } else if (e.tipo === 'red') {
+                    svg += `<rect x="${(ex-3.5).toFixed(1)}" y="${EVT_Y-6}" width="7" height="10" rx="1.5" fill="#ef4444"/>`;
+                } else if (e.tipo === 'injury') {
+                    svg += `<polygon points="${ex},${EVT_Y-7} ${(ex-5)},${EVT_Y+4} ${(ex+5)},${EVT_Y+4}" fill="#f97316"/>`;
+                }
+            });
 
             svg += '</svg>';
 
