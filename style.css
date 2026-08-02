@@ -1455,7 +1455,13 @@ input, select {
     .um-sidebar #um-bulk-bar button { min-height: 38px; touch-action: manipulation; }
 }
 
-@media (max-width: 760px) {
+/* El corte es 950px por decisión del autor (2026-08-02): con 760px el iPad en
+   vertical (768-834px) se quedaba en dos columnas, y prefiere pantalla única
+   también ahí. 950 es además el punto de corte que ya usa el resto del
+   proyecto, así que la mensajería deja de tener uno propio. El iPad en
+   horizontal (1024px) y el iPad Pro 12.9" en vertical (1024px) siguen con las
+   dos columnas. */
+@media (max-width: 950px) {
     /* El panel en MODO MODAL medía 86vh + los 2rem de padding de .modal = se
        salía por abajo en móviles. dvh además absorbe la barra del navegador. */
     .modal-content.um-root {

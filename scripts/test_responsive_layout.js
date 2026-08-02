@@ -109,6 +109,18 @@ ok('1h · el split sigue teniendo el min-width:260px inline (es el que se anula)
 ok('1i · el CSS anula ese min-width con !important en la columna de contactos',
    /\.um-split\s*>\s*\.um-sidebar\s*\{[^}]*min-width:\s*0\s*!important/.test(cssLimpio));
 
+// 1.3b · EL PUNTO DE CORTE. Decisión del autor (2026-08-02): 950px, para que el
+//        iPad en VERTICAL (768-834px) también vaya a pantalla única. Con el 760
+//        de la primera versión se quedaba en dos columnas. Se fija aquí porque
+//        es un número que se cambia en un segundo y nadie recordaría por qué.
+//        Se busca la @media que ENVUELVE al intercambio, no una cualquiera:
+//        style.css tiene varias `max-width: 950px` y la primera no es esta.
+const iIntercambio = cssLimpio.indexOf('.um-split.um-showing-chat');
+const mediasPrevias = [...cssLimpio.slice(0, iIntercambio).matchAll(/@media\s*([^{]+)\{/g)];
+const mediaQueEnvuelve = mediasPrevias.length ? mediasPrevias[mediasPrevias.length - 1][1].trim() : '';
+ok('1i2 · el maestro-detalle vive en @media (max-width: 950px), no en 760',
+   /^\(max-width:\s*950px\)$/.test(mediaQueEnvuelve));
+
 // 1.4 · El intercambio propiamente dicho: las dos caras tienen que existir.
 ok('1j · con chat abierto se esconde la lista',
    /\.um-split\.um-showing-chat\s*>\s*\.um-sidebar\s*\{\s*display:\s*none\s*!important/.test(cssLimpio));

@@ -748,7 +748,7 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
         </div>
 
         <!-- Split View Layout -->
-        <!-- 📱 RESPONSIVE: en pantallas estrechas (<=760px) este split deja de ser
+        <!-- 📱 RESPONSIVE: en pantallas estrechas (<=950px) este split deja de ser
              de dos columnas y pasa a maestro-detalle: se ve la lista O el chat, y
              el intercambio lo hace la clase 'um-showing-chat' sobre este mismo
              contenedor (ver bloque "MENSAJERÍA RESPONSIVE" en style.css). Las
@@ -1752,7 +1752,7 @@ async function _selectUnifiedContact(uid) {
 
     // 📱 Maestro-detalle en móvil: al abrir un contacto se muestra el chat y se
     // esconde la lista. En pantallas anchas la clase no hace NADA (el CSS solo
-    // la mira dentro del @media <=760px), así que el split de dos columnas del
+    // la mira dentro del @media <=950px), así que el split de dos columnas del
     // PC/iPad no cambia ni un píxel.
     _umSetShowingChat(true);
 
