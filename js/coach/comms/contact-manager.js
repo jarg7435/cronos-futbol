@@ -348,21 +348,40 @@ async function openContactManager() {
                     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0.5rem;">
                         <table style="width:100%;min-width:580px;font-size:0.74rem;border-collapse:collapse;">
                             <thead>
+                                <!-- ══════════════════════════════════════════════════════
+                                     v430 · LAS 10 COLUMNAS DE "PADRES / TUTORES", en el
+                                     orden fijado por el autor. Ademas de reordenar, esto
+                                     ARREGLA UN DESCUADRE REAL Y PREEXISTENTE: la fila del
+                                     padre VINCULADO traia 12 celdas contra 11 cabeceras
+                                     (llevaba el dorsal Y el codigo en dos celdas, pero solo
+                                     habia una cabecera para las dos). Desde la 3a columna,
+                                     cada palomilla del padre vinculado quedaba bajo el
+                                     rotulo de la ANTERIOR: el entrenador creia marcar MSJ.
+                                     y estaba marcando ENTR. Los datos se guardaban bien
+                                     —el guardado busca por CLASE, no por posicion—, asi que
+                                     el fallo era puramente visual y por eso nunca dio error.
+                                     Ahora las tres formas de fila (cabecera, vinculado y
+                                     manual) tienen EXACTAMENTE 11 celdas: las 10 pedidas
+                                     mas la de acciones. Lo fija el guard con un recuento.
+                                     ⚠️ Al tocar esta tabla hay que cambiar LAS TRES a la
+                                     vez: vinculados y manuales comparten el mismo <tbody>.
+                                     ══════════════════════════════════════════════════════ -->
                                 <tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.1);">
-                                    <th style="padding:0.45rem;text-align:left;min-width:120px;">JUGADOR / NOMBRE</th>
-                                    <th style="padding:0.45rem;text-align:left;min-width:40px;">N°</th>
+                                    <th style="padding:0.45rem;text-align:left;min-width:130px;">FAMILIAR</th>
+                                    <th style="padding:0.45rem;text-align:left;min-width:120px;"
+                                        title="Codigo del jugador asociado a este familiar">CODIGO JUGADOR</th>
                                     <th style="padding:0.45rem;text-align:left;min-width:110px;">WHATSAPP</th>
                                     <th style="padding:0.45rem;text-align:left;min-width:130px;">EMAIL</th>
-                                    <th style="padding:0.45rem;text-align:center;" title="Convocatorias">CONV.</th>
-                                    <th style="padding:0.45rem;text-align:center;" title="Entrenamientos">ENTR.</th>
-                                    <th style="padding:0.45rem;text-align:center;" title="Recibe mensajes del entrenador">MSJ.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Recibir convocatorias">CONV.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Recibir entrenamientos">ENTR.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Recibir mensajes del club">MSJ.</th>
                                     <!-- v429 · Permiso de ENVÍO. Recibir y poder escribir son
                                          cosas distintas: TODOS los padres reciben siempre; poder
                                          escribir lo autoriza el entrenador uno a uno. -->
                                     <th style="padding:0.45rem;text-align:center;color:#3fb950;"
-                                        title="Permitir enviar mensajes. Si se desmarca, ese padre solo puede RECIBIR.">ENVIAR ✍️</th>
-                                    <th style="padding:0.45rem;text-align:center;" title="Informes">INF.</th>
-                                    <th style="padding:0.45rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
+                                        title="Permitir enviar mensajes al entrenador. Si se desmarca, ese padre solo puede RECIBIR.">ENVIAR ✍️</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Recibir los informes individuales del jugador">INF.</th>
+                                    <th style="padding:0.45rem;text-align:center;color:#ff5858;" title="Ver los partidos en vivo">EN VIVO 📡</th>
                                     <th style="padding:0.45rem;"></th>
                                 </tr>
                             </thead>
@@ -370,16 +389,34 @@ async function openContactManager() {
                                 ${links.sort((a,b) => (a.playerNumber||0)-(b.playerNumber||0)).map(link => `
                                 <tr class="parent-contact-row firestore-linked" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
                                     style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                    <td style="padding:0.45rem;font-weight:600;">
-                                        ${typeof escapeHtml==='function'?escapeHtml(link.playerAlias || link.playerName || 'Jugador'):link.playerAlias || link.playerName || 'Jugador'}
-                                        <span style="font-size:0.6rem;color:var(--text-muted);
-                                                     margin-left:3px;background:rgba(255,255,255,0.06);
-                                                     border-radius:3px;padding:1px 4px;">vinculado</span>
-                                    </td>
-                                    <td style="padding:0.45rem;font-weight:700;color:var(--primary);">#${typeof escapeAttr==='function'?escapeAttr(link.playerNumber):link.playerNumber}</td>
+                                    <!-- 1 · FAMILIAR. Antes esta celda mostraba el nombre del
+                                         JUGADOR, no el del familiar, aunque el vínculo ya
+                                         guardaba parentName: el dato estaba y no se pintaba.
+                                         Ahora es editable y se persiste, como el teléfono y el
+                                         email de al lado.
+                                         ⚠️ SIN BACKTICKS aquí dentro (ver la nota de la celda
+                                         de ENVIAR): cierran el template literal del innerHTML. -->
                                     <td style="padding:0.45rem;">
+                                        <input type="text" class="contact-parent-name" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
+                                            value="${typeof escapeAttr==='function'?escapeAttr(link.parentName||''):link.parentName||''}"
+                                            placeholder="Nombre del padre/madre"
+                                            style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);
+                                                   border:1px solid rgba(255,255,255,0.1);border-radius:6px;
+                                                   color:white;font-size:0.72rem;box-sizing:border-box;">
+                                    </td>
+                                    <!-- 2 · CÓDIGO DEL JUGADOR. Una sola celda con las tres
+                                         señas del vínculo —código de invitación, dorsal y alias—
+                                         para que de un vistazo se vea A QUÉ JUGADOR pertenece
+                                         este familiar. Antes iban en dos celdas y esa era la
+                                         causa del descuadre de la tabla. -->
+                                    <td style="padding:0.45rem;white-space:nowrap;">
                                         <span style="background:rgba(240,136,62,0.12);color:#f0883e;font-size:0.7rem;font-weight:700;padding:1px 6px;border-radius:4px;cursor:help;" title="Código que el padre introduce al registrarse">
                                             🔑 ${typeof escapeHtml==='function'?escapeHtml(link.inviteCode || ('J'+link.playerNumber)):link.inviteCode || ('J'+link.playerNumber)}
+                                        </span>
+                                        <span style="font-size:0.66rem;color:var(--text-muted);margin-left:4px;"
+                                            title="Jugador vinculado">
+                                            #${typeof escapeHtml==='function'?escapeHtml(String(link.playerNumber||'')):String(link.playerNumber||'')}
+                                            ${typeof escapeHtml==='function'?escapeHtml(link.playerAlias || link.playerName || 'Jugador'):link.playerAlias || link.playerName || 'Jugador'}
                                         </span>
                                     </td>
                                     <td style="padding:0.45rem;">
@@ -480,6 +517,7 @@ async function saveContactManagerData() {
         for (const input of parentInputs) {
             const linkId      = input.dataset.linkid;
             const phone       = input.value.trim().replace(/\s/g, '');
+            const nameEl      = document.querySelector(`.contact-parent-name[data-linkid="${linkId}"]`);
             const emailEl     = document.querySelector(`.contact-parent-email[data-linkid="${linkId}"]`);
             const cvEl        = document.querySelector(`.contact-cv[data-linkid="${linkId}"]`);
             const trEl        = document.querySelector(`.contact-tr[data-linkid="${linkId}"]`);
@@ -496,6 +534,15 @@ async function saveContactManagerData() {
             const updateData = {
                 parentPhone:        phone,
                 parentEmail:        emailEl   ? emailEl.value.trim()   : undefined,
+                // v430 · nombre del familiar. `parentName` YA existía en el
+                // vínculo —lo escriben el alta del padre y el panel del Admin de
+                // Club—, pero esta tabla no lo pintaba: la primera columna
+                // mostraba el nombre del JUGADOR. Ahora es editable aquí.
+                // ⚠️ `undefined` cuando la casilla no está en el DOM, igual que
+                // parentEmail: Firestore IGNORA los campos undefined en un
+                // updateDoc, así que un formulario a medio montar no borra el
+                // nombre que ya hubiera guardado. Con '' sí lo borraría.
+                parentName:         nameEl    ? nameEl.value.trim()    : undefined,
                 canWatchLive:       liveEl    ? liveEl.checked          : false,
                 canReceiveReports:  rptEl     ? rptEl.checked           : false,
                 canReceiveConv:     cvEl      ? cvEl.checked            : true,
