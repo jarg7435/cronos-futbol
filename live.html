@@ -379,6 +379,65 @@
             transition: border-color 0.2s;
         }
         .history-card:hover { border-color: var(--primary); }
+
+        /* ── v432 · Mini-feed de sucesos dentro de la tarjeta ──────────
+           Bloque compacto entre el marcador y la fila de acciones. Altura
+           ACOTADA con max-height + overflow: son siempre 3 filas, pero un
+           nombre muy largo no debe poder estirar la tarjeta ni empujar el
+           boton VER PARTIDO fuera de sitio. */
+        .live-feed {
+            background: rgba(0,0,0,0.22);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 8px;
+            padding: 0.5rem 0.6rem;
+            margin-bottom: 0.8rem;
+            max-height: 118px;
+            overflow: hidden;
+        }
+        .live-feed-head {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 0.4rem;
+            font-size: 0.6rem; font-weight: 800; letter-spacing: 0.8px;
+            color: var(--muted);
+            margin-bottom: 0.35rem;
+        }
+        .live-feed-fase {
+            font-size: 0.58rem; font-weight: 800; letter-spacing: 0.4px;
+            color: #f0883e;
+            background: rgba(240,136,62,0.12);
+            border: 1px solid rgba(240,136,62,0.3);
+            border-radius: 4px; padding: 1px 5px;
+            white-space: nowrap; flex-shrink: 0;
+        }
+        .live-feed-fila {
+            display: flex; align-items: baseline; gap: 0.4rem;
+            font-size: 0.73rem; line-height: 1.55;
+            /* Una sola linea por suceso: el nombre largo se recorta con
+               puntos suspensivos en vez de saltar de linea y descuadrar. */
+            white-space: nowrap; overflow: hidden;
+        }
+        .live-feed-fila .lf-min {
+            flex-shrink: 0; min-width: 26px; text-align: right;
+            font-weight: 800; font-size: 0.66rem; color: var(--primary);
+            font-variant-numeric: tabular-nums;
+        }
+        .live-feed-fila .lf-ico { flex-shrink: 0; font-size: 0.8rem; }
+        .live-feed-fila .lf-txt {
+            color: var(--text);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            min-width: 0;
+        }
+        .live-feed-vacio {
+            font-size: 0.7rem; color: var(--muted); font-style: italic;
+            padding: 0.15rem 0;
+        }
+        /* En movil se aprieta un poco: la tarjeta ya va justa de alto. */
+        @media (max-width: 600px) {
+            .live-feed { padding: 0.42rem 0.5rem; max-height: 104px; }
+            .live-feed-fila { font-size: 0.68rem; line-height: 1.45; }
+            .live-feed-fila .lf-min { min-width: 23px; font-size: 0.61rem; }
+            .live-feed-head { font-size: 0.55rem; }
+        }
         .history-card-top {
             display: flex; justify-content: space-between;
             align-items: center; margin-bottom: 0.3rem;
@@ -3303,6 +3362,113 @@ function renderBench(data) {
     });
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  v432 · MINI-FEED DE SUCESOS EN LA TARJETA DE CADA PARTIDO
+// ════════════════════════════════════════════════════════════════════
+//  Para que el Director Deportivo vea de un vistazo qué está pasando en cada
+//  campo sin entrar en "VER PARTIDO".
+//
+//  🔑 EL TIPO ES EL CONTRATO, NO EL TEXTO NI EL ICONO. Cada evento guardado
+//  lleva `icon` y `text` ya formateados (js/match/events/player-actions.js),
+//  pero son PRESENTACIÓN: han cambiado varias veces —los glifos de las
+//  sustituciones tres veces— y una repetición se quedó sin cambios por
+//  depender de ese texto (v418-v421). Aquí el icono se deriva de `type` y los
+//  nombres se sacan de los campos ESTRUCTURADOS (subOutName/subInName/
+//  playerName) siempre que existan.
+//
+//  ⚠️ Goles, tarjetas y lesiones NO llevan campo estructurado con el nombre:
+//  `_registerMatchEvent('goal', 'GOL · ' + p.name, '⚽')` se emite sin `extra`.
+//  Para esos, el texto es la única fuente y se recorta por el separador ' · '.
+//  Si el recorte falla se muestra el texto entero: peor estética, nunca una
+//  línea vacía.
+const _LIVE_FEED_ICONOS = {
+    goal:    '⚽',
+    yellow:  '🟨',
+    red:     '🟥',
+    sub:     '🔄',
+    sub_in:  '🔄',
+    sub_out: '🔄',
+    injury:  '🚑'
+};
+
+// "1T 10:00" / "2T 50:00" -> "10'" / "50'".
+// El minuto de matchTime ya viene ACUMULADO desde el principio del partido,
+// también en la 2ª parte: el prefijo 1T/2T es solo una etiqueta, no un origen
+// de coordenadas (documentado en replay-player.js, defecto B de v394). Así que
+// se muestra tal cual, sin sumarle la duración de la primera parte.
+function _liveFeedMinuto(ev) {
+    const m = typeof ev.matchTime === 'string' ? ev.matchTime.match(/(\d+):(\d+)/) : null;
+    if (m) return parseInt(m[1], 10) + "'";
+    return '';
+}
+
+// Descripción corta y legible de un evento.
+function _liveFeedTexto(ev) {
+    const trasSeparador = (t) => {
+        const s = String(t || '');
+        const i = s.indexOf(' · ');
+        return i === -1 ? s : s.slice(i + 3).trim();
+    };
+    if (ev.type === 'sub' && ev.subOutName && ev.subInName) {
+        return 'Sale ' + ev.subOutName + ' · Entra ' + ev.subInName;
+    }
+    if (ev.type === 'sub_in')  return 'Entra ' + (ev.playerName || trasSeparador(ev.text));
+    if (ev.type === 'sub_out') return 'Sale '  + (ev.playerName || trasSeparador(ev.text));
+    if (ev.type === 'goal' || ev.type === 'yellow' || ev.type === 'red' || ev.type === 'injury') {
+        return trasSeparador(ev.text) || String(ev.text || '');
+    }
+    return String(ev.text || '');
+}
+
+// Los N sucesos más recientes que merece la pena enseñar.
+function _liveFeedItems(m, max) {
+    const eventos = Array.isArray(m && m.events) ? m.events : [];
+    // `tactical_move` se descarta SIEMPRE: su `text` es un JSON con las
+    // coordenadas del arrastre, no una frase. Colarlo llenaría el feed de
+    // ruido ilegible y taparía los goles, que es justo lo que se quiere ver.
+    const utiles = eventos.filter(e => e && e.type && e.type !== 'tactical_move');
+    // Orden por createdAt DESCENDENTE: "lo último que ha pasado". No se usa el
+    // orden del array porque un evento retroactivo se añade AHORA con un minuto
+    // ANTIGUO, y por minuto quedaría enterrado justo cuando acaba de anotarse.
+    // Sin createdAt (eventos viejos) se conserva la posición original.
+    return utiles
+        .map((e, i) => ({ e, i }))
+        .sort((a, b) => ((b.e.createdAt || 0) - (a.e.createdAt || 0)) || (b.i - a.i))
+        .slice(0, max || 3)
+        .map(x => x.e);
+}
+
+function _liveFeedHtml(m) {
+    const items = _liveFeedItems(m, 3);
+    const fase = m.phase === 'break' || m.phase === 'halftime' ? 'DESCANSO'
+               : m.phase === 'finished' ? 'FINALIZADO'
+               : m.phase === '2nd_half' ? '2ª PARTE'
+               : '1ª PARTE';
+    const chip = '<span class="live-feed-fase">⏱️ ' + fase + '</span>';
+
+    if (!items.length) {
+        return '<div class="live-feed">' +
+               '<div class="live-feed-head"><span>ÚLTIMOS SUCESOS</span>' + chip + '</div>' +
+               '<div class="live-feed-vacio">Sin sucesos todavía</div>' +
+               '</div>';
+    }
+
+    const filas = items.map(ev => {
+        const icono = _LIVE_FEED_ICONOS[ev.type] || '•';
+        const min   = _liveFeedMinuto(ev);
+        return '<div class="live-feed-fila">' +
+               '<span class="lf-min">' + escapeHtml(min) + '</span>' +
+               '<span class="lf-ico">' + icono + '</span>' +
+               '<span class="lf-txt">' + escapeHtml(_liveFeedTexto(ev)) + '</span>' +
+               '</div>';
+    }).join('');
+
+    return '<div class="live-feed">' +
+           '<div class="live-feed-head"><span>ÚLTIMOS SUCESOS</span>' + chip + '</div>' +
+           filas +
+           '</div>';
+}
+
 // ── Show history ───────────────────────────────────────────────────
 // ── Pantalla principal: partidos EN VIVO ──────────────────────────
 let _liveListUnsubscribe = null;
@@ -3502,6 +3668,11 @@ window.showLiveNow = async function() {
                         </div>
                     </div>
                 </div>
+
+                <!-- v432 · Mini-feed de los ultimos sucesos del partido.
+                     Va aqui, entre el marcador y la fila de acciones, para que
+                     no empuje ni descuadre el boton VER PARTIDO. -->
+                ${_liveFeedHtml(m)}
 
                 <!-- Entrenador + botones -->
                 <div style="display:flex;justify-content:space-between;
@@ -4239,7 +4410,7 @@ setInterval(function() {
     #sound-activate-banner { display: none !important; }
 }
 </style>
-<script src="js/match/replay/replay-player.js?v=v431"></script>
-<script src="js/match/events/retroactive-modal.js?v=v431"></script>
+<script src="js/match/replay/replay-player.js?v=v432"></script>
+<script src="js/match/events/retroactive-modal.js?v=v432"></script>
 </body>
 </html>
