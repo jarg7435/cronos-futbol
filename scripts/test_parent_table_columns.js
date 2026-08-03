@@ -38,6 +38,15 @@ const ok = (name, cond, extra) => {
 
 const SRC = fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'contact-manager.js'), 'utf8');
 
+// ⚠️ LAS ASERCIONES NEGATIVAS MIRAN EL CODIGO, NO LOS COMENTARIOS.
+// Reincidencia numero tres en este proyecto: la 4c dio rojo con el codigo YA
+// corregido porque casaba con el comentario que documenta cual era la forma
+// retirada. Todo `!/.../.test(...)` tiene que ir contra CODIGO.
+const CODIGO = SRC
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n').map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+
 console.log('── tabla "Padres / Tutores": 10 columnas ──\n');
 
 // ═══════ Recorte de las tres formas de fila ═══════
@@ -126,14 +135,21 @@ console.log('\n── PARTE 4 · cada familiar, con su jugador ──');
        'la primera celda seguia pintando el alias del JUGADOR');
 
     ok('4b · y ese nombre se persiste en el vinculo',
-       /parentName:\s*nameEl\s*\?\s*nameEl\.value\.trim\(\)/.test(SRC),
+       /if\s*\(nameEl\)\s*updateData\.parentName\s*=\s*nameEl\.value\.trim\(\)/.test(SRC),
        'se podria editar y no se guardaria');
 
-    // undefined, no '': Firestore ignora undefined en updateDoc, asi que un
-    // formulario a medio montar no borra el nombre ya guardado.
-    ok('4c · si la casilla no esta en el DOM se manda undefined, no cadena vacia',
-       /parentName:\s*nameEl\s*\?[^:]*:\s*undefined/.test(SRC),
-       'con cadena vacia se borraria el nombre ya guardado');
+    // ⚠️ CORREGIDA EN v431. Esta asercion decia, en v430, que el campo debia
+    // mandarse como `undefined` cuando su casilla no esta en el DOM, "porque
+    // Firestore ignora los undefined". ERA FALSO: el SDK solo los ignora si la
+    // instancia se creo con `ignoreUndefinedProperties: true`, y este proyecto
+    // no usa esa opcion en ningun sitio. Sin ella, updateDoc LANZA
+    // ("Unsupported field value: undefined") y se cae el guardado ENTERO de la
+    // tabla, no solo ese campo. La intencion —no pisar con cadena vacia un dato
+    // ya guardado— era correcta; la forma, no. Ahora el campo se OMITE.
+    ok('4c · si la casilla no esta en el DOM, el campo se OMITE (ni undefined ni cadena vacia)',
+       !/parentName:\s*[^,]*undefined/.test(CODIGO) &&
+       !/parentEmail:\s*[^,]*undefined/.test(CODIGO),
+       'un undefined en el payload hace que updateDoc lance y no se guarde nada');
 
     ok('4d · la columna del codigo enseña el codigo de invitacion',
        /link\.inviteCode/.test(filaVinc), 'sin codigo no se sabe a que jugador va');

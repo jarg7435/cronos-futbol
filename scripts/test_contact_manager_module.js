@@ -599,8 +599,25 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         phone.dataset = { linkid: 'club1_7' };
         const t = buildSandbox({ phoneRows: [phone], queryMap: {} });
         await t.g.saveContactManagerData();
-        ok('4e · ⚠️ sin input de email escribe parentEmail: undefined (se preserva tal cual)',
-            'parentEmail' in t.written[0].data && t.written[0].data.parentEmail === undefined,
+        // ⚠️ ASERCION INVERTIDA EN v431, y merece explicacion porque hasta
+        // ahora iba marcada como "rareza preservada a proposito".
+        //
+        // Decia: "sin input de email escribe parentEmail: undefined (se
+        // preserva tal cual)", y estaba VERDE. Pero no era una rareza inocua:
+        // el SDK de Firestore **LANZA** ante un valor undefined
+        // ("Unsupported field value: undefined") salvo que la instancia se haya
+        // creado con `ignoreUndefinedProperties: true` — opcion que este
+        // proyecto no usa en ningun sitio. O sea que este caso, en produccion,
+        // no "preservaba" nada: tumbaba el guardado ENTERO de la tabla de
+        // contactos. Estaba verde solo porque el Firestore falso de este arnes
+        // acepta undefined sin rechistar.
+        //
+        // El guard estaba defendiendo el defecto. Desde v431 el campo se OMITE
+        // cuando su casilla no esta en el DOM, que era la intencion original
+        // (no pisar con cadena vacia un dato ya guardado) pero por la via que
+        // de verdad funciona.
+        ok('4e · sin input de email, parentEmail se OMITE del payload (no viaja como undefined)',
+            !('parentEmail' in t.written[0].data),
             Object.keys(t.written[0].data));
     }
     {

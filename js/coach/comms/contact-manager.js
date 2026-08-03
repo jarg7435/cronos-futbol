@@ -533,16 +533,6 @@ async function saveContactManagerData() {
 
             const updateData = {
                 parentPhone:        phone,
-                parentEmail:        emailEl   ? emailEl.value.trim()   : undefined,
-                // v430 · nombre del familiar. `parentName` YA existía en el
-                // vínculo —lo escriben el alta del padre y el panel del Admin de
-                // Club—, pero esta tabla no lo pintaba: la primera columna
-                // mostraba el nombre del JUGADOR. Ahora es editable aquí.
-                // ⚠️ `undefined` cuando la casilla no está en el DOM, igual que
-                // parentEmail: Firestore IGNORA los campos undefined en un
-                // updateDoc, así que un formulario a medio montar no borra el
-                // nombre que ya hubiera guardado. Con '' sí lo borraría.
-                parentName:         nameEl    ? nameEl.value.trim()    : undefined,
                 canWatchLive:       liveEl    ? liveEl.checked          : false,
                 canReceiveReports:  rptEl     ? rptEl.checked           : false,
                 canReceiveConv:     cvEl      ? cvEl.checked            : true,
@@ -556,6 +546,26 @@ async function saveContactManagerData() {
                 // (isLinkOwner en cronos_player_links).
                 canSendMsg:         sendEl    ? sendEl.checked          : true,
             };
+
+            // ⚠️ CORRECCIÓN v431 — EL `undefined` NO SE IGNORA, LANZA.
+            // Hasta v430 estos dos campos se escribían como
+            // `parentEmail: emailEl ? emailEl.value.trim() : undefined`, con el
+            // comentario (mío, y equivocado) de que "Firestore ignora los
+            // undefined en un updateDoc". NO es cierto: el SDK sólo los ignora
+            // si la instancia se creó con `ignoreUndefinedProperties: true`, y
+            // en este proyecto eso no se usa en ningún sitio. Sin esa opción,
+            // updateDoc **lanza** ("Unsupported field value: undefined") y se
+            // cae el guardado ENTERO de la tabla de contactos, no sólo ese
+            // campo. El defecto era latente porque en el flujo normal las dos
+            // casillas están en el DOM; saltaba sólo con el formulario a medio
+            // montar, que es justo cuando peor viene.
+            //
+            // La intención original SÍ era buena —no pisar con cadena vacía un
+            // dato ya guardado—, así que se conserva: el campo se añade sólo si
+            // su casilla existe, y si no existe simplemente no viaja.
+            if (nameEl)  updateData.parentName  = nameEl.value.trim();
+            if (emailEl) updateData.parentEmail = emailEl.value.trim();
+
             // Solo añadir inviteCode si no existía ya (para no sobreescribir)
             if (inviteCode) updateData.inviteCode = inviteCode;
 
