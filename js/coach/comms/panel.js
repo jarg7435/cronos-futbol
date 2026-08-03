@@ -585,6 +585,61 @@ async function _resolveThreadDoc(db, myUid, contactUid, role, tabId, clubId, con
     return { id: canonicalId, snap: null, data: null };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  v429 — ¿PUEDE ESTE PADRE ENVIAR MENSAJES?
+// ════════════════════════════════════════════════════════════════════
+//  Regla del autor: TODOS los padres RECIBEN siempre; ENVIAR lo autoriza el
+//  entrenador padre por padre, con la casilla "ENVIAR ✍️" del gestor de
+//  contactos.
+//
+//  🔑 DÓNDE VIVE EL PERMISO Y POR QUÉ. La lista de contactos del entrenador
+//  se guarda en `users/{coachUid}/cronos_data/main` (cloudSet), un documento
+//  que el padre NO puede leer. Así que la casilla no se guarda solo ahí: se
+//  escribe como `canSendMsg` en `cronos_player_links/{linkId}`, que es el
+//  ÚNICO documento del entrenador que las reglas dejan ver al padre
+//  (`isLinkOwner()` en firestore.rules). Sin esa pieza, el cliente del padre
+//  no tendría forma de saber si puede escribir.
+//
+//  ⚠️ FALLA HACIA EL "SÍ" a propósito, en los tres sitios:
+//    · sin campo `canSendMsg` (todos los vínculos de hoy) → puede enviar;
+//    · si la consulta falla → puede enviar;
+//    · con varios hijos, basta que UN vínculo lo permita → puede enviar.
+//  Es la decisión del autor: nadie pierde de golpe una capacidad que ya
+//  tenía. El bloqueo es, además, solo de interfaz (decisión de v429): un
+//  usuario técnico podría saltárselo desde la consola. Si algún día se
+//  quiere blindar de verdad, hay que llevarlo a firestore.rules.
+//
+//  El caso de los varios hijos NO es exacto: el permiso debería ser por
+//  entrenador/hilo, y aquí se resuelve para el padre entero. Con un hijo
+//  —lo normal— coincide. Si aparece el caso real de dos hijos con dos
+//  entrenadores de criterio distinto, hay que subir el permiso al hilo.
+window._cronosParentSendCache = null;
+
+window._cronosParentCanSendMsg = async function(force) {
+    if (!force && window._cronosParentSendCache !== null) {
+        return window._cronosParentSendCache;
+    }
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
+    if (!me || !me.uid) return true;
+    try {
+        const { db, collection, getDocs, query, where } = await _cFS();
+        if (!db) return true;
+        const snap = await getDocs(query(
+            collection(db, 'cronos_player_links'),
+            where('parentUid', '==', me.uid)
+        ));
+        const links = [];
+        snap.forEach(d => links.push(d.data() || {}));
+        // Sin vínculos no hay nada que restringir (padre recién registrado).
+        const allowed = !links.length || links.some(l => l.canSendMsg !== false);
+        window._cronosParentSendCache = allowed;
+        return allowed;
+    } catch(e) {
+        console.warn('[mensajeria v429] No se pudo leer el permiso de envío:', e && e.message);
+        return true;
+    }
+};
+
 // ── Estado global de la modal de mensajería ──────────────────────────
 window._umState = {
     role: 'coach',
@@ -658,6 +713,17 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     if (!me) {
         if (typeof showToast === 'function') showToast('⚠️ Inicia sesión para ver los mensajes.', 3000);
+        return;
+    }
+
+    // v429 · EXTRA 'mensajeria'. Este es el ÚNICO punto por el que pasan los
+    // SEIS roles (entrenador, director, coordinador, padre, admin de club y
+    // admin individual): las seis funciones open*Messaging no hacen otra cosa
+    // que llamar aquí. Gatear aquí y no en cada una evita que al añadir un
+    // séptimo rol se olvide el candado, que es exactamente como se coló el
+    // hueco de 'comunicaciones' (un extra sin un solo lector).
+    if (typeof window._cronosExtraGate === 'function' &&
+        !window._cronosExtraGate('mensajeria', 'La mensajería')) {
         return;
     }
 
@@ -1836,7 +1902,7 @@ async function _selectUnifiedContact(uid) {
     </div>
 
     <!-- Redactor de Envío -->
-    <div style="padding:0.8rem 1.2rem;background:#161b22;border-top:1px solid var(--glass-border);flex-shrink:0;">
+    <div id="um-composer" style="padding:0.8rem 1.2rem;background:#161b22;border-top:1px solid var(--glass-border);flex-shrink:0;">
         <div style="display:flex;gap:0.6rem;align-items:flex-end;">
             <textarea id="um-msg-input" class="um-input" placeholder="Escribe un mensaje… (Enter para enviar, Shift+Enter para nueva línea)"
                 rows="2"
@@ -1849,6 +1915,32 @@ async function _selectUnifiedContact(uid) {
             </button>
         </div>
     </div>`;
+
+    // v429 · Si quien mira es un PADRE sin permiso de envío, el redactor se
+    // sustituye por un aviso. Se hace DESPUÉS de pintar y no antes porque la
+    // consulta es asíncrona: bloquear el render entero por ella dejaría el
+    // hilo en blanco mientras se resuelve, y el padre SIEMPRE puede leer.
+    if (window._umState.role === 'parent' &&
+        typeof window._cronosParentCanSendMsg === 'function') {
+        try {
+            const puede = await window._cronosParentCanSendMsg();
+            if (!puede) {
+                const composer = document.getElementById('um-composer');
+                if (composer) {
+                    composer.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;
+                                background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                                border-radius:8px;color:var(--text-muted);font-size:0.8rem;">
+                        <span style="font-size:1.1rem;">🔒</span>
+                        <div>
+                            <div style="font-weight:700;color:#c9d1d9;">Solo lectura</div>
+                            <div style="font-size:0.74rem;">Tu entrenador no ha habilitado el envío de mensajes para ti. Puedes seguir recibiendo los suyos.</div>
+                        </div>
+                    </div>`;
+                }
+            }
+        } catch(_) { /* falla hacia el "sí": se deja el redactor */ }
+    }
 
     await _loadUnifiedThreadMessages(threadId, contact);
 }
@@ -1936,6 +2028,21 @@ async function _sendUnifiedMessage(recipientUid) {
     const input = document.getElementById('um-msg-input');
     const text = (input?.value || '').trim();
     if (!text) return;
+
+    // v429 · Segundo cerrojo del permiso de envío del padre. El primero es
+    // visual (se retira el redactor); éste es el que de verdad impide la
+    // escritura, porque el redactor puede seguir en pantalla si la consulta
+    // llegó tarde o si el permiso cambió mientras el hilo estaba abierto.
+    if (window._umState.role === 'parent' &&
+        typeof window._cronosParentCanSendMsg === 'function') {
+        const puede = await window._cronosParentCanSendMsg();
+        if (!puede) {
+            if (typeof showToast === 'function') {
+                showToast('🔒 Tu entrenador no ha habilitado el envío de mensajes para ti.', 4000);
+            }
+            return;
+        }
+    }
 
     // FIX (conexión entre roles): contexto canónico, no la pestaña cruda (ver nota en _loadUnifiedContactList).
     const tabContext = _getCanonicalContext(window._umState.role, window._umState.activeTab);
@@ -2260,7 +2367,32 @@ window.sendCoachMessage = (threadId, recipientUid) => _sendUnifiedMessage(recipi
 //  2026-07-27). Ese archivo llama a openUnifiedCommsMenu(), que sigue aquí.
 // ════════════════════════════════════════════════════════════════════
 
+// v429 · Candado de las tarjetas del menú de Comunicaciones.
+// Dos helpers en vez de uno porque el atributo (disabled/title) y el icono
+// (🔒 en vez del propio) van en sitios distintos del mismo botón, y meterlo
+// todo en una cadena obligaría a reescribir el marcado de cada tarjeta.
+function _umCardLock(extraKey) {
+    const on = (typeof window._cronosExtraEnabled === 'function')
+        ? window._cronosExtraEnabled(extraKey) : true;
+    // Solo `disabled` + tooltip: el aspecto lo pone .btn-comms-card[disabled]
+    // en la hoja de este mismo menú (ver la nota de allí sobre el style doble).
+    return on ? '' : 'disabled title="No disponible en el plan de tu club"';
+}
+function _umCardIcon(extraKey, icon) {
+    const on = (typeof window._cronosExtraEnabled === 'function')
+        ? window._cronosExtraEnabled(extraKey) : true;
+    return on ? icon : '🔒';
+}
+
 async function openUnifiedCommsMenu() {
+    // v429 · EXTRA 'comunicaciones'. Era el ÚNICO extra del panel del
+    // SuperAdmin sin un solo lector en todo el proyecto (censo de v429): se
+    // podía apagar y no pasaba absolutamente nada. Este menú es su puerta.
+    if (typeof window._cronosExtraGate === 'function' &&
+        !window._cronosExtraGate('comunicaciones', 'El área de Comunicaciones')) {
+        return;
+    }
+
     // Pila de navegación (js/core/nav-stack.js). Este menú es el ROUTER de
     // área de Comunicaciones, no el motor de mensajería: se apila como una
     // pantalla más. Se entra desde el modal de setup (botón COMUNICACIONES) y
@@ -2300,9 +2432,11 @@ async function openUnifiedCommsMenu() {
         <!-- Las 4 Opciones Exclusivas del Panel de Comunicaciones -->
         <div style="display:grid;grid-template-columns:1fr;gap:0.8rem;flex:1;overflow-y:auto;padding-right:2px;">
 
-            <!-- 1. MENSAJES -->
-            <button onclick="openCoachMessaging('parents')" class="btn-comms-card">
-                <span class="icon">💬</span>
+            <!-- 1. MENSAJES · v429: candado si el extra 'mensajeria' está apagado.
+                 La tarjeta se sigue viendo (política del autor), en gris y con 🔒. -->
+            <button onclick="openCoachMessaging('parents')" class="btn-comms-card"
+                ${_umCardLock('mensajeria')}>
+                <span class="icon">${_umCardIcon('mensajeria', '💬')}</span>
                 <div class="content">
                     <div class="title">Mensajes</div>
                     <div class="desc">Chat con padres · dirección · coordinación</div>
@@ -2310,7 +2444,7 @@ async function openUnifiedCommsMenu() {
             </button>
 
             <!-- 2. PARTIDOS TERMINADOS -->
-            <button onclick="typeof showFinishedMatches==='function'?showFinishedMatches():(typeof openPastMatchesModal==='function'?openPastMatchesModal():alert('No hay partidos terminados'))" class="btn-comms-card" style="--color:#ff5858;--bg:rgba(255,88,88,0.08);">
+            <button onclick="typeof showFinishedMatches==='function'?showFinishedMatches():(typeof openPastMatchesModal==='function'?openPastMatchesModal():alert('No hay partidos terminados'))" class="btn-comms-card" ${_umCardLock('partidos_terminados')} style="--color:#ff5858;--bg:rgba(255,88,88,0.08);">
                 <span class="icon">📋</span>
                 <div class="content">
                     <div class="title" style="color:#ff5858;">Partidos Terminados</div>
@@ -2328,8 +2462,8 @@ async function openUnifiedCommsMenu() {
             </button>
 
             <!-- 4. PARTIDOS EN VIVO -->
-            <button onclick="if(typeof showLiveShareModal==='function') showLiveShareModal(); else window.open('./live.html','_blank');" class="btn-comms-card" style="--color:#ff5858;--bg:rgba(255,88,88,0.12);">
-                <span class="icon">🔴</span>
+            <button onclick="if(typeof showLiveShareModal==='function') showLiveShareModal(); else window.open('./live.html','_blank');" class="btn-comms-card" ${_umCardLock('partidos_en_vivo')} style="--color:#ff5858;--bg:rgba(255,88,88,0.12);">
+                <span class="icon">${_umCardIcon('partidos_en_vivo', '🔴')}</span>
                 <div class="content">
                     <div class="title" style="color:#ff5858;">Partidos en Vivo</div>
                     <div class="desc">Ver partidos del club en directo</div>
@@ -2365,6 +2499,19 @@ async function openUnifiedCommsMenu() {
         .btn-comms-card .content { text-align:left;flex:1; }
         .btn-comms-card .title  { font-weight:700;color:var(--color,var(--primary));font-size:0.95rem;margin-bottom:2px; }
         .btn-comms-card .desc   { font-size:0.74rem;color:var(--text-muted);line-height:1.3; }
+        /* v429 · Tarjeta con el extra apagado: se VE, pero bloqueada.
+           Va en CSS y no en un style inline porque dos de las cuatro tarjetas
+           ya traen su propio style= con las variables --color/--bg: un segundo
+           atributo style en el mismo botón no se suma, gana el primero y se
+           perderían esas variables. */
+        .btn-comms-card[disabled] {
+            opacity:0.45; cursor:not-allowed; filter:grayscale(0.7);
+        }
+        .btn-comms-card[disabled]:hover {
+            background:var(--bg,rgba(88,166,255,0.08));
+            border-color:rgba(255,255,255,0.08);
+            transform:none; box-shadow:none;
+        }
     </style>`;
 }
 

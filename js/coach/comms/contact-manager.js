@@ -355,7 +355,12 @@ async function openContactManager() {
                                     <th style="padding:0.45rem;text-align:left;min-width:130px;">EMAIL</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Convocatorias">CONV.</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Entrenamientos">ENTR.</th>
-                                    <th style="padding:0.45rem;text-align:center;" title="Mensajes">MSJ.</th>
+                                    <th style="padding:0.45rem;text-align:center;" title="Recibe mensajes del entrenador">MSJ.</th>
+                                    <!-- v429 · Permiso de ENVÍO. Recibir y poder escribir son
+                                         cosas distintas: TODOS los padres reciben siempre; poder
+                                         escribir lo autoriza el entrenador uno a uno. -->
+                                    <th style="padding:0.45rem;text-align:center;color:#3fb950;"
+                                        title="Permitir enviar mensajes. Si se desmarca, ese padre solo puede RECIBIR.">ENVIAR ✍️</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Informes">INF.</th>
                                     <th style="padding:0.45rem;text-align:center;color:#ff5858;">EN VIVO 📡</th>
                                     <th style="padding:0.45rem;"></th>
@@ -402,6 +407,24 @@ async function openContactManager() {
                                     <td style="padding:0.45rem;text-align:center;">
                                         <input type="checkbox" class="contact-msg" data-linkid="${link._id}"
                                             ${link.canReceiveMsg !== false ? 'checked' : ''} style="width:16px;height:16px;">
+                                    </td>
+                                    <!-- v429 · "Permitir enviar mensajes". Se compara con
+                                         distinto-de-false, NO con igual-a-true: los vínculos ya
+                                         existentes NO traen el campo, y la decisión del autor es
+                                         que nadie pierda de golpe una capacidad que ya tenía.
+                                         Exigiendo igual-a-true, el día del despliegue TODOS los
+                                         padres se quedarían mudos hasta que el entrenador los
+                                         rehabilitara uno a uno.
+                                         ⚠️ SIN BACKTICKS en este comentario: va DENTRO del
+                                         template literal del innerHTML y uno solo lo cierra,
+                                         rompiendo el render entero SIN que node --check lo vea
+                                         (lo que queda detrás sigue siendo JS válido). Costó los
+                                         8 fallos de test_contact_manager_module en v429. -->
+                                    <td style="padding:0.45rem;text-align:center;">
+                                        <input type="checkbox" class="contact-cansend" data-linkid="${link._id}"
+                                            ${link.canSendMsg !== false ? 'checked' : ''}
+                                            title="Si se desmarca, este padre solo podrá RECIBIR mensajes"
+                                            style="width:16px;height:16px;accent-color:#3fb950;">
                                     </td>
                                     <td style="padding:0.45rem;text-align:center;">
                                         <input type="checkbox" class="contact-rpt" data-linkid="${link._id}"
@@ -461,6 +484,7 @@ async function saveContactManagerData() {
             const cvEl        = document.querySelector(`.contact-cv[data-linkid="${linkId}"]`);
             const trEl        = document.querySelector(`.contact-tr[data-linkid="${linkId}"]`);
             const msgEl       = document.querySelector(`.contact-msg[data-linkid="${linkId}"]`);
+            const sendEl      = document.querySelector(`.contact-cansend[data-linkid="${linkId}"]`);
             const rptEl       = document.querySelector(`.contact-rpt[data-linkid="${linkId}"]`);
             const liveEl      = document.querySelector(`.contact-live[data-linkid="${linkId}"]`);
 
@@ -477,6 +501,13 @@ async function saveContactManagerData() {
                 canReceiveConv:     cvEl      ? cvEl.checked            : true,
                 canReceiveTr:       trEl      ? trEl.checked            : true,
                 canReceiveMsg:      msgEl     ? msgEl.checked           : true,
+                // v429 · permiso de ENVÍO del padre. El respaldo es `true` (no
+                // `false`) por lo mismo que el `!== false` del render: si la
+                // casilla no está en el DOM, no se le quita a nadie un permiso
+                // que ya tenía. Lo lee el propio padre desde su vínculo, que es
+                // el único documento del entrenador que las reglas le dejan ver
+                // (isLinkOwner en cronos_player_links).
+                canSendMsg:         sendEl    ? sendEl.checked          : true,
             };
             // Solo añadir inviteCode si no existía ya (para no sobreescribir)
             if (inviteCode) updateData.inviteCode = inviteCode;
@@ -657,6 +688,14 @@ function renderParentRowMarkup(c = {}) {
         <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="p-msg" ${isMsg ? 'checked' : ''} style="width:15px;height:15px;">
         </td>
+        <!-- v429 · Columna "ENVIAR ✍️". Los padres MANUALES no tienen cuenta en
+             la app (esta fila no captura uid, solo teléfono y email), así que no
+             pueden abrir un chat y el permiso no les aplica. Pero la celda TIENE
+             que existir: estas filas se añaden al MISMO <tbody> que las de los
+             padres vinculados, y sin ella la tabla se desalinearía una columna
+             entera a partir de aquí. -->
+        <td style="padding:0.4rem;text-align:center;color:var(--text-muted);font-size:0.68rem;"
+            title="Solo aplica a padres vinculados con cuenta en la app">—</td>
         <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="p-rpt" ${isRpt ? 'checked' : ''} style="width:15px;height:15px;">
         </td>

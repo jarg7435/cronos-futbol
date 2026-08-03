@@ -10,12 +10,27 @@
 //  Cubierto por scripts/test_sa_extras_module.js.
 // ════════════════════════════════════════════════════════════════════
 
+// ⚠️ EL ORDEN DE ESTA LISTA ES EL ORDEN DEL PANEL. Añadir al final o donde
+// corresponda temáticamente, pero NUNCA reutilizar una `key` para otra cosa:
+// la clave es lo que queda escrito en clubs/{id}.extras y en individuals/{id}.
 window._CRONOS_EXTRAS_DEF = [
     { key: 'plantilla',      icon: '👥', label: 'Gestionar Plantilla',      desc: 'Dar de alta y editar jugadores' },
+    // v429: 'contactos' se usaba en setup-modal.js (_cronosExtraBtn) desde
+    // hacía tiempo pero NO estaba en esta lista, así que el SuperAdmin no
+    // podía apagarlo: el botón de Contactos quedaba siempre activo porque
+    // `extras['contactos']` era undefined y la regla es `!== false`. No era
+    // un extra "desactivado por defecto", era uno INALCANZABLE.
+    { key: 'contactos',      icon: '📱', label: 'Gestionar Contactos',      desc: 'Teléfonos, emails y permisos de padres y staff' },
     { key: 'convocatorias',  icon: '📋', label: 'Crear Convocatorias',      desc: 'Enviar convocatorias a destinatarios' },
     { key: 'entrenamientos', icon: '🏃', label: 'Crear Entrenamientos',     desc: 'Planificación semanal de entrenamientos' },
     { key: 'informes',       icon: '📊', label: 'Recibir Informes',         desc: 'Informes colectivos y de partido' },
-    { key: 'comunicaciones', icon: '💬', label: 'Comunicaciones',           desc: 'Mensajes, partidos terminados y retransmisión' },
+    // v429: 'mensajeria' es INDEPENDIENTE de 'comunicaciones'. Antes la
+    // descripción de comunicaciones prometía "Mensajes", pero esa clave no la
+    // leía nadie (censo de v429: era el único extra del panel sin un solo
+    // lector). Ahora comunicaciones gatea el MENÚ del área, y mensajeria el
+    // chat en sí, que es lo que el autor quiere poder vender por separado.
+    { key: 'mensajeria',     icon: '✉️', label: 'Mensajería',               desc: 'Chat interno entre roles del club y con las familias' },
+    { key: 'comunicaciones', icon: '💬', label: 'Comunicaciones',           desc: 'Menú del área: partidos terminados, retransmisión y sucesos offline' },
     { key: 'semaforo',       icon: '🚦', label: 'Semáforo con Porcentajes', desc: 'Sistema de colores y umbrales de tiempos' },
     { key: 'informes_padres',icon: '📧', label: 'Enviar Informes a Padres', desc: 'Informes individuales por jugador enviados a padres' },
     { key: 'actualizaciones', icon: '🔄', label: 'Actualizaciones de la App', desc: 'Permitir recibir actualizaciones automáticas' },

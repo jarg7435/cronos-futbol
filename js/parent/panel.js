@@ -53,6 +53,31 @@ async function openParentPanel(initialTab) {
         'position:fixed;inset:0;background:#0a0e14;z-index:8000;' +
         'display:flex;flex-direction:column;overflow:hidden;font-family:inherit;';
 
+    // ── v429 · Pestaña con candado 🔒 si su extra está desactivado ────
+    // Política del autor: la pestaña NO se esconde. Sigue viéndose, con el
+    // candado por delante y en estado bloqueado, para que la familia sepa que
+    // la función existe y que depende del plan del club.
+    //
+    // ⚠️ DOS RESTRICCIONES QUE OBLIGAN A ESTA FORMA, no es rodeo gratuito:
+    //  1. El `id="pp-tab-conv"` de cada botón tiene que estar LITERAL en el
+    //     fuente. Lo exige la aserción 14e de test_nav_stack.js, y con razón:
+    //     ppTab reactiva la pestaña buscándola por ese id cuando la pila
+    //     repinta sin `this`, así que el id debe poder encontrarse con un
+    //     grep. Un helper que lo montara con 'pp-tab-' + tab funcionaría en
+    //     ejecución pero dejaría el id invisible para cualquier búsqueda.
+    //  2. NADA de backticks aquí dentro: estos helpers se interpolan en el
+    //     template literal del innerHTML y un backtick lo cerraría, rompiendo
+    //     el fichero entero (ver la nota de las propias pestañas).
+    // Por eso se devuelven los ATRIBUTOS y el PREFIJO por separado, y el id y
+    // la etiqueta se quedan escritos tal cual en cada botón.
+    const _ppTabOn = (extraKey) => (typeof window._cronosExtraEnabled !== 'function')
+        || window._cronosExtraEnabled(extraKey);
+    const _ppTabAttrs = (tab, extraKey, title) => _ppTabOn(extraKey)
+        ? 'onclick="ppTab(\'' + tab + '\',this)" title="' + title + '"'
+        : 'disabled title="' + title + ' · no disponible en el plan de tu club"' +
+          ' style="opacity:0.45;cursor:not-allowed;filter:grayscale(0.7);"';
+    const _ppTabLock = (extraKey) => _ppTabOn(extraKey) ? '' : '🔒 ';
+
     panel.innerHTML = `
     <style>
         #parent-panel .pp-tab {
@@ -129,11 +154,11 @@ async function openParentPanel(initialTab) {
              ⚠️ SIN BACKTICKS: este comentario va DENTRO del template literal
              del innerHTML, y un backtick aquí lo cierra y rompe el fichero
              entero. Lo fija la aserción 14p. -->
-        <button id="pp-tab-conv"   class="pp-tab${_tab === 'conv'   ? ' active' : ''}" onclick="ppTab('conv',this)" title="Convocatorias">📋 Convoc.</button>
-        <button id="pp-tab-train"  class="pp-tab${_tab === 'train'  ? ' active' : ''}" onclick="ppTab('train',this)" title="Entrenamientos">📅 Entreno.</button>
-        <button id="pp-tab-player" class="pp-tab${_tab === 'player' ? ' active' : ''}" onclick="ppTab('player',this)" title="Informes del jugador">📊 Informes</button>
-        <button id="pp-tab-chat"   class="pp-tab${_tab === 'chat'   ? ' active' : ''}" onclick="ppTab('chat',this)" title="Mensajes con el entrenador">💬 Mensajes</button>
-        <button id="pp-tab-live"   class="pp-tab${_tab === 'live'   ? ' active' : ''}" onclick="ppTab('live',this)" title="Partidos en vivo">🔴 En Vivo</button>
+        <button id="pp-tab-conv"   class="pp-tab${_tab === 'conv'   ? ' active' : ''}" ${_ppTabAttrs('conv','convocatorias','Convocatorias')}>${_ppTabLock('convocatorias')}📋 Convoc.</button>
+        <button id="pp-tab-train"  class="pp-tab${_tab === 'train'  ? ' active' : ''}" ${_ppTabAttrs('train','entrenamientos','Entrenamientos')}>${_ppTabLock('entrenamientos')}📅 Entreno.</button>
+        <button id="pp-tab-player" class="pp-tab${_tab === 'player' ? ' active' : ''}" ${_ppTabAttrs('player','informes','Informes del jugador')}>${_ppTabLock('informes')}📊 Informes</button>
+        <button id="pp-tab-chat"   class="pp-tab${_tab === 'chat'   ? ' active' : ''}" ${_ppTabAttrs('chat','mensajeria','Mensajes con el entrenador')}>${_ppTabLock('mensajeria')}💬 Mensajes</button>
+        <button id="pp-tab-live"   class="pp-tab${_tab === 'live'   ? ' active' : ''}" ${_ppTabAttrs('live','partidos_en_vivo','Partidos en vivo')}>${_ppTabLock('partidos_en_vivo')}🔴 En Vivo</button>
     </div>
 
     <!-- CUERPO -->
@@ -142,7 +167,28 @@ async function openParentPanel(initialTab) {
     </div>`;
 
     // ── Router ────────────────────────────────────────────────────
+    // v429 · Qué extra gobierna cada pestaña. Lo usan el pintado (_ppTabBtn) y
+    // el router, para que no puedan divergir.
+    const _PP_TAB_EXTRA = {
+        conv:   'convocatorias',
+        train:  'entrenamientos',
+        player: 'informes',
+        chat:   'mensajeria',
+        live:   'partidos_en_vivo'
+    };
+
     window.ppTab = (tab, btn) => {
+        // v429 · Cerrojo del router. El botón deshabilitado ya impide el click,
+        // pero aquí se llega TAMBIÉN desde la pila de navegación —que repinta
+        // con la pestaña guardada como argumento de la raíz— y desde cualquier
+        // llamada directa a ppTab(). Sin esto, una pestaña bloqueada seguiría
+        // siendo alcanzable al volver atrás.
+        const _key = _PP_TAB_EXTRA[tab];
+        if (_key && typeof window._cronosExtraGate === 'function' &&
+            !window._cronosExtraGate(_key)) {
+            return;
+        }
+
         // La pestaña activa se guarda como argumento de la RAÍZ, no como una
         // pantalla propia. ⚠️ Se registra SOLO el nombre: el segundo argumento
         // `btn` es un NODO DEL DOM y guardarlo en la pila sería inútil —al
@@ -1271,7 +1317,23 @@ async function openParentPanel(initialTab) {
 
     // Cargar la pestaña inicial: la registrada en la pila, no una fija. Así,
     // al volver al panel desde otra pantalla se reabre donde estabas.
-    ppTab(_tab);
+    // v429 · La pestaña de arranque no puede ser una bloqueada. `_tab` vale
+    // 'conv' por defecto, así que un club sin el extra de convocatorias abriría
+    // el Área de Familias directamente sobre una pestaña con candado y con el
+    // cuerpo vacío. Se cae a la primera habilitada; si no hay ninguna, se
+    // entra igualmente en la pedida para que el aviso explique el porqué en
+    // lugar de dejar la pantalla muda.
+    (function _ppArrancarEnPestanaValida() {
+        const orden = ['conv', 'train', 'player', 'chat', 'live'];
+        const libre = (t) => {
+            const k = _PP_TAB_EXTRA[t];
+            return !k || typeof window._cronosExtraEnabled !== 'function'
+                || window._cronosExtraEnabled(k);
+        };
+        if (libre(_tab)) { ppTab(_tab); return; }
+        const alternativa = orden.find(libre);
+        ppTab(alternativa || _tab);
+    })();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1424,6 +1486,31 @@ window.ppSendChatMessage = async (threadId) => {
     const input = document.getElementById('pp-chat-input');
     const text = (input?.value || '').trim();
     if (!text) return;
+
+    // v429 · SEGUNDA VÍA DE ENVÍO DEL PADRE. La mensajería del padre entra
+    // normalmente por openParentMessaging (el motor unificado), pero esta
+    // función sigue viva y escribe en cronos_messages por su cuenta: gatear
+    // solo el motor habría dejado este camino abierto. Ver la nota larga de
+    // _cronosParentCanSendMsg en js/coach/comms/panel.js.
+    // v429 · SEGUNDA VÍA DE ENVÍO DEL PADRE. La mensajería del padre entra
+    // normalmente por openParentMessaging (el motor unificado), pero esta
+    // función sigue viva y escribe en cronos_messages por su cuenta: gatear
+    // solo el motor habría dejado este camino abierto. Ver la nota larga de
+    // _cronosParentCanSendMsg en js/coach/comms/panel.js.
+    // v429 · SEGUNDA VÍA DE ENVÍO DEL PADRE. La mensajería del padre entra
+    // normalmente por openParentMessaging (el motor unificado), pero esta
+    // función sigue viva y escribe en cronos_messages por su cuenta: gatear
+    // solo el motor habría dejado este camino abierto. Ver la nota larga de
+    // _cronosParentCanSendMsg en js/coach/comms/panel.js.
+    if (typeof window._cronosParentCanSendMsg === 'function') {
+        const puede = await window._cronosParentCanSendMsg();
+        if (!puede) {
+            if (typeof showToast === 'function') {
+                showToast('🔒 Tu entrenador no ha habilitado el envío de mensajes para ti.', 4000);
+            }
+            return;
+        }
+    }
 
     try {
         const { doc, getDoc, setDoc, updateDoc, arrayUnion } = await import(

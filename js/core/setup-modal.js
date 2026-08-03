@@ -10,13 +10,58 @@
 // v261: Variable global para recordar qué modalidades tiene permitidas el entrenador.
 window._cronosAllowedModes = ['f7', 'f11']; // por defecto, ambas
 
+// ════════════════════════════════════════════════════════════════════
+//  v429 — POLÍTICA DE EXTRAS BLOQUEADOS (🔒), PUNTO ÚNICO
+// ════════════════════════════════════════════════════════════════════
+//  La regla del autor: un extra desactivado NO esconde su pestaña ni su
+//  botón — los deja a la vista con un candado y en estado bloqueado, para
+//  que el usuario sepa que la función existe y que es cosa de su plan.
+//
+//  Hasta v428 esa política vivía ENTERA dentro de _cronosExtraBtn, y por
+//  tanto solo existía en el modal del Entrenador. El panel de Padres, el
+//  menú de Comunicaciones y las entradas de mensajería no la aplicaban.
+//  Estas tres funciones la sacan a un sitio común para que todas las
+//  superficies decidan igual:
+//
+//    _cronosExtraEnabled(key) → ¿está activo?          (LECTURA única)
+//    _cronosExtraGate(key)    → ¿puedo entrar? + aviso (RUNTIME)
+//    _cronosExtraBtn(...)     → botón con candado      (PINTADO)
+//
+//  ⚠️ Por defecto TODO está activo: `!== false`. Un extra ausente (club
+//  antiguo que nunca pasó por el panel del SuperAdmin) tiene que quedar
+//  HABILITADO. Comparar con `=== true` apagaría media aplicación a todos
+//  los clubes que aún no tienen el mapa `extras` en su documento.
+window._cronosExtraEnabled = function(extraKey) {
+    // Usuario EFECTIVO: en cuentas multi-rol el usuario activo puede no ser
+    // window._cronosCurrentUser. Los extras son del club, así que en la
+    // práctica coinciden; se prefiere el efectivo por coherencia con el
+    // motor de mensajería, que ya resuelve así.
+    const me = (typeof window._getEffectiveUser === 'function')
+        ? (window._getEffectiveUser() || window._cronosCurrentUser)
+        : window._cronosCurrentUser;
+    const extras = (me && me.extras) || {};
+    return extras[extraKey] !== false;
+};
+
+// Portero de tiempo de ejecución. Se llama al PRINCIPIO de la función de
+// entrada de cada función bloqueable: si devuelve false, no se entra.
+// Devolver un booleano (y no lanzar) permite usarlo tal cual en un `if`.
+window._cronosExtraGate = function(extraKey, label) {
+    if (window._cronosExtraEnabled(extraKey)) return true;
+    const txt = '🔒 ' + (label || 'Esta función') + ' no está disponible en tu plan';
+    if (typeof showToast === 'function') showToast(txt, 3500);
+    else alert(txt);
+    return false;
+};
+
 // FIX (Error #26): Helper para mostrar botones con candado si el extra está desactivado
 window._cronosExtraBtn = function(extraKey, label, onclickAction, styleStr) {
-    const me = window._cronosCurrentUser;
-    const extras = (me && me.extras) || {};
-    const enabled = extras[extraKey] !== false;
-    // FIX: verificar en tiempo de click tambien (por si extras se cargo tarde)
-    const guard = "if(window._cronosCurrentUser && window._cronosCurrentUser.extras && window._cronosCurrentUser.extras['" + extraKey + "'] === false){if(typeof showToast==='function')showToast('🔒 No disponible en tu plan',3000);else alert('No disponible en tu plan');return;}";
+    const enabled = window._cronosExtraEnabled(extraKey);
+    // FIX: verificar en tiempo de click tambien (por si extras se cargo tarde).
+    // v429: el guard delega en _cronosExtraGate en vez de repetir aquí la
+    // lectura de extras — antes había DOS reglas (esta cadena y la de arriba)
+    // que podían divergir, y de hecho miraban usuarios distintos.
+    const guard = "if(typeof window._cronosExtraGate==='function' && !window._cronosExtraGate('" + extraKey + "'))return;";
     if (enabled) {
         return '<button class="btn" onclick="' + guard + onclickAction + '" style="background:' + styleStr + '; font-size:0.7rem; font-weight:800; padding:0.6rem 0.2rem; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">' + label + '</button>';
     } else {
@@ -1257,12 +1302,14 @@ window._openCoachCommsMenu = function() {
 
             <div style="display:grid;gap:0.7rem;">
 
-                <!-- MENSAJES -->
+                <!-- MENSAJES · v429: candado del extra 'mensajeria'. -->
                 <button onclick="(function(){ if(typeof openCoachMessaging==='function'){openCoachMessaging('parents');}else{alert('Módulo de mensajes no disponible');} })()"
+                    ${window._cronosExtraEnabled('mensajeria') ? '' : 'disabled title="No disponible en el plan de tu club"'}
                     style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
                            background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);
-                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
-                    <span style="font-size:1.5rem;">💬</span>
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;
+                           ${window._cronosExtraEnabled('mensajeria') ? '' : 'opacity:0.45;cursor:not-allowed;filter:grayscale(0.7);'}">
+                    <span style="font-size:1.5rem;">${window._cronosExtraEnabled('mensajeria') ? '💬' : '🔒'}</span>
                     <div>
                         <div style="font-weight:700;font-size:0.9rem;">Mensajes</div>
                         <div style="font-size:0.72rem;color:var(--text-muted);">Chat con padres · dirección · coordinación</div>
