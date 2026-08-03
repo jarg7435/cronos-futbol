@@ -158,8 +158,217 @@
         return h1 + h2;
     }
 
+    // ── Hoja de estilos del reproductor ──────────────────────────────
+    // v427. ¿Por qué se inyecta desde JS y no vive en style.css?
+    // Porque `replay-player.js` lo cargan DOS páginas —index.html (panel del
+    // entrenador/director) y live.html (visor en directo)— y **live.html no
+    // enlaza style.css**: tiene su propia hoja embebida. Si las clases del
+    // reproductor vivieran en style.css, la repetición se vería con estilos
+    // desde el panel y SIN NINGUNO desde el visor (fichas apiladas sin tamaño
+    // ni color), que es justo lo contrario del requisito de que la experiencia
+    // sea idéntica. Inyectándola aquí, la hoja viaja con el módulo.
+    //
+    // Los tamaños replican los de la retransmisión (live.html): 48px de ficha
+    // en escritorio —el punto medio que allí usa la banda de tablet— con las
+    // etiquetas de tiempo y nombre proporcionales, y las mismas dos bandas
+    // responsive. Antes las fichas eran círculos de 26px con el nombre a
+    // 0.62rem: ilegibles.
+    function _injectReplayStyles() {
+        // La hoja es un ADORNO: si no se puede inyectar, la repetición debe
+        // seguir funcionando. Sin esta guarda, un `document` sin head tumbaba
+        // openMatchReplay entero con un TypeError antes de pintar nada.
+        if (typeof document === 'undefined' || !document.head) return;
+        if (document.getElementById('cronos-replay-styles')) return;
+        const st = document.createElement('style');
+        st.id = 'cronos-replay-styles';
+        st.textContent = `
+        .replay-player {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            display: flex; flex-direction: column;
+            align-items: center; gap: 2px;
+            z-index: 10;
+            transition: left 0.4s ease-out, top 0.4s ease-out;
+        }
+        .replay-player-time {
+            font-size: 0.72rem; font-weight: 800;
+            font-family: 'Courier New', monospace;
+            min-width: 46px; text-align: center;
+            border-radius: 4px; padding: 2px 6px;
+            line-height: 1.25; white-space: nowrap;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+        }
+        .replay-player-chip {
+            width: 48px; height: 48px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.05rem; font-weight: 900;
+            border: 3px solid rgba(255,255,255,0.85);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,0,0,0.4);
+            position: relative;
+        }
+        .replay-player-label {
+            font-size: 0.72rem; font-weight: 700;
+            background: rgba(0,0,0,0.85);
+            color: #f5f0e8;
+            border-radius: 3px; padding: 2px 6px;
+            white-space: nowrap; max-width: 92px;
+            overflow: hidden; text-overflow: ellipsis;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            line-height: 1.25;
+        }
+        .replay-goal-badge {
+            position: absolute; top: 20%; right: -24px;
+            transform: translateY(-50%);
+            font-size: 0.68rem; font-weight: 700;
+            background: rgba(0,0,0,0.9); color: #fff;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 4px; padding: 1px 4px;
+            white-space: nowrap; z-index: 36;
+        }
+        .replay-card-badge {
+            position: absolute; bottom: -8px; right: -8px;
+            font-size: 1rem; z-index: 35; line-height: 1;
+        }
+        .replay-injured-badge {
+            position: absolute; bottom: -8px; left: -8px;
+            width: 20px; height: 20px; border-radius: 50%;
+            background: #e74c3c; color: #fff;
+            font-size: 0.75rem; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+        }
+        .replay-bench-row {
+            display: flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 6px; padding: 4px 6px; margin-bottom: 4px;
+        }
+        .replay-bench-dot {
+            width: 22px; height: 22px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.6rem; font-weight: 900;
+            border: 1px solid rgba(255,255,255,0.4);
+            flex-shrink: 0;
+        }
+        .replay-bench-name {
+            flex: 1; min-width: 0;
+            font-size: 0.72rem; font-weight: 700; color: #fff;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .replay-bench-time {
+            font-size: 0.66rem; font-weight: 800;
+            font-family: 'Courier New', monospace;
+            border-radius: 3px; padding: 1px 5px;
+            flex-shrink: 0; white-space: nowrap;
+        }
+        /* Tablet: mismo escalón intermedio que la retransmisión. */
+        @media (max-width: 950px) {
+            .replay-player-chip  { width: 38px; height: 38px; font-size: 0.85rem; border-width: 2.5px; }
+            .replay-player-time  { font-size: 0.62rem; min-width: 40px; padding: 1px 4px; }
+            .replay-player-label { font-size: 0.62rem; max-width: 72px; padding: 1px 4px; }
+            .replay-goal-badge   { font-size: 0.6rem; right: -20px; }
+        }
+        @media (max-width: 600px) {
+            .replay-player-chip  { width: 32px; height: 32px; font-size: 0.72rem; border-width: 2px; }
+            .replay-player-time  { font-size: 0.55rem; min-width: 34px; padding: 1px 3px; }
+            .replay-player-label { font-size: 0.55rem; max-width: 56px; padding: 1px 3px; }
+            .replay-goal-badge   { font-size: 0.55rem; right: -18px; }
+            .replay-card-badge   { font-size: 0.8rem; bottom: -6px; right: -6px; }
+        }
+        `;
+        document.head.appendChild(st);
+    }
+
+    // ── Semáforo de tiempo jugado en la repetición ───────────────────
+    // v427. Puerto de `_timerColorFor` (live.html) con UNA diferencia
+    // deliberada: aquí la fuente de verdad es el PARTIDO, no el club de hoy.
+    //
+    // Desde v427 `pushLiveSnapshot` persiste `semaforoActive` en el documento
+    // (js/match/live/sync.js), que es la decisión ya resuelta el día que se
+    // jugó. Si el campo existe, MANDA: no se vuelve a preguntar por la
+    // categoría ni por `categoryConfigs`, porque el Director puede haber
+    // apagado el semáforo o cambiado los umbrales después del partido y la
+    // repetición debe seguir mostrando los colores que se retransmitieron.
+    //
+    // Para los partidos ANTERIORES a v427 el campo no existe, y sólo entonces
+    // se reconstruye la decisión con la misma cascada que usa el visor:
+    // extras del club → juvenil/regional (nunca llevan semáforo) →
+    // categoryConfigs[grupo].semaforoActive → umbrales → defaults 33/50.
+    const REPLAY_CELESTE = { bg: '#79c0ff', text: '#000000' };
+
+    function _replayGroupKey(cat, sub) {
+        if (typeof window.getCategoryGroupKey === 'function') {
+            return window.getCategoryGroupKey(cat, sub);
+        }
+        const raw = String(cat || '').toLowerCase();
+        if (raw.includes('f7') || raw.includes('prebenj') || raw.includes('benj') || raw.includes('alev')) return 'f7';
+        if (raw.includes('infant')) return sub === 'B' ? 'infantil_b' : sub === 'C' ? 'infantil_c' : 'infantil_a';
+        if (raw.includes('cadet'))  return sub === 'B' ? 'cadete_b'   : sub === 'C' ? 'cadete_c'   : 'cadete_a';
+        if (raw.includes('juvenil')) return 'juvenil';
+        if (raw.includes('regional') || raw.includes('senior') || raw.includes('aficionad')) return 'regional';
+        return 'f7';
+    }
+
+    function _replayTimerColor(timeSec, data) {
+        data = data || {};
+
+        const cat = data.category || '';
+        const sub = data.subcategory || 'A';
+        const groupKey = _replayGroupKey(cat, sub);
+        const configs = data.categoryConfigs
+                     || (typeof window !== 'undefined' && window._clubCategoryConfigs)
+                     || (typeof window !== 'undefined' && window._liveCategoryConfigs)
+                     || {};
+        const groupCfg = configs[groupKey] || null;
+
+        // ── 1. ¿Semáforo activo? ──
+        // La bandera guardada CON el partido gana a cualquier otra fuente.
+        // Ojo con el `=== false`: un partido antiguo no trae el campo
+        // (undefined) y debe caer a la cascada, no darse por activo.
+        let semaforoOn;
+        if (data.semaforoActive === true)  semaforoOn = true;
+        else if (data.semaforoActive === false || data.semaforo === false || data.semaforoEnabled === false) semaforoOn = false;
+        else {
+            const me = (typeof window !== 'undefined' && window._cronosCurrentUser) || null;
+            const extras = (me && me.extras)
+                        || (typeof window !== 'undefined' && window._liveClubExtras)
+                        || {};
+            if (extras.semaforo === false) semaforoOn = false;
+            else if (groupKey === 'juvenil' || groupKey === 'regional') semaforoOn = false;
+            else if (groupCfg && groupCfg.semaforoActive === false) semaforoOn = false;
+            else semaforoOn = true;
+        }
+
+        if (!semaforoOn) return { bg: REPLAY_CELESTE.bg, text: REPLAY_CELESTE.text };
+
+        // ── 2. Umbrales ──
+        // `timerThresholds` viaja en el snapshot desde v221, así que para los
+        // partidos grabados es el valor que el partido tenía de verdad.
+        const fallback = data.timerThresholds
+                      || (typeof window !== 'undefined' && window._clubTimerThresholds)
+                      || (typeof window !== 'undefined' && window._liveCachedThresholds)
+                      || null;
+        const src = (groupCfg && (typeof groupCfg.red === 'number' || typeof groupCfg.yellow === 'number'))
+                  ? groupCfg
+                  : (fallback || {});
+        const redPct    = (typeof src.red    === 'number' && !isNaN(src.red))    ? src.red    : 33;
+        const yellowPct = (typeof src.yellow === 'number' && !isNaN(src.yellow)) ? src.yellow : 50;
+
+        const mode = data.mode === 'f7' ? 'f7' : 'f11';
+        const h1 = data.half1MaxTime || (mode === 'f7' ? 1800 : 2400);
+        const h2 = data.half2MaxTime || (mode === 'f7' ? 1800 : 2400);
+        const totalSec = h1 + h2;
+
+        const t = timeSec || 0;
+        if (t >= totalSec * (yellowPct / 100)) return { bg: '#2ea043', text: '#000000' };
+        if (t >= totalSec * (redPct    / 100)) return { bg: '#e3b341', text: '#000000' };
+        return { bg: '#da3633', text: '#ffffff' };
+    }
+
     // ── Construir la UI Modal del Reproductor ────────────────────────
     function _renderReplayModal() {
+        _injectReplayStyles();
         let modal = document.getElementById('cronos-replay-modal');
         if (!modal) {
             modal = document.createElement('div');
@@ -457,9 +666,39 @@
                 goals: 0,
                 cards: 'ninguna',
                 yellowCards: 0,
-                injured: false
+                injured: false,
+                // v427: minutos jugados hasta el instante que se está pintando.
+                // Se ACUMULA (ver _avanzarCronometros); no se lee de ningún sitio.
+                timePlayed: 0
             };
         });
+
+        // ── Cronómetro individual de cada jugador ────────────────────
+        // v427. El tiempo jugado NO se puede leer del documento: `data.players`
+        // es la ÚLTIMA foto que dejó pushLiveSnapshot (la reescribe entera en
+        // cada latido de 5 s), así que sus `time` son los TOTALES al acabar el
+        // partido. Usarlos aquí pintaría los 47' finales de un jugador ya en el
+        // minuto 3 — la misma trampa que el defecto A del once inicial.
+        //
+        // Se deriva integrando el estado: cada tramo entre dos eventos suma a
+        // quien estuviera en el campo durante ese tramo. La condición es
+        // exactamente la del reloj real (js/match/timer/core.js: `if (p.status
+        // === 'field') p.time += delta`), incluidos sus matices — un expulsado
+        // sigue contando hasta que el entrenador lo retira del campo, igual que
+        // en el partido en vivo.
+        //
+        // La línea de tiempo de la repetición está en SEGUNDOS DE PARTIDO, que
+        // por construcción ya excluyen las pausas y el descanso, así que el
+        // delta del reloj de partido es el delta correcto de tiempo jugado.
+        let _marcaSec = 0;
+        function _avanzarCronometros(hastaSec) {
+            const dt = Math.max(0, (hastaSec || 0) - _marcaSec);
+            if (dt <= 0) return;
+            Object.values(playersMap).forEach(p => {
+                if (p.status === 'field') p.timePlayed += dt;
+            });
+            _marcaSec = hastaSec;
+        }
 
         let homeScore = 0;
         let awayScore = 0;
@@ -467,6 +706,11 @@
         // Aplicar eventos cronológicamente hasta timeSec
         events.forEach(ev => {
             if (ev.timeSec > timeSec) return;
+
+            // Cerrar el tramo ANTERIOR antes de aplicar el evento: si este
+            // evento es un cambio, el que sale debe cobrar hasta AQUÍ y el que
+            // entra empezar a cobrar DESDE aquí.
+            _avanzarCronometros(ev.timeSec);
 
             // Movimiento táctico
             if (ev.type === 'tactical_move' && ev.detailData) {
@@ -532,6 +776,9 @@
             }
         });
 
+        // Último tramo: desde el evento más reciente hasta el instante pintado.
+        _avanzarCronometros(timeSec);
+
         // 3. Renderizar Marcador
         const scoreHomeEl = document.getElementById('replay-score-home');
         const scoreAwayEl = document.getElementById('replay-score-away');
@@ -596,27 +843,32 @@
             const cleanNum = escapeHtml(rawNum);
             const numLabel = cleanNum ? `${cleanNum} ` : '';
 
+            // v427: cronómetro individual. `timePlayed` lo acumula
+            // _updateReplayFrame instante a instante; el color sale del
+            // semáforo del partido (celeste si estaba desactivado).
+            const played = p.timePlayed || 0;
+            const timerCol = _replayTimerColor(played, data);
+            const timeHtml = `<div class="replay-player-time" style="background:${timerCol.bg}; color:${timerCol.text};">${_fmtSecs(played)}</div>`;
+            const injuredBadge = p.injured ? `<span class="replay-injured-badge">✚</span>` : '';
+
             if (p.status === 'field') {
                 const x = Math.max(5, Math.min(95, p.x || 50));
                 const y = Math.max(5, Math.min(95, p.y || 50));
+                // ⚠️ `left:`/`top:` siguen siendo INLINE a propósito: son valores
+                // dinámicos por jugador y además el exportador de vídeo los lee
+                // del atributo style (ver drawPitchFrame).
                 pitchHtml += `
-                    <div style="position:absolute; left:${x}%; top:${y}%; transform:translate(-50%,-50%); transition:left 0.4s ease-out, top 0.4s ease-out; display:flex; flex-direction:column; align-items:center; z-index:10;">
-                        <div style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%); color:${textColor}; font-weight:900; font-size:0.75rem; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 3px 8px rgba(0,0,0,0.5); position:relative;">
-                            ${cleanNum}
-                            ${cardIcon ? `<span style="position:absolute; top:-4px; right:-6px; font-size:0.6rem;">${cardIcon}</span>` : ''}
-                        </div>
-                        <div style="font-size:0.62rem; font-weight:700; color:white; text-shadow:0 1px 3px black; white-space:nowrap; margin-top:2px;">
-                            ${cleanName} ${goalIcon}
-                        </div>
+                    <div class="replay-player" style="left:${x}%; top:${y}%;">
+                        ${timeHtml}
+                        <div class="replay-player-chip" style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%); color:${textColor};">${cleanNum}${goalIcon ? `<span class="replay-goal-badge">${goalIcon}</span>` : ''}${cardIcon ? `<span class="replay-card-badge">${cardIcon}</span>` : ''}${injuredBadge}</div>
+                        <div class="replay-player-label">${cleanName}</div>
                     </div>`;
             } else {
                 const itemHtml = `
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); padding:4px 8px; border-radius:6px; font-size:0.7rem; display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-                        <span style="display:flex; align-items:center; gap:5px;">
-                            <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%); border:1px solid rgba(255,255,255,0.4); flex-shrink:0;"></span>
-                            <span style="font-weight:700; color:white;">${numLabel}${cleanName}</span>
-                        </span>
-                        <span>${cardIcon} ${goalIcon}</span>
+                    <div class="replay-bench-row">
+                        <span class="replay-bench-dot" style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%); color:${textColor};">${cleanNum}</span>
+                        <span class="replay-bench-name">${numLabel}${cleanName} ${cardIcon} ${goalIcon}</span>
+                        <span class="replay-bench-time" style="background:${timerCol.bg}; color:${timerCol.text};">${_fmtSecs(played)}</span>
                     </div>`;
                 if (isHome) benchHomeHtml += itemHtml;
                 else benchAwayHtml += itemHtml;
@@ -803,7 +1055,15 @@
                 // 4. Renderizar Jugadores en el Campo
                 const pitchPlayersEl = document.getElementById('replay-pitch-players');
                 if (pitchPlayersEl) {
-                    const chips = pitchPlayersEl.querySelectorAll('div[style*="position:absolute"]');
+                    // v427: el selector era `div[style*="position:absolute"]` y
+                    // los hijos se leían POR POSICIÓN (`chip.children[1]` = el
+                    // nombre). Al pasar las fichas a clases, `position:absolute`
+                    // dejó de estar en el atributo style —se lo lleva la hoja—
+                    // y el orden cambió (ahora [0] es el cronómetro). Sin este
+                    // cambio el vídeo exportado saldría con el campo VACÍO, y
+                    // sin ningún error: el selector simplemente no encuentra
+                    // nada. Ahora se busca por clase y cada parte por la suya.
+                    const chips = pitchPlayersEl.querySelectorAll('.replay-player');
                     chips.forEach(chip => {
                         const style = chip.getAttribute('style') || '';
                         const leftM = style.match(/left:\s*([\d\.]+)%/);
@@ -815,16 +1075,26 @@
                             const cX = pX + pctX * pW;
                             const cY = pY + pctY * pH;
 
-                            // Leer dorsal y color
-                            const numEl = chip.querySelector('div');
-                            const nameEl = chip.children[1];
-                            const numTxt = numEl ? numEl.textContent.trim() : '';
+                            // Leer dorsal, nombre, cronómetro y color
+                            const numEl  = chip.querySelector('.replay-player-chip');
+                            const nameEl = chip.querySelector('.replay-player-label');
+                            const timeEl = chip.querySelector('.replay-player-time');
+                            // El dorsal es el primer nodo de texto de la ficha:
+                            // textContent arrastraría también los badges de gol
+                            // y tarjeta, que son hijos suyos.
+                            const numTxt = numEl
+                                ? (numEl.firstChild && numEl.firstChild.nodeType === 3
+                                    ? numEl.firstChild.textContent.trim()
+                                    : numEl.textContent.trim())
+                                : '';
                             const nameTxt = nameEl ? nameEl.textContent.trim() : '';
+                            const timeTxt = timeEl ? timeEl.textContent.trim() : '';
                             const color = numEl ? numEl.style.background : homeColor;
 
-                            // Dibujar Ficha
+                            // Dibujar Ficha (radio 18: acompaña el aumento de
+                            // tamaño de las fichas en pantalla)
                             ctx.beginPath();
-                            ctx.arc(cX, cY, 14, 0, Math.PI * 2);
+                            ctx.arc(cX, cY, 18, 0, Math.PI * 2);
                             ctx.fillStyle = color;
                             ctx.fill();
                             ctx.strokeStyle = '#ffffff';
@@ -833,15 +1103,27 @@
 
                             // Dorsal
                             ctx.fillStyle = '#000000';
-                            ctx.font = 'bold 11px sans-serif';
+                            ctx.font = 'bold 13px sans-serif';
                             ctx.textAlign = 'center';
-                            ctx.fillText(numTxt, cX, cY + 4);
+                            ctx.fillText(numTxt, cX, cY + 5);
+
+                            // Cronómetro individual, con el color del semáforo
+                            // que ya calculó el render (se lee del DOM para no
+                            // duplicar la decisión).
+                            if (timeTxt) {
+                                const tw = 40, th = 14, ty = cY - 34;
+                                ctx.fillStyle = timeEl.style.backgroundColor || '#79c0ff';
+                                ctx.fillRect(cX - tw / 2, ty, tw, th);
+                                ctx.fillStyle = timeEl.style.color || '#000000';
+                                ctx.font = 'bold 10px monospace';
+                                ctx.fillText(timeTxt, cX, ty + 11);
+                            }
 
                             // Nombre
                             if (nameTxt) {
                                 ctx.fillStyle = '#ffffff';
-                                ctx.font = 'bold 10px sans-serif';
-                                ctx.fillText(nameTxt, cX, cY + 26);
+                                ctx.font = 'bold 11px sans-serif';
+                                ctx.fillText(nameTxt, cX, cY + 32);
                             }
                         }
                     });

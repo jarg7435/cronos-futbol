@@ -382,6 +382,20 @@ async function pushLiveSnapshot(status = 'active') {
                     yellow: Number(_thresholds.yellow) || 50
                   }
                 : null,
+            // v427: bandera de semáforo ACTIVO/INACTIVO resuelta arriba
+            // (_semaforoActive). Hasta ahora se calculaba y NO se escribía en
+            // ningún sitio: era una variable muerta. live.html:_timerColorFor
+            // pregunta por `data.semaforoActive` desde v217, así que la rama
+            // estaba comprobando un campo que jamás llegaba, y el visor tenía
+            // que reconstruir la decisión releyendo clubs/{clubId} por su
+            // cuenta. Persistirla aquí es lo que permite que la REPETICIÓN
+            // (js/match/replay/replay-player.js) coloree los cronómetros con la
+            // configuración que el partido tenía DE VERDAD el día que se jugó,
+            // y no con la que el club tenga hoy: los umbrales pueden haber
+            // cambiado, o el Director puede haber apagado el semáforo después.
+            // Los partidos ya grabados no llevan el campo y siguen resolviéndose
+            // por la cascada de respaldo (categoría → categoryConfigs → extras).
+            semaforoActive: _semaforoActive,
             // phaseStartedAt: instante absoluto (epoch ms) en que arrancó la parte
             // ACTUAL. Se ancla a lastTickTime (no a Date.now() crudo) sumando los
             // segundos que el tick no pudo procesar por throttling del navegador
