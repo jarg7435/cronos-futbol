@@ -2688,34 +2688,34 @@ function _userCanFollow(m) {
 //  desplegar los indices, la consulta falla y el usuario se quedaria SIN
 //  ALERTAS y sin ningun aviso visible. El catch cae al escaneo completo:
 //  caro, pero funcionando.
-async function _fetchFollowableMatches() {
-    const vistos = new Map();
-    const absorber = (snap) => snap.forEach(d => vistos.set(d.id, { id: d.id, ...d.data() }));
-
+//  v433 · UN SOLO PUNTO donde se declaran esas consultas. Lo usan los DOS
+//  consumidores: _fetchFollowableMatches (sondeo de los watchers de alertas) y
+//  la lista de Partidos en Vivo de showLiveNow. Estaban duplicados —la lista
+//  seguia escaneando la coleccion entera— y dos definiciones del mismo criterio
+//  acaban divergiendo: es exactamente lo que ya paso con _userCanFollow.
+function _followableQueries() {
+    const col = collection(db, "live_matches");
     const esSA = (userData.role === "superadmin" || userData.role === "admin");
     if (esSA) {
         // El SuperAdmin si puede seguirlos todos. Al menos se acota por estado
         // —los terminados no se siguen— y por el filtro de club si lo tiene
         // puesto, que es lo que ya hacia _userCanFollow.
         if (window._saClubFilter) {
-            absorber(await getDocs(query(collection(db, "live_matches"),
+            return [query(col,
                 where("status", "==", "active"),
-                where("clubId", "==", window._saClubFilter))));
-        } else {
-            absorber(await getDocs(query(collection(db, "live_matches"),
-                where("status", "==", "active"))));
+                where("clubId", "==", window._saClubFilter))];
         }
-        return Array.from(vistos.values());
+        return [query(col, where("status", "==", "active"))];
     }
 
     const consultas = [];
     if (userData.clubId) {
-        consultas.push(query(collection(db, "live_matches"),
+        consultas.push(query(col,
             where("status", "==", "active"),
             where("clubId", "==", userData.clubId)));
     }
     if (userData.uid) {
-        consultas.push(query(collection(db, "live_matches"),
+        consultas.push(query(col,
             where("status", "==", "active"),
             where("createdBy", "==", userData.uid)));
     }
@@ -2728,10 +2728,20 @@ async function _fetchFollowableMatches() {
         // respaldo del escaneo NO se activaria (la consulta no falla, solo
         // devuelve menos). Es el unico caso en que este cambio ve menos que
         // antes, y es preferible a 480.000 lecturas/hora.
-        consultas.push(query(collection(db, "live_matches"),
+        consultas.push(query(col,
             where("status", "==", "active"),
             where("coachEmail", "==", userData.email)));
     }
+    return consultas;
+}
+
+async function _fetchFollowableMatches() {
+    const vistos = new Map();
+    const absorber = (snap) => snap.forEach(d => vistos.set(d.id, { id: d.id, ...d.data() }));
+
+    // Firestore no tiene OR entre campos distintos: son varias consultas que se
+    // fusionan por id, de ahi el Map.
+    const consultas = _followableQueries();
     if (!consultas.length) return [];
 
     const resultados = await Promise.all(consultas.map(q => getDocs(q)));
@@ -3530,13 +3540,30 @@ window.showLiveNow = async function() {
     listEl.innerHTML = '<p style="color:var(--muted);text-align:center;margin-top:2rem;">⏳ Buscando partidos en vivo…</p>';
 
     try {
-        const q = collection(db, 'live_matches');
         console.log("[LIVE] Subscribing to live list...");
-        
-        _liveListUnsubscribe = onSnapshot(q, (snap) => {
+
+        // ════════════════════════════════════════════════════════════════
+        //  v433 · LA LISTA TAMPOCO ESCANEA YA LA COLECCION ENTERA
+        // ════════════════════════════════════════════════════════════════
+        //  Hasta aqui esto era onSnapshot(collection(db,'live_matches')) SIN un
+        //  solo where, filtrando despues en el cliente: el mismo defecto que se
+        //  corrigio en refreshBackgroundWatchers en v431, y el ultimo que
+        //  quedaba abierto. Cuesta menos que aquel —es un listener, no un
+        //  sondeo cada 30 s— pero cada espectador se bajaba TODOS los partidos
+        //  de TODOS los clubes de una sentada, y volvia a bajarse el documento
+        //  entero en cada latido de 5 s de CUALQUIERA de ellos.
+        //
+        //  Ahora son las mismas consultas de _followableQueries(), que ya tienen
+        //  sus indices compuestos desplegados. Firestore no sabe hacer OR entre
+        //  campos distintos, asi que son varios listeners y la fusion se hace
+        //  aqui: cada consulta guarda su PROPIO mapa y se refunden en cada
+        //  repintado. Guardar un mapa por consulta —y no uno comun— es lo que
+        //  hace que un partido que sale de una consulta (termina, o cambia de
+        //  club) desaparezca de verdad de la lista; con un mapa compartido se
+        //  quedaria pegado para siempre, porque un snapshot solo dice lo que
+        //  HAY, no lo que se ha ido.
+        const _repintarLista = (allDocs) => {
             const liveMatches = [];
-            const allDocs = [];
-            snap.forEach(d => { allDocs.push({ id: d.id, ...d.data() }); });
         // Ordenar cliente (sin índice Firestore)
         allDocs.sort((a,b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
         
@@ -3712,7 +3739,66 @@ window.showLiveNow = async function() {
             listEl.appendChild(card);
         });
 
-        }); // fin onSnapshot callback
+        }; // fin _repintarLista
+
+        // ── Cableado de los listeners filtrados ──────────────────────────
+        const consultas   = _followableQueries();
+        const porConsulta = consultas.map(() => new Map());
+        const unsubs      = [];
+        let respaldoActivo = false;
+        let cancelado      = false;
+
+        const fusionarYPintar = () => {
+            const vistos = new Map();
+            porConsulta.forEach(mapa => mapa.forEach((v, k) => vistos.set(k, v)));
+            _repintarLista(Array.from(vistos.values()));
+        };
+
+        const cancelarTodos = () => {
+            cancelado = true;
+            unsubs.forEach(u => { try { u(); } catch(e) {} });
+            unsubs.length = 0;
+        };
+
+        // ⚠️ RESPALDO AL ESCANEO COMPLETO, igual que en v431: si faltara algun
+        // indice compuesto la consulta falla y la lista se quedaria VACIA, que
+        // aqui es indistinguible de "no hay partidos" —ni error, ni sintoma—.
+        // Caro, pero funcionando. El `cancelado` importa: sin el, un error que
+        // llegue despues de salir de la pantalla levantaria un listener sobre
+        // la coleccion entera que ya nadie cancela, justo lo que se arregla.
+        const activarRespaldo = (err) => {
+            if (cancelado || respaldoActivo) return;
+            respaldoActivo = true;
+            console.warn("[LIVE v433] Consulta filtrada no disponible, se usa el escaneo completo:", err && err.message);
+            cancelarTodos();
+            cancelado = false;
+            unsubs.push(onSnapshot(collection(db, 'live_matches'), (snap) => {
+                const todos = [];
+                snap.forEach(d => { todos.push({ id: d.id, ...d.data() }); });
+                _repintarLista(todos);
+            }, (e2) => console.warn("[LIVE] respaldo de la lista:", e2 && e2.message)));
+        };
+
+        if (!consultas.length) {
+            // Sin clubId, sin uid y sin email no hay nada que se pueda seguir.
+            // Antes tampoco se veia nada: el filtro del cliente lo descartaba
+            // todo despues de habersela bajado entera.
+            _repintarLista([]);
+        } else {
+            consultas.forEach((q, idx) => {
+                unsubs.push(onSnapshot(q, (snap) => {
+                    if (respaldoActivo) return;
+                    const mapa = new Map();
+                    snap.forEach(d => mapa.set(d.id, { id: d.id, ...d.data() }));
+                    porConsulta[idx] = mapa;
+                    fusionarYPintar();
+                }, activarRespaldo));
+            });
+        }
+
+        // Se mantiene el nombre de siempre: los puntos de cancelacion (la
+        // entrada de showLiveNow) siguen llamando a una sola funcion.
+        _liveListUnsubscribe = cancelarTodos;
 
         // Levantar el setInterval para los relojes de las tarjetas
         _liveListTimerInterval = setInterval(() => {
@@ -4410,7 +4496,7 @@ setInterval(function() {
     #sound-activate-banner { display: none !important; }
 }
 </style>
-<script src="js/match/replay/replay-player.js?v=v432"></script>
-<script src="js/match/events/retroactive-modal.js?v=v432"></script>
+<script src="js/match/replay/replay-player.js?v=v433"></script>
+<script src="js/match/events/retroactive-modal.js?v=v433"></script>
 </body>
 </html>
