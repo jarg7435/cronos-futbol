@@ -339,7 +339,16 @@ async function openParentPanel(initialTab) {
                                 👥 CONVOCADOS (${n.players.length})
                             </div>
                             <div style="font-size:0.8rem;line-height:1.8;">
-                                ${n.players.map((p,i)=>`${i+1}. ${typeof escapeHtml==='function'?escapeHtml(p):p}`).join('<br>')}
+                                ${n.players.map((p,i)=>{
+                                    // v428: el dorsal ya viene DENTRO de la cadena
+                                    // ("15. CUCO"); anteponer ademas el indice pintaba
+                                    // dos numeros ("14. 15. CUCO").
+                                    const f = (typeof window._cronosFormatConvokedPlayer==='function')
+                                        ? window._cronosFormatConvokedPlayer(p,i)
+                                        : { num: String(i+1), name: String(p==null?'':p) };
+                                    const nm = typeof escapeHtml==='function'?escapeHtml(f.name):f.name;
+                                    return f.name ? `${f.num}. ${nm}` : `${f.num}.`;
+                                }).join('<br>')}
                             </div>
                         </div>` : ''}
                         ${n.extra ? `<div style="font-size:0.8rem;margin-top:0.5rem;
@@ -1943,7 +1952,14 @@ window.ppNotifsByType = async function(type) {
                 <div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
                     <div style="font-size:0.72rem;font-weight:700;color:#3fb950;margin-bottom:0.6rem;letter-spacing:0.5px;">👥 CONVOCADOS (${d.players.length})</div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.25rem;">
-                        ${d.players.map((p,i)=>`<div style="font-size:0.8rem;padding:0.2rem 0.4rem;background:rgba(255,255,255,0.04);border-radius:4px;">${i+1}. ${typeof escapeHtml==='function'?escapeHtml(p):p}</div>`).join('')}
+                        ${d.players.map((p,i)=>{
+                            // v428: ver nota en el render de la lista de avisos.
+                            const f = (typeof window._cronosFormatConvokedPlayer==='function')
+                                ? window._cronosFormatConvokedPlayer(p,i)
+                                : { num: String(i+1), name: String(p==null?'':p) };
+                            const nm = typeof escapeHtml==='function'?escapeHtml(f.name):f.name;
+                            return `<div style="font-size:0.8rem;padding:0.2rem 0.4rem;background:rgba(255,255,255,0.04);border-radius:4px;">${f.num}.${f.name?' '+nm:''}</div>`;
+                        }).join('')}
                     </div>
                 </div>` : ''}
 

@@ -1050,6 +1050,56 @@ function _cronosResolvePlayersArr() {
 window._cronosResolvePlayersArr = _cronosResolvePlayersArr;
 
 // ════════════════════════════════════════════════════════════════════
+// v428 — UN SOLO NÚMERO POR CONVOCADO
+// ════════════════════════════════════════════════════════════════════
+// El bug: en el modal de Convocatoria salía "1. 1. PEDRO", "14. 15. CUCO".
+//
+// Por qué. La convocatoria se guarda como un array de STRINGS, no de
+// objetos, y _cronosResolvePlayersArr (justo arriba) mete el dorsal DENTRO
+// de la cadena: `label = num + '. ' + alias` -> "15. CUCO". Después, las
+// tres vistas que la pintan añadían encima el índice de la lista
+// (`${i+1}. ${p}`), así que se veían los DOS números. Cuando dorsal e índice
+// coincidían parecía un simple "1. 1."; cuando no, salía "14. 15. CUCO", que
+// es la pista de que son dos numeraciones distintas y no un carácter repetido.
+//
+// Se normaliza AQUÍ, al pintar, y no al guardar, por dos razones:
+//   · las convocatorias ya enviadas están en Firestore con el dorsal dentro
+//     de la cadena; arreglar solo la escritura las dejaría mal para siempre;
+//   · el mensaje de WhatsApp/email se compone de los inputs del formulario
+//     (.conv-player-name), que llevan SOLO el alias, y ahí la numeración por
+//     índice es correcta y no está duplicada. No tocarla.
+//
+// Qué número sobrevive: el DORSAL, que es la identidad del jugador en una
+// convocatoria. El índice de la lista es solo orden de pintado. Si una
+// entrada no trae dorsal (alias suelto, nombre editado a mano en el
+// formulario, convocatoria antigua), se usa el ordinal para que la lista no
+// quede con huecos sin numerar.
+//
+// Devuelve { num, name } SIN escapar: `num` sale de una captura de \d y es
+// seguro por construcción, pero `name` es texto libre y CADA vista tiene que
+// pasarlo por su escapeHtml. No devolver HTML ya montado desde aquí.
+function _cronosFormatConvokedPlayer(entry, index) {
+    const raw = String(entry == null ? '' : entry).trim();
+    const ordinal = String((index || 0) + 1);
+
+    // "15. CUCO" · "15 CUCO" · "15 - CUCO" · "15) CUCO"
+    const m = raw.match(/^(\d{1,3})\s*[.\-–—)]*\s+(.+)$/);
+    if (m && m[2].trim()) {
+        return { num: m[1], name: m[2].trim() };
+    }
+
+    // Entrada que es SOLO un número (el roster no tenía alias): ese número es
+    // lo único que identifica al jugador, así que se muestra tal cual y no se
+    // le antepone además el ordinal.
+    if (/^\d{1,3}$/.test(raw)) {
+        return { num: raw, name: '' };
+    }
+
+    return { num: ordinal, name: raw };
+}
+window._cronosFormatConvokedPlayer = _cronosFormatConvokedPlayer;
+
+// ════════════════════════════════════════════════════════════════════
 // RENDER COMPARTIDO — PLANIFICACIÓN SEMANAL (tarjetas horizontales)
 // ════════════════════════════════════════════════════════════════════
 // Fuente ÚNICA del layout del aviso de entrenamiento para que todas las

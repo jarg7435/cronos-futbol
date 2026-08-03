@@ -245,7 +245,15 @@ async function _sdLoadEvents(type) {
                 <div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
                     <div style="font-size:0.75rem;font-weight:700;color:#3fb950;margin-bottom:0.6rem;letter-spacing:0.5px;">👥 CONVOCADOS (${d.players.length})</div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.3rem;">
-                        ${d.players.map((p,i)=>`<div style="font-size:0.82rem;padding:0.2rem 0.4rem;background:rgba(255,255,255,0.04);border-radius:4px;">${i+1}. ${escapeHtml(p)}</div>`).join('')}
+                        ${d.players.map((p,i)=>{
+                            // v428: el dorsal ya viene DENTRO de la cadena guardada
+                            // ("15. CUCO"); anteponer ademas el indice de la lista
+                            // pintaba dos numeros ("14. 15. CUCO").
+                            const f = (typeof window._cronosFormatConvokedPlayer==='function')
+                                ? window._cronosFormatConvokedPlayer(p,i)
+                                : { num: String(i+1), name: String(p==null?'':p) };
+                            return `<div style="font-size:0.82rem;padding:0.2rem 0.4rem;background:rgba(255,255,255,0.04);border-radius:4px;">${f.num}.${f.name?' '+escapeHtml(f.name):''}</div>`;
+                        }).join('')}
                     </div>
                 </div>`:''}
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:8px;font-style:italic;">💬 ${escapeHtml(d.extra)}</div>`:''}`;
