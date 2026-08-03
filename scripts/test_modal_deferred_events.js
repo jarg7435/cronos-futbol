@@ -130,8 +130,12 @@ console.log('\n── PARTE 2 · nada sale del modal hasta HECHO ──');
     const a = sinCom(ACT);
     // El buffer arrastra también `extra` (los campos estructurados), o al
     // confirmar se perderían y el replay volvería a depender del texto.
+    // v434 · La tupla lleva ahora un 6º elemento, `target` (el partido destino),
+    // porque _confirmarEventosModal la reenvía con apply: sin él, un evento
+    // aparcado perdería el destino al emitirse y volvería a caer en la global
+    // liveMatchId. El regex admite comentarios entre el `if` y el push.
     ok('2a · 🔑 con el modal abierto, _registerMatchEvent aparca en vez de emitir',
-       /if \(_modalStaging\) \{\s*_modalBuffer\.push\(\[type, text, icon, matchTimeOverride, extra\]\);\s*return;\s*\}/.test(a),
+       /if \(_modalStaging\) \{[\s\S]{0,400}?_modalBuffer\.push\(\[type, text, icon, matchTimeOverride, extra, target\]\);\s*return;\s*\}/.test(a),
        (a.match(/if \(_modalStaging\)[\s\S]{0,160}/) || ['(no aparece)'])[0]);
     ok('2b · 🔑 abrir el modal fotografía el estado inicial',
        /_modalBaseline = \{[\s\S]{0,200}?goals: player\.goals[\s\S]{0,120}?cards: player\.cards/.test(a));

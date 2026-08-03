@@ -1259,26 +1259,51 @@ exports.cleanupLiveMatches = functions.pubsub
       console.error('[cleanupLiveMatches] paso A (cerrar abandonados):', e.message);
     }
 
-    /* ---- PASO B · borrar los terminados con mas de 10 h ---- */
+    /* ---- PASO B · borrar los cerrados con mas de 10 h ---- */
     try {
-      // Se consulta por updatedAt (existe en TODOS los documentos) y el ancla
-      // real se decide abajo. Ver la nota de arriba sobre los documentos sin
-      // finishedAt: filtrar por finishedAt en la consulta los dejaria fuera.
+      // ⚠️ v434 · SE QUITA EL `where('updatedAt','<',corte10h)`.
+      // Ese filtro reintroducia por la puerta de atras justo el aplazamiento
+      // que el ancla `finishedAt` existe para evitar: cualquier escritura
+      // posterior al final —un suceso retroactivo dentro de la ventana de 2 h,
+      // por ejemplo— refresca `updatedAt`, el documento sale de la consulta y
+      // el borrado se retrasa otras 10 h contadas desde esa edicion. Con la
+      // regla de las 10 h exactas de retencion, eso ya no vale.
+      //
+      // Se puede prescindir del filtro temporal porque la coleccion se mantiene
+      // pequena precisamente gracias a este borrado: lo que hay son los
+      // partidos de las ultimas horas. El `orderBy('updatedAt')` ordena de mas
+      // antiguo a mas reciente para que, si un dia hubiera acumulacion, cada
+      // pasada ataque siempre los mas viejos en vez de quedarse dando vueltas
+      // sobre los mismos 450. Usa el indice (status, updatedAt), ya desplegado.
+      //
+      // ⚠️ `orderBy` EXCLUYE los documentos que no tengan el campo, igual que un
+      // `where`. Se ordena por `updatedAt`, que existe en todos; ordenar por
+      // `finishedAt` dejaria fuera para siempre a los anteriores a v431.
+      //
+      // v434 · Tambien se recogen los 'cancelled'. Antes solo se miraban los
+      // 'finished', asi que un partido cancelado se quedaba en la coleccion
+      // indefinidamente — y desde v434 ya no se puede borrar a mano una vez
+      // congelado, con lo que nadie lo recogeria nunca.
       const terminados = await db.collection('live_matches')
-        .where('status', '==', 'finished')
-        .where('updatedAt', '<', corte10h)
+        .where('status', 'in', ['finished', 'cancelled'])
+        .orderBy('updatedAt', 'asc')
         .limit(450)   // mismo motivo que en el paso A: tope de 500 por batch
         .get();
 
       const loteB = db.batch();
       terminados.forEach(d => {
         const data = d.data() || {};
-        const fin = data.finishedAt || data.updatedAt;
-        const finMs = fin && typeof fin.toDate === 'function' ? fin.toDate().getTime() : 0;
+        // El ancla es CUANDO TERMINO, con respaldo en updatedAt para los
+        // documentos anteriores a v431, que nunca tuvieron sello.
+        const fin = data.finishedAt || data.cancelledAt || data.updatedAt;
+        let finMs = 0;
+        if (fin && typeof fin.toDate === 'function') finMs = fin.toDate().getTime();
+        else if (typeof fin === 'string') { const t = Date.parse(fin); finMs = isNaN(t) ? 0 : t; }
+        else if (typeof fin === 'number') finMs = fin;
         // Sin fecha utilizable no se borra: mas vale un documento de mas que
         // destruir el partido de alguien por un dato corrupto.
         if (!finMs) return;
-        if (finMs <= ahora - 10 * 60 * 60 * 1000) {
+        if (finMs <= corte10h.getTime()) {
           loteB.delete(d.ref);
           borrados++;
         }

@@ -56,10 +56,14 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 // cerrojo de ppSendChatMessage BORRADO, porque casaba con un comentario que
 // nombraba _cronosParentCanSendMsg. Un guard que no se ha visto en rojo puede
 // estar defendiendo el aire. Se comprueba con `sinComs`, no con el fuente.
+// ⚠️ v434 · `split(/\r?\n/)` y no `split('\n')`: el `.` de una regex no casa
+// `\r`, así que en un fichero con CRLF `//.*$` no llegaba al final de línea y
+// este helper no borraba NI UN comentario. Ver la nota larga en
+// scripts/test_live_cleanup_and_reads.js, donde se descubrió.
 const sinComs = (src) => src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
-    .split('\n').map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+    .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
 
 // Aisla el cuerpo de una funcion desde su firma, para no casar con cualquier
 // aparicion suelta del nombre en otro punto del fichero.

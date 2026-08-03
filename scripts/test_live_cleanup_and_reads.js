@@ -50,10 +50,18 @@ const ok = (name, cond, extra) => {
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 // Toda asercion negativa va contra CODIGO, no contra comentarios (lección ya
 // pagada tres veces en este proyecto).
+// ⚠️ v434 · `split(/\r?\n/)` Y NO `split('\n')`. En JavaScript el `.` de una
+// regex NO casa `\r` (es terminador de línea, igual que `\n`), así que en un
+// fichero con CRLF la línea queda con un `\r` final, `//.*$` no llega hasta el
+// final y NO SE BORRABA NI UN COMENTARIO. functions/index.js es CRLF: todas las
+// aserciones negativas contra FNc llevaban tiempo evaluándose sobre el fuente
+// CON comentarios, que es exactamente lo que este helper existe para evitar.
+// Se descubrió en v434, cuando una aserción nueva casó con el comentario que yo
+// mismo acababa de escribir describiendo el código que había quitado.
 const sinComs = (src) => src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
-    .split('\n').map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+    .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
 
 const FN    = read('functions/index.js');
 const SYNC  = read('js/match/live/sync.js');
@@ -89,15 +97,28 @@ console.log('\n── PARTE 2 · 10 h desde que TERMINA el partido ──');
        /10\s*\*\s*60\s*\*\s*60\s*\*\s*1000/.test(cuerpo), 'el corte no son 10 h');
 
     ok('2b · [TRAMPA A] el ancla del borrado es finishedAt, no updatedAt',
-       /finishedAt\s*\|\|\s*(data\.)?updatedAt/.test(cuerpo),
+       /finishedAt\s*\|\|[\s\S]{0,40}updatedAt/.test(cuerpo),
        'con updatedAt como ancla, cualquier retoque aplaza el borrado');
 
-    ok('2c · [TRAMPA B] la CONSULTA va por updatedAt, que existe en todos',
-       /where\('status',\s*'==',\s*'finished'\)[\s\S]{0,200}where\('updatedAt',\s*'<'/.test(cuerpo),
-       'filtrando por finishedAt, los partidos anteriores a v431 no se borrarian nunca');
+    // ⚠️ v434 · ASERCIÓN REESCRITA. Antes exigía literalmente el
+    // `where('updatedAt','<',corte10h)`, y ESO ERA EL DEFECTO: reintroducía por
+    // la puerta de atrás el aplazamiento que el ancla `finishedAt` existe para
+    // evitar — cualquier escritura posterior al final refrescaba `updatedAt`,
+    // el documento salía de la consulta y el borrado se retrasaba otras 10 h.
+    // La preocupación legítima que defendía (no anclar la CONSULTA a un campo
+    // que puede faltar, porque un `where`/`orderBy` excluye los documentos sin
+    // él) se mantiene: se sigue sin tocar `finishedAt` en la consulta.
+    ok('2c · [TRAMPA B] la consulta NO se ancla a finishedAt, que puede faltar',
+       !/where\('finishedAt'/.test(cuerpo) && !/orderBy\('finishedAt'/.test(cuerpo),
+       'los partidos anteriores a v431 no tienen ese campo y quedarian excluidos para siempre');
 
-    ok('2d · solo borra los que estan finished',
-       /where\('status',\s*'==',\s*'finished'\)/.test(cuerpo));
+    ok('2c2 · [v434] y tampoco filtra por updatedAt, que aplazaba el borrado',
+       !/where\('updatedAt',\s*'<'\s*,\s*corte10h\)/.test(cuerpo),
+       'una edicion posterior al final retrasaba el borrado otras 10 h');
+
+    ok('2d · borra los cerrados: finished Y cancelled',
+       /where\('status',\s*'in',\s*\['finished',\s*'cancelled'\]\)/.test(cuerpo),
+       'un partido cancelado se quedaba indefinidamente y ya nadie puede borrarlo a mano');
 
     ok('2e · cierra tambien los ABANDONADOS (active sin latido), o nunca llegarian a borrarse',
        /where\('status',\s*'==',\s*'active'\)/.test(cuerpo) &&

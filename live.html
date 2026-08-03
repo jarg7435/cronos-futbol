@@ -3878,23 +3878,31 @@ function setMatchListContext(matches, currentId) {
     updateNavButtons();
 }
 
+// v434 · RETIRADA. El campo `keep` marcaba un partido como "guardado para
+// siempre" y el auto-borrado del cliente lo respetaba. Desde v431 el borrado lo
+// hace `cleanupLiveMatches` en el servidor a las 10 h SIN mirar `keep`, así que
+// el botón prometía algo que no se cumplía. Y desde v434 escribir ese campo es
+// editar un partido terminado. La función se conserva —está en `window` y podría
+// llamarla algo que no haya localizado— pero ya no escribe.
 window.toggleKeepMatch = async function(matchId, e) {
     if (e) e.stopPropagation();
-    try {
-        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const matchData = window._allFetchedMatches?.find(m => m.id === matchId);
-        const newKeep = matchData ? !matchData.keep : true;
-        await updateDoc(doc(db, 'live_matches', matchId), { keep: newKeep });
-        if (matchData) matchData.keep = newKeep;
-        showHistory(); // Refrescar vista
-    } catch(err) {
-        console.error(err);
-        alert('Error al guardar: ' + err.message);
+    console.warn('[v434] toggleKeepMatch: retirado. Un partido terminado no se edita.');
+    if (typeof showToast === 'function') {
+        showToast('🔒 Los partidos terminados no se modifican. Se conservan 10 h y se borran solos.', 5000);
     }
 };
 
 window.deleteMatch = async function(matchId, e) {
     if (e) e.stopPropagation();
+
+    // v434 · Congelado es también no borrable. Se comprueba contra la copia ya
+    // descargada; la barrera de verdad es la regla de Firestore.
+    const _m = window._allFetchedMatches?.find(m => m.id === matchId);
+    if (_m && window.CronosMatchLock && !window.CronosMatchLock.canDelete(_m, false)) {
+        alert(window.CronosMatchLock.lockReason(_m));
+        return;
+    }
+
     if (!confirm('¿Eliminar definitivamente este partido del historial?')) return;
     try {
         const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -3913,6 +3921,16 @@ window.deleteMatch = async function(matchId, e) {
 window.deleteLiveMatch = async function(matchId, e) {
     if (e) { e.stopPropagation(); e.preventDefault(); }
     if (!matchId) return;
+
+    // v434 · Este botón está pensado para partidos EN VIVO descoordinados o
+    // huérfanos, donde el borrado es legítimo. Pero la función es genérica y
+    // está en `window`: si el partido ya está congelado, no se borra. Se
+    // comprueba contra la copia descargada por la lista.
+    const _m = (window._allFetchedMatches || []).find(x => x.id === matchId);
+    if (_m && window.CronosMatchLock && !window.CronosMatchLock.canDelete(_m, false)) {
+        alert(window.CronosMatchLock.lockReason(_m));
+        return;
+    }
 
     // Confirmación doble: primero confirmar, luego advertencia de que se
     // perderán todos los eventos registrados.
@@ -4052,32 +4070,44 @@ window.showHistory = async function() {
             return;
         }
 
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // ── v434 · VENTANA DE RETENCIÓN, y se acabó el auto-borrado local ──
+        // Antes esto eran 24 h medidas sobre `updatedAt` y, además de filtrar,
+        // BORRABA desde el navegador lo que se pasara. Las dos cosas se caen:
+        //  · La retención es de 10 h ancladas en `finishedAt` (2 h de ventana de
+        //    incidencias + 8 h congelado). 24 h contradecía la regla.
+        //  · El borrado lo hace `cleanupLiveMatches` en el servidor desde v431.
+        //    Y desde v434 un partido congelado NO ES BORRABLE por nadie salvo el
+        //    SuperAdmin, así que aquel deleteDoc del cliente ya sólo podía
+        //    producir errores de permisos silenciados en un catch.
+        const _retencionMs = (window.CronosMatchLock && window.CronosMatchLock.RETENTION_MS)
+                              || (10 * 60 * 60 * 1000);
+        const _cortRetencion = Date.now() - _retencionMs;
 
-        // Separar: en vivo vs finalizados (y auto-borrar caducados)
+        // Separar: en vivo vs finalizados dentro de la ventana de retención
         const liveMatches = [], finishedMatches = [];
         const allDocs2 = [];
         snap.forEach(d => { allDocs2.push({ id: d.id, ...d.data() }); });
-        
+
         window._allFetchedMatches = allDocs2;
-        
+
         // Ordenar cliente (sin índice Firestore)
         allDocs2.sort((a,b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
-        
-        const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        
+
         allDocs2.forEach(m => {
-            const updated = m.updatedAt?.toDate?.() || new Date(0);
             if (m.status === 'active') {
                 liveMatches.push(m);
-            } else {
-                if (updated <= twentyFourHoursAgo && !m.keep) {
-                    // Auto-borrar si tiene más de 24h y no está marcado como guardado
-                    deleteDoc(doc(db, 'live_matches', m.id)).catch(err => console.warn('Error auto-borrado:', err));
-                } else {
-                    finishedMatches.push(m);
-                }
+                return;
             }
+            // v434 · El ancla es finishedAt (con respaldo en updatedAt), la misma
+            // que usan el candado y la Cloud Function. Con `updatedAt` a secas,
+            // un partido tocado después de terminar se quedaba en la lista más
+            // tiempo del que le toca. Lo que ya pasó de las 10 h no se enseña
+            // aunque el barrido del servidor todavía no lo haya recogido: la
+            // función corre cada hora, así que puede existir hasta 1 h de más.
+            const finMs = (window.CronosMatchLock && window.CronosMatchLock.finishedAtMs(m))
+                          || (m.updatedAt?.toMillis?.() || 0);
+            if (finMs && finMs <= _cortRetencion) return;   // caducado: no se pinta
+            finishedMatches.push(m);
         });
 
         listEl.innerHTML = '';
@@ -4184,18 +4214,31 @@ window.showHistory = async function() {
                                        color:#58a6ff;font-size:0.75rem;cursor:pointer;font-weight:700;">
                                 ▶️ Revivir
                             </button>
-                            <button onclick="toggleKeepMatch('${m.id}', event)" title="${m.keep ? 'Dejar de guardar' : 'Guardar permanentemente'}"
-                                style="padding:0.3rem 0.6rem;background:${m.keep ? 'rgba(63,185,80,0.15)' : 'rgba(255,255,255,0.05)'};
-                                       border:1px solid ${m.keep ? 'rgba(63,185,80,0.4)' : 'var(--border)'};border-radius:6px;
-                                       color:${m.keep ? '#3fb950' : 'var(--muted)'};font-size:0.75rem;cursor:pointer;font-weight:600;">
-                                ${m.keep ? '★ Guardado' : '☆ Guardar'}
-                            </button>
+                            <!-- v434 · El boton "Guardar" (campo keep) se
+                                 retira. Prometia conservar el partido para
+                                 siempre y desde v431 era MENTIRA: la Cloud
+                                 Function borra a las 10 h sin mirar ese campo.
+                                 Ademas escribirlo es editar un partido
+                                 terminado, que es justo lo que se prohibe. -->
+                            ${window.CronosMatchLock && window.CronosMatchLock.state(m) === 'frozen' ? `
+                            <span title="Cerrado definitivamente: no admite cambios ni borrado"
+                                style="padding:0.3rem 0.6rem;background:rgba(125,133,144,0.12);
+                                       border:1px solid rgba(125,133,144,0.3);border-radius:6px;
+                                       color:var(--muted);font-size:0.75rem;font-weight:700;">
+                                🔒 Cerrado
+                            </span>` : `
+                            <span title="Admite incidencias durante este tiempo"
+                                style="padding:0.3rem 0.6rem;background:rgba(240,136,62,0.12);
+                                       border:1px solid rgba(240,136,62,0.35);border-radius:6px;
+                                       color:#f0883e;font-size:0.75rem;font-weight:700;">
+                                ✏️ ${escapeHtml((window.CronosMatchLock && window.CronosMatchLock.graceRemainingText(m)) || '')}
+                            </span>
                             <button onclick="deleteMatch('${m.id}', event)"
                                 style="padding:0.3rem 0.6rem;background:rgba(255,88,88,0.1);
                                        border:1px solid rgba(255,88,88,0.3);border-radius:6px;
                                        color:#ff5858;font-size:0.75rem;cursor:pointer;">
                                 🗑️ Eliminar
-                            </button>
+                            </button>`}
                         </div>
                     </div>`;
                 card.onclick = () => { history.pushState({},'','?match='+m.id); setMatchListContext(finishedMatches.length ? [...liveMatches,...finishedMatches] : [m], m.id); loadMatch(m.id); };
@@ -4496,7 +4539,9 @@ setInterval(function() {
     #sound-activate-banner { display: none !important; }
 }
 </style>
-<script src="js/match/replay/replay-player.js?v=v433"></script>
-<script src="js/match/events/retroactive-modal.js?v=v433"></script>
+<!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
+<script src="js/match/immutability.js?v=v434"></script>
+<script src="js/match/replay/replay-player.js?v=v434"></script>
+<script src="js/match/events/retroactive-modal.js?v=v434"></script>
 </body>
 </html>

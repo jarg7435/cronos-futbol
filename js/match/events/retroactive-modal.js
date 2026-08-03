@@ -8,10 +8,55 @@
 
     let _selectedEventType = 'goal';
     let _targetMatchId = null;
+    // v434 · Datos del partido destino, para saber si admite incidencias. Lo
+    // aportan los listados de Partidos Terminados al abrir el modal desde una
+    // tarjeta. Sin él (partido en curso) el estado es 'live' por definición.
+    let _targetMatchData = null;
 
     // ── Abrir el modal para registrar un evento retroactivo ────────────
-    window.openRetroactiveEventModal = function(matchId) {
+    // v434 · 2º parámetro `matchData`: el documento del partido, para aplicar la
+    // ventana de gracia. Es opcional a propósito — el botón "⏱️ PERDIDOS" del
+    // partido en curso (index.html) llama sin argumentos y debe seguir yendo.
+    // v434 · Lee el documento del partido para decidir la ventana con el dato
+    // del SERVIDOR y no con la copia que tenga pintada la pantalla, que puede
+    // llevar ahí un buen rato. Si la lectura falla se devuelve null y el cliente
+    // deja pasar: entonces manda la regla de firestore.rules, que es la barrera
+    // de verdad. Nunca al revés — un fallo de red no debe abrir la puerta.
+    async function _cargarPartido(matchId) {
+        try {
+            const fa = window._cronos_auth;
+            if (!fa || !fa.db || !matchId) return null;
+            const fs = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const snap = await fs.getDoc(fs.doc(fa.db, 'live_matches', matchId));
+            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        } catch (e) {
+            console.warn('[v434] No se pudo leer el partido destino:', e && e.message);
+            return null;
+        }
+    }
+
+    window.openRetroactiveEventModal = async function(matchId, matchData) {
         _targetMatchId = matchId || (typeof liveMatchId !== 'undefined' ? liveMatchId : null);
+        _targetMatchData = matchData || null;
+
+        // Si el destino NO es el partido que se está jugando, se lee su estado.
+        // Así la puerta funciona para cualquier punto de llamada sin que tenga
+        // que cooperar pasando los datos — incluidos los que se añadan después.
+        const _enCurso = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
+        if (!_targetMatchData && _targetMatchId && _targetMatchId !== _enCurso) {
+            _targetMatchData = await _cargarPartido(_targetMatchId);
+        }
+
+        // v434 · PUERTA DE ENTRADA. Un partido congelado no abre el modal: es
+        // preferible decirlo antes que dejar rellenar el formulario para
+        // rechazarlo al guardar.
+        if (_targetMatchData && window.CronosMatchLock
+            && !window.CronosMatchLock.canAddEvent(_targetMatchData)) {
+            const motivo = window.CronosMatchLock.lockReason(_targetMatchData);
+            if (typeof showToast === 'function') showToast('🔒 ' + motivo, 5000);
+            else alert(motivo);
+            return;
+        }
 
         let modal = document.getElementById('cronos-retroactive-modal');
         if (!modal) {
@@ -138,6 +183,19 @@
 
     // ── Procesar el envío del evento retroactivo ──────────────────────
     window.submitRetroactiveEvent = async function() {
+        // v434 · SE REVALIDA AL GUARDAR, no basta con la puerta de apertura: el
+        // modal puede quedarse abierto y la ventana de 2 h vencer mientras se
+        // rellena. Sin esto, dejar el modal abierto sería la forma de saltarse
+        // la congelación.
+        if (_targetMatchData && window.CronosMatchLock
+            && !window.CronosMatchLock.canAddEvent(_targetMatchData)) {
+            const motivo = window.CronosMatchLock.lockReason(_targetMatchData);
+            if (typeof showToast === 'function') showToast('🔒 ' + motivo, 5000);
+            else alert(motivo);
+            window.closeRetroactiveEventModal();
+            return;
+        }
+
         const half = document.getElementById('retro-half-select')?.value || '1T';
         const minute = parseInt(document.getElementById('retro-minute-input')?.value || '30');
         const playerId = document.getElementById('retro-player-select')?.value;
@@ -188,8 +246,15 @@
         // Registrar el evento reutilizando la ruta central _registerMatchEvent,
         // que además persiste en Firestore (live_matches) con arrayUnion. Le
         // pasamos el matchTime manual como 4º parámetro (override retroactivo).
+        //
+        // v434 · Y EL PARTIDO DESTINO como 6º. Antes no se pasaba: _targetMatchId
+        // solo se usaba para el registro de auditoría, mientras la escritura de
+        // Firestore iba a la global `liveMatchId`. Abrir este modal desde la
+        // tarjeta de un partido terminado escribía el evento en el partido que
+        // el entrenador estuviera jugando, o en ninguno.
         if (typeof _registerMatchEvent === 'function') {
-            _registerMatchEvent(eventType, text, icon, matchTime);
+            _registerMatchEvent(eventType, text, icon, matchTime, null,
+                                { matchId: _targetMatchId, matchData: _targetMatchData });
             // El evento retroactivo se inserta fuera de orden: reordenar por tiempo.
             if (Array.isArray(window._cronosMatchEvents)) {
                 window._cronosMatchEvents.sort((a, b) => (a.createdAt - b.createdAt));

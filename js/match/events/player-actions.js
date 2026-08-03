@@ -107,14 +107,21 @@ window._registerSubHalf = function (player, subId, action) {
 // último trozo). Al reformatear las sustituciones ese parseo dejaba de
 // encontrarlo. Con campos propios, el formato visible puede cambiar sin romper
 // nada que dependa de los datos.
-function _registerMatchEvent(type, text, icon, matchTimeOverride, extra) {
+// v434 · `target` (opcional) = { matchId, matchData }. Solo lo usa el modal de
+// eventos retroactivos, para escribir en el partido que el usuario abrió y no
+// en el que se esté jugando. Ver la nota junto a la puerta de inmutabilidad.
+function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target) {
     // 🔑 CONFIRMACIÓN DIFERIDA: con el modal abierto NADA sale de aquí. Se aparca
     // y se decide en HECHO (_confirmarEventosModal), para que una rectificación
     // o un doble clic no manden un aviso falso que ya no se puede retirar.
     // Los cambios de jugador no pasan por aquí con el modal abierto —es un modal
     // bloqueante—, así que no se aparca nada ajeno al propio modal.
     if (_modalStaging) {
-        _modalBuffer.push([type, text, icon, matchTimeOverride, extra]);
+        // v434: `target` va en la tupla porque _confirmarEventosModal la reenvía
+        // con _registerMatchEvent.apply(null, ev). Sin él, un evento aparcado
+        // perdería el partido destino al emitirse y volvería a caer en la global
+        // liveMatchId, que es el defecto que v434 corrige.
+        _modalBuffer.push([type, text, icon, matchTimeOverride, extra, target]);
         return;
     }
     try {
@@ -175,7 +182,30 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra) {
 
         // v246: escribir a Firestore con setDoc + merge + arrayUnion.
         var fa = window._cronos_auth;
-        var _id = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
+        // v434 · EL PARTIDO DESTINO PUEDE NO SER EL QUE SE ESTÁ JUGANDO.
+        // `target` lo pasa el modal retroactivo cuando se abre desde la tarjeta
+        // de un partido TERMINADO. Hasta v434 esto no existía: el modal recibía
+        // el matchId, lo guardaba en _targetMatchId y NO lo pasaba aquí, así que
+        // el evento se escribía sobre la global `liveMatchId` — es decir, en el
+        // partido en curso del entrenador, o en ninguno. La única edición
+        // post-partido que hay apuntaba al documento equivocado.
+        var _id = (target && target.matchId)
+                    || ((typeof liveMatchId !== 'undefined') ? liveMatchId : null);
+
+        // v434 · PUERTA DE INMUTABILIDAD. Solo se comprueba cuando el llamante
+        // aporta los datos del partido destino (el caso retroactivo): para el
+        // partido en curso el estado es 'live' por definición. Esto es UX —
+        // evitar una escritura que el servidor va a rechazar—; la barrera real
+        // está en firestore.rules.
+        if (target && target.matchData && window.CronosMatchLock
+            && !window.CronosMatchLock.canAddEvent(target.matchData)) {
+            console.warn('[v434] Partido congelado: no se registra el evento.');
+            if (typeof showToast === 'function') {
+                showToast('🔒 ' + window.CronosMatchLock.lockReason(target.matchData), 5000);
+            }
+            return;
+        }
+
         if (fa && fa.db && _id) {
             import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
                 .then(function(fs) {

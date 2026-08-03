@@ -832,6 +832,57 @@ service cloud.firestore {
     // ============================================================
     match /live_matches/{matchId} {
       allow read: if isRegisteredUser();
+
+      // ══════════════════════════════════════════════════════════════
+      // v434 · INMUTABILIDAD DEL PARTIDO TERMINADO
+      // ══════════════════════════════════════════════════════════════
+      // Regla de negocio: lo ocurrido en un partido no se puede reescribir.
+      //   live    · status 'active'      -> se escribe con normalidad
+      //   grace   · terminado hace < 2 h -> SOLO se pueden AÑADIR sucesos
+      //   frozen  · terminado hace > 2 h -> ni edicion ni borrado
+      // 2 h de gracia + 8 h congelado = las 10 h de retencion de v431, tras las
+      // cuales `cleanupLiveMatches` lo borra desde el servidor.
+      //
+      // ⚠️ ESTA ES LA BARRERA DE VERDAD. El equivalente en el navegador
+      // (js/match/immutability.js) es solo interfaz: apaga botones y evita
+      // intentos que van a fallar, pero cualquiera puede saltarselo desde la
+      // consola. Si cambian las horas hay que cambiarlas EN LOS DOS SITIOS —
+      // no se pueden compartir constantes entre JS y el lenguaje de reglas.
+      //
+      // ⚠️ La Cloud Function `cleanupLiveMatches` usa el Admin SDK, que NO pasa
+      // por estas reglas: cerrar abandonados y borrar a las 10 h sigue yendo.
+      //
+      // ⚠️ Todas las lecturas del documento usan .get(campo, default) y NO el
+      // acceso directo: leer una clave AUSENTE de un mapa LANZA, y un error en
+      // la condicion equivale a DENY. Es la misma trampa que ya se pago en el
+      // `create` de abajo, detectada el 2026-07-29 con el test de SEC-C3.
+
+      // Instante de finalizacion, con respaldo en updatedAt. El respaldo cubre
+      // los partidos anteriores a v431, que nunca tuvieron sello.
+      function lmAnchor() {
+        return resource.data.get('finishedAt', resource.data.get('updatedAt', null));
+      }
+      function lmIsLive() {
+        return resource.data.get('status', 'active') == 'active';
+      }
+      // Sin fecha utilizable NO hay ventana: si no se puede fechar el final, no
+      // se puede demostrar que estemos dentro de las 2 h. Ante la duda, cerrado.
+      function lmInGrace() {
+        return !lmIsLive()
+               && lmAnchor() != null
+               && request.time < lmAnchor() + duration.value(2, 'h');
+      }
+      function lmFrozen() {
+        return !lmIsLive() && !lmInGrace();
+      }
+      // En la ventana de gracia lo unico que puede cambiar es la lista de
+      // sucesos. Sin este `hasOnly`, la ventana permitiria reescribir el
+      // marcador, las alineaciones o los minutos durante 2 h, que es justo la
+      // falsificacion que se quiere impedir.
+      function lmOnlyEvents() {
+        return request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['events', 'updatedAt']);
+      }
       // SEC (cierre de hueco): create/update ya NO son un `if isAuth()` abierto.
       // El documento contiene PII (coachEmail, nombres/dorsales de jugadores
       // -menores-, nombre/colores de club), asi que cualquier autenticado podia
@@ -888,6 +939,12 @@ service cloud.firestore {
       // UPDATE: se valida contra el clubId YA EXISTENTE en el documento
       // (resource.data), no contra el entrante, para evitar que un escritor
       // "reclame" el partido cambiando el clubId a uno al que pertenece.
+      //
+      // v434 · A la pertenencia se le suma AHORA el estado del partido. Ni
+      // siquiera el SuperAdmin edita un partido cerrado: la inmutabilidad no
+      // admite excepciones por rol, porque un rol con permiso para reescribir
+      // el resultado es exactamente la falsificacion que se quiere impedir. El
+      // SuperAdmin si conserva el BORRADO (ver `allow delete`), como valvula.
       allow update: if isAuth() && (
                        isSuperAdmin() ||
                        sameClub(resource.data.clubId) ||
@@ -897,6 +954,14 @@ service cloud.firestore {
                        (resource.data.coachEmail != null &&
                         ('email' in request.auth.token) && request.auth.token.email != null &&
                         resource.data.coachEmail == request.auth.token.email)
+                    )
+                    && (
+                       // Partido en curso: se escribe con normalidad. Incluye la
+                       // propia transicion a 'finished', porque el estado que se
+                       // mira es el ANTERIOR (resource.data), no el entrante.
+                       lmIsLive() ||
+                       // Ventana de 2 h: solo anadir sucesos, nada mas.
+                       (lmInGrace() && lmOnlyEvents())
                     );
       // v274: Borrado ampliado para permitir limpiar partidos en vivo
       // huerfanos / descoordinados / abandonados. Puede borrar:
@@ -916,15 +981,26 @@ service cloud.firestore {
       // y coachEmail==token.email, que NO llevan gate de clubId. Se reintrodujo
       // en el commit c61eda0 (commit mixto que reescribio el bloque desde una
       // base obsoleta y revirtio el cierre original 1d3fe3a); aqui se re-cierra.
+      //
+      // v434 · CONGELADO ES TAMBIEN NO BORRABLE. Lo que no se puede editar se
+      // falsificaria por omision: si un partido incomodo se puede hacer
+      // desaparecer, la inmutabilidad no sirve de nada. Pasadas las 2 h solo lo
+      // borra `cleanupLiveMatches` (Admin SDK, no pasa por aqui) a las 10 h.
+      // El SuperAdmin conserva el borrado SIEMPRE como valvula de escape para
+      // partidos de prueba, duplicados o creados por error.
       allow delete: if isAuth() && (
                        isSuperAdmin() ||
-                       sameClub(resource.data.clubId) ||
-                       userDocClubId(resource.data.clubId) ||
-                       (resource.data.createdBy != null &&
-                        resource.data.createdBy == request.auth.uid) ||
-                       (resource.data.coachEmail != null &&
-                        ('email' in request.auth.token) && request.auth.token.email != null &&
-                        resource.data.coachEmail == request.auth.token.email)
+                       (
+                         !lmFrozen() && (
+                           sameClub(resource.data.clubId) ||
+                           userDocClubId(resource.data.clubId) ||
+                           (resource.data.createdBy != null &&
+                            resource.data.createdBy == request.auth.uid) ||
+                           (resource.data.coachEmail != null &&
+                            ('email' in request.auth.token) && request.auth.token.email != null &&
+                            resource.data.coachEmail == request.auth.token.email)
+                         )
+                       )
                     );
     }
 

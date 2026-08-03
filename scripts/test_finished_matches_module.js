@@ -144,13 +144,26 @@ function buildSandbox({
         escapeHtml: escHtml,
     };
     vm.createContext(sandbox);
+    // v434 · El modulo de inmutabilidad se carga DE VERDAD en el sandbox: el
+    // render pregunta por window.CronosMatchLock para decidir si un partido
+    // admite todavia incidencias. Sin el, todo saldria congelado y las
+    // aserciones de los botones probarian el caso equivocado.
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/match/immutability.js'), 'utf8'), sandbox);
     vm.runInContext(BLOCK, sandbox);
 
     return { g: sandbox, w: sandbox.window, store, written, readCols, container };
 }
 
 const idxOf = (s, sub) => s.indexOf(sub);
-const finished = (extra) => Object.assign({ status: 'finished', clubId: 'club1' }, extra);
+// v434 · `finished()` produce un partido recien terminado, o sea DENTRO de la
+// ventana de gracia de 2 h: es el estado en el que la ficha conserva sus
+// botones. Para el otro estado esta `congelado()`.
+const finished = (extra) => Object.assign(
+    { status: 'finished', clubId: 'club1', finishedAt: { toDate: () => new Date(Date.now() - 10 * 60000) } },
+    extra);
+const congelado = (extra) => Object.assign(
+    { status: 'finished', clubId: 'club1', finishedAt: { toDate: () => new Date(Date.now() - 5 * 3600 * 1000) } },
+    extra);
 const collective = (extra) => Object.assign({ staffReport: true, clubId: 'club1' }, extra);
 
 function walk(dir, out) {
@@ -347,9 +360,15 @@ function walk(dir, out) {
         });
         await g._renderFinishedMatchesTab();
         ok('3b · con partidos sin categoría, lee users', readCols.includes('users'), readCols);
-        ok('3c · escribe la categoría encontrada en la colección de origen',
-            written.length === 1 && written[0].col === 'live_matches' && written[0].id === 'L1'
-            && written[0].data.category === 'Cadete' && written[0].data.subcategory === 'B',
+        // ⚠️ v434 · ASERCIÓN INVERTIDA. Hasta v434 exigía que el enriquecimiento
+        // PERSISTIERA la categoría en live_matches. Eso es escribir sobre un
+        // partido terminado, que es justo lo que la regla de inmutabilidad
+        // prohíbe: la regla de Firestore lo deniega y el `.catch(() => {})` se
+        // tragaba el error, dejando un fallo de permisos por cada ficha y cada
+        // apertura de la pestaña. Ahora se comprueba lo contrario, y 3g sigue
+        // fijando que la categoría SÍ se calcula y se pinta.
+        ok('3c · [v434] NO persiste la categoría sobre un partido terminado',
+            written.length === 0,
             written);
     }
     {
@@ -363,13 +382,15 @@ function walk(dir, out) {
             written);
     }
     {
-        const { g, written } = buildSandbox({
+        const { g, written, container } = buildSandbox({
             live: { L1: finished({ coachEmail: 'c9@x.com', homeName: 'SinCat', createdAt: 1 }) },
             users: { zz: { category: 'Alevín', email: 'c9@x.com' } },
         });
         await g._renderFinishedMatchesTab();
+        // v434 · La resolución por email se sigue probando, pero mirando el
+        // RENDER en vez de la escritura, que ya no ocurre para partidos.
         ok('3e · resuelve el entrenador también por email',
-            written.length === 1 && written[0].data.category === 'Alevín', written);
+            container.innerHTML.includes('ALEVÍN'), container.innerHTML.slice(0, 200));
     }
     {
         const { g, written, container } = buildSandbox({
@@ -378,9 +399,10 @@ function walk(dir, out) {
             live: { L1: finished({ createdBy: 'u1', homeName: 'SinCat', createdAt: 1 }) },
         });
         await g._renderFinishedMatchesTab();
+        // v434 · Igual que 3e: se comprueba en el render, no en la escritura.
         ok('3f · usa la categoría del propio usuario si el partido es suyo',
-            written.length === 1 && written[0].data.category === 'Infantil'
-            && written[0].data.subcategory === 'C', written);
+            container.innerHTML.includes('INFANTIL') && container.innerHTML.includes('Grupo C'),
+            container.innerHTML.slice(0, 200));
         ok('3g · y el render ya refleja la categoría enriquecida',
             container.innerHTML.includes('INFANTIL'), container.innerHTML.slice(0, 0) || undefined);
     }
@@ -544,13 +566,36 @@ function walk(dir, out) {
         ok('6b · etiqueta de categoría y grupo', h.includes('CADETE') && h.includes('Grupo A'));
         ok('6c · fecha desde matchDate', h.includes(escHtml('02/03/2026')));
         ok('6d · contador de eventos', h.includes('3 eventos'));
+        // v434 · Este partido está DENTRO de la ventana de gracia (finished()
+        // lo fabrica recién terminado), así que conserva los tres botones.
         ok('6e · los tres botones con sus llamadas',
             h.includes(`window.openMatchReplay('M1')`)
             && h.includes(`openRetroactiveEventModal('M1')`)
             && h.includes(`deleteFinishedMatchFromCloud('M1', '', event)`));
+        ok('6e2 · [v434] y el chip dice cuánta ventana queda', h.includes('✏️'), h.slice(0, 200));
         ok('6f · ⚠️ el modal retroactivo va guardado y el borrado NO',
             h.includes(`if(typeof openRetroactiveEventModal==='function')`)
             && !/typeof deleteFinishedMatchFromCloud/.test(h));
+    }
+    {
+        // ── v434 · LA OTRA MITAD: un partido CONGELADO no ofrece salida ──
+        // Es la comprobación que da valor a la regla: pasadas las 2 h la ficha
+        // se puede revivir, pero ni se le añaden sucesos ni se borra.
+        const { g, container } = buildSandbox({
+            live: { M9: congelado({ homeName: 'Viejo', awayName: 'Rival', createdAt: 1 }) },
+        });
+        await g._renderFinishedMatchesTab();
+        const hc = container.innerHTML;
+        ok('6h · [v434] la ficha congelada se marca como CERRADA', hc.includes('🔒 CERRADO'));
+        ok('6i · [v434] y NO ofrece el botón de evento retroactivo',
+            !hc.includes('openRetroactiveEventModal'),
+            'pasadas las 2 h no se admite ninguna incidencia');
+        ok('6j · [v434] ni el de borrar',
+            !hc.includes('deleteFinishedMatchFromCloud'),
+            'lo que no se puede editar tampoco se puede hacer desaparecer');
+        ok('6k · [v434] pero SÍ se puede seguir reviviendo',
+            hc.includes(`window.openMatchReplay('M9')`),
+            'la consulta del historial no se toca: solo la escritura');
     }
     {
         const { g, container } = buildSandbox({

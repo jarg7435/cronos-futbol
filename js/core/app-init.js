@@ -952,7 +952,12 @@ async function showFinishedMatches() {
                         m.subcategory = m.subcategory || info.subcategory;
                         const colName = m.source === 'live_matches' ? 'live_matches' : 'cronos_player_reports';
                         const targetId = m.docId || m.id;
-                        if (targetId && updateDoc && doc) {
+                        // v434 · Mismo caso que en finished-matches-tab.js: no se
+                        // persiste sobre un partido terminado. Se sigue usando en
+                        // pantalla, pero editar un partido cerrado está prohibido
+                        // y la regla lo denegaría en cada ficha, en silencio.
+                        const _esPartido = colName === 'live_matches';
+                        if (targetId && updateDoc && doc && !_esPartido) {
                             updateDoc(doc(_db, colName, targetId), {
                                 category: m.category,
                                 subcategory: m.subcategory
@@ -1025,12 +1030,23 @@ async function showFinishedMatches() {
             const eventsCount = Array.isArray(m.events) ? m.events.length : 0;
             const dateStr = m.matchDate || (m.createdAt ? (typeof m.createdAt === 'number' ? new Date(m.createdAt).toLocaleDateString('es-ES') : new Date(m.createdAt.seconds * 1000).toLocaleDateString('es-ES')) : '—');
 
+            // ── v434 · Estado de inmutabilidad ────────────────────────────
+            // Mismo criterio que finished-matches-tab.js, el listado gemelo:
+            // las fichas de cronos_player_reports son INFORMES (cerrados por la
+            // regla de independencia) y se tratan siempre como congeladas.
+            const _lock = window.CronosMatchLock;
+            const _congelado = (m.source === 'cronos_player_reports' || !_lock)
+                                 ? true
+                                 : _lock.state(m) === 'frozen';
+            const _restante = (!_congelado && _lock) ? _lock.graceRemainingText(m) : '';
+
             return `
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:0.8rem 1rem;background:rgba(255,255,255,0.03);border:1px solid rgba(121,192,255,0.2);border-radius:10px;margin-bottom:0.6rem;gap:1rem;">
                     <div>
                         <div style="font-weight:800;color:white;font-size:0.9rem;">${escapeHtml(homeName)} ${scoreHome} - ${scoreAway} ${escapeHtml(awayName)}</div>
                         <div style="font-size:0.72rem;color:#7d8590;margin-top:2px;">
                             ${escapeHtml(cat)} ${escapeHtml(sub)} · 📅 ${escapeHtml(dateStr)} ${eventsCount > 0 ? `· 📍 ${eventsCount} eventos` : ''}
+                            ${_congelado ? ' · 🔒 CERRADO' : ` · ✏️ ${escapeHtml(_restante)}`}
                         </div>
                     </div>
                     <div style="display:flex; gap:0.4rem; align-items:center;">
@@ -1038,14 +1054,15 @@ async function showFinishedMatches() {
                             style="padding:0.45rem 1rem;background:linear-gradient(135deg,#58a6ff,#1f6beb);border:none;border-radius:7px;color:white;font-size:0.8rem;cursor:pointer;font-weight:800;white-space:nowrap;box-shadow:0 3px 8px rgba(88,166,255,0.3);">
                             ▶️ Revivir
                         </button>
-                        <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal('${m.id}');" title="Añadir evento retroactivo (batería/cobertura)"
+                        ${_congelado ? '' : `
+                        <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal('${m.id}');" title="Añadir evento retroactivo (batería/cobertura) — quedan ${escapeHtml(_restante)}"
                             style="padding:0.45rem 0.6rem;background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);border-radius:7px;color:#58a6ff;font-size:0.8rem;cursor:pointer;font-weight:700;">
                             ⏱️
                         </button>
                         <button onclick="deleteFinishedMatchFromCloud('${m.id}', '${m.docId || ''}', event);" title="Eliminar partido"
                             style="padding:0.45rem 0.6rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:7px;color:#ff5858;font-size:0.8rem;cursor:pointer;font-weight:700;">
                             🗑️
-                        </button>
+                        </button>`}
                     </div>
                 </div>`;
         };
@@ -1060,6 +1077,33 @@ async function showFinishedMatches() {
 
 window.deleteFinishedMatchFromCloud = async function(matchId, docId, e) {
     if (e) e.stopPropagation();
+
+    // ── v434 · PUERTA DE BORRADO ──────────────────────────────────────
+    // Congelado es también NO BORRABLE. Si un partido incómodo se puede hacer
+    // desaparecer, la inmutabilidad no sirve de nada: lo que no se puede editar
+    // se falsificaría por omisión. El SuperAdmin conserva la válvula de escape.
+    // Se relee el documento en vez de fiarse de la ficha pintada, que puede
+    // llevar abierta más de las 2 h de la ventana.
+    try {
+        const fa0 = window._cronos_auth;
+        const esSA = window._cronosCurrentUser?.role === 'superadmin'
+                  || window._cronosCurrentUser?.role === 'admin';
+        if (matchId && fa0 && fa0.db && window.CronosMatchLock && !esSA) {
+            const fs0 = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const snap0 = await fs0.getDoc(fs0.doc(fa0.db, 'live_matches', matchId));
+            if (snap0.exists() && !window.CronosMatchLock.canDelete({ id: snap0.id, ...snap0.data() }, false)) {
+                const motivo = window.CronosMatchLock.lockReason({ id: snap0.id, ...snap0.data() });
+                if (typeof showToast === 'function') showToast('🔒 ' + motivo, 5000);
+                else alert(motivo);
+                return;
+            }
+        }
+    } catch (eLock) {
+        // Un fallo de lectura NO abre la puerta por su cuenta: se sigue y es la
+        // regla de firestore.rules la que decide. Aquí solo se pierde el aviso.
+        console.warn('[v434] No se pudo comprobar el candado antes de borrar:', eLock && eLock.message);
+    }
+
     if (!confirm('¿Eliminar definitivamente este partido del historial?')) return;
 
     try {

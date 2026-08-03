@@ -190,7 +190,16 @@ async function _renderFinishedMatchesTab() {
                         // Guardar en Firestore de forma silenciosa e instantánea
                         const colName = m.source === 'live_matches' ? 'live_matches' : 'cronos_player_reports';
                         const targetId = m.docId || m.id;
-                        if (targetId && updateDoc && doc) {
+                        // v434 · NO SE ESCRIBE SOBRE UN PARTIDO TERMINADO. Este
+                        // "enriquecimiento" rellenaba category/subcategory
+                        // durante el render, y eso es editar un partido cerrado:
+                        // la regla de firestore.rules lo deniega y el .catch(())
+                        // se lo tragaba, dejando un error de permisos por cada
+                        // ficha en cada apertura de la pestaña. La categoría
+                        // calculada se sigue usando EN PANTALLA (las dos líneas
+                        // de arriba), simplemente ya no se persiste.
+                        const _esPartido = colName === 'live_matches';
+                        if (targetId && updateDoc && doc && !_esPartido) {
                             updateDoc(doc(db, colName, targetId), {
                                 category: m.category,
                                 subcategory: m.subcategory
@@ -273,6 +282,21 @@ async function _renderFinishedMatchesTab() {
             const eventsCount = Array.isArray(m.events) ? m.events.length : 0;
             const dateStr = m.matchDate || (m.createdAt ? (typeof m.createdAt === 'number' ? new Date(m.createdAt).toLocaleDateString('es-ES') : new Date(m.createdAt.seconds * 1000).toLocaleDateString('es-ES')) : '—');
 
+            // ── v434 · Estado de inmutabilidad ────────────────────────────
+            // Las fichas que vienen de cronos_player_reports son INFORMES, no
+            // partidos: no hay documento de partido que editar y, por la regla
+            // de independencia, un informe enviado está cerrado. Se tratan
+            // siempre como congeladas.
+            const _lock = window.CronosMatchLock;
+            const _estado = (m.source === 'cronos_player_reports' || !_lock)
+                                ? 'frozen'
+                                : _lock.state(m);
+            const _congelado = _estado === 'frozen';
+            const _restante = (!_congelado && _lock) ? _lock.graceRemainingText(m) : '';
+            const _chip = _congelado
+                ? `<span title="Cerrado definitivamente: no admite cambios" style="background:rgba(125,133,144,0.15); border:1px solid rgba(125,133,144,0.35); color:#7d8590; font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:5px;">🔒 CERRADO</span>`
+                : `<span title="Admite incidencias durante ${escapeHtml(_restante)} más" style="background:rgba(240,136,62,0.12); border:1px solid rgba(240,136,62,0.35); color:#f0883e; font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:5px;">✏️ ${escapeHtml(_restante)}</span>`;
+
             return `
                 <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(121,192,255,0.2); border-radius:12px; padding:0.9rem 1.1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:0.7rem; transition:border-color 0.2s;"
                      onmouseover="this.style.borderColor='rgba(121,192,255,0.45)'" onmouseout="this.style.borderColor='rgba(121,192,255,0.2)'">
@@ -282,6 +306,7 @@ async function _renderFinishedMatchesTab() {
                             <span style="background:rgba(121,192,255,0.12); border:1px solid rgba(121,192,255,0.3); color:#79c0ff; font-size:0.65rem; font-weight:700; padding:2px 6px; border-radius:5px;">
                                 ${escapeHtml(cat)} ${escapeHtml(sub)}
                             </span>
+                            ${_chip}
                         </div>
                         <div style="font-size:0.75rem; color:#7d8590; display:flex; align-items:center; gap:0.8rem;">
                             <span>📅 ${escapeHtml(dateStr)}</span>
@@ -294,7 +319,8 @@ async function _renderFinishedMatchesTab() {
                             style="background:linear-gradient(135deg,#58a6ff,#1f6beb); border:none; color:white; padding:0.5rem 1.1rem; border-radius:8px; font-weight:800; font-size:0.8rem; cursor:pointer; box-shadow:0 4px 12px rgba(88,166,255,0.3); display:flex; align-items:center; gap:0.4rem;">
                             ▶️ Revivir Partido
                         </button>
-                        <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal('${m.id}');" title="Añadir evento retroactivo (batería/cobertura)"
+                        ${_congelado ? '' : `
+                        <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal('${m.id}');" title="Añadir evento retroactivo (batería/cobertura) — quedan ${escapeHtml(_restante)}"
                             style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:#58a6ff; padding:0.5rem 0.65rem; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;"
                             onmouseover="this.style.background='rgba(88,166,255,0.3)'" onmouseout="this.style.background='rgba(88,166,255,0.15)'">
                             ⏱️
@@ -303,7 +329,7 @@ async function _renderFinishedMatchesTab() {
                             style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.4); color:#ff5858; padding:0.5rem 0.65rem; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;"
                             onmouseover="this.style.background='rgba(255,88,88,0.3)'" onmouseout="this.style.background='rgba(255,88,88,0.15)'">
                             🗑️
-                        </button>
+                        </button>`}
                     </div>
                 </div>`;
         };

@@ -12,12 +12,13 @@ async function cleanupStaleMatches() {
     try {
         const fa = window._cronos_auth;
         if (!fa || !fa.db) return;
+        // v434 · `deleteDoc` ya no se importa: el borrado desde el cliente se
+        // retiró (ver abajo). `serverTimestamp` entra para sellar finishedAt.
         const { collection, query, where, getDocs,
-                updateDoc, deleteDoc, doc } = await import(
+                updateDoc, doc, serverTimestamp } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
         const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
         // v431 · ACOTADO AL CLUB PROPIO. Esto era el segundo escaneo completo
         // de la colección: `getDocs(collection(fa.db,'live_matches'))` sin
@@ -37,24 +38,35 @@ async function cleanupStaleMatches() {
             where('clubId', '==', _clubIdLimpieza)
         ));
 
-        let closed = 0, deleted = 0;
+        let closed = 0;
         const promises = [];
 
         snap.forEach(d => {
             const data    = d.data();
             const updated = data.updatedAt?.toDate?.() || new Date(0);
 
-            if (updated < sevenDaysAgo) {
-                // Más de 7 días → borrar definitivamente
+            // v434 · SE RETIRA EL BORRADO A 7 DÍAS DESDE EL CLIENTE.
+            // Ya era inalcanzable desde v431 —`cleanupLiveMatches` borra en
+            // servidor a las 10 h, así que nunca hay nada de 7 días— y desde
+            // v434 es además IMPOSIBLE: un partido congelado no lo puede borrar
+            // nadie salvo el SuperAdmin, de modo que ese deleteDoc solo podía
+            // producir errores de permisos tragados por el .catch(). Lo que
+            // queda es cerrar los abandonados, que sigue siendo legítimo porque
+            // el documento todavía está 'active' y la regla lo permite.
+            if (data.status === 'active' && updated < fourHoursAgo) {
+                // Más de 4 horas sin actualizar → cerrar como finalizado.
+                // ⚠️ Se sella `finishedAt` aquí también. Sin el sello, el ancla
+                // de la ventana de gracia y del borrado caía en `updatedAt`,
+                // que en un partido abandonado es la hora del último latido: el
+                // partido nacía ya congelado y con la retención medio gastada.
+                // La Cloud Function sí lo sellaba; este camino no, y son el
+                // mismo cierre por las mismas 4 h.
                 promises.push(
-                    deleteDoc(doc(fa.db, 'live_matches', d.id))
-                        .then(() => deleted++)
-                        .catch(() => {})
-                );
-            } else if (data.status === 'active' && updated < fourHoursAgo) {
-                // Más de 4 horas sin actualizar → cerrar como finalizado
-                promises.push(
-                    updateDoc(doc(fa.db, 'live_matches', d.id), { status: 'finished' })
+                    updateDoc(doc(fa.db, 'live_matches', d.id), {
+                        status: 'finished',
+                        finishedAt: serverTimestamp(),
+                        autoClosed: true
+                    })
                         .then(() => closed++)
                         .catch(() => {})
                 );
