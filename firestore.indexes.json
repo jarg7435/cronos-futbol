@@ -1,6 +1,38 @@
 {
   "indexes": [
     {
+      "collectionGroup": "live_matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",    "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "live_matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "clubId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "live_matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",    "order": "ASCENDING" },
+        { "fieldPath": "createdBy", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "live_matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",     "order": "ASCENDING" },
+        { "fieldPath": "coachEmail", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "platform_requests",
       "queryScope": "COLLECTION",
       "fields": [

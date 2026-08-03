@@ -1137,7 +1137,7 @@ import { initializeApp }
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, collection,
-         onSnapshot, getDocs, query, orderBy }
+         onSnapshot, getDocs, query, orderBy, where }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -2604,12 +2604,99 @@ function _userCanFollow(m) {
     return false;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  v431 · LAS CONSULTAS QUE SUSTITUYEN AL ESCANEO COMPLETO
+// ════════════════════════════════════════════════════════════════════
+//  refreshBackgroundWatchers se descargaba la coleccion ENTERA
+//  —getDocs(collection(db,"live_matches")), sin un solo where— y filtraba
+//  DESPUES en el cliente con _userCanFollow. Y esto corre cada 30 s por cada
+//  espectador conectado. El coste crece MULTIPLICANDO:
+//
+//      lecturas/hora = espectadores × 120 × documentos_en_la_coleccion
+//
+//  Con 20 partidos y 200 espectadores son 480.000 lecturas/hora. Ese era el
+//  techo real de la aplicacion, no las escrituras.
+//
+//  Ahora se pregunta solo por lo que el usuario puede seguir, con las MISMAS
+//  tres condiciones que ya evaluaba _userCanFollow (club propio, creador, o
+//  email del entrenador). Firestore no tiene OR entre campos distintos, asi
+//  que son tres consultas que se fusionan por id. Aun asi se pasa el resultado
+//  por _userCanFollow: es barato y garantiza que el criterio siga siendo UNO
+//  SOLO — si alguna consulta trae de mas, el filtro lo corta igual que antes.
+//
+//  ⚠️ CON RESPALDO AL ESCANEO ANTIGUO. Estas consultas necesitan indices
+//  compuestos (firestore.indexes.json). Si se despliega el hosting sin
+//  desplegar los indices, la consulta falla y el usuario se quedaria SIN
+//  ALERTAS y sin ningun aviso visible. El catch cae al escaneo completo:
+//  caro, pero funcionando.
+async function _fetchFollowableMatches() {
+    const vistos = new Map();
+    const absorber = (snap) => snap.forEach(d => vistos.set(d.id, { id: d.id, ...d.data() }));
+
+    const esSA = (userData.role === "superadmin" || userData.role === "admin");
+    if (esSA) {
+        // El SuperAdmin si puede seguirlos todos. Al menos se acota por estado
+        // —los terminados no se siguen— y por el filtro de club si lo tiene
+        // puesto, que es lo que ya hacia _userCanFollow.
+        if (window._saClubFilter) {
+            absorber(await getDocs(query(collection(db, "live_matches"),
+                where("status", "==", "active"),
+                where("clubId", "==", window._saClubFilter))));
+        } else {
+            absorber(await getDocs(query(collection(db, "live_matches"),
+                where("status", "==", "active"))));
+        }
+        return Array.from(vistos.values());
+    }
+
+    const consultas = [];
+    if (userData.clubId) {
+        consultas.push(query(collection(db, "live_matches"),
+            where("status", "==", "active"),
+            where("clubId", "==", userData.clubId)));
+    }
+    if (userData.uid) {
+        consultas.push(query(collection(db, "live_matches"),
+            where("status", "==", "active"),
+            where("createdBy", "==", userData.uid)));
+    }
+    if (userData.email) {
+        // ⚠️ _userCanFollow compara el email en minusculas, pero Firestore no
+        // sabe comparar sin distinguir mayusculas: la consulta trae solo la
+        // coincidencia EXACTA. Las variantes de capitalizacion las sigue
+        // recogiendo la rama del club o la del creador; y si un dia hubiera un
+        // partido que solo casara por email con otra capitalizacion, el
+        // respaldo del escaneo NO se activaria (la consulta no falla, solo
+        // devuelve menos). Es el unico caso en que este cambio ve menos que
+        // antes, y es preferible a 480.000 lecturas/hora.
+        consultas.push(query(collection(db, "live_matches"),
+            where("status", "==", "active"),
+            where("coachEmail", "==", userData.email)));
+    }
+    if (!consultas.length) return [];
+
+    const resultados = await Promise.all(consultas.map(q => getDocs(q)));
+    resultados.forEach(absorber);
+    return Array.from(vistos.values());
+}
+
 async function refreshBackgroundWatchers() {
     try {
-        const snap = await getDocs(collection(db, "live_matches"));
+        let candidatos;
+        try {
+            candidatos = await _fetchFollowableMatches();
+        } catch (errIdx) {
+            // Falta el indice compuesto (o cualquier otro fallo de consulta):
+            // se vuelve al escaneo completo para no dejar al usuario sin
+            // alertas. Se avisa por consola para que se note en desarrollo.
+            console.warn("[LIVE v431] Consulta filtrada no disponible, se usa el escaneo completo:", errIdx && errIdx.message);
+            const todos = await getDocs(collection(db, "live_matches"));
+            candidatos = [];
+            todos.forEach(d => candidatos.push({ id: d.id, ...d.data() }));
+        }
+
         const activeIds = new Set();
-        snap.forEach(d => {
-            const m = { id: d.id, ...d.data() };
+        candidatos.forEach(m => {
             if (!_userCanFollow(m)) return;
             activeIds.add(m.id);
             if (_bgWatchers[m.id]) return; // ya suscrito
@@ -4152,7 +4239,7 @@ setInterval(function() {
     #sound-activate-banner { display: none !important; }
 }
 </style>
-<script src="js/match/replay/replay-player.js?v=v430"></script>
-<script src="js/match/events/retroactive-modal.js?v=v430"></script>
+<script src="js/match/replay/replay-player.js?v=v431"></script>
+<script src="js/match/events/retroactive-modal.js?v=v431"></script>
 </body>
 </html>

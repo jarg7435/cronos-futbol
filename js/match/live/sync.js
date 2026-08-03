@@ -19,8 +19,23 @@ async function cleanupStaleMatches() {
         const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-        // Obtener todos los partidos
-        const snap = await getDocs(collection(fa.db, 'live_matches'));
+        // v431 · ACOTADO AL CLUB PROPIO. Esto era el segundo escaneo completo
+        // de la colección: `getDocs(collection(fa.db,'live_matches'))` sin
+        // filtro, en el arranque de la app de CADA usuario, trayéndose los
+        // partidos de todos los clubes —con nombres y dorsales de menores— al
+        // navegador de un entrenador que solo necesita los suyos.
+        //
+        // Ya no hace falta que barra todo: desde v431 la limpieza de verdad la
+        // hace `cleanupLiveMatches` en el servidor (functions/index.js), cada
+        // hora y para toda la colección. Esto se queda como red de seguridad
+        // local para que el propio club no vea fantasmas entre dos pasadas.
+        // Sin clubId no hay nada que acotar y se sale: el servidor se encarga.
+        const _clubIdLimpieza = window._cronosCurrentUser?.clubId;
+        if (!_clubIdLimpieza) return;
+        const snap = await getDocs(query(
+            collection(fa.db, 'live_matches'),
+            where('clubId', '==', _clubIdLimpieza)
+        ));
 
         let closed = 0, deleted = 0;
         const promises = [];
@@ -480,6 +495,34 @@ async function pushLiveSnapshot(status = 'active') {
             snapshot.initialPlayers   = _pendingInitialLineup.initialPlayers;
             snapshot.initialFormation = _pendingInitialLineup.initialFormation;
             _pendingInitialLineup = null;
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // v431 · SELLO DE FINALIZACIÓN, ancla del borrado automático a 10 h
+        // ════════════════════════════════════════════════════════════════
+        // El borrado se ancla a CUÁNDO TERMINÓ el partido, no a la última
+        // modificación del documento. Ese instante no se guardaba en ningún
+        // sitio: sólo existía `updatedAt`, que reescribe cualquier retoque
+        // posterior y habría ido aplazando el borrado indefinidamente.
+        //
+        // ⚠️ SE AÑADE FUERA DEL OBJETO, CON UN `if`, Y NO COMO
+        // `finishedAt: status === 'finished' ? x : undefined`.
+        // El SDK de Firestore **LANZA** con un valor `undefined`
+        // ("Unsupported field value: undefined") salvo que se haya creado la
+        // instancia con `ignoreUndefinedProperties: true`, y en este proyecto
+        // NO se usa esa opción en ningún sitio. Con el ternario, cada latido
+        // de un partido activo habría reventado la sincronización entera.
+        //
+        // Al ir dentro del `if`, el campo simplemente no viaja mientras el
+        // partido está en curso, y el `merge: true` deja intacto el sello ya
+        // guardado: no se pisa a sí mismo ni se borra al reabrir la app.
+        if (status === 'finished') {
+            snapshot.finishedAt = serverTimestamp();
+            // Caducidad explícita, por si algún día se activa la política TTL
+            // nativa de Firestore como red de seguridad sin coste. La TTL
+            // nativa borra "dentro de las 24 h siguientes", no a la hora
+            // exacta; por eso el borrado fino lo hace la función programada.
+            snapshot.expireAt = new Date(Date.now() + 10 * 60 * 60 * 1000);
         }
 
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });

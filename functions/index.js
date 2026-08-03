@@ -1181,3 +1181,113 @@ exports.logAuditEntry = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', 'No se pudo registrar la auditoria');
   }
 });
+
+/* ==================================================================== */
+/* 7️⃣ Cloud Function: cleanupLiveMatches — borrado automatico de        */
+/*    live_matches a las 10 HORAS de TERMINAR el partido (v431)          */
+/* ==================================================================== */
+/*
+ *  POR QUE EXISTE. Hasta v431 la limpieza de `live_matches` la hacia
+ *  EXCLUSIVAMENTE el navegador (`cleanupStaleMatches` en js/match/live/sync.js),
+ *  y por tanto solo ocurria si algun entrenador abria la aplicacion. Si nadie
+ *  entraba, los documentos —con nombres y dorsales de MENORES— se quedaban
+ *  indefinidamente. Ademas escaneaba la coleccion ENTERA sin filtro.
+ *
+ *  QUE HACE, en dos pasos, una vez por hora:
+ *
+ *   PASO A · cerrar los partidos ABANDONADOS. Un partido cuyo entrenador cerro
+ *     la app sin pulsar "finalizar" se queda 'active' para siempre y por tanto
+ *     nunca entraria en el paso B. Se cierran los 'active' sin latido desde
+ *     hace mas de 4 h, que es EXACTAMENTE el mismo umbral que ya aplicaba el
+ *     cliente: este paso no cambia el criterio, solo lo traslada al servidor.
+ *
+ *   PASO B · borrar los TERMINADOS con mas de 10 h. El ancla es `finishedAt`
+ *     (sello que escribe pushLiveSnapshot en la transicion a 'finished'),
+ *     NO `updatedAt`: cualquier retoque posterior del documento reescribe
+ *     updatedAt y habria ido aplazando el borrado indefinidamente.
+ *
+ *  ⚠️ PARTIDOS ANTERIORES A v431 (sin `finishedAt`). Una consulta
+ *  `where('finishedAt','<',corte)` NO devuelve los documentos que no tienen el
+ *  campo — Firestore los excluye del indice, no los trata como "null". Esos
+ *  documentos no se borrarian JAMAS y el problema seguiria vivo justo para lo
+ *  ya acumulado. Por eso la consulta se hace sobre `updatedAt`, que existe en
+ *  todos, y el ancla real se decide en codigo con `finishedAt || updatedAt`.
+ *
+ *  ⚠️ PRECISION. Al correr cada hora, el borrado ocurre entre las 10 h y las
+ *  11 h despues de terminar. Para afinar mas, bajar el `every N minutes` (el
+ *  coste es despreciable: son dos consultas indexadas por ejecucion).
+ */
+// Sin `.timeZone(...)`: el disparador es un INTERVALO ("cada 60 minutos"), no
+// una hora concreta del dia, asi que la zona horaria no pinta nada. Ademas
+// mantiene la firma igual que cleanupExpiredRequests, que es lo que espera el
+// arnes de scripts/test_sec_c1_clubid.js al cargar este fichero.
+exports.cleanupLiveMatches = functions.pubsub
+  .schedule('every 60 minutes')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const ahora = Date.now();
+    const corte4h  = new Date(ahora - 4  * 60 * 60 * 1000);
+    const corte10h = new Date(ahora - 10 * 60 * 60 * 1000);
+
+    let cerrados = 0, borrados = 0;
+
+    /* ---- PASO A · cerrar abandonados (mismo umbral que el cliente) ---- */
+    try {
+      // ⚠️ `limit(450)`: un batch de Firestore admite 500 operaciones como
+      // maximo y falla ENTERO al superarlas. Con 150 partidos simultaneos
+      // previstos, una acumulacion de fin de semana puede pasar de 500 y
+      // dejaria la limpieza sin hacer NADA, justo cuando mas falta hace. Al
+      // correr cada hora, lo que sobre se recoge en la pasada siguiente.
+      const abandonados = await db.collection('live_matches')
+        .where('status', '==', 'active')
+        .where('updatedAt', '<', corte4h)
+        .limit(450)
+        .get();
+
+      const loteA = db.batch();
+      abandonados.forEach(d => {
+        loteA.update(d.ref, {
+          status:     'finished',
+          finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+          expireAt:   new Date(ahora + 10 * 60 * 60 * 1000),
+          autoClosed: true,
+        });
+        cerrados++;
+      });
+      if (cerrados) await loteA.commit();
+    } catch (e) {
+      console.error('[cleanupLiveMatches] paso A (cerrar abandonados):', e.message);
+    }
+
+    /* ---- PASO B · borrar los terminados con mas de 10 h ---- */
+    try {
+      // Se consulta por updatedAt (existe en TODOS los documentos) y el ancla
+      // real se decide abajo. Ver la nota de arriba sobre los documentos sin
+      // finishedAt: filtrar por finishedAt en la consulta los dejaria fuera.
+      const terminados = await db.collection('live_matches')
+        .where('status', '==', 'finished')
+        .where('updatedAt', '<', corte10h)
+        .limit(450)   // mismo motivo que en el paso A: tope de 500 por batch
+        .get();
+
+      const loteB = db.batch();
+      terminados.forEach(d => {
+        const data = d.data() || {};
+        const fin = data.finishedAt || data.updatedAt;
+        const finMs = fin && typeof fin.toDate === 'function' ? fin.toDate().getTime() : 0;
+        // Sin fecha utilizable no se borra: mas vale un documento de mas que
+        // destruir el partido de alguien por un dato corrupto.
+        if (!finMs) return;
+        if (finMs <= ahora - 10 * 60 * 60 * 1000) {
+          loteB.delete(d.ref);
+          borrados++;
+        }
+      });
+      if (borrados) await loteB.commit();
+    } catch (e) {
+      console.error('[cleanupLiveMatches] paso B (borrar terminados):', e.message);
+    }
+
+    console.log('[cleanupLiveMatches] cerrados=' + cerrados + ' borrados=' + borrados);
+    return null;
+  });
