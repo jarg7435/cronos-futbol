@@ -610,6 +610,104 @@ function _setMyTeamRole(role) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  v441 · UNA SOLA TARJETA POR PARTIDO EN "RECUPERAR PARTIDO EN CURSO"
+//
+//  Reporte del autor: al salir y volver a entrar, el mismo partido salía DOS
+//  veces —una con la etiqueta "DISPOSITIVO LOCAL" y otra con "NUBE"—, y hay que
+//  elegir entre dos tarjetas que son lo mismo.
+//
+//  🔑 POR QUÉ NO BASTABA EL DEDUP QUE YA HABÍA. Existía, pero comparaba
+//  ÚNICAMENTE el identificador: `localMatch.liveMatchId === d.id`. Basta con que
+//  el id guardado en el dispositivo no coincida con el del documento de la nube
+//  para que el filtro no vea nada y salgan las dos. Y hay más de una forma de
+//  que no coincida: que el estado se guardara antes de que `startLiveSync`
+//  asignara el id (arranca 800 ms después de pintar a los jugadores), o que el
+//  partido se reanudara sin pasar por "Retomar", en cuyo caso `startLiveSync`
+//  lo trata como partido NUEVO y genera otro id —lleva la hora y el minuto en
+//  el sufijo— dejando el documento anterior huérfano en la nube.
+//
+//  🔑 LA IDENTIDAD QUE SÍ AGUANTA: dentro de este panel, dos entradas con los
+//  MISMOS equipos y la misma modalidad son el mismo partido. No es una
+//  suposición: las dos fuentes ya vienen filtradas por el límite de duración
+//  (80 min en F-7, 110/120 en F-11), así que la lista sólo puede contener
+//  partidos de las últimas dos horas y no se puede jugar dos veces el mismo
+//  enfrentamiento en esa ventana. El id sigue valiendo como segunda vía: si
+//  coincide, fusiona aunque alguien haya renombrado un equipo a mitad.
+//
+//  Se fusiona en vez de descartar una fuente porque cada una sabe algo que la
+//  otra no: el dispositivo tiene el estado más fresco cuando se perdió la
+//  cobertura, y la nube lo tiene cuando el partido se siguió desde otro
+//  aparato. Se muestra la MÁS RECIENTE y se ofrece un único "Retomar".
+// ════════════════════════════════════════════════════════════════════
+function _recoveryNorm(s) {
+    return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Momento del último guardado, en milisegundos. Es lo que decide qué fuente
+// manda cuando el mismo partido está en las dos.
+function _recoveryTs(c) {
+    if (!c) return 0;
+    if (c.isLocal) return new Date(c.savedAt || 0).getTime() || 0;
+    const u = c.updatedAt;
+    if (u && typeof u.toMillis === 'function') return u.toMillis() || 0;
+    if (u && typeof u.toDate === 'function') return u.toDate().getTime() || 0;
+    return new Date(c.savedAt || u || 0).getTime() || 0;
+}
+
+// Las claves por las que dos candidatos son el MISMO partido.
+function _recoveryClaves(c) {
+    const claves = [];
+    const id = c.isLocal ? c.liveMatchId : c._id;
+    if (id) claves.push('id:' + id);
+    const home = _recoveryNorm(c.homeTeam && c.homeTeam.name);
+    const away = _recoveryNorm(c.awayTeam && c.awayTeam.name);
+    // Sin nombres de equipo no hay identidad por equipos: se queda sólo con el
+    // id. Fusionar dos partidos "sin nombre" sería peor que enseñar dos.
+    if (home || away) claves.push('eq:' + home + '|' + away + '|' + (c.mode || 'f7'));
+    return claves;
+}
+
+// Fusiona las dos fuentes en UNA entrada por partido. Función pura: no toca el
+// DOM ni Firestore, para poder ejercitarla en el guard.
+//   Devuelve [{ datos, tieneLocal, idsNube, ts }] ordenado por ts descendente.
+function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
+    const entradas = [];
+    const porClave = new Map();
+
+    const meter = (cand) => {
+        if (!cand) return;
+        const claves = _recoveryClaves(cand);
+        let destino = null;
+        for (const k of claves) {
+            if (porClave.has(k)) { destino = porClave.get(k); break; }
+        }
+        if (!destino) {
+            destino = { datos: null, tieneLocal: false, idsNube: [], ts: -1 };
+            entradas.push(destino);
+        }
+        // TODAS las claves del candidato apuntan ya a esta entrada: así un
+        // tercer candidato que coincida por cualquiera de ellas también cae
+        // aquí (el local casa por equipos, y el segundo documento de nube por
+        // id con el primero).
+        for (const k of claves) porClave.set(k, destino);
+
+        if (cand.isLocal) destino.tieneLocal = true;
+        else if (cand._id && destino.idsNube.indexOf(cand._id) === -1) destino.idsNube.push(cand._id);
+
+        // Lo que se ENSEÑA sale de la fuente más reciente.
+        const ts = _recoveryTs(cand);
+        if (ts > destino.ts) { destino.datos = cand; destino.ts = ts; }
+    };
+
+    meter(localMatch);
+    (docsNube || []).forEach(meter);
+
+    entradas.sort((a, b) => b.ts - a.ts);
+    return entradas;
+}
+window._fusionaCandidatosRecuperacion = _fusionaCandidatosRecuperacion;
+
+// ════════════════════════════════════════════════════════════════════
 //  RECUPERAR PARTIDO EN CURSO
 //  Consulta live_matches en Firestore filtrando por coachUid actual
 //  y status === 'active'. Muestra un panel para retomar el partido.
@@ -726,10 +824,7 @@ async function openLiveMatchRecovery() {
         const list = document.getElementById('live-recovery-list');
         if (!list) return;
 
-        const allDocs = [];
-        if (localMatch) {
-            allDocs.push(localMatch);
-        }
+        const docsNube = [];
 
         snap.forEach(d => {
             const data = d.data();
@@ -764,22 +859,18 @@ async function openLiveMatchRecovery() {
             if (isExpired) {
                 _doDeleteLiveMatch(d.id, null, true);
             } else {
-                // Evitar duplicar en la lista si ya mostramos la versión local (más reciente)
-                const isSameId = localMatch && localMatch.liveMatchId === d.id;
-                if (!isSameId) {
-                    allDocs.push({ _id: d.id, ...data });
-                }
+                // v441: ya NO se descarta aquí el documento que coincide con el
+                // local. La fusión se hace después, en un solo sitio y con una
+                // identidad que no depende de que los ids coincidan.
+                docsNube.push({ _id: d.id, ...data });
             }
         });
 
-        // Ordenar por actualización descendente
-        allDocs.sort((a, b) => {
-            const ta = a.isLocal ? new Date(a.savedAt).getTime() : (a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0);
-            const tb = b.isLocal ? new Date(b.savedAt).getTime() : (b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0);
-            return tb - ta;
-        });
+        // v441 · Las dos fuentes se funden en UNA entrada por partido, ordenadas
+        // por la más recientemente guardada.
+        const entradas = _fusionaCandidatosRecuperacion(localMatch, docsNube);
 
-        if (allDocs.length === 0) {
+        if (entradas.length === 0) {
             list.innerHTML = `
             <div style="text-align:center;padding:3rem 1rem;color:var(--text-muted);">
                 <div style="font-size:2.5rem;margin-bottom:0.8rem;">✅</div>
@@ -791,8 +882,11 @@ async function openLiveMatchRecovery() {
             return;
         }
 
-        list.innerHTML = allDocs.map(m => {
-            const updTs = m.isLocal ? new Date(m.savedAt).getTime() : (m.updatedAt?.toMillis ? m.updatedAt.toMillis() : 0);
+        list.innerHTML = entradas.map(entrada => {
+            // `m` son los datos de la fuente MÁS RECIENTE de esta entrada; la
+            // procedencia (dispositivo, nube o ambas) va aparte.
+            const m = entrada.datos;
+            const updTs = entrada.ts > 0 ? entrada.ts : 0;
             const updStr = updTs
                 ? new Date(updTs).toLocaleString('es-ES', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
                 : '—';
@@ -806,22 +900,43 @@ async function openLiveMatchRecovery() {
             const minsH2 = Math.floor((m.timeH2 || 0) / 60).toString().padStart(2,'0');
             const secsH2 = ((m.timeH2 || 0) % 60).toString().padStart(2,'0');
             const timeStr = m.phase === '2nd_half' ? `${minsH2}:${secsH2}` : `${minsH1}:${secsH1}`;
-            const playerCount = m.playerCount || 0;
+            // v441: `playerCount` sólo lo trae la fuente del dispositivo; el
+            // documento de la nube guarda el array `players`. Antes toda tarjeta
+            // de nube decía "0 jugadores", y ahora la fusión puede elegir esa
+            // fuente, así que el recuento se saca de donde esté.
+            const playerCount = m.playerCount || (Array.isArray(m.players) ? m.players.length : 0);
             const modeLabel = m.mode === 'f11' ? 'F-11' : 'F-7';
 
-            let clickResume, clickDelete;
+            // ── Retomar: por la fuente MÁS RECIENTE de la entrada ──
+            // Retomar del dispositivo no necesita red y trae el estado tal cual
+            // se dejó; de la nube trae el que vieron los espectadores. Se elige
+            // el más fresco, que es justo lo que ya decidió la fusión.
+            const idsAttr = typeof escapeAttr === 'function'
+                ? escapeAttr(entrada.idsNube.join(','))
+                : entrada.idsNube.join(',').replace(/'/g, '');
+            let clickResume;
             if (m.isLocal) {
                 clickResume = `_doResumeLocalMatch()`;
-                clickDelete = `_doDeleteLocalMatch()`;
             } else {
-                const safeId = typeof escapeAttr === 'function' ? escapeAttr(m._id) : m._id.replace(/'/g, '');
+                const safeId = typeof escapeAttr === 'function' ? escapeAttr(m._id) : String(m._id).replace(/'/g, '');
                 clickResume = `_doResumeMatch('${safeId}')`;
-                clickDelete = `_doDeleteLiveMatch('${safeId}', this)`;
             }
+            // ── Eliminar: SE LLEVA LAS DOS FUENTES ──
+            // 🔑 Si sólo se borrara una, la otra reaparecería sola en el
+            // siguiente repintado y el usuario volvería a ver el partido que
+            // acaba de eliminar. Es la mitad del defecto que se está cerrando.
+            const clickDelete = `_doDeleteRecoveryEntry('${idsAttr}', ${entrada.tieneLocal ? 'true' : 'false'})`;
 
-            const localTag = m.isLocal
-                ? `<span style="background:#58a6ff;color:#0a0e14;font-size:0.68rem;padding:2px 6px;border-radius:4px;font-weight:900;margin-left:0.5rem;vertical-align:middle;">DISPOSITIVO LOCAL</span>`
-                : `<span style="background:rgba(240,136,62,0.2);color:#f0883e;font-size:0.68rem;padding:2px 6px;border-radius:4px;font-weight:900;margin-left:0.5rem;vertical-align:middle;">NUBE</span>`;
+            // Una sola etiqueta que dice DÓNDE está guardado, en vez de dos
+            // tarjetas compitiendo. La información no se pierde: se consolida.
+            const origenTexto = (entrada.tieneLocal && entrada.idsNube.length) ? '📱 DISPOSITIVO + ☁️ NUBE'
+                              : entrada.tieneLocal ? '📱 SOLO EN ESTE DISPOSITIVO'
+                              : '☁️ NUBE';
+            const origenColor = (entrada.tieneLocal && entrada.idsNube.length)
+                ? 'background:rgba(63,185,80,0.18);color:#3fb950;'
+                : entrada.tieneLocal ? 'background:rgba(88,166,255,0.2);color:#58a6ff;'
+                : 'background:rgba(240,136,62,0.2);color:#f0883e;';
+            const localTag = `<span title="Fuentes de este partido" style="${origenColor}font-size:0.62rem;padding:2px 6px;border-radius:4px;font-weight:900;margin-left:0.5rem;vertical-align:middle;white-space:nowrap;">${origenTexto}</span>`;
 
             return `
             <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.3);
@@ -922,6 +1037,52 @@ async function openLiveMatchRecovery() {
         console.error('[Recovery] Error cargando live_matches:', err);
     }
 }
+
+// ¿El partido guardado en este dispositivo es el del id que se va a borrar?
+// Se compara por id Y por equipos, la misma identidad que usa la fusión: si
+// sólo se mirara el id, el estado local del MISMO partido sobreviviría al
+// borrado (con otro id) y el partido reaparecería solo.
+function _recoveryEsElPartidoLocal(matchId) {
+    try {
+        const raw = localStorage.getItem('cronos_active_match_v2');
+        if (!raw) return false;
+        const p = JSON.parse(raw);
+        if (!p) return false;
+        if (p.liveMatchId && matchId && p.liveMatchId === matchId) return true;
+        // Sin coincidencia de id, el nombre del equipo local va dentro del id
+        // generado por startLiveSync (slug del equipo + fecha + hora), así que
+        // se compara por ahí; es una pista, no una certeza, y por eso exige
+        // además que el partido local no tenga id propio con el que decidir.
+        if (!p.liveMatchId && p.teamNames && p.teamNames.home && matchId) {
+            const slug = _recoveryNorm(p.teamNames.home)
+                .normalize('NFD').replace(/[̀-ͯ]/g, '')
+                .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 20);
+            return !!slug && String(matchId).indexOf(slug) === 0;
+        }
+        return false;
+    } catch (e) { return false; }
+}
+window._recoveryEsElPartidoLocal = _recoveryEsElPartidoLocal;
+
+// ── Eliminar una entrada FUSIONADA del panel de recuperación (v441) ────
+// Borra TODAS las fuentes del partido: los documentos de la nube que se
+// hubieran fusionado y el estado guardado en el dispositivo. Si se dejara una,
+// el partido volvería a aparecer solo en el siguiente repintado.
+async function _doDeleteRecoveryEntry(idsNubeCsv, tieneLocal) {
+    if (!confirm('¿Eliminar este partido en curso? Se borrará de este dispositivo y de la nube, y no podrás recuperarlo.')) return;
+    const ids = String(idsNubeCsv || '').split(',').map(s => s.trim()).filter(Boolean);
+    for (const id of ids) {
+        try { await _doDeleteLiveMatch(id, null, true); } catch (e) { console.warn('[Recovery] borrando', id, e); }
+    }
+    if (tieneLocal === true || tieneLocal === 'true') {
+        localStorage.removeItem('cronos_active_match_v2');
+        document.getElementById('cronos-restore-banner')?.remove();
+    }
+    if (typeof showToast === 'function') showToast('🗑 Partido eliminado', 2500);
+    // Repintar: es la forma de que el recuento y el estado vacío queden bien.
+    openLiveMatchRecovery();
+}
+window._doDeleteRecoveryEntry = _doDeleteRecoveryEntry;
 
 // ── Retomar un partido local ───────────────────────────────────────────
 function _doResumeLocalMatch() {
@@ -1243,8 +1404,16 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         await deleteDoc(doc(fa.db, 'live_matches', matchId));
 
-        // ALSO clean local storage so it doesn't try to recover it locally!
-        localStorage.removeItem('cronos_active_match_v2');
+        // Limpiar también el estado del dispositivo, para que no reaparezca por
+        // la otra fuente.
+        // 🐛 v441 · PERO SÓLO SI ES EL MISMO PARTIDO. Antes se borraba SIEMPRE, y
+        // esta función se llama en silencio para cada documento CADUCADO que se
+        // encuentra al abrir el panel: un partido viejo de la nube borraba el
+        // estado del partido de HOY que aún estaba en curso en el dispositivo.
+        // Pérdida de datos real, y silenciosa.
+        if (_recoveryEsElPartidoLocal(matchId)) {
+            localStorage.removeItem('cronos_active_match_v2');
+        }
 
         if (isSilent) return; // No UI updates if silent
 
