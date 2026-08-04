@@ -4,12 +4,44 @@
 // Extraído de app.js (líneas 5234-5809)
 // ══════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════
+//  v445 · LA HORA REAL DEL RELOJ, ANEXADA AL APUNTE
+//
+//  Petición del autor: el Informe Colectivo tiene que enseñar la hora real de
+//  cada incidencia, "como ya aparece en el historial del partido en vivo".
+//
+//  🔑 Y NO ESTABA GUARDADA EN NINGÚN SITIO QUE EL INFORME PUEDA LEER. El visor
+//  la saca de `live_matches.events[].realTime`, que es otra colección y además
+//  se borra a las 10 h del final del partido. El historial del jugador —lo que
+//  de verdad viaja al informe— sólo llevaba el reloj DEL PARTIDO (MM:SS). Así
+//  que hay que capturarla aquí, en el momento del suceso.
+//
+//  ⚠️ SE ANEXA AL FINAL Y CON '@', y esto es lo delicado:
+//  `_parseHistoryForFirestore` saca el minuto con /(\d{1,2}):(\d{2})/, que
+//  coge la PRIMERA hora que encuentra en la cadena. Puesta delante, el informe
+//  entero leería como minuto de partido las 20:10 del reloj de pared y el
+//  cronograma se iría al garete sin dar un solo error. Al final, la primera
+//  sigue siendo la del partido.
+//
+//  ⚠️ Y NO SE PUEDE RECUPERAR HACIA ATRÁS: los partidos ya jugados no la
+//  tienen. Sus informes seguirán mostrando sólo el minuto de partido, que es
+//  como se han visto hasta ahora.
+// ════════════════════════════════════════════════════════════════════
+function _horaRealAhora() {
+    try {
+        return new Date().toLocaleTimeString('es-ES',
+            { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) { return ''; }
+}
+if (typeof window !== 'undefined') window._horaRealAhora = _horaRealAhora;
+
 function logEvent(player, eventType) {
     // Registra gol, tarjeta o lesión con el minuto exacto
     const elapsed = matchPhase === '2nd_half' ? (masterTimeH1 + masterTimeH2) : masterTimeH1;
     const timestamp = formatTime(elapsed);
     const halfLabel = matchPhase === '1st_half' ? '1ªP' : matchPhase === '2nd_half' ? '2ªP' : 'DESC';
-    player.history.push(`${eventType} a las ${timestamp} (${halfLabel})`);
+    const real = _horaRealAhora();
+    player.history.push(`${eventType} a las ${timestamp} (${halfLabel})${real ? ' @' + real : ''}`);
 }
 
 function resetMatch() {

@@ -414,6 +414,27 @@
             content: 'Sin sucesos todavía';
             font-size: 0.75rem; color: var(--muted); font-style: italic;
         }
+
+        /* ── v445 · ETIQUETA DE EQUIPO DE UNA INCIDENCIA ──
+           La comparten el aviso flotante y la ventana de sucesos, para que un
+           gol se lea igual en los dos sitios. Colores del marcador: local azul,
+           visitante rojo. */
+        .eq-chip {
+            display: inline-block; flex-shrink: 0;
+            max-width: 40%; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; vertical-align: baseline;
+            font-size: 0.66rem; font-weight: 800; letter-spacing: 0.3px;
+            text-transform: uppercase;
+            border-radius: 4px; padding: 1px 5px; margin-right: 5px;
+        }
+        .eq-chip-home {
+            color: var(--primary); background: rgba(88,166,255,0.14);
+            border: 1px solid rgba(88,166,255,0.32);
+        }
+        .eq-chip-away {
+            color: var(--danger); background: rgba(255,88,88,0.14);
+            border: 1px solid rgba(255,88,88,0.32);
+        }
         .bench-player-row {
             display: flex; align-items: center; gap: 0.5rem;
             padding: 0.4rem 0.5rem; border-radius: 6px;
@@ -2040,8 +2061,15 @@ window._posicionaAvisos = _posicionaAvisos;
 //  por delante TODO lo demás: la fila del historial, el destello, el sonido y
 //  la vibración. Por eso cada pieza va en su propio bloque con su guarda.
 // ════════════════════════════════════════════════════════════════════
-function showEventToast(type, line, sub, matchTime) {
+function showEventToast(type, line, sub, matchTime, equipo) {
     const meta = EVENT_META[type] || EVENT_META.sub;
+
+    // v445 · EL EQUIPO DE LA INCIDENCIA. Si el llamante no lo trae —la vía de
+    // respaldo por delta, y cualquier llamada antigua— se resuelve aquí con el
+    // último snapshot del partido que se está viendo. Se calcula UNA vez y
+    // vale para el aviso y para la fila del historial.
+    const _texto = (typeof line === 'string') ? line.replace(/<[^>]+>/g, '') : '';
+    const _eq = equipo || _equipoDeSuceso(lastSnapshot, { type: type, text: _texto });
 
     // ── 1 · el aviso flotante ────────────────────────────────────────
     const stack = document.getElementById("event-toast-stack");
@@ -2061,7 +2089,10 @@ function showEventToast(type, line, sub, matchTime) {
         el.innerHTML =
             '<div class="et-icon">' + meta.icon + '</div>' +
             '<div class="et-body">' +
-                '<div class="et-title">' + titleHTML + '</div>' +
+                // v445 · la etiqueta del equipo, delante del suceso: un gol ya
+                // no es "GOL · Pedro" a secas.
+                '<div class="et-title">' + _chipEquipoHtml(_eq) +
+                    _sinPrefijoEquipo(titleHTML, _eq) + '</div>' +
                 (sub ? '<div class="et-sub">' + escapeHtml(sub) + '</div>' : "") +
             '</div>';
         const quitar = () => {
@@ -2081,7 +2112,7 @@ function showEventToast(type, line, sub, matchTime) {
     // `sub` (la etiqueta del partido) llega hasta aquí y se pinta en el AVISO,
     // que es global; en la ventana no, porque la ventana ya es del partido que
     // se está viendo y lo dice su cabecera.
-    const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '' });
+    const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '', equipo: _eq });
     _appendEventToHistoryPanel(type, line, sub, _metaExt);
 
     // ── 3 · destello, sonido y vibración ─────────────────────────────
@@ -2115,7 +2146,7 @@ window._matchEventsLog = window._matchEventsLog || [];
 // Al agrandar la letra para que se lea, se unifican.
 const _FILA_SUCESO_CSS = 'display:flex; align-items:center; gap:8px; padding:4px 0;' +
                          'border-bottom:1px solid rgba(255,255,255,0.05);';
-function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML) {
+function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML, equipo) {
     // Hora real en gris y minuto de partido en NARANJA (v230). El minuto del
     // partido es lo que de verdad se busca al leer, así que va destacado.
     const hora = '<span style="font-size:0.72rem; color:#7d8590; font-weight:700;' +
@@ -2126,10 +2157,60 @@ function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML) {
         : '';
     return hora + minuto +
            '<span style="font-size:1.05rem; flex-shrink:0;">' + (evIcon || '•') + '</span>' +
+           _chipEquipoHtml(equipo) +
            // Sin `white-space:nowrap`: si un nombre largo no cabe, que salte de
            // línea. Recortarlo con puntos suspensivos aquí sería justo el
            // defecto que el autor reportó de la columna lateral.
            '<span style="flex:1; min-width:0;">' + titleHTML + '</span>';
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  v445 · DE QUÉ EQUIPO ES CADA INCIDENCIA
+//
+//  Petición del autor: goles, tarjetas y lesiones sólo decían el nombre del
+//  jugador. Los cambios sí llevaban el equipo, pero DENTRO del texto
+//  ("CRONOS B | ▲ SALE: …"), que es la forma que este proyecto ya decidió no
+//  usar como contrato (v418-v421, v439).
+//
+//  🔑 SE RESUELVE COMO DATO Y SE PINTA APARTE, no se mete en el texto: así el
+//  reproductor de repeticiones y los guards que dependen del formato exacto del
+//  `text` siguen intactos. Reutiliza el resolutor de v439 —campo `team` del
+//  evento, con respaldo por el prefijo del texto y por la plantilla del
+//  partido—, o sea que también funciona con partidos ya en curso.
+//
+//  Y para que no salga DOS veces, al pintar una sustitución se le quita al
+//  texto el prefijo "EQUIPO | " que ya lleva: el equipo pasa a la etiqueta y
+//  las cuatro incidencias quedan con la misma pinta.
+// ════════════════════════════════════════════════════════════════════
+function _equipoDeSuceso(m, ev) {
+    try {
+        if (typeof _liveFeedLado !== 'function') return null;
+        const lado = _liveFeedLado(m, ev);
+        if (!lado) return null;
+        return { lado: lado, nombre: _liveFeedNombreEquipo(m, lado, ev) };
+    } catch (e) { return null; }
+}
+
+function _chipEquipoHtml(equipo) {
+    if (!equipo || !equipo.lado) return '';
+    return '<span class="eq-chip eq-chip-' + equipo.lado + '">' +
+           escapeHtml(equipo.nombre || '') + '</span>';
+}
+
+// Quita el "EQUIPO | " que las sustituciones llevan al principio del texto.
+// Trabaja sobre el HTML ya formateado, así que se ancla en el separador ' | '
+// que _coloreaSustitucion no toca. Si no lo encuentra, devuelve lo mismo: nunca
+// puede dejar la línea vacía.
+function _sinPrefijoEquipo(html, equipo) {
+    if (!equipo || typeof html !== 'string') return html;
+    const i = html.indexOf(' | ');
+    if (i === -1) return html;
+    const cabeza = html.slice(0, i).replace(/<[^>]+>/g, '').trim().toLowerCase();
+    const nombre = String(equipo.nombre || '').trim().toLowerCase();
+    // Sólo se recorta si lo que hay delante ES el nombre del equipo. Un texto
+    // que empiece por otra cosa se deja tal cual.
+    if (!cabeza || (cabeza !== nombre && cabeza !== 'local' && cabeza !== 'visitante')) return html;
+    return html.slice(i + 3);
 }
 
 function _appendEventToHistoryPanel(type, line, sub, meta) {
@@ -2171,9 +2252,14 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         if (countEl) countEl.textContent = '(' + window._matchEventsLog.length + ')';
 
         // Crear la fila del DOM.
+        // v445 · el equipo llega en el meta (lo resuelve showEventToast) y se
+        // pinta como etiqueta aparte; en las sustituciones se le quita al texto
+        // el prefijo que ya lo llevaba, para no decirlo dos veces.
+        const _eq = (meta && meta.equipo) || null;
         const row = document.createElement('div');
         row.style.cssText = _FILA_SUCESO_CSS;
-        row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML);
+        row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon,
+                                        _sinPrefijoEquipo(titleHTML, _eq), _eq);
         listEl.appendChild(row);
 
         // Auto-scroll al final para ver el evento más reciente.
@@ -2232,9 +2318,13 @@ window._loadMatchEventsFromSnapshot = function(events) {
 
         window._matchEventsLog.push({ type, titleHTML, titleText, sub: '', ts: realTime, realTime, matchTime, icon: evIcon });
 
+        // v445 · aquí el equipo sale del PROPIO evento (campo `team` de v439),
+        // con el respaldo del resolutor para los eventos anteriores.
+        const _eq = _equipoDeSuceso(lastSnapshot, ev);
         const row = document.createElement('div');
         row.style.cssText = _FILA_SUCESO_CSS;
-        row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML);
+        row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon,
+                                        _sinPrefijoEquipo(titleHTML, _eq), _eq);
         listEl.appendChild(row);
     });
 
@@ -2833,7 +2923,11 @@ function detectAndAlert(matchId, matchData, fromCache) {
             // sustituciones. Antes el resto se mostraba con el texto crudo, y
             // ése era justo el "otro formato" del gol duplicado.
             const _linea = _formateaLineaEvento(_t, ev.text || '');
-            showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime);
+            // v445 · el equipo sale del PROPIO evento (campo `team`, v439), que
+            // es la fuente fiable; showEventToast sólo lo deduce cuando no se
+            // le pasa.
+            showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime,
+                           _equipoDeSuceso(matchData, ev));
         });
         return;
     }
@@ -4989,8 +5083,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v444"></script>
-<script src="js/match/replay/replay-player.js?v=v444"></script>
-<script src="js/match/events/retroactive-modal.js?v=v444"></script>
+<script src="js/match/immutability.js?v=v445"></script>
+<script src="js/match/replay/replay-player.js?v=v445"></script>
+<script src="js/match/events/retroactive-modal.js?v=v445"></script>
 </body>
 </html>

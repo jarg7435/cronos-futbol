@@ -320,8 +320,13 @@ function logMovement(player, subId, prevStatus) {
     const timestamp = formatTime(elapsed);
     const halfLabel = matchPhase === '1st_half' ? '1ªP' : matchPhase === '2nd_half' ? '2ªP' : 'DESC';
     const action = player.status === 'field' ? 'Entra' : 'Sale';
-    // subId permite emparejar la entrada con la salida en el informe
-    player.history.push(`${action} a las ${timestamp} (${halfLabel})${subId ? ' #' + subId : ''}`);
+    // subId permite emparejar la entrada con la salida en el informe.
+    // v445: y la hora real del reloj al final, con '@'. Va DESPUÉS del subId a
+    // propósito: el parser saca el minuto con la PRIMERA hora de la cadena y el
+    // subId con /#(\d+)/, así que anexar al final no le toca ni uno ni otro.
+    const _real = (typeof window !== 'undefined' && typeof window._horaRealAhora === 'function')
+        ? window._horaRealAhora() : '';
+    player.history.push(`${action} a las ${timestamp} (${halfLabel})${subId ? ' #' + subId : ''}${_real ? ' @' + _real : ''}`);
     // v230: registrar cambio en el historial del partido para Firestore.
     // 2026-07-31: se emite UN ÚNICO evento por sustitución. logMovement se
     // llama una vez por jugador, así que se entrega la mitad y _registerSubHalf

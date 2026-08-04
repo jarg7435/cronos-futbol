@@ -27,6 +27,17 @@ if (typeof window !== 'undefined') window._cMyTeamKey = _cMyTeamKey;
 //  El Gantt necesita objetos: {type:'sub_in', minute:3}
 //  Esta función convierte ambos formatos al formato objeto estándar
 // ════════════════════════════════════════════════════════════════════
+// v445 · La hora real del reloj que logEvent/logMovement anexan al final del
+// apunte con '@' ("… (1ªP) #123 @20:10:35"). Es lo que el Informe Colectivo
+// necesita para poder decir a qué hora pasó cada incidencia.
+// ⚠️ Se busca ANCLADA al '@'. Sin ese ancla se cogería el minuto de partido,
+// que va antes en la misma cadena.
+function _horaRealDeNota(nota) {
+    const m = String(nota || '').match(/@\s*(\d{1,2}:\d{2}(?::\d{2})?)/);
+    return m ? m[1] : '';
+}
+if (typeof window !== 'undefined') window._horaRealDeNota = _horaRealDeNota;
+
 function _parseHistoryForFirestore(raw) {
     if (!Array.isArray(raw)) return [];
     const result = [];
@@ -48,7 +59,11 @@ function _parseHistoryForFirestore(raw) {
             // lo trae (informe guardado antes de v426) se re-deduce del `note`,
             // que es donde quedó el texto original.
             const _fase = (e.phase === true) || /\((?:DESCANSO|FIN)\)/i.test(String(e.note || ''));
-            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', subId: e.subId || null, note: e.note || '', phase: _fase });
+            // v445 · `realTime` (hora del reloj de pared) tiene que sobrevivir a
+            // un re-parseo igual que `phase`. Si el objeto no la trae, se
+            // re-deduce del `note`, que es donde quedó la cadena original.
+            const _real = e.realTime || _horaRealDeNota(e.note);
+            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', subId: e.subId || null, note: e.note || '', phase: _fase, realTime: _real });
             return;
         }
         if (typeof e !== 'string') return;
@@ -89,7 +104,8 @@ function _parseHistoryForFirestore(raw) {
         // Ojo: (DESC) ≠ (DESCANSO). La primera es un cambio hecho DURANTE el
         // descanso y es real; la segunda es el apunte automático.
         const esFase = /\((?:DESCANSO|FIN)\)/i.test(e);
-        if (type) pushEvent({ type, minute, second, timeStr, subId, note: e, phase: esFase });
+        if (type) pushEvent({ type, minute, second, timeStr, subId, note: e, phase: esFase,
+                              realTime: _horaRealDeNota(e) });
     });
     return result;
 }

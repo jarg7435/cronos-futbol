@@ -177,10 +177,17 @@ console.log('\n── PARTE 4 · el delta sólo para partidos sin eventId ──
     // sustituciones y el resto salía con el texto crudo; ese "texto crudo" era
     // justo el segundo formato con el que el mismo gol aparecía repetido en el
     // historial. El minuto sigue saliendo del propio evento.
+    // v445: la llamada admite un 5º argumento con el equipo de la incidencia,
+    // así que el cierre del paréntesis deja de ir pegado al minuto. Se fija lo
+    // mismo que antes —texto y minuto salen del PROPIO evento— sin exigir que
+    // no haya más argumentos.
     ok('4d · 🔑 el aviso por evento usa el texto y el minuto del propio evento',
-       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime\)/.test(l) &&
+       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime[,)]/.test(l) &&
        /_linea = _formateaLineaEvento\(_t, ev\.text \|\| ''\)/.test(l),
        (l.match(/showEventToast\(_t[^\n]*/) || ['(no aparece)'])[0]);
+    ok('4d2 · v445 · y le pasa el EQUIPO del propio evento',
+       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\)\)/.test(l),
+       'el campo `team` del evento es la fuente fiable; deducirlo es el respaldo');
     ok('4e · 🔑 y las sustituciones se colorean: verde ENTRA, rojo SALE',
        /ENTRA:\[\^\|\]\*\)/.test(l.replace(/\\/g, '')) || /_coloreaSustitucion/.test(l));
 }

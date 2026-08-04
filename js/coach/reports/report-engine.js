@@ -274,8 +274,10 @@ const _RP = (() => {
                 const g = timeMap[tKey];
                 if (g.in && g.out) return; // Es un simple cambio de posición en el campo, no sustitución
                 const exact = parseFloat(tKey);
-                if (g.out) outs.push({ min: exact, timeStr: g.eOut.timeStr || '', subId: g.eOut.subId || null, p });
-                if (g.in)  ins.push({ min: exact, timeStr: g.eIn.timeStr || '', subId: g.eIn.subId || null, p });
+                // v445: `realTime` (hora del reloj de pared) viaja con la
+                // salida, que es la que manda la fila del panel de rotaciones.
+                if (g.out) outs.push({ min: exact, timeStr: g.eOut.timeStr || '', realTime: g.eOut.realTime || '', subId: g.eOut.subId || null, p });
+                if (g.in)  ins.push({ min: exact, timeStr: g.eIn.timeStr || '', realTime: g.eIn.realTime || '', subId: g.eIn.subId || null, p });
             });
         });
         outs.sort((a, b) => a.min - b.min);
@@ -317,7 +319,11 @@ const _RP = (() => {
         // Array unico final, en el mismo orden que outs (ordenado por min).
         return outs.map((o, idx) => {
             const found = pairIn[idx];
-            return { min: o.min, timeStr: o.timeStr, out: o.p, inp: found ? found.p : null };
+            // v445: si la salida no trae hora de reloj (informe viejo, o apunte
+            // sin ella) se prueba con la entrada emparejada: es el mismo
+            // instante del partido.
+            const realTime = o.realTime || (found ? found.realTime : '') || '';
+            return { min: o.min, timeStr: o.timeStr, realTime, out: o.p, inp: found ? found.p : null };
         });
     };
 
@@ -774,7 +780,29 @@ const _RP = (() => {
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid #f97316;display:inline-block;"></span>Lesión</span>` +
         `</div>`;
 
-        // ════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════
+    //  v445 · LA HORA REAL DEL RELOJ DE 24 H
+    //
+    //  Petición del autor: el Panel de Rotaciones y el Registro Cronológico
+    //  tienen que decir a qué hora ocurrió cada cosa, igual que el historial
+    //  del partido en vivo, no sólo el minuto de juego.
+    //
+    //  ⚠️ SÓLO APARECE SI EL APUNTE LA TRAE. La hora de reloj se empezó a
+    //  guardar en v445 (logEvent / logMovement la anexan con '@'), así que los
+    //  partidos ANTERIORES no la tienen y no hay de dónde sacarla: el visor la
+    //  guardaba en `live_matches.events[].realTime`, que es otra colección y
+    //  además se borra a las 10 h de acabar. En esos informes esta etiqueta no
+    //  se pinta y todo queda como estaba, en vez de inventar una hora.
+    // ════════════════════════════════════════════════════════════════
+    const horaRealPill = (hhmmss) => {
+        const t = String(hhmmss || '').trim();
+        if (!t) return '';
+        return `<span title="Hora real" style="font-size:0.63rem;font-weight:700;color:#58a6ff;` +
+               `background:rgba(88,166,255,0.10);border:1px solid rgba(88,166,255,0.22);` +
+               `border-radius:4px;padding:1px 5px;flex-shrink:0;white-space:nowrap;">🕐 ${esc(t)}</span>`;
+    };
+
+    // ════════════════════════════════════════════════════════════════
     //  SECCIÓN 4: PANEL DE ROTACIONES — Quién por quién
     // ════════════════════════════════════════════════════════════════
     const buildRotPanel = (subs) => {
@@ -819,6 +847,7 @@ const _RP = (() => {
                 `<div style="display:flex;align-items:center;gap:7px;padding:6px 0;` +
                 `border-bottom:${idx < subs.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none'};flex-wrap:wrap;">` +
                 `<span style="min-width:35px;font-size:0.7rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${sub.timeStr || formatTot(sub.min)}</span>` +
+                horaRealPill(sub.realTime) +
                 outPill +
                 `<span style="color:rgba(255,255,255,0.2);font-size:0.85rem;flex-shrink:0;">→</span>` +
                 inPill +
@@ -881,6 +910,7 @@ const _RP = (() => {
                 `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;` +
                 `border-bottom:${idx < relevant.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none'};font-size:0.76rem;">` +
                 `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${ev.timeStr || formatTot((ev.minute||0) + (ev.second||0)/60)}</span>` +
+                horaRealPill(ev.realTime) +
                 icon +
                 `<span style="color:${col};">${txt}</span>` +
                 `</div>`
