@@ -207,15 +207,110 @@ console.log('\n── PARTE 2B · sólo existe dentro de un partido ──');
        /id="match-events-match"/.test(SIN_COM) &&
        /function _etiquetaBarraSucesos\(data\)[\s\S]{0,700}?homeTeam[\s\S]{0,300}?awayTeam/.test(SIN_COM),
        'era lo que le faltaba a la barra global con varios partidos en curso');
-    ok('2m · 🔑 no se despliega ni se pliega SOLA (nada de temporizadores)',
-       !/_matchEventsAutoCollapseTimer/.test(SIN_COM) &&
-       !/setTimeout\([^)]*_aplicaPlegadoSucesos/.test(SIN_COM),
-       'la barra vieja saltaba 5 s con cada suceso: la mitad del ruido');
-    ok('2n · el plegado lo decide el usuario y se RECUERDA',
+    ok('2n · el plegado manual se RECUERDA',
        /_SUCESOS_PLEGADA_KEY/.test(SIN_COM) &&
        /localStorage\.setItem\(_SUCESOS_PLEGADA_KEY/.test(SIN_COM));
-    ok('2o · y arranca plegada donde el campo va justo de alto (vertical ≤950)',
-       /matchMedia\('\(orientation: portrait\) and \(max-width: 950px\)'\)/.test(SIN_COM));
+    ok('2o · no queda la maquinaria de la barra GLOBAL retirada en v440',
+       !/_matchEventsAutoCollapseTimer/.test(SIN_COM) && !/_setMatchEventsPanelMode/.test(SIN_COM),
+       'el auto-despliegue vuelve, pero sobre una barra que ya no es global');
+}
+
+// ═══════ PARTE 2C · v443 · asoma sola 3 s, y el clic manda ═══════
+// ⚠️ SUSTITUYE A LA ASERCIÓN 2m DE v442, que exigía justo lo contrario ("nada
+// de temporizadores"). Es la OCTAVA vez que una aserción propia se pone del
+// lado del defecto tras un cambio de criterio del autor — y esta vez la vieja
+// no llegó a ponerse roja: seguía VERDE porque su regex no casaba con la nueva
+// forma del setTimeout, o sea que estaba defendiendo nada. Por eso esta parte
+// EJECUTA la máquina de estados en vez de mirarla de lejos.
+//
+// Lo que se fija es la petición literal del autor:
+//   1 · un suceso la SUBE;  2 · baja sola a los 3 s;
+//   3 · si la abre el usuario, NO baja hasta que él vuelva a pulsar.
+console.log('\n── PARTE 2C · sube con el suceso, baja a los 3 s ──');
+{
+    const ini = MODULO.indexOf('const _SUCESOS_MS_AUTO');
+    const fin = MODULO.indexOf('(function _initMatchEventsPanel()');
+    ok('2p · el bloque de la ventana desplegable existe', ini !== -1 && fin > ini);
+
+    if (ini !== -1 && fin > ini) {
+        // DOM de mentira: sólo la barra y su botón. Y un reloj controlado, para
+        // poder comprobar el "a los 3 segundos" sin esperar 3 segundos.
+        const clases = new Set(['plegada']);
+        const bar = { classList: {
+            toggle(c, on) { if (on) clases.add(c); else clases.delete(c); },
+            contains(c) { return clases.has(c); } } };
+        const btn = { textContent: '', title: '', setAttribute() {} };
+        let pendiente = null, sigId = 1;
+        const sb = {
+            console: { log() {}, warn() {} },
+            document: { getElementById: (id) => id === 'match-events-bar' ? bar
+                                       : id === 'match-events-toggle' ? btn : null },
+            localStorage: { _d: {}, getItem(k) { return this._d[k] ?? null; },
+                            setItem(k, v) { this._d[k] = v; } },
+            _SUCESOS_PLEGADA_KEY: 'cronos_live_sucesos_plegada',
+            setTimeout(fn, ms) { pendiente = { fn, ms, id: sigId++ }; return pendiente.id; },
+            clearTimeout(id) { if (pendiente && pendiente.id === id) pendiente = null; },
+        };
+        vm.createContext(sb);
+        vm.runInContext(MODULO.slice(ini, fin) +
+            '\n;globalThis.suceso = _asomaSucesosPorEvento;' +
+            '\n;globalThis.clic   = _alternaSucesosManual;' +
+            '\n;globalThis.pon    = _aplicaPlegadoSucesos;' +
+            '\n;globalThis.inicial= _plegadoInicialSucesos;' +
+            '\n;globalThis.modo   = () => _sucesosModo;', sb);
+
+        const abierta = () => !clases.has('plegada');
+        const correElReloj = () => { const p = pendiente; pendiente = null; if (p) p.fn(); };
+
+        sb.pon(sb.inicial());
+        ok('2q · en reposo arranca PLEGADA', !abierta() && sb.modo() === 'plegada');
+
+        // 1 · un suceso la sube
+        sb.suceso();
+        ok('2r · 🔑 un suceso la SUBE sola', abierta() && sb.modo() === 'auto');
+        ok('2s · 🔑 y programa su bajada a los 3 SEGUNDOS exactos',
+           pendiente && pendiente.ms === 3000, pendiente && pendiente.ms);
+
+        // 2 · baja sola
+        correElReloj();
+        ok('2t · 🔑 pasado ese tiempo, baja sola', !abierta() && sb.modo() === 'plegada');
+
+        // 3 · el clic manual manda
+        sb.clic();
+        ok('2u · un clic la abre en modo manual', abierta() && sb.modo() === 'manual');
+        ok('2u2 · y ese clic CANCELA cualquier bajada pendiente', pendiente === null);
+        sb.suceso();
+        ok('2v · 🔑 un suceso NO le roba el control: sigue abierta y en manual',
+           abierta() && sb.modo() === 'manual');
+        ok('2v2 · 🔑 y NO se programa ninguna bajada mientras es manual',
+           pendiente === null,
+           'sin esto, el temporizador de un gol le cerraría la ventana en la cara al que está leyendo');
+        sb.clic();
+        ok('2w · 🔑 sólo otro clic la cierra', !abierta() && sb.modo() === 'plegada');
+
+        // Un suceso mientras está asomada reinicia la cuenta atrás.
+        sb.suceso();
+        const primero = pendiente && pendiente.id;
+        sb.suceso();
+        ok('2x · cada suceso nuevo REINICIA la cuenta atrás',
+           pendiente && pendiente.id !== primero,
+           'si no, dos goles seguidos dejarían la ventana menos tiempo del debido');
+
+        // 🔑 DESDE 'auto', EL CLIC LA FIJA — no la cierra. Sin esto el requisito
+        // 3 del autor es inalcanzable: la ventana pasa la mayor parte del
+        // tiempo asomada por un suceso, así que si el clic la cerrara habría
+        // que esperar a que bajara sola para poder dejarla abierta.
+        ok('2y · el estado de partida de esta comprobación es "auto"', sb.modo() === 'auto');
+        sb.clic();
+        ok('2y2 · 🔑 clic con la ventana ASOMADA = quedársela, no cerrarla',
+           abierta() && sb.modo() === 'manual' && pendiente === null);
+
+        // La elección manual se recuerda entre sesiones.
+        ok('2z · al dejarla abierta se recuerda la elección',
+           sb.localStorage._d['cronos_live_sucesos_plegada'] === '0' && sb.inicial() === 'manual');
+        sb.clic();
+        ok('2z2 · y al cerrarla, también', !abierta() && sb.inicial() === 'plegada');
+    }
 }
 
 // ═══════ PARTE 3 · [DEFECTO B y C] ejecutado de verdad, SIN panel ═══════
@@ -232,6 +327,13 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
     };
     const contador = { textContent: '' };
     const flash = { style: {}, classList: { _f: [], add(c) { this._f.push(c); }, remove() {} }, offsetWidth: 0 };
+    // La barra, con sus clases de verdad: es lo que permite comprobar que el
+    // suceso la hace ASOMAR de extremo a extremo, y no sólo que la máquina de
+    // estados funcione por su cuenta.
+    const clasesBarra = new Set(['plegada']);
+    const barra = { style: {}, classList: {
+        toggle(c, on) { if (on) clasesBarra.add(c); else clasesBarra.delete(c); },
+        contains(c) { return clasesBarra.has(c); }, add(c) { clasesBarra.add(c); }, remove(c) { clasesBarra.delete(c); } } };
     const generico = () => ({
         style: {}, classList: { toggle() {}, add() {}, remove() {} },
         appendChild() {}, remove() {}, set innerHTML(v) {}, get innerHTML() { return ''; },
@@ -252,6 +354,7 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
                 if (id === 'match-events-list')  return lista;
                 if (id === 'match-events-count') return contador;
                 if (id === 'event-flash')        return flash;
+                if (id === 'match-events-bar')   return barra;
                 // 🔑 CUALQUIER otro id no existe. En particular NO existe
                 // 'match-events-panel': es el punto de la prueba.
                 return generico();
@@ -317,6 +420,16 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
         ok('3g · [DEFECTO D] 🔑 sigue destellando', flash.classList._f.indexOf('fire') !== -1);
         ok('3h · [DEFECTO D] 🔑 y sigue vibrando', vibrados.length > 0);
 
+        // 🔑 DE EXTREMO A EXTREMO: que la máquina de estados funcione no sirve
+        // de nada si nadie la llama. Esto ejercita el camino real —el mismo por
+        // el que detectAndAlert anuncia un gol— y comprueba que la ventana
+        // ASOMA. Sin esta comprobación, borrar la llamada de
+        // _appendEventToHistoryPanel pasaba desapercibido (mutación M10 del
+        // red-check, verde con el defecto puesto).
+        ok('3f2 · 🔑 el suceso hace ASOMAR la ventana (camino completo)',
+           !clasesBarra.has('plegada'),
+           'la máquina de estados puede estar perfecta y no estar conectada');
+
         // [DEFECTO C] el dedup de v424.
         anunciar('goal', 'GOL · Pedro', 'CRONOS A vs CRONOS B', '1T 10:00');
         ok('3i · [DEFECTO C] 🔑 el MISMO suceso no se pinta dos veces',
@@ -372,6 +485,52 @@ console.log('\n── PARTE 4 · el listado conserva su mini-feed por tarjeta �
        'es el "cajón propio" de cada partido en el panel general');
     ok('4b · y con el equipo de cada suceso (v439)',
        /_liveFeedLado\(m, ev\)/.test(SIN_COM));
+}
+
+// ═══════ PARTE 5 · 🐛 EL HTML NO PUEDE QUEDARSE CACHEADO ═══════
+// La razón REAL de que el autor siguiera viendo la versión anterior del visor
+// tras dos despliegues. MEDIDO en producción: live.html se servía con
+// `Cache-Control: max-age=3600` mientras index.html iba con `no-cache`, porque
+// firebase.json sólo daba cabecera propia a /index.html, /sw.js, /auth.js y
+// /app.js, y el resto cae en el `**` sin Cache-Control (Firebase pone una hora).
+//
+// 🔑 Y ES PEOR DE LO QUE PARECE: todo el versionado de este proyecto vive en
+// los `?v=` que cache-bust.js escribe DENTRO del HTML. Si el HTML se cachea, el
+// navegador no llega ni a enterarse de que hay marcadores nuevos: se queda con
+// el HTML viejo Y con los ficheros viejos que ese HTML pide.
+//
+// ⚠️ Y ME ENGAÑÓ A MÍ TAMBIÉN: mis verificaciones de producción piden los
+// ficheros con `?cb=<ahora>` y `cache: 'no-store'`, que esquivan exactamente
+// esta caché. Daban verde mientras el navegador del autor servía la copia
+// vieja. Un "verificado en producción" que no comprueba las CABECERAS no ve
+// esta clase de fallo.
+console.log('\n── PARTE 5 · el HTML no se cachea (firebase.json) ──');
+{
+    const fb = JSON.parse(fs.readFileSync(path.join(ROOT, 'firebase.json'), 'utf8'));
+    const headers = (fb.hosting && fb.hosting.headers) || [];
+    const noCache = (h) => (h.headers || []).some(x =>
+        /cache-control/i.test(x.key) && /no-store/.test(x.value));
+
+    const reglaHtml = headers.find(h => h.source === '**/*.html' && noCache(h));
+    ok('5a · 🔑 hay una regla que declara TODOS los .html sin caché',
+       !!reglaHtml,
+       'declarada por FORMA y no fichero a fichero: así es como se coló live.html');
+
+    // El caso concreto: la ruta del visor tiene que quedar cubierta.
+    const cubre = (ruta) => headers.some(h => noCache(h) &&
+        (h.source === ruta || h.source === '**/*.html'));
+    ok('5b · live.html queda cubierto', cubre('/live.html'));
+    ok('5c · index.html sigue cubierto', cubre('/index.html'));
+    ok('5d · y sw.js también (es quien decide cuándo se actualiza todo)',
+       headers.some(h => h.source === '/sw.js' && noCache(h)));
+
+    // Alambre trampa: si alguien añade un HTML nuevo que se publique, la regla
+    // por forma ya lo cubre. Lo que NO puede pasar es que la regla desaparezca
+    // dejando sólo las de fichero suelto.
+    const sueltas = headers.filter(h => /\.html$/.test(h.source || '') && h.source !== '**/*.html');
+    ok('5e · las reglas por fichero suelto son un extra, no la única defensa',
+       !!reglaHtml || sueltas.length === 0,
+       sueltas.map(h => h.source).join(' '));
 }
 
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');

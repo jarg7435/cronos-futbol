@@ -403,8 +403,13 @@
             height: 116px; overflow-y: auto;
             padding: 0.25rem 0.9rem 0.4rem;
             font-size: 0.82rem; line-height: 1.5; color: #c9d1d9;
+            /* v443 · la ventana SUBE y BAJA. Se anima el alto y no `display`,
+               que no es animable: con display:none el cajón daba un salto seco. */
+            transition: height 0.25s ease, padding 0.25s ease;
         }
-        #match-events-bar.plegada #match-events-list { display: none; }
+        #match-events-bar.plegada #match-events-list {
+            height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden;
+        }
         #match-events-list:empty::after {
             content: 'Sin sucesos todavía';
             font-size: 0.75rem; color: var(--muted); font-style: italic;
@@ -1355,6 +1360,9 @@ function _soltarPartidoVisible() {
     // apagarla aquí para que no vuelva a verse fuera de un partido — que es el
     // defecto por el que se retiró la barra global en v440.
     if (typeof _mostrarBarraSucesos === 'function') _mostrarBarraSucesos(false);
+    // v443 · y se cancela el cierre automático pendiente: un temporizador vivo
+    // al volver al listado dispararía sobre una barra que ya no se ve.
+    if (typeof _sucesosCancelaCierre === 'function') _sucesosCancelaCierre();
 }
 
 // Cancela TODOS los listeners de fondo y detiene el polling de la lista.
@@ -1963,6 +1971,14 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
 
         // Auto-scroll al final para ver el evento más reciente.
         listEl.scrollTop = listEl.scrollHeight;
+
+        // v443 · y la ventana ASOMA. Va aquí, después del dedup, para que sólo
+        // asome con sucesos que de verdad se pintan; y no en la reconstrucción
+        // desde el snapshot, que repinta la lista entera al entrar en un
+        // partido y la haría subir con sucesos viejos.
+        // Con guarda `typeof`: esta función corre en el camino de un gol, y una
+        // excepción aquí se llevaría el registro del suceso por delante.
+        if (typeof _asomaSucesosPorEvento === 'function') _asomaSucesosPorEvento();
     } catch(e) { console.warn('[_appendEventToHistoryPanel]', e); }
 }
 
@@ -2070,31 +2086,98 @@ function _etiquetaBarraSucesos(data) {
     el.textContent = home + ' ' + gh + ' – ' + ga + ' ' + away;
 }
 
-function _aplicaPlegadoSucesos(plegada) {
+// ════════════════════════════════════════════════════════════════════
+//  v443 · LA VENTANA ASOMA SOLA CON CADA SUCESO, Y EL CLIC MANDA
+//
+//  Petición literal del autor: que suba al ocurrir un suceso, baje a los 3
+//  segundos, y que si la abre él a mano se quede abierta hasta que vuelva a
+//  pulsar.
+//
+//  ⚠️ ESTE AUTO-DESPLIEGUE ES EL QUE SE RETIRÓ EN v440, Y NO ES UNA VUELTA
+//  ATRÁS. Aquello se quitó porque la barra era GLOBAL —vivía sobre cualquier
+//  pantalla y no decía de qué partido hablaba—, no porque asomara sola. Esta
+//  barra ya no es global (la enciende renderMatch, la apaga la salida del
+//  detalle) y lleva el marcador en la cabecera, así que asomar sola informa en
+//  vez de confundir.
+//
+//  🔑 TRES ESTADOS, Y EL MANUAL GANA SIEMPRE:
+//    · 'plegada' → reposo, sólo la cabecera.
+//    · 'auto'    → la subió un suceso; baja sola a los 3 s.
+//    · 'manual'  → la subió el usuario; NO baja sola, pase lo que pase.
+//  Sin el estado 'manual' separado del 'auto', el temporizador de un suceso
+//  posterior le cerraría la ventana en la cara a quien la acaba de abrir para
+//  leerla — que es justo lo que pidió evitar.
+// ════════════════════════════════════════════════════════════════════
+const _SUCESOS_MS_AUTO = 3000;
+let _sucesosModo  = 'plegada';   // 'plegada' | 'auto' | 'manual'
+let _sucesosTimer = null;
+
+function _sucesosCancelaCierre() {
+    if (_sucesosTimer) { clearTimeout(_sucesosTimer); _sucesosTimer = null; }
+}
+
+function _aplicaPlegadoSucesos(modo) {
+    // Se acepta el booleano de v442 por compatibilidad con cualquier llamada
+    // suelta: true == plegada.
+    if (modo === true)  modo = 'plegada';
+    if (modo === false) modo = 'manual';
+    const plegada = (modo === 'plegada');
+    _sucesosModo = modo;
     const bar = document.getElementById('match-events-bar');
     const btn = document.getElementById('match-events-toggle');
     if (!bar) return;
-    if (bar.classList && bar.classList.toggle) bar.classList.toggle('plegada', !!plegada);
+    if (bar.classList && bar.classList.toggle) bar.classList.toggle('plegada', plegada);
     if (btn) {
         btn.textContent = plegada ? '▴' : '▾';
         if (btn.setAttribute) btn.setAttribute('aria-expanded', plegada ? 'false' : 'true');
-        btn.title = plegada ? 'Mostrar los sucesos' : 'Ocultar los sucesos';
+        // El rótulo dice lo que va a HACER el clic, y en 'auto' no es cerrar:
+        // es quedársela. Ver _alternaSucesosManual.
+        btn.title = plegada ? 'Mostrar los sucesos'
+                  : (modo === 'auto' ? 'Mantener abierto' : 'Ocultar los sucesos');
     }
 }
 
-// Estado inicial: lo que el usuario eligiera la última vez. Sin elección
-// previa, plegada SÓLO en pantallas donde el campo va justo de alto (móvil y
-// tablet en vertical, que es donde el campo ocupa el alto entero); en el resto,
-// desplegada, que es lo que el autor pidió poder leer.
+// Un suceso nuevo la hace asomar. La llama _appendEventToHistoryPanel DESPUÉS
+// del dedup, así que sólo asoma con sucesos que de verdad se pintan — y no al
+// reconstruir la lista entera al entrar en un partido.
+function _asomaSucesosPorEvento() {
+    if (_sucesosModo === 'manual') return;   // 🔑 el usuario manda
+    _aplicaPlegadoSucesos('auto');
+    _sucesosCancelaCierre();
+    _sucesosTimer = setTimeout(() => {
+        // Sólo baja si sigue en automático: si el usuario la abrió mientras
+        // tanto, este temporizador ya no es suyo.
+        if (_sucesosModo === 'auto') _aplicaPlegadoSucesos('plegada');
+        _sucesosTimer = null;
+    }, _SUCESOS_MS_AUTO);
+}
+
+// El clic del usuario.
+//
+// 🔑 DESDE 'auto' EL CLIC LA FIJA, NO LA CIERRA. Es lo que pidió el autor —"si
+// hace clic para verlo manualmente, que se mantenga abierto"— y sin esto el
+// requisito no se puede cumplir: la ventana pasa la mayor parte del tiempo
+// asomada por un suceso, así que si el clic la cerrara, para dejarla fija
+// habría que esperar a que bajara sola y pulsar en ese hueco.
+//   plegada → manual (abre y se queda)
+//   auto    → manual (se la queda quien está leyendo)
+//   manual  → plegada (y sólo así se cierra)
+function _alternaSucesosManual() {
+    _sucesosCancelaCierre();
+    _aplicaPlegadoSucesos(_sucesosModo === 'manual' ? 'plegada' : 'manual');
+    try {
+        localStorage.setItem(_SUCESOS_PLEGADA_KEY, _sucesosModo === 'plegada' ? '1' : '0');
+    } catch (e) {}
+}
+
+// Estado inicial: en reposo va plegada —es lo que pide el comportamiento
+// nuevo, que asome sola con cada suceso—, salvo que la última acción manual
+// del usuario fuera dejarla abierta.
 function _plegadoInicialSucesos() {
     try {
-        const guardado = localStorage.getItem(_SUCESOS_PLEGADA_KEY);
-        if (guardado === '1') return true;
-        if (guardado === '0') return false;
+        if (localStorage.getItem(_SUCESOS_PLEGADA_KEY) === '0') return 'manual';
     } catch (e) {}
-    try {
-        return window.matchMedia && window.matchMedia('(orientation: portrait) and (max-width: 950px)').matches;
-    } catch (e) { return false; }
+    return 'plegada';
 }
 
 (function _initMatchEventsPanel() {
@@ -2110,14 +2193,19 @@ function _plegadoInicialSucesos() {
 
         _aplicaPlegadoSucesos(_plegadoInicialSucesos());
 
+        // Toda la cabecera abre y cierra, no sólo la flecha: es una franja de
+        // 34px y acertarle al botón con el dedo, en un banquillo, es pedir
+        // mucho. Los botones propios paran la propagación.
+        const head = document.getElementById('match-events-head');
+        if (head && typeof head.addEventListener === 'function') {
+            head.addEventListener('click', (e) => {
+                if (e && e.target && (e.target.id === 'match-events-clear')) return;
+                _alternaSucesosManual();
+            });
+        }
         toggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const bar = document.getElementById('match-events-bar');
-            const plegadaAhora = !!(bar && bar.classList && bar.classList.contains('plegada'));
-            _aplicaPlegadoSucesos(!plegadaAhora);
-            // Se recuerda: la barra vieja decidía sola y volvía a plegarse cada
-            // pocos segundos, que era la mitad del ruido que se quitó.
-            try { localStorage.setItem(_SUCESOS_PLEGADA_KEY, !plegadaAhora ? '1' : '0'); } catch (e2) {}
+            e.stopPropagation();   // si no, la cabecera lo alternaría otra vez
+            _alternaSucesosManual();
         });
 
         clear.addEventListener('click', (e) => {
@@ -4680,8 +4768,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v442"></script>
-<script src="js/match/replay/replay-player.js?v=v442"></script>
-<script src="js/match/events/retroactive-modal.js?v=v442"></script>
+<script src="js/match/immutability.js?v=v443"></script>
+<script src="js/match/replay/replay-player.js?v=v443"></script>
+<script src="js/match/events/retroactive-modal.js?v=v443"></script>
 </body>
 </html>
