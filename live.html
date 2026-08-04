@@ -454,6 +454,55 @@
            ACOTADA con max-height + overflow: son siempre 3 filas, pero un
            nombre muy largo no debe poder estirar la tarjeta ni empujar el
            boton VER PARTIDO fuera de sitio. */
+        /* En móvil, los toasts se reposicionan a la altura del marcador */
+        @media (max-width: 950px) {
+            #event-toast-stack {
+                /* v424: el `top` ya no se declara aquí. Lo hereda de la regla
+                   base, que usa --toast-top, medido en tiempo real sobre el
+                   borde inferior del marcador. La notch la absorbe la propia
+                   medición (getBoundingClientRect ya la incluye), así que
+                   tampoco hace falta el env(safe-area-inset-top). */
+                right: 0.5rem;
+                /* v422: antes esto era `left: 0.5rem; max-width: none`, o sea una
+                   franja del ANCHO COMPLETO de la pantalla. Como el contenedor
+                   lleva `pointer-events: auto` (lo necesita para poder deslizar
+                   la pila), esa franja invisible se tragaba los toques sobre el
+                   campo a la altura del marcador durante los segundos que dura
+                   un aviso. Ahora ocupa solo lo que ocupa el aviso. */
+                left: auto;
+                width: min(340px, calc(100vw - 1rem));
+                max-width: none;
+                align-items: flex-end;
+                /* v232: en móvil, permitir scroll vertical en la pila de toasts
+                   para que cuando haya más de 3 cambios se pueda hacer scroll
+                   y verlos todos. Especialmente útil en landscape móvil. */
+                max-height: calc(100vh - env(safe-area-inset-top, 0px) - 120px);
+                overflow-y: auto;
+                pointer-events: auto;
+            }
+            .event-toast {
+                max-width: min(340px, 92vw);
+                padding: 0.5rem 0.7rem;
+            }
+            .event-toast .et-icon { font-size: 1.1rem; }
+            .event-toast .et-title { font-size: 0.74rem; }
+            .event-toast .et-sub { font-size: 0.65rem; }
+        }
+        /* v232: En móvil landscape, los toasts son más compactos y con scroll
+           para que quepan más en la pantalla horizontal. */
+        @media (orientation: landscape) and (max-width: 950px) {
+            #event-toast-stack {
+                max-height: calc(100vh - env(safe-area-inset-top, 0px) - 100px);
+                gap: 0.3rem;
+            }
+            .event-toast {
+                padding: 0.35rem 0.5rem;
+                max-width: min(300px, 85vw);
+            }
+            .event-toast .et-icon { font-size: 0.9rem; }
+            .event-toast .et-title { font-size: 0.66rem; }
+            .event-toast .et-sub { font-size: 0.58rem; }
+        }
         .live-feed {
             background: rgba(0,0,0,0.22);
             border: 1px solid rgba(255,255,255,0.07);
@@ -569,6 +618,65 @@
            cada tarjeta del listado.
            Lo que SI se conserva: el destello, el sonido y la vibracion, que
            tienen su propio mando (boton 🔔) y no compiten por el sitio. */
+        /* ── ALERTAS DE EVENTO (sonoras + visuales) ──
+           v444 · LOS AVISOS FLOTANTES VUELVEN. Se retiraron en v440 y el autor
+           los ha pedido de vuelta: el aviso emergente es el unico que se ve SIN
+           mirar, y la ventana inferior de sucesos no lo sustituye (esta plegada
+           en reposo). Ahora conviven: el aviso canta el suceso al instante y la
+           ventana guarda el historial legible.
+           El CSS se reinserta TEXTUALMENTE desde v439 (commit 7a6996a) para no
+           perder sus dos arreglos: la posicion MEDIDA sobre el borde inferior
+           del marcador (--toast-top, v424) y el ancho acotado en movil (v422,
+           porque a ancho completo la franja invisible se tragaba los toques
+           sobre el campo). */
+        #event-toast-stack {
+            position: fixed;
+            top: var(--toast-top, 6rem);
+            right: 1rem;
+            z-index: 1200; display: flex; flex-direction: column;
+            gap: 0.55rem; max-width: min(380px, 92vw);
+            pointer-events: none;
+        }
+        .event-toast {
+            pointer-events: auto;
+            display: flex; align-items: center; gap: 0.7rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--primary);
+            border-radius: 10px; padding: 0.7rem 0.9rem;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+            animation: toastIn 0.35s cubic-bezier(.2,.9,.3,1.2),
+                       toastPulse 1.1s ease-in-out 0.35s 2;
+            cursor: pointer;
+        }
+        .event-toast.leaving { animation: toastOut 0.3s ease forwards; }
+        .event-toast .et-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1; }
+        .event-toast .et-body { flex: 1; min-width: 0; }
+        .event-toast .et-title {
+            font-weight: 800; font-size: 0.84rem; color: var(--text);
+            display: flex; align-items: center; gap: 0.4rem;
+        }
+        .event-toast .et-sub {
+            font-size: 0.72rem; color: var(--muted); margin-top: 1px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .event-toast.ev-goal     { border-left-color: #3fb950; }
+        .event-toast.ev-yellow   { border-left-color: #e3b341; }
+        .event-toast.ev-red      { border-left-color: #da3633; }
+        .event-toast.ev-sub      { border-left-color: #58a6ff; }
+        .event-toast.ev-injury   { border-left-color: #e74c3c; }
+        @keyframes toastIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+        }
+        @keyframes toastOut {
+            from { transform: translateX(0);    opacity: 1; max-height: 100px; }
+            to   { transform: translateX(120%); opacity: 0; max-height: 0; margin: 0; padding: 0; }
+        }
+        @keyframes toastPulse {
+            0%,100% { box-shadow: 0 8px 28px rgba(0,0,0,0.55); }
+            50%     { box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 0 0 4px rgba(255,255,255,0.06); }
+        }
         #event-flash {
             position: fixed; inset: 0; z-index: 1100;
             pointer-events: none; opacity: 0;
@@ -1042,6 +1150,13 @@
             .bench-name { font-size: 0.65rem; max-width: 64px; text-align: center; }
             .bench-num  { font-size: 0.58rem; }
             .bench-time { font-size: 0.62rem; padding: 1px 5px; margin-top: 2px; }
+            /* v424: el `top` lo pone --toast-top (medido). Aquí sólo el ancho,
+               que en tablet admite algo más que en el móvil. */
+            #event-toast-stack {
+                width: min(380px, calc(100vw - 1.5rem));
+                right: 0.75rem;
+            }
+
 
         }
         @media (max-height: 500px) {
@@ -1848,36 +1963,128 @@ function _buildEventTitleHTML(line) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  v440 · SE RETIRA LA PILA DE AVISOS FLOTANTES
+// 🔑 POSICIÓN DE LOS AVISOS FLOTANTES — MEDIDA, NO CLAVADA (v424)
 // ═══════════════════════════════════════════════════════════════════════════
-//  Aquí vivían `_posicionaAvisos()` y el observador `_observaAlturaCabecera`,
-//  que medían el borde inferior del marcador para colocar la pila de avisos
-//  justo debajo (v424). Sin pila que colocar, ambos quedaban sin lector: la
-//  variable --toast-top no la usa ya ninguna regla de CSS.
+// Requisito del autor: en PC, tablet y móvil los avisos van justo debajo del
+// marcador, sin tapar nunca la cabecera.
 //
-//  🔑 QUÉ SE CONSERVA, Y POR QUÉ NO ES LO MISMO QUE EL AVISO: el suceso sigue
-//  anunciándose con DESTELLO, SONIDO y VIBRACIÓN. Eso no compite por el sitio
-//  en pantalla, tiene su propio mando (el botón 🔔) y es lo que hace que el
-//  entrenador se entere sin mirar. Lo que desaparece es la tarjeta flotante,
-//  que era GLOBAL: con varios partidos en curso no decía a cuál pertenecía.
+// Se mide el borde inferior REAL del marcador y se publica en --toast-top. Con
+// un número fijo por formato esto se rompía en cuanto cambiaba la cabecera —y
+// cambió en v422, al compactarla—, y además la cabecera envuelve a 2 o 3 filas
+// según el ancho, así que no existe un número que valga para todos los casos.
 //
-//  ⚠️ LA FUNCIÓN SIGUE LLAMÁNDOSE showEventToast. No es descuido: es el ÚNICO
-//  punto por el que detectAndAlert anuncia un suceso, y el guard de las alertas
-//  (scripts/test_live_event_alerts.js) sustituye su cuerpo por un registrador
-//  para observar QUÉ se anuncia. Renombrarla obligaría a tocar el guard sin
-//  ganar nada.
-// ═══════════════════════════════════════════════════════════════════════════
+// Se usa el MARCADOR como referencia y no la cabecera porque el marcador está
+// debajo: su borde inferior garantiza las dos condiciones a la vez (a la altura
+// del marcador Y sin tapar la cabecera). Si el marcador está oculto (pantalla de
+// historial o de lista) se cae a la cabecera, y si tampoco, al valor de reserva.
+function _posicionaAvisos() {
+    try {
+        const sb  = document.getElementById('scoreboard');
+        const hdr = document.getElementById('live-header');
+        const visible = el => el && el.offsetParent !== null && el.getBoundingClientRect().height > 0;
+        let top = null;
+        if (visible(sb))       top = sb.getBoundingClientRect().bottom;
+        else if (visible(hdr)) top = hdr.getBoundingClientRect().bottom;
+        if (top === null) return;   // nada visible: se deja el valor anterior
+        // +8px de aire para que el aviso no quede pegado al borde del marcador.
+        document.documentElement.style.setProperty('--toast-top', Math.max(0, Math.round(top) + 8) + 'px');
+    } catch (e) { /* nunca debe tumbar el visor por una medición */ }
+}
+window._posicionaAvisos = _posicionaAvisos;
+
+// Re-medir cuando algo pueda haber cambiado la altura de la cabecera o del
+// marcador: giro de pantalla, cambio de tamaño de ventana, y cualquier cambio
+// de caja de esos dos elementos (que es lo que pilla el envolver de los botones
+// o el paso de EN VIVO a FINALIZADO).
+(function _observaAlturaCabecera() {
+    // ⚠️ Todo lo de aquí va con guarda de existencia A PROPÓSITO. Este bloque se
+    // ejecuta al cargar el módulo: si algo de esto no existiera, lanzaría y se
+    // llevaría por delante el resto del <script> —o sea, el visor entero— por
+    // una simple colocación de avisos. requestAnimationFrame no está, por
+    // ejemplo, cuando la suite ejecuta este código en un contexto de vm.
+    const remedir = () => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(_posicionaAvisos);
+        else _posicionaAvisos();
+    };
+    if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('resize', remedir);
+        window.addEventListener('orientationchange', remedir);
+    }
+    if (typeof document !== 'undefined' && document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', remedir);
+    }
+    if (typeof ResizeObserver === 'function' && typeof document !== 'undefined' && document.getElementById) {
+        const ro = new ResizeObserver(remedir);
+        const enganchar = () => {
+            const sb  = document.getElementById('scoreboard');
+            const hdr = document.getElementById('live-header');
+            if (sb)  ro.observe(sb);
+            if (hdr) ro.observe(hdr);
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', enganchar);
+        else enganchar();
+    }
+    remedir();
+})();
+
+// ════════════════════════════════════════════════════════════════════
+//  v444 · EL SUCESO SE ANUNCIA POR LAS DOS VÍAS, Y NINGUNA DEPENDE DE LA OTRA
+//
+//  · AVISO FLOTANTE (arriba, a la altura del marcador): salta al instante y se
+//    va solo. Es lo único que se ve SIN mirar. Volvió aquí en v444 después de
+//    retirarse en v440.
+//  · VENTANA INFERIOR: guarda el historial legible del partido y asoma 3 s.
+//
+//  🔑 EL AVISO NO PUEDE DEPENDER DEL CAJÓN NI AL REVÉS. Si `#event-toast-stack`
+//  no existiera, el `return` temprano que había aquí antes de v440 se llevaba
+//  por delante TODO lo demás: la fila del historial, el destello, el sonido y
+//  la vibración. Por eso cada pieza va en su propio bloque con su guarda.
+// ════════════════════════════════════════════════════════════════════
 function showEventToast(type, line, sub, matchTime) {
     const meta = EVENT_META[type] || EVENT_META.sub;
 
-    // El suceso va al cajón del partido (dentro del banquillo). `sub` sigue
-    // llegando —es la etiqueta del partido— pero ya no se pinta: el cajón ES
-    // del partido que se está viendo, así que repetirlo en cada línea sería
-    // ruido. Se conserva en la firma porque el guard de dedup fija la llamada.
+    // ── 1 · el aviso flotante ────────────────────────────────────────
+    const stack = document.getElementById("event-toast-stack");
+    if (stack) {
+        // v424: medir justo antes de enseñarlo. El marcador puede acabar de
+        // hacerse visible (se entra a un partido) y en ese instante todavía no
+        // ha saltado ningún resize ni ResizeObserver, así que el primer aviso
+        // saldría con la posición de reserva.
+        if (typeof _posicionaAvisos === 'function') _posicionaAvisos();
+        const el = document.createElement("div");
+        el.className = "event-toast " + meta.cls;
+        // v218: `line` puede ser HTML (con spans de color para la palabra
+        // clave). Si contiene '<', se inyecta tal cual; si no, se escapa.
+        const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
+            ? line
+            : escapeHtml(line || meta.title);
+        el.innerHTML =
+            '<div class="et-icon">' + meta.icon + '</div>' +
+            '<div class="et-body">' +
+                '<div class="et-title">' + titleHTML + '</div>' +
+                (sub ? '<div class="et-sub">' + escapeHtml(sub) + '</div>' : "") +
+            '</div>';
+        const quitar = () => {
+            el.classList.add("leaving");
+            setTimeout(() => el.remove(), 320);
+        };
+        el.onclick = quitar;
+        stack.appendChild(el);
+        // v220: el tope es 15 y no 5 porque siete cambios grupales llegan en un
+        // ÚNICO snapshot (throttle de 2 s de liveSyncOnAction) y con 5 se
+        // evictaban los primeros antes de que nadie los leyera.
+        while (stack.children.length > 15) stack.firstChild.remove();
+        setTimeout(quitar, 8000);
+    }
+
+    // ── 2 · el historial de la ventana inferior ──────────────────────
+    // `sub` (la etiqueta del partido) llega hasta aquí y se pinta en el AVISO,
+    // que es global; en la ventana no, porque la ventana ya es del partido que
+    // se está viendo y lo dice su cabecera.
     const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '' });
     _appendEventToHistoryPanel(type, line, sub, _metaExt);
 
-    // Flash de pantalla
+    // ── 3 · destello, sonido y vibración ─────────────────────────────
     const flash = document.getElementById("event-flash");
     if (flash) {
         flash.style.background = "radial-gradient(circle at 50% 30%, " + meta.flash + ", transparent 70%)";
@@ -1991,6 +2198,10 @@ window._loadMatchEventsFromSnapshot = function(events) {
     const countEl = document.getElementById('match-events-count');
     if (!listEl) return;
 
+    // Cuántos había ANTES de reconstruir: es lo que distingue "estoy entrando
+    // al partido y pinto todo el historial" de "ha entrado un suceso nuevo".
+    const previos = (window._matchEventsLog && window._matchEventsLog.length) || 0;
+
     // Limpiar el log actual y reemplazarlo con los eventos del snapshot.
     window._matchEventsLog = [];
     listEl.innerHTML = '';
@@ -2031,6 +2242,19 @@ window._loadMatchEventsFromSnapshot = function(events) {
 
     // Scroll al final.
     listEl.scrollTop = listEl.scrollHeight;
+
+    // 🔑 v444 · LA VENTANA TAMBIÉN ASOMA POR ESTA VÍA. Son DOS los escritores
+    // de la lista, y hasta aquí sólo el otro (_appendEventToHistoryPanel) la
+    // hacía asomar: un suceso que llegara por la reconstrucción del snapshot se
+    // añadía en silencio, con la ventana plegada. Es justo el "no recibe los
+    // eventos" que reportó el autor.
+    // ⚠️ Sólo si YA había sucesos pintados y ahora hay MÁS: al entrar en un
+    // partido esta función pinta todo el historial de golpe, y ahí la ventana
+    // no debe saltar.
+    if (previos > 0 && window._matchEventsLog.length > previos &&
+        typeof _asomaSucesosPorEvento === 'function') {
+        _asomaSucesosPorEvento();
+    }
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -4525,10 +4749,7 @@ function showLoadingScreen(msg) {
 }
 </script>
 <div id="event-flash"></div>
-<!-- v440: aquí vivía <div id="event-toast-stack">, la pila de avisos flotantes.
-     Retirada por decisión del autor junto con la barra inferior de HISTORIAL:
-     un aviso GLOBAL no dice a qué partido pertenece cuando hay varios en curso.
-     El destello (#event-flash), el sonido y la vibración se conservan. -->
+<div id="event-toast-stack"></div>
 
 <!-- v229: BANNER DE ACTUALIZACIÓN DISPONIBLE — aparece cuando el Service
      Worker detecta una nueva versión. Funciona en PC, iPad y móvil.
@@ -4768,8 +4989,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v443"></script>
-<script src="js/match/replay/replay-player.js?v=v443"></script>
-<script src="js/match/events/retroactive-modal.js?v=v443"></script>
+<script src="js/match/immutability.js?v=v444"></script>
+<script src="js/match/replay/replay-player.js?v=v444"></script>
+<script src="js/match/events/retroactive-modal.js?v=v444"></script>
 </body>
 </html>

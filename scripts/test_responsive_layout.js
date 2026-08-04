@@ -209,20 +209,21 @@ ok('2d · las fichas suben a un tamaño intermedio (ni 36px de móvil ni 64px de
 ok('2e · el banquillo pasa a franja horizontal con scroll',
    /#bench-panel\s*\{[^}]*overflow-x:\s*auto/.test(bloqueTablet));
 
-// 2.2 · v440 · LA PILA DE AVISOS YA NO EXISTE, así que el bug de TOQUES que
-//       vigilaban 2f/2g/2h es imposible por construcción y no por medida.
-//       ⚠️ Aserciones INVERTIDAS a propósito: fijaban que la pila tuviera ancho
-//       acotado y pointer-events:auto para poder deslizarse sin tragarse los
-//       toques sobre el campo (v422). El autor retiró la pila entera en v440
-//       —era global y no decía a qué partido pertenecía—, de modo que lo que
-//       hay que fijar ahora es que no vuelva a aparecer nada flotante ahí.
-ok('2f · 🔑 no queda ninguna regla de la pila de avisos en el CSS del visor',
-   !/#event-toast-stack/.test(liveCss) && !/\.event-toast/.test(liveCss),
-   (liveCss.match(/[^\n]*event-toast[^\n]*/) || ['(limpio)'])[0]);
-ok('2g · 🔑 y por tanto ya nada invisible puede tragarse los toques sobre el campo',
-   !/pointer-events:\s*auto/.test(liveCss) ||
-   !/#event-toast-stack\s*\{[^}]*pointer-events:\s*auto/.test(liveCss),
-   'era el bug de v422: una franja invisible a ancho completo sobre el campo');
+// 2.2 · Los avisos flotantes NO ocupan todo el ancho. Es el bug de TOQUES: el
+//       contenedor lleva pointer-events:auto para poder deslizarse, así que a
+//       ancho completo se tragaba los toques sobre el campo (v422).
+//       ⚠️ Estas tres cambiaron de signo en v440, cuando el autor retiró la
+//       pila, y vuelven a su forma original en v444, cuando la pidió de vuelta.
+//       El arreglo de v422 tenía que volver CON ella: se reinsertó el CSS
+//       textualmente desde el histórico justo para no perderlo.
+ok('2f · la pila de avisos ya no se estira a todo el ancho en móvil',
+   !/#event-toast-stack\s*\{[^}]*left:\s*0\.5rem/.test(liveCss));
+ok('2g · la pila de avisos tiene ancho acotado',
+   /#event-toast-stack\s*\{[^}]*width:\s*min\(340px/.test(liveCss),
+   'a ancho completo, su franja invisible se comía los toques sobre el campo');
+ok('2g2 · y sigue pudiendo deslizarse (pointer-events auto + overflow)',
+   /#event-toast-stack\s*\{[^}]*pointer-events:\s*auto/.test(liveCss) &&
+   /#event-toast-stack\s*\{[^}]*overflow-y:\s*auto/.test(liveCss));
 // v442 · La lista de sucesos sale del banquillo (allí, a 200px de ancho, era
 // ilegible: lo reportó el autor) y vuelve a ser una barra inferior a lo ancho.
 // ⚠️ 2h/2h2 fijaban que se ocultara en las dos maquetaciones de franja

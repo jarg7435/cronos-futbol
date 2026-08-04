@@ -100,9 +100,14 @@ console.log('\n── PARTE 1 · la FORMA prohibida: barras globales al pie ─�
     ok('1b · no queda la barra "HISTORIAL" (#match-events-panel)',
        !/match-events-panel/.test(SIN_COM),
        (SIN_COM.match(/[^\n]*match-events-panel[^\n]*/) || ['(limpio)'])[0]);
-    ok('1c · ni la pila de avisos emergentes (#event-toast-stack)',
-       !/event-toast/.test(SIN_COM),
-       (SIN_COM.match(/[^\n]*event-toast-stack[^\n]*/) || ['(limpio)'])[0]);
+    // v444: la pila de avisos VOLVIÓ (el autor la pidió de vuelta). Lo que se
+    // fija aquí es lo único que importaba de ella para esta parte: que va
+    // ARRIBA, a la altura del marcador, y no anclada al pie como la barra
+    // retirada. Su comportamiento lo cubre test_live_view_cleanup PARTE 2.
+    ok('1c · la pila de avisos vuelve, pero ARRIBA y no anclada al pie',
+       /#event-toast-stack\s*\{[^}]*top:\s*var\(--toast-top/.test(SIN_COM) &&
+       !/#event-toast-stack\s*\{[^}]*bottom:\s*0/.test(SIN_COM),
+       (SIN_COM.match(/#event-toast-stack\s*\{[^}]*/) || ['(no está)'])[0].slice(0, 90));
     ok('1d · ni el z-index de guerra que la ponía por encima de todo',
        !/z-index:\s*9998/.test(SIN_COM));
 
@@ -330,6 +335,14 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
     // La barra, con sus clases de verdad: es lo que permite comprobar que el
     // suceso la hace ASOMAR de extremo a extremo, y no sólo que la máquina de
     // estados funcione por su cuenta.
+    // La pila de avisos flotantes, para comprobar que el aviso se CREA.
+    const pilaAvisos = [];
+    const pila = {
+        appendChild(el) { pilaAvisos.push(el); },
+        get children() { return { length: pilaAvisos.length }; },
+        get firstChild() { return pilaAvisos[0] || null; },
+        removeChild() {},
+    };
     const clasesBarra = new Set(['plegada']);
     const barra = { style: {}, classList: {
         toggle(c, on) { if (on) clasesBarra.add(c); else clasesBarra.delete(c); },
@@ -355,6 +368,7 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
                 if (id === 'match-events-count') return contador;
                 if (id === 'event-flash')        return flash;
                 if (id === 'match-events-bar')   return barra;
+                if (id === 'event-toast-stack')  return pila;
                 // 🔑 CUALQUIER otro id no existe. En particular NO existe
                 // 'match-events-panel': es el punto de la prueba.
                 return generico();
@@ -420,6 +434,17 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
         ok('3g · [DEFECTO D] 🔑 sigue destellando', flash.classList._f.indexOf('fire') !== -1);
         ok('3h · [DEFECTO D] 🔑 y sigue vibrando', vibrados.length > 0);
 
+        // 🔑 v444 · EL AVISO FLOTANTE, DE EXTREMO A EXTREMO. El autor lo
+        // reportó como "roto por completo": sonaba pero no se veía nada. Aquí
+        // se comprueba que el MISMO camino que pinta la fila crea también el
+        // aviso, con su texto y con la etiqueta del partido.
+        ok('3e2 · 🔑 el suceso crea el AVISO FLOTANTE',
+           pilaAvisos.length === 1, pilaAvisos.length + ' avisos');
+        ok('3e3 · con el texto del suceso y la etiqueta del partido',
+           /GOL · Pedro/.test(pilaAvisos[0] ? pilaAvisos[0].innerHTML : '') &&
+           /CRONOS A vs CRONOS B/.test(pilaAvisos[0] ? pilaAvisos[0].innerHTML : ''),
+           pilaAvisos[0] && pilaAvisos[0].innerHTML);
+
         // 🔑 DE EXTREMO A EXTREMO: que la máquina de estados funcione no sirve
         // de nada si nadie la llama. Esto ejercita el camino real —el mismo por
         // el que detectAndAlert anuncia un gol— y comprueba que la ventana
@@ -442,15 +467,37 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
 
     if (typeof cargar === 'function') {
         // La OTRA vía: reconstrucción completa desde el snapshot de Firestore.
-        cargar([
+        const DOS = [
             { type: 'goal',   text: 'GOL · Pedro',             icon: '⚽', realTime: '20:10:00', matchTime: '1T 10:00' },
             { type: 'yellow', text: 'TARJETA AMARILLA · Luis', icon: '🟨', realTime: '20:20:00', matchTime: '1T 20:00' },
             { type: 'tactical_move', text: '{"x":1}',          icon: '•',  realTime: '20:21:00', matchTime: '1T 21:00' },
-        ]);
+        ];
+        cargar(DOS);
         ok('3k · la reconstrucción desde el snapshot también pinta sin panel',
            filas.length === 2, filas.length + ' filas');
         ok('3l · y sigue cribando la telemetría táctica',
            !filas.some(f => /"x":1/.test(f.innerHTML)));
+
+        // 🔑 v444 · LA VENTANA ASOMA POR LAS **DOS** VÍAS. Hasta v443 sólo la
+        // hacía asomar _appendEventToHistoryPanel: un suceso que llegara por
+        // esta reconstrucción se añadía en SILENCIO, con la ventana plegada.
+        // Es el "el cajón no recibe los eventos" que reportó el autor.
+        clasesBarra.add('plegada');                 // se parte de plegada
+        cargar(DOS.concat([{ type: 'red', text: 'TARJETA ROJA · Ana', icon: '🟥',
+                             realTime: '20:30:00', matchTime: '1T 30:00' }]));
+        ok('3m · 🔑 un suceso NUEVO por la reconstrucción también la hace asomar',
+           !clasesBarra.has('plegada'),
+           'con una sola vía disparando, la mitad de los sucesos entraban sin avisar');
+
+        // …pero NO al entrar en el partido, que es cuando se pinta el historial
+        // entero de golpe.
+        sb.window._matchEventsLog = [];
+        filas.length = 0;
+        clasesBarra.add('plegada');
+        cargar(DOS);
+        ok('3n · ⚠️ y NO asoma al entrar en el partido (historial entero de golpe)',
+           clasesBarra.has('plegada'),
+           'saltaría sola al abrir cualquier partido con sucesos previos');
     } else {
         ok('3k · _loadMatchEventsFromSnapshot sigue publicada', false);
     }

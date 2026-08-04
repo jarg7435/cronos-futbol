@@ -88,53 +88,77 @@ ok('1h · 🔑 el parseo del replay NO depende del glifo, solo de SALE:/ENTRA:',
    /text\.match\(\/SALE:\\s\*\(\.\+\?\)\\s\*\\\|\\s\*\[\^\|\]\*ENTRA:/.test(REPL));
 
 // ───────────────────────────────────────────────────────────────────────────
-console.log('\n── PARTE 2 · v440 · YA NO HAY AVISOS FLOTANTES ──');
+console.log('\n── PARTE 2 · v444 · LOS AVISOS FLOTANTES, DE VUELTA ──');
 // ───────────────────────────────────────────────────────────────────────────
-// ⚠️ ESTA PARTE ESTÁ INVERTIDA RESPECTO A v424, y a propósito. Fijaba que la
-// pila de avisos (#event-toast-stack) se colocara justo debajo del marcador,
-// midiendo su borde inferior en --toast-top. El autor RETIRÓ la pila entera en
-// v440: con varios partidos simultáneos, un aviso GLOBAL no dice a cuál
-// pertenece, y eso confunde más de lo que informa.
-//
-// La intención se conserva —vigilar cómo se anuncia un suceso— pero ahora lo
-// que hay que fijar es que NO quede nada flotando y que el anuncio siga
-// existiendo por las vías que no compiten por el sitio: destello, sonido y
-// vibración. Ver scripts/test_live_events_drawer.js para el cajón que lo
-// sustituye.
+// ⚠️ ESTA PARTE HA CAMBIADO DE SIGNO DOS VECES, y conviene saberlo antes de
+// tocarla otra vez:
+//   · v424 la escribió para fijar que la pila de avisos se colocara justo
+//     debajo del marcador, midiendo su borde inferior (--toast-top).
+//   · v440 la invirtió: el autor retiró la pila entera porque, siendo GLOBAL,
+//     no decía a qué partido pertenecía con varios en curso.
+//   · v444 la devuelve a su intención original: el autor pidió los avisos de
+//     vuelta —"no sólo deben sonar, también tienen que mostrarse"—, porque el
+//     aviso emergente es lo único que se ve SIN mirar y la ventana inferior no
+//     lo sustituye (en reposo está plegada).
+// Lo que NO se ha deshecho de v440 es la ventana inferior: ahora conviven, y
+// scripts/test_live_events_drawer.js fija que ninguna dependa de la otra.
 //
 // 🔑 Se mide sobre LIVEC (sin comentarios): los comentarios de este proyecto
-// CITAN lo que se acaba de retirar, así que un censo sobre el fuente crudo
-// daría rojo por la razón equivocada.
+// CITAN lo que se retira y lo que vuelve, así que un censo sobre el fuente
+// crudo daría verde o rojo por la razón equivocada.
 
-// ⚠️ `sinCom` quita los comentarios de JS y CSS, pero NO los de HTML — y el
-// marcado lleva un <!-- --> que CITA el id retirado. Es la misma trampa que ya
-// documenta la PARTE 4: sin quitarlos, esta aserción daría rojo midiendo un
-// comentario.
-const LIVE_SIN_HTML_COM = LIVEC.replace(/<!--[\s\S]*?-->/g, '');
-ok('2a · 🔑 no queda NINGUNA pila de avisos flotantes en el marcado',
-   !/id="event-toast-stack"/.test(LIVE_SIN_HTML_COM),
-   (LIVE_SIN_HTML_COM.match(/[^\n]*event-toast-stack[^\n]*/) || ['(limpio)'])[0]);
-ok('2a2 · y el censo ignora los comentarios (si no, mide lo ya retirado)',
-   LIVE_SIN_HTML_COM.length < LIVEC.length && /event-toast-stack/.test(LIVEC),
-   'el propio comentario que explica la retirada cita el id');
-ok('2b · 🔑 ni sus estilos, ni la variable que la colocaba',
-   !/#event-toast-stack\s*\{/.test(LIVEC) && !/\.event-toast\s*[.{]/.test(LIVEC) &&
-   !/--toast-top/.test(LIVEC),
-   (LIVEC.match(/[^\n]*(event-toast|--toast-top)[^\n]*/) || ['(limpio)'])[0]);
-ok('2c · ni la función que la medía',
-   !/function _posicionaAvisos\(\)/.test(LIVEC) && !/_posicionaAvisos\(\)/.test(LIVEC));
-ok('2d · ni sus animaciones huérfanas',
-   !/@keyframes toast(In|Out|Pulse)/.test(LIVEC));
-// Lo que SÍ tiene que seguir vivo: el suceso se sigue anunciando.
-ok('2e · 🔑 el suceso SIGUE anunciándose con destello',
-   /function showEventToast[\s\S]{0,900}?getElementById\("event-flash"\)/.test(LIVEC));
-ok('2f · 🔑 …con sonido',
-   /function showEventToast[\s\S]{0,900}?playEventSound\(type\)/.test(LIVEC));
-ok('2g · 🔑 …y con vibración, salvo silenciado',
-   /function showEventToast[\s\S]{0,900}?if \(!_alertsMuted\) vibrate\(meta\.vib\)/.test(LIVEC));
-ok('2h · 🔑 y va a parar al cajón del partido',
-   /function showEventToast[\s\S]{0,900}?_appendEventToHistoryPanel\(type, line, sub, _metaExt\)/.test(LIVEC),
+ok('2a · 🔑 la pila de avisos flotantes está en el marcado',
+   /<div id="event-toast-stack"><\/div>/.test(LIVEC.replace(/<!--[\s\S]*?-->/g, '')),
+   'el autor los pidió de vuelta en v444');
+ok('2b · con sus estilos y la variable que la coloca',
+   /#event-toast-stack\s*\{/.test(LIVEC) && /\.event-toast\s*\{/.test(LIVEC) &&
+   /--toast-top/.test(LIVEC));
+ok('2b2 · 🔑 la posición sale de una variable CSS, no de un número por formato',
+   /#event-toast-stack\s*\{[^}]*top:\s*var\(--toast-top/.test(LIVEC),
+   'v424: con un número por formato se rompía al cambiar la cabecera');
+ok('2b3 · 🔑 y NADIE la vuelve a clavar en ningún @media',
+   !/#event-toast-stack\s*\{[^}]*top:\s*(calc\()?\s*\d/.test(LIVEC),
+   (LIVEC.match(/#event-toast-stack\s*\{[^}]*top:[^;]*/g) || []).join(' // '));
+ok('2c · existe la función que mide',
+   /function _posicionaAvisos\(\)/.test(LIVEC));
+ok('2c2 · 🔑 mide el borde INFERIOR del marcador, con la cabecera de respaldo',
+   /sb\.getBoundingClientRect\(\)\.bottom/.test(LIVEC) &&
+   /hdr\.getBoundingClientRect\(\)\.bottom/.test(LIVEC));
+ok('2c3 · y se re-mide al girar, al redimensionar y al cambiar la caja',
+   /addEventListener\('orientationchange', remedir\)/.test(LIVEC) &&
+   /addEventListener\('resize', remedir\)/.test(LIVEC) &&
+   /new ResizeObserver\(remedir\)/.test(LIVEC));
+ok('2d · y sus animaciones',
+   /@keyframes toastIn/.test(LIVEC) && /@keyframes toastOut/.test(LIVEC));
+
+// El anuncio va por VARIAS vías y ninguna puede llevarse a las otras por
+// delante. Se acota el cuerpo de showEventToast por la siguiente declaración en
+// columna 0, no por un número fijo de caracteres: la función acaba de crecer y
+// una ventana de 900 se quedó corta (trampa ya pagada en la ronda 2 del
+// nav-stack).
+const _cuerpoToast = (() => {
+    const i = LIVEC.indexOf('function showEventToast(');
+    if (i === -1) return '';
+    const j = LIVEC.indexOf('\n}', i);
+    return j === -1 ? LIVEC.slice(i) : LIVEC.slice(i, j);
+})();
+ok('2e · 🔑 el suceso se anuncia con AVISO FLOTANTE',
+   /getElementById\("event-toast-stack"\)/.test(_cuerpoToast) &&
+   /stack\.appendChild\(el\)/.test(_cuerpoToast));
+ok('2e2 · …que se va solo a los 8 s y también al tocarlo',
+   /setTimeout\(quitar, 8000\)/.test(_cuerpoToast) && /el\.onclick = quitar/.test(_cuerpoToast));
+ok('2e3 · 🔑 el aviso lleva la etiqueta del partido (es global: hace falta)',
+   /sub \? '<div class="et-sub">' \+ escapeHtml\(sub\)/.test(_cuerpoToast));
+ok('2f · …con destello', /getElementById\("event-flash"\)/.test(_cuerpoToast));
+ok('2g · …con sonido', /playEventSound\(type\)/.test(_cuerpoToast));
+ok('2h · …con vibración, salvo silenciado',
+   /if \(!_alertsMuted\) vibrate\(meta\.vib\)/.test(_cuerpoToast));
+ok('2h2 · …y va a parar a la ventana inferior de sucesos',
+   /_appendEventToHistoryPanel\(type, line, sub, _metaExt\)/.test(_cuerpoToast),
    'es el único punto por el que detectAndAlert anuncia un suceso');
+ok('2h3 · 🔑 y NINGUNA de esas vías puede abortar a las siguientes',
+   !/const stack = document\.getElementById\("event-toast-stack"\);\s*if \(!stack\) return;/.test(_cuerpoToast),
+   'antes de v440 un `if (!stack) return` se llevaba por delante historial, destello, sonido y vibración');
 ok('2i · el mando de sonido sigue en la cabecera (no se ha quedado sin dueño)',
    /id="btn-mute" onclick="toggleSound\(\)"/.test(LIVE));
 
