@@ -422,6 +422,24 @@
             font-variant-numeric: tabular-nums;
         }
         .live-feed-fila .lf-ico { flex-shrink: 0; font-size: 0.8rem; }
+        /* v439 · etiqueta del equipo. Acotada al 34% del ancho: un nombre de
+           equipo largo no puede comerse la linea y dejar sin sitio al suceso,
+           que es lo que de verdad se va a leer. */
+        .live-feed-fila .lf-eq {
+            flex-shrink: 0; max-width: 34%;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-size: 0.6rem; font-weight: 800; letter-spacing: 0.3px;
+            text-transform: uppercase;
+            border-radius: 4px; padding: 1px 5px;
+        }
+        .live-feed-fila .lf-eq-home {
+            color: var(--primary); background: rgba(88,166,255,0.14);
+            border: 1px solid rgba(88,166,255,0.32);
+        }
+        .live-feed-fila .lf-eq-away {
+            color: var(--danger); background: rgba(255,88,88,0.14);
+            border: 1px solid rgba(255,88,88,0.32);
+        }
         .live-feed-fila .lf-txt {
             color: var(--text);
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -436,6 +454,7 @@
             .live-feed { padding: 0.42rem 0.5rem; max-height: 104px; }
             .live-feed-fila { font-size: 0.68rem; line-height: 1.45; }
             .live-feed-fila .lf-min { min-width: 23px; font-size: 0.61rem; }
+            .live-feed-fila .lf-eq  { font-size: 0.55rem; max-width: 30%; padding: 0 4px; }
             .live-feed-head { font-size: 0.55rem; }
         }
         .history-card-top {
@@ -1241,7 +1260,54 @@ window.doLiveAuth = async () => {
     }
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  v439 · "← VOLVER" DESDE EL DETALLE DE UN PARTIDO  (bloque VOLVER)
+//
+//  Petición del autor: quien entra a un partido y pulsa VOLVER tiene que
+//  aparecer en el panel general de Partidos en Vivo. Hasta aquí VOLVER hacía
+//  siempre lo mismo —cerrar la pestaña del visor— así que para alternar entre
+//  dos partidos del club había que salir del visor y volver a entrar.
+//
+//  🔑 Y DEPENDE DEL ROL, porque no todos llegan igual:
+//    · El PADRE entra desde su panel con un enlace directo a UN partido
+//      (js/parent/panel.js, target="_blank"). No tiene entre qué elegir, así
+//      que su vuelta sigue siendo la de siempre: la vista desde la que abrió
+//      el visor.
+//    · El cuerpo técnico —entrenador, coordinador, director, admin de club y
+//      superadmin— puede tener VARIOS partidos del club en curso a la vez, y
+//      lo que necesita es el listado para saltar de uno a otro.
+//
+//  ⚠️ SÓLO DESDE DENTRO DE UN PARTIDO. Estando ya en el listado, VOLVER
+//  conserva su función de siempre (salir del visor): si no, sería un botón
+//  que no hace nada justo en la pantalla donde más se mira.
+// ════════════════════════════════════════════════════════════════════
+const _LIVE_ROLES_MULTIPARTIDO = ['user', 'director', 'coordinator',
+                                  'club_admin', 'superadmin', 'admin'];
+
+function _liveEnDetalleDePartido() {
+    if (!currentMatchId) return false;
+    // El listado y el historial comparten contenedor (#history-view) y lo dejan
+    // en 'flex' al pintarse; el detalle del partido lo apaga (renderMatch).
+    const hv = document.getElementById('history-view');
+    return !(hv && hv.style.display === 'flex');
+}
+
+function _livePuedeVolverAlListado() {
+    const rol = (typeof userData !== 'undefined' && userData && userData.role) || '';
+    return _liveEnDetalleDePartido() &&
+           _LIVE_ROLES_MULTIPARTIDO.indexOf(rol) !== -1;
+}
+
 window.backToMatch = function() {
+    if (_livePuedeVolverAlListado()) {
+        // Se limpia el ?match= de la URL: si no, recargar dejaría al usuario
+        // otra vez dentro del partido del que acaba de salir (enterLiveView lee
+        // urlMatchId al arrancar). No se pierde nada: el partido sigue vivo en
+        // Firestore y se vuelve a él tocando su tarjeta.
+        try { history.pushState({}, '', location.pathname); } catch(e) {}
+        showLiveNow();
+        return;
+    }
     if (window.opener && !window.opener.closed) {
         window.opener.focus();
         window.close();
@@ -1249,12 +1315,34 @@ window.backToMatch = function() {
         window.location.href = 'index.html';
     }
 };
+// ── fin del bloque VOLVER (v439) ────────────────────────────────────
 
 // v424: el botón "← VOLVER" (antes "← MI PARTIDO") ya NO se muestra sólo cuando
 // hay window.opener. Ahora está siempre visible porque es la única salida de la
 // cabecera hacia la app: backToMatch() ya distingue los dos casos —cierra la
 // pestaña si la abrió la app, y si no navega a index.html—, que es exactamente
 // lo que hacía el botón "🏠 INICIO" que se ha retirado por duplicado.
+
+// ════════════════════════════════════════════════════════════════════
+//  v439 · SOLTAR EL PARTIDO AL SALIR DE ÉL
+//
+//  🐛 SIN ESTO, "volver al listado" NO ES POSIBLE, y ése era el defecto de
+//  fondo del botón VOLVER: el onSnapshot del documento del partido seguía
+//  vivo después de pintar la lista, y su callback llama a renderMatch, que
+//  apaga #history-view y enciende el campo. Como el entrenador reescribe el
+//  documento cada ~5 s, la lista duraba en pantalla lo que tardase el
+//  siguiente latido: el usuario aparecía de vuelta dentro del partido sin
+//  haber tocado nada. Le pasaba igual al botón "EN VIVO" de la cabecera.
+//
+//  NO se toca `currentMatchId`: los avisos (gol, tarjeta, cambio) del partido
+//  que se estaba viendo los sigue emitiendo el watcher de fondo, que filtra
+//  precisamente por esa variable (v274). Lo que se suelta es el PINTADO, no
+//  la vigilancia.
+// ════════════════════════════════════════════════════════════════════
+function _soltarPartidoVisible() {
+    if (unsubscribeMatch) { unsubscribeMatch(); unsubscribeMatch = null; }
+    clearInterval(timerInterval); timerInterval = null;
+}
 
 // Cancela TODOS los listeners de fondo y detiene el polling de la lista.
 // Idempotente: seguro llamarla varias veces.
@@ -2828,6 +2916,15 @@ window.loadMatch = function(matchId) {
     currentMatchId = matchId;
     showLoadingScreen('Conectando al partido…');
 
+    // v439 · SIMÉTRICO A showLiveNow: al entrar en un partido se sueltan los
+    // listeners del listado. Seguían vivos repintando un #history-list que ya
+    // no se ve —y con un setInterval de 1 s por cada tarjeta— mientras se
+    // miraba el campo. Ahora que VOLVER devuelve a la lista se entra y se sale
+    // muchas más veces, y showLiveNow la reconstruye entera cada vez, así que
+    // no se pierde nada por soltarlos.
+    if (_liveListUnsubscribe) { _liveListUnsubscribe(); _liveListUnsubscribe = null; }
+    if (_liveListTimerInterval) { clearInterval(_liveListTimerInterval); _liveListTimerInterval = null; }
+
     // El listener visible RECLAMA este partido: resetea de forma SINCRONA el
     // estado de seeding/monotonia para este matchId, descartando cualquier valor
     // que el watcher de fondo (startBackgroundWatch) hubiera tocado durante la
@@ -3430,6 +3527,84 @@ function _liveFeedTexto(ev) {
     return String(ev.text || '');
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  v439 · DE QUÉ EQUIPO ES CADA SUCESO
+//
+//  Petición del autor: en la tarjeta del panel general los sucesos decían la
+//  acción y el jugador, pero no el equipo, así que en un club con los dos
+//  equipos sobre el mismo campo no se sabía quién había marcado.
+//
+//  🔑 EL ORDEN DE LAS FUENTES IMPORTA, y las dos últimas son un RESPALDO para
+//  los partidos que ya estén en juego cuando esto se despliegue (sus eventos
+//  ya están escritos y no se pueden reescribir: el documento se congela y
+//  `events` sólo admite arrayUnion):
+//    1 · `ev.team` — el contrato, escrito por _datosEquipoDe en
+//        js/match/events/player-actions.js. Es lo único fiable.
+//    2 · el prefijo del texto de las SUSTITUCIONES ("CRONOS | ▲ SALE: …"),
+//        que sí llevaba el equipo desde v424.
+//    3 · el nombre del protagonista, buscado en la plantilla del partido.
+//  Si ninguna resuelve, NO se inventa: la fila se pinta sin etiqueta. Una
+//  etiqueta equivocada es peor que ninguna — el director tomaría por propio
+//  un gol del rival.
+// ════════════════════════════════════════════════════════════════════
+function _liveFeedNombreEquipo(m, lado, ev) {
+    const t = lado === 'away' ? (m && m.awayTeam) : (m && m.homeTeam);
+    // El nombre del DOCUMENTO manda sobre el guardado en el evento: si el club
+    // renombra el equipo, la tarjeta debe decir el nombre de ahora. `teamName`
+    // sólo entra cuando el documento no lo trae.
+    return (t && t.name) || (ev && ev.teamName) ||
+           (lado === 'away' ? 'VISITANTE' : 'LOCAL');
+}
+
+// Nombre del protagonista, para poder buscarlo en la plantilla.
+// Se limpia el paréntesis final: "Luis (doble amarilla)", "Pedro (Retroactivo)".
+function _liveFeedNombreJugador(ev) {
+    if (!ev) return '';
+    if (ev.playerName) return String(ev.playerName);
+    if (ev.subOutName) return String(ev.subOutName);
+    if (ev.subInName)  return String(ev.subInName);
+    const s = String(ev.text || '');
+    const i = s.indexOf(' · ');
+    if (i === -1) return '';
+    return s.slice(i + 3).replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
+function _liveFeedLado(m, ev) {
+    // 1 · el contrato.
+    if (ev && (ev.team === 'home' || ev.team === 'away')) return ev.team;
+
+    const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
+
+    // 2 · el prefijo del texto de las sustituciones.
+    const texto = String((ev && ev.text) || '');
+    const corte = texto.indexOf('|');
+    if (corte > 0) {
+        const prefijo = norm(texto.slice(0, corte));
+        const home = norm(((m && m.homeTeam) || {}).name);
+        const away = norm(((m && m.awayTeam) || {}).name);
+        if (prefijo && prefijo === home && prefijo !== away) return 'home';
+        if (prefijo && prefijo === away && prefijo !== home) return 'away';
+    }
+
+    // 3 · el jugador, buscado en la plantilla del partido.
+    const nombre = norm(_liveFeedNombreJugador(ev));
+    if (nombre) {
+        const plantilla = Array.isArray(m && m.players) ? m.players : [];
+        let lado = null;
+        for (const p of plantilla) {
+            if (!p || norm(p.name) !== nombre) continue;
+            const suyo = p.team === 'away' ? 'away' : (p.team === 'home' ? 'home' : null);
+            if (!suyo) continue;
+            // Mismo nombre en los DOS equipos: ambiguo, y adivinar sería peor
+            // que callar.
+            if (lado && lado !== suyo) return null;
+            lado = suyo;
+        }
+        if (lado) return lado;
+    }
+    return null;
+}
+
 // Los N sucesos más recientes que merece la pena enseñar.
 function _liveFeedItems(m, max) {
     const eventos = Array.isArray(m && m.events) ? m.events : [];
@@ -3466,9 +3641,18 @@ function _liveFeedHtml(m) {
     const filas = items.map(ev => {
         const icono = _LIVE_FEED_ICONOS[ev.type] || '•';
         const min   = _liveFeedMinuto(ev);
+        // v439 · el equipo, delante del texto. Además del nombre lleva el color
+        // del marcador (local azul / visitante rojo), para que la distinción se
+        // vea también de un vistazo y no sólo leyendo.
+        const lado  = _liveFeedLado(m, ev);
+        const eq    = lado
+            ? '<span class="lf-eq lf-eq-' + lado + '">' +
+              escapeHtml(_liveFeedNombreEquipo(m, lado, ev)) + '</span>'
+            : '';
         return '<div class="live-feed-fila">' +
                '<span class="lf-min">' + escapeHtml(min) + '</span>' +
                '<span class="lf-ico">' + icono + '</span>' +
+               eq +
                '<span class="lf-txt">' + escapeHtml(_liveFeedTexto(ev)) + '</span>' +
                '</div>';
     }).join('');
@@ -3486,7 +3670,10 @@ let _liveListTimerInterval = null;
 
 window.showLiveNow = async function() {
     console.log("[LIVE] showLiveNow: start");
-    clearInterval(timerInterval); timerInterval = null;
+    // v439: soltar el partido que se estuviera viendo ANTES de pintar la lista.
+    // Si su onSnapshot sigue vivo, el siguiente latido llama a renderMatch y
+    // devuelve al usuario al campo. Incluye el clearInterval del cronómetro.
+    _soltarPartidoVisible();
     if (_liveListUnsubscribe) { _liveListUnsubscribe(); _liveListUnsubscribe = null; }
     if (_liveListTimerInterval) { clearInterval(_liveListTimerInterval); _liveListTimerInterval = null; }
     window._prevPhase = null; // reset para resinc al volver
@@ -3517,6 +3704,14 @@ window.showLiveNow = async function() {
         </button>`;
 
     // Insertar Filtro si es SuperAdmin
+    // v439 · Y RETIRAR EL DE LA VISITA ANTERIOR. Este bloque inserta un div
+    // nuevo en el padre de #history-header, que NO se vacía al repintar (sólo
+    // se reemplaza el innerHTML de la cabecera y el de la lista). Cada vuelta
+    // al listado —ahora hay muchas más, porque VOLVER trae aquí— añadía OTRO
+    // desplegable de club encima del anterior. Ya pasaba con "🔄 Actualizar" y
+    // con cada cambio del propio filtro.
+    const _filtroViejo = document.getElementById('live-club-filter');
+    if (_filtroViejo && _filtroViejo.remove) _filtroViejo.remove();
     if (userData.role === 'superadmin' || userData.role === 'admin') {
         const clubsSnap = await getDocs(collection(db, 'clubs'));
         const clubs = [];
@@ -3524,6 +3719,7 @@ window.showLiveNow = async function() {
         clubs.sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
         const filterDiv = document.createElement('div');
+        filterDiv.id = 'live-club-filter';
         filterDiv.style.cssText = 'margin-top:1rem; padding:0.8rem; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:10px; display:flex; align-items:center; gap:0.6rem;';
         filterDiv.innerHTML = `
             <span style="font-size:0.75rem; color:var(--muted); font-weight:700;">FILTRAR POR CLUB:</span>
@@ -4030,7 +4226,9 @@ window.deleteLiveMatch = async function(matchId, e) {
 
 
 window.showHistory = async function() {
-    clearInterval(timerInterval); timerInterval = null;
+    // v439: mismo motivo que en showLiveNow — el historial también lo tapaba el
+    // renderMatch del partido que siguiera suscrito.
+    _soltarPartidoVisible();
     window._prevPhase = null; // reset para resinc al volver
     document.getElementById('scoreboard').style.display   = 'none';
     document.getElementById('live-main').style.display    = 'none';
@@ -4540,8 +4738,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v436"></script>
-<script src="js/match/replay/replay-player.js?v=v436"></script>
-<script src="js/match/events/retroactive-modal.js?v=v436"></script>
+<script src="js/match/immutability.js?v=v439"></script>
+<script src="js/match/replay/replay-player.js?v=v439"></script>
+<script src="js/match/events/retroactive-modal.js?v=v439"></script>
 </body>
 </html>

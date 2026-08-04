@@ -47,6 +47,32 @@ function _nombreEquipoDe(player) {
     return t === 'away' ? 'VISITANTE' : 'LOCAL';
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  v439 · EL EQUIPO, EN CAMPOS ESTRUCTURADOS DEL EVENTO
+//
+//  Hasta aquí el equipo sólo viajaba DENTRO del texto, y sólo en las
+//  sustituciones ("CRONOS | ▲ SALE: …"). En goles, tarjetas y lesiones no
+//  viajaba de ninguna forma: el texto es 'GOL · Pedro' y nada más. Por eso el
+//  mini-feed de las tarjetas de Partidos en Vivo no podía decir de qué equipo
+//  era el gol, que es justo lo que pidió el autor.
+//
+//  🔑 SE EMITE COMO DATO, NO COMO TEXTO. Es la misma regla que ya obligó a
+//  añadir subOutName/subInName (v418-v421): el formato visible ha cambiado
+//  varias veces y cualquier consumidor que lo parsee se rompe en silencio.
+//    · `team`     → 'home' | 'away'  (el CONTRATO: no depende del idioma ni
+//                    de que el club renombre el equipo a mitad de temporada)
+//    · `teamName` → el nombre en el momento del suceso, sólo para poder
+//                    mostrar algo si el documento del partido no lo trae.
+//  El texto NO se toca: hay guards y un reproductor de repeticiones que
+//  dependen de su formato exacto.
+// ════════════════════════════════════════════════════════════════════
+function _datosEquipoDe(player) {
+    return {
+        team: ((player && player.team) === 'away') ? 'away' : 'home',
+        teamName: _nombreEquipoDe(player)
+    };
+}
+
 window._registerSubstitution = function (outPlayer, inPlayer) {
     if (typeof _registerMatchEvent !== 'function') return;
     var outName = (outPlayer && outPlayer.name) || 'Jugador';
@@ -56,9 +82,10 @@ window._registerSubstitution = function (outPlayer, inPlayer) {
     // lo pone el visor con _coloreaSustitucion, porque ▲/▼ son glifos neutros.
     // subOutName/subInName: los nombres en campos propios, para que el replay
     // no dependa de parsear el texto visible.
+    var eq = _datosEquipoDe(outPlayer || inPlayer);
     _registerMatchEvent('sub',
         equipo + ' | ▲ SALE: ' + outName + ' | ▼ ENTRA: ' + inName, '🔄', undefined,
-        { subOutName: outName, subInName: inName });
+        { subOutName: outName, subInName: inName, team: eq.team, teamName: eq.teamName });
 };
 
 // Emparejado para logMovement, que se invoca UNA VEZ POR JUGADOR y por tanto
@@ -83,13 +110,14 @@ window._registerSubHalf = function (player, subId, action) {
     // ▲ = SALE, ▼ = ENTRA (ver la convención al principio del fichero).
     if (!subId) {
         var eq = _nombreEquipoDe(player);
+        var datosEq = _datosEquipoDe(player);
         var nombre = player.name || 'Jugador';
         _registerMatchEvent(
             action === 'Entra' ? 'sub_in' : 'sub_out',
             action === 'Entra' ? (eq + ' | ▼ ENTRA: ' + nombre)
                                : (eq + ' | ▲ SALE: ' + nombre),
             action === 'Entra' ? '▼' : '▲', undefined,
-            { playerName: nombre });
+            { playerName: nombre, team: datosEq.team, teamName: datosEq.teamName });
         return;
     }
     var slot = _subsPendientes[subId] || (_subsPendientes[subId] = {});
@@ -429,7 +457,7 @@ function toggleInjury() {
     if (!p) return;
     const wasInjured = p.injured;
     p.injured = !p.injured;
-    if (p.injured) { logEvent(p, 'LESIÓN'); _registerMatchEvent('injury', 'LESIÓN · ' + p.name, '🚑'); }
+    if (p.injured) { logEvent(p, 'LESIÓN'); _registerMatchEvent('injury', 'LESIÓN · ' + p.name, '🚑', undefined, _datosEquipoDe(p)); }
 
     // 📊 SOLUCIÓN #7: Auditar cambio de lesión
     if (window.auditLogger && liveMatchId) {
@@ -500,7 +528,7 @@ function assignCard(type) {
         const wasCards = p.cards;
         p.cards       = 'roja';
         p.yellowCards = 0; // Roja directa → NO es doble amarilla
-        logEvent(p, 'TARJETA ROJA'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name, '🟥');
+        logEvent(p, 'TARJETA ROJA'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name, '🟥', undefined, _datosEquipoDe(p));
         // Commit síncrono del evento crítico antes de sincronizar con Firestore.
         if (typeof commitCriticalEvent === 'function') {
             commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'roja_directa' });
@@ -546,7 +574,7 @@ function assignCard(type) {
             const wasYellow = p.yellowCards;
             p.cards       = 'roja';
             p.yellowCards = 2; // Doble amarilla → queda registrado
-            logEvent(p, 'DOBLE AMARILLA → EXPULSADO'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name + ' (doble amarilla)', '🟥');
+            logEvent(p, 'DOBLE AMARILLA → EXPULSADO'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name + ' (doble amarilla)', '🟥', undefined, _datosEquipoDe(p));
             // Commit síncrono del evento crítico antes de sincronizar con Firestore.
             if (typeof commitCriticalEvent === 'function') {
                 commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'doble_amarilla' });
@@ -587,7 +615,7 @@ function assignCard(type) {
         const wasCards2 = p.cards;
         p.cards       = 'amarilla';
         p.yellowCards = 1;
-        logEvent(p, 'TARJETA AMARILLA'); _registerMatchEvent('yellow', 'TARJETA AMARILLA · ' + p.name, '🟨');
+        logEvent(p, 'TARJETA AMARILLA'); _registerMatchEvent('yellow', 'TARJETA AMARILLA · ' + p.name, '🟨', undefined, _datosEquipoDe(p));
         // Commit síncrono del evento crítico antes de sincronizar con Firestore.
         if (typeof commitCriticalEvent === 'function') {
             commitCriticalEvent('card_yellow', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 1 });
@@ -762,7 +790,7 @@ function changeGoals(amount) {
         const prevGoals = p.goals || 0;
         p.goals = Math.max(0, prevGoals + amount);
         if (amount > 0 && p.goals > prevGoals) {
-            logEvent(p, `GOL (${p.goals}º)`); _registerMatchEvent('goal', 'GOL · ' + p.name, '⚽');;
+            logEvent(p, `GOL (${p.goals}º)`); _registerMatchEvent('goal', 'GOL · ' + p.name, '⚽', undefined, _datosEquipoDe(p));
             
             // 📊 SOLUCIÓN #7: Auditar gol
             if (window.auditLogger && liveMatchId) {

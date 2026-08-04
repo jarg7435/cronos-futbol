@@ -33,6 +33,14 @@
 //
 //  E · NADA DE HTML SIN ESCAPAR. El texto sale de nombres de jugador
 //      introducidos a mano por el entrenador.
+//
+//  F · v439 · CADA SUCESO DICE DE QUE EQUIPO ES. Sin eso, en un club con los
+//      dos equipos sobre el mismo campo, "GOL · Pedro" no dice nada: el
+//      director no sabe si va ganando o perdiendo. El equipo viaja en un campo
+//      ESTRUCTURADO del evento (`team`), no en el texto — misma regla que A—,
+//      con dos respaldos para los eventos ya escritos antes de v439.
+//      🔑 Y SI NINGUNA FUENTE RESUELVE, NO SE INVENTA: mejor sin etiqueta que
+//      con la equivocada, que le atribuiria al club un gol del rival.
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
@@ -65,9 +73,11 @@ vm.runInContext(LIVE.slice(ini, fin) +
     '\n;globalThis.items = _liveFeedItems;' +
     '\n;globalThis.html  = _liveFeedHtml;' +
     '\n;globalThis.minuto= _liveFeedMinuto;' +
-    '\n;globalThis.texto = _liveFeedTexto;', sandbox);
+    '\n;globalThis.texto = _liveFeedTexto;' +
+    '\n;globalThis.lado  = _liveFeedLado;' +
+    '\n;globalThis.nomEq = _liveFeedNombreEquipo;', sandbox);
 
-const { items, html, minuto, texto } = sandbox;
+const { items, html, minuto, texto, lado, nomEq } = sandbox;
 
 // Eventos con la forma REAL que escribe js/match/events/player-actions.js.
 const ev = (o) => Object.assign({
@@ -210,6 +220,132 @@ console.log('\n── PARTE 5 · integracion y estilos ──');
        /\.lf-txt\s*\{[^}]*text-overflow:\s*ellipsis/.test(LIVE));
     ok('5f · con banda responsive para movil',
        /@media \(max-width: 600px\)[\s\S]{0,400}\.live-feed\s*\{/.test(LIVE));
+}
+
+// ═══════════ PARTE 6 · v439 · de que equipo es cada suceso ═══════════
+console.log('\n── PARTE 6 · el equipo de cada suceso (v439) ──');
+{
+    // Partido de referencia: los dos equipos del mismo club, que es el caso
+    // que hizo imposible leer el feed.
+    const M = {
+        homeTeam: { name: 'CRONOS A', score: 1 },
+        awayTeam: { name: 'CRONOS B', score: 0 },
+        players: [
+            { id: 1, name: 'Pedro', team: 'home' },
+            { id: 2, name: 'Luis',  team: 'away' },
+            { id: 3, name: 'Ana',   team: 'home' },
+            { id: 4, name: 'Bruno', team: 'away' },
+        ],
+    };
+
+    // ── 1 · el contrato: el campo estructurado manda ──
+    ok('6a · [DEFECTO F] el lado sale de ev.team, no del texto',
+       lado(M, ev({ type: 'goal', text: 'GOL · Pedro', team: 'away' })) === 'away',
+       'si se dedujera del nombre diria home: el campo estructurado tiene que ganar');
+    ok('6b · y se traduce al nombre REAL del equipo',
+       nomEq(M, 'away', ev({})) === 'CRONOS B' && nomEq(M, 'home', ev({})) === 'CRONOS A');
+    ok('6c · el nombre del DOCUMENTO manda sobre el guardado en el evento',
+       nomEq(M, 'home', ev({ teamName: 'NOMBRE VIEJO' })) === 'CRONOS A',
+       'si el club renombra el equipo, la tarjeta debe decir el nombre de ahora');
+    ok('6d · pero si el documento no lo trae, se usa el del evento',
+       nomEq({}, 'home', ev({ teamName: 'CRONOS A' })) === 'CRONOS A');
+    ok('6e · y en ultimo extremo, LOCAL / VISITANTE',
+       nomEq({}, 'home', ev({})) === 'LOCAL' && nomEq({}, 'away', ev({})) === 'VISITANTE');
+
+    // ── 2 · respaldo para los eventos ANTERIORES a v439 ──
+    ok('6f · [RESPALDO] una sustitucion vieja se resuelve por el prefijo del texto',
+       lado(M, ev({ type: 'sub', subOutName: 'Bruno', subInName: 'Luis',
+                    text: 'CRONOS B | ▲ SALE: Bruno | ▼ ENTRA: Luis' })) === 'away',
+       'los partidos ya en juego al desplegar no pueden reescribir sus eventos');
+    ok('6g · [RESPALDO] un gol viejo se resuelve buscando al jugador en la plantilla',
+       lado(M, ev({ type: 'goal', text: 'GOL · Luis' })) === 'away');
+    ok('6h · [RESPALDO] el parentesis final no impide encontrar al jugador',
+       lado(M, ev({ type: 'red', text: 'TARJETA ROJA · Pedro (doble amarilla)' })) === 'home' &&
+       lado(M, ev({ type: 'goal', text: 'GOL · Luis (Retroactivo)' })) === 'away');
+
+    // ── 3 · lo que NO se puede hacer: adivinar ──
+    const ambiguo = { homeTeam: { name: 'A' }, awayTeam: { name: 'B' },
+                      players: [ { name: 'Pedro', team: 'home' }, { name: 'Pedro', team: 'away' } ] };
+    ok('6i · 🔑 el MISMO nombre en los dos equipos NO se etiqueta (adivinar seria peor)',
+       lado(ambiguo, ev({ type: 'goal', text: 'GOL · Pedro' })) === null,
+       'una etiqueta equivocada le atribuye al club un gol del rival');
+    ok('6j · un suceso irreconocible tampoco inventa equipo',
+       lado(M, ev({ type: 'goal', text: 'GOL · Fulanito' })) === null &&
+       lado({}, ev({ type: 'goal', text: 'GOL' })) === null);
+    ok('6k · y no revienta sin partido ni sin evento',
+       lado(undefined, undefined) === null && lado({}, {}) === null);
+
+    // ── 4 · como se pinta ──
+    const h = html(Object.assign({ phase: '1st_half', events: [
+        ev({ type: 'goal',   text: 'GOL · Pedro',             team: 'home', teamName: 'CRONOS A', matchTime: '1T 10:00', createdAt: 2 }),
+        ev({ type: 'yellow', text: 'TARJETA AMARILLA · Luis', team: 'away', teamName: 'CRONOS B', matchTime: '1T 20:00', createdAt: 1 }),
+    ] }, M));
+    ok('6l · cada fila lleva su etiqueta de equipo',
+       (h.match(/class="lf-eq /g) || []).length === 2, h);
+    ok('6m · con el nombre del equipo visible',
+       h.includes('CRONOS A') && h.includes('CRONOS B'), h);
+    ok('6n · 🔑 local y visitante se distinguen por clase (color), no solo por texto',
+       /lf-eq lf-eq-home">CRONOS A/.test(h) && /lf-eq lf-eq-away">CRONOS B/.test(h), h);
+    ok('6o · la etiqueta va ANTES del suceso, no despues',
+       h.indexOf('CRONOS A') < h.indexOf('Pedro'), h);
+    ok('6p · sin equipo resoluble la fila se pinta igual, solo que sin etiqueta',
+       (() => {
+           const sin = html({ events: [ ev({ type: 'goal', text: 'GOL · Fulanito', matchTime: '1T 05:00', createdAt: 1 }) ] });
+           return !/lf-eq/.test(sin) && /Fulanito/.test(sin);
+       })(), 'perder el suceso por no saber el equipo seria peor que la etiqueta que falta');
+    ok('6q · [DEFECTO E] el nombre del equipo tambien va ESCAPADO',
+       (() => {
+           const x = html({ homeTeam: { name: '<img src=x onerror=alert(1)>' },
+                            events: [ ev({ type: 'goal', text: 'GOL · Pedro', team: 'home', matchTime: '1T 05:00', createdAt: 1 }) ] });
+           return !/<img/.test(x) && /&lt;img/.test(x);
+       })());
+    ok('6r · la etiqueta esta ACOTADA para no comerse la linea del suceso',
+       /\.lf-eq\s*\{[^}]*max-width:/.test(LIVE) &&
+       /\.lf-eq\s*\{[^}]*text-overflow:\s*ellipsis/.test(LIVE));
+}
+
+// ═══════ PARTE 7 · v439 · quien ESCRIBE el equipo en el evento ═══════
+// El feed no puede inventarse un dato que nadie emite: esta parte vigila el
+// otro extremo del contrato.
+console.log('\n── PARTE 7 · el emisor escribe el equipo ──');
+{
+    const sinComentarios = (src) => src.split(/\r?\n/)
+        .map(l => l.replace(/\/\/.*$/, '')).join('\n')
+        .replace(/\/\*[\s\S]*?\*\//g, '');
+
+    const PACT  = sinComentarios(fs.readFileSync(path.join(ROOT, 'js/match/events/player-actions.js'), 'utf8'));
+    const RETRO = sinComentarios(fs.readFileSync(path.join(ROOT, 'js/match/events/retroactive-modal.js'), 'utf8'));
+
+    ok('7a · existe el helper que arma el dato',
+       /function _datosEquipoDe\(player\)[\s\S]{0,220}team:[\s\S]{0,120}teamName:/.test(PACT));
+    ok('7b · 🔑 `team` es "home"/"away", no el nombre (el club puede renombrar el equipo)',
+       /team: \(\(player && player\.team\) === 'away'\) \? 'away' : 'home'/.test(PACT));
+
+    // Censo: NINGUNA emision de un suceso de jugador puede quedarse sin equipo.
+    const llamadas = PACT.match(/_registerMatchEvent\('(goal|yellow|red|injury|sub)'[\s\S]{0,400}?\);/g) || [];
+    ok('7c · siguen estando las 6 emisiones con tipo literal (gol, amarilla, 2 rojas, lesion, cambio)',
+       llamadas.length === 6, llamadas.length + ' encontradas');
+    const huerfanas = llamadas.filter(c => !/_datosEquipoDe|team:/.test(c));
+    ok('7d · 🔑 y NINGUNA se queda sin el equipo',
+       huerfanas.length === 0, huerfanas.join('\n---\n'));
+
+    ok('7e · la sustitucion completa lo lleva SIN perder subOutName/subInName',
+       /_registerMatchEvent\('sub',[\s\S]{0,300}subOutName: outName, subInName: inName, team: eq\.team, teamName: eq\.teamName/.test(PACT),
+       'el replay depende de esos dos campos desde v418');
+    ok('7f · y la media sustitucion suelta (sub_in / sub_out) tambien',
+       /action === 'Entra' \? 'sub_in' : 'sub_out'[\s\S]{0,400}playerName: nombre, team: datosEq\.team/.test(PACT));
+    ok('7g · el evento RETROACTIVO tambien lleva equipo cuando hay jugador',
+       /_datosEquipoDe\(p\) : null;[\s\S]{0,200}_registerMatchEvent\(eventType, text, icon, matchTime, extraEq/.test(RETRO));
+
+    ok('7h · 🔑 el TEXTO de los eventos NO ha cambiado (hay guards y un replay que dependen de el)',
+       /'GOL · ' \+ p\.name/.test(PACT) &&
+       /'TARJETA AMARILLA · ' \+ p\.name/.test(PACT) &&
+       /'LESIÓN · ' \+ p\.name/.test(PACT) &&
+       /' \| ▲ SALE: ' \+ outName \+ ' \| ▼ ENTRA: ' \+ inName/.test(PACT));
+    ok('7i · y _registerMatchEvent conserva su firma (el 5o argumento sigue siendo `extra`)',
+       /function _registerMatchEvent\(type, text, icon, matchTimeOverride, extra, target\)/.test(PACT));
+    ok('7j · que mezcla el extra en el evento guardado',
+       /Object\.keys\(extra\)\.forEach[\s\S]{0,160}eventEntry\[k\] = extra\[k\]/.test(PACT));
 }
 
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');

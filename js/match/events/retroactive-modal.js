@@ -252,8 +252,14 @@
         // Firestore iba a la global `liveMatchId`. Abrir este modal desde la
         // tarjeta de un partido terminado escribía el evento en el partido que
         // el entrenador estuviera jugando, o en ninguno.
+        // v439 · `extra` deja de ser `null`: el evento lleva el equipo en campos
+        // estructurados (team/teamName) para que el mini-feed de las tarjetas de
+        // Partidos en Vivo pueda decir de quien es el suceso sin parsear texto.
+        // Sin jugador seleccionado no hay equipo que deducir y se manda null,
+        // exactamente como antes.
+        const extraEq = (p && typeof _datosEquipoDe === 'function') ? _datosEquipoDe(p) : null;
         if (typeof _registerMatchEvent === 'function') {
-            _registerMatchEvent(eventType, text, icon, matchTime, null,
+            _registerMatchEvent(eventType, text, icon, matchTime, extraEq,
                                 { matchId: _targetMatchId, matchData: _targetMatchData });
             // El evento retroactivo se inserta fuera de orden: reordenar por tiempo.
             if (Array.isArray(window._cronosMatchEvents)) {

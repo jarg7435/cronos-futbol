@@ -131,8 +131,12 @@ ok('1v · congelado no tiene restante', L.graceRemainingMs({ status: 'finished',
 // ═══════════ PARTE 2 · las puertas del cliente ═══════════
 console.log('\n── PARTE 2 · puertas en el navegador (interfaz) ──');
 {
+    // v439: el 5o argumento (`extra`) dejo de ser el literal `null` — ahora lleva
+    // el equipo en campos estructurados. Lo que fija esta asercion es el 6o, el
+    // partido DESTINO, asi que el hueco de `extra` se acepta abierto: exigir
+    // `null` ahi era fijar un detalle ajeno al bug que protege.
     ok('2a · [BUG v434] el modal retroactivo pasa el partido DESTINO',
-       /_registerMatchEvent\(eventType, text, icon, matchTime, null,[\s\S]{0,120}matchId: _targetMatchId/.test(RETRO),
+       /_registerMatchEvent\(eventType, text, icon, matchTime, [^,]+,[\s\S]{0,120}matchId: _targetMatchId/.test(RETRO),
        'sin esto el evento se escribia en la global liveMatchId: el partido equivocado');
     ok('2b · y _registerMatchEvent acepta ese destino',
        /function _registerMatchEvent\(type, text, icon, matchTimeOverride, extra, target\)/.test(PACT));
