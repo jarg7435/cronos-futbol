@@ -61,10 +61,19 @@ ok('1c · [FIX] sin rama standalone `resource.data.clubId == null ||` en allow d
 
 // 1d. Las ramas legitimas siguen presentes en el allow delete.
 ok('1d · allow delete conserva isSuperAdmin()', /isSuperAdmin\(\)/.test(allowDelete));
-ok('1e · allow delete conserva sameClub(resource.data.clubId)', /sameClub\(resource\.data\.clubId\)/.test(allowDelete));
-ok('1f · allow delete conserva userDocClubId(resource.data.clubId)', /userDocClubId\(resource\.data\.clubId\)/.test(allowDelete));
-ok('1g · allow delete conserva la rama createdBy == uid', /resource\.data\.createdBy\s*==\s*request\.auth\.uid/.test(allowDelete));
-ok('1h · allow delete conserva la rama coachEmail == token.email', /resource\.data\.coachEmail\s*==\s*request\.auth\.token\.email/.test(allowDelete));
+// v438: el barrido de accesos directos cambio la FORMA de leer los campos
+// (resource.data.X -> resource.data.get('X', null)), no las ramas. Estas
+// aserciones protegen que las ramas SIGAN ESTANDO, que es lo que SEC-C2 vigila,
+// asi que admiten las dos formas en vez de atarse a la sintaxis.
+const campo = (n) => "resource\\.data(?:\\." + n + "|\\.get\\('" + n + "',\\s*[^)]*\\))";
+ok('1e · allow delete conserva sameClub(clubId)',
+   new RegExp('sameClub\\(' + campo('clubId') + '\\)').test(allowDelete));
+ok('1f · allow delete conserva userDocClubId(clubId)',
+   new RegExp('userDocClubId\\(' + campo('clubId') + '\\)').test(allowDelete));
+ok('1g · allow delete conserva la rama createdBy == uid',
+   new RegExp(campo('createdBy') + '\\s*==\\s*request\\.auth\\.uid').test(allowDelete));
+ok('1h · allow delete conserva la rama coachEmail == token.email',
+   new RegExp(campo('coachEmail') + '\\s*==\\s*request\\.auth\\.token\\.email').test(allowDelete));
 
 // 1i. El create/update NO deben re-introducir la rama standalone null como via
 //     de borrado (sanity: siguen intactos, no es objetivo de este fix).
