@@ -208,8 +208,18 @@ window.saClubs = async function saClubs() {
                                    color:#58a6ff;font-size:0.68rem;cursor:pointer;">
                             ✏️ Editar
                         </button>
+                        <!-- v436 · Vaciado de temporada. Va con guarda typeof
+                             porque season-reset.js es un módulo aparte: si no
+                             se cargara, el botón avisa en vez de romper. -->
+                        <button onclick="if(typeof saResetClubSeason==='function') saResetClubSeason('${c.id}','${typeof escapeAttr==='function'?escapeAttr(c.name||c.id):(c.name||c.id)}'); else alert('Módulo no disponible');"
+                            title="Vaciar los datos de la temporada CONSERVANDO el club y sus usuarios"
+                            style="padding:0.2rem 0.5rem;background:rgba(240,136,62,0.14);
+                                   border:1px solid rgba(240,136,62,0.4);border-radius:5px;
+                                   color:#f0883e;font-size:0.68rem;cursor:pointer;font-weight:700;">
+                            🧹
+                        </button>
                         <button onclick="saDeleteClubComplete('${c.id}','${typeof escapeAttr==='function'?escapeAttr(c.name||c.id):(c.name||c.id)}')"
-                            title="Borrar club completo"
+                            title="Borrar club completo (el club DESAPARECE y sus usuarios quedan libres)"
                             style="padding:0.2rem 0.5rem;background:rgba(255,88,88,0.15);
                                    border:1px solid rgba(255,88,88,0.4);border-radius:5px;
                                    color:#ff5858;font-size:0.68rem;cursor:pointer;font-weight:700;">

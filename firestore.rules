@@ -626,12 +626,21 @@ service cloud.firestore {
         (resource.data.staffUid != null && request.auth.uid == resource.data.staffUid) ||
         userDocClubId(resource.data.clubId)
       );
+      // ⚠️ v436 · isSuperAdmin() VA PRIMERO y todas las lecturas usan
+      // .get(campo, default). Leer una clave AUSENTE de un mapa LANZA, y un
+      // error equivale a DENY para la condicion ENTERA: un hilo sin
+      // `participants` —o sin coachUid/parentUid— hacia fallar la evaluacion
+      // ANTES de llegar a la rama del SuperAdmin, que asi no podia borrarlo
+      // aunque la regla dijera que si. Se descubrio al construir el vaciado de
+      // temporada (v436), que borra hilos del club: habria fallado en silencio
+      // sobre justo los documentos mas viejos, que son los que peor formados
+      // estan. Misma trampa que en cronos_player_reports (v435).
       allow delete: if isAuth() &&
-                    (request.auth.uid in resource.data.participants ||
-                     request.auth.uid == resource.data.coachUid ||
-                     request.auth.uid == resource.data.parentUid ||
-                     (resource.data.staffUid != null && request.auth.uid == resource.data.staffUid) ||
-                     isSuperAdmin());
+                    (isSuperAdmin() ||
+                     request.auth.uid in resource.data.get('participants', []) ||
+                     request.auth.uid == resource.data.get('coachUid', null) ||
+                     request.auth.uid == resource.data.get('parentUid', null) ||
+                     request.auth.uid == resource.data.get('staffUid', null));
     }
 
     // ============================================================
