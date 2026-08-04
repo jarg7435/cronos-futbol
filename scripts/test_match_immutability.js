@@ -154,8 +154,17 @@ console.log('\n── PARTE 2 · puertas en el navegador (interfaz) ──');
 
     ok('2i · el borrado desde el historial comprueba el candado',
        /window\.deleteMatch = async function[\s\S]{0,400}canDelete\(_m, false\)/.test(LIVE));
-    ok('2j · y el borrado del listado de terminados tambien',
-       /deleteFinishedMatchFromCloud = async function[\s\S]{0,1200}canDelete\(/.test(INIT));
+    // Se recorta el cuerpo de la funcion y se busca DENTRO, en vez de fiarlo a
+    // un `[\s\S]{0,N}` con un tope a ojo: en v435 se le anadieron comentarios y
+    // la comprobacion quedo fuera del rango, dando un rojo que no era un
+    // defecto sino un limite mal elegido.
+    {
+        const iniD = INIT.indexOf('window.deleteFinishedMatchFromCloud = async function');
+        const cuerpoD = iniD === -1 ? '' : INIT.slice(iniD, iniD + 4000);
+        ok('2j · y el borrado del listado de terminados tambien',
+           /canDelete\(/.test(cuerpoD) && /CronosMatchLock/.test(cuerpoD),
+           'sin la puerta, un partido congelado se podria borrar desde ese listado');
+    }
     ok('2k · deleteLiveMatch igual',
        /window\.deleteLiveMatch = async function[\s\S]{0,600}canDelete\(_m, false\)/.test(LIVE));
 

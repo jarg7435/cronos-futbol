@@ -1030,15 +1030,16 @@ async function showFinishedMatches() {
             const eventsCount = Array.isArray(m.events) ? m.events.length : 0;
             const dateStr = m.matchDate || (m.createdAt ? (typeof m.createdAt === 'number' ? new Date(m.createdAt).toLocaleDateString('es-ES') : new Date(m.createdAt.seconds * 1000).toLocaleDateString('es-ES')) : '—');
 
-            // ── v434 · Estado de inmutabilidad ────────────────────────────
+            // ── v434/v435 · Estado de la ficha ────────────────────────────
             // Mismo criterio que finished-matches-tab.js, el listado gemelo:
-            // las fichas de cronos_player_reports son INFORMES (cerrados por la
-            // regla de independencia) y se tratan siempre como congeladas.
+            // los PARTIDOS se rigen por la inmutabilidad de v434 (2 h y luego
+            // congelados), y los INFORMES son deportivos y los gestiona el
+            // cuerpo técnico, así que se pueden borrar pero no admiten evento
+            // retroactivo.
             const _lock = window.CronosMatchLock;
-            const _congelado = (m.source === 'cronos_player_reports' || !_lock)
-                                 ? true
-                                 : _lock.state(m) === 'frozen';
-            const _restante = (!_congelado && _lock) ? _lock.graceRemainingText(m) : '';
+            const _esInforme = m.source === 'cronos_player_reports';
+            const _congelado = _esInforme ? false : (!_lock || _lock.state(m) === 'frozen');
+            const _restante = (!_esInforme && !_congelado && _lock) ? _lock.graceRemainingText(m) : '';
 
             return `
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:0.8rem 1rem;background:rgba(255,255,255,0.03);border:1px solid rgba(121,192,255,0.2);border-radius:10px;margin-bottom:0.6rem;gap:1rem;">
@@ -1046,7 +1047,7 @@ async function showFinishedMatches() {
                         <div style="font-weight:800;color:white;font-size:0.9rem;">${escapeHtml(homeName)} ${scoreHome} - ${scoreAway} ${escapeHtml(awayName)}</div>
                         <div style="font-size:0.72rem;color:#7d8590;margin-top:2px;">
                             ${escapeHtml(cat)} ${escapeHtml(sub)} · 📅 ${escapeHtml(dateStr)} ${eventsCount > 0 ? `· 📍 ${eventsCount} eventos` : ''}
-                            ${_congelado ? ' · 🔒 CERRADO' : ` · ✏️ ${escapeHtml(_restante)}`}
+                            ${_esInforme ? ' · 📋 INFORME' : _congelado ? ' · 🔒 CERRADO' : ` · ✏️ ${escapeHtml(_restante)}`}
                         </div>
                     </div>
                     <div style="display:flex; gap:0.4rem; align-items:center;">
@@ -1054,12 +1055,13 @@ async function showFinishedMatches() {
                             style="padding:0.45rem 1rem;background:linear-gradient(135deg,#58a6ff,#1f6beb);border:none;border-radius:7px;color:white;font-size:0.8rem;cursor:pointer;font-weight:800;white-space:nowrap;box-shadow:0 3px 8px rgba(88,166,255,0.3);">
                             ▶️ Revivir
                         </button>
-                        ${_congelado ? '' : `
+                        ${(_congelado || _esInforme) ? '' : `
                         <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal('${m.id}');" title="Añadir evento retroactivo (batería/cobertura) — quedan ${escapeHtml(_restante)}"
                             style="padding:0.45rem 0.6rem;background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);border-radius:7px;color:#58a6ff;font-size:0.8rem;cursor:pointer;font-weight:700;">
                             ⏱️
-                        </button>
-                        <button onclick="deleteFinishedMatchFromCloud('${m.id}', '${m.docId || ''}', event);" title="Eliminar partido"
+                        </button>`}
+                        ${_congelado ? '' : `
+                        <button onclick="deleteFinishedMatchFromCloud('${m.id}', '${m.docId || ''}', event);" title="${_esInforme ? 'Eliminar informe' : 'Eliminar partido'}"
                             style="padding:0.45rem 0.6rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:7px;color:#ff5858;font-size:0.8rem;cursor:pointer;font-weight:700;">
                             🗑️
                         </button>`}
@@ -1084,6 +1086,15 @@ window.deleteFinishedMatchFromCloud = async function(matchId, docId, e) {
     // se falsificaría por omisión. El SuperAdmin conserva la válvula de escape.
     // Se relee el documento en vez de fiarse de la ficha pintada, que puede
     // llevar abierta más de las 2 h de la ventana.
+    // ⚠️ v435 · EL CANDADO SOLO AFECTA AL PARTIDO, NUNCA AL INFORME.
+    // Esta función recibe DOS cosas: el id de un partido de live_matches y el
+    // de un informe de cronos_player_reports. En el listado, el `id` de una
+    // ficha de informe es `data.liveMatchId || d.id`, así que puede ser el id de
+    // un partido YA CONGELADO — y con la comprobación de v434 tal como estaba,
+    // ese partido bloqueaba el borrado del INFORME, que se rige por otro
+    // criterio (deportivo, gestionado por el cuerpo técnico) y debe poder
+    // borrarse igual. Ahora el candado solo decide si se borra el partido.
+    let _borrarPartido = !!matchId;
     try {
         const fa0 = window._cronos_auth;
         const esSA = window._cronosCurrentUser?.role === 'superadmin'
@@ -1092,10 +1103,15 @@ window.deleteFinishedMatchFromCloud = async function(matchId, docId, e) {
             const fs0 = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
             const snap0 = await fs0.getDoc(fs0.doc(fa0.db, 'live_matches', matchId));
             if (snap0.exists() && !window.CronosMatchLock.canDelete({ id: snap0.id, ...snap0.data() }, false)) {
-                const motivo = window.CronosMatchLock.lockReason({ id: snap0.id, ...snap0.data() });
-                if (typeof showToast === 'function') showToast('🔒 ' + motivo, 5000);
-                else alert(motivo);
-                return;
+                _borrarPartido = false;
+                // Si no había informe que borrar, no queda nada que hacer: se
+                // avisa y se sale sin pedir confirmación de una acción vacía.
+                if (!docId) {
+                    const motivo = window.CronosMatchLock.lockReason({ id: snap0.id, ...snap0.data() });
+                    if (typeof showToast === 'function') showToast('🔒 ' + motivo, 5000);
+                    else alert(motivo);
+                    return;
+                }
             }
         }
     } catch (eLock) {
@@ -1104,20 +1120,22 @@ window.deleteFinishedMatchFromCloud = async function(matchId, docId, e) {
         console.warn('[v434] No se pudo comprobar el candado antes de borrar:', eLock && eLock.message);
     }
 
-    if (!confirm('¿Eliminar definitivamente este partido del historial?')) return;
+    if (!confirm(docId && !_borrarPartido
+            ? '¿Eliminar definitivamente este informe?'
+            : '¿Eliminar definitivamente este partido del historial?')) return;
 
     try {
         const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const fa = window._cronos_auth;
         if (fa && fa.db) {
-            if (matchId) {
+            if (matchId && _borrarPartido) {
                 await deleteDoc(doc(fa.db, 'live_matches', matchId)).catch(() => {});
             }
             if (docId) {
                 await deleteDoc(doc(fa.db, 'cronos_player_reports', docId)).catch(() => {});
             }
         }
-        if (typeof showToast === 'function') showToast('🗑️ Partido eliminado del historial', 3000);
+        if (typeof showToast === 'function') showToast('🗑️ Eliminado del historial', 3000);
 
         if (typeof _renderFinishedMatchesTab === 'function') {
             _renderFinishedMatchesTab();

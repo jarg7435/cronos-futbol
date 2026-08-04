@@ -62,6 +62,20 @@ service cloud.firestore {
     // staffUids ni un clubId que case con users/{uid}.clubId (docs legacy o
     // variantes _coach_pN / _pN sin esos campos). No amplía la superficie: la
     // regla que la invoca sigue restringida a modificar SOLO dismissedByStaff.
+    // v435 · CUERPO TECNICO, por rol explicito. A diferencia de
+    // isStaffRoleByDoc(), que ademas da por staff a cualquiera con `allRoles`
+    // no vacio —un padre incluido—, esta exige el rol concreto. Se usa para
+    // decidir quien gestiona los informes COLECTIVOS: el criterio del autor
+    // dice Director Deportivo, Coordinador y Entrenador, y un padre NO debe
+    // poder borrar el informe colectivo de un equipo.
+    function isTechStaffByDoc() {
+      return isAuth()
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid))
+                  .data.get('role', '') in ['director', 'coordinator', 'coach',
+                                            'club_admin', 'individual_admin'];
+    }
+
     function isStaffRoleByDoc() {
       return isAuth()
              && exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -664,40 +678,67 @@ service cloud.firestore {
     // SEC-013: Validate club on create
     // ============================================================
     match /cronos_player_reports/{reportId} {
+      // ⚠️ v435 · TODAS LAS LECTURAS DEL DOCUMENTO USAN .get(campo, null).
+      // En el lenguaje de reglas, leer una clave AUSENTE de un mapa LANZA, y un
+      // error en la condicion equivale a DENY. Aqui se accedia directo a
+      // `.parentUid` y `.coachUid`, campos que un informe COLECTIVO no lleva:
+      // evaluar esta condicion contra un colectivo tiraba
+      // "Property parentUid is undefined on object" y denegaba POR AVERIA, no
+      // por logica. Funcionaba de casualidad cuando el resultado esperado era
+      // denegar, y cualquier reordenacion de las ramas podia dejar sin leer sus
+      // informes a quien si tiene derecho. Es la misma trampa que ya se pago en
+      // el `create` de live_matches (2026-07-29). Detectado con el test de
+      // comportamiento en v435: una lectura estatica no lo ve.
       allow read: if isAuth() && (
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid == resource.data.coachUid ||
-        request.auth.uid == resource.data.parentUid ||
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        request.auth.uid == resource.data.get('coachUid', null) ||
+        request.auth.uid == resource.data.get('parentUid', null) ||
         // FIX: directores/coordinadores reciben informes de staff aunque su
         // token aún NO tenga el custom claim 'clubId' (claims sin propagar o
         // token caducado). El informe incluye staffUids con los UIDs de los
         // destinatarios de staff (ver panel.js), así que permitimos leer a
         // quien esté listado explícitamente. Esto NO amplía la superficie:
         // solo accede el staff destinatario del propio documento.
-        (resource.data.staffUids != null &&
-         request.auth.uid in resource.data.staffUids) ||
+        (resource.data.get('staffUids', null) != null &&
+         request.auth.uid in resource.data.get('staffUids', [])) ||
         // FIX (entrenador sin claim): miembros del club según users/{uid}.clubId.
-        userDocClubId(resource.data.clubId) ||
-        transitionalRead(resource.data.clubId)
+        userDocClubId(resource.data.get('clubId', null)) ||
+        transitionalRead(resource.data.get('clubId', null))
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId) ||
-        request.auth.uid == request.resource.data.coachUid ||
+        sameClub(request.resource.data.get('clubId', null)) ||
+        request.auth.uid == request.resource.data.get('coachUid', null) ||
         // FIX (entrenador sin claim): autor miembro del club por users/{uid}.
-        userDocClubId(request.resource.data.clubId)
+        userDocClubId(request.resource.data.get('clubId', null))
       );
+      // ══════════════════════════════════════════════════════════════
+      // v435 · CRITERIO DEL AUTOR PARA LOS INFORMES
+      // ══════════════════════════════════════════════════════════════
+      // Los informes son PURAMENTE DEPORTIVOS: analizan lo ocurrido en el
+      // campo y no llevan datos personales sensibles. Por eso aqui no rige la
+      // congelacion del partido (v434), sino un modelo de CONTROL POR ROL:
+      //   · COLECTIVOS   -> los gestionan Director Deportivo, Coordinador y
+      //                     Entrenador del club.
+      //   · INDIVIDUALES -> el padre tiene control total sobre los de su hijo:
+      //                     los descarga y los borra cuando quiera.
+      //   · El SuperAdmin puede vaciar al cerrar la temporada.
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid == resource.data.coachUid ||
-        // FIX (entrenador sin claim): el autor reescribe su propio informe.
-        request.auth.uid == request.resource.data.coachUid ||
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        request.auth.uid == resource.data.get('coachUid', null) ||
+        // ⚠️ v435 · ELIMINADA la rama `request.auth.uid ==
+        // request.resource.data.coachUid`. Leia el documento ENTRANTE, no el
+        // guardado: CUALQUIER usuario autenticado podia reescribir CUALQUIER
+        // informe sin mas que ponerse a si mismo como coachUid en el payload.
+        // El caso legitimo que decia cubrir —"el autor reescribe su propio
+        // informe"— ya lo cubre la rama de arriba, que compara contra
+        // resource.data (lo que hay guardado) y por tanto no se puede falsear.
         // FIX v2: staff (director/coordinador) puede añadir su UID a dismissedBy
         // para ocultar el informe de su panel individual sin afectar a otros.
-        (resource.data.staffUids != null &&
-         request.auth.uid in resource.data.staffUids &&
+        (resource.data.get('staffUids', null) != null &&
+         request.auth.uid in resource.data.get('staffUids', []) &&
          request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedBy'])) ||
         // FIX v4: el staff destinatario (director/coordinador) oculta el informe
@@ -705,8 +746,8 @@ service cloud.firestore {
         // compartido NO se borra: cada rol ve/oculta de forma independiente. Solo
         // se permite modificar el campo dismissedByStaff (no se toca el contenido
         // del informe), restringido a UIDs listados en staffUids del propio doc.
-        (resource.data.staffUids != null &&
-         request.auth.uid in resource.data.staffUids &&
+        (resource.data.get('staffUids', null) != null &&
+         request.auth.uid in resource.data.get('staffUids', []) &&
          request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedByStaff'])) ||
         // FIX (permisos dismiss): el staff (director/coordinador, según su doc
@@ -720,32 +761,46 @@ service cloud.firestore {
             .hasOnly(['dismissedByStaff'])) ||
         // FIX v2: padres pueden añadir su UID a dismissedBy para ocultar
         // informes de su panel sin afectar a otros usuarios.
-        (request.auth.uid == resource.data.parentUid &&
+        (request.auth.uid == resource.data.get('parentUid', null) &&
          request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedBy'])) ||
-        userDocClubId(resource.data.clubId)
+        userDocClubId(resource.data.get('clubId', null))
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
         // FIX v4: solo el coach AUTOR puede borrar físicamente el doc compartido.
-        request.auth.uid == resource.data.coachUid ||
+        request.auth.uid == resource.data.get('coachUid', null) ||
         // FIX v2: padres pueden borrar informes individuales dirigidos a ellos
-        (request.auth.uid == resource.data.parentUid &&
-         resource.data.type == 'parent_player_report') ||
+        (request.auth.uid == resource.data.get('parentUid', null) &&
+         resource.data.get('type', '') == 'parent_player_report') ||
         // FIX v3: padres pueden borrar docs legacy (rpt_*) dirigidos a ellos
         // que NO tienen type='parent_player_report' pero sí tienen su parentUid
         // y NO son docs de staff (staffReport=true) ni de coach (_forCoach=true)
-        (request.auth.uid == resource.data.parentUid &&
-         resource.data.staffReport != true &&
-         resource.data._forCoach != true) ||
-        // FIX v4: miembros del mismo club (incl. director/coordinador) SOLO pueden
-        // borrar físicamente documentos que NO son informes de staff. Para los
-        // informes de staff (staffReport=true) el director/coordinador NO borra el
-        // doc compartido: usa el campo dismissedByStaff (ver allow update) para
-        // ocultarlo SOLO de su propio panel, sin afectar a los demás roles.
-        (resource.data.staffReport != true &&
-         (sameClubAsDoc(resource.data.clubId) ||
-          userDocClubId(resource.data.clubId)))
+        (request.auth.uid == resource.data.get('parentUid', null) &&
+         resource.data.get('staffReport', false) != true &&
+         resource.data.get('_forCoach', false) != true) ||
+        // v435 · LOS COLECTIVOS LOS GESTIONA EL CUERPO TECNICO DEL CLUB.
+        // Hasta v435 esta rama excluia los informes de staff
+        // (`staffReport != true`): el director/coordinador solo podia OCULTARLOS
+        // de su panel con dismissedByStaff, nunca borrarlos, asi que el
+        // documento compartido no habia forma de eliminarlo salvo por el coach
+        // autor o el SuperAdmin.
+        //
+        // ⚠️ PERO NO BASTA CON PERTENECER AL CLUB. El primer intento quito el
+        // gate de staffReport dejando solo sameClubAsDoc/userDocClubId, y eso
+        // daba el borrado de los informes COLECTIVOS a cualquier miembro del
+        // club — LOS PADRES INCLUIDOS, porque su users/{uid}.clubId tambien
+        // casa. El criterio del autor es Director Deportivo, Coordinador y
+        // Entrenador, asi que el colectivo exige ademas rol tecnico.
+        (resource.data.get('staffReport', false) == true
+         && isTechStaffByDoc()
+         && (sameClubAsDoc(resource.data.get('clubId', null)) ||
+             userDocClubId(resource.data.get('clubId', null)))) ||
+        // Los que NO son de staff (individuales y sueltos) se quedan como
+        // estaban: cualquier miembro del club puede borrarlos.
+        (resource.data.get('staffReport', false) != true &&
+         (sameClubAsDoc(resource.data.get('clubId', null)) ||
+          userDocClubId(resource.data.get('clubId', null))))
       );
     }
 

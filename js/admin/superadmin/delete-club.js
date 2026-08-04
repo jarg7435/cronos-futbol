@@ -20,6 +20,9 @@ window.saDeleteClubComplete = async function(clubId, clubName) {
         '\u2022 Borrar\u00e1 el documento del club\n' +
         '\u2022 Eliminar\u00e1 el clubId de todos sus usuarios\n' +
         '\u2022 Borrar\u00e1 todas sus platform_requests\n' +
+        // v435: el borrado se lleva tambien lo deportivo. Antes quedaba
+        // huerfano y sin nadie que pudiera verlo ni limpiarlo.
+        '\u2022 Borrar\u00e1 TODOS sus informes, partidos y v\u00ednculos jugador-padre\n' +
         '\u2022 Los usuarios quedar\u00e1n libres para re-registrarse con el mismo email\n\n' +
         '\u00bfConfirmas el borrado completo?'
     )) return;
@@ -86,11 +89,49 @@ window.saDeleteClubComplete = async function(clubId, clubName) {
                 }).catch(()=>{});
         });
 
-        // 3. Borrar el club
+        // \u2500\u2500 v435 \u00b7 3. LOS DATOS DEPORTIVOS DEL CLUB \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        // Hasta v435 el borrado dejaba hu\u00e9rfanos los informes, los partidos y
+        // los v\u00ednculos jugador-padre: se borraba el club y sus usuarios, pero
+        // `cronos_player_reports`, `live_matches` y `cronos_player_links`
+        // segu\u00edan en la base de datos para siempre, sin nadie que pudiera
+        // verlos ni limpiarlos \u2014porque el acceso se resuelve por clubId y ya no
+        // quedaba ning\u00fan usuario con ese clubId\u2014. El criterio del autor es que
+        // el SuperAdmin pueda vaciar la informaci\u00f3n al cerrar la temporada, as\u00ed
+        // que el borrado del club se lleva ahora tambi\u00e9n lo deportivo.
+        //
+        // Se hace en tandas de 400: un batch de Firestore admite 500
+        // operaciones y falla ENTERO al pasarse. Aqu\u00ed no se usa batch sino
+        // borrados sueltos, pero se trocea igual para no lanzar miles de
+        // promesas a la vez contra la cuota.
+        const _borrarPorClub = async (col) => {
+            let n = 0;
+            try {
+                const snap = await getDocs(query(collection(db, col), where('clubId', '==', clubId)));
+                const ids = [];
+                snap.forEach(d => ids.push(d.id));
+                for (let i = 0; i < ids.length; i += 400) {
+                    await Promise.all(ids.slice(i, i + 400)
+                        .map(id => deleteDoc(doc(db, col, id)).then(() => { n++; }).catch(() => {})));
+                }
+            } catch (e) {
+                console.warn('[saDeleteClubComplete] ' + col + ':', e && e.message);
+            }
+            return n;
+        };
+
+        const [nRep, nLive, nLinks] = await Promise.all([
+            _borrarPorClub('cronos_player_reports'),
+            _borrarPorClub('live_matches'),
+            _borrarPorClub('cronos_player_links'),
+        ]);
+
+        // 4. Borrar el club
         await deleteDoc(doc(db,'clubs',clubId));
 
         _saHideSpinner();
-        _saToast('\u2705 Club "' + clubName + '" borrado. ' + usersSnap.size + ' usuario(s) reseteados. Pueden re-registrarse con los mismos correos.', 7000);
+        _saToast('\u2705 Club "' + clubName + '" borrado. ' + usersSnap.size + ' usuario(s) reseteados. '
+               + nRep + ' informe(s), ' + nLive + ' partido(s) y ' + nLinks + ' v\u00ednculo(s) eliminados. '
+               + 'Pueden re-registrarse con los mismos correos.', 7000);
         saTab('clubs');
 
     } catch(e) {

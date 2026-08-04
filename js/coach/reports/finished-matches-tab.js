@@ -282,18 +282,24 @@ async function _renderFinishedMatchesTab() {
             const eventsCount = Array.isArray(m.events) ? m.events.length : 0;
             const dateStr = m.matchDate || (m.createdAt ? (typeof m.createdAt === 'number' ? new Date(m.createdAt).toLocaleDateString('es-ES') : new Date(m.createdAt.seconds * 1000).toLocaleDateString('es-ES')) : '—');
 
-            // ── v434 · Estado de inmutabilidad ────────────────────────────
-            // Las fichas que vienen de cronos_player_reports son INFORMES, no
-            // partidos: no hay documento de partido que editar y, por la regla
-            // de independencia, un informe enviado está cerrado. Se tratan
-            // siempre como congeladas.
+            // ── v434/v435 · Estado de la ficha ────────────────────────────
+            // Hay DOS cosas distintas en este listado y no se rigen igual:
+            //
+            //  · PARTIDOS (live_matches) → inmutabilidad de v434: 2 h de
+            //    ventana para incidencias y después congelado, ni editar ni
+            //    borrar.
+            //  · INFORMES (cronos_player_reports) → v435. Son puramente
+            //    deportivos y los GESTIONAN Director Deportivo, Coordinador y
+            //    Entrenador: se pueden borrar en cualquier momento. Lo que NO
+            //    admiten es el evento retroactivo, porque un informe no es un
+            //    partido en curso al que añadirle sucesos.
             const _lock = window.CronosMatchLock;
-            const _estado = (m.source === 'cronos_player_reports' || !_lock)
-                                ? 'frozen'
-                                : _lock.state(m);
-            const _congelado = _estado === 'frozen';
-            const _restante = (!_congelado && _lock) ? _lock.graceRemainingText(m) : '';
-            const _chip = _congelado
+            const _esInforme = m.source === 'cronos_player_reports';
+            const _congelado = _esInforme ? false : (!_lock || _lock.state(m) === 'frozen');
+            const _restante = (!_esInforme && !_congelado && _lock) ? _lock.graceRemainingText(m) : '';
+            const _chip = _esInforme
+                ? `<span title="Informe deportivo: lo gestiona el cuerpo técnico del club" style="background:rgba(121,192,255,0.12); border:1px solid rgba(121,192,255,0.3); color:#79c0ff; font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:5px;">📋 INFORME</span>`
+                : _congelado
                 ? `<span title="Cerrado definitivamente: no admite cambios" style="background:rgba(125,133,144,0.15); border:1px solid rgba(125,133,144,0.35); color:#7d8590; font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:5px;">🔒 CERRADO</span>`
                 : `<span title="Admite incidencias durante ${escapeHtml(_restante)} más" style="background:rgba(240,136,62,0.12); border:1px solid rgba(240,136,62,0.35); color:#f0883e; font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:5px;">✏️ ${escapeHtml(_restante)}</span>`;
 
@@ -319,13 +325,14 @@ async function _renderFinishedMatchesTab() {
                             style="background:linear-gradient(135deg,#58a6ff,#1f6beb); border:none; color:white; padding:0.5rem 1.1rem; border-radius:8px; font-weight:800; font-size:0.8rem; cursor:pointer; box-shadow:0 4px 12px rgba(88,166,255,0.3); display:flex; align-items:center; gap:0.4rem;">
                             ▶️ Revivir Partido
                         </button>
-                        ${_congelado ? '' : `
+                        ${(_congelado || _esInforme) ? '' : `
                         <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal('${m.id}');" title="Añadir evento retroactivo (batería/cobertura) — quedan ${escapeHtml(_restante)}"
                             style="background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:#58a6ff; padding:0.5rem 0.65rem; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;"
                             onmouseover="this.style.background='rgba(88,166,255,0.3)'" onmouseout="this.style.background='rgba(88,166,255,0.15)'">
                             ⏱️
-                        </button>
-                        <button onclick="deleteFinishedMatchFromCloud('${m.id}', '${m.docId || ''}', event);" title="Eliminar partido"
+                        </button>`}
+                        ${_congelado ? '' : `
+                        <button onclick="deleteFinishedMatchFromCloud('${m.id}', '${m.docId || ''}', event);" title="${_esInforme ? 'Eliminar informe' : 'Eliminar partido'}"
                             style="background:rgba(255,88,88,0.15); border:1px solid rgba(255,88,88,0.4); color:#ff5858; padding:0.5rem 0.65rem; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;"
                             onmouseover="this.style.background='rgba(255,88,88,0.3)'" onmouseout="this.style.background='rgba(255,88,88,0.15)'">
                             🗑️

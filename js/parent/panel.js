@@ -1124,26 +1124,118 @@ async function openParentPanel(initialTab) {
                 return { svg, events, periods, playedSec };
             };
 
-            // ── Handler de borrado (expuesto globalmente) ────────────────────
-            // FIX v2: Soft delete — añade el UID del padre a dismissedBy
-            // en vez de borrar físicamente el documento. Así no afecta a otros roles.
-            window._ppDeleteReport = async (reportId) => {
-                if (!confirm('¿Ocultar este informe de tu panel? Solo se eliminará para ti.')) return;
-                try {
-                    const { doc: dRef2, updateDoc, arrayUnion } = await import(
-                        'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    await updateDoc(dRef2(fa.db, 'cronos_player_reports', reportId), {
-                        dismissedBy: arrayUnion(me.uid)
+            // ── v435 · EL PADRE TIENE CONTROL TOTAL SOBRE LOS INFORMES DE SU
+            //    HIJO: los descarga y los borra de verdad ────────────────────
+            // Registro por id para que los manejadores globales (que reciben
+            // solo el id desde un onclick) puedan recuperar el informe entero.
+            window._ppReportsById = window._ppReportsById || {};
+            reports.forEach(r => { if (r && r._id) window._ppReportsById[r._id] = r; });
+
+            // Descarga en TXT. Mismo formato y mismas decisiones que
+            // miDescargarInforme (js/coach/comms/individual-reports.js): BOM al
+            // principio porque el Bloc de notas de Windows rompe los acentos sin
+            // él, y el <a> se adjunta al DOM antes del click porque un click
+            // suelto no dispara la descarga en Firefox.
+            window._ppDownloadReport = (reportId) => {
+                const r = window._ppReportsById?.[reportId];
+                if (!r) { alert('No se encontró el informe.'); return; }
+
+                const sh = r.scoreHome, sa = r.scoreAway;
+                const hay = sh != null && sa != null;
+                // MISMA semántica que la tarjeta: el resultado depende de
+                // myTeamRole y los informes antiguos que no lo llevan caen a
+                // 'home'. Si divergiera, el fichero contradiría a la pantalla.
+                const mios  = r.myTeamRole === 'away' ? Number(sa) : Number(sh);
+                const suyos = r.myTeamRole === 'away' ? Number(sh) : Number(sa);
+                const veredicto = !hay ? '' : mios > suyos ? 'VICTORIA' : mios < suyos ? 'DERROTA' : 'EMPATE';
+                const fecha = r.matchDate
+                    ? new Date(r.matchDate + 'T12:00:00').toLocaleDateString('es-ES',
+                        { day: '2-digit', month: 'long', year: 'numeric' })
+                    : '—';
+
+                const { events: evts, playedSec } = _buildTimeline(r);
+                const etiqueta = {
+                    starter: 'TITULAR', sub_in: 'CAMBIO · Entra', sub_out: 'CAMBIO · Sale',
+                    goal: 'GOL', yellow: 'TARJETA AMARILLA', red: 'TARJETA ROJA', injury: 'LESIÓN',
+                };
+
+                const L = [];
+                L.push('INFORME INDIVIDUAL DE PARTIDO');
+                L.push('='.repeat(46));
+                L.push(`Jugador:      ${r.playerAlias || r.playerName || '—'}`
+                     + (r.playerNumber ? `  (dorsal ${r.playerNumber})` : ''));
+                L.push(`Rival:        ${r.rival || '—'}`);
+                L.push(`Fecha:        ${fecha}`);
+                if (r.category) L.push(`Categoría:    ${r.category}`);
+                L.push(`Localía:      ${r.myTeamRole === 'away' ? 'Visitante' : 'Local'}`);
+                L.push(`Resultado:    ${hay ? `${sh} - ${sa}` : '—'}${veredicto ? '  (' + veredicto + ')' : ''}`);
+                L.push('');
+                L.push('RENDIMIENTO');
+                L.push('-'.repeat(46));
+                L.push(`Tiempo jugado: ${playedSec > 0 ? _secToLabel(playedSec) : "0'"}`);
+                L.push(`Goles:         ${r.goals || 0}`);
+                L.push(`Tarjetas:      ${r.cards && r.cards !== 'ninguna' ? r.cards : 'ninguna'}`);
+                L.push(`Lesión:        ${r.injured ? 'sí' : 'no'}`);
+
+                if (evts && evts.length) {
+                    L.push('');
+                    L.push('CRONOLOGÍA');
+                    L.push('-'.repeat(46));
+                    [...evts].sort((a, b) => a.timeSec - b.timeSec).forEach(ev => {
+                        L.push(`  ${String(_secToLabel(ev.timeSec)).padStart(5)}  `
+                             + `${etiqueta[ev.type] || ev.type}${ev.note ? ' · ' + ev.note : ''}`);
                     });
+                }
+
+                L.push('');
+                L.push('-'.repeat(46));
+                L.push(`Generado por Chronos Fútbol · ${new Date().toLocaleDateString('es-ES')}`);
+
+                const blob = new Blob(['﻿' + L.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+                const url  = URL.createObjectURL(blob);
+                const a    = document.createElement('a');
+                const limpio = s => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().replace(/\s+/g, '_');
+                a.href = url;
+                a.download = `informe_${limpio(r.playerAlias || r.playerName) || 'jugador'}`
+                           + `_${limpio(r.rival) || 'partido'}_${r.matchDate || 'sin-fecha'}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            };
+
+            // ── Handler de borrado (expuesto globalmente) ────────────────────
+            // ⚠️ v435 · BORRADO REAL, no "ocultar". Hasta aquí esto era un soft
+            // delete (añadir el uid del padre a `dismissedBy`) con un fallback a
+            // borrado físico si fallaba. El criterio del autor es que el padre
+            // tiene CONTROL TOTAL sobre los informes de su hijo, así que se
+            // borra el documento.
+            //
+            // Es seguro hacerlo físico: el id de un informe individual es
+            // `{matchId}_parent_{parentUid}_p{dorsal}`, o sea que el documento
+            // es EXCLUSIVO de ese padre y borrarlo no le quita el informe a
+            // nadie más. Para los docs legacy compartidos (rpt_*) la regla de
+            // Firestore ya exige que no sean de staff ni de coach.
+            window._ppDeleteReport = async (reportId) => {
+                if (!confirm('¿Eliminar definitivamente este informe?\n\nSe borrará de tu panel y no se podrá recuperar.')) return;
+                try {
+                    const { doc: dRef2, deleteDoc } = await import(
+                        'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                    await deleteDoc(dRef2(fa.db, 'cronos_player_reports', reportId));
+                    if (window._ppReportsById) delete window._ppReportsById[reportId];
                     if (typeof window.ppPlayer === 'function') window.ppPlayer();
                 } catch(err) {
-                    // Fallback: si dismissedBy falla (permisos), intentar borrado físico
-                    // solo para informes de tipo parent_player_report del propio padre
-                    console.warn('[ppDelete] Soft delete falló, intentando borrado físico:', err.message);
+                    // Último recurso: si el borrado físico no pasa las reglas —un
+                    // documento legacy COMPARTIDO, que no lleva el uid del padre
+                    // en el id— se cae al soft delete para que al menos
+                    // desaparezca de su panel sin quitárselo a los demás.
+                    console.warn('[ppDelete] Borrado físico denegado, se oculta del panel:', err.message);
                     try {
-                        const { doc: dRef3, deleteDoc } = await import(
+                        const { doc: dRef3, updateDoc, arrayUnion } = await import(
                             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                        await deleteDoc(dRef3(fa.db, 'cronos_player_reports', reportId));
+                        await updateDoc(dRef3(fa.db, 'cronos_player_reports', reportId), {
+                            dismissedBy: arrayUnion(me.uid)
+                        });
                         if (typeof window.ppPlayer === 'function') window.ppPlayer();
                     } catch(err2) {
                         alert('⚠️ Error al eliminar: ' + err2.message);
@@ -1255,8 +1347,17 @@ async function openParentPanel(initialTab) {
                                 <div style="font-size:1.15rem;font-weight:800;color:#58a6ff;line-height:1;">${tlLabel}</div>
                                 <div style="font-size:0.58rem;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px;">tiempo jugado</div>
                             </div>
+                            <!-- v435 · Descarga: el padre tiene control total
+                                 sobre los informes de su hijo. -->
+                            <button onclick="window._ppDownloadReport('${_esc(r._id||'')}')"
+                                title="Descargar este informe en TXT"
+                                style="background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.25);
+                                    color:#58a6ff;border-radius:6px;padding:5px 8px;cursor:pointer;
+                                    font-size:0.8rem;line-height:1;transition:background 0.15s;"
+                                onmouseover="this.style.background='rgba(88,166,255,0.22)'"
+                                onmouseout="this.style.background='rgba(88,166,255,0.1)'">📥</button>
                             <button onclick="window._ppDeleteReport('${_esc(r._id||'')}')"
-                                title="Eliminar este partido"
+                                title="Eliminar definitivamente este informe"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.25);
                                     color:#ff5858;border-radius:6px;padding:5px 8px;cursor:pointer;
                                     font-size:0.8rem;line-height:1;transition:background 0.15s;"
