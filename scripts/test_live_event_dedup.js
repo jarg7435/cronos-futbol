@@ -221,9 +221,14 @@ console.log('\n── PARTE 6 · el panel inferior flotante ya no existe ──'
        !/_setMatchEventsPanelMode/.test(l) && !/_matchEventsPanelMode/.test(l) &&
        !/_matchEventsAutoCollapseTimer/.test(l),
        (l.match(/[^\n]*_matchEventsPanelMode[^\n]*/) || ['(limpio)'])[0]);
-    ok('6c · 🔑 el cajón de sucesos está DENTRO del banquillo del partido',
-       /<aside id="bench-panel">[\s\S]*?id="match-events-box"[\s\S]*?<\/aside>/.test(l),
-       'fuera del <aside> volvería a ser un elemento global');
+    // v442: la lista sale del banquillo (allí era ilegible, 200px de ancho) y
+    // vuelve a ser una barra inferior. Lo que hay que seguir fijando NO es
+    // dónde está, sino que no sea GLOBAL: se enciende con renderMatch y se
+    // apaga al salir del detalle.
+    ok('6c · 🔑 la barra de sucesos sólo existe dentro del detalle de un partido',
+       /_mostrarBarraSucesos\(true\)/.test(l) && /_mostrarBarraSucesos\(false\)/.test(l) &&
+       /<div id="match-events-bar" style="display:none;">/.test(l),
+       'en el listado no puede haber barra: era el defecto de la barra global');
     ok('6d · y la lista conserva su id, que es de lo que cuelgan las dos vías',
        /id="match-events-list"/.test(l));
     ok('6e · 🔑 sigue habiendo UN solo sitio donde se añade una fila nueva',
@@ -231,8 +236,11 @@ console.log('\n── PARTE 6 · el panel inferior flotante ya no existe ──'
     ok('6f · el cajón no flota: no lleva position fixed ni anclaje al pie',
        !/#match-events-box\s*\{[^}]*position:\s*fixed/.test(l) &&
        !/#match-events-box\s*\{[^}]*bottom:\s*0/.test(l));
+    // Anclado al MANEJADOR de "Limpiar", no a la distancia desde su id: entre
+    // uno y otro se coló el manejador del plegado (v442) y la ventana fija de
+    // caracteres se quedó corta, dando rojo por la razón equivocada.
     ok('6g · "Limpiar" sobrevive y vacía TAMBIÉN el registro del dedup',
-       /match-events-clear[\s\S]{0,600}?_histVistos = new Set\(\)/.test(l),
+       /clear\.addEventListener\('click'[\s\S]{0,600}?_histVistos = new Set\(\)/.test(l),
        'sin eso, tras limpiar el siguiente snapshot no repintaría nada: todo contaría como ya visto');
 }
 

@@ -223,14 +223,23 @@ ok('2g · 🔑 y por tanto ya nada invisible puede tragarse los toques sobre el 
    !/pointer-events:\s*auto/.test(liveCss) ||
    !/#event-toast-stack\s*\{[^}]*pointer-events:\s*auto/.test(liveCss),
    'era el bug de v422: una franja invisible a ancho completo sobre el campo');
-// El cajón que los sustituye NO puede aparecer donde el banquillo es una franja
-// horizontal: ahí no hay alto que gastar y el campo va a 100dvh sin scroll.
+// v442 · La lista de sucesos sale del banquillo (allí, a 200px de ancho, era
+// ilegible: lo reportó el autor) y vuelve a ser una barra inferior a lo ancho.
+// ⚠️ 2h/2h2 fijaban que se ocultara en las dos maquetaciones de franja
+// horizontal. Ya no se oculta: cabe, porque va debajo y no dentro. Lo que hay
+// que fijar ahora es que en esas dos —donde el campo va a 100dvh sin scroll—
+// la barra sea BAJA, y que arranque plegada (eso lo decide el JS).
 const CONDICION_PORTRAIT_MOVIL = /@media\s*\(orientation:\s*portrait\)\s*and\s*\(max-width:\s*600px\)/;
-ok('2h · el cajón de sucesos se oculta en móvil vertical (franja horizontal)',
-   /#match-events-box\s*\{\s*display:\s*none/.test(cuerpoMedia(liveCss, CONDICION_PORTRAIT_MOVIL)),
-   'metido en la franja saldría como una columna aplastada');
-ok('2h2 · y en tablet vertical, que es la misma maquetación',
-   /#match-events-box\s*\{\s*display:\s*none/.test(bloqueTablet));
+const bloqueMovil = cuerpoMedia(liveCss, CONDICION_PORTRAIT_MOVIL);
+const altoLista = (b) => parseInt((b.match(/#match-events-list\s*\{[^}]*height:\s*(\d+)px/) || [, '999'])[1], 10);
+ok('2h · en móvil vertical la barra de sucesos es baja (≤100px de lista)',
+   altoLista(bloqueMovil) <= 100, altoLista(bloqueMovil) + 'px');
+ok('2h2 · y en tablet vertical también (≤120px)',
+   altoLista(bloqueTablet) <= 120, altoLista(bloqueTablet) + 'px');
+ok('2h3 · 🔑 y ya NO se oculta en ninguna de las dos: ahora cabe',
+   !/#match-events-(box|bar)\s*\{\s*display:\s*none/.test(bloqueMovil) &&
+   !/#match-events-(box|bar)\s*\{\s*display:\s*none/.test(bloqueTablet),
+   'ocultarla era el precio de tenerla dentro del banquillo');
 
 // 2.3 · Cabecera compacta en vertical: era el mayor ladrón de alto del campo.
 ok('2i · el logo se encoge a 34px en móvil vertical',

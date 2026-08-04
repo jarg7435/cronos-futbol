@@ -114,17 +114,29 @@ console.log('\n── PARTE 1 · la FORMA prohibida: barras globales al pie ─�
        /id="update-banner"[\s\S]{0,200}position:\s*fixed;\s*top:\s*0/.test(SIN_COM));
 }
 
-// ═══════ PARTE 2 · el cajón está DENTRO del partido ═══════
-console.log('\n── PARTE 2 · el cajón, dentro del banquillo ──');
+// ═══════ PARTE 2 · la barra de sucesos, legible y sin tapar el campo ═══════
+// ⚠️ PARTE REESCRITA EN v442. Fijaba que la lista viviera DENTRO del <aside>
+// del banquillo (v440). Medido contra la app real por el autor: en una columna
+// de 200px las líneas se parten y no se entiende nada. Vuelve a ser una barra
+// inferior a lo ancho. Lo que se conserva de la intención original —y es lo que
+// de verdad importaba— es que NO sea global: se enciende y se apaga con la
+// vista de partido, y dice de qué partido es.
+console.log('\n── PARTE 2 · la barra inferior, legible y en el flujo ──');
 {
     const aside = (SIN_COM.match(/<aside id="bench-panel">([\s\S]*?)<\/aside>/) || [, ''])[1];
     ok('2a · el banquillo sigue teniendo sus dos secciones de suplentes',
        /id="bench-home"/.test(aside) && /id="bench-away"/.test(aside));
-    ok('2b · 🔑 y el cajón de sucesos va DENTRO, no suelto por la página',
-       /id="match-events-box"/.test(aside) && /id="match-events-list"/.test(aside),
-       'fuera del <aside> volvería a ser un elemento global');
+    ok('2b · 🔑 y YA NO lleva dentro la lista de sucesos (era ilegible a 200px)',
+       !/match-events/.test(aside),
+       'el defecto que reportó el autor: comprimida en la columna lateral');
+    ok('2b2 · 🔑 la barra va DESPUÉS de #live-main, en el flujo de la columna',
+       /<\/div>\s*<div id="match-events-bar"/.test(SIN_COM.slice(SIN_COM.indexOf('id="live-main"'))),
+       'en el flujo no puede tapar el campo: #live-main es flex:1 y se reajusta');
+    ok('2b3 · 🔑 y NO flota (sin position:fixed ni anclaje al pie)',
+       !/#match-events-bar\s*\{[^}]*position:\s*fixed/.test(SIN_COM) &&
+       !/id="match-events-bar"[^>]*position:\s*fixed/.test(SIN_COM));
     ok('2c · con su contador y su botón de limpiar',
-       /id="match-events-count"/.test(aside) && /id="match-events-clear"/.test(aside));
+       /id="match-events-count"/.test(SIN_COM) && /id="match-events-clear"/.test(SIN_COM));
     // ⚠️ SOBRE LA REGLA BASE, NO SOBRE CUALQUIERA. Hay una segunda regla de
     // #match-events-list dentro del @media de móvil apaisado, y buscar en todo
     // el CSS la encontraba a ELLA: quitarle el tope a la regla base pasaba
@@ -146,19 +158,64 @@ console.log('\n── PARTE 2 · el cajón, dentro del banquillo ──');
         }
         return out;
     })();
-    ok('2d · 🔑 la lista lleva alto ACOTADO y scroll propio',
-       /#match-events-list\s*\{[^}]*max-height:/.test(cssBase) &&
+    // ⚠️ `height:` ANCLADO AL INICIO DE DECLARACIÓN. Sin el `[;{]` delante, la
+    // regex casaba con `line-height: 1.5` y daba por bueno un alto que ya no
+    // existía: la mutación que borraba `height: 116px` salía VERDE.
+    ok('2d · 🔑 la lista lleva alto FIJO y scroll propio',
+       /#match-events-list\s*\{(?:[^}]*;)?\s*height:\s*\d/.test(cssBase) &&
        /#match-events-list\s*\{[^}]*overflow-y:\s*auto/.test(cssBase),
-       'sin tope, una racha de sucesos empuja los suplentes fuera de la vista');
+       'un alto que creciera con el número de sucesos le iría comiendo el campo');
     ok('2d2 · y la medida se hace sobre la regla BASE, no sobre la de un @media',
        !/@media/.test(cssBase) && cssBase.length < SIN_COM.length,
        'con el CSS entero, la regla de móvil apaisado tapaba el defecto');
     ok('2e · y un estado vacío, para que no parezca roto antes del primer suceso',
        /#match-events-list:empty::after/.test(SIN_COM));
-    // Donde el banquillo es una franja horizontal no cabe: se oculta.
-    ok('2f · se oculta en las DOS maquetaciones de franja horizontal',
-       (SIN_COM.match(/#match-events-box\s*\{\s*display:\s*none/g) || []).length === 2,
-       'móvil vertical (96px) y tablet vertical (118px)');
+
+    // 🔑 LEGIBILIDAD, que es lo que reportó el autor. Se mide, no se argumenta:
+    // el texto de la lista tiene que ser claramente mayor que el de la columna
+    // lateral de la que viene (0.72rem) y las líneas no pueden recortarse.
+    const tamListaBase = (cssBase.match(/#match-events-list\s*\{[^}]*font-size:\s*([\d.]+)rem/) || [, '0'])[1];
+    ok('2g · 🔑 la letra de los sucesos es legible (≥ 0.8rem, era 0.72 en la columna)',
+       parseFloat(tamListaBase) >= 0.8, tamListaBase + 'rem');
+    ok('2g2 · y las filas no recortan el texto con puntos suspensivos',
+       !/function _filaSucesoHtml[\s\S]{0,900}?text-overflow:\s*ellipsis/.test(SIN_COM),
+       'recortar aquí sería el mismo defecto que en la columna lateral');
+    // ⚠️ Se cuentan los USOS, no las apariciones: la declaración lleva los
+    // mismos nombres de parámetro y se colaba en el recuento. Cuarta vez que
+    // aparece esta familia (`openPastMatchesModal` y el `===` del typeof).
+    ok('2g3 · 🔑 la fila la construye UN solo sitio, y lo usan las DOS vías',
+       (SIN_COM.match(/function _filaSucesoHtml/g) || []).length === 1 &&
+       (SIN_COM.match(/row\.innerHTML = _filaSucesoHtml\(/g) || []).length === 2,
+       'dos copias del mismo render acaban divergiendo: es el bug que arregló v424');
+}
+
+// ═══════ PARTE 2B · v442 · la barra NO es global ═══════
+// Es la razón por la que se retiró la barra de v440, y lo único que hay que no
+// volver a romper al haberla traído de vuelta.
+console.log('\n── PARTE 2B · sólo existe dentro de un partido ──');
+{
+    ok('2h · nace oculta', /<div id="match-events-bar" style="display:none;">/.test(SIN_COM));
+    ok('2i · 🔑 la ENCIENDE renderMatch, que es la vista de detalle',
+       /function renderMatch\(data\)[\s\S]{0,1200}?_mostrarBarraSucesos\(true\)/.test(SIN_COM));
+    ok('2j · 🔑 y la APAGA la salida del detalle, por la que pasan las dos vías',
+       /function _soltarPartidoVisible\(\)[\s\S]{0,600}?_mostrarBarraSucesos\(false\)/.test(SIN_COM),
+       'showLiveNow y showHistory llaman ahí: el listado no puede tener barra');
+    ok('2k · ⚠️ y la llamada de renderMatch va con guarda typeof',
+       /if \(typeof _mostrarBarraSucesos === 'function'\) _mostrarBarraSucesos\(true\)/.test(SIN_COM),
+       'renderMatch pinta campo, marcador y cronómetro: una excepción ahí no falla, MATA la vista');
+    ok('2l · 🔑 la cabecera dice de QUÉ PARTIDO son los sucesos',
+       /id="match-events-match"/.test(SIN_COM) &&
+       /function _etiquetaBarraSucesos\(data\)[\s\S]{0,700}?homeTeam[\s\S]{0,300}?awayTeam/.test(SIN_COM),
+       'era lo que le faltaba a la barra global con varios partidos en curso');
+    ok('2m · 🔑 no se despliega ni se pliega SOLA (nada de temporizadores)',
+       !/_matchEventsAutoCollapseTimer/.test(SIN_COM) &&
+       !/setTimeout\([^)]*_aplicaPlegadoSucesos/.test(SIN_COM),
+       'la barra vieja saltaba 5 s con cada suceso: la mitad del ruido');
+    ok('2n · el plegado lo decide el usuario y se RECUERDA',
+       /_SUCESOS_PLEGADA_KEY/.test(SIN_COM) &&
+       /localStorage\.setItem\(_SUCESOS_PLEGADA_KEY/.test(SIN_COM));
+    ok('2o · y arranca plegada donde el campo va justo de alto (vertical ≤950)',
+       /matchMedia\('\(orientation: portrait\) and \(max-width: 950px\)'\)/.test(SIN_COM));
 }
 
 // ═══════ PARTE 3 · [DEFECTO B y C] ejecutado de verdad, SIN panel ═══════

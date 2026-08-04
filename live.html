@@ -346,37 +346,68 @@
         }
         .bench-section-title:first-child { margin-top: 0; }
 
-        /* ── v440 · CAJÓN DE SUCESOS DEL PARTIDO (dentro del banquillo) ──
-           Sustituye a la barra fija al pie de la pantalla. Vive en la columna
-           del partido que se está viendo, así que ya no hay forma de confundir
-           de qué partido son los sucesos.
-           La lista lleva su PROPIO scroll y un alto acotado: el banquillo ya
-           tiene el suyo, y sin tope una racha de sucesos lo empujaría hasta
-           dejar los suplentes fuera de la vista. */
-        #match-events-box {
-            margin-top: 0.9rem;
-            border-top: 1px solid var(--border);
-            padding-top: 0.5rem;
+        /* ── v442 · BARRA DE SUCESOS DEL PARTIDO (al pie de la vista) ──
+           v440 la metió en la columna del banquillo y, medido contra la app
+           real, en 200px de ancho las líneas se parten y no hay quien lo lea.
+           Vuelve abajo, a lo ancho, pero SIN los defectos de la barra global:
+           va en el FLUJO de la columna (no `position:fixed`), así que no puede
+           tapar el campo —el campo es `flex:1` y se reajusta solo—, y sólo
+           existe dentro de la vista de partido.
+
+           🔑 EL ALTO LO DECIDE EL USUARIO Y SE RECUERDA. La barra vieja se
+           auto-desplegaba con cada suceso y se volvía a plegar sola: eso era
+           la mitad del ruido. Aquí `.plegada` deja sólo la cabecera. */
+        #match-events-bar {
+            flex-shrink: 0;
+            display: flex; flex-direction: column;
+            background: rgba(13,17,23,0.96);
+            border-top: 2px solid rgba(88,166,255,0.35);
+        }
+        #match-events-head {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.35rem 0.9rem;
+            background: rgba(88,166,255,0.10);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            flex-shrink: 0; min-height: 34px;
         }
         #match-events-title {
-            display: flex; align-items: center; gap: 0.4rem;
-            color: var(--primary); margin-bottom: 0.4rem;
+            font-size: 0.72rem; font-weight: 800; letter-spacing: 0.5px;
+            color: var(--primary); flex-shrink: 0;
         }
-        #match-events-count { opacity: 0.7; font-weight: 600; }
+        #match-events-count { font-size: 0.72rem; color: var(--muted); font-weight: 700; flex-shrink: 0; }
+        /* 🔑 DE QUÉ PARTIDO SON. Es lo que le faltaba a la barra global: con
+           varios partidos en curso no decía a cuál pertenecía. */
+        #match-events-match {
+            flex: 1; min-width: 0;
+            font-size: 0.74rem; font-weight: 700; color: var(--text);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            text-align: center; opacity: 0.85;
+        }
+        #match-events-clear, #match-events-toggle {
+            flex-shrink: 0; cursor: pointer; font-family: inherit;
+            border-radius: 6px; font-weight: 700;
+            min-height: 26px; touch-action: manipulation;
+        }
         #match-events-clear {
-            margin-left: auto; flex-shrink: 0;
             background: rgba(218,54,51,0.15); border: 1px solid rgba(218,54,51,0.3);
-            color: #da3633; padding: 1px 6px; border-radius: 5px;
-            font-size: 0.6rem; font-weight: 700; cursor: pointer;
-            font-family: inherit; letter-spacing: 0;
+            color: #da3633; padding: 2px 9px; font-size: 0.68rem;
         }
+        #match-events-toggle {
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14);
+            color: var(--muted); padding: 2px 10px; font-size: 0.8rem; line-height: 1;
+        }
+        /* Alto FIJO y con scroll propio: entran ~4 sucesos de un vistazo y los
+           demás se recorren. Un alto que creciera con el número de sucesos le
+           iría comiendo el campo poco a poco. */
         #match-events-list {
-            max-height: 34vh; overflow-y: auto;
-            font-size: 0.72rem; color: #c9d1d9;
+            height: 116px; overflow-y: auto;
+            padding: 0.25rem 0.9rem 0.4rem;
+            font-size: 0.82rem; line-height: 1.5; color: #c9d1d9;
         }
+        #match-events-bar.plegada #match-events-list { display: none; }
         #match-events-list:empty::after {
             content: 'Sin sucesos todavía';
-            font-size: 0.65rem; color: var(--muted); font-style: italic;
+            font-size: 0.75rem; color: var(--muted); font-style: italic;
         }
         .bench-player-row {
             display: flex; align-items: center; gap: 0.5rem;
@@ -622,10 +653,12 @@
             .bench-num  { font-size: 0.55rem; }
             .bench-time { font-size: 0.55rem; padding: 1px 4px; }
             .bench-section-title { font-size: 0.58rem; margin-top: 0.5rem; margin-bottom: 0.3rem; }
-            /* v440: aquí el banquillo SÍ es columna (140px), así que el cajón
-               de sucesos se queda, sólo que más apretado. */
-            #match-events-box { margin-top: 0.5rem; padding-top: 0.35rem; }
-            #match-events-list { max-height: 26vh; font-size: 0.64rem; }
+            /* v442 · móvil apaisado: la pantalla es MUY baja (el campo va a
+               100dvh), así que la barra se queda pero con menos alto. Sigue
+               entrando ~2 sucesos y el resto se recorre con su scroll. */
+            #match-events-head { min-height: 30px; padding: 0.25rem 0.6rem; }
+            #match-events-list { height: 68px; font-size: 0.76rem; padding: 0.2rem 0.6rem 0.3rem; }
+            #match-events-match { font-size: 0.68rem; }
 
             /* Fichas en landscape móvil — más grandes pero sin solaparse */
             .live-player-chip { width: 32px; height: 32px; font-size: 0.7rem; border-width: 2px; }
@@ -768,15 +801,15 @@
                 box-sizing: border-box;
             }
 
-            /* v440: aquí el banquillo es una FRANJA HORIZONTAL de 96px con
-               scroll en X, así que el cajón de sucesos no tiene dónde caber:
-               metido en esta fila saldría como una columna aplastada, y
-               robarle alto al campo va contra la razón de ser de esta
-               maquetación (el campo va a 100dvh sin scroll, v422). Se oculta;
-               los sucesos se consultan en la tarjeta del partido, en el
-               listado, que muestra los tres últimos con minuto, icono y
-               equipo. */
-            #match-events-box { display: none; }
+            /* v442 · móvil vertical: la barra de sucesos SÍ está (antes, como
+               cajón del banquillo, no cabía), pero arranca PLEGADA —lo decide
+               _plegadoInicialSucesos— para no robarle alto al campo, que aquí
+               va a 100dvh sin scroll (v422). Desplegarla es un toque, y la
+               elección se recuerda. */
+            #match-events-head { min-height: 32px; padding: 0.3rem 0.7rem; }
+            #match-events-list { height: 92px; font-size: 0.78rem; padding: 0.2rem 0.7rem 0.3rem; }
+            #match-events-match { font-size: 0.7rem; }
+            #match-events-title { font-size: 0.66rem; }
 
             /* Títulos de sección inline (etiquetas verticales tipo chip) */
             #bench-panel > .bench-section-title {
@@ -957,9 +990,10 @@
                 -webkit-overflow-scrolling: touch;
                 overscroll-behavior-x: contain;
             }
-            /* v440: mismo caso que en móvil vertical — franja horizontal de
-               118px, sin sitio para el cajón de sucesos. */
-            #match-events-box { display: none; }
+            /* v442 · tablet en vertical: sobra ancho, así que la barra se lee
+               de maravilla. Arranca plegada igual que en móvil (el campo va a
+               100dvh) y el usuario la abre si quiere. */
+            #match-events-list { height: 108px; font-size: 0.82rem; }
             #bench-panel > .bench-section-title {
                 writing-mode: vertical-rl;
                 transform: rotate(180deg);
@@ -1126,23 +1160,38 @@
         <div id="bench-home"></div>
         <div class="bench-section-title">VISITANTE · BANQUILLO</div>
         <div id="bench-away"></div>
-        <!-- v440 · LOS SUCESOS, DENTRO DEL PARTIDO AL QUE PERTENECEN.
-             Sustituye a la barra "📋 HISTORIAL" que estaba fija al pie de la
-             pantalla y flotaba sobre cualquier vista. Aquí es una sección más
-             de la columna del partido que se está viendo: no flota, no tapa el
-             campo y no puede confundirse con otro partido.
-             ⚠️ Se oculta en las dos maquetaciones donde el banquillo es una
-             FRANJA HORIZONTAL (móvil y tablet en vertical): ahí no hay alto que
-             gastar —el campo va a 100dvh sin scroll— y los sucesos se consultan
-             en la tarjeta del partido, en el listado. -->
-        <div id="match-events-box">
-            <div class="bench-section-title" id="match-events-title">
-                📋 SUCESOS <span id="match-events-count">(0)</span>
-                <button id="match-events-clear" title="Vaciar la lista de sucesos">Limpiar</button>
-            </div>
-            <div id="match-events-list"></div>
-        </div>
     </aside>
+</div>
+
+<!-- ══ SUCESOS DEL PARTIDO · barra inferior (v442) ═══════════════════
+     v440 puso esta lista dentro del banquillo. Medido contra la app real por
+     el autor: en una columna de 200px (140 en móvil apaisado) las líneas se
+     parten y no se entiende nada. Vuelve a ser una barra inferior, PERO sin
+     los tres defectos por los que se retiró en v440:
+
+       1 · NO ES GLOBAL. Vive dentro del bloque de la vista de partido y se
+           enciende y apaga con ella (renderMatch la muestra; showLiveNow y
+           showHistory la ocultan). En el listado no existe, que era de donde
+           venía la confusión con varios partidos en curso.
+       2 · DICE DE QUÉ PARTIDO ES. La cabecera lleva el marcador y los dos
+           equipos, así que ni cabe la duda que había con la barra global.
+       3 · NO SALTA SOLA. La barra vieja se auto-desplegaba 5 s con cada
+           suceso y se volvía a plegar; ahora el alto lo decide el usuario y
+           su elección se recuerda (localStorage).
+
+     Y NO TAPA EL CAMPO: va en el flujo de la columna (después de #live-main,
+     que es `flex:1`), no en `position:fixed`. El campo se reajusta solo.
+     ══════════════════════════════════════════════════════════════════ -->
+<div id="match-events-bar" style="display:none;">
+    <div id="match-events-head">
+        <span id="match-events-title">📋 SUCESOS</span>
+        <span id="match-events-count">(0)</span>
+        <span id="match-events-match"></span>
+        <button id="match-events-clear" title="Vaciar la lista de sucesos">Limpiar</button>
+        <button id="match-events-toggle" title="Mostrar u ocultar los sucesos"
+                aria-expanded="true">▾</button>
+    </div>
+    <div id="match-events-list"></div>
 </div>
 
 <!-- ══ HISTORIAL ═════════════════════════════════════════════════ -->
@@ -1301,6 +1350,11 @@ window.backToMatch = function() {
 function _soltarPartidoVisible() {
     if (unsubscribeMatch) { unsubscribeMatch(); unsubscribeMatch = null; }
     clearInterval(timerInterval); timerInterval = null;
+    // v442 · y se apaga la barra de sucesos. Es el punto por el que pasan las
+    // DOS salidas del detalle (showLiveNow y showHistory), así que basta con
+    // apagarla aquí para que no vuelva a verse fuera de un partido — que es el
+    // defecto por el que se retiró la barra global en v440.
+    if (typeof _mostrarBarraSucesos === 'function') _mostrarBarraSucesos(false);
 }
 
 // Cancela TODOS los listeners de fondo y detiene el polling de la lista.
@@ -1838,6 +1892,31 @@ function showEventToast(type, line, sub, matchTime) {
 //  tocado ni una línea de cómo se decide QUÉ se pinta.
 window._matchEventsLog = window._matchEventsLog || [];
 
+// ── La fila de un suceso, en UN solo sitio (v442) ────────────────────
+// 🔑 La pintaban DOS escritores con el mismo HTML copiado —esta lista la
+// alimentan la vía en vivo y la reconstrucción desde el snapshot—, y en este
+// proyecto dos copias del mismo render acaban divergiendo: es literalmente lo
+// que produjo el gol duplicado con dos aspectos distintos que arregló v424.
+// Al agrandar la letra para que se lea, se unifican.
+const _FILA_SUCESO_CSS = 'display:flex; align-items:center; gap:8px; padding:4px 0;' +
+                         'border-bottom:1px solid rgba(255,255,255,0.05);';
+function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML) {
+    // Hora real en gris y minuto de partido en NARANJA (v230). El minuto del
+    // partido es lo que de verdad se busca al leer, así que va destacado.
+    const hora = '<span style="font-size:0.72rem; color:#7d8590; font-weight:700;' +
+                 'min-width:54px; flex-shrink:0;">' + (realTime || '') + '</span>';
+    const minuto = matchTime
+        ? '<span style="font-size:0.76rem; color:#f0883e; font-weight:800;' +
+          'min-width:50px; flex-shrink:0;">' + matchTime + '</span>'
+        : '';
+    return hora + minuto +
+           '<span style="font-size:1.05rem; flex-shrink:0;">' + (evIcon || '•') + '</span>' +
+           // Sin `white-space:nowrap`: si un nombre largo no cabe, que salte de
+           // línea. Recortarlo con puntos suspensivos aquí sería justo el
+           // defecto que el autor reportó de la columna lateral.
+           '<span style="flex:1; min-width:0;">' + titleHTML + '</span>';
+}
+
 function _appendEventToHistoryPanel(type, line, sub, meta) {
     try {
         const listEl    = document.getElementById('match-events-list');
@@ -1878,20 +1957,8 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
 
         // Crear la fila del DOM.
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 0;' +
-                            'border-bottom:1px solid rgba(255,255,255,0.04);';
-        // v230: mostrar hora real (gris) Y tiempo del partido (NARANJA) si existe.
-        const timeLabel = matchTime
-            ? '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>' +
-              '<span style="font-size:0.62rem; color:#f0883e; font-weight:800; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
-            : '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>';
-        // v440: ya NO se pinta `sub` (la etiqueta del partido). El cajón está
-        // dentro del partido al que pertenece, así que repetir su nombre en
-        // cada línea era ruido; en la barra global sí hacía falta.
-        row.innerHTML =
-            timeLabel +
-            '<span style="font-size:0.9rem; flex-shrink:0;">' + evIcon + '</span>' +
-            '<span style="flex:1; min-width:0;">' + titleHTML + '</span>';
+        row.style.cssText = _FILA_SUCESO_CSS;
+        row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML);
         listEl.appendChild(row);
 
         // Auto-scroll al final para ver el evento más reciente.
@@ -1939,16 +2006,8 @@ window._loadMatchEventsFromSnapshot = function(events) {
         window._matchEventsLog.push({ type, titleHTML, titleText, sub: '', ts: realTime, realTime, matchTime, icon: evIcon });
 
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 0;' +
-                            'border-bottom:1px solid rgba(255,255,255,0.04);';
-        const timeLabel = matchTime
-            ? '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>' +
-              '<span style="font-size:0.62rem; color:#f0883e; font-weight:800; min-width:42px; flex-shrink:0;">' + matchTime + '</span>'
-            : '<span style="font-size:0.62rem; color:#7d8590; font-weight:700; min-width:48px; flex-shrink:0;">' + realTime + '</span>';
-        row.innerHTML =
-            timeLabel +
-            '<span style="font-size:0.9rem; flex-shrink:0;">' + evIcon + '</span>' +
-            '<span style="flex:1; min-width:0;">' + titleHTML + '</span>';
+        row.style.cssText = _FILA_SUCESO_CSS;
+        row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML);
         listEl.appendChild(row);
     });
 
@@ -1982,17 +2041,84 @@ function _vaciarCajonSucesos() {
     if (countEl) countEl.textContent = '(0)';
 }
 
-// v440 · Sólo queda "Limpiar". Los mandos de expandir/contraer se fueron con la
-// barra flotante: el cajón vive dentro del banquillo, con su propio scroll, y
-// no tiene nada que plegar.
+// ════════════════════════════════════════════════════════════════════
+//  v442 · LA BARRA DE SUCESOS SE ENCIENDE Y SE APAGA CON LA VISTA
+//
+//  🔑 ES LO QUE LA SEPARA DE LA BARRA GLOBAL QUE SE RETIRÓ EN v440. Aquella
+//  estaba en `position:fixed` y vivía por encima de CUALQUIER pantalla: en el
+//  listado seguía ahí, hablando de un partido que ya no se estaba viendo. Ésta
+//  la enciende renderMatch y la apagan showLiveNow y showHistory, así que fuera
+//  del detalle de un partido no existe.
+// ════════════════════════════════════════════════════════════════════
+const _SUCESOS_PLEGADA_KEY = 'cronos_live_sucesos_plegada';
+
+function _mostrarBarraSucesos(visible) {
+    const bar = document.getElementById('match-events-bar');
+    if (!bar) return;
+    bar.style.display = visible ? 'flex' : 'none';
+}
+
+// La etiqueta del partido en la cabecera: con varios partidos en curso, es lo
+// que impide la duda que tenía la barra global.
+function _etiquetaBarraSucesos(data) {
+    const el = document.getElementById('match-events-match');
+    if (!el || !data) return;
+    const home = (data.homeTeam && data.homeTeam.name) || 'LOCAL';
+    const away = (data.awayTeam && data.awayTeam.name) || 'VISITANTE';
+    const gh = (data.homeTeam && data.homeTeam.score) || 0;
+    const ga = (data.awayTeam && data.awayTeam.score) || 0;
+    el.textContent = home + ' ' + gh + ' – ' + ga + ' ' + away;
+}
+
+function _aplicaPlegadoSucesos(plegada) {
+    const bar = document.getElementById('match-events-bar');
+    const btn = document.getElementById('match-events-toggle');
+    if (!bar) return;
+    if (bar.classList && bar.classList.toggle) bar.classList.toggle('plegada', !!plegada);
+    if (btn) {
+        btn.textContent = plegada ? '▴' : '▾';
+        if (btn.setAttribute) btn.setAttribute('aria-expanded', plegada ? 'false' : 'true');
+        btn.title = plegada ? 'Mostrar los sucesos' : 'Ocultar los sucesos';
+    }
+}
+
+// Estado inicial: lo que el usuario eligiera la última vez. Sin elección
+// previa, plegada SÓLO en pantallas donde el campo va justo de alto (móvil y
+// tablet en vertical, que es donde el campo ocupa el alto entero); en el resto,
+// desplegada, que es lo que el autor pidió poder leer.
+function _plegadoInicialSucesos() {
+    try {
+        const guardado = localStorage.getItem(_SUCESOS_PLEGADA_KEY);
+        if (guardado === '1') return true;
+        if (guardado === '0') return false;
+    } catch (e) {}
+    try {
+        return window.matchMedia && window.matchMedia('(orientation: portrait) and (max-width: 950px)').matches;
+    } catch (e) { return false; }
+}
+
 (function _initMatchEventsPanel() {
     function bind() {
-        const clear = document.getElementById('match-events-clear');
-        const list  = document.getElementById('match-events-list');
-        if (!clear || !list) { setTimeout(bind, 500); return; }
+        const clear  = document.getElementById('match-events-clear');
+        const toggle = document.getElementById('match-events-toggle');
+        const list   = document.getElementById('match-events-list');
+        if (!clear || !toggle || !list) { setTimeout(bind, 500); return; }
         // v220: ser defensivo — en algunos entornos (tests headless) los
         // elementos stub no implementan addEventListener.
-        if (typeof clear.addEventListener !== 'function') return;
+        if (typeof clear.addEventListener !== 'function' ||
+            typeof toggle.addEventListener !== 'function') return;
+
+        _aplicaPlegadoSucesos(_plegadoInicialSucesos());
+
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const bar = document.getElementById('match-events-bar');
+            const plegadaAhora = !!(bar && bar.classList && bar.classList.contains('plegada'));
+            _aplicaPlegadoSucesos(!plegadaAhora);
+            // Se recuerda: la barra vieja decidía sola y volvía a plegarse cada
+            // pocos segundos, que era la mitad del ruido que se quitó.
+            try { localStorage.setItem(_SUCESOS_PLEGADA_KEY, !plegadaAhora ? '1' : '0'); } catch (e2) {}
+        });
 
         clear.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2811,6 +2937,15 @@ function renderMatch(data) {
     document.getElementById('scoreboard').style.display      = 'flex';
     document.getElementById('live-main').style.display       = 'flex';
     document.getElementById('history-view').style.display    = 'none';
+    // v442 · la barra de sucesos SÓLO existe dentro del detalle de un partido.
+    // ⚠️ CON GUARDA `typeof`, NO PELADA. renderMatch pinta el campo, el
+    // marcador y el cronómetro: una excepción aquí no daría un fallo pequeño,
+    // se llevaría por delante TODA la vista del partido. Y no es hipotético —
+    // dos guards extraen renderMatch SOLA y la ejecutan, y con la llamada
+    // pelada reventaban con ReferenceError. Misma familia que la guarda del
+    // árbol de categorías: sin el typeof no falla, MUERE.
+    if (typeof _mostrarBarraSucesos === 'function') _mostrarBarraSucesos(true);
+    if (typeof _etiquetaBarraSucesos === 'function') _etiquetaBarraSucesos(data);
 
     const isLive = data.status === 'active';
 
@@ -4545,8 +4680,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v441"></script>
-<script src="js/match/replay/replay-player.js?v=v441"></script>
-<script src="js/match/events/retroactive-modal.js?v=v441"></script>
+<script src="js/match/immutability.js?v=v442"></script>
+<script src="js/match/replay/replay-player.js?v=v442"></script>
+<script src="js/match/events/retroactive-modal.js?v=v442"></script>
 </body>
 </html>
