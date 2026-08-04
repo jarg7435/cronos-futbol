@@ -203,9 +203,13 @@ console.log('\n── PARTE 5 · 🔑 participants, que es lo que permiten las r
     const rules = leer('firestore.rules');
     const bloque = rules.slice(rules.indexOf('match /cronos_messages/'),
                                rules.indexOf('match /cronos_notifications/'));
+    // v437: el acceso sigue siendo POR PARTICIPANTE, que es lo que esta
+    // asercion protege; lo que cambió es la forma de leer el campo, que pasó a
+    // `.get('participants', [])` para que un hilo sin ese campo no haga lanzar
+    // la rama. El regex admite las dos formas para no atarse a la sintaxis.
     ok('5a · 🔑 las reglas de cronos_messages permiten por PARTICIPANTE, no por rol',
-       /request\.auth\.uid in resource\.data\.participants/.test(bloque) &&
-       /request\.auth\.uid in request\.resource\.data\.participants/.test(bloque));
+       /request\.auth\.uid in resource\.data(\.participants|\.get\('participants', \[\]\))/.test(bloque) &&
+       /request\.auth\.uid in request\.resource\.data(\.participants|\.get\('participants', \[\]\))/.test(bloque));
     // Si esto cambiara, los canales nuevos dejarían de funcionar en producción
     // aunque toda la suite siguiera verde: por eso se fija aquí.
     ok('5b · 🔑 y por eso NO hace falta desplegar reglas para los canales nuevos',

@@ -250,9 +250,14 @@ async function seguir() {
         // bloque siguen accediendo directo a `participants`, que es un defecto
         // preexistente ANOTADO PERO NO TOCADO aqui: el vaciado no lo necesita y
         // cambiarlo ampliaria el alcance de esta ronda sin pedirlo.
-        const iMsg = RULES.indexOf('match /cronos_messages/');
-        const iDel = iMsg === -1 ? -1 : RULES.indexOf('allow delete', iMsg);
-        const delMsg = iDel === -1 ? '' : RULES.slice(iDel, iDel + 600);
+        // ⚠️ Sobre el fuente SIN COMENTARIOS. Con los comentarios puestos,
+        // `indexOf('allow delete')` casaba con un comentario que menciona esa
+        // cadena, y el recorte no llegaba nunca a la regla de verdad. Es la
+        // enésima vez que un censo encuentra un comentario en vez del código.
+        const RULESc = sinComs(RULES);
+        const iMsg = RULESc.indexOf('match /cronos_messages/');
+        const iDel = iMsg === -1 ? -1 : RULESc.indexOf('allow delete: if', iMsg);
+        const delMsg = iDel === -1 ? '' : RULESc.slice(iDel, iDel + 600);
 
         ok('5a · el SuperAdmin puede borrar en cronos_messages',
            /allow delete: if isAuth\(\) &&\s*\(isSuperAdmin\(\)/.test(delMsg),

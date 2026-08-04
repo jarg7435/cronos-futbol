@@ -598,33 +598,56 @@ service cloud.firestore {
       // (`getDoc` devuelve `exists:false` sin payload para CUALQUIER
       // usuario, da igual quién pregunte), así que no amplía el acceso a
       // ningún dato real.
+      // ══════════════════════════════════════════════════════════════
+      // ⚠️ v437 · EL CAMPO AUSENTE, no solo el documento ausente
+      // ══════════════════════════════════════════════════════════════
+      // El comentario de arriba ya describe el mecanismo —"CUALQUIER rama que
+      // lea resource.data.X genera un error"— pero se parcheo SOLO para el
+      // documento inexistente (`resource == null`). El otro caso, el del
+      // documento que SI existe pero al que le falta una clave, seguia igual:
+      // leer una clave AUSENTE de un mapa LANZA, y un error en la condicion
+      // equivale a DENY para la condicion ENTERA, no solo para esa rama.
+      //
+      // Consecuencia real: un hilo sin `participants` —o sin coachUid, o sin
+      // parentUid, o sin clubId— daba "Missing or insufficient permissions" a
+      // quien SI tenia derecho a leerlo, porque la evaluacion reventaba antes
+      // de llegar a su rama. Y el sintoma es enganoso: parece un problema de
+      // permisos o de claims, cuando es un campo que no esta.
+      //
+      // Ahora TODAS las lecturas usan .get(campo, default) y ninguna rama puede
+      // tumbar a las demas. Mismo arreglo que en cronos_player_reports (v435) y
+      // en el `allow delete` de aqui mismo (v436).
+      //
+      // Nota sobre staffUid: `(x != null && uid == x)` se queda en
+      // `uid == .get('staffUid', null)`, que es equivalente —si el campo falta,
+      // el uid nunca es null— y ademas no puede lanzar.
       allow read: if isAuth() && (
         resource == null ||
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid in resource.data.participants ||
-        request.auth.uid == resource.data.coachUid ||
-        request.auth.uid == resource.data.parentUid ||
-        (resource.data.staffUid != null && request.auth.uid == resource.data.staffUid) ||
-        userDocClubId(resource.data.clubId) ||
-        transitionalRead(resource.data.clubId)
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        request.auth.uid in resource.data.get('participants', []) ||
+        request.auth.uid == resource.data.get('coachUid', null) ||
+        request.auth.uid == resource.data.get('parentUid', null) ||
+        request.auth.uid == resource.data.get('staffUid', null) ||
+        userDocClubId(resource.data.get('clubId', null)) ||
+        transitionalRead(resource.data.get('clubId', null))
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.clubId) ||
-        request.auth.uid in request.resource.data.participants ||
-        request.auth.uid == request.resource.data.coachUid ||
-        request.auth.uid == request.resource.data.parentUid ||
-        (request.resource.data.staffUid != null && request.auth.uid == request.resource.data.staffUid)
+        sameClub(request.resource.data.get('clubId', null)) ||
+        request.auth.uid in request.resource.data.get('participants', []) ||
+        request.auth.uid == request.resource.data.get('coachUid', null) ||
+        request.auth.uid == request.resource.data.get('parentUid', null) ||
+        request.auth.uid == request.resource.data.get('staffUid', null)
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.clubId) ||
-        request.auth.uid in resource.data.participants ||
-        request.auth.uid == resource.data.coachUid ||
-        request.auth.uid == resource.data.parentUid ||
-        (resource.data.staffUid != null && request.auth.uid == resource.data.staffUid) ||
-        userDocClubId(resource.data.clubId)
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        request.auth.uid in resource.data.get('participants', []) ||
+        request.auth.uid == resource.data.get('coachUid', null) ||
+        request.auth.uid == resource.data.get('parentUid', null) ||
+        request.auth.uid == resource.data.get('staffUid', null) ||
+        userDocClubId(resource.data.get('clubId', null))
       );
       // ⚠️ v436 · isSuperAdmin() VA PRIMERO y todas las lecturas usan
       // .get(campo, default). Leer una clave AUSENTE de un mapa LANZA, y un
