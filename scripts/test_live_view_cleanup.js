@@ -88,35 +88,55 @@ ok('1h · 🔑 el parseo del replay NO depende del glifo, solo de SALE:/ENTRA:',
    /text\.match\(\/SALE:\\s\*\(\.\+\?\)\\s\*\\\|\\s\*\[\^\|\]\*ENTRA:/.test(REPL));
 
 // ───────────────────────────────────────────────────────────────────────────
-console.log('\n── PARTE 2 · avisos justo debajo del marcador ──');
+console.log('\n── PARTE 2 · v440 · YA NO HAY AVISOS FLOTANTES ──');
 // ───────────────────────────────────────────────────────────────────────────
-// Antes cada formato tenía su `top` a ojo (1rem / 100px / 130px), calculado
-// sobre la altura que tenía la cabecera aquel día. En v422 se compactó la
-// cabecera del móvil y esos números se quedaron mal sin que nada fallara.
+// ⚠️ ESTA PARTE ESTÁ INVERTIDA RESPECTO A v424, y a propósito. Fijaba que la
+// pila de avisos (#event-toast-stack) se colocara justo debajo del marcador,
+// midiendo su borde inferior en --toast-top. El autor RETIRÓ la pila entera en
+// v440: con varios partidos simultáneos, un aviso GLOBAL no dice a cuál
+// pertenece, y eso confunde más de lo que informa.
+//
+// La intención se conserva —vigilar cómo se anuncia un suceso— pero ahora lo
+// que hay que fijar es que NO quede nada flotando y que el anuncio siga
+// existiendo por las vías que no compiten por el sitio: destello, sonido y
+// vibración. Ver scripts/test_live_events_drawer.js para el cajón que lo
+// sustituye.
+//
+// 🔑 Se mide sobre LIVEC (sin comentarios): los comentarios de este proyecto
+// CITAN lo que se acaba de retirar, así que un censo sobre el fuente crudo
+// daría rojo por la razón equivocada.
 
-ok('2a · la posición sale de una variable CSS, no de un número por formato',
-   /#event-toast-stack\s*\{[^}]*top:\s*var\(--toast-top/.test(LIVEC));
-ok('2b · 🔑 y NADIE la vuelve a clavar en ningún @media',
-   !/#event-toast-stack\s*\{[^}]*top:\s*(calc\()?\s*\d/.test(LIVEC),
-   (LIVEC.match(/#event-toast-stack\s*\{[^}]*top:[^;]*/g) || []).join(' // '));
-ok('2c · existe la función que mide', /function _posicionaAvisos\(\)/.test(LIVEC));
-ok('2d · 🔑 mide el borde INFERIOR del marcador (no la cabecera)',
-   /getElementById\('scoreboard'\)/.test(LIVEC) &&
-   /sb\.getBoundingClientRect\(\)\.bottom/.test(LIVEC));
-ok('2e · con la cabecera como respaldo si el marcador está oculto',
-   /hdr\.getBoundingClientRect\(\)\.bottom/.test(LIVEC));
-ok('2f · se re-mide al girar la pantalla y al redimensionar',
-   /addEventListener\('orientationchange', remedir\)/.test(LIVEC) &&
-   /addEventListener\('resize', remedir\)/.test(LIVEC));
-ok('2g · y cuando cambia la caja de la cabecera o del marcador (ResizeObserver)',
-   /new ResizeObserver\(remedir\)/.test(LIVEC));
-ok('2h · 🔑 se mide también justo antes de enseñar un aviso',
-   /function showEventToast[\s\S]{0,400}?_posicionaAvisos\(\);/.test(LIVEC),
-   'si no, el primer aviso tras entrar a un partido sale mal colocado');
-// El bloque corre al cargar el módulo: si lanzara, se llevaría el visor entero.
-ok('2i · 🔑 el observador tolera que no exista requestAnimationFrame',
-   /typeof requestAnimationFrame === 'function'/.test(LIVEC),
-   'se ejecuta al cargar: una excepción aquí tumba TODO el <script>');
+// ⚠️ `sinCom` quita los comentarios de JS y CSS, pero NO los de HTML — y el
+// marcado lleva un <!-- --> que CITA el id retirado. Es la misma trampa que ya
+// documenta la PARTE 4: sin quitarlos, esta aserción daría rojo midiendo un
+// comentario.
+const LIVE_SIN_HTML_COM = LIVEC.replace(/<!--[\s\S]*?-->/g, '');
+ok('2a · 🔑 no queda NINGUNA pila de avisos flotantes en el marcado',
+   !/id="event-toast-stack"/.test(LIVE_SIN_HTML_COM),
+   (LIVE_SIN_HTML_COM.match(/[^\n]*event-toast-stack[^\n]*/) || ['(limpio)'])[0]);
+ok('2a2 · y el censo ignora los comentarios (si no, mide lo ya retirado)',
+   LIVE_SIN_HTML_COM.length < LIVEC.length && /event-toast-stack/.test(LIVEC),
+   'el propio comentario que explica la retirada cita el id');
+ok('2b · 🔑 ni sus estilos, ni la variable que la colocaba',
+   !/#event-toast-stack\s*\{/.test(LIVEC) && !/\.event-toast\s*[.{]/.test(LIVEC) &&
+   !/--toast-top/.test(LIVEC),
+   (LIVEC.match(/[^\n]*(event-toast|--toast-top)[^\n]*/) || ['(limpio)'])[0]);
+ok('2c · ni la función que la medía',
+   !/function _posicionaAvisos\(\)/.test(LIVEC) && !/_posicionaAvisos\(\)/.test(LIVEC));
+ok('2d · ni sus animaciones huérfanas',
+   !/@keyframes toast(In|Out|Pulse)/.test(LIVEC));
+// Lo que SÍ tiene que seguir vivo: el suceso se sigue anunciando.
+ok('2e · 🔑 el suceso SIGUE anunciándose con destello',
+   /function showEventToast[\s\S]{0,900}?getElementById\("event-flash"\)/.test(LIVEC));
+ok('2f · 🔑 …con sonido',
+   /function showEventToast[\s\S]{0,900}?playEventSound\(type\)/.test(LIVEC));
+ok('2g · 🔑 …y con vibración, salvo silenciado',
+   /function showEventToast[\s\S]{0,900}?if \(!_alertsMuted\) vibrate\(meta\.vib\)/.test(LIVEC));
+ok('2h · 🔑 y va a parar al cajón del partido',
+   /function showEventToast[\s\S]{0,900}?_appendEventToHistoryPanel\(type, line, sub, _metaExt\)/.test(LIVEC),
+   'es el único punto por el que detectAndAlert anuncia un suceso');
+ok('2i · el mando de sonido sigue en la cabecera (no se ha quedado sin dueño)',
+   /id="btn-mute" onclick="toggleSound\(\)"/.test(LIVE));
 
 // ───────────────────────────────────────────────────────────────────────────
 console.log('\n── PARTE 3 · 🔑 UN GOL, UNA LÍNEA (ejecutado de verdad) ──');

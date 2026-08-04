@@ -199,34 +199,41 @@ console.log('\n── PARTE 5 · aislamiento por matchId ──');
        /onSnapshot\(\s*doc\(db, 'live_matches', matchId\)/.test(l));
 }
 
-// ═══════ PARTE 6 · el panel de historial se cierra solo ═══════
-// El autor pidió que el panel inferior, cuando emerge por un suceso, se cierre
-// SOLO a los pocos segundos, y que únicamente permanezca abierto si lo abre él
-// a mano.
+// ═══════ PARTE 6 · v440 · YA NO HAY PANEL INFERIOR QUE CERRAR ═══════
+// ⚠️ PARTE INVERTIDA, Y ES LA QUINTA VEZ QUE PASA EN ESTE PROYECTO: fijaba que
+// la barra inferior de HISTORIAL se auto-expandiera 5 segundos con cada suceso
+// y se cerrara sola (v228, a petición del autor de entonces). En v440 el autor
+// pidió RETIRAR esa barra: era GLOBAL —una sola para toda la aplicación, fija
+// al pie y por encima de cualquier pantalla—, así que en el listado, con varios
+// partidos en curso, no se sabía de cuál hablaba.
 //
-// ⚠️ ESTO YA ESTABA IMPLEMENTADO (v228) y en el camino de ejecución: no se
-// reescribió nada. Lo que hacía que PARECIERA roto era la DUPLICACIÓN de
-// sustituciones —cada cambio disparaba dos veces la expansión— corregida al
-// quitar la emisión redundante de render.js. Se fija aquí para que el
-// comportamiento no se pierda en un refactor futuro.
-console.log('\n── PARTE 6 · auto-cierre del panel de historial ──');
+// La intención se conserva: que los sucesos no se pierdan y que el mecanismo
+// que los pinta siga siendo uno solo. Lo que cambia es DÓNDE: el cajón vive
+// ahora dentro del banquillo del partido (#match-events-box). El resto de este
+// fichero —el dedup, que es lo que de verdad protege— no se toca.
+console.log('\n── PARTE 6 · el panel inferior flotante ya no existe ──');
 {
-    const l = sinCom(LIVE);
-    ok('6a · 🔑 al llegar un suceso el panel se auto-expande…',
-       /_setMatchEventsPanelMode\('auto-expanded'\)/.test(l));
-    ok('6b · 🔑 …y se programa su cierre automático a los 5 segundos',
-       /_matchEventsAutoCollapseTimer = setTimeout\([\s\S]{0,220}?_setMatchEventsPanelMode\('collapsed'\)[\s\S]{0,60}?\}, 5000\)/.test(l),
-       (l.match(/_matchEventsAutoCollapseTimer = setTimeout[\s\S]{0,200}/) || ['(no aparece)'])[0]);
-    ok('6c · 🔑 sólo se auto-expande si el usuario NO lo abrió a mano',
-       /if \(_matchEventsPanelMode !== 'manual-expanded'\) \{/.test(l));
-    ok('6d · 🔑 y sólo se cierra si sigue en modo automático (no pisa al usuario)',
-       /if \(_matchEventsPanelMode === 'auto-expanded'\) \{\s*_setMatchEventsPanelMode\('collapsed'\);/.test(l));
-    ok('6e · un clic manual cancela el cierre automático',
-       /clearTimeout\(_matchEventsAutoCollapseTimer\);[\s\S]{0,120}?_matchEventsAutoCollapseTimer = null;/.test(l));
-    ok('6f · y deja el panel en modo manual, que ya no se auto-cierra',
-       /_setMatchEventsPanelMode\('manual-expanded'\)/.test(l));
-    ok('6g · cada suceso nuevo reinicia la cuenta atrás',
-       /if \(_matchEventsAutoCollapseTimer\) clearTimeout\(_matchEventsAutoCollapseTimer\);\s*_matchEventsAutoCollapseTimer = setTimeout/.test(l));
+    const l = sinCom(LIVE).replace(/<!--[\s\S]*?-->/g, '');
+    ok('6a · 🔑 no queda rastro del panel fijo al pie de la pantalla',
+       !/id="match-events-panel"/.test(l) && !/match-events-strip/.test(l),
+       (l.match(/[^\n]*match-events-panel[^\n]*/) || ['(limpio)'])[0]);
+    ok('6b · ni su maquinaria de expandir/contraer',
+       !/_setMatchEventsPanelMode/.test(l) && !/_matchEventsPanelMode/.test(l) &&
+       !/_matchEventsAutoCollapseTimer/.test(l),
+       (l.match(/[^\n]*_matchEventsPanelMode[^\n]*/) || ['(limpio)'])[0]);
+    ok('6c · 🔑 el cajón de sucesos está DENTRO del banquillo del partido',
+       /<aside id="bench-panel">[\s\S]*?id="match-events-box"[\s\S]*?<\/aside>/.test(l),
+       'fuera del <aside> volvería a ser un elemento global');
+    ok('6d · y la lista conserva su id, que es de lo que cuelgan las dos vías',
+       /id="match-events-list"/.test(l));
+    ok('6e · 🔑 sigue habiendo UN solo sitio donde se añade una fila nueva',
+       (l.match(/function _appendEventToHistoryPanel/g) || []).length === 1);
+    ok('6f · el cajón no flota: no lleva position fixed ni anclaje al pie',
+       !/#match-events-box\s*\{[^}]*position:\s*fixed/.test(l) &&
+       !/#match-events-box\s*\{[^}]*bottom:\s*0/.test(l));
+    ok('6g · "Limpiar" sobrevive y vacía TAMBIÉN el registro del dedup',
+       /match-events-clear[\s\S]{0,600}?_histVistos = new Set\(\)/.test(l),
+       'sin eso, tras limpiar el siguiente snapshot no repintaría nada: todo contaría como ya visto');
 }
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);

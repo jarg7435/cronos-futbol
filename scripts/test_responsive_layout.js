@@ -209,15 +209,28 @@ ok('2d · las fichas suben a un tamaño intermedio (ni 36px de móvil ni 64px de
 ok('2e · el banquillo pasa a franja horizontal con scroll',
    /#bench-panel\s*\{[^}]*overflow-x:\s*auto/.test(bloqueTablet));
 
-// 2.2 · Los avisos flotantes ya no ocupan todo el ancho. Es el bug de TOQUES:
-//       el contenedor lleva pointer-events:auto para poder deslizarse, así que
-//       a ancho completo se tragaba los toques sobre el campo.
-ok('2f · la pila de avisos ya no se estira a todo el ancho en móvil',
-   !/#event-toast-stack\s*\{[^}]*left:\s*0\.5rem/.test(liveCss));
-ok('2g · la pila de avisos tiene ancho acotado',
-   /#event-toast-stack\s*\{[^}]*width:\s*min\(340px/.test(liveCss));
-ok('2h · y sigue pudiendo deslizarse (pointer-events auto + overflow)',
-   /#event-toast-stack\s*\{[^}]*pointer-events:\s*auto/.test(liveCss));
+// 2.2 · v440 · LA PILA DE AVISOS YA NO EXISTE, así que el bug de TOQUES que
+//       vigilaban 2f/2g/2h es imposible por construcción y no por medida.
+//       ⚠️ Aserciones INVERTIDAS a propósito: fijaban que la pila tuviera ancho
+//       acotado y pointer-events:auto para poder deslizarse sin tragarse los
+//       toques sobre el campo (v422). El autor retiró la pila entera en v440
+//       —era global y no decía a qué partido pertenecía—, de modo que lo que
+//       hay que fijar ahora es que no vuelva a aparecer nada flotante ahí.
+ok('2f · 🔑 no queda ninguna regla de la pila de avisos en el CSS del visor',
+   !/#event-toast-stack/.test(liveCss) && !/\.event-toast/.test(liveCss),
+   (liveCss.match(/[^\n]*event-toast[^\n]*/) || ['(limpio)'])[0]);
+ok('2g · 🔑 y por tanto ya nada invisible puede tragarse los toques sobre el campo',
+   !/pointer-events:\s*auto/.test(liveCss) ||
+   !/#event-toast-stack\s*\{[^}]*pointer-events:\s*auto/.test(liveCss),
+   'era el bug de v422: una franja invisible a ancho completo sobre el campo');
+// El cajón que los sustituye NO puede aparecer donde el banquillo es una franja
+// horizontal: ahí no hay alto que gastar y el campo va a 100dvh sin scroll.
+const CONDICION_PORTRAIT_MOVIL = /@media\s*\(orientation:\s*portrait\)\s*and\s*\(max-width:\s*600px\)/;
+ok('2h · el cajón de sucesos se oculta en móvil vertical (franja horizontal)',
+   /#match-events-box\s*\{\s*display:\s*none/.test(cuerpoMedia(liveCss, CONDICION_PORTRAIT_MOVIL)),
+   'metido en la franja saldría como una columna aplastada');
+ok('2h2 · y en tablet vertical, que es la misma maquetación',
+   /#match-events-box\s*\{\s*display:\s*none/.test(bloqueTablet));
 
 // 2.3 · Cabecera compacta en vertical: era el mayor ladrón de alto del campo.
 ok('2i · el logo se encoge a 34px en móvil vertical',
