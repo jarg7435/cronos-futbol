@@ -126,7 +126,34 @@ function _cronosMatchMomentOverlay(icon, title, subtitle, onDone) {
 
 
 function setupEventListeners() {
-    document.getElementById('btn-play-pause').addEventListener('click', toggleGame);
+    // ── Botón superior de control de tiempo (EMPEZAR / PAUSAR / REANUDAR) ──
+    //
+    // Es el control PRINCIPAL del partido y se quedaba MUERTO en el DESCANSO:
+    // estaba enganchado directamente a toggleGame(), que sólo levanta la
+    // bandera `isRunning` y arranca el intervalo... pero `tick()` únicamente
+    // suma tiempo en '1st_half' y '2nd_half'. En 'break' el entrenador pulsaba
+    // REANUDAR, el botón cambiaba a PAUSAR y el cronómetro NO se movía: había
+    // que ir a buscar el ▶️ pequeño de la 2ª parte.
+    //
+    // Ahora el botón enruta por FASE, que es lo que se espera de un control
+    // universal: en el descanso arranca la 2ª parte, y en cualquier otra fase
+    // se comporta EXACTAMENTE igual que antes.
+    //
+    // ⚠️ POR QUÉ EL ENRUTADO VA AQUÍ Y NO DENTRO DE toggleGame(): esa función
+    // la llaman también la recuperación de partido (setup-modal.js, cuando el
+    // snapshot trae `isRunning`) y la propia startSecondHalf(). Metiéndolo en
+    // toggleGame, retomar un partido guardado en descanso habría ARRANCADO LA
+    // 2ª PARTE SOLO, sin que nadie la pidiera, y además startSecondHalf() se
+    // llamaría a sí misma. Aquí sólo cambia lo que hace el CLIC del usuario.
+    window.onPlayPauseClick = function onPlayPauseClick() {
+        if (typeof matchPhase !== 'undefined' && matchPhase === 'break' &&
+            typeof window.startSecondHalf === 'function') {
+            window.startSecondHalf();   // ella misma pone la fase y llama a toggleGame()
+            return;
+        }
+        toggleGame();
+    };
+    document.getElementById('btn-play-pause').addEventListener('click', window.onPlayPauseClick);
     document.getElementById('btn-reset').addEventListener('click', resetMatch);
     document.getElementById('btn-save-team').addEventListener('click', saveCurrentTeam);
     document.getElementById('btn-export').addEventListener('click', exportData);

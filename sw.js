@@ -1,5 +1,30 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v448: EL BOTON SUPERIOR DE TIEMPO FUNCIONA TAMBIEN EN EL DESCANSO.
+//        Reporte del autor: "REANUDAR va bien al pausar y reanudar un partido
+//        en juego, pero se queda inactivo en el descanso y obliga a usar el
+//        play pequeño de la 2a parte".
+//        CAUSA: el boton colgaba DIRECTAMENTE de toggleGame(), que solo levanta
+//        la bandera `isRunning` y programa el intervalo. Pero `tick()` unicamente
+//        suma tiempo en '1st_half' y '2nd_half'. ⚠️ Y por eso desconcertaba
+//        tanto: el boton NO estaba muerto —cambiaba a PAUSAR y arrancaba su
+//        intervalo tan campante—, lo que no ocurria es que el CRONOMETRO
+//        AVANZARA, porque la fase seguia siendo 'break'. Cero errores en consola.
+//        AHORA el boton enruta por FASE: en 'break' llama a startSecondHalf(),
+//        la MISMA funcion que el ▶️ pequeño, asi que el comportamiento es
+//        identico (fase, "Entra (2ªP)" en los del campo, semilla de lastTickTime,
+//        snapshot en vivo y guardado). En cualquier otra fase, nada cambia.
+//        🔑 EL ENRUTADO VA EN EL MANEJADOR DEL CLIC, NO DENTRO DE toggleGame():
+//        a esa funcion la llaman TAMBIEN la recuperacion de partido
+//        (setup-modal.js, cuando el snapshot trae isRunning) y la propia
+//        startSecondHalf(). Metiendolo dentro, retomar un partido guardado en
+//        DESCANSO habria arrancado la 2a parte SOLO —escribiendo "Entra (2ªP)"
+//        en el historial de cada jugador— y startSecondHalf se llamaria a si
+//        misma. El guard tiene una prueba dedicada a eso.
+//        Guard nuevo scripts/test_play_pause_universal.js 31/31: no mira el
+//        texto, EJECUTA el clic en cada fase con el tick real. Red-check de 2
+//        mutaciones (el codigo original y el atajo tentador), las 2 cazadas.
+//        Suite 99/99 activos + 11 xfail. Bump para forzar recarga.
 //  v447: LA APP SIN COBERTURA. Cuatro piezas, tras la pregunta del autor de
 //        que pasa si se queda sin cobertura en el campo. La respuesta era
 //        mala en tres frentes distintos y ninguno se veia desde la interfaz.
@@ -1071,7 +1096,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v447';
+const CACHE_NAME = 'cronos-cache-v448';
 
 const ASSETS = [
     './',
