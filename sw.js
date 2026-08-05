@@ -1,5 +1,50 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v453: 🔴 FIX CRITICO — "TypeError: Failed to convert value to 'Response'" y
+//        live.html EN NEGRO, con Ctrl+Shift+R obligatorio. Reportado en
+//        produccion la vispera de una demostracion.
+//        CAUSA EXACTA: `event.respondWith()` EXIGE una Response; si la promesa
+//        que recibe resuelve a `undefined`, el navegador lanza ese TypeError y
+//        la peticion MUERE — no cae al comportamiento por defecto, no se
+//        reintenta, simplemente no hay respuesta. Y `caches.match()` resuelve a
+//        `undefined` cuando no hay coincidencia: NO rechaza. El `.catch` de la
+//        rama cache-first terminaba en `return caches.match(request)`, asi que
+//        un recurso NO CACHEADO cuya red fallara respondia `undefined`.
+//        ⚠️ POR QUE SE VOLVIO CRITICO EN v447 Y NO ANTES: hasta entonces esa
+//        rama solo servia iconos y fuentes, donde fallar es cosmetico. En v447
+//        se metio ahi el SDK de Firebase (gstatic) para que la app arrancase
+//        sin cobertura. Desde ese momento, un tropiezo de red sobre
+//        firebase-app.js tumbaba el `import` del modulo y live.html se quedaba
+//        EN NEGRO, porque su contenido entero lo pinta ese modulo.
+//        CURA, en dos capas redundantes a proposito:
+//          · las dos estrategias pasan a ser funciones async con su PROPIO
+//            ultimo recurso, que siempre construye una Response de verdad;
+//          · y ademas todo pasa por `_respuestaGarantizada`, que sustituye por
+//            una Response cualquier valor que no lo sea. Con eso el TypeError
+//            es ESTRUCTURALMENTE IMPOSIBLE. (El red-check lo confirma: hay que
+//            quitar las DOS capas para que el guard se ponga rojo.)
+//        Y para que nadie tenga que refrescar a mano: en `activate`, la purga
+//        de caches antiguas YA NO PUEDE IMPEDIR EL CLAIM. Antes iban
+//        encadenadas con `.then`, asi que un `caches.delete` fallido rechazaba
+//        la promesa y `clients.claim()` no llegaba a ejecutarse: el SW nuevo
+//        quedaba activo pero SIN controlar las pestanyas abiertas. Ahora el
+//        claim se ejecuta pase lo que pase. Con skipWaiting() en install y el
+//        `controllerchange` que ya recarga en index.html y live.html, la cadena
+//        queda completa: version nueva -> activa al instante -> toma las
+//        pestanyas -> se recargan solas.
+//        ⚠️ TRAMPA PAGADA POR EL CAMINO: el comentario `/* ... */` que se
+//        anyadio aqui dejo CIEGAS 1100 lineas a los guards. sw.js es el unico
+//        fichero sin comentarios de bloque y su changelog contiene
+//        `js/admin/superadmin/*` DENTRO de un comentario de linea (v390); los
+//        limpiadores de comentarios quitaban los bloques ANTES que las lineas,
+//        asi que ese `/*` abria un bloque que se comia todo hasta el primer
+//        `*/` del fichero. Tumbo 9 aserciones de test_offline_resilience.js sin
+//        que nada estuviera roto. Se corrige el ORDEN en los dos guards y aqui
+//        no se usan comentarios de bloque.
+//        Guard nuevo scripts/test_sw_respuesta_garantizada.js 22/22: monta un
+//        `self` falso y DISPARA el evento fetch en los escenarios que importan.
+//        Red-check de 4 mutaciones, las 4 cazadas.
+//        Suite 102/102 activos + 11 xfail. Bump para forzar recarga.
 //  v452: PUESTA A PUNTO PREVIA A LA DEMO. Auditoria global de v446-v451 y UN
 //        arreglo real, el unico que la auditoria encontro con impacto para el
 //        usuario:
@@ -1250,7 +1295,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v452';
+const CACHE_NAME = 'cronos-cache-v453';
 
 const ASSETS = [
     './',
@@ -1381,20 +1426,154 @@ self.addEventListener('install', event => {
     );
 });
 
+// ── ACTIVACIÓN: purgar lo viejo y tomar el control YA ─────────────
+// v453 · Reforzado para que nadie tenga que refrescar a mano:
+//  · la purga de cachés antiguas NO puede impedir el claim. Antes iba
+//    encadenada con `.then`, así que si un `caches.delete` fallaba, la promesa
+//    se rechazaba y `clients.claim()` NO LLEGABA A EJECUTARSE: el Service
+//    Worker nuevo quedaba activo pero SIN controlar las pestañas abiertas, que
+//    seguían con el viejo hasta un refresco manual. Ahora el claim va en un
+//    `finally` lógico: pase lo que pase con el borrado, se toma el control.
+//  · `skipWaiting()` (en install) + `clients.claim()` (aquí) + el
+//    `controllerchange` que ya recarga en index.html y live.html forman la
+//    cadena completa: versión nueva → activa al instante → toma las pestañas →
+//    se recargan solas. Sin banner, sin Ctrl+Shift+R.
 self.addEventListener('activate', event => {
-    event.waitUntil(
-        caches.keys().then(keys => {
-            return Promise.all(
-                keys.filter(key => key !== CACHE_NAME)
-                    .map(key => {
-                        return caches.delete(key);
-                    })
-            );
-        }).then(() => {
-            return self.clients.claim();
-        })
-    );
+    event.waitUntil((async () => {
+        try {
+            const keys = await caches.keys();
+            const viejas = keys.filter(key => key !== CACHE_NAME);
+            await Promise.all(viejas.map(key => caches.delete(key).catch(() => false)));
+            if (viejas.length) {
+                console.log(`[SW ${VERSION}] Purgadas ${viejas.length} caché(s) antigua(s):`, viejas);
+            }
+        } catch (e) {
+            console.warn(`[SW ${VERSION}] No se pudieron purgar las cachés antiguas:`, e && e.message);
+        }
+        // Pase lo que pase con la purga, tomar el control de las pestañas.
+        try { await self.clients.claim(); }
+        catch (e) { console.warn(`[SW ${VERSION}] clients.claim() falló:`, e && e.message); }
+    })());
 });
+
+// ══════════════════════════════════════════════════════════════════
+//  🔑🔑 v453 · TODA RESPUESTA ES UNA `Response`. SIN EXCEPCIONES.
+//
+//  `event.respondWith()` EXIGE una Response. Si la promesa que recibe se
+//  resuelve a `undefined`, el navegador lanza
+//      TypeError: Failed to convert value to 'Response'
+//  y la petición muere: no cae al comportamiento normal, no se reintenta,
+//  simplemente NO HAY RESPUESTA.
+//
+//  Y `caches.match()` resuelve a `undefined` cuando no hay coincidencia — no
+//  rechaza. Ese era exactamente el fallo: el `.catch` de la rama cache-first
+//  hacía `return caches.match(request)` como último recurso, así que un
+//  recurso NO CACHEADO cuya red fallara respondía `undefined`.
+//
+//  ⚠️ POR QUÉ SE VOLVIÓ CRÍTICO EN v447 Y NO ANTES: hasta entonces esa rama
+//  sólo servía iconos y fuentes, donde fallar es cosmético. En v447 se metió
+//  ahí el SDK de Firebase (gstatic) para que la app arrancara sin cobertura.
+//  Desde ese momento, un tropiezo de red sobre `firebase-app.js` tumbaba el
+//  `import` del módulo y `live.html` se quedaba EN NEGRO, porque su contenido
+//  entero lo pinta ese módulo. Obligaba a un Ctrl+Shift+R.
+//
+//  La cura no es parchear ese `.catch`: es que NINGÚN camino pueda devolver
+//  algo que no sea una Response. Por eso las dos estrategias son funciones
+//  `async` con su propio último recurso, y además pasan por
+//  `_respuestaGarantizada`, que sustituye cualquier valor que no sea una
+//  Response por una de verdad. Cinturón y tirantes, a propósito: este fallo
+//  no puede repetirse en una demostración.
+// ══════════════════════════════════════════════════════════════════
+
+// Último recurso: una Response real y explícita, nunca `undefined`.
+function _respuestaDeEmergencia(url, motivo) {
+    return new Response(
+        'No se pudo obtener el recurso: ' + (motivo || 'desconocido'),
+        { status: 504, statusText: 'Gateway Timeout',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+    );
+}
+
+// Red de seguridad final. Si algo, en cualquier rama, resuelve a undefined o a
+// un valor que no es Response, aquí se convierte en Response antes de llegar a
+// respondWith. Es lo que hace IMPOSIBLE el TypeError.
+async function _respuestaGarantizada(promesa, url) {
+    try {
+        const r = await promesa;
+        if (r instanceof Response) return r;
+        console.warn(`[SW ${VERSION}] Respuesta no válida para ${url}; se sustituye.`);
+        return _respuestaDeEmergencia(url, 'respuesta no válida');
+    } catch (e) {
+        console.warn(`[SW ${VERSION}] Error resolviendo ${url}:`, e && e.message);
+        return _respuestaDeEmergencia(url, (e && e.message) || 'excepción');
+    }
+}
+
+// Guardar en caché nunca puede tumbar la respuesta: va aparte y silencioso.
+function _guardaEnCache(request, response) {
+    try {
+        if (!response || !response.ok) return;
+        const copia = response.clone();
+        caches.open(CACHE_NAME)
+            .then((cache) => cache.put(request, copia))
+            .catch(() => {});
+    } catch (e) {
+        // Guardar en caché JAMÁS puede romper el flujo de la respuesta.
+        //
+        // ⚠️ Y este comentario va con `//` a propósito, no con `/* */`: es el
+        // ÚNICO fichero del proyecto sin comentarios de bloque, y su changelog
+        // contiene la cadena `js/admin/superadmin/*` dentro de un comentario de
+        // línea (v390). Los limpiadores de comentarios de los guards quitan los
+        // bloques ANTES que las líneas, así que ese `/*` abre un bloque que se
+        // come todo hasta el primer `*/` del fichero. Introducir aquí un
+        // comentario de bloque dejó ciegas 1100 líneas y tumbó 9 aserciones de
+        // test_offline_resilience.js sin que nada estuviera roto de verdad.
+    }
+}
+
+// CACHE FIRST — para lo inmutable: iconos, fuentes, manifest y el SDK.
+async function _cacheFirst(request) {
+    const cacheado = await caches.match(request).catch(() => undefined);
+    if (cacheado) return cacheado;
+    try {
+        const red = await fetch(request);
+        _guardaEnCache(request, red);
+        // Puede ser un 404, pero ES una Response: se devuelve tal cual.
+        return red;
+    } catch (e) {
+        // La red falló y no estaba cacheado. Se reintenta la caché por si
+        // otra pestaña acaba de guardarlo, y si no, respuesta explícita.
+        const segundo = await caches.match(request).catch(() => undefined);
+        return segundo || _respuestaDeEmergencia(request.url, 'sin red y sin copia local');
+    }
+}
+
+// NETWORK FIRST — para el resto: siempre lo más fresco, con la caché detrás.
+async function _networkFirst(request) {
+    try {
+        const red = await fetch(request);
+        _guardaEnCache(request, red);
+        return red;
+    } catch (e) {
+        const cacheado = await caches.match(request).catch(() => undefined);
+        if (cacheado) return cacheado;
+
+        if (request.destination === 'document') {
+            const offline = await caches.match('./offline.html').catch(() => undefined);
+            if (offline) return offline;
+            return new Response(
+                '⚠️ Sin conexión y página no disponible en caché',
+                { status: 503, statusText: 'Service Unavailable',
+                  headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+            );
+        }
+        return new Response(
+            'Recurso no disponible',
+            { status: 404, statusText: 'Not Found',
+              headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+        );
+    }
+}
 
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
@@ -1403,66 +1582,20 @@ self.addEventListener('fetch', event => {
     // No cachear el canal VIVO de Firebase (datos en tiempo real).
     if (_esCanalVivo(event.request.url)) return;
 
-    // CACHE FIRST para iconos, fonts, assets estáticos y el SDK de Firebase
-    if (_esSdkFirebase(event.request.url) ||
-        event.request.url.includes('/public/assets/icons/') ||
-        event.request.url.includes('.svg') ||
-        event.request.url.includes('.woff') ||
-        event.request.url.includes('.woff2') ||
-        event.request.url.includes('manifest.json')) {
-        
-        event.respondWith(
-            caches.match(event.request)
-                .then(response => {
-                    return response || fetch(event.request)
-                        .then(response => {
-                            if (response.ok) {
-                                const copy = response.clone();
-                                caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-                            }
-                            return response;
-                        });
-                })
-                .catch(() => {
-                    console.warn(`[SW ${VERSION}] Asset no disponible:`, event.request.url);
-                    return caches.match(event.request);
-                })
-        );
-        return;
-    }
+    const req = event.request;
+    const url = req.url;
 
-    // NETWORK FIRST para todo lo demás
+    // CACHE FIRST para iconos, fuentes, assets estáticos y el SDK de Firebase.
+    const esInmutable =
+        _esSdkFirebase(url) ||
+        url.includes('/public/assets/icons/') ||
+        url.includes('.svg') ||
+        url.includes('.woff') ||
+        url.includes('.woff2') ||
+        url.includes('manifest.json');
+
     event.respondWith(
-        fetch(event.request)
-            .then(response => {
-                if (response.ok) {
-                    const copy = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-                }
-                return response;
-            })
-            .catch(() => {
-                // Intentar caché
-                return caches.match(event.request)
-                    .then(cached => {
-                        if (cached) return cached;
-                        
-                        // Fallback a offline.html para navegación
-                        if (event.request.destination === 'document') {
-                            return caches.match('./offline.html')
-                                .then(offlinePage => offlinePage || new Response(
-                                    '⚠️ Sin conexión y página no disponible en caché',
-                                    { status: 503, statusText: 'Service Unavailable' }
-                                ));
-                        }
-                        
-                        // Para otros recursos, retornar error
-                        return new Response(
-                            'Recurso no disponible',
-                            { status: 404, statusText: 'Not Found' }
-                        );
-                    });
-            })
+        _respuestaGarantizada(esInmutable ? _cacheFirst(req) : _networkFirst(req), url)
     );
 });
 

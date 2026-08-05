@@ -64,8 +64,16 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 // Quita comentarios: una aserción que casa con un comentario da VERDE con el
 // código borrado (ya pasó en v429).
-const sinCom = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
-    .split(/\r?\n/).map(l => l.replace(/^\s*\/\/.*$/, '')).join('\n');
+//
+// ⚠️ v453 · EL ORDEN IMPORTA: primero los de LÍNEA y después los de BLOQUE. Al
+// revés, un `/*` que viva DENTRO de un comentario de línea —sw.js tiene
+// `js/admin/superadmin/*` en su changelog de v390— abre un bloque que se traga
+// todo hasta el primer `*/` del fichero. Mientras sw.js no tuvo ningún `*/` no
+// pasó nada; en cuanto se añadió uno, este limpiador dejó ciegas 1100 líneas y
+// puso en rojo 9 aserciones de la parte 6 sin que nada estuviera roto.
+const sinCom = (t) => t
+    .split(/\r?\n/).map(l => l.replace(/^\s*\/\/.*$/, '')).join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
 
 const STORAGE_SRC = read('js/services/firestore-storage.js');
 const INIT_SRC    = read('js/services/firebase-init.js');
