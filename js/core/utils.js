@@ -589,17 +589,63 @@ if (typeof window._cronosRecipientKeyParts !== 'function') {
     };
 }
 
-if (typeof window._cronosRecipientScope !== 'function') {
-    window._cronosRecipientScope = function(c) {
-        const tipo = String((c && c.type) || '').trim().toLowerCase() || 'staff';
-        if (tipo !== 'parent') return tipo;   // el staff no se agrupa por jugador
-        const pid = String((c && c.playerId) || '').trim().toLowerCase();
-        const num = String((c && c.playerNumber) != null ? c.playerNumber : '').trim();
-        // Sin código de jugador se cae al nombre del jugador; y si tampoco lo
-        // hay, al ámbito vacío (todas las copias sin jugador se funden).
-        const jugador = pid || (num ? '#' + num : '') ||
-                        String((c && c.player) || '').trim().toLowerCase();
-        return tipo + '|' + jugador;
+if (typeof window._cronosRecipientType !== 'function') {
+    window._cronosRecipientType = function(c) {
+        return String((c && c.type) || '').trim().toLowerCase() || 'staff';
+    };
+}
+
+// ── Los ALIAS del hijo, no "el" código del hijo ───────────────────────
+// 🔑🔑 LA PRIMERA VERSIÓN DE ESTO ESTABA MAL Y DEJABA PASAR DUPLICADOS.
+// Agrupaba por UN código elegido con una cadena de respaldos
+// (`playerId || '#'+dorsal || nombre`). Pero los cuatro orígenes escriben
+// el hijo de forma DISTINTA para el mismo niño:
+//    · contact-manager.js  → playerId: l.playerId || ('J' + l.playerNumber)
+//    · match-reports-send  → playerId: l.playerId, crudo
+//    · usuarios 'parent'   → playerId: u.playerId || '', a menudo VACÍO
+// Así que 'J-01', 'J1', el dorsal 1 y "Marcos" son el MISMO hijo y caían en
+// grupos distintos — y dentro de cada grupo nunca se comparaban entre sí.
+// El mismo familiar salía dos veces.
+//
+// Ahora cada entrada aporta un CONJUNTO de alias y dos referencias son el
+// mismo hijo si comparten cualquiera. El número se extrae de los dígitos,
+// que es lo que 'J-01', 'J1' y el dorsal 1 tienen en común.
+if (typeof window._cronosRecipientChildAliases !== 'function') {
+    window._cronosRecipientChildAliases = function(c) {
+        // Se devuelven por separado los CÓDIGOS (id y dorsal, que identifican
+        // al jugador sin ambigüedad) y los NOMBRES, que son un indicio más
+        // flojo. La distinción importa al decidir si dos referencias se
+        // CONTRADICEN — ver hijosSeContradicen.
+        const codigos = new Set();
+        const nombres = new Set();
+        if (!c) return { codigos, nombres };
+
+        const pid = String(c.playerId == null ? '' : c.playerId).trim().toLowerCase();
+        if (pid) {
+            codigos.add('id:' + pid);
+            // Los dígitos son lo que 'J-01', 'J1' y el dorsal 1 tienen en común.
+            const digitos = pid.replace(/\D/g, '').replace(/^0+/, '');
+            if (digitos) codigos.add('n:' + digitos);
+        }
+        const num = String(c.playerNumber == null ? '' : c.playerNumber).replace(/\D/g, '').replace(/^0+/, '');
+        if (num) codigos.add('n:' + num);
+
+        const nombre = String(c.player == null ? '' : c.player).trim().toLowerCase().replace(/\s+/g, ' ');
+        // "Jugador" es el relleno que ponen los orígenes cuando no saben el
+        // nombre: como alias no distingue a nadie.
+        if (nombre && nombre !== 'jugador') nombres.add('p:' + nombre);
+
+        return { codigos, nombres };
+    };
+}
+
+// Nombres de relleno que los orígenes ponen cuando no saben cómo se llama el
+// familiar. No identifican a nadie, así que no pueden fundir a dos personas.
+if (typeof window._cronosGenericRecipientName !== 'function') {
+    window._cronosGenericRecipientName = function(n) {
+        const s = String(n == null ? '' : n).trim().toLowerCase().replace(/\s+/g, ' ');
+        if (!s) return true;
+        return /^(padre|madre|tutor|tutora|familiar|padre\/tutor|padre\/madre|padre\/madre\/tutor|padre o madre|sin nombre|staff|entrenador)$/.test(s);
     };
 }
 
@@ -607,37 +653,80 @@ if (typeof window._cronosDedupeRecipients !== 'function') {
     window._cronosDedupeRecipients = function(lista) {
         if (!Array.isArray(lista)) return [];
         const partesDe = window._cronosRecipientKeyParts;
-        const ambitoDe = window._cronosRecipientScope;
+        const tipoDe   = window._cronosRecipientType;
+        const aliasDe  = window._cronosRecipientChildAliases;
 
         const cubos = [];          // conserva el orden de aparición
-        const porAmbito = new Map();
+        const porTipo = new Map();
 
-        const compartenIdentidad = (a, b) => (
-            (!!a.uid   && a.uid   === b.uid) ||
-            (!!a.email && a.email === b.email) ||
-            (!!a.phone && a.phone === b.phone) ||
-            // El nombre sólo vale cuando NINGUNA de las dos aporta un
-            // identificador fuerte: dos "Padre/Tutor" distintos con correo
-            // propio no pueden fundirse por llamarse igual.
-            (!!a.name  && a.name  === b.name &&
-             !a.uid && !b.uid && !a.email && !b.email && !a.phone && !b.phone)
+        // ── ¿Hay CONTRADICCIÓN entre dos identificadores fuertes? ──────
+        // Que los dos traigan correo y sean distintos es una contradicción;
+        // que uno traiga correo y el otro sólo teléfono, no lo es.
+        const seContradicen = (a, b) => (
+            (!!a.uid   && !!b.uid   && a.uid   !== b.uid) ||
+            (!!a.email && !!b.email && a.email !== b.email) ||
+            (!!a.phone && !!b.phone && a.phone !== b.phone)
         );
+
+        // ── ¿Es la MISMA PERSONA? ──────────────────────────────────────
+        // Comparten CUALQUIER identificador: cada origen rellena uno distinto
+        // (uid / email / teléfono), así que exigir uno concreto es justo lo
+        // que dejaba pasar duplicados.
+        // El NOMBRE vale como último recurso —una copia manual puede traer
+        // sólo el teléfono y otra sólo el correo—, pero nunca si los
+        // identificadores se contradicen, ni si el nombre es un relleno del
+        // tipo "Padre/Tutor", que no identifica a nadie.
+        const mismaPersona = (a, b) => {
+            if (!!a.uid   && a.uid   === b.uid)   return true;
+            if (!!a.email && a.email === b.email) return true;
+            if (!!a.phone && a.phone === b.phone) return true;
+            return !!a.name && a.name === b.name &&
+                   !window._cronosGenericRecipientName(a.name) &&
+                   !seContradicen(a, b);
+        };
+
+        // ── ¿Son hijos DISTINTOS? ──────────────────────────────────────
+        // ⚠️ LA ASIMETRÍA QUE SOSTIENE LA REGLA DEL AUTOR: separar exige
+        // CONTRADICCIÓN demostrada; ante la duda se funde. Que dos referencias
+        // "no coincidan" no prueba nada — un origen dice 'J-01' y otro dice
+        // "Marcos", y es el mismo niño.
+        //   · dos CÓDIGOS que no se solapan → hijos distintos (J-02 vs J-05);
+        //   · si sólo una de las dos trae código, no hay contradicción posible;
+        //   · sin códigos por ninguna parte, decide el nombre del jugador
+        //     ("Marcos" frente a "Sara" sí son hermanos distintos).
+        const hijosSeContradicen = (A, B) => {
+            if (A.codigos.size && B.codigos.size) {
+                for (const k of A.codigos) if (B.codigos.has(k)) return false;
+                return true;
+            }
+            if (!A.codigos.size && !B.codigos.size && A.nombres.size && B.nombres.size) {
+                for (const k of A.nombres) if (B.nombres.has(k)) return false;
+                return true;
+            }
+            return false;
+        };
 
         lista.forEach((c) => {
             if (!c) return;
-            const ambito = ambitoDe(c);
+            const tipo   = tipoDe(c);
             const partes = partesDe(c);
-            const candidatos = porAmbito.get(ambito) || [];
-            const cubo = candidatos.find(b => compartenIdentidad(b._partes, partes));
+            const alias  = aliasDe(c);
+            const candidatos = porTipo.get(tipo) || [];
+            // Se recorre en orden de aparición y gana el primer cubo
+            // compatible, para que una tercera copia sin dato de hijo caiga
+            // en la línea más antigua y no invente una nueva.
+            const cubo = candidatos.find(b =>
+                mismaPersona(b._partes, partes) && !hijosSeContradicen(b._alias, alias));
 
             if (!cubo) {
                 const nuevo = Object.assign({}, c, {
                     _partes: partes,
+                    _alias: alias,
                     _ids: [c.id].filter(v => v != null && v !== ''),
                 });
                 cubos.push(nuevo);
                 candidatos.push(nuevo);
-                porAmbito.set(ambito, candidatos);
+                porTipo.set(tipo, candidatos);
                 return;
             }
 
@@ -659,9 +748,19 @@ if (typeof window._cronosDedupeRecipients !== 'function') {
             // comparaciones siguientes: así una tercera copia que sólo traiga
             // el teléfono también reconoce a este cubo.
             cubo._partes = partesDe(cubo);
+            // Y los alias del hijo se ACUMULAN: si esta copia aportaba el
+            // dorsal y el cubo sólo tenía el nombre, a partir de ahora el cubo
+            // responde por los dos. Sin esto, la cadena 'J-01' → dorsal 1 →
+            // "Marcos" se rompía en el segundo salto.
+            alias.codigos.forEach(a => cubo._alias.codigos.add(a));
+            alias.nombres.forEach(a => cubo._alias.nombres.add(a));
         });
 
-        return cubos.map((b) => { const o = Object.assign({}, b); delete o._partes; return o; });
+        return cubos.map((b) => {
+            const o = Object.assign({}, b);
+            delete o._partes; delete o._alias;
+            return o;
+        });
     };
 }
 

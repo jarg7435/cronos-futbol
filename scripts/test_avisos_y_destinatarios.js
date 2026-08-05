@@ -280,6 +280,129 @@ function cargarUtils() {
        JSON.stringify(r[0].tags));
 }
 
+// ═══ PARTE 2B · LA REGLA EXACTA DEL AUTOR ═══
+// "Varias líneas SÍ, si son PERSONAS DISTINTAS. Nunca dos líneas del MISMO
+//  usuario/familiar."
+//
+// 🔑🔑 AQUÍ ESTUVO EL FALLO DE LA PRIMERA VERSIÓN, y no era teórico: agrupaba
+// por UN código de hijo elegido con una cadena de respaldos
+// (`playerId || '#'+dorsal || nombre`). Pero los cuatro orígenes escriben el
+// hijo DISTINTO para el mismo niño —'J-01', 'J1', el dorsal 1, "Marcos", o
+// nada—, así que la misma persona caía en grupos distintos y NUNCA se llegaban
+// a comparar. Salía dos veces. Ahora la persona manda y el hijo sólo SEPARA
+// cuando se demuestra que son distintos.
+console.log('\n── PARTE 2B · una línea por persona real ──');
+{
+    const sb = cargarUtils();
+    const dedupe = sb.window._cronosDedupeRecipients;
+    const n = (arr) => dedupe(arr).length;
+
+    // ── El mismo familiar, expresado como lo hace cada origen ──────────
+    ok('2p · 🔑 mismo familiar, hijo como "J-01" y como dorsal 1 → UNA línea',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', playerId: 'J-01' },
+          { id: 'b', type: 'parent', name: 'Ana', email: 'ana@x.com', playerNumber: 1 }]) === 1);
+
+    ok('2q · 🔑 mismo familiar, "J-01" frente a "J1" (los dos formatos reales) → UNA',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', playerId: 'J-01' },
+          { id: 'b', type: 'parent', name: 'Ana', email: 'ana@x.com', playerId: 'J1' }]) === 1);
+
+    ok('2r · 🔑 mismo familiar, uno con código y otro sólo con el nombre del hijo → UNA',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', playerId: 'J-01', player: 'Marcos' },
+          { id: 'b', type: 'parent', name: 'Ana', email: 'ana@x.com', player: 'Marcos' }]) === 1);
+
+    ok('2s · 🔑 mismo familiar, una copia SIN dato de hijo (usuario registrado) → UNA',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', playerId: 'J-01' },
+          { id: 'b', type: 'parent', uid: 'u_ana', name: 'Ana', email: 'ana@x.com' }]) === 1);
+
+    ok('2t · el relleno "Jugador" no cuenta como hijo distinto',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', player: 'Marcos' },
+          { id: 'b', type: 'parent', name: 'Ana', email: 'ana@x.com', player: 'Jugador' }]) === 1);
+
+    ok('2u · el dorsal con ceros a la izquierda es el mismo dorsal',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', playerNumber: '01' },
+          { id: 'b', type: 'parent', name: 'Ana', email: 'ana@x.com', playerNumber: 1 }]) === 1);
+
+    // Cadena de tres saltos: los alias se acumulan o la cadena se rompe.
+    ok('2v · 🔑 cadena de tres copias (código → dorsal → nombre) → UNA sola línea',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', playerId: 'J-01' },
+          { id: 'b', type: 'parent', name: 'Ana', email: 'ana@x.com', playerNumber: 1, player: 'Marcos' },
+          { id: 'c', type: 'parent', name: 'Ana', email: 'ana@x.com', player: 'Marcos' }]) === 1,
+       'sin acumular los alias, el tercer salto abre línea nueva');
+
+    // ⚠️ EL ORDEN IMPORTA, y esta es la prueba que lo demuestra: si la copia
+    // SIN dato de hijo llega la primera, el cubo nace sin códigos. Los alias
+    // tienen que ACUMULARSE al fusionar; si no, el cubo se queda "en blanco"
+    // para siempre y el hijo siguiente —que sí es otro— tampoco lo contradice
+    // y acaba fundido en la misma línea. Lo destapó el red-check.
+    ok('2v2 · 🔑 copia sin hijo PRIMERO, luego dos hijos distintos → DOS líneas',
+       n([{ id: 'a', type: 'parent', name: 'Marta', email: 'm@x.com' },
+          { id: 'b', type: 'parent', name: 'Marta', email: 'm@x.com', playerId: 'J-02' },
+          { id: 'c', type: 'parent', name: 'Marta', email: 'm@x.com', playerId: 'J-05' }]) === 2,
+       'sin acumular los alias, los dos hermanos caen en la misma línea');
+
+    // ── PERSONAS DISTINTAS: siguen siendo varias líneas ────────────────
+    ok('2w · [D] padre Y madre del mismo hijo → DOS líneas',
+       n([{ id: 'a', type: 'parent', name: 'Padre', email: 'p@x.com', playerId: 'J-03' },
+          { id: 'b', type: 'parent', name: 'Madre', email: 'm@x.com', playerId: 'J-03' }]) === 2,
+       'son personas distintas: cada una recibe lo suyo');
+
+    ok('2x · [D] padres separados, dos correos y dos teléfonos → DOS líneas',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', phone: '600111111', playerId: 'J-03' },
+          { id: 'b', type: 'parent', name: 'Luis', email: 'luis@x.com', phone: '600222222', playerId: 'J-03' }]) === 2);
+
+    ok('2y · [D] el entrenador es otra persona → línea propia',
+       n([{ id: 'a', type: 'parent', name: 'Ana', email: 'ana@x.com', playerId: 'J-03' },
+          { id: 'b', type: 'staff',  name: 'Entrenador', email: 'coach@x.com' }]) === 2);
+
+    ok('2z · [D] el mismo familiar con DOS hijos convocados → DOS líneas',
+       n([{ id: 'a', type: 'parent', name: 'Marta', email: 'm@x.com', playerId: 'J-02' },
+          { id: 'b', type: 'parent', name: 'Marta', email: 'm@x.com', playerId: 'J-05' }]) === 2,
+       'confirmado por el autor: son dos informes distintos');
+
+    ok('2z2 · [D] sin códigos, dos NOMBRES de hijo distintos también separan',
+       n([{ id: 'a', type: 'parent', name: 'Marta', email: 'm@x.com', player: 'Marcos' },
+          { id: 'b', type: 'parent', name: 'Marta', email: 'm@x.com', player: 'Sara' }]) === 2,
+       'Marcos y Sara son dos hermanos, aunque nadie traiga el dorsal');
+
+    // ⚠️ El nombre funde a dos copias con datos de contacto complementarios,
+    // pero NO puede fundir a dos personas reales que se llamen igual porque
+    // nadie les puso nombre propio.
+    ok('2z3 · 🔑 un nombre de RELLENO no funde a dos personas',
+       n([{ id: 'a', type: 'parent', name: 'Padre/Tutor', phone: '600111111', playerId: 'J-03' },
+          { id: 'b', type: 'parent', name: 'Padre/Tutor', email: 'otro@x.com', playerId: 'J-03' }]) === 2,
+       'podrían ser el padre y la madre del mismo hijo, cada uno con un dato');
+
+    // ⚠️ Dos correos DISTINTOS son una contradicción, y ante ella el nombre no
+    // manda: podrían ser dos personas que se llaman igual. Se prefiere una
+    // línea de más a fundir a dos personas reales y mandarle a una el informe
+    // del hijo de la otra.
+    ok('2j2 · 🔑 mismo nombre pero correos que se CONTRADICEN → dos líneas',
+       n([{ id: 'a', type: 'parent', name: 'Ana Pérez', email: 'ana1@x.com', playerId: 'J-03' },
+          { id: 'b', type: 'parent', name: 'Ana Pérez', email: 'ana2@x.com', playerId: 'J-03' }]) === 2,
+       'el nombre no puede pasar por encima de dos identificadores fuertes distintos');
+
+    ok('2z4 · pero un nombre PROPIO sí une copias con datos complementarios',
+       n([{ id: 'a', type: 'parent', name: 'Ana Pérez', phone: '600111111', playerId: 'J-03' },
+          { id: 'b', type: 'parent', name: 'Ana Pérez', email: 'ana@x.com',  playerId: 'J-03' }]) === 1,
+       'una copia manual con teléfono y otra de Firestore con correo');
+
+    // El caso completo: 4 orígenes, 3 personas reales, uno con dos hijos.
+    const revuelto = [
+        { id: 'lnk1', type: 'parent', name: 'Ana Pérez', email: 'ana@x.com', playerId: 'J-01' },
+        { id: 'u_a',  type: 'parent', name: 'Ana Pérez', uid: 'u_a', email: 'ana@x.com', playerNumber: 1 },
+        { id: 'man1', type: 'parent', name: 'Ana Pérez', phone: '600112233', player: 'Marcos' },
+        { id: 'lnk2', type: 'parent', name: 'Ana Pérez', email: 'ana@x.com', playerId: 'J-07' },
+        { id: 'lnk3', type: 'parent', name: 'Luis Soto', email: 'luis@x.com', playerId: 'J-01' },
+        { id: 's1',   type: 'staff',  name: 'Director',  email: 'dir@x.com' },
+        { id: 's2',   type: 'staff',  name: 'Director',  uid: 'u_dir', email: 'dir@x.com' },
+    ];
+    const res = dedupe(revuelto);
+    ok('2aa · 🔑 el caso completo: 7 entradas → 4 líneas',
+       res.length === 4,
+       'Ana(Marcos) + Ana(2º hijo) + Luis + Director. Salen ' + res.length + ': ' +
+       JSON.stringify(res.map(x => x.name + '/' + (x.playerId || x.playerNumber || x.player || '—'))));
+}
+
 // ═══════════ PARTE 3 · LOS DOS CONSTRUCTORES, EJECUTADOS ═══════════
 // ⚠️ Esta parte empezó siendo un censo de regex y el RED-CHECK la tumbó: al
 // desenganchar el helper, la aserción seguía en VERDE porque el nombre

@@ -1,5 +1,44 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v450: UNA LINEA POR PERSONA REAL — la regla del autor, matizada.
+//        "Varias lineas SI, si son PERSONAS DISTINTAS (padre, madre,
+//        entrenador, padres separados). Nunca dos lineas del MISMO
+//        usuario/familiar."
+//        ⚠️ LA DEDUPLICACION DE v449 SE QUEDABA CORTA, y no en teoria: cuatro
+//        escenarios reales daban dos lineas del mismo familiar y el mismo hijo.
+//        CAUSA: agrupaba PRIMERO por un codigo de hijo elegido con una cadena
+//        de respaldos (`playerId || '#'+dorsal || nombre`) y solo comparaba
+//        identidades DENTRO de ese grupo. Pero los cuatro origenes escriben el
+//        hijo distinto para el MISMO niño:
+//          · contact-manager.js  -> playerId: l.playerId || ('J' + dorsal)
+//          · match-reports-send  -> playerId: l.playerId, crudo
+//          · usuarios 'parent'   -> playerId: u.playerId || '', a menudo VACIO
+//        'J-01', 'J1', el dorsal 1 y "Marcos" son el mismo hijo y caian en
+//        grupos distintos, asi que las dos copias NUNCA se llegaban a comparar.
+//        AHORA el algoritmo va al reves: manda la PERSONA y el hijo solo
+//        SEPARA cuando se demuestra que son distintos.
+//          🔑 El hijo aporta un CONJUNTO de alias (id, dorsal derivado de los
+//             digitos —que es lo que 'J-01', 'J1' y el 1 comparten—, y nombre),
+//             y los alias se ACUMULAN al fusionar. Sin acumularlos, una copia
+//             sin dato de hijo que llegue la PRIMERA deja el cubo en blanco
+//             para siempre y el hermano siguiente tampoco lo contradice: los
+//             dos hijos acaban en la misma linea (lo destapo el red-check).
+//          🔑 SEPARAR EXIGE CONTRADICCION, no simple ausencia de coincidencia:
+//             dos codigos que no se solapan separan; si solo una de las dos
+//             trae codigo, no hay contradiccion posible y se funden.
+//          🔑 La identidad de la PERSONA admite el nombre como ultimo recurso
+//             (una copia manual trae solo el telefono y otra solo el correo),
+//             pero NUNCA si los identificadores fuertes se contradicen, ni si
+//             el nombre es un relleno tipo "Padre/Tutor" — podrian ser el
+//             padre y la madre del mismo hijo, cada uno con un dato.
+//        SIGUE INTACTO lo que el autor confirmo expresamente: varias lineas
+//        para personas DISTINTAS (padre, madre, entrenador, padres separados),
+//        el mismo familiar con DOS hijos convocados, y quien es staff Y padre.
+//        Guard test_avisos_y_destinatarios.js 32 -> 49. Red-check de 7
+//        mutaciones, las 7 cazadas; destapo ademas DOS huecos de mis propias
+//        pruebas (la acumulacion de alias segun el orden de llegada, y el
+//        nombre frente a identificadores contradictorios).
+//        Suite 100/100 activos + 11 xfail. Bump para forzar recarga.
 //  v449: EL AVISO DICE DE QUE PARTIDO ES · UNA LINEA POR FAMILIAR.
 //        Dos reportes del autor, independientes.
 //        1) AVISOS FLOTANTES SIN PARTIDO. ⚠️ El dato NO faltaba: viajaba desde
@@ -1142,7 +1181,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v449';
+const CACHE_NAME = 'cronos-cache-v450';
 
 const ASSETS = [
     './',
