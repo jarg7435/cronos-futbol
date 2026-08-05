@@ -155,8 +155,42 @@ ok('1t · _umBackToList está expuesto en window (el onclick es inline)',
 // 1.8 · Objetivo táctil y antizoom de iOS.
 ok('1u · las pestañas tienen 44px de alto mínimo al tacto',
    /\.um-tab\s*\{[^}]*min-height:\s*44px\s*!important/.test(cssLimpio));
+// ⚠️ Estas dos aserciones extraen el BLOQUE `@media (pointer: coarse)` entero
+// balanceando llaves, en vez de saltar con `[^}]*` desde la cabecera. La versión
+// anterior daba por hecho que `.um-input` era la PRIMERA regla del bloque: al
+// añadir el antizoom general delante (v452), se puso roja sin que nada
+// estuviera mal. Un ancla que depende del ORDEN dentro de un bloque es un
+// falso rojo esperando a que alguien inserte una línea.
+const _bloqueCoarse = (() => {
+    const i = cssLimpio.search(/@media\s*\(pointer:\s*coarse\)\s*\{/);
+    if (i === -1) return '';
+    let j = cssLimpio.indexOf('{', i), prof = 0;
+    for (; j < cssLimpio.length; j++) {
+        if (cssLimpio[j] === '{') prof++;
+        else if (cssLimpio[j] === '}') { prof--; if (prof === 0) { j++; break; } }
+    }
+    return cssLimpio.slice(i, j);
+})();
+
 ok('1v · el redactor sube a 16px en punteros gruesos (iOS hace zoom por debajo)',
-   /@media\s*\(pointer:\s*coarse\)\s*\{[^}]*\.um-input\s*\{\s*font-size:\s*16px\s*!important/.test(cssLimpio));
+   _bloqueCoarse !== '' &&
+   /\.um-input\s*\{\s*font-size:\s*16px\s*!important/.test(_bloqueCoarse));
+
+// v452 · EL ANTIZOOM, EN TODOS LOS CAMPOS. En v422 sólo se cubrió `.um-input`
+// y se quedaron fuera los demás — entre ellos LOS DEL LOGIN (0.95rem =
+// 15.2px). En un iPhone o un iPad, tocar el campo de email —la primerísima
+// interacción de la app— hacía que Safari ampliara y descolocara la pantalla.
+// 16px es el umbral exacto de iOS y no hay alternativa: `user-scalable=no` se
+// retiró a propósito en v200 por accesibilidad.
+ok('1v2 · 🔑 TODOS los campos de texto suben a 16px al tacto (no sólo el redactor)',
+   /input:not\(\[type="checkbox"\]\)[\s\S]{0,160}font-size:\s*16px\s*!important/.test(_bloqueCoarse),
+   'sin esto, tocar el email del login amplía la pantalla en iPhone/iPad');
+ok('1v3 · va por TIPO DE PUNTERO y no por ancho (un iPad en horizontal tiene 1024px)',
+   _bloqueCoarse.indexOf('input:not([type="checkbox"])') !== -1);
+ok('1v4 · checkbox y radio quedan fuera (font-size no les afecta y descolocaría su caja)',
+   /:not\(\[type="checkbox"\]\)/.test(_bloqueCoarse) && /:not\(\[type="radio"\]\)/.test(_bloqueCoarse));
+ok('1v5 · select y textarea también entran',
+   /select,[\s\S]{0,40}textarea\s*\{\s*font-size:\s*16px\s*!important/.test(_bloqueCoarse));
 
 // 1.8b · Objetivos táctiles del resto del panel: se pintaban con paddings de
 //        ratón (0.32rem ≈ 28px de alto) y con el dedo se falla.

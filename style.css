@@ -1435,6 +1435,29 @@ input, select {
    al hacerlo descoloca todo el layout (y no vuelve solo). Vale para tablet
    también, por eso va por tipo de puntero y no por ancho. */
 @media (pointer: coarse) {
+    /* v452 · EL ANTIZOOM, A TODOS LOS CAMPOS. En v422 esto sólo cubría el
+       redactor de mensajería (.um-input) y se quedaron fuera los demás — entre
+       ellos LOS DEL LOGIN, que están a 0.95rem = 15.2px. Resultado en un
+       iPhone o un iPad: al tocar el campo de email, la primerísima interacción
+       de la app, Safari hace zoom y descoloca la pantalla (y no vuelve solo).
+       16px es el umbral exacto de iOS; no hay forma de evitarlo sin subir la
+       tipografía, porque `user-scalable=no` se retiró a propósito en v200 por
+       accesibilidad.
+       Va por TIPO DE PUNTERO y no por ancho: un iPad en horizontal tiene 1024px
+       y sigue siendo táctil.
+       El !important es obligatorio: estos campos se pintan con `style=""`
+       inline y a eso sólo lo vence una hoja con !important (lección de v422).
+       Se excluyen checkbox y radio, donde font-size no pinta nada y sólo
+       serviría para descolocar su caja. */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea { font-size: 16px !important; }
+
+    /* La tabla de plantilla es densa (0.8rem) y sus celdas son estrechas: al
+       subir a 16px se compensa el alto de fila bajando un poco el relleno,
+       para que la maqueta quede lo más parecida posible a la de escritorio. */
+    .roster-table input { padding: 0.3rem !important; }
+
     .um-input { font-size: 16px !important; }
 
     /* Objetivos táctiles del panel. Todo esto se pintaba con paddings pensados

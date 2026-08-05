@@ -1,5 +1,40 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v452: PUESTA A PUNTO PREVIA A LA DEMO. Auditoria global de v446-v451 y UN
+//        arreglo real, el unico que la auditoria encontro con impacto para el
+//        usuario:
+//        🔑 EL ZOOM DE iOS AL TOCAR UN CAMPO. Safari amplia automaticamente al
+//        enfocar un input con font-size < 16px, y al hacerlo descoloca la
+//        pantalla y NO vuelve solo. v422 puso el antizoom SOLO en el redactor
+//        de mensajeria (.um-input) y se quedaron fuera los demas — entre ellos
+//        LOS DEL LOGIN, a 0.95rem = 15.2px. O sea que en un iPhone o un iPad la
+//        PRIMERISIMA interaccion con la app (tocar el campo de email) daba un
+//        salto de zoom. Ahora suben a 16px todos los input de texto, select y
+//        textarea en punteros gruesos.
+//          · va por TIPO DE PUNTERO y no por ancho: un iPad en horizontal tiene
+//            1024px y sigue siendo tactil;
+//          · checkbox y radio quedan fuera (font-size no les afecta y solo
+//            descolocaria su caja);
+//          · el !important es obligatorio: esos campos se pintan con `style=""`
+//            inline y a eso solo lo vence la hoja con !important (v422);
+//          · 16px es el umbral EXACTO de iOS y no hay alternativa, porque
+//            `user-scalable=no` se retiro a proposito en v200 por accesibilidad;
+//          · la tabla de plantilla es densa: se compensa el alto de fila con
+//            menos relleno para que la maqueta quede como en escritorio.
+//        AUDITORIA (sin cambios de codigo, todo verde): precache del SW con sus
+//        77 recursos existentes en disco —un solo 404 rechaza el addAll ENTERO
+//        y dejaria la app sin precache—, los 81 scripts enlazados existen y van
+//        con su ?v=, los 82 .js compilan, sin mojibake, los 7 bloques inline de
+//        los HTML compilan, las 33 funciones invocadas desde onclick estan
+//        declaradas, y produccion sirve BYTE A BYTE lo mismo que el disco en los
+//        83 ficheros comprobados. Reglas de Firestore sin cambios locales desde
+//        v438.
+//        Se reescribe la asercion 1v de test_responsive_layout.js: saltaba con
+//        `[^}]*` desde la cabecera del @media dando por hecho que .um-input era
+//        la PRIMERA regla del bloque, asi que insertar algo delante la ponia
+//        roja sin que nada estuviera mal. Ahora extrae el bloque balanceando
+//        llaves. Guard 66 -> 70, red-check de 3 mutaciones, las 3 cazadas.
+//        Suite 101/101 activos + 11 xfail. Bump para forzar recarga.
 //  v451: RECUPERAR Y CAMBIAR LA CONTRASEÑA (implementar.txt).
 //        1) "¿Has olvidado tu contraseña?" en el login -> sendPasswordResetEmail.
 //        2) "Cambiar contraseña" con la sesion iniciada -> updatePassword.
@@ -1215,7 +1250,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v451';
+const CACHE_NAME = 'cronos-cache-v452';
 
 const ASSETS = [
     './',
