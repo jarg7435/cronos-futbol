@@ -142,7 +142,14 @@ function openSetupModal() {
                     <img src="public/assets/logo.png" style="height:40px; margin-right:12px; filter: drop-shadow(0 0 10px rgba(88,166,255,0.3));" onerror="this.style.display='none'">
                     <span style="font-size:1.4rem; font-weight:900; color:var(--text); letter-spacing:-0.5px;">CHRONOS <span style="color:#58a6ff;">FÚTBOL</span></span>
                 </div>
-                <button onclick="cerrarSesion()" style="background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:var(--text-muted); padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.75rem;">Cerrar Sesión</button>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <!-- v451 · el entrenador vive en esta pantalla; la otra vía
+                         está en el landing de roles, que no todos vuelven a ver. -->
+                    <button onclick="if(typeof openChangePasswordModal==='function')openChangePasswordModal();"
+                            title="Cambiar mi contraseña"
+                            style="background:rgba(88,166,255,0.08); border:1px solid rgba(88,166,255,0.3); color:#58a6ff; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.75rem;">🔒 Contraseña</button>
+                    <button onclick="cerrarSesion()" style="background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:var(--text-muted); padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.75rem;">Cerrar Sesión</button>
+                </div>
             </div>
 
             <!-- CUADRICULA SIMÉTRICA DE EQUIPOS (LOCAL / VISITANTE) -->

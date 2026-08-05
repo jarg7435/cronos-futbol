@@ -1,5 +1,39 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v451: RECUPERAR Y CAMBIAR LA CONTRASEÑA (implementar.txt).
+//        1) "¿Has olvidado tu contraseña?" en el login -> sendPasswordResetEmail.
+//        2) "Cambiar contraseña" con la sesion iniciada -> updatePassword.
+//        Fichero nuevo js/services/auth/password.js, script CLASICO (no
+//        modulo): tiene que publicar en window para los onclick del HTML, y
+//        el ambito de un modulo ES no cuelga de window (trampa de v383). Por
+//        eso las funciones de Firebase Auth se publican en _cronos_auth desde
+//        firebase-init.js en vez de importarse alli donde se usan.
+//        🔑 DOS DECISIONES DE SEGURIDAD:
+//         · NO SE REVELA SI UN CORREO ESTA REGISTRADO.
+//           sendPasswordResetEmail lanza 'auth/user-not-found' cuando la
+//           cuenta no existe; contarlo convertiria el formulario en un
+//           comprobador de altas y cualquiera podria averiguar que familias
+//           estan en el club. Se responde EXACTAMENTE lo mismo exista o no.
+//         · SE REAUTENTICA SIEMPRE ANTES DE CAMBIARLA, no solo cuando Firebase
+//           lo exija. updatePassword unicamente pide sesion RECIENTE, asi que
+//           recien iniciada dejaria cambiar la contraseña SIN pedir la actual:
+//           un movil desbloqueado encima de la mesa bastaria para quedarse con
+//           la cuenta. Pedir la actual y reautenticar lo cierra y, de paso,
+//           hace imposible el 'requires-recent-login'.
+//        La contraseña nueva pasa por validatePasswordStrength, LA MISMA del
+//        registro: si aqui se aceptara una mas floja, este formulario seria la
+//        puerta de atras para saltarse la politica del alta.
+//        Entradas: el enlace del login va DENTRO de #login-pwd-section, que
+//        switchTab ya oculta en modo registro (asi aparece y desaparece solo);
+//        "Cambiar contraseña" va en el landing de roles —que ve TODO rol— y en
+//        la cabecera del entrenador.
+//        Guard nuevo scripts/test_password_recovery.js 35/35: no mira el texto,
+//        PULSA los botones contra un Firebase falso y comprueba a que se llama
+//        y en que orden. Red-check de 12 mutaciones, las 12 cazadas; destapo
+//        ademas DOS fragilidades del propio guard (un `undefined.orden` que
+//        cortaba la cadena de promesas y una excepcion sin capturar), porque
+//        un guard que MUERE no informa.
+//        Suite 101/101 activos + 11 xfail. Bump para forzar recarga.
 //  v450: UNA LINEA POR PERSONA REAL — la regla del autor, matizada.
 //        "Varias lineas SI, si son PERSONAS DISTINTAS (padre, madre,
 //        entrenador, padres separados). Nunca dos lineas del MISMO
@@ -1181,7 +1215,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v450';
+const CACHE_NAME = 'cronos-cache-v451';
 
 const ASSETS = [
     './',
@@ -1203,6 +1237,7 @@ const ASSETS = [
     './js/services/auth.js',
     './js/services/auth/role-launch.js',
     './js/services/auth-improvements.js',
+    './js/services/auth/password.js',
     './js/services/firestore-sync.js',
     './js/services/firestore-storage.js',
     './js/services/offline-manager.js',

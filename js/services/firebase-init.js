@@ -46,7 +46,13 @@
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
     const { getAuth, createUserWithEmailAndPassword,
             signInWithEmailAndPassword, onAuthStateChanged, signOut,
-            setPersistence, browserLocalPersistence } =
+            setPersistence, browserLocalPersistence,
+            // v451 · recuperación y cambio de contraseña. `updatePassword`
+            // exige sesión reciente, así que reautenticamos SIEMPRE antes con
+            // la contraseña actual: de paso se comprueba que quien la cambia
+            // es el dueño y no alguien que pilló el móvil desbloqueado.
+            sendPasswordResetEmail, updatePassword,
+            reauthenticateWithCredential, EmailAuthProvider } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
     const { getFirestore, initializeFirestore, persistentLocalCache,
             persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
@@ -209,7 +215,13 @@
         createUserWithEmailAndPassword,
         signInWithEmailAndPassword,
         doc, getDoc, setDoc, serverTimestamp,
-        checkAuthorization
+        checkAuthorization,
+        // v451 · contraseñas. Se publican aquí, y no con un import() dinámico
+        // en cada sitio, porque js/services/auth/password.js es un script
+        // CLÁSICO: no puede hacer `import` y el ámbito de este módulo no
+        // cuelga de window (la trampa de v383).
+        sendPasswordResetEmail, updatePassword,
+        reauthenticateWithCredential, EmailAuthProvider
     };
 
     // SECURITY FIX (SEC-001): Removed sessionStorage-based session restoration.
