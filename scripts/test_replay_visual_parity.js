@@ -339,11 +339,19 @@ console.log('\n── PARTE 7 · estructura ──');
        codigo.includes(".querySelectorAll('.replay-player')") &&
        !codigo.includes('div[style*="position:absolute"]'),
        'sigue el selector fragil por atributo style');
-    ok('7b · y lee nombre/cronometro por su clase, no por chip.children[1]',
-       codigo.includes(".querySelector('.replay-player-label')") &&
-       codigo.includes(".querySelector('.replay-player-time')") &&
-       !codigo.includes('chip.children[1]'),
-       'sigue leyendo los hijos por posicion');
+    // v446: la intencion de esta asercion —que el exportador NO reconstruya
+    // datos leyendo la PRESENTACION— se cumple ahora de forma mas fuerte: el
+    // nombre, el dorsal, el cronometro y los colores viajan en atributos
+    // `data-*` de la ficha, en vez de rascarse del DOM con querySelector. Lo
+    // que se prohibe sigue siendo lo mismo, y se amplia: ni por posicion de
+    // hijo, ni leyendo el gradiente del CSS (eso ultimo fue el defecto de los
+    // colores mezclados en el video, v446).
+    ok('7b · y NO reconstruye datos leyendo la presentacion (posicion ni CSS)',
+       !codigo.includes('chip.children[1]') &&
+       !/fillStyle = (?:numEl|chip)\.style\.background/.test(codigo) &&
+       /chip\.dataset/.test(codigo) &&
+       /data-shirt=/.test(src),
+       'sigue leyendo los hijos por posicion o el gradiente del CSS');
 
     // A: que nadie "simplifique" leyendo el total final del snapshot.
     ok('7c · el cronometro se acumula (timePlayed), no se lee de p.time',

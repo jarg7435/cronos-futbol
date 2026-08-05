@@ -92,7 +92,9 @@
 
         _replayState.matchData = data;
         _replayState.events = _extractEventsFromMatch(data);
-        _replayState.maxTimeSec = _calculateMaxTime(data);
+        // v446: los eventos van como segundo argumento para que la barra no
+        // pueda terminar antes que el último suceso.
+        _replayState.maxTimeSec = _calculateMaxTime(data, _replayState.events);
         _replayState.currentTimeSec = 0;
         _replayState.isPlaying = false;
         _replayState.speed = 1;
@@ -151,11 +153,56 @@
         return parsed;
     }
 
-    function _calculateMaxTime(data) {
+    // ════════════════════════════════════════════════════════════════
+    //  v446 · LA DURACIÓN REAL DEL PARTIDO, DESCUENTO INCLUIDO
+    //
+    //  Reporte del autor: la repetición y las descargas sólo contaban el tiempo
+    //  REGLAMENTARIO. Un partido que se alargó con descuento se reproducía
+    //  cortado, y la barra terminaba antes que el partido.
+    //
+    //  🔑 EL DESCUENTO NO ES UN CAMPO: ESTÁ EN EL CRONÓMETRO. La app deja correr
+    //  el reloj más allá del reglamentario (así se pinta el "+MM:SS" del visor),
+    //  y ese exceso queda en `timeH1`/`timeH2`, que son los segundos ACUMULADOS
+    //  de cada parte. `half1MaxTime`/`half2MaxTime` son sólo el reglamento
+    //  configurado, o sea el mínimo previsto, no lo jugado.
+    //
+    //  Se usa lo JUGADO cuando el documento lo trae —es la realidad del partido,
+    //  y también acorta la barra de un partido suspendido antes de tiempo— y se
+    //  cae al reglamento cuando no está (documentos antiguos). En los dos casos
+    //  se estira hasta el último suceso: ningún evento puede quedar fuera de la
+    //  barra, que es como se perdía media segunda parte antes de v394.
+    // ════════════════════════════════════════════════════════════════
+    function _reglamentarioSec(data) {
         const mode = data.mode === 'f7' ? 'f7' : 'f11';
         const h1 = data.half1MaxTime || (mode === 'f7' ? 1800 : 2400);
         const h2 = data.half2MaxTime || (mode === 'f7' ? 1800 : 2400);
         return h1 + h2;
+    }
+
+    function _jugadoSec(data) {
+        const t1 = Number(data && data.timeH1) || 0;
+        const t2 = Number(data && data.timeH2) || 0;
+        return t1 + t2;
+    }
+
+    // Instante en que acabó de verdad la 1ª parte: su cronómetro acumulado, que
+    // ya incluye el descuento. Sin él, el rótulo saltaba a "2ª PARTE" en cuanto
+    // se pasaba del reglamento, con la 1ª todavía en juego.
+    function _finPrimeraParteSec(data) {
+        const real = Number(data && data.timeH1) || 0;
+        if (real > 0) return real;
+        const mode = data.mode === 'f7' ? 'f7' : 'f11';
+        return data.half1MaxTime || (mode === 'f7' ? 1800 : 2400);
+    }
+
+    function _calculateMaxTime(data, events) {
+        const jugado = _jugadoSec(data);
+        let total = jugado > 0 ? jugado : _reglamentarioSec(data);
+        (events || []).forEach(e => {
+            const t = e && Number(e.timeSec);
+            if (!isNaN(t) && t > total) total = t;
+        });
+        return Math.max(1, Math.round(total));
     }
 
     // ── Hoja de estilos del reproductor ──────────────────────────────
@@ -355,10 +402,11 @@
         const redPct    = (typeof src.red    === 'number' && !isNaN(src.red))    ? src.red    : 33;
         const yellowPct = (typeof src.yellow === 'number' && !isNaN(src.yellow)) ? src.yellow : 50;
 
-        const mode = data.mode === 'f7' ? 'f7' : 'f11';
-        const h1 = data.half1MaxTime || (mode === 'f7' ? 1800 : 2400);
-        const h2 = data.half2MaxTime || (mode === 'f7' ? 1800 : 2400);
-        const totalSec = h1 + h2;
+        // v446: el semáforo mide el % del partido jugado, así que su base tiene
+        // que ser la duración REAL —descuento incluido—, no el reglamento. Con
+        // la base corta, un partido alargado ponía a todo el mundo en verde
+        // antes de tiempo.
+        const totalSec = _calculateMaxTime(data, _replayState.events);
 
         const t = timeSec || 0;
         if (t >= totalSec * (yellowPct / 100)) return { bg: '#2ea043', text: '#000000' };
@@ -633,8 +681,10 @@
 
         const data = _replayState.matchData || {};
         const events = _replayState.events || [];
-        const mode = data.mode === 'f7' ? 'f7' : 'f11';
-        const h1Max = data.half1MaxTime || (mode === 'f7' ? 1800 : 2400);
+        // v446: la 1ª parte acaba cuando acabó DE VERDAD (su cronómetro
+        // acumulado), no cuando se agotó el reglamento: si no, el rótulo decía
+        // "2ª PARTE" durante el descuento de la primera.
+        const h1Max = _finPrimeraParteSec(data);
 
         // 1. Actualizar Seekbar y Tiempos
         const seek = document.getElementById('replay-seekbar');
@@ -851,6 +901,29 @@
             const timeHtml = `<div class="replay-player-time" style="background:${timerCol.bg}; color:${timerCol.text};">${_fmtSecs(played)}</div>`;
             const injuredBadge = p.injured ? `<span class="replay-injured-badge">✚</span>` : '';
 
+            // ⚠️ v446 · LOS DATOS DE LA FICHA, EN ATRIBUTOS `data-*`.
+            // El exportador de vídeo los necesita y hasta aquí los sacaba del
+            // CSS: leía `chip.style.background`, que es un
+            // `linear-gradient(...)`, y se lo pasaba a `ctx.fillStyle`. Canvas
+            // NO entiende un gradiente en forma de cadena: descarta el valor en
+            // silencio y sigue pintando con el color anterior — de ahí que los
+            // equipos salieran MEZCLADOS en el vídeo. Es la misma lección de
+            // v427: leer la PRESENTACIÓN para reconstruir datos se rompe sin dar
+            // ningún error. Ahora el dato viaja como dato.
+            const datosFicha =
+                ` data-team="${isHome ? 'home' : 'away'}"` +
+                ` data-shirt="${escapeHtml(color)}"` +
+                ` data-shorts="${escapeHtml(shortsColor)}"` +
+                ` data-text="${escapeHtml(textColor)}"` +
+                ` data-num="${cleanNum}"` +
+                ` data-name="${cleanName}"` +
+                ` data-goals="${p.goals || 0}"` +
+                ` data-card="${p.cards === 'amarilla' ? 'amarilla' : p.cards === 'roja' ? 'roja' : ''}"` +
+                ` data-injured="${p.injured ? '1' : ''}"` +
+                ` data-time="${_fmtSecs(played)}"` +
+                ` data-timebg="${escapeHtml(timerCol.bg)}"` +
+                ` data-timefg="${escapeHtml(timerCol.text)}"`;
+
             if (p.status === 'field') {
                 const x = Math.max(5, Math.min(95, p.x || 50));
                 const y = Math.max(5, Math.min(95, p.y || 50));
@@ -858,14 +931,14 @@
                 // dinámicos por jugador y además el exportador de vídeo los lee
                 // del atributo style (ver drawPitchFrame).
                 pitchHtml += `
-                    <div class="replay-player" style="left:${x}%; top:${y}%;">
+                    <div class="replay-player" style="left:${x}%; top:${y}%;"${datosFicha}>
                         ${timeHtml}
                         <div class="replay-player-chip" style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%); color:${textColor};">${cleanNum}${goalIcon ? `<span class="replay-goal-badge">${goalIcon}</span>` : ''}${cardIcon ? `<span class="replay-card-badge">${cardIcon}</span>` : ''}${injuredBadge}</div>
                         <div class="replay-player-label">${cleanName}</div>
                     </div>`;
             } else {
                 const itemHtml = `
-                    <div class="replay-bench-row">
+                    <div class="replay-bench-row"${datosFicha}>
                         <span class="replay-bench-dot" style="background:linear-gradient(to bottom, ${color} 50%, ${shortsColor} 50%); color:${textColor};">${cleanNum}</span>
                         <span class="replay-bench-name">${numLabel}${cleanName} ${cardIcon} ${goalIcon}</span>
                         <span class="replay-bench-time" style="background:${timerCol.bg}; color:${timerCol.text};">${_fmtSecs(played)}</span>
@@ -979,8 +1052,13 @@
             // Crear Canvas dinámico para renderizar la repetición a 30 FPS
             const canvas = document.createElement('canvas');
             canvas.width = 900;
-            canvas.height = 550;
+            // v446: 550 → 700. Los 150 px de más son la franja de BANQUILLOS,
+            // que el vídeo no dibujaba en absoluto. El campo conserva su tamaño:
+            // lo que antes era el borde inferior del lienzo ahora es el borde
+            // superior de la franja.
+            canvas.height = 700;
             const ctx = canvas.getContext('2d');
+            const ALTO_BANQUILLOS = 150;
 
             function drawPitchFrame() {
                 const data = _replayState.matchData || {};
@@ -1032,7 +1110,9 @@
                 ctx.fillText(`${timerTxt} (${phaseTxt})`, canvas.width - 20, 36);
 
                 // 3. Líneas del Campo
-                const pX = 20, pY = 75, pW = canvas.width - 40, pH = canvas.height - 90;
+                // v446: el alto del campo descuenta la franja de banquillos.
+                const pX = 20, pY = 75, pW = canvas.width - 40,
+                      pH = canvas.height - 90 - ALTO_BANQUILLOS;
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(pX, pY, pW, pH);
@@ -1075,47 +1155,23 @@
                             const cX = pX + pctX * pW;
                             const cY = pY + pctY * pH;
 
-                            // Leer dorsal, nombre, cronómetro y color
-                            const numEl  = chip.querySelector('.replay-player-chip');
-                            const nameEl = chip.querySelector('.replay-player-label');
-                            const timeEl = chip.querySelector('.replay-player-time');
-                            // El dorsal es el primer nodo de texto de la ficha:
-                            // textContent arrastraría también los badges de gol
-                            // y tarjeta, que son hijos suyos.
-                            const numTxt = numEl
-                                ? (numEl.firstChild && numEl.firstChild.nodeType === 3
-                                    ? numEl.firstChild.textContent.trim()
-                                    : numEl.textContent.trim())
-                                : '';
-                            const nameTxt = nameEl ? nameEl.textContent.trim() : '';
-                            const timeTxt = timeEl ? timeEl.textContent.trim() : '';
-                            const color = numEl ? numEl.style.background : homeColor;
+                            // v446 · TODO SALE DE LOS `data-*`, no del CSS.
+                            const d = chip.dataset || {};
+                            const numTxt  = d.num  || '';
+                            const nameTxt = d.name || '';
+                            const timeTxt = d.time || '';
 
-                            // Dibujar Ficha (radio 18: acompaña el aumento de
-                            // tamaño de las fichas en pantalla)
-                            ctx.beginPath();
-                            ctx.arc(cX, cY, 18, 0, Math.PI * 2);
-                            ctx.fillStyle = color;
-                            ctx.fill();
-                            ctx.strokeStyle = '#ffffff';
-                            ctx.lineWidth = 2;
-                            ctx.stroke();
-
-                            // Dorsal
-                            ctx.fillStyle = '#000000';
-                            ctx.font = 'bold 13px sans-serif';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(numTxt, cX, cY + 5);
+                            dibujaFicha(cX, cY, 18, d);
 
                             // Cronómetro individual, con el color del semáforo
-                            // que ya calculó el render (se lee del DOM para no
-                            // duplicar la decisión).
+                            // que ya decidió el render.
                             if (timeTxt) {
                                 const tw = 40, th = 14, ty = cY - 34;
-                                ctx.fillStyle = timeEl.style.backgroundColor || '#79c0ff';
+                                ctx.fillStyle = d.timebg || '#79c0ff';
                                 ctx.fillRect(cX - tw / 2, ty, tw, th);
-                                ctx.fillStyle = timeEl.style.color || '#000000';
+                                ctx.fillStyle = d.timefg || '#000000';
                                 ctx.font = 'bold 10px monospace';
+                                ctx.textAlign = 'center';
                                 ctx.fillText(timeTxt, cX, ty + 11);
                             }
 
@@ -1123,11 +1179,151 @@
                             if (nameTxt) {
                                 ctx.fillStyle = '#ffffff';
                                 ctx.font = 'bold 11px sans-serif';
+                                ctx.textAlign = 'center';
                                 ctx.fillText(nameTxt, cX, cY + 32);
                             }
                         }
                     });
                 }
+
+                // 5. v446 · LOS BANQUILLOS. El vídeo no los dibujaba en
+                //    absoluto: quien lo veía no sabía quién estaba fuera.
+                // ⚠️ Los nombres y colores van por ARGUMENTO: se declaran dentro
+                // de drawPitchFrame, así que una función hermana no los ve. Con
+                // la referencia suelta esto lanzaba ReferenceError y se llevaba
+                // por delante la grabación entera, fotograma a fotograma.
+                dibujaBanquillos(pY + pH + 8, homeName, awayName, homeColor, awayColor);
+            }
+
+            // ── Una ficha, con sus dos colores y sus sucesos ────────────────
+            //  🔑 EL GRADIENTE SE CONSTRUYE, NO SE COPIA. La camiseta arriba y
+            //  el pantalón abajo, igual que en pantalla. Antes se le pasaba a
+            //  `fillStyle` la cadena CSS `linear-gradient(...)`, que canvas
+            //  ignora en silencio dejando el color del dibujo ANTERIOR: por eso
+            //  los equipos salían mezclados.
+            function dibujaFicha(cX, cY, r, d) {
+                const camiseta = d.shirt  || '#58a6ff';
+                const pantalon = d.shorts || camiseta;
+                const grad = ctx.createLinearGradient(0, cY - r, 0, cY + r);
+                grad.addColorStop(0, camiseta);
+                grad.addColorStop(0.5, camiseta);
+                grad.addColorStop(0.5, pantalon);
+                grad.addColorStop(1, pantalon);
+
+                ctx.beginPath();
+                ctx.arc(cX, cY, r, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Dorsal, con el color de texto que eligió el club.
+                ctx.fillStyle = d.text || '#000000';
+                ctx.font = 'bold ' + Math.round(r * 0.72) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(String(d.num || ''), cX, cY + r * 0.28);
+
+                dibujaSucesos(cX, cY, r, d);
+            }
+
+            // ── Goles, tarjetas y lesión SOBRE la ficha ─────────────────────
+            //  El vídeo sólo pintaba dorsal, nombre y cronómetro: un gol no se
+            //  veía por ninguna parte. Se dibujan con formas, no con emojis,
+            //  para que no dependan de que la fuente del sistema los tenga.
+            function dibujaSucesos(cX, cY, r, d) {
+                const goles = parseInt(d.goals || '0', 10) || 0;
+                if (goles > 0) {
+                    const bx = cX + r * 0.85, by = cY - r * 0.85;
+                    ctx.beginPath();
+                    ctx.arc(bx, by, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                    ctx.strokeStyle = '#1a1a1a';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(goles > 1 ? String(goles) : '1', bx, by + 3.5);
+                }
+                if (d.card === 'amarilla' || d.card === 'roja') {
+                    const cw = 9, ch = 13;
+                    const tx = cX - r - cw * 0.6, ty = cY - r * 0.9;
+                    ctx.fillStyle = d.card === 'roja' ? '#da3633' : '#e3b341';
+                    ctx.fillRect(tx, ty, cw, ch);
+                    ctx.strokeStyle = '#1a1a1a';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(tx, ty, cw, ch);
+                }
+                if (d.injured) {
+                    const ix = cX - r * 0.85, iy = cY + r * 0.85;
+                    ctx.beginPath();
+                    ctx.arc(ix, iy, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#e74c3c';
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    // La cruz de la lesión, en trazo (no como texto).
+                    ctx.beginPath();
+                    ctx.moveTo(ix - 4, iy); ctx.lineTo(ix + 4, iy);
+                    ctx.moveTo(ix, iy - 4); ctx.lineTo(ix, iy + 4);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+
+            // ── La franja de banquillos ─────────────────────────────────────
+            function dibujaBanquillos(yTop, homeName, awayName, homeColor, awayColor) {
+                const filas = {
+                    home: document.querySelectorAll('#replay-bench-home .replay-bench-row'),
+                    away: document.querySelectorAll('#replay-bench-away .replay-bench-row'),
+                };
+                ctx.fillStyle = 'rgba(10, 14, 20, 0.92)';
+                ctx.fillRect(0, yTop, canvas.width, canvas.height - yTop);
+
+                const mitad = canvas.width / 2;
+                [['home', 20, homeName, homeColor], ['away', mitad + 10, awayName, awayColor]]
+                    .forEach(([lado, x0, titulo, colorTitulo]) => {
+                        ctx.textAlign = 'left';
+                        ctx.font = 'bold 11px sans-serif';
+                        ctx.fillStyle = colorTitulo;
+                        ctx.fillText('BANQUILLO · ' + String(titulo).toUpperCase().slice(0, 22),
+                                     x0, yTop + 18);
+
+                        const lista = filas[lado];
+                        // Dos columnas por equipo: con una sola, un banquillo
+                        // largo se salía del lienzo sin avisar.
+                        const porColumna = 4;
+                        lista.forEach((fila, i) => {
+                            if (i >= porColumna * 2) return;   // tope visible
+                            const col = Math.floor(i / porColumna);
+                            const x = x0 + 14 + col * 210;
+                            const y = yTop + 42 + (i % porColumna) * 26;
+                            const d = fila.dataset || {};
+                            dibujaFicha(x, y, 11, d);
+                            ctx.textAlign = 'left';
+                            ctx.fillStyle = '#e6edf3';
+                            ctx.font = 'bold 11px sans-serif';
+                            ctx.fillText(String(d.name || '').slice(0, 14), x + 18, y + 4);
+                            if (d.time) {
+                                ctx.fillStyle = d.timebg || '#79c0ff';
+                                ctx.fillRect(x + 140, y - 7, 38, 14);
+                                ctx.fillStyle = d.timefg || '#000000';
+                                ctx.font = 'bold 9px monospace';
+                                ctx.textAlign = 'center';
+                                ctx.fillText(d.time, x + 159, y + 3);
+                            }
+                        });
+                        if (!lista.length) {
+                            ctx.textAlign = 'left';
+                            ctx.fillStyle = '#7d8590';
+                            ctx.font = 'italic 11px sans-serif';
+                            ctx.fillText('Vacío', x0 + 14, yTop + 44);
+                        }
+                    });
             }
 
             // Iniciar renderizado constante a 30 FPS
