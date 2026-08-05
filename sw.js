@@ -1,5 +1,51 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v449: EL AVISO DICE DE QUE PARTIDO ES · UNA LINEA POR FAMILIAR.
+//        Dos reportes del autor, independientes.
+//        1) AVISOS FLOTANTES SIN PARTIDO. ⚠️ El dato NO faltaba: viajaba desde
+//           v220 y se pintaba... en `.et-sub`, gris `--muted`, 0.72rem y en
+//           SEGUNDA linea, debajo de un titulo que desde v445 empieza por el
+//           chip del EQUIPO de la incidencia. Se leia "ARINAGA 7 · GOL ·
+//           Pedro" y el encuentro pasaba desapercibido. Ahora encabeza el
+//           aviso en `.et-match`, en color primario y a dos lineas si hace
+//           falta (nunca cortado con puntos suspensivos: un nombre de equipo
+//           recortado es justo el problema que se venia a resolver).
+//           Ademas, respaldo: si un llamante olvidase la etiqueta se
+//           reconstruye del ultimo snapshot; y si no hay de donde, NO SE
+//           INVENTA (leccion de v439) — mejor sin linea que un "Local vs
+//           Visitante" falso.
+//        2) DESTINATARIOS DUPLICADOS AL TERMINAR EL PARTIDO. La lista se
+//           compone de CUATRO origenes que no se conocen entre si
+//           (emailConfig, staff real, cronos_player_links y usuarios con rol
+//           parent) y las comprobaciones de "¿ya existe?" de cada uno fallaban
+//           por dos motivos silenciosos:
+//             🔑 el familiar SIN `parentUid` recibe como id el ID DEL
+//                DOCUMENTO DEL VINCULO, asi que dos vinculos del mismo padre
+//                dan dos ids distintos y no se reconocian;
+//             🔑 cada origen compara por un campo distinto (uid / email /
+//                phone): si una copia trae solo el correo y otra solo el
+//                telefono, NINGUNA comparacion las une.
+//           Helper nuevo `_cronosDedupeRecipients` (core/utils.js): dos
+//           entradas son la misma persona si comparten CUALQUIER
+//           identificador, y se FUSIONAN (la linea que queda se lleva el
+//           correo, el telefono y el nombre mas completos).
+//           ⚠️ LO QUE NO SE PUEDE "ARREGLAR" DE MAS: el codigo del jugador
+//           forma parte de la identidad, asi que un padre con DOS hijos
+//           convocados SIGUE viendo DOS lineas (son dos informes); y no se
+//           funde entre roles, porque quien es staff Y padre recibe el
+//           resumen global Y el individual de su hijo.
+//           ⚠️ Y la preseleccion guardada se comprueba contra TODOS los ids
+//           fusionados: si no, fusionar habria DESELECCIONADO en silencio a
+//           destinatarios ya elegidos.
+//        Guard nuevo scripts/test_avisos_y_destinatarios.js 32/32: pinta el
+//        aviso y la lista de verdad, no mira el texto del codigo. Red-check de
+//        11 mutaciones, las 11 cazadas — y tumbo TRES aserciones mias que
+//        miraban solo si el nombre del helper aparecia (la misma clase de
+//        asercion-que-defiende-el-bug de v417 y v447): reescritas para
+//        EJECUTAR los dos constructores y contar las casillas.
+//        Se reapunta la asercion 2e3 de test_live_view_cleanup.js, que fijaba
+//        la FORMA antigua (`.et-sub`) de algo cuya intencion no cambia.
+//        Suite 100/100 activos + 11 xfail. Bump para forzar recarga.
 //  v448: EL BOTON SUPERIOR DE TIEMPO FUNCIONA TAMBIEN EN EL DESCANSO.
 //        Reporte del autor: "REANUDAR va bien al pausar y reanudar un partido
 //        en juego, pero se queda inactivo en el descanso y obliga a usar el
@@ -1096,7 +1142,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v448';
+const CACHE_NAME = 'cronos-cache-v449';
 
 const ASSETS = [
     './',

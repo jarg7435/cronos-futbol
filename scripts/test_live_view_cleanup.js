@@ -147,8 +147,13 @@ ok('2e · 🔑 el suceso se anuncia con AVISO FLOTANTE',
    /stack\.appendChild\(el\)/.test(_cuerpoToast));
 ok('2e2 · …que se va solo a los 8 s y también al tocarlo',
    /setTimeout\(quitar, 8000\)/.test(_cuerpoToast) && /el\.onclick = quitar/.test(_cuerpoToast));
+// v449: la etiqueta del partido SIGUE siendo obligatoria —la intención de esta
+// aserción no cambia— pero ya no se pinta en `.et-sub` (gris, segunda línea):
+// encabeza el aviso en `.et-match`. Se reapunta a la forma nueva en vez de
+// borrarla. El detalle de dónde va y de que no se invente cuando no hay datos
+// lo cubre scripts/test_avisos_y_destinatarios.js.
 ok('2e3 · 🔑 el aviso lleva la etiqueta del partido (es global: hace falta)',
-   /sub \? '<div class="et-sub">' \+ escapeHtml\(sub\)/.test(_cuerpoToast));
+   /_partido \? '<div class="et-match">' \+ escapeHtml\(_partido\)/.test(_cuerpoToast));
 ok('2f · …con destello', /getElementById\("event-flash"\)/.test(_cuerpoToast));
 ok('2g · …con sonido', /playEventSound\(type\)/.test(_cuerpoToast));
 ok('2h · …con vibración, salvo silenciado',

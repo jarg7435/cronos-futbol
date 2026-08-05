@@ -284,7 +284,14 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
         return false;
     });
 
-    const allToShow = [...staff, ...activeParents];
+    // ── UNA línea por familiar y código de jugador ────────────────────
+    // Mismo criterio que la lista de fin de partido (sharedBuildRecipientsHTML):
+    // los cuatro orígenes de contactos traían cada uno su copia del mismo
+    // padre. Ver _cronosDedupeRecipients en core/utils.js — un padre con DOS
+    // hijos convocados SIGUE viendo dos líneas, porque son dos informes.
+    const allToShow = (typeof window._cronosDedupeRecipients === 'function')
+        ? window._cronosDedupeRecipients([...staff, ...activeParents])
+        : [...staff, ...activeParents];
 
     if (!allToShow.length) {
         return `<div style="text-align:center;color:var(--text-muted);font-size:0.75rem;padding:1rem;">
@@ -296,7 +303,12 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
     let savedIds = JSON.parse(localStorage.getItem(`cronos_match_rpt_selection`) || 'null');
 
     return allToShow.map(c => {
-        const checked = savedIds ? savedIds.includes(c.id) : (c.tags || []).includes(prefix);
+        // 🔑 Contra TODOS los ids fusionados: una preselección guardada con el
+        // id de una copia descartada tiene que seguir marcando la casilla.
+        const idsDeLaLinea = Array.isArray(c._ids) && c._ids.length ? c._ids : [c.id];
+        const checked = savedIds
+            ? idsDeLaLinea.some(id => savedIds.includes(id))
+            : (c.tags || []).includes(prefix);
         const typeIcon = c.type === 'staff' ? '🏢' : '👨‍👩‍👧';
         const typeLabel = c.type === 'staff' ? 'Staff' : 'Padre/Madre';
         const accent = c.type === 'staff' ? 'var(--primary)' : '#f0883e';

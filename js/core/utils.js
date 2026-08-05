@@ -532,6 +532,139 @@ if (typeof window._cronosPeerChatThreadId !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════
+//  _cronosDedupeRecipients(lista) → lista fusionada, sin duplicados
+//  ──────────────────────────────────────────────────────────────
+//  UNA sola línea por FAMILIAR y CÓDIGO DE JUGADOR. La lista de
+//  destinatarios de los informes se compone de hasta CUATRO orígenes que
+//  no se conocen entre sí, y cada uno traía su propia copia de la misma
+//  persona:
+//    1. `emailConfig.contacts` guardados a mano;
+//    2. el staff real de Firestore (`_cGetStaff`);
+//    3. los vínculos `cronos_player_links`;
+//    4. los usuarios con rol 'parent' registrados en el club.
+//
+//  Las comprobaciones de "¿ya existe?" de cada origen fallaban por dos
+//  motivos concretos, y ninguno daba error:
+//
+//   🔑 EL FAMILIAR SIN `parentUid` NO TIENE IDENTIDAD ESTABLE. En
+//     contact-manager.js el id sale de `l.parentUid || l.uid || l._id`, y
+//     ese último respaldo es el ID DEL DOCUMENTO DEL VÍNCULO. Dos vínculos
+//     del mismo familiar dan dos ids distintos, así que la comprobación no
+//     los reconocía y se colaban dos líneas del mismo padre.
+//
+//   🔑 CADA ORIGEN COMPARA POR UN CAMPO DISTINTO. Uno mira `uid`, otro
+//     `email`, otro `phone`. Si la copia A trae sólo el correo y la copia B
+//     sólo el teléfono, NINGUNA comparación las une. Por eso aquí no se
+//     compara por un campo elegido de antemano: dos entradas son la misma
+//     persona si comparten CUALQUIER identificador.
+//
+//  ⚠️ EL CÓDIGO DEL JUGADOR FORMA PARTE DE LA IDENTIDAD, y es lo que
+//  impide "arreglar" esto de más: un padre con DOS hijos convocados tiene
+//  que seguir viendo DOS líneas, porque son dos informes distintos. Sin
+//  esta parte de la clave, el segundo hijo desaparecería en silencio.
+//
+//  ⚠️ Y NO SE FUSIONA ENTRE ROLES: quien es a la vez staff y padre recibe
+//  el resumen global Y el informe individual de su hijo. Son dos envíos
+//  reales, no una duplicidad.
+//
+//  Fusionar, no descartar: la línea que sobrevive se queda con el correo,
+//  el teléfono y el nombre más completos de todas sus copias, y con la
+//  lista de ids en `_ids` para que una preselección guardada con el id de
+//  una copia descartada siga marcando la casilla.
+// ════════════════════════════════════════════════════════════════
+if (typeof window._cronosRecipientKeyParts !== 'function') {
+    window._cronosRecipientKeyParts = function(c) {
+        const norm = (v) => String(v == null ? '' : v).trim().toLowerCase();
+        // El teléfono se reduce a sus dígitos y se queda con los 9 últimos:
+        // el mismo número aparece como '+34 600 11 22 33', '0034600112233'
+        // y '600112233' según quién lo escribiera.
+        const tel = String(c && c.phone != null ? c.phone : '').replace(/\D/g, '');
+        return {
+            uid:   norm(c && c.uid),
+            email: norm(c && c.email),
+            phone: tel.length > 9 ? tel.slice(-9) : tel,
+            name:  norm((c && (c.name || c.label)) || '').replace(/\s+/g, ' '),
+        };
+    };
+}
+
+if (typeof window._cronosRecipientScope !== 'function') {
+    window._cronosRecipientScope = function(c) {
+        const tipo = String((c && c.type) || '').trim().toLowerCase() || 'staff';
+        if (tipo !== 'parent') return tipo;   // el staff no se agrupa por jugador
+        const pid = String((c && c.playerId) || '').trim().toLowerCase();
+        const num = String((c && c.playerNumber) != null ? c.playerNumber : '').trim();
+        // Sin código de jugador se cae al nombre del jugador; y si tampoco lo
+        // hay, al ámbito vacío (todas las copias sin jugador se funden).
+        const jugador = pid || (num ? '#' + num : '') ||
+                        String((c && c.player) || '').trim().toLowerCase();
+        return tipo + '|' + jugador;
+    };
+}
+
+if (typeof window._cronosDedupeRecipients !== 'function') {
+    window._cronosDedupeRecipients = function(lista) {
+        if (!Array.isArray(lista)) return [];
+        const partesDe = window._cronosRecipientKeyParts;
+        const ambitoDe = window._cronosRecipientScope;
+
+        const cubos = [];          // conserva el orden de aparición
+        const porAmbito = new Map();
+
+        const compartenIdentidad = (a, b) => (
+            (!!a.uid   && a.uid   === b.uid) ||
+            (!!a.email && a.email === b.email) ||
+            (!!a.phone && a.phone === b.phone) ||
+            // El nombre sólo vale cuando NINGUNA de las dos aporta un
+            // identificador fuerte: dos "Padre/Tutor" distintos con correo
+            // propio no pueden fundirse por llamarse igual.
+            (!!a.name  && a.name  === b.name &&
+             !a.uid && !b.uid && !a.email && !b.email && !a.phone && !b.phone)
+        );
+
+        lista.forEach((c) => {
+            if (!c) return;
+            const ambito = ambitoDe(c);
+            const partes = partesDe(c);
+            const candidatos = porAmbito.get(ambito) || [];
+            const cubo = candidatos.find(b => compartenIdentidad(b._partes, partes));
+
+            if (!cubo) {
+                const nuevo = Object.assign({}, c, {
+                    _partes: partes,
+                    _ids: [c.id].filter(v => v != null && v !== ''),
+                });
+                cubos.push(nuevo);
+                candidatos.push(nuevo);
+                porAmbito.set(ambito, candidatos);
+                return;
+            }
+
+            // ── Fusión: la línea superviviente se queda con lo más completo ──
+            ['email', 'phone', 'uid', 'name', 'label', 'player', 'playerId',
+             'playerNumber', 'sublabel', 'category', 'subcategory', 'role'
+            ].forEach((campo) => {
+                if (!cubo[campo] && c[campo]) cubo[campo] = c[campo];
+            });
+            if (Array.isArray(c.tags)) {
+                const tags = new Set([].concat(cubo.tags || [], c.tags));
+                cubo.tags = Array.from(tags);
+            }
+            if (c.defaultOn) cubo.defaultOn = true;
+            if (c.id != null && c.id !== '' && cubo._ids.indexOf(c.id) === -1) {
+                cubo._ids.push(c.id);
+            }
+            // Los identificadores recién incorporados pasan a contar para las
+            // comparaciones siguientes: así una tercera copia que sólo traiga
+            // el teléfono también reconoce a este cubo.
+            cubo._partes = partesDe(cubo);
+        });
+
+        return cubos.map((b) => { const o = Object.assign({}, b); delete o._partes; return o; });
+    };
+}
+
 // ── Exportación global ────────────────────────────────────────
 // Este archivo se carga como <script> clásico (NO type="module"),
 // por lo que NO se puede usar `export`. Las funciones ya quedan

@@ -702,11 +702,27 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
             sublabel: c.email || '',
             phone:  c.phone || '',
             email:  c.email || '',
+            // ⚠️ El nombre y el código del jugador viajan aunque no se pinten:
+            // son la mitad de la identidad con la que se deduplica. Sin ellos,
+            // un padre con DOS hijos convocados perdería una de sus dos líneas.
+            name:   c.name || '',
+            player: c.player || '',
+            playerId: c.playerId || '',
+            playerNumber: c.playerNumber != null ? c.playerNumber : '',
             defaultOn: (c.tags || []).includes(prefix)
         });
     });
 
-    if (!allContacts.length) {
+    // ── UNA línea por familiar y código de jugador ────────────────────
+    // Los orígenes de contactos no se conocen entre sí y cada uno traía su
+    // copia del mismo padre (ver _cronosDedupeRecipients en core/utils.js).
+    // Aquí se fusionan justo antes de pintar: no se toca nada de lo guardado,
+    // así que también sanea las listas que ya vienen sucias.
+    let listaFinal = (typeof window._cronosDedupeRecipients === 'function')
+        ? window._cronosDedupeRecipients(allContacts)
+        : allContacts;
+
+    if (!listaFinal.length) {
         return `<div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:1rem 0;">
             ⚠️ No hay contactos configurados. Ve a <strong>Gestión de Contactos</strong> para añadirlos.
         </div>`;
@@ -716,8 +732,15 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
     let savedIds = null;
     try { savedIds = savedRecipients || JSON.parse(localStorage.getItem(`cronos_${prefix}_preselection`) || 'null'); } catch(e) {}
 
-    return allContacts.map(c => {
-        const checked = savedIds ? savedIds.includes(c.id) : c.defaultOn;
+    return listaFinal.map(c => {
+        // 🔑 La preselección se comprueba contra TODOS los ids fusionados. Si
+        // se guardó con el id de una copia que ahora desaparece, la casilla
+        // tiene que seguir marcada: si no, fusionar habría DESELECCIONADO en
+        // silencio a destinatarios que el entrenador ya tenía elegidos.
+        const idsDeLaLinea = Array.isArray(c._ids) && c._ids.length ? c._ids : [c.id];
+        const checked = savedIds
+            ? idsDeLaLinea.some(id => savedIds.includes(id))
+            : c.defaultOn;
         const typeColor = c.type === 'staff' ? 'rgba(88,166,255,0.15)' : 'rgba(240,136,62,0.1)';
         const typeBorder = c.type === 'staff' ? 'rgba(88,166,255,0.25)' : 'rgba(240,136,62,0.2)';
         const typeTag = c.type === 'staff' ? '🏢' : '👨‍👩‍👧';

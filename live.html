@@ -508,6 +508,7 @@
             .event-toast .et-icon { font-size: 1.1rem; }
             .event-toast .et-title { font-size: 0.74rem; }
             .event-toast .et-sub { font-size: 0.65rem; }
+            .event-toast .et-match { font-size: 0.62rem; }
         }
         /* v232: En móvil landscape, los toasts son más compactos y con scroll
            para que quepan más en la pantalla horizontal. */
@@ -523,6 +524,8 @@
             .event-toast .et-icon { font-size: 0.9rem; }
             .event-toast .et-title { font-size: 0.66rem; }
             .event-toast .et-sub { font-size: 0.58rem; }
+            /* En horizontal el alto manda: una sola línea para el encuentro. */
+            .event-toast .et-match { font-size: 0.56rem; -webkit-line-clamp: 1; margin-bottom: 1px; }
         }
         .live-feed {
             background: rgba(0,0,0,0.22);
@@ -680,6 +683,18 @@
         .event-toast .et-sub {
             font-size: 0.72rem; color: var(--muted); margin-top: 1px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        /* v449 · El ENCUENTRO al que pertenece el suceso. Encabeza el aviso y
+           NO usa `--muted`: con varios partidos seguidos, saber de cuál es el
+           gol importa tanto como el gol. Se deja envolver a dos líneas en vez
+           de cortarse con puntos suspensivos — un nombre de equipo recortado
+           es exactamente el problema que se venía a resolver. */
+        .event-toast .et-match {
+            font-size: 0.68rem; font-weight: 800; letter-spacing: 0.3px;
+            color: var(--primary); text-transform: uppercase;
+            margin-bottom: 3px; line-height: 1.25;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+            overflow: hidden;
         }
         .event-toast.ev-goal     { border-left-color: #3fb950; }
         .event-toast.ev-yellow   { border-left-color: #e3b341; }
@@ -2079,6 +2094,21 @@ window._posicionaAvisos = _posicionaAvisos;
 //  por delante TODO lo demás: la fila del historial, el destello, el sonido y
 //  la vibración. Por eso cada pieza va en su propio bloque con su guarda.
 // ════════════════════════════════════════════════════════════════════
+// v449 · LA ETIQUETA DEL ENCUENTRO, a prueba de llamantes despistados.
+// `sub` la traen los ocho llamantes de detectAndAlert, pero si algún día uno
+// se olvida, el aviso saldría ANÓNIMO — que es justo lo que confunde cuando
+// hay varios partidos. Aquí se reconstruye del último snapshot.
+// ⚠️ Si no hay de dónde sacarla NO SE INVENTA (lección de v439): se devuelve
+// vacío y el aviso sale sin la línea, en vez de mentir con "Local vs
+// Visitante", que es peor que no decir nada.
+function _etiquetaPartidoDe(snap) {
+    if (!snap) return '';
+    const local = (snap.homeTeam && snap.homeTeam.name) || '';
+    const visit = (snap.awayTeam && snap.awayTeam.name) || '';
+    if (!local && !visit) return '';
+    return (local || 'Local') + ' vs ' + (visit || 'Visitante');
+}
+
 function showEventToast(type, line, sub, matchTime, equipo) {
     const meta = EVENT_META[type] || EVENT_META.sub;
 
@@ -2104,14 +2134,21 @@ function showEventToast(type, line, sub, matchTime, equipo) {
         const titleHTML = (typeof line === 'string' && line.indexOf('<') >= 0)
             ? line
             : escapeHtml(line || meta.title);
+        // v449 · EL ENCUENTRO, ARRIBA Y LEGIBLE. Ya viajaba desde v220 y se
+        // pintaba en `.et-sub`: gris apagado, 0.72rem y en SEGUNDA línea,
+        // debajo de un título que desde v445 empieza por el chip del equipo de
+        // la incidencia. Con varios partidos seguidos, el ojo leía
+        // "ARINAGA 7 · GOL · Pedro" y el encuentro pasaba desapercibido.
+        // Ahora encabeza el aviso y se lee antes que el suceso.
+        const _partido = sub || _etiquetaPartidoDe(lastSnapshot);
         el.innerHTML =
             '<div class="et-icon">' + meta.icon + '</div>' +
             '<div class="et-body">' +
+                (_partido ? '<div class="et-match">' + escapeHtml(_partido) + '</div>' : "") +
                 // v445 · la etiqueta del equipo, delante del suceso: un gol ya
                 // no es "GOL · Pedro" a secas.
                 '<div class="et-title">' + _chipEquipoHtml(_eq) +
                     _sinPrefijoEquipo(titleHTML, _eq) + '</div>' +
-                (sub ? '<div class="et-sub">' + escapeHtml(sub) + '</div>' : "") +
             '</div>';
         const quitar = () => {
             el.classList.add("leaving");
@@ -5101,8 +5138,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v448"></script>
-<script src="js/match/replay/replay-player.js?v=v448"></script>
-<script src="js/match/events/retroactive-modal.js?v=v448"></script>
+<script src="js/match/immutability.js?v=v449"></script>
+<script src="js/match/replay/replay-player.js?v=v449"></script>
+<script src="js/match/events/retroactive-modal.js?v=v449"></script>
 </body>
 </html>
