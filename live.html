@@ -1363,7 +1363,8 @@ import { initializeApp }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, collection,
+import { getFirestore, initializeFirestore, persistentLocalCache,
+         persistentMultipleTabManager, doc, getDoc, collection,
          onSnapshot, getDocs, query, orderBy, where }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -1378,7 +1379,24 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
+
+// ── Firestore con cache PERSISTENTE en disco ──────────────────────
+// Este visor es un DOCUMENTO APARTE (se abre con window.open desde la app),
+// con su propia instancia de Firestore. Por eso el gestor MULTIPESTANYA es
+// obligatorio: con el de una sola pestanya, el segundo documento en arrancar
+// se queda sin persistencia, y el caso normal es tener los dos abiertos.
+// El respaldo a getFirestore mantiene el visor funcionando si el navegador
+// deniega IndexedDB (modo privado, cuota).
+let db;
+try {
+    db = initializeFirestore(app, {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+} catch (e) {
+    console.warn('[Cronos] Cache persistente no disponible en el visor; se usa la de memoria:', e.message);
+    db = getFirestore(app);
+}
+
 // Ensure session shared with main app
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 
@@ -5083,8 +5101,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v446"></script>
-<script src="js/match/replay/replay-player.js?v=v446"></script>
-<script src="js/match/events/retroactive-modal.js?v=v446"></script>
+<script src="js/match/immutability.js?v=v447"></script>
+<script src="js/match/replay/replay-player.js?v=v447"></script>
+<script src="js/match/events/retroactive-modal.js?v=v447"></script>
 </body>
 </html>

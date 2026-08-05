@@ -50,6 +50,15 @@ async function cerrarSesion() {
     // [Cronos-Privacy] Logout: purga incondicional de PII + marcador.
     if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
 
+    // [Cronos-Privacy] Y la caché EN DISCO de Firestore, que localStorage no
+    // cubre: las lecturas servidas desde ella no pasan por las reglas, así que
+    // sin borrarla el siguiente usuario del dispositivo podría leer documentos
+    // cacheados de éste. Se espera antes de recargar para que dé tiempo a
+    // completarse; si falla (otra pestaña abierta) no bloquea la salida.
+    if (typeof window._cronosClearFirestoreCache === 'function') {
+        await window._cronosClearFirestoreCache();
+    }
+
     // Recargar para volver al login
     location.reload();
 }

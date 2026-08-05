@@ -48,7 +48,9 @@
             signInWithEmailAndPassword, onAuthStateChanged, signOut,
             setPersistence, browserLocalPersistence } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
-    const { getFirestore, doc, getDoc, setDoc, serverTimestamp } =
+    const { getFirestore, initializeFirestore, persistentLocalCache,
+            persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
+            doc, getDoc, getDocFromServer, setDoc, serverTimestamp } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     const { getFunctions } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
@@ -92,8 +94,56 @@
     console.log('[Cronos] App Check desactivado (v227). Si lo necesitas, verifícalo en Firebase Console.');
 
     const auth = getAuth(app);
-    const db   = getFirestore(app);
+
+    // ── Firestore con caché PERSISTENTE en disco ──────────────────
+    // Sin esto la caché es sólo de memoria: muere con la pestaña, así que
+    // recargar la app sin cobertura dejaba al usuario fuera (no había ni
+    // documento de usuario que leer para autorizarle).
+    //
+    // ⚠️ EL GESTOR MULTIPESTAÑA NO ES OPCIONAL AQUÍ. El visor `live.html` se
+    // abre con window.open: es OTRO documento con SU PROPIA instancia de
+    // Firestore, y lo normal es tenerlos abiertos a la vez. Con el gestor por
+    // defecto (una sola pestaña), el segundo en arrancar se queda SIN
+    // persistencia — justo el caso de uso real del entrenador.
+    //
+    // El respaldo a getFirestore existe porque un navegador puede denegar
+    // IndexedDB (modo privado, cuota); ahí se pierde la persistencia, pero la
+    // app tiene que seguir arrancando.
+    let db;
+    try {
+        db = initializeFirestore(app, {
+            localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+        });
+    } catch (e) {
+        console.warn('[Cronos] Caché persistente no disponible; se usa la de memoria:', e.message);
+        db = getFirestore(app);
+    }
+
     const functions = getFunctions(app);
+
+    // ── Borrado de la caché en disco de Firestore ─────────────────
+    // [Cronos-Privacy] ⚠️ Las lecturas servidas desde la caché local NO PASAN
+    // POR LAS REGLAS de Firestore: son datos ya descargados. Es la lección de
+    // v199 aplicada a la capa nueva — sin borrarla al salir o al cambiar de
+    // usuario, el siguiente usuario del dispositivo podría leer documentos
+    // cacheados del anterior. Va enganchada al purgado de PII que ya existía.
+    //
+    // clearIndexedDbPersistence() EXIGE que la instancia esté terminada, y
+    // falla si otro documento (p. ej. live.html abierto) sigue usándola: por
+    // eso nunca lanza hacia fuera, sólo informa. Sus dos llamadores recargan
+    // la página justo después, así que terminar la instancia no rompe nada.
+    window._cronosClearFirestoreCache = async function _cronosClearFirestoreCache() {
+        try {
+            await terminate(db);
+            await clearIndexedDbPersistence(db);
+            console.log('[Cronos-Privacy] 🔒 Caché en disco de Firestore borrada.');
+            return true;
+        } catch (e) {
+            console.warn('[Cronos-Privacy] No se pudo borrar la caché de Firestore ' +
+                         '(¿otra pestaña abierta?):', e.message);
+            return false;
+        }
+    };
 
     // ── Función checkAuthorization (fallback si auth.js no cargó) ──
     // FIX: Añadido SuperAdmin bypass para que el fallback no bloquee al SA
@@ -175,17 +225,34 @@
         if (window._cronosCurrentUser) return;
         if (user) {
             // ── Validar token antes de continuar ──
+            //
+            // El refresco FORZADO (getIdToken(true)) es obligatorio cuando hay
+            // red: es la única forma de detectar un token revocado (SEC-M01).
+            // Pero exige ida al servidor, así que SIN COBERTURA lanza siempre
+            // 'auth/network-request-failed' — y eso cerraba la sesión y dejaba
+            // al usuario en el login por una simple pérdida de red.
+            //
+            // Ahora: forzado sólo si el navegador dice que hay red, y un fallo
+            // de RED no cuesta la sesión (se sigue con el token cacheado; las
+            // reglas de Firestore siguen validando en el servidor de todos
+            // modos). Un token realmente inválido sí expulsa, como antes.
+            const _hayRed = navigator.onLine !== false;
             try {
-                await user.getIdToken(true);
+                await user.getIdToken(_hayRed);
             } catch (tokenErr) {
-                console.warn('[Cronos] Token inválido — limpiando sesión:', tokenErr.code || tokenErr.message);
-                await signOut(auth).catch(() => {});
-                const el = document.getElementById('auth-screen');
-                if (el) {
-                    document.body.classList.remove('locked');
-                    el.style.display = 'flex';
+                const _code = (tokenErr && tokenErr.code) || '';
+                const _esDeRed = _code === 'auth/network-request-failed' || !navigator.onLine;
+                if (!_esDeRed) {
+                    console.warn('[Cronos] Token inválido — limpiando sesión:', _code || tokenErr.message);
+                    await signOut(auth).catch(() => {});
+                    const el = document.getElementById('auth-screen');
+                    if (el) {
+                        document.body.classList.remove('locked');
+                        el.style.display = 'flex';
+                    }
+                    return;
                 }
-                return;
+                console.warn('[Cronos] Sin red al validar el token: se continúa con el cacheado.');
             }
             // Verificar autorización
             await checkAuthorization(user);
@@ -200,6 +267,56 @@
                     el.style.display = 'flex';
                 }
             }
+        }
+    });
+
+    // ── Revalidación al recuperar la cobertura ────────────────────
+    // Con la caché en disco, un usuario puede haber entrado leyendo su
+    // autorización del disco, sin hablar con el servidor. Eso es lo que hace
+    // usable la app sin cobertura, pero no puede quedarse así para siempre:
+    // en cuanto vuelve la red hay que comprobar contra el SERVIDOR que la
+    // cuenta sigue siendo válida y expulsar si ya no lo es.
+    //
+    // Es la mitad que le faltaba a lo que quitó SEC-M08: allí se entraba con
+    // datos sin verificar y nunca se verificaban; aquí se entra con datos que
+    // FUERON verificados y se revalidan a la primera oportunidad.
+    //
+    // Sólo mira las dos condiciones inequívocas —token revocado y cuenta
+    // borrada o desautorizada— para no duplicar la política de roles, que
+    // vive entera en checkAuthorization y divergiría al copiarla.
+    let _revalidando = false;
+    window.addEventListener('online', async () => {
+        if (_revalidando) return;
+        const u = auth.currentUser;
+        if (!u || !window._cronosCurrentUser) return;
+        _revalidando = true;
+        try {
+            await u.getIdToken(true);   // token revocado → lanza
+            const snap = await getDocFromServer(doc(db, 'users', u.uid));
+            const d = snap.exists() ? snap.data() : null;
+            const _fuera = !d || d.isAuthorized === false ||
+                           d.status === 'suspended' || d.status === 'deleted';
+            if (_fuera) {
+                console.warn('[Cronos] La cuenta ya no está autorizada. Cerrando sesión.');
+                if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
+                await signOut(auth).catch(() => {});
+                location.reload();
+                return;
+            }
+            console.log('[Cronos] Cobertura recuperada: autorización revalidada contra el servidor.');
+        } catch (e) {
+            const _code = (e && e.code) || '';
+            if (_code === 'auth/user-token-expired' || _code === 'auth/user-disabled' ||
+                _code === 'auth/user-not-found') {
+                await signOut(auth).catch(() => {});
+                location.reload();
+                return;
+            }
+            // Red aún inestable u otro fallo transitorio: se reintenta en el
+            // siguiente evento 'online'. Nunca se expulsa por esto.
+            console.warn('[Cronos] No se pudo revalidar al reconectar:', e.message);
+        } finally {
+            _revalidando = false;
         }
     });
 

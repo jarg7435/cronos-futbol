@@ -1,5 +1,49 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v447: LA APP SIN COBERTURA. Cuatro piezas, tras la pregunta del autor de
+//        que pasa si se queda sin cobertura en el campo. La respuesta era
+//        mala en tres frentes distintos y ninguno se veia desde la interfaz.
+//        A) cloudSet escribia en localStorage DESPUES de `await setDoc`, y
+//           setDoc no resuelve hasta que el SERVIDOR confirma: sin red se
+//           queda pendiente PARA SIEMPRE, no lanza y no entra en el catch.
+//           Guardar una plantilla sin cobertura no la guardaba en NINGUN
+//           sitio, y team-persistence.js ya habia enseñado "✅ guardado".
+//           Ahora local primero y la nube sin esperar el ACK (el SDK la
+//           reenvia solo). ⚠️ Esto NO lo arregla la caché de la pieza B: la
+//           promesa espera al servidor haya o no persistencia.
+//        B) Firestore se creaba con getFirestore() a secas: caché SOLO EN
+//           MEMORIA, que muere con la pestaña. Pasa a persistentLocalCache
+//           con persistentMultipleTabManager -- el gestor multipestaña NO es
+//           opcional: live.html se abre con window.open y es otro documento
+//           con su propia instancia, asi que con el gestor de una sola
+//           pestaña el segundo en arrancar se quedaba sin persistencia.
+//           [Privacy] Las lecturas desde esa caché NO PASAN POR LAS REGLAS
+//           (leccion de v199 en la capa nueva): se borra en los dos logout y
+//           en el cambio de uid, enganchada al purgado de PII que ya existia.
+//        C) Sin cobertura NO SE PODIA ENTRAR, y encima deslogueaba:
+//           · getIdToken(true) fuerza ida al servidor -> signOut. Ahora el
+//             refresco forzado solo con red (SEC-M01 intacto) y un fallo de
+//             RED no cuesta la sesion;
+//           · 🔑🔑 con caché en disco una lectura sin red NO LANZA, devuelve
+//             un snapshot vacio marcado fromCache. `exists()` en false hacia
+//             caer al usuario en la rama de "tu cuenta no esta registrada",
+//             que cierra sesion. Guarda nueva (CASO 0);
+//           · la misma trampa en la limpieza de roles huerfanos llegaba a
+//             ESCRIBIR un allRoles recortado con lo poco que hubiera en
+//             caché: perdida de roles permanente al volver la red;
+//           · `await setDoc(lastLogin)` era la ultima linea antes de
+//             enterApp(): sin cobertura no se entraba NUNCA, sin error.
+//           SEC-M08 sigue en pie: nadie entra sin datos verificados, y al
+//           recuperar la red se revalida contra el SERVIDOR y se expulsa si
+//           la cuenta ya no vale.
+//        D) El SW excluia gstatic.com, asi que los 4 modulos del SDK
+//           dependian del caché HTTP del navegador: si lo soltaba, la app no
+//           arrancaba sin red y B y C daban igual. Ahora se precachean en su
+//           PROPIA lista (un addAll unico dejaria el shell sin cachear si
+//           gstatic falla) y se sirven cache-first. googleapis.com sigue
+//           excluido: ese es el canal vivo de Firestore.
+//        Guard nuevo scripts/test_offline_resilience.js, visto ROJO antes
+//        (33 fallos). Bump para forzar recarga.
 //  v393: VUELVE LA LISTA DE PLANTILLAS GUARDADAS, con sus botones de borrado
 //        y filtrada por modalidad. Tres archivos declaraban el mismo bloque de
 //        persistencia y ganaba el que carga el ULTIMO, ai/import.js, con unas
@@ -1027,7 +1071,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v446';
+const CACHE_NAME = 'cronos-cache-v447';
 
 const ASSETS = [
     './',
@@ -1110,13 +1154,49 @@ const ASSETS = [
     './public/assets/icons/chronos-512.svg',
 ];
 
+// ── SDK de Firebase (gstatic) ─────────────────────────────────────────
+// Sin estos cuatro módulos la app NO ARRANCA sin cobertura: se cargan por
+// `import()` desde firebase-init.js y live.html, y hasta ahora el SW los
+// excluía a propósito, así que dependían del caché HTTP del navegador. Si
+// éste los soltaba, daba igual toda la persistencia de Firestore: no había
+// SDK con el que leerla.
+//
+// Van en su propia lista y con su propio addAll porque son de OTRO ORIGEN:
+// si gstatic falla o cambia de política CORS, un addAll único se rechazaría
+// entero y dejaría el shell de la app SIN PRECACHEAR, que es peor que no
+// tener el SDK. Las URL llevan la versión dentro, así que son inmutables:
+// al subir de 10.12.2 cambian las claves y las viejas se van con el
+// CACHE_NAME antiguo en el 'activate'.
+const FIREBASE_SDK = [
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js',
+];
+
+// Canal VIVO de Firebase: JAMÁS se cachea. Son los datos en tiempo real del
+// partido; servirlos de caché mostraría un marcador muerto.
+// ⚠️ gstatic NO entra aquí: es el CÓDIGO del SDK, no los datos.
+function _esCanalVivo(url) {
+    return url.includes('googleapis.com') || url.includes('firebaseio.com');
+}
+
+// Código del SDK: URL versionada e inmutable → cache-first sin dudarlo.
+function _esSdkFirebase(url) {
+    return url.includes('gstatic.com/firebasejs/');
+}
+
 self.addEventListener('install', event => {
     self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
-            return cache.addAll(ASSETS).catch(err => {
+            const _shell = cache.addAll(ASSETS).catch(err => {
                 console.warn(`[SW ${VERSION}] Error al precargar recursos:`, err);
             });
+            const _sdk = cache.addAll(FIREBASE_SDK).catch(err => {
+                console.warn(`[SW ${VERSION}] No se pudo precargar el SDK de Firebase:`, err);
+            });
+            return Promise.all([_shell, _sdk]);
         })
     );
 });
@@ -1140,13 +1220,12 @@ self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
     if (!event.request.url.startsWith('http')) return;
 
-    // No cachear peticiones a Firebase/Google
-    if (event.request.url.includes('googleapis.com') ||
-        event.request.url.includes('firebaseio.com') ||
-        event.request.url.includes('gstatic.com')) return;
+    // No cachear el canal VIVO de Firebase (datos en tiempo real).
+    if (_esCanalVivo(event.request.url)) return;
 
-    // CACHE FIRST para iconos, fonts, y assets estáticos
-    if (event.request.url.includes('/public/assets/icons/') ||
+    // CACHE FIRST para iconos, fonts, assets estáticos y el SDK de Firebase
+    if (_esSdkFirebase(event.request.url) ||
+        event.request.url.includes('/public/assets/icons/') ||
         event.request.url.includes('.svg') ||
         event.request.url.includes('.woff') ||
         event.request.url.includes('.woff2') ||

@@ -94,6 +94,19 @@ function _purgeStaleLocalDataIfNeeded(incomingUid) {
             `Purgadas ${_purged.length} clave(s) de PII del usuario anterior:`,
             _purged
         );
+
+        // [Cronos-Privacy] La caché EN DISCO de Firestore guarda documentos del
+        // usuario ANTERIOR y sus lecturas no pasan por las reglas: hay que
+        // borrarla también. No se puede hacer en caliente —borrarla exige
+        // terminar la instancia, que este mismo login está usando—, así que se
+        // borra y se recarga: el login se rehace con la caché limpia.
+        //
+        // No hay bucle: el marcador ya se ha actualizado arriba, así que tras
+        // la recarga se entra por el CASO 1 (mismo uid) y no se vuelve a pasar
+        // por aquí.
+        if (typeof window._cronosClearFirestoreCache === 'function') {
+            window._cronosClearFirestoreCache().finally(() => location.reload());
+        }
     } catch (e) {
         console.warn('[Cronos-Privacy] Error en _purgeStaleLocalDataIfNeeded:', e.message);
     }
@@ -123,25 +136,57 @@ function _userRef() {
 }
 
 // ── Guardar un campo en el subdocumento 'data' del usuario ────────
+//
+// ⚠️ EL ORDEN DE ESTA FUNCIÓN ES SU CONTRATO. Antes escribía en localStorage
+// DESPUÉS de `await setDoc(...)`, y eso perdía datos sin cobertura:
+//
+//   · `setDoc()` no resuelve cuando la escritura se guarda en local, sino
+//     cuando el SERVIDOR la confirma. Sin red se queda pendiente PARA
+//     SIEMPRE: no lanza, no entra en el catch, simplemente no sigue.
+//   · Con el `localStorage.setItem` detrás de ese await, guardar una
+//     plantilla sin cobertura no la guardaba en ningún sitio — y el llamador
+//     (team-persistence.js) ya había enseñado "✅ <equipo> guardado".
+//   · Esto NO lo arregla la caché persistente de Firestore: la promesa sigue
+//     esperando el ACK del servidor haya o no persistencia en disco.
+//
+// Ahora: (1) local SIEMPRE primero y de forma síncrona, y (2) la escritura en
+// la nube se ENTREGA al SDK sin esperar su confirmación. La cola del propio
+// SDK la reenvía sola al recuperar la red, que es exactamente lo que hace
+// falta; esperarla aquí sólo servía para colgar a quien nos llamara.
 async function cloudSet(key, value) {
+    const _raw = typeof value === 'string' ? value : JSON.stringify(value);
+
+    // 1. LOCAL PRIMERO. Éxito garantizado y sin depender de la red.
     try {
-        const fa  = window._cronos_auth;
-        const uid = window._cronosCurrentUser?.uid;
-        if (!fa || !uid) {
-            localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
-            return;
-        }
+        localStorage.setItem(key, _raw);
+    } catch (e) {
+        console.warn('cloudSet: no se pudo escribir en localStorage:', e.message);
+    }
+
+    const fa  = window._cronos_auth;
+    const uid = window._cronosCurrentUser?.uid;
+    if (!fa || !uid) return;
+
+    try {
         const { setDoc, doc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        await setDoc(
+
+        // 2. Entregar la escritura al SDK SIN esperar el ACK del servidor.
+        //    El aviso de permisos se maneja aquí porque el llamador ya no
+        //    puede recibirlo: esta función deja de rechazar por ese motivo.
+        setDoc(
             doc(fa.db, 'users', uid, 'cronos_data', 'main'),
-            { [key]: typeof value === 'string' ? value : JSON.stringify(value) },
+            { [key]: _raw },
             { merge: true }
-        );
-        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
-    } catch(e) {
-        console.warn('cloudSet error, usando localStorage:', e.message);
-        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+        ).catch((err) => {
+            const _msg = err && err.message ? err.message : String(err);
+            console.warn('cloudSet: la escritura en la nube falló:', _msg);
+            if (_msg.includes('permission') && typeof showToast === 'function') {
+                showToast('⚠️ Guardado en este dispositivo, pero error de permisos en la nube. Contacta con soporte.', 5000);
+            }
+        });
+    } catch (e) {
+        console.warn('cloudSet: no se pudo entregar la escritura a la nube:', e.message);
     }
 }
 

@@ -594,6 +594,29 @@ export async function checkAuthorization(user) {
             }
         }
 
+        // ── CASO 0: sin cobertura y sin el documento en caché ───
+        // 🔑🔑 Con la caché en disco de Firestore, una lectura sin red NO
+        // LANZA: devuelve un snapshot vacío marcado `fromCache`. Es decir,
+        // `exists()` pasa a ser false porque el documento no está cacheado en
+        // este dispositivo, no porque no exista en el servidor.
+        //
+        // Sin esta guarda, el CASO 1 de abajo tomaba esa lectura al pie de la
+        // letra: cerraba la sesión y le decía al usuario que su cuenta no está
+        // registrada y que vuelva a registrarse. Es la peor forma posible de
+        // fallar por quedarse sin cobertura.
+        //
+        // NO se entra en la app (eso sería reabrir SEC-M08): se conserva la
+        // sesión y se explica qué pasa, para que baste con recuperar la red.
+        if (!snap.exists() && snap.metadata && snap.metadata.fromCache) {
+            console.warn('[Cronos] Sin conexión y sin datos de la cuenta en caché local.');
+            showAuthError(
+                '⚠️ Sin conexión y sin datos de tu cuenta guardados en este ' +
+                'dispositivo. Conéctate a internet para entrar; no hace falta ' +
+                'volver a registrarse.'
+            );
+            return;
+        }
+
         // ── CASO 1: Documento NO existe ─────────────────────────
         if (!snap.exists()) {
             if (SUPERADMIN_EMAILS.includes(user.email)) {
@@ -1044,7 +1067,13 @@ export async function checkAuthorization(user) {
             ]);
             if (!allReqsSnap) throw new Error('[Cronos] Timeout platform_requests (auto-activar)');
             const approvedReqDocs = [];
-            _verificationLoaded = true; // verificación disponible
+            // Sin cobertura esta consulta se resuelve contra la CACHÉ, y lo
+            // normal es que devuelva vacío aunque el usuario sí tenga
+            // solicitudes aprobadas. Darla por buena filtraría todos sus roles
+            // secundarios más abajo. Un resultado de caché cuenta como
+            // "verificación NO disponible", que es justo el FAIL-OPEN que este
+            // código ya contempla para timeouts y cortes de red.
+            _verificationLoaded = !(allReqsSnap.metadata && allReqsSnap.metadata.fromCache);
             allReqsSnap.forEach(d => {
                 const s = d.data().status;
                 if (s === 'sa_approved' || s === 'approved' || s === 'active') approvedReqDocs.push(d);
@@ -1144,6 +1173,20 @@ export async function checkAuthorization(user) {
                     _t3
                 ]);
                 if (!clubsSnap) throw new Error('[Cronos] Timeout clubs (cleanup)');
+
+                // 🔑 PÉRDIDA DE ROLES SI ESTO SE HACE CON DATOS DE CACHÉ.
+                // Sin cobertura, `getDocs(clubs)` se resuelve contra la caché
+                // local, que casi nunca tiene la colección entera. Los clubes
+                // ausentes se tomarían por "clubes que ya no existen", el
+                // filtro de abajo borraría roles legítimos y —lo peor— el
+                // setDoc siguiente ESCRIBIRÍA ese allRoles recortado, que se
+                // subiría en cuanto volviera la red: pérdida permanente y
+                // silenciosa. Una lista incompleta no sirve para decidir qué
+                // borrar, así que con datos de caché no se limpia nada.
+                if (clubsSnap.metadata && clubsSnap.metadata.fromCache) {
+                    throw new Error('[Cronos] Clubes desde caché: se omite la limpieza de roles huérfanos');
+                }
+
                 const validClubIds = new Set();
                 clubsSnap.forEach(d => validClubIds.add(d.id));
 
@@ -1246,7 +1289,15 @@ export async function checkAuthorization(user) {
         // ── Un solo rol → entrar directamente ───────────────────
         if (authorizedRoles.length === 1) {
             const r = authorizedRoles[0];
-            await fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true });
+            // 🔑 SIN `await`, A PROPÓSITO. Esta es la ruta normal (un solo rol)
+            // y ésta era la última línea antes de entrar en la app. `setDoc()`
+            // no resuelve hasta que el SERVIDOR confirma, así que sin cobertura
+            // se quedaba pendiente para siempre y `enterApp()` NO SE LLAMABA
+            // NUNCA: pantalla muerta, sin ningún error en consola.
+            // El sello de última conexión no vale una entrada bloqueada; el SDK
+            // lo reenvía solo al recuperar la red.
+            fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true })
+                .catch(e => console.warn('[Cronos] No se pudo sellar lastLogin:', e.message));
 
             // SECURITY FIX (SEC-002): Use full reassignment instead of property mutation
             // because _cronosCurrentUser is now wrapped in a protective Proxy
@@ -1267,11 +1318,25 @@ export async function checkAuthorization(user) {
 
     } catch (err) {
         console.error('[Cronos] Auth verify error:', err);
-        
+
+        // ── ¿Es un fallo de RED o un fallo real de autorización? ──
+        // Un corte de cobertura no puede costar la sesión: obligaba a volver a
+        // escribir la contraseña por algo que se arregla solo al recuperar la
+        // señal. Se distinguen los dos casos y sólo el segundo expulsa.
+        const _msgErr = (err && err.message) || '';
+        const _esDeRed = err.code === 'unavailable' ||
+                         err.code === 'auth/network-request-failed' ||
+                         _msgErr.includes('Firestore no responde') ||
+                         _msgErr.includes('client is offline') ||
+                         !navigator.onLine;
+
         // SECURITY FIX (SEC-M08): Removed error recovery that called enterApp().
         // If authorization fails, the user must NOT be let into the app with
         // partial/stale data. Sign out instead so they must re-authenticate.
-        if (user) {
+        // ⚠️ SEC-M08 SIGUE EN PIE: aquí no se entra en la app en ningún caso.
+        // Lo único que cambia es que un fallo de RED conserva la sesión de
+        // Firebase para poder reintentar, en vez de destruirla.
+        if (user && !_esDeRed) {
             try {
                 const fa = window._cronos_auth;
                 if (fa) await fa.signOut(fa.auth);
@@ -1279,13 +1344,14 @@ export async function checkAuthorization(user) {
                 console.error('[Cronos] Error signing out after auth failure:', signOutErr);
             }
         }
-        
+
         // Si Firebase no responde o hay error de permisos, dar mensaje útil
-        const msg = (err.message || '').includes('Firestore no responde')
-            ? '⚠️ Firestore no responde. Comprueba tu conexión a internet e inténtalo de nuevo.'
-            : (err.code === 'permission-denied' || (err.message || '').includes('permission'))
+        const msg = _esDeRed
+            ? '⚠️ Sin conexión. Tu sesión sigue abierta: vuelve a intentarlo cuando ' +
+              'recuperes internet, no hace falta volver a entrar.'
+            : (err.code === 'permission-denied' || _msgErr.includes('permission'))
             ? '⚠️ Error de permisos. Se está reintentando... Si persiste, contacta al administrador.'
-            : 'Error de verificación: ' + (err.message || 'Desconocido');
+            : 'Error de verificación: ' + (_msgErr || 'Desconocido');
         showAuthError(msg);
     }
 }
@@ -2765,20 +2831,30 @@ export async function doAuth() {
 // ════════════════════════════════════════════════════════════════════
 
 // ── Logout ─────────────────────────────────────────────────
-window.logoutUser = () => {
+window.logoutUser = async () => {
     if (!confirm('¿Seguro que deseas salir y volver al inicio?')) return;
     sessionStorage.clear();
     // [Cronos-Privacy] Logout: purga incondicional de PII + marcador.
     if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
+
+    // [Cronos-Privacy] La caché EN DISCO de Firestore no la cubre la purga de
+    // localStorage, y sus lecturas no pasan por las reglas: hay que borrarla
+    // también antes de dejar el dispositivo al siguiente usuario. Se hace
+    // DESPUÉS del signOut y ANTES de recargar; nunca lanza.
+    const _limpiarCache = async () => {
+        if (typeof window._cronosClearFirestoreCache === 'function') {
+            await window._cronosClearFirestoreCache();
+        }
+    };
+
     if (window._cronos_auth?.auth) {
-        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js')
-            .then(({ signOut }) => {
-                signOut(window._cronos_auth.auth).finally(() => location.reload());
-            })
-            .catch(() => location.reload());
-    } else {
-        location.reload();
+        try {
+            const { signOut } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
+            await signOut(window._cronos_auth.auth).catch(() => {});
+        } catch (_) { /* seguir: la salida no puede quedar bloqueada */ }
     }
+    await _limpiarCache();
+    location.reload();
 };
 
 // ── Exportación Global ───────────────────────────────────────
