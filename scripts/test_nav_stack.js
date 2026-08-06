@@ -1088,14 +1088,29 @@ console.log('\n── PARTE 18 · Partidos Terminados ──');
     ok('18g · y la del modal de 3 opciones, que SI se apila',
        /navScreen\('_openCoachCommsMenu'\)/.test(sinCom(leer('js/core/setup-modal.js'))));
 
-    // ⚠️ LO QUE NO SE TOCA, Y POR QUE:
-    //  · el boton de cada partido oculta el modal a proposito para lanzar el
-    //    reproductor, que toma la pantalla entera. NO es una ✕.
-    //  · openPastMatchesModal es un respaldo MUERTO: no existe en el proyecto
-    //    (misma familia que openMisInformesColectivos). Gana siempre la primera
-    //    rama porque showFinishedMatches si existe.
-    ok('18h · el boton de repeticion sigue ocultando el modal a proposito',
-       /style\.display='none'; window\.openMatchReplay/.test(cuerpo));
+    // ⚠️⚠️ 18h INVERTIDA EN v459, y esta es la historia completa porque la
+    // aserción no reflejaba el defecto: LO DEFENDIA.
+    //
+    // Decia "el boton de repeticion sigue ocultando el modal a proposito. NO es
+    // una ✕", y el razonamiento parecia solido: el reproductor toma la pantalla
+    // entera, asi que da igual lo que quede debajo. Pero SI importa lo que queda
+    // debajo, porque el reproductor se cierra: su ✕ solo quita SU capa, y
+    // entonces se ve lo que hubiera detras. Ocultando #setup-modal, detras
+    // quedaba #main-container — el campo de futbol vacio que reporto el autor
+    // (implementar.txt, capturas 8446-8450).
+    //
+    // O sea: el "a proposito" era correcto para ABRIR y desastroso para CERRAR,
+    // y ninguna asercion miraba el cierre. Es la misma leccion de v404 (mapear
+    // las CAPAS del DOM, no los manejadores) y la cuarta vez que una asercion
+    // propia se pone roja exigiendo lo que ahora es el defecto.
+    // El cierre lo cubre ahora scripts/test_replay_export_y_cierre.js, que
+    // EJECUTA abrir y cerrar y comprueba que capa queda a la vista.
+    //
+    // ⚠️ Lo que NO se toca: openPastMatchesModal es un respaldo MUERTO (no
+    // existe en el proyecto, misma familia que openMisInformesColectivos).
+    ok('18h · el boton de repeticion ya NO oculta la capa del listado',
+       !/style\.display='none';\s*window\.openMatchReplay/.test(cuerpo) &&
+       /window\.openMatchReplay\(/.test(cuerpo));
     // ⚠️ `openPastMatchesModal\s*=` casaba con `openPastMatchesModal==='function'`
     // del propio typeof —el primer `=` de `===`—, o sea que media la GUARDA en vez
     // de una definicion y daba rojo por la razon equivocada. El `[^=]` lo excluye.

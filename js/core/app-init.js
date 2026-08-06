@@ -1051,7 +1051,14 @@ async function showFinishedMatches() {
                         </div>
                     </div>
                     <div style="display:flex; gap:0.4rem; align-items:center;">
-                        <button onclick="document.getElementById('setup-modal').style.display='none'; window.openMatchReplay('${m.id}');"
+                        <!-- 🔑 v459 · ESTE BOTÓN YA NO OCULTA #setup-modal.
+                             Ocultarlo no servía de nada —el reproductor es una
+                             capa opaca a z-index 100000 que ya lo tapa entero— y
+                             era la CAUSA de que al pulsar la ✕ apareciera el
+                             campo vacío: debajo del reproductor no quedaba el
+                             listado, sino #main-container. Ver la cabecera de
+                             closeMatchReplay en replay-player.js. -->
+                        <button onclick="window.openMatchReplay('${m.id}');"
                             style="padding:0.45rem 1rem;background:linear-gradient(135deg,#58a6ff,#1f6beb);border:none;border-radius:7px;color:white;font-size:0.8rem;cursor:pointer;font-weight:800;white-space:nowrap;box-shadow:0 3px 8px rgba(88,166,255,0.3);">
                             ▶️ Revivir
                         </button>

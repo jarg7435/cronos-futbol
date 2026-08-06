@@ -90,6 +90,10 @@
             return;
         }
 
+        // v459 · cómo estaba la capa de modales ANTES de abrir el reproductor.
+        // Se restaura tal cual al cerrar (ver _restauraCapaOrigen).
+        _recuerdaCapaOrigen();
+
         _replayState.matchData = data;
         _replayState.events = _extractEventsFromMatch(data);
         // v446: los eventos van como segundo argumento para que la barra no
@@ -309,6 +313,35 @@
             border-radius: 3px; padding: 1px 5px;
             flex-shrink: 0; white-space: nowrap;
         }
+        /* ── v459 · LA CABECERA DEL REPRODUCTOR, EN LOS TRES FORMATOS ──
+           La barra superior lleva el título del encuentro, el botón de descarga
+           y la ✕. Iba en flex con space-between y SIN envolver, dentro de un
+           contenedor que recorta lo que se sale: en un móvil de 390px el título
+           empuja a los botones fuera de la caja y la ✕ —la única salida del
+           reproductor— se queda recortada. Con esto el bloque de acciones no se
+           encoge nunca y, si no cabe, baja a una segunda línea. Mismo
+           comportamiento en PC, tablet y móvil.
+           ⚠️ SIN ACENTOS GRAVES EN ESTE COMENTARIO: toda esta hoja vive dentro
+           de un template literal, y uno solo lo cerraría y rompería el fichero
+           entero (la lección de v400, que dejó muerto el panel de Padres). */
+        .replay-topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 0.5rem; flex-wrap: wrap;
+        }
+        .replay-topbar-info {
+            display: flex; align-items: center; gap: 0.8rem;
+            min-width: 0; flex: 1 1 auto;
+        }
+        .replay-topbar-title {
+            min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .replay-topbar-actions {
+            display: flex; align-items: center; gap: 0.6rem;
+            flex-shrink: 0;   /* 🔑 la ✕ nunca se encoge ni se recorta */
+        }
+        @media (max-width: 600px) {
+            .replay-topbar-actions button { font-size: 0.7rem; padding: 0.3rem 0.6rem; }
+        }
         /* Tablet: mismo escalón intermedio que la retransmisión. */
         @media (max-width: 950px) {
             .replay-player-chip  { width: 38px; height: 38px; font-size: 0.85rem; border-width: 2.5px; }
@@ -440,16 +473,16 @@
 
         modal.innerHTML = `
             <!-- Cabecera del visor -->
-            <div style="background:rgba(255,255,255,0.03); border-bottom:1px solid rgba(255,255,255,0.1); padding:0.6rem 1.2rem; display:flex; align-items:center; justify-content:space-between;">
-                <div style="display:flex; align-items:center; gap:0.8rem;">
-                    <span style="background:rgba(88,166,255,0.2); border:1px solid rgba(88,166,255,0.4); color:#58a6ff; font-size:0.75rem; font-weight:800; padding:2px 8px; border-radius:6px;">
+            <div class="replay-topbar" style="background:rgba(255,255,255,0.03); border-bottom:1px solid rgba(255,255,255,0.1); padding:0.6rem 1.2rem;">
+                <div class="replay-topbar-info">
+                    <span style="background:rgba(88,166,255,0.2); border:1px solid rgba(88,166,255,0.4); color:#58a6ff; font-size:0.75rem; font-weight:800; padding:2px 8px; border-radius:6px; flex-shrink:0;">
                         ▶️ REPETICIÓN DEL PARTIDO
                     </span>
-                    <span style="font-size:0.85rem; font-weight:700; color:white;">
+                    <span class="replay-topbar-title" style="font-size:0.85rem; font-weight:700; color:white;">
                         vs ${escapeHtml(rival)} (${escapeHtml(category)})
                     </span>
                 </div>
-                <div style="display:flex; align-items:center; gap:0.6rem;">
+                <div class="replay-topbar-actions">
                     <button onclick="window._replayRecordVideo()" id="btn-replay-record"
                         style="background:rgba(231,76,60,0.15); border:1px solid rgba(231,76,60,0.4); color:#ff5858; font-size:0.75rem; font-weight:800; padding:0.35rem 0.8rem; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:4px;">
                         📹 Descargar Vídeo (.webm)
@@ -1017,14 +1050,156 @@
         }
     };
 
+    // ════════════════════════════════════════════════════════════════
+    //  v459 · LA ✕ DEVUELVE AL LISTADO, NO AL CAMPO VACÍO
+    //
+    //  Reporte del autor: al salir de un partido terminado con la ✕, la app
+    //  dejaba a la vista un campo de fútbol vacío en lugar del panel de
+    //  "Partidos Terminados".
+    //
+    //  🔑 NO ERA ESTE BOTÓN: ERAN LAS CAPAS DEL DOM. El reproductor es una capa
+    //  `position:fixed` OPACA a z-index 100000, así que quitarla deja ver lo que
+    //  hubiera debajo. Y debajo no estaba el listado: el botón "▶️ Revivir" de
+    //  Partidos Terminados hacía `setup-modal.style.display='none'` ANTES de
+    //  abrir el reproductor, y #setup-modal (z-index 2200) es justo la capa
+    //  donde vive ese listado. Sin ella, lo que queda a la vista es
+    //  #main-container, o sea el terreno de juego. Ocultarla no servía de nada
+    //  —el reproductor ya la tapaba entera— y era la causa del síntoma.
+    //  Es la misma lección de v404: ante un síntoma visual, mapear las CAPAS
+    //  antes que los manejadores.
+    //
+    //  El arreglo va en dos sitios: el botón ya no oculta nada (app-init.js), y
+    //  aquí se restaura de forma DEFENSIVA por si alguna otra vía lo ocultara.
+    //  Se guarda cómo estaba la capa al ABRIR y se deja igual al cerrar; sólo se
+    //  repinta (navReload) si de verdad hubo que devolverla a la vista, para no
+    //  provocar lecturas de Firestore cuando el listado sigue intacto.
+    //
+    //  ⚠️ En live.html no existe #setup-modal: todo esto no hace nada allí, que
+    //  es lo correcto — el visor en directo queda debajo y se ve solo.
+    // ════════════════════════════════════════════════════════════════
+    function _capaSetupModal() {
+        if (typeof document === 'undefined' || !document.getElementById) return null;
+        return document.getElementById('setup-modal');
+    }
+
+    function _recuerdaCapaOrigen() {
+        const capa = _capaSetupModal();
+        _replayState.capaVisibleAlAbrir = !!(capa && capa.style && capa.style.display &&
+                                             capa.style.display !== 'none');
+        _replayState.capaDisplayAlAbrir = (capa && capa.style && capa.style.display) || 'flex';
+    }
+
+    function _restauraCapaOrigen() {
+        const capa = _capaSetupModal();
+        if (!capa || !capa.style) return;
+        if (!_replayState.capaVisibleAlAbrir) return;          // no estaba abierta: no se inventa
+        if (capa.style.display !== 'none') return;             // sigue a la vista: nada que hacer
+        capa.style.display = _replayState.capaDisplayAlAbrir || 'flex';
+        // Repintar la pantalla que la pila dice que es la actual (el listado),
+        // por si quien la ocultó también la vació.
+        if (typeof window !== 'undefined' && typeof window.navReload === 'function') {
+            try { window.navReload(); } catch (e) { /* el listado ya está a la vista */ }
+        }
+    }
+
     window.closeMatchReplay = function() {
+        // Si se estaba exportando, se aborta sin descargar un fichero a medias.
+        _detenerRecorrido();
+        if (_replayState.mediaRecorder && _replayState.mediaRecorder.state === 'recording') {
+            _replayState.exportAbortada = true;
+            try { _replayState.mediaRecorder.stop(); } catch (e) {}
+        }
+        if (_recordCanvasTimer) { clearInterval(_recordCanvasTimer); _recordCanvasTimer = null; }
         _pauseReplay();
         const modal = document.getElementById('cronos-replay-modal');
         if (modal) modal.remove();
+        _restauraCapaOrigen();
     };
 
     // ── Exportar Vídeo (.webm) Nativo con Canvas & MediaRecorder ─────
     let _recordCanvasTimer = null;
+
+    // ════════════════════════════════════════════════════════════════
+    //  v459 · EL VÍDEO CONTIENE EL PARTIDO ENTERO, SIEMPRE
+    //
+    //  Reporte del autor: el fichero descargado traía sólo la primera parte.
+    //  Medido ejecutando el reproductor con un reloj controlado, la grabación
+    //  tenía TRES agujeros y bastaba con cualquiera de ellos:
+    //
+    //   1 · EMPEZABA DONDE ESTUVIERA EL REPRODUCTOR. `_playReplay` sólo
+    //       rebobina si el cursor ya está en el final, así que quien hubiera
+    //       estado viendo el partido grababa desde donde lo dejó.
+    //   2 · AVANZABA A TIEMPO REAL: un segundo de partido por segundo de
+    //       reloj. Un partido de 73:40 exigía 73 minutos y 40 segundos de
+    //       grabación con la pestaña abierta. Nadie espera eso: se pulsa
+    //       "Detener" a media faena y el fichero se queda por donde iba.
+    //   3 · NO SE DETENÍA SOLA. Ni al llegar al final: el `_pauseReplay()` del
+    //       tic para el reloj del partido, pero el MediaRecorder sigue
+    //       abierto. El fichero se cerraba SÓLO cuando el usuario pulsaba
+    //       Detener, así que su contenido dependía de su paciencia.
+    //
+    //  🔑 La exportación deja de depender del usuario: rebobina a 0, recorre la
+    //  línea temporal COMPLETA —descuento incluido, porque `maxTimeSec` sale de
+    //  `timeH1`+`timeH2` desde v446— con un ritmo propio, y se detiene y
+    //  descarga sola al llegar al final.
+    //
+    //  El ritmo: 10 saltos por segundo (100 ms) y el paso se calcula para que
+    //  CUALQUIER duración quepa en ~600 saltos, o sea ~60 s de vídeo. Un
+    //  partido de 73:40 sale en un minuto de vídeo en vez de en 73. El lienzo
+    //  se sigue capturando a 30 fps, así que cada instante de la línea temporal
+    //  ocupa unos 3 fotogramas y el movimiento se ve fluido.
+    // ════════════════════════════════════════════════════════════════
+    const _EXPORT_MS    = 100;   // cada cuánto avanza la línea temporal
+    const _EXPORT_SALTOS = 600;  // saltos totales ⇒ ~60 s de vídeo
+    let _exportTimer = null;
+
+    function _detenerRecorrido() {
+        if (_exportTimer) { clearInterval(_exportTimer); _exportTimer = null; }
+        _replayState.exportando = false;
+    }
+
+    function _restauraBotonGrabar() {
+        const btn = document.getElementById('btn-replay-record');
+        if (!btn) return;
+        btn.innerHTML = '📹 Descargar Vídeo (.webm)';
+        btn.style.background = 'rgba(231,76,60,0.15)';
+        btn.style.borderColor = 'rgba(231,76,60,0.4)';
+        btn.style.color = '#ff5858';
+    }
+
+    function _progresoExport(actual, total) {
+        const btn = document.getElementById('btn-replay-record');
+        if (!btn) return;
+        const pct = Math.min(100, Math.round((actual / (total || 1)) * 100));
+        btn.innerHTML = `⏹️ Grabando el partido… ${pct}%`;
+    }
+
+    // Recorre la línea temporal de 0 al final y llama a `alAcabar` cuando ha
+    // pintado el último instante. No usa `_playReplay`: ése es el reproductor
+    // del usuario, va a tiempo real y se puede pausar desde la interfaz.
+    function _recorreParaExportar(alAcabar) {
+        _pauseReplay();
+        _detenerRecorrido();
+        _replayState.exportando = true;
+        const total = Math.max(1, _replayState.maxTimeSec || 1);
+        const paso  = Math.max(1, Math.ceil(total / _EXPORT_SALTOS));
+        _updateReplayFrame(0);
+        _progresoExport(0, total);
+        _exportTimer = setInterval(() => {
+            const siguiente = _replayState.currentTimeSec + paso;
+            if (siguiente >= total) {
+                _updateReplayFrame(total);     // el instante final, completo
+                _progresoExport(total, total);
+                _detenerRecorrido();
+                // Un respiro para que el último fotograma entre en el vídeo:
+                // el lienzo se captura a 30 fps y el corte es asíncrono.
+                setTimeout(() => { if (typeof alAcabar === 'function') alAcabar(); }, 700);
+                return;
+            }
+            _updateReplayFrame(siguiente);
+            _progresoExport(siguiente, total);
+        }, _EXPORT_MS);
+    }
 
     window._replayRecordVideo = async function() {
         const pitchContainer = document.getElementById('replay-pitch-container');
@@ -1033,17 +1208,15 @@
         try {
             const recordBtn = document.getElementById('btn-replay-record');
 
-            // Si ya está grabando, detener y descargar
+            // Si ya está grabando, detener y descargar lo que haya. Sigue
+            // existiendo como ESCAPE —una grabación larga se puede abortar—,
+            // pero ya no es la forma normal de terminar: v459 la cierra sola.
             if (_replayState.mediaRecorder && _replayState.mediaRecorder.state === 'recording') {
+                _detenerRecorrido();
                 _replayState.mediaRecorder.stop();
                 _pauseReplay();
                 if (_recordCanvasTimer) clearInterval(_recordCanvasTimer);
-                if (recordBtn) {
-                    recordBtn.innerHTML = '📹 Descargar Vídeo (.webm)';
-                    recordBtn.style.background = 'rgba(231,76,60,0.15)';
-                    recordBtn.style.borderColor = 'rgba(231,76,60,0.4)';
-                    recordBtn.style.color = '#ff5858';
-                }
+                _restauraBotonGrabar();
                 return;
             }
 
@@ -1346,6 +1519,12 @@
             recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
             recorder.onstop = () => {
                 if (_recordCanvasTimer) clearInterval(_recordCanvasTimer);
+                _detenerRecorrido();
+                _restauraBotonGrabar();
+                // v459 · si la grabación se abortó al cerrar el reproductor, no
+                // se descarga nada: un fichero a medias que nadie pidió es peor
+                // que ninguno.
+                if (_replayState.exportAbortada) { _replayState.exportAbortada = false; return; }
                 const blob = new Blob(chunks, { type: mimeType });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1358,16 +1537,24 @@
             };
 
             recorder.start();
-            _playReplay();
+            // 🔑 v459 · DE 0 AL FINAL, Y SE CIERRA SOLA. Antes esto era
+            // `_playReplay()`: arrancaba donde estuviera el cursor, avanzaba a
+            // tiempo real y no paraba nunca.
+            _recorreParaExportar(() => {
+                if (_replayState.mediaRecorder && _replayState.mediaRecorder.state === 'recording') {
+                    _replayState.mediaRecorder.stop();
+                }
+            });
 
             if (recordBtn) {
-                recordBtn.innerHTML = '⏹️ Detener y Descargar Vídeo';
                 recordBtn.style.background = '#e74c3c';
                 recordBtn.style.borderColor = '#c0392b';
                 recordBtn.style.color = '#ffffff';
             }
 
-            if (typeof showToast === 'function') showToast('⏺️ Grabando vídeo… Pulsa "Detener" cuando desees guardar.', 4000);
+            if (typeof showToast === 'function') {
+                showToast('⏺️ Grabando el partido completo… se descargará solo al terminar.', 4000);
+            }
 
         } catch(e) {
             console.error('[Replay] Error al grabar vídeo:', e);

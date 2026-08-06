@@ -1,5 +1,56 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v459: LA DESCARGA TRAE EL PARTIDO ENTERO Y LA ✕ DEVUELVE AL LISTADO. Dos
+//        incidencias criticas de implementar.txt (capturas 8446-8450), de cara
+//        a la demo.
+//        A) EL VIDEO DESCARGADO SOLO TRAIA LA PRIMERA PARTE. Medido ejecutando
+//           el reproductor con un reloj controlado, la grabacion tenia TRES
+//           agujeros y bastaba con cualquiera:
+//             · empezaba DONDE ESTUVIERA EL CURSOR (_playReplay solo rebobina
+//               si ya esta en el final), asi que quien hubiera visto un rato
+//               grababa desde ahi;
+//             · avanzaba A TIEMPO REAL, un segundo de partido por segundo de
+//               reloj: 73 minutos de grabacion para un partido de 73:40;
+//             · y NO SE DETENIA SOLA: el MediaRecorder seguia abierto aunque la
+//               linea temporal llegara al final, asi que el contenido del
+//               fichero dependia de cuando se cansara el usuario.
+//           Ahora la exportacion rebobina a 0, recorre la linea temporal
+//           COMPLETA —descuento incluido, porque maxTimeSec sale de
+//           timeH1+timeH2 desde v446— con ritmo propio (10 saltos por segundo y
+//           paso calculado para que cualquier duracion quepa en ~600 saltos,
+//           o sea ~60 s de video) y se cierra y descarga sola. El boton muestra
+//           el avance para que nadie lo corte.
+//        B) 🔑 LA ✕ DEJABA A LA VISTA UN CAMPO VACIO, Y NO ERA EL BOTON: ERAN
+//           LAS CAPAS. El reproductor es una capa opaca a z-index 100000;
+//           quitarla deja ver lo que hay debajo. Y el boton "Revivir" del
+//           listado hacia `setup-modal.style.display='none'` ANTES de abrirlo
+//           —#setup-modal (z-index 2200) es justo la capa donde vive el
+//           listado—, asi que debajo no quedaba el listado sino
+//           #main-container: el terreno de juego. Ocultarla no servia de nada,
+//           el reproductor ya la tapaba entera. El boton ya no oculta nada y
+//           closeMatchReplay restaura de forma defensiva la capa que hubiera al
+//           abrir (y solo repinta si de verdad hizo falta). Misma leccion que
+//           v404: ante un sintoma visual, mapear las CAPAS antes que los
+//           manejadores.
+//        C) Y PARA QUE EL RETORNO SEA IGUAL EN LOS TRES FORMATOS: la barra
+//           superior del reproductor iba en flex sin envolver dentro de un
+//           contenedor que recorta, asi que en un movil estrecho el titulo
+//           empujaba los botones fuera de la caja y la ✕ —la unica salida— se
+//           quedaba recortada. Ahora el bloque de acciones no se encoge nunca y
+//           la barra envuelve si no cabe.
+//        Guard nuevo scripts/test_replay_export_y_cierre.js 55/55: EJECUTA el
+//        reproductor con DOM y MediaRecorder de mentira y reloj controlado.
+//        Rojo sobre el codigo anterior, con la prueba del delito: la grabacion
+//        llegaba a 35:00 de 73:40, exactamente la primera parte. Red-check 13/13
+//        —y una mutacion suya destapo que una asercion mia se cumplia por la
+//        cadena del onstop y no medía el cierre; se añadio el escenario que si
+//        lo mide.
+//        ⚠️ Se INVIERTE 18h de test_nav_stack.js, que fijaba que el boton
+//        ocultara el modal "a proposito": era correcto para ABRIR y desastroso
+//        para CERRAR, y ninguna asercion miraba el cierre.
+//        ⚠️ Y el guard cazo un fallo MIO antes de desplegar: meti acentos graves
+//        en un comentario CSS que vive DENTRO de un template literal, lo que
+//        rompia replay-player.js entero (la leccion de v400).
 //  v458: EL INFORME POST-PARTIDO, EXHAUSTIVO (implementar.txt, capturas
 //        8436/8437). El autor pide "rigor e integridad informativo absoluto":
 //        que aparezcan TODOS los convocados —14 en F7, 18 en F11, con 0 minutos
@@ -1477,7 +1528,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v458';
+const CACHE_NAME = 'cronos-cache-v459';
 
 const ASSETS = [
     './',
