@@ -252,6 +252,17 @@
             'la contraseña actual antes de cambiarla.',
             '<label style="font-size:0.75rem;color:#7d8590;display:block;margin-bottom:5px;">Contraseña actual</label>' +
             _input('pwd-actual', 'password', '••••••••', 'current-password') +
+            // v462 · LA SALIDA PARA QUIEN NO LA RECUERDA. Va pegada al campo
+            // que lo bloquea: es ahí donde se atasca, y hasta ahora tenía que
+            // deducir por su cuenta que debía cerrar sesión e ir al login.
+            '<div style="text-align:right;margin:-0.5rem 0 1rem;">' +
+                '<button type="button" id="pwd-olvidada-actual"' +
+                ' onclick="window.cronosResetDesdePerfil()"' +
+                ' style="background:none;border:none;padding:0;cursor:pointer;' +
+                'color:#58a6ff;font-size:0.75rem;text-decoration:underline;">' +
+                    '¿No la recuerdas? Te enviamos un enlace por correo' +
+                '</button>' +
+            '</div>' +
             '<label style="font-size:0.75rem;color:#7d8590;display:block;margin-bottom:5px;">Contraseña nueva</label>' +
             _input('pwd-nueva', 'password', 'Mínimo 8 caracteres', 'new-password') +
             '<div id="pwd-nueva-feedback"></div>' +
@@ -320,6 +331,66 @@
             setTimeout(_cerrar, 1800);
         } catch (err) {
             console.warn('[Cronos-Pwd] Error al cambiar la contraseña:', (err && err.code) || err);
+            _msg('⚠️ ' + _errorLegible(err), '#ff5858');
+        }
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  3 · ¿NO RECUERDAS LA ACTUAL? — el puente, desde el perfil   v462
+    // ══════════════════════════════════════════════════════════════
+    //  Reporte del autor (captura 8454): la ventana de cambio exige la
+    //  contraseña actual y quien la ha olvidado se quedaba sin salida A LA
+    //  VISTA. El flujo de recuperación existe desde v451, pero vive en la
+    //  pantalla de LOGIN: había que deducir por cuenta propia que tocaba
+    //  cerrar sesión primero. Esto no duplica aquel flujo, sólo lo pone al
+    //  alcance de quien está atascado.
+    //
+    //  🔑 EL CORREO SALE DE LA SESIÓN, NUNCA DE UN CAMPO. Aquí ya hay usuario
+    //  autenticado: pedirle que lo teclee sería absurdo, y leerlo de un input
+    //  permitiría mandar el enlace a OTRA dirección desde una sesión abierta
+    //  que no es tuya —convirtiendo un móvil desbloqueado en un secuestro de
+    //  cuenta—. Es la misma razón por la que el cambio reautentica siempre.
+    //
+    //  🔑 Y NO ES UN ATAJO: no cambia ninguna contraseña ni relaja la
+    //  reautenticación. Lo único que hace es mandar el enlace oficial al buzón
+    //  del titular, que es quien tiene que demostrar que lo es.
+    //
+    //  Aquí SÍ se puede confirmar el envío nombrando el correo, al revés que
+    //  en el flujo del login: la cuenta existe por definición —hay sesión—, así
+    //  que no se filtra nada que quien mira la pantalla no sepa ya.
+    // ══════════════════════════════════════════════════════════════
+    window.cronosResetDesdePerfil = async function cronosResetDesdePerfil() {
+        const fa = window._cronos_auth;
+
+        // El servicio primero: sin él no se puede ni mirar la sesión.
+        if (!fa || typeof fa.sendPasswordResetEmail !== 'function') {
+            _msg('El servicio no está disponible. Recarga la página.', '#ff5858');
+            if (typeof showToast === 'function') {
+                showToast('⚠️ El servicio no está disponible. Recarga la página.', 4000);
+            }
+            return;
+        }
+
+        const user = fa.auth ? fa.auth.currentUser : null;
+        const email = user && user.email ? String(user.email).trim() : '';
+        if (!email) {
+            _msg('La sesión ha caducado. Vuelve a entrar y usa ' +
+                 '"¿Has olvidado tu contraseña?" en la pantalla de acceso.', '#ff5858');
+            if (typeof showToast === 'function') {
+                showToast('⚠️ La sesión ha caducado. Vuelve a entrar.', 4000);
+            }
+            return;
+        }
+
+        _msg('⏳ Enviando el enlace…', '#7d8590');
+        try {
+            await fa.sendPasswordResetEmail(fa.auth, email);
+            _msg('✅ Te hemos enviado un enlace a <strong>' + _esc(email) + '</strong>. ' +
+                 'Ábrelo desde tu buzón para crear una contraseña nueva.<br>' +
+                 '<span style="color:#7d8590;">Revisa también la carpeta de spam.</span>', '#3fb950');
+        } catch (err) {
+            console.warn('[Cronos-Pwd] Error al enviar el enlace desde el perfil:',
+                         (err && err.code) || err);
             _msg('⚠️ ' + _errorLegible(err), '#ff5858');
         }
     };

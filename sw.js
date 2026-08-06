@@ -1,5 +1,32 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v462: SALIDA PARA QUIEN HA OLVIDADO LA CONTRASEÑA ACTUAL. Reporte del autor
+//        (captura 8454): la ventana de cambiar contraseña exige la "Contraseña
+//        actual" y quien la ha olvidado se quedaba sin salida A LA VISTA.
+//        ⚠️ EL FLUJO DE RECUPERACION YA EXISTIA DESDE v451, pero vive en la
+//        pantalla de LOGIN ("¿Has olvidado tu contraseña?" ->
+//        sendPasswordResetEmail). Lo que faltaba era el PUENTE: con la sesion
+//        iniciada no habia forma de llegar hasta el sin deducir por cuenta
+//        propia que tocaba cerrar sesion primero. Esto NO duplica aquel flujo:
+//        pone la salida donde el usuario se atasca, pegada al campo que le
+//        bloquea.
+//        🔑 EL CORREO SALE DE LA SESION, NUNCA DE UN CAMPO. Aqui ya hay usuario
+//        autenticado: leerlo de un input permitiria mandar el enlace a OTRA
+//        direccion desde una sesion abierta ajena, convirtiendo un movil
+//        desbloqueado en un secuestro de cuenta. Misma razon por la que el
+//        cambio reautentica siempre.
+//        🔑 Y NO ES UN ATAJO: no cambia ninguna contraseña ni relaja la
+//        reautenticacion de v451 (que sigue exigiendo la actual antes de
+//        updatePassword). Solo manda el enlace oficial al buzon del titular.
+//        Aqui SI se confirma el envio nombrando el correo, al reves que en el
+//        login: la cuenta existe por definicion —hay sesion—, asi que no se
+//        filtra nada que quien mira la pantalla no sepa ya.
+//        Guard nuevo test_password_reset_desde_perfil.js, que PULSA los botones
+//        con Firebase Auth de mentira. Visto rojo antes 13/25; 29/29 y
+//        red-check 10/10. ⚠️ El red-check tumbo una asercion mia laxa (un OR
+//        que aceptaba el consejo equivocado) y destapo que un fichero que no
+//        compila mataba el guard con un stack trace: ahora eso da rojo con
+//        nombre (PARTE 0).
 //  v461: EL VIDEO DEL PARTIDO SE EXPORTA EN MP4, NO EN WEBM. Reporte del autor
 //        (captura IMG_0486): el fichero descargado salia en .webm y iOS/iPadOS
 //        no abre ese formato ni en Fotos ni en el reproductor del sistema —hay
@@ -1564,7 +1591,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v461';
+const CACHE_NAME = 'cronos-cache-v462';
 
 const ASSETS = [
     './',
