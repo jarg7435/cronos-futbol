@@ -2156,6 +2156,32 @@ window._posicionaAvisos = _posicionaAvisos;
 // ⚠️ Si no hay de dónde sacarla NO SE INVENTA (lección de v439): se devuelve
 // vacío y el aviso sale sin la línea, en vez de mentir con "Local vs
 // Visitante", que es peor que no decir nada.
+// ══════════════════════════════════════════════════════════════════
+//  v455 · ORDEN ESTABLE DE LA LISTA DE PARTIDOS
+//
+//  🔑 La lista se ordenaba por `updatedAt` descendente. Pero `pushLiveSnapshot`
+//  reescribe ese campo CADA 5 SEGUNDOS en todos los partidos activos, así que
+//  el que acabara de latir saltaba al primer puesto: con dos partidos en curso
+//  (F7 y Juvenil) las tarjetas se intercambiaban solas sin parar y era
+//  imposible pulsar la que uno quería.
+//
+//  El documento NO guarda hora de inicio (`pushLiveSnapshot` no escribe
+//  `createdAt`), así que no se puede ordenar por antigüedad. Se ordena por
+//  datos que NO cambian durante el partido, y que además agrupan como espera
+//  un director: categoría, subcategoría, modalidad y nombre del equipo local.
+//  El `id` cierra el orden para que sea TOTAL: sin ese desempate, dos partidos
+//  con los mismos datos podrían volver a bailar.
+// ══════════════════════════════════════════════════════════════════
+function _ordenEstablePartidos(a, b) {
+    const txt = (v) => String(v == null ? '' : v).toLowerCase();
+    const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+    return cmp(txt(a.category),    txt(b.category))
+        || cmp(txt(a.subcategory), txt(b.subcategory))
+        || cmp(txt(a.mode),        txt(b.mode))
+        || cmp(txt(a.homeTeam && a.homeTeam.name), txt(b.homeTeam && b.homeTeam.name))
+        || cmp(txt(a.id),          txt(b.id));
+}
+
 function _etiquetaPartidoDe(snap) {
     if (!snap) return '';
     const local = (snap.homeTeam && snap.homeTeam.name) || '';
@@ -2164,15 +2190,32 @@ function _etiquetaPartidoDe(snap) {
     return (local || 'Local') + ' vs ' + (visit || 'Visitante');
 }
 
-function showEventToast(type, line, sub, matchTime, equipo) {
+// v455 · `matchId` (6º argumento) es el partido AL QUE PERTENECE el suceso.
+// Decide el destino:
+//   · el AVISO FLOTANTE se emite SIEMPRE — es global y dice de qué partido es;
+//   · el CAJÓN DE HISTORIAL sólo se toca si el suceso es del partido que se
+//     está viendo. Es el problema que v274 intentó resolver cortando por lo
+//     sano (dejando de procesar los demás partidos) y que costó que los avisos
+//     de un segundo partido en curso no llegaran nunca.
+// Si no se pasa, se asume el partido visible: así las llamadas antiguas siguen
+// comportándose igual que siempre.
+function showEventToast(type, line, sub, matchTime, equipo, matchId) {
     const meta = EVENT_META[type] || EVENT_META.sub;
+    const _esDelPartidoVisible = (matchId === undefined || matchId === null)
+        ? true
+        : (matchId === currentMatchId);
 
     // v445 · EL EQUIPO DE LA INCIDENCIA. Si el llamante no lo trae —la vía de
     // respaldo por delta, y cualquier llamada antigua— se resuelve aquí con el
     // último snapshot del partido que se está viendo. Se calcula UNA vez y
     // vale para el aviso y para la fila del historial.
     const _texto = (typeof line === 'string') ? line.replace(/<[^>]+>/g, '') : '';
-    const _eq = equipo || _equipoDeSuceso(lastSnapshot, { type: type, text: _texto });
+    // ⚠️ El respaldo por `lastSnapshot` sólo vale si el suceso es del partido
+    // visible: para un partido de FONDO, `lastSnapshot` es el de OTRO partido y
+    // atribuiría el gol al equipo equivocado. Ahí se prefiere no decir nada.
+    const _eq = equipo || (_esDelPartidoVisible
+        ? _equipoDeSuceso(lastSnapshot, { type: type, text: _texto })
+        : '');
 
     // ── 1 · el aviso flotante ────────────────────────────────────────
     const stack = document.getElementById("event-toast-stack");
@@ -2195,7 +2238,7 @@ function showEventToast(type, line, sub, matchTime, equipo) {
         // la incidencia. Con varios partidos seguidos, el ojo leía
         // "ARINAGA 7 · GOL · Pedro" y el encuentro pasaba desapercibido.
         // Ahora encabeza el aviso y se lee antes que el suceso.
-        const _partido = sub || _etiquetaPartidoDe(lastSnapshot);
+        const _partido = sub || (_esDelPartidoVisible ? _etiquetaPartidoDe(lastSnapshot) : '');
         el.innerHTML =
             '<div class="et-icon">' + meta.icon + '</div>' +
             '<div class="et-body">' +
@@ -2222,8 +2265,14 @@ function showEventToast(type, line, sub, matchTime, equipo) {
     // `sub` (la etiqueta del partido) llega hasta aquí y se pinta en el AVISO,
     // que es global; en la ventana no, porque la ventana ya es del partido que
     // se está viendo y lo dice su cabecera.
-    const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '', equipo: _eq });
-    _appendEventToHistoryPanel(type, line, sub, _metaExt);
+    // 🔑 v455 · SÓLO el partido que se está viendo escribe en su cajón. Un
+    // suceso de otro partido en curso se anuncia arriba (que para eso el aviso
+    // lleva el nombre del encuentro) pero NO se cuela en el historial ajeno:
+    // ése era el defecto real que v274 vino a tapar.
+    if (_esDelPartidoVisible) {
+        const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '', equipo: _eq });
+        _appendEventToHistoryPanel(type, line, sub, _metaExt);
+    }
 
     // ── 3 · destello, sonido y vibración ─────────────────────────────
     const flash = document.getElementById("event-flash");
@@ -3037,7 +3086,7 @@ function detectAndAlert(matchId, matchData, fromCache) {
             // es la fuente fiable; showEventToast sólo lo deduce cuando no se
             // le pasa.
             showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime,
-                           _equipoDeSuceso(matchData, ev));
+                           _equipoDeSuceso(matchData, ev), matchId);
         });
         return;
     }
@@ -3083,23 +3132,23 @@ function detectAndAlert(matchId, matchData, fromCache) {
             const n = np.goals - pp.goals;
             if (np.team === "away") playerGoalsAway += n; else playerGoalsHome += n;
             const line = _formateaLineaEvento("goal", 'GOL · ' + playerName);
-            showEventToast("goal", line, matchLabel + (n > 1 ? " · +" + n : ""), _matchTime);
+            showEventToast("goal", line, matchLabel + (n > 1 ? " · +" + n : ""), _matchTime, undefined, matchId);
         }
         // TARJETAS — cambio de estado de tarjeta
         if (np.cards !== pp.cards) {
             if (np.cards === "amarilla" && pp.cards !== "amarilla") {
                 const line = _formateaLineaEvento("yellow", 'TARJETA AMARILLA · ' + playerName);
-                showEventToast("yellow", line, matchLabel, _matchTime);
+                showEventToast("yellow", line, matchLabel, _matchTime, undefined, matchId);
             }
             else if (np.cards === "roja" && pp.cards !== "roja") {
                 const line = _formateaLineaEvento("red", 'TARJETA ROJA · ' + playerName);
-                showEventToast("red", line, matchLabel, _matchTime);
+                showEventToast("red", line, matchLabel, _matchTime, undefined, matchId);
             }
         }
         // LESIÓN — pasó a lesionado
         if (np.injured && !pp.injured) {
             const line = _formateaLineaEvento("injury", 'LESIÓN · ' + playerName);
-            showEventToast("injury", line, matchLabel, _matchTime);
+            showEventToast("injury", line, matchLabel, _matchTime, undefined, matchId);
         }
         // CAMBIO — transiciones field<->bench (no por expulsión roja)
         if (np.status !== pp.status && np.cards !== "roja" && pp.cards !== "roja") {
@@ -3134,11 +3183,11 @@ function detectAndAlert(matchId, matchData, fromCache) {
     for (let i = 0; i < extraHome; i++) {
         // v218: "GOL" en MAYÚSCULAS verde, seguido del nombre del equipo.
         const line = _formateaLineaEvento("goal", 'GOL · ' + homeName);
-        showEventToast("goal", line, matchLabel, _matchTime);
+        showEventToast("goal", line, matchLabel, _matchTime, undefined, matchId);
     }
     for (let i = 0; i < extraAway; i++) {
         const line = _formateaLineaEvento("goal", 'GOL · ' + awayName);
-        showEventToast("goal", line, matchLabel, _matchTime);
+        showEventToast("goal", line, matchLabel, _matchTime, undefined, matchId);
     }
 
     // Sustituciones: emparejar entradas/salidas en un único aviso si es posible.
@@ -3161,7 +3210,7 @@ function detectAndAlert(matchId, matchData, fromCache) {
             else if (outP)        texto = eqNom + ' | ▲ SALE: ' + outP;
             else                  texto = eqNom + ' | CAMBIO';
             const line = _formateaLineaEvento("sub", texto);
-            showEventToast("sub", line, matchLabel, _matchTime);
+            showEventToast("sub", line, matchLabel, _matchTime, undefined, matchId);
         }
     }
 }
@@ -3190,8 +3239,35 @@ async function checkUserAccess(user) {
         if (dbg) { dbg.style.display='block'; document.getElementById('live-status-text').textContent='Acceso verificado, cargando partidos...'; }
         enterLiveView();
     } catch(e) {
-        errEl.textContent = 'Error de conexión: ' + e.message;
+        // 🔴 v455 · AQUÍ NACÍA LA PANTALLA EN NEGRO DEL MÓVIL.
+        // Se escribía el error en `errEl`… que vive DENTRO de #auth-overlay, y
+        // ese overlay estaba en `display:none`. Como la pantalla de arranque ya
+        // se había ocultado incondicionalmente y el resto de vistas siguen
+        // ocultas hasta que el acceso se concede, el resultado era una página
+        // COMPLETAMENTE NEGRA, sin mensaje y sin salida.
+        // En el iPad la lectura de Firestore iba bien y no se veía el agujero;
+        // en el móvil fallaba y quedaba al descubierto.
+        console.error('[LIVE] checkUserAccess falló:', e);
+        _mostrarFalloDeAcceso('Error de conexión: ' + (e && e.message ? e.message : e));
     }
+}
+
+// v455 · Ninguna vista puede quedar oculta sin decir por qué.
+// Enseña el overlay de acceso con un mensaje legible y un botón de reintento.
+function _mostrarFalloDeAcceso(mensaje) {
+    try {
+        const startup = document.getElementById('startup-screen');
+        if (startup) startup.style.display = 'none';
+        const ov = document.getElementById('auth-overlay');
+        if (ov) ov.style.display = 'flex';
+        const errEl = document.getElementById('auth-error');
+        if (errEl) {
+            errEl.innerHTML = escapeHtml(mensaje) +
+                '<br><button onclick="location.reload()" style="margin-top:0.8rem;' +
+                'padding:0.5rem 1.1rem;background:#58a6ff;border:none;border-radius:6px;' +
+                'color:#0a0e14;font-weight:700;cursor:pointer;">Reintentar</button>';
+        }
+    } catch (_) { /* si ni esto se puede, el vigilante de abajo actúa */ }
 }
 
 // Restore session if already logged in
@@ -3200,12 +3276,40 @@ onAuthStateChanged(auth, async (user) => {
     const startup = document.getElementById('startup-screen');
     if (startup) startup.style.display = 'none';
     if (user) {
-        await checkUserAccess(user);
+        // v455 · `checkUserAccess` ya captura lo suyo, pero si algo se le
+        // escapara —o si el propio `await` rechazara— no puede quedarse la
+        // pantalla muda: sin este catch volvemos al negro.
+        try {
+            await checkUserAccess(user);
+        } catch (e) {
+            console.error('[LIVE] Fallo no capturado al verificar el acceso:', e);
+            _mostrarFalloDeAcceso('No se pudo verificar tu acceso. ' +
+                                  (e && e.message ? e.message : ''));
+        }
     } else {
         // Sin sesión → mostrar login
         document.getElementById('auth-overlay').style.display = 'flex';
     }
 });
+
+// v455 · RED DE SEGURIDAD FINAL: si a los 6 s no hay NINGUNA vista visible, la
+// pantalla está en negro por el motivo que sea. Mejor un mensaje con salida que
+// un rectángulo oscuro delante de un cliente.
+// Es independiente del vigilante de autocuración (que limpia cachés y recarga):
+// aquel actúa si el MÓDULO no arranca; éste, si el módulo arrancó pero ninguna
+// vista llegó a encenderse.
+setTimeout(function () {
+    try {
+        const visibles = ['startup-screen', 'auth-overlay', 'live-header', 'live-main',
+                          'history-view', 'loading-screen', 'scoreboard']
+            .map(id => document.getElementById(id))
+            .filter(el => el && el.offsetParent !== null);
+        if (visibles.length === 0) {
+            console.warn('[LIVE] Ninguna vista visible a los 6 s: se muestra el aviso de acceso.');
+            _mostrarFalloDeAcceso('No se ha podido cargar el panel en vivo.');
+        }
+    } catch (_) {}
+}, 6000);
 
 // ── Vigilancia en segundo plano de TODOS los partidos seguidos ─────
 // Suscribe un onSnapshot a cada partido en vivo que el usuario puede
@@ -3336,12 +3440,22 @@ async function refreshBackgroundWatchers() {
             _bgWatchers[m.id] = onSnapshot(doc(db, "live_matches", m.id), (s2) => {
                 if (!s2.exists()) return;
                 const data = s2.data();
-                // v274: SOLO procesar eventos del partido que se está viendo.
-                // Antes, el background watcher llamaba a detectAndAlert para TODOS
-                // los partidos en vivo, lo que hacía que los eventos de un partido
-                // (ej: DORAMAS) aparecieran en el historial de otro (ej: ARINAGA 11).
-                // Ahora, si no es el partido actual, NO procesar nada.
-                if (m.id !== currentMatchId) return;
+                // v455 · SE RETIRA EL FILTRO POR `currentMatchId`.
+                //
+                // v274 lo puso para arreglar un problema REAL: los sucesos de un
+                // partido aparecían en el CAJÓN DE HISTORIAL de otro. Pero la
+                // cura fue demasiado ancha — se dejaron de procesar del todo los
+                // demás partidos, así que los avisos flotantes quedaban
+                // enganchados al último partido abierto y un gol en otro campo
+                // no se anunciaba jamás. Con dos partidos en curso (F7 y
+                // Juvenil), el director sólo se enteraba de uno.
+                //
+                // 🔑 La separación correcta no es "procesar o no procesar", es
+                // POR DESTINO, y ya se puede hacer porque el aviso dice de qué
+                // partido es (`.et-match`, v449):
+                //   · AVISO FLOTANTE  → global, para TODOS los partidos seguidos;
+                //   · CAJÓN DE HISTORIAL → sólo el partido que se está viendo.
+                // De eso se encarga showEventToast con el matchId que recibe.
                 detectAndAlert(m.id, data, s2.metadata && s2.metadata.fromCache);
             }, () => {});
         });
@@ -4249,7 +4363,8 @@ window.showLiveNow = async function() {
         const _repintarLista = (allDocs) => {
             const liveMatches = [];
         // Ordenar cliente (sin índice Firestore)
-        allDocs.sort((a,b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+        // v455 · orden ESTABLE: por updatedAt las tarjetas bailaban cada 5 s.
+        allDocs.sort(_ordenEstablePartidos);
         
         allDocs.forEach(m => { 
             if (m.status !== 'active') return;
@@ -4777,7 +4892,8 @@ window.showHistory = async function() {
         window._allFetchedMatches = allDocs2;
 
         // Ordenar cliente (sin índice Firestore)
-        allDocs2.sort((a,b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+        // v455 · orden ESTABLE: por updatedAt las tarjetas bailaban cada 5 s.
+        allDocs2.sort(_ordenEstablePartidos);
 
         allDocs2.forEach(m => {
             if (m.status === 'active') {
@@ -5193,8 +5309,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v454"></script>
-<script src="js/match/replay/replay-player.js?v=v454"></script>
-<script src="js/match/events/retroactive-modal.js?v=v454"></script>
+<script src="js/match/immutability.js?v=v455"></script>
+<script src="js/match/replay/replay-player.js?v=v455"></script>
+<script src="js/match/events/retroactive-modal.js?v=v455"></script>
 </body>
 </html>

@@ -185,8 +185,8 @@ console.log('\n── PARTE 4 · el delta sólo para partidos sin eventId ──
        /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime[,)]/.test(l) &&
        /_linea = _formateaLineaEvento\(_t, ev\.text \|\| ''\)/.test(l),
        (l.match(/showEventToast\(_t[^\n]*/) || ['(no aparece)'])[0]);
-    ok('4d2 · v445 · y le pasa el EQUIPO del propio evento',
-       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\)\)/.test(l),
+    ok('4d2 · v445 · y le pasa el EQUIPO del propio evento (+ el matchId, v455)',
+       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\), matchId\)/.test(l),
        'el campo `team` del evento es la fuente fiable; deducirlo es el respaldo');
     ok('4e · 🔑 y las sustituciones se colorean: verde ENTRA, rojo SALE',
        /ENTRA:\[\^\|\]\*\)/.test(l.replace(/\\/g, '')) || /_coloreaSustitucion/.test(l));
@@ -196,8 +196,16 @@ console.log('\n── PARTE 4 · el delta sólo para partidos sin eventId ──
 console.log('\n── PARTE 5 · aislamiento por matchId ──');
 {
     const l = sinCom(LIVE);
-    ok('5a · el watcher de fondo sólo procesa el partido abierto',
-       /if \(m\.id !== currentMatchId\) return;/.test(l));
+    // ⚠️ INVERTIDA EN v455. Fijaba el filtro de v274 —`if (m.id !== currentMatchId)
+    // return;`— que arreglaba un problema real (los sucesos de un partido se
+    // colaban en el CAJÓN de otro) pero cortando por lo sano: dejaba de procesar
+    // los demás partidos, así que un gol en otro campo NO se anunciaba JAMÁS. Con
+    // dos partidos en curso, el director sólo se enteraba de uno.
+    // La separación correcta es POR DESTINO, y la decide showEventToast con el
+    // matchId que recibe: aviso flotante global, cajón del partido visible.
+    ok('5a · [INVERTIDA v455] el watcher de fondo procesa TODOS los partidos',
+       !/if \(m\.id !== currentMatchId\) return;/.test(l),
+       'ese return dejaba los avisos pegados al último partido abierto');
     ok('5b · 🔑 y la criba de eventos filtra además por el matchId del evento',
        /if \(!_eventBelongsTo\(ev, matchId\)\) return;/.test(l));
     ok('5c · los mapas de estado siguen estando indexados por matchId',

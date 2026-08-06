@@ -143,10 +143,16 @@ console.log('\n── PARTE 2 · las dos vías la pintan ──');
        /function _filaSucesoHtml\([^)]*equipo\)[\s\S]{0,900}?_chipEquipoHtml\(equipo\)/.test(L));
     ok('2d · el equipo viaja al historial por el meta, calculado UNA vez',
        /const _metaExt = Object\.assign\(\{\}, meta, \{ matchTime: matchTime \|\| '', equipo: _eq \}\)/.test(L));
-    ok('2e · 🔑 la vía por evento le pasa el equipo del PROPIO evento',
-       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\)\)/.test(L));
+    ok('2e · 🔑 la vía por evento le pasa el equipo del PROPIO evento (+ matchId, v455)',
+       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\), matchId\)/.test(L));
+    // v455 · El respaldo sigue existiendo, pero SÓLO para el partido visible: en
+    // uno de fondo, `lastSnapshot` es el de OTRO partido y atribuiría el gol al
+    // equipo equivocado. Ahí se prefiere no decir nada (lección de v439).
     ok('2f · y la vía de respaldo lo deduce sola, sin quedarse sin etiqueta',
-       /const _eq = equipo \|\| _equipoDeSuceso\(lastSnapshot, \{ type: type, text: _texto \}\)/.test(L));
+       /const _eq = equipo \|\| \(_esDelPartidoVisible[\s\S]{0,140}_equipoDeSuceso\(lastSnapshot, \{ type: type, text: _texto \}\)/.test(L));
+    ok('2f2 · ⚠️ pero NO deduce el equipo con el snapshot de otro partido',
+       /_esDelPartidoVisible/.test(L),
+       'atribuiría el gol al equipo equivocado');
     ok('2g · la reconstrucción desde el snapshot, igual',
        /const _eq = _equipoDeSuceso\(lastSnapshot, ev\)/.test(L));
     ok('2h · hay estilos para la etiqueta, con los dos lados',

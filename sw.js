@@ -1,5 +1,48 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v455: VARIOS PARTIDOS A LA VEZ + EL NEGRO DEL MOVIL. Tres incidencias de las
+//        pruebas reales con un F7 y un Juvenil en curso.
+//        A) LAS TARJETAS BAILABAN. La lista se ordenaba por `updatedAt`
+//           descendente, y pushLiveSnapshot reescribe ese campo CADA 5 SEGUNDOS
+//           en todos los partidos activos: el que acababa de latir saltaba al
+//           primer puesto y era imposible pulsar el que uno queria. El
+//           documento NO guarda hora de inicio, asi que se ordena por lo que NO
+//           cambia durante el partido — categoria, subcategoria, modalidad y
+//           equipo local— con el id de desempate para que el orden sea TOTAL.
+//        B) LOS AVISOS SE QUEDABAN PEGADOS AL ULTIMO PARTIDO ABIERTO. El
+//           watcher de fondo hacia `if (m.id !== currentMatchId) return;`
+//           (v274). Aquello arreglaba un problema REAL —los sucesos de un
+//           partido se colaban en el CAJON de otro— pero cortando por lo sano:
+//           dejaba de procesar los demas partidos, asi que un gol en el otro
+//           campo NO se anunciaba JAMAS.
+//           🔑 La separacion correcta no es "procesar o no procesar", es POR
+//           DESTINO, y ya se puede hacer porque el aviso dice de que partido es
+//           (.et-match, v449): AVISO FLOTANTE global para todos los partidos
+//           seguidos, CAJON DE HISTORIAL solo para el que se esta viendo. Lo
+//           decide showEventToast con el matchId que ahora recibe.
+//           ⚠️ Y el respaldo que deduce el equipo por `lastSnapshot` solo se usa
+//           si el suceso es del partido VISIBLE: en uno de fondo atribuiria el
+//           gol al equipo equivocado. Ahi se prefiere no decir nada (v439).
+//        C) 🔴 PANTALLA EN NEGRO EN EL MOVIL (en iPad no se veia). Causa
+//           EXACTA: `checkUserAccess` escribia su error en #auth-error… que
+//           vive DENTRO de #auth-overlay, y ese overlay estaba en display:none.
+//           Como la pantalla de arranque ya se habia ocultado
+//           INCONDICIONALMENTE y el resto de vistas siguen ocultas hasta
+//           conceder el acceso, cualquier fallo dejaba la pagina COMPLETAMENTE
+//           NEGRA, sin mensaje y sin salida. En el iPad la lectura de Firestore
+//           iba bien y el agujero no se veia; en el movil fallaba y quedaba al
+//           descubierto. No era el Service Worker: si lo fuera, habria fallado
+//           en los dos.
+//           Ahora todo fallo de acceso ENSEÑA el overlay con un mensaje legible
+//           y un boton de reintento, el observador de sesion tiene su propio
+//           catch, y hay una red de seguridad final: si a los 6 s NINGUNA vista
+//           esta visible, se muestra el aviso. Una pantalla en negro delante de
+//           un cliente no puede volver a ocurrir en silencio.
+//        Guard nuevo scripts/test_live_multipartido.js 23/23, red-check de 7
+//        mutaciones con las 7 cazadas. Se INVIERTE la asercion 5a de
+//        test_live_event_dedup.js (fijaba el filtro de v274) y se actualizan
+//        dos de test_sucesos_equipo_hora.js por el cambio de firma.
+//        Suite 103/103 activos + 11 xfail.
 //  v454: 🔴 EL SERVICE WORKER DEJA DE TOCAR EL SDK DE FIREBASE + PURGA TOTAL.
 //        El bloqueo del panel en vivo PERSISTIA en movil y en iPad despues de
 //        v453, y eso descarto el diagnostico inicial: v453 hizo IMPOSIBLE el
@@ -1334,7 +1377,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v454';
+const CACHE_NAME = 'cronos-cache-v455';
 
 const ASSETS = [
     './',
