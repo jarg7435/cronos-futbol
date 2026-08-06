@@ -1195,6 +1195,73 @@
 
 
         }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           v456 · TABLET ANCHA (iPad en HORIZONTAL, y el 12.9" en vertical)
+           ═══════════════════════════════════════════════════════════════════
+           Reporte del autor con capturas (IMG_0483 / IMG_0484): al pulsar la
+           barra inferior de SUCESOS, la pantalla del iPad se desplazaba entera
+           hacia abajo y el marcador desaparecía; en el móvil el mismo toque
+           despliega el cajón sin mover nada.
+
+           🔑 EL DEFECTO NO ESTABA EN LA BARRA, SINO EN QUÉ MAQUETACIÓN LE TOCA
+           AL iPAD. La vista se anclaba al viewport (`100dvh` + `overflow:
+           hidden`) en TRES bandas —móvil vertical, móvil apaisado y tablet
+           vertical ≤950px— y se dejaba fuera la cuarta: un iPad EN HORIZONTAL
+           mide 1024-1194px y un iPad Pro 12.9" en VERTICAL mide 1024px, así
+           que los dos caen en la maquetación de PC, donde el `body` sigue con
+           `min-height: 100vh` y sin `overflow: hidden`.
+
+           🔑 Y EN iOS `100vh` NO ES LO QUE SE VE: es el alto con las barras
+           del navegador RECOGIDAS. Con `min-height:100vh` sobran siempre unos
+           60-90px de desplazamiento, así que desplegar un cajón que crece
+           hacia abajo hacía que Safari se desplazara hasta él y sacara de la
+           pantalla la cabecera y el marcador. `100dvh` es el alto realmente
+           visible; el `100vh` de la línea anterior queda de respaldo para
+           navegadores que no entiendan `dvh`.
+
+           ⚠️ VA POR TIPO DE PUNTERO, NO SÓLO POR ANCHO. Es la misma decisión
+           del antizoom de v452 y por el mismo motivo: un iPad en horizontal
+           mide lo mismo que un portátil, así que un `min-width:951px` a secas
+           se llevaría por delante la maquetación de PC. Con `pointer: coarse`
+           el PC no cambia en nada.
+
+           Con la vista anclada, los 96px del cajón salen del CAMPO —que pasa
+           a `max-height:100%` y se reajusta solo, como en el móvil— y no de la
+           página: el marcador y el terreno de juego siguen en pantalla y el
+           despliegue es el mismo acordeón animado (la transición de `height`
+           vive en la regla base de #match-events-list).
+           ═══════════════════════════════════════════════════════════════════ */
+        @media (min-width: 951px) and (pointer: coarse) {
+            body {
+                height: 100vh;
+                height: 100dvh;
+                min-height: 0;
+                overflow: hidden;
+            }
+            /* Sin esto, anclar el body sólo cambiaría el defecto de sitio: el
+               campo se saldría por abajo y lo recortaría el `overflow:hidden`
+               de #live-main en vez de encogerse. */
+            #live-main {
+                min-height: 0;
+                overflow: hidden;
+            }
+            #field-wrap {
+                min-height: 0;
+                overflow: hidden;
+            }
+            #live-pitch {
+                width: 100%;
+                max-width: 100%;
+                height: auto;
+                max-height: 100%;
+                min-height: 0;
+                flex-shrink: 1;
+            }
+            /* Algo más bajo que los 116px de PC: en una tablet apaisada el alto
+               es el recurso escaso y siguen entrando ~4 sucesos con su scroll. */
+            #match-events-list { height: 96px; }
+        }
         @media (max-height: 500px) {
             #live-header { padding: 0.3rem 0.8rem; }
             #scoreboard { font-size: 0.85em; }
@@ -5309,8 +5376,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v455"></script>
-<script src="js/match/replay/replay-player.js?v=v455"></script>
-<script src="js/match/events/retroactive-modal.js?v=v455"></script>
+<script src="js/match/immutability.js?v=v456"></script>
+<script src="js/match/replay/replay-player.js?v=v456"></script>
+<script src="js/match/events/retroactive-modal.js?v=v456"></script>
 </body>
 </html>

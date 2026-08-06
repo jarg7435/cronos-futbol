@@ -1,5 +1,31 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v456: EL CAJON DE SUCESOS, CONTENIDO TAMBIEN EN EL iPAD. Reporte del autor
+//        con capturas (IMG_0483/IMG_0484): en el iPad, pulsar la barra inferior
+//        de SUCESOS desplazaba la PAGINA ENTERA hacia abajo y el marcador
+//        desaparecia; en el movil el mismo toque despliega el cajon sin mover
+//        nada y el campo se reajusta solo.
+//        🔑 EL DEFECTO NO ESTABA EN LA BARRA, sino en QUE MAQUETACION le toca
+//        al iPad. live.html anclaba la vista al viewport (100dvh +
+//        overflow:hidden) en TRES bandas —movil vertical, movil apaisado y
+//        tablet vertical ≤950px— y dejaba fuera la cuarta: un iPad EN
+//        HORIZONTAL mide 1024-1194px y un iPad Pro 12.9" en VERTICAL mide
+//        1024px, asi que los dos caen en la maquetacion de PC, donde el body
+//        sigue con min-height:100vh y sin overflow:hidden.
+//        🔑 Y EN iOS `100vh` NO ES LO QUE SE VE: es el alto con las barras del
+//        navegador RECOGIDAS. Sobran siempre ~60-90px de scroll, y desplegar un
+//        cajon que crece hacia abajo hacia que Safari se desplazara hasta el.
+//        Nueva banda @media (min-width:951px) and (pointer: coarse): body a
+//        100dvh + overflow:hidden y campo con max-height:100%, de modo que los
+//        96px del cajon salen del CAMPO —que se reajusta solo— y no de la
+//        pagina. VA POR TIPO DE PUNTERO, no solo por ancho (misma decision que
+//        el antizoom de v452): un iPad en horizontal mide lo mismo que un
+//        portatil, y el PC no cambia en nada.
+//        Guard nuevo scripts/test_tablet_sucesos_contenido.js 93/93: SIMULA LA
+//        CASCADA (parsea los <style>, evalua cada @media contra 10 perfiles de
+//        dispositivo y comprueba el valor GANADOR), porque un regex solo dice
+//        que la regla existe, no a QUE DISPOSITIVO le llega — y el defecto era
+//        exactamente ese. Red-check de 13 mutaciones, las 13 cazadas.
 //  v455: VARIOS PARTIDOS A LA VEZ + EL NEGRO DEL MOVIL. Tres incidencias de las
 //        pruebas reales con un F7 y un Juvenil en curso.
 //        A) LAS TARJETAS BAILABAN. La lista se ordenaba por `updatedAt`
@@ -1377,7 +1403,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v455';
+const CACHE_NAME = 'cronos-cache-v456';
 
 const ASSETS = [
     './',
