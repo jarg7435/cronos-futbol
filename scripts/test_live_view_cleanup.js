@@ -145,8 +145,28 @@ const _cuerpoToast = (() => {
 ok('2e · 🔑 el suceso se anuncia con AVISO FLOTANTE',
    /getElementById\("event-toast-stack"\)/.test(_cuerpoToast) &&
    /stack\.appendChild\(el\)/.test(_cuerpoToast));
+// ⚠️ v457 · REAPUNTADA, no borrada. La intención NO cambia —el aviso se va solo
+// a los 8 s y también al tocarlo—, pero las dos vías pasan ahora por un
+// intermediario y la forma literal de v424 (`setTimeout(quitar, 8000)` /
+// `el.onclick = quitar`) ya no aparece:
+//   · el cierre automático se aplaza mientras se está LEYENDO la pila (si no,
+//     deslizarla para leer un cambio grupal hacía desaparecer los primeros
+//     avisos a media lectura);
+//   · el clic no cierra si el toque fue el comienzo de un DESLIZAMIENTO.
+// Lo que se fija aquí es que los 8 s y el cierre por toque siguen existiendo, y
+// que ninguna de las dos guardas nuevas puede saltar en un contexto donde no
+// existan (se consultan con `typeof`, porque esta función se extrae y se
+// ejecuta sola en varios guards).
 ok('2e2 · …que se va solo a los 8 s y también al tocarlo',
-   /setTimeout\(quitar, 8000\)/.test(_cuerpoToast) && /el\.onclick = quitar/.test(_cuerpoToast));
+   /setTimeout\(cierreAutomatico, 8000\)/.test(_cuerpoToast) &&
+   /el\.onclick = \(\) => \{/.test(_cuerpoToast) &&
+   /quitar\(\);/.test(_cuerpoToast));
+ok('2e2b · v457 · el cierre automático se aplaza mientras se lee la pila',
+   /typeof _avisosEnLectura === 'function' && _avisosEnLectura\(\)/.test(_cuerpoToast) &&
+   /setTimeout\(cierreAutomatico, 600\)/.test(_cuerpoToast),
+   'sin esto, deslizar para leer un cambio grupal hace desaparecer los avisos');
+ok('2e2c · v457 · y un deslizamiento no cuenta como toque de cierre',
+   /typeof _fueArrastreDeLectura === 'function' && _fueArrastreDeLectura\(\)/.test(_cuerpoToast));
 // v449: la etiqueta del partido SIGUE siendo obligatoria —la intención de esta
 // aserción no cambia— pero ya no se pinta en `.et-sub` (gris, segunda línea):
 // encabeza el aviso en `.et-match`. Se reapunta a la forma nueva en vez de

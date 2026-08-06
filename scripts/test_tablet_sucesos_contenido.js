@@ -47,155 +47,31 @@ function ok(nombre, cond, detalle) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// 1 · PARSEO DEL CSS
+// 1 · EL SIMULADOR DE LA CASCADA (compartido)
 // ───────────────────────────────────────────────────────────────────────────
-// Sólo se parsea lo que hay DENTRO de <style>. Es deliberado: quitar los
-// comentarios /* */ del fichero ENTERO es la trampa que costó v454 (un `/*`
-// dentro de un comentario `//` de JavaScript dejó 1100 líneas ciegas). Dentro
-// de <style> no hay comentarios de línea, así que el borrado es seguro.
-const bloquesStyle = [...live.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]);
+// v457: el parser de CSS, el evaluador de @media y los perfiles de dispositivo
+// se han movido a scripts/_css_cascade.js porque los usa también
+// test_avisos_pila_scroll.js. Dos copias del mismo simulador acabarían
+// divergiendo — la lección que ya costó el gol duplicado (v424) y la fila de
+// sucesos escrita dos veces (v442).
+const { simulador, bloquesDeEstilo, TACTILES, RATON } = require('./_css_cascade.js');
 
-function quitarComentarios(css) {
-    return css.replace(/\/\*[\s\S]*?\*\//g, '');
-}
-
-// Devuelve [{ media: 'condición' | null, selector, decls: {prop: {valor, importante}} }]
-// en ORDEN DE FUENTE. Soporta un nivel de @media; cualquier otra at-rule con
-// cuerpo (@keyframes, @supports, @font-face) se salta entera.
-function parsearReglas(css, media, salida) {
-    let i = 0;
-    while (i < css.length) {
-        const llave = css.indexOf('{', i);
-        if (llave === -1) break;
-        const prefacio = css.slice(i, llave).trim();
-
-        // Cuerpo del bloque, contando llaves.
-        let prof = 0, j = llave, fin = -1;
-        for (; j < css.length; j++) {
-            if (css[j] === '{') prof++;
-            else if (css[j] === '}') { prof--; if (prof === 0) { fin = j; break; } }
-        }
-        if (fin === -1) break;                        // CSS truncado
-        const cuerpo = css.slice(llave + 1, fin);
-
-        if (prefacio.startsWith('@media')) {
-            parsearReglas(cuerpo, prefacio.replace(/^@media\s*/, '').trim(), salida);
-        } else if (prefacio.startsWith('@')) {
-            /* @keyframes y compañía: no aportan declaraciones a estos selectores */
-        } else {
-            const decls = {};
-            for (const trozo of cuerpo.split(';')) {
-                const dosPuntos = trozo.indexOf(':');
-                if (dosPuntos === -1) continue;
-                const prop = trozo.slice(0, dosPuntos).trim().toLowerCase();
-                let valor  = trozo.slice(dosPuntos + 1).trim();
-                if (!prop || !valor) continue;
-                const importante = /!important$/i.test(valor);
-                if (importante) valor = valor.replace(/!important$/i, '').trim();
-                // ⚠️ Una propiedad declarada DOS veces en la misma regla (el
-                // patrón `height:100vh; height:100dvh` de este fichero): manda
-                // la última, igual que en el navegador. Se guardan las dos para
-                // poder afirmar que existe el respaldo en vh.
-                if (!decls[prop]) decls[prop] = { valores: [], importante: false };
-                decls[prop].valores.push(valor);
-                decls[prop].importante = decls[prop].importante || importante;
-            }
-            for (const sel of prefacio.split(',')) {
-                const s = sel.trim().replace(/\s+/g, ' ');
-                if (s) salida.push({ media, selector: s, decls });
-            }
-        }
-        i = fin + 1;
-    }
-    return salida;
-}
-
-const reglas = [];
-for (const b of bloquesStyle) parsearReglas(quitarComentarios(b), null, reglas);
-
-// ───────────────────────────────────────────────────────────────────────────
-// 2 · EVALUADOR DE @media
-// ───────────────────────────────────────────────────────────────────────────
-// Sólo las características que usa live.html. Una desconocida LANZA: es
-// preferible un guard que se rompe a un guard que ignora en silencio la
-// condición que decide si el iPad entra o no en el bloque.
-function casaCaracteristica(cond, disp) {
-    const m = cond.match(/^\(\s*([a-z-]+)\s*:\s*([^)]+?)\s*\)$/i);
-    if (!m) throw new Error('Condición @media no reconocida: ' + cond);
-    const [, rasgo, valor] = [m[0], m[1].toLowerCase(), m[2].toLowerCase()];
-    const px = v => parseFloat(String(v).replace('px', ''));
-    switch (rasgo) {
-        case 'min-width':   return disp.ancho >= px(valor);
-        case 'max-width':   return disp.ancho <= px(valor);
-        case 'min-height':  return disp.alto  >= px(valor);
-        case 'max-height':  return disp.alto  <= px(valor);
-        case 'orientation': return disp.orientacion === valor;
-        case 'pointer':     return disp.puntero === valor;
-        case 'hover':       return disp.hover === valor;
-        default: throw new Error('Rasgo @media no soportado por el guard: ' + rasgo);
-    }
-}
-
-function casaMedia(media, disp) {
-    if (!media) return true;
-    // Lista separada por comas = O lógico.
-    return media.split(',').some(rama => {
-        const partes = rama.trim().split(/\s+and\s+/i).map(s => s.trim()).filter(Boolean);
-        return partes.every(p => casaCaracteristica(p, disp));
-    });
-}
-
-// Valor ganador de `prop` para `selector` en el dispositivo `disp`.
-// Todos los selectores consultados aquí tienen la MISMA especificidad entre sí
-// (un #id, o `body`), así que basta el orden de fuente + !important.
-function calcula(selector, disp) {
-    const out = {};
-    for (const r of reglas) {
-        if (r.selector !== selector) continue;
-        if (!casaMedia(r.media, disp)) continue;
-        for (const [prop, d] of Object.entries(r.decls)) {
-            const previo = out[prop];
-            if (previo && previo.importante && !d.importante) continue;
-            out[prop] = { valores: d.valores, importante: d.importante,
-                          valor: d.valores[d.valores.length - 1] };
-        }
-    }
-    return out;
-}
-const v = (selector, prop, disp) => (calcula(selector, disp)[prop] || {}).valor;
-
-// ───────────────────────────────────────────────────────────────────────────
-// 3 · PERFILES DE DISPOSITIVO
-// ───────────────────────────────────────────────────────────────────────────
-const TACTILES = [
-    // El caso reportado: iPad en HORIZONTAL. Los tres tamaños que existen.
-    { n: 'iPad 11" horizontal',        ancho: 1194, alto: 834,  orientacion: 'landscape', puntero: 'coarse', hover: 'none' },
-    { n: 'iPad 10.9" horizontal',      ancho: 1180, alto: 820,  orientacion: 'landscape', puntero: 'coarse', hover: 'none' },
-    { n: 'iPad mini horizontal',       ancho: 1133, alto: 744,  orientacion: 'landscape', puntero: 'coarse', hover: 'none' },
-    // Y el que también caía en la maquetación de PC estando en VERTICAL.
-    { n: 'iPad Pro 12.9" vertical',    ancho: 1024, alto: 1366, orientacion: 'portrait',  puntero: 'coarse', hover: 'none' },
-    // Los que ya estaban bien: no deben perder el anclaje.
-    { n: 'iPad 11" vertical',          ancho: 834,  alto: 1194, orientacion: 'portrait',  puntero: 'coarse', hover: 'none' },
-    { n: 'iPhone vertical',            ancho: 390,  alto: 844,  orientacion: 'portrait',  puntero: 'coarse', hover: 'none' },
-    { n: 'iPhone horizontal',          ancho: 844,  alto: 390,  orientacion: 'landscape', puntero: 'coarse', hover: 'none' },
-];
-const RATON = [
-    { n: 'PC 1920x1080',   ancho: 1920, alto: 1080, orientacion: 'landscape', puntero: 'fine', hover: 'hover' },
-    { n: 'portátil 1366',  ancho: 1366, alto: 768,  orientacion: 'landscape', puntero: 'fine', hover: 'hover' },
-    // Un portátil del MISMO ancho que el iPad: si el arreglo fuera por ancho en
-    // vez de por tipo de puntero, este perfil cambiaría de comportamiento.
-    { n: 'portátil 1194',  ancho: 1194, alto: 834,  orientacion: 'landscape', puntero: 'fine', hover: 'hover' },
-];
+const SIM = simulador(live);
+const { calcula, v, reglas } = SIM;
+const bloquesStyle = bloquesDeEstilo(live);
+const perfil = (nombre) => {
+    const d = TACTILES.concat(RATON).find(p => p.n === nombre);
+    if (!d) throw new Error('Perfil desconocido: ' + nombre);
+    return d;
+};
 
 // ───────────────────────────────────────────────────────────────────────────
 console.log('\n── PARTE 0 · el CSS se puede leer ──');
 // ───────────────────────────────────────────────────────────────────────────
 ok('0a · live.html trae bloques <style>', bloquesStyle.length > 0);
 ok('0b · se han parseado reglas suficientes', reglas.length > 100, reglas.length + ' reglas');
-let mediasOk = true, errMedia = '';
-try { for (const r of reglas) casaMedia(r.media, TACTILES[0]); }
-catch (e) { mediasOk = false; errMedia = e.message; }
-ok('0c · todas las @media del fichero son evaluables por el guard', mediasOk, errMedia);
+const _medias = SIM.mediasEvaluables(TACTILES[0]);
+ok('0c · todas las @media del fichero son evaluables por el guard', _medias.ok, _medias.error);
 
 // ───────────────────────────────────────────────────────────────────────────
 console.log('\n── PARTE 1 · en TÁCTIL la vista está anclada al viewport ──');
@@ -238,7 +114,8 @@ for (const d of TACTILES) {
 // ───────────────────────────────────────────────────────────────────────────
 console.log('\n── PARTE 3 · el cajón es un acordeón, y sigue SIN tapar el campo ──');
 // ───────────────────────────────────────────────────────────────────────────
-const dIpad = TACTILES[0];
+// Por NOMBRE y no por índice: el orden de la lista compartida puede cambiar.
+const dIpad = perfil('iPad 11" horizontal');
 ok('3a · plegado, la lista mide 0 (sólo se ve la cabecera)',
    v('#match-events-bar.plegada #match-events-list', 'height', dIpad) === '0');
 ok('3b · el despliegue se anima (transición de height, no display)',

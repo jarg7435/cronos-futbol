@@ -1,5 +1,36 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v457: LA PILA DE AVISOS DE UN CAMBIO GRUPAL CABE Y SE DEJA LEER. Reporte del
+//        autor: al hacer un cambio multiple/grupal, la tarjeta de avisos
+//        flotantes es mas larga que la pantalla del movil, no se ve entera y no
+//        da tiempo a leerla. Un cambio grupal emite UN AVISO POR PAREJA y los
+//        siete de un grupal llegan en un UNICO snapshot: lo que se desborda es
+//        la PILA. Tres defectos a la vez:
+//        A) EL TOPE DE ALTO ESTABA MAL MEDIDO. Era
+//           `calc(100vh - env(safe-area-inset-top) - 120px)`, un numero que NO
+//           descuenta de donde ARRANCA la pila (--toast-top, el borde inferior
+//           MEDIDO del marcador, ~200px): su base caia ~80px POR DEBAJO de la
+//           pantalla. 🔑 No se puede recorrer con scroll lo que esta fuera del
+//           area visible. Ahora es `calc(100dvh - var(--toast-top) - 1rem)`, en
+//           `dvh` porque en iOS `100vh` es el alto con las barras recogidas
+//           (misma trampa que v456) y con respaldo en vh.
+//        B) 🔑 LOS AVISOS SE ENCOGIAN EN VEZ DE DESBORDAR. En una columna flex
+//           con tope de alto, los hijos se comprimen ANTES de que el `overflow`
+//           entre a jugar (flex-shrink vale 1 por defecto): se aplastaban unos
+//           contra otros en vez de poder recorrerlos. Va `flex-shrink: 0`.
+//        C) SE IBAN A MEDIA LECTURA. Ahora cualquier gesto sobre la pila aplaza
+//           los cierres 2,5 s (se guarda un INSTANTE hasta el que no se cierra
+//           nada, no un booleano: asi se suelta solo sin depender de un "fin de
+//           gesto" fiable, que en tactil no lo hay), y un DESLIZAMIENTO de mas
+//           de 10px ya no cuenta como el toque que cierra el aviso — sin eso, el
+//           dedo que va a recorrer los cambios cerraba el que tenia debajo.
+//        Guard nuevo scripts/test_avisos_pila_scroll.js 191/191: hace la
+//        ARITMETICA del tope contra el alto visible de 11 dispositivos (la
+//        unica forma de afirmar "la pila termina DENTRO de la pantalla") y
+//        EJECUTA el ciclo de vida del aviso con reloj controlado, incluido un
+//        cambio grupal de 7. Red-check de 13 mutaciones, las 13 cazadas.
+//        El simulador de cascada de v456 pasa a scripts/_css_cascade.js,
+//        compartido por los dos guards.
 //  v456: EL CAJON DE SUCESOS, CONTENIDO TAMBIEN EN EL iPAD. Reporte del autor
 //        con capturas (IMG_0483/IMG_0484): en el iPad, pulsar la barra inferior
 //        de SUCESOS desplazaba la PAGINA ENTERA hacia abajo y el marcador
@@ -1403,7 +1434,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v456';
+const CACHE_NAME = 'cronos-cache-v457';
 
 const ASSETS = [
     './',

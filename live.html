@@ -496,8 +496,14 @@
                 align-items: flex-end;
                 /* v232: en móvil, permitir scroll vertical en la pila de toasts
                    para que cuando haya más de 3 cambios se pueda hacer scroll
-                   y verlos todos. Especialmente útil en landscape móvil. */
-                max-height: calc(100vh - env(safe-area-inset-top, 0px) - 120px);
+                   y verlos todos. Especialmente útil en landscape móvil.
+                   ⚠️ v457 · AQUÍ VIVÍA EL DEFECTO: el tope era
+                   `calc(100vh - env(safe-area-inset-top) - 120px)`, un número
+                   que NO descuenta de dónde arranca la pila (--toast-top, el
+                   borde del marcador), así que su base caía por debajo de la
+                   pantalla y los últimos avisos de un cambio grupal no había
+                   manera de verlos. El tope correcto está ahora en la regla
+                   base, en `dvh` y restando `--toast-top`. */
                 overflow-y: auto;
                 pointer-events: auto;
             }
@@ -514,7 +520,8 @@
            para que quepan más en la pantalla horizontal. */
         @media (orientation: landscape) and (max-width: 950px) {
             #event-toast-stack {
-                max-height: calc(100vh - env(safe-area-inset-top, 0px) - 100px);
+                /* v457 · el tope ya no se declara aquí (era otro número que no
+                   descontaba `--toast-top`); lo pone la regla base en `dvh`. */
                 gap: 0.3rem;
             }
             .event-toast {
@@ -659,10 +666,43 @@
             right: 1rem;
             z-index: 1200; display: flex; flex-direction: column;
             gap: 0.55rem; max-width: min(380px, 92vw);
-            pointer-events: none;
+            /* ── v457 · LA PILA CABE EN LA PANTALLA Y SE PUEDE RECORRER ──
+               Reporte del autor: con un CAMBIO GRUPAL llegan de golpe tantos
+               avisos como parejas (cada sustitución es su propio aviso), y en
+               el móvil la pila no cabía y no había forma de leerla entera.
+
+               🔑 EL TOPE SE MIDE DESDE DONDE EMPIEZA LA PILA. Antes valía
+               `calc(100vh - 120px)` en móvil, y la pila NO empieza arriba del
+               todo: arranca en `--toast-top` (el borde inferior MEDIDO del
+               marcador, ~200px). Sumando las dos cosas su base caía ~80px POR
+               DEBAJO del borde de la pantalla, así que los últimos avisos
+               quedaban fuera y el `overflow` no podía enseñarlos: no se puede
+               recorrer lo que está fuera del área visible. Restando el propio
+               `--toast-top`, la pila termina SIEMPRE dentro.
+               🔑 Y va en `dvh`, no en `vh`: en iOS `100vh` es el alto con las
+               barras del navegador recogidas (misma trampa que v456). Con
+               `100vh` el tope se pasaba otra vez de largo en el móvil.
+               La línea en `vh` queda de respaldo para navegadores sin `dvh`. */
+            max-height: calc(100vh  - var(--toast-top, 6rem) - 1rem);
+            max-height: calc(100dvh - var(--toast-top, 6rem) - 1rem);
+            overflow-y: auto;
+            /* Que el gesto no arrastre la página de detrás al llegar al final. */
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            /* Hace falta para poder DESLIZAR la pila con el dedo. No convierte
+               la pila en una franja que se trague los toques (el defecto de
+               v422): con `max-height` —y no `height`— la caja sigue midiendo lo
+               que miden los avisos, así que fuera de ellos no hay nada. */
+            pointer-events: auto;
         }
         .event-toast {
             pointer-events: auto;
+            /* 🔑 SIN ESTO EL SCROLL NO EXISTE. En una columna flex con tope de
+               alto, los hijos se ENCOGEN para caber (flex-shrink vale 1 por
+               defecto) antes de que el `overflow` entre en juego: los avisos de
+               un cambio grupal se aplastarían unos contra otros y se cortaría su
+               texto en vez de poder recorrerlos. */
+            flex-shrink: 0;
             display: flex; align-items: center; gap: 0.7rem;
             background: var(--surface);
             border: 1px solid var(--border);
@@ -2204,6 +2244,82 @@ window._posicionaAvisos = _posicionaAvisos;
 })();
 
 // ════════════════════════════════════════════════════════════════════
+//  v457 · LA PILA DE AVISOS SE DEJA LEER
+//
+//  Reporte del autor: con un CAMBIO GRUPAL llegan de golpe tantos avisos como
+//  parejas de jugadores (cada sustitución es su propio aviso, y los siete de un
+//  grupal llegan en un ÚNICO snapshot), la pila no cabe en el móvil y no da
+//  tiempo a leerla.
+//
+//  El tope de alto y el `overflow` los pone el CSS. Aquí van las dos cosas que
+//  el CSS no puede hacer:
+//
+//  1 · 🔑 MIENTRAS SE LEE, NINGÚN AVISO SE VA. Sin esto el arreglo del scroll
+//      no sirve de nada: los avisos se cierran solos a los 8 s, así que quien
+//      se pusiera a deslizar para leer los últimos cambios vería
+//      desvanecerse los de arriba a media lectura. Cualquier gesto sobre la
+//      pila —tocarla, deslizarla, o simplemente tener el ratón encima—
+//      APLAZA los cierres 2,5 s más. Se guarda un INSTANTE hasta el que no se
+//      cierra nada, no un booleano: así se suelta solo y no hace falta un
+//      "fin de gesto" fiable, que en táctil no lo hay.
+//
+//  2 · 🔑 UN DESLIZAMIENTO NO ES UN CLIC. Tocar un aviso lo cierra (v424), y
+//      esa es justo la forma de empezar a deslizar la pila: sin esta guarda, el
+//      dedo que va a recorrer los cambios cierra el que tiene debajo. Si el
+//      puntero se ha movido más de 10px desde que se apoyó, el clic se ignora.
+//
+//  ⚠️ Las dos se consultan desde showEventToast CON `typeof`: esa función se
+//  extrae y se EJECUTA SOLA en varios guards, y una referencia pelada la
+//  tumbaría (misma lección que la barra de sucesos en v442).
+// ════════════════════════════════════════════════════════════════════
+const _AVISOS_GRACIA_MS = 2500;   // cuánto se aplaza el cierre tras cada gesto
+const _AVISOS_ARRASTRE_PX = 10;   // a partir de aquí, es deslizar y no pulsar
+let _avisosLecturaHasta = 0;
+let _avisoArrastrePx = 0;
+
+function _avisosEnLectura() { return Date.now() < _avisosLecturaHasta; }
+function _retenAvisos(ms) {
+    const espera = (typeof ms === 'number') ? ms : _AVISOS_GRACIA_MS;
+    _avisosLecturaHasta = Math.max(_avisosLecturaHasta, Date.now() + espera);
+}
+function _fueArrastreDeLectura() { return _avisoArrastrePx > _AVISOS_ARRASTRE_PX; }
+window._retenAvisos = _retenAvisos;
+
+(function _pilaAvisosSeDejaLeer() {
+    function enganchar() {
+        const pila = (typeof document !== 'undefined' && document.getElementById)
+            ? document.getElementById('event-toast-stack') : null;
+        // Mismo patrón defensivo que el cajón de sucesos: en un contexto de
+        // pruebas los elementos pueden no implementar addEventListener.
+        if (!pila || typeof pila.addEventListener !== 'function') {
+            if (typeof setTimeout === 'function') setTimeout(enganchar, 500);
+            return;
+        }
+        let x0 = 0, y0 = 0;
+        const punto = (e) => {
+            const t = (e && e.touches && e.touches[0]) || e || {};
+            return { x: t.clientX || 0, y: t.clientY || 0 };
+        };
+        const inicio = (e) => { const p = punto(e); x0 = p.x; y0 = p.y; _avisoArrastrePx = 0; _retenAvisos(); };
+        const mueve  = (e) => {
+            const p = punto(e);
+            _avisoArrastrePx = Math.max(_avisoArrastrePx, Math.abs(p.x - x0) + Math.abs(p.y - y0));
+            _retenAvisos();
+        };
+        const reten  = () => _retenAvisos();
+        // ⚠️ NO se escucha `mousedown`: en táctil el navegador lo emite DESPUÉS
+        // del gesto, por compatibilidad, y reiniciaría la distancia recorrida
+        // justo antes del clic — o sea, desactivaría la guarda del punto 2 en el
+        // único sitio donde hace falta. `pointerdown` ya cubre ratón y dedo.
+        ['touchstart', 'pointerdown'].forEach(ev => pila.addEventListener(ev, inicio, { passive: true }));
+        ['touchmove', 'pointermove'].forEach(ev => pila.addEventListener(ev, mueve,  { passive: true }));
+        ['touchend', 'pointerup', 'scroll', 'wheel', 'mouseover']
+            .forEach(ev => pila.addEventListener(ev, reten, { passive: true }));
+    }
+    enganchar();
+})();
+
+// ════════════════════════════════════════════════════════════════════
 //  v444 · EL SUCESO SE ANUNCIA POR LAS DOS VÍAS, Y NINGUNA DEPENDE DE LA OTRA
 //
 //  · AVISO FLOTANTE (arriba, a la altura del marcador): salta al instante y se
@@ -2319,13 +2435,28 @@ function showEventToast(type, line, sub, matchTime, equipo, matchId) {
             el.classList.add("leaving");
             setTimeout(() => el.remove(), 320);
         };
-        el.onclick = quitar;
+        // v457 · el toque sigue cerrando el aviso… salvo que haya sido el
+        // comienzo de un DESLIZAMIENTO para leer la pila. Ver _fueArrastreDeLectura.
+        el.onclick = () => {
+            if (typeof _fueArrastreDeLectura === 'function' && _fueArrastreDeLectura()) return;
+            quitar();
+        };
         stack.appendChild(el);
         // v220: el tope es 15 y no 5 porque siete cambios grupales llegan en un
         // ÚNICO snapshot (throttle de 2 s de liveSyncOnAction) y con 5 se
         // evictaban los primeros antes de que nadie los leyera.
         while (stack.children.length > 15) stack.firstChild.remove();
-        setTimeout(quitar, 8000);
+        // v457 · se va solo a los 8 s, PERO NO MIENTRAS SE ESTÁ LEYENDO. Con un
+        // cambio grupal, quien se pone a deslizar la pila para ver los últimos
+        // cambios veía desvanecerse los primeros a media lectura.
+        const cierreAutomatico = () => {
+            if (typeof _avisosEnLectura === 'function' && _avisosEnLectura()) {
+                setTimeout(cierreAutomatico, 600);   // se reintenta, no se cancela
+                return;
+            }
+            quitar();
+        };
+        setTimeout(cierreAutomatico, 8000);
     }
 
     // ── 2 · el historial de la ventana inferior ──────────────────────
@@ -5376,8 +5507,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v456"></script>
-<script src="js/match/replay/replay-player.js?v=v456"></script>
-<script src="js/match/events/retroactive-modal.js?v=v456"></script>
+<script src="js/match/immutability.js?v=v457"></script>
+<script src="js/match/replay/replay-player.js?v=v457"></script>
+<script src="js/match/events/retroactive-modal.js?v=v457"></script>
 </body>
 </html>
