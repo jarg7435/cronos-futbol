@@ -1,5 +1,48 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v458: EL INFORME POST-PARTIDO, EXHAUSTIVO (implementar.txt, capturas
+//        8436/8437). El autor pide "rigor e integridad informativo absoluto":
+//        que aparezcan TODOS los convocados —14 en F7, 18 en F11, con 0 minutos
+//        quien no jugó— y que se listen TODOS los sucesos en orden.
+//        Medido con un F7 simulado de 14 convocados escribiendo el historial
+//        como lo escribe la app: aparecian 8 jugadores, faltaban el gol del
+//        minuto 10 y la amarilla del 15, y sobraban 14 filas de "CAMBIO".
+//        🔑 LOS DATOS NUNCA ESTUVIERON MAL: los tres escritores guardan un
+//        documento por CADA jugador del equipo. Todo se perdia al PINTAR, asi
+//        que esto repara tambien los informes YA GUARDADOS.
+//        A) EL FILTRO `p.convocado || tiene intervalos` borraba a DOS grupos:
+//           a quien no jugo —porque `convocado` NO LO ESCRIBE NADIE— y a quien
+//           jugo el partido ENTERO sin ser sustituido, cuyos unicos apuntes son
+//           los automaticos de fase (DESCANSO/2ªP/FIN), que se descartan con
+//           razon. Fuera el filtro: el informe lista la convocatoria completa.
+//        B) 🔑 `minutesPlayed` NO ES UN NUMERO: es la CADENA "MM:SS"
+//           (formatTime). `player.minutesPlayed > 0` era SIEMPRE falso
+//           —Number("70:00") es NaN—, y por eso el titular sin cambios se
+//           quedaba sin barra en el cronograma. Se lee como en category-tree.js.
+//        C) La clave de deduplicacion era `dorsal || '?'`: TODOS los jugadores
+//           sin dorsal caian en la misma y el informe se quedaba con uno.
+//        D) EL REGISTRO CRONOLOGICO leia el historial CRUDO, asi que pintaba
+//           como "CAMBIO" los apuntes automaticos de descanso y final (14 filas
+//           falsas en un F7) y a la vez perdia los sucesos de los jugadores
+//           filtrados. Ahora usa el MISMO criterio que el resto del motor
+//           (indicesDeFase), ordena por minuto Y segundo con desempate estable,
+//           y el descanso y el final se muestran como marcas de fase.
+//        E) EL CONTADOR DE TARJETAS DE LA CABECERA MARCO CERO SIEMPRE: comparaba
+//           `p.cards === 'yellow'` y toda la app escribe 'amarilla'. Era la
+//           amarilla que el autor echaba en falta. Se cuentan con la regla ya
+//           validada en category-tree.js (amarillas de history, rojas de cards).
+//        F) Integridad en el otro sentido, no inventar: un GOL ANULADO se tipa
+//           como 'goal' (el parser busca 'gol') y se pintaba como un gol mas;
+//           una ROJA REVERTIDA, como expulsion; y la DOBLE AMARILLA, como una
+//           amonestacion normal. Los tres se dicen ahora por su nombre.
+//        Guard nuevo scripts/test_informe_convocatoria_completa.js 53/53, que
+//        NO usa fixtures comodas: escribe el historial con las cadenas de la
+//        app, lo pasa por el _parseHistoryForFirestore REAL y arma el documento
+//        con los campos EXACTOS de collective-report.js. Rojo sobre el motor
+//        anterior (8 de 14 en F7 y 8 de 18 en F11). Red-check 12/12.
+//        ⚠️ Se invierten 3b/3e/3e-bis de test_report_engine_module.js, que
+//        fijaban el filtro — y que daban verde porque sus fixtures llevan
+//        `titular:true`, un campo que ningun escritor guarda.
 //  v457: LA PILA DE AVISOS DE UN CAMBIO GRUPAL CABE Y SE DEJA LEER. Reporte del
 //        autor: al hacer un cambio multiple/grupal, la tarjeta de avisos
 //        flotantes es mas larga que la pantalla del movil, no se ve entera y no
@@ -1434,7 +1477,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v457';
+const CACHE_NAME = 'cronos-cache-v458';
 
 const ASSETS = [
     './',

@@ -291,9 +291,23 @@ function walk(dir, out) {
             html.includes('Largo') && !html.includes('Corto'));
     }
     {
+        // ⚠️ v458 · ASERCIÓN INVERTIDA, y a petición expresa del autor
+        // (implementar.txt): "el informe debe ser exhaustivo con la plantilla;
+        // quien no participó no debe desaparecer, debe figurar con 0 minutos
+        // para que el registro del club sea fiel a la realidad".
+        //
+        // 🔑 Y ESTA ASERCIÓN ERA PARTE DEL PROBLEMA, no sólo su reflejo: daba
+        // VERDE con fixtures que llevan `titular: true` / `convocado: true`,
+        // campos que NINGÚN escritor guarda en Firestore. Con los documentos
+        // REALES el filtro que aquí se celebraba borraba también a quien había
+        // jugado el partido entero sin ser sustituido. Lo cubre a partir de
+        // ahora scripts/test_informe_convocatoria_completa.js, que construye el
+        // documento tal y como lo escribe la app.
         const { html } = build([titular('Jugo', 4), suplente('NoJugo', 8)], { duration: 60 });
-        ok('3b · descarta a quien no jugó ni fue convocado',
-            html.includes('Jugo') && !html.includes('NoJugo'));
+        ok('3b · conserva a quien no jugó (aparece con 0 minutos)',
+            html.includes('Jugo') && html.includes('NoJugo'));
+        ok('3b2 · y lo dice explícitamente, para no confundirlo con un dato ausente',
+            html.includes('no jugó'));
     }
     {
         const { html } = build([titular('Jugo', 4), suplente('Banca', 8, { convocado: true })], { duration: 60 });
@@ -308,8 +322,15 @@ function walk(dir, out) {
     {
         const { html, match } = build([titular('A', 1), titular('B', 2), suplente('C', 3)], { duration: 60 });
         ok('3e · ⚠️ build MUTA su argumento escribiendo m.participantsCount',
-            match.participantsCount === 2, match.participantsCount);
-        ok('3e-bis · y sólo cuenta a los participantes reales', !html.includes('>C<'));
+            match.participantsCount === 3, match.participantsCount);
+        // ⚠️ v458 · INVERTIDA con 3b: `participantsCount` es el rótulo
+        // "convocados" de la cabecera y ahora los cuenta a TODOS, que es lo que
+        // esa palabra significa. Quién llegó a jugar lo dice `playedCount`, un
+        // contador aparte: antes los dos conceptos iban en el mismo número y por
+        // eso la cabecera decía "8 convocados" en un partido de 14.
+        ok('3e-bis · y `playedCount` distingue a los que de verdad jugaron',
+            match.playedCount === 2 && html.includes('>C<'),
+            { convocados: match.participantsCount, jugaron: match.playedCount });
     }
     {
         let threw = null;

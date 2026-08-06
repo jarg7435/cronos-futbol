@@ -161,6 +161,28 @@ const _RP = (() => {
         return evs.filter((_, i) => !fuera.has(i));
     };
 
+    // ── Segundos jugados SEGÚN EL CRONÓMETRO, tal y como se guardan ────
+    // 🔑 v458 · `minutesPlayed` NO ES UN NÚMERO en el documento: los tres
+    // escritores (collective-report.js, match-reports-auto.js,
+    // match-reports-send.js) lo guardan con formatTime, o sea la CADENA
+    // "MM:SS". La comprobación `player.minutesPlayed > 0` que había en buildIvs
+    // era por tanto SIEMPRE falsa —Number("70:00") es NaN—, y ése era el motivo
+    // de que un jugador que disputó el partido ENTERO sin ser sustituido se
+    // quedara sin intervalos y desapareciera del informe.
+    // Mismo criterio ya validado en js/admin/shared/category-tree.js
+    // (_ctToSeconds): se aceptan "MM:SS", los segundos en crudo y el número.
+    const _segundosJugados = (p) => {
+        if (!p) return 0;
+        const v = p.minutesPlayed;
+        if (typeof v === 'number' && isFinite(v)) return Math.max(0, Math.round(v));
+        const s = String(v == null ? '' : v).trim();
+        const mmss = s.match(/^(\d+):([0-5]?\d)$/);
+        if (mmss) return parseInt(mmss[1], 10) * 60 + parseInt(mmss[2], 10);
+        if (/^\d+$/.test(s)) return parseInt(s, 10);
+        if (typeof p.time === 'number' && isFinite(p.time)) return Math.max(0, Math.round(p.time));
+        return 0;
+    };
+
     // ── Reconstruir intervalos en campo desde el historial ────────────
     // history contiene eventos {type:'sub_in'|'sub_out'|'goal'|..., minute:N, second:S, timeStr:"MM:SS"}
     const buildIvs = (player, totMin) => {
@@ -190,7 +212,9 @@ const _RP = (() => {
         });
             
         if (!hist.length) {
-            const playedSome = (player.minutesPlayed > 0) || (player.status === 'field') || (player.initialStatus === 'field') || (player.titular === true);
+            // v458 · el cronómetro manda, y se lee bien (ver _segundosJugados).
+            const playedSome = _segundosJugados(player) > 0 || (player.status === 'field') ||
+                               (player.initialStatus === 'field') || (player.titular === true);
             return playedSome ? [[0, totMin]] : [];
         }
         
@@ -438,8 +462,26 @@ const _RP = (() => {
     // ════════════════════════════════════════════════════════════════
     const buildStats = m => {
         const goals  = m.players.reduce((s, p) => s + (p.goals || 0), 0);
-        const ycards = m.players.filter(p => p.cards === 'yellow').length;
-        const rcards = m.players.filter(p => p.cards === 'red').length;
+        // 🔑 v458 · ESTE CONTADOR SIEMPRE MARCÓ CERO TARJETAS. Comparaba
+        // `p.cards === 'yellow'` / `'red'`, pero TODA la app escribe ese campo
+        // en español ('amarilla' / 'roja') — lo hacen player-actions.js y lo
+        // leen así la propia tabla de tiempos de este motor, collective-report,
+        // match-reports-auto y match-reports-send. La amarilla que el autor echó
+        // en falta en el informe salía de aquí.
+        //
+        // Y se cuentan con la regla ya validada en category-tree.js:
+        //   · LAS AMARILLAS, DE `history`: `cards` es un único campo y la
+        //     segunda amarilla lo sobrescribe a 'roja', así que un expulsado por
+        //     doble amarilla saldría con CERO amarillas.
+        //   · LAS ROJAS, DE `cards`: en una doble amarilla no hay apunte 'red'
+        //     en el historial y en una roja directa sí; `cards === 'roja'` cubre
+        //     los dos casos exactamente una vez. Sumar las dos fuentes
+        //     duplicaría las rojas directas.
+        const _amarillasDe = p => ((p.history || []).filter(e =>
+            e && ((typeof e === 'object' && e.type === 'yellow') ||
+                  (typeof e === 'string' && e.toLowerCase().indexOf('amarilla') !== -1))).length);
+        const ycards = m.players.reduce((s, p) => s + _amarillasDe(p), 0);
+        const rcards = m.players.filter(p => p.cards === 'roja' || p.cards === 'red').length;
         const inj    = m.players.filter(p => p.injured).length;
         const cardTxt = ycards > 0
             ? (rcards > 0
@@ -450,7 +492,12 @@ const _RP = (() => {
             `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);` +
             `border-radius:10px;padding:0.5rem;text-align:center;">` +
             `<div style="font-size:1.2rem;font-weight:700;color:white;">${m.participantsCount || m.players.length}</div>` +
-            `<div style="font-size:0.62rem;color:var(--text-muted);">convocados</div></div>` +
+            `<div style="font-size:0.62rem;color:var(--text-muted);">convocados</div>` +
+            // v458 · cuántos de ellos llegaron a jugar. El total ya dice la
+            // verdad (son todos), así que este segundo número es el que informa.
+            (typeof m.playedCount === 'number'
+                ? `<div style="font-size:0.58rem;color:var(--text-muted);opacity:0.8;">${m.playedCount} jugaron</div>` : '') +
+            `</div>` +
 
             `<div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.15);` +
             `border-radius:10px;padding:0.5rem;text-align:center;">` +
@@ -865,10 +912,41 @@ const _RP = (() => {
     // ════════════════════════════════════════════════════════════════
     //  SECCIÓN 5: REGISTRO CRONOLÓGICO DE INCIDENCIAS
     // ════════════════════════════════════════════════════════════════
+    // 🔑 v458 · LOS SUCESOS DE UN JUGADOR, SIN LOS APUNTES AUTOMÁTICOS DE FASE.
+    // Al cerrar la primera parte la app apunta "Sale (DESCANSO)" a todos los que
+    // están en el campo, "Entra (2ªP)" al empezar la segunda y "Sale (FIN)" al
+    // acabar. NO son cambios —el reglamento no gasta una sustitución por pasar
+    // por el descanso— y el resto del informe (el cronograma y el panel de
+    // rotaciones) ya los descarta desde v426. Este registro NO lo hacía: en un
+    // F7 con 14 convocados metía 14 filas de "CAMBIO" falsas que ahogaban a los
+    // sucesos de verdad. Se descartan con el MISMO criterio que usa el resto del
+    // motor (indicesDeFase), no con un filtro de texto propio: dos criterios
+    // distintos para lo mismo acabarían divergiendo.
+    // El descanso y el final SÍ se muestran, pero como lo que son: marcas de
+    // fase (ver _filasDeFase), no sustituciones.
+    const sucesosReales = (p) => {
+        const hist = (p.history || []).filter(e => e && e.type);
+        const subs = hist.filter(e => e.type === 'sub_in' || e.type === 'sub_out');
+        const fuera = indicesDeFase(subs);
+        const descartados = new Set();
+        subs.forEach((e, i) => { if (fuera.has(i)) descartados.add(e); });
+        return hist.filter(e => !descartados.has(e));
+    };
+
+    // Orden de desempate dentro del mismo instante. Sin él, dos sucesos del
+    // mismo minuto salían en el orden en que estuvieran los JUGADORES, que no
+    // es cronológico ni estable.
+    const _RANGO_SUCESO = { goal: 0, yellow: 1, red: 2, injury: 3, sub_out: 4, sub_in: 5 };
+    const _instante = e => (e.minute || 0) + (e.second || 0) / 60;
+
     const buildEventsList = players => {
         const all = [];
-        players.forEach(p => (p.history || []).forEach(ev => all.push({ ...ev, _p: p })));
-        all.sort((a, b) => (a.minute || 0) - (b.minute || 0));
+        players.forEach(p => sucesosReales(p).forEach(ev => all.push({ ...ev, _p: p })));
+        all.sort((a, b) =>
+            (_instante(a) - _instante(b)) ||
+            ((_RANGO_SUCESO[a.type] === undefined ? 9 : _RANGO_SUCESO[a.type]) -
+             (_RANGO_SUCESO[b.type] === undefined ? 9 : _RANGO_SUCESO[b.type])) ||
+            ((parseInt(a._p.playerNumber) || 99) - (parseInt(b._p.playerNumber) || 99)));
 
         const relevant = all.filter(ev => ['goal','yellow','red','injury','sub_in','sub_out'].includes(ev.type));
         if (!relevant.length) return '';
@@ -876,12 +954,37 @@ const _RP = (() => {
         const rows = relevant.map((ev, idx) => {
             // v218: sin "nº<num>"; solo nombre del jugador.
             const name = esc((ev._p.playerAlias || 'Jugador').substring(0, 16));
+            // v458 · el TEXTO original del apunte, para no contar como gol un
+            // gol anulado ni como expulsión una roja revertida. Ver _matiz.
+            const nota = String(ev.note || '');
+            const anulado  = /ANULAD/i.test(nota);
+            const revertida = /REVERTID|RECTIFIC/i.test(nota);
+            const dobleAmarilla = /DOBLE\s+AMARILLA/i.test(nota);
             let icon = '', col = 'var(--text-muted)', txt = '';
 
-            if (ev.type === 'goal') {
+            if (ev.type === 'goal' && anulado) {
+                // 🔑 v458 · "GOL ANULADO (Quedan: N)" se tipa como 'goal' porque
+                // el parser busca 'gol' en el texto. Pintarlo como un GOL más
+                // era decir en el informe oficial que se marcó un gol que el
+                // árbitro anuló: lo contrario del rigor que se pide.
+                icon = `<span style="width:10px;height:10px;border-radius:50%;background:transparent;border:2px solid #7d8590;display:inline-block;flex-shrink:0;"></span>`;
+                col = 'var(--text-muted)';
+                txt = `<strong style="letter-spacing:0.5px;">GOL ANULADO</strong> &middot; ${name}`;
+            } else if (ev.type === 'goal') {
                 icon = `<span style="width:10px;height:10px;border-radius:50%;background:#3fb950;border:2px solid #27500A;display:inline-block;flex-shrink:0;"></span>`;
                 // v218: GOL en MAYÚSCULAS (verde).
                 col = '#3fb950'; txt = `<strong style="letter-spacing:0.5px;">GOL</strong> &middot; ${name}`;
+            } else if (ev.type === 'red' && revertida) {
+                icon = `<span style="width:7px;height:10px;background:transparent;border:1px solid #7d8590;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
+                col = 'var(--text-muted)';
+                txt = `<strong style="letter-spacing:0.5px;">ROJA REVERTIDA</strong> &middot; ${name}`;
+            } else if (ev.type === 'yellow' && dobleAmarilla) {
+                // La segunda amarilla es una EXPULSIÓN. El parser la tipa como
+                // 'yellow' (mira 'amarilla' antes que 'roja'), así que sin este
+                // matiz el informe la enseñaba como una amonestación normal.
+                icon = `<span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
+                col = '#ff5858';
+                txt = `<strong style="letter-spacing:0.5px;">DOBLE AMARILLA</strong> · <span style="color:#ff5858;">Expulsión</span> &middot; ${name}`;
             } else if (ev.type === 'yellow') {
                 icon = `<span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;flex-shrink:0;"></span>`;
                 // v218: TARJETA en MAYÚSCULAS (amarillo).
@@ -908,18 +1011,55 @@ const _RP = (() => {
 
             return (
                 `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;` +
-                `border-bottom:${idx < relevant.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none'};font-size:0.76rem;">` +
+                `font-size:0.76rem;" data-suceso="${esc(ev.type)}">` +
                 `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${ev.timeStr || formatTot((ev.minute||0) + (ev.second||0)/60)}</span>` +
                 horaRealPill(ev.realTime) +
                 icon +
                 `<span style="color:${col};">${txt}</span>` +
                 `</div>`
             );
-        }).join('');
+        });
+
+        // ── v458 · LAS MARCAS DE FASE, COMO LO QUE SON ──────────────────
+        // El descanso y el final no son sustituciones, pero sí forman parte de
+        // la cronología del encuentro. Se intercalan como separadores para que
+        // el registro se lea de principio a fin sin huecos ni invenciones.
+        const marcas = [];
+        const _addMarca = (t, etiqueta) => {
+            if (t == null || marcas.some(x => Math.abs(x.t - t) < 0.001 && x.etiqueta === etiqueta)) return;
+            marcas.push({ t, etiqueta });
+        };
+        players.forEach(p => (p.history || []).forEach(e => {
+            if (!e || !e.type) return;
+            const nota = String(e.note || '');
+            if (/\(DESCANSO\)/i.test(nota)) _addMarca(_instante(e), 'DESCANSO');
+            else if (/\(FIN\)/i.test(nota)) _addMarca(_instante(e), 'FINAL DEL PARTIDO');
+        }));
+        const filaMarca = (mk) =>
+            `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:0.72rem;" data-suceso="fase">` +
+            `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${formatTot(mk.t)}</span>` +
+            `<span style="flex:1;height:1px;background:rgba(255,255,255,0.10);"></span>` +
+            `<span style="font-size:0.63rem;font-weight:700;letter-spacing:1px;color:rgba(255,255,255,0.45);text-transform:uppercase;">${mk.etiqueta}</span>` +
+            `<span style="flex:1;height:1px;background:rgba(255,255,255,0.10);"></span>` +
+            `</div>`;
+
+        // Se funden las dos listas por instante. La marca de fase va DELANTE de
+        // los sucesos del mismo minuto: un cambio hecho durante el descanso se
+        // lee después del rótulo DESCANSO, que es como ocurrió.
+        const items = relevant
+            .map((ev, i) => ({ t: _instante(ev), orden: 1, html: rows[i] }))
+            .concat(marcas.map(mk => ({ t: mk.t, orden: 0, html: filaMarca(mk) })))
+            .sort((a, b) => (a.t - b.t) || (a.orden - b.orden));
+
+        const cuerpo = items.map((it, i) =>
+            i < items.length - 1
+                ? it.html.replace('font-size:0.7', 'border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.7')
+                : it.html
+        ).join('');
 
         return (
             `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Registro cronológico de incidencias</div>` +
-            `<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.65rem 0.85rem;">${rows}</div>`
+            `<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.65rem 0.85rem;">${cuerpo}</div>`
         );
     };
 
@@ -947,7 +1087,13 @@ const _RP = (() => {
                 ? `<span style="font-size:0.68rem;background:rgba(239,68,68,0.15);color:#ef4444;padding:1px 6px;border-radius:100px;">🟥</span>` : '';
             const injBadge = p.injured
                 ? `<span style="font-size:0.68rem;background:rgba(249,115,22,0.15);color:#f97316;padding:1px 6px;border-radius:100px;">🚑</span>` : '';
-            const badges = [goalBadge, cardBadge, injBadge].filter(Boolean).join(' ');
+            // v458 · quien no jugó ni un minuto figura EXPLÍCITAMENTE, con su
+            // 00:00 y dicho con todas las letras: así el registro del club es
+            // fiel y nadie confunde un 00:00 con un dato que falta.
+            const noJugo = (_segundosJugados(p) === 0 && !(p._tot > 0));
+            const banqBadge = noJugo
+                ? `<span style="font-size:0.62rem;background:rgba(255,255,255,0.06);color:var(--text-muted);padding:1px 7px;border-radius:100px;letter-spacing:0.3px;">no jugó</span>` : '';
+            const badges = [goalBadge, cardBadge, injBadge, banqBadge].filter(Boolean).join(' ');
 
             return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:${bg};border-radius:5px;">
                 <span style="min-width:22px;font-size:0.72rem;font-weight:700;color:rgba(255,255,255,0.35);text-align:right;">${esc(String(p.playerNumber || '?'))}</span>
@@ -972,25 +1118,55 @@ const _RP = (() => {
         const totMin  = getTotMin(m);
         const stopMin = parseInt(m.stoppageTime) || 0;
 
-        // 1. Deduplicar jugadores por número (quedarnos con el informe más completo/reciente)
+        // 1. Deduplicar jugadores (quedarnos con el informe más completo/reciente)
+        // 🔑 v458 · LA CLAVE ES EL DORSAL CUANDO LO HAY, Y EL ALIAS CUANDO NO.
+        // Con `p.playerNumber || '?'`, TODOS los jugadores sin dorsal caían en
+        // la misma clave '?' y el informe se quedaba sólo con uno de ellos: era
+        // una segunda forma silenciosa de perder convocados.
         const uniquePlayers = {};
-        m.players.forEach(p => {
-            const num = p.playerNumber || '?';
-            if (!uniquePlayers[num] || (p.history && p.history.length > (uniquePlayers[num].history || []).length)) {
-                uniquePlayers[num] = p;
+        m.players.forEach((p, i) => {
+            const num   = String(p.playerNumber == null ? '' : p.playerNumber).trim();
+            const alias = String(p.playerAlias  == null ? '' : p.playerAlias).trim().toLowerCase();
+            const key   = num ? ('n:' + num) : (alias ? ('a:' + alias) : ('i:' + i));
+            if (!uniquePlayers[key] || (p.history && p.history.length > (uniquePlayers[key].history || []).length)) {
+                uniquePlayers[key] = p;
             }
         });
 
-        // 2. Enriquecer y filtrar: Solo los que han tenido minutos de juego (convocados/participantes)
+        // 2. TODOS LOS CONVOCADOS, HAYAN JUGADO O NO.
+        // 🔑 v458 · ENCARGO DEL AUTOR: "el informe debe ser exhaustivo con la
+        // plantilla; en F7 los 14 convocados y en F11 los 18. Quien no haya
+        // participado no debe desaparecer: debe figurar con 0 minutos para que
+        // el registro del club sea fiel a la realidad."
+        //
+        // Aquí había un `.filter(p => p.convocado || p._ivs.some(...))` que
+        // dejaba fuera a DOS grupos, no a uno:
+        //   · a quien no jugó ni un minuto —lo que el autor pide corregir—,
+        //     porque `convocado` NO LO ESCRIBE NINGÚN ESCRITOR (los tres
+        //     guardan playerNumber, playerAlias, position, goals, cards,
+        //     injured, minutesPlayed e history, y nada más);
+        //   · y a quien jugó el partido ENTERO sin ser sustituido, porque sus
+        //     únicos apuntes son los automáticos de fase (DESCANSO/2ªP/FIN),
+        //     que `soloCambiosReales` descarta con razón, y entonces se quedaba
+        //     sin intervalos.
+        // Medido sobre un F7 simulado con 14 convocados: aparecían 8.
+        //
+        // Los datos NUNCA estuvieron mal: los tres escritores guardan un
+        // documento por CADA jugador del equipo. La pérdida era sólo de
+        // presentación, así que esto REPARA TAMBIÉN LOS INFORMES YA GUARDADOS
+        // (mismo efecto que el arreglo de la semilla en v425).
         const players = Object.values(uniquePlayers)
             .map(p => ({ ...p, _pos: getPos(p), _ivs: buildIvs(p, totMin) }))
-            .filter(p => p.convocado || p._ivs.some(([a, b]) => b > a))
-            .sort((a, b) => (parseInt(a.playerNumber) || 99) - (parseInt(b.playerNumber) || 99));
+            .sort((a, b) => ((parseInt(a.playerNumber) || 99) - (parseInt(b.playerNumber) || 99)) ||
+                            String(a.playerAlias || '').localeCompare(String(b.playerAlias || '')));
 
         players.forEach(p => { p._tot = calcTot(p._ivs); });
-        
-        // Guardar contador para las estadísticas
+
+        // Contadores para las estadísticas. `participantsCount` es el rótulo
+        // "convocados" de la cabecera: ahora dice la verdad (antes contaba sólo
+        // a los que sobrevivían al filtro de arriba).
         m.participantsCount = players.length;
+        m.playedCount = players.filter(p => _segundosJugados(p) > 0 || p._tot > 0).length;
 
         const subs      = buildSubs(players);
         const clubName  = me?.clubName || 'CD Local';
