@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v460: el video exportado pasa de ~1 min a ~2 min (peticion del autor). Es un
+//        solo numero: _EXPORT_SALTOS 600 -> 1200 en replay-player.js. Todo lo
+//        demas de v459 sigue igual.
 //  v459: LA DESCARGA TRAE EL PARTIDO ENTERO Y LA ✕ DEVUELVE AL LISTADO. Dos
 //        incidencias criticas de implementar.txt (capturas 8446-8450), de cara
 //        a la demo.
@@ -17,9 +20,11 @@
 //           Ahora la exportacion rebobina a 0, recorre la linea temporal
 //           COMPLETA —descuento incluido, porque maxTimeSec sale de
 //           timeH1+timeH2 desde v446— con ritmo propio (10 saltos por segundo y
-//           paso calculado para que cualquier duracion quepa en ~600 saltos,
-//           o sea ~60 s de video) y se cierra y descarga sola. El boton muestra
-//           el avance para que nadie lo corte.
+//           paso calculado para que cualquier duracion quepa en ~1200 saltos,
+//           o sea ~2 MINUTOS de video —duracion pedida por el autor tras ver la
+//           primera version de un minuto— y se cierra y descarga sola. El boton
+//           muestra el avance para que nadie lo corte. Para cambiar la duracion
+//           se toca SOLO _EXPORT_SALTOS: dura _EXPORT_SALTOS x _EXPORT_MS.
 //        B) 🔑 LA ✕ DEJABA A LA VISTA UN CAMPO VACIO, Y NO ERA EL BOTON: ERAN
 //           LAS CAPAS. El reproductor es una capa opaca a z-index 100000;
 //           quitarla deja ver lo que hay debajo. Y el boton "Revivir" del
@@ -1528,7 +1533,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v459';
+const CACHE_NAME = 'cronos-cache-v460';
 
 const ASSETS = [
     './',

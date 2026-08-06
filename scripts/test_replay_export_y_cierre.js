@@ -191,12 +191,16 @@ function exporta(partido, { dejarCursorEn = 0, esperaMs = 5 * 60 * 1000 } = {}) 
     ok('1d · y descarga el fichero sin intervención',
        sb._descargas.some(a => /^partido_repeticion_\d+\.(webm|mp4)$/.test(a.download || '') && a.clicked),
        JSON.stringify(sb._descargas.map(a => a.download)));
-    ok('1e · 🔑 la grabación dura un tiempo RAZONABLE (≤ 90 s de reloj real)',
-       rec && (rec.fin - rec.inicio) <= 90000,
+    // 🔑 DURACIÓN PEDIDA POR EL AUTOR: "más lento, a unos 2 minutos" (2026-08-06,
+    // tras ver la primera versión de ~1 min). La horquilla es generosa por
+    // arriba y por abajo porque el paso se redondea a segundos enteros, pero
+    // deja fuera tanto el tiempo real (73 min) como un pase acelerado ilegible.
+    ok('1e · 🔑 la grabación dura ~2 minutos, como pidió el autor (90-150 s)',
+       rec && (rec.fin - rec.inicio) >= 90000 && (rec.fin - rec.inicio) <= 150000,
        rec ? Math.round((rec.fin - rec.inicio) / 1000) + ' s' : '—');
-    ok('1e2 · …y no es instantánea (el vídeo tiene metraje suficiente para verse)',
-       rec && (rec.fin - rec.inicio) >= 20000,
-       rec ? Math.round((rec.fin - rec.inicio) / 1000) + ' s' : '—');
+    ok('1e2 · …y desde luego no es el tiempo real del partido',
+       rec && (rec.fin - rec.inicio) < (P.timeH1 + P.timeH2) * 1000 / 4,
+       rec ? Math.round((rec.fin - rec.inicio) / 1000) + ' s de ' + (P.timeH1 + P.timeH2) + ' s jugados' : '—');
     ok('1f · el vídeo llega a la SEGUNDA PARTE (el rótulo de fase lo dice)',
        sb._reg['replay-phase-display'].textContent === '2ª PARTE',
        sb._reg['replay-phase-display'].textContent);
@@ -217,8 +221,8 @@ function exporta(partido, { dejarCursorEn = 0, esperaMs = 5 * 60 * 1000 } = {}) 
        seg(sb._reg['replay-seek-curr'].textContent) === totalPartido,
        sb._reg['replay-seek-curr'].textContent);
     ok('1h2 · y también se cierra sola', rec && rec.state !== 'recording');
-    ok('1h3 · con una duración parecida a la de F7 (el ritmo se adapta)',
-       rec && (rec.fin - rec.inicio) <= 90000,
+    ok('1h3 · con una duración parecida a la de F7 (el ritmo se adapta a la del partido)',
+       rec && (rec.fin - rec.inicio) >= 90000 && (rec.fin - rec.inicio) <= 150000,
        rec ? Math.round((rec.fin - rec.inicio) / 1000) + ' s' : '—');
 }
 {

@@ -1144,13 +1144,20 @@
     //  descarga sola al llegar al final.
     //
     //  El ritmo: 10 saltos por segundo (100 ms) y el paso se calcula para que
-    //  CUALQUIER duración quepa en ~600 saltos, o sea ~60 s de vídeo. Un
-    //  partido de 73:40 sale en un minuto de vídeo en vez de en 73. El lienzo
-    //  se sigue capturando a 30 fps, así que cada instante de la línea temporal
-    //  ocupa unos 3 fotogramas y el movimiento se ve fluido.
+    //  CUALQUIER duración quepa en ~1200 saltos, o sea ~2 MINUTOS de vídeo. Un
+    //  partido de 73:40 sale en dos minutos en vez de en 73. El lienzo se sigue
+    //  capturando a 30 fps, así que cada instante de la línea temporal ocupa
+    //  unos 3 fotogramas y el movimiento se ve fluido.
+    //
+    //  ⚠️ LOS DOS SON DECISIÓN DEL AUTOR, no un ajuste técnico: pidió el vídeo
+    //  "más lento, a unos 2 minutos" tras ver la primera versión de un minuto.
+    //  Para cambiar la duración se toca SÓLO `_EXPORT_SALTOS`: la duración del
+    //  vídeo es `_EXPORT_SALTOS × _EXPORT_MS` (1200 × 100 ms = 120 s), y el paso
+    //  se recalcula solo para cada partido. Bajar `_EXPORT_MS` no alarga el
+    //  vídeo, lo acelera.
     // ════════════════════════════════════════════════════════════════
-    const _EXPORT_MS    = 100;   // cada cuánto avanza la línea temporal
-    const _EXPORT_SALTOS = 600;  // saltos totales ⇒ ~60 s de vídeo
+    const _EXPORT_MS    = 100;    // cada cuánto avanza la línea temporal
+    const _EXPORT_SALTOS = 1200;  // saltos totales ⇒ ~120 s de vídeo
     let _exportTimer = null;
 
     function _detenerRecorrido() {
