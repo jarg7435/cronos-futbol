@@ -1,5 +1,44 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v454: 🔴 EL SERVICE WORKER DEJA DE TOCAR EL SDK DE FIREBASE + PURGA TOTAL.
+//        El bloqueo del panel en vivo PERSISTIA en movil y en iPad despues de
+//        v453, y eso descarto el diagnostico inicial: v453 hizo IMPOSIBLE el
+//        TypeError, asi que la causa ya no podia ser esa.
+//        🔑 LA CAUSA REAL, y es de v447: `live.html` importa el SDK con
+//        `import` ESTATICOS en la cabecera de su modulo. Si UNA sola de esas
+//        peticiones no devuelve JavaScript valido, el modulo ENTERO no se
+//        evalua y la pagina se queda EN BLANCO, sin mensaje. v453 solo cambio
+//        el sintoma: donde habia un TypeError paso a haber un 504 fabricado por
+//        nosotros, y el import seguia fallando igual.
+//        CURA: se REVIERTE la "Pieza D" de v447. El SW ya no intercepta
+//        gstatic (pasa a _esCanalVivo) ni lo precachea. Lo sirve el navegador,
+//        que es como funciono el proyecto hasta v447 y como debe ser:
+//        ⚠️ interceptar peticiones de OTRO ORIGEN que alimentan `import` de
+//        modulos es asumir una responsabilidad que no nos corresponde.
+//        Coste asumido: sin cobertura y con el cache HTTP vacio, la app no
+//        arranca. Escenario poco frecuente y RECUPERABLE; una pantalla en
+//        negro al abrir el panel en vivo no lo es.
+//        PURGA TOTAL DE UN SOLO USO (PURGA_TOTAL): los dispositivos arrastraban
+//        entradas envenenadas DENTRO de la cache vigente, asi que borrar solo
+//        "las que no son la actual" no bastaba. Con el sello nuevo se borran
+//        TODAS —salvo `cronos-meta`, que guarda el propio sello— y se repuebla
+//        el shell acto seguido. Es un martillo: solo se sube ante sospecha de
+//        cache corrupta en dispositivos reales.
+//        AUTOCURACION EN EL CLIENTE (live.html): un vigilante en script
+//        CLASICO, ANTES del modulo para que sobreviva a su muerte. Si a los 8 s
+//        la vista no ha dado senyal de vida, borra todas las caches, da de baja
+//        el Service Worker y recarga. 🔑 UNA SOLA VEZ, marcado en
+//        sessionStorage: sin esa marca, una pagina que no arranque por un
+//        motivo AJENO a la cache entraria en un bucle infinito de recargas, que
+//        es peor que la pantalla en blanco.
+//        Ademas: `install` ya no puede fallar por un recurso de otro origen —
+//        un install que falla deja mandando al Service Worker VIEJO.
+//        ⚠️ Se INVIERTEN las aserciones de la Parte 6 de
+//        test_offline_resilience.js y los casos del SDK de
+//        test_sw_respuesta_garantizada.js: fijaban la Pieza D, que es
+//        justamente lo que rompio la aplicacion. Se invierten, no se borran
+//        (mismo criterio que los cuatro guards de v440).
+//        Guards 28/28 y 43/43. Suite 102/102 activos + 11 xfail.
 //  v453: 🔴 FIX CRITICO — "TypeError: Failed to convert value to 'Response'" y
 //        live.html EN NEGRO, con Ctrl+Shift+R obligatorio. Reportado en
 //        produccion la vispera de una demostracion.
@@ -1295,7 +1334,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v453';
+const CACHE_NAME = 'cronos-cache-v454';
 
 const ASSETS = [
     './',
@@ -1392,37 +1431,61 @@ const ASSETS = [
 // tener el SDK. Las URL llevan la versión dentro, así que son inmutables:
 // al subir de 10.12.2 cambian las claves y las viejas se van con el
 // CACHE_NAME antiguo en el 'activate'.
-const FIREBASE_SDK = [
-    'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
-    'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
-    'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
-    'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js',
-];
+// v454 · Aquí vivía FIREBASE_SDK, la lista de módulos de gstatic que v447
+// precacheaba. Se retira junto con su interceptación: precachear algo que ya
+// no se sirve desde la caché no aporta nada, y `cache.addAll` sobre URLs de
+// OTRO ORIGEN es además una fuente de fallos de instalación en iOS —
+// exactamente el dispositivo donde apareció el problema.
 
-// Canal VIVO de Firebase: JAMÁS se cachea. Son los datos en tiempo real del
-// partido; servirlos de caché mostraría un marcador muerto.
-// ⚠️ gstatic NO entra aquí: es el CÓDIGO del SDK, no los datos.
+// ══════════════════════════════════════════════════════════════════
+//  🔴 v454 · EL SERVICE WORKER NO TOCA EL SDK DE FIREBASE. NUNCA.
+//
+//  Esto REVIERTE la "Pieza D" de v447, que precacheaba los módulos del SDK
+//  (gstatic) y los servía cache-first para que la app arrancase sin cobertura.
+//  La idea era buena; la ejecución rompió la aplicación en móvil y en iPad.
+//
+//  🔑 POR QUÉ: `live.html` importa el SDK con `import` ESTÁTICOS en la cabecera
+//  de su módulo. Si UNA sola de esas peticiones devuelve algo que no sea el
+//  JavaScript esperado —una respuesta de error, una entrada de caché a medio
+//  escribir, o cualquier cosa que el Service Worker fabrique— el módulo ENTERO
+//  no se evalúa y la página se queda EN BLANCO. Sin mensaje y sin recuperación.
+//
+//  v453 hizo imposible el `TypeError: Failed to convert value to 'Response'`,
+//  pero eso sólo cambió el sintoma: donde antes había un TypeError pasó a haber
+//  un 504 fabricado por nosotros, y el `import` seguía fallando igual. La
+//  pantalla negra persistió en los dispositivos del autor.
+//
+//  ⚠️ LA LECCIÓN: interceptar peticiones de OTRO ORIGEN que alimentan `import`
+//  de módulos es asumir una responsabilidad que no nos corresponde. El
+//  navegador ya cachea el SDK por su cuenta con las cabeceras de gstatic, y lo
+//  hace bien: así funcionó el proyecto hasta v447.
+//
+//  Coste asumido a conciencia: sin cobertura y con el caché HTTP del navegador
+//  vacío, la app no arranca. Es un escenario poco frecuente y RECUPERABLE;
+//  una pantalla en negro al abrir el panel en vivo no lo es.
+// ══════════════════════════════════════════════════════════════════
+
+// Peticiones que el Service Worker NO intercepta jamás:
+//  · googleapis / firebaseio → el canal VIVO de datos. Cachearlo mostraría un
+//    marcador muerto.
+//  · gstatic/firebasejs      → el CÓDIGO del SDK. Ver el bloque de arriba: que
+//    lo sirva el navegador, que para eso está.
 function _esCanalVivo(url) {
-    return url.includes('googleapis.com') || url.includes('firebaseio.com');
-}
-
-// Código del SDK: URL versionada e inmutable → cache-first sin dudarlo.
-function _esSdkFirebase(url) {
-    return url.includes('gstatic.com/firebasejs/');
+    return url.includes('googleapis.com') ||
+           url.includes('firebaseio.com') ||
+           url.includes('gstatic.com');
 }
 
 self.addEventListener('install', event => {
     self.skipWaiting();
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => {
-            const _shell = cache.addAll(ASSETS).catch(err => {
+        caches.open(CACHE_NAME)
+            .then(cache => cache.addAll(ASSETS))
+            .catch(err => {
+                // Nunca se deja fallar la instalación: un Service Worker que no
+                // instala es un Service Worker VIEJO que se queda mandando.
                 console.warn(`[SW ${VERSION}] Error al precargar recursos:`, err);
-            });
-            const _sdk = cache.addAll(FIREBASE_SDK).catch(err => {
-                console.warn(`[SW ${VERSION}] No se pudo precargar el SDK de Firebase:`, err);
-            });
-            return Promise.all([_shell, _sdk]);
-        })
+            })
     );
 });
 
@@ -1438,14 +1501,55 @@ self.addEventListener('install', event => {
 //    `controllerchange` que ya recarga en index.html y live.html forman la
 //    cadena completa: versión nueva → activa al instante → toma las pestañas →
 //    se recargan solas. Sin banner, sin Ctrl+Shift+R.
+// v454 · PURGA TOTAL DE UN SOLO USO.
+// Los dispositivos del autor arrastraban cachés envenenadas de versiones
+// anteriores y no bastaba con borrar "las que no son la actual": la caché
+// ACTUAL podía contener ya entradas malas escritas por el Service Worker roto
+// (respuestas de error guardadas como si fueran buenas). Subiendo este sello se
+// fuerza a borrar ABSOLUTAMENTE TODAS las cachés, incluida la del nombre
+// vigente, y a repoblarlas desde cero.
+// ⚠️ Es un martillo: sólo se sube cuando hay sospecha de caché corrupta en
+// dispositivos reales, no en cada versión.
+const PURGA_TOTAL = 'v454-limpieza-integral';
+
 self.addEventListener('activate', event => {
     event.waitUntil((async () => {
         try {
             const keys = await caches.keys();
-            const viejas = keys.filter(key => key !== CACHE_NAME);
+
+            // ¿Toca purga total? Se guarda el sello dentro de la propia caché
+            // para saber si este dispositivo ya la hizo.
+            let selloPrevio = null;
+            try {
+                const meta = await caches.open('cronos-meta');
+                const r = await meta.match('purga-total');
+                if (r) selloPrevio = await r.text();
+            } catch (e) { /* sin metadatos: se asume que toca */ }
+
+            const tocaPurgaTotal = selloPrevio !== PURGA_TOTAL;
+            const viejas = tocaPurgaTotal
+                ? keys.filter(k => k !== 'cronos-meta')       // TODAS
+                : keys.filter(k => k !== CACHE_NAME && k !== 'cronos-meta');
+
             await Promise.all(viejas.map(key => caches.delete(key).catch(() => false)));
             if (viejas.length) {
-                console.log(`[SW ${VERSION}] Purgadas ${viejas.length} caché(s) antigua(s):`, viejas);
+                console.log(`[SW ${VERSION}] ${tocaPurgaTotal ? '🧹 PURGA TOTAL' : 'Purga'}: ` +
+                            `${viejas.length} caché(s) borrada(s):`, viejas);
+            }
+
+            if (tocaPurgaTotal) {
+                // Repoblar el shell inmediatamente: si no, la primera navegación
+                // tras la purga se queda sin red de seguridad.
+                try {
+                    const cache = await caches.open(CACHE_NAME);
+                    await cache.addAll(ASSETS);
+                } catch (e) {
+                    console.warn(`[SW ${VERSION}] No se pudo repoblar tras la purga:`, e && e.message);
+                }
+                try {
+                    const meta = await caches.open('cronos-meta');
+                    await meta.put('purga-total', new Response(PURGA_TOTAL));
+                } catch (e) { /* si no se puede sellar, se repetirá: inofensivo */ }
             }
         } catch (e) {
             console.warn(`[SW ${VERSION}] No se pudieron purgar las cachés antiguas:`, e && e.message);
@@ -1585,9 +1689,9 @@ self.addEventListener('fetch', event => {
     const req = event.request;
     const url = req.url;
 
-    // CACHE FIRST para iconos, fuentes, assets estáticos y el SDK de Firebase.
+    // CACHE FIRST para iconos, fuentes y assets estáticos PROPIOS.
+    // (v454: el SDK de Firebase ya no entra aquí — ver _esCanalVivo.)
     const esInmutable =
-        _esSdkFirebase(url) ||
         url.includes('/public/assets/icons/') ||
         url.includes('.svg') ||
         url.includes('.woff') ||

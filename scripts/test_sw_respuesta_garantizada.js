@@ -68,13 +68,31 @@ function montar(op) {
     const cache = new Map(Object.entries(op.cacheado || {}));
     const reg = { puestos: [], borrados: [], claims: 0, avisos: [] };
 
+    // Almacén con cachés CON NOMBRE, para poder probar el sello de la purga
+    // total: vive en la caché 'cronos-meta' y decide si toca borrarlo todo.
+    const porNombre = new Map();
+    if (op.selloPrevio) {
+        porNombre.set('cronos-meta', new Map([['purga-total', { text: async () => op.selloPrevio }]]));
+    }
     const almacen = {
         match: async (req) => {
             if (op.cachesMatchLanza) throw new Error('caches.match reventó');
             const url = typeof req === 'string' ? req : req.url;
             return cache.get(url);            // undefined si no está: como el real
         },
-        open: async () => ({ put: async (req, resp) => { reg.puestos.push(typeof req === 'string' ? req : req.url); } }),
+        open: async (nombre) => {
+            if (!porNombre.has(nombre)) porNombre.set(nombre, new Map());
+            const m = porNombre.get(nombre);
+            return {
+                put: async (req, resp) => {
+                    const k = typeof req === 'string' ? req : req.url;
+                    m.set(k, resp);
+                    reg.puestos.push(k);
+                },
+                match: async (req) => m.get(typeof req === 'string' ? req : req.url),
+                addAll: async () => { if (op.addAllFalla) throw new Error('addAll falló'); reg.repoblado = true; },
+            };
+        },
         keys: async () => (op.clavesCache || ['cronos-cache-vVIEJA', 'cronos-cache-v453']),
         delete: async (k) => { if (op.deleteLanza) throw new Error('delete falló'); reg.borrados.push(k); return true; },
     };
@@ -123,15 +141,18 @@ function montar(op) {
 }
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+// v454 · El SDK ya NO se intercepta (ver más abajo, 1e). Como ejemplo de
+// recurso cache-first se usa un icono propio, que es lo que quedó en esa rama.
+const ICONO = 'https://app/public/assets/icons/chronos-192.svg';
 
 // ═══════════ PARTE 1 · EL FALLO REPORTADO ═══════════
 console.log('── PARTE 1 · 🔑🔑 el escenario que dejaba live.html en negro ──');
 (async () => {
 {
-    // SDK de Firebase: NO cacheado y la red falla. Era el `undefined`.
+    // Recurso cache-first NO cacheado y con la red caída. Era el `undefined`.
     const t = montar({ fetchFalla: true, cacheado: {} });
-    const r = await t.pedir(SDK);
-    ok('1a · 🔑🔑 SDK no cacheado + red caída → SIGUE devolviendo una Response',
+    const r = await t.pedir(ICONO);
+    ok('1a · 🔑🔑 recurso no cacheado + red caída → SIGUE devolviendo una Response',
        r instanceof RespuestaFalsa,
        'devolvió: ' + (r === undefined ? 'undefined → TypeError: Failed to convert value to Response' : typeof r));
     ok('1b · y es un error explícito, no una página en blanco',
@@ -139,17 +160,32 @@ console.log('── PARTE 1 · 🔑🔑 el escenario que dejaba live.html en neg
 }
 {
     // El mismo caso, pero SÍ cacheado: debe servirse de la caché.
-    const t = montar({ fetchFalla: true, cacheado: { [SDK]: new RespuestaFalsa('sdk', { status: 200 }) } });
-    const r = await t.pedir(SDK);
-    ok('1c · SDK cacheado + red caída → se sirve la copia local',
-       r instanceof RespuestaFalsa && r.cuerpo === 'sdk', JSON.stringify(r));
+    const t = montar({ fetchFalla: true, cacheado: { [ICONO]: new RespuestaFalsa('icono', { status: 200 }) } });
+    const r = await t.pedir(ICONO);
+    ok('1c · cacheado + red caída → se sirve la copia local',
+       r instanceof RespuestaFalsa && r.cuerpo === 'icono', JSON.stringify(r));
 }
 {
     // Y si además `caches.match` revienta, tampoco puede colarse un undefined.
     const t = montar({ fetchFalla: true, cachesMatchLanza: true });
-    const r = await t.pedir(SDK);
+    const r = await t.pedir(ICONO);
     ok('1d · 🔑 aunque `caches.match` LANCE, se responde una Response',
        r instanceof RespuestaFalsa, 'devolvió: ' + typeof r);
+}
+{
+    // ⚠️⚠️ LA REGLA QUE NACIÓ DEL FALLO REAL: el SDK de Firebase NO se toca.
+    // `live.html` lo importa con `import` ESTÁTICOS; si el Service Worker le
+    // devuelve cualquier cosa que no sea el JavaScript esperado —incluida una
+    // respuesta de error fabricada por nosotros— el módulo ENTERO no se evalúa
+    // y la página se queda EN BLANCO. Que lo sirva el navegador.
+    for (const op of [{}, { fetchFalla: true }, { fetchFalla: true, cachesMatchLanza: true }]) {
+        const t = montar(op);
+        const r = await t.pedir(SDK);
+        ok('1e · 🔑🔑 el SDK de Firebase NUNCA se intercepta (' +
+           (op.fetchFalla ? (op.cachesMatchLanza ? 'red caída + caché rota' : 'red caída') : 'red OK') + ')',
+           r === undefined,
+           'interceptarlo fue lo que dejó live.html en negro en móvil y iPad');
+    }
 }
 
 // ═══════════ PARTE 2 · TODOS LOS CAMINOS ═══════════
@@ -168,7 +204,7 @@ console.log('\n── PARTE 2 · ningún camino puede responder algo que no sea 
         ['script normal + red caída',          'https://app/js/core/app-init.js',      '', { fetchFalla: true }],
         ['script normal + red OK',             'https://app/js/core/app-init.js',      '', {}],
         ['recurso que devuelve 404',           'https://app/js/no-existe.js',          '', { fetchDevuelve404: true }],
-        ['SDK con red OK',                     SDK,                                     '', {}],
+        // (el SDK ya no entra aquí: no se intercepta — ver 1e)
     ];
     for (const [etq, url, destino, op] of casos) {
         const t = montar(op);
@@ -188,14 +224,45 @@ console.log('\n── PARTE 2 · ningún camino puede responder algo que no sea 
 // ═══════════ PARTE 3 · ACTIVACIÓN Y PURGA ═══════════
 console.log('\n── PARTE 3 · purga automática y toma de control ──');
 {
-    // El nombre de caché vigente se LEE del propio sw.js: fijarlo a mano hacía
-    // que la prueba caducara en el siguiente bump de versión.
+    // El nombre de caché vigente y el sello se LEEN del propio sw.js: fijarlos
+    // a mano hacía que la prueba caducara en el siguiente bump.
     const ACTUAL = (SW_SRC.match(/const CACHE_NAME = '([^']+)'/) || [])[1];
-    const t = montar({ clavesCache: ['cronos-cache-vVIEJA-1', 'cronos-cache-vVIEJA-2', ACTUAL] });
+    const SELLO  = (SW_SRC.match(/const PURGA_TOTAL = '([^']+)'/) || [])[1];
+
+    // ── Modo PURGA TOTAL (dispositivo que aún no tiene el sello) ──────
+    // Es el martillo de v454: los dispositivos del autor arrastraban entradas
+    // envenenadas DENTRO de la caché vigente, así que borrar sólo "las que no
+    // son la actual" no bastaba.
+    {
+        const t = montar({ clavesCache: ['cronos-cache-vVIEJA-1', ACTUAL, 'cronos-meta'] });
+        await t.activar();
+        ok('3a · 🔑 sin el sello, se borran TODAS las cachés (incluida la vigente)',
+           t.reg.borrados.indexOf(ACTUAL) !== -1 &&
+           t.reg.borrados.indexOf('cronos-cache-vVIEJA-1') !== -1,
+           JSON.stringify(t.reg.borrados));
+        ok('3a2 · ⚠️ pero NO se borra `cronos-meta` (guarda el propio sello)',
+           t.reg.borrados.indexOf('cronos-meta') === -1,
+           'borrarla haría la purga total en CADA arranque, para siempre');
+        ok('3a3 · y el shell se repuebla acto seguido',
+           t.reg.repoblado === true,
+           'si no, la primera navegación tras la purga se queda sin red de seguridad');
+        ok('3a4 · el sello queda guardado para no repetirla',
+           t.reg.puestos.indexOf('purga-total') !== -1, JSON.stringify(t.reg.puestos));
+    }
+
+    // ── Modo normal (el sello ya está: purga sólo lo viejo) ───────────
+    {
+        const t = montar({ selloPrevio: SELLO,
+                           clavesCache: ['cronos-cache-vVIEJA-1', 'cronos-cache-vVIEJA-2', ACTUAL, 'cronos-meta'] });
+        await t.activar();
+        ok('3a5 · con el sello puesto, la caché vigente se RESPETA',
+           t.reg.borrados.length === 2 && t.reg.borrados.indexOf(ACTUAL) === -1,
+           JSON.stringify(t.reg.borrados));
+    }
+
+    const t = montar({ selloPrevio: SELLO,
+                       clavesCache: ['cronos-cache-vVIEJA-1', 'cronos-cache-vVIEJA-2', ACTUAL] });
     await t.activar();
-    ok('3a · se purgan TODAS las cachés que no son la actual (' + ACTUAL + ')',
-       t.reg.borrados.length === 2 && t.reg.borrados.indexOf(ACTUAL) === -1,
-       JSON.stringify(t.reg.borrados));
     ok('3b · y se toma el control de las pestañas abiertas', t.reg.claims === 1);
 }
 {

@@ -1372,6 +1372,56 @@
     <p id="loading-msg">Cargando partido…</p>
 </div>
 
+<!-- ══ AUTOCURACIÓN (v454) ═══════════════════════════════════════
+     Red de seguridad para que NADIE tenga que limpiar la caché a mano.
+
+     El módulo de abajo importa el SDK de Firebase con `import` ESTÁTICOS: si
+     una sola de esas peticiones no devuelve JavaScript válido, el módulo
+     ENTERO no se evalúa y esta página se queda EN BLANCO, sin mensaje. Fue lo
+     que pasó en móvil y en iPad con la caché envenenada de v447-v453.
+
+     Este vigilante va en un script CLÁSICO y ANTES del módulo, precisamente
+     para que se ejecute aunque el módulo muera. Si a los 8 s la vista no ha
+     dado señales de vida, borra todas las cachés, da de baja el Service
+     Worker y recarga.
+
+     🔑 UNA SOLA VEZ: el intento queda marcado en sessionStorage. Sin esa
+     marca, una página que no arranque por un motivo AJENO a la caché entraría
+     en un bucle infinito de recargas — que es peor que la pantalla en blanco.
+     ══════════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+    var MARCA = 'cronos_autocura_live';
+    window._cronosLiveBooted = false;
+
+    setTimeout(function () {
+        if (window._cronosLiveBooted) return;              // arrancó: nada que hacer
+        if (sessionStorage.getItem(MARCA)) {               // ya se intentó: no insistir
+            console.warn('[Cronos] La vista no arranca y la limpieza ya se intentó.');
+            return;
+        }
+        try { sessionStorage.setItem(MARCA, String(Date.now())); } catch (e) {}
+        console.warn('[Cronos] El panel en vivo no arrancó en 8 s. Limpiando cachés y recargando…');
+
+        var recargar = function () { try { location.reload(); } catch (e) {} };
+        var limpiar = Promise.resolve();
+
+        if (window.caches && caches.keys) {
+            limpiar = caches.keys()
+                .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+                .catch(function () {});
+        }
+        limpiar.then(function () {
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+                return navigator.serviceWorker.getRegistrations()
+                    .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+                    .catch(function () {});
+            }
+        }).catch(function () {}).then(recargar);
+    }, 8000);
+})();
+</script>
+
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp }
@@ -1391,6 +1441,11 @@ const firebaseConfig = {
     messagingSenderId: '393110572633',
     appId:             '1:393110572633:web:27a7effed60975e690ab48'
 };
+
+// v454 · Señal de vida para el vigilante de autocuración de arriba. Se marca
+// AQUÍ, en cuanto los `import` han resuelto: si alguno fallara, esta línea no
+// llega a ejecutarse y el vigilante hace su trabajo.
+window._cronosLiveBooted = true;
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -5138,8 +5193,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v453"></script>
-<script src="js/match/replay/replay-player.js?v=v453"></script>
-<script src="js/match/events/retroactive-modal.js?v=v453"></script>
+<script src="js/match/immutability.js?v=v454"></script>
+<script src="js/match/replay/replay-player.js?v=v454"></script>
+<script src="js/match/events/retroactive-modal.js?v=v454"></script>
 </body>
 </html>

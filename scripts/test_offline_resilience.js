@@ -296,13 +296,25 @@ console.log('\n── PARTE 5 · PIEZA C · la puerta de entrada ──');
 }
 
 // ═══════════ PARTE 6 · PIEZA D — el SDK en el service worker ═══════════
-console.log('\n── PARTE 6 · PIEZA D · el SDK sin red ──');
+console.log('\n── PARTE 6 · PIEZA D · REVERTIDA en v454 ──');
 {
-    const modulos = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js', 'firebase-functions.js'];
-    for (const m of modulos) {
-        ok('6a · [PIEZA D] el SW precachea ' + m,
-           new RegExp('gstatic\\.com/firebasejs/[0-9.]+/' + m.replace('.', '\\.')).test(SW),
-           'sin él la app no arranca sin red y las Piezas B y C dan igual');
+    // ⚠️⚠️ ESTA PARTE ESTÁ INVERTIDA A PROPÓSITO. Fijaba la "Pieza D" de v447
+    // —precachear el SDK de Firebase y servirlo cache-first— y esa decisión
+    // ROMPIÓ LA APLICACIÓN en móvil y en iPad: `live.html` importa el SDK con
+    // `import` ESTÁTICOS, así que en cuanto una de esas peticiones devolvía
+    // algo que no fuera JavaScript válido (una respuesta de error nuestra, o
+    // una entrada de caché envenenada) el módulo ENTERO no se evaluaba y la
+    // página se quedaba EN BLANCO, sin mensaje.
+    //
+    // Se invierten en vez de borrarse, como los cuatro guards de v440: lo que
+    // hay que defender ahora es justo lo contrario, y con la misma firmeza.
+    // 🔑 La regla que queda: el Service Worker NO intercepta peticiones de
+    // otro origen que alimenten `import` de módulos.
+    for (const m of ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js', 'firebase-functions.js']) {
+        ok('6a · [REVERTIDO] el SW ya NO precachea ' + m,
+           !new RegExp("'https://www\\.gstatic\\.com/firebasejs/[0-9.]+/" + m.replace('.', '\\.') + "'").test(SW),
+           'precachearlo es inútil si no se sirve de caché, y `cache.addAll` sobre ' +
+           'otro origen falla en iOS');
     }
     // El criterio de "no cachear" y el de "cache-first" tienen que ser dos
     // funciones con nombre: si se mezclan en una condición suelta, basta con
@@ -312,21 +324,25 @@ console.log('\n── PARTE 6 · PIEZA D · el SDK sin red ──');
         return i === -1 ? '' : SW.slice(i, SW.indexOf('}', i) + 1);
     };
     const CANAL_VIVO = cuerpoDe('_esCanalVivo');
-    const SDK_FB     = cuerpoDe('_esSdkFirebase');
 
-    ok('6b · [PIEZA D] 🔑 gstatic.com ya NO cuenta como canal vivo (no se excluye)',
-       CANAL_VIVO !== '' && !/gstatic/.test(CANAL_VIVO),
-       'mientras esté excluido, el SW no puede servir el SDK sin red · ' + CANAL_VIVO);
-    ok('6c · [PIEZA D] ⚠️ googleapis.com SIGUE siendo canal vivo (excluido)',
+    ok('6b · [REVERTIDO] 🔑🔑 gstatic.com NO se intercepta: lo sirve el navegador',
+       CANAL_VIVO !== '' && /gstatic/.test(CANAL_VIVO),
+       'interceptar imports de módulos de otro origen dejó live.html EN BLANCO · ' + CANAL_VIVO);
+    ok('6c · ⚠️ googleapis.com sigue sin interceptarse (canal vivo de datos)',
        /googleapis\.com/.test(CANAL_VIVO),
-       'es el canal vivo de Firestore: cachearlo serviría datos muertos');
-    ok('6d · [PIEZA D] el precache del SDK no puede tumbar al del shell',
-       (SW.match(/cache\.addAll\(/g) || []).length >= 2,
-       'un addAll único deja el shell sin cachear si falla un módulo del SDK');
-    ok('6e · [PIEZA D] el SDK se sirve cache-first (URL versionada, inmutable)',
-       /gstatic\.com\/firebasejs/.test(SDK_FB) &&
-       new RegExp('_esSdkFirebase\\s*\\(').test(SW.slice(SW.indexOf("addEventListener('fetch'"))),
-       'network-first sobre el SDK deja el arranque sin red a merced del timeout');
+       'cachearlo serviría un marcador muerto');
+    ok('6d · [REVERTIDO] ya no existe la función que enrutaba el SDK a cache-first',
+       !/_esSdkFirebase/.test(SW),
+       'su sola existencia invita a volver a interceptar gstatic');
+    ok('6e · 🔑 el manejador `fetch` no menciona gstatic salvo para NO tocarlo',
+       (() => {
+           const f = SW.slice(SW.indexOf("addEventListener('fetch'"));
+           return !/gstatic/.test(f);
+       })(),
+       'la única mención permitida está en _esCanalVivo, fuera del manejador');
+    ok('6e2 · la instalación no puede fallar por un recurso de otro origen',
+       !/cache\.addAll\(FIREBASE_SDK\)/.test(SW) && !/const FIREBASE_SDK\s*=/.test(SW),
+       'un install que falla deja mandando al Service Worker VIEJO');
 
     // El bump es lo que hace que un despliegue de hosting llegue de verdad.
     const cacheName = (SW.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
