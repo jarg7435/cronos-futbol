@@ -485,7 +485,7 @@
                 <div class="replay-topbar-actions">
                     <button onclick="window._replayRecordVideo()" id="btn-replay-record"
                         style="background:rgba(231,76,60,0.15); border:1px solid rgba(231,76,60,0.4); color:#ff5858; font-size:0.75rem; font-weight:800; padding:0.35rem 0.8rem; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:4px;">
-                        📹 Descargar Vídeo (.webm)
+                        📹 Descargar Vídeo (${_formatoSalida()})
                     </button>
                     <button onclick="window.closeMatchReplay()"
                         style="background:rgba(255,255,255,0.1); border:none; color:white; font-size:1.1rem; width:30px; height:30px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center;">
@@ -1116,8 +1116,78 @@
         _restauraCapaOrigen();
     };
 
-    // ── Exportar Vídeo (.webm) Nativo con Canvas & MediaRecorder ─────
+    // ── Exportar Vídeo (MP4) Nativo con Canvas & MediaRecorder ──────
     let _recordCanvasTimer = null;
+
+    // ════════════════════════════════════════════════════════════════
+    //  v461 · EL VÍDEO SALE EN MP4 PARA QUE EL iPHONE Y EL iPAD LO ABRAN
+    //
+    //  Reporte del autor (captura IMG_0486): el fichero descargado era `.webm`.
+    //  iOS/iPadOS NO abre webm ni en Fotos ni en el reproductor del sistema —
+    //  hace falta instalar VLC—, así que un vídeo que no se puede ver desde el
+    //  móvil no sirve para enseñárselo a nadie.
+    //
+    //  🔑 EL DEFECTO ERA EL ORDEN DE PREFERENCIA, no que faltara el mp4: se
+    //  probaba `video/webm;codecs=vp9` PRIMERO y sólo se caía a `video/mp4` si
+    //  el webm no estaba soportado. Cualquier navegador que sepa hacer las dos
+    //  cosas —Chrome de escritorio y de Android, y las versiones de Safari que
+    //  ya aceptan webm— entregaba webm. Ahora el mp4 va primero y el webm queda
+    //  sólo como último recurso para quien no sabe muxear mp4 (Firefox), que se
+    //  le avisa.
+    //
+    //  🔑🔑 TRES TRAMPAS QUE OBLIGAN A PROBAR Y NO A PREGUNTAR:
+    //   1 · Safari acepta `video/mp4` A SECAS y rechaza la cadena con codecs.
+    //       Si la lista no lleva la forma pelada, en el iPhone no hay mp4 por
+    //       mucho que el mp4 vaya delante.
+    //   2 · Hay navegadores que ANUNCIAN un tipo en `isTypeSupported` y luego
+    //       el constructor lanza. Por eso se intenta CONSTRUIR y se sigue
+    //       probando, en vez de fiarse de la respuesta.
+    //   3 · Lo que de verdad se graba es `recorder.mimeType`, que puede NO ser
+    //       lo que se pidió. La extensión y el `type` del Blob salen de ÉL: un
+    //       `.mp4` que por dentro es webm engaña al usuario y a iOS.
+    //
+    //  El `type` del Blob va SIN el parámetro `codecs` (`video/mp4` pelado):
+    //  es lo que iOS mira para decidir con qué app abre el fichero.
+    // ════════════════════════════════════════════════════════════════
+    const _MIME_MP4 = [
+        'video/mp4;codecs=avc1.42E01E',   // H.264 Baseline 3.0 — el más compatible con QuickTime
+        'video/mp4;codecs=avc1.4D401E',   // H.264 Main 3.0
+        'video/mp4;codecs=h264',
+        'video/mp4',                      // 🔑 la forma pelada: la que acepta Safari
+    ];
+    const _MIME_WEBM = [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+    ];
+
+    function _tipoSoportado(t) {
+        try {
+            if (typeof MediaRecorder === 'undefined') return false;
+            if (typeof MediaRecorder.isTypeSupported !== 'function') return true;  // no se puede preguntar: se intenta
+            return !!MediaRecorder.isTypeSupported(t);
+        } catch (e) { return false; }
+    }
+
+    // ¿Puede este navegador grabar mp4? Se usa sólo para el rótulo del botón:
+    // prometer `.webm` a quien va a recibir un `.mp4` (y al revés) confunde.
+    function _hayMp4() {
+        if (typeof MediaRecorder === 'undefined') return true;
+        if (typeof MediaRecorder.isTypeSupported !== 'function') return true;
+        return _MIME_MP4.some(_tipoSoportado);
+    }
+    function _formatoSalida() { return _hayMp4() ? 'MP4' : 'WEBM'; }
+
+    // Construye la grabadora con el PRIMER candidato que el navegador acepte de
+    // verdad. No basta con `isTypeSupported`: ver la trampa 2 de arriba.
+    function _creaGrabadora(stream) {
+        for (const t of _MIME_MP4.concat(_MIME_WEBM)) {
+            if (!_tipoSoportado(t)) continue;
+            try { return new MediaRecorder(stream, { mimeType: t }); }
+            catch (e) { /* lo anunciaba pero no lo puede montar: siguiente */ }
+        }
+        return new MediaRecorder(stream);   // que elija el navegador antes que quedarse sin vídeo
+    }
 
     // ════════════════════════════════════════════════════════════════
     //  v459 · EL VÍDEO CONTIENE EL PARTIDO ENTERO, SIEMPRE
@@ -1168,7 +1238,7 @@
     function _restauraBotonGrabar() {
         const btn = document.getElementById('btn-replay-record');
         if (!btn) return;
-        btn.innerHTML = '📹 Descargar Vídeo (.webm)';
+        btn.innerHTML = `📹 Descargar Vídeo (${_formatoSalida()})`;
         btn.style.background = 'rgba(231,76,60,0.15)';
         btn.style.borderColor = 'rgba(231,76,60,0.4)';
         btn.style.color = '#ff5858';
@@ -1513,13 +1583,9 @@
             // Transmisión de vídeo desde el canvas
             const stream = canvas.captureStream(30);
 
-            let mimeType = 'video/webm';
-            if (typeof MediaRecorder !== 'undefined') {
-                if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
-                else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
-            }
-
-            const recorder = new MediaRecorder(stream, { mimeType });
+            // v461 · MP4 primero (ver el bloque de _MIME_MP4): es el único
+            // formato que el iPhone y el iPad abren sin instalar nada.
+            const recorder = _creaGrabadora(stream);
             _replayState.mediaRecorder = recorder;
             const chunks = [];
 
@@ -1532,15 +1598,36 @@
                 // se descarga nada: un fichero a medias que nadie pidió es peor
                 // que ninguno.
                 if (_replayState.exportAbortada) { _replayState.exportAbortada = false; return; }
-                const blob = new Blob(chunks, { type: mimeType });
+                // 🔑 v461 · EL TIPO REAL ES EL DE LA GRABADORA, no el que se
+                // pidió: hay navegadores que aceptan el mp4 y graban otra cosa.
+                // La extensión y el `type` del Blob siguen a la REALIDAD.
+                const tipoReal = String((recorder && recorder.mimeType) || '') ||
+                                 (chunks[0] && chunks[0].type) || 'video/mp4';
+                const esMp4  = /mp4/i.test(tipoReal);
+                const ext    = esMp4 ? 'mp4' : 'webm';
+                // Sin el parámetro `codecs`: es el MIME pelado lo que mira iOS
+                // para decidir con qué app abre el fichero.
+                const tipoBlob = esMp4 ? 'video/mp4' : 'video/webm';
+                const blob = new Blob(chunks, { type: tipoBlob });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
                 a.download = `partido_repeticion_${Date.now()}.${ext}`;
+                // v461 · En iOS la descarga de un blob sólo prende si el enlace
+                // está EN EL DOCUMENTO, y revocar la URL en el mismo tic aborta
+                // el guardado. Se ancla, se pulsa y se limpia después.
+                try { document.body.appendChild(a); } catch (e) {}
                 a.click();
-                URL.revokeObjectURL(url);
-                if (typeof showToast === 'function') showToast('✅ Vídeo descargado con éxito', 4000);
+                setTimeout(() => {
+                    try { a.remove(); } catch (e) {}
+                    URL.revokeObjectURL(url);
+                }, 4000);
+                if (typeof showToast === 'function') {
+                    showToast(esMp4
+                        ? '✅ Vídeo descargado en MP4 · se abre en Fotos del iPhone y del iPad'
+                        : '⚠️ Vídeo descargado en .webm: este navegador no sabe grabar MP4 y un iPhone o iPad no lo abrirá. Descárgalo desde Chrome o desde Safari.',
+                        esMp4 ? 4000 : 7000);
+                }
             };
 
             recorder.start();

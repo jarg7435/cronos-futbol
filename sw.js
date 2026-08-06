@@ -1,5 +1,36 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v461: EL VIDEO DEL PARTIDO SE EXPORTA EN MP4, NO EN WEBM. Reporte del autor
+//        (captura IMG_0486): el fichero descargado salia en .webm y iOS/iPadOS
+//        no abre ese formato ni en Fotos ni en el reproductor del sistema —hay
+//        que instalar VLC—, asi que el video no se podia enseñar desde el
+//        movil.
+//        🔑 EL DEFECTO ERA EL ORDEN DE PREFERENCIA, no que faltara el mp4: se
+//        probaba 'video/webm;codecs=vp9' PRIMERO y solo se caia a 'video/mp4'
+//        si el webm no estaba soportado, asi que cualquier navegador que sepa
+//        hacer las dos cosas (Chrome de escritorio y de Android, y las
+//        versiones de Safari que ya aceptan webm) entregaba webm. Ahora el mp4
+//        va primero, con H.264 explicito (avc1), y el webm queda solo como
+//        ultimo recurso para quien no sabe muxear mp4 (Firefox), avisando de
+//        que ese fichero no valdra en un iPhone.
+//        🔑🔑 TRES TRAMPAS QUE OBLIGAN A PROBAR Y NO A PREGUNTAR:
+//          · Safari acepta 'video/mp4' A SECAS y rechaza la cadena con codecs;
+//            sin la forma pelada en la lista, en el iPhone no hay mp4 por mucho
+//            que el mp4 vaya delante.
+//          · hay navegadores que ANUNCIAN un tipo en isTypeSupported y luego el
+//            constructor lanza, asi que se intenta CONSTRUIR y se sigue
+//            probando; y si no reconoce ninguna cadena, se graba sin pedir
+//            formato antes que quedarse sin video.
+//          · lo que de verdad se graba es recorder.mimeType, que puede NO ser
+//            lo pedido: la extension y el type del Blob salen de EL. Un .mp4
+//            que por dentro es webm engaña al usuario y a iOS.
+//        El type del Blob va SIN el parametro codecs ('video/mp4' pelado): es
+//        lo que iOS mira para decidir con que app abre el fichero. Y la
+//        descarga se ancla al documento y revoca la URL con retraso, porque en
+//        iOS un blob no se guarda si el enlace no esta en el DOM o si se revoca
+//        en el mismo tic. El rotulo del boton dice el formato REAL que va a
+//        entregar ese navegador. Guard nuevo: test_replay_export_mp4.js, que
+//        GRABA un partido entero contra cinco perfiles de navegador.
 //  v460: el video exportado pasa de ~1 min a ~2 min (peticion del autor). Es un
 //        solo numero: _EXPORT_SALTOS 600 -> 1200 en replay-player.js. Todo lo
 //        demas de v459 sigue igual.
@@ -1533,7 +1564,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v460';
+const CACHE_NAME = 'cronos-cache-v461';
 
 const ASSETS = [
     './',
