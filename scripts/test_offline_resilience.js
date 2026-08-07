@@ -200,9 +200,24 @@ console.log('\n── PARTE 4 · PIEZA B2 · la caché en disco y la PII ──'
 {
     ok('4a · [PIEZA B2] existe el borrador de la caché de Firestore',
        /_cronosClearFirestoreCache\s*=/.test(INIT));
-    ok('4b · [PIEZA B2] termina la instancia antes de borrar',
-       /terminate\s*\(/.test(INIT) && /clearIndexedDbPersistence\s*\(/.test(INIT),
-       'clearIndexedDbPersistence falla si la instancia sigue viva');
+    // ⚠️⚠️ v468 · INVERTIDA A PROPOSITO. Esta asercion exigia
+    // `terminate(...)` + `clearIndexedDbPersistence(...)`, y ESO ES
+    // EXACTAMENTE LO QUE PROVOCO UN BLOQUEO TOTAL DE ACCESO en produccion
+    // (v467): no existe la "instancia temporal" —`initializeFirestore` crea LA
+    // de la app—, asi que terminar para poder borrar dejaba a la aplicacion
+    // corriendo sobre un cliente muerto y no se podia ni iniciar sesion.
+    //
+    // La INTENCION original se conserva entera y se sigue exigiendo: la cache
+    // en disco SE BORRA (4a, 4c, 4d, 4e). Lo que cambia es el COMO: por
+    // IndexedDB, que no necesita ninguna instancia de Firestore. Y se anyade la
+    // prohibicion, porque asi es como se reescribiria el corte.
+    ok('4b · [PIEZA B2] 🔑 la cache se borra por IndexedDB, SIN terminar el cliente',
+       /indexedDB\.deleteDatabase\s*\(/.test(INIT),
+       'sin instancia de por medio: es lo unico que no deja a la app sin cliente');
+    ok('4b2 · [PIEZA B2] ⚠️ y NO se termina ninguna instancia (bloqueo de acceso de v467)',
+       !/\bterminate\s*\(/.test(INIT.replace(/\/\/[^\n]*/g, '')) &&
+       !/\bclearIndexedDbPersistence\s*\(/.test(INIT.replace(/\/\/[^\n]*/g, '')),
+       'terminar la instancia que la app usa fue el corte total de v467');
 
     // ⚠️ Hay que exigir la LLAMADA, no que el nombre aparezca: la guarda
     // `typeof window._cronosClearFirestoreCache === 'function'` ya contiene el

@@ -1,5 +1,37 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v468: 🚨 BLOQUEO TOTAL DE ACCESO CAUSADO POR v467 — CORREGIDO. Reporte del
+//        autor (captura 8490): autentica en Firebase Auth pero falla al leer el
+//        documento de usuario y no se puede entrar.
+//        ⚠️ LO CAUSE YO EN v467. Para borrar la cache "antes de que exista la
+//        instancia de la app" escribi:
+//            const _tmp = initializeFirestore(app, {});
+//            await terminate(_tmp);
+//            await clearIndexedDbPersistence(_tmp);
+//        🔑 NO EXISTE LA "INSTANCIA TEMPORAL": `initializeFirestore` crea LA
+//        instancia de esa app. Terminarla dejaba a la aplicacion entera sin
+//        cliente sano y sin poder ni iniciar sesion. La idea de v467 era
+//        correcta —no terminar el cliente que la app usa—; la implementacion la
+//        contradecia en su primera linea.
+//        SOLUCION: la cache de Firestore ES UN IndexedDB y se borra COMO TAL,
+//        con `indexedDB.deleteDatabase`, sin crear ni terminar ninguna
+//        instancia. Se enumera con `indexedDB.databases()` cuando el navegador
+//        lo permite y se cae al nombre canonico `firestore/[DEFAULT]/{project}/
+//        main` (Firefox no implementa `databases()`). No se espera en
+//        `onblocked`: si otra pestaña tiene la base abierta se sigue y la app
+//        arranca con un cliente SANO, que es lo unico innegociable.
+//        ⚠️ `terminate` y `clearIndexedDbPersistence` YA NO SE IMPORTAN: con
+//        ellas a mano la via se vuelve a tomar por descuido.
+//        Las REGLAS de Firestore se revisaron y estaban BIEN y ya desplegadas
+//        (`allow read: if isAuth()` en users/{uid}); el snapshot local
+//        rules_test/DEPLOYED_firestore.rules estaba desfasado (julio) e indujo
+//        a error durante el diagnostico: se ha actualizado.
+//        Guards: test_cliente_firestore_vivo.js (31/31) y
+//        test_offline_resilience.js (44/44), con red-check de 4 mutaciones. La
+//        asercion 4b de offline_resilience EXIGIA el `terminate` — o sea,
+//        fijaba el defecto — y se ha invertido conservando su intencion (la
+//        cache se sigue borrando). Es la QUINTA vez que un guard ajeno fija lo
+//        que hay que cambiar (v440, v454, v455, v465, v468).
 //  v467: 🚨 EMERGENCIA — LA SINCRONIZACION SE HABIA ROTO DEL TODO. Reporte del
 //        autor sobre v466 (capturas 8484/8485/8487/8488): bucles masivos de
 //        `The client has already been terminated` y de `failed-precondition`
@@ -1738,7 +1770,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v467';
+const CACHE_NAME = 'cronos-cache-v468';
 
 const ASSETS = [
     './',

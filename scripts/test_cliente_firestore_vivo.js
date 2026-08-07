@@ -122,15 +122,38 @@ console.log('── PARTE 1 · ⚠️ nadie termina el cliente que la app usa �
     const reTerm  = /\bterminate\s*\(/g;
     const reClear = /\bclearIndexedDbPersistence\s*\(/g;
 
-    ok('1b · el arranque SÍ puede terminar (una instancia temporal, aún sin app encima)',
-       usos(antes, reTerm) >= 1 && usos(antes, reClear) >= 1,
-       'terminate=' + usos(antes, reTerm) + ' clear=' + usos(antes, reClear));
+    // ⚠️⚠️ v468 · REESCRITA, Y ES LA ASERCIÓN CENTRAL DEL FICHERO.
+    // La versión de v467 decía "el arranque SÍ puede terminar (una instancia
+    // temporal)". ESO ERA FALSO Y CAUSÓ UN BLOQUEO TOTAL DE ACCESO en
+    // producción: `initializeFirestore` NO crea instancias temporales, crea LA
+    // instancia de la app. Terminar "la temporal" era terminar la única que
+    // habría, y la segunda `initializeFirestore` —la que lleva `localCache`—
+    // lanzaba, caía al `catch` y `getFirestore(app)` devolvía la instancia YA
+    // TERMINADA. La app entera arrancaba sobre un cliente muerto.
+    //
+    // La invariante correcta no admite matices: en el producto NO SE TERMINA
+    // NINGUNA INSTANCIA, NUNCA, EN NINGÚN SITIO. La caché se borra por
+    // IndexedDB, que no necesita cliente.
+    ok('1b · ⚠️🔑 `terminate` NO aparece en NINGÚN punto del arranque',
+       usos(antes, reTerm) === 0 && usos(despues, reTerm) === 0,
+       'antes=' + usos(antes, reTerm) + ' después=' + usos(despues, reTerm) +
+       ' — no existe la "instancia temporal": initializeFirestore crea LA de la app');
 
-    // ⚠️ LA ASERCIÓN CENTRAL DE TODO EL FICHERO.
-    ok('1c · ⚠️🔑 NADIE termina ni borra la persistencia DESPUÉS de crear el db real',
-       usos(despues, reTerm) === 0 && usos(despues, reClear) === 0,
-       'terminate=' + usos(despues, reTerm) + ' clear=' + usos(despues, reClear) +
-       ' — terminar la instancia viva es exactamente el fallo de v466');
+    ok('1c · ⚠️🔑 `clearIndexedDbPersistence` tampoco (exige terminar para poder usarse)',
+       usos(antes, reClear) === 0 && usos(despues, reClear) === 0,
+       'antes=' + usos(antes, reClear) + ' después=' + usos(despues, reClear));
+
+    // Y ni siquiera se importan: con ellas a mano, la vía se vuelve a tomar.
+    ok('1b2 · ⚠️ ni se IMPORTAN desde el SDK (la barrera de verdad)',
+       !/\bterminate\s*,/.test(antes) && !/\bclearIndexedDbPersistence\s*,/.test(antes),
+       'estaban importadas cuando se cometió el fallo de v467');
+
+    // 🔑 Y exactamente UNA creación de instancia. Dos = la segunda lanza y la
+    // app se queda con la primera, que es como se rompió el acceso.
+    const nInit = usos(INIT_COD, /\binitializeFirestore\s*\(/g);
+    ok('1b3 · ⚠️🔑 `initializeFirestore` se llama UNA sola vez en todo el fichero',
+       nInit === 1, 'llamadas=' + nInit +
+       ' — la segunda lanza y deja a la app con la primera (bloqueo de acceso de v467)');
 
     // Y en ningún otro fichero del producto.
     const otros = [['firestore-storage.js', STORE], ['sync.js', SYNC], ['player-actions.js', ACTS]];
@@ -187,13 +210,21 @@ console.log('\n── PARTE 3 · el arranque consume la marca ──');
     ok('3a · el arranque lee la marca', /localStorage\.getItem\(_MARCA_LIMPIEZA\)/.test(bloque));
     // C · se retira ANTES de intentarlo.
     const iQuita = bloque.indexOf('removeItem(_MARCA_LIMPIEZA)');
-    const iTerm  = bloque.indexOf('terminate(');
+    const iBorra = bloque.indexOf('deleteDatabase(');
     ok('3b · ⚠️🔑 la marca se retira ANTES de intentar el borrado',
-       iQuita !== -1 && iTerm !== -1 && iQuita < iTerm,
-       'si el borrado falla —otra pestaña abierta— una marca pegada repetiría el intento en CADA arranque');
-    ok('3c · el borrado usa una instancia TEMPORAL, no la de la app',
-       /const _tmp = initializeFirestore\(app, \{\}\);[\s\S]{0,120}?terminate\(_tmp\)/.test(bloque),
-       'terminar la de la app es justo el defecto que se cierra');
+       iQuita !== -1 && iBorra !== -1 && iQuita < iBorra,
+       'si el borrado falla —otra pestaña con la base abierta— una marca pegada repetiría el intento en CADA arranque');
+    // 🔑 v468 · el borrado va por IndexedDB, que NO necesita cliente. Es lo que
+    // permite cumplir "no se termina el cliente" sin quedarse sin cliente.
+    ok('3c · 🔑 el borrado va por IndexedDB, sin crear ni terminar ninguna instancia',
+       /indexedDB\.deleteDatabase\(/.test(bloque) &&
+       !/initializeFirestore/.test(bloque) && !/terminate\(/.test(bloque),
+       'crear una instancia "temporal" aquí fue el bloqueo total de acceso de v467');
+    ok('3c2 · y sabe el nombre canónico por si el navegador no deja enumerar (Firefox)',
+       /firestore\/\[DEFAULT\]\/' \+ firebaseConfig\.projectId \+ '\/main/.test(bloque));
+    ok('3c3 · ⚠️ no se queda esperando si otra pestaña tiene la base abierta',
+       /onblocked/.test(bloque) && /setTimeout\(res, \d+\)/.test(bloque),
+       'un `blocked` sin salida colgaría el arranque de la app para siempre');
     ok('3d · y nunca bloquea el arranque (va en try/catch)',
        /catch \(e\) \{[\s\S]{0,220}?No se pudo borrar la caché en el arranque/.test(bloque));
 

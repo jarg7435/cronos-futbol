@@ -54,8 +54,15 @@
             sendPasswordResetEmail, updatePassword,
             reauthenticateWithCredential, EmailAuthProvider } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
+    // v468 · ⚠️ `terminate` y `clearIndexedDbPersistence` YA NO SE IMPORTAN, y
+    // no es limpieza cosmética: es la barrera. Con ellas a mano, el arreglo de
+    // v467 las usó en el arranque creyendo que actuaba sobre una instancia
+    // "temporal" —no existe tal cosa: `initializeFirestore` crea LA instancia
+    // de la app— y dejó la aplicación entera corriendo sobre un cliente
+    // terminado: bloqueo total de acceso. Sin el import, esa vía no se puede
+    // volver a tomar por descuido. La caché se borra por IndexedDB, más abajo.
     const { getFirestore, initializeFirestore, persistentLocalCache,
-            persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
+            persistentMultipleTabManager,
             doc, getDoc, getDocFromServer, setDoc, serverTimestamp } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     const { getFunctions } =
@@ -143,17 +150,54 @@
     //  borrado se hace aquí, en el arranque siguiente, cuando todavía no hay
     //  instancia que romper. Sale gratis en el 99,9 % de los arranques (una
     //  lectura de localStorage) y elimina la ventana de cliente muerto.
+    //  ⚠️⚠️ v468 · SE BORRA EL IndexedDB DIRECTAMENTE, SIN TOCAR FIRESTORE.
+    //  La primera versión de esto (v467) hacía aquí
+    //  `const _tmp = initializeFirestore(app, {}); await terminate(_tmp); ...`
+    //  y ERA UN BLOQUEO TOTAL DE ACCESO: `initializeFirestore` NO crea una
+    //  instancia "temporal", crea LA instancia de esa app. La segunda llamada
+    //  —la de abajo, la que lleva `localCache`— LANZA ("Firestore has already
+    //  been started"), cae al `catch`, y `getFirestore(app)` devuelve
+    //  EXACTAMENTE LA INSTANCIA QUE SE ACABA DE TERMINAR. La app arrancaba
+    //  entera sobre un cliente muerto y no se podía ni iniciar sesión.
+    //
+    //  🔑 LA CACHÉ DE FIRESTORE ES UN IndexedDB Y SE PUEDE BORRAR COMO TAL.
+    //  No hace falta ninguna instancia: ni crearla, ni terminarla, ni el baile
+    //  de `clearIndexedDbPersistence`, que además exige que la instancia esté
+    //  terminada y falla si otra pestaña la tiene abierta. Aquí, ANTES de que
+    //  exista ningún cliente, basta con pedirle al navegador que borre esas
+    //  bases. Es la única forma de cumplir la regla de v467 —no se termina
+    //  jamás el cliente que la app usa— sin quedarse sin cliente.
     const _MARCA_LIMPIEZA = 'cronos_pending_cache_clear';
     try {
         if (localStorage.getItem(_MARCA_LIMPIEZA)) {
-            // Se retira ANTES de intentarlo: si el borrado falla (otra pestaña
-            // con la persistencia abierta) no puede quedar una marca pegada que
-            // repita esto en cada arranque para siempre.
+            // Se retira ANTES de intentarlo: si el borrado falla no puede
+            // quedar una marca pegada que repita esto en cada arranque.
             localStorage.removeItem(_MARCA_LIMPIEZA);
-            const _tmp = initializeFirestore(app, {});
-            await terminate(_tmp);
-            await clearIndexedDbPersistence(_tmp);
-            console.log('[Cronos-Privacy] 🔒 Caché en disco borrada en el arranque (marca pendiente).');
+            // Firestore nombra sus bases `firestore/{clave}/{projectId}/main`.
+            // Se enumeran cuando el navegador lo permite y, si no (Firefox no
+            // implementa `databases()`), se va al nombre canónico.
+            let _nombres = [];
+            try {
+                if (indexedDB && typeof indexedDB.databases === 'function') {
+                    const _todas = await indexedDB.databases();
+                    _nombres = (_todas || []).map(d => d && d.name)
+                        .filter(n => typeof n === 'string' && n.indexOf('firestore/') === 0);
+                }
+            } catch (e) { /* enumerar puede no estar permitido: se usa el respaldo */ }
+            if (!_nombres.length) {
+                _nombres = ['firestore/[DEFAULT]/' + firebaseConfig.projectId + '/main'];
+            }
+            await Promise.all(_nombres.map(n => new Promise((res) => {
+                try {
+                    const req = indexedDB.deleteDatabase(n);
+                    // `blocked` ocurre si otra pestaña tiene la base abierta. No
+                    // se espera indefinidamente: se sigue y la app arranca igual
+                    // con un cliente SANO, que es lo único innegociable.
+                    req.onsuccess = req.onerror = req.onblocked = () => res();
+                    setTimeout(res, 1500);
+                } catch (e) { res(); }
+            })));
+            console.log('[Cronos-Privacy] 🔒 Caché en disco borrada en el arranque:', _nombres.join(', '));
         }
     } catch (e) {
         // Nunca bloquea el arranque: si no se pudo borrar, la app entra igual.
