@@ -1,5 +1,26 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v463: CATEGORIA Y SUBCATEGORIA SOBRE EL CRONOMETRO DE CADA TARJETA EN VIVO.
+//        Reporte del autor (captura 8469): en el panel de Partidos en Vivo solo
+//        se ven los nombres de los equipos, y con varios partidos activos a la
+//        vez eso no basta para saber cual es cual. Ahora, justo encima del
+//        cronometro, aparece en letras blancas "ALEVIN C" / "INFANTIL B".
+//        ⚠️ LA CATEGORIA VIAJA EN CAMPOS NUEVOS (matchCategory /
+//        matchSubcategory) Y NO EN `category`/`subcategory`. No es duplicar por
+//        duplicar: esos dos son la ENTRADA DEL SEMAFORO en live.html
+//        (_timerColorFor) y en la repeticion, y las dos formas de escribir la
+//        misma categoria NO resuelven al mismo grupo — getCategoryGroupKey mira
+//        primero si la cadena contiene 'f7', asi que el valor del panel de
+//        creacion `f7_infantil` cae en el grupo 'f7' mientras que el del perfil,
+//        `infantil`, cae en 'infantil_a', con OTROS umbrales de rojo/amarillo.
+//        Reutilizar el campo para pintar una etiqueta les habria cambiado los
+//        colores del semaforo, en vivo y a mitad de partido, a los equipos de
+//        Infantil/Cadete que juegan en F7.
+//        Guard: scripts/test_live_card_categoria.js (38/38, red-check de 14
+//        mutaciones). Incluye la comprobacion de que live.html PARSEA: un
+//        acento grave dentro de un comentario del template literal de la
+//        tarjeta lo cierra a media cadena y deja la lista en negro (van tres
+//        veces: v422, v459 y esta).
 //  v462: SALIDA PARA QUIEN HA OLVIDADO LA CONTRASEÑA ACTUAL. Reporte del autor
 //        (captura 8454): la ventana de cambiar contraseña exige la "Contraseña
 //        actual" y quien la ha olvidado se quedaba sin salida A LA VISTA.
@@ -1591,7 +1612,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v462';
+const CACHE_NAME = 'cronos-cache-v463';
 
 const ASSETS = [
     './',

@@ -348,6 +348,30 @@ async function pushLiveSnapshot(status = 'active') {
         const snapCat = window._cronosCurrentUser?.category || window._cronosCurrentUser?._activeRoleData?.category || window._cronosCurrentUser?.categoryLabel || null;
         const snapSub = window._cronosCurrentUser?.subcategory || window._cronosCurrentUser?._activeRoleData?.subcategory || null;
 
+        // v463 · CATEGORÍA DEL PARTIDO (la del panel de creación), aparte de la
+        // del entrenador. La lista de Partidos en Vivo la pinta encima del
+        // cronómetro para poder distinguir varios partidos simultáneos.
+        //
+        // ⚠️ VAN EN CAMPOS PROPIOS Y NO SE TOCAN `category`/`subcategory`. No es
+        // duplicar por duplicar: `category` es la entrada del SEMÁFORO tanto en
+        // live.html (`_timerColorFor`) como en la repetición, y las dos formas
+        // NO resuelven al mismo grupo. `getCategoryGroupKey` mira primero si la
+        // cadena contiene 'f7', así que el valor del panel `f7_infantil` cae en
+        // el grupo 'f7' mientras que el del perfil, 'infantil', cae en
+        // 'infantil_a' — con umbrales distintos. Reutilizar el mismo campo para
+        // pintar una etiqueta le cambiaría los colores del semáforo a los
+        // equipos de Infantil/Cadete que juegan F7, en un partido en curso.
+        //
+        // El orden de la cascada es el mismo que usa `getTimerColor`
+        // (js/core/app-init.js): manda el DOM del panel, y `_currentMatchCategory`
+        // es el respaldo para cuando el modal ya se cerró o el partido se
+        // recuperó de localStorage.
+        const _dom = (id) => {
+            try { return document.getElementById(id)?.value || ''; } catch(e) { return ''; }
+        };
+        const _matchCat = _dom('match-category')    || window._currentMatchCategory    || '';
+        const _matchSub = _dom('match-subcategory') || window._currentMatchSubcategory || '';
+
         const _me = window._cronosCurrentUser;
         const _extras = (_me && _me.extras) || (_thresholds && _thresholds.extras) || {};
         let _semaforoActive = true;
@@ -381,6 +405,15 @@ async function pushLiveSnapshot(status = 'active') {
             // Categoría y Subcategoría del Entrenador
             category:    window._cronosCurrentUser?.category || window._cronosCurrentUser?._activeRoleData?.category || window._cronosCurrentUser?.categoryLabel || null,
             subcategory: window._cronosCurrentUser?.subcategory || window._cronosCurrentUser?._activeRoleData?.subcategory || null,
+
+            // v463 · Categoría y Subcategoría DEL PARTIDO, tal y como las dejó el
+            // entrenador en el panel de creación. Sólo para mostrar (la etiqueta
+            // sobre el cronómetro de la tarjeta en vivo); ver el comentario de
+            // arriba para por qué no comparten campo con las de encima.
+            // Se cae al perfil del entrenador cuando el panel no las resuelve,
+            // para que la etiqueta no desaparezca al recuperar un partido.
+            matchCategory:    _matchCat || snapCat || null,
+            matchSubcategory: _matchSub || snapSub || null,
 
             // Partido
             mode:        currentMode,

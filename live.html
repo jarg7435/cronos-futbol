@@ -534,6 +534,30 @@
             /* En horizontal el alto manda: una sola línea para el encuentro. */
             .event-toast .et-match { font-size: 0.56rem; -webkit-line-clamp: 1; margin-bottom: 1px; }
         }
+        /* v463 · Categoria y subcategoria del partido, encima del cronometro
+           de cada tarjeta de Partidos en Vivo. En BLANCO a proposito: es la
+           unica etiqueta de la tarjeta que no compite con los colores de los
+           equipos (azul local / rojo visitante) ni con los del semaforo del
+           cronometro (verde/ambar/naranja), asi que se lee sin confundirse
+           con ninguno de ellos.
+           `white-space: nowrap` es obligatorio: partida en dos lineas empujaria
+           el cronometro hacia abajo y descuadraria la fila del marcador. */
+        .live-list-cat {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.62rem;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: 0.6px;
+            line-height: 1.1;
+            white-space: nowrap;
+            margin-bottom: 0.3rem;
+            text-transform: uppercase;
+        }
+        /* PREBENJAMIN C es la etiqueta mas larga; en pantallas estrechas se
+           encoge en vez de ensanchar la columna. */
+        @media (max-width: 400px) {
+            .live-list-cat { font-size: 0.55rem; letter-spacing: 0.2px; }
+        }
         .live-feed {
             background: rgba(0,0,0,0.22);
             border: 1px solid rgba(255,255,255,0.07);
@@ -4463,6 +4487,87 @@ function _liveFeedHtml(m) {
            '</div>';
 }
 
+// ── v463 · Etiqueta de CATEGORÍA/SUBCATEGORÍA de la tarjeta en vivo ─────
+// Con varios partidos a la vez, dos nombres de equipo no bastan para saber
+// cuál es cuál: el mismo club puede tener al Alevín A y al Alevín C jugando
+// a la misma hora y con el mismo nombre en el marcador. La etiqueta va justo
+// encima del cronómetro, que es donde se mira.
+//
+// 🔑 LA FUENTE ES EL PARTIDO, NO EL ENTRENADOR. Se lee primero
+// `matchCategory`/`matchSubcategory` —lo que el entrenador eligió en el panel
+// de creación (v463)— y sólo si no están se cae a `category`/`subcategory`,
+// que son las del perfil y las que alimentan el semáforo. Los partidos
+// creados antes de v463 no llevan los campos nuevos y siguen etiquetándose
+// por el respaldo.
+const _LIVE_CAT_ETIQUETAS = {
+    prebenjamin: 'PREBENJAMÍN',
+    benjamin:    'BENJAMÍN',
+    alevin:      'ALEVÍN',
+    infantil:    'INFANTIL',
+    cadete:      'CADETE',
+    juvenil:     'JUVENIL',
+    regional:    'REGIONAL',
+};
+
+// Minúsculas y SIN acentos: el mismo equipo llega escrito de tres maneras
+// distintas según el origen —`f7_alevin` del panel, `Alevín` del perfil,
+// `f7_prebenjamín` de las opciones del desplegable (que sí lleva tilde en el
+// value)—, y comparar sin normalizar deja fuera justo esa tercera.
+function _liveCatNormaliza(s) {
+    return String(s == null ? '' : s).trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function _liveCatNombre(cat) {
+    const norm = _liveCatNormaliza(cat).replace(/^f\d+_/, '');
+    if (!norm) return '';
+    // ⚠️ EL ORDEN DE ESTA LISTA ES PARTE DE LA LÓGICA: 'prebenjamin' CONTIENE
+    // 'benjamin'. Con el orden alfabético, todos los prebenjamines se
+    // etiquetarían como BENJAMÍN.
+    const claves = ['prebenjamin', 'benjamin', 'alevin', 'infantil',
+                    'cadete', 'juvenil', 'regional'];
+    for (let i = 0; i < claves.length; i++) {
+        if (norm.includes(claves[i])) return _LIVE_CAT_ETIQUETAS[claves[i]];
+    }
+    // Categoría que no está en la tabla (un club puede tener las suyas). Se
+    // muestra lo que hay, con sus acentos, en vez de inventar una equivalencia
+    // o de tragarse el dato: mejor "SENIOR" que nada.
+    return String(cat).trim()
+        .replace(/^[fF]\d+_/, '')
+        .replace(/[_\-]+/g, ' ')
+        .toUpperCase();
+}
+
+// La subcategoría es A/B/C. Cualquier otra cosa (un nombre completo colado en
+// el campo, un espacio suelto) se descarta: pegada detrás de la categoría
+// convertiría la etiqueta en una frase ilegible dentro de una columna de 88px.
+function _liveCatSubNombre(sub) {
+    const s = String(sub == null ? '' : sub).trim().toUpperCase();
+    return /^[A-Z0-9]{1,2}$/.test(s) ? s : '';
+}
+
+function _liveCategoriaEtiqueta(m) {
+    if (!m) return '';
+    const nombre = _liveCatNombre(m.matchCategory || m.category || m.categoryLabel || '');
+    if (!nombre) return '';
+    const sub = _liveCatSubNombre(
+        m.matchSubcategory != null && String(m.matchSubcategory).trim() !== ''
+            ? m.matchSubcategory
+            : m.subcategory);
+    return sub ? (nombre + ' ' + sub) : nombre;
+}
+
+function _liveCategoriaHtml(m) {
+    const etiqueta = _liveCategoriaEtiqueta(m);
+    // Si no se puede resolver NO SE INVENTA y no se pinta nada: una etiqueta
+    // equivocada sobre un cronómetro es peor que ninguna, porque le atribuye
+    // el partido a otro equipo. La fila no se descuadra al faltar, porque el
+    // hueco lo reparte el propio flex de la columna.
+    if (!etiqueta) return '';
+    return '<div class="live-list-cat" title="Categoría y subcategoría del partido">' +
+           escapeHtml(etiqueta) + '</div>';
+}
+
 // ── Show history ───────────────────────────────────────────────────
 // ── Pantalla principal: partidos EN VIVO ──────────────────────────
 let _liveListUnsubscribe = null;
@@ -4649,8 +4754,15 @@ window.showLiveNow = async function() {
                 </div>
 
                 <!-- Marcador -->
+                <!-- v463 · el gap baja de 1.5rem a 1rem y la columna central
+                     sube de 70px a 88px para hacerle sitio a la etiqueta de
+                     categoría. La suma es la misma (70+48 = 118 ≈ 88+32 = 120),
+                     así que los dos equipos conservan su ancho.
+                     ⚠️ SIN ACENTOS GRAVES EN ESTE COMENTARIO: va dentro de un
+                     template literal, y uno solo lo cierra a media cadena. Van
+                     tres veces ya (v422, v459 y esta). -->
                 <div style="display:flex;align-items:center;
-                            justify-content:center;gap:1.5rem;margin-bottom:0.8rem;">
+                            justify-content:center;gap:1rem;margin-bottom:0.8rem;">
                     <div style="text-align:center;flex:1;">
                         <div style="font-size:0.8rem;font-weight:700;
                                     color:var(--primary);letter-spacing:0.5px;
@@ -4667,7 +4779,11 @@ window.showLiveNow = async function() {
                         </div>
                     </div>
                     <!-- CRONÓMETRO NUEVO EN MEDIO -->
-                    <div style="text-align:center; min-width: 70px;">
+                    <div style="text-align:center; min-width: 88px;">
+                        <!-- v463 · CATEGORÍA/SUBCATEGORÍA, justo encima del
+                             cronómetro. Con varios partidos abiertos a la vez es
+                             lo que permite saber cuál es cuál de un vistazo. -->
+                        ${_liveCategoriaHtml(m)}
                         <div class="live-list-timer" data-match='${escapeHtml(JSON.stringify(m))}'
                              style="font-family:'Outfit',sans-serif; font-size:1.8rem; font-weight:700; color:var(--text);">
                             --:--
@@ -5507,8 +5623,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v462"></script>
-<script src="js/match/replay/replay-player.js?v=v462"></script>
-<script src="js/match/events/retroactive-modal.js?v=v462"></script>
+<script src="js/match/immutability.js?v=v463"></script>
+<script src="js/match/replay/replay-player.js?v=v463"></script>
+<script src="js/match/events/retroactive-modal.js?v=v463"></script>
 </body>
 </html>
