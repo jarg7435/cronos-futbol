@@ -1,5 +1,27 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v464: LA ETIQUETA DE CATEGORIA, LEGIBLE DE UN VISTAZO. Reporte del autor
+//        (captura 8471): la etiqueta de v463 aparecia, pero a 0.62rem era
+//        demasiado pequena para identificar el partido sin esfuerzo, que es
+//        justo para lo que esta puesta. Sube a 1.05rem, por encima del nombre
+//        del equipo (0.8rem): en la tarjeta manda el cronometro (1.8rem),
+//        luego la categoria y despues los equipos.
+//        ⚠️ EL TAMANO Y EL ANCHO DE LA COLUMNA SON UNA SOLA DECISION. La
+//        etiqueta va con `nowrap` DENTRO de la columna del cronometro, asi que
+//        su ancho EMPUJA a los dos equipos. Por eso la columna sube de 88px a
+//        112px (y el gap baja de 1rem a 0.75rem), y por eso existe el escalon
+//        `.live-list-cat-larga`: a 1.05rem "PREBENJAMIN A" (13 caracteres) se
+//        va a ~135px y deja a cada equipo con menos de 70px en un movil, con
+//        el nombre partido en tres lineas. El escalon se decide por la
+//        LONGITUD del texto ya resuelto y no por la categoria, porque una
+//        categoria libre de club ("SENIOR FEMENINO") ocupa lo mismo.
+//        Guard: scripts/test_live_card_categoria.js (47/47, red-check de 24
+//        mutaciones entre las dos rondas). Dos agujeros que destapo el
+//        red-check y que ya estan cerrados: la constante del umbral quedaba
+//        FUERA del bloque que el guard extrae y ejecuta (ReferenceError), y
+//        buscar una regla CSS sin quitar antes los @media daba por buena la
+//        copia del `@media (max-width:400px)` — borrar la regla BASE dejaba el
+//        guard verde mientras las etiquetas largas se rompian en tablet y PC.
 //  v463: CATEGORIA Y SUBCATEGORIA SOBRE EL CRONOMETRO DE CADA TARJETA EN VIVO.
 //        Reporte del autor (captura 8469): en el panel de Partidos en Vivo solo
 //        se ven los nombres de los equipos, y con varios partidos activos a la
@@ -1612,7 +1634,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v463';
+const CACHE_NAME = 'cronos-cache-v464';
 
 const ASSETS = [
     './',

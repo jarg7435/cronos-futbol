@@ -49,6 +49,17 @@
 //
 //  F · NADA DE HTML SIN ESCAPAR: la categoria puede venir de un texto libre
 //      guardado por el club.
+//
+//  G · v464 · EL TAMANO Y EL ANCHO DE LA COLUMNA SON UNA SOLA DECISION. El
+//      autor reporto (captura 8471) que a 0.62rem no se leia de un vistazo,
+//      que es justo para lo que esta puesta. Sube a 1.05rem — por encima del
+//      nombre del equipo (0.8rem) — pero la etiqueta va con `nowrap` DENTRO de
+//      la columna del cronometro, asi que su ancho EMPUJA a los dos equipos:
+//      subir la letra sin ensanchar la columna parte los nombres en tres
+//      lineas en un movil. De ahi el escalon `.live-list-cat-larga` para las
+//      etiquetas de mas de 10 caracteres ("PREBENJAMIN A", o una categoria
+//      libre del club como "SENIOR FEMENINO"), que se decide por la LONGITUD
+//      del texto ya resuelto y no por la categoria.
 // ─────────────────────────────────────────────────────────────────────────
 const fs   = require('fs');
 const os   = require('os');
@@ -228,6 +239,32 @@ const hx = html({ matchCategory: '<img src=x onerror=alert(1)>' });
 ok('4d · el texto va escapado',
    hx.indexOf('<img') === -1 && hx.indexOf('&lt;IMG') !== -1, hx);
 
+// ── v464 · el escalon de tamano para las etiquetas largas ──
+// G · La etiqueta va con nowrap DENTRO de la columna del cronometro, asi que su
+// ancho empuja a los dos equipos. Al subirla a 1.05rem, las cortas caben y
+// "PREBENJAMIN A" no: sin escalon, en un movil deja a cada equipo con menos de
+// 70px y el nombre se parte en tres lineas.
+const claseDe = (m) => (html(m).match(/class="([^"]*)"/) || ['', ''])[1];
+
+ok('4e · etiqueta corta (ALEVIN C, 8) va a tamano GRANDE, sin la clase -larga',
+   claseDe({ matchCategory: 'f7_alevin', matchSubcategory: 'C' }) === 'live-list-cat',
+   claseDe({ matchCategory: 'f7_alevin', matchSubcategory: 'C' }));
+ok('4f · etiqueta larga (PREBENJAMIN A, 13) baja de escalon',
+   /\blive-list-cat-larga\b/.test(claseDe({ matchCategory: 'f7_prebenjamín', matchSubcategory: 'A' })),
+   claseDe({ matchCategory: 'f7_prebenjamín', matchSubcategory: 'A' }));
+// El limite exacto: 10 caracteres entran grandes, 11 ya no. Si alguien mueve la
+// constante sin mirar el ancho de la columna, esto se pone rojo.
+ok('4g · el umbral son 10 chars: INFANTIL B (10) grande, PREBENJAMIN (11) pequena',
+   claseDe({ matchCategory: 'f11_infantil', matchSubcategory: 'B' }) === 'live-list-cat' &&
+   /-larga/.test(claseDe({ matchCategory: 'f7_prebenjamín' })),
+   claseDe({ matchCategory: 'f11_infantil', matchSubcategory: 'B' }) + ' | ' +
+   claseDe({ matchCategory: 'f7_prebenjamín' }));
+// El escalon se decide por la LONGITUD, no por la categoria: una categoria
+// libre del club ocupa lo mismo y necesita lo mismo.
+ok('4h · una categoria libre larga (SENIOR FEMENINO) tambien baja de escalon',
+   /-larga/.test(claseDe({ matchCategory: 'f11_senior_femenino' })),
+   claseDe({ matchCategory: 'f11_senior_femenino' }));
+
 // ═══════════ PARTE 5 · el SITIO en la tarjeta ═══════════
 // Esto solo se puede comprobar leyendo el fuente, asi que se ancla lo mas
 // estrecho posible: la COLUMNA CENTRAL de la tarjeta, no el fichero entero.
@@ -244,13 +281,76 @@ ok('5b · _liveCategoriaHtml(m) se invoca JUSTO ENCIMA del cronometro',
    'no aparece en los 600 chars previos al cronometro');
 
 // E · una sola linea, o empuja el cronometro.
-const cssIdx = LIVE.indexOf('.live-list-cat {');
-ok('5c · existe la regla CSS .live-list-cat', cssIdx !== -1);
-const cssBloque = cssIdx === -1 ? '' : LIVE.slice(cssIdx, LIVE.indexOf('}', cssIdx));
+//
+// ⚠️ HAY QUE QUITAR LOS @media ANTES DE BUSCAR LA REGLA, y no es un detalle.
+// Comprobado con el red-check: al BORRAR la regla base `.live-list-cat-larga`
+// el guard seguia VERDE, porque encontraba la copia de dentro del
+// `@media (max-width: 400px)` y la daba por buena. El defecto real que eso deja
+// pasar es de los que no se ven: las etiquetas largas dejarian de encogerse en
+// tablet y escritorio (donde no aplica el @media) y solo funcionarian en
+// moviles estrechos. Lo que se afirma aqui es el tamano BASE, asi que hay que
+// mirar el CSS base.
+function sinMedia(css) {
+    let out = '', i = 0;
+    for (;;) {
+        const j = css.indexOf('@media', i);
+        if (j === -1) { out += css.slice(i); return out; }
+        out += css.slice(i, j);
+        let k = css.indexOf('{', j);
+        if (k === -1) return out;
+        let nivel = 1; k++;
+        while (k < css.length && nivel > 0) {
+            if (css[k] === '{') nivel++;
+            else if (css[k] === '}') nivel--;
+            k++;
+        }
+        i = k;
+    }
+}
+const LIVE_BASE = sinMedia(LIVE);
+
+function reglaCss(sel) {
+    const re = new RegExp(sel.replace(/[.\-]/g, '\\$&') + '\\s*\\{([^}]*)\\}');
+    const m = LIVE_BASE.match(re);
+    return m ? m[1] : '';
+}
+const remDe = (bloque) => {
+    const m = bloque.match(/font-size:\s*([\d.]+)rem/);
+    return m ? parseFloat(m[1]) : NaN;
+};
+
+const cssBloque = reglaCss('.live-list-cat');
+ok('5c · existe la regla CSS .live-list-cat', cssBloque !== '');
 ok('5d · el color es BLANCO (lo que pidio el autor)',
    /color:\s*#(fff|ffffff)\b/i.test(cssBloque), cssBloque);
 ok('5e · white-space: nowrap — una sola linea, no empuja el cronometro',
    /white-space:\s*nowrap/.test(cssBloque), cssBloque);
+
+// ── v464 · el TAMANO, que es lo que pidio el autor en la captura 8471 ──
+// El numero concreto es una decision de diseno, pero el MINIMO no: a 0.62rem
+// (v463) la etiqueta no se leia de un vistazo, y el nombre del equipo de la
+// propia tarjeta va a 0.8rem. Si la categoria no supera eso, deja de ser lo
+// que el autor pidio: "bastante mas grande, destacada y legible".
+const remBase = remDe(cssBloque);
+ok('5f · la etiqueta mide al menos 1rem (era 0.62rem en v463)',
+   remBase >= 1, 'font-size = ' + remBase + 'rem');
+ok('5g · y es MAS GRANDE que el nombre del equipo de la tarjeta (0.8rem)',
+   remBase > 0.8, 'font-size = ' + remBase + 'rem vs 0.8rem del equipo');
+
+// El escalon de las largas tiene que escalar HACIA ABAJO; si alguien lo iguala
+// o lo sube, deja de proteger la fila y la clase sobra.
+const cssLarga = reglaCss('.live-list-cat-larga');
+ok('5h · existe el escalon .live-list-cat-larga', cssLarga !== '');
+const remLarga = remDe(cssLarga);
+ok('5i · el escalon de las largas es MENOR que el tamano base',
+   remLarga < remBase, 'larga = ' + remLarga + 'rem vs base = ' + remBase + 'rem');
+
+// El ancho de la columna y el tamano de la letra son UNA SOLA decision: subir
+// la letra sin ensanchar la columna es lo que parte los nombres de los equipos.
+const colMatch = LIVE.match(/min-width:\s*(\d+)px;">\s*\n\s*<!-- v463/);
+ok('5j · la columna del cronometro se ensancho con la letra (>= 112px)',
+   colMatch !== null && Number(colMatch[1]) >= 112,
+   colMatch ? colMatch[1] + 'px' : 'no se encontro el min-width de la columna');
 
 // ═══════════ PARTE 6 · lo que escribe sync.js ═══════════
 console.log('\n── PARTE 6 · el snapshot que escribe el entrenador ──');

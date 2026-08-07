@@ -541,22 +541,43 @@
            cronometro (verde/ambar/naranja), asi que se lee sin confundirse
            con ninguno de ellos.
            `white-space: nowrap` es obligatorio: partida en dos lineas empujaria
-           el cronometro hacia abajo y descuadraria la fila del marcador. */
+           el cronometro hacia abajo y descuadraria la fila del marcador.
+
+           v464 · TAMANO. Reporte del autor (captura 8471): a 0.62rem no se leia
+           de un vistazo, que es justo para lo que esta puesta. Sube a 1.05rem,
+           por encima del nombre del equipo (0.8rem), de modo que en la tarjeta
+           mande el cronometro (1.8rem), luego la categoria y despues los
+           equipos. */
         .live-list-cat {
             font-family: 'Outfit', sans-serif;
-            font-size: 0.62rem;
+            font-size: 1.05rem;
             font-weight: 800;
             color: #ffffff;
-            letter-spacing: 0.6px;
-            line-height: 1.1;
+            letter-spacing: 0.4px;
+            line-height: 1.15;
             white-space: nowrap;
-            margin-bottom: 0.3rem;
+            margin-bottom: 0.45rem;
             text-transform: uppercase;
         }
-        /* PREBENJAMIN C es la etiqueta mas larga; en pantallas estrechas se
-           encoge en vez de ensanchar la columna. */
+        /* ⚠️ v464 · EL ESCALON PARA LAS ETIQUETAS LARGAS NO ES COSMETICO.
+           La etiqueta va con `nowrap` dentro de la columna del cronometro, asi
+           que su ancho EMPUJA a los dos equipos. A 1.05rem "ALEVIN C" ocupa
+           ~83px y cabe, pero "PREBENJAMIN A" (13 caracteres) se va a ~135px y
+           deja a cada equipo con menos de 70px en un movil: el nombre se parte
+           en tres lineas y la fila del marcador se descuadra — justo lo que el
+           autor pidio no romper.
+           La clase la pone `_liveCategoriaHtml` segun la LONGITUD del texto ya
+           resuelto, no segun la categoria: una categoria libre de club
+           ("SENIOR FEMENINO") es igual de larga y necesita lo mismo. */
+        .live-list-cat-larga {
+            font-size: 0.82rem;
+            letter-spacing: 0.2px;
+        }
+        /* En pantallas estrechas todo baja un escalon mas: ahi el ancho que se
+           le quita a los equipos duele el doble. */
         @media (max-width: 400px) {
-            .live-list-cat { font-size: 0.55rem; letter-spacing: 0.2px; }
+            .live-list-cat       { font-size: 0.9rem;  letter-spacing: 0.2px; }
+            .live-list-cat-larga { font-size: 0.72rem; letter-spacing: 0; }
         }
         .live-feed {
             background: rgba(0,0,0,0.22);
@@ -4509,6 +4530,16 @@ const _LIVE_CAT_ETIQUETAS = {
     regional:    'REGIONAL',
 };
 
+// v464 · Longitud a partir de la cual la etiqueta baja de tamaño. Es una
+// constante porque el número está atado a la anchura de la columna del
+// cronómetro (`.live-list-cat` + el `min-width` de esa columna): quien toque
+// una de las dos cosas tiene que mirar la otra.
+// ⚠️ VA DEBAJO DE LA TABLA, DENTRO DEL BLOQUE. El guard extrae desde
+// `const _LIVE_CAT_ETIQUETAS` hasta "Show history" y ejecuta ese trozo: puesta
+// encima quedaba FUERA del corte y las funciones reventaban con un
+// ReferenceError al ejecutarlas.
+const _LIVE_CAT_MAX_CHARS_GRANDE = 10;
+
 // Minúsculas y SIN acentos: el mismo equipo llega escrito de tres maneras
 // distintas según el origen —`f7_alevin` del panel, `Alevín` del perfil,
 // `f7_prebenjamín` de las opciones del desplegable (que sí lleva tilde en el
@@ -4564,7 +4595,16 @@ function _liveCategoriaHtml(m) {
     // el partido a otro equipo. La fila no se descuadra al faltar, porque el
     // hueco lo reparte el propio flex de la columna.
     if (!etiqueta) return '';
-    return '<div class="live-list-cat" title="Categoría y subcategoría del partido">' +
+    // v464 · El escalón de tamaño se decide por la LONGITUD del texto ya
+    // resuelto, no por la categoría: "PREBENJAMÍN A" y una categoría libre del
+    // club como "SENIOR FEMENINO" ocupan lo mismo y necesitan lo mismo. El
+    // umbral son 10 caracteres porque a 1.05rem esa es la última etiqueta que
+    // cabe en la columna del cronómetro sin empujar a los equipos: "INFANTIL B"
+    // y "REGIONAL A" miden justo 10 y entran; "PREBENJAMÍN A" mide 13 y no.
+    const clase = etiqueta.length > _LIVE_CAT_MAX_CHARS_GRANDE
+        ? 'live-list-cat live-list-cat-larga'
+        : 'live-list-cat';
+    return '<div class="' + clase + '" title="Categoría y subcategoría del partido">' +
            escapeHtml(etiqueta) + '</div>';
 }
 
@@ -4758,11 +4798,15 @@ window.showLiveNow = async function() {
                      sube de 70px a 88px para hacerle sitio a la etiqueta de
                      categoría. La suma es la misma (70+48 = 118 ≈ 88+32 = 120),
                      así que los dos equipos conservan su ancho.
+                     v464 · con la etiqueta ya a 1.05rem, la columna sube a
+                     112px y el gap baja a 0.75rem: 112+24 = 136 frente a los
+                     120 de antes, o sea 8px menos por equipo. Es el precio de
+                     que "ALEVÍN C" se lea de lejos, y cabe de sobra.
                      ⚠️ SIN ACENTOS GRAVES EN ESTE COMENTARIO: va dentro de un
                      template literal, y uno solo lo cierra a media cadena. Van
                      tres veces ya (v422, v459 y esta). -->
                 <div style="display:flex;align-items:center;
-                            justify-content:center;gap:1rem;margin-bottom:0.8rem;">
+                            justify-content:center;gap:0.75rem;margin-bottom:0.8rem;">
                     <div style="text-align:center;flex:1;">
                         <div style="font-size:0.8rem;font-weight:700;
                                     color:var(--primary);letter-spacing:0.5px;
@@ -4779,7 +4823,7 @@ window.showLiveNow = async function() {
                         </div>
                     </div>
                     <!-- CRONÓMETRO NUEVO EN MEDIO -->
-                    <div style="text-align:center; min-width: 88px;">
+                    <div style="text-align:center; min-width: 112px;">
                         <!-- v463 · CATEGORÍA/SUBCATEGORÍA, justo encima del
                              cronómetro. Con varios partidos abiertos a la vez es
                              lo que permite saber cuál es cuál de un vistazo. -->
@@ -5623,8 +5667,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v463"></script>
-<script src="js/match/replay/replay-player.js?v=v463"></script>
-<script src="js/match/events/retroactive-modal.js?v=v463"></script>
+<script src="js/match/immutability.js?v=v464"></script>
+<script src="js/match/replay/replay-player.js?v=v464"></script>
+<script src="js/match/events/retroactive-modal.js?v=v464"></script>
 </body>
 </html>
