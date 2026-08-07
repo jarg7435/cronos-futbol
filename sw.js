@@ -1,5 +1,31 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v470: 🚨 EL CLIENTE MUERTO DEL VISOR — CAUSA ENCONTRADA Y ERRADICADA.
+//        Reporte del autor: vuelve "The client has already been terminated", y
+//        esta vez EN live.html. Ahi estaba la pieza que faltaba.
+//        🔑🔑 live.html es OTRO DOCUMENTO con su propia instancia de Firestore
+//        PERO COMPARTE EL MISMO IndexedDB (el gestor multipestaña es
+//        obligatorio alli, y lo normal es tener visor y app abiertos a la vez).
+//        Al borrar esa base desde la app —logout o cambio de cuenta— el
+//        navegador fuerza el cierre de la conexion que el VISOR tiene abierta y
+//        su SDK termina el cliente. De ahi el error, y de ahi tambien la
+//        supuesta latencia de 4-5 s y las "acumulaciones que saltan de golpe":
+//        no habia retardo, habia escrituras fallando y reintentandose.
+//        ⚠️ Y LO EMPEORE YO. Hasta v466 se usaba clearIndexedDbPersistence, que
+//        SE NIEGA cuando otro documento tiene la persistencia abierta: con el
+//        visor abierto no hacia nada, y por eso nunca molesto. Cambiarlo por
+//        indexedDB.deleteDatabase (v468/v469) lo convirtio en un borrado real
+//        que se lleva por delante el cliente del visor.
+//        SOLUCION: la cache en disco NO SE TOCA. Se vuelve al comportamiento de
+//        v466 y anteriores. La purga de PII de localStorage —plantillas,
+//        nombres, convocatorias— sigue intacta y no ha cambiado.
+//        HUECO ASUMIDO Y DOCUMENTADO: en un dispositivo compartido, la cache en
+//        disco del usuario anterior sobrevive al cambio de cuenta. Cerrarlo
+//        exige hacerlo en el ARRANQUE, sin ningun cliente abierto en ninguna
+//        pestaña, y v467/v468 demostraron que eso no se improvisa en la ruta de
+//        login. Queda como trabajo aparte, NUNCA en caliente durante un partido.
+//        ⚠️ EL GUARD NO MIRABA live.html: ese fue el agujero. Ahora entra en el
+//        censo con el mismo derecho que los modulos de la app.
 //  v469: SE RETIRA TODO LO QUE v467/v468 METIERON EN EL ARRANQUE + aislamiento
 //        estanco por partido + aviso y cajon con la misma duracion (3 s).
 //        ⚠️ ARRANQUE: entre crear `auth` y crear `db` ya NO hay ni una linea
@@ -1791,7 +1817,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v469';
+const CACHE_NAME = 'cronos-cache-v470';
 
 const ASSETS = [
     './',

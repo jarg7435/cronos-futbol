@@ -232,26 +232,46 @@
     // la persistencia abierta, y la app se quedaba viva sobre un cliente
     // muerto. Aquí no hay nada que esperar ni ninguna instancia que tocar.
     window._cronosClearFirestoreCache = async function _cronosClearFirestoreCache() {
-        try {
-            let nombres = [];
-            try {
-                if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
-                    const todas = await indexedDB.databases();
-                    nombres = (todas || []).map(d => d && d.name)
-                        .filter(n => typeof n === 'string' && n.indexOf('firestore/') === 0);
-                }
-            } catch (e) { /* enumerar puede estar prohibido: se usa el respaldo */ }
-            if (!nombres.length) {
-                // Firefox no implementa `databases()`. Nombre canónico del SDK.
-                nombres = ['firestore/[DEFAULT]/' + firebaseConfig.projectId + '/main'];
-            }
-            nombres.forEach(n => { try { indexedDB.deleteDatabase(n); } catch (e) {} });
-            console.log('[Cronos-Privacy] 🔒 Borrado de la caché en disco solicitado:', nombres.join(', '));
-            return true;
-        } catch (e) {
-            console.warn('[Cronos-Privacy] No se pudo solicitar el borrado de la caché:', e && e.message);
-            return false;
-        }
+        // ══════════════════════════════════════════════════════════════
+        //  v470 · ⚠️⚠️ ESTA FUNCIÓN NO BORRA NADA, Y ES DELIBERADO.
+        // ══════════════════════════════════════════════════════════════
+        //  Reporte del autor: vuelve `The client has already been terminated`,
+        //  y esta vez EN `live.html`. Ahí estaba la pieza que me faltaba:
+        //
+        //  🔑🔑 `live.html` ES OTRO DOCUMENTO CON SU PROPIA INSTANCIA DE
+        //  FIRESTORE, PERO COMPARTE EL MISMO IndexedDB (el gestor
+        //  multipestaña es obligatorio ahí, y lo normal es tener el visor y la
+        //  app abiertos a la vez). Al borrar esa base desde aquí —logout o
+        //  cambio de cuenta en la app— el navegador fuerza el cierre de la
+        //  conexión que el VISOR tiene abierta, y el SDK del visor termina su
+        //  cliente. De ahí el error, y de ahí la "latencia" y las
+        //  "acumulaciones que saltan de golpe": no había retardo, había
+        //  escrituras fallando y reintentándose.
+        //
+        //  ⚠️ Y LO EMPEORÉ YO. Hasta v466 esto usaba
+        //  `clearIndexedDbPersistence`, que **se niega** cuando otro documento
+        //  tiene la persistencia abierta: con el visor abierto no hacía nada y
+        //  por eso nunca molestó. Al cambiarlo por `indexedDB.deleteDatabase`
+        //  (v468/v469) pasó a borrar DE VERDAD, y a llevarse por delante el
+        //  cliente del visor.
+        //
+        //  Se vuelve al comportamiento de v466 y anteriores: NO se toca la
+        //  caché en disco. La purga de PII de `localStorage`
+        //  (`_cronosPurgeAllLocalPII`, que es la que guarda plantillas,
+        //  nombres y convocatorias) SIGUE HACIÉNDOSE y no ha cambiado.
+        //
+        //  HUECO CONOCIDO Y ASUMIDO: en un dispositivo COMPARTIDO por dos
+        //  usuarios distintos, los documentos que Firestore dejó cacheados en
+        //  disco sobreviven al cambio de cuenta, y las lecturas servidas desde
+        //  esa caché no pasan por las reglas. Cerrarlo exige una vía que no
+        //  pueda tumbar al visor —y no la hay desde aquí—: el sitio correcto
+        //  es hacerlo al ARRANCAR, cuando aún no hay ningún cliente abierto en
+        //  ninguna pestaña, y eso es justo lo que v467/v468 demostraron que no
+        //  se puede improvisar en la ruta de login. Queda como trabajo aparte,
+        //  con su propio guard, y NO se hace en caliente durante un partido.
+        console.log('[Cronos-Privacy] Caché en disco de Firestore: NO se toca ' +
+                    '(la comparte live.html; borrarla le mata el cliente al visor).');
+        return true;
     };
 
     // ══════════════════════════════════════════════════════════════

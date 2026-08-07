@@ -211,9 +211,18 @@ console.log('\n── PARTE 4 · PIEZA B2 · la caché en disco y la PII ──'
     // en disco SE BORRA (4a, 4c, 4d, 4e). Lo que cambia es el COMO: por
     // IndexedDB, que no necesita ninguna instancia de Firestore. Y se anyade la
     // prohibicion, porque asi es como se reescribiria el corte.
-    ok('4b · [PIEZA B2] 🔑 la cache se borra por IndexedDB, SIN terminar el cliente',
-       /indexedDB\.deleteDatabase\s*\(/.test(INIT),
-       'sin instancia de por medio: es lo unico que no deja a la app sin cliente');
+    // ⚠️⚠️ v470 · INVERTIDA OTRA VEZ, y ahora en la direccion definitiva.
+    // v468 la puso como "se borra por IndexedDB". Eso resulto ser dañino:
+    // `live.html` es OTRO documento con su propia instancia de Firestore pero
+    // COMPARTE ese IndexedDB, asi que borrarlo desde la app le fuerza el cierre
+    // de la conexion al VISOR y su SDK termina el cliente — el
+    // `The client has already been terminated` que el autor reporto EN EL VISOR.
+    // Hasta v466 se usaba `clearIndexedDbPersistence`, que SE NIEGA cuando otro
+    // documento la tiene abierta, y por eso nunca hizo daño.
+    // Lo que se exige ahora es que NO se toque la cache en disco desde aqui.
+    ok('4b · [PIEZA B2] ⚠️🔑 NO se borra la cache en disco (la comparte live.html)',
+       !/deleteDatabase\s*\(/.test(INIT.replace(/\/\/[^\n]*/g, '')),
+       'borrarla desde la app mata el cliente del visor en mitad de un partido');
     ok('4b2 · [PIEZA B2] ⚠️ y NO se termina ninguna instancia (bloqueo de acceso de v467)',
        !/\bterminate\s*\(/.test(INIT.replace(/\/\/[^\n]*/g, '')) &&
        !/\bclearIndexedDbPersistence\s*\(/.test(INIT.replace(/\/\/[^\n]*/g, '')),

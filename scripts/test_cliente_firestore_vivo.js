@@ -171,7 +171,14 @@ console.log('── PARTE 1 · ⚠️ nadie termina el cliente que la app usa �
        ' — v467 y v468 rompieron producción metiendo trabajo justo aquí');
 
     // Y en ningún otro fichero del producto.
-    const otros = [['firestore-storage.js', STORE], ['sync.js', SYNC], ['player-actions.js', ACTS]];
+    // ⚠️⚠️ v470 · `live.html` ESTABA FUERA DE ESTA LISTA Y ESE FUE EL AGUJERO.
+    // El autor reportó `The client has already been terminated` EN EL VISOR, y
+    // este guard no lo miraba: sólo censaba los módulos de la app. El visor es
+    // otro documento con su propia instancia de Firestore, así que entra aquí
+    // con el mismo derecho que los demás.
+    const LIVE = fs.readFileSync(path.join(ROOT, 'live.html'), 'utf8');
+    const otros = [['firestore-storage.js', STORE], ['sync.js', SYNC],
+                   ['player-actions.js', ACTS], ['live.html', LIVE]];
     const culpables = otros.filter(([, src]) => {
         const cod = sinComentarios(src);
         return /\bterminate\s*\(/.test(cod) || /\bclearIndexedDbPersistence\s*\(/.test(cod);
@@ -208,13 +215,15 @@ console.log('\n── PARTE 2 · la limpieza se aplaza al arranque, no se pierde
     vm.runInContext(fuente, sandbox);
 
     return void sandbox.window._cronosClearFirestoreCache().then((devuelto) => {
-        ok('2b · 🔑 pide borrar la caché de Firestore (la limpieza NO se ha perdido)',
-           borradas.some(n => n.indexOf('firestore/') === 0), JSON.stringify(borradas));
-        // ⚠️ La sesión de Firebase Auth vive en `firebaseLocalStorageDb`. Si se
-        // borrara, cerraría la sesión del usuario en cada salida — y peor, un
-        // arranque a medias podría dejar peticiones SIN token, que es
-        // exactamente el `Missing or insufficient permissions` del reporte.
-        ok('2b2 · ⚠️🔑 NO toca la base de Firebase Auth (ahí vive la sesión)',
+        // ⚠️⚠️ v470 · INVERTIDA. Antes exigía que se pidiera el borrado; ahora se
+        // exige lo contrario, EJECUTÁNDOLO: no puede tocar NINGUNA base.
+        // `live.html` comparte ese IndexedDB y borrarlo le mata el cliente al
+        // visor en mitad de un partido, que es el fallo reportado.
+        ok('2b · ⚠️🔑 EJECUTADA, no borra NINGUNA base de datos',
+           borradas.length === 0, 'intentó borrar: ' + JSON.stringify(borradas));
+        // Se conservan estas dos: si algún día vuelve a borrarse algo desde
+        // aquí, siguen marcando lo que jamás puede tocarse.
+        ok('2b2 · ⚠️🔑 y menos aún la de Firebase Auth (ahí vive la sesión)',
            !borradas.some(n => /firebaseLocalStorage/i.test(n)), JSON.stringify(borradas));
         ok('2b3 · ni ninguna base ajena', !borradas.some(n => n === 'otra-cosa'), JSON.stringify(borradas));
         ok('2c · y dice que sí al llamador', devuelto === true, String(devuelto));
@@ -232,17 +241,27 @@ console.log('\n── PARTE 3 · el borrado de la caché va AL SALIR, no al entr
     const i0 = INIT.indexOf('window._cronosClearFirestoreCache = async function');
     const fuente = INIT.slice(i0, INIT.indexOf('v467 · RED DE SEGURIDAD', i0));
 
-    ok('3a · 🔑 el borrado se pide por IndexedDB, sin tocar ninguna instancia',
-       /indexedDB\.deleteDatabase\(/.test(fuente) &&
-       !/initializeFirestore/.test(fuente) && !/\bterminate\(/.test(fuente),
-       'crear o terminar instancias aquí fue el bloqueo de acceso de v467');
-    // ⚠️ Esperar fue el cuelgue de v467: `clearIndexedDbPersistence` se queda
-    // colgada si otra pestaña tiene la persistencia abierta.
-    ok('3b · ⚠️ y NO se espera a que el borrado termine',
-       !/await[^;\n]*deleteDatabase/.test(fuente),
-       'los tres llamadores recargan a continuación; el borrado se completa al cerrarse las conexiones');
-    ok('3c · sabe el nombre canónico por si el navegador no deja enumerar (Firefox)',
-       /firestore\/\[DEFAULT\]\/' \+ firebaseConfig\.projectId \+ '\/main/.test(fuente));
+    // ⚠️⚠️ v470 · REESCRITA. La caché en disco YA NO SE BORRA, y es deliberado:
+    // `live.html` es otro documento con su propia instancia de Firestore pero
+    // COMPARTE el IndexedDB, así que borrarlo desde la app le fuerza el cierre
+    // de la conexión al VISOR y su SDK termina el cliente — el
+    // `The client has already been terminated` que reportó el autor.
+    // Hasta v466 esto usaba `clearIndexedDbPersistence`, que SE NIEGA cuando
+    // otro documento la tiene abierta: por eso nunca molestó. Cambiarlo por
+    // `deleteDatabase` (v468/v469) lo convirtió en un borrado real y dañino.
+    const codFuente = sinComentarios(fuente);
+    ok('3a · ⚠️🔑 NO se borra la caché en disco (la comparte el visor)',
+       !/deleteDatabase\s*\(/.test(codFuente) &&
+       !/clearIndexedDbPersistence\s*\(/.test(codFuente) &&
+       !/\bterminate\s*\(/.test(codFuente),
+       'borrarla desde aquí mata el cliente de live.html en mitad de un partido');
+    ok('3b · y la función sigue existiendo y devolviendo bien (sus 3 llamadores no cambian)',
+       /return true;/.test(codFuente));
+    // La purga de PII de localStorage —la que de verdad guarda plantillas,
+    // nombres y convocatorias— NO se ha tocado y sigue siendo obligatoria.
+    ok('3c · ⚠️ la purga de PII de localStorage SIGUE intacta',
+       /_cronosSweepLocalPII/.test(STORE) && /_cronosPurgeAllLocalPII/.test(STORE),
+       'lo que se retira es sólo el borrado del IndexedDB, no la purga de datos personales');
     // ⚠️ v469 · y sobre todo: el ARRANQUE ya no tiene nada que hacer.
     ok('3d · ⚠️🔑 el ARRANQUE no consume ninguna marca (esa mecánica ya no existe)',
        !/cronos_pending_cache_clear/.test(INIT),
