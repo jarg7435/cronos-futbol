@@ -115,6 +115,51 @@
     // El respaldo a getFirestore existe porque un navegador puede denegar
     // IndexedDB (modo privado, cuota); ahí se pierde la persistencia, pero la
     // app tiene que seguir arrancando.
+    // ══════════════════════════════════════════════════════════════
+    //  v467 · EL BORRADO DE LA CACHÉ SE HACE **ANTES** DE QUE EXISTA
+    //  LA INSTANCIA QUE LA APP VA A USAR
+    // ══════════════════════════════════════════════════════════════
+    //  Emergencia reportada por el autor: bucles de
+    //  `The client has already been terminated` y de
+    //  `failed-precondition` al guardar sucesos; nada se sincronizaba.
+    //
+    //  ⚠️ CAUSA: `_purgeStaleLocalDataIfNeeded` (login con un uid distinto al
+    //  último del dispositivo — o sea, CADA vez que se cambia de cuenta en el
+    //  mismo navegador, que es lo normal en una demo) llamaba a
+    //  `_cronosClearFirestoreCache()`, y ésa hace `terminate(db)` sobre LA
+    //  INSTANCIA QUE LA APP ESTÁ USANDO y sólo recarga la página en el
+    //  `.finally()`, DESPUÉS de `clearIndexedDbPersistence`.
+    //
+    //  El cliente muere en el acto, pero la recarga puede tardar mucho o no
+    //  llegar: `clearIndexedDbPersistence` **rechaza o se queda colgada si otra
+    //  pestaña sigue usando la persistencia**, y con el gestor multipestaña eso
+    //  es lo habitual (live.html abierto, o los dos partidos simultáneos que
+    //  v465 hizo posibles). En esa ventana la app sigue viva sobre un cliente
+    //  muerto: el latido de 5 s y cada escritura de suceso fallan una y otra
+    //  vez. De ahí los bucles y la pérdida total de sincronización.
+    //
+    //  🔑 LA REGLA: **no se termina jamás el cliente que la app sigue usando.**
+    //  Quien quiere limpiar la caché deja una MARCA y recarga en el acto; el
+    //  borrado se hace aquí, en el arranque siguiente, cuando todavía no hay
+    //  instancia que romper. Sale gratis en el 99,9 % de los arranques (una
+    //  lectura de localStorage) y elimina la ventana de cliente muerto.
+    const _MARCA_LIMPIEZA = 'cronos_pending_cache_clear';
+    try {
+        if (localStorage.getItem(_MARCA_LIMPIEZA)) {
+            // Se retira ANTES de intentarlo: si el borrado falla (otra pestaña
+            // con la persistencia abierta) no puede quedar una marca pegada que
+            // repita esto en cada arranque para siempre.
+            localStorage.removeItem(_MARCA_LIMPIEZA);
+            const _tmp = initializeFirestore(app, {});
+            await terminate(_tmp);
+            await clearIndexedDbPersistence(_tmp);
+            console.log('[Cronos-Privacy] 🔒 Caché en disco borrada en el arranque (marca pendiente).');
+        }
+    } catch (e) {
+        // Nunca bloquea el arranque: si no se pudo borrar, la app entra igual.
+        console.warn('[Cronos-Privacy] No se pudo borrar la caché en el arranque:', e && e.message);
+    }
+
     let db;
     try {
         db = initializeFirestore(app, {
@@ -138,17 +183,86 @@
     // falla si otro documento (p. ej. live.html abierto) sigue usándola: por
     // eso nunca lanza hacia fuera, sólo informa. Sus dos llamadores recargan
     // la página justo después, así que terminar la instancia no rompe nada.
+    // v467 · ⚠️ YA NO TERMINA NADA AQUÍ. Antes hacía `terminate(db)` sobre la
+    // instancia viva y esperaba a `clearIndexedDbPersistence`, que se cuelga o
+    // rechaza cuando otra pestaña tiene la persistencia abierta (lo habitual
+    // con el gestor multipestaña). El cliente quedaba muerto y la app seguía
+    // funcionando encima: bucles de `The client has already been terminated` en
+    // el latido de 5 s y en cada escritura de suceso. Era la emergencia de v466.
+    //
+    // Ahora sólo DEJA LA MARCA. El borrado de verdad lo hace el arranque
+    // siguiente, arriba en este mismo fichero, ANTES de crear la instancia que
+    // usará la app — que es el único momento en que se puede hacer sin romper
+    // nada. Los tres llamadores recargan justo después, así que la limpieza
+    // ocurre igual y en el mismo gesto del usuario.
+    //
+    // Devuelve `true` porque, desde el punto de vista del llamador, la limpieza
+    // queda garantizada: lo que cambia es CUÁNDO.
     window._cronosClearFirestoreCache = async function _cronosClearFirestoreCache() {
         try {
-            await terminate(db);
-            await clearIndexedDbPersistence(db);
-            console.log('[Cronos-Privacy] 🔒 Caché en disco de Firestore borrada.');
+            localStorage.setItem('cronos_pending_cache_clear', String(Date.now()));
+            console.log('[Cronos-Privacy] 🔒 Caché marcada para borrar en el próximo arranque.');
             return true;
         } catch (e) {
-            console.warn('[Cronos-Privacy] No se pudo borrar la caché de Firestore ' +
-                         '(¿otra pestaña abierta?):', e.message);
+            console.warn('[Cronos-Privacy] No se pudo marcar la caché para borrado:', e && e.message);
             return false;
         }
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  v467 · RED DE SEGURIDAD: UN CLIENTE MUERTO NO PUEDE QUEDARSE
+    //  DANDO VUELTAS
+    // ══════════════════════════════════════════════════════════════
+    //  Aunque arriba se haya cerrado la causa conocida, un cliente terminado
+    //  puede volver a aparecer por otras vías (una pestaña que se quedó con la
+    //  versión anterior, un fallo del SDK, el navegador cerrando IndexedDB por
+    //  cuota). Y lo que hacía daño de verdad NO era el fallo puntual: era que
+    //  la app seguía intentándolo cada 5 segundos, para siempre, sin decir
+    //  nada al usuario y sin guardar un solo suceso.
+    //
+    //  🔑 Un cliente terminado NO se recupera: la única salida es recargar. Y
+    //  recargar es barato desde v465, porque la pestaña recupera SU partido
+    //  (js/core/match-slots.js) con marcador, cronómetro y alineación.
+    //
+    //  ⚠️ CON TOPE DE UN INTENTO POR SESIÓN. Si el problema persistiera, una
+    //  recarga automática en bucle sería peor que el propio fallo: dejaría la
+    //  app inservible y sin forma de leer el aviso. A partir del segundo, se
+    //  informa y se deja al usuario decidir.
+    const _CLAVE_RECARGA = 'cronos_recuperacion_cliente';
+    window._cronosClienteTerminado = function(err) {
+        if (!err) return false;
+        const msg = String((err && err.message) || err).toLowerCase();
+        const code = String((err && err.code) || '').toLowerCase();
+        return msg.includes('client has already been terminated') ||
+               msg.includes('client has already been closed') ||
+               (code.includes('failed-precondition') && msg.includes('terminated'));
+    };
+    window._cronosRecuperaSiClienteMuerto = function(err, origen) {
+        try {
+            if (!window._cronosClienteTerminado(err)) return false;
+            let intentos = 0;
+            try { intentos = Number(sessionStorage.getItem(_CLAVE_RECARGA)) || 0; } catch (e) {}
+            if (intentos >= 1) {
+                if (!window._cronosAvisoClienteMuerto) {
+                    window._cronosAvisoClienteMuerto = true;
+                    console.error('[Cronos] Cliente de Firestore terminado y la recarga no lo arregló (' + (origen || '') + ').');
+                    if (typeof showToast === 'function') {
+                        showToast('⚠️ Se ha perdido la conexión con la base de datos. Cierra las demás pestañas de la app y vuelve a entrar.', 12000);
+                    }
+                }
+                return true;
+            }
+            try { sessionStorage.setItem(_CLAVE_RECARGA, String(intentos + 1)); } catch (e) {}
+            console.error('[Cronos] Cliente de Firestore terminado (' + (origen || '') +
+                          '). Recargando para restablecer la sincronización.');
+            if (typeof showToast === 'function') {
+                showToast('🔄 Restableciendo la conexión…', 4000);
+            }
+            // Un respiro para que el aviso se vea y para que cualquier escritura
+            // ya encolada por el SDK tenga su oportunidad.
+            setTimeout(() => { try { location.reload(); } catch (e) {} }, 1200);
+            return true;
+        } catch (e) { return false; }
     };
 
     // ── Función checkAuthorization (fallback si auth.js no cargó) ──

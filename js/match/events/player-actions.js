@@ -246,6 +246,13 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
                 })
                 .catch(function(err) {
                     console.error('[v246] ERROR guardando evento:', err && err.code || '', err && err.message);
+                    // v467 · `failed-precondition: The client has already been
+                    // terminated` no es un fallo de red: el cliente está muerto
+                    // y NINGÚN suceso más se va a guardar. Se recupera
+                    // recargando (la pestaña recupera su partido desde v465).
+                    if (typeof window._cronosRecuperaSiClienteMuerto === 'function') {
+                        window._cronosRecuperaSiClienteMuerto(err, '_registerMatchEvent');
+                    }
                 });
         } else {
             console.warn('[v246] No se pudo guardar: fa=', !!fa, 'matchId=', _id);

@@ -1,5 +1,41 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v467: 🚨 EMERGENCIA — LA SINCRONIZACION SE HABIA ROTO DEL TODO. Reporte del
+//        autor sobre v466 (capturas 8484/8485/8487/8488): bucles masivos de
+//        `The client has already been terminated` y de `failed-precondition`
+//        al guardar sucesos. Nada se sincronizaba ni se guardaba, en F7 y F11.
+//        ⚠️ CAUSA (no venia de v465/v466, estaba escrita desde antes):
+//        `_purgeStaleLocalDataIfNeeded` salta en el LOGIN cuando el uid
+//        entrante no es el ultimo que uso el dispositivo — o sea CADA VEZ QUE
+//        SE CAMBIA DE CUENTA en el mismo navegador, que en una demo es
+//        constante. Ahi llamaba a `_cronosClearFirestoreCache()`, que hacia
+//        `await terminate(db)` SOBRE LA INSTANCIA VIVA y solo recargaba en el
+//        `.finally()`, DESPUES de `clearIndexedDbPersistence`. El cliente moria
+//        en el acto, pero la recarga podia tardar o no llegar:
+//        `clearIndexedDbPersistence` RECHAZA O SE CUELGA mientras otra pestaña
+//        tenga la persistencia abierta, y con el gestor multipestaña eso es lo
+//        habitual (live.html abierto, o los dos partidos simultaneos que v465
+//        hizo posibles). En esa ventana la app seguia viva sobre un cliente
+//        muerto: el latido de 5 s y cada escritura de suceso fallaban en bucle.
+//        🔑 LA REGLA QUE SE FIJA: NO SE TERMINA JAMAS EL CLIENTE QUE LA APP
+//        SIGUE USANDO. Quien quiere limpiar la cache deja una MARCA y recarga;
+//        el borrado se hace en el arranque siguiente, sobre una instancia
+//        TEMPORAL, antes de que exista la que usara la app. La limpieza no se
+//        pierde (es privacidad: las lecturas de cache no pasan por las reglas),
+//        solo cambia el CUANDO. La marca se retira ANTES de intentarlo, o un
+//        fallo la dejaria pegada repitiendo el intento en cada arranque.
+//        🔑 RED DE SEGURIDAD: un cliente terminado NO se recupera solo, y lo
+//        que hacia daño no era el fallo puntual sino que la app lo repitiera
+//        cada 5 s para siempre, en silencio. Ahora se detecta y se recarga UNA
+//        vez por sesion (recargar es barato desde v465: la pestaña recupera su
+//        partido entero). ⚠️ CON TOPE: un bucle de recargas seria PEOR que el
+//        fallo — dejaria la app inservible y sin poder leer el aviso.
+//        Guard: scripts/test_cliente_firestore_vivo.js (27/27, red-check de 15
+//        mutaciones). Su asercion central prohibe `terminate(`/
+//        `clearIndexedDbPersistence(` DESPUES de crear el db real. ⚠️ Censa
+//        sobre CODIGO SIN COMENTARIOS: la primera version daba rojo contando
+//        las menciones a `terminate(db)` de los comentarios de este mismo
+//        arreglo.
 //  v466: UNA PILA DE AVISOS POR PARTIDO EN EL LISTADO EN VIVO. Reporte del
 //        autor (implementar.txt): con varios partidos abiertos, los avisos
 //        flotantes "solo aparecen en el ultimo partido creado o en el ultimo
@@ -1702,7 +1738,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v466';
+const CACHE_NAME = 'cronos-cache-v467';
 
 const ASSETS = [
     './',

@@ -582,6 +582,14 @@ async function pushLiveSnapshot(status = 'active') {
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
     } catch (err) {
         console.warn('Error sync live:', err.message);
+        // v467 · Si el cliente de Firestore está TERMINADO, esto no es un fallo
+        // pasajero: no se recupera solo y el latido lo repetiría cada 5 s para
+        // siempre, sin sincronizar ni un suceso y sin decírselo a nadie. Era la
+        // emergencia de v466. La única salida es recargar, y desde v465 la
+        // pestaña recupera su partido entero al volver.
+        if (typeof window._cronosRecuperaSiClienteMuerto === 'function') {
+            window._cronosRecuperaSiClienteMuerto(err, 'pushLiveSnapshot');
+        }
     }
 }
 

@@ -24,6 +24,12 @@ const _CRONOS_LOCAL_KEEP_KEYS = new Set([
     'cronos_live_muted',     // preferencia mute alertas (por dispositivo)
     'cronos_tutorial_done',  // flag tutorial visto (genérico)
     'cronos_post_update',    // flag actualización SW (normalmente sessionStorage)
+    // v467 · marca de "hay que borrar la caché de Firestore en el próximo
+    // arranque". NO es PII: es una orden pendiente para el dispositivo. Va en
+    // la lista blanca porque el barrido corre JUSTO ANTES de dejarla, y una
+    // barrida que se la llevara dejaría la caché del usuario anterior sin
+    // borrar — que es exactamente lo que la marca viene a garantizar.
+    'cronos_pending_cache_clear',
 ]);
 window._CRONOS_LOCAL_KEEP_KEYS = _CRONOS_LOCAL_KEEP_KEYS;
 
