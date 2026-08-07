@@ -107,6 +107,44 @@ function goBackToSetup() {
     openSetupModal();
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  v471 · EL BOTÓN + DEL MARCADOR TAMBIÉN AVISA
+//  ────────────────────────────────────────────────────────────────────────
+//  Reporte del autor (captura 8504): al sumar un gol al VISITANTE desde el
+//  marcador superior —sin plantilla ni dorsal— el marcador subía pero no
+//  salía ningún aviso flotante ni alarma en el panel en vivo.
+//
+//  ⚠️ ERA MÁS ANCHO DE LO QUE PARECÍA: NINGUNO de los tres caminos de
+//  `changeScore` emitía suceso, ni siquiera eligiendo goleador de la lista.
+//  El único gol que avisaba era el de la ficha del jugador
+//  (`player-actions.js`), que sí llama a `_registerMatchEvent`. Desde el
+//  marcador, `logEvent()` sólo escribe en el historial del jugador — no
+//  emite nada — así que el panel en vivo no se enteraba nunca.
+//
+//  Los tres casos son: goleador elegido, "0 · Gol No Asignado" y equipo SIN
+//  plantilla (el visitante, que es el del reporte).
+//
+//  🔑 `_registerMatchEvent` vive en player-actions.js, que es un script
+//  CLÁSICO y carga ANTES que éste, así que aquí es una global. Con guarda
+//  `typeof` de todos modos: varios guards extraen estas funciones y las
+//  ejecutan sueltas, y una llamada pelada las reventaría.
+function _avisaGolDesdeMarcador(team, autor) {
+    try {
+        if (typeof _registerMatchEvent !== 'function') return;
+        var nombre = (typeof TEAM_NAMES !== 'undefined')
+            ? (team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away) : '';
+        // Sin nombre de club configurado se dice LOCAL/VISITANTE, que es lo que
+        // pidió el autor: el aviso tiene que decir QUIÉN ha marcado aunque no
+        // haya ni plantilla ni dorsal.
+        if (!nombre) nombre = (team === 'home') ? 'LOCAL' : 'VISITANTE';
+        // Mismo formato que el gol con ficha (`GOL · <quién>`): el visor recorta
+        // por ' · ' para sacar el autor, así que respetarlo importa.
+        var texto = 'GOL · ' + (autor || nombre);
+        _registerMatchEvent('goal', texto, '⚽', undefined,
+                            { team: (team === 'away' ? 'away' : 'home'), teamName: nombre });
+    } catch (e) { /* un aviso nunca puede impedir que se sume el gol */ }
+}
+
 function changeScore(team, delta) {
     if (!isRunning) {
         alert("⚠️ No se pueden sumar o quitar goles con el cronómetro del partido detenido. Debe iniciar o reanudar el partido.");
@@ -116,6 +154,10 @@ function changeScore(team, delta) {
     const el = document.getElementById(`score-${team}`);
     const current = parseInt(el.textContent) || 0;
     const next = Math.max(0, current + delta);
+    // v471 · ¿se ha llegado a anotar un gol? El prompt se puede cancelar, así
+    // que sumar `delta > 0` no garantiza que haya gol: sin esto se mandaría un
+    // envío inmediato por un gol que el entrenador acaba de descartar.
+    let _golAnotado = false;
 
     if (delta > 0) {
         const teamPlayers = players.filter(p => p.team === team);
@@ -134,17 +176,28 @@ function changeScore(team, delta) {
                     if (typeof logEvent === 'function') {
                         logEvent(scorer, `GOL (${scorer.goals}º)`);
                     }
+                    // v471 · caso 1 · goleador elegido de la lista.
+                    _avisaGolDesdeMarcador(team, scorer.name);
+                    _golAnotado = true;
                     renderPlayers();
                 } else if (answer.trim() === '0' || idx === -1) {
                     if (!window._cronosExtraGoals) window._cronosExtraGoals = { home: 0, away: 0 };
                     window._cronosExtraGoals[team]++;
                     if (typeof showToast === 'function') showToast(`⚽ Gol no asignado sumado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                    // v471 · caso 2 · gol sin autor, con plantilla presente.
+                    _avisaGolDesdeMarcador(team, null);
+                    _golAnotado = true;
                 }
                 syncScoreFromPlayers(team);
             }
         } else {
             if (!window._cronosExtraGoals) window._cronosExtraGoals = { home: 0, away: 0 };
             window._cronosExtraGoals[team]++;
+            // v471 · caso 3 · EQUIPO SIN PLANTILLA. Es el del reporte: el
+            // visitante al que no se le ha cargado convocatoria. Aquí no hay a
+            // quién preguntar, así que el gol es del equipo y así se anuncia.
+            _avisaGolDesdeMarcador(team, null);
+            _golAnotado = true;
             syncScoreFromPlayers(team);
         }
     } else {
@@ -206,7 +259,13 @@ function changeScore(team, delta) {
         }
     }
 
-    if (typeof liveSyncOnAction === 'function') {
+    // v471 · UN GOL VA INMEDIATO, no por el throttle de 500 ms. Es la misma
+    // decisión que ya tenía la ficha del jugador desde v225: el marcador del
+    // panel en vivo no puede ir medio segundo por detrás del campo. El resto de
+    // ajustes (quitar un gol) siguen agrupándose, que no corre prisa.
+    if (_golAnotado && typeof window.liveSyncFlushNow === 'function') {
+        window.liveSyncFlushNow();
+    } else if (typeof liveSyncOnAction === 'function') {
         liveSyncOnAction();
     }
 }

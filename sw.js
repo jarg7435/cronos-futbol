@@ -1,5 +1,32 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v471: EL BOTON + DEL MARCADOR TAMBIEN AVISA. Reporte del autor (captura
+//        8504): al sumar un gol al VISITANTE desde el marcador superior —sin
+//        plantilla ni dorsal— el marcador subia pero no salia ningun aviso
+//        flotante ni alarma en el panel en vivo.
+//        ⚠️ ERA MAS ANCHO DE LO QUE PARECIA: NINGUNO de los tres caminos de
+//        `changeScore` emitia suceso, ni siquiera eligiendo goleador de la
+//        lista. El unico gol que avisaba era el de la FICHA del jugador
+//        (player-actions.js), que si llama a _registerMatchEvent. Desde el
+//        marcador se llamaba a logEvent(), que SOLO escribe en el historial del
+//        jugador y no emite nada.
+//        Ahora emiten los tres: goleador elegido, "0 · Gol No Asignado" y
+//        equipo SIN plantilla (el visitante del reporte).
+//        🔑 EL FORMATO `GOL · <quien>` ES EL CONTRATO: el visor recorta por
+//        ' · ' para sacar el autor, porque los goles NO llevan campo
+//        estructurado con el nombre. Cambiarlo por "GOL -" romperia el feed de
+//        las tarjetas sin dar ningun error.
+//        Sin jugador al que atribuirlo, el suceso viaja con {team, teamName} —
+//        de ahi sale el chip del visor— y el texto dice el nombre del club, o
+//        LOCAL/VISITANTE si no hay ninguno configurado.
+//        ⚠️ CANCELAR EL DIALOGO NO ES UN GOL: no se emite nada ni se fuerza
+//        envio. Anunciar un gol descartado no tiene vuelta atras.
+//        Y un gol va con envio INMEDIATO (liveSyncFlushNow), no por el throttle
+//        de 500 ms — la misma decision que la ficha tiene desde v225.
+//        Guard: scripts/test_gol_marcador_avisa.js (24/24, red-check de 9
+//        mutaciones). EJECUTA changeScore con players/TEAM_NAMES/prompt
+//        simulados: un regex veria que la llamada existe, no CUAL de los tres
+//        caminos la alcanza.
 //  v470: 🚨 EL CLIENTE MUERTO DEL VISOR — CAUSA ENCONTRADA Y ERRADICADA.
 //        Reporte del autor: vuelve "The client has already been terminated", y
 //        esta vez EN live.html. Ahi estaba la pieza que faltaba.
@@ -1817,7 +1844,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v470';
+const CACHE_NAME = 'cronos-cache-v471';
 
 const ASSETS = [
     './',
