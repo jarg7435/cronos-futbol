@@ -157,8 +157,14 @@ ok('2e · 🔑 el suceso se anuncia con AVISO FLOTANTE',
 // que ninguna de las dos guardas nuevas puede saltar en un contexto donde no
 // existan (se consultan con `typeof`, porque esta función se extrae y se
 // ejecuta sola en varios guards).
-ok('2e2 · …que se va solo a los 8 s y también al tocarlo',
-   /setTimeout\(cierreAutomatico, 8000\)/.test(_cuerpoToast) &&
+// ⚠️ v469 · ACTUALIZADA: la vida del aviso baja de 8 s a 3 s por peticion del
+// autor (que el aviso y el cajon de sucesos se abran y cierren a la vez), y
+// sale de la constante compartida `window._CRONOS_MS_AVISO`, no de un numero
+// clavado. La intencion —que el aviso se vaya SOLO y tambien al tocarlo— es la
+// misma; lo que se exige ahora es que use la constante, para que la duracion no
+// pueda volver a separarse de la del cajon.
+ok('2e2 · …que se va solo (con la duracion compartida) y tambien al tocarlo',
+   /setTimeout\(cierreAutomatico, \(typeof window\._CRONOS_MS_AVISO === 'number'\)/.test(_cuerpoToast) &&
    /el\.onclick = \(\) => \{/.test(_cuerpoToast) &&
    /quitar\(\);/.test(_cuerpoToast));
 ok('2e2b · v457 · el cierre automático se aplaza mientras se lee la pila',

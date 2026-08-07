@@ -167,42 +167,21 @@
     //  exista ningún cliente, basta con pedirle al navegador que borre esas
     //  bases. Es la única forma de cumplir la regla de v467 —no se termina
     //  jamás el cliente que la app usa— sin quedarse sin cliente.
-    const _MARCA_LIMPIEZA = 'cronos_pending_cache_clear';
-    try {
-        if (localStorage.getItem(_MARCA_LIMPIEZA)) {
-            // Se retira ANTES de intentarlo: si el borrado falla no puede
-            // quedar una marca pegada que repita esto en cada arranque.
-            localStorage.removeItem(_MARCA_LIMPIEZA);
-            // Firestore nombra sus bases `firestore/{clave}/{projectId}/main`.
-            // Se enumeran cuando el navegador lo permite y, si no (Firefox no
-            // implementa `databases()`), se va al nombre canónico.
-            let _nombres = [];
-            try {
-                if (indexedDB && typeof indexedDB.databases === 'function') {
-                    const _todas = await indexedDB.databases();
-                    _nombres = (_todas || []).map(d => d && d.name)
-                        .filter(n => typeof n === 'string' && n.indexOf('firestore/') === 0);
-                }
-            } catch (e) { /* enumerar puede no estar permitido: se usa el respaldo */ }
-            if (!_nombres.length) {
-                _nombres = ['firestore/[DEFAULT]/' + firebaseConfig.projectId + '/main'];
-            }
-            await Promise.all(_nombres.map(n => new Promise((res) => {
-                try {
-                    const req = indexedDB.deleteDatabase(n);
-                    // `blocked` ocurre si otra pestaña tiene la base abierta. No
-                    // se espera indefinidamente: se sigue y la app arranca igual
-                    // con un cliente SANO, que es lo único innegociable.
-                    req.onsuccess = req.onerror = req.onblocked = () => res();
-                    setTimeout(res, 1500);
-                } catch (e) { res(); }
-            })));
-            console.log('[Cronos-Privacy] 🔒 Caché en disco borrada en el arranque:', _nombres.join(', '));
-        }
-    } catch (e) {
-        // Nunca bloquea el arranque: si no se pudo borrar, la app entra igual.
-        console.warn('[Cronos-Privacy] No se pudo borrar la caché en el arranque:', e && e.message);
-    }
+    // ⚠️⚠️ v469 · EL ARRANQUE NO HACE **NADA** CON LA CACHÉ. Aquí no va código.
+    //
+    // v467 y v468 metieron trabajo en este punto —crear una instancia, terminar
+    // la instancia, enumerar y borrar bases de IndexedDB— y las dos veces salió
+    // mal en producción: v467 dejó la app sin cliente (bloqueo de acceso) y
+    // v468, aun sin terminar nada, siguió tocando el almacén JUSTO ANTES de que
+    // el SDK abriera el suyo. El arranque de sesión es la ruta más crítica de
+    // la aplicación y no admite pasos opcionales delante.
+    //
+    // 🔑 EL BORRADO SE HACE AL SALIR, NO AL ENTRAR (ver
+    // `_cronosClearFirestoreCache` más abajo): en ese momento la página se va a
+    // recargar de todos modos, así que pedir el borrado no le quita el cliente
+    // a nadie. Si otra pestaña tiene la base abierta, el navegador deja el
+    // borrado EN COLA y lo completa solo cuando se cierran las conexiones —que
+    // es exactamente lo que pasa al recargar—, sin que nadie tenga que esperar.
 
     let db;
     try {
@@ -242,13 +221,35 @@
     //
     // Devuelve `true` porque, desde el punto de vista del llamador, la limpieza
     // queda garantizada: lo que cambia es CUÁNDO.
+    // v469 · Se PIDE el borrado aquí mismo y se vuelve en el acto. Sus tres
+    // llamadores (logout de security-and-state.js, logout de auth.js y el
+    // cambio de usuario de firestore-storage.js) recargan justo después, y esa
+    // recarga cierra las conexiones que tuviera abiertas la base: el navegador
+    // completa entonces el borrado que aquí queda encolado.
+    //
+    // ⚠️ NO SE ESPERA A QUE TERMINE, y es deliberado. Esperar fue el fallo de
+    // v467: `clearIndexedDbPersistence` se queda colgada si otra pestaña tiene
+    // la persistencia abierta, y la app se quedaba viva sobre un cliente
+    // muerto. Aquí no hay nada que esperar ni ninguna instancia que tocar.
     window._cronosClearFirestoreCache = async function _cronosClearFirestoreCache() {
         try {
-            localStorage.setItem('cronos_pending_cache_clear', String(Date.now()));
-            console.log('[Cronos-Privacy] 🔒 Caché marcada para borrar en el próximo arranque.');
+            let nombres = [];
+            try {
+                if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
+                    const todas = await indexedDB.databases();
+                    nombres = (todas || []).map(d => d && d.name)
+                        .filter(n => typeof n === 'string' && n.indexOf('firestore/') === 0);
+                }
+            } catch (e) { /* enumerar puede estar prohibido: se usa el respaldo */ }
+            if (!nombres.length) {
+                // Firefox no implementa `databases()`. Nombre canónico del SDK.
+                nombres = ['firestore/[DEFAULT]/' + firebaseConfig.projectId + '/main'];
+            }
+            nombres.forEach(n => { try { indexedDB.deleteDatabase(n); } catch (e) {} });
+            console.log('[Cronos-Privacy] 🔒 Borrado de la caché en disco solicitado:', nombres.join(', '));
             return true;
         } catch (e) {
-            console.warn('[Cronos-Privacy] No se pudo marcar la caché para borrado:', e && e.message);
+            console.warn('[Cronos-Privacy] No se pudo solicitar el borrado de la caché:', e && e.message);
             return false;
         }
     };

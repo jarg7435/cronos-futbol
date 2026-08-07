@@ -2716,9 +2716,17 @@ function showEventToast(type, line, sub, matchTime, equipo, matchId) {
         // ÚNICO snapshot (throttle de 2 s de liveSyncOnAction) y con 5 se
         // evictaban los primeros antes de que nadie los leyera.
         while (stack.children.length > 15) stack.firstChild.remove();
-        // v457 · se va solo a los 8 s, PERO NO MIENTRAS SE ESTÁ LEYENDO. Con un
-        // cambio grupal, quien se pone a deslizar la pila para ver los últimos
-        // cambios veía desvanecerse los primeros a media lectura.
+        // v469 · LA MISMA DURACIÓN QUE EL CAJÓN (3 s), pedida por el autor:
+        // "el historial debe abrirse y cerrarse coincidiendo estrictamente con
+        // la duración del aviso flotante". Sale de la MISMA constante
+        // (`_SUCESOS_MS_AUTO`, publicada como `window._CRONOS_MS_AVISO`), no de
+        // un 3000 copiado: dos números sueltos vuelven a separarse en cuanto
+        // alguien toca uno. Eran 8 s desde v457.
+        //
+        // ⚠️ SE CONSERVA "no mientras se está leyendo", de v457, y es
+        // importante ahora MÁS que antes: un cambio grupal suelta un aviso por
+        // pareja, y a 3 s los primeros se irían a media lectura. El temporizador
+        // no se cancela, se reintenta.
         const cierreAutomatico = () => {
             if (typeof _avisosEnLectura === 'function' && _avisosEnLectura()) {
                 setTimeout(cierreAutomatico, 600);   // se reintenta, no se cancela
@@ -2726,7 +2734,8 @@ function showEventToast(type, line, sub, matchTime, equipo, matchId) {
             }
             quitar();
         };
-        setTimeout(cierreAutomatico, 8000);
+        setTimeout(cierreAutomatico, (typeof window._CRONOS_MS_AVISO === 'number')
+            ? window._CRONOS_MS_AVISO : 3000);
     }
 
     // ── 2 · el historial de la ventana inferior ──────────────────────
@@ -3049,7 +3058,18 @@ function _etiquetaBarraSucesos(data) {
 //  posterior le cerraría la ventana en la cara a quien la acaba de abrir para
 //  leerla — que es justo lo que pidió evitar.
 // ════════════════════════════════════════════════════════════════════
+// v469 · UNA SOLA DURACIÓN PARA EL AVISO Y PARA EL CAJÓN.
+// Petición del autor: "el historial debe abrirse y cerrarse coincidiendo
+// estrictamente con la duración del aviso flotante (3 segundos)". El cajón ya
+// iba a 3 s, pero el aviso se quedaba 8 s (v457), así que uno desaparecía
+// mientras el otro seguía. Comparten constante A PROPÓSITO: si fueran dos
+// números sueltos volverían a separarse en cuanto alguien tocara uno.
 const _SUCESOS_MS_AUTO = 3000;
+// ⚠️ CON GUARDA `typeof`, NO PELADA. Esta constante vive dentro de un bloque
+// que varios guards EXTRAEN y ejecutan en un sandbox sin `window`: una
+// asignación pelada aquí los revienta con ReferenceError antes de la primera
+// aserción. Ya pasó al añadirla (v469).
+if (typeof window !== 'undefined') window._CRONOS_MS_AVISO = _SUCESOS_MS_AUTO;
 let _sucesosModo  = 'plegada';   // 'plegada' | 'auto' | 'manual'
 let _sucesosTimer = null;
 
@@ -5913,8 +5933,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v468"></script>
-<script src="js/match/replay/replay-player.js?v=v468"></script>
-<script src="js/match/events/retroactive-modal.js?v=v468"></script>
+<script src="js/match/immutability.js?v=v469"></script>
+<script src="js/match/replay/replay-player.js?v=v469"></script>
+<script src="js/match/events/retroactive-modal.js?v=v469"></script>
 </body>
 </html>

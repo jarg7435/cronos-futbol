@@ -155,6 +155,21 @@ console.log('── PARTE 1 · ⚠️ nadie termina el cliente que la app usa �
        nInit === 1, 'llamadas=' + nInit +
        ' — la segunda lanza y deja a la app con la primera (bloqueo de acceso de v467)');
 
+    // ⚠️⚠️⚠️ v469 · LA ASERCIÓN QUE HABRÍA EVITADO LOS DOS CORTES SEGUIDOS.
+    // Entre crear `auth` y crear `db` NO PUEDE HABER NADA EJECUTABLE. Ahí es
+    // donde v467 metió el terminate (bloqueo total de acceso) y donde v468, ya
+    // sin terminate, seguía enumerando y borrando bases de IndexedDB justo
+    // antes de que el SDK abriera la suya. El arranque de sesión es la ruta más
+    // crítica de la app y no admite pasos opcionales por delante: cualquier
+    // cosa que se quiera hacer con la caché se hace AL SALIR, no al entrar.
+    const iAuth = INIT_COD.indexOf('const auth = getAuth(app);');
+    const entre = INIT_COD.slice(iAuth + 'const auth = getAuth(app);'.length, corte)
+        .split('\n').map(l => l.trim()).filter(Boolean);
+    ok('1b4 · ⚠️🔑🔑 entre crear `auth` y crear `db` NO hay ni una línea de código',
+       iAuth !== -1 && entre.length === 0,
+       'sobra(n): ' + JSON.stringify(entre.slice(0, 6)) +
+       ' — v467 y v468 rompieron producción metiendo trabajo justo aquí');
+
     // Y en ningún otro fichero del producto.
     const otros = [['firestore-storage.js', STORE], ['sync.js', SYNC], ['player-actions.js', ACTS]];
     const culpables = otros.filter(([, src]) => {
@@ -173,65 +188,65 @@ console.log('\n── PARTE 2 · la limpieza se aplaza al arranque, no se pierde
     const fin = INIT.indexOf('};', INIT.indexOf('return false;', ini)) + 2;
     const fuente = INIT.slice(ini, fin);
 
-    const almacen = () => {
-        const m = new Map();
-        return { getItem: k => (m.has(k) ? m.get(k) : null),
-                 setItem: (k, v) => m.set(k, String(v)),
-                 removeItem: k => m.delete(k), _m: m };
+    // Se EJECUTA de verdad contra un IndexedDB simulado, para ver qué bases
+    // pide borrar. Es lo único que demuestra que la limpieza no se ha perdido.
+    const borradas = [];
+    const sandbox = {
+        console: { log() {}, warn() {} },
+        firebaseConfig: { projectId: 'cronos-futbol-app' },
+        indexedDB: {
+            databases: async () => ([
+                { name: 'firestore/[DEFAULT]/cronos-futbol-app/main' },
+                { name: 'firebaseLocalStorageDb' },     // ⚠️ la de AUTH: no se toca
+                { name: 'otra-cosa' },
+            ]),
+            deleteDatabase: (n) => { borradas.push(n); return {}; },
+        },
     };
-    const ls = almacen();
-    const sandbox = { localStorage: ls, console: { log() {}, warn() {} } };
     sandbox.window = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(fuente, sandbox);
 
-    let devuelto = null;
-    // Es async: se resuelve de inmediato porque ya no espera a Firestore.
-    sandbox.window._cronosClearFirestoreCache().then(v => { devuelto = v; });
-    // microtask
-    return void Promise.resolve().then(() => {
-        ok('2b · 🔑 deja la MARCA de limpieza pendiente',
-           ls.getItem('cronos_pending_cache_clear') !== null);
-        ok('2c · y dice que sí al llamador (la limpieza está garantizada, cambia el CUÁNDO)',
-           devuelto === true, String(devuelto));
+    return void sandbox.window._cronosClearFirestoreCache().then((devuelto) => {
+        ok('2b · 🔑 pide borrar la caché de Firestore (la limpieza NO se ha perdido)',
+           borradas.some(n => n.indexOf('firestore/') === 0), JSON.stringify(borradas));
+        // ⚠️ La sesión de Firebase Auth vive en `firebaseLocalStorageDb`. Si se
+        // borrara, cerraría la sesión del usuario en cada salida — y peor, un
+        // arranque a medias podría dejar peticiones SIN token, que es
+        // exactamente el `Missing or insufficient permissions` del reporte.
+        ok('2b2 · ⚠️🔑 NO toca la base de Firebase Auth (ahí vive la sesión)',
+           !borradas.some(n => /firebaseLocalStorage/i.test(n)), JSON.stringify(borradas));
+        ok('2b3 · ni ninguna base ajena', !borradas.some(n => n === 'otra-cosa'), JSON.stringify(borradas));
+        ok('2c · y dice que sí al llamador', devuelto === true, String(devuelto));
         ok('2d · ⚠️ y NO termina nada (es lo que mataba la sincronización)',
            !/terminate\s*\(/.test(fuente) && !/clearIndexedDbPersistence\s*\(/.test(fuente));
-        seguir(ls);
+        seguir();
     });
 }
 
-function seguir(lsPrevio) {
+function seguir() {
 
-// ═══════════ PARTE 3 · el arranque consume la marca ═══════════
-console.log('\n── PARTE 3 · el arranque consume la marca ──');
+// ═══════════ PARTE 3 · el borrado de la caché va AL SALIR ═══════════
+console.log('\n── PARTE 3 · el borrado de la caché va AL SALIR, no al entrar ──');
 {
-    const bloque = INIT.slice(INIT.indexOf("const _MARCA_LIMPIEZA"), INIT.indexOf('let db;'));
+    const i0 = INIT.indexOf('window._cronosClearFirestoreCache = async function');
+    const fuente = INIT.slice(i0, INIT.indexOf('v467 · RED DE SEGURIDAD', i0));
 
-    ok('3a · el arranque lee la marca', /localStorage\.getItem\(_MARCA_LIMPIEZA\)/.test(bloque));
-    // C · se retira ANTES de intentarlo.
-    const iQuita = bloque.indexOf('removeItem(_MARCA_LIMPIEZA)');
-    const iBorra = bloque.indexOf('deleteDatabase(');
-    ok('3b · ⚠️🔑 la marca se retira ANTES de intentar el borrado',
-       iQuita !== -1 && iBorra !== -1 && iQuita < iBorra,
-       'si el borrado falla —otra pestaña con la base abierta— una marca pegada repetiría el intento en CADA arranque');
-    // 🔑 v468 · el borrado va por IndexedDB, que NO necesita cliente. Es lo que
-    // permite cumplir "no se termina el cliente" sin quedarse sin cliente.
-    ok('3c · 🔑 el borrado va por IndexedDB, sin crear ni terminar ninguna instancia',
-       /indexedDB\.deleteDatabase\(/.test(bloque) &&
-       !/initializeFirestore/.test(bloque) && !/terminate\(/.test(bloque),
-       'crear una instancia "temporal" aquí fue el bloqueo total de acceso de v467');
-    ok('3c2 · y sabe el nombre canónico por si el navegador no deja enumerar (Firefox)',
-       /firestore\/\[DEFAULT\]\/' \+ firebaseConfig\.projectId \+ '\/main/.test(bloque));
-    ok('3c3 · ⚠️ no se queda esperando si otra pestaña tiene la base abierta',
-       /onblocked/.test(bloque) && /setTimeout\(res, \d+\)/.test(bloque),
-       'un `blocked` sin salida colgaría el arranque de la app para siempre');
-    ok('3d · y nunca bloquea el arranque (va en try/catch)',
-       /catch \(e\) \{[\s\S]{0,220}?No se pudo borrar la caché en el arranque/.test(bloque));
-
-    // D · la marca sobrevive al barrido de PII.
-    ok('3e · ⚠️ la marca está en la lista blanca del barrido de PII',
-       /'cronos_pending_cache_clear',/.test(STORE),
-       'el barrido corre JUSTO ANTES de dejarla: sin lista blanca se la llevaría y la caché del usuario anterior no se borraría');
+    ok('3a · 🔑 el borrado se pide por IndexedDB, sin tocar ninguna instancia',
+       /indexedDB\.deleteDatabase\(/.test(fuente) &&
+       !/initializeFirestore/.test(fuente) && !/\bterminate\(/.test(fuente),
+       'crear o terminar instancias aquí fue el bloqueo de acceso de v467');
+    // ⚠️ Esperar fue el cuelgue de v467: `clearIndexedDbPersistence` se queda
+    // colgada si otra pestaña tiene la persistencia abierta.
+    ok('3b · ⚠️ y NO se espera a que el borrado termine',
+       !/await[^;\n]*deleteDatabase/.test(fuente),
+       'los tres llamadores recargan a continuación; el borrado se completa al cerrarse las conexiones');
+    ok('3c · sabe el nombre canónico por si el navegador no deja enumerar (Firefox)',
+       /firestore\/\[DEFAULT\]\/' \+ firebaseConfig\.projectId \+ '\/main/.test(fuente));
+    // ⚠️ v469 · y sobre todo: el ARRANQUE ya no tiene nada que hacer.
+    ok('3d · ⚠️🔑 el ARRANQUE no consume ninguna marca (esa mecánica ya no existe)',
+       !/cronos_pending_cache_clear/.test(INIT),
+       'la marca obligaba a trabajar en el arranque, que es justo lo que no se puede hacer');
 }
 
 // ═══════════ PARTE 4 · 🔑 recuperación sin bucle ═══════════

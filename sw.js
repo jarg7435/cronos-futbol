@@ -1,5 +1,26 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v469: SE RETIRA TODO LO QUE v467/v468 METIERON EN EL ARRANQUE + aislamiento
+//        estanco por partido + aviso y cajon con la misma duracion (3 s).
+//        ⚠️ ARRANQUE: entre crear `auth` y crear `db` ya NO hay ni una linea
+//        de codigo. v467 metio ahi un terminate (bloqueo total de acceso) y
+//        v468, aun sin terminate, seguia enumerando y borrando bases de
+//        IndexedDB justo antes de que el SDK abriera la suya. El arranque de
+//        sesion es la ruta mas critica y no admite pasos opcionales delante.
+//        El borrado de la cache se hace AL SALIR (los tres llamadores recargan
+//        a continuacion, y esa recarga cierra las conexiones que dejan
+//        completarse el borrado encolado). Guard nuevo 1b4.
+//        ⚠️ COMPROBADO CONTRA EL SERVIDOR, no deducido: las reglas PERMITEN
+//        todas las lecturas del login (sonda con la Rules REST API) y App
+//        Check esta UNENFORCED. El bloqueo no estaba en ninguno de los dos.
+//        🔒 AISLAMIENTO ESTANCO: _registerMatchEvent y pushLiveSnapshot se
+//        niegan a escribir si el liveMatchId no es el partido que ESTA
+//        pestaña declara jugar (sessionStorage, v465). Es el unico punto por
+//        el que un gol puede acabar en otro partido. Se exceptua la edicion
+//        retroactiva, que apunta a otro partido a proposito.
+//        ⏱️ El aviso flotante pasa de 8 s a 3 s y sale de la MISMA constante
+//        que el cajon de sucesos (_SUCESOS_MS_AUTO), para que no puedan
+//        volver a separarse. Se conserva "no se cierra mientras se lee".
 //  v468: 🚨 BLOQUEO TOTAL DE ACCESO CAUSADO POR v467 — CORREGIDO. Reporte del
 //        autor (captura 8490): autentica en Firebase Auth pero falla al leer el
 //        documento de usuario y no se puede entrar.
@@ -1770,7 +1791,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v468';
+const CACHE_NAME = 'cronos-cache-v469';
 
 const ASSETS = [
     './',

@@ -234,6 +234,42 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
             return;
         }
 
+        // ══════════════════════════════════════════════════════════════
+        //  v469 · 🔒 CIERRE ESTANCO POR PARTIDO
+        // ══════════════════════════════════════════════════════════════
+        //  Reporte del autor: "los sucesos se están cruzando entre sí (un gol
+        //  en Fútbol 7 aparece en Juvenil)".
+        //
+        //  🔑 EL CRUCE SOLO PUEDE PASAR AQUÍ: `_id` sale de la global
+        //  `liveMatchId`, y esa global la reescriben el arranque de un partido
+        //  y la RECUPERACIÓN de uno guardado. Si una pestaña recupera la ranura
+        //  equivocada, `liveMatchId` pasa a ser el del OTRO partido y todos sus
+        //  sucesos se escriben en el documento ajeno — exactamente el síntoma.
+        //
+        //  Desde v465 cada pestaña declara CUÁL es su partido en sessionStorage
+        //  (js/core/match-slots.js), que no se comparte entre pestañas. Aquí se
+        //  usa como CONTRASTE: si lo que se va a escribir no es el partido que
+        //  esta pestaña dice estar jugando, NO SE ESCRIBE.
+        //
+        //  ⚠️ Se exige coincidencia sólo cuando la pestaña tiene un partido
+        //  declarado Y NO es una edición retroactiva (`target.matchId`, que
+        //  apunta a propósito a otro partido ya terminado). Sin ese matiz, la
+        //  puerta bloquearía la única edición post-partido que existe.
+        try {
+            var _S = window._cronosMatchSlots;
+            var _propio = _S && _S.getTabMatchId();
+            var _esRetroactivo = !!(target && target.matchId);
+            if (_id && _propio && !_esRetroactivo && _propio !== _id
+                && String(_propio).indexOf('tab:') !== 0) {
+                console.error('[v469] 🔒 Suceso BLOQUEADO: se iba a escribir en "' + _id +
+                              '" pero esta pestaña juega "' + _propio + '".');
+                if (typeof showToast === 'function') {
+                    showToast('🔒 Suceso no guardado: apuntaba a otro partido. Recarga esta pestaña.', 6000);
+                }
+                return;
+            }
+        } catch (e) { /* la puerta nunca puede impedir un partido por sí misma */ }
+
         if (fa && fa.db && _id) {
             import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
                 .then(function(fs) {

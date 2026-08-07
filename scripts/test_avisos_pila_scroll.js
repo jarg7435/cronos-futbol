@@ -210,15 +210,20 @@ function crearEntorno() {
     };
 }
 
-// 3.1 · Sin nadie mirando, el aviso se va solo a los 8 s (lo de siempre).
+// 3.1 · Sin nadie mirando, el aviso se va solo.
+// ⚠️ v469 · ACTUALIZADO A 3 s POR PETICION DEL AUTOR: el aviso y el cajon de
+// sucesos deben abrirse y cerrarse a la vez, y el cajon ya iba a 3 s. Antes el
+// aviso duraba 8 s y uno desaparecia mientras el otro seguia. La INTENCION de
+// estas aserciones no cambia: comprobar que se va SOLO y que NO se va mientras
+// se esta leyendo (3.2 y 3.3), que es lo que de verdad protegen.
 {
     const e = crearEntorno();
     e.avisa();
     ok('3a · aparece el aviso', e.pila.children.length === 1);
-    e.reloj.avanza(7000);
-    ok('3b · a los 7 s sigue en pantalla', e.vivo());
+    e.reloj.avanza(2000);
+    ok('3b · a los 2 s sigue en pantalla', e.vivo());
     e.reloj.avanza(1500);
-    ok('3c · a los 8 s se va solo (no se ha roto el comportamiento de siempre)', !e.vivo());
+    ok('3c · a los 3 s se va solo (misma duracion que el cajon de sucesos)', !e.vivo());
 }
 
 // 3.2 · 🔑 EL ARREGLO: mientras se lee la pila, NO se va.
@@ -228,10 +233,10 @@ function crearEntorno() {
     const enganchados = e.disparar('touchmove', 100, 100);
     ok('3d · la pila tiene oyentes enganchados de verdad', enganchados > 0,
        'sin enganche, el arreglo no llega al navegador');
-    e.reloj.avanza(7500);
+    e.reloj.avanza(2500);
     e.disparar('touchmove', 100, 120);          // el usuario sigue deslizando
-    e.reloj.avanza(2000);                        // pasa de los 8 s de vida
-    ok('3e · 🔑 deslizando la pila, el aviso NO se cierra a los 8 s', e.vivo(),
+    e.reloj.avanza(2000);                        // pasa de los 3 s de vida
+    ok('3e · 🔑 deslizando la pila, el aviso NO se cierra a los 3 s', e.vivo(),
        'era lo que impedía leer un cambio grupal entero');
     e.reloj.avanza(3000);                        // 2,5 s de gracia + margen
     ok('3f · y en cuanto se deja de leer, se va (no se queda pegado)', !e.vivo());
@@ -263,13 +268,17 @@ function crearEntorno() {
     const e = crearEntorno();
     for (let i = 0; i < 7; i++) e.avisa();       // siete parejas, un solo snapshot
     ok('3i · los 7 avisos de un cambio grupal caben en la pila', e.pila.children.length === 7);
-    // El usuario va recorriendo la lista: un gesto cada 2 s durante 6 s. La
-    // gracia son 2,5 s desde el ÚLTIMO gesto, así que esto es "leyendo", no
-    // "leyó una vez hace rato".
-    e.reloj.avanza(6000);
+    // El usuario va recorriendo la lista: un gesto cada 2 s. La gracia son 2,5 s
+    // desde el ÚLTIMO gesto, así que esto es "leyendo", no "leyó una vez hace
+    // rato".
+    // ⚠️ v469 · el primer avance baja de 6 s a 2 s: con la vida en 3 s (antes 8),
+    // esperar 6 s sin tocar nada ya no es "leyendo", es dejar morir los avisos.
+    // El caso que importa —empiezo a leer ANTES de que expiren y no se me van—
+    // sigue siendo el mismo.
+    e.reloj.avanza(2000);
     for (let i = 0; i < 3; i++) { e.disparar('scroll', 0, 0); e.reloj.avanza(2000); }
     const vivos = e.pila.children.filter(c => !c.clases.includes('leaving')).length;
-    ok('3j · 🔑 recorriéndola, los 7 siguen ahí pasados los 8 s de vida',
+    ok('3j · 🔑 recorriéndola, los 7 siguen ahí pasados los 3 s de vida',
        vivos === 7, vivos + ' vivos a los ' + e.reloj.ahora() + ' ms');
     e.reloj.avanza(4000);                        // deja de leer
     ok('3k · y cuando termina de leer, la pila se vacía sola',

@@ -579,6 +579,20 @@ async function pushLiveSnapshot(status = 'active') {
             snapshot.expireAt = new Date(Date.now() + 10 * 60 * 60 * 1000);
         }
 
+        // v469 · 🔒 MISMA PUERTA ESTANCA QUE EN LOS SUCESOS. El latido reescribe
+        // marcador, alineación y tiempos: mandarlo al documento equivocado no
+        // "cruza un gol", sobrescribe el partido entero de otro. Si esta pestaña
+        // declara jugar otro partido, no se emite.
+        try {
+            const _S = window._cronosMatchSlots;
+            const _propio = _S && _S.getTabMatchId();
+            if (_propio && _propio !== liveMatchId && String(_propio).indexOf('tab:') !== 0) {
+                console.error('[v469] 🔒 Latido BLOQUEADO: iba a "' + liveMatchId +
+                              '" y esta pestaña juega "' + _propio + '".');
+                return;
+            }
+        } catch (e) { /* nunca puede cortar la emisión por sí misma */ }
+
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
     } catch (err) {
         console.warn('Error sync live:', err.message);
