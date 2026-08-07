@@ -740,6 +740,57 @@
                que miden los avisos, así que fuera de ellos no hay nada. */
             pointer-events: auto;
         }
+        /* ── v466 · UNA PILA POR PARTIDO EN EL LISTADO ──
+           Reporte del autor: con varios partidos abiertos, los avisos "solo
+           aparecen en el ultimo partido creado o en el ultimo que se abrio y
+           cerro". No era la suscripcion —el vigilante sigue suscrito a todos y
+           showEventToast procesa los de fondo desde v455—: era que habia UNA
+           SOLA pila, fija en la esquina y colocada midiendo desde el marcador
+           del partido abierto. Los avisos de los tres salian, pero caian todos
+           en el mismo sitio.
+
+           🔑🔑 ESTAS PILAS NO VAN DENTRO DE LA TARJETA. showLiveNow repinta la
+           lista entera (`innerHTML = ''`) en CADA latido de CUALQUIER partido,
+           o sea cada pocos segundos: un aviso metido en la tarjeta se
+           destruiria antes de poder leerse. Viven en la capa fija
+           #live-card-toasts y se ALINEAN midiendo la tarjeta. */
+        #live-card-toasts { position: fixed; inset: 0; z-index: 1200; pointer-events: none; }
+        .lct-stack {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            width: min(320px, 76vw);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            /* Igual que la pila global: `max-height` —y no `height`— para que la
+               caja mida lo que miden los avisos y fuera de ellos no haya una
+               franja invisible que se trague los toques (defecto de v422). */
+            pointer-events: auto;
+        }
+        /* 🔑 Rescate: la tarjeta esta fuera de la pantalla. Un aviso pegado a
+           ella seria invisible, que es justo lo que se viene a arreglar, asi
+           que baja al borde con su partido bien visible y al tocarlo lleva a su
+           tarjeta. Se distingue del resto para que se lea como "esto pasa en
+           otro sitio" y no como un aviso de lo que estas mirando. */
+        .lct-stack.lct-rescate .event-toast {
+            border-left-width: 6px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+            cursor: pointer;
+        }
+        .lct-stack.lct-rescate .event-toast .et-match {
+            color: #f0883e;
+            font-weight: 900;
+        }
+        .lct-stack.lct-rescate .event-toast .et-match::after {
+            content: ' · TOCA PARA VERLO';
+            font-weight: 700;
+            opacity: 0.75;
+        }
+        @media (max-width: 600px) {
+            .lct-stack { width: min(260px, 66vw); }
+        }
         .event-toast {
             pointer-events: auto;
             /* 🔑 SIN ESTO EL SCROLL NO EXISTE. En una columna flex con tope de
@@ -2418,6 +2469,159 @@ function _etiquetaPartidoDe(snap) {
     return (local || 'Local') + ' vs ' + (visit || 'Visitante');
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  v466 · UNA PILA DE AVISOS POR PARTIDO EN EL LISTADO
+//  ──────────────────────────────────────────────────────────────────────
+//  Reporte del autor: con varios partidos abiertos, los avisos flotantes
+//  "solo aparecen en el último partido creado o en el último que se abrió y
+//  cerró".
+//
+//  ⚠️ NO ERA LA SUSCRIPCIÓN. Se comprobó antes de tocar nada: el vigilante de
+//  fondo sigue suscrito a TODOS los partidos seguidos (sólo se cancela al
+//  cerrar sesión) y `showEventToast` procesa los de fondo desde v455. Lo que
+//  pasaba es que existía UNA SOLA pila, `#event-toast-stack`, fija en la
+//  esquina y colocada por `_posicionaAvisos()` MIDIENDO DESDE EL MARCADOR del
+//  partido que tuvieras abierto. Los avisos de los tres partidos salían, sí,
+//  pero caían todos en el mismo sitio y parecían del mismo partido.
+//
+//  Ahora, EN EL LISTADO, cada partido tiene su propia pila alineada a la
+//  altura de su tarjeta.
+//
+//  🔑🔑 LAS PILAS NO VIVEN DENTRO DE LAS TARJETAS, y no es una preferencia:
+//  `showLiveNow` repinta la lista entera con `listEl.innerHTML = ''` en CADA
+//  latido de CUALQUIER partido —cada pocos segundos—, así que un aviso metido
+//  en la tarjeta se destruiría antes de poder leerse. Viven en una capa fija
+//  aparte y se ALINEAN midiendo la tarjeta por su `data-match-id`.
+//
+//  🔑 Y EL RESCATE AL BORDE (decisión del autor): si la tarjeta está fuera de
+//  la pantalla —hay scroll y 3-4 partidos—, un aviso pegado a ella sería
+//  invisible, que es justo lo que se venía a arreglar. Esos avisos se agrupan
+//  al pie con el nombre del partido y al tocarlos llevan a su tarjeta.
+// ════════════════════════════════════════════════════════════════════════
+const _AVISO_CAPA_ID = 'live-card-toasts';
+
+// ¿Estamos en el LISTADO de partidos? Es lo que decide si hay tarjetas a las
+// que alinear. Dentro del detalle de un partido manda la pila de siempre
+// (v444/v457), que el autor ya tiene verificada y no se toca.
+function _avisosEnListado() {
+    const hv = document.getElementById('history-view');
+    return !!(hv && hv.offsetParent !== null);
+}
+
+function _avisoCapa() {
+    let capa = document.getElementById(_AVISO_CAPA_ID);
+    if (!capa) {
+        capa = document.createElement('div');
+        capa.id = _AVISO_CAPA_ID;
+        // La capa no intercepta toques: sólo lo hacen los avisos concretos.
+        // Sin esto, una franja invisible se tragaría los toques sobre las
+        // tarjetas — el defecto que ya se pagó en v422.
+        capa.style.cssText = 'position:fixed;inset:0;z-index:1200;pointer-events:none;';
+        document.body.appendChild(capa);
+    }
+    return capa;
+}
+
+// La pila de un partido, creándola si hace falta.
+function _avisoPilaDe(matchId) {
+    const id = String(matchId || '');
+    if (!id) return null;
+    const capa = _avisoCapa();
+    let pila = capa.querySelector('.lct-stack[data-match="' + (window.CSS && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '')) + '"]');
+    if (!pila) {
+        pila = document.createElement('div');
+        pila.className = 'lct-stack';
+        pila.setAttribute('data-match', id);
+        capa.appendChild(pila);
+    }
+    return pila;
+}
+
+// Coloca cada pila a la altura de SU tarjeta, o la manda al rescate del pie.
+// Se llama en cada repintado, en cada scroll y en cada resize.
+function _avisoColocaPilas() {
+    try {
+        const capa = document.getElementById(_AVISO_CAPA_ID);
+        if (!capa) return;
+        const enListado = _avisosEnListado();
+        // Fuera del listado no hay tarjetas a las que alinear NADA, y dentro de
+        // un partido manda la pila de siempre. Las pilas que quedaran de la
+        // visita anterior al listado se retiran aquí: dejarlas competiría con la
+        // pila del detalle por el mismo sitio. Es autocurativo — no hace falta
+        // un gancho en cada transición, que es justo donde se olvidan.
+        if (!enListado) { capa.innerHTML = ''; return; }
+        const pilas = capa.querySelectorAll('.lct-stack');
+        let rescatadas = 0;
+        for (let i = 0; i < pilas.length; i++) {
+            const pila = pilas[i];
+            if (!pila.children.length) { pila.remove(); continue; }
+            const id = pila.getAttribute('data-match');
+            const tarjeta = document.querySelector('.history-card[data-match-id="' +
+                (window.CSS && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '')) + '"]');
+            let r = null;
+            if (tarjeta && tarjeta.offsetParent !== null) r = tarjeta.getBoundingClientRect();
+
+            // Visible DE VERDAD: hace falta ver un trozo con sentido de la
+            // tarjeta, no un píxel asomando por el borde. Con un umbral de 0, un
+            // aviso anclado a una tarjeta medio salida saldría cortado y daría
+            // la misma sensación de "no se ve" que se viene a arreglar.
+            const alto  = (typeof window.innerHeight === 'number') ? window.innerHeight : 800;
+            const ancho = (document.documentElement && document.documentElement.clientWidth) || 360;
+            const seVe  = !!r && r.bottom > 56 && r.top < (alto - 56);
+
+            if (seVe) {
+                pila.classList.remove('lct-rescate');
+                pila.style.top    = Math.round(r.top + 8) + 'px';
+                pila.style.left   = '';
+                // Pegada al borde derecho DE SU TARJETA, no al de la pantalla:
+                // es lo que hace que se lea como suya y no como un aviso suelto.
+                pila.style.right  = Math.max(8, Math.round(ancho - r.right + 8)) + 'px';
+                pila.style.bottom = '';
+                pila.style.maxHeight = Math.max(64, Math.round(r.height - 8)) + 'px';
+            } else {
+                // Rescate: al pie, apiladas, con el partido bien visible.
+                pila.classList.add('lct-rescate');
+                pila.style.top = '';
+                pila.style.left = '';
+                pila.style.right = '0.75rem';
+                pila.style.bottom = (0.75 + rescatadas * 0.35) + 'rem';
+                pila.style.maxHeight = '38dvh';
+                rescatadas++;
+            }
+        }
+    } catch (e) { /* una medición nunca puede tumbar el visor */ }
+}
+window._avisoColocaPilas = _avisoColocaPilas;
+
+let _avisoColocaPendiente = false;
+function _avisoColocaPronto() {
+    if (_avisoColocaPendiente) return;
+    _avisoColocaPendiente = true;
+    const correr = () => { _avisoColocaPendiente = false; _avisoColocaPilas(); };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(correr);
+    else setTimeout(correr, 16);
+}
+window._avisoColocaPronto = _avisoColocaPronto;
+
+// El scroll del listado y el de la ventana mueven las tarjetas bajo las pilas.
+(function _avisoCableaRecolocacion() {
+    if (typeof window.addEventListener !== 'function') return;
+    ['scroll', 'resize', 'orientationchange'].forEach(ev => {
+        window.addEventListener(ev, _avisoColocaPronto, { passive: true, capture: true });
+    });
+})();
+
+// Lleva a la tarjeta de un partido (lo que hace el aviso rescatado al tocarlo).
+window._avisoIrATarjeta = function(matchId) {
+    try {
+        const t = document.querySelector('.history-card[data-match-id="' + (window.CSS && CSS.escape ? CSS.escape(String(matchId)) : String(matchId).replace(/"/g, '')) + '"]');
+        if (t && typeof t.scrollIntoView === 'function') {
+            t.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            _avisoColocaPronto();
+        }
+    } catch (e) {}
+};
+
 // v455 · `matchId` (6º argumento) es el partido AL QUE PERTENECE el suceso.
 // Decide el destino:
 //   · el AVISO FLOTANTE se emite SIEMPRE — es global y dice de qué partido es;
@@ -2446,13 +2650,23 @@ function showEventToast(type, line, sub, matchTime, equipo, matchId) {
         : '');
 
     // ── 1 · el aviso flotante ────────────────────────────────────────
-    const stack = document.getElementById("event-toast-stack");
+    // v466 · EL DESTINO DEPENDE DE DÓNDE ESTÉ EL USUARIO:
+    //   · en el LISTADO  → la pila DE ESE PARTIDO, alineada a su tarjeta;
+    //   · en el DETALLE  → la pila de siempre (#event-toast-stack), que el
+    //     autor ya tiene verificada (v444/v457) y que aquí no se toca.
+    // Si el suceso no trae matchId no hay a qué tarjeta alinearlo: va a la de
+    // siempre, como hacía antes.
+    const _enListado = (typeof _avisosEnListado === 'function') && _avisosEnListado();
+    const _pilaPorTarjeta = (_enListado && matchId)
+        ? _avisoPilaDe(matchId)
+        : null;
+    const stack = _pilaPorTarjeta || document.getElementById("event-toast-stack");
     if (stack) {
         // v424: medir justo antes de enseñarlo. El marcador puede acabar de
         // hacerse visible (se entra a un partido) y en ese instante todavía no
         // ha saltado ningún resize ni ResizeObserver, así que el primer aviso
         // saldría con la posición de reserva.
-        if (typeof _posicionaAvisos === 'function') _posicionaAvisos();
+        if (!_pilaPorTarjeta && typeof _posicionaAvisos === 'function') _posicionaAvisos();
         const el = document.createElement("div");
         el.className = "event-toast " + meta.cls;
         // v218: `line` puede ser HTML (con spans de color para la palabra
@@ -2484,9 +2698,20 @@ function showEventToast(type, line, sub, matchTime, equipo, matchId) {
         // comienzo de un DESLIZAMIENTO para leer la pila. Ver _fueArrastreDeLectura.
         el.onclick = () => {
             if (typeof _fueArrastreDeLectura === 'function' && _fueArrastreDeLectura()) return;
+            // v466 · Si el aviso está RESCATADO al pie (su tarjeta no se ve), el
+            // toque lleva primero a la tarjeta: es lo que lo hace útil y no sólo
+            // visible. Si ya se ve, se comporta como siempre y se cierra.
+            if (_pilaPorTarjeta && _pilaPorTarjeta.classList.contains('lct-rescate')) {
+                if (typeof window._avisoIrATarjeta === 'function') window._avisoIrATarjeta(matchId);
+                quitar();
+                return;
+            }
             quitar();
         };
         stack.appendChild(el);
+        // v466 · medir DESPUÉS de meterlo: la pila acaba de cambiar de alto y su
+        // tarjeta puede estar en cualquier punto del scroll.
+        if (_pilaPorTarjeta && typeof _avisoColocaPronto === 'function') _avisoColocaPronto();
         // v220: el tope es 15 y no 5 porque siete cambios grupales llegan en un
         // ÚNICO snapshot (throttle de 2 s de liveSyncOnAction) y con 5 se
         // evictaban los primeros antes de que nadie los leyera.
@@ -4773,6 +4998,13 @@ window.showLiveNow = async function() {
             const awayPlayers = (m.players||[]).filter(p=>p.team==='away'&&p.status==='field').length;
             const card = document.createElement('div');
             card.className = 'history-card';
+            // v466 · La tarjeta se identifica para poder ALINEARLE su pila de
+            // avisos. ⚠️ La pila NO va dentro: esta lista se repinta entera
+            // (`listEl.innerHTML = ''`) en CADA latido de CUALQUIER partido, o
+            // sea cada pocos segundos, y un aviso metido aquí se destruiría
+            // solo antes de poder leerse. Vive en una capa aparte que se mide
+            // contra este `data-match-id`.
+            card.setAttribute('data-match-id', m.id || '');
             card.style.cssText =
                 'border-color:rgba(255,88,88,0.4);' +
                 'background:linear-gradient(135deg,rgba(255,88,88,0.08),rgba(255,88,88,0.03));' +
@@ -4895,6 +5127,12 @@ window.showLiveNow = async function() {
             };
             listEl.appendChild(card);
         });
+
+        // v466 · La lista se acaba de reconstruir entera, así que TODAS las
+        // tarjetas son elementos nuevos y en otra posición. Las pilas de avisos
+        // viven fuera (por eso sobreviven al repintado), pero hay que volver a
+        // medirlas contra las tarjetas nuevas o quedarían señalando al vacío.
+        if (typeof _avisoColocaPronto === 'function') _avisoColocaPronto();
 
         }; // fin _repintarLista
 
@@ -5675,8 +5913,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v465"></script>
-<script src="js/match/replay/replay-player.js?v=v465"></script>
-<script src="js/match/events/retroactive-modal.js?v=v465"></script>
+<script src="js/match/immutability.js?v=v466"></script>
+<script src="js/match/replay/replay-player.js?v=v466"></script>
+<script src="js/match/events/retroactive-modal.js?v=v466"></script>
 </body>
 </html>

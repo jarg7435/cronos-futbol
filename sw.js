@@ -1,5 +1,34 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v466: UNA PILA DE AVISOS POR PARTIDO EN EL LISTADO EN VIVO. Reporte del
+//        autor (implementar.txt): con varios partidos abiertos, los avisos
+//        flotantes "solo aparecen en el ultimo partido creado o en el ultimo
+//        que se abrio y cerro".
+//        ⚠️ EL DIAGNOSTICO DEL REPORTE APUNTABA A LA SUSCRIPCION Y NO ERA ESO.
+//        Se comprobo ANTES de tocar nada: el vigilante de fondo sigue suscrito
+//        a TODOS los partidos seguidos (solo se cancela al cerrar sesion) y
+//        showEventToast procesa los de fondo desde v455. Lo que habia era UNA
+//        SOLA pila, `#event-toast-stack`, fija en la esquina y colocada por
+//        `_posicionaAvisos()` MIDIENDO DESDE EL MARCADOR del partido abierto:
+//        los avisos de los tres partidos salian, pero caian todos en el mismo
+//        sitio y parecian del mismo partido. Tocar los onSnapshot habria sido
+//        arreglar algo que no estaba roto.
+//        Ahora, EN EL LISTADO, cada partido tiene su pila alineada a la altura
+//        de su tarjeta. Dentro del detalle manda la pila de siempre
+//        (v444/v457), que no se toca.
+//        🔑🔑 LAS PILAS NO VIVEN DENTRO DE LAS TARJETAS: showLiveNow repinta la
+//        lista entera (`innerHTML = ''`) en CADA latido de CUALQUIER partido
+//        —cada pocos segundos—, asi que un aviso metido en la tarjeta se
+//        destruiria antes de poder leerse. Viven en una capa fija aparte y se
+//        ALINEAN midiendo la tarjeta por su `data-match-id`.
+//        🔑 RESCATE AL BORDE (decision del autor ante la tension entre sus dos
+//        requisitos): si la tarjeta esta fuera de pantalla, un aviso pegado a
+//        ella seria invisible —justo lo que se venia a arreglar—, asi que baja
+//        al borde con el nombre del partido y al tocarlo lleva a su tarjeta.
+//        Guard: scripts/test_avisos_por_tarjeta.js (33/33, red-check de 16
+//        mutaciones). EJECUTA la colocacion contra un DOM simulado con scroll
+//        de verdad: un regex ve que las funciones existen, no DONDE acaba cada
+//        aviso.
 //  v465: VARIOS PARTIDOS A LA VEZ, SIN QUE SE PISEN. Reporte del autor
 //        (capturas 8474 y 8475): con un Alevin C y un Juvenil B abiertos al
 //        mismo tiempo, los datos y sucesos de uno de los dos dejaban de llegar
@@ -1673,7 +1702,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v465';
+const CACHE_NAME = 'cronos-cache-v466';
 
 const ASSETS = [
     './',
