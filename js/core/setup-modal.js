@@ -677,6 +677,12 @@ function _recoveryClaves(c) {
 // Fusiona las dos fuentes en UNA entrada por partido. Función pura: no toca el
 // DOM ni Firestore, para poder ejercitarla en el guard.
 //   Devuelve [{ datos, tieneLocal, idsNube, ts }] ordenado por ts descendente.
+// v465 · El primer argumento admite UN candidato local o una LISTA de ellos.
+// Antes sólo podía haber uno porque el estado local vivía en una clave única;
+// desde v465 hay una ranura por partido y un entrenador puede tener dos o tres
+// abiertos a la vez, así que el panel tiene que poder enseñarlos todos. Se
+// mantiene la forma de un solo candidato porque es como lo llama el guard
+// scripts/test_recovery_merge.js, que comprueba la fusión en sí.
 function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
     const entradas = [];
     const porClave = new Map();
@@ -689,7 +695,7 @@ function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
             if (porClave.has(k)) { destino = porClave.get(k); break; }
         }
         if (!destino) {
-            destino = { datos: null, tieneLocal: false, idsNube: [], ts: -1 };
+            destino = { datos: null, tieneLocal: false, idsNube: [], idsLocal: [], ts: -1 };
             entradas.push(destino);
         }
         // TODAS las claves del candidato apuntan ya a esta entrada: así un
@@ -698,7 +704,16 @@ function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
         // id con el primero).
         for (const k of claves) porClave.set(k, destino);
 
-        if (cand.isLocal) destino.tieneLocal = true;
+        if (cand.isLocal) {
+            destino.tieneLocal = true;
+            // v465 · QUÉ ranura local es. Con varios partidos abiertos,
+            // "tiene local" ya no basta para borrarlo: hay que saber CUÁL, o
+            // el botón de eliminar se llevaría por delante el partido
+            // equivocado.
+            if (cand._slotId && destino.idsLocal.indexOf(cand._slotId) === -1) {
+                destino.idsLocal.push(cand._slotId);
+            }
+        }
         else if (cand._id && destino.idsNube.indexOf(cand._id) === -1) destino.idsNube.push(cand._id);
 
         // Lo que se ENSEÑA sale de la fuente más reciente.
@@ -706,7 +721,8 @@ function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
         if (ts > destino.ts) { destino.datos = cand; destino.ts = ts; }
     };
 
-    meter(localMatch);
+    if (Array.isArray(localMatch)) localMatch.forEach(meter);
+    else meter(localMatch);
     (docsNube || []).forEach(meter);
 
     entradas.sort((a, b) => b.ts - a.ts);
@@ -761,14 +777,17 @@ async function openLiveMatchRecovery() {
         </div>
     </div>`;
 
-    // 1. Obtener y validar partido local en localStorage
-    const localRaw = localStorage.getItem('cronos_active_match_v2');
-    let localMatch = null;
+    // 1. Obtener y validar los partidos locales.
+    // v465 · Ya no es UNO: hay una ranura por partido (js/core/match-slots.js),
+    // porque un entrenador puede tener el Alevín y el Juvenil abiertos a la vez.
+    // El panel tiene que enseñarlos TODOS o el segundo sería irrecuperable.
+    const localMatches = [];
     const now = Date.now();
 
-    if (localRaw) {
+    const _ranuras = window._cronosMatchSlots ? window._cronosMatchSlots.listar() : [];
+    for (const _ranura of _ranuras) {
         try {
-            const parsed = JSON.parse(localRaw);
+            const parsed = _ranura.state;
             if (parsed && parsed.savedAt && parsed.matchPhase !== 'finished') {
                 const mode = parsed.currentMode || 'f7';
                 const cat = (parsed.category || '').toLowerCase();
@@ -791,8 +810,13 @@ async function openLiveMatchRecovery() {
                 const LIMIT_SEC = limitMins * 60;
 
                 if (elapsedSec <= LIMIT_SEC) {
-                    localMatch = {
+                    localMatches.push({
+                        // El _id sigue siendo el marcador de "esto es local"; lo
+                        // que identifica la RANURA concreta es `_slotId`, y es
+                        // lo que necesita el botón de eliminar para no llevarse
+                        // el partido de al lado.
                         _id: 'local_active',
+                        _slotId: _ranura.id,
                         isLocal: true,
                         liveMatchId: parsed.liveMatchId,
                         savedAt: parsed.savedAt,
@@ -805,10 +829,10 @@ async function openLiveMatchRecovery() {
                         timeH2: parsed.masterTimeH2,
                         playerCount: Array.isArray(parsed.players) ? parsed.players.length : 0,
                         category: parsed.category || ''
-                    };
+                    });
                 } else {
-                    // Expiró localmente
-                    localStorage.removeItem('cronos_active_match_v2');
+                    // Expiró localmente — se cierra SÓLO esta ranura.
+                    window._cronosMatchSlots?.cerrar(_ranura.id, false);
                 }
             }
         } catch (e) {
@@ -875,7 +899,7 @@ async function openLiveMatchRecovery() {
 
         // v441 · Las dos fuentes se funden en UNA entrada por partido, ordenadas
         // por la más recientemente guardada.
-        const entradas = _fusionaCandidatosRecuperacion(localMatch, docsNube);
+        const entradas = _fusionaCandidatosRecuperacion(localMatches, docsNube);
 
         if (entradas.length === 0) {
             list.innerHTML = `
@@ -923,7 +947,12 @@ async function openLiveMatchRecovery() {
                 : entrada.idsNube.join(',').replace(/'/g, '');
             let clickResume;
             if (m.isLocal) {
-                clickResume = `_doResumeLocalMatch()`;
+                // v465 · SE DICE QUÉ RANURA SE RETOMA. Sin el argumento, con dos
+                // partidos abiertos las dos tarjetas llamaban a lo mismo y la
+                // segunda retomaba el primero.
+                const safeSlot = typeof escapeAttr === 'function'
+                    ? escapeAttr(m._slotId || '') : String(m._slotId || '').replace(/'/g, '');
+                clickResume = `_doResumeLocalMatch('${safeSlot}')`;
             } else {
                 const safeId = typeof escapeAttr === 'function' ? escapeAttr(m._id) : String(m._id).replace(/'/g, '');
                 clickResume = `_doResumeMatch('${safeId}')`;
@@ -932,7 +961,9 @@ async function openLiveMatchRecovery() {
             // 🔑 Si sólo se borrara una, la otra reaparecería sola en el
             // siguiente repintado y el usuario volvería a ver el partido que
             // acaba de eliminar. Es la mitad del defecto que se está cerrando.
-            const clickDelete = `_doDeleteRecoveryEntry('${idsAttr}', ${entrada.tieneLocal ? 'true' : 'false'})`;
+            // v465 · viaja también QUÉ ranura local es esta entrada.
+            const idsLocalAttr = (entrada.idsLocal || []).join(',');
+            const clickDelete = `_doDeleteRecoveryEntry('${idsAttr}', ${entrada.tieneLocal ? 'true' : 'false'}, '${idsLocalAttr}')`;
 
             // Una sola etiqueta que dice DÓNDE está guardado, en vez de dos
             // tarjetas compitiendo. La información no se pierde: se consolida.
@@ -984,8 +1015,12 @@ async function openLiveMatchRecovery() {
 
     } catch (err) {
         const list = document.getElementById('live-recovery-list');
-        if (list && localMatch) {
-            // Caso sin conexión: mostrar el local al menos
+        if (list && localMatches.length) {
+            // Caso sin conexión: mostrar los locales al menos.
+            // v465 · TODOS, no sólo el primero: sin red, esta lista es la única
+            // forma de volver a un partido, y dejar fuera el segundo lo haría
+            // irrecuperable justo cuando peor viene.
+            list.innerHTML = localMatches.map(localMatch => {
             const updTs = new Date(localMatch.savedAt).getTime();
             const updStr = updTs
                 ? new Date(updTs).toLocaleString('es-ES', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
@@ -1002,8 +1037,9 @@ async function openLiveMatchRecovery() {
             const timeStr = localMatch.phase === '2nd_half' ? `${minsH2}:${secsH2}` : `${minsH1}:${secsH1}`;
             const playerCount = localMatch.playerCount || 0;
             const modeLabel = localMatch.mode === 'f11' ? 'F-11' : 'F-7';
+            const slotAttr = (typeof escapeHtml==='function'?escapeHtml(localMatch._slotId||''):(localMatch._slotId||''));
 
-            list.innerHTML = `
+            return `
             <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.3);
                         border-radius:12px;padding:0.9rem 1rem;display:flex;flex-direction:column;gap:0.5rem;">
                 <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
@@ -1022,13 +1058,13 @@ async function openLiveMatchRecovery() {
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0;">
-                        <button onclick="_doResumeLocalMatch()"
+                        <button onclick="_doResumeLocalMatch('${slotAttr}')"
                             style="padding:0.45rem 1rem;background:#f0883e;border:none;
                                    border-radius:8px;color:#0a0e14;font-weight:800;
                                    font-size:0.82rem;cursor:pointer;">
                             ▶ Retomar
                         </button>
-                        <button onclick="_doDeleteLocalMatch()"
+                        <button onclick="_doDeleteLocalMatch('${slotAttr}')"
                             style="padding:0.35rem 0.7rem;background:rgba(255,88,88,0.12);
                                    border:1px solid rgba(255,88,88,0.35);
                                    border-radius:8px;color:#ff5858;font-weight:700;
@@ -1038,6 +1074,7 @@ async function openLiveMatchRecovery() {
                     </div>
                 </div>
             </div>`;
+            }).join('');
         } else {
             if (list) list.innerHTML = `<div style="color:#ff5858;text-align:center;padding:2rem;">⚠️ Error al cargar: ${err.message}</div>`;
         }
@@ -1049,11 +1086,24 @@ async function openLiveMatchRecovery() {
 // Se compara por id Y por equipos, la misma identidad que usa la fusión: si
 // sólo se mirara el id, el estado local del MISMO partido sobreviviría al
 // borrado (con otro id) y el partido reaparecería solo.
-function _recoveryEsElPartidoLocal(matchId) {
+// v465 · Devuelve el ID DE LA RANURA que corresponde a ese partido, o '' si
+// ninguna. Antes devolvía un booleano porque sólo podía haber un estado local;
+// ahora hay uno por partido y hace falta saber CUÁL, no si "hay alguno": con
+// dos partidos abiertos, un booleano habría hecho que borrar el de la nube se
+// llevara por delante el estado local del otro.
+function _recoveryRanuraDelPartido(matchId) {
     try {
-        const raw = localStorage.getItem('cronos_active_match_v2');
-        if (!raw) return false;
-        const p = JSON.parse(raw);
+        const S = window._cronosMatchSlots;
+        if (!S) return '';
+        for (const r of S.listar()) {
+            if (_ranuraCasaConPartido(r.state, matchId)) return r.id;
+        }
+        return '';
+    } catch (e) { return ''; }
+}
+
+function _ranuraCasaConPartido(p, matchId) {
+    try {
         if (!p) return false;
         if (p.liveMatchId && matchId && p.liveMatchId === matchId) return true;
         // Sin coincidencia de id, el nombre del equipo local va dentro del id
@@ -1069,20 +1119,37 @@ function _recoveryEsElPartidoLocal(matchId) {
         return false;
     } catch (e) { return false; }
 }
+
+// Se conserva la forma booleana: la usa el borrado silencioso de documentos
+// caducados y el guard scripts/test_recuperar_partido_fusion equivalente.
+function _recoveryEsElPartidoLocal(matchId) {
+    return !!_recoveryRanuraDelPartido(matchId);
+}
 window._recoveryEsElPartidoLocal = _recoveryEsElPartidoLocal;
+window._recoveryRanuraDelPartido = _recoveryRanuraDelPartido;
 
 // ── Eliminar una entrada FUSIONADA del panel de recuperación (v441) ────
 // Borra TODAS las fuentes del partido: los documentos de la nube que se
 // hubieran fusionado y el estado guardado en el dispositivo. Si se dejara una,
 // el partido volvería a aparecer solo en el siguiente repintado.
-async function _doDeleteRecoveryEntry(idsNubeCsv, tieneLocal) {
+async function _doDeleteRecoveryEntry(idsNubeCsv, tieneLocal, idsLocalCsv) {
     if (!confirm('¿Eliminar este partido en curso? Se borrará de este dispositivo y de la nube, y no podrás recuperarlo.')) return;
     const ids = String(idsNubeCsv || '').split(',').map(s => s.trim()).filter(Boolean);
     for (const id of ids) {
         try { await _doDeleteLiveMatch(id, null, true); } catch (e) { console.warn('[Recovery] borrando', id, e); }
     }
     if (tieneLocal === true || tieneLocal === 'true') {
-        localStorage.removeItem('cronos_active_match_v2');
+        // v465 · Se borran LAS RANURAS DE ESTA ENTRADA, no "el estado local".
+        // Con varios partidos abiertos, borrar a ciegas se llevaba el que
+        // seguía jugándose.
+        const locales = String(idsLocalCsv || '').split(',').map(s => s.trim()).filter(Boolean);
+        const S = window._cronosMatchSlots;
+        if (S) {
+            if (locales.length) locales.forEach(sid => S.cerrar(sid, true));
+            // Respaldo para una entrada antigua sin idsLocal: se resuelve por
+            // identidad del partido, nunca borrando lo primero que haya.
+            else ids.forEach(id => { const sid = _recoveryRanuraDelPartido(id); if (sid) S.cerrar(sid, true); });
+        }
         document.getElementById('cronos-restore-banner')?.remove();
     }
     if (typeof showToast === 'function') showToast('🗑 Partido eliminado', 2500);
@@ -1092,16 +1159,22 @@ async function _doDeleteRecoveryEntry(idsNubeCsv, tieneLocal) {
 window._doDeleteRecoveryEntry = _doDeleteRecoveryEntry;
 
 // ── Retomar un partido local ───────────────────────────────────────────
-function _doResumeLocalMatch() {
+// v465 · Recibe QUÉ ranura se retoma. `_restoreActiveMatch` lee
+// `_cronosRestoreSlotId`, así que fijarlo aquí es lo que hace que el botón de
+// la segunda tarjeta retome el segundo partido y no el primero.
+function _doResumeLocalMatch(slotId) {
+    if (slotId) window._cronosRestoreSlotId = slotId;
     if (typeof window._restoreActiveMatch === 'function') {
         window._restoreActiveMatch();
     }
 }
 window._doResumeLocalMatch = _doResumeLocalMatch;
 // ── Eliminar un partido local ──────────────────────────────────────────
-function _doDeleteLocalMatch() {
+function _doDeleteLocalMatch(slotId) {
     if (!confirm('¿Eliminar este partido local en curso? Se perderá definitivamente.')) return;
-    localStorage.removeItem('cronos_active_match_v2');
+    const S = window._cronosMatchSlots;
+    const id = slotId || (S && S.getTabMatchId());
+    if (S && id) S.cerrar(id, true);
     document.getElementById('cronos-restore-banner')?.remove();
     if (typeof showToast === 'function') showToast('🗑 Partido local eliminado', 3000);
     openLiveMatchRecovery();
@@ -1418,9 +1491,12 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
         // encuentra al abrir el panel: un partido viejo de la nube borraba el
         // estado del partido de HOY que aún estaba en curso en el dispositivo.
         // Pérdida de datos real, y silenciosa.
-        if (_recoveryEsElPartidoLocal(matchId)) {
-            localStorage.removeItem('cronos_active_match_v2');
-        }
+        // v465 · Y sólo LA RANURA de ese partido. La v441 ya evitó que un
+        // documento caducado borrase el partido de hoy; con varios partidos
+        // abiertos hay que apuntar además a la ranura correcta, porque ahora
+        // conviven dos partidos de hoy igual de vivos.
+        const _sid = _recoveryRanuraDelPartido(matchId);
+        if (_sid) window._cronosMatchSlots?.cerrar(_sid, true);
 
         if (isSilent) return; // No UI updates if silent
 

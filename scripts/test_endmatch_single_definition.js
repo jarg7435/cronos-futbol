@@ -58,8 +58,19 @@ ok('2c · sprint3-init.js envuelve window.endMatch existente (no lo redefine des
 
 // El comportamiento completo (localStorage, pushLiveSnapshot, silbato) sigue
 // intacto en la única definición real que queda.
-ok('3a · active-match.js: sigue limpiando cronos_active_match_v2 al finalizar',
-   /localStorage\.removeItem\('cronos_active_match_v2'\)/.test(activeMatch));
+// v465 · ACTUALIZADA A PROPOSITO, y se refuerza en vez de relajarse.
+// Antes exigia el literal `localStorage.removeItem('cronos_active_match_v2')`.
+// Esa clave UNICA era el fallo que reporto el autor: con dos partidos abiertos,
+// terminar uno borraba el estado del otro y lo dejaba sin emitir. Ahora hay una
+// ranura por partido y endMatch cierra LA SUYA. La intencion original —"al
+// finalizar se limpia el estado persistido, o reaparece el banner de retomar"—
+// se sigue exigiendo, y ademas se prohibe volver a la clave pelada, que es como
+// se reescribiria la regresion.
+ok('3a · active-match.js: sigue limpiando el estado persistido al finalizar',
+   /_cronosMatchSlots\?\.cerrar\(/.test(activeMatch));
+ok('3a2 · ⚠️ y NO vuelve a la clave unica compartida entre pestanyas',
+   !/localStorage\s*\.\s*(removeItem|setItem)\s*\(\s*'cronos_active_match_v2(_finished)?'/.test(activeMatch),
+   'la clave pelada la escriben TODAS las pestanyas: terminar un partido apagaria el otro');
 ok('3b · active-match.js: sigue empujando el snapshot \'finished\' a Firestore',
    /pushLiveSnapshot\('finished'\)/.test(activeMatch));
 ok('3c · active-match.js: conserva el guard de idempotencia (matchPhase===\'finished\')',

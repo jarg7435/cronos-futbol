@@ -737,8 +737,13 @@ function terminateMatch(reason) {
     // Punto 2: limpiar el estado persistido para que el partido no quede
     // recuperable tras finalizar por expulsiones (misma corrección que endMatch).
     try {
-        localStorage.removeItem('cronos_active_match_v2');
-        localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
+        // v465 · sólo la ranura de ESTE partido (ver js/core/match-slots.js).
+        // La misma corrección que en endMatch: el fin por expulsiones tampoco
+        // puede invalidar el partido que otra pestaña siga jugando.
+        window._cronosMatchSlots?.cerrar(
+            window._cronosMatchSlots.slotIdActual(
+                (typeof liveMatchId !== 'undefined') ? liveMatchId : null),
+            true);
     } catch (e) {}
     // Commit sincrono del FIN (por expulsiones) como evento critico durable.
     try {

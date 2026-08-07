@@ -247,9 +247,15 @@ function _refreshMatchUI() {
         }
     }
     try {
-        const raw = localStorage.getItem('cronos_active_match_v2');
-        if (!raw) return;
-        const state = JSON.parse(raw);
+        // v465 · La ranura de ESTA pestaña, nunca "el partido activo" a secas.
+        // ⚠️ Esta función REEMPLAZA window.players, matchPhase y el marcador de
+        // la pantalla. Leyendo la clave única, una pestaña podía repintarse con
+        // el estado del partido que estuviera jugando la OTRA pestaña del mismo
+        // entrenador y ponerse a emitir eso. Si esta pestaña no tiene partido
+        // propio, no hay nada que refrescar: no se toca nada.
+        const S = window._cronosMatchSlots;
+        const propio = S && S.getTabMatchId();
+        const state = (S && propio) ? S.leer(propio) : null;
         if (!state || !Array.isArray(state.players)) return;
         window.players = state.players;
         if (typeof matchPhase !== 'undefined' && state.matchPhase) matchPhase = state.matchPhase;
@@ -290,7 +296,11 @@ async function startRealtimeSync() {
                 }
             });
             if (changed) {
-                const activeMatchChanged = Object.keys(data).some(k => k === 'cronos_active_match_v2');
+                // v465 · las ranuras de partido llevan sufijo `::<matchId>`.
+                // Nunca deberían llegar por aquí (el estado del partido en
+                // curso no se sube a la nube), pero si un documento antiguo
+                // las trae, el refresco sigue reconociéndolas.
+                const activeMatchChanged = Object.keys(data).some(k => k.indexOf('cronos_active_match_v2') === 0);
                 if (activeMatchChanged) _refreshMatchUI();
                 if (typeof loadEmailConfig === 'function') loadEmailConfig();
                 if (typeof loadStaffConfig === 'function') loadStaffConfig();

@@ -204,8 +204,24 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
         .filter(n => aiDecl.has(n));
     ok('2a · ⚠️ app-init.js no declara ninguna de las 116', quedan.length === 0, quedan);
 
-    // y sigue cargando el PRIMERO, que es lo que hacia perder a sus copias
-    ok('2b · app-init.js sigue siendo el primer script clasico', ORDER[0] === AI, ORDER[0]);
+    // y sigue cargando ANTES QUE SUS DUENYOS, que es lo que hacia perder a sus
+    // copias (lo comprueba 2c). Lo que importa aqui es esa relacion, no el
+    // puesto absoluto.
+    //
+    // v465 · ACTUALIZADA A PROPOSITO. Antes exigia `ORDER[0] === app-init.js`.
+    // Ahora js/core/match-slots.js va DELANTE, y tiene que ir delante: define
+    // las claves del partido activo y hace la migracion desde la clave unica de
+    // v464, asi que app-init.js debe encontrarse el almacen ya migrado cuando
+    // pregunte por el partido en curso. La asercion no se relaja: se sigue
+    // exigiendo que app-init.js sea el primero SALVO por esa lista corta y
+    // explicita de precursores, para que colar un sexto script delante siga
+    // poniendose rojo.
+    const PRECURSORES = ['js/core/match-slots.js'];
+    const idxAI = ORDER.indexOf(AI);
+    const delante = ORDER.slice(0, idxAI);
+    ok('2b · antes de app-init.js solo van sus precursores declarados',
+       idxAI !== -1 && delante.every(s => PRECURSORES.some(p => String(s).indexOf(p) !== -1)),
+       'delante: ' + JSON.stringify(delante));
 
     // los duenyos tienen que cargar DESPUES (si alguien reordena las etiquetas
     // <script>, la copia superviviente podria dejar de ganar)

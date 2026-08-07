@@ -156,6 +156,15 @@ async function startLiveSync() {
             ? window._cronosBuildLiveMatchId({ teamName: TEAM_NAMES.home, rivalName: TEAM_NAMES.away, date: now, uid: _uidSlug }) + '-' + _hourSlug
             : `${teamSlug}-${dateSlug}-${(window._cronosStableSlug ? window._cronosStableSlug(_uidSlug+'|'+teamSlug+'|'+dateSlug, 4) : '0000')}-${_hourSlug}`;
     }
+    // v465 · ESTA PESTAÑA RECLAMA EL PARTIDO. Es la pieza que ata el estado
+    // local a quien lo está jugando: a partir de aquí el autoguardado escribe
+    // en `cronos_active_match_v2::<liveMatchId>` y, al recargarse, la pestaña
+    // recupera ESTE partido y no el que tenga abierto la de al lado. Vive en
+    // sessionStorage —lo único que NO comparten dos pestañas del mismo
+    // usuario—, así que sobrevive a la recarga sin pisar a nadie.
+    // Se llama también cuando el partido NO es nuevo: una reconexión tiene que
+    // volver a reclamarlo, porque la pestaña puede haberse recargado por medio.
+    try { window._cronosMatchSlots?.setTabMatchId(liveMatchId); } catch (e) {}
     liveIsActive = true;
 
     if (_isNewMatch) {

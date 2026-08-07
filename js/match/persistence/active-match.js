@@ -45,10 +45,19 @@ window.endMatch = function endMatch(skipConfirm = false) {
         // No detenemos autoSaveInterval (destruirlo rompería el autoguardado de
         // un partido nuevo iniciado en la misma sesión). Su guard interno ya
         // evita reescribir el snapshot cuando matchPhase === 'finished'.
-        localStorage.removeItem('cronos_active_match_v2');
-        // Blindaje: marca de finalización que _checkActiveMatch() respeta para
-        // ignorar cualquier snapshot residual escrito por una carrera de 5s.
-        localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
+        // v465 · ⚠️ SE CIERRA SÓLO ESTE PARTIDO. Aquí estaba el fallo que
+        // reportó el autor (capturas 8474/8475): esto borraba la clave ÚNICA y
+        // levantaba una bandera GLOBAL de "terminado", así que al finalizar el
+        // Alevín, la pestaña del Juvenil —que seguía jugándose— leía esa
+        // bandera al recargarse, borraba su estado y se quedaba sin
+        // liveMatchId: dejaba de emitir al panel en vivo.
+        // La bandera por partido sigue haciendo su trabajo original: evitar que
+        // una carrera del autoguardado de 5 s resucite la ranura recién
+        // cerrada.
+        window._cronosMatchSlots?.cerrar(
+            window._cronosMatchSlots.slotIdActual(
+                (typeof liveMatchId !== 'undefined') ? liveMatchId : null),
+            true);
         // Commit sincrono del FIN como evento critico durable en IndexedDB.
         // No usamos commitCriticalEvent() aqui porque reescribiria el snapshot
         // que acabamos de borrar; registramos solo el evento de forma durable.

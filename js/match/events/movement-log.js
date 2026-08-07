@@ -62,7 +62,14 @@ function resetMatch() {
     window._cronosLastDispatchedMatch = null;
     // Punto 2: limpiar la marca de finalización para que el autoguardado del
     // partido reiniciado persista y no sea descartado al recargar la app.
-    try { localStorage.removeItem('cronos_active_match_v2_finished'); } catch (e) {}
+    // v465 · la bandera es por partido: se retira sólo la de ESTA pestaña.
+    try {
+        const S = window._cronosMatchSlots;
+        if (S) {
+            const id = S.slotIdActual((typeof liveMatchId !== 'undefined') ? liveMatchId : null);
+            if (id) localStorage.removeItem(S.claveFinDe(id));
+        }
+    } catch (e) {}
     updateMasterUI();
     const btn = document.getElementById('btn-play-pause');
     btn.textContent = 'EMPEZAR'; btn.classList.remove('danger');

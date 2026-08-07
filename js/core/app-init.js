@@ -367,19 +367,36 @@ let activeActionPlayerId = null;
 //  Guarda el estado completo cada 15 segundos y al abandonar la app.
 //  Al reabrir, si hay un partido en curso, ofrece retomarlo.
 // ════════════════════════════════════════════════════════════════════
-const _ACTIVE_MATCH_KEY = 'cronos_active_match_v2';
+// v465 · UNA RANURA POR PARTIDO, no una clave única para todos.
+// La clave global `cronos_active_match_v2` la escribían TODAS las pestañas del
+// mismo usuario (localStorage es compartido por origen), así que con dos
+// partidos abiertos a la vez se pisaban entre ellas y terminar uno invalidaba
+// el estado del otro. Todo el detalle, en js/core/match-slots.js.
+// Ya no queda ninguna lectura ni escritura de la clave pelada en este fichero:
+// todo pasa por `_cronosMatchSlots`, que es quien compone
+// `cronos_active_match_v2::<matchId>`. La constante que había aquí se retiró
+// para que nadie la reintroduzca por costumbre.
+const _slots = () => window._cronosMatchSlots;
+
+// El id con el que ESTA pestaña guarda su partido. Mientras `liveMatchId` no
+// exista todavía (hay un hueco real entre "empieza el partido" y "startLiveSync
+// fija el id"), se usa la identidad de la pestaña y la ranura se muda sola en
+// cuanto llega el id definitivo.
+function _miSlotId() {
+    const S = _slots();
+    if (!S) return null;
+    return S.slotIdActual(typeof liveMatchId !== 'undefined' ? liveMatchId : null);
+}
 
 function _saveMatchStateToStorage() {
     if (matchPhase === 'finished' || matchPhase === 'idle') return;
     try {
-        const existingRaw = localStorage.getItem(_ACTIVE_MATCH_KEY);
+        const S = _slots();
+        const slotId = _miSlotId();
+        if (!S || !slotId) return;
+        const previo = S.leer(slotId);
         let createdAt = new Date().toISOString();
-        if (existingRaw) {
-            try {
-                const parsed = JSON.parse(existingRaw);
-                if (parsed && parsed.createdAt) createdAt = parsed.createdAt;
-            } catch(e) {}
-        }
+        if (previo && previo.createdAt) createdAt = previo.createdAt;
 
         const state = {
             savedAt:      new Date().toISOString(),
@@ -400,7 +417,7 @@ function _saveMatchStateToStorage() {
             category:     document.getElementById('match-category')?.value || window._currentMatchCategory || '',
             extraGoals:   window._cronosExtraGoals || { home: 0, away: 0 },
         };
-        localStorage.setItem(_ACTIVE_MATCH_KEY, JSON.stringify(state));
+        S.guardar(slotId, state);
     } catch(e) { /* silencioso */ }
 }
 window._saveMatchStateToStorage = _saveMatchStateToStorage;
@@ -413,18 +430,25 @@ let autoSaveInterval = setInterval(() => {
 }, 5000);
 
 function _checkActiveMatch() {
-    if (localStorage.getItem('cronos_active_match_v2_finished')) {
-        localStorage.removeItem(_ACTIVE_MATCH_KEY);
-        localStorage.removeItem('cronos_active_match_v2_finished');
-        return false;
-    }
+    // v465 · Ya no hay bandera GLOBAL de "terminado" que consultar. Era el
+    // corazón del fallo: al finalizar el Alevín se levantaba una bandera única
+    // y la pestaña del Juvenil, al recargarse, la leía como suya, borraba su
+    // estado y devolvía false — el partido que seguía en juego se quedaba sin
+    // banner y sin emitir. Ahora la bandera es por partido y la comprueba
+    // `_cronosMatchSlots.leer`, que devuelve null sólo para el partido que de
+    // verdad terminó.
     try {
-        const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
-        if (!raw) return false;
-        const state = JSON.parse(raw);
+        const S = _slots();
+        if (!S) return false;
+        // 🔑 El de ESTA pestaña primero (sessionStorage). Es lo que hace que dos
+        // pestañas recargadas recuperen cada una lo suyo en vez de robárselo.
+        const elegido = S.elegir();
+        if (!elegido) return false;
+        const state = elegido.state;
+        window._cronosRestoreSlotId = elegido.id;
         if (!state || !state.savedAt) return false;
         if (state.matchPhase === 'finished') {
-            localStorage.removeItem(_ACTIVE_MATCH_KEY);
+            S.cerrar(elegido.id, false);
             return false;
         }
 
@@ -450,9 +474,11 @@ function _checkActiveMatch() {
         const elapsedSec = (Date.now() - startTimestamp) / 1000;
 
         if (elapsedSec > LIMIT_SEC) {
-            // Expiró el tiempo reglamentario de validez → cancelar
+            // Expiró el tiempo reglamentario de validez → cancelar. Sólo ESTA
+            // ranura: la caducidad de un partido no puede llevarse por delante
+            // otro que siga en juego.
             _cancelInterruptedMatch(state);
-            localStorage.removeItem(_ACTIVE_MATCH_KEY);
+            S.cerrar(elegido.id, false);
             return false;
         }
 
@@ -550,7 +576,7 @@ function _showRestoreMatchBanner(state, elapsedSec, limitSec) {
         if (rem <= 0) {
             clearInterval(tick);
             _cancelInterruptedMatch(state);
-            localStorage.removeItem(_ACTIVE_MATCH_KEY);
+            _slots()?.cerrar(window._cronosRestoreSlotId || state.liveMatchId, false);
             document.getElementById('cronos-restore-banner')?.remove();
             openSetupModal();
             if (typeof showToast === 'function')
@@ -562,11 +588,13 @@ function _showRestoreMatchBanner(state, elapsedSec, limitSec) {
 }
 
 window._discardActiveMatch = function() {
-    const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
-    if (raw) {
-        try { _cancelInterruptedMatch(JSON.parse(raw)); } catch(e) {}
-    }
-    localStorage.removeItem(_ACTIVE_MATCH_KEY);
+    // v465 · Descarta SÓLO el partido que el banner está ofreciendo. Antes
+    // borraba la clave única, o sea el partido de quien fuera.
+    const S = _slots();
+    const slotId = window._cronosRestoreSlotId || (S && S.getTabMatchId());
+    const state = (S && slotId) ? S.leer(slotId) : null;
+    if (state) { try { _cancelInterruptedMatch(state); } catch(e) {} }
+    if (S && slotId) S.cerrar(slotId, true);
     document.getElementById('cronos-restore-banner')?.remove();
     // Solo abrir el panel de entrenador si no hay otro panel/modal ya abierto.
     // Evita cerrar el panel de Admin Individual, Club Admin o SA al cancelar un partido.
@@ -579,9 +607,17 @@ window._discardActiveMatch = function() {
 
 window._restoreActiveMatch = function() {
     try {
-        const raw = localStorage.getItem(_ACTIVE_MATCH_KEY);
-        if (!raw) return;
-        const state = JSON.parse(raw);
+        // v465 · Se retoma la ranura que el banner ofreció (la de esta pestaña
+        // si la había). Y en cuanto se retoma, ESTA PESTAÑA LA RECLAMA: a
+        // partir de aquí su autoguardado escribe en esa ranura y ninguna otra
+        // pestaña se la puede llevar.
+        const S = _slots();
+        if (!S) return;
+        const slotId = window._cronosRestoreSlotId || S.getTabMatchId();
+        const state = slotId ? S.leer(slotId) : null;
+        if (!state) return;
+        if (state.liveMatchId) S.setTabMatchId(state.liveMatchId);
+        else if (slotId) S.setTabMatchId(slotId);
         document.getElementById('cronos-restore-banner')?.remove();
 
         // Calcular tiempo real transcurrido si el partido estaba en curso
@@ -1418,9 +1454,16 @@ let _tesseractLoaded = false;
 //    y al re-confirmar la convocatoria se ejecutaba el RESET GLOBAL.
 function _guardAgainstMatchReset() {
     try {
-        const raw = localStorage.getItem('cronos_active_match_v2');
-        if (!raw) return false;
-        const st = JSON.parse(raw);
+        // v465 · ⚠️ SÓLO EL PARTIDO DE ESTA PESTAÑA. Con la clave única, abrir
+        // un SEGUNDO partido en otra pestaña disparaba este aviso hablando del
+        // PRIMERO ("hay un partido en curso, 2ª PARTE, 1-0"), y aceptar
+        // reanudaba el ajeno encima del nuevo. Un partido de otra pestaña no
+        // tiene por qué impedir empezar éste.
+        const S = _slots();
+        if (!S) return false;
+        const propio = S.getTabMatchId();
+        if (!propio) return false;
+        const st = S.leer(propio);
         if (!st || !st.matchPhase) return false;
         const inProgress = (st.matchPhase === '1st_half' || st.matchPhase === 'break' || st.matchPhase === '2nd_half');
         if (!inProgress) return false;

@@ -1,5 +1,44 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v465: VARIOS PARTIDOS A LA VEZ, SIN QUE SE PISEN. Reporte del autor
+//        (capturas 8474 y 8475): con un Alevin C y un Juvenil B abiertos al
+//        mismo tiempo, los datos y sucesos de uno de los dos dejaban de llegar
+//        al panel en vivo.
+//        ⚠️ LA CAUSA NO ERA FIRESTORE NI EL SW. Todo el estado del partido en
+//        curso vivia en UNA clave de localStorage, `cronos_active_match_v2`, y
+//        localStorage es COMPARTIDO POR TODAS LAS PESTANYAS del mismo origen:
+//          · las dos pestanyas autoguardaban ahi cada 5 s y ganaba la ultima;
+//          · `endMatch` borraba esa clave y levantaba la bandera GLOBAL
+//            `..._finished`, asi que al terminar el Alevin la pestanya del
+//            Juvenil —que seguia en juego— la leia al recargarse, BORRABA su
+//            estado y se quedaba sin liveMatchId, sin banner y sin latido:
+//            dejaba de emitir. En un movil eso no es raro, es lo normal (el
+//            sistema desaloja pestanyas y cada update del SW fuerza recarga);
+//          · y sin terminar ninguno, una pestanya recargada restauraba el
+//            estado del partido AJENO, liveMatchId incluido.
+//        SOLUCION, en dos piezas que hacen falta LAS DOS (js/core/match-slots.js):
+//          A · UNA RANURA POR PARTIDO: `cronos_active_match_v2::<matchId>` y
+//              bandera de fin por partido. Terminar uno ya no toca a los demas.
+//          B · CADA PESTANYA SABE CUAL ES EL SUYO, y eso va en sessionStorage
+//              —por pestanya Y superviviente a la recarga—, NO en localStorage,
+//              que es justo lo que se comparte. Sin B, separar las claves no
+//              arregla nada: al recargar, la pestanya seguiria sin saber cual
+//              de las ranuras es la suya.
+//        Migracion incluida y obligatoria: este despliegue puede caer con
+//        partidos EN JUEGO, asi que al arrancar se muda lo que hubiera en la
+//        clave unica a su ranura. Es idempotente.
+//        Guard: scripts/test_multipartido_aislamiento.js (33/33, red-check de
+//        13 mutaciones) — carga el modulo en dos sandboxes que COMPARTEN
+//        localStorage y tienen sessionStorage separados, que es lo que son dos
+//        pestanyas. Encontro ejecutandolo un fallo que leyendo no se veia: la
+//        ranura provisional (la del hueco entre "empieza el partido" y
+//        "startLiveSync fija el id") no se mudaba al id definitivo.
+//        Tres guards ajenos actualizados A PROPOSITO porque fijaban la
+//        arquitectura de clave unica (test_app_init_dead_duplicates,
+//        test_endmatch_single_definition, test_recovery_merge); en los tres se
+//        conserva la INTENCION y se anyade la prohibicion de volver a la clave
+//        pelada. Uno de ellos, ademas, tapaba que el boton "Retomar" de la
+//        tarjeta fusionada no decia QUE partido retomaba.
 //  v464: LA ETIQUETA DE CATEGORIA, LEGIBLE DE UN VISTAZO. Reporte del autor
 //        (captura 8471): la etiqueta de v463 aparecia, pero a 0.62rem era
 //        demasiado pequena para identificar el partido sin esfuerzo, que es
@@ -1634,7 +1673,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v464';
+const CACHE_NAME = 'cronos-cache-v465';
 
 const ASSETS = [
     './',
@@ -1643,6 +1682,12 @@ const ASSETS = [
     './privacy.html',
     './manifest.json',
     './style.css',
+    // v465 · va en el precache como los demas modulos del core: define las
+    // claves del partido activo y sin el, sin cobertura, el estado del partido
+    // en curso no se podria ni guardar ni recuperar. El fichero existe en
+    // disco: `cache.addAll` es ATOMICO y una ruta que devuelva 404 tumba la
+    // precarga ENTERA (leccion de v452).
+    './js/core/match-slots.js',
     './js/core/app-init.js',
     './js/core/setup-modal.js',
     './js/core/patches.js',

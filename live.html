@@ -5146,17 +5146,25 @@ window.deleteLiveMatch = async function(matchId, e) {
         await deleteDoc(doc(db, 'live_matches', matchId));
         console.log('[LIVE] Partido eliminado:', matchId);
 
-        // Limpiar localStorage si era el partido activo del entrenador.
+        // Limpiar el estado local SÓLO del partido que se acaba de borrar.
+        // v465 · Hay UNA RANURA POR PARTIDO (`cronos_active_match_v2::<id>`),
+        // porque un entrenador puede tener dos abiertos a la vez. live.html no
+        // carga js/core/match-slots.js —es una página aparte, sin los módulos
+        // de la app—, así que compone la clave a mano. Se recorren las ranuras
+        // en vez de mirar una sola clave: la del partido borrado puede no ser
+        // la única, y borrar a ciegas se llevaría el partido que sigue en juego.
         try {
-            const raw = localStorage.getItem('cronos_active_match_v2');
-            if (raw) {
-                const state = JSON.parse(raw);
-                if (state && state.liveMatchId === matchId) {
-                    localStorage.removeItem('cronos_active_match_v2');
-                    localStorage.setItem('cronos_active_match_v2_finished', Date.now().toString());
-                    console.log('[LIVE] cronos_active_match_v2 limpiado (era el partido activo local).');
-                }
-            }
+            const PREF = 'cronos_active_match_v2::';
+            Object.keys(localStorage).forEach(k => {
+                if (k.indexOf(PREF) !== 0) return;
+                let st = null;
+                try { st = JSON.parse(localStorage.getItem(k)); } catch(e) { return; }
+                const slotId = k.slice(PREF.length);
+                if (!(slotId === matchId || (st && st.liveMatchId === matchId))) return;
+                localStorage.removeItem(k);
+                localStorage.setItem('cronos_active_match_v2_finished::' + slotId, Date.now().toString());
+                console.log('[LIVE] ranura local limpiada (era el partido borrado):', slotId);
+            });
         } catch(eLs) {}
 
         // Si estábamos viendo la lista showLiveNow, el onSnapshot detectará
@@ -5667,8 +5675,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v464"></script>
-<script src="js/match/replay/replay-player.js?v=v464"></script>
-<script src="js/match/events/retroactive-modal.js?v=v464"></script>
+<script src="js/match/immutability.js?v=v465"></script>
+<script src="js/match/replay/replay-player.js?v=v465"></script>
+<script src="js/match/events/retroactive-modal.js?v=v465"></script>
 </body>
 </html>

@@ -202,23 +202,39 @@ console.log('\n── PARTE 4 · casos límite ──');
 // ═══════════ PARTE 5 · la interfaz pinta UNA tarjeta ═══════════
 console.log('\n── PARTE 5 · el panel usa la fusión ──');
 {
+    // v465 · ACTUALIZADA A PROPOSITO: el primer argumento pasa a ser una LISTA
+    // (`localMatches`). Ya no puede haber un solo partido local: desde v465 hay
+    // una ranura por partido y un entrenador puede tener el Alevin y el Juvenil
+    // abiertos a la vez, asi que el panel tiene que poder ensenyarlos todos o el
+    // segundo seria irrecuperable. La intencion de la asercion no cambia: el
+    // panel se pinta desde la FUSION, no desde una fuente suelta.
     ok('5a · 🔑 el panel pinta a partir de las entradas fusionadas',
-       /const entradas = _fusionaCandidatosRecuperacion\(localMatch, docsNube\)/.test(SMC) &&
+       /const entradas = _fusionaCandidatosRecuperacion\(localMatches, docsNube\)/.test(SMC) &&
        /list\.innerHTML = entradas\.map\(/.test(SMC));
+    ok('5a2 · v465 · y los candidatos locales salen de TODAS las ranuras',
+       /_cronosMatchSlots\.listar\(\)/.test(SMC) && /const localMatches = \[\]/.test(SMC),
+       'con una sola ranura, el segundo partido del entrenador no aparecia');
     ok('5b · y ya NO existe el descarte por id suelto que había',
        !/isSameId/.test(SMC),
        'era el dedup que sólo veía ids idénticos');
     ok('5c · 🔑 UNA sola etiqueta de procedencia, no dos tarjetas compitiendo',
        /DISPOSITIVO \+ ☁️ NUBE/.test(SM) && /SOLO EN ESTE DISPOSITIVO/.test(SM) &&
        (SMC.match(/const localTag = /g) || []).length === 1);
+    // v465 · la llamada lleva un tercer argumento: QUE ranura local es esta
+    // entrada. Con varios partidos abiertos, "tiene local" ya no basta para
+    // borrar — habria que adivinar cual, y adivinar aqui significa llevarse por
+    // delante el partido que sigue jugandose.
     ok('5d · [DEFECTO D] 🔑 eliminar se lleva las DOS fuentes',
-       /_doDeleteRecoveryEntry\('\$\{idsAttr\}', \$\{entrada\.tieneLocal \? 'true' : 'false'\}\)/.test(SM));
+       /_doDeleteRecoveryEntry\('\$\{idsAttr\}', \$\{entrada\.tieneLocal \? 'true' : 'false'\}, '\$\{idsLocalAttr\}'\)/.test(SM));
     ok('5e · y esa función borra cada documento de nube Y el estado del dispositivo',
-       /async function _doDeleteRecoveryEntry[\s\S]{0,900}?_doDeleteLiveMatch\(id, null, true\)[\s\S]{0,400}?removeItem\('cronos_active_match_v2'\)/.test(SMC));
+       /async function _doDeleteRecoveryEntry[\s\S]{0,1200}?_doDeleteLiveMatch\(id, null, true\)[\s\S]{0,800}?S\.cerrar\(sid, true\)/.test(SMC));
     ok('5f · con UNA sola confirmación, no una por fuente',
        (SMC.match(/function _doDeleteRecoveryEntry[\s\S]{0,900}?confirm\(/g) || []).length === 1);
-    ok('5g · retomar usa la fuente más reciente de la entrada',
-       /if \(m\.isLocal\) \{\s*clickResume = `_doResumeLocalMatch\(\)`;/.test(SMC));
+    // v465 · retomar dice QUE ranura. Sin el argumento, con dos partidos
+    // abiertos las dos tarjetas llamaban a lo mismo y la segunda retomaba el
+    // primero — la version anterior de esta asercion fijaba justo eso.
+    ok('5g · retomar usa la fuente más reciente de la entrada, y dice CUÁL',
+       /if \(m\.isLocal\) \{[\s\S]{0,600}?clickResume = `_doResumeLocalMatch\('\$\{safeSlot\}'\)`;/.test(SMC));
     ok('5h · el recuento de jugadores sale de cualquiera de las dos fuentes',
        /m\.playerCount \|\| \(Array\.isArray\(m\.players\) \? m\.players\.length : 0\)/.test(SMC),
        'el documento de nube guarda `players`, no `playerCount`: antes decía 0');
@@ -227,37 +243,56 @@ console.log('\n── PARTE 5 · el panel usa la fusión ──');
 // ═══════════ PARTE 6 · [DEFECTO E] el borrado silencioso ═══════════
 console.log('\n── PARTE 6 · borrar un caducado no borra el partido de hoy ──');
 {
+    // v465 · misma intencion, apuntando ademas a la RANURA correcta: ya no hay
+    // "el estado local", hay uno por partido y hoy conviven dos igual de vivos.
     ok('6a · 🐛 el borrado sólo limpia el dispositivo si es el MISMO partido',
-       /if \(_recoveryEsElPartidoLocal\(matchId\)\) \{\s*localStorage\.removeItem\('cronos_active_match_v2'\);/.test(SMC),
+       /const _sid = _recoveryRanuraDelPartido\(matchId\);\s*\n\s*if \(_sid\) window\._cronosMatchSlots\?\.cerrar\(_sid, true\);/.test(SMC),
        'se llama en silencio por cada documento caducado al abrir el panel');
     ok('6b · y esa comprobación existe',
-       /function _recoveryEsElPartidoLocal\(matchId\)/.test(SMC));
+       /function _recoveryRanuraDelPartido\(matchId\)/.test(SMC));
     ok('6c · el barrido de caducados sigue siendo silencioso',
        /if \(isExpired\) \{\s*_doDeleteLiveMatch\(d\.id, null, true\);/.test(SMC));
 
     // Ejecutado: la comprobación decide bien con y sin id.
-    const ini2 = SM.indexOf('function _recoveryEsElPartidoLocal(matchId)');
+    // v465 · El corte empieza en `_recoveryRanuraDelPartido` porque es donde
+    // vive ahora la lógica; `_recoveryEsElPartidoLocal` quedó como envoltorio
+    // booleano y, extraído solo, reventaba con un ReferenceError. Y en vez de
+    // un localStorage con un único valor, se le da un `_cronosMatchSlots` con
+    // VARIAS ranuras: es la situación real desde v465 y la que hace falta para
+    // que 6e signifique algo.
+    const ini2 = SM.indexOf('function _recoveryRanuraDelPartido(matchId)');
     const fin2 = SM.indexOf('window._recoveryEsElPartidoLocal');
     if (ini2 !== -1 && fin2 > ini2) {
-        const sb2 = { console: { log() {}, warn() {} }, window: {}, JSON,
-            _recoveryNorm: sandbox.window._recoveryNorm || ((s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ')),
-            localStorage: { _v: null, getItem() { return this._v; } } };
+        const ranuras = { _lista: [] };
+        const sb2 = { console: { log() {}, warn() {} }, JSON,
+            _recoveryNorm: sandbox.window._recoveryNorm || ((s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ')) };
+        sb2.window = { _cronosMatchSlots: { listar: () => ranuras._lista } };
         vm.createContext(sb2);
-        vm.runInContext(SM.slice(ini2, fin2) + '\n;globalThis.esLocal = _recoveryEsElPartidoLocal;', sb2);
-        const esLocal = sb2.esLocal;
-        sb2.localStorage._v = JSON.stringify({ liveMatchId: 'cronos-0408-aaa-1830', teamNames: { home: 'CRONOS A' } });
+        vm.runInContext(SM.slice(ini2, fin2) +
+            '\n;globalThis.esLocal = _recoveryEsElPartidoLocal;' +
+            '\n;globalThis.ranuraDe = _recoveryRanuraDelPartido;', sb2);
+        const esLocal = sb2.esLocal, ranuraDe = sb2.ranuraDe;
+
+        // Dos partidos abiertos a la vez: exactamente el caso del autor.
+        ranuras._lista = [
+            { id: 'cronos-0408-aaa-1830', state: { liveMatchId: 'cronos-0408-aaa-1830', teamNames: { home: 'CRONOS A' } } },
+            { id: 'cronos-0408-bbb-1900', state: { liveMatchId: 'cronos-0408-bbb-1900', teamNames: { home: 'CRONOS B' } } },
+        ];
         ok('6d · con el MISMO id, sí limpia', esLocal('cronos-0408-aaa-1830') === true);
+        ok('6d2 · v465 · 🔑 y dice QUÉ ranura, no sólo que hay alguna',
+           ranuraDe('cronos-0408-bbb-1900') === 'cronos-0408-bbb-1900',
+           'un booleano haría que borrar un partido se llevara el de al lado: ' + ranuraDe('cronos-0408-bbb-1900'));
         ok('6e · 🔑 con OTRO id (un caducado de otro día), NO limpia',
            esLocal('viejo-0308-bbb-1200') === false,
            'aquí estaba la pérdida de datos');
-        sb2.localStorage._v = null;
+        ranuras._lista = [];
         ok('6f · sin partido en el dispositivo, no hay nada que limpiar',
            esLocal('cualquiera') === false);
-        sb2.localStorage._v = '{ esto no es json';
-        ok('6g · y un localStorage corrupto no revienta el borrado',
+        ranuras._lista = [{ id: 'roto', state: null }];
+        ok('6g · y una ranura corrupta no revienta el borrado',
            esLocal('cualquiera') === false);
     } else {
-        ok('6d · se pudo extraer _recoveryEsElPartidoLocal', false);
+        ok('6d · se pudo extraer _recoveryRanuraDelPartido', false);
     }
 }
 
