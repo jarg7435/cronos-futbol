@@ -1,5 +1,90 @@
 // ─────────────────────────────────────────────────────────────
 //  CRONOS FUTBOL - Service Worker v229
+//  v473: EL CSV, LEGIBLE DE VERDAD. Reporte del autor (captura 8561): Excel le
+//        abria el CSV con las tildes rotas (`CompeticiÃ³n`, `CategorÃ­a`,
+//        `LesiÃ³n`) y la ultima columna en ingles en crudo (`sub_out`, `goal`).
+//
+//        1) CODIFICACION. 🔑🔑 NO FALTABA EL BOM. Se comprobo sobre los BYTES
+//        del Blob, no sobre la cadena: el archivo empezaba por `EF BB BF` y los
+//        acentos iban bien. Su Excel IGNORO el BOM de UTF-8, que es opcional y
+//        se puede pasar por alto (le ocurre a Excel de Mac/iOS y a algunas
+//        compilaciones). Ahora el CSV se escribe en UTF-16LE: su BOM `FF FE` es
+//        OBLIGATORIO para leer el archivo, asi que no existe el fallback
+//        silencioso a Windows-1252 que nos ha mordido. Es lo que escribe el
+//        propio Excel al guardar "Texto Unicode".
+//        🔑 El separador SIGUE siendo `;` y no se toca: en su captura las
+//        columnas SI salian separadas, luego eso ya acertaba.
+//        ⚠️ Se codifica a mano con un Uint8Array: el Blob serializa las cadenas
+//        SIEMPRE en UTF-8, asi que no hay otra forma de emitir UTF-16.
+//        ⚠️ MI GUARD DABA VERDE CON EL FALLO DELANTE: comprobaba la CADENA de
+//        JavaScript sobre un Blob de mentira que solo concatenaba. Para hablar
+//        de codificaciones hay que mirar BYTES y el doble tiene que codificar
+//        de verdad. Ahora usa el Blob nativo.
+//
+//        2) INCIDENCIAS. Traducidas al español, pero el idioma era lo de menos:
+//        volcar `history` en crudo tenia DOS defectos que el informe de pantalla
+//        ya resolvio y este CSV no.
+//        🔑 NO TODO "sub_out" ES UNA SUSTITUCION: la app apunta sola un "Sale
+//        (DESCANSO)" a TODOS los del campo, un "Entra (2ªP)" a los que salen a
+//        la segunda y un "Sale (FIN)" al acabar. En un F7 con 14 convocados son
+//        14 cambios FALSOS. Y no se decide apunte a apunte: "(2ªP)" es AMBIGUA
+//        —la escribe el automatico Y un cambio real de la segunda parte— y se
+//        resuelve POR PAREJA, con el sello de tiempo del "Sale (DESCANSO)".
+//        🔑 HAY SUCESOS QUE SE TIPAN COMO LO QUE NO SON: el parser mira el
+//        TEXTO, asi que un "GOL ANULADO" llega como 'goal' y una segunda
+//        amarilla como 'yellow'. Traducir a secas habria escrito en un
+//        documento que se imprime y se reparte un gol que el arbitro anulo, y
+//        habria dejado una expulsion como una simple amonestacion.
+//        El vocabulario SI es propio del CSV: en pantalla amarilla y roja se
+//        distinguen por COLOR y en una hoja de calculo no hay color.
+//        ⚠️ El criterio esta DUPLICADO respecto a report-engine.js porque este
+//        modulo no puede nombrar `_RP` (lista cerrada de consumidores); el guard
+//        compara los marcadores de los DOS ficheros para que no se separen.
+//
+//        3) De paso: el `URL.revokeObjectURL` ya no se llama en la misma vuelta
+//        del bucle que el click (la descarga es asincrona y podia quedarse a
+//        medias).
+//        Guard: scripts/test_reports_export.js (77/77, red-check de 13
+//        mutaciones, 13 cazadas). Suite 115/115 + 11 xfail.
+//        ⚠️ AJENO AL ENCARGO: test_multipartido_aislamiento.js llevaba una
+//        BOMBA DE RELOJERIA —fechas fijas del 2026-08-07 contra el barrido de
+//        6 h de match-slots.js— y se puso rojo solo al cruzar esa frontera,
+//        sin que nadie tocara el producto. Ahora las fechas son relativas.
+//  v472: DESCARGAR LOS INFORMES EN PDF Y EN CSV/EXCEL. Encargo del autor: en
+//        la pestana "Informes" del Panel de Direccion no habia forma de
+//        sacar nada de la pantalla. Ahora hay botones en tres sitios:
+//         · por EQUIPO, encima de su tabla: "Resumen acumulado de la
+//           temporada" en PDF y en CSV.
+//         · una barra global arriba con TODOS los equipos del club.
+//         · en cada tarjeta de informe grupal, su PDF y su CSV.
+//        Los ve cualquiera que entre a la pestana (Director y Coordinador; el
+//        Entrenador no accede a este panel: lo suyo es "Mis Informes").
+//        Modulo nuevo js/coach/reports/reports-export.js; reports-tab.js solo
+//        reune los datos.
+//        🔑 EL PDF SE HACE CON window.print(), SIN LIBRERIAS (mismo camino que
+//        las facturas de billing.js). Papel BLANCO, pero el informe grupal va
+//        dentro de una tarjeta OSCURA: su HTML trae los colores en linea y
+//        pensados para fondo #0d1117, asi que en una hoja blanca saldria
+//        literalmente blanco sobre blanco.
+//        🔑 Y POR ESO `print-color-adjust: exact` ES OBLIGATORIO: sin esa regla
+//        el navegador tira los fondos al imprimir y el PDF sale EN BLANCO, sin
+//        dar ningun error.
+//        🔑 El motor de informes usa var(--text-muted), que vive en style.css y
+//        la ventana de impresion NO carga: las variables se redefinen dentro.
+//        🔑 EL CSV VA CON PUNTO Y COMA, no con coma: Excel en configuracion
+//        española abre asi los .csv; con comas mete la fila entera en una sola
+//        columna y parece que la descarga esta rota. Y con BOM, o los acentos
+//        salen destrozados.
+//        🔑 Los totales del papel dicen LO MISMO que los de pantalla: PJ del
+//        equipo (no la suma de participaciones) y minutos sin sumar entre
+//        jugadores. Un PDF que contradiga al panel es peor que no tener PDF.
+//        ⚠️ Al anadir el PDF eran DOS los sitios que necesitaban el informe
+//        visual; se extrajo _sdReportHtml para que _RP.build siga llamandose
+//        una sola vez (lo exige la asercion 1c de test_reports_tab_module.js).
+//        Y el modulo nuevo NO nombra _RP ni _sdMatchData: dos guards ajenos
+//        mantienen listas CERRADAS de quien puede hacerlo.
+//        Guard: scripts/test_reports_export.js (64/64, red-check de 17
+//        mutaciones, todas detectadas). Suite completa 115/115 + 11 xfail.
 //  v471: EL BOTON + DEL MARCADOR TAMBIEN AVISA. Reporte del autor (captura
 //        8504): al sumar un gol al VISITANTE desde el marcador superior —sin
 //        plantilla ni dorsal— el marcador subia pero no salia ningun aviso
@@ -1844,7 +1929,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v471';
+const CACHE_NAME = 'cronos-cache-v473';
 
 const ASSETS = [
     './',
@@ -1927,6 +2012,7 @@ const ASSETS = [
     './js/coach/reports/events-tab.js',
     './js/coach/reports/finished-matches-tab.js',
     './js/coach/reports/reports-tab.js',
+    './js/coach/reports/reports-export.js',
     './js/coach/training/panel.js',
     './js/parent/panel.js',
     // SPRINT 4: Iconos locales para PWA

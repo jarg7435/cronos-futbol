@@ -185,8 +185,17 @@ console.log('\n── PARTE 3 · 🔑 la pertenencia va en sessionStorage (por p
     p1.window._cronosMatchSlots.setTabMatchId('m-uno');
     p2.window._cronosMatchSlots.setTabMatchId('m-dos');
     // El SEGUNDO guarda DESPUÉS: con la clave única, era el que ganaba siempre.
-    p1.window._cronosMatchSlots.guardar('m-uno', estado({ liveMatchId: 'm-uno', savedAt: '2026-08-07T18:00:00.000Z' }));
-    p2.window._cronosMatchSlots.guardar('m-dos', estado({ liveMatchId: 'm-dos', savedAt: '2026-08-07T18:05:00.000Z' }));
+    // ⚠️ FECHAS RELATIVAS AL RELOJ, NO FIJAS (arreglado 2026-08-08).
+    // Antes iban a pelo ('2026-08-07T18:00:00.000Z' y las 18:05). El barrido de
+    // ranuras caducadas de match-slots.js tira todo lo que pase de 6 h, así que
+    // esta parte pasaba de verde a roja SOLA al cruzar esa frontera: seis horas
+    // después de la hora escrita, y ya para siempre. Se detectó el 2026-08-08 a
+    // las 01:07Z, con 7,03 h de desfase, en una sesión que no tocaba nada de
+    // esto. Lo único que importa aquí es que el SEGUNDO se guarde DESPUÉS que
+    // el primero, que es lo que la aserción 3c pone a prueba.
+    const _t0 = Date.now() - 10 * 60 * 1000;   // hace 10 minutos, siempre vigente
+    p1.window._cronosMatchSlots.guardar('m-uno', estado({ liveMatchId: 'm-uno', savedAt: new Date(_t0).toISOString() }));
+    p2.window._cronosMatchSlots.guardar('m-dos', estado({ liveMatchId: 'm-dos', savedAt: new Date(_t0 + 5 * 60 * 1000).toISOString() }));
 
     ok('3a · la pertenencia NO está en localStorage (si no, se compartiría)',
        LS.getItem('cronos_tab_match') === null);

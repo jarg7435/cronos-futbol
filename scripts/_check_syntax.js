@@ -15,6 +15,7 @@ const files = (argFiles.length ? argFiles : [
   'js/coach/reports/events-tab.js',
   'js/coach/reports/finished-matches-tab.js',
   'js/coach/reports/reports-tab.js',
+  'js/coach/reports/reports-export.js',
   'js/coach/comms/panel.js',
   'js/coach/comms/training-notify.js',
   'js/coach/comms/collective-report.js',

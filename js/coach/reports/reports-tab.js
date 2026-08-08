@@ -59,6 +59,22 @@
 //  el catch general (aserción 8h). finished-matches-tab.js sí tolera number y
 //  {seconds}; aquí no.
 //
+//  DESCARGAS (2026-08-08): los botones de PDF y CSV que aparecen en la
+//  cabecera de cada equipo y en cada tarjeta de informe delegan TODO el
+//  formateo en js/coach/reports/reports-export.js (window.rx*). Aquí sólo se
+//  reúnen los datos, que es lo único que este archivo sabe hacer:
+//   · window._sdStatsData[cat|sub] guarda los PARTIDOS de cada rama del árbol,
+//     no las filas ya acumuladas: así el CSV y el PDF se calculan al pulsar,
+//     con el mismo ctAccumulatePlayerStats que pintó la tabla de pantalla, y
+//     no hay una segunda copia de los números que se pueda desincronizar.
+//   · _sdReportHtml(m) es el ÚNICO sitio que llama al motor de informes. Se
+//     extrajo al añadir la descarga en PDF porque el desplegable y el PDF
+//     necesitan exactamente el mismo HTML — y porque la aserción 1c del test
+//     exige que _RP.build aparezca UNA sola vez en este archivo.
+//   · Las descargas sólo se ofrecen si el módulo está cargado (guarda typeof,
+//     igual que el árbol): un botón que no puede hacer nada es peor que no
+//     tenerlo.
+//
 //  Cubierto por scripts/test_reports_tab_module.js.
 // ════════════════════════════════════════════════════════════════════
 
@@ -441,6 +457,20 @@ async function _sdLoadReports() {
         window._sdMatchData = {};
 
         let html = `
+        <style>
+            .sd-exp-bar { display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;
+                margin:0 0 0.7rem;padding:0.45rem 0.7rem;border-radius:9px;
+                background:rgba(88,166,255,0.05);border:1px solid rgba(88,166,255,0.16); }
+            .sd-exp-lbl { font-size:0.7rem;font-weight:600;color:#8b949e;margin-right:auto; }
+            .sd-exp-btn { background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.32);
+                color:#58a6ff;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;
+                font-size:0.7rem;font-weight:700;white-space:nowrap;transition:all 0.2s; }
+            .sd-exp-btn:hover { background:rgba(88,166,255,0.2);border-color:rgba(88,166,255,0.6); }
+            .sd-exp-mini { background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);
+                color:#58a6ff;padding:0.4rem;border-radius:6px;cursor:pointer;line-height:1;
+                display:flex;align-items:center;justify-content:center;transition:all 0.2s; }
+            .sd-exp-mini:hover { background:rgba(88,166,255,0.22); }
+        </style>
         <div style="margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
             <h3 style="margin:0;font-size:0.95rem;color:white;">
                 📊 Informes — ${sorted.length} encuentro${sorted.length !== 1 ? 's' : ''}
@@ -456,6 +486,20 @@ async function _sdLoadReports() {
         // de este mapa, así que no puede quedar a merced de por dónde se pinte.
         const _sdKey64 = (m) => btoa(unescape(encodeURIComponent(m.key))).replace(/=/g, '');
         sorted.forEach(m => { window._sdMatchData[_sdKey64(m)] = m; });
+
+        // ── DESCARGAS (PDF / CSV) ────────────────────────────────────────
+        // Módulo de exportación: js/coach/reports/reports-export.js. Mismo
+        // criterio que con el árbol — sin él, la pestaña sigue funcionando y
+        // simplemente no aparece ningún botón de descarga.
+        const _sdPuedeExpInforme = typeof window.rxExportarInformePDF === 'function' &&
+                                   typeof window.rxExportarInformeCSV === 'function';
+        const _sdPuedeExpResumen = typeof window.rxExportarResumenPDF === 'function' &&
+                                   typeof window.rxExportarResumenCSV === 'function' &&
+                                   typeof window.ctAccumulatePlayerStats === 'function';
+        // Partidos de cada rama del árbol, indexados por 'categoria|SUB'. Se
+        // rellena al pintar cada cabecera de subcategoría y se consume al
+        // pulsar un botón de descarga.
+        window._sdStatsData = {};
 
         // ⚠️ LA TARJETA DE UN INFORME, EN UN SOLO SITIO (fase 5). La consumen la
         // lista plana y las hojas del árbol; duplicarla haría que las dos vistas
@@ -497,7 +541,12 @@ async function _sdLoadReports() {
                         <div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;">▼ Ver informe completo</div>
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.5rem;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
-                        <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')" 
+                        ${_sdPuedeExpInforme ? `
+                        <button onclick="event.stopPropagation(); sdExportInforme('${key64}','pdf')"
+                                title="Descargar este informe grupal en PDF" class="sd-exp-mini">🖨️</button>
+                        <button onclick="event.stopPropagation(); sdExportInforme('${key64}','csv')"
+                                title="Descargar este informe grupal en CSV (Excel)" class="sd-exp-mini">📊</button>` : ''}
+                        <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')"
                                 title="Eliminar este informe definitivamente"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                                        color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
@@ -527,12 +576,40 @@ async function _sdLoadReports() {
                             typeof window.ctAccumulatePlayerStats === 'function' &&
                             typeof window.ctRenderStatsTable === 'function';
 
+        // Barra de descarga que se pinta encima de la tabla de un equipo. Deja
+        // los PARTIDOS de esa rama en _sdStatsData y devuelve los dos botones.
+        // ⚠️ Va aquí y NO dentro de ctRenderStatsTable: esa función la comparten
+        // otros paneles y su marcado está fijado por scripts/test_category_tree.js.
+        const _sdStatsBar = (arr, catId, subId) => {
+            const skey = catId + '|' + subId;
+            window._sdStatsData[skey] = arr.map(x => x.m);
+            if (!_sdPuedeExpResumen) return '';
+            return `
+            <div class="sd-exp-bar">
+                <span class="sd-exp-lbl">⬇️ Resumen acumulado de la temporada de este equipo</span>
+                <button class="sd-exp-btn" onclick="sdExportResumen('${skey}','pdf')">🖨️ PDF</button>
+                <button class="sd-exp-btn" onclick="sdExportResumen('${skey}','csv')">📊 CSV / Excel</button>
+            </div>`;
+        };
+
         if (_sdUsaArbol) {
             // Índice de entrenadores para completar los informes históricos a los
             // que _cMatchSubcatFor dejó la subcategoría vacía. Sale de los
             // documentos de usuario que ya se leyeron arriba: sin consulta nueva.
             let _sdCoachIndex = new Map();
             try { _sdCoachIndex = window.ctBuildCoachIndex(_sdUserDocs); } catch (_) {}
+
+            // Descarga global: TODOS los equipos del club en un solo documento.
+            // Sólo en el camino del árbol — en la lista plana no hay tabla de
+            // resumen en pantalla, así que tampoco se ofrece descargarla.
+            if (_sdPuedeExpResumen) {
+                html += `
+                <div class="sd-exp-bar">
+                    <span class="sd-exp-lbl">⬇️ Resumen acumulado de la temporada · TODOS los equipos</span>
+                    <button class="sd-exp-btn" onclick="sdExportResumen('*','pdf')">🖨️ PDF</button>
+                    <button class="sd-exp-btn" onclick="sdExportResumen('*','csv')">📊 CSV / Excel</button>
+                </div>`;
+            }
 
             const _sdResueltos = sorted.map(m => ({ m: m, r: window.ctResolveCatSub(m, _sdCoachIndex) }));
             html += window.ctRenderTree({
@@ -544,8 +621,8 @@ async function _sdLoadReports() {
                 // arr.length son los PARTIDOS de esa rama (un elemento = un
                 // partido ya agrupado), que es justo lo que va en la celda PJ de
                 // la fila de totales. Sin pasarlo, esa celda saldría con guion.
-                renderSubHeader: (arr) =>
-                    window.ctRenderStatsTable(
+                renderSubHeader: (arr, catId, subId) =>
+                    _sdStatsBar(arr, catId, subId) + window.ctRenderStatsTable(
                         window.ctAccumulatePlayerStats(arr.map(x => x.m)),
                         { matchCount: arr.length }),
                 renderLeaf: (x) => _sdReportCard(x.m),
@@ -556,6 +633,14 @@ async function _sdLoadReports() {
         }
 
         container.innerHTML = html;
+
+        // ⚠️ EL ÚNICO PUNTO DE LLAMADA AL MOTOR DE INFORMES. Lo usan el
+        // desplegable de la tarjeta y la descarga en PDF, y tienen que ver
+        // EXACTAMENTE el mismo informe: si el PDF lo construyera por su cuenta,
+        // cualquier cambio futuro en el motor podría llegar a una vía y no a la
+        // otra. Además, la aserción 1c del guard exige que _RP.build aparezca
+        // una sola vez en este archivo.
+        const _sdReportHtml = (m) => _RP.build(m, window._cronosCurrentUser);
 
         // ── Toggle con renderizado lazy del informe visual ────────────
         window.sdToggleReport = (key64) => {
@@ -568,7 +653,7 @@ async function _sdLoadReports() {
                 const matchData = window._sdMatchData && window._sdMatchData[key64];
                 if (matchData) {
                     try {
-                        detail.innerHTML = _RP.build(matchData, window._cronosCurrentUser);
+                        detail.innerHTML = _sdReportHtml(matchData);
                     } catch (err) {
                         detail.innerHTML = `<div style="color:#ff5858;font-size:0.8rem;">⚠️ Error al generar informe: ${err.message}</div>`;
                     }
@@ -577,6 +662,59 @@ async function _sdLoadReports() {
             }
             detail.style.display = isOpen ? 'none' : 'block';
             if (card) card.style.borderColor = isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(88,166,255,0.55)';
+        };
+
+        // ── DESCARGA DE UN INFORME GRUPAL (PDF / CSV) ─────────────────
+        // El PDF necesita el informe visual completo, así que se construye en
+        // el momento aunque la tarjeta esté plegada: descargar no obliga a
+        // haber abierto antes el desplegable.
+        window.sdExportInforme = (key64, fmt) => {
+            const m = window._sdMatchData && window._sdMatchData[key64];
+            if (!m) {
+                if (typeof showToast === 'function') showToast('⚠️ No se encontró ese informe', 2500);
+                return;
+            }
+            if (fmt === 'csv') { window.rxExportarInformeCSV(m); return; }
+            let cuerpo = '';
+            try {
+                cuerpo = _sdReportHtml(m);
+            } catch (err) {
+                if (typeof showToast === 'function') showToast('⚠️ Error al generar el informe: ' + err.message, 4000);
+                return;
+            }
+            window.rxExportarInformePDF(m, cuerpo, { club: me.clubName || clubId });
+        };
+
+        // ── DESCARGA DEL RESUMEN ACUMULADO DE TEMPORADA (PDF / CSV) ───
+        // skey = 'categoria|SUB' para un equipo, o '*' para todos.
+        // 🔑 Las filas se ACUMULAN AL PULSAR, con la misma función que pintó la
+        // tabla de pantalla: el papel no puede decir otra cosa que el panel.
+        window.sdExportResumen = (skey, fmt) => {
+            const _label = (k) => {
+                const cat = k.split('|')[0], sub = k.split('|')[1] || '';
+                const def = (window.CT_CATEGORIES || []).find(c => c.id === cat);
+                return ((def && def.label) || cat) + (sub ? ' ' + sub : '');
+            };
+            const _bloque = (k) => {
+                const ms = (window._sdStatsData && window._sdStatsData[k]) || [];
+                return { equipo: _label(k), filas: window.ctAccumulatePlayerStats(ms), partidos: ms.length };
+            };
+
+            const claves = Object.keys(window._sdStatsData || {}).sort();
+            const bloques = (skey === '*')
+                ? claves.map(_bloque)
+                : (claves.indexOf(skey) !== -1 ? [_bloque(skey)] : []);
+
+            if (!bloques.length) {
+                if (typeof showToast === 'function') showToast('⚠️ No hay datos de temporada que descargar', 3000);
+                return;
+            }
+            const meta = {
+                club:   me.clubName || clubId,
+                ambito: skey === '*' ? 'Todos los equipos del club' : bloques[0].equipo,
+            };
+            if (fmt === 'csv') window.rxExportarResumenCSV(bloques, meta);
+            else               window.rxExportarResumenPDF(bloques, meta);
         };
 
         // ── Función para ocultar informe del panel ──────────────
