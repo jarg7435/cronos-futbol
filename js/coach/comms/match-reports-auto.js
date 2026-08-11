@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL · Despacho AUTOMÁTICO de informes de partido
+//  CHRONOS FÚTBOL · Despacho AUTOMÁTICO de informes de partido
 //  Extraído de js/coach/comms/panel.js (auditoría 2026-07-22, paso 6b, el
 //  ÚLTIMO del monolito #3). Movimiento MECÁNICO: cero cambios de
 //  comportamiento.
@@ -230,6 +230,13 @@ async function autoDispatchMatchReports() {
                 myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                 category:      window._currentMatchCategory || '',
                 subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
+                // El informe pertenece al EQUIPO. Se sella su clave para que la
+                // consulta por equipo sea directa y no dependa de recalcularla
+                // desde los textos de categoría (que un día pueden renombrarse).
+                teamId:        (typeof window.cronosTeamId === 'function')
+                                 ? window.cronosTeamId(me.clubId || '', window._currentMatchCategory || '',
+                                                       _cMatchSubcatFor(me, window._currentMatchCategory || ''))
+                                 : '',
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(p.number || ''),
                 playerAlias:   p.alias || p.name || '',
@@ -246,7 +253,16 @@ async function autoDispatchMatchReports() {
         // ── Notificar al staff (coordinador + director) ──────────────────
         // Los destinatarios ya fueron resueltos arriba (antes de los reports).
         // Aquí enviamos las notificaciones Y creamos los hilos de mensajes.
-
+        //
+        // ⚠️ v507 · ESTE BLOQUE NO PUEDE TUMBAR LA FUNCIÓN. El `setDoc` de la
+        // notificación de abajo estaba SIN try: un permission-denied con un
+        // solo miembro del staff saltaba al catch general y se llevaba por
+        // delante la FASE B y, sobre todo, la FASE C —la copia del propio
+        // entrenador—, que es la última en escribirse. Ése es exactamente el
+        // cuadro reportado: "el informe llega al Director y al Coordinador
+        // pero no al entrenador". Los informes de staff (FASE A) ya estaban
+        // escritos ANTES, así que el fallo era invisible por ese lado.
+        try {
         for (const staff of staffToNotify) {
             if (!staff.uid || notifiedUids.has(staff.uid)) continue;
             notifiedUids.add(staff.uid);
@@ -322,6 +338,12 @@ async function autoDispatchMatchReports() {
                 }
             }
         }
+        } catch (staffLoopErr) {
+            // v507 · Un fallo notificando al staff NO puede impedir que el
+            // entrenador reciba su copia (FASE C). Se registra y se sigue.
+            console.error('[autoDispatch] Fallo notificando al staff (se continúa ' +
+                'para no perder la copia del entrenador):', staffLoopErr && staffLoopErr.message, staffLoopErr);
+        }
 
         // --- FASE B: INFORMES INDIVIDUALES (PADRES) — REDISEÑO v171 ---
         // REGLA 3 (estricta): se itera por PADRES (no por jugadores). Cada padre
@@ -334,7 +356,16 @@ async function autoDispatchMatchReports() {
         // respete ESTRICTAMENTE el checkbox per-partido (modal de convocatoria).
         // Si preSelectionIds es null (no se uso el modal), el helper cae al
         // comportamiento legacy (tag 'rpt' global).
-        const _parentTargets = _cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds);
+        // v507 · La RESOLUCIÓN de destinatarios estaba fuera de todo try: si
+        // lanzaba (contactos o links mal formados), se llevaba por delante la
+        // FASE C. El bucle de abajo sí guarda cada padre por separado.
+        let _parentTargets = [];
+        try {
+            _parentTargets = _cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds) || [];
+        } catch (targetsErr) {
+            console.error('[autoDispatch] No se pudieron resolver los padres destinatarios ' +
+                '(se continúa con la copia del entrenador):', targetsErr && targetsErr.message, targetsErr);
+        }
         for (const { parentUid, dorsal, player } of _parentTargets) {
             // FIX v176: Cada padre se envía en su propio try/catch para que un
             // fallo con un padre (p.ej. permission-denied) NO impida el envío
@@ -465,6 +496,11 @@ async function autoDispatchMatchReports() {
                     myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                     category:      window._currentMatchCategory || '',
                     subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
+                    // Clave de equipo: el informe es del equipo, no del autor.
+                    teamId:        (typeof window.cronosTeamId === 'function')
+                                     ? window.cronosTeamId(me.clubId || '', window._currentMatchCategory || '',
+                                                           _cMatchSubcatFor(me, window._currentMatchCategory || ''))
+                                     : '',
                     createdAt:     new Date().toISOString(),
                     playerNumber:  String(p.number||''),
                     playerAlias:   p.alias || p.name || '',

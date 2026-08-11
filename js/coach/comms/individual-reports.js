@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL · Mis Informes / Informes Individuales
+//  CHRONOS FÚTBOL · Mis Informes / Informes Individuales
 //  Extraído de js/coach/comms/panel.js (auditoría 2026-07-22, paso 3 de 6
 //  del monolito #3). Movimiento MECÁNICO: cero cambios de comportamiento.
 //
@@ -100,13 +100,109 @@ window.openMisInformes = async function openMisInformes() {
     </div>`;
 
     try {
-        const { db, collection, getDocs, query, where } = await _cFS();
-        const rawCoachSnap = await getDocs(query(
-            collection(db, 'cronos_player_reports'),
-            where('coachUid', '==', me.uid)
-        ));
-        // Filtrar en cliente: solo los del propio entrenador (_forCoach=true)
-        const snap = { forEach: (fn) => rawCoachSnap.forEach(d => { if (d.data()._forCoach === true) fn(d); }) };
+        const { db, collection, getDocs, query, where, limit, orderBy } = await _cFS();
+
+        // ══════════════════════════════════════════════════════════════
+        // EL INFORME ES DEL EQUIPO, NO DE QUIEN LO FIRMÓ
+        // ══════════════════════════════════════════════════════════════
+        // Antes esto consultaba `where('coachUid','==',me.uid)`: el entrenador
+        // solo veía lo que había escrito ÉL. Consecuencia práctica: al relevar
+        // a un entrenador, el que llegaba a la categoría abría "Mis Informes"
+        // y lo encontraba VACÍO, aunque el club conservara entero el histórico
+        // de ese equipo. El dato estaba; era la consulta la que lo escondía.
+        //
+        // Ahora se consulta por CLUB y se filtra por EQUIPO asignado.
+        //
+        // 🔑 DOBLE LECTURA, sin migrar nada: cronosTeamIdOfDoc() usa el campo
+        //    `teamId` de los informes nuevos y, cuando no está —todo el
+        //    histórico ya escrito—, lo deduce de category+subcategory, que sí
+        //    llevan desde siempre. Por eso no hace falta reescribir ni un solo
+        //    documento de producción para que el histórico aparezca.
+        const equipoAsignado = (typeof window.cronosTeamId === 'function')
+            ? window.cronosTeamId(me.clubId || '', me.category || me.categoryLabel || '', me.subcategory || '')
+            : '';
+
+        // ⚠️ Sin club o sin categoría asignada NO se ensancha la vista al club
+        //    entero: se conserva el comportamiento anterior (solo lo suyo).
+        //    Un entrenador todavía sin asignar vería informes de equipos que no
+        //    son el suyo, que es justo lo contrario de lo que pide el modelo.
+        //    Cubre también al ente individual, que no tiene clubId.
+        const puedeFiltrarPorEquipo = !!(me.clubId && equipoAsignado);
+
+        // ══════════════════════════════════════════════════════════════
+        // 🔑🔑🔑 v508 · UN `limit` SIN `orderBy` ES UNA VENTANA FIJA EN LO
+        //               MÁS VIEJO, NO "LOS ÚLTIMOS 500"
+        // ══════════════════════════════════════════════════════════════
+        // Esta consulta pedía `limit(500)` SIN ordenar. Firestore devuelve
+        // entonces los 500 primeros por ID de documento, y el ID empieza por
+        // `match_{uid}_{AAAA-MM-DD}_…`: el orden por ID es CRONOLÓGICO
+        // ASCENDENTE. O sea, la ventana estaba clavada en los partidos MÁS
+        // ANTIGUOS del club y NUNCA alcanzaba los de hoy.
+        //
+        // MEDIDO sobre los datos reales (2026-08-11): el club tiene 3620
+        // informes; los 500 que traía esta consulta iban del 2026-06-27 al
+        // 2026-07-01 — cinco días de hace mes y medio. El informe recién
+        // guardado era el documento ~3600: imposible de alcanzar. Por eso
+        // salía "Sin informes aún" por muy bien escrita que estuviera la
+        // copia del entrenador (comprobado: existe, con su coachUid, su
+        // clubId y su teamId correctos).
+        //
+        // 🔑 ASIMETRÍA QUE LO EXPLICA TODO: el Panel de Dirección
+        // (reports-tab.js) SÍ ordena por `createdAt desc`, así que el
+        // Director veía el partido de hoy al instante. Misma colección, dos
+        // consultas distintas: por eso "a él le llega y a mí no".
+        //
+        // Se ordena por `__name__` DESC —y no por `createdAt`— a propósito:
+        // con una sola igualdad, ordenar por el ID NO necesita índice
+        // compuesto nuevo (verificado contra producción por REST), mientras
+        // que `createdAt` sí lo exigiría y habría que desplegarlo aparte.
+        const COL = () => collection(db, 'cronos_player_reports');
+        const NUEVOS_PRIMERO = orderBy('__name__', 'desc');
+
+        // Consulta principal: el equipo (o, sin equipo asignado, lo suyo).
+        const consultas = [ puedeFiltrarPorEquipo
+            ? query(COL(), where('clubId', '==', me.clubId), NUEVOS_PRIMERO, limit(500))
+            : query(COL(), where('coachUid', '==', me.uid),  NUEVOS_PRIMERO, limit(500)) ];
+
+        // ⚠️ Y SIEMPRE lo que él firmó. En un club activo, los 500 más
+        // recientes del CLUB pueden ser casi todos de otros entrenadores y
+        // volver a dejarle fuera de su propia pestaña. Con esta segunda
+        // consulta su histórico no depende del volumen ajeno.
+        if (puedeFiltrarPorEquipo) {
+            consultas.push(query(COL(), where('coachUid', '==', me.uid), NUEVOS_PRIMERO, limit(500)));
+        }
+
+        const porId = new Map();
+        for (const c of consultas) {
+            const s = await getDocs(c);
+            s.forEach(d => { if (!porId.has(d.id)) porId.set(d.id, d); });
+        }
+        const rawSnap = { forEach: (fn) => porId.forEach(d => fn(d)) };
+
+        // Filtrar en cliente: solo informes de entrenador (_forCoach=true) y,
+        // si procede, solo los del equipo asignado.
+        const snap = { forEach: (fn) => rawSnap.forEach(d => {
+            const datos = d.data();
+            if (datos._forCoach !== true) return;
+            // ⚠️ v507 · LO QUE ÉL FIRMÓ NO SE LE PUEDE OCULTAR NUNCA.
+            // El filtro por equipo descarta el documento cuando su clave de
+            // equipo no se resuelve: `cronosDocEsDeEquipo` devuelve false si
+            // el informe no trae `teamId` NI `category` (mira
+            // cronosTeamIdOfDoc → cronosTeamId, que devuelve '' sin categoría).
+            // Y la categoría del partido puede faltar: se escribe desde
+            // `window._currentMatchCategory`, que sólo se rellena al confirmar
+            // el setup. Resultado: un informe correctamente guardado quedaba
+            // INVISIBLE para su propio autor, que es justo el síntoma de
+            // "se guarda pero no aparece en Mis Informes".
+            // El propio autor ve siempre lo suyo; el filtro por equipo sigue
+            // rigiendo para lo que firmaron OTROS (el histórico heredado del
+            // equipo), que es para lo que se puso.
+            const esMio = !!(datos.coachUid && me.uid && datos.coachUid === me.uid);
+            if (!esMio && puedeFiltrarPorEquipo &&
+                typeof window.cronosDocEsDeEquipo === 'function' &&
+                !window.cronosDocEsDeEquipo(datos, [equipoAsignado], me.clubId)) return;
+            fn(d);
+        }) };
 
         const reports = [];
         snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
@@ -164,8 +260,88 @@ window.openMisInformes = async function openMisInformes() {
 
         window._misInformesData = matches;
 
+        // ══════════════════════════════════════════════════════════════
+        // v509 · RESUMEN ACUMULADO DE LA TEMPORADA, encima del listado
+        // ══════════════════════════════════════════════════════════════
+        // El entrenador tenía el listado partido a partido pero NO el bloque
+        // acumulado que sí ven el Director Deportivo y el Coordinador en su
+        // panel (reports-tab.js). Se reutilizan LAS MISMAS funciones globales
+        // —`ctAccumulatePlayerStats` para las filas, `ctRenderStatsTable` para
+        // la tabla y `rxExportarResumen*` para las descargas— a propósito: si
+        // se recalculara aquí, los dos paneles acabarían diciendo cosas
+        // distintas del mismo equipo, que es justo lo que se pide evitar.
+        // `ctRenderStatsTable` trae su propio CSS (CT_STATS_CSS), así que la
+        // tabla se ve igual sin depender de style.css.
+
+        // El equipo de un partido, leído de sus documentos (doble lectura:
+        // `teamId` en los nuevos, category+subcategory en el histórico).
+        const _miEquipoDe = (m) => {
+            const p = (m.players && m.players[0]) || null;
+            return (p && typeof window.cronosTeamIdOfDoc === 'function')
+                ? window.cronosTeamIdOfDoc(p, me.clubId) : '';
+        };
+        // El acumulado es DE SU EQUIPO. Si el filtro no deja nada (por
+        // ejemplo, informes antiguos sin categoría), se acumula todo lo que
+        // se está listando: mejor un acumulado real que una tabla vacía.
+        const _miDelEquipo = puedeFiltrarPorEquipo
+            ? sorted.filter(m => _miEquipoDe(m) === equipoAsignado)
+            : sorted;
+        const _miParaResumen = _miDelEquipo.length ? _miDelEquipo : sorted;
+
+        // Etiqueta del equipo: la del árbol de categorías si se reconoce.
+        const _miEtiquetaEquipo = () => {
+            const p0 = (_miParaResumen[0] && _miParaResumen[0].players && _miParaResumen[0].players[0]) || {};
+            const cat = p0.category || me.category || me.categoryLabel || '';
+            const sub = p0.subcategory || me.subcategory || '';
+            const def = (window.CT_CATEGORIES || []).find(c => c.id === cat);
+            const etiqueta = (def && def.label) || cat;
+            return (etiqueta ? etiqueta + (sub ? ' ' + sub : '') : 'Mi equipo');
+        };
+
+        // Guardado para las descargas, que reacumulan AL PULSAR con la misma
+        // función que pintó la tabla (el papel no puede decir otra cosa que
+        // la pantalla).
+        window._miResumenPartidos = _miParaResumen;
+        window._miResumenEquipo   = _miEtiquetaEquipo();
+
+        const _miPuedeExportar = typeof window.rxExportarResumenPDF === 'function' &&
+                                 typeof window.rxExportarResumenCSV === 'function';
+        const _miPuedeResumir  = typeof window.ctAccumulatePlayerStats === 'function' &&
+                                 typeof window.ctRenderStatsTable === 'function';
+
+        let _miResumenHtml = '';
+        if (_miPuedeResumir) {
+            // Estilos EQUIVALENTES a los de la barra del panel de Dirección
+            // (.sd-exp-* en reports-tab.js). Van en línea y con nombres
+            // propios para no depender de que aquel panel se haya abierto
+            // antes: su <style> se inyecta con SU html y aquí no existe.
+            const barra = _miPuedeExportar ? `
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;
+                        margin:0 0 0.7rem;padding:0.45rem 0.7rem;border-radius:9px;
+                        background:rgba(88,166,255,0.05);border:1px solid rgba(88,166,255,0.16);">
+                <span style="font-size:0.7rem;font-weight:600;color:#8b949e;margin-right:auto;">
+                    ⬇️ Resumen acumulado de la temporada de este equipo
+                </span>
+                <button onclick="miExportResumen('pdf')"
+                    style="background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.32);
+                           color:#58a6ff;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;
+                           font-size:0.7rem;font-weight:700;white-space:nowrap;">🖨️ PDF</button>
+                <button onclick="miExportResumen('csv')"
+                    style="background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.32);
+                           color:#58a6ff;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;
+                           font-size:0.7rem;font-weight:700;white-space:nowrap;">📊 CSV / Excel</button>
+            </div>` : '';
+
+            // matchCount = partidos del EQUIPO, que es lo que va en la celda PJ
+            // de la fila de totales (sin él sale un guion).
+            _miResumenHtml = barra + window.ctRenderStatsTable(
+                window.ctAccumulatePlayerStats(_miParaResumen),
+                { matchCount: _miParaResumen.length }
+            );
+        }
+
         const body = document.getElementById('mis-informes-body');
-        body.innerHTML = `<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.8rem;">
+        body.innerHTML = _miResumenHtml + `<div style="font-size:0.74rem;color:var(--text-muted);margin:0.9rem 0 0.8rem;">
             ${sorted.length} partido${sorted.length!==1?'s':''} · ${reports.length} informes de jugadores
         </div>` + sorted.map(m => {
             const sh=m.scoreHome, sa=m.scoreAway;
@@ -415,6 +591,27 @@ window.openMisInformes = async function openMisInformes() {
             }
             
             delete window._misInformesData[key];
+        };
+
+        // ── DESCARGA DEL RESUMEN ACUMULADO (PDF / CSV) ────────────────
+        // 🔑 Las filas se ACUMULAN AL PULSAR, con la MISMA función que pintó
+        // la tabla de pantalla, igual que hace sdExportResumen en el panel de
+        // Dirección: si el papel se calculara por otro camino, podría acabar
+        // diciendo algo distinto de lo que el entrenador tiene delante.
+        window.miExportResumen = (fmt) => {
+            const partidos = window._miResumenPartidos || [];
+            if (!partidos.length || typeof window.ctAccumulatePlayerStats !== 'function') {
+                if (typeof showToast === 'function') showToast('No hay datos que exportar todavía', 3000);
+                return;
+            }
+            const bloque = {
+                equipo:   window._miResumenEquipo || 'Mi equipo',
+                filas:    window.ctAccumulatePlayerStats(partidos),
+                partidos: partidos.length,
+            };
+            const meta = { club: me.clubName || me.clubId || '', ambito: bloque.equipo };
+            if (fmt === 'csv') window.rxExportarResumenCSV([bloque], meta);
+            else               window.rxExportarResumenPDF([bloque], meta);
         };
 
     } catch(e) {

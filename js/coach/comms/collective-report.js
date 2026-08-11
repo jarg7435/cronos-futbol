@@ -354,7 +354,19 @@ window._sendCollectiveReportNow = async function() {
 
         for (const p of homePlayers) {
             const rptId = `${matchId}_p${p.number}`;
-            await setDoc(doc(db, 'cronos_player_reports', rptId), {
+            // ══════════════════════════════════════════════════════════════
+            // v507 · UN SOLO PAYLOAD PARA LOS TRES ROLES
+            // ══════════════════════════════════════════════════════════════
+            // Antes este objeto se escribía SOLO en el documento del staff, y
+            // al entrenador se le dejaba únicamente una notificación (más
+            // abajo). Como "Mis Informes" lee `cronos_player_reports` filtrando
+            // `_forCoach === true`, esa notificación NO alimentaba nada: el
+            // entrenador enviaba el colectivo y su propia pestaña seguía
+            // vacía, aunque el Director y el Coordinador sí lo recibían.
+            // Ahora el MISMO objeto se escribe dos veces —staff y entrenador—,
+            // así que el informe del entrenador no puede ser una versión
+            // reducida: es literalmente el mismo.
+            const _reportePartido = {
                 // Identificadores del partido
                 matchId,
                 type:           'collective_match_report',
@@ -378,6 +390,16 @@ window._sendCollectiveReportNow = async function() {
                                  (typeof window.currentCategory !== 'undefined' ? window.currentCategory : ''),
                 subcategory:    _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
                                  (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '')),
+                // Clave de equipo: el informe colectivo es del equipo, no del
+                // entrenador que lo firmó. Permite que lo herede su relevo.
+                teamId:         (typeof window.cronosTeamId === 'function')
+                                  ? window.cronosTeamId(
+                                      me.clubId || '',
+                                      (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                        (typeof window.currentCategory !== 'undefined' ? window.currentCategory : ''),
+                                      _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                        (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '')))
+                                  : '',
                 venue:          (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
                 competition:    (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
                 matchTime:      (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
@@ -395,7 +417,29 @@ window._sendCollectiveReportNow = async function() {
                 // history: array de eventos {type, minute} — clave para el Gantt
                 // p.history puede contener strings "Entra a las MM:SS (1ªP)" O objetos {type,minute}
                 history: _parseHistoryForFirestore(p.history || []),
-            });
+            };
+
+            // 1) Copia del STAFF (Director Deportivo y Coordinador).
+            await setDoc(doc(db, 'cronos_player_reports', rptId), _reportePartido);
+
+            // 2) Copia del ENTRENADOR, con los MISMOS datos.
+            //    · `_forCoach: true`  → es lo que "Mis Informes" busca.
+            //    · `staffReport: false` → no se duplica en el Panel de Dirección,
+            //      que filtra por `staffReport === true`.
+            //    El id es el MISMO que usa el despacho automático de fin de
+            //    partido (`{matchId}_coach_p{dorsal}`), a propósito: así el
+            //    envío manual SOBREESCRIBE esa copia en vez de crear una
+            //    segunda, y el entrenador nunca ve el partido repetido.
+            try {
+                await setDoc(doc(db, 'cronos_player_reports', `${matchId}_coach_p${p.number}`), {
+                    ..._reportePartido,
+                    staffReport: false,
+                    _forCoach:   true,
+                });
+            } catch (coachCopyErr) {
+                console.error('[ColReport] La copia del entrenador falló para el dorsal ' +
+                    p.number + ':', coachCopyErr && coachCopyErr.code, coachCopyErr && coachCopyErr.message);
+            }
         }
         console.log(`[StaffReport] TOTAL informes colectivos escritos en cronos_player_reports: ${homePlayers.length} (matchId=${matchId}, staff=${staff.length}, staffUids=${_collStaffUids.length})`);
 
@@ -503,8 +547,12 @@ window._sendCollectiveReportNow = async function() {
             }
         }
 
-        // ── Guardar copia para el entrenador (registro propio) ──────────
-        // Esto alimenta la pestaña "Mis Informes" del menú de Comunicaciones.
+        // ── Aviso in-app para el entrenador (registro propio) ───────────
+        // ⚠️ v507 · Este documento es SOLO el aviso del feed. Decía alimentar
+        // la pestaña "Mis Informes", y era falso: esa pestaña lee
+        // `cronos_player_reports` con `_forCoach === true`, no
+        // `cronos_notifications`. Quien alimenta "Mis Informes" es la copia
+        // del entrenador que ahora se escribe arriba, junto a la del staff.
         try {
             const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {

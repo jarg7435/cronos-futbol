@@ -99,6 +99,11 @@ function readBlock() {
 }
 const BLOCK = readBlock();
 
+// utils.js REAL (cronosTeamId / cronosDocEsDeEquipo). Se ejecuta dentro del
+// mismo sandbox que el bloque bajo prueba, para que el filtrado por equipo se
+// mida contra la normalización de verdad y no contra una imitación.
+const UTILS_SRC = fs.readFileSync(path.join(ROOT, 'js', 'core', 'utils.js'), 'utf8');
+
 function walk(dir, out) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         if (e.name === 'node_modules' || e.name === '.git') continue;
@@ -163,11 +168,56 @@ function buildSandbox({
         db: {},
         collection: (db, name) => ({ __col: name }),
         query: (colRef, ...clauses) => ({ __col: colRef.__col, clauses }),
-        where: (f, op, v) => f + op + v,
+        // ⚠️ `where` devolvía la CADENA `f+op+v` y getDocs no la miraba: el
+        // doble entregaba TODOS los documentos hiciera la consulta lo que
+        // hiciera. Con eso, una aserción del tipo "el entrenador entrante ve
+        // el histórico" pasaba aunque la consulta siguiera filtrando por
+        // coachUid — es decir, seguía verde con el defecto delante. Ahora la
+        // cláusula se guarda estructurada y getDocs la APLICA.
+        where: (campo, op, valor) => ({ __where: true, campo, op, valor }),
+        // `limit` faltaba en este doble. _cFS() hace `{...module, db}`, así que
+        // en producción SÍ existe; aquí su ausencia hacía estallar la consulta
+        // con "limit is not a function" y el módulo caía al pintado de error,
+        // no al estado vacío. Un doble incompleto no prueba menos: prueba OTRA
+        // cosa, y encima en verde para las aserciones que no lo tocan.
+        limit: (n) => ({ __limit: n }),
+        // `orderBy` faltaba, y por la MISMA razón que faltaba `limit`: en
+        // producción `_cFS()` hace `{...module, db}` y existe siempre. Desde
+        // v508 la consulta de "Mis Informes" ordena por `__name__` DESC (un
+        // `limit` sin orden dejaba la ventana clavada en lo más viejo, ver
+        // scripts/test_mis_informes_ventana_reciente.js), y sin esta función
+        // el doble reventaba con "orderBy is not a function" y el módulo caía
+        // al pintado de error en vez de al estado vacío.
+        orderBy: (campo, dir) => ({ __orderBy: true, campo, dir: dir || 'asc' }),
         getDocs: async (q) => {
             if (getDocsThrows) throw new Error(getDocsThrows);
-            if (q.__col === 'cronos_player_reports') return snapOf(reports);
-            if (q.__col === 'cronos_player_links') return snapOf(linkDocs);
+            // Aplica las cláusulas '==' igual que lo haría Firestore, para que
+            // el doble no entregue documentos que la consulta real no traería.
+            // Y ORDENA/RECORTA como ella: si no, el doble probaría otra cosa.
+            const aplica = (docs) => {
+                const filtros = (q.clauses || []).filter(c => c && c.__where && c.op === '==');
+                let r = docs.filter(d => filtros.every(f => d[f.campo] === f.valor));
+                const ord = (q.clauses || []).find(c => c && c.__orderBy);
+                if (ord) {
+                    const clave = (d) => String(ord.campo === '__name__'
+                        ? (d._id || d.id || '') : (d[ord.campo] ?? ''));
+                    r = r.slice().sort((a, b) => (clave(a) < clave(b) ? -1 : clave(a) > clave(b) ? 1 : 0));
+                    if (String(ord.dir).toLowerCase() === 'desc') r.reverse();
+                }
+                const lim = (q.clauses || []).find(c => c && typeof c.__limit === 'number');
+                if (lim) r = r.slice(0, lim.__limit);
+                return r;
+            };
+            if (q.__col === 'cronos_player_reports') return snapOf(aplica(reports));
+            // Los enlaces se consultan con where('clubId','==',me.clubId). Las
+            // fixtures se escribieron SIN clubId —documentos que la consulta
+            // real jamás habría devuelto—, así que se les pone el del club del
+            // usuario salvo que la propia fixture fije otro a propósito.
+            if (q.__col === 'cronos_player_links') {
+                const conClub = linkDocs.map(d =>
+                    ('clubId' in d) ? d : Object.assign({}, d, { clubId: me.clubId || '' }));
+                return snapOf(aplica(conClub));
+            }
             return snapOf([]);
         },
         doc: (db, col, id) => ({ __col: col, __id: id }),
@@ -254,7 +304,13 @@ function buildSandbox({
     }
     if (withDownloader) sandbox.window.sdDownloadInforme = (k) => opened.push('download:' + k);
 
+    // Los helpers de equipo se cargan del utils.js REAL, no se remedan.
+    // El filtrado por equipo depende de que "Alevín" y "Alevin" produzcan la
+    // misma clave; un doble escrito a mano daría por buena esa equivalencia
+    // sin comprobarla, que es no probar nada.
     vm.createContext(sandbox);
+    vm.runInContext(UTILS_SRC, sandbox);
+
     vm.runInContext(BLOCK, sandbox);
 
     return {
@@ -355,11 +411,19 @@ const inCol = (written, col) => written.filter(w => w.col === col);
 
     // ═════════════════════════════════════════════════════════════════════
     console.log('\n── PARTE 2 · openMisInformes: consulta, agrupacion y pintado ──');
-    ok('2a · consulta cronos_player_reports filtrando por coachUid == me.uid',
+    // ⚠️ 2a DEFENDÍA EL DEFECTO. Afirmaba que la consulta va por
+    // `where('coachUid','==',me.uid)`, que era precisamente lo que escondía el
+    // histórico al entrenador entrante: veía "Mis Informes" vacío aunque el
+    // club conservara todo el histórico de su categoría. Ahora la consulta va
+    // por CLUB cuando hay equipo asignado, y solo cae a coachUid como
+    // respaldo (entrenador sin categoría, o ente individual sin clubId).
+    ok('2a · consulta por CLUB cuando hay equipo asignado',
         /collection\(db, 'cronos_player_reports'\)/.test(BLOCK)
-        && /where\('coachUid', '==', me\.uid\)/.test(BLOCK));
+        && /where\('clubId', '==', me\.clubId\)/.test(BLOCK));
+    ok('2a-bis · conserva el respaldo por coachUid (sin club o sin categoría)',
+        /where\('coachUid', '==', me\.uid\)/.test(BLOCK));
     ok('2b · filtra en cliente por _forCoach === true',
-        /d\.data\(\)\._forCoach === true/.test(BLOCK));
+        /datos\._forCoach !== true/.test(BLOCK));
     {
         const t = buildSandbox({ reports: [] });
         await t.w.openMisInformes();
@@ -377,6 +441,50 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         ok('2d · descarta los documentos sin _forCoach === true',
             m && m.players.length === 1 && m.players[0].playerNumber === '7',
             m && m.players.map(p => p.playerNumber));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // EL RELEVO DE ENTRENADOR — lo que el punto 2 tiene que garantizar
+    // ═════════════════════════════════════════════════════════════════════
+    {
+        // Entrenador NUEVO (uid 'coach2') que acaba de heredar Alevín B.
+        // Todo el histórico lo firmó 'coach1', que ya no está. Antes esto
+        // devolvía la pantalla vacía; ahora tiene que ver el histórico.
+        const nuevo = { uid: 'coach2', clubId: 'club1', email: 'n@x.com',
+                        category: 'Alevín', subcategory: 'B' };
+        const t = buildSandbox({
+            me: nuevo,
+            reports: [
+                // Histórico del equipo, SIN campo teamId (como en producción)
+                // y firmado por OTRO entrenador.
+                rep({ _id: 'h1', coachUid: 'coach1', matchId: 'M-VIEJO',
+                      clubId: 'club1', category: 'Alevin', subcategory: 'b' }),
+                // Informe de OTRA categoría del mismo club: NO debe colarse.
+                rep({ _id: 'x1', coachUid: 'coach1', matchId: 'M-OTRO',
+                      clubId: 'club1', category: 'Juvenil', subcategory: 'C',
+                      playerNumber: '9' }),
+            ],
+        });
+        await t.w.openMisInformes();
+        const datos = t.w._misInformesData || {};
+        ok('2n · el entrenador entrante VE el histórico de su categoría (firmado por otro, y sin teamId)',
+            !!datos['M-VIEJO'], Object.keys(datos));
+        ok('2o · NO ve los informes de otra categoría del mismo club',
+            !datos['M-OTRO'], Object.keys(datos));
+        ok('2p · la equivalencia de acentos/mayúsculas no parte el equipo ("Alevin/b" == "Alevín/B")',
+            !!datos['M-VIEJO']);
+    }
+    {
+        // Entrenador SIN categoría asignada: se conserva el comportamiento
+        // anterior (solo lo suyo). Ensanchar aquí al club entero sería un
+        // agujero, no una mejora.
+        const t = buildSandbox({
+            me: { uid: 'coach3', clubId: 'club1', email: 's@x.com' },
+            reports: [rep({ _id: 'p1', coachUid: 'coach3', matchId: 'M-MIO', clubId: 'club1' })],
+        });
+        await t.w.openMisInformes();
+        ok('2q · sin categoría asignada se consulta por coachUid (sin ensanchar al club)',
+            !!(t.w._misInformesData || {})['M-MIO']);
     }
     {
         const t = buildSandbox({
