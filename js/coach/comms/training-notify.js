@@ -274,3 +274,149 @@ window._sendTrainingNotification = async function() {
 };
 
 window.openTrainingNotification = openTrainingNotification;
+
+// ════════════════════════════════════════════════════════════════════
+//  v510 · ENVÍO DE LA PLANIFICACIÓN SEMANAL DESDE EL SELECTOR NUEVO
+// ════════════════════════════════════════════════════════════════════
+//  🔑 ESTA FUNCIÓN NO EXISTÍA. `js/shared/whatsapp-email.js` construye el
+//  botón verde del selector con este nombre desde hace tiempo:
+//
+//      const sendFunction = isConv ? 'publishConvocationToAppV2'
+//                                  : '_sendTrainingNotificationV2';
+//
+//  …pero sólo se llegó a escribir la mitad de convocatoria. La de
+//  entrenamiento no estaba en NINGÚN sitio del repositorio: su único rastro
+//  era ese nombre. De ahí el `Uncaught ReferenceError` al pulsar enviar.
+//  No era, por tanto, un problema de exportación ni de ámbito.
+//
+//  ⚠️ NO VALE LLAMAR A `_sendTrainingNotification` (la de arriba). Esa lee
+//  `#tr-datetime`, `#tr-location`, `#tr-notes` y `.tr-recipient-chk`, que
+//  son de SU propio modal; cuando corre este flujo, el selector ya ha
+//  reemplazado `#setup-modal` y todo eso ha desaparecido del DOM. Renombrar
+//  la llamada habría cambiado el error visible por un "0 destinatarios" o un
+//  "indica al menos fecha/hora", que es peor: falla callando.
+//
+//  EL FLUJO REAL, desde el panel de Planificación Semanal:
+//    saveTrainingWeek()  → guarda la semana en `cronos_training_weeks`
+//    _cronosOpenRoleSelector('entrenamiento')  → elegir rol
+//    _cronosOpenRecipientPicker(rol, 'entrenamiento')  → elegir personas
+//    _sendTrainingNotificationV2()  ← AQUÍ
+//
+//  Por eso la semana se lee de localStorage (fuente de verdad que dejó
+//  `saveTrainingWeek`) y no del DOM, exactamente el mismo motivo por el que
+//  `publishConvocationToAppV2` lee de `_savedConvData`.
+//
+//  🔑 EL CONTRATO DEL AVISO lo fijan sus DOS lectores, y se respeta al pie
+//  de la letra para no romperlos:
+//   · js/parent/panel.js pinta la tabla con `weekStartDate` y
+//     `days[] = { day, time, note, venue }`.
+//   · js/coach/reports/events-tab.js titula con `weekStartDate` y clasifica
+//     por `category`/`subcategory` — sin ellas el aviso cae en "Sin
+//     clasificar" en el panel del Director.
+//  El texto de `note` se compone como ya lo hacía el otro emisor
+//  (js/parent/panel.js): tipo · equipaciones · duración.
+window._sendTrainingNotificationV2 = async function() {
+    const me = window._cronosCurrentUser;
+    const fa = window._cronos_auth;
+    if (!me || !fa) {
+        if (typeof showToast === 'function') showToast('⚠️ Sesión no disponible', 3000);
+        return;
+    }
+
+    // ── Destinatarios: los del selector (mismo marcado que la convocatoria)
+    const selected = Array.from(document.querySelectorAll('.cronos-pick-chk:checked')).map(chk => ({
+        id:    chk.dataset.id,
+        uid:   chk.dataset.uid   || '',
+        email: chk.dataset.email || '',
+        label: chk.dataset.label || '',
+    }));
+    if (!selected.length) {
+        if (typeof showToast === 'function') showToast('⚠️ Selecciona al menos una persona', 3000);
+        return;
+    }
+
+    // ── La semana que se acaba de guardar ────────────────────────────
+    const offset  = window._trWeekOffset || 0;
+    const monday  = (typeof _getWeekMonday === 'function') ? _getWeekMonday(offset) : null;
+    if (!monday) {
+        if (typeof showToast === 'function') showToast('⚠️ No se pudo determinar la semana', 3000);
+        return;
+    }
+    const weekKey = _cronosLocalDateKey(monday);
+
+    let weekData = {};
+    try {
+        const todas = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+        weekData = todas[weekKey] || {};
+    } catch (_) { weekData = {}; }
+
+    const NOMBRE_DIA = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+        const fecha   = new Date(monday.getTime() + i * 86400000);
+        const clave   = _cronosLocalDateKey(fecha);
+        const dd      = weekData[clave] || {};
+        const nota    = [dd.tipo, dd.equipaciones, dd.duracion].filter(Boolean).join(' · ');
+        // Un día sin NADA es descanso: se envía igualmente para que la
+        // semana se lea completa (el padre ya pinta "Descanso" si no hay
+        // hora ni nota).
+        days.push({
+            day:   NOMBRE_DIA[i],
+            time:  dd.hora  || '',
+            venue: dd.lugar || '',
+            note:  nota,
+        });
+    }
+
+    if (!days.some(d => d.time || d.note || d.venue)) {
+        if (typeof showToast === 'function') showToast('⚠️ La semana está vacía: rellena algún día antes de enviar', 4000);
+        return;
+    }
+
+    if (typeof showSpinner === 'function') showSpinner('Enviando planificación semanal…');
+
+    try {
+        const { setDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = fa.db;
+
+        // La categoría es la del ENTRENADOR que envía, nunca la del que
+        // recibe (mismo criterio y mismo orden de respaldo que arriba).
+        const _cat = me.category    || me._activeRoleData?.category    || me.categoryLabel || null;
+        const _sub = me.subcategory || me._activeRoleData?.subcategory || null;
+
+        const enviados = new Set();
+        let n = 0;
+        for (const r of selected) {
+            const uid = r.uid || r.id;
+            if (!uid || enviados.has(uid)) continue;
+            enviados.add(uid);
+            await setDoc(doc(db, 'cronos_notifications', 'week_' + uid + '_' + Date.now().toString(36) + '_' + n), {
+                type:          'planificacion_semanal',
+                clubId:        me.clubId || null,
+                userId:        uid,          // campo que verifican las reglas
+                parentUid:     uid,          // el que buscan los paneles receptores
+                coachUid:      me.uid,
+                coachEmail:    me.email || '',
+                category:      _cat,
+                subcategory:   _sub,
+                weekStartDate: weekKey,
+                days,
+                createdAt:     new Date().toISOString(),
+            });
+            n++;
+        }
+
+        if (typeof hideSpinner === 'function') hideSpinner();
+        if (typeof showToast === 'function') {
+            showToast(n > 0
+                ? '✅ Planificación semanal enviada a ' + n + ' persona(s)'
+                : '⚠️ No se pudo enviar a ninguna persona', 5000);
+        }
+        if (typeof openUnifiedCommsMenu === 'function') openUnifiedCommsMenu();
+
+    } catch (e) {
+        if (typeof hideSpinner === 'function') hideSpinner();
+        if (typeof showToast  === 'function') showToast('⚠️ Error: ' + e.message, 4000);
+        console.error('[TrainingNotifV2]', e);
+    }
+};

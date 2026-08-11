@@ -189,7 +189,14 @@ const idxOf = (s, sub) => s.indexOf(sub);
         // otra propiedad. Se lista aquí en vez de relajar el barrido, para que
         // cualquier OTRO test que empiece a depender de la sección siga dando
         // rojo. Misma familia que el barrido que contaba los .bak_* del repo.
-        const PERMITIDOS = new Set(['test_nav_stack.js']);
+        // 2026-08-11 · test_envio_entrenamiento_semanal.js se declara TAMBIEN de
+        // forma explicita. Cubre el OTRO camino de envio, el que sale del panel
+        // de Planificacion Semanal: `_sendTrainingNotificationV2`, que vive en
+        // este mismo fichero pero no comparte nada con `openTrainingNotification`
+        // (aquella lee su propio modal; esta lee el selector de destinatarios y
+        // la semana de localStorage). Se lista aqui en vez de relajar el barrido,
+        // por la misma razon que test_nav_stack.js.
+        const PERMITIDOS = new Set(['test_nav_stack.js', 'test_envio_entrenamiento_semanal.js']);
         const offenders = fs.readdirSync(SC).filter(f =>
             /^test_.*\.js$/.test(f) && f !== path.basename(__filename)
             && !PERMITIDOS.has(f)
