@@ -560,6 +560,10 @@ function openConvocationModal() {
                     </button>
                 </div>
 
+                <div id="conv-invalid-msg" style="display:none; font-size:0.72rem; font-weight:700;
+                     color:#f85149; background:rgba(248,81,73,0.1); border:1px solid rgba(248,81,73,0.35);
+                     border-radius:8px; padding:0.45rem 0.6rem; text-align:center;"></div>
+
                 <button class="btn primary" id="btn-go-titulares" onclick="goToTitularSelection()" disabled
                     style="width:100%; font-weight:900; letter-spacing:1px; padding:0.6rem;">
                     \u26BD IR AL PARTIDO
@@ -578,16 +582,75 @@ function openConvocationModal() {
     let titulares = 0;
     window._titularSelectionOrder = [];
 
+    // v506 · Aviso de limite alcanzado. showToast lo define timer/core.js,
+    //   que carga DESPUES; si aun no existe no puede quedarse mudo (seria
+    //   un clic que no hace nada y no dice por que).
+    function convWarn(msg) {
+        if (typeof showToast === 'function') showToast(msg, 2800);
+        else alert(msg);
+    }
+
+    // v506 · Devuelve la fila al estado "sin seleccionar". Centralizado
+    //   porque ahora se deselecciona desde DOS sitios (3er clic y limite de
+    //   titulares alcanzado). Limpia tambien el resplandor y la negrita del
+    //   punto, que el codigo anterior se dejaba puestos al quitar un titular.
+    function convResetRow(row) {
+        const dot   = row.querySelector('.conv-dot');
+        const badge = row.querySelector('.conv-status-badge');
+        row.dataset.state = 'none';
+        row.classList.remove('conv-selected');
+        row.style.borderColor = 'transparent';
+        row.style.background  = 'var(--glass)';
+        row.style.boxShadow   = 'none';
+        if (dot) {
+            dot.style.background  = 'rgba(255,255,255,0.1)';
+            dot.style.borderColor = 'rgba(255,255,255,0.25)';
+            dot.style.color = 'transparent';
+            dot.style.fontWeight = '';
+            dot.textContent = '✓';
+        }
+        if (badge) badge.style.display = 'none';
+        const idx = parseInt(row.dataset.index);
+        window._titularSelectionOrder = (window._titularSelectionOrder || []).filter(i => i !== idx);
+    }
+
+    // v506 · MOTIVO por el que la convocatoria NO es valida ('' = valida).
+    //   UNICA fuente de verdad de la validez: la usan el boton IR AL PARTIDO
+    //   (para quedar bloqueado) y el aviso bajo el boton. Antes solo se
+    //   miraba el minimo de titulares, asi que con 15 convocados en F-7 el
+    //   boton seguia activo y el partido arrancaba roto.
+    function convocationError() {
+        const modoTxt = (currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11');
+        if (convocados > maxConvoked) {
+            return 'Máximo ' + maxConvoked + ' convocados en ' + modoTxt + ' — tienes ' +
+                   convocados + '. Quita ' + (convocados - maxConvoked) + '.';
+        }
+        if (titulares > maxTitulares) {
+            return 'Máximo ' + maxTitulares + ' titulares — tienes ' + titulares + '.';
+        }
+        if (titulares < minTitulares) {
+            return 'Necesitas al menos ' + minTitulares + ' titulares (naranja) — tienes ' + titulares + '.';
+        }
+        return '';
+    }
+    window._cronosConvocationError = convocationError;
+
     // Función auxiliar para actualizar los contadores visuales
     function updateConvCounters() {
         if (numConvEl) numConvEl.textContent = convocados;
         if (numTitEl) numTitEl.textContent = titulares;
         // Color de fondo dinámico según estado
         if (counterConvBox) {
-            counterConvBox.style.background = convocados > 0 ? 'rgba(88,166,255,0.2)' : 'rgba(88,166,255,0.1)';
+            // v506 · en ROJO al rebasar el maximo, para que el motivo del
+            // bloqueo se vea en el propio contador.
+            const overMax = convocados > maxConvoked;
+            counterConvBox.style.background  = overMax ? 'rgba(248,81,73,0.18)'
+                                             : (convocados > 0 ? 'rgba(88,166,255,0.2)' : 'rgba(88,166,255,0.1)');
+            counterConvBox.style.borderColor = overMax ? 'rgba(248,81,73,0.7)' : 'rgba(88,166,255,0.35)';
+            if (numConvEl) numConvEl.style.color = overMax ? '#f85149' : 'var(--primary)';
         }
         if (counterTitBox) {
-            const isValid = titulares >= minTitulares;
+            const isValid = titulares >= minTitulares && titulares <= maxTitulares;
             counterTitBox.style.background = isValid ? 'rgba(240,136,62,0.2)' : 'rgba(240,136,62,0.1)';
             counterTitBox.style.borderColor = isValid ? 'rgba(240,136,62,0.6)' : 'rgba(240,136,62,0.35)';
         }
@@ -595,7 +658,19 @@ function openConvocationModal() {
         if (countEl) {
             countEl.innerHTML = '<span style="color:var(--primary)">' + convocados + ' convocados</span> \u00b7 <span style="color:#f0883e;font-weight:700;">' + titulares + ' titulares</span>';
         }
-        goBtn.disabled = titulares < minTitulares;
+        // v506 · BLOQUEO ESTRICTO: el boton solo se activa si la convocatoria
+        // es valida POR COMPLETO, y cuando no lo es se dice POR QUE.
+        const err = convocationError();
+        if (goBtn) {
+            goBtn.disabled = !!err;
+            goBtn.style.opacity = err ? '0.45' : '';
+            goBtn.title = err || '';
+        }
+        const msgEl = document.getElementById('conv-invalid-msg');
+        if (msgEl) {
+            msgEl.textContent = err ? ('⛔ ' + err) : '';
+            msgEl.style.display = err ? 'block' : 'none';
+        }
     }
 
     // \u2500\u2500 Pre-restaurar desde equipo cargado \u2500\u2500
@@ -645,6 +720,11 @@ function openConvocationModal() {
         updateConvCounters();
     }
 
+    // v506 · Pintar el estado inicial SIEMPRE (haya equipo cargado o no):
+    //   asi el motivo del bloqueo se ve desde el primer momento y no solo
+    //   despues del primer clic.
+    updateConvCounters();
+
     // \u2500\u2500 Click handler: 3 estados (none \u2192 convocado \u2192 titular \u2192 none) \u2500\u2500
     document.querySelectorAll('.conv-row').forEach(row => {
         row.addEventListener('click', () => {
@@ -653,6 +733,14 @@ function openConvocationModal() {
             const badge = row.querySelector('.conv-status-badge');
 
             if (state === 'none') {
+                // v506 · BLOQUEO EN ORIGEN: no se puede marcar al convocado
+                // numero (max+1) — el 15 en Futbol 7. Mismo comportamiento
+                // que ya tenia el limite de TITULARES: aviso y no se marca.
+                if (convocados >= maxConvoked) {
+                    convWarn('⚠️ Máximo ' + maxConvoked + ' convocados en ' +
+                             (currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'));
+                    return;
+                }
                 // Estado 1: Seleccionar como CONVOCADO (azul)
                 row.dataset.state = 'convocado';
                 row.classList.add('conv-selected');
@@ -670,7 +758,16 @@ function openConvocationModal() {
             } else if (state === 'convocado') {
                 // Estado 2: Promocionar a TITULAR (naranja)
                 if (titulares >= maxTitulares) {
-                    showToast('\u26A0\ufe0f M\u00e1ximo ' + maxTitulares + ' titulares', 2500);
+                    // v506 \u00b7 Antes se salia por aqui con `return` y el jugador
+                    // quedaba ATRAPADO como convocado: con los titulares al
+                    // maximo, el clic no hacia nada y era IMPOSIBLE quitarlo
+                    // de la convocatoria (justo lo que hace falta para bajar
+                    // de 15 a 14). Ahora el ciclo avanza a "sin seleccionar".
+                    convWarn('\u26A0\ufe0f M\u00e1ximo ' + maxTitulares +
+                             ' titulares \u00b7 se retira de la convocatoria');
+                    convResetRow(row);
+                    convocados--;
+                    updateConvCounters();
                     return;
                 }
                 row.dataset.state = 'titular';
@@ -691,19 +788,9 @@ function openConvocationModal() {
                 window._titularSelectionOrder.push(parseInt(row.dataset.index));
             } else {
                 // Estado 3: Deseleccionar (volver a none)
-                row.dataset.state = 'none';
-                row.classList.remove('conv-selected');
-                row.style.borderColor = 'transparent';
-                row.style.background  = 'var(--glass)';
-                dot.style.background  = 'rgba(255,255,255,0.1)';
-                dot.style.borderColor = 'rgba(255,255,255,0.25)';
-                dot.style.color = 'transparent';
-                dot.textContent = '\u2713';
-                badge.style.display = 'none';
+                convResetRow(row);
                 titulares--;
                 convocados--;
-                const idx = parseInt(row.dataset.index);
-                window._titularSelectionOrder = window._titularSelectionOrder.filter(i => i !== idx);
             }
 
             updateConvCounters();
@@ -746,7 +833,17 @@ function saveConvPlayers() {
 }
 
 // ── IR AL PARTIDO (desde convocatoria con 3 estados: convocado/titular) ──
+// v506 · DEVUELVE true si el partido ARRANCA y false si se ABORTA. No es
+//   cosmetico: js/core/patches.js envuelve esta funcion y, cuando abortaba,
+//   seguia adelante igualmente (ocultaba el modal, mostraba la vista de
+//   partido y, al no haber jugadores, FABRICABA 7 "Jugador N" locales). De
+//   ahi el partido roto sin visitante tras el aviso de "maximo 14".
 function goToTitularSelection() {
+    // OJO: aqui NO se devuelve false. Ese guard significa "el usuario ha
+    // elegido REANUDAR el partido en curso", y _restoreActiveMatch() ya ha
+    // dejado la vista de partido en pantalla: los envoltorios deben seguir
+    // su camino de siempre. false queda reservado a "convocatoria RECHAZADA,
+    // seguimos en el modal", que es lo unico que debe frenarlos.
     if (typeof window._guardAgainstMatchReset === 'function' && window._guardAgainstMatchReset()) return;
     saveConvData();
     saveConvPlayers();
@@ -771,13 +868,20 @@ function goToTitularSelection() {
 
     const minTitulares = currentMode === 'f7' ? 5 : 7;
     const maxConvocados = currentMode === 'f7' ? 14 : 18;
-    if (titularCount < minTitulares) {
-        alert('Necesitas al menos ' + minTitulares + ' titulares (naranja) para iniciar el partido.\nActualmente tienes ' + titularCount + ' titulares de ' + matchPlayers.length + ' convocados.');
-        return;
-    }
+    // v506 · Los limites se comprueban ANTES de tocar nada, y cada aborto
+    //   devuelve false para que ningun envoltorio siga adelante. Se mira
+    //   primero el MAXIMO de convocados: es el que rompia el partido.
     if (matchPlayers.length > maxConvocados) {
         alert('Máximo ' + maxConvocados + ' convocados para Fútbol ' + (currentMode === 'f7' ? '7' : '11') + '.\nActualmente tienes ' + matchPlayers.length + ' convocados.\nElimina jugadores de la convocatoria antes de iniciar.');
-        return;
+        return false;
+    }
+    if (titularCount > maxTitulares) {
+        alert('Máximo ' + maxTitulares + ' titulares para Fútbol ' + (currentMode === 'f7' ? '7' : '11') + '.\nActualmente tienes ' + titularCount + '.');
+        return false;
+    }
+    if (titularCount < minTitulares) {
+        alert('Necesitas al menos ' + minTitulares + ' titulares (naranja) para iniciar el partido.\nActualmente tienes ' + titularCount + ' titulares de ' + matchPlayers.length + ' convocados.');
+        return false;
     }
 
     window.activeConvocation = matchPlayers;
@@ -815,11 +919,14 @@ function goToTitularSelection() {
     const pitch = document.getElementById('football-pitch');
     pitch.addEventListener('click', () => closeDrawers());
     pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+
+    return true;   // v506 - partido arrancado: los envoltorios pueden seguir
 }
 
 // ── INICIAR PARTIDO desde selecci\u00f3n de titulares (compatibilidad) ──
 function startMatchFromTitularSelection() {
-    goToTitularSelection();
+    // v506 · propaga el veredicto: false = convocatoria invalida, no se arranca
+    return goToTitularSelection();
 }
 
 

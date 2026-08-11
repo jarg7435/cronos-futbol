@@ -201,7 +201,11 @@
         if (typeof goToTitularSelection === 'undefined') { setTimeout(patchGoToTitularTimer, 200); return; }
         var orig = window.goToTitularSelection;
         window.goToTitularSelection = function() {
-            orig();
+            // v506: si la convocatoria NO es valida, goToTitularSelection
+            // devuelve false y NO ha arrancado partido alguno. Propagamos ese
+            // veredicto y no tocamos los cronometros de un partido inexistente.
+            var ok = orig();
+            if (ok === false) return false;
             if (_cronosCorrectHalfTime && _cronosCorrectHalfTime > 0) {
                 half1MaxTime = _cronosCorrectHalfTime;
                 half2MaxTime = _cronosCorrectHalfTime;
@@ -212,6 +216,7 @@
                 if (t2) t2.textContent = display;
                 try { if (typeof updateMasterUI === 'function') updateMasterUI(); } catch(e) {}
             }
+            return ok;
         };
     }
     patchGoToTitularTimer();
@@ -376,12 +381,30 @@
         var orig = goToTitularSelection;
         window.goToTitularSelection = function() {
             // CRÍTICO: Quitar setup-mode ANTES de cualquier otra cosa
+            var teniaSetupMode = document.body.classList.contains('setup-mode');
             document.body.classList.remove('setup-mode');
 
+            var ok;
             try {
-                orig();
+                ok = orig();
             } catch(e) {
                 console.error('[Chronos v8] Error en goToTitularSelection original:', e);
+                ok = false;   // v506: un error tampoco es un partido arrancado
+            }
+
+            // ── v506 · ABORTO = NO HAY PARTIDO ──────────────────────────
+            //  ESTA era la causa del "partido roto sin visitante": cuando la
+            //  convocatoria no era valida (p.ej. 15 convocados en F-7),
+            //  goToTitularSelection avisaba y se paraba, pero este envoltorio
+            //  seguia adelante igualmente: ocultaba el modal, mostraba la
+            //  vista de partido y, al no haber jugadores, FABRICABA una
+            //  plantilla ficticia de "Jugador 1..N", todos locales. El
+            //  fallback solo tiene sentido si el partido SI arranco.
+            if (ok === false) {
+                if (teniaSetupMode) document.body.classList.add('setup-mode');
+                var modalAbort = document.getElementById('setup-modal');
+                if (modalAbort && modalAbort.children.length > 0) modalAbort.style.display = 'flex';
+                return false;
             }
 
             // Asegurar que la vista de partido es visible
@@ -416,6 +439,7 @@
             }
 
             document.body.classList.remove('setup-mode');
+            return ok;
         };
     }
     patchGoToTitularSelection();
