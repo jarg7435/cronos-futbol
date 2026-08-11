@@ -1,0 +1,9 @@
+Claude, hemos validado que los informes ya aparecen ordenados y visibles en "Mis Informes" del entrenador (gracias a la v508, ver captura 8756), pero falta un elemento estructural clave para mantener la simetría con los otros roles.
+
+Comparando con el panel del Director Deportivo y Coordinador (captura 8753_2), falta añadir **el bloque superior de "Resumen acumulado de la temporada de este equipo"** dentro de la ventana de "Mis Informes" del entrenador. 
+
+Por favor, implementa lo siguiente:
+1. En la vista "Mis Informes" del entrenador, justo arriba de la lista de partidos, debe incorporarse el **resumen acumulado de la temporada** de su categoría y subcategoría correspondiente (con su tabla de estadísticas por jugador: PJ, Minutos, Goles, Tarjetas, Lesiones y sus botones de exportación PDF/Excel).
+2. El entrenador debe tener exactamente el mismo desglose acumulado de su equipo que el que se muestra en las vistas superiores de dirección y coordinación.
+
+Por favor, añade este resumen acumulado a la interfaz de "Mis Informes" del entrenador y avísame para probarlo.

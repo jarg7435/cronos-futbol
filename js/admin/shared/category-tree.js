@@ -775,8 +775,13 @@
                 '<th title="Partidos jugados">PJ</th>' +
                 '<th title="Minutos jugados totales">Min</th>' +
                 '<th title="Goles">Goles</th>' +
+                // v476 · Los cuadrados grandes van SEGUIDOS en Unicode y es
+                // facilisimo pillar el de al lado: &#128997; 🟥 rojo,
+                // &#128998; azul, &#128999; naranja, &#129000; 🟨 amarillo,
+                // &#129001; 🟩 VERDE. La columna de rojas llevaba 129001, o
+                // sea un cuadrado VERDE (reportado en la captura 8567).
                 '<th title="Tarjetas amarillas">&#129000; Amarillas</th>' +
-                '<th title="Tarjetas rojas">&#129001; Rojas</th>' +
+                '<th title="Tarjetas rojas">&#128997; Rojas</th>' +
                 '<th title="Partidos con lesión">Lesiones</th>' +
             '</tr></thead>' +
             '<tbody>' + cuerpo + '</tbody>' +

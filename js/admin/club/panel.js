@@ -252,16 +252,41 @@ async function openClubAdminPanel(preClubId = null) {
     users = Array.from(userMap.values());
     features = club.features || {};
 
+    // ══════════════════════════════════════════════════════════════
+    // PLAZA VACANTE — quién OCUPA de verdad una plaza del club
+    // ══════════════════════════════════════════════════════════════
+    // De esto depende el bloqueo "⛔ Cuota llena para este rol", que corta
+    // dar de alta o aprobar a un entrenador nuevo (4 puntos del panel). Si
+    // alguien dado de baja sigue contando, su categoría NUNCA queda vacante y
+    // el sustituto no puede entrar aunque el hueco exista.
+    //
+    // ⚠️ NO BASTA CON MIRAR `isAuthorized`. Un rol dado de baja se marca con
+    //    status:'removed' + isAuthorized:false, pero hay documentos en los que
+    //    esas dos cosas NO son coherentes:
+    //      · los que reactivó el fallo de resurrección al iniciar sesión
+    //        (quedaron status:'removed' con isAuthorized:true, o al revés);
+    //      · los antiguos que usan el alias heredado `authorized` sin el "is".
+    //    Contando solo `isAuthorized === true` esas plazas se quedaban pilladas
+    //    para siempre, sin forma de liberarlas desde la interfaz.
+    //    Por eso 'removed' manda: si el rol está de baja, NO ocupa plaza, diga
+    //    lo que diga el resto de banderas.
+    const _rolOcupaPlaza = (r, role) => {
+        if (!r || r.role !== role) return false;
+        if (String(r.clubId || '') !== String(clubId || '') && r.clubId) return false;
+        if (r.status === 'removed' || r.status === 'rejected') return false;
+        return r.isAuthorized === true || r.authorized === true;
+    };
     const slotOf = (role) => {
         const max = (club.slots || {})[role === 'director' ? 'directors' : role === 'coordinator' ? 'coordinators' : role === 'parent' ? 'parents' : 'users'] ?? -1;
         const usedSet = new Set();
         users.forEach(u => {
             if (u.status === 'removed') return;
-            if (u.role === role && u.isAuthorized === true) {
+            // El rol de la RAÍZ. Se exige además que la raíz no esté de baja,
+            // por si el documento quedó con status y bandera descuadrados.
+            if (u.role === role && u.isAuthorized === true && u.status !== 'removed') {
                 usedSet.add(u._id);
             } else if (u.allRoles) {
-                const hasRole = u.allRoles.some(r => r.role === role && r.isAuthorized === true && (r.clubId === clubId || !r.clubId));
-                if (hasRole) usedSet.add(u._id);
+                if (u.allRoles.some(r => _rolOcupaPlaza(r, role))) usedSet.add(u._id);
             }
         });
         const used = usedSet.size;
@@ -433,10 +458,12 @@ async function openClubAdminPanel(preClubId = null) {
                     onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}')"
                     style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">
                     🗑️ Baja</button>` : ''}
-                <button class="sa-btn"
-                    onclick="caDeleteUserComplete('${euid}','${email}','${ecid}')"
-                    style="font-size:0.7rem;color:white;border-color:rgba(255,88,88,0.6);background:rgba(255,88,88,0.2);font-weight:700;">
-                    🗑️ Eliminar</button>
+                <!-- ⚠️ EL BOTÓN "🗑️ Eliminar" (cuenta entera) SE HA RETIRADO.
+                     El borrado global de cuentas es cosa del SuperAdministrador
+                     al cerrar temporada. Desde el Panel de Club sólo se vacían
+                     casillas, y la cuenta desaparece —sola— cuando se revoca la
+                     última. Un botón que borra cuentas enteras al lado de uno
+                     que sólo quita un rol es un accidente esperando. -->
             </div>
         </div>`;
     };
@@ -473,7 +500,13 @@ async function openClubAdminPanel(preClubId = null) {
                 const rCid = String(r.clubId || '');
                 const isAuth = r.isAuthorized === true || r.authorized === true || (u.role === 'superadmin');
                 
-                if (rCid === cidStr && isAuth && r.status !== 'rejected') {
+                // ⚠️ 'removed' TAMBIÉN excluye, no solo 'rejected'. Desde que la
+                //    baja MARCA el rol en vez de borrarlo (revocación), un rol
+                //    dado de baja sigue estando en allRoles: si aquí no se
+                //    descarta explícitamente, el entrenador se sigue pintando
+                //    en su categoría como si nada. `isAuth` no basta por sí
+                //    solo, porque acepta el alias heredado `r.authorized`.
+                if (rCid === cidStr && isAuth && r.status !== 'rejected' && r.status !== 'removed') {
                     // Fallback por-rol: si esta entrada concreta de allRoles no trae
                     // category/subcategory (tipico de altas del flujo Club previas al
                     // fix), respaldarlas desde la raiz del documento del usuario.
@@ -580,12 +613,14 @@ async function openClubAdminPanel(preClubId = null) {
                     <div style="font-size:0.74rem; color:#8b949e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</div>
                     <div style="font-size:0.72rem; color:#8b949e; white-space:nowrap;">${regDate}</div>
                     <div style="display:flex; gap:0.4rem; flex-shrink:0; justify-content:flex-end;">
-                        <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${erole}')"
-                            title="Quitar este rol (conserva la cuenta y los demás roles)"
-                            class="sa-btn" style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Rol</button>
-                        <button onclick="caDeleteUserComplete('${euid}','${email}','${ecid}','${erole}')"
-                            title="Eliminar usuario completamente (borra la cuenta Auth y todos sus roles)"
-                            class="sa-btn" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.3); font-weight:700;">🗑️ Usuario</button>
+                        <!-- ⚠️ UN SOLO BOTÓN. Aquí había también un "🗑️ Usuario"
+                             que borraba la cuenta ENTERA: se ha retirado. Desde
+                             una fila de equipo sólo se vacía esa casilla; el
+                             borrado de cuentas es cosa del SuperAdministrador al
+                             cerrar temporada, y ocurre solo si era el último rol. -->
+                        <button onclick="caRevocarCasilla('${euid}','${email}','${ecid}','${erole}')"
+                            title="Quitar esta casilla: archiva su trabajo en la categoría y la deja vacante. La cuenta se conserva si le quedan otros roles."
+                            class="sa-btn" style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Quitar del equipo</button>
                     </div>
                 </div>`;
         };
@@ -628,12 +663,10 @@ async function openClubAdminPanel(preClubId = null) {
                             ${modBadge}
                         </div>
                         <div style="display:flex; gap:0.4rem; flex-shrink:0;">
-                            <button onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${erole}')"
-                                title="Quitar este rol" class="sa-btn"
-                                style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Rol</button>
-                            <button onclick="caDeleteUserComplete('${euid}','${email}','${ecid}')"
-                                title="Eliminar usuario completamente" class="sa-btn"
-                                style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.3); font-weight:700;">🗑️ Usuario</button>
+                            <button onclick="caRevocarCasilla('${euid}','${email}','${ecid}','${erole}')"
+                                title="Quitar esta casilla: archiva su trabajo y la deja vacante"
+                                class="sa-btn"
+                                style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Quitar del equipo</button>
                         </div>
                     </div>`;
             }).join('');
@@ -1403,45 +1436,78 @@ async function openClubAdminPanel(preClubId = null) {
     };
 
     // ── Rechazar solicitud de acceso ─────────────────────────────────
+    // v474 · Rechazar es DOS limpiezas independientes —marcar el perfil y
+    // retirar la(s) solicitud(es)— y antes iban encadenadas: si la primera
+    // fallaba, la segunda ni se intentaba y la solicitud se quedaba colgada en
+    // el panel para siempre (el caso reportado). Ahora se intentan LAS DOS y
+    // solo se da error si no se consiguió ninguna.
+    //
+    // ⚠️ Los deleteDoc se ESPERAN uno a uno. Antes se lanzaban sin await
+    // dentro de un forEach y el repintado posterior (navReload) llegaba antes
+    // que los borrados: la solicitud recién rechazada volvía a aparecer.
     window.caRejectRequest = async (uid, email, isPlatformReq, userUid) => {
         if (!confirm('¿Rechazar solicitud de ' + email + '?')) return;
-        try {
-            const isPR = isPlatformReq === true || isPlatformReq === 'true'
-                || (typeof uid === 'string' && (uid.startsWith('self_reg_') || uid.startsWith('fwd_')));
 
-            if (isPR) {
-                // uid es un doc de platform_requests — borrarlo
-                await deleteDoc(doc(db, 'platform_requests', uid));
-                // Si tenemos el UID real del usuario, marcarlo como rechazado
-                if (userUid) {
-                    await updateDoc(doc(db, 'users', userUid), {
-                        isAuthorized: false, status: 'rejected',
-                        rejectedAt: new Date().toISOString(), rejectedBy: me.uid
-                    }).catch(e => console.warn('[caRejectRequest] No se pudo actualizar user:', e.message));
-                }
-            } else {
-                // uid es un usuario real
-                try {
-                    await updateDoc(doc(db,'users',uid), {
-                        isAuthorized: false, status: 'rejected',
-                        rejectedAt: new Date().toISOString(), rejectedBy: me.uid
-                    });
-                } catch(updErr) {
-                    if (!updErr.message.includes('No document to update')) throw updErr;
-                    // El doc de usuario no existe — solo limpiamos (no es error fatal)
-                    console.warn('[caRejectRequest] User doc no existe, limpiando platform_requests...');
-                }
-                // Limpiar platform_requests relacionados (evitar solicitudes fantasma)
-                try {
-                    const prSnap = await getDocs(query(collection(db, 'platform_requests'), where('userUid', '==', uid)));
-                    prSnap.forEach(d => deleteDoc(doc(db, 'platform_requests', d.id)).catch(() => {}));
-                } catch(_) {}
+        // `uid` es el id de un doc de platform_requests o el de un usuario.
+        const isPR = isPlatformReq === true || isPlatformReq === 'true'
+            || (typeof uid === 'string' && (uid.startsWith('self_reg_') || uid.startsWith('fwd_')
+                || uid.startsWith('ind_reg_') || uid.startsWith('user_req_')));
+        const targetUid = isPR ? (userUid || '') : (uid || '');
+
+        const fallos = [];
+        let algoHecho = false;
+
+        // 1. Marcar el perfil como rechazado (si sabemos de quién es).
+        if (targetUid) {
+            try {
+                await updateDoc(doc(db, 'users', targetUid), {
+                    isAuthorized: false, status: 'rejected',
+                    rejectedAt: new Date().toISOString(), rejectedBy: me.uid
+                });
+                algoHecho = true;
+            } catch (updErr) {
+                const msg = updErr && updErr.message ? updErr.message : String(updErr);
+                // Que el documento no exista NO es un fallo: hay solicitudes sin
+                // perfil todavía. Solo hay que retirar la solicitud.
+                if (!msg.includes('No document to update')) fallos.push('perfil: ' + msg);
             }
-            showToast('❌ Solicitud de ' + email + ' rechazada.', 3000);
-            // Refresco tras la acción. Antes iba SIN clubId, así que al
-            // SuperAdmin le devolvía al selector de clubes.
-            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
-        } catch(e) { showToast('❌ Error al rechazar: ' + e.message, 3000); }
+        }
+
+        // 2. Retirar la solicitud pulsada y cualquier otra del mismo usuario,
+        //    para que no reaparezca como solicitud fantasma.
+        //    ⚠️ EL FILTRO POR clubId NO ES DECORATIVO. Firestore autoriza una
+        //    consulta SIN leer los documentos: la regla tiene que quedar
+        //    garantizada por los filtros de la consulta. Con `userUid` a secas,
+        //    `resource.data.clubId` es desconocido y la consulta se deniega
+        //    entera —"Missing or insufficient permissions" al LISTAR—, que es
+        //    justo por lo que las solicitudes seguian sin retirarse. El listado
+        //    principal del panel (linea ~180) ya filtra por clubId; esta no.
+        const porBorrar = [];
+        if (isPR && uid) porBorrar.push(uid);
+        if (targetUid) {
+            try {
+                const prSnap = await getDocs(query(collection(db, 'platform_requests'),
+                    where('clubId', '==', clubId), where('userUid', '==', targetUid)));
+                prSnap.forEach(d => { if (porBorrar.indexOf(d.id) === -1) porBorrar.push(d.id); });
+            } catch (qErr) {
+                console.warn('[caRejectRequest] No se pudieron listar las solicitudes:', qErr.message);
+            }
+        }
+        for (const prId of porBorrar) {
+            try { await deleteDoc(doc(db, 'platform_requests', prId)); algoHecho = true; }
+            catch (delErr) { fallos.push('solicitud ' + prId + ': ' + (delErr.message || delErr)); }
+        }
+
+        if (!algoHecho && fallos.length) {
+            showToast('❌ Error al rechazar: ' + fallos[0], 4000);
+            return;
+        }
+        if (fallos.length) console.warn('[caRejectRequest] Rechazo parcial:', fallos);
+
+        showToast('❌ Solicitud de ' + email + ' rechazada.', 3000);
+        // Refresco tras la acción. Antes iba SIN clubId, así que al
+        // SuperAdmin le devolvía al selector de clubes.
+        if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
     };
 
     // ── Rechazar rol pendiente de un usuario multi-rol ─────────────
@@ -1562,15 +1628,27 @@ async function openClubAdminPanel(preClubId = null) {
             
             // 3. Limpiar la solicitud original self_reg_* para que no quede colgada como pendiente
             //    Se buscan platform_requests de tipo pending_club_admin con el mismo usuario
+            //    ⚠️ v474 · MISMO DEFECTO QUE EN caRejectRequest, y aqui lo tapaba un
+            //    `catch(_) {}` mudo: sin el filtro por clubId la consulta se DENIEGA
+            //    entera, asi que esta limpieza no borraba nada. Se ve en los datos de
+            //    produccion: usuarios con su `fwd_*` ya aprobado y el `self_reg_*`
+            //    original todavia en pending_club_admin, apareciendo como pendientes.
+            //    Los borrados se ESPERAN, como en caRejectRequest.
             try {
                 const { getDocs: _gds, collection: _col, query: _q, where: _w } = await saFS();
-                const origPRSnap = await _gds(_q(_col(fDb, 'platform_requests'), _w('userUid', '==', uid)));
+                const origPRSnap = await _gds(_q(_col(fDb, 'platform_requests'),
+                    _w('clubId', '==', cid), _w('userUid', '==', uid)));
+                const _viejas = [];
                 origPRSnap.forEach(d => {
                     if (d.id !== fwdReqId && (d.data().status === 'pending_club_admin' || d.data().status === 'pending')) {
-                        fDeleteDoc ? fDeleteDoc(fDoc(fDb, 'platform_requests', d.id)).catch(() => {}) : null;
+                        _viejas.push(d.id);
                     }
                 });
-            } catch(_) {}
+                for (const _vid of _viejas) {
+                    try { await fDeleteDoc(fDoc(fDb, 'platform_requests', _vid)); }
+                    catch (e) { console.warn('[caForwardToSA] No se pudo retirar la solicitud original ' + _vid + ':', e.message); }
+                }
+            } catch(e) { console.warn('[caForwardToSA] No se pudieron listar las solicitudes originales:', e.message); }
 
             showToast('✅ Solicitud de ' + email + ' reenviada al SuperAdmin.', 4000);
             // Refresco tras la acción. Antes iba SIN clubId, así que al
@@ -1581,31 +1659,149 @@ async function openClubAdminPanel(preClubId = null) {
         }
     };
 
-    // ── Cambiar estado de un usuario (activo / bloqueado / baja total) ──
+    // ── Cambiar estado de un usuario (activo / bloqueado / baja) ──
 
-    // ── Eliminar usuario completo (sin preguntar motivo, borrado total) ──
-    window.caDeleteUserComplete = async (userId, userEmail, cid, targetRole) => {
+    // ══════════════════════════════════════════════════════════════════
+    // REVOCAR UNA CASILLA (rol + categoría) — NO se borra a la persona
+    // ══════════════════════════════════════════════════════════════════
+    // 🔑 LA REGLA DE NEGOCIO, tal y como la fijó el autor:
+    //
+    //    · El correo es de la PERSONA. La casilla (rol + categoría) es del
+    //      CLUB. Una misma cuenta puede llevar varias casillas: un equipo de
+    //      F11 y otro de F7, y además ser padre, coordinador o director.
+    //    · Revocar una casilla ARCHIVA su trabajo en la categoría —para que
+    //      lo herede quien venga— y la deja VACANTE. La cuenta no se toca.
+    //    · SÓLO si era el ÚLTIMO rol que le quedaba en el club se elimina su
+    //      cuenta de Auth y se libera su correo.
+    //
+    // ⚠️ Desde las filas de equipo YA NO SE BORRAN CUENTAS ENTERAS. Eso lo
+    //    gestiona el SuperAdministrador a nivel de club al cerrar temporada.
+    //    Aquí sólo se vacían casillas; el borrado, cuando toca, es una
+    //    CONSECUENCIA de haber revocado la última, no una acción aparte.
+    //
+    // 🔑 EL ORDEN NO ES CASUAL:
+    //   1. Revocar primero: marca el rol y —lo que la Function no hace—
+    //      LIBERA LA PLAZA del club decrementando usedSlots.
+    //   2. Después la Function: archiva y verifica; y sólo si no le queda
+    //      ningún rol, borra la cuenta.
+    window.caRevocarCasilla = async (userId, userEmail, cid, targetRole) => {
+        // ── Cuántos roles le quedarían: decide el aviso y la confirmación ──
+        // Se lee del documento, no de lo pintado en la fila: la fila puede
+        // llevar minutos en pantalla.
+        let quedanOtros = null;   // null = no se ha podido saber
+        try {
+            const _s = await getDoc(doc(db, 'users', userId));
+            if (_s.exists()) {
+                const _d = _s.data() || {};
+                const _todos = Array.isArray(_d.allRoles) ? _d.allRoles : [];
+                const _vivo = (r) => r && r.status !== 'removed' &&
+                                     (r.isAuthorized === true || r.authorized === true);
+                // El que se está revocando ahora todavía consta como vivo.
+                quedanOtros = _todos.filter((r) => _vivo(r) &&
+                    !(r.role === targetRole && (!r.clubId || String(r.clubId) === String(cid || '')))).length;
+            }
+        } catch (_) { /* si falla, se avisa en genérico y decide el servidor */ }
+
+        const _rotulo = { user: 'Entrenador', parent: 'Padre/Madre/Tutor', director: 'Director Deportivo',
+                          coordinator: 'Coordinador', club_admin: 'Administrador' }[targetRole] || targetRole;
+        const esUltimo = (quedanOtros === 0);
+
         if (!confirm(
-            '🗑️ ELIMINAR USUARIO COMPLETAMENTE\n\n' +
-            'Email: ' + userEmail + '\n\n' +
-            'Esto eliminará PERMANENTEMENTE:\n' +
-            '• Su cuenta y documento de Firestore\n' +
-            '• Todas sus solicitudes y platform_requests\n' +
-            '• Sus enlaces con jugadores (cronos_player_links)\n' +
-            '• Sus registros de baja\n\n' +
-            'El correo quedará libre para re-registrarse.\n\n' +
-            '¿Confirmar BORRADO TOTAL?'
+            '➖ QUITAR LA CASILLA DE "' + _rotulo + '" A ' + userEmail + '\n\n' +
+            'QUÉ PASA CON EL TRABAJO:\n' +
+            '• Se archiva en la categoría, para el siguiente entrenador\n' +
+            '• Informes, convocatorias y entrenamientos siguen en el club\n\n' +
+            'QUÉ PASA CON LA CASILLA:\n' +
+            '• Queda VACANTE, lista para otra persona\n\n' +
+            'QUÉ PASA CON SU CUENTA:\n' +
+            (esUltimo
+                ? '• ⚠️ Es el ÚLTIMO rol que le queda en el club:\n' +
+                  '  su cuenta se ELIMINARÁ y su correo quedará LIBRE.\n' +
+                  '  ESTO NO SE PUEDE DESHACER.\n'
+                : (quedanOtros === null
+                    ? '• Se conservará si le quedan otros roles\n'
+                    : '• Sigue intacta: conserva ' + quedanOtros + ' rol(es) más\n')) +
+            '\n¿Continuar?'
         )) return;
-        // Reutilizar caSetUserStatus con 'removed' que ya hace el borrado completo
-        await window.caSetUserStatus(userId, userEmail, 'removed', cid, targetRole);
+
+        // ── Segunda confirmación SÓLO cuando de verdad se va a borrar ──
+        // 🔑 Pedirla siempre acabaría en aceptar sin leer; pedirla justo
+        //    cuando la acción es irreversible es lo que la hace valer.
+        if (esUltimo) {
+            const tecleado = prompt(
+                'Es su último rol: se eliminará la cuenta y se liberará el correo.\n\n' +
+                'Escribe el correo completo para confirmarlo:\n' + userEmail
+            );
+            if (tecleado === null) return;
+            if (String(tecleado).trim().toLowerCase() !== String(userEmail).trim().toLowerCase()) {
+                alert('El correo no coincide. No se ha hecho nada.');
+                return;
+            }
+        }
+
+        try {
+            if (typeof showToast === 'function') showToast('⏳ Archivando el trabajo del equipo…', 4000);
+
+            // 1. Revocar esa casilla: marca el rol y libera la plaza.
+            await window.caSetUserStatus(userId, userEmail, 'removed', cid, targetRole, true);
+
+            // 2. Archivar (y borrar la cuenta sólo si era el último rol).
+            if (typeof httpsCallable !== 'function' || !fa || !fa.functions) {
+                alert('⚠️ La casilla ha quedado vacante, pero no se pudo contactar con el ' +
+                      'servidor para archivar el trabajo. No se ha borrado nada: reinténtalo.');
+                return;
+            }
+            const res = await httpsCallable(fa.functions, 'archiveAndDeleteCoach')({
+                uid: userId, email: userEmail, clubId: cid, role: targetRole || null
+            });
+            const d = (res && res.data) || {};
+            alert('✅ Casilla de "' + _rotulo + '" liberada.\n\n' +
+                  'Archivado en la categoría: ' + (d.documentosArchivados || 0) + ' documento(s), ' +
+                  (d.clavesArchivadas || 0) + ' dato(s).\n' +
+                  (d.cuentaBorrada
+                      ? 'Era su último rol: cuenta eliminada y correo LIBERADO.'
+                      : 'Su cuenta sigue activa con ' + ((d.rolesRestantes || []).length) + ' rol(es): ' +
+                        ((d.rolesRestantes || []).join(', ') || '—')) +
+                  '\n\nEl histórico del equipo sigue en el Panel del Club.');
+            // Mismo patrón que el resto del panel: si nav-stack no ha cargado,
+            // se repinta a mano CON el clubId.
+            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(cid);
+        } catch (e) {
+            const msg = (e && e.message) || String(e);
+            alert('⚠️ No se ha completado.\n\n' + msg + '\n\n' +
+                  'Si el mensaje dice que el archivado no se pudo verificar, ' +
+                  'NO se ha borrado la cuenta ni se ha perdido ningún dato: vuelve a intentarlo.');
+            console.error('[caRevocarCasilla]', e);
+        }
     };
 
-    // ── GESTIONAR EQUIPO (Categoría/Subcategoría) ────────────────────
+    // ── ASIGNAR / MOVER DE EQUIPO (Categoría/Subcategoría) ───────────
+    //
+    // Esta es la palanca de MOVILIDAD: cambiar aquí la categoría de un
+    // entrenador le retira la vista de su equipo anterior y le da la del
+    // nuevo, con TODO el histórico que ese equipo acumule, lo firmara quien
+    // lo firmara. No hay que mover ni copiar un solo informe: los informes
+    // se consultan por equipo (ver cronosTeamId en js/core/utils.js).
     window.caEditUserCategory = async function(uid, email, currentCat, currentSub) {
         let newCat = prompt('Categoría (ej: Infantil, Cadete, Senior...):', currentCat);
         if (newCat === null) return;
         let newSub = prompt('Subcategoría / Grupo (ej: A, B, Segunda...):', currentSub);
         if (newSub === null) return;
+
+        // Que el administrador vea la consecuencia ANTES de aceptar: esto no
+        // es editar una etiqueta, es mover el acceso de una persona.
+        var _antes = (currentCat || '—') + (currentSub ? ' / ' + currentSub : '');
+        var _despues = (newCat || '—') + (newSub ? ' / ' + newSub : '');
+        if (_antes !== _despues) {
+            if (!confirm('Mover a ' + email + ' de equipo:\n\n' +
+                         '   ' + _antes + '   →   ' + _despues + '\n\n' +
+                         'Pasará a ver el histórico de ' + _despues + ' (informes,\n' +
+                         'convocatorias y entrenamientos, los firmara quien los firmara)\n' +
+                         'y dejará de ver los de ' + _antes + '.\n\n' +
+                         'No se mueve ni se borra ningún dato: cada informe se queda\n' +
+                         'en el equipo donde se generó.\n\n' +
+                         '¿Confirmar el cambio de equipo?')) return;
+        }
 
         try {
             const { db, doc, updateDoc, getDoc } = await saFS();
@@ -1617,7 +1813,7 @@ async function openClubAdminPanel(preClubId = null) {
                 return;
             }
             const data = snap.data();
-            
+
             // Actualizar en el perfil general
             let updates = {
                 category: newCat,
@@ -1625,9 +1821,23 @@ async function openClubAdminPanel(preClubId = null) {
             };
 
             // Actualizar en allRoles
+            //
+            // ⚠️ LA PUNTERÍA ERA DEMASIADO ANCHA. La condición era
+            //        r.role === data.role || r.clubId === clubId
+            //    con un O: bastaba que el rol coincidiera con el rol RAÍZ para
+            //    reetiquetar entradas de OTROS clubes, y bastaba compartir club
+            //    para reetiquetar OTROS roles. A quien tuviera dos roles en el
+            //    mismo club (p. ej. entrenador y padre) se le cambiaba la
+            //    categoría de los dos de una vez.
+            //    Ahora se exige club Y rol, y sólo se tocan los roles ACTIVOS:
+            //    un rol ya revocado conserva la categoría que tenía, que es su
+            //    valor histórico.
             if (data.allRoles) {
                 updates.allRoles = data.allRoles.map(function(r) {
-                    if (r.role === data.role || r.clubId === clubId) {
+                    var mismoClub = String(r.clubId || '') === String(clubId || '');
+                    var mismoRol  = r.role === data.role;
+                    var activo    = r.status !== 'removed' && r.isAuthorized !== false;
+                    if (mismoClub && mismoRol && activo) {
                         return Object.assign({}, r, { category: newCat, subcategory: newSub });
                     }
                     return r;
@@ -1635,7 +1845,10 @@ async function openClubAdminPanel(preClubId = null) {
             }
 
             await updateDoc(userRef, updates);
-            if (typeof showToast === 'function') showToast('✅ Equipo actualizado correctamente', 3000);
+            // ⚠️ El cambio NO es inmediato para el interesado: su categoría se
+            //    leyó al iniciar sesión (window._cronosCurrentUser), así que
+            //    verá el equipo nuevo la próxima vez que entre.
+            if (typeof showToast === 'function') showToast('✅ Equipo actualizado. Lo verá al volver a entrar.', 4000);
             
             // Refrescar panel tras 1 segundo (antes SIN clubId: al SuperAdmin
             // le devolvía al selector de clubes en vez de al club editado).
@@ -1646,12 +1859,24 @@ async function openClubAdminPanel(preClubId = null) {
         }
     };
 
-    window.caSetUserStatus = async (userId, userEmail, newStatus, cid, targetRole) => {
-        const labels = { active:'activar', blocked:'bloquear', removed:'dar de baja definitivamente' };
+    // `sinConfirmar` lo usa caRevocarCasilla, que ya ha pedido su propia
+    // doble confirmación: encadenar aquí un tercer diálogo sólo consigue que
+    // se acepte sin leer.
+    window.caSetUserStatus = async (userId, userEmail, newStatus, cid, targetRole, sinConfirmar) => {
+        // 'removed' ya NO es "dar de baja definitivamente": es revocar el
+        // acceso. El texto lo dice, porque de él depende que el administrador
+        // entienda qué está aceptando.
+        const labels = { active:'activar', blocked:'bloquear', removed:'dar de baja (revocar el acceso de)' };
         // Si se especifica targetRole, la "baja" es de UN solo rol (no del usuario entero).
-        if (newStatus === 'removed' && targetRole) {
+        if (sinConfirmar) {
+            /* el llamante ya ha confirmado */
+        } else if (newStatus === 'removed' && targetRole) {
             if (!confirm('¿Quitar el rol "' + targetRole + '" a ' + userEmail + '?\n\n' +
                          'Se conservará su cuenta y los demás roles activos.')) return;
+        } else if (newStatus === 'removed') {
+            if (!confirm('¿Dar de baja a ' + userEmail + '?\n\n' +
+                         'Se le retira el acceso y se libera su plaza.\n' +
+                         'Su cuenta y el histórico del equipo se conservan.')) return;
         } else {
             if (!confirm('¿Deseas ' + (labels[newStatus] || newStatus) + ' a ' + userEmail + '?')) return;
         }
@@ -1690,186 +1915,268 @@ async function openClubAdminPanel(preClubId = null) {
                     allRoles = docData.allRoles;
                 }
 
-                // ── Determinar alcance del borrado (multi-rol) ──────────────
+                // ── Determinar alcance de la REVOCACIÓN (multi-rol) ─────────
                 // Si se especifica targetRole y el usuario tiene OTROS roles
-                // activos, solo se elimina ESE rol; la cuenta Auth y los demás
-                // roles se conservan. Sin targetRole = borrado total del usuario.
+                // activos, solo se revoca ESE rol; los demás siguen vivos.
+                // Sin targetRole = se revoca su acceso al club entero.
+                //
+                // ⚠️ LA PUNTERÍA ERA MÁS ESTRECHA QUE LA DEL LISTADO. Exigía
+                //    `String(r.clubId||'') === String(cid||'')`, pero el panel
+                //    pinta los roles con `(r.clubId === clubId || !r.clubId)`
+                //    (líneas 263/280/298): una entrada de allRoles SIN clubId
+                //    —las hay, las crea auth.js con `clubId: data.clubId || null`—
+                //    SE VE en el listado y NO casaba aquí. Resultado: cero roles
+                //    seleccionados, cero cambios escritos... y toast de éxito.
+                //    Es una de las causas del "parece que funciona y no persiste".
+                var _esDeEsteClub = function(r) {
+                    var rc = String(r.clubId || '');
+                    return rc === String(cid || '') || rc === '';
+                };
                 var rolesRemovidos = allRoles.filter(function(r) {
-                    var sameClub = String(r.clubId || '') === String(cid || '');
-                    if (!sameClub) return false;
+                    if (!_esDeEsteClub(r)) return false;
                     if (targetRole && r.role !== targetRole) return false;
                     return true;
                 });
                 var rolesRestantes = allRoles.filter(function(r) {
-                    var sameClub = String(r.clubId || '') === String(cid || '');
-                    if (!sameClub) return true;
+                    if (!_esDeEsteClub(r)) return true;
                     if (targetRole && r.role !== targetRole) return true;
                     return false;
                 });
-                var deleteAllRoles = rolesRestantes.length === 0;
-                var shouldDeleteAuth = deleteAllRoles;
+                // Sólo cuentan como "restantes" los que siguen VIVOS: un rol ya
+                // revocado antes no puede sostener la cuenta abierta.
+                var rolesRestantesVivos = rolesRestantes.filter(function(r) {
+                    return r.status !== 'removed' && r.isAuthorized !== false;
+                });
+                var revocaTodosLosRoles = rolesRestantesVivos.length === 0;
 
-                // ── CAMINO A: quitar SOLO los roles de este club/rol (conservar cuenta + otros roles)
-                if (!deleteAllRoles) {
-                    // A1. Liberar slots en el club
-                    for (var rIdx = 0; rIdx < rolesRemovidos.length; rIdx++) {
-                        var rolRem = rolesRemovidos[rIdx].role;
-                        if (cid) {
-                            try {
-                                var csR = await getDoc(doc(db, 'clubs', cid));
-                                if (csR.exists()) {
-                                    var rkR  = _slotKey(rolRem);
-                                    var subR = rkR.split('.')[1];
-                                    var curR = ((csR.data().usedSlots || {})[subR]) || 1;
-                                    var updR = {}; updR[rkR] = Math.max(0, curR - 1);
-                                    await updateDoc(doc(db, 'clubs', cid), updR);
-                                }
-                            } catch (_) {}
-                        }
-                    }
-                    // A2. Quitar roles de allRoles del doc primario (NO borrar el doc)
+                // ⚠️⚠️ EL ROL DE LA RAÍZ MANDA SOBRE allRoles.
+                //    users/{uid} tiene, además del array, un rol de RAÍZ
+                //    (`role` + `clubId` + `isAuthorized`). Si se revoca ese
+                //    mismo rol y la raíz se queda con isAuthorized:true,
+                //    auth.js lo RESUCITA en el siguiente inicio de sesión
+                //    (ver el bloque "Sincronizar roles autorizados entre raíz y
+                //    allRoles"): reescribe la entrada a isAuthorized:true /
+                //    status:'active' y la persiste. Ese era el fallo reportado:
+                //    el entrenador reaparecía en su misma categoría al recargar.
+                //    Por eso, si lo revocado incluye el rol raíz de este club,
+                //    la raíz TIENE que quedar desautorizada.
+                var _raizEsDeEsteClub = String(docData.clubId || '') === String(cid || '')
+                                        || String(docData.clubId || '') === '';
+                var revocaRolRaiz = _raizEsDeEsteClub && !!docData.role &&
+                    rolesRemovidos.some(function(r) { return r.role === docData.role; });
+                // Sin allRoles utilizable, la baja recae entera sobre la raíz.
+                if (allRoles.length === 0) revocaRolRaiz = true;
+
+                // ══════════════════════════════════════════════════════════
+                // 🔑 allRoles: SE MARCA, NO SE QUITA
+                // ══════════════════════════════════════════════════════════
+                // Antes el rol revocado se BORRABA del array. Se conserva la
+                // entrada con status:'removed' porque:
+                //
+                //  1. Es la convención que el backend YA entiende: el trigger
+                //     autoSetClaimsOnApproval (functions/index.js) elige el
+                //     clubId saltándose los roles con
+                //     `isAuthorized === false || status === 'removed'`. Marcar
+                //     produce el mismo efecto que borrar de cara a los claims,
+                //     y además deja rastro.
+                //  2. Readmitir a alguien es volver a poner status:'active',
+                //     sin reconstruir un rol desde cero.
+                //  3. El histórico de quién entrenó qué categoría y cuándo
+                //     queda EN el documento, no solo en deletion_requests.
+                var marcaRevocado = function(r) {
+                    return Object.assign({}, r, {
+                        status: 'removed',
+                        isAuthorized: false,
+                        // ⚠️ `authorized` (sin el "is") es un alias heredado que
+                        //    el listado TAMBIÉN acepta como válido:
+                        //    `r.isAuthorized === true || r.authorized === true`.
+                        //    Marcar solo isAuthorized dejaba visible cualquier
+                        //    entrada antigua que llevara el alias a true.
+                        authorized: false,
+                        removedAt: new Date().toISOString(),
+                        removedBy: me.uid,
+                        removedReason: (reason || '').trim() || 'Sin motivo indicado'
+                    });
+                };
+                // El array COMPLETO que se va a guardar: los revocados marcados
+                // y los demás intactos. Se respeta el orden original.
+                var allRolesTrasRevocar = allRoles.map(function(r) {
+                    var esRevocado = rolesRemovidos.some(function(x) {
+                        return x.role === r.role &&
+                               String(x.clubId || '') === String(r.clubId || '');
+                    });
+                    return esRevocado ? marcaRevocado(r) : r;
+                });
+
+                // ══════════════════════════════════════════════════════════
+                // REVOCACIÓN — un solo camino, sin borrar NADA
+                // ══════════════════════════════════════════════════════════
+                // Antes había dos caminos: "quitar un rol" (conservador) y
+                // "borrado total", que eliminaba los documentos de users, los
+                // cronos_player_links y la cuenta de Firebase Auth.
+                //
+                // 🔑 EL BORRADO TOTAL SE RETIRA DE AQUÍ. El dato del club
+                //    (informes, convocatorias, entrenamientos) pertenece al
+                //    EQUIPO, no a la cuenta que lo generó, y ya vivía en
+                //    colecciones propias indexadas por clubId — nunca se
+                //    borraba en cascada. Lo que sí destruía el borrado total
+                //    era el acceso al histórico:
+                //
+                //    ⚠️⚠️ users/{uid}/cronos_data/main es una SUBCOLECCIÓN.
+                //    Firestore NO borra subcolecciones al borrar el documento
+                //    padre: la plantilla quedaba viva pero HUÉRFANA, y su regla
+                //    (`request.auth.uid == userId`, sin rama de SuperAdmin) la
+                //    dejaba ilegible para todo el mundo, incluido el SA. Al
+                //    re-registrarse, el correo estrena UID y apunta a un
+                //    documento vacío. Se perdía sin dar un solo error.
+                //
+                //    ⚠️ Y si deleteAuthUser fallaba, los datos ya estaban
+                //    borrados pero el correo seguía ocupado en Auth: el
+                //    re-registro caía en 'auth/email-already-in-use' y exigía
+                //    la contraseña ANTIGUA. Quien no la recordara se quedaba
+                //    fuera para siempre.
+                //
+                // Ahora la baja es exactamente lo que dice ser: se le retira el
+                // acceso. La cuenta, su UID y todo lo que firmó siguen en pie,
+                // así que el entrenador que herede la categoría encuentra el
+                // histórico intacto y readmitir a alguien es reactivar un rol.
+
+                // 1. Liberar las plazas del club de CADA rol revocado. La
+                //    plaza sí se libera: la persona deja de ocuparla.
+                for (var rIdx = 0; rIdx < rolesRemovidos.length; rIdx++) {
+                    var cidRol = rolesRemovidos[rIdx].clubId || cid;
+                    if (!cidRol) continue;
                     try {
-                        await updateDoc(doc(db, 'users', realUid), { allRoles: rolesRestantes });
+                        var csR = await getDoc(doc(db, 'clubs', cidRol));
+                        if (csR.exists()) {
+                            var rkR  = _slotKey(rolesRemovidos[rIdx].role);
+                            var subR = rkR.split('.')[1];
+                            var curR = ((csR.data().usedSlots || {})[subR]) || 1;
+                            var updR = {}; updR[rkR] = Math.max(0, curR - 1);
+                            await updateDoc(doc(db, 'clubs', cidRol), updR);
+                        }
                     } catch (_) {}
-                    // A3. Eliminar docs secundarios
-                    for (var rIdx2 = 0; rIdx2 < rolesRemovidos.length; rIdx2++) {
-                        var rolRem2 = rolesRemovidos[rIdx2].role;
-                        var secOne = realUid + '_' + rolRem2 + '_' + (cid || 'global');
-                        if (secOne !== realUid) {
-                            try { await deleteDoc(doc(db, 'users', secOne)); } catch (_) {}
-                        }
-                    }
-                    // A4. Eliminar enlaces de jugador (solo si eliminamos el rol de 'parent')
-                    var tieneParentRemovido = rolesRemovidos.some(function(r) { return r.role === 'parent'; });
-                    if (tieneParentRemovido) {
-                        try {
-                            var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
-                            var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
-                            for (var li = 0; li < linksArr.length; li++) {
-                                try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
-                            }
-                        } catch (_) {}
-                        try {
-                            var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
-                            var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
-                            for (var li2 = 0; li2 < linksArr2.length; li2++) {
-                                try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
-                            }
-                        } catch (_) {}
-                    }
-                    // A5. Registrar la baja de rol (sin tocar Firebase Auth)
-                    await setDoc(doc(db, 'deletion_requests', realUid + '_role_' + Date.now()), {
-                        userId: realUid, userEmail: realEmail, clubId: cid,
-                        requestedBy: me.uid, requestedByEmail: me.email,
-                        reason: (reason || '').trim() || 'Baja de rol',
-                        rolesDeleted: rolesRemovidos.map(function(r) { return r.role; }),
-                        remainingRoles: rolesRestantes.map(function(r) { return r.role; }),
-                        status: 'completed',
-                        resolvedAt: new Date().toISOString(),
-                        createdAt: new Date().toISOString()
-                    }).catch(function() {});
-
-                    showToast('➖ Rol/Roles de ' + userEmail + ' removidos. El usuario conserva sus otros roles.', 4000);
-                    // Refresco tras la acción. Antes iba SIN clubId, así que al
-            // SuperAdmin le devolvía al selector de clubes.
-            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
-                    return; // NO continúa al borrado total ni llama a deleteAuthUser
                 }
 
-                // ── CAMINO B: borrado TOTAL del usuario (incluye Auth) ──────
-                // 3. Actualizar slots del club para CADA rol del usuario
-                // (_slotKey ya definido al inicio de caSetUserStatus)
-                for (var ri = 0; ri < allRoles.length; ri++) {
-                    var rcid = allRoles[ri].clubId || cid;
-                    if (rcid) {
-                        var rk = _slotKey(allRoles[ri].role);
-                        try {
-                            var cs = await getDoc(doc(db, 'clubs', rcid));
-                            if (cs.exists()) {
-                                var sub = rk.split('.')[1];
-                                var cur = ((cs.data().usedSlots || {})[sub]) || 1;
-                                var upd = {}; upd[rk] = Math.max(0, cur - 1);
-                                await updateDoc(doc(db, 'clubs', rcid), upd);
-                            }
-                        } catch (_) {}
-                    }
+                // 2. Marcar los roles revocados en el documento PRIMARIO.
+                //
+                // ⚠️ SOLO SE ESCRIBEN CAMPOS DE isMembershipDecision().
+                //    Las reglas acotan al administrador de club con un
+                //    hasOnly([...]) (firestore.rules): 'isAuthorized',
+                //    'status', 'allRoles', 'updatedAt' y poco más. Colar aquí
+                //    un campo de raíz fuera de esa lista —'removedAt' suelto,
+                //    por ejemplo— NO se ignora: hace fallar la actualización
+                //    ENTERA con "Missing or insufficient permissions". El
+                //    detalle de la baja va DENTRO de allRoles[] (que es un
+                //    campo permitido) y en deletion_requests.
+                // ⚠️ SI NO SE HA SELECCIONADO NADA, NO SE ANUNCIA UNA BAJA.
+                //    Cuando el filtro no casaba ningún rol, esto seguía adelante,
+                //    escribía un allRoles idéntico al que ya había y mostraba el
+                //    toast de éxito: el administrador daba por hecha una baja que
+                //    no se había producido. Ahora se dice, y no se toca nada.
+                if (rolesRemovidos.length === 0 && !revocaRolRaiz && !revocaTodosLosRoles) {
+                    showToast('⚠️ No se encontró ningún rol activo de ' + userEmail +
+                              ' en este club' + (targetRole ? ' con el rol "' + targetRole + '"' : '') +
+                              '. No se ha cambiado nada.', 6000);
+                    return;
                 }
 
-                // 4. Eliminar todos los documentos secundarios (roles adicionales)
-                for (var si2 = 0; si2 < allRoles.length; si2++) {
-                    var secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
-                    if (secId !== realUid) {
-                        try { await deleteDoc(doc(db, 'users', secId)); } catch (_) {}
-                    }
+                var revocaRaiz = {
+                    allRoles: allRolesTrasRevocar,
+                    updatedAt: new Date().toISOString()
+                };
+                if (revocaTodosLosRoles || revocaRolRaiz) {
+                    // Se cierra la puerta. isAuthorized:false es lo que de
+                    // verdad revoca, porque userDocClubId() de las reglas lo
+                    // exige para conceder acceso a los datos del club.
+                    //
+                    // ⚠️ También cuando `revocaRolRaiz`, aunque le queden otros
+                    //    roles: dejar la raíz autorizada con el rol revocado es
+                    //    lo que hacía que auth.js lo resucitara al entrar. No se
+                    //    puede "mover" la raíz al rol que le queda porque las
+                    //    reglas prohíben al administrador escribir 'role' y
+                    //    'clubId' (isMembershipDecision). Si conserva otros
+                    //    roles, se le reactiva desde el panel y auth.js
+                    //    reconstruye la raíz en el siguiente inicio de sesión.
+                    revocaRaiz.isAuthorized = false;
+                    revocaRaiz.status = 'removed';
                 }
-
-                // 5. Eliminar documento primario
-                try { await deleteDoc(doc(db, 'users', realUid)); } catch (_) {}
-                // Si el documento clickeado era secundario, eliminarlo también
-                if (userId !== realUid) {
-                    try { await deleteDoc(doc(db, 'users', userId)); } catch (_) {}
-                }
-
-                // 6. Eliminar enlaces de jugador (cronos_player_links)
+                var falloRevocacion = null;
                 try {
-                    var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
-                    var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
-                    for (var li = 0; li < linksArr.length; li++) {
-                        try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
-                    }
-                } catch (_) {}
-                // También por email
-                try {
-                    var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
-                    var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
-                    for (var li2 = 0; li2 < linksArr2.length; li2++) {
-                        try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
-                    }
-                } catch (_) {}
+                    await updateDoc(doc(db, 'users', realUid), revocaRaiz);
+                } catch (revErr) {
+                    falloRevocacion = revErr;
+                }
 
-                // 7. Eliminar cuenta de Firebase Auth (vía Cloud Function) — ÚLTIMA operación.
-                //    Solo se ejecuta en borrado TOTAL (shouldDeleteAuth). El fallo NO se
-                //    ignora: se registra en auth_deletion_failures y se avisa al admin.
-                if (shouldDeleteAuth) {
+                // 3. Marcar también los documentos SECUNDARIOS (uid_rol_club).
+                //    Antes se borraban; ahora se desautorizan, que es lo que
+                //    corta el acceso sin perder el rastro del rol.
+                for (var rIdx2 = 0; rIdx2 < rolesRemovidos.length; rIdx2++) {
+                    var secOne = realUid + '_' + rolesRemovidos[rIdx2].role +
+                                 '_' + (rolesRemovidos[rIdx2].clubId || cid || 'global');
+                    if (secOne === realUid) continue;
                     try {
-                        if (!fa || !fa.functions) throw new Error('Functions SDK no disponible');
-                        var delFn = httpsCallable(fa.functions, 'deleteAuthUser');
-                        var authRes = await delFn({ uid: realUid, email: realEmail });
-                    } catch (authErr) {
-                        console.error('[caSetUserStatus] deleteAuthUser FALLÓ:',
-                            authErr && authErr.code, authErr && authErr.message);
-                        // Registrar el fallo de forma persistente para revisión manual
-                        try {
-                            await setDoc(doc(db, 'auth_deletion_failures', realUid + '_' + Date.now()), {
-                                uid: realUid, email: realEmail, clubId: cid,
-                                errorCode: (authErr && authErr.code) || null,
-                                errorMessage: (authErr && authErr.message) || String(authErr),
-                                requestedBy: me.uid, requestedByEmail: me.email,
-                                createdAt: new Date().toISOString()
-                            });
-                        } catch (_) {}
-                        showToast('⚠️ Datos borrados, pero la cuenta de Auth de ' + realEmail +
-                                  ' NO se pudo eliminar. Registrado para revisión.', 6000);
-                    }
+                        await updateDoc(doc(db, 'users', secOne), {
+                            isAuthorized: false,
+                            status: 'removed',
+                            updatedAt: new Date().toISOString()
+                        });
+                    } catch (_) { /* puede no existir: no es un error */ }
                 }
 
-                // 8. Registrar la baja completa en deletion_requests
-                var delRoles = allRoles.map(function(r) { return r.role; });
-                await setDoc(doc(db, 'deletion_requests', realUid + '_del_' + Date.now()), {
+                // 4. Los cronos_player_links NO se tocan.
+                //    Antes se borraban al dar de baja a un padre. Ese enlace es
+                //    la relación padre↔jugador del CLUB, no una pertenencia de
+                //    la cuenta: borrarlo obligaba a reconstruir a mano los
+                //    contactos del equipo. Con isAuthorized:false el padre ya
+                //    no puede leer nada (isLinkClubMember exige autorización),
+                //    así que conservarlos no abre ningún acceso.
+
+                // 5. Dejar constancia. Aquí sí caben los campos libres: la
+                //    colección deletion_requests admite `create` de cualquier
+                //    autenticado y no la acota isMembershipDecision().
+                await setDoc(doc(db, 'deletion_requests', realUid + '_revoke_' + Date.now()), {
                     userId: realUid, userEmail: realEmail, clubId: cid,
                     requestedBy: me.uid, requestedByEmail: me.email,
-                    reason: reason.trim() || 'Sin motivo indicado',
-                    allRolesDeleted: delRoles,
+                    reason: (reason || '').trim() || 'Sin motivo indicado',
+                    action: 'revoke',
+                    rolesRevoked: rolesRemovidos.map(function(r) { return r.role; }),
+                    remainingRoles: rolesRestantes.map(function(r) { return r.role; }),
+                    accountDeleted: false,
+                    dataDeleted: false,
                     status: 'completed',
                     resolvedAt: new Date().toISOString(),
                     createdAt: new Date().toISOString()
                 }).catch(function() {});
 
-                showToast('\uD83D\uDDD1\uFE0F ' + userEmail + ' dado de baja. Todos los rastros eliminados.', 4000);
-                // Refresco tras la acción. Antes iba SIN clubId, así que al
-            // SuperAdmin le devolvía al selector de clubes.
-            if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
+                // ⚠️ El fallo se REPORTA. Antes los updateDoc iban en
+                //    try/catch mudos y un error de permisos dejaba al usuario
+                //    con el acceso intacto mientras el panel cantaba éxito.
+                if (falloRevocacion) {
+                    showToast('❌ No se pudo revocar el acceso de ' + userEmail +
+                              ': ' + (falloRevocacion.message || falloRevocacion), 6000);
+                    return;
+                }
+
+                if (revocaTodosLosRoles) {
+                    showToast('🔒 Acceso de ' + userEmail + ' revocado. Sus datos y el ' +
+                              'histórico del equipo se conservan íntegros.', 4500);
+                } else {
+                    showToast('➖ Rol/Roles de ' + userEmail + ' revocados. Conserva sus otros roles.', 4000);
+                }
+                if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
                 return;
+
+                // ── (retirado) CAMINO B: borrado TOTAL del usuario ──────────
+                // Aquí vivía el borrado de los documentos de users, de los
+                // cronos_player_links y de la cuenta de Firebase Auth. Se
+                // retira entero: la revocación de arriba ya cumple la baja y
+                // no destruye el acceso al histórico. Ver el bloque
+                // "REVOCACIÓN — un solo camino, sin borrar NADA".
+                //
+                // El derecho de supresión (RGPD) NO desaparece: sigue
+                // atendiéndose desde el Panel del SuperAdmin, que es donde
+                // debe estar una operación irreversible sobre datos ajenos.
             }
 
             // ═══════════════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 /**
  * auth.js - Gestión de Autenticación y Autorización
- * Cronos Fútbol — v5.1 (multi-rol sin queries, compatible con firestore rules)
+ * Chronos Fútbol — v5.1 (multi-rol sin queries, compatible con firestore rules)
  */
 
 // Selección de rol y arranque: extraídos a ./auth/role-launch.js. Se
@@ -15,6 +15,12 @@ const _ADDING_ROLE_TIMEOUT_MS = 30000; // 30s safety net contra _addingRole esta
 // ── Cambiar entre Login y Registro ──────────────────────────
 export async function switchTab(tab) {
     _isLoginMode = (tab === 'login');
+
+    // ⚠️ AQUÍ NO SE PONEN CLASES DE MODO EN EL FORMULARIO. Hubo un
+    //    `classList.toggle('mode-login'/'mode-register')` con reglas en
+    //    style.css gobernando la casilla del RGPD: era la quinta capa apilada
+    //    sobre lo mismo. Producción no lo tiene y allí funciona. Esta función
+    //    es la de producción, línea por línea.
 
     // ── Estilos de las pestañas ──────────────────────────────
     const loginTab = document.getElementById('tab-login');
@@ -48,6 +54,12 @@ export async function switchTab(tab) {
     if (roleCont) roleCont.style.display = _isLoginMode ? 'none' : 'block';
 
     // GDPR: mostrar/ocultar consentimiento (solo visible en modo registro)
+    //
+    // ⚠️⚠️ ESTAS CUATRO LÍNEAS SON LAS DE PRODUCCIÓN. No las "mejores": entre
+    //    v485 y v490 se sustituyeron por una clase del <body> con una hoja de
+    //    !important, y eso fue lo que rompió el registro en testeo mientras
+    //    producción seguía funcionando con esto. Si hay que tocar algo aquí,
+    //    primero descarga cronos-futbol-app y compara.
     const gdprCont = document.getElementById('gdpr-consent-container');
     if (gdprCont) gdprCont.style.setProperty('display', _isLoginMode ? 'none' : 'block', 'important');
     // Resetear el checkbox al volver a login para que el consentimiento sea explicito
@@ -88,16 +100,35 @@ export async function switchTab(tab) {
     }
 }
 
-// ── RGPD: habilita/inhabilita #auth-btn según el consentimiento ─────
-// En login el botón siempre está activo; en registro requiere el check.
+// ── RGPD: pista visual sobre #auth-btn según el consentimiento ──────
+//
+// ⚠️⚠️ ESTE BOTÓN YA NO SE DESHABILITA. Antes, en modo registro, se ponía
+//    `authBtn.disabled = true` mientras la casilla de la Política de
+//    Privacidad estuviera sin marcar. Un botón `disabled` no dispara submit,
+//    no ejecuta nada y NO ESCRIBE NADA EN LA CONSOLA: el formulario se queda
+//    muerto al pulsar y no hay ni una pista de por qué. Es exactamente el
+//    síntoma reportado ("se queda bloqueado, sin errores en consola").
+//
+// 🔑 Y el bloqueo era REDUNDANTE: doAuth() ya comprueba el consentimiento y
+//    responde con "Debes aceptar la Política de Privacidad para registrarte."
+//    Es decir, había dos guardianes para lo mismo — uno que lo explica y otro
+//    que enmudece el botón antes de que el primero llegue a hablar. Se queda
+//    el que explica.
+//
+// El requisito RGPD no se relaja: sin marcar la casilla NO se registra a
+// nadie. Solo cambia que ahora se dice por qué.
 function syncAuthBtnConsent() {
     const authBtn = document.getElementById('auth-btn');
     const gdprChk = document.getElementById('gdpr-consent');
     if (!authBtn) return;
-    const disabled = !_isLoginMode && !(gdprChk && gdprChk.checked);
-    authBtn.disabled = disabled;
-    authBtn.style.opacity = disabled ? '0.5' : '1';
-    authBtn.style.cursor  = disabled ? 'not-allowed' : 'pointer';
+    const faltaConsentimiento = !_isLoginMode && !(gdprChk && gdprChk.checked);
+    // El botón SIEMPRE queda pulsable; la opacidad es solo una pista.
+    authBtn.disabled = false;
+    authBtn.style.opacity = faltaConsentimiento ? '0.6' : '1';
+    authBtn.style.cursor  = 'pointer';
+    authBtn.title = faltaConsentimiento
+        ? 'Acepta la Política de Privacidad para poder registrarte'
+        : '';
 }
 
 // ── Cargar Clubes y Administradores Individuales en el selector ──────
@@ -153,7 +184,7 @@ export async function loadClubOptions() {
                 if (indivHtml) indivLoaded = true;
             }
         } catch(e) {
-            console.warn('[Cronos] Error cargando clubs_public:', e.message);
+            console.warn('[Chronos] Error cargando clubs_public:', e.message);
         }
 
         // Cargar entidades individuales (colección 'individuals' — compatibilidad)
@@ -176,7 +207,7 @@ export async function loadClubOptions() {
                 indivLoaded = true;
             }
         } } catch(e) {
-            console.warn('[Cronos] Error cargando entidades individuales:', e.message);
+            console.warn('[Chronos] Error cargando entidades individuales:', e.message);
         }
 
         // Construir HTML combinado
@@ -261,7 +292,7 @@ export async function loadClubOptions() {
             });
         }
     } catch(e) {
-        console.error('[Cronos] Error cargando opciones:', e);
+        console.error('[Chronos] Error cargando opciones:', e);
         select.innerHTML = '<option value="">⚠️ Error al cargar — actualiza la página</option>';
         setTimeout(() => loadClubOptions(), 2000);
     }
@@ -486,14 +517,14 @@ async function loadSuperAdminEmails() {
             // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email count
             // 
         } else {
-            console.warn('[Cronos] No se encontró cronos_config/superadmins en Firestore');
+            console.warn('[Chronos] No se encontró cronos_config/superadmins en Firestore');
             _superAdminLoaded = true; // Doc no existe pero ya lo intentamos
         }
     } catch(e) {
         // Si falla por permisos (usuario no autenticado aún), reintentar tras auth
         // Permisos insuficientes = comportamiento esperado antes del login. Silencioso.
         if (e.code !== 'permission-denied' && !(e.message && e.message.includes('permission'))) {
-            console.error('[Cronos] Error cargando superadmin emails:', e);
+            console.error('[Chronos] Error cargando superadmin emails:', e);
         }
     }
 }
@@ -530,7 +561,7 @@ async function _ensureSuperAdminConfig(email) {
             // 
         }
     } catch (e) {
-        console.warn('[Cronos] _ensureSuperAdminConfig error:', e.message);
+        console.warn('[Chronos] _ensureSuperAdminConfig error:', e.message);
         // Si falla por permisos, las nuevas reglas de Firestore lo solucionarán
         // tras el próximo deploy. No bloquear el login.
     }
@@ -559,7 +590,7 @@ export async function checkAuthorization(user) {
     if (window._addingRole && user) {
         const elapsed = Date.now() - _addingRoleTimestamp;
         if (elapsed > _ADDING_ROLE_TIMEOUT_MS) {
-            console.warn('[Cronos] _addingRole estancado (' + Math.round(elapsed/1000) + 's). Reseteando...');
+            console.warn('[Chronos] _addingRole estancado (' + Math.round(elapsed/1000) + 's). Reseteando...');
             window._addingRole = false;
             _addingRoleTimestamp = 0;
         } else {
@@ -574,7 +605,7 @@ export async function checkAuthorization(user) {
         // puede fallar con permission-denied. En ese caso, reintentar una vez.
         const ref  = fa.doc(fa.db, 'users', user.uid);
         const _mainTimeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('[Cronos] Firestore no responde. Comprueba tu conexión.')), 4000)
+            setTimeout(() => reject(new Error('[Chronos] Firestore no responde. Comprueba tu conexión.')), 4000)
         );
         let snap;
         try {
@@ -583,10 +614,10 @@ export async function checkAuthorization(user) {
             // Si es error de permisos, las reglas pueden estar fallando por el
             // documento cronos_config/superadmins inexistente. Reintentar tras 1s.
             if (primaryErr.code === 'permission-denied' || (primaryErr.message||'').includes('permission')) {
-                console.warn('[Cronos] Primera lectura de usuario falló (permisos), reintentando en 1s...');
+                console.warn('[Chronos] Primera lectura de usuario falló (permisos), reintentando en 1s...');
                 await new Promise(r => setTimeout(r, 1000));
                 const _retryTimeout = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('[Cronos] Firestore no responde tras reintento.')), 6000)
+                    setTimeout(() => reject(new Error('[Chronos] Firestore no responde tras reintento.')), 6000)
                 );
                 snap = await Promise.race([fa.getDoc(ref), _retryTimeout]);
             } else {
@@ -608,7 +639,7 @@ export async function checkAuthorization(user) {
         // NO se entra en la app (eso sería reabrir SEC-M08): se conserva la
         // sesión y se explica qué pasa, para que baste con recuperar la red.
         if (!snap.exists() && snap.metadata && snap.metadata.fromCache) {
-            console.warn('[Cronos] Sin conexión y sin datos de la cuenta en caché local.');
+            console.warn('[Chronos] Sin conexión y sin datos de la cuenta en caché local.');
             showAuthError(
                 '⚠️ Sin conexión y sin datos de tu cuenta guardados en este ' +
                 'dispositivo. Conéctate a internet para entrar; no hace falta ' +
@@ -731,7 +762,7 @@ export async function checkAuthorization(user) {
                     return;
                 }
             } catch(preErr) {
-                console.warn('[Cronos] Error buscando entidad individual:', preErr.message);
+                console.warn('[Chronos] Error buscando entidad individual:', preErr.message);
             }
 
             await fa.signOut(fa.auth);
@@ -787,7 +818,7 @@ export async function checkAuthorization(user) {
                         lastLogin: fa.serverTimestamp(),
                     }, { merge: true });
                 } catch(fixErr) {
-                    console.warn('[Cronos] SuperAdmin bypass: no se pudo corregir el documento:', fixErr.message);
+                    console.warn('[Chronos] SuperAdmin bypass: no se pudo corregir el documento:', fixErr.message);
                 }
             }
             // Forzar valores en memoria para el resto del flujo
@@ -802,7 +833,7 @@ export async function checkAuthorization(user) {
 
             // Asegurar que cronos_config/superadmins existe y contiene este email
             _ensureSuperAdminConfig(user.email).catch(e =>
-                console.warn('[Cronos] No se pudo actualizar cronos_config/superadmins:', e.message)
+                console.warn('[Chronos] No se pudo actualizar cronos_config/superadmins:', e.message)
             );
 
             // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email
@@ -842,7 +873,7 @@ export async function checkAuthorization(user) {
                                   where('userUid', '==', user.uid))),
                     _t1
                 ]);
-                if (!allUserReqs) throw new Error('[Cronos] Timeout platform_requests (pending)');
+                if (!allUserReqs) throw new Error('[Chronos] Timeout platform_requests (pending)');
 
                 // Filtrar los aprobados por SA en JS
                 const approvedDocs = [];
@@ -950,7 +981,7 @@ export async function checkAuthorization(user) {
                     return;
                 }
             } catch (_activErr) {
-                console.warn('[Cronos] Error al verificar aprobación SA:', _activErr);
+                console.warn('[Chronos] Error al verificar aprobación SA:', _activErr);
             }
 
             // No hay aprobación del SA todavía
@@ -1027,6 +1058,25 @@ export async function checkAuthorization(user) {
             _verifiedRoleKeys.add(_roleKey(data.role, data.clubId, data.individualEntityId));
         }
 
+        // ══════════════════════════════════════════════════════════════
+        // ⚠️⚠️ ESTE BLOQUE RESUCITABA LOS ROLES DADOS DE BAJA
+        // ══════════════════════════════════════════════════════════════
+        // Sincroniza la raíz con allRoles, y hasta aquí bien. El problema es
+        // que lo hacía SIN MIRAR SI EL ROL ESTABA REVOCADO: veía la entrada
+        // con isAuthorized:false, la daba por "desincronizada", la reescribía
+        // a isAuthorized:true / status:'active' Y LA PERSISTÍA con setDoc.
+        //
+        // Efecto observado: el administrador daba de baja a un entrenador de
+        // una subcategoría, la pantalla confirmaba la baja, y al cerrar sesión
+        // y volver a entrar el entrenador reaparecía en su misma categoría con
+        // sus roles intactos. No era que la baja no se guardara: se guardaba, y
+        // el siguiente inicio de sesión la deshacía.
+        //
+        // 🔑 Una baja es un HECHO DELIBERADO, no una desincronización que haya
+        //    que reparar. `status:'removed'` gana siempre sobre la raíz. El
+        //    resto de la sincronización se mantiene igual (un rol PENDIENTE sí
+        //    se activa desde la raíz, que es para lo que existía).
+        const _rolRevocado = (r) => !!r && r.status === 'removed';
         if (data.isAuthorized && data.role) {
             let needsRoleSync = false;
             const existingRole = allRoles.find(r => r.role === data.role && (r.clubId || null) === (data.clubId || null));
@@ -1039,8 +1089,8 @@ export async function checkAuthorization(user) {
                     status: 'active'
                 });
                 needsRoleSync = true;
-            } else if (!existingRole.isAuthorized) {
-                allRoles = allRoles.map(r => 
+            } else if (!existingRole.isAuthorized && !_rolRevocado(existingRole)) {
+                allRoles = allRoles.map(r =>
                     (r.role === data.role && (r.clubId || null) === (data.clubId || null))
                     ? { ...r, isAuthorized: true, status: 'active' } : r
                 );
@@ -1065,7 +1115,7 @@ export async function checkAuthorization(user) {
                               where('userUid', '==', user.uid))),
                 _t2
             ]);
-            if (!allReqsSnap) throw new Error('[Cronos] Timeout platform_requests (auto-activar)');
+            if (!allReqsSnap) throw new Error('[Chronos] Timeout platform_requests (auto-activar)');
             const approvedReqDocs = [];
             // Sin cobertura esta consulta se resuelve contra la CACHÉ, y lo
             // normal es que devuelva vacío aunque el usuario sí tenga
@@ -1102,7 +1152,20 @@ export async function checkAuthorization(user) {
                         r.role === role && (r.clubId || null) === clubId && (r.individualEntityId || null) === indivEntityId
                     );
 
-                    if (existingIdx === -1) {
+                    // ⚠️⚠️ SEGUNDA VÍA DE RESURRECCIÓN, Y LA MÁS DAÑINA.
+                    //    La platform_request que aprobó a esta persona en su día
+                    //    queda con status 'approved' PARA SIEMPRE: nadie la
+                    //    retira al darla de baja. Así que este bloque volvía a
+                    //    activarle el rol en CADA inicio de sesión, y además
+                    //    (más abajo) reponía la raíz a isAuthorized:true /
+                    //    status:'active', deshaciendo la revocación entera.
+                    //    Una baja nunca puede quedar a merced de una solicitud
+                    //    antigua: si el rol está revocado, se respeta.
+                    if (existingIdx !== -1 && _rolRevocado(updatedAllRoles[existingIdx])) {
+                        // Rol dado de baja: ni se reactiva ni cuenta como
+                        // verificado para el resto del arranque.
+                        _verifiedRoleKeys.delete(_roleKey(role, clubId, indivEntityId));
+                    } else if (existingIdx === -1) {
                         // Añadir el rol si no existe
                         updatedAllRoles.push({
                             role, isAuthorized: true, status: 'active',
@@ -1125,7 +1188,16 @@ export async function checkAuthorization(user) {
                     allRoles = updatedAllRoles;
                     // También actualizar clubId principal si es club_admin
                     const clubAdminRole = updatedAllRoles.find(r => r.role === 'club_admin' && r.isAuthorized);
-                    const updateData = { allRoles: updatedAllRoles, isAuthorized: true, status: 'active' };
+                    // ⚠️ `isAuthorized:true` / `status:'active'` en la RAÍZ solo
+                    //    si de verdad queda algún rol vivo. Escribirlo a ciegas
+                    //    reabría la cuenta de alguien recién dado de baja: la
+                    //    revocación marcaba la raíz, y el siguiente inicio de
+                    //    sesión la reponía sin que nadie lo pidiera.
+                    const _quedaAlgunRolVivo = updatedAllRoles.some(r =>
+                        r && r.isAuthorized === true && !_rolRevocado(r));
+                    const updateData = _quedaAlgunRolVivo
+                        ? { allRoles: updatedAllRoles, isAuthorized: true, status: 'active' }
+                        : { allRoles: updatedAllRoles };
                     if (clubAdminRole?.clubId && !data.clubId) {
                         updateData.clubId   = clubAdminRole.clubId;
                         updateData.clubName = clubAdminRole.clubName || data.clubName || '';
@@ -1172,7 +1244,7 @@ export async function checkAuthorization(user) {
                     getDocs(collection(fa.db, 'clubs')),
                     _t3
                 ]);
-                if (!clubsSnap) throw new Error('[Cronos] Timeout clubs (cleanup)');
+                if (!clubsSnap) throw new Error('[Chronos] Timeout clubs (cleanup)');
 
                 // 🔑 PÉRDIDA DE ROLES SI ESTO SE HACE CON DATOS DE CACHÉ.
                 // Sin cobertura, `getDocs(clubs)` se resuelve contra la caché
@@ -1184,7 +1256,7 @@ export async function checkAuthorization(user) {
                 // silenciosa. Una lista incompleta no sirve para decidir qué
                 // borrar, así que con datos de caché no se limpia nada.
                 if (clubsSnap.metadata && clubsSnap.metadata.fromCache) {
-                    throw new Error('[Cronos] Clubes desde caché: se omite la limpieza de roles huérfanos');
+                    throw new Error('[Chronos] Clubes desde caché: se omite la limpieza de roles huérfanos');
                 }
 
                 const validClubIds = new Set();
@@ -1275,7 +1347,7 @@ export async function checkAuthorization(user) {
         // al superadmin mediante isSuperAdminEmail(), incluso sin custom claims.
         if (data.role === 'superadmin' || data.role === 'admin') {
             _ensureSuperAdminConfig(user.email).catch(e =>
-                console.warn('[Cronos] No se pudo crear cronos_config/superadmins:', e.message)
+                console.warn('[Chronos] No se pudo crear cronos_config/superadmins:', e.message)
             );
         }
 
@@ -1297,7 +1369,7 @@ export async function checkAuthorization(user) {
             // El sello de última conexión no vale una entrada bloqueada; el SDK
             // lo reenvía solo al recuperar la red.
             fa.setDoc(ref, { lastLogin: fa.serverTimestamp() }, { merge: true })
-                .catch(e => console.warn('[Cronos] No se pudo sellar lastLogin:', e.message));
+                .catch(e => console.warn('[Chronos] No se pudo sellar lastLogin:', e.message));
 
             // SECURITY FIX (SEC-002): Use full reassignment instead of property mutation
             // because _cronosCurrentUser is now wrapped in a protective Proxy
@@ -1317,7 +1389,7 @@ export async function checkAuthorization(user) {
         enterApp(); // Muestra el landing de "Bienvenido" que invoca showRoleSelection
 
     } catch (err) {
-        console.error('[Cronos] Auth verify error:', err);
+        console.error('[Chronos] Auth verify error:', err);
 
         // ── ¿Es un fallo de RED o un fallo real de autorización? ──
         // Un corte de cobertura no puede costar la sesión: obligaba a volver a
@@ -1341,7 +1413,7 @@ export async function checkAuthorization(user) {
                 const fa = window._cronos_auth;
                 if (fa) await fa.signOut(fa.auth);
             } catch(signOutErr) {
-                console.error('[Cronos] Error signing out after auth failure:', signOutErr);
+                console.error('[Chronos] Error signing out after auth failure:', signOutErr);
             }
         }
 
@@ -1486,6 +1558,27 @@ export async function doAuth() {
     const fa = window._cronos_auth;
     if (!fa) { showAuthError('Firebase no disponible.'); return; }
 
+    // ⚠️ EL MODO SE RECONCILIA CON LO QUE EL USUARIO ESTÁ VIENDO.
+    //    `_isLoginMode` solo cambia dentro de switchTab(), pero las pestañas
+    //    la invocan desde un onclick en línea protegido con
+    //    `if (typeof switchTab === 'function')`. Si alguien pulsa "Registro"
+    //    antes de que el módulo termine de evaluarse, esa guarda falla en
+    //    silencio: la pestaña SE VE en modo registro (el propio onclick
+    //    muestra los campos) pero el estado interno sigue en login, y el envío
+    //    se va por el camino de INICIAR SESIÓN con un correo que aún no
+    //    existe. El formulario no avanza y no hay nada en la consola.
+    //    El formulario visible manda sobre la variable.
+    //    Se compara SOLO contra 'block', que es literalmente lo que escribe el
+    //    onclick de la pestaña de registro. Aceptar además la cadena vacía
+    //    habría sido peor que el fallo: `role-container` nace con
+    //    `display:none` en línea, pero si algo la limpiara, el modo LOGIN se
+    //    reinterpretaría como registro y se rompería el inicio de sesión.
+    const _roleCont = document.getElementById('role-container');
+    const _seVeRegistro = !!_roleCont && _roleCont.style.display === 'block';
+    if (_seVeRegistro && _isLoginMode && typeof switchTab === 'function') {
+        switchTab('register');
+    }
+
     // Si hay sesión activa pero el usuario quiere entrar con OTRA cuenta (ha escrito algo), ignorar pending
     const emailInp = document.getElementById('auth-email')?.value.trim();
     const passInp  = document.getElementById('auth-password')?.value;
@@ -1551,9 +1644,29 @@ export async function doAuth() {
         const requestedRole   = document.getElementById('auth-role')?.value          || 'user';
 
         // ── RGPD: el consentimiento es obligatorio para registrarse ──
+        //
+        // ⚠️ NO SE PUEDE EXIGIR ALGO QUE NO SE VE. Hubo un camino —llegar por
+        //    enlace de invitación con `register=true`— en el que la vista de
+        //    registro se montaba a mano y #gdpr-consent-container se quedaba en
+        //    `display:none`. El usuario veía este aviso en rojo pidiéndole que
+        //    aceptara una casilla que no estaba renderizada por ninguna parte:
+        //    un callejón sin salida.
+        //    Ese camino ya está arreglado en index.html, pero la exigencia y la
+        //    visibilidad tienen que ir JUNTAS pase lo que pase: si se va a
+        //    bloquear por falta de consentimiento, primero se garantiza que la
+        //    casilla esté a la vista.
         const gdprConsent = document.getElementById('gdpr-consent');
         if (!gdprConsent || !gdprConsent.checked) {
-            showAuthError('Debes aceptar la Política de Privacidad para registrarte.');
+            // Mismo mecanismo que las pestañas y switchTab —el de producción—:
+            // se muestra la casilla y se oculta el pie. Nada nuevo.
+            const _cont = document.getElementById('gdpr-consent-container');
+            if (_cont) {
+                _cont.style.setProperty('display', 'block', 'important');
+                const _pie = document.getElementById('privacy-link-footer');
+                if (_pie) _pie.style.setProperty('display', 'none', 'important');
+                try { _cont.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
+            }
+            showAuthError('Debes aceptar la Política de Privacidad para registrarte (marca la casilla).');
             return;
         }
         // Campos de consentimiento RGPD a persistir en el documento del usuario.
@@ -1639,8 +1752,25 @@ export async function doAuth() {
         let cred;
         let isAddingRole = false;
 
+        // ⚠️ CON TIEMPO LÍMITE, igual que el login. Sin él, si Firebase Auth no
+        //    contesta (red móvil, QUIC, corte a medias) este `await` se queda
+        //    esperando PARA SIEMPRE: el formulario se queda en "⏳ Conectando…"
+        //    sin avanzar y sin escribir NADA en la consola. El camino de inicio
+        //    de sesión ya corría contra un tope de 6 s; el de registro no, y esa
+        //    asimetría convertía cualquier tropiezo de red en un bloqueo mudo.
+        const _altaTimer = setTimeout(() => {
+            showAuthError('⏳ Creando la cuenta… (puede tardar unos segundos)');
+        }, 2000);
+        const _altaTimeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(
+                'El registro tardó demasiado. Comprueba tu conexión e inténtalo de nuevo.'
+            )), 15000)
+        );
         try {
-            cred = await fa.createUserWithEmailAndPassword(fa.auth, email, password);
+            cred = await Promise.race([
+                fa.createUserWithEmailAndPassword(fa.auth, email, password),
+                _altaTimeout
+            ]);
         } catch (createErr) {
             if (createErr.code === 'auth/email-already-in-use') {
                 try {
@@ -1679,6 +1809,10 @@ export async function doAuth() {
             } else {
                 throw createErr;
             }
+        } finally {
+            // El aviso de "puede tardar" se retira pase lo que pase, también
+            // cuando el camino de arriba sale con `return`.
+            clearTimeout(_altaTimer);
         }
 
         // ── Determinar autorización y rol final ─────────────────
@@ -1786,7 +1920,7 @@ export async function doAuth() {
                                         adminName: _adminData.displayName || _adminData.firstName || null,
                                     });
                                 } catch(syncErr) {
-                                    console.warn('[Cronos] No se pudo corregir hasAdmin en entidad:', syncErr.message);
+                                    console.warn('[Chronos] No se pudo corregir hasAdmin en entidad:', syncErr.message);
                                 }
                                 // Actualizar email del admin si lo encontramos
                                 if (_adminData && !individualOwnerEmail) {
@@ -1794,7 +1928,7 @@ export async function doAuth() {
                                 }
                             }
                         } catch(queryErr) {
-                            console.warn('[Cronos] Error consultando users para verificar admin:', queryErr.message);
+                            console.warn('[Chronos] Error consultando users para verificar admin:', queryErr.message);
                             // FIX (admin individual): la query a 'users' falla por reglas de
                             // Firestore cuando el usuario recién creado aún no tiene documento
                             // (un primer admin de una entidad con 0 usuarios). En ese caso NO
@@ -1836,7 +1970,7 @@ export async function doAuth() {
                     // registerUnderIndividual ya es true desde arriba
                 }
             } catch(e) {
-                console.warn('[Cronos] Error obteniendo datos del individual:', e.message);
+                console.warn('[Chronos] Error obteniendo datos del individual:', e.message);
             }
         }
 
@@ -1914,7 +2048,7 @@ export async function doAuth() {
                         // Si no hay admin aún, el entrenador queda en estado pending_individual
                         // El admin lo aprobará cuando se registre
                         if (!_entData.hasAdmin) {
-                            console.warn('[Cronos] Entidad sin admin aún — el entrenador quedará pendiente de aprobación');
+                            console.warn('[Chronos] Entidad sin admin aún — el entrenador quedará pendiente de aprobación');
                         }
                     }
                 }
@@ -2201,7 +2335,7 @@ export async function doAuth() {
                         requestedEmail: email, requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
                         requestedRole: finalRole, requestedRoleLabel: RL_IND[finalRole] || finalRole,
                         userUid: cred.user.uid, status: 'pending_individual', createdAt: new Date().toISOString(),
-                    }).catch(function(e) { console.warn('[Cronos] Error creating platform_request:', e); });
+                    }).catch(function(e) { console.warn('[Chronos] Error creating platform_request:', e); });
                 } else if (freshNeedsApproval && clubId) {
                     const RL2 = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid), {
@@ -2211,7 +2345,7 @@ export async function doAuth() {
                         requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
                         requestedRole: finalRole, requestedRoleLabel: RL2[finalRole] || finalRole,
                         userUid: cred.user.uid, status: 'pending_club_admin', createdAt: new Date().toISOString(),
-                    }).catch(function(e) { console.warn('[Cronos] Error creating platform_request:', e); });
+                    }).catch(function(e) { console.warn('[Chronos] Error creating platform_request:', e); });
                 } else if (['club_admin','individual'].includes(requestedRole) && !isAuthorized) {
                     const _saReqData2 = {
                         type: 'self_registration', requestedEmail: email,
@@ -2224,7 +2358,7 @@ export async function doAuth() {
                         _saReqData2.individualOwnerId = selectedIndivId;
                         _saReqData2.clubId = selectedIndivId;
                     }
-                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid + '_' + requestedRole), _saReqData2).catch(function(e) { if(window._CRONOS_DEBUG) console.warn('[Cronos] Error creating platform_request:', e); });
+                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid + '_' + requestedRole), _saReqData2).catch(function(e) { if(window._CRONOS_DEBUG) console.warn('[Chronos] Error creating platform_request:', e); });
                 }
 
                 const rl3 = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Padre/Madre/Tutor', club_admin:'Administrador de Club', individual:'Administrador Individual' };
@@ -2439,7 +2573,7 @@ export async function doAuth() {
                 }
                 await fa.setDoc(fa.doc(fa.db, 'users', secondaryId), secondaryData);
             } catch (secErr) {
-                console.warn('[Cronos] Secondary doc creation failed (permissions). Non-critical — allRoles is the source of truth.', secErr.message);
+                console.warn('[Chronos] Secondary doc creation failed (permissions). Non-critical — allRoles is the source of truth.', secErr.message);
             }
 
             // 6. Crear platform_request según el rol
@@ -2466,7 +2600,7 @@ export async function doAuth() {
                         createdAt: new Date().toISOString(),
                     });
                 } catch (prErr) {
-                    console.warn('[Cronos] Error creando platform_request individual:', prErr.message);
+                    console.warn('[Chronos] Error creando platform_request individual:', prErr.message);
                 }
 
             } else if (needsSAApprovalDirect) {
@@ -2497,7 +2631,7 @@ export async function doAuth() {
                     }
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', saReqId), _saReqData3);
                 } catch (prErr) {
-                    console.warn('[Cronos] Error creando platform_request SA:', prErr.message);
+                    console.warn('[Chronos] Error creando platform_request SA:', prErr.message);
                 }
 
             } else if (needsApproval && clubId) {
@@ -2522,7 +2656,7 @@ export async function doAuth() {
                         createdAt: new Date().toISOString(),
                     });
                 } catch (prErr) {
-                    console.warn('[Cronos] platform_request creation failed:', prErr.message);
+                    console.warn('[Chronos] platform_request creation failed:', prErr.message);
                 }
             }
 
@@ -2715,7 +2849,7 @@ export async function doAuth() {
                         userUid: cred.user.uid,
                         createdAt: new Date().toISOString(),
                     });
-                } catch(_e) { console.warn('[Cronos] Error creando platform_request para admin individual:', _e.message); }
+                } catch(_e) { console.warn('[Chronos] Error creando platform_request para admin individual:', _e.message); }
             }
 
             // Crear platform_request según el rol
@@ -2858,6 +2992,15 @@ window.logoutUser = async () => {
 };
 
 // ── Exportación Global ───────────────────────────────────────
+// ⚠️ ESTAS ASIGNACIONES SON LA ÚLTIMA LÍNEA QUE EJECUTA EL MÓDULO.
+//    Todo lo que este fichero publica en `window` depende de que la
+//    evaluación llegue hasta aquí. Cualquier cosa que la interrumpa antes
+//    —el import estático de ./auth/role-launch.js que no resuelva, una
+//    respuesta que no sea JS válido al pedir el fichero, un throw previo—
+//    deja el formulario de acceso cableado a un global que no existe, y el
+//    síntoma es un escueto "doAuth is not defined" al pulsar Enviar, sin
+//    pista de la causa real. Por eso el enganche del formulario ya no
+//    descansa solo en esto (ver el listener de más abajo).
 window.switchTab            = switchTab;
 window.handleRoleChange     = handleRoleChange;
 window.handleEntityChange   = handleEntityChange;
@@ -2867,3 +3010,47 @@ window._checkAuthorization  = checkAuthorization;
 window.enterApp             = enterApp;
 window.showRoleSelector     = showRoleSelection;
 window.showAuthError        = showAuthError;
+
+// ── Enganche del formulario de acceso / registro ─────────────────────
+//
+// El formulario llevaba el envío cableado en el HTML como
+//     onsubmit="event.preventDefault(); doAuth();"
+// es decir, resolviendo un GLOBAL en el momento del click. Eso convierte
+// cualquier fallo de carga de este módulo en un "doAuth is not defined" al
+// pulsar el botón: el formulario queda muerto y el mensaje no dice nada de
+// la causa. Aquí se engancha la referencia DIRECTA a la función, sin pasar
+// por `window`: si este código corre, el formulario funciona; y si no corre,
+// el respaldo del HTML avisa de que la app aún está cargando.
+//
+// Se marca el formulario para no enganchar dos veces (este fichero puede
+// re-evaluarse si alguna vista lo reinyecta) y para que el respaldo del HTML
+// no dispare un segundo envío.
+function _cronosEnlazaFormularioAuth() {
+    const form = document.getElementById('auth-form');
+    if (!form || form.dataset.cronosAuthEnlazado === '1') return;
+    form.dataset.cronosAuthEnlazado = '1';
+    form.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        doAuth();
+    });
+    // Ya hay listener: el onsubmit en línea sobra y sólo puede estorbar.
+    form.removeAttribute('onsubmit');
+
+    // ⚠️ RED DE SEGURIDAD: el botón no puede quedarse `disabled` por nada.
+    const authBtn = document.getElementById('auth-btn');
+    if (authBtn) authBtn.disabled = false;
+
+    // Y la casilla de consentimiento se cablea aquí también, no solo en
+    // switchTab, para que la pista visual siga al estado real del check.
+    const gdprChk = document.getElementById('gdpr-consent');
+    if (gdprChk && !gdprChk._gdprWired) {
+        gdprChk.addEventListener('change', syncAuthBtnConsent);
+        gdprChk._gdprWired = true;
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _cronosEnlazaFormularioAuth);
+} else {
+    _cronosEnlazaFormularioAuth();
+}

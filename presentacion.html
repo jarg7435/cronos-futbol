@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <!-- Optimized for iPad Touch Viewport & Retina Displays -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes, viewport-fit=cover">
+  <title>Chronos Fútbol - Presentación Oficial para Clubes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Palette based on Chronos Fútbol Logo: Vibrant Blues & Energetic Oranges */
+      --bg-dark: #070d1e;
+      --bg-gradient: radial-gradient(circle at 10% 20%, rgba(30, 64, 175, 0.25) 0%, transparent 50%),
+                     radial-gradient(circle at 90% 80%, rgba(255, 107, 0, 0.2) 0%, transparent 50%),
+                     linear-gradient(185deg, #060b18 0%, #0c162d 100%);
+      
+      --brand-blue: #1e40af;
+      --brand-blue-light: #3b82f6;
+      --brand-orange: #ff6b00;
+      --brand-orange-bright: #f97316;
+      --brand-orange-glow: rgba(255, 107, 0, 0.35);
+      
+      --card-bg: rgba(15, 25, 48, 0.85);
+      --card-border: rgba(255, 107, 0, 0.25);
+      
+      --text-bright: #ffffff;
+      --text-sub: #e2e8f0;
+      --text-muted: #94a3b8;
+      
+      --font-heading: 'Outfit', -apple-system, sans-serif;
+      --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      
+      --radius-xl: 24px;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: var(--bg-gradient);
+      color: var(--text-bright);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    button, .nav-circle-btn, .nav-pill-btn, .zoom-btn, .drawer-row {
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-user-select: auto;
+      user-select: auto;
+    }
+
+    /* Fixed Watermark Logo on Top Left */
+    .fixed-logo-badge {
+      position: fixed;
+      top: 16px;
+      left: 20px;
+      z-index: 120;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 18px 8px 10px;
+      background: rgba(10, 18, 36, 0.9);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 2px solid var(--brand-orange);
+      border-radius: 40px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5), 0 0 20px var(--brand-orange-glow);
+    }
+
+    .fixed-logo-img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #fff;
+    }
+
+    .fixed-logo-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .fixed-logo-title {
+      font-family: var(--font-heading);
+      font-weight: 900;
+      font-size: 1.05rem;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #ffffff 40%, var(--brand-orange-bright) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .fixed-logo-sub {
+      font-size: 0.65rem;
+      color: var(--brand-blue-light);
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Top Progress Bar (Subtle & Low Contrast) */
+    .progress-bar-wrap {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.04);
+      z-index: 130;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--brand-blue-light), var(--brand-orange));
+      opacity: 0.5;
+      transition: width 0.3s ease;
+    }
+
+    /* Viewport Area */
+    .presentation-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 75px 20px 95px 20px;
+      width: 100%;
+      height: 100vh;
+      max-width: 1700px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .slide {
+      display: none;
+      width: 100%;
+      height: calc(100vh - 170px);
+      grid-template-columns: 1.35fr 1fr;
+      gap: 30px;
+      align-items: center;
+      opacity: 0;
+      transform: scale(0.98);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+
+    .slide.active {
+      display: grid;
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* Full Width layout for Portada & Cierre */
+    .slide.hero-layout {
+      grid-template-columns: 1fr;
+      text-align: center;
+      justify-items: center;
+    }
+
+    .hero-box {
+      max-width: 820px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 40px;
+      background: var(--card-bg);
+      border: 2px solid var(--brand-orange);
+      border-radius: var(--radius-xl);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 0 40px var(--brand-orange-glow);
+    }
+
+    .hero-logo-large {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 4px solid var(--brand-orange);
+      box-shadow: 0 0 30px var(--brand-orange-glow);
+    }
+
+    /* Protagonist Image Viewer Area with Vertical/Horizontal Scroll Support */
+    .media-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-height: 720px;
+      background: rgba(8, 14, 30, 0.9);
+      border: 2px solid rgba(255, 107, 0, 0.35);
+      border-radius: var(--radius-xl);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(30, 64, 175, 0.2);
+    }
+
+    .image-viewport {
+      width: 100%;
+      height: 100%;
+      overflow: auto; /* Enables native scroll up/down & left/right when zoomed */
+      -webkit-overflow-scrolling: touch; /* Smooth iOS momentum scroll */
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-lg);
+      cursor: grab;
+      scroll-behavior: smooth;
+    }
+
+    /* Alignment adjustment when zoomed so top of image can be reached when scrolling up */
+    .image-viewport.is-zoomed {
+      align-items: flex-start;
+      justify-content: center;
+      padding: 16px 0;
+    }
+
+    .image-viewport:active {
+      cursor: grabbing;
+    }
+
+    /* Scrollbar styling for image container */
+    .image-viewport::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    .image-viewport::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+    }
+    .image-viewport::-webkit-scrollbar-thumb {
+      background: var(--brand-orange);
+      border-radius: 4px;
+    }
+
+    .slide-img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+      transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), min-width 0.25s ease;
+      transform-origin: top center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      display: block;
+    }
+
+    /* Dynamic Zoom Classes allowing full vertical/horizontal scroll up & down */
+    .slide-img.zoom-1-5 {
+      min-width: 150%;
+      max-width: none;
+      max-height: none;
+    }
+    .slide-img.zoom-2 {
+      min-width: 200%;
+      max-width: none;
+      max-height: none;
+    }
+    .slide-img.zoom-3 {
+      min-width: 300%;
+      max-width: none;
+      max-height: none;
+    }
+
+    /* Zoom Overlay Controls on Image */
+    .zoom-toolbar {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(6, 11, 24, 0.92);
+      border: 1px solid var(--brand-orange);
+      border-radius: 30px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .zoom-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      min-width: 38px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .zoom-btn:hover, .zoom-btn:active, .zoom-btn.active {
+      background: var(--brand-orange);
+      border-color: var(--brand-orange);
+      color: #fff;
+      box-shadow: 0 0 12px var(--brand-orange-glow);
+    }
+
+    /* Right Side Content Card - NO SLIDE NUMBERS FOR SPECTATORS */
+    .content-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 18px;
+      padding: 36px;
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      border-radius: var(--radius-xl);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+
+    .content-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 6px;
+      height: 100%;
+      background: linear-gradient(180deg, var(--brand-orange), var(--brand-blue-light));
+      border-top-left-radius: var(--radius-xl);
+      border-bottom-left-radius: var(--radius-xl);
+    }
+
+    .card-badge-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    .card-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px;
+      background: rgba(255, 107, 0, 0.15);
+      border: 1px solid var(--brand-orange);
+      color: var(--brand-orange-bright);
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .card-title {
+      font-family: var(--font-heading);
+      font-size: 2.1rem;
+      font-weight: 800;
+      line-height: 1.25;
+      color: var(--text-bright);
+    }
+
+    .card-desc {
+      font-size: 1.18rem;
+      line-height: 1.65;
+      color: var(--text-sub);
+      font-weight: 500;
+    }
+
+    .card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .card-tag-pill {
+      padding: 6px 12px;
+      background: rgba(30, 64, 175, 0.25);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      color: #93c5fd;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    /* Fixed Bottom iPad Control Bar - Subtle Counter for Presenter Only */
+    .ipad-nav-bar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 120;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 22px;
+      background: rgba(8, 14, 30, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 2px solid var(--brand-orange);
+      border-radius: 50px;
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.7), 0 0 25px var(--brand-orange-glow);
+    }
+
+    .nav-circle-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-blue) 0%, #1d4ed8 100%);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #fff;
+      font-size: 1.3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.2s ease;
+    }
+
+    .nav-circle-btn:active {
+      transform: scale(0.92);
+      background: var(--brand-orange);
+    }
+
+    .nav-circle-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    /* Subtle, discrete, unhighlighted slide counter */
+    .nav-counter-box {
+      font-family: var(--font-heading);
+      font-weight: 500;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.32); /* Low-contrast, subtle so spectators don't notice total slides */
+      min-width: 40px;
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-pill-btn {
+      padding: 10px 18px;
+      border-radius: 30px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: var(--text-sub);
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 48px;
+    }
+
+    .nav-pill-btn:active, .nav-pill-btn.active {
+      background: var(--brand-orange);
+      color: #fff;
+      border-color: var(--brand-orange);
+    }
+
+    /* Index Drawer for Quick Slide Jumping */
+    .drawer-bg {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 6, 15, 0.88);
+      backdrop-filter: blur(14px);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .drawer-bg.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .drawer-panel {
+      width: 100%;
+      max-width: 480px;
+      height: 100%;
+      background: #091124;
+      border-left: 2px solid var(--brand-orange);
+      padding: 30px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
+    }
+
+    .drawer-bg.open .drawer-panel {
+      transform: translateX(0);
+    }
+
+    .drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .drawer-title-text {
+      font-family: var(--font-heading);
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .drawer-close-btn {
+      background: none;
+      border: none;
+      color: var(--brand-orange);
+      font-size: 1.6rem;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .drawer-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .drawer-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+    }
+
+    .drawer-row:active, .drawer-row.active {
+      background: rgba(255, 107, 0, 0.2);
+      border-color: var(--brand-orange);
+    }
+
+    .drawer-thumb {
+      width: 55px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 6px;
+    }
+
+    .drawer-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .drawer-text {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    /* Lightbox Modal */
+    .lightbox-bg {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.94);
+      backdrop-filter: blur(16px);
+      z-index: 300;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .lightbox-bg.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .lightbox-img-element {
+      max-width: 95vw;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: 12px;
+      box-shadow: 0 0 50px rgba(255, 107, 0, 0.3);
+    }
+
+    .lightbox-close-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: var(--brand-orange);
+      border: none;
+      color: #fff;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      font-size: 1.5rem;
+      cursor: pointer;
+      box-shadow: 0 0 20px var(--brand-orange-glow);
+    }
+
+    @media (max-width: 1024px) {
+      .slide {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr auto;
+        gap: 16px;
+        height: auto;
+        max-height: none;
+        overflow-y: auto;
+      }
+      .media-wrapper {
+        height: 380px;
+      }
+      .content-card {
+        padding: 24px;
+      }
+      .card-title {
+        font-size: 1.5rem;
+      }
+      .card-desc {
+        font-size: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Progress Bar (Subtle) -->
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="progressFill"></div>
+  </div>
+
+  <!-- Fixed Watermark Logo (Always Visible on Top Left) -->
+  <div class="fixed-logo-badge">
+    <img src="presentación/0 LOGO.jpeg" alt="Chronos Fútbol Logo" class="fixed-logo-img">
+    <div class="fixed-logo-text">
+      <span class="fixed-logo-title">CHRONOS FÚTBOL</span>
+      <span class="fixed-logo-sub">Gestión & Banquillo Inteligente</span>
+    </div>
+  </div>
+
+  <!-- Main Viewport for Presentation Slides -->
+  <main class="presentation-container">
+
+    <!-- SLIDE 0: PORTADA PRINCIPAL -->
+    <section class="slide hero-layout active" data-slide="0">
+      <div class="hero-box">
+        <img src="presentación/0 LOGO.jpeg" alt="Logo Chronos Fútbol" class="hero-logo-large">
+        <h1 style="font-family: var(--font-heading); font-size: 3rem; font-weight: 900; background: linear-gradient(135deg, #ffffff 40%, var(--brand-orange-bright) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+          CHRONOS FÚTBOL
+        </h1>
+        <p style="font-size: 1.35rem; color: var(--brand-blue-light); font-weight: 700;">
+          La Plataforma Inteligente de Gestión Deportiva y Banquillo en Vivo
+        </p>
+        <p style="font-size: 1.15rem; color: var(--text-sub); line-height: 1.6;">
+          Bienvenidos a la solución definitiva para clubes de fútbol base. Digitalización completa, ahorro de tiempo para los técnicos y máxima transparencia con las familias.
+        </p>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+          <span class="card-tag-pill">⚽ Cero Conflictos de Minutos</span>
+          <span class="card-tag-pill">⏱️ Smart Bench en Directo</span>
+          <span class="card-tag-pill">📱 100% Compatible iPad / Móvil</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 1: 0 LOGO -->
+    <section class="slide" data-slide="1">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(1, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(1, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(1, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(1, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-1" onclick="openLightbox('presentación/0 LOGO.jpeg')">
+          <img src="presentación/0 LOGO.jpeg" alt="Logo Chronos Fútbol" class="slide-img" id="img-1">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 1 • PRESENTACIÓN</span>
+        </div>
+        <h2 class="card-title">Identidad y Filosofía Chronos Fútbol</h2>
+        <p class="card-desc">
+          Unificamos a la junta directiva, entrenadores, coordinadores y familias en un único espacio profesional y transparente. Diseñado para elevar la gestión del club.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🏆 Identidad de Club</span>
+          <span class="card-tag-pill">🤝 Transparencia</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: 1 REGISTRO DE ENTRENADOR -->
+    <section class="slide" data-slide="2">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(2, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(2, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(2, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(2, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-2" onclick="openLightbox('presentación/1 REGISTRO DE ENTRENADOR.png')">
+          <img src="presentación/1 REGISTRO DE ENTRENADOR.png" alt="Registro de Entrenador" class="slide-img" id="img-2">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 1 • ALTA DE TÉCNICO</span>
+        </div>
+        <h2 class="card-title">Registro y Alta de Entrenadores</h2>
+        <p class="card-desc">
+          Formulario sencillo para dar de alta al cuerpo técnico con sus datos corporativos y credenciales de acceso seguras. Control estricto de permisos desde el primer día.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📝 Formulario Seguro</span>
+          <span class="card-tag-pill">🔑 Credenciales Corporativas</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: 2 OPCIONES DE ROLES -->
+    <section class="slide" data-slide="3">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(3, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(3, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(3, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(3, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-3" onclick="openLightbox('presentación/2 OPCIONES DE ROLES.png')">
+          <img src="presentación/2 OPCIONES DE ROLES.png" alt="Opciones de Roles" class="slide-img" id="img-3">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 1 • ESTRUCTURA</span>
+        </div>
+        <h2 class="card-title">Accesos Personalizados por Rol</h2>
+        <p class="card-desc">
+          Cada perfil accede únicamente a lo que necesita. Directores, coordinadores, entrenadores y padres cuentan con una vista adaptada a su responsabilidad.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🔒 Accesos Seguros</span>
+          <span class="card-tag-pill">👥 Segmentación por Rol</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: 3 PANEL ENTRENADOR -->
+    <section class="slide" data-slide="4">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(4, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(4, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(4, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(4, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-4" onclick="openLightbox('presentación/3 PANEL ENTRENADOR.png')">
+          <img src="presentación/3 PANEL ENTRENADOR.png" alt="Panel Entrenador" class="slide-img" id="img-4">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 1 • CUERPO TÉCNICO</span>
+        </div>
+        <h2 class="card-title">Centro de Control del Entrenador</h2>
+        <p class="card-desc">
+          El panel principal donde el míster gestiona su equipo en segundos. Desde aquí accede a la plantilla, convocatorias, entrenamientos y al control de partido en vivo.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📋 Panel de Control</span>
+          <span class="card-tag-pill">⚡ Gestión Rápida</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: 4 PANEL GESTIÓN PLANTILLA 1 -->
+    <section class="slide" data-slide="5">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(5, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(5, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(5, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(5, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-5" onclick="openLightbox('presentación/4 PANEL GESTIÓN PLANTILLA 1.png')">
+          <img src="presentación/4 PANEL GESTIÓN PLANTILLA 1.png" alt="Gestión Plantilla 1" class="slide-img" id="img-5">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 1 • PLANTILLA</span>
+        </div>
+        <h2 class="card-title">Vista General de la Plantilla</h2>
+        <p class="card-desc">
+          Todos los futbolistas del equipo organizados en una lista clara. Muestra de un vistazo las posiciones tácticas, disponibilidad y datos de contacto de cada jugador.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🏃 Demarcaciones Tácticas</span>
+          <span class="card-tag-pill">📞 Contacto Directo</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: 5 PANEL GESTIÓN PLANTILLA 2 -->
+    <section class="slide" data-slide="6">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(6, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(6, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(6, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(6, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-6" onclick="openLightbox('presentación/5 PANEL GESTIÓN PLANTILLA 2.png')">
+          <img src="presentación/5 PANEL GESTIÓN PLANTILLA 2.png" alt="Gestión Plantilla 2" class="slide-img" id="img-6">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 1 • LICENCIAS</span>
+        </div>
+        <h2 class="card-title">Gestión de Fichas y Licencias</h2>
+        <p class="card-desc">
+          Administra las altas, bajas y documentación de los jugadores sin papeleo. Permite mantener actualizada la información de la plantilla de forma fácil y rápida.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📄 Cero Papeleo</span>
+          <span class="card-tag-pill">🗂️ Expediente Digital</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: 6 PANEL CONVOCATORIA -->
+    <section class="slide" data-slide="7">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(7, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(7, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(7, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(7, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-7" onclick="openLightbox('presentación/6 PANEL CONVOCATORIA.png')">
+          <img src="presentación/6 PANEL CONVOCATORIA.png" alt="Panel Convocatoria" class="slide-img" id="img-7">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 2 • PLANIFICACIÓN</span>
+        </div>
+        <h2 class="card-title">Convocatorias y Citaciones Oficiales</h2>
+        <p class="card-desc">
+          Envía las citaciones de partido indicando lugar, hora, vestuario y rival. Los jugadores y padres confirman su asistencia directamente desde su móvil.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📍 Ubicación del Campo</span>
+          <span class="card-tag-pill">✅ Confirmación Inmediata</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: 7 PANEL ENTRENAMIENTOS -->
+    <section class="slide" data-slide="8">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(8, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(8, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(8, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(8, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-8" onclick="openLightbox('presentación/7 PANEL ENTRENAMIENTOS.png')">
+          <img src="presentación/7 PANEL ENTRENAMIENTOS.png" alt="Panel Entrenamientos" class="slide-img" id="img-8">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 2 • SALUD Y CARGA</span>
+        </div>
+        <h2 class="card-title">Asistencia y Carga de Entrenamiento</h2>
+        <p class="card-desc">
+          Pase de lista digital en el campo en menos de un minuto. Permite clasificar ausencias por motivos médicos o escolares para cuidar la salud y compromiso del deportista.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">⏱️ Pase de Lista</span>
+          <span class="card-tag-pill">🏥 Control de Ausencias</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: 8 PARTIDO -->
+    <section class="slide" data-slide="9">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(9, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(9, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(9, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(9, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-9" onclick="openLightbox('presentación/8 PARTIDO.png')">
+          <img src="presentación/8 PARTIDO.png" alt="Preparación Partido" class="slide-img" id="img-9">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 2 • COMPETICIÓN</span>
+        </div>
+        <h2 class="card-title">Preparación Táctica del Partido</h2>
+        <p class="card-desc">
+          Configura el XI titular, los suplentes y la estrategia de cambios antes del silbato inicial. Todo queda preparado para gestionar el choque sin distracciones.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">⚽ XI Titular y Banquillo</span>
+          <span class="card-tag-pill">🎯 Estrategia de Rotación</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: 9 FICHA JUGADOR 1 -->
+    <section class="slide" data-slide="10">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(10, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(10, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(10, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(10, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-10" onclick="openLightbox('presentación/9 FICHA JUGADOR 1.jpg')">
+          <img src="presentación/9 FICHA JUGADOR 1.jpg" alt="Ficha Jugador 1" class="slide-img" id="img-10" onerror="if(!this.tried){this.tried=true;this.src='presentación/9 FICHA JUGADOR 1.png';}">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • PERFIL JUGADOR</span>
+        </div>
+        <h2 class="card-title">Ficha Individual del Futbolista</h2>
+        <p class="card-desc">
+          Perfil completo con los datos personales, demarcación principal e historial deportivo del jugador. Permite conocer en detalle a cada integrante de la plantilla.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">👤 Perfil Deportivo</span>
+          <span class="card-tag-pill">📊 Histórico</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 11: 10 FICHA JUGADOR 2 -->
+    <section class="slide" data-slide="11">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(11, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(11, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(11, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(11, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-11" onclick="openLightbox('presentación/10 FICHA JUGADOR 2.jpg')">
+          <img src="presentación/10 FICHA JUGADOR 2.jpg" alt="Ficha Jugador 2" class="slide-img" id="img-11" onerror="if(!this.tried){this.tried=true;this.src='presentación/10 FICHA JUGADOR 3.png';}">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • MINUTOS Y RENDIMIENTO</span>
+        </div>
+        <h2 class="card-title">Registro de Minutos y Rendimiento</h2>
+        <p class="card-desc">
+          Cómputo objetivo y al segundo del tiempo disputado. Facilita el análisis continuo de rendimiento y participación en cada jornada de liga.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">⏱️ Cómputo de Minutos</span>
+          <span class="card-tag-pill">📊 Rendimiento</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 12: 11 FICHA JUGADOR 3 -->
+    <section class="slide" data-slide="12">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(12, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(12, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(12, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(12, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-12" onclick="openLightbox('presentación/11 FICHA JUGADOR 3.jpg')">
+          <img src="presentación/11 FICHA JUGADOR 3.jpg" alt="Ficha Jugador 3" class="slide-img" id="img-12" onerror="if(!this.tried){this.tried=true;this.src='presentación/11 FICHA JUGADOR 2.png';}">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • HISTÓRICO Y EVOLUCIÓN</span>
+        </div>
+        <h2 class="card-title">Historial y Evolución del Futbolista</h2>
+        <p class="card-desc">
+          Seguimiento del desarrollo formativo del jugador durante la temporada. Base de información objetiva para evaluar la progresión continua.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📈 Evolución Continua</span>
+          <span class="card-tag-pill">⭐ Trayectoria</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 13: 12 AVISO DE CAMBIO -->
+    <section class="slide" data-slide="13">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(13, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(13, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(13, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(13, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-13" onclick="openLightbox('presentación/12 AVISO DE CAMBIO.png')">
+          <img src="presentación/12 AVISO DE CAMBIO.png" alt="Aviso de Cambio" class="slide-img" id="img-13">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • SMART BENCH</span>
+        </div>
+        <h2 class="card-title">Sustituciones Ágiles durante el Juego</h2>
+        <p class="card-desc">
+          Realiza los cambios de jugadores en la pantalla con un solo toque. El sistema registra el minuto exacto de sustitución y recalcula el tiempo jugado por ambos al instante.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🔄 Cambios a 1-Clic</span>
+          <span class="card-tag-pill">⏱️ Registro en Vivo</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 14: 13 PANEL EN VIVO CAMBIAR -->
+    <section class="slide" data-slide="14">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(14, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(14, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(14, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(14, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-14" onclick="openLightbox('presentación/13 PANEL ËN VIVO .png')">
+          <img src="presentación/13 PANEL ËN VIVO .png" alt="Panel En Vivo" class="slide-img" id="img-14">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • BANQUILLO INTELIGENTE</span>
+        </div>
+        <h2 class="card-title">El Banquillo Inteligente en Directo</h2>
+        <p class="card-desc">
+          Cronometraje simultáneo e individual de los 11 titulares y los suplentes. Recibe alertas visuales para mantener el equilibrio de minutos sin perder la concentración en el partido.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🔔 Alertas de Rotación</span>
+          <span class="card-tag-pill">⚖️ Minutos Garantizados</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 15: 14 AVISO DE GOL -->
+    <section class="slide" data-slide="15">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(15, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(15, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(15, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(15, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-15" onclick="openLightbox('presentación/14 AVISO DE GOL.png')">
+          <img src="presentación/14 AVISO DE GOL.png" alt="Aviso de Gol" class="slide-img" id="img-15">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • EVENTOS</span>
+        </div>
+        <h2 class="card-title">Anotación de Goles y Asistencias</h2>
+        <p class="card-desc">
+          Registra los tantos al momento indicando quién marca y quién da el pase de gol. El marcador y las estadísticas individuales del equipo se actualizan solas en vivo.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">⚽ Marcador en Directo</span>
+          <span class="card-tag-pill">👟 Asistencias</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 16: 15 AVISO DE LESIÓN -->
+    <section class="slide" data-slide="16">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(16, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(16, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(16, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(16, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-16" onclick="openLightbox('presentación/15 AVISO DE LESIÓN.png')">
+          <img src="presentación/15 AVISO DE LESIÓN.png" alt="Aviso de Lesión" class="slide-img" id="img-16">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • ATENCIÓN MÉDICA</span>
+        </div>
+        <h2 class="card-title">Alerta de Lesiones y Atención Médica</h2>
+        <p class="card-desc">
+          Anota los contratiempos físicos durante el encuentro al momento. Genera un aviso automático para que los servicios médicos y el club inicien el seguimiento de salud.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🚑 Protocolo Médico</span>
+          <span class="card-tag-pill">🏥 Salud del Deportista</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 17: 16 AVISO DE TARJETA -->
+    <section class="slide" data-slide="17">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(17, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(17, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(17, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(17, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-17" onclick="openLightbox('presentación/16 AVISO DE TARJETA.png')">
+          <img src="presentación/16 AVISO DE TARJETA.png" alt="Aviso de Tarjeta" class="slide-img" id="img-17">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • DISCIPLINA</span>
+        </div>
+        <h2 class="card-title">Registro Disciplinario en Campo</h2>
+        <p class="card-desc">
+          Control inmediato de amonestaciones amarillas y rojas. Ayuda a gestionar la disciplina del equipo y a prevenir sanciones en las siguientes jornadas de liga.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🟨 Amarillas / Rojas</span>
+          <span class="card-tag-pill">🤝 Fair Play</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 18: 17 AVISO FINAL PRIMERA PARTE -->
+    <section class="slide" data-slide="18">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(18, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(18, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(18, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(18, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-18" onclick="openLightbox('presentación/17 AVISO FINAL PRIMERA PARTE.png')">
+          <img src="presentación/17 AVISO FINAL PRIMERA PARTE.png" alt="Final Primera Parte" class="slide-img" id="img-18">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • INTERMEDIO</span>
+        </div>
+        <h2 class="card-title">Pausa al Descanso e Intermedio</h2>
+        <p class="card-desc">
+          Pause los tiempos al descanso para revisar el reparto de minutos de la primera parte y ajustar la estrategia en vestuarios con total precisión.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">⏸️ Pausa de Tiempos</span>
+          <span class="card-tag-pill">🎯 Ajustes en Vestuario</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 19: 18 AVISO FINAL DE PARTIDO -->
+    <section class="slide" data-slide="19">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(19, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(19, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(19, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(19, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-19" onclick="openLightbox('presentación/18 AVISO FINAL DE PARTIDO.png')">
+          <img src="presentación/18 AVISO FINAL DE PARTIDO.png" alt="Final de Partido" class="slide-img" id="img-19">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 3 • PITIDO FINAL</span>
+        </div>
+        <h2 class="card-title">Pitido Final y Acta Automática</h2>
+        <p class="card-desc">
+          Al terminar el partido, el sistema consolida los eventos y tiempos disputados, generando el acta digital completa al instante sin papeleo posterior.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🏁 Acta Automática</span>
+          <span class="card-tag-pill">📄 Registro Completo</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 20: 19 INFORME COLECTIVO RESUMEN INFORMES -->
+    <section class="slide" data-slide="20">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(20, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(20, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(20, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(20, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-20" onclick="openLightbox('presentación/19 INFORME COLECTIVO RESUMEN INFORMES.png')">
+          <img src="presentación/19 INFORME COLECTIVO RESUMEN INFORMES.png" alt="Resumen Informes Colectivos" class="slide-img" id="img-20">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 4 • ANÁLISIS GLOBAL</span>
+        </div>
+        <h2 class="card-title">Resumen de Informes Colectivos</h2>
+        <p class="card-desc">
+          Cuadro general con el rendimiento y equilibrio de minutos de todos los equipos del club para coordinadores y directores deportivos.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📊 Comparativa de Equipos</span>
+          <span class="card-tag-pill">🔍 Visión de Club</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 21: 20 INFORME COLECTIVO -->
+    <section class="slide" data-slide="21">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(21, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(21, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(21, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(21, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-21" onclick="openLightbox('presentación/20 INFORME COLECTIVO.png')">
+          <img src="presentación/20 INFORME COLECTIVO.png" alt="Informe Colectivo Detalle" class="slide-img" id="img-21">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 4 • REPORTE DE EQUIPO</span>
+        </div>
+        <h2 class="card-title">Reporte Colectivo de Equipo</h2>
+        <p class="card-desc">
+          Métricas completas de victorias, goles, tarjetas y participación por líneas. La base ideal para las reuniones de evaluación del cuerpo técnico.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">⚽ Métricas de Juego</span>
+          <span class="card-tag-pill">📄 Reporte Descargable</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 22: 21 OPCIÓN ENVÍO INFORME INDIVIDUAL -->
+    <section class="slide" data-slide="22">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(22, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(22, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(22, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(22, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-22" onclick="openLightbox('presentación/21 OPCIÓN ENVÍO INFORME INDIVIDUAL.png')">
+          <img src="presentación/21 OPCIÓN ENVÍO INFORME INDIVIDUAL.png" alt="Envío Informe Individual" class="slide-img" id="img-22">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 4 • COMUNICACIÓN FAMILIAR</span>
+        </div>
+        <h2 class="card-title">Distribución de Informes a Familias</h2>
+        <p class="card-desc">
+          Comparte reportes periódicos de desarrollo del jugador directamente con sus padres a través del canal oficial. Fomenta la transparencia y el compromiso.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📩 Envío en 1 Clic</span>
+          <span class="card-tag-pill">👨‍👩‍👧 Canal Formal</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 23: 22 INFORME INDIVIDUAL -->
+    <section class="slide" data-slide="23">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(23, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(23, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(23, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(23, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-23" onclick="openLightbox('presentación/22 INFORME INDIVIDUAL.png')">
+          <img src="presentación/22 INFORME INDIVIDUAL.png" alt="Informe Individual" class="slide-img" id="img-23">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 4 • PROGRESIÓN JUGADOR</span>
+        </div>
+        <h2 class="card-title">Reporte de Desarrollo Individual</h2>
+        <p class="card-desc">
+          Documento claro y profesional que refleja el progreso, la asistencia y la participación del futbolista con datos reales e irrefutables.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🌟 Valoración de Esfuerzo</span>
+          <span class="card-tag-pill">📊 Datos Irrefutables</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 24: 23 PANEL COMUNICACIONES -->
+    <section class="slide" data-slide="24">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(24, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(24, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(24, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(24, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-24" onclick="openLightbox('presentación/23 PANEL COMUNICACIONES.png')">
+          <img src="presentación/23 PANEL COMUNICACIONES.png" alt="Panel Comunicaciones" class="slide-img" id="img-24">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • CANAL OFICIAL</span>
+        </div>
+        <h2 class="card-title">Canal Oficial de Noticias del Club</h2>
+        <p class="card-desc">
+          Emita circulares y avisos oficiales para entrenadores y padres, eliminando los rumores y malentendidos en chats informales de mensajería.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📢 Circulares Oficiales</span>
+          <span class="card-tag-pill">🛑 Cero Rumores</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 25: 24 MENSAJERÍA -->
+    <section class="slide" data-slide="25">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(25, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(25, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(25, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(25, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-25" onclick="openLightbox('presentación/24 MENSAJERÍA.png')">
+          <img src="presentación/24 MENSAJERÍA.png" alt="Mensajería Interna" class="slide-img" id="img-25">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • MENSAJERÍA INTELIGENTE</span>
+        </div>
+        <h2 class="card-title">Centro de Mensajería Interna</h2>
+        <p class="card-desc">
+          Comunicación fluida y segura entre el club, entrenadores y familias sin compartir números de teléfono personales. Protege la privacidad de todos los usuarios.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">💬 Mensajería Privada</span>
+          <span class="card-tag-pill">🛡️ Privacidad Garantizada</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 26: 25 PARTIDOS TERMINADOS -->
+    <section class="slide" data-slide="26">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(26, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(26, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(26, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(26, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-26" onclick="openLightbox('presentación/25 PARTIDOS TERMINADOS.png')">
+          <img src="presentación/25 PARTIDOS TERMINADOS.png" alt="Partidos Terminados" class="slide-img" id="img-26">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • ARCHIVO DE PARTIDOS</span>
+        </div>
+        <h2 class="card-title">Histórico y Archivo de Actas</h2>
+        <p class="card-desc">
+          Acceda en todo momento a la biblioteca de partidos finalizados para consultar resultados, estadísticas y eventos pasados con total seguridad.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">📚 Biblioteca de Actas</span>
+          <span class="card-tag-pill">🔍 Consulta Histórica</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 27: 26 PANEL DIRECTOR DEPORTIVO -->
+    <section class="slide" data-slide="27">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(27, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(27, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(27, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(27, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-27" onclick="openLightbox('presentación/26 PANEL DIRECTOR DEPORTIVO.png')">
+          <img src="presentación/26 PANEL DIRECTOR DEPORTIVO.png" alt="Director Deportivo" class="slide-img" id="img-27">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • DIRECCIÓN DEPORTIVA</span>
+        </div>
+        <h2 class="card-title">Visión 360° para Dirección Deportiva</h2>
+        <p class="card-desc">
+          Supervise que todas las categorías aplican la línea metodológica del club y respetan la política de desarrollo deportivo en cada encuentro.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🦅 Control 360°</span>
+          <span class="card-tag-pill">⚽ Metodología de Club</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 28: 27 OPCIÓN CONFIG -->
+    <section class="slide" data-slide="28">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(28, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(28, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(28, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(28, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-28" onclick="openLightbox('presentación/27 OPCIÓN CONFIG.png')">
+          <img src="presentación/27 OPCIÓN CONFIG.png" alt="Opciones Config" class="slide-img" id="img-28">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • PERSONALIZACIÓN</span>
+        </div>
+        <h2 class="card-title">Personalización de Reglas y Normativas</h2>
+        <p class="card-desc">
+          Ajuste los tiempos de parte y las reglas de minutos mínimos según la categoría y la filosofía interna de su entidad. La app se adapta a su club.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">⚙️ Reglas Flexibles</span>
+          <span class="card-tag-pill">⏱️ Normativa a Medida</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 29: 28 PANEL ADMINISTRADOR DE CLUB -->
+    <section class="slide" data-slide="29">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(29, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(29, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(29, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(29, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-29" onclick="openLightbox('presentación/28 PANEL ADMINISTRADOR DE CLUB.png')">
+          <img src="presentación/28 PANEL ADMINISTRADOR DE CLUB.png" alt="Administrador de Club" class="slide-img" id="img-29">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • ADMINISTRACIÓN</span>
+        </div>
+        <h2 class="card-title">Administración e Identidad de Club</h2>
+        <p class="card-desc">
+          Personalice la plataforma con el escudo y colores corporativos. Controle la asignación de campos e instalaciones con gobierno total de la entidad.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🎨 Escudo y Colores</span>
+          <span class="card-tag-pill">🏟️ Instalaciones y Campos</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 30: 29 PANEL COORDINADOR -->
+    <section class="slide" data-slide="30">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(30, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(30, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(30, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(30, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-30" onclick="openLightbox('presentación/29 PANEL COORDINADOR.png')">
+          <img src="presentación/29 PANEL COORDINADOR.png" alt="Panel Coordinador" class="slide-img" id="img-30">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • COORDINACIÓN</span>
+        </div>
+        <h2 class="card-title">Coordinación por Etapas Formativas</h2>
+        <p class="card-desc">
+          Gestión centralizada para coordinadores de Fútbol 7 y Fútbol 11, apoyando el trabajo diario de los entrenadores y resolviendo incidencias al instante.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">🏆 Agrupación por Etapas</span>
+          <span class="card-tag-pill">🤝 Apoyo al Técnico</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 31: 30 PANEL PADRES MADRES TUTORES -->
+    <section class="slide" data-slide="31">
+      <div class="media-wrapper">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn active" onclick="setZoom(31, 1)">1x</button>
+          <button class="zoom-btn" onclick="setZoom(31, 1.5)">1.5x</button>
+          <button class="zoom-btn" onclick="setZoom(31, 2)">2x</button>
+          <button class="zoom-btn" onclick="setZoom(31, 3)">3x</button>
+        </div>
+        <div class="image-viewport" id="viewport-31" onclick="openLightbox('presentación/30 PANEL PADRES MADRES TUTORES.png')">
+          <img src="presentación/30 PANEL PADRES MADRES TUTORES.png" alt="Portal Familias" class="slide-img" id="img-31">
+        </div>
+      </div>
+      <div class="content-card">
+        <div class="card-badge-row">
+          <span class="card-badge">FASE 5 • PORTAL FAMILIAR</span>
+        </div>
+        <h2 class="card-title">Portal de Transparencia para Familias</h2>
+        <p class="card-desc">
+          Las familias consultan convocatorias, horarios, mapa de campos y seguimiento de sus hijos con total tranquilidad, fortaleciendo la confianza en el club.
+        </p>
+        <div class="card-tags">
+          <span class="card-tag-pill">👨‍👩‍👧 Transparencia Total</span>
+          <span class="card-tag-pill">🕊️ Paz Mental</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 32: CIERRE FINAL CON EL LOGO -->
+    <section class="slide hero-layout" data-slide="32">
+      <div class="hero-box">
+        <img src="presentación/0 LOGO.jpeg" alt="Logo Chronos Fútbol" class="hero-logo-large">
+        <h2 style="font-family: var(--font-heading); font-size: 2.8rem; font-weight: 900; color: #fff;">
+          CHRONOS FÚTBOL
+        </h2>
+        <p style="font-size: 1.4rem; color: var(--brand-orange-bright); font-weight: 800;">
+          ¡Gracias! El Futuro de tu Club Comienza Hoy
+        </p>
+        <p style="font-size: 1.15rem; color: var(--text-sub); line-height: 1.6;">
+          Profesionalice la gestión de su entidad con la plataforma más avanzada, equitativa y transparente del fútbol base. Estamos listos para acompañar a su club.
+        </p>
+        <div style="display: flex; gap: 12px; margin-top: 10px;">
+          <span class="card-tag-pill">🚀 Solución Llave en Mano</span>
+          <span class="card-tag-pill">📞 Soporte Continuo</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- iPad Touch Control Bar at Bottom - Discretely Unhighlighted Slide Counter for Presenter Only -->
+  <nav class="ipad-nav-bar">
+    <button class="nav-circle-btn" id="prevBtn" title="Anterior">←</button>
+    <div class="nav-counter-box" id="slideCounter"></div>
+    <button class="nav-circle-btn" id="nextBtn" title="Siguiente">→</button>
+    
+    <div style="width: 2px; height: 26px; background: rgba(255,255,255,0.18); margin: 0 4px;"></div>
+
+    <button class="nav-pill-btn" id="playBtn">
+      <span id="playIcon">▶</span> <span id="playText">Auto</span>
+    </button>
+    <button class="nav-pill-btn" id="drawerBtn">
+      📑 Índice
+    </button>
+    <button class="nav-pill-btn" id="fullscreenBtn">
+      ⛶
+    </button>
+  </nav>
+
+  <!-- Drawer Index Overlay for Quick Jump -->
+  <div class="drawer-bg" id="drawerBg" onclick="closeDrawerOnBg(event)">
+    <div class="drawer-panel">
+      <div class="drawer-head">
+        <h3 class="drawer-title-text">Índice de Diapositivas</h3>
+        <button class="drawer-close-btn" id="drawerCloseBtn">✕</button>
+      </div>
+      <div class="drawer-grid" id="drawerGrid">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox Modal -->
+  <div class="lightbox-bg" id="lightboxBg" onclick="closeLightbox()">
+    <button class="lightbox-close-btn">✕</button>
+    <img src="" alt="Ampliación" class="lightbox-img-element" id="lightboxImg">
+  </div>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    let currentSlideIndex = 0;
+    let autoPlayTimer = null;
+
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const slideCounter = document.getElementById('slideCounter');
+    const progressFill = document.getElementById('progressFill');
+    const drawerGrid = document.getElementById('drawerGrid');
+
+    const slidesData = [
+      { num: 0, title: "PORTADA: Chronos Fútbol", img: "presentación/0 LOGO.jpeg" },
+      { num: 1, title: "0 LOGO: Identidad Chronos Fútbol", img: "presentación/0 LOGO.jpeg" },
+      { num: 2, title: "1. Registro de Entrenador", img: "presentación/1 REGISTRO DE ENTRENADOR.png" },
+      { num: 3, title: "2. Opciones de Roles", img: "presentación/2 OPCIONES DE ROLES.png" },
+      { num: 4, title: "3. Panel Entrenador", img: "presentación/3 PANEL ENTRENADOR.png" },
+      { num: 5, title: "4. Gestión Plantilla 1", img: "presentación/4 PANEL GESTIÓN PLANTILLA 1.png" },
+      { num: 6, title: "5. Gestión Plantilla 2", img: "presentación/5 PANEL GESTIÓN PLANTILLA 2.png" },
+      { num: 7, title: "6. Panel Convocatoria", img: "presentación/6 PANEL CONVOCATORIA.png" },
+      { num: 8, title: "7. Panel Entrenamientos", img: "presentación/7 PANEL ENTRENAMIENTOS.png" },
+      { num: 9, title: "8. Preparación Partido", img: "presentación/8 PARTIDO.png" },
+      { num: 10, title: "9. Ficha Jugador 1 (Perfil)", img: "presentación/9 FICHA JUGADOR 1.jpg" },
+      { num: 11, title: "10. Ficha Jugador 2 (Detalle)", img: "presentación/10 FICHA JUGADOR 2.jpg" },
+      { num: 12, title: "11. Ficha Jugador 3 (Minutos)", img: "presentación/11 FICHA JUGADOR 3.jpg" },
+      { num: 13, title: "12. Aviso de Cambio", img: "presentación/12 AVISO DE CAMBIO.png" },
+      { num: 14, title: "13. Banquillo En Vivo", img: "presentación/13 PANEL ËN VIVO .png" },
+      { num: 15, title: "14. Aviso de Gol", img: "presentación/14 AVISO DE GOL.png" },
+      { num: 16, title: "15. Aviso de Lesión", img: "presentación/15 AVISO DE LESIÓN.png" },
+      { num: 17, title: "16. Aviso de Tarjeta", img: "presentación/16 AVISO DE TARJETA.png" },
+      { num: 18, title: "17. Final Primera Parte", img: "presentación/17 AVISO FINAL PRIMERA PARTE.png" },
+      { num: 19, title: "18. Final de Partido", img: "presentación/18 AVISO FINAL DE PARTIDO.png" },
+      { num: 20, title: "19. Resumen Informes Colectivos", img: "presentación/19 INFORME COLECTIVO RESUMEN INFORMES.png" },
+      { num: 21, title: "20. Informe Colectivo Detalle", img: "presentación/20 INFORME COLECTIVO.png" },
+      { num: 22, title: "21. Envío Informe Individual", img: "presentación/21 OPCIÓN ENVÍO INFORME INDIVIDUAL.png" },
+      { num: 23, title: "22. Informe Individual Futbolista", img: "presentación/22 INFORME INDIVIDUAL.png" },
+      { num: 24, title: "23. Panel Comunicaciones", img: "presentación/23 PANEL COMUNICACIONES.png" },
+      { num: 25, title: "24. Mensajería Interna", img: "presentación/24 MENSAJERÍA.png" },
+      { num: 26, title: "25. Partidos Terminados", img: "presentación/25 PARTIDOS TERMINADOS.png" },
+      { num: 27, title: "26. Director Deportivo", img: "presentación/26 PANEL DIRECTOR DEPORTIVO.png" },
+      { num: 28, title: "27. Opción Configuración", img: "presentación/27 OPCIÓN CONFIG.png" },
+      { num: 29, title: "28. Administrador de Club", img: "presentación/28 PANEL ADMINISTRADOR DE CLUB.png" },
+      { num: 30, title: "29. Panel Coordinador", img: "presentación/29 PANEL COORDINADOR.png" },
+      { num: 31, title: "30. Portal Padres / Madres / Tutores", img: "presentación/30 PANEL PADRES MADRES TUTORES.png" },
+      { num: 32, title: "CIERRE: Chronos Fútbol", img: "presentación/0 LOGO.jpeg" }
+    ];
+
+    function initDrawer() {
+      drawerGrid.innerHTML = slidesData.map((s, idx) => `
+        <div class="drawer-row ${idx === 0 ? 'active' : ''}" onclick="goToSlide(${idx})">
+          <img src="${s.img}" alt="${s.title}" class="drawer-thumb" onerror="this.src='presentación/0 LOGO.jpeg'">
+          <div class="drawer-info">
+            <span class="drawer-text">${s.title}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function showSlide(index) {
+      if (index < 0) index = 0;
+      if (index >= totalSlides) index = totalSlides - 1;
+
+      slides.forEach((slide, idx) => {
+        if (idx === index) {
+          slide.classList.add('active');
+        } else {
+          slide.classList.remove('active');
+        }
+      });
+
+      currentSlideIndex = index;
+      
+      // Discrete, subtle counter for presenter only (low contrast)
+      slideCounter.textContent = `${index}`;
+
+      prevBtn.disabled = index === 0;
+      nextBtn.disabled = index === totalSlides - 1;
+
+      const progressPct = (index / (totalSlides - 1)) * 100;
+      progressFill.style.width = `${progressPct}%`;
+
+      const rows = drawerGrid.querySelectorAll('.drawer-row');
+      rows.forEach((row, idx) => {
+        if (idx === index) row.classList.add('active');
+        else row.classList.remove('active');
+      });
+    }
+
+    function nextSlide() {
+      if (currentSlideIndex < totalSlides - 1) {
+        showSlide(currentSlideIndex + 1);
+      } else if (autoPlayTimer) {
+        toggleAutoPlay();
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlideIndex > 0) {
+        showSlide(currentSlideIndex - 1);
+      }
+    }
+
+    function goToSlide(index) {
+      showSlide(index);
+      toggleDrawer();
+    }
+
+    /* Multi-stage Zoom & Full Top-to-Bottom Native Scroll Feature */
+    function setZoom(slideNum, scale) {
+      const img = document.getElementById(`img-${slideNum}`);
+      const viewport = document.getElementById(`viewport-${slideNum}`);
+      
+      if (img && viewport) {
+        img.classList.remove('zoom-1-5', 'zoom-2', 'zoom-3');
+        viewport.classList.remove('is-zoomed');
+        
+        if (scale > 1) {
+          viewport.classList.add('is-zoomed');
+          if (scale === 1.5) img.classList.add('zoom-1-5');
+          else if (scale === 2) img.classList.add('zoom-2');
+          else if (scale === 3) img.classList.add('zoom-3');
+          viewport.scrollTop = 0;
+          viewport.scrollLeft = 0;
+        }
+      }
+      
+      const slideElem = document.querySelector(`.slide[data-slide="${slideNum}"]`);
+      if (slideElem) {
+        const btns = slideElem.querySelectorAll('.zoom-btn');
+        btns.forEach(btn => {
+          if (btn.textContent === `${scale}x`) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+      }
+    }
+
+    function toggleAutoPlay() {
+      const playBtn = document.getElementById('playBtn');
+      const playIcon = document.getElementById('playIcon');
+      const playText = document.getElementById('playText');
+
+      if (autoPlayTimer) {
+        clearInterval(autoPlayTimer);
+        autoPlayTimer = null;
+        playBtn.classList.remove('active');
+        playIcon.textContent = '▶';
+        playText.textContent = 'Auto';
+      } else {
+        autoPlayTimer = setInterval(() => {
+          nextSlide();
+        }, 5000);
+        playBtn.classList.add('active');
+        playIcon.textContent = '⏸';
+        playText.textContent = 'Pausa';
+      }
+    }
+
+    function toggleDrawer() {
+      const drawerBg = document.getElementById('drawerBg');
+      drawerBg.classList.toggle('open');
+    }
+
+    function closeDrawerOnBg(e) {
+      if (e.target.id === 'drawerBg') {
+        toggleDrawer();
+      }
+    }
+
+    function openLightbox(src) {
+      const lightboxBg = document.getElementById('lightboxBg');
+      const lightboxImg = document.getElementById('lightboxImg');
+      lightboxImg.src = src;
+      lightboxBg.classList.add('open');
+    }
+
+    function closeLightbox() {
+      const lightboxBg = document.getElementById('lightboxBg');
+      lightboxBg.classList.remove('open');
+    }
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.log(`Error fullscreen: ${err.message}`);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    /* Explicit touch & click bindings for 100% iPad Touch compatibility */
+    function addTouchClick(elem, fn) {
+      if (!elem) return;
+      elem.addEventListener('click', (e) => {
+        e.preventDefault();
+        fn(e);
+      });
+      elem.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        fn(e);
+      });
+    }
+
+    addTouchClick(document.getElementById('prevBtn'), prevSlide);
+    addTouchClick(document.getElementById('nextBtn'), nextSlide);
+    addTouchClick(document.getElementById('playBtn'), toggleAutoPlay);
+    addTouchClick(document.getElementById('drawerBtn'), toggleDrawer);
+    addTouchClick(document.getElementById('drawerCloseBtn'), toggleDrawer);
+    addTouchClick(document.getElementById('fullscreenBtn'), toggleFullScreen);
+
+    /* Mouse Drag-to-Scroll for Desktop / iPad pointer */
+    document.querySelectorAll('.image-viewport').forEach(viewport => {
+      let isDragging = false;
+      let startX, startY, scrollLeft, scrollTop;
+
+      viewport.addEventListener('mousedown', (e) => {
+        if (!viewport.classList.contains('is-zoomed')) return;
+        isDragging = true;
+        startX = e.pageX - viewport.offsetLeft;
+        startY = e.pageY - viewport.offsetTop;
+        scrollLeft = viewport.scrollLeft;
+        scrollTop = viewport.scrollTop;
+        viewport.style.cursor = 'grabbing';
+      });
+
+      viewport.addEventListener('mouseleave', () => {
+        isDragging = false;
+        viewport.style.cursor = 'grab';
+      });
+
+      viewport.addEventListener('mouseup', () => {
+        isDragging = false;
+        viewport.style.cursor = 'grab';
+      });
+
+      viewport.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - viewport.offsetLeft;
+        const y = e.pageY - viewport.offsetTop;
+        const walkX = (x - startX) * 1.5;
+        const walkY = (y - startY) * 1.5;
+        viewport.scrollLeft = scrollLeft - walkX;
+        viewport.scrollTop = scrollTop - walkY;
+      });
+    });
+
+    let touchStartX = 0;
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      let touchEndX = e.changedTouches[0].screenX;
+      const activeViewport = document.querySelector('.slide.active .image-viewport.is-zoomed');
+      if (!activeViewport) {
+        if (touchEndX < touchStartX - 60) nextSlide();
+        if (touchEndX > touchStartX + 60) prevSlide();
+      }
+    }, { passive: true });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'Space' || e.key === 'PageDown') nextSlide();
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+      if (e.key === 'Escape') {
+        closeLightbox();
+        const drawerBg = document.getElementById('drawerBg');
+        if (drawerBg.classList.contains('open')) toggleDrawer();
+      }
+    });
+
+    initDrawer();
+    showSlide(0);
+  </script>
+</body>
+</html>

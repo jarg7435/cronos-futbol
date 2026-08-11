@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL · Selección de rol y arranque de la aplicación
+//  CHRONOS FÚTBOL · Selección de rol y arranque de la aplicación
 //  Extraído de js/services/auth.js (auditoría 2026-07-22, monolito #4,
 //  paso 1). Movimiento MECÁNICO: cero cambios de comportamiento.
 //

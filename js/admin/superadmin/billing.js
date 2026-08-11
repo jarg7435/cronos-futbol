@@ -1,5 +1,5 @@
 /**
- * billing.js — Sistema de Facturación Cronos Fútbol v1.0
+ * billing.js — Sistema de Facturación Chronos Fútbol v1.0
  * SuperAdmin: gestión de planes, suscripciones, facturas y resumen mensual
  * Club Admin: vista de suscripción y facturas del club
  * Administrador Individual: vista de suscripción personal
@@ -945,7 +945,7 @@ function _billPrintInvoice(inv) {
       <tr>
         <td>
           <strong>Plan ${inv.planName||inv.planCode} — ${inv.period==='annual'?'Anual':inv.period==='trial'?'Período de prueba':'Mensual'}</strong><br>
-          <span style="color:#6b7280;font-size:11px;">Suscripción Cronos Fútbol · ${_fmtDate(inv.issueDate)} – ${_fmtDate(inv.dueDate)}</span>
+          <span style="color:#6b7280;font-size:11px;">Suscripción Chronos Fútbol · ${_fmtDate(inv.issueDate)} – ${_fmtDate(inv.dueDate)}</span>
           ${inv.notes?`<br><span style="color:#9ca3af;font-size:11px;font-style:italic;">${inv.notes}</span>`:''}
         </td>
         <td style="text-align:right;font-weight:600">${(inv.amount||0).toFixed(2)} €</td>
@@ -967,7 +967,7 @@ function _billPrintInvoice(inv) {
   </div>
 
   <div class="footer">
-    <p>Cronos Fútbol · Sistema de Gestión Deportiva</p>
+    <p>Chronos Fútbol · Sistema de Gestión Deportiva</p>
     <p style="margin-top:4px;">Esta factura ha sido generada electrónicamente y es válida sin firma.</p>
   </div>
 </div>

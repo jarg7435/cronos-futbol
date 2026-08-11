@@ -415,13 +415,13 @@ const _RP = (() => {
             `<div style="background:linear-gradient(135deg,#0d1117,#161b22);` +
             `border:1px solid rgba(88,166,255,0.22);border-radius:14px;padding:1.1rem 1.3rem;margin-bottom:0.85rem;">` +
 
-            // Cronos header row
+            // Chronos header row
             `<div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.85rem;` +
             `padding-bottom:0.7rem;border-bottom:1px solid rgba(255,255,255,0.07);">` +
             `<div style="width:30px;height:30px;border-radius:50%;background:#0d1117;border:2px solid #3fb950;` +
             `display:flex;align-items:center;justify-content:center;flex-shrink:0;">${logoSVG}</div>` +
             `<div style="flex:1;">` +
-            `<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.7px;color:#3fb950;">CRONOS FÚTBOL</div>` +
+            `<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.7px;color:#3fb950;">CHRONOS FÚTBOL</div>` +
             `<div style="font-size:0.64rem;color:var(--text-muted);">Informe oficial post-partido · Generado automáticamente · No editable</div>` +
             `</div>` +
             `<div style="text-align:right;font-size:0.67rem;">` +

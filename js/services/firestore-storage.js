@@ -403,7 +403,7 @@ function testWhatsApp() {
     loadEmailConfig();
     const num = (document.getElementById('cfg-whatsapp')?.value || emailConfig.whatsappNumber || '').replace(/[^0-9]/g,'');
     if (!num) { alert('Introduce primero el número de WhatsApp.'); return; }
-    const msg = encodeURIComponent('✅ Prueba Cronos Fútbol\nSi recibes esto, el envío automático está listo. ⚽');
+    const msg = encodeURIComponent('✅ Prueba Chronos Fútbol\nSi recibes esto, el envío automático está listo. ⚽');
     window.open('https://wa.me/' + num + '?text=' + msg, '_blank');
 }
 
@@ -466,7 +466,7 @@ function registerServiceWorker() {
                     if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                         sessionStorage.setItem('cronos_post_update', '1');
                         const toast = document.createElement('div');
-                        toast.innerHTML = '🔄 Actualizando Cronos Fútbol…';
+                        toast.innerHTML = '🔄 Actualizando Chronos Fútbol…';
                         toast.style.cssText =
                             'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
                             'background:#1a7a3e;color:#fff;padding:10px 24px;border-radius:8px;' +

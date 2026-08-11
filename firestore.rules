@@ -224,6 +224,48 @@ service cloud.firestore {
                 );
     }
 
+    // ============================================================
+    // v474 · DECISION DE PERTENENCIA (aprobar / rechazar / bloquear)
+    // ------------------------------------------------------------
+    // isAdminOfClub(): el ADMINISTRADOR de ese club o de esa entidad
+    // individual. Se resuelve por CLAIM (isClubAdmin / isIndividualAdmin) y,
+    // como respaldo, por clubs/{clubId}.adminUid|adminEmail (isClubAdminOf),
+    // que cubre al administrador cuyo token aun no tiene los claims.
+    //
+    // ⚠️ NO se usa sameClubAsDoc() AQUI, aunque sea el predicado habitual del
+    // fichero: solo mira request.auth.token.clubId, y ESE claim lo lleva
+    // CUALQUIER miembro autorizado del club —un entrenador o un padre
+    // incluidos, porque autoSetClaimsOnApproval se lo pone a todos—. Usarlo
+    // habria dado a toda la plantilla el poder de aceptar y rechazar altas.
+    // ============================================================
+    function isAdminOfClub(clubId) {
+      return isAuth() && clubId != null && (
+               isClubAdmin(clubId) ||
+               isIndividualAdmin(clubId) ||
+               isClubAdminOf(clubId)
+             );
+    }
+
+    // Los UNICOS campos que esa decision puede tocar en users/{uid}. Son los
+    // que escriben caApproveRequest / caConfirmClubAccess / caRejectRequest /
+    // caSetUserStatus (js/admin/club/panel.js).
+    //
+    // ⚠️ QUEDAN FUERA A PROPOSITO 'role', 'clubId' y 'clubName': sin ellos el
+    // administrador no puede ascender a nadie (ni a si mismo) a otro rol, ni
+    // arrastrar la cuenta de un usuario al club de otro. La rama solo aplica
+    // ademas a documentos cuyo clubId YA es el suyo, asi que el alcance es
+    // exactamente "los usuarios de mi club, y solo su estado de acceso".
+    function isMembershipDecision() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'isAuthorized', 'status', 'allRoles',
+        'authorizedAt', 'authorizedBy',
+        'rejectedAt', 'rejectedBy',
+        'blockedAt', 'blockedBy',
+        'category', 'categoryLabel', 'subcategory',
+        'updatedAt'
+      ]);
+    }
+
     // El usuario es el propietario del enlace padre→jugador
     function isLinkOwner() {
       return isAuth() && request.auth.uid == resource.data.get('parentUid', null);
@@ -323,11 +365,23 @@ service cloud.firestore {
       // Admin SDK, via la Cloud Function syncRootClubId() (valida server-side
       // que el clubId pertenece al usuario) o el trigger autoSetClaimsOnApproval
       // (lo puebla al aprobar). 'clubId' esta en la lista prohibida de hasAny().
+      //
+      // v474 (tercera rama) · EL ADMINISTRADOR DEL CLUB DECIDE SOBRE LAS
+      // SOLICITUDES DE SU CLUB. Sin ella, "Solicitudes de Registro" del Panel
+      // de Administrador de Club era decorativa para todo el que no fuera el
+      // SuperAdmin: aceptar, rechazar y bloquear escriben isAuthorized/status
+      // en el documento de OTRO usuario, que hasta aqui solo el SA podia
+      // tocar. Sintoma reportado: "Error al rechazar: Missing or insufficient
+      // permissions", con la solicitud colgada para siempre en el panel.
+      // Acotada por los DOS lados: el documento tiene que ser YA de su club
+      // (isAdminOfClub sobre el clubId EXISTENTE, nunca el entrante) y solo
+      // puede cambiar los campos de isMembershipDecision().
       allow update: if isSuperAdmin() ||
         (isAuth() && request.auth.uid == userId
           && !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny(['role', 'isAuthorized', 'status', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'])
-        );
+        ) ||
+        (isAdminOfClub(resource.data.get('clubId', null)) && isMembershipDecision());
 
       allow delete: if isSuperAdmin();
     }
@@ -374,6 +428,36 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // SUBCOLECCION: clubs/{clubId}/team_archives/{teamId}
+    // ------------------------------------------------------------
+    // El trabajo que un entrenador dejo al ser ELIMINADO, guardado en
+    // su CATEGORIA para que lo herede quien venga detras.
+    //
+    // Por que existe: la plantilla vive en users/{uid}/cronos_data,
+    // una SUBCOLECCION. Firestore no la borra al borrar el documento
+    // del usuario, y su regla es `request.auth.uid == userId` sin rama
+    // de SuperAdmin: en cuanto ese uid deja de existir NADIE puede
+    // leerla nunca mas. La Cloud Function archiveAndDeleteCoach la
+    // copia aqui ANTES de borrar la cuenta.
+    //
+    // ESCRITURA: `if false` A PROPOSITO. Solo la escribe esa Function
+    // con el Admin SDK, que no pasa por estas reglas. Si el cliente
+    // pudiera escribir aqui, cualquiera podria falsear o vaciar el
+    // archivo historico de un equipo.
+    //
+    // LECTURA: los miembros autorizados del club. El entrenador
+    // entrante tiene que poder abrirlo, que es el objetivo entero.
+    // ============================================================
+    match /clubs/{clubId}/team_archives/{teamId} {
+      allow read: if isAuth() && (
+                       isSuperAdmin() ||
+                       sameClubAsDoc(clubId) ||
+                       isClubAdminOf(clubId)
+                     );
+      allow write: if false;
+    }
+
+    // ============================================================
     // COLECCIÓN: clubs_public
     // Espejo PÚBLICO de clubs con solo 3 campos: name, type, status.
     // Permite que el formulario de registro liste los clubes/entes
@@ -413,17 +497,44 @@ service cloud.firestore {
     // COLECCIÓN: platform_requests
     // ============================================================
     match /platform_requests/{reqId} {
+      // ⚠️ SOBRE LAS CONSULTAS (list), v474: Firestore resuelve el permiso de
+      // una consulta SIN leer los documentos — la condicion tiene que quedar
+      // garantizada por los filtros de la propia consulta. Por eso el listado
+      // del panel (`where('clubId','==',clubId)`) SI pasa y una consulta por
+      // `userUid` a secas NO: `resource.data.clubId` es desconocido y ninguna
+      // rama puede darse por cierta. La cura es del lado del CLIENTE — filtrar
+      // tambien por clubId—, no de aqui: relajar esta regla para que cualquier
+      // consulta valiera significaria abrir la coleccion entera.
       allow read: if isSuperAdmin() ||
                      (isAuth() && (
                        sameClubAsDoc(resource.data.get('clubId', null)) ||
+                       isAdminOfClub(resource.data.get('clubId', null)) ||
                        request.auth.uid == resource.data.get('requestedBy', null) ||
                        request.auth.uid == resource.data.get('userId', null) ||
+                       // v474 · el campo que ESCRIBEN auth.js y el panel se llama
+                       // 'userUid'; 'userId' (arriba) no existe en ningun documento,
+                       // asi que la rama "el propio solicitante lee su solicitud"
+                       // nunca se cumplia. Se deja la vieja por si hay docs legacy.
+                       request.auth.uid == resource.data.get('userUid', null) ||
                        (('clubId' in request.auth.token) && request.auth.token.clubId == resource.data.get('individualOwnerId', null))
                      ));
       allow create: if isAuth();
       allow update: if isSuperAdmin() ||
                        (isAuth() && sameClubAsDoc(resource.data.get('clubId', null)));
-      allow delete: if isSuperAdmin();
+      // v474 · El administrador del club (o de la entidad individual) RETIRA
+      // las solicitudes de registro de los suyos. Antes solo podia el
+      // SuperAdmin, asi que al rechazar desde el Panel de Administrador de
+      // Club saltaba "Missing or insufficient permissions" y la solicitud se
+      // quedaba colgada en el listado sin forma de retirarla.
+      //
+      // ⚠️ Deliberadamente MAS ESTRECHO que el `allow update` de arriba: aquel
+      // se conforma con sameClubAsDoc(), que es cierto para cualquier miembro
+      // autorizado del club. Borrar la solicitud de otro exige ser el ADMIN.
+      // La segunda rama cubre las altas bajo una entidad individual
+      // (ind_reg_*), que llevan individualOwnerId y NO llevan clubId.
+      allow delete: if isSuperAdmin() ||
+                       isAdminOfClub(resource.data.get('clubId', null)) ||
+                       isIndividualAdmin(resource.data.get('individualOwnerId', null));
     }
 
     // ============================================================

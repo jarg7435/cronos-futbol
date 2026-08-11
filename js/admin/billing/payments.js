@@ -28,13 +28,13 @@ async function saSendPaymentEmail(id, type) {
 
     // ── Contenido del email ──────────────────────────────────────
     const subject = encodeURIComponent(
-        `Cronos Fútbol — Aviso de renovación · ${name}`
+        `Chronos Fútbol — Aviso de renovación · ${name}`
     );
 
     const body = encodeURIComponent(
 `Hola,
 
-Te contacto en relación a tu plan de Cronos Fútbol para el club "${name}".
+Te contacto en relación a tu plan de Chronos Fútbol para el club "${name}".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
   DETALLES DEL PLAN
@@ -70,7 +70,7 @@ ${SA_CONFIG.email}
 
     // ── Contenido de WhatsApp ────────────────────────────────────
     const waText = encodeURIComponent(
-`Hola 👋 te escribo desde Cronos Fútbol.
+`Hola 👋 te escribo desde Chronos Fútbol.
 
 📋 *Aviso de renovación — ${name}*
 • Plan: ${plan.label}

@@ -453,7 +453,8 @@ function walk(dir, out) {
         ok('5a · crea un overlay con id sd-detail-overlay y lo cuelga del body',
             appended.length === 1 && appended[0].id === 'sd-detail-overlay', appended.length);
         const h = appended[0].innerHTML;
-        ok('5b · cabecera CONVOCATORIA', h.includes('CONVOCATORIA') && h.includes('CRONOS FÚTBOL'));
+        // v476 · la marca lleva H: CHRONOS. Esta asercion fijaba la errata.
+        ok('5b · cabecera CONVOCATORIA', h.includes('CONVOCATORIA') && h.includes('CHRONOS FÚTBOL'));
         ok('5c · muestra fecha, rival, campo, presentación y hora de inicio',
             h.includes('02&#x2F;03&#x2F;2026') && h.includes('CD Rival')
             && h.includes('Campo A') && h.includes('17:00') && h.includes('18:00'));

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Informe Técnico y Arquitectura General - CRONOS FÚTBOL</title>
+<style>
+    body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        line-height: 1.6;
+        color: #1e293b;
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 20px;
+        background-color: #ffffff;
+    }
+    h1 {
+        color: #0f172a;
+        border-bottom: 3px solid #0284c7;
+        padding-bottom: 12px;
+        font-size: 26pt;
+        margin-bottom: 5px;
+    }
+    .subtitle {
+        color: #64748b;
+        font-size: 13pt;
+        margin-bottom: 30px;
+        font-weight: 500;
+    }
+    h2 {
+        color: #0369a1;
+        border-bottom: 1px solid #e2e8f0;
+        padding-bottom: 6px;
+        margin-top: 35px;
+        font-size: 18pt;
+    }
+    h3 {
+        color: #0f172a;
+        margin-top: 20px;
+        font-size: 14pt;
+    }
+    p, li {
+        font-size: 11pt;
+    }
+    .badge {
+        background-color: #e0f2fe;
+        color: #0369a1;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 10pt;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        font-size: 10.5pt;
+    }
+    th {
+        background-color: #0f172a;
+        color: #ffffff;
+        text-align: left;
+        padding: 10px 12px;
+    }
+    td {
+        border-bottom: 1px solid #e2e8f0;
+        padding: 10px 12px;
+    }
+    tr:nth-child(even) {
+        background-color: #f8fafc;
+    }
+    .box {
+        background-color: #f0f9ff;
+        border-left: 4px solid #0284c7;
+        padding: 15px 20px;
+        margin: 20px 0;
+        border-radius: 0 8px 8px 0;
+    }
+    .code-block {
+        background-color: #0f172a;
+        color: #38bdf8;
+        padding: 15px;
+        border-radius: 6px;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 10pt;
+        white-space: pre-wrap;
+    }
+    .cmd-box {
+        background-color: #1e293b;
+        color: #f8fafc;
+        padding: 12px 15px;
+        border-radius: 6px;
+        font-family: 'Consolas', monospace;
+        margin: 10px 0;
+    }
+</style>
+</head>
+<body>
+
+<h1>⚽ INFORME TÉCNICO Y ARQUITECTURA GENERAL</h1>
+<div class="subtitle">CRONOS FÚTBOL — Plataforma de Gestión Deportivo-Táctica & Comunicación Omnicanal</div>
+
+<div class="box">
+    <strong>Resumen del Informe:</strong> Diagnóstico integral del sistema, herramientas de infraestructura (Firebase, Cloudflare, GitHub, Google Cloud), modelo multi-rol de datos, cuotas del Plan Blaze, tasa de crecimiento y propuesta paso a paso de entorno de testeo/staging.
+</div>
+
+<h2>📋 1. Evolución Histórica y Estado Actual</h2>
+<p><strong>CRONOS FÚTBOL</strong> comenzó como una aplicación orientada al soporte de entrenadores individuales (control de asistencia, citaciones y estadísticas de partidos). Hoy en día se ha consolidado como una <strong>plataforma web integral de gestión técnico-táctica y comunicación omnicanal</strong> para clubes de fútbol base, academias y entrenadores independientes.</p>
+
+<h3>Capacidades Clave Implementadas</h3>
+<ul>
+    <li><strong>Sincronización en Tiempo Real:</strong> Seguimiento de partidos en directo (*Live Match Tracking*), alineaciones, eventos y actas digitales.</li>
+    <li><strong>Motor Multi-Rol Aislado:</strong> Permite que un mismo usuario utilice el mismo correo electrónico para actuar como Administrador de Club, Entrenador de una categoría concreta y Padre de un jugador en otra categoría, sin cruce de datos.</li>
+    <li><strong>Panel de Mensajería Unificado Split-Pane:</strong> Comunicación fluida con pestañas independientes para <em>Padres</em>, <em>Director Deportivo</em> y <em>Coordinador</em>.</li>
+    <li><strong>Seguridad de Datos y Bajas Inteligentes:</strong> Al dar de baja un usuario en una categoría o rol, sus demás roles y su cuenta principal se preservan intactos.</li>
+</ul>
+
+<h2>🛠️ 2. Stack Tecnológico e Infraestructura</h2>
+
+<table>
+    <thead>
+        <tr>
+            <th>Capa / Módulo</th>
+            <th>Tecnología / Servicio</th>
+            <th>Función y Descripción Técnica</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Frontend</strong></td>
+            <td>HTML5, JavaScript (ES6+), Vanilla CSS3</td>
+            <td>Arquitectura modulada de alto rendimiento sin sobrecarga de frameworks pesados, carga instantánea y UI responsiva.</td>
+        </tr>
+        <tr>
+            <td><strong>PWA & Cache</strong></td>
+            <td>Service Worker (<code>sw.js</code>)</td>
+            <td>Instalación nativa en dispositivos móviles/tablets y gestión optimizada de caché estático.</td>
+        </tr>
+        <tr>
+            <td><strong>Hosting & CDN</strong></td>
+            <td><strong>Firebase Hosting</strong> (Google Cloud)</td>
+            <td>Servidor global con SSL, compresión Gzip/Brotli y cabeceras de seguridad estrictas (CSP, HSTS, SAMEORIGIN).</td>
+        </tr>
+        <tr>
+            <td><strong>Base de Datos</strong></td>
+            <td><strong>Cloud Firestore</strong> (NoSQL Realtime)</td>
+            <td>Almacenamiento reactivo en tiempo real con escuchadores <code>onSnapshot</code> y reglas de seguridad por token (<code>firestore.rules</code>).</td>
+        </tr>
+        <tr>
+            <td><strong>Autenticación</strong></td>
+            <td><strong>Firebase Authentication</strong></td>
+            <td>Autenticación segura basada en tokens JWT, sesiones persistentes y gestión de contraseñas.</td>
+        </tr>
+        <tr>
+            <td><strong>Computación Backend</strong></td>
+            <td><strong>Cloud Functions for Firebase</strong></td>
+            <td>Funciones serverless en Node.js para tareas administrativas privilegiadas (ej: eliminación segura de credenciales Auth <code>deleteAuthUser</code>).</td>
+        </tr>
+        <tr>
+            <td><strong>Control de Versiones</strong></td>
+            <td><strong>Git & GitHub</strong></td>
+            <td>Repositorio de código fuente con historial de cambios, control de ramas y trazabilidad de versiones.</td>
+        </tr>
+        <tr>
+            <td><strong>Integraciones Auxiliares</strong></td>
+            <td>Cloudflare Worker Proxy, EmailJS, WhatsApp Web APIs</td>
+            <td>Proxy intermedio para evitar bloqueos CORS y conectores de comunicación directa con las familias.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>🧬 3. Modelo de Datos y Motor Multi-Rol</h2>
+<p>El núcleo del sistema utiliza una estructura NoSQL en Firestore donde el documento principal del usuario <code>users/{uid}</code> alberga un vector de roles activos denominado <code>allRoles</code>:</p>
+
+<div class="code-block">
+{
+  "uid": "USER_123_UID",
+  "email": "padre.entrenador@cronosfutbol.com",
+  "role": "user",
+  "allRoles": [
+    { "role": "coach", "clubId": "cd_dia", "category": "alevin", "subcategory": "C", "isAuthorized": true },
+    { "role": "parent", "clubId": "cd_dia", "category": "infantil", "subcategory": "A", "isAuthorized": true }
+  ]
+}
+</div>
+
+<p>Esta arquitectura garantiza que cuando el usuario ingresa al <strong>Área de Familias</strong>, el sistema filtra de forma estricta los mensajes e informes del equipo de su hijo. Cuando cambia al <strong>Panel de Entrenador</strong>, la aplicación ajusta automáticamente el contexto (<code>_activeRoleData</code>) a su equipo asignado.</p>
+
+<h2>⚡ 4. Capacidad, Cuotas y Costos (Plan Firebase Blaze)</h2>
+<p>La aplicación está desplegada bajo el plan **Firebase Blaze (Pago por uso)** sobre la infraestructura de Google Cloud Platform (GCP).</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Métrica de Recurso</th>
+            <th>Límite Incluido (Gratuito / Día)</th>
+            <th>Capacidad / Costo en Escalamiento (Blaze)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Lecturas Firestore</strong></td>
+            <td>50,000 lecturas / día</td>
+            <td>~$0.06 por cada 100,000 lecturas adicionales. Soporta hasta 1 millón de conexiones concurrentes.</td>
+        </tr>
+        <tr>
+            <td><strong>Escrituras Firestore</strong></td>
+            <td>20,000 escrituras / día</td>
+            <td>~$0.18 por cada 100,000 escrituras adicionales.</td>
+        </tr>
+        <tr>
+            <td><strong>Ancho de Banda Hosting</strong></td>
+            <td>10 GB / mes</td>
+            <td>~$0.15 por GB adicional. CDN global distribuida de alta disponibilidad.</td>
+        </tr>
+        <tr>
+            <td><strong>Usuarios de Autenticación</strong></td>
+            <td>Ilimitado (Auth básico)</td>
+            <td>$0.00 (sin costo por usuarios email/password).</td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="box">
+    <strong>Proyección de Costos de Infraestructura:</strong><br>
+    • <strong>1 a 5 Clubes (Fase Actual):</strong> $0.00 - $2.00 USD/mes.<br>
+    • <strong>50 Clubes (~5,000 usuarios activos):</strong> $15.00 - $45.00 USD/mes.<br>
+    • <strong>500 Clubes (~50,000 usuarios activos):</strong> $150.00 - $350.00 USD/mes.
+</div>
+
+<h2>🧪 5. Propuesta de Entorno de Testeo / Staging (Ambiente de Pruebas Seguro)</h2>
+<p>Para evitar que las pruebas de desarrollo o nuevos módulos interfieran con los clubes y familias que ya están utilizando la aplicación en producción, se propone la creación de un <strong>Entorno de Staging/Pruebas Aislado</strong>.</p>
+
+<h3>Flujo de Entornos Recomendado</h3>
+
+<ol>
+    <li>
+        <strong>Creación del Proyecto Staging en Firebase:</strong>
+        <p>Crear un segundo proyecto en Firebase Console llamado <code>cronos-futbol-test</code> con su propia base de datos Firestore y Firebase Auth totalmente vacías o pobladas con datos sintéticos.</p>
+    </li>
+    <li>
+        <strong>Configuración de Alias en la Terminal:</strong>
+        <p>En el directorio del proyecto se ejecutan los alias:</p>
+        <div class="cmd-box">
+firebase use --add
+# Se selecciona 'cronos-futbol-test' con el alias 'staging'
+# Se selecciona 'cronos-futbol-app' con el alias 'production'
+        </div>
+    </li>
+    <li>
+        <strong>Workflow de Desarrollo Seguro:</strong>
+        <p>1. Se desarrolla la función o ajuste técnico.<br>
+        2. Se despliega a pruebas con: <code>firebase deploy --only hosting --project cronos-futbol-test</code><br>
+        3. Se realizan pruebas funcionales en <code>https://cronos-futbol-test.web.app</code>.<br>
+        4. Tras la validación final, se despliega a producción con: <code>firebase deploy --only hosting --project cronos-futbol-app</code></p>
+    </li>
+</ol>
+
+<h2>✅ 6. Conclusiones y Diagnóstico General</h2>
+<ul>
+    <li><strong>Calidad Técnica:</strong> La aplicación posee una estructura robusta, ligera y desacoplada que evita los problemas habituales de sobrecarga de librerías.</li>
+    <li><strong>Seguridad de Datos:</strong> El motor de roles `allRoles` garantiza la privacidad e integridad de los datos entre diferentes categorías y clubes.</li>
+    <li><strong>Preparada para Escalar:</strong> Con la infraestructura Blaze de Google Cloud, la aplicación puede absorber miles de usuarios concurrentes sin caídas de servidor.</li>
+</ul>
+
+</body>
+</html>

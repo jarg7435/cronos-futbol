@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL · Envío MANUAL de informes de partido
+//  CHRONOS FÚTBOL · Envío MANUAL de informes de partido
 //  Extraído de js/coach/comms/panel.js (auditoría 2026-07-22, paso 6a de
 //  6b del monolito #3). Movimiento MECÁNICO: cero cambios de
 //  comportamiento.
@@ -446,7 +446,7 @@ window._executeReportsSend = async function(method) {
             fbSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
         }
     } catch(errLinks) {
-        console.warn('[Cronos] Error recuperando vínculos:', errLinks);
+        console.warn('[Chronos] Error recuperando vínculos:', errLinks);
     }
 
     const scoreHome = document.getElementById('score-home')?.textContent || '0';
@@ -621,7 +621,7 @@ window._executeReportsSend = async function(method) {
                                 unreadByStaff: 1
                             });
                         } catch(setErr) {
-                            if(window._CRONOS_DEBUG) console.warn('[Cronos] Error creando hilo staff:', {
+                            if(window._CRONOS_DEBUG) console.warn('[Chronos] Error creando hilo staff:', {
                                 code: setErr && setErr.code,
                                 message: setErr && setErr.message,
                                 threadId,
@@ -668,6 +668,15 @@ window._executeReportsSend = async function(method) {
                                                    (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || '',
                                     subcategory:   _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
                                                    (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || ''),
+                                    // Clave de equipo (el informe es del equipo).
+                                    teamId:        (typeof window.cronosTeamId === 'function')
+                                                     ? window.cronosTeamId(
+                                                         me.clubId || '',
+                                                         (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                                           (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || '',
+                                                         _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                                           (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '') || ''))
+                                                     : '',
                                     venue:         (typeof window.matchVenue !== 'undefined' ? window.matchVenue : ''),
                                     competition:   (typeof window.matchCompetition !== 'undefined' ? window.matchCompetition : ''),
                                     matchTime:     (typeof window.matchTime !== 'undefined' ? window.matchTime : ''),
@@ -687,7 +696,7 @@ window._executeReportsSend = async function(method) {
                                 });
                             }
                         } catch(srErr) {
-                            console.warn('[Cronos] Error escribiendo cronos_player_reports para staff:', srErr);
+                            console.warn('[Chronos] Error escribiendo cronos_player_reports para staff:', srErr);
                         }
                     }
 
@@ -817,7 +826,7 @@ window._executeReportsSend = async function(method) {
                             lastMessageAt: msgEntry.timestamp, unreadByCoach: 0, unreadByParent: 1
                         });
                     } catch(setErr) {
-                        console.warn('[Cronos] Error creando hilo parent:', {
+                        console.warn('[Chronos] Error creando hilo parent:', {
                             code: setErr && setErr.code,
                             message: setErr && setErr.message,
                             threadId, parentUid: targetParentUid,
@@ -839,7 +848,7 @@ window._executeReportsSend = async function(method) {
                         injured: player.injured || false, createdAt: new Date().toISOString()
                     });
                 } catch(notifErr) {
-                    console.warn('[Cronos] Error enviando notificación a parentUid:', targetParentUid, notifErr);
+                    console.warn('[Chronos] Error enviando notificación a parentUid:', targetParentUid, notifErr);
                 }
 
                 sentCount++;
@@ -864,6 +873,13 @@ window._executeReportsSend = async function(method) {
                     myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
                     category: (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
                     subcategory: _cMatchSubcatFor(me, (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:'')),
+                    // Clave de equipo (el informe es del equipo).
+                    teamId: (typeof window.cronosTeamId === 'function')
+                              ? window.cronosTeamId(
+                                  me.clubId || '',
+                                  (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:''),
+                                  _cMatchSubcatFor(me, (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:'')))
+                              : '',
                     createdAt: new Date().toISOString(),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
                     position: p.position || p.pos || '',
@@ -890,7 +906,7 @@ window._executeReportsSend = async function(method) {
         } // fin guard !_autoAlreadyRan
 
     } catch (sendErr) {
-        console.error('[Cronos] Error enviando informes internos:', sendErr);
+        console.error('[Chronos] Error enviando informes internos:', sendErr);
         if (msgEl) {
             msgEl.style.color = '#da3633';
             msgEl.textContent = '⚠️ Error al enviar. Comprueba la conexión e inténtalo de nuevo.';

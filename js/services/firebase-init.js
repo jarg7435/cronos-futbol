@@ -99,12 +99,12 @@
             provider: new ReCaptchaV3Provider(_RECAPTCHA_SITE_KEY),
             isTokenAutoRefreshEnabled: true
         });
-        console.log('[Cronos] App Check inicializado correctamente con reCAPTCHA v3.');
+        console.log('[Chronos] App Check inicializado correctamente con reCAPTCHA v3.');
     } catch (e) {
-        console.warn('[Cronos] No se pudo inicializar App Check:', e.message);
+        console.warn('[Chronos] No se pudo inicializar App Check:', e.message);
     }
     */
-    console.log('[Cronos] App Check desactivado (v227). Si lo necesitas, verifícalo en Firebase Console.');
+    console.log('[Chronos] App Check desactivado (v227). Si lo necesitas, verifícalo en Firebase Console.');
 
     const auth = getAuth(app);
 
@@ -189,7 +189,7 @@
             localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
         });
     } catch (e) {
-        console.warn('[Cronos] Caché persistente no disponible; se usa la de memoria:', e.message);
+        console.warn('[Chronos] Caché persistente no disponible; se usa la de memoria:', e.message);
         db = getFirestore(app);
     }
 
@@ -310,7 +310,7 @@
             if (intentos >= 1) {
                 if (!window._cronosAvisoClienteMuerto) {
                     window._cronosAvisoClienteMuerto = true;
-                    console.error('[Cronos] Cliente de Firestore terminado y la recarga no lo arregló (' + (origen || '') + ').');
+                    console.error('[Chronos] Cliente de Firestore terminado y la recarga no lo arregló (' + (origen || '') + ').');
                     if (typeof showToast === 'function') {
                         showToast('⚠️ Se ha perdido la conexión con la base de datos. Cierra las demás pestañas de la app y vuelve a entrar.', 12000);
                     }
@@ -318,7 +318,7 @@
                 return true;
             }
             try { sessionStorage.setItem(_CLAVE_RECARGA, String(intentos + 1)); } catch (e) {}
-            console.error('[Cronos] Cliente de Firestore terminado (' + (origen || '') +
+            console.error('[Chronos] Cliente de Firestore terminado (' + (origen || '') +
                           '). Recargando para restablecer la sincronización.');
             if (typeof showToast === 'function') {
                 showToast('🔄 Restableciendo la conexión…', 4000);
@@ -384,7 +384,7 @@
             }
             await setDoc(ref, { lastLogin: serverTimestamp() }, { merge: true });
         } catch (err) {
-            console.error('[Cronos] Firebase auth error:', err);
+            console.error('[Chronos] Firebase auth error:', err);
         }
     }
 
@@ -434,7 +434,7 @@
                 const _code = (tokenErr && tokenErr.code) || '';
                 const _esDeRed = _code === 'auth/network-request-failed' || !navigator.onLine;
                 if (!_esDeRed) {
-                    console.warn('[Cronos] Token inválido — limpiando sesión:', _code || tokenErr.message);
+                    console.warn('[Chronos] Token inválido — limpiando sesión:', _code || tokenErr.message);
                     await signOut(auth).catch(() => {});
                     const el = document.getElementById('auth-screen');
                     if (el) {
@@ -443,7 +443,7 @@
                     }
                     return;
                 }
-                console.warn('[Cronos] Sin red al validar el token: se continúa con el cacheado.');
+                console.warn('[Chronos] Sin red al validar el token: se continúa con el cacheado.');
             }
             // Verificar autorización
             await checkAuthorization(user);
@@ -488,13 +488,13 @@
             const _fuera = !d || d.isAuthorized === false ||
                            d.status === 'suspended' || d.status === 'deleted';
             if (_fuera) {
-                console.warn('[Cronos] La cuenta ya no está autorizada. Cerrando sesión.');
+                console.warn('[Chronos] La cuenta ya no está autorizada. Cerrando sesión.');
                 if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
                 await signOut(auth).catch(() => {});
                 location.reload();
                 return;
             }
-            console.log('[Cronos] Cobertura recuperada: autorización revalidada contra el servidor.');
+            console.log('[Chronos] Cobertura recuperada: autorización revalidada contra el servidor.');
         } catch (e) {
             const _code = (e && e.code) || '';
             if (_code === 'auth/user-token-expired' || _code === 'auth/user-disabled' ||
@@ -505,7 +505,7 @@
             }
             // Red aún inestable u otro fallo transitorio: se reintenta en el
             // siguiente evento 'online'. Nunca se expulsa por esto.
-            console.warn('[Cronos] No se pudo revalidar al reconectar:', e.message);
+            console.warn('[Chronos] No se pudo revalidar al reconectar:', e.message);
         } finally {
             _revalidando = false;
         }

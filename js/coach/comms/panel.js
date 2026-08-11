@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Sistema de Comunicación Entrenador ↔ Padres v1.0
+//  CHRONOS FÚTBOL — Sistema de Comunicación Entrenador ↔ Padres v1.0
 //  Colecciones Firestore:
 //    cronos_player_links/{clubId}_{playerNumber} → vincula padre con jugador
 //    cronos_messages/{coachUid}_{parentUid}      → hilo de mensajes
@@ -279,13 +279,13 @@ async function _cResolveClubId(db, me, fns) {
                         await httpsCallable(fa.functions, 'syncRootClubId')({ clubId: cid });
                     }
                 } catch (migrateErr) {
-                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
+                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Chronos] No se pudo migrar clubId al campo raíz:', migrateErr.message);
                 }
             }
             return cid;
         }
     } catch (e) {
-        if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Cronos] No se pudo resolver clubId desde Firestore:', e && e.message);
+        if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[Chronos] No se pudo resolver clubId desde Firestore:', e && e.message);
     }
     return null;
 }
@@ -445,7 +445,7 @@ async function _cGetStaff(db, clubId, fns, roles) {
 
 // ════════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — SISTEMA DE MENSAJERÍA UNIFICADO E INDEPENDIENTE POR ROL
+//  CHRONOS FÚTBOL — SISTEMA DE MENSAJERÍA UNIFICADO E INDEPENDIENTE POR ROL
 // ════════════════════════════════════════════════════════════════════
 
 // ── Helpers de normalización y filtrado ─────────────────────────────

@@ -51,7 +51,7 @@ function _nombreEquipoDe(player) {
 //  v439 · EL EQUIPO, EN CAMPOS ESTRUCTURADOS DEL EVENTO
 //
 //  Hasta aquí el equipo sólo viajaba DENTRO del texto, y sólo en las
-//  sustituciones ("CRONOS | ▲ SALE: …"). En goles, tarjetas y lesiones no
+//  sustituciones ("CHRONOS | ▲ SALE: …"). En goles, tarjetas y lesiones no
 //  viajaba de ninguna forma: el texto es 'GOL · Pedro' y nada más. Por eso el
 //  mini-feed de las tarjetas de Partidos en Vivo no podía decir de qué equipo
 //  era el gol, que es justo lo que pidió el autor.

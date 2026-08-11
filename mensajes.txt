@@ -1,0 +1,590 @@
+Claude, queremos estandarizar la arquitectura de navegación en todos los paneles de la aplicación (Director Deportivo, Coordinador, Entrenador, Padres, Admin de Club y SuperAdmin).
+
+Requisito de Navegación Estricta:
+Cuando un usuario navega hacia dentro en cualquier opción o subsección de un panel, la interfaz debe ofrecer siempre una experiencia consistente basada en una pila de navegación limpia (estilo history stack / breadcrumbs).
+
+Toda subpantalla o modal debe disponer de dos únicas vías de salida claras y visibles:
+
+Botón "Volver" / "Atrás": Debe deshacer exactamente el camino andado, regresando paso a paso a la pantalla/modal inmediatamente anterior desde la cual se accedió.
+
+Botón "Salir" / "Cerrar Sesión": Para abandonar la aplicación de forma directa y limpia.
+
+Problema a corregir:
+Actualmente hay puntos donde al cerrar o volver desde una subopción, el flujo se desvía, saltando a pantallas no relacionadas, cerrando modales padre indebidamente o abriendo vistas cruzadas que no corresponden al camino que recorrió el usuario.
+
+Instrucciones de trabajo:
+
+Revisa cómo gestionamos el estado de modales y vistas en app-init.js (o en los controladores de UI correspondiente) para asegurar que se mantiene un registro claro de la pantalla de origen.
+
+Asegúrate de que los eventos de los botones "Volver" / "Cerrar" desapilen el estado de forma ordenada y predecible.
+
+Pasa la suite de tests para asegurar que esta estandarización no rompa la apertura ni el funcionamiento de los paneles existentes.
+
+Analiza el mapa de modales/vistas actual y dime cómo planteas estructurar este flujo de navegación uniforme.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+GUION DE PRUEBAS EN NAVEGADOR — v401 (motor de mensajería, ronda 7 y última)
+Escrito por Claude el 2026-07-29. Apunta el resultado detrás de cada línea.
+═══════════════════════════════════════════════════════════════════════════════
+
+ANTES DE EMPEZAR
+  Ctrl+Shift+R para forzar recarga (el service worker es v401). Si en la consola
+  aparece algún "Uncaught SyntaxError", para y dímelo: significa que un fichero
+  no ha parseado y todo lo de abajo dará falsos negativos.
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE A · El motor de mensajería en MODAL (rol Entrenador)
+Es lo que se ha cambiado en esta ronda. Las dos vías de entrada son el punto.
+
+A1. Entrar como Entrenador. Desde el modal de setup, pulsar "MENSAJES"
+    (el que abre la mensajería directamente, sin pasar por Comunicaciones).
+    Pulsar "← Volver".
+    ESPERADO: vuelves AL MODAL DE SETUP.
+    ANTES DE HOY: aparecías en el menú de Comunicaciones, donde no habías
+    estado. Este es el arreglo principal de navegación de la ronda.
+    RESULTADO:
+
+A2. Ahora entrar por el otro camino: modal de setup → "COMUNICACIONES" →
+    "MENSAJES". Pulsar "← Volver".
+    ESPERADO: vuelves al MENÚ DE COMUNICACIONES.
+    O sea: el MISMO botón, dos destinos distintos según por dónde entraste.
+    RESULTADO:
+
+A3. Dentro de Mensajes, pulsar la ✕ de arriba a la derecha.
+    ESPERADO: se CIERRA y te deja en el campo/pantalla de detrás. Ya no te
+    lleva al menú de Comunicaciones (antes la ✕ era un "Volver" disfrazado;
+    su tooltip decía literalmente "Volver al menú de Comunicaciones").
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE B · El bug de DATOS (el más importante de verificar)
+Esto no es cosmético: podía dejar mensajes en un hilo que nadie lee.
+
+B1. Entrar en Mensajes como Entrenador (queda en la pestaña "Padres").
+    Cambiar a la pestaña "Director".
+    Pulsar "🔄 Actualizar".
+    ESPERADO: la lista sigue mostrando el DIRECTOR, y la pestaña subrayada
+    sigue siendo Director. Las dos cosas de acuerdo.
+    ANTES DE HOY: la lista volvía a PADRES mientras el subrayado seguía en
+    Director. Y si en ese estado abrías un contacto y le escribías, el mensaje
+    se guardaba con el contexto equivocado y el destinatario no lo veía nunca.
+    RESULTADO:
+
+B2. Repetir B1 pero comprobando además que el mensaje llega: en la pestaña
+    Padres, abrir un padre, enviarle algo, y confirmar que ese padre lo ve en
+    su "Área de Familias" → Mensajes.
+    ESPERADO: llega.
+    RESULTADO:
+
+B3. Lo mismo desde Dirección: entrar como Director → pestaña Mensajes →
+    cambiar a "Entrenadores" → "🔄 Actualizar".
+    ESPERADO: sigue mostrando Entrenadores. (El Director y el Coordinador
+    tenían el mismo defecto, con sus dos pestañas.)
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE C · El motor EMBEBIDO — que NO se rompa nada
+Aquí no se ha cambiado comportamiento; es la comprobación de que sigue igual.
+
+C1. Como Director: panel de Dirección → pestaña "Mensajes".
+    ESPERADO: la mensajería se ve DENTRO del panel, y NO aparece ningún botón
+    "← Volver" ni ✕ dentro de ella (los de arriba del panel siguen).
+    RESULTADO:
+
+C2. Con la mensajería abierta ahí, cambiar de pestaña del panel (p.ej. a
+    "Convocatorias") y volver a "Mensajes".
+    ESPERADO: todo normal, sin que se cierre el panel ni salte a otra pantalla.
+    RESULTADO:
+
+C3. Como Director, pulsar "🔄 Recargar" del panel estando en Mensajes.
+    ESPERADO: se queda en Mensajes (no salta a Convocatorias).
+    RESULTADO:
+
+C4. Igual como Coordinador.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE D · Panel de Padres (ronda 6, ya desplegada en v400)
+D1 es el importante: ese panel estuvo un rato sin poder abrirse.
+
+D1. Entrar como Padre.
+    ESPERADO: el "Área de Familias" ABRE, con sus 5 pestañas.
+    (Había un error de sintaxis que dejaba el fichero entero sin cargar y el
+    panel no abría en absoluto. Se corrigió antes de desplegar.)
+    RESULTADO:
+
+D2. Cambiar entre las 5 pestañas (Convoc. / Entreno. / Informes / Mensajes /
+    En Vivo) y comprobar que el subrayado azul coincide siempre con lo que se
+    ve debajo.
+    RESULTADO:
+
+D3. En la pestaña "Mensajes", abrir un hilo con el entrenador, escribir y
+    enviar 3 mensajes seguidos.
+    ESPERADO: el título del chat sigue mostrando UN SOLO "⚽" delante del
+    nombre del entrenador.
+    ⚠️ AVISO HONESTO: este es el defecto del emoji que arreglé, pero por el
+    camino descubrí que la pantalla del hilo antiguo (ppOpenChatThread) ya no
+    tiene punto de entrada — la pestaña de Mensajes usa el motor unificado. Así
+    que lo más probable es que NO puedas reproducir el defecto ni antes ni
+    después, porque ese código no corre. Si ves algo raro con el emoji, es otra
+    cosa y quiero saberlo.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE E · Barrido rápido de los otros paneles (rondas 1-5, ya en producción)
+Solo para confirmar que la ronda 7 no ha tocado nada de esto.
+
+E1. SuperAdmin: entrar, moverse por 3 pestañas, entrar en una subpantalla y
+    volver. ESPERADO: vuelves a la pestaña exacta donde estabas.
+    RESULTADO:
+
+E2. Admin de Club: hacer una acción de gestión (p.ej. autorizar o editar).
+    ESPERADO: te quedas en el panel del club, NO te expulsa al listado de
+    clubes. RESULTADO:
+
+E3. Entrenador: Comunicaciones → Contactos → "Volver". Y también desde el
+    modal de setup → Contactos → "Volver".
+    ESPERADO: cada uno vuelve por su camino, a sitios distintos.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE F · "Partidos Terminados" (v402 — el que reportaste tú)
+⚠️ Requiere Ctrl+Shift+R otra vez: esto se desplegó DESPUÉS del resto del guion.
+
+F1. Comunicaciones → "Partidos Terminados". Pulsar la ✕.
+    ESPERADO: vuelves al MENÚ DE COMUNICACIONES. Ya no se descubre el campo
+    de fútbol de fondo.
+    RESULTADO:
+
+F2. La otra vía: el modal de 3 opciones (Mensajes / Partidos Terminados /
+    Retransmisión) → "Partidos Terminados". Pulsar la ✕.
+    ESPERADO: vuelves A ESE MODAL DE 3 OPCIONES, no al de Comunicaciones.
+    El mismo botón con dos destinos según por dónde entraste: eso es lo que
+    estaba roto.
+    RESULTADO:
+
+F3. Borrar un partido del listado (si tienes alguno de prueba).
+    ESPERADO: la lista se refresca y sigues en "Partidos Terminados". Y al
+    pulsar luego la ✕, vuelves a tu origen (no un nivel de más).
+    RESULTADO:
+
+F4. Pulsar un partido para VER LA REPETICIÓN.
+    ESPERADO: el reproductor toma la pantalla completa, como siempre. Esto NO
+    lo he cambiado: ese botón oculta el modal a propósito. Si notas algo
+    distinto a antes, dímelo.
+    RESULTADO:
+
+F5. Nota sobre navExit(): me pediste esa salida y NO te la puse, porque
+    navExit() es literalmente el `display='none'` que ya tenía el botón —
+    habría limpiado la pila y te habría dejado mirando el mismo campo. Si al
+    probarlo prefieres que la ✕ CIERRE del todo en vez de volver, dímelo y lo
+    cambio; pero entonces volverás a ver lo que haya detrás, que es el campo.
+    RESULTADO / DECISIÓN:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE G · La ✕ del menú de Comunicaciones (v403 — tu segundo reporte)
+⚠️ Otro Ctrl+Shift+R: esto es posterior al bloque F.
+
+G1. Terminar un partido (o llegar al post-partido) → "ENVIAR INFORMES" /
+    Comunicaciones. Pulsar la ✕ de arriba a la derecha.
+    ESPERADO: vuelves AL POST-PARTIDO, y con su marcador correcto. El campo
+    ya no queda al descubierto.
+    RESULTADO:
+
+G2. En ese mismo menú, pulsar el "← Volver" de abajo.
+    ESPERADO: lo mismo que G1. Los dos botones hacen ahora lo mismo, y es lo
+    que pediste. Si prefieres que se diferencien, dímelo.
+    RESULTADO:
+
+G3. Comprobar que la ✕ del MOTOR de mensajes sigue cerrando (no volviendo):
+    Comunicaciones → "Mensajes" → ✕ de la ventana de mensajes.
+    ESPERADO: cierra. Esta la dejamos así a propósito en la ronda 7 porque
+    debajo no hay pantalla de trabajo. Si aquí también ves el campo de fútbol
+    y te molesta, dímelo y la cambio igual que las otras dos.
+    RESULTADO:
+
+G4. Una duda que me quedó de tu reporte: dijiste que la ✕ está "al lado del
+    botón ← Volver arriba a la derecha". En el código la ✕ está arriba en la
+    cabecera y el "← Volver" abajo del listado. Arreglé la de arriba, que es
+    la que describías. Si de verdad ves DOS botones juntos arriba a la
+    derecha, dime qué pone en cada uno: habría un tercero sin localizar.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE H · Salir del partido de verdad (v404)
+⚠️ Ctrl+Shift+R. Esto SUSTITUYE a los bloques F y G: la ✕ ya no vuelve, SALE.
+
+Lo que fallaba en los dos intentos anteriores, por si te sirve: el campo está en
+#main-container y los modales en #setup-modal, que es una capa POR ENCIMA. Todo
+lo que habíamos tocado movía solo la capa de arriba, así que por debajo seguía
+estando el partido. Ahora también se oculta el campo.
+
+H1. Con un partido en marcha o recién terminado: Comunicaciones → ✕.
+    ESPERADO: sales al SELECTOR DE ROLES. Ni campo de fútbol, ni pantalla en
+    negro.
+    RESULTADO:
+
+H2. Comunicaciones → "← Volver" (el de abajo).
+    ESPERADO: vuelve al post-partido, SIN sacarte del partido. Los dos botones
+    hacen ahora cosas distintas: Volver navega, ✕ sale.
+    RESULTADO:
+
+H3. Partidos Terminados: ahora tiene DOS botones arriba a la derecha,
+    "← Volver" y "✕". (Antes solo tenía la ✕, haciendo el trabajo de Volver.)
+    · "← Volver" → vuelve a Comunicaciones, sigues en el partido.
+    · "✕"       → sale al selector de roles.
+    RESULTADO:
+
+H4. ⚠️ EL MÁS IMPORTANTE — que no se pierda el partido.
+    Con un partido EN CURSO (cronómetro corriendo, algún gol marcado):
+    Comunicaciones → ✕ → sales al selector → vuelve a entrar como Entrenador
+    → en el modal de setup pulsa "🔄 RECUPERAR PARTIDO".
+    ESPERADO: el partido sigue con sus jugadores, su cronómetro y sus goles.
+    El campo se OCULTA, no se destruye, pero quiero que lo confirmes tú con un
+    partido real antes de fiarme.
+    RESULTADO:
+
+H5. La ✕ del MOTOR de mensajes (Comunicaciones → Mensajes → ✕) sigue cerrando
+    sin sacarte al selector. Es la única de las tres que se comporta distinto.
+    Si también quieres que saque, dímelo y unifico las tres.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE I · TODAS las ✕ del Entrenador (v405) — sustituye a F, G y H
+⚠️ Ctrl+Shift+R.
+
+Tenías razón cuatro veces y las cuatro arreglé un botón. El problema era que
+había DIEZ ✕ con el mismo defecto: la ronda 2 puso navExit() en todas creyendo
+que era "salir limpio", y en el área del Entrenador siempre hay un partido
+debajo. Ahora las diez sacan al selector de roles. El botón que señalabas estaba
+en setup-modal.js, el fichero que dijiste desde el principio.
+
+I1. EL QUE REPORTASTE: modal de setup → "💬 COMUNICACIONES" (el que tiene
+    "← Volver" y "✕" juntos arriba) → pulsa la ✕.
+    ESPERADO: sales al selector de roles. Sin campo de fútbol.
+    RESULTADO:
+
+I2. En ese mismo modal, "← Volver".
+    ESPERADO: vuelve al modal de setup, sin sacarte del partido.
+    RESULTADO:
+
+I3. Barrido de las demás ✕ — todas deben sacarte al selector:
+    · Comunicaciones (el otro modal, el del listado)   RESULTADO:
+    · Mensajes (el motor)                              RESULTADO:
+    · Contactos                                        RESULTADO:
+    · Aviso de Entrenamiento                           RESULTADO:
+    · Panel de Entrenamientos                          RESULTADO:
+    · Mis Informes                                     RESULTADO:
+    · Partidos Terminados                              RESULTADO:
+    · Retransmisión en vivo                            RESULTADO:
+
+I4. ⚠️ SIGUE PENDIENTE Y ES EL QUE MÁS ME PREOCUPA (era H4):
+    con un partido EN CURSO (cronómetro corriendo y algún gol), sal por
+    cualquier ✕ y luego recupéralo con "🔄 RECUPERAR PARTIDO" del modal de
+    setup. ESPERADO: jugadores, cronómetro y goles intactos.
+    El código oculta el campo sin destruirlo y hay dos aserciones que lo fijan,
+    pero esto necesita un partido real. Si algo se pierde, es lo más grave de
+    todo lo que hemos tocado.
+    RESULTADO: ✅ OK (2026-07-30, probado con un partido en curso real: se
+    recuperó con todo intacto). Cierra el último riesgo abierto de v402-v405.
+
+I5. Si alguna ✕ concreta prefieres que VUELVA en vez de salir, dime cuál:
+    ahora es un cambio de una línea por botón.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+SI ALGO SALE MAL
+Pégame aquí el texto del error de la consola (pestaña Console, en rojo) y el
+número del paso. Con el paso y el error localizo el sitio; sin el error tengo
+que adivinar.
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+GUION DE PRUEBAS EN NAVEGADOR — v422 (diseño adaptativo: tablet y móvil)
+Escrito por Claude el 2026-08-02. Apunta el resultado detrás de cada línea.
+═══════════════════════════════════════════════════════════════════════════════
+
+QUÉ SE HA TOCADO
+  Solo maquetación (CSS) y los ganchos mínimos en el motor de mensajería para
+  poder maquetarlo. CERO cambios de lógica: no se ha tocado quién ve qué, cómo
+  se resuelven los destinatarios, la pila de navegación, la confirmación
+  diferida del modal, el dedup de avisos ni la repetición.
+
+CÓMO PROBAR SIN TENER LOS TRES APARATOS
+  Con el PC vale: F12 → icono de móvil/tablet (Ctrl+Shift+M) → arriba eliges
+  aparato. Prueba al menos con: iPhone 12 Pro (390px), iPad Air en VERTICAL
+  (820px) y iPad Air en HORIZONTAL. Y gira el móvil a horizontal en alguno.
+  ⚠️ Ctrl+Shift+R primero: el service worker es v422.
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE A · MENSAJERÍA EN MÓVIL — es el cambio grande
+Antes, en un móvil de 390px, la lista de contactos se comía 260px y al chat le
+quedaban ~130px: ilegible. Ahora es maestro-detalle (se ve la lista O el chat).
+
+A1. En móvil (390px), entrar en Mensajes con cualquier rol.
+    ESPERADO: la lista de contactos ocupa TODO el ancho. No se ve el panel de
+    chat vacío a la derecha.
+    RESULTADO:
+
+A2. Tocar un contacto.
+    ESPERADO: la lista desaparece y el chat pasa a ocupar toda la pantalla,
+    con un botón "←" nuevo a la izquierda del nombre del contacto.
+    RESULTADO:
+
+A3. Tocar ese "←".
+    ESPERADO: vuelves a la LISTA de contactos. (Ojo: este "←" es interno del
+    panel, NO es el "← Volver" de la pila de navegación de la app; ese sigue
+    arriba en la cabecera y hace lo mismo que siempre.)
+    RESULTADO:
+
+A4. Con un chat abierto, cambiar de pestaña (p.ej. Padres → Director).
+    ESPERADO: vuelves solo a la LISTA de la nueva pestaña. Esto importa: si se
+    quedara en el chat vacío, no habría "←" al que agarrarse (el "←" vive
+    dentro del hilo) y te quedarías sin salida.
+    RESULTADO:
+
+A5. Tocar el cuadro de escribir el mensaje.
+    ESPERADO: el teclado sube y la página NO hace zoom. Antes la letra era de
+    14px y iOS hace zoom automático por debajo de 16px, descolocándolo todo
+    (y no vuelve solo).
+    RESULTADO:
+
+A6. Enviar un mensaje de verdad desde el móvil y comprobar que llega.
+    ESPERADO: llega igual que siempre. (Aquí no se ha tocado nada del envío,
+    pero es el que confirma que la maqueta no ha roto el motor.)
+    RESULTADO:
+
+A7. En PC (ventana ancha), abrir la mensajería.
+    ESPERADO: EXACTAMENTE igual que ayer — dos columnas, lista a la izquierda,
+    chat a la derecha, y NINGÚN botón "←" nuevo dentro del hilo.
+    Esta es la comprobación de que no he estropeado el PC.
+    RESULTADO:
+
+A8. [ACTUALIZADO en v423 — ya lo decidiste: pantalla única también en iPad.
+    El corte pasó de 760px a 950px.]
+    En iPad VERTICAL (820px): ESPERADO que se comporte como el móvil, o sea
+    maestro-detalle — lista a todo el ancho, y al tocar un contacto el chat
+    ocupa la pantalla con su "←". NO dos columnas.
+    RESULTADO:
+
+A9. En iPad HORIZONTAL (1024px): ESPERADO que siga en DOS COLUMNAS, como el PC.
+    El corte de 950px deja fuera el iPad apaisado a propósito. (Si tienes un
+    iPad Pro de 12,9", en vertical también mide 1024px y por tanto seguirá en
+    dos columnas: dímelo si prefieres que ese también cambie.)
+    RESULTADO:
+
+A10. En iPad vertical, con la mensajería abierta en MODAL: el panel ahora ocupa
+    todo el alto de la pantalla (antes estaba topado a 850px). Es consecuencia
+    de la pantalla única y creo que ahí gana, pero míralo por si no te encaja.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE B · VISOR EN VIVO (live.html)
+
+B1. Móvil VERTICAL. Mirar la cabecera.
+    ESPERADO: logo pequeño y botones compactos, ocupando 1-2 filas.
+    ANTES: logo de 60px y siete botones apilados en 3-4 filas (~170px), y como
+    la vista está a pantalla completa sin scroll, ese alto se lo quitaba
+    DIRECTAMENTE al campo.
+    Comprueba que el campo se ve claramente más grande que antes.
+    RESULTADO:
+
+B2. Con un partido en vivo, provocar un gol (o una tarjeta) desde el móvil que
+    dirige el partido, y en el móvil que MIRA, mientras el aviso flotante está
+    en pantalla, intentar tocar/deslizar sobre el campo a la altura del aviso
+    pero POR LA IZQUIERDA, lejos del aviso.
+    ESPERADO: la pantalla responde con normalidad. Antes había una franja
+    invisible del ancho completo que se tragaba los toques mientras durase el
+    aviso.
+    RESULTADO:
+
+B3. Que el aviso siga funcionando: aparece, suena (si activaste el sonido),
+    se puede deslizar la pila si hay varios, y al tocarlo hace lo de siempre.
+    RESULTADO:
+
+B4. iPAD EN VERTICAL — esto es nuevo, antes esta franja no tenía reglas propias.
+    ESPERADO: campo apaisado ocupando TODO el ancho arriba, y el banquillo
+    abajo en una franja horizontal que se desliza. Dorsales y cronómetros de
+    tamaño intermedio (más grandes que en el móvil, más pequeños que en PC).
+    ANTES: un campo de ~570x380 flotando en medio de la pantalla con el
+    banquillo de pie a la derecha y las fichas diminutas.
+    RESULTADO:
+
+B5. iPad HORIZONTAL y PC: ESPERADO igual que siempre, sin cambios.
+    RESULTADO:
+
+B6. Móvil pequeño en HORIZONTAL: ¿se ve el banquillo a la derecha?
+    ESPERADO: sí. Había una regla que lo escondía por completo en pantallas de
+    600px o menos; en vertical no se notaba porque otra regla posterior lo
+    repintaba, pero en horizontal desaparecía.
+    RESULTADO:
+
+B7. El historial (📋) y el volver a "🔴 EN VIVO" en móvil: que se abran y se
+    lean bien. No los he tocado, es comprobación de que siguen bien.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+BLOQUE C · MODAL DE EVENTOS Y EL BOTÓN "HECHO"
+Recuerda que HECHO es la ÚNICA salida de ese modal: no tiene ✕ ni se cierra
+tocando fuera. Si en móvil quedase fuera de alcance, te quedas encerrado y los
+eventos aparcados no se confirman nunca. Por eso este bloque.
+
+C1. Móvil VERTICAL, partido en marcha. Tocar un jugador del campo.
+    ESPERADO: el modal cabe en pantalla sin desbordarse por los lados.
+    RESULTADO:
+
+C2. Pulsar +1 y -1 de goles varias veces seguidas, con el dedo, deprisa.
+    ESPERADO: acierta siempre. Esos dos botones medían ~36px de alto; ahora 44.
+    Es el que se pulsa con el partido corriendo, así que es el que más importa.
+    RESULTADO:
+
+C3. Poner una amarilla, dos goles y quitar uno, y pulsar HECHO.
+    ESPERADO: sale UN solo aviso de gol (diferencia neta = +1) y uno de
+    amarilla. Igual que en PC. La confirmación diferida no se ha tocado; esto
+    verifica que sigue igual desde el móvil.
+    RESULTADO:
+
+C4. MÓVIL EN HORIZONTAL (el caso real en la banda). Abrir el mismo modal.
+    ESPERADO: el modal se puede desplazar y la fila LIMPIAR/HECHO se queda
+    PEGADA ABAJO, siempre visible aunque el contenido no quepa.
+    RESULTADO:
+
+C5. Lo mismo en iPad.
+    RESULTADO:
+
+───────────────────────────────────────────────────────────────────────────────
+LO QUE NO PUEDO COMPROBAR YO
+La suite (77/77 activos + 11 xfail) y el guard nuevo de este trabajo
+(scripts/test_responsive_layout.js, 62/62) verifican que las reglas existen,
+que el CSS cierra sus llaves y que el JS compila. Lo que NINGÚN guard ve es el
+resultado VISUAL: si algo se solapa, se corta o queda feo, solo se ve mirando.
+Por eso los bloques de arriba.
+
+SI ALGO SALE MAL
+Pégame el número del paso y, si hay error, el texto rojo de la consola. Si es
+cosa de aspecto, con que me digas "en el iPad vertical el banquillo se corta"
+me sobra: son números que cambio en un momento.
+═══════════════════════════════════════════════════════════════════════════════
+
+
+═══════════════════════════════════════════════════════════════════════════════
+GUION DE PRUEBAS · LA APP SIN COBERTURA (v447, piezas A/B/C/D)
+═══════════════════════════════════════════════════════════════════════════════
+
+ANTES DE EMPEZAR — IMPRESCINDIBLE, O LAS PRUEBAS 2 Y 3 SALDRÁN MAL SIN QUE
+HAYA NADA ROTO:
+Tras desplegar, abre la app UNA VEZ CON INTERNET y entra con tu cuenta. Esa
+primera visita es la que deja en el dispositivo (a) el SDK de Firebase en el
+service worker y (b) tu documento de usuario en la caché de Firestore. Sin
+haber estado nunca dentro con red, no hay nada guardado que usar sin ella.
+Cierra y vuelve a abrir una vez, para asegurarte de que el service worker
+nuevo ha tomado el control.
+
+CÓMO SIMULAR "SIN COBERTURA" EN EL ORDENADOR:
+F12 → pestaña "Network" (Red) → el desplegable que pone "No throttling" →
+elige "Offline". Para volver a tener red, el mismo desplegable → "No
+throttling". En el móvil vale con activar el modo avión.
+
+───────────────────────────────────────────────────────────────────────────────
+PRUEBA 1 · GUARDAR UNA PLANTILLA SIN COBERTURA   (Pieza A)
+Esto ANTES perdía los datos y te decía que había ido bien.
+
+  1.1 Con internet, entra como Entrenador y ve a preparar un partido.
+  1.2 Pon el navegador en Offline.
+  1.3 Monta una plantilla con un nombre reconocible (p. ej. "PRUEBA SIN RED")
+      y dale a guardar el equipo.
+  1.4 Debe salir el "✅ ... guardado" de siempre.
+  1.5 SIN volver a poner internet, RECARGA la página (F5) y vuelve al
+      desplegable de plantillas guardadas.
+
+  ESPERADO: "PRUEBA SIN RED" SIGUE AHÍ después de recargar.
+  (Antes desaparecía: el toast mentía.)
+
+  1.6 Vuelve a poner internet, espera ~10 segundos y recarga.
+  ESPERADO: la plantilla sigue, y ahora además está subida a la nube.
+
+  RESULTADO:
+
+
+───────────────────────────────────────────────────────────────────────────────
+PRUEBA 2 · ABRIR / RECARGAR LA APP SIN COBERTURA   (Piezas B, C y D)
+Esto ANTES te dejaba fuera Y te cerraba la sesión.
+
+  2.1 Entra normalmente con internet. Déjalo dentro de la app.
+  2.2 Pon el navegador en Offline.
+  2.3 Recarga la página (F5).
+
+  ESPERADO: entras en la app con normalidad, sin pedirte la contraseña.
+  NO ESPERADO (era lo de antes): la pantalla de login con el mensaje
+  "Firestore no responde" o, peor, "Tu cuenta no está registrada en el
+  sistema. ...puedes volver a registrarte".
+
+  2.4 Vuelve a poner internet.
+  ESPERADO: la app sigue funcionando; en la consola (F12 → Console) debe
+  aparecer "Cobertura recuperada: autorización revalidada contra el servidor."
+
+  RESULTADO:
+
+
+───────────────────────────────────────────────────────────────────────────────
+PRUEBA 3 · PARTIDO EN CURSO QUE PIERDE Y RECUPERA LA COBERTURA
+La prueba que de verdad importa para el campo.
+
+  3.1 Con internet, arranca un partido y activa la retransmisión en vivo.
+  3.2 Abre el visor (live.html) en OTRA pestaña y déjalo abierto: quiero
+      comprobar de paso que las dos pestañas conviven (es el motivo del
+      gestor multipestaña).
+  3.3 En la pestaña del partido, pon el navegador en Offline.
+  3.4 Sin red, haz DE TODO durante 2-3 minutos: 2 goles, 1 amarilla,
+      1 sustitución y el cambio a la 2ª parte.
+
+  ESPERADO sin red: el cronómetro, el campo y los sucesos funcionan con
+  total normalidad. El visor, lógicamente, se queda congelado.
+
+  3.5 Vuelve a poner internet y espera ~15 segundos.
+
+  ESPERADO: el visor se pone al día y aparecen TODOS los sucesos que
+  hiciste sin red (los 2 goles, la amarilla y el cambio), no sólo el
+  último. El marcador coincide.
+
+  3.6 Termina el partido y comprueba que el informe se genera bien.
+
+  RESULTADO:
+
+
+───────────────────────────────────────────────────────────────────────────────
+PRUEBA 4 · PRIVACIDAD: LA CACHÉ SE BORRA AL SALIR   (Pieza B2)
+Es la lección de v199 aplicada a la capa nueva.
+
+  4.1 Con internet y sesión iniciada, cierra sesión con el botón de siempre.
+  4.2 Mira la consola (F12 → Console).
+
+  ESPERADO: aparece "🔒 Caché en disco de Firestore borrada."
+  Si en su lugar sale "No se pudo borrar la caché de Firestore (¿otra
+  pestaña abierta?)", cierra la pestaña del visor y repite: es lo esperado
+  con live.html abierto, pero quiero saber si te pasa.
+
+  RESULTADO:
+
+
+───────────────────────────────────────────────────────────────────────────────
+LO QUE NO PUEDO COMPROBAR YO
+La suite (98/98 activos + 11 xfail), el guard nuevo
+(scripts/test_offline_resilience.js, 42/42) y su red-check (13 mutaciones,
+13 cazadas) verifican el CÓDIGO: que el orden de escritura es el correcto,
+que la caché se pide con gestor multipestaña, que ninguna guarda de red
+cierra la sesión y que el SDK está precacheado.
+
+Lo que ningún guard puede ver es el comportamiento REAL del navegador sin
+red: cuánto tarda el SDK en servirse de caché, si tu navegador concede
+IndexedDB, y si Firestore reenvía la cola tal y como esperamos. Eso son
+justamente las cuatro pruebas de arriba.
+
+SI ALGO SALE MAL
+Pégame el número del paso y, si hay error, el texto rojo de la consola
+(F12 → Console). Ojo a un caso concreto: si en la PRUEBA 2 te sale el login,
+dime si el mensaje habla de "Sin conexión" (eso sería el comportamiento
+nuevo y correcto para un dispositivo sin datos guardados) o de "cuenta no
+registrada" (eso sí sería un fallo).
+═══════════════════════════════════════════════════════════════════════════════

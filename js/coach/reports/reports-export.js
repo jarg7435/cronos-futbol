@@ -87,7 +87,7 @@
             .trim()
             .replace(/\s+/g, '_')
             .replace(/_+/g, '_')
-            .slice(0, 60) || 'cronos';
+            .slice(0, 60) || 'chronos';
     };
 
     // Fecha corta para el nombre del archivo: 2026-08-08.

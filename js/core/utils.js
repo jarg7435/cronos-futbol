@@ -764,6 +764,96 @@ if (typeof window._cronosDedupeRecipients !== 'function') {
     };
 }
 
+// ══════════════════════════════════════════════════════════════
+// IDENTIDAD DE EQUIPO — el dato pertenece al EQUIPO, no al entrenador
+// ══════════════════════════════════════════════════════════════
+// El sistema pasa a estar centrado en el Equipo/Categoría. Para eso hace
+// falta una clave de equipo estable, y aquí está la decisión que evita una
+// migración de datos:
+//
+// 🔑 cronosTeamId() es una FUNCIÓN PURA de (clubId, categoría, subcategoría).
+//    No es un identificador aleatorio guardado en ninguna parte. Por eso el
+//    histórico YA ESCRITO —que no tiene campo `teamId`— se reconoce igual:
+//    se recalcula al vuelo desde su `category`+`subcategory`, que sí llevan
+//    desde siempre. Un identificador aleatorio habría obligado a reescribir
+//    todos los documentos de producción para no perderlos de vista.
+//
+// ⚠️ CONSECUENCIA A RESPETAR: si algún día esto deja de ser una función pura
+//    (p.ej. se pasa a un id aleatorio por equipo), TODO el histórico anterior
+//    deja de casar de golpe y hace falta el backfill que aquí se evita.
+//
+// ⚠️ La normalización tiene que ser ESTABLE frente a las variaciones con que
+//    los datos reales llegan: acentos ("Alevín"/"Alevin"), mayúsculas,
+//    espacios de más y separadores. Dos escrituras del mismo equipo tienen
+//    que dar la MISMA clave o el equipo se parte en dos.
+// ¿Este carácter NO es una marca diacrítica combinante?
+//
+// ⚠️ Se comprueba por CÓDIGO de carácter y no con una clase de regex a
+//    propósito. El bloque combinante (U+0300..U+036F) escrito dentro de una
+//    regex acaba en el fichero como marcas sueltas literales —caracteres
+//    invisibles que se pegan al corchete anterior—, y ahí cualquier paso que
+//    toque la codificación las destruye SIN ERROR: la regex sigue compilando,
+//    deja de casar acentos, y "Alevín" y "Alevin" pasan a ser dos equipos
+//    distintos. Escrito así, el fuente es ASCII puro y no puede degradarse.
+function _cronosNoEsAcento(caracter) {
+    const cod = caracter.charCodeAt(0);
+    return cod < 0x300 || cod > 0x36f;
+}
+
+function cronosTeamSlug(valor) {
+    if (valor === null || valor === undefined) return '';
+    return String(valor)
+        .normalize('NFD')                  // separa la letra de su acento…
+        .split('').filter(_cronosNoEsAcento).join('')   // …y lo descarta
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')       // cualquier separador → guion
+        .replace(/^-+|-+$/g, '');          // sin guiones sueltos en los bordes
+}
+
+// Clave canónica del equipo. Un equipo SIN subcategoría es legítimo (algunos
+// clubes sólo usan categoría), y entonces la clave queda con el tramo vacío:
+// eso es deliberado, para que "Alevín" y "Alevín/A" NO sean el mismo equipo.
+function cronosTeamId(clubId, category, subcategory) {
+    const c = cronosTeamSlug(clubId);
+    const cat = cronosTeamSlug(category);
+    const sub = cronosTeamSlug(subcategory);
+    if (!c || !cat) return '';   // sin club o sin categoría no hay equipo
+    return c + '__' + cat + '__' + sub;
+}
+
+// Clave de equipo de un documento CUALQUIERA, venga de donde venga.
+//
+// 🔑 Este es el corazón de la "doble lectura": prefiere el campo `teamId` que
+//    escriben los documentos NUEVOS y, si no está, lo deduce de
+//    `category`+`subcategory` como hace el histórico. Ningún consumidor
+//    necesita saber cuál de los dos casos tiene delante.
+function cronosTeamIdOfDoc(datos, clubIdPorDefecto) {
+    if (!datos) return '';
+    if (datos.teamId) return String(datos.teamId);
+    return cronosTeamId(
+        datos.clubId || clubIdPorDefecto || '',
+        datos.category || '',
+        datos.subcategory || ''
+    );
+}
+
+// ¿Este documento pertenece a alguno de los equipos indicados?
+// `equipos` es un array de claves de equipo (las del entrenador asignado).
+// Un array VACÍO significa "sin restricción de equipo" y devuelve true: así
+// los roles que ven el club entero (director, coordinador, administrador) no
+// necesitan un camino aparte.
+function cronosDocEsDeEquipo(datos, equipos, clubIdPorDefecto) {
+    if (!Array.isArray(equipos) || equipos.length === 0) return true;
+    const propio = cronosTeamIdOfDoc(datos, clubIdPorDefecto);
+    if (!propio) return false;
+    return equipos.indexOf(propio) !== -1;
+}
+
+window.cronosTeamSlug     = cronosTeamSlug;
+window.cronosTeamId       = cronosTeamId;
+window.cronosTeamIdOfDoc  = cronosTeamIdOfDoc;
+window.cronosDocEsDeEquipo = cronosDocEsDeEquipo;
+
 // ── Exportación global ────────────────────────────────────────
 // Este archivo se carga como <script> clásico (NO type="module"),
 // por lo que NO se puede usar `export`. Las funciones ya quedan

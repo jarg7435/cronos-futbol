@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FUTBOL — FIN DE PARTIDO (endMatch)
+//  CHRONOS FUTBOL — FIN DE PARTIDO (endMatch)
 // ════════════════════════════════════════════════════════════════════
 //  Este archivo declara UNA sola cosa: window.endMatch, de la que es el
 //  UNICO duenyo en todo el proyecto. La consumen core/app-init.js,

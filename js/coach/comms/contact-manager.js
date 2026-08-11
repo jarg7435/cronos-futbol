@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL · Gestión de Contactos (la "Fuente de la Verdad")
+//  CHRONOS FÚTBOL · Gestión de Contactos (la "Fuente de la Verdad")
 //  Extraído de js/coach/comms/panel.js (auditoría 2026-07-22, paso 4 de 6
 //  del monolito #3). Movimiento MECÁNICO: cero cambios de comportamiento.
 //

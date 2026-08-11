@@ -479,11 +479,25 @@ console.log('\n── PARTE 10 · Admin de Club ──');
     const sinArg = (club.match(/openClubAdminPanel\(\s*\)/g) || []).length;
     ok('10c · [FIX] ya no queda ningun refresco openClubAdminPanel() sin clubId',
        sinArg === 0, 'quedan: ' + sinArg);
+    // Eran 10 hasta que la baja de usuario dejo de tener DOS caminos. El
+    // camino "quitar un rol" y el de "borrado total" refrescaban cada uno por
+    // su cuenta; al unificarse en una sola revocacion queda un unico refresco.
+    // Lo que este par de aserciones protege NO es el numero, sino que ninguno
+    // se quede sin el respaldo `else openClubAdminPanel(clubId)` (sin el, al
+    // SuperAdmin le devolvia al selector de clubes). Por eso los dos recuentos
+    // tienen que seguir siendo IGUALES entre si.
+    // ⚠️⚠️ EL NUMERO EXACTO SE RETIRA, Y EL PROPIO COMENTARIO DE ARRIBA DICE
+    //    POR QUE: "lo que esto protege NO es el numero". La cifra ya se rompio
+    //    dos veces sin que nada estuviera mal — de 10 a 9 al unificar los dos
+    //    caminos de la baja, y de 9 a 10 al anadir el refresco del borrado con
+    //    archivado. Cada vez obligaba a tocar el test sin ganar nada.
+    //    Lo que se fija es la PROPIEDAD: hay refrescos, y NINGUNO se queda sin
+    //    su respaldo con clubId.
     const reloads = (club.match(/navReload\(\)/g) || []).length;
-    ok('10d · y hay 10 navReload() en su lugar', reloads === 10, 'encontrados: ' + reloads);
+    const respaldos = (club.match(/else openClubAdminPanel\((clubId|cid)\)/g) || []).length;
+    ok('10d · el panel se refresca por navReload()', reloads >= 9, 'encontrados: ' + reloads);
     ok('10e · cada uno con respaldo explicito al clubId si nav-stack no cargara',
-       (club.match(/else openClubAdminPanel\(clubId\)/g) || []).length === 10,
-       (club.match(/else openClubAdminPanel\(clubId\)/g) || []).length);
+       respaldos === reloads, { reloads, respaldos });
 
     // navReload existe y no apila
     ok('10f · nav-stack.js exporta navReload',

@@ -401,6 +401,352 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
 });
 
 /* ==================================================================== */
+/* 4️⃣b Cloud Function: archiveAndDeleteCoach                            */
+/*      PRESERVAR ANTES DE BORRAR. Encargo del autor (implementar.txt):  */
+/*      al eliminar a un entrenador se libera su correo, pero su trabajo  */
+/*      se queda en la CATEGORÍA.                                        */
+/* ==================================================================== */
+//
+// ⚠️⚠️ POR QUÉ ESTA FUNCIÓN EXISTE Y POR QUÉ EL ORDEN ES INNEGOCIABLE
+//
+// Casi todo el trabajo del entrenador (informes, convocatorias, partidos,
+// entrenamientos) ya vive en colecciones indexadas por `clubId`: eso NO se
+// pierde al borrar la cuenta. El problema es UNO y muy concreto:
+//
+//   `users/{uid}/cronos_data/main` — donde vive la PLANTILLA
+//   (`cronos_master_roster`, vía cloudSet) — es una SUBCOLECCIÓN.
+//
+//   · Firestore NO borra las subcolecciones al borrar el documento padre, y
+//     el disparador `deleteUserData` borra `users/{uid}`. La subcolección
+//     queda HUÉRFANA.
+//   · Su regla es `request.auth.uid == userId`, SIN rama de SuperAdmin: en
+//     cuanto ese uid deja de existir, no la puede leer NADIE. Nunca más.
+//   · Al re-registrarse, el mismo correo estrena UID y apunta a un documento
+//     vacío.
+//   Resultado: se perdía sin dar un solo error.
+//
+// 🔑 De ahí el orden: COPIAR → VERIFICAR → BORRAR AUTH → LIMPIAR. Si la
+//    verificación no cuadra, se aborta y NO se borra nada. Es preferible
+//    dejar el correo ocupado a perder la plantilla, porque lo primero se
+//    puede reintentar y lo segundo no.
+//
+// ⚠️ Y no se copia sólo el roster: `cronos_data/main` es un documento
+//    clave-valor donde cloudSet mete lo que le pidan. Se archiva ENTERA la
+//    subcolección, documento a documento, para no dejarse claves futuras.
+
+// Réplica EXACTA de cronosTeamId() de js/core/utils.js, que es una FUNCIÓN
+// PURA: por eso el archivo casa con el histórico ya escrito sin migrar nada.
+//
+// ⚠️ Los acentos se filtran por CÓDIGO DE CARÁCTER, no con una clase de regex
+//    tipo [̀-ͯ]. Escribir esa clase en el fuente ha acabado más de
+//    una vez como marcas diacríticas literales en el fichero; con charCodeAt
+//    el fuente es ASCII puro y no hay nada que se pueda corromper al escribirlo.
+function _esMarcaDeAcento(ch) {
+  const c = ch.charCodeAt(0);
+  return c >= 0x300 && c <= 0x36f;
+}
+function _teamSlug(valor) {
+  if (valor === null || valor === undefined) return '';
+  return String(valor)
+    .normalize('NFD')
+    .split('').filter((ch) => !_esMarcaDeAcento(ch)).join('')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+function _teamId(clubId, category, subcategory) {
+  const c = _teamSlug(clubId);
+  const cat = _teamSlug(category);
+  const sub = _teamSlug(subcategory);
+  if (!c || !cat) return '';
+  return c + '__' + cat + '__' + sub;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// DE QUÉ EQUIPO ES ESTE ENTRENADOR
+// ══════════════════════════════════════════════════════════════════════
+// ⚠️⚠️ NO SE PUEDE LEER LA CATEGORÍA DE LA RAÍZ, Y ASÍ EMPEZÓ ESTO. En la
+//    primera prueba real la Function abortó porque la raíz del documento era
+//    la identidad `club_admin` de una cuenta con CINCO roles: ahí `category`
+//    y `subcategory` están vacías. **La categoría del entrenador vive DENTRO
+//    de `allRoles[]`**, en la entrada de su rol. Abortar fue lo correcto (no
+//    se archivó ni se borró nada), pero el motivo era un defecto de aquí.
+//
+// 🔑 Está FUERA de la callable a propósito: así el guard puede EJECUTARLA con
+//    la forma real del documento que falló, en vez de mirar su texto.
+function _resuelveEquipo(target, data) {
+  const allRoles = Array.isArray(target.allRoles) ? target.allRoles : [];
+  const clubBase = target.clubId || (data && data.clubId) || null;
+  const esDeEsteClub = (r) => !r.clubId || String(r.clubId) === String(clubBase || '');
+
+  let rolElegido = null;
+  // 1. El rol que el panel dice estar dando de baja: es la señal más fiable.
+  if (data && data.role) {
+    rolElegido = allRoles.find((r) => r && r.role === data.role && r.category && esDeEsteClub(r)) || null;
+  }
+  // 2. Si no, el rol revocado MÁS RECIENTE con categoría (la baja acaba de
+  //    marcarlo justo antes de llamar aquí).
+  if (!rolElegido) {
+    const revocados = allRoles
+      .filter((r) => r && r.status === 'removed' && r.category && esDeEsteClub(r))
+      .sort((a, b) => String(b.removedAt || '').localeCompare(String(a.removedAt || '')));
+    rolElegido = revocados[0] || null;
+  }
+  // 3. Y como último recurso, cualquiera de este club que tenga categoría.
+  if (!rolElegido) {
+    rolElegido = allRoles.find((r) => r && r.category && esDeEsteClub(r)) || null;
+  }
+
+  const clubId = clubBase || (rolElegido && rolElegido.clubId) || null;
+  const category = target.category || (rolElegido && rolElegido.category) ||
+                   (data && data.category) || '';
+  const subcategory = target.subcategory || (rolElegido && rolElegido.subcategory) ||
+                      (data && data.subcategory) || '';
+  return { clubId, category, subcategory, teamId: _teamId(clubId, category, subcategory) };
+}
+
+exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Usuario no autenticado');
+  }
+  const db = admin.firestore();
+  const callerUid = context.auth.uid;
+  const callerDoc = await db.collection('users').doc(callerUid).get();
+  if (!callerDoc.exists ||
+      !['superadmin', 'club_admin', 'individual_admin'].includes(callerDoc.data().role)) {
+    throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
+  }
+  const callerRole = callerDoc.data().role;
+
+  const targetUid = data && data.uid;
+  const targetEmail = data && data.email;
+  if (!targetUid || !targetEmail) {
+    throw new functions.https.HttpsError('invalid-argument', 'uid y email son requeridos');
+  }
+
+  const targetSnap = await db.collection('users').doc(targetUid).get();
+  const target = targetSnap.exists ? targetSnap.data() : {};
+
+  // El club se resuelve del documento del LLAMANTE, nunca de lo que mande el
+  // cliente (misma política que deleteAuthUser).
+  if (callerRole === 'club_admin') {
+    const callerClubId = callerDoc.data().clubId;
+    if (targetSnap.exists && target.clubId !== callerClubId) {
+      throw new functions.https.HttpsError('permission-denied',
+        'Solo puedes eliminar usuarios de tu club');
+    }
+  }
+  if (callerRole === 'individual_admin') {
+    const callerEntityId = callerDoc.data().individualEntityId || callerDoc.data().clubId;
+    const targetEntityId = target.individualEntityId || target.clubId;
+    if (targetSnap.exists && targetEntityId !== callerEntityId) {
+      throw new functions.https.HttpsError('permission-denied',
+        'Solo puedes eliminar usuarios de tu propio ente individual');
+    }
+  }
+
+  // De qué equipo es este entrenador (ver _resuelveEquipo, más arriba).
+  const { clubId, category, subcategory, teamId } = _resuelveEquipo(target, data);
+  const allRoles = Array.isArray(target.allRoles) ? target.allRoles : [];
+
+  // ══════════════════════════════════════════════════════════════════
+  // ¿SE BORRA LA CUENTA, O SOLO SE VACÍA LA CASILLA?
+  // ══════════════════════════════════════════════════════════════════
+  // 🔑 LA REGLA DE NEGOCIO, tal y como la fijó el autor:
+  //    · El correo es de la PERSONA; la casilla (rol + categoría) es del CLUB.
+  //    · Revocar una casilla archiva su trabajo en la categoría y la deja
+  //      vacante, pero **la cuenta sigue viva mientras le quede algún rol**
+  //      (un entrenador puede llevar, por ejemplo, un equipo de F11 y otro
+  //      de F7, además de ser padre o coordinador).
+  //    · Sólo cuando se le revoca el ÚLTIMO rol del club se elimina su
+  //      cuenta de Auth y se libera su correo.
+  //
+  // Por eso aquí ya no se aborta si conserva roles: se archiva igual y
+  // simplemente NO se borra. Lo único que decide es cuántos roles vivos
+  // quedan DESPUÉS de la revocación (el panel revoca justo antes de llamar).
+  const _vivo = (r) => r && r.status !== 'removed' &&
+                       (r.isAuthorized === true || r.authorized === true);
+  const _esAdmin = (rol) => rol === 'club_admin' || rol === 'superadmin' ||
+                            rol === 'individual_admin';
+  const rolesVivos = allRoles.filter(_vivo);
+
+  // ⚠️ SALVAGUARDA QUE SE QUEDA: una cuenta ADMINISTRADORA no se borra nunca
+  //    desde aquí, ni aunque pareciera quedarse sin roles. Las filas de equipo
+  //    no muestran el rol de administrador (no tiene categoría), así que este
+  //    caso no debería darse; es una red por si algún día se da. Dejar un club
+  //    sin administrador no se puede deshacer.
+  const esCuentaAdmin = _esAdmin(target.role) || allRoles.some((r) => _esAdmin(r.role) && _vivo(r));
+  const borrarCuenta = rolesVivos.length === 0 && !esCuentaAdmin;
+
+  // ── 1. COPIAR: la subcolección entera ────────────────────────────
+  const origen = await db.collection('users').doc(targetUid).collection('cronos_data').get();
+  const payload = {};
+  let clavesOrigen = 0;
+  origen.forEach((d) => {
+    payload[d.id] = d.data() || {};
+    clavesOrigen += Object.keys(payload[d.id]).length;
+  });
+
+  // Sin equipo no hay dónde archivar. Si además había algo que guardar, se
+  // aborta: borrar dejaría la plantilla ilegible para siempre.
+  if (!teamId) {
+    if (origen.size > 0) {
+      // El mensaje dice QUÉ falta: sin esto, la primera prueba real dejó al
+      // administrador sin saber si el problema era suyo o de la aplicación.
+      const falta = !_teamSlug(clubId) ? 'el club' : 'la categoría';
+      throw new functions.https.HttpsError('failed-precondition',
+        'No se puede archivar el trabajo de ' + targetEmail + ' porque no consta ' + falta +
+        ' de su rol de entrenador (club=' + JSON.stringify(clubId) +
+        ', categoría=' + JSON.stringify(category) + '/' + JSON.stringify(subcategory) + '). ' +
+        'No se ha borrado nada: asígnale categoría en el panel y reinténtalo.');
+    }
+    console.warn('[archiveAndDeleteCoach] Sin teamId y sin datos que archivar:', targetUid);
+  }
+
+  const archivoRef = teamId
+    ? db.collection('clubs').doc(clubId).collection('team_archives').doc(teamId)
+    : null;
+
+  if (archivoRef) {
+    // merge:true — si esa categoría ya tiene archivo de un entrenador
+    // anterior, se ACUMULA por uid en vez de pisarlo.
+    await archivoRef.set({
+      teamId: teamId,
+      clubId: clubId,
+      category: category,
+      subcategory: subcategory,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      coaches: {
+        [targetUid]: {
+          uid: targetUid,
+          email: targetEmail,
+          archivedAt: new Date().toISOString(),
+          archivedBy: context.auth.token.email || callerUid,
+          documentos: payload,
+          numDocumentos: origen.size,
+          numClaves: clavesOrigen,
+        },
+      },
+    }, { merge: true });
+  }
+
+  // ── 2. VERIFICAR antes de tocar nada irreversible ────────────────
+  // 🔑 Se RELEE del servidor y se cuentan las claves. Si no cuadra, se aborta
+  //    con el correo aún ocupado: eso se puede reintentar; perder la
+  //    plantilla, no.
+  if (archivoRef) {
+    const comprobacion = await archivoRef.get();
+    const guardado = comprobacion.exists
+      ? ((comprobacion.data().coaches || {})[targetUid] || null)
+      : null;
+    const okDocs = guardado && guardado.numDocumentos === origen.size;
+    let okClaves = false;
+    if (guardado && guardado.documentos) {
+      let n = 0;
+      Object.keys(guardado.documentos).forEach((k) => {
+        n += Object.keys(guardado.documentos[k] || {}).length;
+      });
+      okClaves = (n === clavesOrigen);
+    }
+    if (!okDocs || !okClaves) {
+      console.error('[archiveAndDeleteCoach] VERIFICACIÓN FALLIDA — no se borra nada', {
+        targetUid, teamId, origen: origen.size, clavesOrigen,
+      });
+      throw new functions.https.HttpsError('internal',
+        'El archivado no se pudo verificar. NO se ha borrado la cuenta: inténtalo de nuevo.');
+    }
+  }
+
+  // ── 3. BORRAR la cuenta de Auth — SÓLO SI ERA SU ÚLTIMO ROL ──────
+  //
+  // ⚠️⚠️ AQUÍ ESTÁ LA REGLA DE NEGOCIO ENTERA. Si le queda cualquier rol
+  //    vivo en el club, la cuenta y el correo siguen siendo suyos y no se
+  //    tocan: lo único que ha pasado es que una casilla ha quedado vacante y
+  //    su trabajo se ha archivado en la categoría. Borrar aquí le dejaría sin
+  //    acceso a sus otros equipos.
+  let resolvedUid = targetUid;
+  let deletedFromAuth = false;
+  let alreadyAbsent = false;
+  if (borrarCuenta) {
+    try {
+      await admin.auth().deleteUser(resolvedUid);
+      deletedFromAuth = true;
+    } catch (err1) {
+      if (err1.code === 'auth/user-not-found') {
+        try {
+          const rec = await admin.auth().getUserByEmail(targetEmail);
+          resolvedUid = rec.uid;
+          await admin.auth().deleteUser(resolvedUid);
+          deletedFromAuth = true;
+        } catch (err2) {
+          if (err2.code === 'auth/user-not-found') alreadyAbsent = true;
+          else {
+            console.error('[archiveAndDeleteCoach] Error al borrar Auth (retry):', err2);
+            throw new functions.https.HttpsError('internal',
+              'Los datos SÍ quedaron archivados, pero no se pudo borrar la cuenta. Reinténtalo.');
+          }
+        }
+      } else {
+        console.error('[archiveAndDeleteCoach] Error al borrar Auth:', err1);
+        throw new functions.https.HttpsError('internal',
+          'Los datos SÍ quedaron archivados, pero no se pudo borrar la cuenta. Reinténtalo.');
+      }
+    }
+  }
+
+  // ── 4. LIMPIAR la subcolección — SÓLO SI LA CUENTA SE HA BORRADO ─
+  //
+  // 🔑 Si la cuenta sigue viva, ARCHIVAR ES COPIAR, NO MOVER: su plantilla
+  //    es de la CUENTA y la sigue necesitando para sus otros equipos. Sólo
+  //    cuando la cuenta desaparece hay que limpiarla, porque si no queda
+  //    huérfana e ilegible para siempre (esa es la razón de ser de todo esto).
+  let limpiados = 0;
+  if (deletedFromAuth || alreadyAbsent) {
+    for (const d of origen.docs) {
+      try { await d.ref.delete(); limpiados++; } catch (e) {
+        console.warn('[archiveAndDeleteCoach] No se pudo limpiar', d.id, e.message);
+      }
+    }
+  }
+
+  // ── 5. Dejar constancia ──────────────────────────────────────────
+  await db.collection('deletion_requests')
+    .doc(resolvedUid + '_purge_' + Date.now())
+    .set({
+      userId: resolvedUid, userEmail: targetEmail, clubId: clubId,
+      requestedBy: callerUid, requestedByEmail: context.auth.token.email || null,
+      action: borrarCuenta ? 'archive_and_delete' : 'archive_slot',
+      teamId: teamId || null,
+      rolRevocado: (data && data.role) || null,
+      accountDeleted: deletedFromAuth,
+      alreadyAbsent: alreadyAbsent,
+      rolesRestantes: rolesVivos.map((r) => r.role),
+      dataArchived: !!archivoRef,
+      documentosArchivados: origen.size,
+      clavesArchivadas: clavesOrigen,
+      subcoleccionLimpiada: limpiados,
+      status: 'completed',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+  return {
+    success: true,
+    uid: resolvedUid,
+    teamId: teamId || null,
+    documentosArchivados: origen.size,
+    clavesArchivadas: clavesOrigen,
+    cuentaBorrada: deletedFromAuth || alreadyAbsent,
+    emailLiberado: deletedFromAuth || alreadyAbsent,
+    rolesRestantes: rolesVivos.map((r) => r.role),
+    esCuentaAdmin: esCuentaAdmin,
+    message: borrarCuenta
+      ? 'Era su último rol: trabajo archivado en la categoría y correo liberado.'
+      : 'Casilla vacante y trabajo archivado. La cuenta sigue activa con ' +
+        rolesVivos.length + ' rol(es).',
+  };
+});
+
+/* ==================================================================== */
 /* 5️⃣ Cloud Function: syncUserChanges – Sincronizar cambios de usuarios entre clubes */
 /* ==================================================================== */
 exports.syncUserChanges = functions.firestore

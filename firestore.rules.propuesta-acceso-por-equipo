@@ -1,0 +1,147 @@
+// ════════════════════════════════════════════════════════════════════════
+// PROPUESTA — NO DESPLEGADA, NO ACTIVA
+// Acceso por EQUIPO en las reglas de Firestore
+// ════════════════════════════════════════════════════════════════════════
+//
+// Este fichero NO se aplica. Firebase sólo lee `firestore.rules`
+// (firebase.json → firestore.rules), y hosting ignora `firestore.rules.*`.
+// Está aquí para que lo revises antes de decidir si entra.
+//
+// QUÉ CUBRE HOY EL CLIENTE Y QUÉ NO
+// ─────────────────────────────────
+// El filtrado por equipo ya implementado es de PRESENTACIÓN: el entrenador
+// ve en "Mis Informes" el histórico de su categoría y no el de las demás.
+// Eso resuelve el uso real, pero NO es una barrera: quien use el SDK con su
+// token puede leer cualquier documento de su club, igual que antes de este
+// cambio. La barrera de verdad son estas reglas.
+//
+// ⚠️⚠️ EL OBSTÁCULO QUE HAY QUE CONOCER ANTES DE DECIDIR
+// ────────────────────────────────────────────────────────
+// El lenguaje de reglas NO puede recalcular la clave de equipo. cronosTeamId()
+// normaliza con `normalize('NFD')` para que "Alevín" y "Alevin" sean el mismo
+// equipo, y en reglas no existe esa normalización: hay `lower()`, `trim()`,
+// `replace()` y `matches()`, pero nada que descomponga un acento.
+//
+// Consecuencia directa y muy importante:
+//
+//   La comparación por equipo en reglas SÓLO puede hacerse contra el campo
+//   `teamId` ya escrito en el documento. El histórico anterior a este cambio
+//   NO lo tiene. Si estas reglas entran tal cual, todo ese histórico deja de
+//   ser legible por la rama de equipo.
+//
+// Por eso la rama de equipo se plantea como ADITIVA (un OR más), nunca
+// sustituyendo a las de club. Endurecerla de verdad —quitar las ramas de
+// club— exige antes el backfill de `teamId` que decidiste no hacer.
+//
+// ⚠️ Y RECUERDA: `npm run deploy:staging` NO puede probar esto. firebaseConfig
+// apunta a `cronos-futbol-app`, así que cronos-futbol-test.web.app evalúa las
+// reglas de PRODUCCIÓN. Estas reglas sólo se prueban de verdad con la Rules
+// REST API (ver reference_rules_test_api / rules_test/) o desplegando a prod.
+
+
+// ── 1. Helpers nuevos ───────────────────────────────────────────────────
+
+// Equipo asignado al usuario, leído de SU documento. Devuelve el `teamId`
+// explícito si el documento lo tiene; si no, no se intenta deducir (ver el
+// obstáculo de arriba: no se puede normalizar aquí).
+//
+// Requiere que users/{uid} lleve `teamId`. HOY NO LO LLEVA: habría que
+// escribirlo en caEditUserCategory al asignar el equipo, y en el alta.
+function userTeamId() {
+  return isAuth()
+         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teamId', '')
+         : '';
+}
+
+// ¿El usuario pertenece al equipo de este documento?
+// Ambos lados tienen que tener teamId no vacío: si falta cualquiera, esta
+// rama simplemente no concede (y decide otra).
+function sameTeamAsDoc(docTeamId) {
+  return isAuth()
+         && docTeamId != null && docTeamId != ''
+         && userTeamId() == docTeamId;
+}
+
+// ¿Es cuerpo técnico con vista de club entero? Director, coordinador y
+// administrador NO se restringen por equipo: ven el club.
+// (isTechStaffByDoc / isAdminOfClub ya existen en firestore.rules)
+function veElClubEntero() {
+  return isSuperAdmin() || isTechStaffByDoc() || isAdminOfClub(
+    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', null)
+  );
+}
+
+
+// ── 2. Rama aditiva en cronos_player_reports ────────────────────────────
+//
+// Se AÑADE `sameTeamAsDoc(...)` a la lista de ramas del `allow read` actual.
+// No se quita ninguna: el histórico sin teamId sigue leyéndose por club.
+//
+//   allow read: if isAuth() && (
+//     isSuperAdmin() ||
+//     sameClubAsDoc(resource.data.get('clubId', null)) ||
+//     request.auth.uid == resource.data.get('coachUid', null) ||
+//     request.auth.uid == resource.data.get('parentUid', null) ||
+//     (resource.data.get('staffUids', null) != null &&
+//      request.auth.uid in resource.data.get('staffUids', [])) ||
+//     userDocClubId(resource.data.get('clubId', null)) ||
+//     sameTeamAsDoc(resource.data.get('teamId', '')) ||      // ← NUEVA
+//     transitionalRead(resource.data.get('clubId', null))
+//   );
+
+
+// ── 3. El endurecimiento REAL (fase 2, sólo tras el backfill) ───────────
+//
+// Restringir de verdad al entrenador a su equipo significa que la rama de
+// club deje de valerle. Es decir, partir `userDocClubId` en dos:
+//
+//   allow read: if isAuth() && (
+//     isSuperAdmin() ||
+//     veElClubEntero() ||                                   // staff: club entero
+//     sameTeamAsDoc(resource.data.get('teamId', ''))        // entrenador: su equipo
+//   );
+//
+// ⚠️ NO APLICAR ESTO SIN ANTES:
+//   a) Backfill de `teamId` en TODO cronos_player_reports (si no, el
+//      histórico se vuelve ilegible para el entrenador).
+//   b) Escribir `teamId` en users/{uid} al asignar equipo.
+//   c) Probarlo con la Rules REST API, caso por caso y por ROL.
+// Sin (a), el día que entre esta regla el entrenador abre "Mis Informes" y lo
+// ve vacío — el mismo síntoma que este trabajo venía a arreglar.
+
+
+// ── 4. Lo que las reglas NO pueden cerrar solas: los CLAIMS ─────────────
+//
+// `sameClubAsDoc()` mira `request.auth.token.clubId`, un custom claim. Al
+// revocar a alguien, Firestore se actualiza pero EL CLAIM SIGUE EN SU TOKEN:
+// no hay escritura en Firestore que lo borre.
+//
+// `userDocClubId()` sí exige `isAuthorized == true`, así que la revocación
+// implementada corta esa vía. Pero un usuario que tuviera claim `clubId`
+// conserva las ramas basadas en `sameClubAsDoc` hasta que se le limpien.
+//
+// Hace falta tocar functions/index.js — y `deploy:staging` NO despliega
+// functions (sólo hosting,firestore), así que esto va en su propio despliegue:
+//
+//   exports.autoSetClaimsOnApproval = ... .onWrite(async (change, context) => {
+//     const after = change.after.data() || {};
+//     // HOY hace `return` y deja los claims intactos:
+//     //   if (!after.isAuthorized || after.status === 'removed' ...) return;
+//     // PROPUESTA: limpiarlos antes de salir.
+//     if (!after.isAuthorized || after.status === 'removed' || after.status === 'blocked') {
+//       const rec = await admin.auth().getUser(userId);
+//       const cl = rec.customClaims || {};
+//       if (cl.clubId || cl.role) {
+//         await admin.auth().setCustomUserClaims(userId, {
+//           ...cl, role: null, clubId: null, claimsSetAt: Date.now(),
+//         });
+//       }
+//       return;
+//     }
+//     ...
+//   });
+//
+// ⚠️ El token ya emitido sigue siendo válido hasta que caduca (~1 h). La
+//    revocación de claims no es instantánea. Para corte inmediato haría falta
+//    `revokeRefreshTokens(uid)` y que las reglas comprobasen `auth_time`.

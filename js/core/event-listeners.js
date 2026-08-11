@@ -66,7 +66,7 @@ function _cronosWhistle(times, onDone) {
         }, totalMs + 100);
 
     } catch (e) {
-        console.warn('[Cronos] Whistle AudioContext error:', e);
+        console.warn('[Chronos] Whistle AudioContext error:', e);
         if (typeof onDone === 'function') onDone();
     }
 }

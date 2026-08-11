@@ -1,0 +1,11 @@
+REGLAS DEL PROYECTO CHRONOS FÚTBOL:
+
+1.Entorno de pruebas: cronos-futbol-test (staging).
+
+2.Entorno de producción: cronos-futbol-app (production).
+
+3.Al sugerir comandos de despliegue para probar o auditar cambios, utiliza siempre npm run deploy:staging.
+
+4.NUNCA sugieras desplegar a producción (npm run deploy:prod) a menos que el usuario confirme explícitamente que las pruebas en staging fueron exitosas.
+
+5.Despliega solo los servicios de hosting y firestore para mantener el plan gratuito en staging.

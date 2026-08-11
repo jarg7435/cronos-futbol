@@ -49,6 +49,14 @@ body.locked {
     animation: fadeIn 0.5s ease-out;
 }
 
+/* ⚠️⚠️ NINGUNA REGLA DE ESTA HOJA PUEDE GOBERNAR #gdpr-consent-container.
+   Aquí hubo un bloque `.mode-login` / `.mode-register` con `!important` que
+   decidía si la casilla del RGPD se veía. Producción NO tiene nada de eso: allí
+   la visibilidad la deciden el marcado (`display:none` en línea), los dos
+   onclick de las pestañas y switchTab(). Ese bloque era la quinta capa que se
+   apilaba sobre lo mismo, y cada capa tapaba a la anterior.
+   Si esta pantalla necesita algo, se cambia PRIMERO en producción. */
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }

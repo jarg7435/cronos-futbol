@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL · Compositor de mensajería masiva (LEGACY)
+//  CHRONOS FÚTBOL · Compositor de mensajería masiva (LEGACY)
 //  Extraído de js/coach/comms/panel.js (auditoría 2026-07-22, paso 5 de 6
 //  del monolito #3). Movimiento MECÁNICO: cero cambios de comportamiento.
 //

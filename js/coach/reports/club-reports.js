@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-//  CRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v3.0
+//  CHRONOS FÚTBOL — Staff Dashboard (Director / Coordinador) v3.0
 //  ADDED: Motor de Informes Visual — Gantt + Panel de Rotaciones +
 //         Cabecera completa con logo, marcador, fecha, venue, tiempo
 // ════════════════════════════════════════════════════════════════════
