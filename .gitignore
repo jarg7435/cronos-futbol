@@ -62,3 +62,10 @@ bgout.txt
 # Nunca deben vivir en functions/ (se empaqueta en cada deploy) ni commitearse:
 # acceden a produccion directamente y no forman parte del producto.
 scripts/ops/
+
+# CANAL DE TRABAJO CON LA IA (no es producto)
+# Ficheros donde el autor deja los encargos y el resultado de sus pruebas.
+# Cambian en cada ronda y no describen el estado del codigo, asi que en el
+# historial solo anaden ruido. Se quedan en disco; simplemente no se siguen.
+implementar.txt
+mensajes.txt
