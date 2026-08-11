@@ -1,5 +1,24 @@
 {
   "projects": {
-    "default": "cronos-futbol-app"
-  }
+    "default": "cronos-futbol-app",
+    "staging": "cronos-futbol-test",
+    "production": "cronos-futbol-app"
+  },
+  "targets": {
+    "cronos-futbol-app": {
+      "hosting": {
+        "live": [
+          "cronos-futbol-app"
+        ]
+      }
+    },
+    "cronos-futbol-test": {
+      "hosting": {
+        "live": [
+          "cronos-futbol-test"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

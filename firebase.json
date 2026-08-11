@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "cronos-futbol-app",
+    "target": "live",
     "public": ".",
     "ignore": [
       "firebase.json",

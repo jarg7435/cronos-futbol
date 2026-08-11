@@ -49,8 +49,20 @@ for (const file of files) {
     return `${pre}${path}?v=${VERSION}${post}`;
   });
 
+  // 🔑 EL SELLO DE VERSION VISIBLE EN LA PANTALLA DE ACCESO.
+  // Se escribe desde aqui —y no a mano— porque un sello que hay que acordarse
+  // de actualizar miente antes o despues, y justo entonces es cuando hace
+  // falta. Sirve para saber de un vistazo si el navegador tiene el codigo
+  // nuevo o una copia vieja del service worker: tres rondas de un mismo fallo
+  // se fueron en no poder responder a esa pregunta.
+  let countVer = 0;
+  html = html.replace(
+    /(<span id="build-version" data-version=")[^"]*(">)[^<]*(<\/span>)/g,
+    (_full, pre, mid, post) => { countVer++; return `${pre}${VERSION}${mid}${VERSION}${post}`; }
+  );
+
   fs.writeFileSync(file, html);
-  resumen.push(`${file}: ${count} scripts + ${countCss} hoja(s) de estilo`);
+  resumen.push(`${file}: ${count} scripts + ${countCss} hoja(s) de estilo + ${countVer} sello(s) de version`);
 }
 
 console.log(`cache-bust: -> ?v=${VERSION}\n  ` + resumen.join('\n  '));

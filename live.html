@@ -1600,11 +1600,11 @@
     setTimeout(function () {
         if (window._cronosLiveBooted) return;              // arrancó: nada que hacer
         if (sessionStorage.getItem(MARCA)) {               // ya se intentó: no insistir
-            console.warn('[Cronos] La vista no arranca y la limpieza ya se intentó.');
+            console.warn('[Chronos] La vista no arranca y la limpieza ya se intentó.');
             return;
         }
         try { sessionStorage.setItem(MARCA, String(Date.now())); } catch (e) {}
-        console.warn('[Cronos] El panel en vivo no arrancó en 8 s. Limpiando cachés y recargando…');
+        console.warn('[Chronos] El panel en vivo no arrancó en 8 s. Limpiando cachés y recargando…');
 
         var recargar = function () { try { location.reload(); } catch (e) {} };
         var limpiar = Promise.resolve();
@@ -1666,7 +1666,7 @@ try {
         localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
 } catch (e) {
-    console.warn('[Cronos] Cache persistente no disponible en el visor; se usa la de memoria:', e.message);
+    console.warn('[Chronos] Cache persistente no disponible en el visor; se usa la de memoria:', e.message);
     db = getFirestore(app);
 }
 
@@ -2805,7 +2805,7 @@ function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML, equipo) {
 //
 //  Petición del autor: goles, tarjetas y lesiones sólo decían el nombre del
 //  jugador. Los cambios sí llevaban el equipo, pero DENTRO del texto
-//  ("CRONOS B | ▲ SALE: …"), que es la forma que este proyecto ya decidió no
+//  ("CHRONOS B | ▲ SALE: …"), que es la forma que este proyecto ya decidió no
 //  usar como contrato (v418-v421, v439).
 //
 //  🔑 SE RESUELVE COMO DATO Y SE PINTA APARTE, no se mete en el texto: así el
@@ -4630,7 +4630,7 @@ function _liveFeedTexto(ev) {
 //  `events` sólo admite arrayUnion):
 //    1 · `ev.team` — el contrato, escrito por _datosEquipoDe en
 //        js/match/events/player-actions.js. Es lo único fiable.
-//    2 · el prefijo del texto de las SUSTITUCIONES ("CRONOS | ▲ SALE: …"),
+//    2 · el prefijo del texto de las SUSTITUCIONES ("CHRONOS | ▲ SALE: …"),
 //        que sí llevaba el equipo desde v424.
 //    3 · el nombre del protagonista, buscado en la plantilla del partido.
 //  Si ninguna resuelve, NO se inventa: la fila se pinta sin etiqueta. Una
@@ -5933,8 +5933,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v473"></script>
-<script src="js/match/replay/replay-player.js?v=v473"></script>
-<script src="js/match/events/retroactive-modal.js?v=v473"></script>
+<script src="js/match/immutability.js?v=v509"></script>
+<script src="js/match/replay/replay-player.js?v=v509"></script>
+<script src="js/match/events/retroactive-modal.js?v=v509"></script>
 </body>
 </html>

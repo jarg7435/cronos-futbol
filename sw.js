@@ -1,5 +1,488 @@
 // ─────────────────────────────────────────────────────────────
-//  CRONOS FUTBOL - Service Worker v229
+//  CHRONOS FUTBOL - Service Worker v229
+//  v501: SINCRONIZACION LIMPIA: EL PANEL DE ACCESO ES EL DE PRODUCCION.
+//        Orden del autor tras ver testeo v500 sin casilla y produccion v476
+//        con ella (capturas 8683/8684): "deja de inventar parches, clona la
+//        estructura exacta de produccion".
+//
+//        QUE SE HA HECHO: se ha descargado cronos-futbol-app y se ha
+//        SUSTITUIDO EL BLOQUE #auth-screen ENTERO por el suyo, verbatim. No
+//        se ha copiado a trozos ni se ha ido corrigiendo diferencia a
+//        diferencia: se ha reemplazado el bloque completo.
+//
+//        Y se han retirado las CINCO capas que se habian ido apilando encima
+//        entre v477 y v500, cada una tapando a la anterior, persiguiendo un
+//        fallo que produccion no tiene:
+//          1) v477 · #auth-screen reescrito a position:fixed + z-index +
+//             env(safe-area-*), y la tarjeta sin margin:auto 0
+//          2) v486 · clase `auth-modo-login` en el <body> + hoja con !important
+//          3) v487 · banda `position:sticky` envolviendo casilla y boton
+//          4) v489/v490 · la casilla movida al principio del formulario y
+//             despues metida dentro de #role-container
+//          5) v500 · clases `mode-login`/`mode-register` en el formulario con
+//             reglas en style.css (esta la anadio otra herramienta trabajando
+//             en paralelo, persiguiendo lo mismo)
+//        Ninguna hacia falta. Fuera todas: reglas de style.css, toggles en
+//        switchTab() y scripts inline dentro del panel.
+//
+//        DESVIACIONES DELIBERADAS QUE QUEDAN — DOS, Y NI UNA MAS:
+//          · el sello de version del subtitulo (va FUERA del formulario, no
+//            puede ocultar nada, y es lo que permite saber que build se esta
+//            probando: el propio autor lo uso para reportar "estamos en v500")
+//          · el respaldo del `onsubmit`, que evita que el formulario se quede
+//            MUDO si auth.js no llega a evaluarse (fallo reportado en la
+//            captura 8594). Tampoco toca la casilla.
+//        Comprobado: el panel entero difiere de produccion en UNA sola linea,
+//        la del sello.
+//
+//        El guard de paridad se pone ROJO si vuelve cualquiera de las cinco
+//        capas, si aparece un script inline dentro del panel o si alguna hoja
+//        vuelve a decidir sobre #gdpr-consent-container. Red-check: 21
+//        mutaciones. Se retira test_diagnostico_rgpd.js, que defendia el
+//        parche de v494.
+//
+//        🔑 REGLA: produccion es la fuente de verdad de esta pantalla. Lo que
+//        haya que cambiar aqui, se cambia PRIMERO alli y se comprueba alli.
+//
+//  v494: LA CASILLA PERTENECE AL PANEL DE REGISTRO. CORRECCION PERMANENTE.
+//        El autodiagnostico de v493 (captura 8668) dejo demostrado lo que
+//        ocho rondas de lectura de codigo no pudieron: al pasar a
+//        "REGISTRARSE" la casilla PIERDE la visibilidad, tratada como si
+//        perteneciera al panel de "Entrar".
+//
+//        Se retira el diagnostico entero (era temporal: panel en pantalla,
+//        interceptacion con pila, _cronosDiagRGPD) y queda UNA regla, la que
+//        pidio el encargo:
+//
+//          SI EL PANEL DE REGISTRO ESTA A LA VISTA, LA CASILLA ESTA A LA
+//          VISTA — la oculte QUIEN LA OCULTE.
+//
+//        No le importa el culpable: switchTab con el modo mal puesto, un
+//        antepasado que se cierra, una regla de hoja o lo que venga. Sube por
+//        los padres deshaciendo lo que la tape. La senal de "estamos en
+//        registro" es #role-container VISIBLE —lo que se ve, no una variable
+//        que pueda ir desincronizada—, la misma que usa doAuth().
+//
+//        ⚠️ TOPE EN #auth-screen, y es imprescindible: al iniciar sesion
+//        showScreen() oculta la pantalla de acceso, y eso es LEGITIMO. Sin el
+//        tope, esto devolveria el login por encima de la aplicacion. Si la
+//        pantalla de acceso ya no se ve, no hace nada. En "Entrar" tampoco
+//        toca nada. Y se apaga solo a los 8 s: no queda ningun bucle vivo.
+//
+//        Guard: scripts/test_diagnostico_rgpd.js EJECUTA el inline real contra
+//        un DOM simulado (con `display` en el PROTOTIPO, como el navegador) y
+//        cubre los cuatro casos, incluido el del antepasado —la familia de
+//        causas que un censo de codigo no puede descartar—. Ademas comprueba
+//        que el diagnostico temporal ya no esta. Red-check: 6 mutaciones.
+//
+//  v493: AUTODIAGNOSTICO EN VIVO DE LA CASILLA DEL RGPD. Encargo del autor
+//        tras ocho rondas: "ya no quiero que adivines mas".
+//
+//        Deja de hacer falta adivinar. Un script INLINE, colocado justo
+//        despues del elemento (para instalarse en el instante en que el nodo
+//        existe, antes de que nadie pueda tocarlo), hace cuatro cosas:
+//
+//        1) INTERCEPTA CON LA PILA DE LLAMADAS toda escritura de `display`
+//           sobre el contenedor: style.setProperty, style.display = ... y
+//           setAttribute('style', ...). Un MutationObserver NO vale para esto:
+//           su callback es asincrono y la pila del culpable ya se perdio. Con
+//           esto, si un script la oculta, queda su NOMBRE y su linea.
+//        2) MUESTREA cada fotograma durante 8 s el `display` CALCULADO del
+//           elemento Y DE TODOS SUS ANTEPASADOS. Esto caza lo que la
+//           interceptacion no puede ver —un antepasado que se oculta, una
+//           regla de hoja, el nodo sacado del DOM— que es justo la familia de
+//           causas que ocho rondas de censo de codigo no podian descartar.
+//        3) REPARA en el acto, sea cual sea la causa, si la casilla pierde
+//           visibilidad mientras se esta viendo el registro. Sube por los
+//           padres deshaciendo lo que la tape.
+//        4) PINTA EL INFORME EN PANTALLA cuando eso ocurre: el propio fallo
+//           muestra su diagnostico y una captura basta para saber la causa.
+//           En consola: `_cronosDiagRGPD.informe()`.
+//
+//        ⚠️ GUARDA IMPORTANTE: si #auth-screen ya no se ve, es que se entro en
+//        la app y ocultarlo es LEGITIMO (showScreen). Sin esa guarda, la
+//        reparacion habria devuelto la pantalla de login por encima de la
+//        aplicacion al iniciar sesion. Y en modo "Entrar" no salta nada:
+//        ocultar la casilla ahi es correcto.
+//
+//        Guard: scripts/test_diagnostico_rgpd.js EJECUTA el script inline real
+//        contra un DOM simulado y comprueba los cuatro comportamientos.
+//        ⚠️ El simulador pone `display` EN EL PROTOTIPO, como el navegador: al
+//        ponerlo como propiedad propia, una asercion CORRECTA daba rojo.
+//        Red-check: 6 mutaciones.
+//
+//  v492: ERA EL CONTENEDOR, NO LA CASILLA. PANTALLA DE ACCESO = PRODUCCION.
+//        v491 dejo el BLOQUE del RGPD identico a produccion y el fallo siguio
+//        igual (captura 8661). Asi que se diffeo la RUTA ENTERA de
+//        autenticacion contra produccion, fichero a fichero, descargando los
+//        dos entornos:
+//
+//          auth-improvements.js, auth/password.js, auth/role-launch.js,
+//          firebase-init.js, app-init.js, security-and-state.js,
+//          accessibility-wcag.js, patches.js, render-optimizer.js,
+//          setup-modal.js, nav-stack.js, style.css .... TODOS IDENTICOS
+//          index.html, auth.js, utils.js ............... distintos
+//
+//        Y dentro de esos: loadClubOptions() identica linea por linea,
+//        handleRoleChange() identica, el bloque del consentimiento identico,
+//        los dos onclick identicos, switchTab() identica. Ninguna linea nueva
+//        de auth.js toca la visibilidad de la casilla.
+//
+//        🔑 LA UNICA DIFERENCIA REAL QUE QUEDABA EN LA PANTALLA DE ACCESO ERA
+//        EL CONTENEDOR. En v477 se reescribio #auth-screen "para que
+//        deslizara": position:fixed con inset 0, z-index:900,
+//        justify-content:flex-start y padding con env(safe-area-*), y se le
+//        quito a la tarjeta el margin:auto 0. Produccion no tiene nada de eso:
+//        caja en flujo normal con min-height/max-height:100dvh, overflow-y
+//        auto y justify-content:safe center, con la tarjeta centrada por
+//        margin:auto 0.
+//
+//        Ese cambio se hizo la NOCHE ANTERIOR al primer informe de la casilla,
+//        nunca se verifico en dispositivo, y a partir de ahi se culpo al
+//        bloque de consentimiento durante siete rondas. El bloque estaba bien:
+//        lo que habia cambiado era el MARCO. Ahora la pantalla entera es la de
+//        produccion, salvo dos anadidos que no pueden ocultar nada: el sello de
+//        version y el respaldo del onsubmit.
+//
+//        ⚠️ test_auth_screen_scroll.js fijaba justo el cambio que habia que
+//        deshacer: TRECE aserciones defendiendo una variante local nunca
+//        verificada. Reescrito para exigir el mecanismo de produccion (que
+//        tambien desliza: max-height:100dvh + overflow-y:auto). Es la octava
+//        vez en este proyecto que un guard defiende el defecto.
+//
+//        🔑 LA REGLA: si hay que tocar la pantalla de acceso, se toca PRIMERO
+//        en produccion y se comprueba alli; aqui solo se copia.
+//        Red-check: 18 mutaciones.
+//
+//  v491: SE DESHACE TODO. EL BLOQUE DEL RGPD VUELVE A SER EL DE PRODUCCION.
+//        Aviso del autor (captura 8658): en cronos-futbol-app el registro
+//        funciona y la casilla se ve al final del formulario, encima del
+//        boton. Lo roto era TESTEO, no el mecanismo.
+//
+//        SE DESCARGO PRODUCCION Y SE COMPARO. Diferencias encontradas, todas
+//        introducidas por mi entre v485 y v490 persiguiendo una hipotesis
+//        equivocada (que un script lo ocultaba, o que el formulario lo
+//        empujaba fuera de la pantalla):
+//          · el contenedor nacia visible en vez de con display:none
+//          · una clase `auth-modo-login` en el <body> y una hoja con
+//            !important decidiendo por el
+//          · una banda `position:sticky` envolviendo casilla y boton
+//          · la casilla subida al principio del formulario
+//          · y despues metida dentro de #role-container
+//          · un vigia con MutationObserver
+//          · y, la peor, una llamada a switchTab('login') en el arranque del
+//            modulo: como auth.js es un modulo con medio arbol de imports
+//            detras, llegaba ~1 s tarde y era exactamente lo que hacia
+//            aparecer y desaparecer la casilla.
+//
+//        TODO ESO SE RETIRA. Queda lo que sirve produccion: el contenedor con
+//        display:none en el marcado, al final del formulario justo encima del
+//        boton; los dos onclick de las pestanas y las cuatro lineas de
+//        switchTab(), con setProperty(...,'important'). Nada muta el bloque al
+//        cargar la pagina: el aspecto inicial lo da el marcado y solo lo
+//        cambian los clics, que es justo por lo que produccion no parpadea.
+//
+//        SE CONSERVAN dos cosas que NO son de este bloque y si hacen falta:
+//          · el respaldo del enlace de invitacion (?register=true), que en
+//            produccion se deja la casilla sin mostrar y deja SIN casilla a
+//            quien llega invitado (capturas 8615/8616). Arreglado con el MISMO
+//            mecanismo: dos lineas de setProperty, nada nuevo.
+//          · el sello de version bajo el logo, que es lo que por fin permitio
+//            saber que codigo se estaba probando.
+//
+//        🔑 LA LECCION, y por eso el guard ahora compara contra produccion:
+//        CUANDO EXISTE UNA VERSION QUE FUNCIONA, SE COMPARA CONTRA ELLA ANTES
+//        DE TEORIZAR. Una descarga y un diff habrian cerrado esto en la
+//        primera ronda, en vez de en siete.
+//
+//        Red-check: 15 mutaciones, una por cada desviacion respecto a
+//        produccion. Una asercion mia daba VERDE con la casilla al principio
+//        del formulario; la cazo el red-check y esta corregida.
+//
+//  v490: LA CASILLA DEL RGPD SE MUDA DENTRO DE #role-container. EL SITIO BUENO.
+//        Reporte del autor (capturas 8651/8652): con v489 la casilla se ve en
+//        "ENTRAR" —donde NO tiene que estar, ahi ya se esta registrado— y en
+//        "REGISTRARSE" no aparece "ni arriba ni abajo". Es decir: exactamente
+//        al reves de lo que hace falta, y en las dos colocaciones probadas
+//        (al final en v487/v488, arriba del todo en v489).
+//
+//        EL RAZONAMIENTO QUE LO RESUELVE. Suelta en el formulario, la casilla
+//        no comparte suerte con nada: hay que acertar con reglas, clases y
+//        alturas, y ya se fallo cinco veces. #role-container, en cambio, es el
+//        bloque «¿Quien eres?» que el usuario SI ve aparecer al pulsar
+//        "REGISTRARSE" — funciona, y se le ve funcionar en sus propias
+//        capturas. Metiendo la casilla DENTRO, su visibilidad queda atada a la
+//        de ese bloque: si se ve el selector de rol, se ve la casilla. Y en
+//        "ENTRAR" el padre esta en display:none, asi que la pestana queda
+//        limpia, que es lo que se pidio. Las dos peticiones, con un solo
+//        cambio, y sin depender de ninguna regla nueva.
+//
+//        Lo gobiernan TRES escritores ya probados: el onclick de cada pestana
+//        (funcionan aunque el modulo no haya cargado) y switchTab(). Ademas
+//        doAuth() fuerza el contenedor a la vista antes de bloquear por falta
+//        de consentimiento: no se puede exigir algo que no se ve.
+//        Va la PRIMERA dentro del bloque, antes del «¿Quien eres?», para que
+//        lo que crece al elegir rol (club, categoria, subcategoria...) quede
+//        por debajo y no pueda empujarla fuera de la vista otra vez.
+//
+//        Se retira la copia suelta que ensuciaba "ENTRAR". Queda UNA sola
+//        casilla en todo el documento, y el guard lo comprueba.
+//        Red-check: 21 mutaciones.
+//
+//  v489: LA CASILLA DEL RGPD SUBE AL PRINCIPIO DEL FORMULARIO. RESUELTO.
+//        El dato que lo cerro (capturas 8647/8648/8649, ya con v488
+//        confirmada por el sello de version): en "ENTRAR" la casilla SE VE;
+//        en "REGISTRARSE" no, y "el formulario queda cortado antes del boton".
+//
+//        Eso descarta de raiz que nada la oculte: el mismo elemento, con la
+//        misma regla `display:block !important` sin excepciones, se pinta en
+//        una pestana y no en la otra. Lo unico que cambia entre las dos es la
+//        ALTURA del formulario. Y "cortado antes del boton" dice que tampoco
+//        se veia el boton: no faltaba la casilla, faltaba TODO EL FINAL del
+//        formulario, que quedaba por debajo del hueco visible.
+//
+//        CAUSA. Al pasar a registro crece todo lo que hay ENTRE las pestanas y
+//        el boton: dos contrasenas con sus dos avisos y el selector de rol
+//        (~280 px de golpe) y, ~1 s despues —cuando loadClubOptions() resuelve
+//        su lectura de Firestore y handleRoleChange() revela club, categoria y
+//        subcategoria—, otros ~200 px. Con la casilla al final, todo ese
+//        crecimiento la empujaba fuera de la pantalla.
+//
+//        ARREGLO. La casilla pasa a ser lo PRIMERO del formulario, justo bajo
+//        las pestanas. Todo lo que crece queda POR DEBAJO de ella, asi que su
+//        sitio en pantalla no se mueve. Es la unica colocacion que no depende
+//        de nada: ni de `position:sticky` (v487, que en su dispositivo no
+//        funciono), ni de que la pantalla deslice, ni de la altura de la
+//        tarjeta, ni de ningun script. Se retira la banda sticky de v487.
+//
+//        LECCION. Cuatro rondas buscando quien ocultaba un elemento que nunca
+//        estuvo oculto. El censo del codigo salio limpio dos veces y eso era
+//        el dato: cuando nadie lo esconde, el eje no es `display`. La pista
+//        definitiva la dio la ASIMETRIA entre las dos pestanas, que solo se
+//        explica por el tamano.
+//
+//        Guard: apartado 8 reescrito — la casilla tiene que ir por delante de
+//        email, contrasenas, rol, club, categoria, invitacion y boton.
+//        Red-check: 19 mutaciones.
+//
+//  v488: LA CASILLA DEL RGPD SE VE SIEMPRE, SIN MODO QUE VALGA. Y LA VERSION
+//        QUE SE EJECUTA, A LA VISTA.
+//        Cuarto reporte del mismo sintoma (capturas 8639/8640), esta vez con
+//        un dato nuevo: ocurre "al hacer Ctrl+Shift+R".
+//
+//        1) SIN EXCEPCIONES. Se retira la regla
+//           `body.auth-modo-login #gdpr-consent-container { display:none }`.
+//           La casilla se ve en las DOS pestanas. Mientras existiera un modo
+//           que la escondia, "no puede desaparecer bajo ningun concepto"
+//           dependia de que ninguna ruta se equivocara de modo — y eso ya
+//           habia fallado tres veces. Ahora no hay estado alguno en el que
+//           este oculta: ni clase, ni temporizador, ni orden de carga pueden
+//           quitarla. Instruccion explicita del autor. El coste es que en
+//           "Entrar" sobra una casilla; ya se eligio antes entre eso y romper
+//           el registro, y se eligio la fealdad. El requisito legal no se
+//           relaja: doAuth() sigue exigiendola marcada para dar de alta.
+//
+//        2) EL SELLO DE VERSION EN LA PANTALLA DE ACCESO. Bajo el logo se lee
+//           ahora "Coach Assistant · vNNN", y lo reescribe cache-bust.js en
+//           cada despliegue (no se puede quedar desfasado a mano). Tres rondas
+//           de este mismo fallo se fueron en no poder responder a una pregunta
+//           basica: si el navegador tenia el codigo nuevo o una copia vieja
+//           servida por el service worker. Con esto, una sola captura de la
+//           pantalla de acceso lo dice.
+//
+//        NOTA PARA QUIEN LEA ESTO DESPUES: en v487 la casilla ya era
+//        IMPOSIBLE de ver en modo login (el <body> nace con la clase y la
+//        oculta desde el primer fotograma), asi que el sintoma "aparece un
+//        segundo y desaparece" NO puede producirlo v487 — es la firma exacta
+//        de v485, donde nacia visible y switchTab('login') la escondia al
+//        terminar de cargar el modulo. De ahi el sello de version.
+//
+//        Guard: apartados 7b (barrido de TODAS las hojas, incluida style.css)
+//        y 7c (el sello coincide con CACHE_NAME). Red-check: 20 mutaciones.
+//
+//  v487: LA CASILLA DEL RGPD NUNCA ESTUVO OCULTA: SE IBA FUERA DE LA VISTA.
+//        Tercer reporte del mismo sintoma (capturas 8635/8636), y las dos
+//        rondas anteriores no lo tocaron porque buscaban en el sitio
+//        equivocado: `display`.
+//
+//        CAUSA REAL, en "Registrarse". Al pulsar la pestana crece TODO lo que
+//        va por encima de la casilla: las dos contrasenas con sus dos avisos y
+//        el selector de rol, ~280 px de golpe. Y aproximadamente UN SEGUNDO
+//        despues —lo que tarda loadClubOptions() en resolver su lectura de
+//        Firestore y handleRoleChange() en revelar club, categoria y
+//        subcategoria— se anaden otros ~200 px. En un movil eso empuja la
+//        casilla por debajo del borde de la pantalla justo en ese instante.
+//        Desde el telefono se ve exactamente como lo describia el reporte:
+//        "aparece un segundo y desaparece de inmediato". Nunca hubo ningun
+//        script ocultandola: el censo del codigo no encontraba al culpable
+//        porque no habia culpable.
+//
+//        ARREGLO. La casilla y el boton de envio pasan a una banda
+//        #auth-actions con `position:sticky; bottom:0`. Mientras el
+//        formulario quepa, la banda va en el flujo y no se nota nada; en
+//        cuanto no cabe, casilla y boton se quedan PEGADOS al fondo de lo que
+//        se ve. Es imposible llegar al boton sin tener la casilla justo
+//        encima. Fondo OPACO a proposito: translucido dejaria leerse el
+//        formulario por debajo al deslizar.
+//
+//        Y UNA RED, porque el reporte insistia en que "un script la oculta":
+//        un vigia (MutationObserver) deshace en el acto cualquier intento de
+//        ocultarla mientras se este viendo el registro, y APUNTA cada rescate
+//        en window._cronosGdprRescates. Si el sintoma volviera con esa lista
+//        vacia, queda demostrado que nadie la oculta. La senal de "se ve el
+//        registro" es role-container —lo que hay en pantalla—, no
+//        _isLoginMode, que es justo la variable que podria ir desincronizada;
+//        por eso los dos caminos de vuelta a login apagan role-container
+//        ANTES de tocar la clase.
+//
+//        Guard: scripts/test_consentimiento_visible_en_registro.js
+//        (apartados 8 y 9 nuevos; red-check con 16 mutaciones).
+//
+//  v486: LA CASILLA DE LA POLITICA DE PRIVACIDAD DEJA DE ESFUMARSE.
+//        Reporte del autor (capturas 8629/8630): la casilla se pinta al
+//        cargar y ~1 segundo despues DESAPARECE SOLA, dejando la pestana
+//        "Registrarse" sin nada que marcar mientras doAuth() lo exige.
+//
+//        CAUSA. No habia ningun script escondiendola por su cuenta: era
+//        switchTab('login'), que auth.js llama al terminar de evaluarse
+//        para dejar la pantalla en modo "Entrar". auth.js es un modulo con
+//        medio arbol de imports detras, asi que esa llamada llega ~1s
+//        tarde — y hasta entonces la casilla ya estaba en pantalla, porque
+//        desde v485 nace visible (fallo-seguro contra el defecto anterior,
+//        capturas 8615/8616). El resultado es que aparecia y se escondia
+//        sola en cada carga.
+//
+//        Y debajo estaba la causa comun de los DOS fallos: la visibilidad
+//        se escribia A MANO con style.setProperty('display', ...) desde
+//        CUATRO sitios (los dos onclick de las pestanas, switchTab() y el
+//        respaldo del enlace de invitacion). Cuatro sitios de los que
+//        acordarse, y un estado inicial que solo quedaba bien cuando
+//        llegaba el JS.
+//
+//        ARREGLO. Un UNICO interruptor: la clase `auth-modo-login` del
+//        <body>, con las reglas en un <style> del <head> de index.html
+//        (viaja con el marcado, no puede llegar tarde ni servirse
+//        desfasado). El estado inicial va en el propio <body>, asi que el
+//        primer fotograma ya es correcto: no hay parpadeo ni carrera.
+//        Los cuatro escritores pasan a tocar la clase; el `!important` de
+//        la hoja impide ademas que un `el.style.display='none'` descuidado
+//        vuelva a esconder la casilla.
+//
+//        De propina, el arranque de auth.js ya no devuelve a "Entrar" a
+//        quien llega por enlace de invitacion (?register=true): mirando
+//        solo role-container no se enteraba, porque el modulo se evalua
+//        ANTES del temporizador de 150 ms de ese respaldo. Y cuando ya se
+//        esta en registro llama a switchTab('register') en vez de salirse
+//        de puntillas, que dejaba _isLoginMode en true con la vista de
+//        registro delante (selector de clubes sin cargar y envio yendose
+//        por el camino de INICIAR SESION).
+//
+//        El requisito legal no se relaja: doAuth() sigue exigiendo la
+//        casilla marcada, y si falta ahora garantiza que este a la vista.
+//        Guard: scripts/test_consentimiento_visible_en_registro.js
+//        (reescrito; red-check con 8 mutaciones).
+//
+//  v476: LA MARCA SE ESCRIBE **CHRONOS**, Y LAS ROJAS SON ROJAS.
+//        Encargo del autor (capturas 8565/8566/8567).
+//
+//        1) ORTOGRAFIA. 93 sitios decian "CRONOS"/"Cronos" mientras
+//        index.html ya usaba "Chronos" en todas partes: la app se leia con
+//        las DOS grafias. Corregidos cabeceras de informes, el pie de los
+//        mensajes a padres, los correos y WhatsApp de facturacion, el aviso
+//        de actualizacion y la pagina de prueba de sonido. Las convocatorias
+//        y la planificacion semanal ya decian `_Chronos Futbol_`.
+//        🔑🔑 LO DELICADO ES LO QUE **NO** SE PUEDE TOCAR: suelto es marca,
+//        pero pegado a `_`, `-` o `.` es CODIGO. Quedan intactos, y un guard
+//        lo vigila: las colecciones (cronos_messages, cronos_player_reports,
+//        cronos_player_links, cronos_notifications, cronos_config), las
+//        variables (window._cronosCurrentUser, _CRONOS_DEBUG), el projectId
+//        (cronos-futbol-app), el nombre de esta cache… y sobre todo las
+//        CLAVES DE localStorage (cronos_active_match_v2, cronos_master_roster,
+//        cronos_teams): renombrar una de esas PIERDE los datos que el usuario
+//        ya tiene guardados, y no da ningun error al hacerlo.
+//        La sustitucion se hizo con limites que excluyen [A-Za-z0-9_-.].
+//
+//        2) LA COLUMNA "ROJAS" PINTABA UN CUADRADO VERDE en el resumen
+//        acumulado de la temporada (js/admin/shared/category-tree.js).
+//        🔑 Los cuadrados grandes van SEGUIDOS en Unicode y es facilisimo
+//        coger el de al lado: &#128997; 🟥 rojo · &#128998; azul ·
+//        &#128999; naranja · &#129000; 🟨 amarillo · &#129001; 🟩 VERDE.
+//        Estaba puesto 129001. Ahora 128997.
+//        ⚠️ El 🟩 NO se barrio a lo bruto: en el visor sigue significando
+//        "ENTRA" en los textos de sustitucion antiguos que aun se parsean.
+//        ⚠️ Un guard ajeno fijaba la errata (test_events_tab_module 5b, que
+//        afirmaba 'CRONOS FÚTBOL'). Van seis veces con guards ajenos.
+//  v475: LO QUE FALTABA DE v474 — LA CONSULTA, Y DONDE VIVEN LAS REGLAS.
+//        Segundo reporte (captura 8569): "Error al rechazar: perfil: Missing
+//        or insufficient permissions" + en consola "No se pudieron listar las
+//        solicitudes". Dos hallazgos, y el segundo es el importante:
+//
+//        🔑🔑🔑 EL DESPLIEGUE A TESTEO NO PUEDE CAMBIAR LAS REGLAS QUE EL
+//        PRUEBA. `firebaseConfig` esta fijado a `cronos-futbol-app`
+//        (js/services/firebase-init.js:75 y live.html), asi que
+//        cronos-futbol-test.web.app sirve el CODIGO nuevo pero habla con la
+//        base de datos y las REGLAS DE PRODUCCION. Comprobado con datos:
+//        el proyecto cronos-futbol-test no tiene NI UN documento (0 clubs,
+//        0 users, sin cronos_config), mientras que damasorv y sus 6
+//        platform_requests estan en produccion. `npm run deploy:staging`
+//        sube reglas a un proyecto que la app no consulta JAMAS.
+//
+//        🔑🔑 Y UN DEFECTO REAL DE LECTURA: Firestore autoriza una CONSULTA
+//        sin leer los documentos — la regla tiene que quedar garantizada por
+//        los FILTROS de la consulta. La limpieza filtraba solo por `userUid`,
+//        asi que `resource.data.clubId` era desconocido, ninguna rama podia
+//        darse por cierta y la consulta se denegaba ENTERA. El listado
+//        principal del panel ya filtraba por clubId y por eso si funcionaba.
+//        Arreglo en el CLIENTE (anadir `where('clubId','==',clubId)`), no en
+//        la regla: relajarla para que cualquier consulta valiera seria abrir
+//        la coleccion entera.
+//        ⚠️ `caForwardToSA` tenia la MISMA consulta y la tapaba un `catch(_)
+//        {}` mudo. Se ve en los datos de produccion: usuarios con su `fwd_*`
+//        ya aprobado y el `self_reg_*` original aun en pending_club_admin,
+//        que es justo lo que aparecia "colgado" en el panel.
+//        ⚠️ La regla de lectura decia `userId` y el campo que escriben auth.js
+//        y el panel es `userUid`: la rama "el solicitante lee su solicitud"
+//        no se cumplia nunca. Se anade la buena y se deja la vieja por legacy.
+//        ⚠️ `users` NUNCA tuvo problema de lectura (`allow read: if isAuth()`);
+//        lo que fallaba con el perfil era la ESCRITURA.
+//  v474: RECHAZAR UNA SOLICITUD DE REGISTRO. Reporte del autor (captura 8564):
+//        al rechazar la solicitud pendiente de damasorv@gmail.com desde el
+//        Panel de Administrador de Club saltaba "Error al rechazar: Missing or
+//        insufficient permissions" y la solicitud se quedaba colgada.
+//
+//        🔑🔑 LA CAUSA ESTABA EN LAS REGLAS, y era mas ancha que el sintoma:
+//        `platform_requests` solo dejaba BORRAR al SuperAdmin, y `users` solo
+//        le dejaba a el ESCRIBIR en el documento de otro. Es decir: la seccion
+//        "Solicitudes de Registro" del panel era decorativa para cualquiera
+//        que no fuera el SuperAdmin — aceptar, rechazar y bloquear son la
+//        MISMA escritura (isAuthorized/status) y las tres estaban cerradas.
+//        Comprobado EJECUTANDO las reglas contra la Rules REST API, y sobre el
+//        ruleset DESPLEGADO (identico al del repo en los dos proyectos), no
+//        deducido: scripts/test_reject_request_rules.js, 25 casos.
+//
+//        El arreglo va acotado por los dos lados: solo el ADMINISTRADOR de ese
+//        club/entidad (por claim, o por clubs/{id}.adminUid|adminEmail para el
+//        que aun no tiene claims), y solo sobre documentos que YA son de su
+//        club, limitado con hasOnly() a los campos de la decision de acceso.
+//        ⚠️ 'role', 'clubId' y 'clubName' quedan FUERA: sin ellos no puede
+//        ascender a nadie de rol ni arrastrar una cuenta al club de otro.
+//        ⚠️ NO se uso sameClubAsDoc(), que es el predicado habitual del
+//        fichero: solo mira token.clubId, y ESE claim lo lleva CUALQUIER
+//        miembro autorizado del club. Habria dado a toda la plantilla —un
+//        entrenador, un padre— el poder de aceptar y rechazar altas.
+//
+//        Y `caRejectRequest` tenia ademas dos defectos propios, que por si
+//        solos ya dejaban la solicitud colgada:
+//        🔑 LAS DOS LIMPIEZAS IBAN ENCADENADAS. Marcar el perfil y retirar la
+//        solicitud son independientes, pero un fallo al escribir el PERFIL
+//        lanzaba y la solicitud ni se intentaba borrar. Ahora se intentan las
+//        dos y solo hay error si fallan AMBAS.
+//        ⚠️ LOS BORRADOS NO SE ESPERABAN: iban sin `await` dentro de un
+//        forEach, asi que el repintado llegaba antes que Firestore y la
+//        solicitud recien rechazada VOLVIA A APARECER.
+//        ⚠️ El red-check corrigio dos aserciones mias que pasaban tambien con
+//        el codigo viejo: por el camino de platform_requests el fallo del
+//        perfil YA se toleraba; el encadenamiento roto estaba en el otro.
 //  v473: EL CSV, LEGIBLE DE VERDAD. Reporte del autor (captura 8561): Excel le
 //        abria el CSV con las tildes rotas (`CompeticiÃ³n`, `CategorÃ­a`,
 //        `LesiÃ³n`) y la ultima columna en ingles en crudo (`sub_out`, `goal`).
@@ -1647,7 +2130,7 @@
 //         derecha, se anade clase body.role-away + CSS para que hide-visitor oculte
 //         la sidebar izquierda (rival) en vez de la derecha (mia). Bug especifico
 //         del rol visitante; de local sin el checkbox ya funcionaba bien.
-//  CRONOS FUTBOL - Service Worker v186
+//  CHRONOS FUTBOL - Service Worker v186
 //  v186: FIX (continuacion v185) resultado V/D/E AUN invertido de VISITANTE en
 //         el Panel de Direccion y Mis Informes pese a que los docs en Firestore
 //         SI tenian myTeamRole correcto. RAIZ: al AGRUPAR los docs por partido
@@ -1929,7 +2412,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v473';
+const CACHE_NAME = 'cronos-cache-v509';
 
 const ASSETS = [
     './',
