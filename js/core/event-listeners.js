@@ -319,7 +319,18 @@ function spawnInitialPlayers() {
                 shortsColor: myColors.shorts,
                 textColor: myColors.text,
                 history: [], goals: 0, cards: 'ninguna', x: 0, y: 0,
-                convocado: true
+                convocado: true,
+                // ⚠️ PLAZAS DE APOYO (2026-08-12): este objeto se construye con
+                // una LISTA FIJA de campos, así que todo lo que no esté aquí se
+                // pierde entre la convocatoria y el partido. Sin estas cuatro
+                // líneas el invitado llegaba al informe indistinguible de un
+                // jugador de la casa y sus minutos no podían volver al acumulado
+                // de su categoría de origen — sin ningún error por el camino.
+                isGuest:           pData.isGuest === true,
+                originTeamId:      pData.originTeamId || '',
+                originCategory:    pData.originCategory || '',
+                originSubcategory: pData.originSubcategory || '',
+                originPlayerId:    pData.originPlayerId || ''
             };
             if (loadedMine) {
                 const saved = loadedMine.find(lp => lp.number == pData.number);

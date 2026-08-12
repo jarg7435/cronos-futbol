@@ -683,6 +683,7 @@ window._executeReportsSend = async function(method) {
                                     duration:      (typeof window.matchDuration !== 'undefined' ? window.matchDuration : ''),
                                     stoppageTime:  (typeof window.stoppageTime !== 'undefined' ? window.stoppageTime : 0),
                                     createdAt:     new Date().toISOString(),
+                                    ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
                                     playerNumber:  String(p.number || ''),
                                     playerAlias:   p.alias || p.name || '',
                                     position:      p.position || p.pos || '',
@@ -881,6 +882,7 @@ window._executeReportsSend = async function(method) {
                                   _cMatchSubcatFor(me, (typeof currentCategory!=='undefined'?currentCategory:'') || (typeof window.currentCategory!=='undefined'?window.currentCategory:'')))
                               : '',
                     createdAt: new Date().toISOString(),
+                    ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
                     position: p.position || p.pos || '',
                     goals: p.goals || 0, cards: p.cards || null, injured: p.injured || false,

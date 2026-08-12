@@ -238,6 +238,7 @@ async function autoDispatchMatchReports() {
                                                        _cMatchSubcatFor(me, window._currentMatchCategory || ''))
                                  : '',
                 createdAt:     new Date().toISOString(),
+                ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
                 playerNumber:  String(p.number || ''),
                 playerAlias:   p.alias || p.name || '',
                 position:      p.position || p.pos || '',
@@ -502,6 +503,7 @@ async function autoDispatchMatchReports() {
                                                            _cMatchSubcatFor(me, window._currentMatchCategory || ''))
                                      : '',
                     createdAt:     new Date().toISOString(),
+                    ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
                     playerNumber:  String(p.number||''),
                     playerAlias:   p.alias || p.name || '',
                     position:      p.position || p.pos || '',

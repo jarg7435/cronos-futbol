@@ -458,6 +458,47 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCIÓN: clubs/{clubId}/team_rosters/{teamId}
+    //
+    // COPIA SIN DATOS PERSONALES de la plantilla de cada equipo. Existe
+    // para las PLAZAS DE APOYO (2026-08-12): un entrenador puede convocar
+    // puntualmente a un jugador de otra categoría o del filial, y para
+    // elegirlo necesita ver los dorsales y alias de ese otro equipo.
+    //
+    // ⚠️⚠️ POR QUÉ ESTA COLECCIÓN Y NO ABRIR users/{uid}/cronos_data:
+    // ahí la plantilla NO vive sola — comparte documento con
+    // cronos_email_config, que son los CORREOS Y TELÉFONOS DE TODOS LOS
+    // PADRES del equipo. Relajar aquella regla para que se vieran los
+    // dorsales habría publicado de paso el directorio de contactos del club
+    // entero. Aquí sólo se escribe { ficha, dorsal, nombre, alias }, que es
+    // exactamente lo que el autor autorizó a compartir.
+    //
+    // ESCRITURA: sólo el entrenador dueño del equipo.
+    // ⚠️ En el update se compara contra resource.data (lo GUARDADO) Y contra
+    // el payload entrante. Mirar sólo el entrante dejaría que cualquiera
+    // reescribiese la plantilla de otro equipo poniéndose a sí mismo como
+    // coachUid — es literalmente el agujero que se cerró en
+    // cronos_player_reports en v435.
+    // ============================================================
+    match /clubs/{clubId}/team_rosters/{teamId} {
+      allow read: if isAuth() && (
+                       isSuperAdmin() ||
+                       sameClubAsDoc(clubId) ||
+                       isClubAdminOf(clubId) ||
+                       userDocClubId(clubId)
+                     );
+      allow create: if isAuth() &&
+                       request.auth.uid == request.resource.data.get('coachUid', null);
+      allow update: if isAuth() &&
+                       request.auth.uid == resource.data.get('coachUid', null) &&
+                       request.auth.uid == request.resource.data.get('coachUid', null);
+      allow delete: if isAuth() && (
+                       isSuperAdmin() ||
+                       request.auth.uid == resource.data.get('coachUid', null)
+                     );
+    }
+
+    // ============================================================
     // COLECCIÓN: clubs_public
     // Espejo PÚBLICO de clubs con solo 3 campos: name, type, status.
     // Permite que el formulario de registro liste los clubes/entes

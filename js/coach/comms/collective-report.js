@@ -407,6 +407,8 @@ window._sendCollectiveReportNow = async function() {
                 stoppageTime:   (typeof window.stoppageTime !== 'undefined' ? window.stoppageTime : 0),
                 createdAt,
                 // Datos del jugador con historial COMPLETO para el Gantt
+                // Plazas de apoyo: si es invitado viaja su ficha de origen.
+                ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
                 playerNumber:   String(p.number || ''),
                 playerAlias:    p.alias || p.name || '',
                 position:       p.position || p.pos || '',

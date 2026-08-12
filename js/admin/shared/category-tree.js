@@ -438,11 +438,18 @@
 
             var subs = (window.CT_SUBCATS || []).map(function (subId) {
                 var arr = subMap.get(subId) || [];
-                var cabecera = (arr.length && renderSubHeader)
+                // opts.alwaysSubHeader: llama a renderSubHeader TAMBIÉN en las
+                // subcategorías vacías. Existe por el filial cuyos jugadores
+                // sólo han jugado cedidos hacia arriba: no tiene ni un partido
+                // propio, así que sin esto su rama nunca preguntaba por las
+                // colaboraciones y el trabajo de esos chavales no se veía en
+                // ningún sitio. Por defecto va APAGADO y el marcado sale
+                // idéntico al de siempre.
+                var cabecera = (renderSubHeader && (arr.length || opts.alwaysSubHeader))
                     ? (renderSubHeader(arr, catDef.id, subId) || '') : '';
                 var body = arr.length
                     ? (cabecera + arr.map(renderLeaf).join(''))
-                    : '<div class="ct-tree-empty">' + _eH(emptyText) + '</div>';
+                    : (cabecera + '<div class="ct-tree-empty">' + _eH(emptyText) + '</div>');
                 return '' +
                 '<div class="ct-tree-sub">' +
                     '<div class="ct-tree-head" onclick="ctToggleNode(this)">' +
@@ -679,17 +686,43 @@
                 const alias = String(p.playerAlias || p.playerName || '').trim();
                 // Sin dorsal se agrupa por alias; el prefijo evita que un alias
                 // que parezca un número se mezcle con el dorsal de otro.
-                const key = num ? ('n:' + num) : ('a:' + alias.toLowerCase());
+                //
+                // 🔑 EL INVITADO SE AGRUPA POR SU FICHA, NO POR EL DORSAL
+                // (plazas de apoyo, 2026-08-12). Un jugador que sube del cadete
+                // suele llevar un dorsal libre del equipo anfitrión, y ese
+                // dorsal ES DE OTRO en los demás partidos: agrupando por número
+                // los dos se fundían en una sola fila y el acumulado del equipo
+                // atribuía a uno los minutos del otro. La ficha ('CDA07') es
+                // única en el club, que es justo para lo que el autor pidió
+                // conservarla.
+                const key = (p.isGuest === true && p.originPlayerId)
+                    ? ('f:' + String(p.originPlayerId))
+                    : (num ? ('n:' + num) : ('a:' + alias.toLowerCase()));
                 if (key === 'a:') return;   // ni dorsal ni alias: no es un jugador
 
                 let f = porJugador.get(key);
                 if (!f) {
-                    f = { number: num, alias: alias, called: 0, pj: 0, seconds: 0,
+                    f = { number: num, alias: alias, ficha: '', called: 0, pj: 0, seconds: 0,
                           minutes: 0, goals: 0, yellow: 0, red: 0, injuries: 0 };
                     porJugador.set(key, f);
                 }
                 // El alias puede llegar vacío en un partido y relleno en otro.
                 if (alias) f.alias = alias;
+
+                // 🔑 EL INVITADO SE MARCA EN LA TABLA DEL EQUIPO DE ACOGIDA
+                // (2026-08-12, petición del autor): sale en la lista del
+                // Juvenil B como uno más —sus minutos SÍ son del Juvenil B—,
+                // pero en una línea diferenciada, porque un acumulado que no
+                // distingue a un cedido de un jugador de la casa induce a
+                // error al leer la temporada del equipo.
+                if (p.isGuest === true) {
+                    f.isGuest = true;
+                    if (p.originPlayerId) f.ficha = String(p.originPlayerId);
+                    const _oc = window.ctNormCat(p.originCategory || '');
+                    const _os = window.ctNormSubcat(p.originSubcategory || '');
+                    const _lbl = _ctTeamLabel(_oc, _os);
+                    if (_lbl) f.originLabel = _lbl;
+                }
 
                 const secs = _ctToSeconds(p.minutesPlayed);
                 f.called  += 1;
@@ -734,15 +767,202 @@
             'border-bottom:none;font-weight:700;color:#79c0ff;}' +
         '.ct-stats-zero{color:#4d5566;}' +
         '.ct-stats-empty{padding:0.8rem;font-size:0.76rem;color:#8b949e;}' +
+        // Filas de COLABORACIÓN con otro equipo (plazas de apoyo). Malva, el
+        // mismo color con el que se marcan las plazas de apoyo en la plantilla
+        // y en la convocatoria: el entrenador ya asocia ese color a "prestado".
+        '.ct-stats tr.ct-stats-guest td{background:rgba(210,168,255,0.07);color:#d2a8ff;}' +
+        '.ct-stats tr.ct-stats-guest td.ct-stats-name{color:#d2a8ff;font-weight:600;}' +
+        '.ct-stats-guest-tag{display:inline-block;font-size:0.6rem;font-weight:700;' +
+            'background:rgba(210,168,255,0.16);border:1px solid rgba(210,168,255,0.3);' +
+            'border-radius:5px;padding:1px 5px;margin-left:0.35rem;white-space:nowrap;}' +
+        '.ct-stats-guest-head td{background:rgba(210,168,255,0.04);color:#8b949e;' +
+            'font-size:0.66rem;text-align:left;font-style:italic;}' +
+        // ⬆ INVITADO EN EL EQUIPO DE ACOGIDA: naranja. A propósito DISTINTO del
+        // malva de las colaboraciones: son dos cosas opuestas y coincidirían en
+        // la pantalla del mismo Director. Naranja = "juega aquí y no es de
+        // aquí"; malva = "es de aquí y ha jugado fuera".
+        '.ct-stats tr.ct-stats-in td{background:rgba(240,136,62,0.07);color:#f0883e;}' +
+        '.ct-stats tr.ct-stats-in td.ct-stats-name{color:#f0883e;font-weight:600;}' +
+        '.ct-stats-in-tag{display:inline-block;font-size:0.6rem;font-weight:700;color:#f0883e;' +
+            'background:rgba(240,136,62,0.16);border:1px solid rgba(240,136,62,0.32);' +
+            'border-radius:5px;padding:1px 5px;margin-left:0.35rem;white-space:nowrap;}' +
+        // Jugador de la plantilla que aún no ha jugado: se ve, pero apagado.
+        '.ct-stats tr.ct-stats-idle td{opacity:0.62;}' +
+        '.ct-stats-idle-tag{display:inline-block;font-size:0.58rem;font-weight:600;color:#8b949e;' +
+            'background:rgba(255,255,255,0.05);border-radius:5px;padding:1px 5px;' +
+            'margin-left:0.35rem;white-space:nowrap;}' +
         '</style>';
+
+    // ════════════════════════════════════════════════════════════════
+    //  COLABORACIONES CON OTROS EQUIPOS (plazas de apoyo, 2026-08-12)
+    //
+    //  ctAccumulateGuestStats(matches, catId, subId) → filas
+    //
+    //  Qué resuelve: cuando un cadete sube a jugar con el juvenil, su informe
+    //  se escribe DENTRO del partido del juvenil, así que el árbol —que
+    //  agrupa por la categoría DEL PARTIDO— lo deja en la rama del juvenil y
+    //  en el acumulado de su propio equipo no aparece por ningún lado.
+    //
+    //  Esta función recorre TODOS los partidos del club y se queda sólo con
+    //  las líneas marcadas isGuest cuyo ORIGEN es el equipo (catId, subId)
+    //  que se está pintando. El resultado va como fila supletoria, aparte y
+    //  de otro color: es el requisito literal del autor —"permitiendo ver
+    //  ambas realidades de forma clara"—, y por eso NO se suma a la fila
+    //  normal del jugador ni a los totales del equipo.
+    //
+    //  ⚠️ Se agrupa por FICHA de origen. Es el único identificador estable:
+    //  el dorsal con el que juega prestado no es suyo.
+    // ════════════════════════════════════════════════════════════════
+    window.ctAccumulateGuestStats = function (matches, catId, subId) {
+        const porFicha = new Map();
+        const nc = window.ctNormCat, ns = window.ctNormSubcat;
+
+        (matches || []).forEach(function (m) {
+            const players = (m && Array.isArray(m.players)) ? m.players : [];
+            // Equipo ANFITRIÓN: sale del propio documento del informe, que es
+            // el del partido en el que colaboró.
+            const anfCat = nc(m && (m.category != null ? m.category : ''));
+            const anfSub = ns(m && (m.subcategory || ''));
+
+            players.forEach(function (p) {
+                if (!p || p.isGuest !== true) return;
+                if (nc(p.originCategory || '') !== catId) return;
+                if (ns(p.originSubcategory || '') !== subId) return;
+
+                const ficha = String(p.originPlayerId || '').trim();
+                const alias = String(p.playerAlias || p.playerName || '').trim();
+                const key = ficha ? ('f:' + ficha) : ('a:' + alias.toLowerCase());
+                if (key === 'a:') return;
+
+                let f = porFicha.get(key);
+                if (!f) {
+                    f = { number: '', alias: alias, ficha: ficha, called: 0, pj: 0,
+                          seconds: 0, minutes: 0, goals: 0, yellow: 0, red: 0,
+                          injuries: 0, hosts: [] };
+                    porFicha.set(key, f);
+                }
+                if (alias) f.alias = alias;
+
+                const etiqueta = _ctTeamLabel(anfCat, anfSub);
+                if (etiqueta && f.hosts.indexOf(etiqueta) === -1) f.hosts.push(etiqueta);
+
+                const secs = _ctToSeconds(p.minutesPlayed);
+                f.called += 1;
+                if (secs > 0) f.pj += 1;
+                f.seconds += secs;
+                f.goals   += Number(p.goals) || 0;
+                f.yellow  += _ctYellowsIn(p.history);
+                if (_ctIsRed(p.cards)) f.red += 1;
+                if (p.injured === true) f.injuries += 1;
+            });
+        });
+
+        const filas = [...porFicha.values()];
+        filas.forEach(function (f) { f.minutes = Math.floor(f.seconds / 60); });
+        filas.sort(function (a, b) {
+            return String(a.alias).localeCompare(String(b.alias));
+        });
+        return filas;
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  LA PLANTILLA ENTERA EN EL ACUMULADO (2026-08-12, petición del autor)
+    //
+    //  ctMergeSquadRows(filas, plantilla) → filas
+    //
+    //  Hasta ahora la tabla se construía SÓLO con quien aparecía en algún
+    //  informe: un F11 de 25 fichas enseñaba 14 nombres y el resto no existía.
+    //  El autor quiere la lista OFICIAL del equipo, con ceros para quien no ha
+    //  jugado todavía.
+    //
+    //  🔑 DE DÓNDE SALE LA PLANTILLA, Y POR QUÉ AHORA SÍ SE PUEDE. La cabecera
+    //  de este módulo explicaba que la tabla NO usa la plantilla real porque
+    //  vive en users/{uid}/cronos_data —sólo su dueño— y ese documento
+    //  contiene los correos y teléfonos de todos los padres. Eso SIGUE SIENDO
+    //  CIERTO. Lo que ha cambiado es que existe una copia SIN datos personales
+    //  en clubs/{clubId}/team_rosters (ficha, dorsal, nombre, alias), que es de
+    //  donde se lee. No se ha ampliado el acceso a ningún dato personal.
+    //
+    //  ⚠️ SIN PLANTILLA PUBLICADA NO SE INVENTA NADA: si el equipo no tiene
+    //  copia (su entrenador no ha guardado desde el cambio), la tabla queda
+    //  exactamente como antes. Es degradación limpia, no un hueco.
+    //
+    //  🔑 EL CRUCE ES POR FICHA Y, SI FALTA, POR DORSAL. Nunca por alias: dos
+    //  hermanos pueden compartirlo y se fundirían en una fila.
+    // ════════════════════════════════════════════════════════════════
+    window.ctMergeSquadRows = function (filas, plantilla) {
+        filas = Array.isArray(filas) ? filas : [];
+        if (!Array.isArray(plantilla) || !plantilla.length) return filas;
+
+        const porFicha  = new Map();
+        const porDorsal = new Map();
+        filas.forEach(function (f) {
+            if (f.ficha) porFicha.set(String(f.ficha), f);
+            if (f.number) porDorsal.set(String(f.number), f);
+        });
+
+        const out = filas.slice();
+        plantilla.forEach(function (p) {
+            if (!p) return;
+            const ficha  = String(p.ficha || '').trim();
+            const dorsal = String(p.dorsal == null ? '' : p.dorsal).trim();
+            const alias  = String(p.alias || p.nombre || '').trim();
+
+            // ⚠️ HACE FALTA NOMBRE, NO BASTA CON DORSAL. Las filas vacías de la
+            // plantilla llevan un dorsal de relleno (1..25) y ningún nombre:
+            // aceptándolas, un F11 a medio rellenar metía once filas fantasma
+            // "Sin nombre" en el acumulado del equipo. Lo cazó el guard.
+            if (!alias) return;
+
+            // 🔑 SE CRUZA POR FICHA **Y** POR DORSAL, no por una u otra.
+            // Las líneas de informe de un jugador de la casa NO llevan ficha
+            // (sólo la llevan los invitados), así que comprobar la ficha del
+            // lado de la plantilla y darla por no encontrada duplicaba a TODO
+            // jugador con informes en cuanto su plantilla publicada sí traía
+            // código. También lo cazó el guard.
+            if (ficha && porFicha.has(ficha)) return;      // ya tiene informes
+            if (dorsal && porDorsal.has(dorsal)) return;
+
+            out.push({ number: dorsal, alias: alias || 'Sin nombre', ficha: ficha,
+                       called: 0, pj: 0, seconds: 0, minutes: 0, goals: 0,
+                       yellow: 0, red: 0, injuries: 0, sinDatos: true });
+        });
+
+        // Mismo orden que ctAccumulatePlayerStats: dorsal NUMÉRICO y los que no
+        // tienen dorsal al final, por alias. Si no, los añadidos se apilarían
+        // todos abajo y la lista dejaría de leerse como una plantilla.
+        out.sort(function (a, b) {
+            const na = a.number ? parseInt(a.number, 10) : Infinity;
+            const nb = b.number ? parseInt(b.number, 10) : Infinity;
+            if (na !== nb) return na - nb;
+            return String(a.alias || '').localeCompare(String(b.alias || ''));
+        });
+        return out;
+    };
+
+    // Etiqueta legible de un equipo a partir de sus ids ya normalizados.
+    function _ctTeamLabel(catId, subId) {
+        const def = (window.CT_CATEGORIES || []).filter(function (c) { return c.id === catId; })[0];
+        const base = def ? def.label : String(catId || '');
+        if (!base) return '';
+        return (base + ' ' + String(subId || '')).trim();
+    }
 
     // ctRenderStatsTable(filas[, opts]) → HTML de la tabla resumen acumulada.
     //   opts.matchCount: partidos que ha disputado el EQUIPO. Va a la celda PJ
     //   de la fila de totales; sin él, esa celda queda con un guion.
+    //   opts.guestRows:  filas de ctAccumulateGuestStats. Se pintan DEBAJO de
+    //   las normales, en malva y con la etiqueta del equipo con el que
+    //   colaboró. Sin ellas el marcado sale idéntico al de siempre.
     window.ctRenderStatsTable = function (filas, opts) {
         filas = Array.isArray(filas) ? filas : [];
         opts = opts || {};
-        if (!filas.length) {
+        // ⚠️ EL VACÍO SE MIDE CONTRA LAS DOS LISTAS. Un equipo puede no tener
+        // ni un informe propio y aun así tener jugadores cedidos a categorías
+        // superiores (justo el caso de un filial). Mirando sólo `filas`, esa
+        // tabla se quedaba en "todavía no hay informes" y las colaboraciones
+        // no se veían en ninguna parte.
+        if (!filas.length && !(Array.isArray(opts.guestRows) && opts.guestRows.length)) {
             return window.CT_STATS_CSS +
                 '<div class="ct-stats-wrap"><div class="ct-stats-empty">' +
                 'Todavía no hay informes de este equipo, así que no hay acumulado de temporada.' +
@@ -769,11 +989,28 @@
         const totPj = (typeof opts.matchCount === 'number' && isFinite(opts.matchCount))
             ? String(opts.matchCount) : '-';
 
+        const _sinJugar = filas.filter(function (f) { return f.sinDatos; }).length;
+
         const cuerpo = filas.map(function (f) {
-            return '<tr>' +
+            // Tres estados de fila, y cada uno se lee de un vistazo:
+            //  · normal            → sin clase
+            //  · INVITADO (naranja)→ juega aquí pero es de otra categoría
+            //  · sin minutos (gris)→ está en la plantilla y no ha jugado
+            const clases = [];
+            if (f.isGuest) clases.push('ct-stats-in');
+            if (f.sinDatos) clases.push('ct-stats-idle');
+            return '<tr' + (clases.length ? ' class="' + clases.join(' ') + '"' : '') + '>' +
                 '<td class="ct-stats-name">' +
                     '<span class="ct-stats-dorsal">' + _eH(f.number || '—') + '</span> ' +
                     _eH(f.alias || 'Sin nombre') +
+                    (f.isGuest
+                        ? '<span class="ct-stats-in-tag" title="Jugador de apoyo: pertenece a otra categoría del club">' +
+                          '&#8593; ' + _eH(f.originLabel || 'otra categoría') +
+                          (f.ficha ? ' · ' + _eH(f.ficha) : '') + '</span>'
+                        : '') +
+                    (f.sinDatos
+                        ? '<span class="ct-stats-idle-tag" title="En la plantilla, sin minutos todavía">sin jugar</span>'
+                        : '') +
                 '</td>' +
                 cel(f.pj) +
                 cel(f.minutes) +
@@ -784,10 +1021,44 @@
             '</tr>';
         }).join('');
 
+        // ── Filas supletorias de colaboración ────────────────────────────
+        // Van DESPUÉS del cuerpo normal y NO entran en `tot`: los goles que un
+        // cadete marcó jugando con el juvenil no son goles del cadete, y
+        // sumarlos al total del equipo falsearía su temporada.
+        const invitadas = Array.isArray(opts.guestRows) ? opts.guestRows : [];
+        const cuerpoInv = invitadas.length ? (
+            '<tr class="ct-stats-guest-head"><td colspan="7">' +
+                '&#8593; Colaboraciones con otros equipos del club ' +
+                '(no suman en el total de este equipo)' +
+            '</td></tr>' +
+            invitadas.map(function (f) {
+                const conQuien = (f.hosts && f.hosts.length)
+                    ? f.hosts.join(' · ') : 'otro equipo';
+                return '<tr class="ct-stats-guest">' +
+                    '<td class="ct-stats-name">' +
+                        '<span class="ct-stats-dorsal">' + _eH(f.ficha || f.number || '—') + '</span> ' +
+                        _eH(f.alias || 'Sin nombre') +
+                        '<span class="ct-stats-guest-tag">&#8593; ' + _eH(conQuien) + '</span>' +
+                    '</td>' +
+                    cel(f.pj) +
+                    cel(f.minutes) +
+                    cel(f.goals) +
+                    cel(f.yellow) +
+                    cel(f.red) +
+                    cel(f.injuries) +
+                '</tr>';
+            }).join('')
+        ) : '';
+
         return window.CT_STATS_CSS +
         '<div class="ct-stats-wrap"><table class="ct-stats">' +
+            // ⚠️ El rótulo dejó de poder decir "N jugadores con informes" en
+            // cuanto la tabla lista la plantilla ENTERA: quien no ha jugado no
+            // tiene informes. Se dicen las dos cifras, que es la información
+            // que el Director quiere de un vistazo.
             '<caption>Resumen acumulado de la temporada · ' + filas.length + ' jugador' +
-                (filas.length === 1 ? '' : 'es') + ' con informes</caption>' +
+                (filas.length === 1 ? '' : 'es') +
+                (_sinJugar ? ' (' + _sinJugar + ' sin jugar)' : '') + '</caption>' +
             '<thead><tr>' +
                 '<th class="ct-stats-name">Jugador</th>' +
                 '<th title="Partidos jugados">PJ</th>' +
@@ -802,7 +1073,7 @@
                 '<th title="Tarjetas rojas">&#128997; Rojas</th>' +
                 '<th title="Partidos con lesión">Lesiones</th>' +
             '</tr></thead>' +
-            '<tbody>' + cuerpo + '</tbody>' +
+            '<tbody>' + cuerpo + cuerpoInv + '</tbody>' +
             '<tfoot><tr class="ct-stats-total">' +
                 '<td class="ct-stats-name">Total equipo</td>' +
                 '<td title="Partidos disputados por el equipo">' + totPj + '</td>' +

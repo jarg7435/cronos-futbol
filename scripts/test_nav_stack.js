@@ -1467,7 +1467,13 @@ console.log('\n── PARTE 24 · censo de todas las ✕ del area del Entrenador
     // momento de pensar si esa ✕ debe sacar al selector o volver.
     ok('24·total · 12 salidas al selector en el area (subir esto es DELIBERADO)',
        totalSalidas === 12, 'encontradas: ' + totalSalidas);
-    ok('24·total · y 17 botones ✕ censados en el area', totalEquis === 17,
+    // 2026-08-12 · 17 -> 18. La ✕ nueva es la de una PLAZA DE APOYO en
+    // openRosterManager (js/core/staff-and-comms.js): vacia esa fila
+    // supletoria llamando a cronosClearSupportSlot(), que repinta la
+    // plantilla. NO es un cierre de pantalla y no puede dejar el campo al
+    // aire — la plantilla sigue delante. Revisado al subir el numero, que es
+    // para lo que esta este alambre.
+    ok('24·total · y 18 botones ✕ censados en el area', totalEquis === 18,
        'encontrados: ' + totalEquis);
 
     // ⚠️ HALLAZGO DE ESTE CENSO, DECLARADO Y NO TOCADO: quedan 3 ✕ cableadas a

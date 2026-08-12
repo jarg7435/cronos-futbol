@@ -334,9 +334,36 @@ window.openMisInformes = async function openMisInformes() {
 
             // matchCount = partidos del EQUIPO, que es lo que va en la celda PJ
             // de la fila de totales (sin él sale un guion).
+            let _miFilas = window.ctAccumulatePlayerStats(_miParaResumen);
+
+            // 🔑 LA PLANTILLA ENTERA, TAMBIÉN AQUÍ (autor, 2026-08-12). El
+            // entrenador no necesita leer nada de la nube: SU plantilla está en
+            // localStorage. Se transforma al mismo formato que publica
+            // team-rosters.js para reutilizar ctMergeSquadRows tal cual.
+            // ⚠️ Se juntan las dos modalidades: el mismo entrenador puede tener
+            // plantilla de F7 y de F11, y "Mis Informes" no distingue.
+            try {
+                if (typeof window.ctMergeSquadRows === 'function') {
+                    const _r = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+                    const _vistos = Object.create(null);
+                    const _sq = [];
+                    ['f7', 'f11'].forEach(function (m) {
+                        (Array.isArray(_r[m]) ? _r[m] : []).forEach(function (p) {
+                            if (!p) return;
+                            const alias = String(p.alias || p.name || '').trim();
+                            if (!alias) return;                       // fila vacía
+                            const k = String(p.id || '') || ('d:' + String(p.number || '') + alias.toLowerCase());
+                            if (_vistos[k]) return;
+                            _vistos[k] = true;
+                            _sq.push({ ficha: p.id || '', dorsal: p.number, nombre: p.name || '', alias: alias });
+                        });
+                    });
+                    if (_sq.length) _miFilas = window.ctMergeSquadRows(_miFilas, _sq);
+                }
+            } catch (_) { /* sin plantilla local, la tabla sale como antes */ }
+
             _miResumenHtml = barra + window.ctRenderStatsTable(
-                window.ctAccumulatePlayerStats(_miParaResumen),
-                { matchCount: _miParaResumen.length }
+                _miFilas, { matchCount: _miParaResumen.length }
             );
         }
 

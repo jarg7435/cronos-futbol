@@ -2412,7 +2412,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v511';
+const CACHE_NAME = 'cronos-cache-v516';
 
 const ASSETS = [
     './',
@@ -2456,6 +2456,8 @@ const ASSETS = [
     './js/match/live/sync.js',
     './js/roster/formations.js',
     './js/roster/legacy-formations.js',
+    './js/roster/team-rosters.js',
+    './js/roster/guest-picker.js',
     './js/ui/bench-scroll.js',
     './js/ui/render.js',
     './js/ui/drag-drop.js',

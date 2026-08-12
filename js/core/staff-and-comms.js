@@ -103,6 +103,43 @@ function renderStaffInBench() {
 // filtrando por la MODALIDAD actual (F7 o F11). Si el entrenador tiene
 // Juvenil B (F11) y crea una plantilla F7, NO debe usar JVB sino la categoría
 // F7 que tenga registrada (si la tiene). Si no tiene ninguna F7, usa fallback.
+// ════════════════════════════════════════════════════════════════════
+//  MODALIDAD ACTIVA (F7 / F11) — resolutor único
+// ════════════════════════════════════════════════════════════════════
+//  🔑🔑🔑 EL PROBLEMA QUE RESUELVE, y por qué no basta con un `?.`:
+//  el <select id="setup-mode"> vive DENTRO de #setup-modal, y
+//  openRosterManager REESCRIBE el innerHTML de ese modal con la tabla de la
+//  plantilla. Desde la pantalla de plantilla en adelante, el elemento YA NO
+//  EXISTE. Todo lo que se llame desde ahí y pregunte por él recibe null.
+//
+//  Eso daba tres fallos distintos, dos de ellos ANTERIORES a las plazas de
+//  apoyo y ninguno evidente:
+//    1. 💥 openRosterManager leía `.value` SIN protección → TypeError. Sólo
+//       saltaba al repintar desde la propia pantalla: con el botón nuevo de
+//       plazas de apoyo y, desde siempre, con "🗑️ BORRAR PLANTILLA", que
+//       termina llamando a openRosterManager.
+//    2. 🤫 showRosterPreview (js/ai/import.js) caía a 'f11' por defecto: una
+//       foto importada con IA estando en Fútbol 7 se escribía en la plantilla
+//       de Fútbol 11. Sin error y sin aviso.
+//    3. 🤫 El selector de jugador invitado caía a 'f7': en F11 ofrecía las
+//       plantillas de F7 de los demás equipos.
+//
+//  ⚠️ POR QUÉ SE RECUERDA Y NO SE ADIVINA: un valor por defecto es
+//  precisamente lo que causaba (2) y (3). Aquí se memoriza la última
+//  modalidad LEÍDA DEL SELECT, que es el dato real, y sólo se cae a
+//  currentMode —el modo del partido en curso— y por último a 'f7'.
+window._cronosLastRosterMode = null;
+window.cronosActiveMode = function () {
+    try {
+        var el = document.getElementById('setup-mode');
+        if (el && el.value) { window._cronosLastRosterMode = el.value; return el.value; }
+    } catch (e) {}
+    if (window._cronosLastRosterMode) return window._cronosLastRosterMode;
+    if (typeof window.currentMode === 'string' && window.currentMode) return window.currentMode;
+    try { if (typeof currentMode === 'string' && currentMode) return currentMode; } catch (e) {}
+    return 'f7';
+};
+
 window._cronosGeneratePlayerId = function(index) {
     var cat = '';
     var sub = 'A';
@@ -159,27 +196,125 @@ window._cronosGeneratePlayerId = function(index) {
     return prefix + sub + num;
 };
 
+// ── PLAZAS DE APOYO (2026-08-12) ────────────────────────────────────
+// La plantilla BASE sigue siendo 18 en F7 y 25 en F11, intacta. Por encima
+// de esa base pueden crecer hasta 7 filas supletorias para incorporar
+// puntualmente a jugadores de otra categoría o del filial.
+window.CRONOS_ROSTER_BASE  = { f7: 18, f11: 25 };
+window.CRONOS_ROSTER_EXTRA = 7;
+window._cronosRosterBase = function (mode) {
+    return window.CRONOS_ROSTER_BASE[mode === 'f7' ? 'f7' : 'f11'];
+};
+
+// Vuelca las filas de la tabla al formato de la plantilla.
+//
+// 🔑 EXISTE PARA NO PERDER EL ORIGEN DEL INVITADO. saveMasterRoster leía las
+// cinco casillas visibles y construía un objeto nuevo; una fila de apoyo
+// habría perdido en cada guardado su ficha de origen, su equipo y su
+// condición de invitada, en silencio y sin ningún error. Los campos de
+// origen viajan en data-* de la fila y se recogen aquí, en UN SOLO SITIO,
+// que es lo que garantiza que los dos llamadores (guardar y añadir plaza)
+// no se separen.
+window._cronosHarvestRosterRows = function () {
+    const rows = document.querySelectorAll('#roster-tbody tr');
+    return Array.from(rows).map(row => {
+        const id      = row.querySelector('.r-id')?.value || '';
+        const number  = row.querySelector('.r-num')?.value || '';
+        const name    = (row.querySelector('.r-name')?.value || '').trim();
+        const surname = (row.querySelector('.r-surname')?.value || '').trim();
+        let   alias   = (row.querySelector('.r-alias')?.value || '').trim();
+        if (!alias && name) alias = name.split(' ')[0];
+
+        const base = { id, number, name, surname, alias };
+        if (row.dataset.extra === '1') base.isSupport = true;
+        if (row.dataset.guest === '1') {
+            base.isGuest           = true;
+            base.originTeamId      = row.dataset.originTeam || '';
+            base.originCategory    = row.dataset.originCat  || '';
+            base.originSubcategory = row.dataset.originSub  || '';
+            base.originPlayerId    = row.dataset.originFicha || '';
+        }
+        return base;
+    });
+};
+
+// Marcado de una fila supletoria. Se distingue a simple vista de las filas
+// base (borde y fondo malva) y NO se teclea: el nombre y el dorsal los rellena
+// el selector, que es el requisito del autor —"en lugar de escribir el nombre
+// a mano"—. El dorsal sí queda editable: el invitado suele jugar con un
+// dorsal distinto al que lleva en su equipo.
+function _cronosSupportRowHtml(p, i) {
+    const esc = (s) => (typeof escapeAttr === 'function')
+        ? escapeAttr(s == null ? '' : s) : String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const puesto = !!p.isGuest;
+    const origen = puesto
+        ? `${esc(p.originCategory || '')} ${esc(p.originSubcategory || '')}`.trim()
+        : '';
+    return `
+        <tr class="r-support" data-extra="1" data-guest="${puesto ? '1' : '0'}"
+            data-origin-team="${esc(p.originTeamId || '')}"
+            data-origin-cat="${esc(p.originCategory || '')}"
+            data-origin-sub="${esc(p.originSubcategory || '')}"
+            data-origin-ficha="${esc(p.originPlayerId || '')}"
+            style="background:rgba(210,168,255,0.06); outline:1px solid rgba(210,168,255,0.28);">
+            <td><input type="text" class="r-id" value="${esc(p.id || '')}" readonly tabindex="-1"
+                title="${puesto ? 'Ficha de origen — no se reescribe' : 'Se rellena al elegir jugador'}"
+                style="width:45px; background:transparent; border:none; color:#d2a8ff; font-size:0.7rem; font-weight:bold; text-align:center;"></td>
+            <td><input type="number" class="r-num" value="${esc(p.number == null ? '' : p.number)}" style="width:40px;"></td>
+            <td style="display:flex; align-items:center; gap:0.4rem;">
+                <input type="text" class="r-name" value="${esc(p.name || '')}" readonly
+                    placeholder="Sin jugador asignado"
+                    style="flex:1; background:rgba(255,255,255,0.03); cursor:pointer;"
+                    onclick="cronosOpenGuestPicker(${i})">
+                <button onclick="cronosOpenGuestPicker(${i})"
+                    title="Elegir jugador de otra categoría del club"
+                    style="background:rgba(210,168,255,0.15); border:1px solid rgba(210,168,255,0.45);
+                           color:#d2a8ff; border-radius:6px; padding:0.25rem 0.5rem; cursor:pointer;
+                           font-size:0.75rem; white-space:nowrap;">🔍</button>
+                <button onclick="cronosClearSupportSlot(${i})"
+                    title="Vaciar esta plaza de apoyo"
+                    style="background:none; border:none; color:#ff5858; cursor:pointer; font-size:0.9rem;">✕</button>
+            </td>
+            <td>${origen ? `<span style="font-size:0.62rem; font-weight:700; color:#d2a8ff;
+                     background:rgba(210,168,255,0.12); border:1px solid rgba(210,168,255,0.3);
+                     padding:2px 6px; border-radius:5px; white-space:nowrap;">${origen}</span>` : ''}</td>
+            <td><input type="text" class="r-alias" value="${esc(p.alias || '')}"></td>
+        </tr>`;
+}
+
 function openRosterManager() {
     // Pila de navegación (js/core/nav-stack.js).
     if (typeof navScreen === 'function') navScreen('openRosterManager');
 
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
-    const mode = document.getElementById('setup-mode').value;
-    const limit = mode === 'f7' ? 18 : 25;
+    const mode = window.cronosActiveMode();
+    const limit = window._cronosRosterBase(mode);
+    const maxExtra = window.CRONOS_ROSTER_EXTRA;
 
     if (roster[mode].length < limit) {
         for (let i = roster[mode].length; i < limit; i++) {
-            roster[mode].push({ 
-                id: window._cronosGeneratePlayerId(i), 
-                number: i + 1, name: '', surname: '', alias: '' 
+            roster[mode].push({
+                id: window._cronosGeneratePlayerId(i),
+                number: i + 1, name: '', surname: '', alias: ''
             });
         }
     }
+    // Tope defensivo: nunca más de base + 7, venga como venga el guardado.
+    if (roster[mode].length > limit + maxExtra) roster[mode].length = limit + maxExtra;
 
     // v260: REGENERAR TODOS los IDs con el formato correcto (categoria+subcategoria).
     // Antes solo se generaban IDs para slots vacíos, pero los ya guardados
     // seguían con J-01. Ahora regeneramos TODOS.
+    //
+    // ⚠️⚠️ SALVO LAS PLAZAS DE APOYO (2026-08-12). _cronosGeneratePlayerId
+    // construye el código con la categoría DEL ENTRENADOR QUE TIENE LA SESIÓN
+    // ABIERTA más el número de fila: aplicado a un invitado, el 'CDA07' del
+    // cadete se reescribiría como 'JVA19' la primera vez que el juvenil
+    // abriera esta pantalla, y el vínculo con su equipo de origen se perdería
+    // sin ruido. El requisito del autor es que el invitado CONSERVE
+    // ESTRICTAMENTE su ID de origen, así que aquí no se le toca.
     roster[mode].forEach((p, i) => {
+        if (i >= limit || p.isGuest || p.isSupport) return;
         var newId = window._cronosGeneratePlayerId(i);
         if (p.id !== newId) {
             console.log('[v260] ID actualizado:', p.id, '→', newId);
@@ -234,7 +369,8 @@ function openRosterManager() {
                         </tr>
                     </thead>
                     <tbody id="roster-tbody">
-                        ${roster[mode].map((p, i) => `
+                        ${roster[mode].map((p, i) => i < limit
+                            ? `
                             <tr>
                                 <td><input type="text" class="r-id" value="${p.id}" readonly tabindex="-1"
                                     style="width:45px; background:transparent; border:none; color:var(--text-muted); font-size:0.7rem; font-weight:bold; text-align:center;"></td>
@@ -243,9 +379,25 @@ function openRosterManager() {
                                 <td></td>
                                 <td><input type="text" class="r-alias" value="${p.alias}"></td>
                             </tr>
-                        `).join('')}
+                        `
+                            : _cronosSupportRowHtml(p, i)).join('')}
                     </tbody>
                 </table>
+            </div>
+
+            <!-- ── PLAZAS DE APOYO ─────────────────────────────────────── -->
+            <div style="margin-top:0.7rem; display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+                <button onclick="cronosAddSupportSlot()" id="btn-add-support"
+                    title="Añade una fila supletoria para convocar puntualmente a un jugador de otra categoría o del filial"
+                    style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
+                           background:rgba(210,168,255,0.12); border:1px solid rgba(210,168,255,0.45);
+                           border-radius:8px; color:#d2a8ff; font-size:0.82rem; font-weight:700; cursor:pointer;">
+                    ➕ AÑADIR PLAZA DE APOYO
+                </button>
+                <span style="font-size:0.72rem; color:var(--text-muted);">
+                    ${roster[mode].length - limit} de ${maxExtra} plazas de apoyo ·
+                    para jugadores de otra categoría o del filial
+                </span>
             </div>
             <!-- CUERPO TÉCNICO -->
             <div style="margin-top:1.2rem; padding:1rem; background:var(--glass);
@@ -304,6 +456,46 @@ function openRosterManager() {
         </div>
     `;
 }
+
+// ── Añadir / vaciar una plaza de apoyo ──────────────────────────────
+// 🔑 LAS DOS RECOGEN LA TABLA ANTES DE REPINTAR. openRosterManager vuelve a
+// leer la plantilla de localStorage, así que sin volcar antes lo que hay en
+// pantalla, pulsar "añadir plaza" borraría todo lo tecleado desde el último
+// guardado — el defecto clásico de repintar sobre datos viejos.
+window.cronosAddSupportSlot = function () {
+    const mode = window.cronosActiveMode();
+    const base = window._cronosRosterBase(mode);
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+
+    const actuales = window._cronosHarvestRosterRows();
+    if (actuales.length) roster[mode] = actuales;
+
+    const extras = Math.max(0, roster[mode].length - base);
+    if (extras >= window.CRONOS_ROSTER_EXTRA) {
+        if (typeof showToast === 'function') {
+            showToast('⚠️ Máximo ' + window.CRONOS_ROSTER_EXTRA + ' plazas de apoyo.', 2800);
+        }
+        return;
+    }
+    roster[mode].push({ id: '', number: '', name: '', surname: '', alias: '', isSupport: true });
+    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+    openRosterManager();
+};
+
+window.cronosClearSupportSlot = function (index) {
+    const mode = window.cronosActiveMode();
+    const base = window._cronosRosterBase(mode);
+    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+
+    const actuales = window._cronosHarvestRosterRows();
+    if (actuales.length) roster[mode] = actuales;
+
+    // Se ELIMINA la fila, no se vacía: dejar un hueco a medias en mitad de las
+    // supletorias descoloca los índices con los que el selector escribe.
+    if (index >= base && index < roster[mode].length) roster[mode].splice(index, 1);
+    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+    openRosterManager();
+};
 
 window.clearMasterRoster = function(mode) {
     if (!confirm('¿Seguro que quieres borrar a TODOS los jugadores de la plantilla actual (' + (mode==='f7'?'F7':'F11') + ')?')) return;

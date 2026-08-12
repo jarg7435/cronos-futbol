@@ -583,6 +583,9 @@ async function _sdLoadReports() {
         const _sdStatsBar = (arr, catId, subId) => {
             const skey = catId + '|' + subId;
             window._sdStatsData[skey] = arr.map(x => x.m);
+            // Un equipo sin partidos propios no ofrece descarga: no hay
+            // temporada que exportar aunque tenga colaboraciones que mostrar.
+            if (!arr.length) return '';
             if (!_sdPuedeExpResumen) return '';
             return `
             <div class="sd-exp-bar">
@@ -598,6 +601,18 @@ async function _sdLoadReports() {
             // documentos de usuario que ya se leyeron arriba: sin consulta nueva.
             let _sdCoachIndex = new Map();
             try { _sdCoachIndex = window.ctBuildCoachIndex(_sdUserDocs); } catch (_) {}
+
+            // Plantillas publicadas del club, para listar en la tabla también a
+            // quien todavía no ha jugado (petición del autor, 2026-08-12).
+            // ⚠️ Son la copia SIN datos personales de clubs/{id}/team_rosters,
+            // no las plantillas originales: aquí no se lee ningún contacto.
+            // Si la lectura falla o el equipo no la ha publicado, la tabla sale
+            // como siempre — sólo con quien tiene informes.
+            let _sdPlantillas = {};
+            if (typeof window.cronosFetchAllTeamRosters === 'function') {
+                try { _sdPlantillas = await window.cronosFetchAllTeamRosters(clubId) || {}; }
+                catch (_) { _sdPlantillas = {}; }
+            }
 
             // Descarga global: TODOS los equipos del club en un solo documento.
             // Sólo en el camino del árbol — en la lista plana no hay tabla de
@@ -621,10 +636,28 @@ async function _sdLoadReports() {
                 // arr.length son los PARTIDOS de esa rama (un elemento = un
                 // partido ya agrupado), que es justo lo que va en la celda PJ de
                 // la fila de totales. Sin pasarlo, esa celda saldría con guion.
-                renderSubHeader: (arr, catId, subId) =>
-                    _sdStatsBar(arr, catId, subId) + window.ctRenderStatsTable(
-                        window.ctAccumulatePlayerStats(arr.map(x => x.m)),
-                        { matchCount: arr.length }),
+                // 🔑 LAS COLABORACIONES SE BUSCAN EN **TODOS** LOS PARTIDOS DEL
+                // CLUB (`sorted`), NO en los de esta rama (`arr`). Un cadete que
+                // sube con el juvenil deja su informe DENTRO del partido del
+                // juvenil, así que en `arr` —los partidos del cadete— no está.
+                // Buscarlo ahí habría devuelto siempre cero y la fila supletoria
+                // no habría aparecido nunca.
+                alwaysSubHeader: true,
+                renderSubHeader: (arr, catId, subId) => {
+                    const _inv = (typeof window.ctAccumulateGuestStats === 'function')
+                        ? window.ctAccumulateGuestStats(sorted, catId, subId) : [];
+                    const _sq = _sdPlantillas[catId + '|' + subId] || [];
+                    // Rama sin partidos, sin colaboraciones y sin plantilla
+                    // publicada: se devuelve '' y queda exactamente como antes
+                    // ("Sin informes de este equipo").
+                    if (!arr.length && !_inv.length && !_sq.length) return '';
+                    let _filas = window.ctAccumulatePlayerStats(arr.map(x => x.m));
+                    if (typeof window.ctMergeSquadRows === 'function') {
+                        _filas = window.ctMergeSquadRows(_filas, _sq);
+                    }
+                    return _sdStatsBar(arr, catId, subId) + window.ctRenderStatsTable(
+                        _filas, { matchCount: arr.length, guestRows: _inv });
+                },
                 renderLeaf: (x) => _sdReportCard(x.m),
                 emptyText:  'Sin informes de este equipo todavía.',
             });

@@ -273,7 +273,9 @@ function showOCRError(msg) {
 
 
 function showRosterPreview(players) {
-    const mode  = document.getElementById('setup-mode')?.value || 'f11';
+    const mode  = (typeof window.cronosActiveMode === 'function')
+        ? window.cronosActiveMode()
+        : (document.getElementById('setup-mode')?.value || 'f11');
     const limit = mode === 'f7' ? 18 : 25;
 
     const modal = document.getElementById('setup-modal');
@@ -404,21 +406,39 @@ function confirmRosterImport(mode) {
 function saveMasterRoster(mode) {
     showSpinner('Guardando plantilla…');
     setTimeout(() => {
-        const rows = document.querySelectorAll('#roster-tbody tr');
-        const playersData = Array.from(rows).map(row => {
-            const id      = row.querySelector('.r-id')?.value || '';
-            const number  = row.querySelector('.r-num')?.value || '';
-            const name    = (row.querySelector('.r-name')?.value || '').trim();
-            // v263: la columna APELLIDOS fue eliminada en v256. Usar optional chaining.
-            const surname = (row.querySelector('.r-surname')?.value || '').trim();
-            let   alias   = (row.querySelector('.r-alias')?.value || '').trim();
-            // Auto-rellenar alias si está vacío: usar el nombre
-            if (!alias && name) alias = name.split(' ')[0];
-            return { id, number, name, surname, alias };
-        });
+        // ⚠️ LA RECOGIDA VIVE EN _cronosHarvestRosterRows (staff-and-comms.js) Y
+        // NO AQUÍ. La copia que había leía sólo las cinco casillas visibles, así
+        // que una PLAZA DE APOYO perdía en cada guardado su ficha de origen, su
+        // equipo y su condición de invitada — sin error y sin síntoma hasta
+        // llegar a los informes. El respaldo de abajo mantiene el comportamiento
+        // antiguo si el módulo aún no ha cargado.
+        const playersData = (typeof window._cronosHarvestRosterRows === 'function')
+            ? window._cronosHarvestRosterRows()
+            : Array.from(document.querySelectorAll('#roster-tbody tr')).map(row => {
+                const id      = row.querySelector('.r-id')?.value || '';
+                const number  = row.querySelector('.r-num')?.value || '';
+                const name    = (row.querySelector('.r-name')?.value || '').trim();
+                // v263: la columna APELLIDOS fue eliminada en v256. Usar optional chaining.
+                const surname = (row.querySelector('.r-surname')?.value || '').trim();
+                let   alias   = (row.querySelector('.r-alias')?.value || '').trim();
+                // Auto-rellenar alias si está vacío: usar el nombre
+                if (!alias && name) alias = name.split(' ')[0];
+                return { id, number, name, surname, alias };
+            });
         const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
         roster[mode] = playersData;
         cloudSet('cronos_master_roster', JSON.stringify(roster));
+
+        // Copia SIN DATOS PERSONALES para que el resto de entrenadores del club
+        // puedan convocar a estos jugadores en sus plazas de apoyo. Sólo salen
+        // ficha, dorsal, nombre y alias — ver js/roster/team-rosters.js.
+        // ⚠️ Sólo las filas BASE: una plaza de apoyo es un jugador PRESTADO de
+        // otro equipo, y republicarlo aquí lo duplicaría en el selector ajeno.
+        if (typeof window.cronosPublishTeamRoster === 'function') {
+            const base = (typeof window._cronosRosterBase === 'function')
+                ? window._cronosRosterBase(mode) : playersData.length;
+            window.cronosPublishTeamRoster(mode, playersData.slice(0, base));
+        }
         saveStaffConfig();
         hideSpinner();
         // Toast en lugar de alert
@@ -520,11 +540,21 @@ function openConvocationModal() {
 
             <!-- \u2500\u2500 LISTADO DE JUGADORES \u2500\u2500 -->
             <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
-                ${myPlayers.length > 0 ? myPlayers.map((p, i) => `
-                    <div class="conv-row" data-index="${i}" data-state="none"
-                        style="background:var(--glass); border:2px solid transparent; border-radius:8px;
+                ${myPlayers.length > 0 ? myPlayers.map((p, i) => {
+                    // \u26a0\ufe0f UNA PLAZA DE APOYO SIN JUGADOR NO SE PINTA. Si no, la
+                    // rejilla mostraria hasta 7 fichas fantasma tipo "J26" que
+                    // se pueden convocar y arrancarian el partido con jugadores
+                    // inexistentes. Se devuelve cadena vacia SIN tocar el array:
+                    // data-index tiene que seguir apuntando a myPlayers.
+                    if (p && p.isSupport && !(p.alias || p.name)) return '';
+                    const _esInv = !!(p && p.isGuest);
+                    const _org   = _esInv ? String(p.originCategory || '').trim() : '';
+                    return `
+                    <div class="conv-row" data-index="${i}" data-state="none" data-guest="${_esInv ? '1' : '0'}"
+                        style="background:${_esInv ? 'rgba(210,168,255,0.08)' : 'var(--glass)'}; border:2px solid transparent; border-radius:8px;
                                padding:${isMobile ? '6px 8px' : '8px 10px'}; display:flex; align-items:center; gap:8px;
-                               cursor:pointer; transition:all 0.1s; user-select:none;">
+                               cursor:pointer; transition:all 0.1s; user-select:none;
+                               ${_esInv ? 'outline:1px solid rgba(210,168,255,0.35);' : ''}">
                         <span class="conv-dot" style="width:16px;height:16px;border-radius:50%;
                               background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25);
                               display:flex;align-items:center;justify-content:center;
@@ -533,10 +563,13 @@ function openConvocationModal() {
                             <span style="color:var(--primary);font-weight:bold;">${p.number}</span>
                             ${typeof escapeHtml==='function'? escapeHtml(p.alias||p.name||'J'+(i+1)): (p.alias||p.name||'J'+(i+1))}
                         </span>
+                        ${_esInv ? `<span title="Jugador de apoyo\u2014sube de ${typeof escapeAttr==='function'?escapeAttr(_org):_org}"
+                            style="font-size:0.5rem;font-weight:800;padding:2px 5px;border-radius:3px;flex-shrink:0;
+                                   background:rgba(210,168,255,0.18);color:#d2a8ff;">\u2b06 ${typeof escapeHtml==='function'?escapeHtml(_org):_org}</span>` : ''}
                         <span class="conv-status-badge" style="font-size:0.5rem;font-weight:bold;padding:2px 5px;
                             border-radius:3px;display:none;margin-left:auto;flex-shrink:0;"></span>
                     </div>
-                `).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.8rem; text-align:center; padding:2rem;">No hay jugadores en la plantilla. Ve a GESTIONAR PLANTILLA para a\u00f1adirlos.</p>'}
+                `;}).join('') : '<p style="grid-column:1/-1; color:var(--text-muted); font-size:0.8rem; text-align:center; padding:2rem;">No hay jugadores en la plantilla. Ve a GESTIONAR PLANTILLA para a\u00f1adirlos.</p>'}
             </div>
 
             <!-- \u2500\u2500 BOTONES \u2500\u2500 -->

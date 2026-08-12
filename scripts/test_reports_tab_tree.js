@@ -302,8 +302,24 @@ console.log('\n── PARTE 6 · el código ──');
     ok('6a · 🔑 el árbol se pide condicionado a que el módulo exista',
        /typeof window\.ctRenderTree === 'function'/.test(sinCom) &&
        /typeof window\.ctRenderStatsTable === 'function'/.test(sinCom));
+    // ⚠️⚠️ SE ACOTA EL BLOQUE, NO SE CUENTAN CARACTERES. La versión anterior era
+    // `renderSubHeader:[\s\S]{0,N}ctRenderStatsTable` y hubo que subir N dos
+    // veces (160 → 400 → …) según crecía el cuerpo de renderSubHeader, que es
+    // trabajo legítimo: cada vez daba un rojo por la razón equivocada y el
+    // arreglo era tocar el número, no el código. Ahora se recorta el trozo que
+    // va de `renderSubHeader:` a `renderLeaf:` y se mira DENTRO: si alguien
+    // mueve la tabla a renderLeaf, sale del recorte y esto se pone rojo por el
+    // motivo correcto, crezca lo que crezca el bloque.
+    const _iSub  = sinCom.indexOf('renderSubHeader:');
+    const _iLeaf = sinCom.indexOf('renderLeaf:', _iSub);
+    const _bloqueSub = (_iSub !== -1 && _iLeaf > _iSub) ? sinCom.slice(_iSub, _iLeaf) : '';
     ok('6b · 🔑 la tabla va en renderSubHeader (por equipo), no en renderLeaf',
-       /renderSubHeader:[\s\S]{0,160}ctRenderStatsTable/.test(sinCom));
+       _bloqueSub.indexOf('ctRenderStatsTable') !== -1,
+       { hayBloque: !!_bloqueSub, iSub: _iSub, iLeaf: _iLeaf });
+    ok('6b-2 · 🔑 y NO cuelga de renderLeaf',
+       sinCom.slice(_iLeaf).indexOf('ctRenderStatsTable') === -1);
+    ok('6b-bis · 🔑 las colaboraciones se buscan en TODOS los partidos, no en los de la rama',
+       /ctAccumulateGuestStats\(sorted,\s*catId,\s*subId\)/.test(sinCom));
     ok('6c · 🔑 la tarjeta se genera con UN solo helper',
        /_sdReportCard/.test(sinCom) && cuenta(sinCom, /class="sd-report-card"/g) === 1);
     ok('6d · 🔑 _sdMatchData se rellena en su propia pasada, no dentro del render',
