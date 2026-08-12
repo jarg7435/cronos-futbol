@@ -2055,7 +2055,7 @@ export async function doAuth() {
 
                 const _cat      = document.getElementById('auth-category')?.value || null;
                 const _sub      = document.getElementById('auth-subcat')?.value || null;
-                const _catLbs   = {prebenjamin:'Prebenjamín',benjamin:'Benjamín',alevin:'Alevín',infantil:'Infantil',cadete:'Cadete',juvenil:'Juvenil',regional:'Regional'};
+                const _catLbs   = {prebenjamin:'Prebenjamín',benjamin:'Benjamín',alevin:'Alevín',infantil:'Infantil',cadete:'Cadete',juvenil:'Juvenil',regional:'Regional',regional_fem:'Regional FEM',futurefem:'FUTureFEM'};
                 const _catLabel = _cat ? (_catLbs[_cat]||_cat)+(_sub?' '+_sub:'') : null;
                 const _disp     = (firstName && lastName) ? (firstName+' '+lastName).trim() : (firstName || email);
 

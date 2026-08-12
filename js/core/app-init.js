@@ -1020,8 +1020,12 @@ async function showFinishedMatches() {
             if (str.includes('infant')) return 'infantil';
             if (str.includes('cadet')) return 'cadete';
             if (str.includes('juven')) return 'juvenil';
+            // ⚠️ 'Regional FEM' CONTIENE 'region': las dos categorías FEM van
+            // ANTES de la comprobación genérica (ver finished-matches-tab.js).
+            if (str.includes('futurefem') || str.includes('future fem') || str.includes('future_fem')) return 'futurefem';
+            if (str.includes('region') && str.includes('fem')) return 'regional_fem';
             if (str.includes('region')) return 'regional';
-            return str.replace(/_[abc]$/, '');
+            return str.replace(/\s+[abc]$/, '').replace(/[\s-]+/g, '_').replace(/_[abc]$/, '');
         };
         const _normSub = (s, c) => {
             let sub = String(s || '').trim().toUpperCase();

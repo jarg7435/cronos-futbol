@@ -359,7 +359,8 @@ const _RP = (() => {
     //    prebenjamín  2×30 = 60      infantil  2×40 = 80
     //    benjamín     2×35 = 70      cadete    2×40 = 80
     //    alevín       2×35 = 70      juvenil   2×45 = 90
-    //                                regional  2×45 = 90
+    //    FUTureFEM    2×35 = 70      regional  2×45 = 90
+    //                                Reg. FEM  2×45 = 90
     //  El margen que permite el cronómetro (+10 min en F7, +15 en F11) es
     //  prolongación y protección ante cortes de conexión: NO forma parte de la
     //  base reglamentaria y se muestra aparte, como `+N'` (ver buildHeader).
@@ -372,6 +373,9 @@ const _RP = (() => {
         if (m.duration) return parseInt(m.duration) || 60;
         const cat = (m.category || '').toLowerCase();
         if (cat.includes('prebenjamin') || cat.includes('prebenjamín')) return 60;
+        // FUTureFEM: F7, 2T x 35' = 70. Va antes que nada por coherencia con el
+        // resto de la cascada; no comparte subcadena con ninguna otra clave.
+        if (cat.includes('futurefem'))                                  return 70;
         if (cat.includes('benjamin')    || cat.includes('benjamín'))    return 70;
         if (cat.includes('alevin')      || cat.includes('alevín'))      return 70;
         if (cat.includes('infantil'))                                   return 80;

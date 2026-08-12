@@ -26,15 +26,22 @@
 (function () {
     'use strict';
 
-    // Las 7 categorías y 3 subcategorías son idénticas en ambos paneles.
+    // Las 9 categorías y 3 subcategorías son idénticas en ambos paneles.
+    //
+    // ⚠️ EL LITERAL DE LAS ETIQUETAS ES EL QUE FIJÓ EL AUTOR (2026-08-12) y no
+    // se "corrige": 'Regional FEM' con FEM en mayúsculas y 'FUTureFEM' con esa
+    // capitalización exacta. Van a continuación de 'Regional', y el ORDEN de
+    // este array es el orden en que se pintan los tres árboles.
     const CT_CATEGORIES = [
-        { id: 'prebenjamin', label: 'Prebenjamín' },
-        { id: 'benjamin',    label: 'Benjamín' },
-        { id: 'alevin',      label: 'Alevín' },
-        { id: 'infantil',    label: 'Infantil' },
-        { id: 'cadete',      label: 'Cadete' },
-        { id: 'juvenil',     label: 'Juvenil' },
-        { id: 'regional',    label: 'Regional' },
+        { id: 'prebenjamin',  label: 'Prebenjamín' },
+        { id: 'benjamin',     label: 'Benjamín' },
+        { id: 'alevin',       label: 'Alevín' },
+        { id: 'infantil',     label: 'Infantil' },
+        { id: 'cadete',       label: 'Cadete' },
+        { id: 'juvenil',      label: 'Juvenil' },
+        { id: 'regional',     label: 'Regional' },
+        { id: 'regional_fem', label: 'Regional FEM' },
+        { id: 'futurefem',    label: 'FUTureFEM' },
     ];
     const CT_SUBCATS = ['A', 'B', 'C'];
     const _validCatIds = new Set(CT_CATEGORIES.map(c => c.id));
@@ -54,8 +61,13 @@
     }
 
     // Normaliza categoría: acepta 'prebenjamin' o el slot combinado 'prebenjamin_a'.
+    // ⚠️ EL ESPACIO SE CONVIERTE EN '_' ANTES DE QUITAR EL SUFIJO: desde que hay
+    // categorías de DOS PALABRAS ('Regional FEM'), el respaldo por categoryLabel
+    // llega como 'regional fem a' y sin esto no casaría nunca con el id
+    // 'regional_fem' — el usuario caería fuera del árbol sin ningún error.
     function _normCat(r) {
         let cat = String(r.category || r.categoryLabel || '').trim().toLowerCase();
+        cat = cat.replace(/[\s-]+/g, '_');
         return cat.replace(/_[abc]$/, '');
     }
     // Normaliza subcategoría: directa o derivada del sufijo '_a/_b/_c'.
@@ -319,7 +331,13 @@
         // que nada fallase a gritos. Así el fuente es 100% ASCII.
         var s = String(raw).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
         s = s.replace(/^(f7_|f8_|f11_)/, '').replace(/_[abc]$/i, '').replace(/\s+[abc]$/i, '');
-        return s.trim();
+        // 🔑 CATEGORÍAS DE DOS PALABRAS (2026-08-12, 'Regional FEM'): el mismo
+        // equipo llega como 'Regional FEM', 'regional_fem' o 'f11_regional_fem'
+        // según el origen. Se unifica al id con guion bajo DESPUÉS de quitar el
+        // sufijo A/B/C, que es quien distingue 'Regional FEM B' de la categoría.
+        s = s.trim().replace(/[\s-]+/g, '_');
+        if (s === 'future_fem' || s === 'futuro_fem') s = 'futurefem';
+        return s;
     };
 
     window.ctNormSubcat = function (raw) {

@@ -178,9 +178,9 @@ console.log('── PARTE 1 · el árbol aparece en Entrenamientos ──');
     const h = t.container.innerHTML;
 
     ok('1a · 🔑 pinta el árbol, no una lista plana', /ct-tree-cat/.test(h));
-    ok('1b · con las 7 categorías', cuenta(h, /class="ct-tree-cat"/g) === 7,
+    ok('1b · con las 9 categorías', cuenta(h, /class="ct-tree-cat"/g) === 9,
        cuenta(h, /class="ct-tree-cat"/g));
-    ok('1c · y las 21 subcategorías', cuenta(h, /class="ct-tree-sub"/g) === 21);
+    ok('1c · y las 27 subcategorías', cuenta(h, /class="ct-tree-sub"/g) === 27);
     ok('1d · trae su propio CSS', /\.ct-tree-body\{display:none/.test(h));
     ok('1e · 🔑 arranca plegado', !/ct-tree-open/.test(marcado(h)));
 
@@ -294,7 +294,7 @@ console.log('\n── PARTE 4 · Convocatorias también en árbol ──');
     const h = t.container.innerHTML;
 
     ok('4a · 🔑 Convocatorias pinta el árbol', /ct-tree-cat/.test(h));
-    ok('4b · con las 7 categorías', cuenta(h, /class="ct-tree-cat"/g) === 7,
+    ok('4b · con las 9 categorías', cuenta(h, /class="ct-tree-cat"/g) === 9,
        cuenta(h, /class="ct-tree-cat"/g));
     ok('4c · la etiqueta CONVOCATORIA sigue dentro de la hoja', /📋 CONVOCATORIA/.test(h));
     ok('4d · y su cuenta de convocados', /👥 2 convocados/.test(h));

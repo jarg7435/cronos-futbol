@@ -228,8 +228,14 @@ async function _renderFinishedMatchesTab() {
             if (str.includes('infant')) return 'infantil';
             if (str.includes('cadet')) return 'cadete';
             if (str.includes('juven')) return 'juvenil';
+            // ⚠️ EL ORDEN IMPORTA (2026-08-12): 'Regional FEM' CONTIENE
+            // 'region'. Con la comprobación genérica delante, la categoría
+            // femenina se archivaba entera bajo 'Regional' y el Director no
+            // veía nunca su rama.
+            if (str.includes('futurefem') || str.includes('future fem') || str.includes('future_fem')) return 'futurefem';
+            if (str.includes('region') && str.includes('fem')) return 'regional_fem';
             if (str.includes('region')) return 'regional';
-            return str.replace(/_[abc]$/, '');
+            return str.replace(/\s+[abc]$/, '').replace(/[\s-]+/g, '_').replace(/_[abc]$/, '');
         };
         const _normSub = (s, c) => {
             let sub = String(s || '').trim().toUpperCase();
@@ -366,8 +372,10 @@ async function _renderFinishedMatchesTab() {
             { id: 'alevin',      label: 'Alevín', icon: '🌟' },
             { id: 'infantil',    label: 'Infantil', icon: '🔥' },
             { id: 'cadete',      label: 'Cadete', icon: '🏆' },
-            { id: 'juvenil',     label: 'Juvenil', icon: '👑' },
-            { id: 'regional',    label: 'Regional', icon: '🥇' }
+            { id: 'juvenil',      label: 'Juvenil', icon: '👑' },
+            { id: 'regional',     label: 'Regional', icon: '🥇' },
+            { id: 'regional_fem', label: 'Regional FEM', icon: '🩷' },
+            { id: 'futurefem',    label: 'FUTureFEM', icon: '💗' }
         ];
         const SUB_LIST = ['A', 'B', 'C'];
 

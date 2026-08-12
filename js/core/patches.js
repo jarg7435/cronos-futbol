@@ -266,7 +266,12 @@
             if (_catSel) {
                 var _userCat = String(_me.category).toLowerCase();
                 var _targetValue = '';
-                if (_userCat.includes('prebenj'))      _targetValue = mode + '_prebenjamin';
+                // ⚠️ Las dos FEM van primero: 'regional_fem' CONTIENE 'regional'
+                // (misma cascada que _forceCategorySelect en setup-modal.js).
+                if (_userCat.includes('futurefem'))     _targetValue = mode + '_futurefem';
+                else if (_userCat.includes('regional') && _userCat.includes('fem'))
+                                                       _targetValue = mode + '_regional_fem';
+                else if (_userCat.includes('prebenj'))  _targetValue = mode + '_prebenjamin';
                 else if (_userCat.includes('benj'))    _targetValue = mode + '_benjamin';
                 else if (_userCat.includes('alev'))    _targetValue = mode + '_alevin';
                 else if (_userCat.includes('infant'))  _targetValue = mode + '_infantil';

@@ -4771,8 +4771,10 @@ const _LIVE_CAT_ETIQUETAS = {
     alevin:      'ALEVÍN',
     infantil:    'INFANTIL',
     cadete:      'CADETE',
-    juvenil:     'JUVENIL',
-    regional:    'REGIONAL',
+    juvenil:      'JUVENIL',
+    regional:     'REGIONAL',
+    regional_fem: 'REGIONAL FEM',
+    futurefem:    'FUTUREFEM',
 };
 
 // v464 · Longitud a partir de la cual la etiqueta baja de tamaño. Es una
@@ -4795,13 +4797,19 @@ function _liveCatNormaliza(s) {
 }
 
 function _liveCatNombre(cat) {
-    const norm = _liveCatNormaliza(cat).replace(/^f\d+_/, '');
+    // El espacio pasa a '_' AQUÍ y no dentro de _liveCatNormaliza (que la fija
+    // el guard aparte): la misma categoría llega como 'f11_regional_fem' desde
+    // el panel de creación y como 'Regional FEM A' desde el perfil, y sin esto
+    // la segunda forma no casaría con ninguna clave.
+    const norm = _liveCatNormaliza(cat).replace(/^f\d+_/, '').replace(/[\s-]+/g, '_');
     if (!norm) return '';
     // ⚠️ EL ORDEN DE ESTA LISTA ES PARTE DE LA LÓGICA: 'prebenjamin' CONTIENE
     // 'benjamin'. Con el orden alfabético, todos los prebenjamines se
-    // etiquetarían como BENJAMÍN.
+    // etiquetarían como BENJAMÍN. Y desde 2026-08-12 hay un segundo caso:
+    // 'regional_fem' CONTIENE 'regional', así que va DELANTE o la categoría
+    // femenina se rotularía REGIONAL en todas las tarjetas.
     const claves = ['prebenjamin', 'benjamin', 'alevin', 'infantil',
-                    'cadete', 'juvenil', 'regional'];
+                    'cadete', 'juvenil', 'futurefem', 'regional_fem', 'regional'];
     for (let i = 0; i < claves.length; i++) {
         if (norm.includes(claves[i])) return _LIVE_CAT_ETIQUETAS[claves[i]];
     }
@@ -5933,8 +5941,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v510"></script>
-<script src="js/match/replay/replay-player.js?v=v510"></script>
-<script src="js/match/events/retroactive-modal.js?v=v510"></script>
+<script src="js/match/immutability.js?v=v511"></script>
+<script src="js/match/replay/replay-player.js?v=v511"></script>
+<script src="js/match/events/retroactive-modal.js?v=v511"></script>
 </body>
 </html>

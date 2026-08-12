@@ -1545,7 +1545,8 @@ async function openClubAdminPanel(preClubId = null) {
     function _catLabel(cat, sub) {
         if (!cat) return '';
         const labels = { prebenjamin:'Prebenjamín', benjamin:'Benjamín', alevin:'Alevín',
-                         infantil:'Infantil', cadete:'Cadete', juvenil:'Juvenil', regional:'Regional' };
+                         infantil:'Infantil', cadete:'Cadete', juvenil:'Juvenil', regional:'Regional',
+                         regional_fem:'Regional FEM', futurefem:'FUTureFEM' };
         return (labels[cat] || cat) + (sub ? ' ' + sub : '');
     }
 

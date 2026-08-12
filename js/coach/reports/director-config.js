@@ -79,7 +79,7 @@ async function _renderDirectorConfig() {
 
     // Definición de las 9 categorías/subcategorías exigidas
     const GROUPS = [
-        { key: 'f7',          label: '⚽ Fútbol 7',                  sub: 'Prebenjamín, Benjamín y Alevín', hasSemaforo: true },
+        { key: 'f7',          label: '⚽ Fútbol 7',                  sub: 'Prebenjamín, Benjamín, Alevín y FUTureFEM', hasSemaforo: true },
         { key: 'infantil_a',  label: '🏆 Infantil — Subcategoría A', sub: 'Categoría Infantil A',           hasSemaforo: true },
         { key: 'infantil_b',  label: '🏆 Infantil — Subcategoría B', sub: 'Categoría Infantil B',           hasSemaforo: true },
         { key: 'infantil_c',  label: '🏆 Infantil — Subcategoría C', sub: 'Categoría Infantil C',           hasSemaforo: true },
@@ -87,7 +87,7 @@ async function _renderDirectorConfig() {
         { key: 'cadete_b',    label: '🥇 Cadete — Subcategoría B',   sub: 'Categoría Cadete B',             hasSemaforo: true },
         { key: 'cadete_c',    label: '🥇 Cadete — Subcategoría C',   sub: 'Categoría Cadete C',             hasSemaforo: true },
         { key: 'juvenil',     label: '🔥 Juveniles',                 sub: 'Todas las subcategorías (A, B, C)', hasSemaforo: false },
-        { key: 'regional',    label: '⭐ Regional / Senior',          sub: 'Todas las subcategorías (A, B, C)', hasSemaforo: false },
+        { key: 'regional',    label: '⭐ Regional / Senior',          sub: 'Regional y Regional FEM · todas las subcategorías (A, B, C)', hasSemaforo: false },
     ];
 
     let html = `
@@ -162,7 +162,7 @@ async function _renderDirectorConfig() {
             </div>` : `
             <div style="background:rgba(121,192,255,0.05); border:1px solid rgba(121,192,255,0.15); border-radius:10px; padding:0.8rem; font-size:0.75rem; color:#7d8590; display:flex; align-items:center; gap:0.6rem;">
               <span style="font-size:1.2rem;">🩵</span>
-              <div>En Juvenil y Regional no se aplica semáforo. Las tarjetas de cronómetro se muestran en <strong>celeste</strong>.</div>
+              <div>En Juvenil, Regional y Regional FEM no se aplica semáforo. Las tarjetas de cronómetro se muestran en <strong>celeste</strong>.</div>
             </div>`}
 
             <!-- Bloque Informes a Padres -->

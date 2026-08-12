@@ -150,6 +150,9 @@ window._cronosGeneratePlayerId = function(index) {
     else if (cat.includes('infantil')) prefix = 'IF';
     else if (cat.includes('cadete')) prefix = 'CD';
     else if (cat.includes('juvenil')) prefix = 'JV';
+    // ⚠️ 'regional_fem' CONTIENE 'regional': va delante o comparte prefijo.
+    else if (cat.includes('futurefem')) prefix = 'FF';
+    else if (cat.includes('regional') && cat.includes('fem')) prefix = 'RF';
     else if (cat.includes('regional')) prefix = 'RG';
 
     var num = String(index + 1).padStart(2, '0');

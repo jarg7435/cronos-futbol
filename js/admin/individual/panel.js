@@ -96,7 +96,7 @@ function _indCatLabel(catId, subCat) {
 
 function _catLabelInd(cat, sub) {
     if (!cat) return '–';
-    const map = { prebenjamin:'Prebenjamín', benjamin:'Benjamín', alevin:'Alevín', infantil:'Infantil', cadete:'Cadete', juvenil:'Juvenil', regional:'Regional' };
+    const map = { prebenjamin:'Prebenjamín', benjamin:'Benjamín', alevin:'Alevín', infantil:'Infantil', cadete:'Cadete', juvenil:'Juvenil', regional:'Regional', regional_fem:'Regional FEM', futurefem:'FUTureFEM' };
     let label = map[cat] || map[cat.replace(/_[abc]$/,'')] || cat;
     if (sub) label += ' ' + sub;
     return label;

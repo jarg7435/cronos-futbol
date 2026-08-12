@@ -57,6 +57,8 @@ function updateCategoryOptions(forcedMode) {
         <option value="f7_cadete">Cadete (2T x 40')</option>
         <option value="f7_juvenil">Juvenil (2T x 45')</option>
         <option value="f7_regional">Regional (2T x 45')</option>
+        <option value="f7_regional_fem">Regional FEM (2T x 45')</option>
+        <option value="f7_futurefem">FUTureFEM (2T x 35')</option>
         `;
     } else {
         sel.innerHTML = `
@@ -67,6 +69,8 @@ function updateCategoryOptions(forcedMode) {
         <option value="f11_cadete">Cadete (2T x 40')</option>
         <option value="f11_juvenil">Juvenil (2T x 45')</option>
         <option value="f11_regional">Regional (2T x 45')</option>
+        <option value="f11_regional_fem">Regional FEM (2T x 45')</option>
+        <option value="f11_futurefem">FUTureFEM (2T x 35')</option>
         `;
     }
     // NO dispatchEvent — elimina bucles y efectos secundarios indeseados

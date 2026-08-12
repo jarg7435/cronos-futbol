@@ -146,7 +146,7 @@ console.log('── PARTE 1 · 🔑 tabla arriba, informes abajo ──');
     const h = t.container.innerHTML;
 
     ok('1a · pinta el árbol', /ct-tree-cat/.test(h));
-    ok('1b · con las 7 categorías', cuenta(h, /class="ct-tree-cat"/g) === 7,
+    ok('1b · con las 9 categorías', cuenta(h, /class="ct-tree-cat"/g) === 9,
        cuenta(h, /class="ct-tree-cat"/g));
     ok('1c · y la tabla resumen dentro', /class="ct-stats"/.test(h));
 

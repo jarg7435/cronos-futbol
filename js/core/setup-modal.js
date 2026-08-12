@@ -99,10 +99,14 @@ function openSetupModal() {
             me.allRoles.forEach(function(r) {
                 if (!r || (r.role !== 'user' && r.role !== 'coach')) return;
                 var rcat = (r.category || '').toLowerCase();
-                // Categorías F7: prebenjamin, benjamin, alevin
-                // Categorías F11: infantil, cadete, juvenil, regional
+                // Categorías F7: prebenjamin, benjamin, alevin, futurefem
+                // Categorías F11: infantil, cadete, juvenil, regional, regional_fem
                 // (aceptamos también con prefijo f7_/f11_)
-                if (rcat.includes('prebenjamin') || rcat.includes('benjamin') || rcat.includes('alevin')) hasF7 = true;
+                // 🔑 FUTureFEM es F7 y Regional FEM es F11 (decisión del autor,
+                // 2026-08-12). 'regional_fem' ya entra por includes('regional');
+                // 'futurefem' no contiene ninguna de las otras claves y sin esta
+                // línea al entrenador se le ofrecerían LAS DOS modalidades.
+                if (rcat.includes('prebenjamin') || rcat.includes('benjamin') || rcat.includes('alevin') || rcat.includes('futurefem')) hasF7 = true;
                 if (rcat.includes('infantil') || rcat.includes('cadete') || rcat.includes('juvenil') || rcat.includes('regional')) hasF11 = true;
                 if (rcat.startsWith('f7_')) hasF7 = true;
                 if (rcat.startsWith('f11_')) hasF11 = true;
@@ -398,7 +402,13 @@ function openSetupModal() {
         var userCat = String(_me.category).toLowerCase();
         var mode = document.getElementById('setup-mode')?.value || 'f7';
         var targetValue = '';
-        if (userCat.includes('prebenj'))      targetValue = mode + '_prebenjamin';
+        // ⚠️ LAS DOS FEM VAN PRIMERO: 'regional_fem' CONTIENE 'regional', así que
+        // con el orden anterior a un entrenador de Regional FEM se le forzaba
+        // 'Regional' a secas y su informe acababa en la rama equivocada.
+        if (userCat.includes('futurefem'))    targetValue = mode + '_futurefem';
+        else if (userCat.includes('regional') && userCat.includes('fem'))
+                                              targetValue = mode + '_regional_fem';
+        else if (userCat.includes('prebenj'))      targetValue = mode + '_prebenjamin';
         else if (userCat.includes('benj'))    targetValue = mode + '_benjamin';
         else if (userCat.includes('alev'))    targetValue = mode + '_alevin';
         else if (userCat.includes('infant'))  targetValue = mode + '_infantil';
@@ -567,6 +577,8 @@ function confirmSetup() {
 
     if (category.includes('prebenjamin')) {
         defaultTime = 30;
+    } else if (category.includes('futurefem')) {
+        defaultTime = 35;               // F7, 2T x 35' (decisión del autor)
     } else if (category.includes('benjamin') || category.includes('alevin')) {
         defaultTime = 35;
     } else if (category.includes('infantil') || category.includes('cadete')) {

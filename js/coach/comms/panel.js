@@ -453,7 +453,13 @@ function _normCat(raw) {
     if (raw == null) return '';
     let s = String(raw).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
     s = s.replace(/^(f7_|f8_|f11_)/, '').replace(/_[abc]$/i, '').replace(/\s+[abc]$/i, '');
-    return s.trim();
+    // \ud83d\udd11 Categor\u00edas de dos palabras ('Regional FEM'). GEMELA DE window.ctNormCat
+    // en js/admin/shared/category-tree.js: la parte 3a de
+    // scripts/test_category_tree.js compara las dos sobre las mismas entradas,
+    // as\u00ed que TODO cambio aqu\u00ed hay que hacerlo tambi\u00e9n all\u00ed.
+    s = s.trim().replace(/[\s-]+/g, '_');
+    if (s === 'future_fem' || s === 'futuro_fem') s = 'futurefem';
+    return s;
 }
 
 function _normSubcat(raw) {
@@ -478,8 +484,8 @@ function _getCategoryModality(cat) {
         return window._cronosMatchModality(cat);
     }
     const c = _normCat(cat);
-    if (['prebenjamin', 'benjamin', 'alevin', 'chupete', 'querubin'].includes(c)) return 'f7';
-    if (['infantil', 'cadete', 'juvenil', 'regional', 'senior', 'amateur'].includes(c)) return 'f11';
+    if (['prebenjamin', 'benjamin', 'alevin', 'chupete', 'querubin', 'futurefem'].includes(c)) return 'f7';
+    if (['infantil', 'cadete', 'juvenil', 'regional', 'regional_fem', 'senior', 'amateur'].includes(c)) return 'f11';
     return 'f7';
 }
 

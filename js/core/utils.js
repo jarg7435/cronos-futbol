@@ -207,7 +207,8 @@ if (typeof window._cronosMatchModality !== 'function') {
             raw === 'f7' || raw === 'f8') return 'f7';
         // 2b) Heurística por etiqueta legible (sin acentos).
         const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(norm)) return 'f7';
+        // 'futurefem' es F7 y 'regional_fem' F11 (éste ya entra por 'regional').
+        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin|futurefem)/.test(norm)) return 'f7';
         if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado)/.test(norm)) return 'f11';
         return '';
     };
@@ -384,7 +385,8 @@ if (typeof window._cronosMatchModality !== 'function') {
             raw === 'f7' || raw === 'f8') return 'f7';
         // 2b) Heurística por etiqueta legible (sin acentos).
         const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(norm)) return 'f7';
+        // 'futurefem' es F7 y 'regional_fem' F11 (éste ya entra por 'regional').
+        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin|futurefem)/.test(norm)) return 'f7';
         if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado)/.test(norm)) return 'f11';
         return '';
     };
@@ -451,8 +453,13 @@ if (typeof window.getCategoryGroupKey !== 'function') {
         const normCat = cat.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const sub = (subcategory == null ? 'A' : String(subcategory)).trim().toUpperCase();
 
+        // 🔑 LAS DOS CATEGORÍAS FEM NO ESTRENAN GRUPO DE SEMÁFORO, HEREDAN:
+        // FUTureFEM es F7 → grupo 'f7'; Regional FEM entra más abajo por
+        // includes('regional') → grupo 'regional' (celeste, sin semáforo). Así
+        // el Director sigue configurando 9 bloques y no hay claves huérfanas en
+        // clubs/{id}.categoryConfigs.
         if (cat.includes('f7') || cat.includes('f8') ||
-            /(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(normCat)) {
+            /(prebenjamin|benjamin|alevin|prebenj|chupete|querubin|futurefem)/.test(normCat)) {
             return 'f7';
         }
         if (normCat.includes('infantil')) {
