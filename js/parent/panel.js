@@ -393,7 +393,11 @@ async function openParentPanel(initialTab) {
                                         ? window._cronosFormatConvokedPlayer(p,i)
                                         : { num: String(i+1), name: String(p==null?'':p) };
                                     const nm = typeof escapeHtml==='function'?escapeHtml(f.name):f.name;
-                                    return f.name ? `${f.num}. ${nm}` : `${f.num}.`;
+                                    // ⬆ Jugador de apoyo: se dice de dónde viene.
+                                    const og = f.origin
+                                        ? ` <span style="color:#d2a8ff;font-weight:700;">⬆ ${typeof escapeHtml==='function'?escapeHtml(f.origin):f.origin}</span>`
+                                        : '';
+                                    return f.name ? `${f.num}. ${nm}${og}` : `${f.num}.`;
                                 }).join('<br>')}
                             </div>
                         </div>` : ''}
@@ -2146,7 +2150,10 @@ window.ppNotifsByType = async function(type) {
                                 ? window._cronosFormatConvokedPlayer(p,i)
                                 : { num: String(i+1), name: String(p==null?'':p) };
                             const nm = typeof escapeHtml==='function'?escapeHtml(f.name):f.name;
-                            return `<div style="font-size:0.8rem;padding:0.2rem 0.4rem;background:rgba(255,255,255,0.04);border-radius:4px;">${f.num}.${f.name?' '+nm:''}</div>`;
+                            const og = f.origin
+                                ? `<div style="font-size:0.62rem;font-weight:700;color:#d2a8ff;margin-top:1px;">⬆ ${typeof escapeHtml==='function'?escapeHtml(f.origin):f.origin}</div>`
+                                : '';
+                            return `<div style="font-size:0.8rem;padding:0.2rem 0.4rem;background:${f.origin?'rgba(210,168,255,0.09)':'rgba(255,255,255,0.04)'};border-radius:4px;${f.origin?'border:1px solid rgba(210,168,255,0.28);':''}">${f.num}.${f.name?' '+nm:''}${og}</div>`;
                         }).join('')}
                     </div>
                 </div>` : ''}

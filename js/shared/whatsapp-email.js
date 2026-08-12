@@ -587,9 +587,15 @@ function openConvocationMessage(target) {
                         border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
                 <div style="font-size:0.78rem;font-weight:700;color:var(--secondary);
                             margin-bottom:0.7rem;letter-spacing:0.5px;">💬 MENSAJE EXTRA (opcional)</div>
+                <!-- Se precarga con lo escrito en el panel de convocatoria
+                     (savedConv.message) para que el entrenador no lo teclee dos
+                     veces; si lo edita aquí, gana esta versión. -->
                 <textarea id="cv-extra" class="conv-input" rows="3"
                     placeholder="ej: ¡Vamos equipo! Estamos preparados para este partido. Recordad traer el equipaje completo. 💪"
-                    style="resize:vertical;">${typeof escapeHtml==='function'?escapeHtml(saved.extra || ''):saved.extra || ''}</textarea>
+                    style="resize:vertical;">${(function(){
+                        const _m = (window._savedConvData && window._savedConvData.message) || saved.extra || '';
+                        return typeof escapeHtml === 'function' ? escapeHtml(_m) : _m;
+                    })()}</textarea>
             </div>
 
             <!-- ── ENVIAR A ─────────────────────────────────── -->
@@ -1018,6 +1024,41 @@ function sendConvocationEmail() {
 //   3. localStorage cronos_last_conv.players (última convocatoria guardada).
 // Devuelve siempre un array de strings no vacíos.
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+//  💬 EL MENSAJE DEL ENTRENADOR EN LA CONVOCATORIA
+// ════════════════════════════════════════════════════════════════════
+//  💥 EL FALLO QUE ESTO CORRIGE (detectado el 2026-08-12 leyendo los datos
+//  reales por REST): los dos publicadores hacían
+//
+//        const extra = sv.type || document.getElementById('cv-extra')…
+//
+//  y `sv.type` es el TIPO DE PARTIDO ('liga' | 'copa' | 'amistoso' |
+//  'torneo'), que SIEMPRE viene relleno —tiene 'amistoso' por defecto—, así
+//  que el `||` cortocircuitaba y el mensaje del entrenador NO SE LEÍA NUNCA.
+//  Las doce últimas convocatorias de producción llevaban literalmente
+//  extra="amistoso" o extra="copa".
+//
+//  🔑 Y EL RECUADRO YA ESTABA PINTADO en los tres sitios donde se ve
+//  (events-tab.js del Director, y dos vistas de parent/panel.js): al usuario
+//  le aparecía un globo 💬 con la palabra "amistoso" dentro. Por eso pedía
+//  "habilitar un campo de comentarios" — lo que faltaba no era el campo ni la
+//  vista, era ESTA LÍNEA. Comprobar los DATOS antes de dar por ausente una
+//  función; el síntoma que describe el usuario no siempre nombra la causa.
+//
+//  Orden de resolución: gana lo que el entrenador tenga delante. Si el panel
+//  de WhatsApp/email está en pantalla y tiene texto, ése; si no, el que
+//  escribió en el panel de convocatoria (`message`); y por último `extra`,
+//  que es lo que guardaban las versiones anteriores.
+function _cronosConvExtra(sv) {
+    sv = sv || {};
+    var el = document.getElementById('cv-extra');
+    var enPanel = el && el.value ? el.value.trim() : '';
+    if (enPanel) return enPanel;
+    if (sv.message) return String(sv.message).trim();
+    if (sv.extra) return String(sv.extra).trim();
+    return '';
+}
+
 function _cronosResolvePlayersArr() {
     let playersArr = [];
 
@@ -1033,7 +1074,23 @@ function _cronosResolvePlayersArr() {
             else if (alias) label = alias;
             else if (num) label = String(num);
             else label = '';
-            return label.trim();
+            label = label.trim();
+
+            // 🔑 EL JUGADOR DE APOYO DICE DE DÓNDE VIENE (2026-08-12).
+            // Se anexa al PROPIO TEXTO y no como campo aparte a propósito:
+            // `players` es un array de CADENAS que consumen ya cuatro vistas
+            // distintas —el panel del Director, las dos del padre y el texto de
+            // WhatsApp/email—, y todas lo escapan como texto plano. Metiendo la
+            // procedencia aquí aparece en las cuatro de golpe; con un campo
+            // nuevo habría que tocar las cuatro y el mensaje de WhatsApp se
+            // quedaría fuera igualmente.
+            if (label && p.isGuest === true) {
+                const _org = (typeof window._cronosTeamRosterLabel === 'function')
+                    ? window._cronosTeamRosterLabel(p.originCategory, p.originSubcategory)
+                    : [p.originCategory, p.originSubcategory].filter(Boolean).join(' ');
+                if (_org) label += ' (' + _org + ')';
+            }
+            return label;
         }).filter(s => s.length > 0);
         console.log('[_cronosResolvePlayersArr] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
         // Si el mapeo dio 0 pero había elementos, usar cualquier clave con texto
@@ -1101,24 +1158,41 @@ window._cronosResolvePlayersArr = _cronosResolvePlayersArr;
 // Devuelve { num, name } SIN escapar: `num` sale de una captura de \d y es
 // seguro por construcción, pero `name` es texto libre y CADA vista tiene que
 // pasarlo por su escapeHtml. No devolver HTML ya montado desde aquí.
+// ⬆ TERCER CAMPO, `origin` (2026-08-12): la categoría de procedencia de un
+// jugador de apoyo. Viaja DENTRO de la cadena, entre paréntesis al final
+// ("18. SISTO (Alevín C)"), porque `players` es un array de cadenas que ya
+// consumen cuatro vistas. Aquí se separa para que quien quiera pueda pintarlo
+// como etiqueta en vez de como texto corrido; `name` sale ya SIN el paréntesis.
+//
+// ⚠️ Sólo se separa si el paréntesis va AL FINAL y no hay otro antes: un alias
+// legítimo tipo "JUAN (EL CHINO)" se trataría igual, y es preferible eso a
+// romper la única fuente que tenemos. Las vistas lo pintan igual de bien.
 function _cronosFormatConvokedPlayer(entry, index) {
     const raw = String(entry == null ? '' : entry).trim();
     const ordinal = String((index || 0) + 1);
 
+    const _partirOrigen = (texto) => {
+        const mo = texto.match(/^(.*\S)\s*\(([^()]+)\)$/);
+        if (mo && mo[1].trim()) return { name: mo[1].trim(), origin: mo[2].trim() };
+        return { name: texto, origin: '' };
+    };
+
     // "15. CUCO" · "15 CUCO" · "15 - CUCO" · "15) CUCO"
     const m = raw.match(/^(\d{1,3})\s*[.\-–—)]*\s+(.+)$/);
     if (m && m[2].trim()) {
-        return { num: m[1], name: m[2].trim() };
+        const p = _partirOrigen(m[2].trim());
+        return { num: m[1], name: p.name, origin: p.origin };
     }
 
     // Entrada que es SOLO un número (el roster no tenía alias): ese número es
     // lo único que identifica al jugador, así que se muestra tal cual y no se
     // le antepone además el ordinal.
     if (/^\d{1,3}$/.test(raw)) {
-        return { num: raw, name: '' };
+        return { num: raw, name: '', origin: '' };
     }
 
-    return { num: ordinal, name: raw };
+    const p = _partirOrigen(raw);
+    return { num: ordinal, name: p.name, origin: p.origin };
 }
 window._cronosFormatConvokedPlayer = _cronosFormatConvokedPlayer;
 
@@ -1258,7 +1332,7 @@ async function publishConvocationToApp() {
     const meettime   = sv.meettime || '';
     const kickoff    = sv.time || '';
     const venue      = sv.venue || '';
-    const extra      = sv.type || '';
+    const extra      = _cronosConvExtra(sv);   // 💥 antes: sv.type (el TIPO de partido)
     // Construir playersArr con la lógica compartida (fuente de verdad → DOM → localStorage)
     const playersArr = _cronosResolvePlayersArr();
 
@@ -1380,7 +1454,7 @@ window.publishConvocationToAppV2 = async function() {
     const meettime   = sv.meettime || document.getElementById('cv-meettime')?.value        || '';
     const kickoff    = sv.time     || document.getElementById('cv-kickoff')?.value         || '';
     const venue      = sv.venue    || document.getElementById('cv-venue')?.value.trim()    || '';
-    const extra      = sv.type     || document.getElementById('cv-extra')?.value.trim()    || '';
+    const extra      = _cronosConvExtra(sv);   // 💥 antes: sv.type (el TIPO de partido)
 
     // Construir playersArr con la lógica compartida (fuente de verdad → DOM → localStorage)
     const playersArr = _cronosResolvePlayersArr();

@@ -251,8 +251,14 @@ async function _sdLoadEvents(type) {
                             // pintaba dos numeros ("14. 15. CUCO").
                             const f = (typeof window._cronosFormatConvokedPlayer==='function')
                                 ? window._cronosFormatConvokedPlayer(p,i)
-                                : { num: String(i+1), name: String(p==null?'':p) };
-                            return `<div style="font-size:0.82rem;padding:0.2rem 0.4rem;background:rgba(255,255,255,0.04);border-radius:4px;">${f.num}.${f.name?' '+escapeHtml(f.name):''}</div>`;
+                                : { num: String(i+1), name: String(p==null?'':p), origin: '' };
+                            // ⬆ Jugador de apoyo: su categoría de origen en malva,
+                            // para que el Director y el coordinador vean de un
+                            // vistazo que no es de la casa y de dónde viene.
+                            const org = f.origin
+                                ? `<div style="font-size:0.62rem;font-weight:700;color:#d2a8ff;margin-top:1px;">⬆ ${escapeHtml(f.origin)}</div>`
+                                : '';
+                            return `<div style="font-size:0.82rem;padding:0.2rem 0.4rem;background:${f.origin?'rgba(210,168,255,0.09)':'rgba(255,255,255,0.04)'};border-radius:4px;${f.origin?'border:1px solid rgba(210,168,255,0.28);':''}">${f.num}.${f.name?' '+escapeHtml(f.name):''}${org}</div>`;
                         }).join('')}
                     </div>
                 </div>`:''}

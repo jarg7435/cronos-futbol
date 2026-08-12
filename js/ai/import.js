@@ -520,6 +520,19 @@ function openConvocationModal() {
                             value="${savedConv.meettime || ''}">
                     </div>
                 </div>
+
+                <!-- \u2500\u2500 MENSAJE PARA LOS JUGADORES \u2500\u2500 -->
+                <div style="margin-top:0.7rem;">
+                    <label for="conv-message" style="font-size:0.72rem; color:var(--secondary); display:block; margin-bottom:0.25rem; font-weight:700;">
+                        \u{1F4AC} Mensaje para los jugadores (opcional)
+                    </label>
+                    <textarea id="conv-message" class="conv-input" rows="3"
+                        placeholder="\u00a1Vamos equipo! Recordad traer el equipaje completo y la botella de agua. \u{1F4AA}"
+                        style="resize:vertical; width:100%; box-sizing:border-box; font-family:inherit;">${typeof escapeHtml==='function'? escapeHtml(savedConv.message||''): (savedConv.message||'')}</textarea>
+                    <div style="font-size:0.66rem; color:var(--text-muted); margin-top:0.2rem;">
+                        Se enviar\u00e1 con la convocatoria y lo ver\u00e1n los jugadores, el coordinador y el director deportivo.
+                    </div>
+                </div>
             </div>
 
             <!-- \u2500\u2500 CONTADORES EN TIEMPO REAL \u2500\u2500 -->
@@ -839,7 +852,11 @@ function saveConvData() {
         venue:    document.getElementById('conv-venue')?.value.trim() || '',
         rival:    document.getElementById('conv-rival')?.value.trim() || '',
         type:     document.getElementById('conv-type')?.value     || 'amistoso',
-        meettime: document.getElementById('conv-meettime')?.value || ''
+        meettime: document.getElementById('conv-meettime')?.value || '',
+        // 💬 Mensaje del entrenador para los jugadores. Va APARTE de `type`:
+        // ver el comentario de _cronosConvExtra() en whatsapp-email.js, donde
+        // se explica el fallo que confundía los dos campos.
+        message:  document.getElementById('conv-message')?.value.trim() || ''
     };
     localStorage.setItem('cronos_conv_data', JSON.stringify(data));
     // FIX (Error #15c): guardar TAMBIEN en window._savedConvData para que
