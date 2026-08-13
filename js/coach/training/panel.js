@@ -14,6 +14,20 @@ function openTrainingPanel() {
     renderTrainingWeek();
 }
 
+// Lector único del cuadrante para esta pantalla. Delega en TrainingSync, que
+// es el dueño de la forma del documento.
+//
+// 🔑 Si TrainingSync no estuviera cargado NO se cae a leer localStorage a
+// mano: una segunda copia de la forma del documento es justo lo que hace que
+// un módulo vea los días y otro no. Se avisa y se devuelve vacío.
+function _cronosLeerCuadrante(weekKey) {
+    if (window.TrainingSync && typeof window.TrainingSync.readWeekDays === 'function') {
+        return window.TrainingSync.readWeekDays(weekKey) || {};
+    }
+    console.warn('[Training] TrainingSync no disponible: el cuadrante no se puede leer.');
+    return {};
+}
+
 function _getWeekMonday(offset) {
     const now = new Date();
     const dow = now.getDay();
@@ -39,8 +53,11 @@ function renderTrainingWeek() {
     const fmtDD = d => d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0');
     const weekKey = _cronosLocalDateKey(monday);
 
-    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-    const weekData = allWeeks[weekKey] || {};
+    // ⚠️ NO SE LEE localStorage A PELO. El cuadrante pasó a colgar de
+    // `teams.<miEquipo>` (ver js/services/training-firestore-sync.js) y en la
+    // raíz del documento conviven además `createdBy` y `lastModified`.
+    // TrainingSync.readWeekDays devuelve SÓLO los días de mi equipo.
+    const weekData = _cronosLeerCuadrante(weekKey);
 
     const typeOpts = ['','entrenamiento','partido liga','partido amistoso'];
 
@@ -120,17 +137,20 @@ function saveTrainingWeek() {
         const val = inp.value.trim();
         if (val) { if (!weekData[day]) weekData[day] = {}; weekData[day][field] = val; }
     });
-    
-    // SPRINT 4: Usar TrainingSync para guardar en localStorage + Firestore
-    if (window.TrainingSync && window._cronosCurrentUser?.clubId) {
+
+    // ⚠️ UN SOLO ESCRITOR. Antes había un camino alternativo que guardaba en
+    // localStorage a mano cuando no había clubId; con el cuadrante por equipo
+    // ese camino escribía en la forma ANTIGUA y la pantalla dejaba de ver lo
+    // guardado. TrainingSync.saveWeek ya contempla el caso sin club: guarda en
+    // local y se salta Firestore.
+    if (window.TrainingSync && typeof window.TrainingSync.saveWeek === 'function') {
         TrainingSync.saveWeek(weekKey, weekData);
     } else {
-        // Fallback: guardar solo en localStorage
-        const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-        allWeeks[weekKey] = weekData;
-        localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+        console.warn('[Training] TrainingSync no disponible: la semana no se ha guardado.');
+        if (typeof showToast === 'function') showToast('⚠️ No se ha podido guardar la semana', 3500);
+        return;
     }
-    
+
     if (typeof showToast === 'function') showToast('✅ Semana guardada correctamente', 3000);
 }
 
@@ -140,15 +160,16 @@ function clearTrainingWeek() {
     const monday = _getWeekMonday(offset);
     const weekKey = _cronosLocalDateKey(monday);
     
-    // SPRINT 4: Usar TrainingSync para eliminar de localStorage + Firestore
-    if (window.TrainingSync) {
+    // TrainingSync.deleteWeek retira SÓLO el cuadrante de mi equipo: antes
+    // borraba el documento de la semana entera y se llevaba por delante la
+    // planificación del resto de entrenadores del club.
+    if (window.TrainingSync && typeof window.TrainingSync.deleteWeek === 'function') {
         TrainingSync.deleteWeek(weekKey);
     } else {
-        const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-        delete allWeeks[weekKey];
-        localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+        console.warn('[Training] TrainingSync no disponible: no se ha limpiado nada.');
+        return;
     }
-    
+
     renderTrainingWeek();
     if (typeof showToast === 'function') showToast('🗑️ Semana limpiada', 3000);
 }
@@ -161,8 +182,13 @@ function _getTrainingWeekText() {
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
     const weekKey = _cronosLocalDateKey(monday);
-    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-    const weekData = allWeeks[weekKey] || {};
+    // 🔑🔑 AQUÍ ESTABA UN DEFECTO VISIBLE PARA LOS PADRES. Esto leía el
+    // documento crudo de la semana y más abajo recorre TODAS sus claves como
+    // si todas fueran días. En cuanto la semana bajaba de Firestore, el
+    // documento traía además `createdBy` y `lastModified`, y el mensaje que se
+    // enviaba a las familias se llevaba dos líneas de "📅 undefined Invalid
+    // Date". El lector único devuelve sólo claves con formato de fecha.
+    const weekData = _cronosLeerCuadrante(weekKey);
     if (Object.keys(weekData).length === 0) return null;
 
     const DAYS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
@@ -342,8 +368,7 @@ function copyTrainingWeek() {
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
     const weekKey = _cronosLocalDateKey(monday);
-    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-    const weekData = allWeeks[weekKey] || {};
+    const weekData = _cronosLeerCuadrante(weekKey);
     if (!Object.keys(weekData).length) {
         if (typeof showToast === 'function') showToast('⚠️ No hay datos para copiar en esta semana', 3000);
         return;
@@ -370,7 +395,6 @@ function pasteTrainingWeek() {
     const relative = JSON.parse(clipStr);
     const offset = window._trWeekOffset || 0;
     const monday = _getWeekMonday(offset);
-    const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
     const weekData = {};
     Object.keys(relative).forEach(idx => {
         const ms = monday.getTime() + parseInt(idx) * 86400000;
@@ -378,8 +402,17 @@ function pasteTrainingWeek() {
         weekData[dateKey] = relative[idx];
     });
     const weekKey = _cronosLocalDateKey(monday);
-    allWeeks[weekKey] = weekData;
-    localStorage.setItem('cronos_training_weeks', JSON.stringify(allWeeks));
+
+    // ⚠️ Antes escribía localStorage a mano y NO subía a Firestore: la semana
+    // pegada se quedaba sólo en ese dispositivo hasta que alguien pulsaba
+    // GUARDAR. Pasando por saveWeek se guarda y se sincroniza como cualquier
+    // otro cambio, y además cae en el nodo del equipo correcto.
+    if (window.TrainingSync && typeof window.TrainingSync.saveWeek === 'function') {
+        TrainingSync.saveWeek(weekKey, weekData);
+    } else {
+        console.warn('[Training] TrainingSync no disponible: no se ha pegado nada.');
+        return;
+    }
     if (typeof showToast === 'function') showToast('✅ Semana pegada correctamente', 3000);
     renderTrainingWeek();
 }

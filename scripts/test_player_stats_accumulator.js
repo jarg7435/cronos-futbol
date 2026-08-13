@@ -269,7 +269,10 @@ if (!API_OK) { ok('5 · omitida: falta la API', false); } else {
     // parser no casaba NADA y fallaban hasta las aserciones de goles, que sí
     // estaban bien — rojo por la razón equivocada.
     const celdasTotal = (h) => {
-        const m = String(h).match(/Total equipo<\/td>((?:<td[^>]*>[^<]*<\/td>){6})/);
+        // ⚠️ SIETE celdas desde la columna PT (2026-08-13). Con {6} se
+        // recortaba la ultima y la asercion de lesiones comparaba contra
+        // undefined: un guard que se apaga solo al crecer la tabla.
+        const m = String(h).match(/Total equipo<\/td>((?:<td[^>]*>[^<]*<\/td>){7})/);
         return m ? m[1].replace(/<td[^>]*>/g, ' ').replace(/<\/td>/g, ' ').trim().split(/\s+/) : [];
     };
 
@@ -283,12 +286,17 @@ if (!API_OK) { ok('5 · omitida: falta la API', false); } else {
     const conCuenta = celdasTotal(sb.ctRenderStatsTable(filas2, { matchCount: 2 }));
     ok('5k · 🔑 PJ del total = partidos del EQUIPO (2), no la suma de PJ (3)',
        conCuenta[0] === '2', JSON.stringify(conCuenta));
-    ok('5l · 🔑 los minutos del total NO se suman: celda con guion',
+    // ⚠️ PT (columna nueva, 2026-08-13) se intercala ENTRE PJ y Min, asi que
+    // los indices de esta fila se desplazan uno. El orden es:
+    //   0 PJ · 1 PT · 2 Min · 3 Goles · 4 Amarillas · 5 Rojas · 6 Lesiones
+    ok('5l-bis · 🔑 PT del total NO se suma: celda con guion',
        conCuenta[1] === '-', JSON.stringify(conCuenta));
-    ok('5m · 🔑 los goles SI se suman (2+1+3 = 6)', conCuenta[2] === '6',
+    ok('5l · 🔑 los minutos del total NO se suman: celda con guion',
+       conCuenta[2] === '-', JSON.stringify(conCuenta));
+    ok('5m · 🔑 los goles SI se suman (2+1+3 = 6)', conCuenta[3] === '6',
        JSON.stringify(conCuenta));
     ok('5n · y las amarillas, rojas y lesiones también',
-       conCuenta[3] === '1' && conCuenta[4] === '0' && conCuenta[5] === '1',
+       conCuenta[4] === '1' && conCuenta[5] === '0' && conCuenta[6] === '1',
        JSON.stringify(conCuenta));
 
     // Sin saber los partidos del equipo, la celda queda con guion — nunca con
@@ -296,7 +304,7 @@ if (!API_OK) { ok('5 · omitida: falta la API', false); } else {
     const sinCuenta = celdasTotal(sb.ctRenderStatsTable(filas2));
     ok('5o · 🔑 sin matchCount, PJ del total es "-" y NUNCA la suma',
        sinCuenta[0] === '-', JSON.stringify(sinCuenta));
-    ok('5p · y los goles se siguen sumando igual', sinCuenta[2] === '6',
+    ok('5p · y los goles se siguen sumando igual', sinCuenta[3] === '6',
        JSON.stringify(sinCuenta));
 
     // Las filas de cada jugador NO cambian: ahí PJ y minutos sí significan algo.

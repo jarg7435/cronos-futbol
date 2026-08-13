@@ -496,6 +496,19 @@ async function _sdLoadReports() {
         const _sdPuedeExpResumen = typeof window.rxExportarResumenPDF === 'function' &&
                                    typeof window.rxExportarResumenCSV === 'function' &&
                                    typeof window.ctAccumulatePlayerStats === 'function';
+
+        // ── BORRADO PERMANENTE: SÓLO EL DIRECTOR DEPORTIVO ───────────────
+        // Regla de producto (2026-08-13): el entrenador y el coordinador sólo
+        // OCULTAN de su panel; destruir datos de la base —y descontarlos del
+        // acumulado del club— es del Director Deportivo, que es el máximo
+        // responsable deportivo.
+        //
+        // ⚠️ Mismo predicado que la pestaña "Config." (_sdEsDirector), no una
+        // copia: el criterio de "esto es cosa del director" tiene que ser uno.
+        // ⚠️ Y si el módulo no ha cargado se responde NO. Un permiso que falla
+        // abierto ante un botón irreversible es peor que no tener el botón.
+        const _sdMuestraPurga = (typeof window._sdPuedePurgar === 'function')
+                                && window._sdPuedePurgar(me);
         // Partidos de cada rama del árbol, indexados por 'categoria|SUB'. Se
         // rellena al pintar cada cabecera de subcategoría y se consume al
         // pulsar un botón de descarga.
@@ -547,12 +560,20 @@ async function _sdLoadReports() {
                         <button onclick="event.stopPropagation(); sdExportInforme('${key64}','csv')"
                                 title="Descargar este informe grupal en CSV (Excel)" class="sd-exp-mini">📊</button>` : ''}
                         <button onclick="event.stopPropagation(); sdDeleteReport('${key64}')"
-                                title="Eliminar este informe definitivamente"
+                                title="Ocultar este informe de MI panel (los demás roles lo siguen viendo)"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                                        color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
                                        display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
                             🗑️
                         </button>
+                        ${_sdMuestraPurga ? `
+                        <button onclick="event.stopPropagation(); sdPurgeMatch('${key64}')"
+                                title="BORRADO PERMANENTE (sólo Director Deportivo): elimina el partido de la base de datos para todo el mundo y lo descuenta del acumulado. No se puede deshacer."
+                                style="background:rgba(139,0,0,0.18);border:1px solid rgba(255,88,88,0.55);
+                                       color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
+                                       display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+                            💣
+                        </button>` : ''}
                     </div>
                 </div>
                 <!-- Panel de detalle: vacío hasta el primer click (lazy render) -->
@@ -748,6 +769,108 @@ async function _sdLoadReports() {
             };
             if (fmt === 'csv') window.rxExportarResumenCSV(bloques, meta);
             else               window.rxExportarResumenPDF(bloques, meta);
+        };
+
+        // ══════════════════════════════════════════════════════════════
+        //  BORRADO PERMANENTE DE UN PARTIDO (2026-08-13)
+        // ══════════════════════════════════════════════════════════════
+        //  Pedido por el autor: en fase de pruebas, los partidos de ensayo
+        //  ensucian el acumulado de temporada, y ocultarlos NO basta porque el
+        //  documento sigue vivo y los demás roles lo siguen contando.
+        //
+        //  🔑🔑 UN PARTIDO NO ES UN DOCUMENTO, SON MUCHOS. Por cada jugador se
+        //  escriben hasta cuatro copias con ids distintos —{mid}_staff_p{n},
+        //  {mid}_coach_p{n}, {mid}_p{n} y {mid}_parent_{uid}_p{n}— desde tres
+        //  ficheros diferentes. Borrar sólo el que tiene delante el panel
+        //  dejaría el resto vivo y el acumulado seguiría sucio: exactamente el
+        //  problema que se viene a resolver. Por eso se CONSULTA por matchId
+        //  además de usar los ids que el panel ya tiene.
+        //
+        //  ⚠️ NO SE PROMETE LO QUE NO SE PUEDE CUMPLIR. firestore.rules sólo
+        //  deja borrar al AUTOR del informe (coachUid) y al SuperAdmin: un
+        //  director NO puede borrar los informes de otro entrenador. Se
+        //  cuentan los borrados y los denegados y se dice la verdad, en vez de
+        //  enseñar "borrado" y dejar los documentos donde estaban.
+        //
+        //  ⚠️ ES IRREVERSIBLE Y AFECTA A TODOS, así que pide DOS confirmaciones
+        //  y la segunda obliga a escribir la palabra. Un solo confirm() delante
+        //  de una papelera es demasiado fácil de pulsar sin leer.
+        window.sdPurgeMatch = async (key64) => {
+            // 🔑 LA PUERTA VA TAMBIÉN AQUÍ, no sólo en el botón. Ocultar el
+            // botón NO es un permiso: esta función es window.* y se invoca
+            // desde la consola o desde un onclick reutilizado. Es el mismo
+            // razonamiento con el que la pestaña "Config." comprueba el
+            // permiso en el botón Y en la ruta.
+            // ⚠️ La barrera REAL son las reglas de Firestore; esto sólo evita
+            // que alguien se lleve un error feo y un borrado a medias.
+            if (typeof window._sdPuedePurgar !== 'function' || !window._sdPuedePurgar(me)) {
+                const aviso = '⛔ El borrado permanente es exclusivo del Director Deportivo. ' +
+                              'Usa 🗑️ para ocultar el informe de tu panel.';
+                if (typeof showToast === 'function') showToast(aviso, 5000); else alert(aviso);
+                return;
+            }
+
+            const match = window._sdMatchData[key64];
+            if (!match) return;
+
+            const _rival = match.rival || 'rival';
+            const _fecha = match.matchDate || '';
+            if (!confirm(
+                '⚠️ BORRADO PERMANENTE\n\n' +
+                'Vas a eliminar de la base de datos el partido:\n' +
+                '   ' + _fecha + ' · vs ' + _rival + '\n\n' +
+                'Se borrarán TODOS sus informes (entrenador, dirección y padres).\n' +
+                'Desaparecerá para todo el mundo y del acumulado de temporada.\n\n' +
+                'ESTO NO SE PUEDE DESHACER. ¿Continuar?')) return;
+
+            // ⚠️ El mensaje dice EXACTAMENTE lo que el código acepta. La
+            // comparación ignora mayúsculas y espacios sobrantes —teclear la
+            // palabra ya es acto deliberado, que es para lo que sirve este
+            // paso—, así que no se exige un formato que luego no se comprueba.
+            const _tecleado = prompt(
+                'Confirmación final.\n\nEscribe la palabra BORRAR para eliminar el partido definitivamente:');
+            if (String(_tecleado || '').trim().toUpperCase() !== 'BORRAR') {
+                if (typeof showToast === 'function') showToast('Cancelado · no se ha borrado nada', 2500);
+                return;
+            }
+
+            try {
+                if (typeof showSpinner === 'function') showSpinner('Purgando partido…');
+
+                // 🔑 LA PURGA VIVE EN js/coach/reports/match-purge.js, NO AQUÍ.
+                // El mismo borrado se dispara también desde Partidos
+                // Terminados; con dos implementaciones, "purga total"
+                // significaba dos cosas distintas según por dónde entrases y el
+                // acumulado quedaba sucio en una de ellas.
+                const r = await window.cronosPurgarPartido({
+                    matchId: match.matchId,
+                    docIds: (match.players || []).map(p => p._id).filter(Boolean),
+                    borrarPartidoEnVivo: true,
+                });
+
+                if (typeof hideSpinner === 'function') hideSpinner();
+
+                const resumen = window.cronosResumenPurga(r);
+                if (typeof showToast === 'function') showToast(resumen, 6000); else alert(resumen);
+
+                // ⚠️ Si no se borró NADA, la ficha se queda donde está: quitarla
+                // de la lista daría por hecho un borrado que no ha ocurrido y al
+                // recargar reaparecería.
+                if (!r.borrados && !r.partidoBorrado) return;
+
+                const card = document.getElementById('rcard-' + key64);
+                if (card) card.remove();
+                delete window._sdMatchData[key64];
+
+                // El acumulado se deriva de los informes vivos: basta repintar
+                // ESTA pestaña, que es la que lo muestra.
+                if (typeof _sdLoadReports === 'function') _sdLoadReports();
+
+            } catch (err) {
+                if (typeof hideSpinner === 'function') hideSpinner();
+                console.error('[Purga] error borrando el partido:', err);
+                alert('Error al borrar el partido: ' + (err && err.message ? err.message : err));
+            }
         };
 
         // ── Función para ocultar informe del panel ──────────────

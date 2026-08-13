@@ -22,6 +22,69 @@ const TrainingSync = (() => {
   let _isInitialized = false;
   let _currentClubId = null;
 
+  // ══════════════════════════════════════════════════════════════════
+  //  EL CUADRANTE ES POR EQUIPO (2026-08-13)
+  // ══════════════════════════════════════════════════════════════════
+  //  🔑🔑🔑 QUÉ ESTABA ROTO. trainingPlans/{clubId}/weeks/{lunes} es UN SOLO
+  //  documento por club y semana, y TODOS los entrenadores del club escribían
+  //  sus días en la raíz de ese documento. Comprobado por REST en producción:
+  //  el club CD DÍA tiene semanas creadas por DOS uid distintos. Mientras
+  //  planifica una sola persona no se nota; en cuanto dos entrenadores tocan
+  //  la misma semana, el `setDoc({merge:true})` funde sus días y, si coinciden
+  //  en fecha, el último guardado pisa al anterior SIN AVISO. Además la
+  //  Planificación Semanal se envía a los padres: los del Alevín podían
+  //  recibir los entrenamientos del Juvenil.
+  //
+  //  Los días pasan a colgar de `teams.<teamId>`. Compatible hacia atrás: si
+  //  no hay nodo para mi equipo se leen los días sueltos de la raíz, que es
+  //  exactamente lo que hay guardado hoy. No hace falta migrar nada.
+  //
+  //  ⚠️ EL FILTRO POR FORMATO DE FECHA NO ES DECORATIVO. En la raíz conviven
+  //  `lastModified`, `createdBy` y ahora `teams`, y _getTrainingWeekText
+  //  recorre las claves COMO SI TODAS FUERAN DÍAS. Hoy, en cuanto la semana
+  //  baja de Firestore, el mensaje que se manda a los padres se lleva dos
+  //  líneas de basura ("📅 undefined Invalid Date"). Todo lector pasa por
+  //  aquí para que eso no pueda volver a ocurrir.
+  const _RE_DIA = /^\d{4}-\d{2}-\d{2}$/;
+
+  function _soloDias(obj) {
+    const out = {};
+    if (!obj || typeof obj !== 'object') return out;
+    Object.keys(obj).forEach(k => { if (_RE_DIA.test(k)) out[k] = obj[k]; });
+    return out;
+  }
+
+  // Clave del equipo de quien mira. Cadena vacía = no lleva equipo (director,
+  // coordinador, administrador): ese caso conserva el comportamiento antiguo
+  // y sigue trabajando sobre los días de la raíz.
+  function _miEquipoId() {
+    try {
+      return (typeof window.cronosMyTeamId === 'function') ? (window.cronosMyTeamId() || '') : '';
+    } catch (e) { return ''; }
+  }
+
+  // Días del equipo indicado dentro del documento de una semana.
+  function _diasDeEquipo(weekDoc, teamId) {
+    if (!weekDoc || typeof weekDoc !== 'object') return {};
+    if (teamId && weekDoc.teams && weekDoc.teams[teamId]) return _soloDias(weekDoc.teams[teamId]);
+    return _soloDias(weekDoc);          // legado: días sueltos en la raíz
+  }
+
+  // Documento de semana con los días de MI equipo sustituidos, conservando
+  // intactos los de los demás equipos y los metadatos.
+  function _conDiasDeEquipo(weekDoc, teamId, dias) {
+    const base = (weekDoc && typeof weekDoc === 'object') ? weekDoc : {};
+    if (!teamId) {
+      // Sin equipo: se reemplazan los días de la raíz y se respeta lo demás.
+      const out = {};
+      Object.keys(base).forEach(k => { if (!_RE_DIA.test(k)) out[k] = base[k]; });
+      return Object.assign(out, dias);
+    }
+    const teams = Object.assign({}, base.teams || {});
+    teams[teamId] = dias;
+    return Object.assign({}, base, { teams: teams });
+  }
+
   /**
    * Convierte serverTimestamp (Firestore) / Date / string a milisegundos
    * para poder comparar versiones local vs remota.
@@ -73,32 +136,53 @@ const TrainingSync = (() => {
   }
 
   /**
-   * Guarda una semana de entrenamiento en localStorage y Firestore
+   * Días del cuadrante de MI equipo en una semana, leídos de localStorage.
+   * Devuelve siempre un objeto { 'YYYY-MM-DD': {tipo,hora,lugar,…} }, nunca
+   * null: los llamadores pintan tablas y un null les obliga a un guard extra.
+   *
+   * 🔑 ES EL ÚNICO LECTOR DEL CUADRANTE. La pantalla de planificación, el
+   * texto que se envía a los padres, el copiar/pegar y la asistencia leen
+   * todos por aquí; si cada uno destripara localStorage a su manera, el día
+   * que cambie la forma del documento unos verían los días y otros no.
+   */
+  function readWeekDays(weekKey) {
+    const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
+    return _diasDeEquipo(allWeeks[weekKey], _miEquipoId());
+  }
+
+  /**
+   * Guarda los días de MI equipo en una semana (localStorage + Firestore).
+   * `weekData` es el mapa de días tal cual lo construye la pantalla.
    */
   function saveWeek(weekKey, weekData) {
     if (!weekKey || !weekData) return false;
 
-    // 1. Guardar en localStorage
+    const teamId = _miEquipoId();
+    const dias   = _soloDias(weekData);
+
+    // 1. Guardar en localStorage (misma forma que el documento de Firestore)
     const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
-    allWeeks[weekKey] = weekData;
+    allWeeks[weekKey] = _conDiasDeEquipo(allWeeks[weekKey], teamId, dias);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
 
     // 2. Guardar en Firestore si está disponible
     if (_isInitialized && _currentClubId && window.saFS) {
-      saveWeekToFirestore(weekKey, weekData);
+      saveWeekToFirestore(weekKey, dias, teamId);
     }
 
     return true;
   }
 
   /**
-   * Carga una semana desde Firestore (con fallback a localStorage)
+   * Carga una semana desde Firestore (con fallback a localStorage).
+   * Devuelve los días de MI equipo, no el documento crudo.
    */
   async function loadWeek(weekKey) {
     const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
+    const teamId = _miEquipoId();
 
     if (!_isInitialized || !_currentClubId || !window.saFS) {
-      return allWeeks[weekKey] || null;
+      return _diasDeEquipo(allWeeks[weekKey], teamId);
     }
 
     try {
@@ -109,37 +193,59 @@ const TrainingSync = (() => {
         // Actualizar localStorage con datos de Firestore
         allWeeks[weekKey] = data;
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
-        return data;
+        return _diasDeEquipo(data, teamId);
       }
-      return allWeeks[weekKey] || null;
+      return _diasDeEquipo(allWeeks[weekKey], teamId);
     } catch (err) {
       console.warn('[TrainingSync] Error cargando desde Firestore:', err);
-      return allWeeks[weekKey] || null;
+      return _diasDeEquipo(allWeeks[weekKey], teamId);
     }
   }
 
   /**
-   * Obtiene todas las semanas
+   * Obtiene todas las semanas (documentos crudos, tal cual están guardados).
    */
   function getAllWeeks() {
     return JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
   }
 
   /**
-   * Elimina una semana de entrenamiento
+   * Vacía el cuadrante de MI equipo en una semana.
+   *
+   * ⚠️ YA NO BORRA EL DOCUMENTO. Antes hacía deleteDoc del documento de la
+   * semana entera: con el cuadrante compartido por club, un entrenador
+   * pulsando "LIMPIAR" se llevaba por delante la planificación de TODOS sus
+   * compañeros. Ahora sólo se retira el nodo del equipo propio.
    */
   function deleteWeek(weekKey) {
+    const teamId = _miEquipoId();
+
     // 1. Eliminar de localStorage
     const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
-    delete allWeeks[weekKey];
+    if (!teamId) {
+      delete allWeeks[weekKey];                       // sin equipo: como antes
+    } else if (allWeeks[weekKey] && allWeeks[weekKey].teams) {
+      delete allWeeks[weekKey].teams[teamId];
+    } else if (allWeeks[weekKey]) {
+      allWeeks[weekKey] = _conDiasDeEquipo(allWeeks[weekKey], teamId, {});
+      delete allWeeks[weekKey].teams[teamId];
+    }
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
 
     // 2. Eliminar de Firestore si está disponible
     if (_isInitialized && _currentClubId && window.saFS) {
       (async () => {
         try {
-          const { db, doc, deleteDoc } = await window.saFS();
-          await deleteDoc(doc(db, 'trainingPlans', _currentClubId, 'weeks', weekKey));
+          const fs = await window.saFS();
+          const ref = fs.doc(fs.db, 'trainingPlans', _currentClubId, 'weeks', weekKey);
+          if (!teamId) {
+            await fs.deleteDoc(ref);
+            return;
+          }
+          const patch = {};
+          patch['teams.' + teamId] = fs.deleteField();
+          patch.lastModified = fs.serverTimestamp();
+          await fs.updateDoc(ref, patch);
         } catch (err) {
           console.warn('[TrainingSync] Error eliminando en Firestore:', err);
         }
@@ -240,16 +346,50 @@ const TrainingSync = (() => {
   /**
    * Guarda una semana en Firestore (función interna)
    */
-  async function saveWeekToFirestore(weekKey, weekData) {
+  async function saveWeekToFirestore(weekKey, weekData, teamId) {
     if (!_currentClubId || !window.saFS) return;
 
     try {
-      const { db, doc, setDoc, serverTimestamp } = await window.saFS();
-      await setDoc(doc(db, 'trainingPlans', _currentClubId, 'weeks', weekKey), {
-        ...weekData,
-        lastModified: serverTimestamp(),
-        createdBy: window._cronosCurrentUser?.uid || 'unknown'
-      }, { merge: true });
+      const { db, doc, setDoc, updateDoc, serverTimestamp } = await window.saFS();
+      const ref = doc(db, 'trainingPlans', _currentClubId, 'weeks', weekKey);
+      const uid = window._cronosCurrentUser?.uid || 'unknown';
+
+      // Sin equipo (director o coordinador planificando para el club): se
+      // conserva EXACTAMENTE el comportamiento anterior, días en la raíz.
+      if (!teamId) {
+        await setDoc(ref, {
+          ...weekData,
+          lastModified: serverTimestamp(),
+          createdBy: uid
+        }, { merge: true });
+        return;
+      }
+
+      // 🔑 updateDoc CON RUTA PUNTEADA, no setDoc con merge, por dos razones:
+      //   1. La ruta punteada REEMPLAZA el nodo del equipo entero, así que un
+      //      día retirado del cuadrante desaparece de verdad. Un merge funde
+      //      mapas y el día borrado sobreviviría para siempre.
+      //   2. Sólo toca `teams.<miEquipo>`: la planificación del resto de
+      //      entrenadores del club queda intacta pase lo que pase.
+      // El teamId sale de cronosTeamSlug, que colapsa todo lo que no sea
+      // [a-z0-9] en guiones: NO puede contener puntos y la ruta no se rompe.
+      const patch = {};
+      patch['teams.' + teamId] = weekData;
+      patch.lastModified = serverTimestamp();
+      patch.createdBy = uid;
+
+      try {
+        await updateDoc(ref, patch);
+      } catch (err) {
+        // El documento de la semana todavía no existe: updateDoc no lo crea.
+        if (err && err.code === 'not-found') {
+          const inicial = { teams: {}, lastModified: serverTimestamp(), createdBy: uid };
+          inicial.teams[teamId] = weekData;
+          await setDoc(ref, inicial, { merge: true });
+        } else {
+          throw err;
+        }
+      }
     } catch (err) {
       console.warn('[TrainingSync] Error guardando en Firestore:', err);
     }
@@ -275,11 +415,16 @@ const TrainingSync = (() => {
     init: init,
     saveWeek: saveWeek,
     loadWeek: loadWeek,
+    readWeekDays: readWeekDays,
     getAllWeeks: getAllWeeks,
     deleteWeek: deleteWeek,
     syncToFirestore: syncToFirestore,
     syncFromFirestore: syncFromFirestore,
-    getStats: getStats
+    getStats: getStats,
+    // Expuestos para la asistencia (que necesita las sesiones de la semana)
+    // y para los guards. Son funciones puras.
+    _diasDeEquipo: _diasDeEquipo,
+    _soloDias: _soloDias
   };
 })();
 

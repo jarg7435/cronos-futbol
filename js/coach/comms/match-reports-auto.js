@@ -246,6 +246,11 @@ async function autoDispatchMatchReports() {
                 cards:         p.cards  || null,
                 injured:       p.injured || false,
                 minutesPlayed: typeof formatTime === 'function' ? formatTime(p.time || 0) : String(p.time || 0),
+                // PT (2026-08-13): la titularidad se elegia en la convocatoria y NO
+                // se guardaba en ningun sitio, asi que el acumulado no podia
+                // contarla. cronosFueTitular (js/core/utils.js) es la UNICA
+                // definicion; los tres escritores de informes usan esta misma.
+                wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
                 history:       _parseHistoryForFirestore(p.history || []),
             });
         }
@@ -406,6 +411,7 @@ async function autoDispatchMatchReports() {
                 cards:         player.cards  || 'ninguna',
                 injured:       player.injured || false,
                 minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
+                wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(player) : false,
                 history:       _parseHistoryForFirestore(player.history || []),
             });
 
@@ -511,6 +517,7 @@ async function autoDispatchMatchReports() {
                     cards:         p.cards  || null,
                     injured:       p.injured || false,
                     minutesPlayed: typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
+                    wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
                     history:       _parseHistoryForFirestore(p.history||[]),
                 });
                 // [DIAG TEMP] setDoc del coach OK para este jugador.

@@ -691,6 +691,7 @@ window._executeReportsSend = async function(method) {
                                     cards:         p.cards  || null,
                                     injured:       p.injured || false,
                                     minutesPlayed: window.formatTime ? window.formatTime(p.time || 0) : String(p.time || 0),
+                                    wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
                                     history:       typeof _parseHistoryForFirestore === 'function'
                                                        ? _parseHistoryForFirestore(p.history || [])
                                                        : (p.history || []),
@@ -885,6 +886,7 @@ window._executeReportsSend = async function(method) {
                     ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
                     position: p.position || p.pos || '',
+                    wasStarter: typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
                     goals: p.goals || 0, cards: p.cards || null, injured: p.injured || false,
                     minutesPlayed: window.formatTime ? window.formatTime(p.time||0) : String(p.time||0),
                     history: _parseHistoryForFirestore(p.history||[]),

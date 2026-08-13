@@ -203,6 +203,56 @@ service cloud.firestore {
                   .hasOnly(['sendIndividualReports']);
     }
 
+    // ============================================================
+    // 2026-08-13 · QUIÉN PUEDE DESTRUIR UN INFORME COLECTIVO
+    // ------------------------------------------------------------
+    // Regla del autor, en sus palabras: la potestad depende "única y
+    // exclusivamente de entrar y tener activo el rol de Director Deportivo o
+    // Administrador del Club", y "aunque una misma persona posea varios
+    // cargos o el correo coincida". Si a mitad de temporada esa persona pasa a
+    // ser sólo coordinador o entrenador, PIERDE la potestad automáticamente.
+    //
+    // 🔑🔑 POR ROL, NUNCA POR IDENTIDAD. Aquí NO se usa isClubAdminOf(), que
+    // concede por `clubs/{id}.adminUid` o —peor— por COINCIDENCIA DE CORREO
+    // (`adminEmail == token.email`). Ese camino sobrevive a un cambio de
+    // cargo: la persona seguiría borrando informes después de dejar de ser
+    // director, que es justo lo que hay que impedir.
+    //
+    // 🔑 SE MIRA EL ROL EN DOS SITIOS Y LOS DOS SIGUEN AL CARGO:
+    //   · el CLAIM `role` del token, que la Cloud Function autoSetClaims
+    //     reescribe cuando cambia users/{uid}.role — así que al degradar a
+    //     coordinador el token deja de valer solo;
+    //   · y el propio users/{uid}, como respaldo mientras el claim se
+    //     propaga, con las mismas exigencias de pertenencia y estado.
+    // Ninguna de las dos vías mira quién es la persona.
+    //
+    // ⚠️ SE EXIGE isAuthorized Y status ACTIVO: un director dado de baja o
+    // pendiente no destruye datos. Verificado contra producción que todas las
+    // cuentas reales llevan status 'active', así que no cierra la puerta a
+    // nadie legítimo.
+    //
+    // ⚠️ LÍMITE HONESTO: las reglas NO pueden ver el rol con el que se ha
+    // ENTRADO en la sesión —`_activeRole` es del cliente y no viaja—. Esta
+    // función exige TENER el cargo; que además se esté ACTUANDO con él lo
+    // impone la interfaz (window._sdPuedePurgar). Las dos capas juntas dan la
+    // regla completa, y la de servidor es la que no se puede saltar.
+    function puedePurgarInformes(clubId) {
+      return isAuth() && clubId != null && (
+        (
+          ('role' in request.auth.token)
+          && (request.auth.token.role == 'director' || request.auth.token.role == 'club_admin')
+          && ('clubId' in request.auth.token) && request.auth.token.clubId == clubId
+        ) || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'director'
+              || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'club_admin')
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == clubId
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', '') == 'active'
+        )
+      );
+    }
+
     // Mismo club por campo del documento
     function sameClubAsDoc(docClubId) {
       return isAuth() && ('clubId' in request.auth.token) && request.auth.token.clubId == docClubId;
@@ -496,6 +546,76 @@ service cloud.firestore {
                        isSuperAdmin() ||
                        request.auth.uid == resource.data.get('coachUid', null)
                      );
+    }
+
+    // ============================================================
+    // COLECCIÓN: clubs/{clubId}/attendance/{teamId}__{YYYY-MM}
+    //
+    // CONTROL DE ASISTENCIA (2026-08-13). Un documento por equipo y mes con
+    // quién vino a cada entrenamiento y a cada partido, y con qué motivo
+    // faltó quien faltó.
+    //
+    // ⚠️⚠️ POR QUÉ LA LECTURA **NO** ES `sameClubAsDoc` A SECAS, que es lo que
+    // usa team_rosters justo aquí arriba: en este documento están las FALTAS
+    // DE LOS 25 JUGADORES con su causa, y un padre del club lleva el mismo
+    // claim `clubId` que un entrenador. Con el predicado de team_rosters,
+    // cualquier padre podría leerse el parte entero del equipo. Aquí se exige
+    // además que el usuario NO sea una cuenta de padre.
+    //
+    // 🔑 SE COMPRUEBA `role != 'parent'` Y NO `role in [...]`: se verificó
+    // contra producción que los ENTRENADORES tienen users/{uid}.role == 'user'
+    // (el rol de entrenador vive dentro de allRoles, no en la raíz). Una lista
+    // blanca como la de isTechStaffByDoc() —que pide 'coach'— habría dejado
+    // fuera a TODOS los entrenadores reales, que son justo quienes escriben.
+    // Con la lista negra pasan entrenador, director, coordinador y admin, y
+    // no pasa la cuenta que sólo es de padre. Quien es padre Y entrenador
+    // pasa, que es lo correcto: es entrenador.
+    //
+    // El padre NO lee este documento: lee su extracto en attendance_players.
+    // ============================================================
+    function attendanceStaff(clubId) {
+      return isAuth() && (
+               isSuperAdmin() ||
+               isClubAdminOf(clubId) ||
+               (
+                 (sameClubAsDoc(clubId) || userDocClubId(clubId))
+                 && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+                 && get(/databases/$(database)/documents/users/$(request.auth.uid))
+                      .data.get('role', '') != 'parent'
+               )
+             );
+    }
+
+    match /clubs/{clubId}/attendance/{docId} {
+      // Entrenador, director, coordinador y administrador del club. El
+      // director y el coordinador ven TODAS las categorías, que es lo que
+      // necesitan para su seguimiento.
+      allow read: if attendanceStaff(clubId);
+      allow create, update: if attendanceStaff(clubId);
+      allow delete: if isAuth() && (isSuperAdmin() || isClubAdminOf(clubId));
+    }
+
+    // ============================================================
+    // COLECCIÓN: clubs/{clubId}/attendance_players/{teamId}__{ficha}
+    //
+    // EXTRACTO POR JUGADOR para que cada padre vea LO DE SU HIJO Y NADA MÁS.
+    //
+    // 🔑🔑🔑 EXISTE PORQUE LAS REGLAS NO PUEDEN FILTRAR UN MAPA. El documento
+    // del equipo lleva las marcas de los 25 jugadores en un solo campo
+    // `marks`; no hay forma de conceder lectura "sólo de la clave ALC07". O
+    // se lee entero o no se lee. Por eso el dispositivo del entrenador
+    // publica además este extracto de UN jugador.
+    //
+    // 🔑 `parentUids` lo escribe el cliente resolviendo cronos_player_links
+    // (el mismo puente que ya usan los informes individuales). La regla no
+    // puede consultar links por query —en reglas no hay queries—, así que la
+    // pertenencia viaja DENTRO del documento.
+    // ============================================================
+    match /clubs/{clubId}/attendance_players/{docId} {
+      allow read: if attendanceStaff(clubId) ||
+                     (isAuth() && request.auth.uid in resource.data.get('parentUids', []));
+      allow create, update: if attendanceStaff(clubId);
+      allow delete: if isAuth() && (isSuperAdmin() || isClubAdminOf(clubId));
     }
 
     // ============================================================
@@ -950,10 +1070,33 @@ service cloud.firestore {
             .hasOnly(['dismissedBy'])) ||
         userDocClubId(resource.data.get('clubId', null))
       );
+      // ══════════════════════════════════════════════════════════════
+      // 2026-08-13 · QUIÉN DESTRUYE UN INFORME COLECTIVO
+      // ------------------------------------------------------------
+      // Regla de producto del autor: el ENTRENADOR y el COORDINADOR sólo
+      // OCULTAN de su panel (dismissedBy / dismissedByStaff, que siguen
+      // permitidos arriba en el update). La purga física —que descuenta los
+      // datos del acumulado de temporada del club— es EXCLUSIVA del DIRECTOR
+      // DEPORTIVO, máximo responsable deportivo.
+      //
+      // ⚠️ ESTO RETIRA DOS PERMISOS QUE ANTES EXISTÍAN, y es intencionado:
+      //   · el COORDINADOR entraba por la rama isTechStaffByDoc() de v435;
+      //   · el ENTRENADOR AUTOR entraba por `coachUid`, que no distinguía
+      //     entre su copia individual y el informe colectivo compartido.
+      // Ahora `coachUid` sólo alcanza lo que NO es de staff.
+      //
+      // ⚠️ SE INCLUYE isClubAdminOf: en los datos reales NO hay ninguna
+      // cuenta con users/{uid}.role == 'director' (el director del club de
+      // pruebas tiene role 'club_admin' y su rol de director vive dentro de
+      // allRoles, que las reglas no saben recorrer). Sin esta rama, NADIE
+      // podría purgar y la función nacería muerta. Es el administrador del
+      // club, que está por encima del director, no un rol lateral.
       allow delete: if isAuth() && (
         isSuperAdmin() ||
-        // FIX v4: solo el coach AUTOR puede borrar físicamente el doc compartido.
-        request.auth.uid == resource.data.get('coachUid', null) ||
+        // El coach autor conserva SUS copias no colectivas. El informe
+        // compartido (staffReport) ya no: eso es del Director.
+        (resource.data.get('staffReport', false) != true &&
+         request.auth.uid == resource.data.get('coachUid', null)) ||
         // FIX v2: padres pueden borrar informes individuales dirigidos a ellos
         (request.auth.uid == resource.data.get('parentUid', null) &&
          resource.data.get('type', '') == 'parent_player_report') ||
@@ -976,10 +1119,13 @@ service cloud.firestore {
         // club — LOS PADRES INCLUIDOS, porque su users/{uid}.clubId tambien
         // casa. El criterio del autor es Director Deportivo, Coordinador y
         // Entrenador, asi que el colectivo exige ademas rol tecnico.
+        //
+        // 2026-08-13 · isTechStaffByDoc() SUSTITUIDO por puedePurgarInformes.
+        // Aquel predicado admitía director, coordinador, coach, club_admin e
+        // individual_admin; la regla nueva deja fuera al coordinador y al
+        // entrenador, que ocultan pero no destruyen.
         (resource.data.get('staffReport', false) == true
-         && isTechStaffByDoc()
-         && (sameClubAsDoc(resource.data.get('clubId', null)) ||
-             userDocClubId(resource.data.get('clubId', null)))) ||
+         && puedePurgarInformes(resource.data.get('clubId', null))) ||
         // Los que NO son de staff (individuales y sueltos) se quedan como
         // estaban: cualquier miembro del club puede borrarlos.
         (resource.data.get('staffReport', false) != true &&

@@ -579,6 +579,9 @@ function openConvocationModal() {
                         ${_esInv ? `<span title="Jugador de apoyo\u2014sube de ${typeof escapeAttr==='function'?escapeAttr(_org):_org}"
                             style="font-size:0.5rem;font-weight:800;padding:2px 5px;border-radius:3px;flex-shrink:0;
                                    background:rgba(210,168,255,0.18);color:#d2a8ff;">\u2b06 ${typeof escapeHtml==='function'?escapeHtml(_org):_org}</span>` : ''}
+                        <span class="conv-att" data-att-ficha="${typeof escapeAttr==='function'?escapeAttr(p.id||''):(p.id||'')}"
+                            style="font-size:0.5rem;font-weight:800;padding:2px 5px;border-radius:3px;
+                                   flex-shrink:0;display:none;"></span>
                         <span class="conv-status-badge" style="font-size:0.5rem;font-weight:bold;padding:2px 5px;
                             border-radius:3px;display:none;margin-left:auto;flex-shrink:0;"></span>
                     </div>
@@ -617,6 +620,16 @@ function openConvocationModal() {
             </div>
         </div>
     `;
+
+    // ── ASISTENCIA RECIENTE JUNTO A CADA JUGADOR ─────────────────────
+    // 🔑 Es criterio para convocar, NO un bloqueo: no impide seleccionar a
+    // nadie. El entrenador decide; esto sólo le pone delante el dato que si
+    // no tendría que ir a buscar a otra pantalla.
+    //
+    // ⚠️ SE RELLENA DESPUÉS DEL PINTADO Y SIN REPINTAR LA REJILLA. Volver a
+    // construir el innerHTML aquí borraría la selección de convocados y
+    // titulares que el entrenador llevara hecha.
+    if (typeof _cronosPintarAsistenciaConv === 'function') _cronosPintarAsistenciaConv();
 
     const countEl = document.getElementById('conv-count');
     const goBtn   = document.getElementById('btn-go-titulares');

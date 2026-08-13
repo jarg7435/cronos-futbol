@@ -313,6 +313,13 @@ function spawnInitialPlayers() {
                 name: pData.alias || pData.name || `J${pData.number}`,
                 team: myTeam,
                 status: pData.initialStatus === 'field' ? 'field' : 'bench',
+                // 🔑 `status` MUTA durante el partido: un suplente que entra
+                // acaba en 'field'. `initialStatus` conserva con qué salió, y
+                // es lo que necesita la columna PT del acumulado. Sin esta
+                // línea se perdía aquí, en la lista fija de campos, igual que
+                // se perdían los datos del invitado antes de las plazas de
+                // apoyo.
+                initialStatus: pData.initialStatus === 'field' ? 'field' : 'bench',
                 titularOrder: pData.titularOrder,
                 time: 0,
                 color: myColors.primary,

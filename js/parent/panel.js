@@ -156,6 +156,7 @@ async function openParentPanel(initialTab) {
              entero. Lo fija la aserción 14p. -->
         <button id="pp-tab-conv"   class="pp-tab${_tab === 'conv'   ? ' active' : ''}" ${_ppTabAttrs('conv','convocatorias','Convocatorias')}>${_ppTabLock('convocatorias')}📋 Convoc.</button>
         <button id="pp-tab-train"  class="pp-tab${_tab === 'train'  ? ' active' : ''}" ${_ppTabAttrs('train','entrenamientos','Entrenamientos')}>${_ppTabLock('entrenamientos')}📅 Entreno.</button>
+        <button id="pp-tab-asist"  class="pp-tab${_tab === 'asist'  ? ' active' : ''}" ${_ppTabAttrs('asist','entrenamientos','Asistencia de tu hijo/a')}>${_ppTabLock('entrenamientos')}✅ Asistencia</button>
         <button id="pp-tab-player" class="pp-tab${_tab === 'player' ? ' active' : ''}" ${_ppTabAttrs('player','informes','Informes del jugador')}>${_ppTabLock('informes')}📊 Informes</button>
         <button id="pp-tab-chat"   class="pp-tab${_tab === 'chat'   ? ' active' : ''}" ${_ppTabAttrs('chat','mensajeria','Mensajes con el entrenador')}>${_ppTabLock('mensajeria')}💬 Mensajes</button>
         <button id="pp-tab-live"   class="pp-tab${_tab === 'live'   ? ' active' : ''}" ${_ppTabAttrs('live','partidos_en_vivo','Partidos en vivo')}>${_ppTabLock('partidos_en_vivo')}🔴 En Vivo</button>
@@ -172,6 +173,10 @@ async function openParentPanel(initialTab) {
     const _PP_TAB_EXTRA = {
         conv:   'convocatorias',
         train:  'entrenamientos',
+        // La asistencia se pasa sobre los días del cuadrante: va con el mismo
+        // extra que los entrenamientos, no con uno inventado que no existiría
+        // en el documento del club.
+        asist:  'entrenamientos',
         player: 'informes',
         chat:   'mensajeria',
         live:   'partidos_en_vivo'
@@ -204,6 +209,7 @@ async function openParentPanel(initialTab) {
         ({
             conv:   () => ppNotifsByType('convocatoria'),
             train:  () => ppNotifsByType('planificacion_semanal'),
+            asist:  ppAsistencia,
             player: ppPlayer,
             chat:   ppChat,
             live:   ppLive,
@@ -502,6 +508,116 @@ async function openParentPanel(initialTab) {
     // ══════════════════════════════════════════════════════════════
     // TAB 3 · MI JUGADOR — estadísticas + historial por partido
     // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════
+    // TAB · ASISTENCIA DE SU HIJO/A
+    // ══════════════════════════════════════════════════════════════
+    //  🔑🔑 LEE clubs/{club}/attendance_players, NO el documento del equipo.
+    //  El del equipo lleva las marcas de los 25 jugadores en un solo campo y
+    //  las reglas de Firestore no saben filtrar por clave dentro de un mapa:
+    //  o se lee entero o no se lee. Este extracto es de UN jugador y su regla
+    //  exige que el uid del padre esté en `parentUids`.
+    //
+    //  ⚠️ La consulta es `array-contains` sobre parentUids y NO por dorsal:
+    //  el dorsal cambia a mitad de temporada, y con él se leería al jugador
+    //  equivocado sin ningún error.
+    window.ppAsistencia = async () => {
+        const body = document.getElementById('pp-body');
+        if (!body) return;
+        const ea = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s == null ? '' : s) : String(s == null ? '' : s);
+
+        if (!clubId) {
+            body.innerHTML = '<div class="pp-empty">✅<br>Aún no estás vinculado a ningún club.</div>';
+            return;
+        }
+
+        let fichas = [];
+        try {
+            const { collection, getDocs, query, where } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const snap = await getDocs(query(
+                collection(fa.db, 'clubs', clubId, 'attendance_players'),
+                where('parentUids', 'array-contains', me.uid)));
+            snap.forEach(d => fichas.push(d.data() || {}));
+        } catch (e) {
+            console.warn('[Padres] no se pudo leer la asistencia:', e && e.message ? e.message : e);
+            body.innerHTML = '<div class="pp-empty">⚠️<br>No se ha podido cargar la asistencia.<br>' +
+                             '<span style="font-size:0.78rem;">Inténtalo de nuevo en unos minutos.</span></div>';
+            return;
+        }
+
+        if (!fichas.length) {
+            body.innerHTML = '<div class="pp-empty">✅<br>Todavía no hay asistencia registrada.<br>' +
+                '<span style="font-size:0.8rem;line-height:1.7;">Aparecerá aquí en cuanto el entrenador ' +
+                'pase lista en un entrenamiento o partido.</span></div>';
+            return;
+        }
+
+        const MOT = { estudios: '📚 Estudios', trabajo: '💼 Trabajo',
+                      medico: '🩹 Motivo médico / lesión', otros: '• Otros' };
+
+        let html = '';
+        fichas.forEach(f => {
+            const days = f.days || {};
+            const claves = Object.keys(days).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort();
+
+            let P = 0, I = 0, J = 0;
+            claves.forEach(k => {
+                const s = days[k] && days[k].s;
+                if (s === 'P') P++; else if (s === 'I') I++; else if (s === 'J') J++;
+            });
+            const total = P + I + J;
+            const pct = total ? Math.round(P / total * 100) : null;
+
+            // Color del porcentaje: informa, no juzga. Verde ≥80, ámbar ≥60.
+            const colPct = pct == null ? '#7d8590' : (pct >= 80 ? '#3fb950' : (pct >= 60 ? '#f0883e' : '#ff5858'));
+
+            html += '<div class="pp-card">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">' +
+                '<div style="font-size:1rem;font-weight:700;color:white;">⚽ ' + ea(f.alias || f.ficha) +
+                  (f.dorsal ? '<span style="color:#58a6ff;"> · ' + ea(f.dorsal) + '</span>' : '') + '</div>' +
+                '<div style="font-size:0.72rem;color:#7d8590;">' + ea(f.category || '') + ' ' + ea(String(f.subcategory || '').toUpperCase()) + '</div>' +
+              '</div>' +
+              '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem;margin-bottom:0.9rem;">' +
+                '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:#3fb950;">' + P + '</div><div style="font-size:0.65rem;color:#7d8590;">ASISTENCIAS</div></div>' +
+                '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:#ff5858;">' + I + '</div><div style="font-size:0.65rem;color:#7d8590;">INJUSTIF.</div></div>' +
+                '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:#f0883e;">' + J + '</div><div style="font-size:0.65rem;color:#7d8590;">JUSTIFIC.</div></div>' +
+                '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:' + colPct + ';">' + (pct == null ? '—' : pct + '%') + '</div><div style="font-size:0.65rem;color:#7d8590;">ASISTENCIA</div></div>' +
+              '</div>';
+
+            // Faltas, de la más reciente a la más antigua.
+            const faltas = claves.filter(k => days[k] && days[k].s !== 'P').reverse();
+            if (faltas.length) {
+                html += '<div style="font-size:0.75rem;font-weight:700;color:#7d8590;margin-bottom:0.45rem;">AUSENCIAS REGISTRADAS</div>';
+                faltas.forEach(k => {
+                    const d = days[k] || {};
+                    const esPartido = d.t === 'partido';
+                    const inj = d.s === 'I';
+                    const fecha = new Date(k + 'T12:00:00').toLocaleDateString('es-ES',
+                        { weekday: 'short', day: 'numeric', month: 'short' });
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;' +
+                            'padding:0.4rem 0.6rem;margin-bottom:0.3rem;border-radius:8px;' +
+                            'background:rgba(' + (inj ? '255,88,88' : '240,136,62') + ',0.07);' +
+                            'border:1px solid rgba(' + (inj ? '255,88,88' : '240,136,62') + ',0.22);">' +
+                      '<span style="font-size:0.8rem;">' + (esPartido ? '⚽' : '🏃') + ' ' + ea(fecha) + '</span>' +
+                      '<span style="font-size:0.74rem;font-weight:700;color:' + (inj ? '#ff5858' : '#f0883e') + ';">' +
+                        (inj ? 'Injustificada' : ea(MOT[d.m] || 'Justificada')) + '</span>' +
+                    '</div>';
+                });
+            } else if (total) {
+                html += '<div style="font-size:0.82rem;color:#3fb950;text-align:center;padding:0.6rem;">' +
+                        '🎉 Sin ninguna ausencia. ¡Enhorabuena!</div>';
+            }
+
+            html += '</div>';
+        });
+
+        html += '<p style="font-size:0.68rem;color:#7d8590;text-align:center;margin-top:0.6rem;line-height:1.6;">' +
+                'La asistencia la registra el entrenador en cada entrenamiento y partido programado.<br>' +
+                'Si crees que hay un error, escríbele desde 💬 Mensajes.</p>';
+
+        body.innerHTML = html;
+    };
+
     window.ppPlayer = async () => {
         const body = document.getElementById('pp-body');
         try {

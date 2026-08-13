@@ -28,7 +28,18 @@
 
     // Rol de entrenador del usuario, ya normalizado. Devuelve
     // { clubId, category, subcategory } o null si no lo es.
+    //
+    // ⚠️ LA CASCADA VIVE AHORA EN cronosMyTeam (js/core/utils.js) — el
+    // cuadrante semanal y la asistencia necesitan EXACTAMENTE la misma, y dos
+    // copias que se separen harían que un módulo escriba en un equipo y otro
+    // lea de otro. Lo de abajo queda sólo como respaldo por si utils.js no ha
+    // cargado; es el mismo código, palabra por palabra.
     function _miEquipo() {
+        if (typeof window.cronosMyTeam === 'function') {
+            var eq = window.cronosMyTeam();
+            return eq ? { clubId: eq.clubId, category: eq.category, subcategory: eq.subcategory } : null;
+        }
+
         var me = window._cronosCurrentUser;
         if (!me) return null;
         var clubId = me.clubId || '';

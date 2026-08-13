@@ -204,6 +204,16 @@ function walk(dir, out) {
         /\n\s+window\._sdMatchData = \{\};/.test(BLOCK)
         && /\n\s+window\.sdToggleReport = \(key64\) =>/.test(BLOCK)
         && /\n\s+window\.sdDeleteReport = async \(key64\) =>/.test(BLOCK));
+    // El BORRADO PERMANENTE (2026-08-13) vive en el mismo bloque y sigue el
+    // mismo patrón. Ocultar y borrar de verdad son dos acciones distintas y
+    // tienen que seguir siendo dos funciones distintas: fundirlas convertiría
+    // el botón de ocultar en un destructor irreversible.
+    ok('1b-bis · sdPurgeMatch también se asigna anidada dentro, y es OTRA función',
+        /\n\s+window\.sdPurgeMatch = async \(key64\) =>/.test(BLOCK)
+        && /\n\s+window\.sdDeleteReport = async \(key64\) =>/.test(BLOCK));
+    // Vuelve a 3: sdPurgeMatch NO abre sesión de Firestore propia — delega
+    // toda la escritura en js/coach/reports/match-purge.js, que es la
+    // definición única que comparten los dos botones de borrado.
     ok('1c · usa _sdFS() 3 veces y _RP.build una vez',
         (BLOCK.match(/await _sdFS\(\)/g) || []).length === 3
         && (BLOCK.match(/_RP\.build\(/g) || []).length === 1,

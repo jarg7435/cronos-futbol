@@ -2412,7 +2412,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v517';
+const CACHE_NAME = 'cronos-cache-v524';
 
 const ASSETS = [
     './',
@@ -2498,7 +2498,10 @@ const ASSETS = [
     './js/coach/reports/finished-matches-tab.js',
     './js/coach/reports/reports-tab.js',
     './js/coach/reports/reports-export.js',
+    './js/coach/reports/match-purge.js',
     './js/coach/training/panel.js',
+    './js/coach/attendance/attendance-store.js',
+    './js/coach/attendance/panel.js',
     './js/parent/panel.js',
     // SPRINT 4: Iconos locales para PWA
     './public/assets/icons/chronos-192.svg',

@@ -341,14 +341,24 @@ function openRosterManager() {
                                font-size:1.2rem; cursor:pointer; line-height:1; padding:0 0.2rem;">✕</button>
                     <h2 style="margin:0;">Gestionar Plantilla - ${mode === 'f7' ? 'Fútbol 7' : 'Fútbol 11'}</h2>
                 </div>
-                <button onclick="triggerRosterPhoto()"
-                    title="Haz una foto a la lista de jugadores y la IA la importa automáticamente"
-                    style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
-                           background:rgba(240,136,62,0.15); border:1px solid rgba(240,136,62,0.5);
-                           border-radius:8px; color:var(--secondary); font-size:0.85rem;
-                           font-weight:700; cursor:pointer; white-space:nowrap;">
-                    📷 IMPORTAR CON IA
-                </button>
+                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                    <button onclick="cronosIrAAsistencia()"
+                        title="Pasar lista de los entrenamientos y partidos de la semana"
+                        style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
+                               background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.5);
+                               border-radius:8px; color:#3fb950; font-size:0.85rem;
+                               font-weight:700; cursor:pointer; white-space:nowrap;">
+                        ✅ ASISTENCIA
+                    </button>
+                    <button onclick="triggerRosterPhoto()"
+                        title="Haz una foto a la lista de jugadores y la IA la importa automáticamente"
+                        style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
+                               background:rgba(240,136,62,0.15); border:1px solid rgba(240,136,62,0.5);
+                               border-radius:8px; color:var(--secondary); font-size:0.85rem;
+                               font-weight:700; cursor:pointer; white-space:nowrap;">
+                        📷 IMPORTAR CON IA
+                    </button>
+                </div>
             </div>
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom:0.8rem;">
                 Completa los datos de tus ${limit} jugadores · El Alias es el nombre que aparecerá en la ficha ·
@@ -456,6 +466,29 @@ function openRosterManager() {
         </div>
     `;
 }
+
+// ── Ir a pasar lista desde la pantalla de plantilla ─────────────────
+//
+// 🔑 VUELCA LA TABLA ANTES DE NAVEGAR, por la misma razón que las plazas de
+// apoyo: lo tecleado desde el último GUARDAR sólo existe en el DOM, y la
+// pantalla de asistencia lee la plantilla de localStorage. Sin esto, un
+// entrenador que acabara de teclear tres jugadores y pulsara ASISTENCIA los
+// perdería y además no los vería en la lista.
+window.cronosIrAAsistencia = function () {
+    try {
+        var mode = window.cronosActiveMode();
+        var actuales = window._cronosHarvestRosterRows();
+        if (actuales && actuales.length) {
+            var roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+            roster[mode] = actuales;
+            localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+        }
+    } catch (e) {
+        console.warn('[Asistencia] no se pudo volcar la plantilla antes de navegar:', e);
+    }
+    if (typeof openAttendancePanel === 'function') openAttendancePanel();
+    else if (typeof showToast === 'function') showToast('⚠️ El módulo de asistencia no está disponible', 3000);
+};
 
 // ── Añadir / vaciar una plaza de apoyo ──────────────────────────────
 // 🔑 LAS DOS RECOGEN LA TABLA ANTES DE REPINTAR. openRosterManager vuelve a

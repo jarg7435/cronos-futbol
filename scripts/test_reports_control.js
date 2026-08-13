@@ -176,6 +176,20 @@ function mocks(uid, data) {
         { function: 'get', args: [{ exactValue: p }], result: { value: { data: data || {} } } },
         { function: 'exists', args: [{ exactValue: `${DB}/cronos_config/superadmins` }], result: { value: false } },
         { function: 'get', args: [{ exactValue: `${DB}/cronos_config/superadmins` }], result: { value: { data: { emails: [] } } } },
+        // ⚠️ EL DOCUMENTO DEL CLUB HAY QUE MOCKEARLO desde 2026-08-13: el
+        // `allow delete` de los informes colectivos consulta isClubAdminOf(),
+        // que hace exists()/get() sobre clubs/{clubId}. Sin este mock la
+        // llamada da "Service call error" y la regla LANZA — y como un error
+        // equivale a DENY, los casos ALLOW salían en rojo y los DENY habrían
+        // salido verdes por el motivo equivocado.
+        // El admin es OTRO uid a propósito: así isClubAdminOf no concede por
+        // la puerta de atrás y cada caso prueba el predicado que dice probar.
+        { function: 'exists', args: [{ exactValue: `${DB}/clubs/clubA` }], result: { value: true } },
+        { function: 'get', args: [{ exactValue: `${DB}/clubs/clubA` }],
+          result: { value: { data: { adminUid: 'otro_admin_uid', adminEmail: 'admin@otro.es' } } } },
+        { function: 'exists', args: [{ exactValue: `${DB}/clubs/clubB` }], result: { value: true } },
+        { function: 'get', args: [{ exactValue: `${DB}/clubs/clubB` }],
+          result: { value: { data: { adminUid: 'otro_admin_uid', adminEmail: 'admin@otro.es' } } } },
     ];
 }
 
@@ -183,7 +197,13 @@ const CLUB = 'clubA';
 const iso = (ms) => new Date(ms).toISOString();
 const AHORA = Date.now();
 
-const docDirector = { clubId: CLUB, isAuthorized: true, role: 'director' };
+// ⚠️ `status: 'active'` NO ES DECORATIVO desde 2026-08-13: el borrado de un
+// informe colectivo pasa por isClubDirectorOf(), que exige isAuthorized Y
+// status activo. La fixture no lo traía y el caso 4a salía en rojo pareciendo
+// un fallo del producto. Se comprobó contra producción que TODOS los usuarios
+// reales llevan status='active', así que la fixture estaba incompleta, no la
+// regla de más.
+const docDirector = { clubId: CLUB, isAuthorized: true, role: 'director', status: 'active' };
 const docPadre    = { clubId: CLUB, isAuthorized: true, role: 'parent' };
 const docExtrano  = { clubId: 'clubZ', isAuthorized: true, role: 'user' };
 

@@ -116,6 +116,11 @@ window.saFS = async function saFS() {
         where: fs.where, getDocs: fs.getDocs,
         orderBy: fs.orderBy, onSnapshot: fs.onSnapshot,
         serverTimestamp: fs.serverTimestamp,
+        // deleteField hace falta para RETIRAR un nodo de un mapa (el cuadrante
+        // de un equipo, la marca de asistencia de un jugador). Sin él sólo se
+        // puede escribir null encima, que NO es lo mismo: el nodo sigue ahí y
+        // los recuentos lo siguen viendo.
+        deleteField: fs.deleteField,
         httpsCallable: fnMod.httpsCallable,
     };
 };

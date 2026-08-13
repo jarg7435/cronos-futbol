@@ -321,9 +321,9 @@ console.log('\n── PARTE 3 · 🔑 el papel dice lo mismo que el panel ──
 
     ok('3a · un solo equipo: cabecera sin columna "Equipo"',
         fUno[0][0] === 'Dorsal' && fUno[0].indexOf('Equipo') === -1, fUno[0]);
-    ok('3a-bis · y las nueve columnas acumuladas',
+    ok('3a-bis · y las diez columnas acumuladas (PT entre PJ y Min)',
         JSON.stringify(fUno[0]) === JSON.stringify(
-            ['Dorsal', 'Jugador', 'Conv.', 'PJ', 'Min', 'Goles', 'Amarillas', 'Rojas', 'Lesiones']), fUno[0]);
+            ['Dorsal', 'Jugador', 'Conv.', 'PJ', 'PT', 'Min', 'Goles', 'Amarillas', 'Rojas', 'Lesiones']), fUno[0]);
 
     const total = fUno[fUno.length - 1];
     // 🔑 Sumar los PJ de cada jugador daría 5 en un equipo que jugó 3: es la
@@ -331,10 +331,14 @@ console.log('\n── PARTE 3 · 🔑 el papel dice lo mismo que el panel ──
     ok('3b · 🔑 el TOTAL de PJ son los partidos del EQUIPO (3), no 5',
         total[3] === 3, total);
     // 🔑 11 jugadores x 90' = 990' por partido: sumarlos no significa nada.
-    ok('3c · 🔑 el TOTAL de minutos va con guion, no sumado',
+    // 🔑 PT tampoco se suma en el total: la suma de titularidades de la
+    // plantilla es el numero de alineaciones, no una magnitud del equipo.
+    ok('3c-bis · 🔑 el TOTAL de PT va con guion, no sumado',
         total[4] === '-', total);
+    ok('3c · 🔑 el TOTAL de minutos va con guion, no sumado',
+        total[5] === '-', total);
     ok('3d · goles, tarjetas y lesiones sí se suman (5 goles, 1 amarilla, 1 lesión)',
-        total[5] === 5 && total[6] === 1 && total[8] === 1, total);
+        total[6] === 5 && total[7] === 1 && total[9] === 1, total);
     ok('3e · y las convocatorias también', total[2] === 6, total);
 
     const varios = [uno[0], { equipo: 'Cadete B', partidos: 1, filas: [F({ number: '9', alias: 'Sergio', goals: 7 })] }];

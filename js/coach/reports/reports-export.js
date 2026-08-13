@@ -281,7 +281,7 @@
     //  tendría dos verdades para el mismo dato.
     //  ÚNICO añadido: la columna "Conv." (convocatorias), que en pantalla no
     //  cabía y en una hoja de cálculo es justo lo que se quiere cruzar con PJ.
-    const RX_COLS = ['Dorsal', 'Jugador', 'Conv.', 'PJ', 'Min', 'Goles', 'Amarillas', 'Rojas', 'Lesiones'];
+    const RX_COLS = ['Dorsal', 'Jugador', 'Conv.', 'PJ', 'PT', 'Min', 'Goles', 'Amarillas', 'Rojas', 'Lesiones'];
 
     function _rxTotales(filas) {
         return (filas || []).reduce(function (t, f) {
@@ -307,7 +307,7 @@
             filas.forEach(function (f) {
                 out.push(pre.concat([
                     f.number || '', f.alias || 'Sin nombre',
-                    f.called || 0, f.pj || 0, f.minutes || 0, f.goals || 0,
+                    f.called || 0, f.pj || 0, f.pt || 0, f.minutes || 0, f.goals || 0,
                     f.yellow || 0, f.red || 0, f.injuries || 0,
                 ]));
             });
@@ -318,7 +318,10 @@
             out.push(pre.concat([
                 '', 'TOTAL EQUIPO', t.called,
                 (typeof b.partidos === 'number' && isFinite(b.partidos)) ? b.partidos : '-',
-                '-', t.goals, t.yellow, t.red, t.injuries,
+                // PT y Min van con guion en el total, igual que en pantalla: la
+                // suma de titularidades de la plantilla es el numero de
+                // alineaciones, no una magnitud del equipo.
+                '-', '-', t.goals, t.yellow, t.red, t.injuries,
             ]));
         });
         return out;
@@ -340,7 +343,7 @@
         const cuerpo = filas.map(function (f) {
             return '<tr><td class="rx-l"><span class="rx-dorsal">' + _rxEsc(f.number || '—') + '</span> ' +
                 _rxEsc(f.alias || 'Sin nombre') + '</td>' +
-                cel(f.called || 0) + cel(f.pj || 0) + cel(f.minutes || 0) + cel(f.goals || 0) +
+                cel(f.called || 0) + cel(f.pj || 0) + cel(f.pt || 0) + cel(f.minutes || 0) + cel(f.goals || 0) +
                 cel(f.yellow || 0) + cel(f.red || 0) + cel(f.injuries || 0) + '</tr>';
         }).join('');
         const t = _rxTotales(filas);
@@ -348,16 +351,16 @@
 
         return '<div class="rx-block">' + titulo +
             '<table class="rx-tabla"><thead><tr>' +
-                '<th class="rx-l">Jugador</th><th>Conv.</th><th>PJ</th><th>Min</th>' +
+                '<th class="rx-l">Jugador</th><th>Conv.</th><th>PJ</th><th>PT</th><th>Min</th>' +
                 '<th>Goles</th><th>Amarillas</th><th>Rojas</th><th>Lesiones</th>' +
             '</tr></thead><tbody>' + cuerpo + '</tbody>' +
             '<tfoot><tr><td class="rx-l">Total equipo</td><td>' + t.called + '</td>' +
-                '<td>' + totPj + '</td><td>-</td><td>' + t.goals + '</td>' +
+                '<td>' + totPj + '</td><td>-</td><td>-</td><td>' + t.goals + '</td>' +
                 '<td>' + t.yellow + '</td><td>' + t.red + '</td><td>' + t.injuries + '</td>' +
             '</tr></tfoot></table>' +
             '<div style="font-size:9px;color:#6b7280;margin-top:4px;">' +
                 filas.length + ' jugador' + (filas.length === 1 ? '' : 'es') + ' con informes · ' +
-                'PJ del total = partidos disputados por el equipo; los minutos no se suman entre jugadores.' +
+                'PJ del total = partidos disputados por el equipo; PT (titularidades) y minutos no se suman entre jugadores.' +
             '</div></div>';
     };
 

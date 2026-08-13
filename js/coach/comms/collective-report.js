@@ -143,9 +143,31 @@ window.openCollectiveReport = async function openCollectiveReport() {
             msg += line + '\n';
         });
 
+        // ── ACUMULADO DE ASISTENCIA DEL MES ──────────────────────────
+        // 🔑 Va DENTRO de este informe y no en uno aparte: es lo que pidió el
+        // autor —que la sumatoria mensual se refleje en los acumulados del
+        // colectivo—, y es la pantalla que dirección ya lee.
+        // ⚠️ textoMensual devuelve '' si no hay ni una marca registrada, y
+        // entonces el mensaje sale EXACTAMENTE igual que antes de existir
+        // esta función. Los clubes que no pasen lista no notan nada.
+        try {
+            if (window.CronosAttendance && typeof window.CronosAttendance.textoMensual === 'function') {
+                const bloque = window.CronosAttendance.textoMensual();
+                if (bloque) msg += bloque;
+            }
+        } catch (e) { console.warn('[collectiveReport] asistencia:', e); }
+
         msg += `\n_Cronos Fútbol · Informe Entrenador_ ⚽`;
         return msg;
     }
+
+    // La caché de asistencia tiene que estar cargada ANTES de construir el
+    // texto: textoMensual lee de local y no espera a la red.
+    try {
+        if (window.CronosAttendance && typeof window.CronosAttendance.precargarMeses === 'function') {
+            await window.CronosAttendance.precargarMeses(31);
+        }
+    } catch (e) { console.warn('[collectiveReport] precarga asistencia:', e); }
 
     modal.style.display = 'flex';
     modal.innerHTML = `
@@ -416,6 +438,10 @@ window._sendCollectiveReportNow = async function() {
                 cards:          p.cards  || null,
                 injured:        p.injured || false,
                 minutesPlayed:  typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
+                // PT: ver js/core/utils.js. Este payload lo comparten la copia
+                // del STAFF y la del ENTRENADOR (se hace spread mas abajo), asi
+                // que con anadirlo aqui las dos lo llevan.
+                wasStarter:     typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
                 // history: array de eventos {type, minute} — clave para el Gantt
                 // p.history puede contener strings "Entra a las MM:SS (1ªP)" O objetos {type,minute}
                 history: _parseHistoryForFirestore(p.history || []),

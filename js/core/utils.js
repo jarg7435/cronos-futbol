@@ -856,10 +856,98 @@ function cronosDocEsDeEquipo(datos, equipos, clubIdPorDefecto) {
     return equipos.indexOf(propio) !== -1;
 }
 
+// ── EL EQUIPO DEL USUARIO QUE TIENE LA SESIÓN ABIERTA ────────────────
+// Devuelve { clubId, category, subcategory, teamId } o null si quien mira no
+// está al frente de ningún equipo (director, coordinador, padre, admin…).
+//
+// 🔑 EXISTE PARA QUE HAYA UNA SOLA CASCADA. Esta resolución —rol activo, si
+//    no el primer rol de entrenador de allRoles, si no la raíz del usuario—
+//    ya estaba escrita dentro de js/roster/team-rosters.js (_miEquipo) y hace
+//    falta ahora también en el cuadrante semanal y en la asistencia. Tres
+//    copias de la misma cascada acaban divergiendo, y el día que divergen un
+//    módulo ESCRIBE en un equipo mientras otro LEE de otro: los dos "funcionan"
+//    y el dato se parte en dos sin un solo error en consola.
+//
+// ⚠️ NO filtra por `removedAt` ni por `authorized` A PROPÓSITO: reproduce
+//    exactamente la cascada con la que se publicaron las fichas de equipo
+//    (clubs/{club}/team_rosters). Cambiar el criterio aquí movería el teamId
+//    de usuarios reales y dejaría su plantilla publicada huérfana.
+function cronosMyTeam() {
+    const me = window._cronosCurrentUser;
+    if (!me) return null;
+
+    let clubId = me.clubId || '';
+    let cat = '', sub = '';
+
+    const rd = me._activeRoleData;
+    if (rd && (rd.role === 'user' || rd.role === 'coach')) {
+        cat    = rd.category || rd.categoryLabel || '';
+        sub    = rd.subcategory || '';
+        clubId = rd.clubId || clubId;
+    }
+    if (!cat && Array.isArray(me.allRoles)) {
+        for (let i = 0; i < me.allRoles.length; i++) {
+            const r = me.allRoles[i];
+            if (r && (r.role === 'user' || r.role === 'coach') && (r.category || r.categoryLabel)) {
+                cat    = r.category || r.categoryLabel;
+                sub    = r.subcategory || '';
+                clubId = r.clubId || clubId;
+                break;
+            }
+        }
+    }
+    if (!cat) {
+        cat = me.category || me.categoryLabel || '';
+        sub = sub || me.subcategory || '';
+    }
+    if (!clubId || !cat) return null;
+
+    const teamId = cronosTeamId(clubId, cat, sub || '');
+    if (!teamId) return null;
+    return { clubId: clubId, category: cat, subcategory: sub || '', teamId: teamId };
+}
+
+// Clave de equipo del usuario actual, o '' si no lleva equipo. Atajo para los
+// llamadores que sólo necesitan la clave.
+function cronosMyTeamId() {
+    const eq = cronosMyTeam();
+    return eq ? eq.teamId : '';
+}
+
+// ── ¿SALIÓ DE INICIO? (columna PT, 2026-08-13) ──────────────────────
+// Recibe el objeto de jugador VIVO del partido (window.players), no un
+// informe ya guardado.
+//
+// 🔑🔑 `status` NO SIRVE: es el estado AL TERMINAR. Un suplente que entró en
+//    el minuto 30 acaba con status 'field', y contarlo como titular es
+//    exactamente el error que ya se pagó en la barra de minutos (v425).
+//
+// 🔑 Los dos marcadores buenos son `initialStatus` —el que fija la
+//    convocatoria— y `titularOrder`, que vale 0..N para los titulares y 999
+//    para el banquillo. Se miran los dos porque hay DOS caminos de arranque:
+//    goToTitularSelection() pone titularOrder, y startMatchWithConvocation()
+//    sólo pone initialStatus.
+//
+// ⚠️ VIVE AQUÍ Y NO EN CADA ESCRITOR. Los informes de plantilla los escriben
+//    TRES ficheros distintos (match-reports-auto, match-reports-send y
+//    collective-report); con una copia en cada uno, el día que cambie el
+//    criterio dos de ellos se quedarían atrás y el acumulado mezclaría
+//    partidos contados con reglas distintas.
+function cronosFueTitular(p) {
+    if (!p) return false;
+    if (p.initialStatus === 'field') return true;
+    if (p.initialStatus === 'bench') return false;
+    if (typeof p.titularOrder === 'number') return p.titularOrder !== 999;
+    return false;
+}
+
+window.cronosFueTitular   = cronosFueTitular;
 window.cronosTeamSlug     = cronosTeamSlug;
 window.cronosTeamId       = cronosTeamId;
 window.cronosTeamIdOfDoc  = cronosTeamIdOfDoc;
 window.cronosDocEsDeEquipo = cronosDocEsDeEquipo;
+window.cronosMyTeam       = cronosMyTeam;
+window.cronosMyTeamId     = cronosMyTeamId;
 
 // ── Exportación global ────────────────────────────────────────
 // Este archivo se carga como <script> clásico (NO type="module"),

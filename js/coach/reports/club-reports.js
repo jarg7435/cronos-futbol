@@ -109,13 +109,63 @@ window.openTestRolePicker = openTestRolePicker;
 //  director, su `_activeRole` es 'director' pero su `role` sigue siendo
 //  'superadmin'). Se respeta esa distincion tal cual la usa openStaffDashboard.
 // ────────────────────────────────────────────────────────────────────
-function _sdCanSeeConfigTab(user) {
+// ────────────────────────────────────────────────────────────────────
+//  ¿ACTÚA COMO DIRECTOR DEPORTIVO?  —  predicado único
+//
+//  Se extrajo de _sdCanSeeConfigTab (2026-08-13) porque el BORRADO
+//  PERMANENTE de informes necesita EXACTAMENTE el mismo criterio: sólo el
+//  Director Deportivo destruye datos; el entrenador y el coordinador ocultan.
+//  Con dos copias, el día que cambie el criterio una de las dos puertas se
+//  quedaría atrás — y aquí quedarse atrás significa que alguien que no debe
+//  borra informes de forma irreversible.
+//
+//  ⚠️ SE MIRA EL ROL CON EL QUE SE ESTÁ ACTUANDO (`_activeRole`), no sólo el
+//  de raíz: un multi-rol que entra como COORDINADOR no es director aunque su
+//  documento diga director. El superadmin se reconoce por `role` porque, al
+//  probar como director, su `_activeRole` es 'director' pero su `role` sigue
+//  siendo 'superadmin'.
+// ────────────────────────────────────────────────────────────────────
+function _sdEsDirector(user) {
     const me = user || window._cronosCurrentUser;
     if (!me) return false;
     if (['superadmin', 'admin'].includes(me.role)) return true;
     return (me._activeRole || me.role) === 'director';
 }
+window._sdEsDirector = _sdEsDirector;
+
+function _sdCanSeeConfigTab(user) {
+    return _sdEsDirector(user);
+}
 window._sdCanSeeConfigTab = _sdCanSeeConfigTab;
+
+// ────────────────────────────────────────────────────────────────────
+//  ¿PUEDE BORRAR INFORMES DE FORMA PERMANENTE?
+//
+//  Regla del autor (2026-08-13, ajuste estricto): la potestad depende ÚNICA Y
+//  EXCLUSIVAMENTE del ROL CON EL QUE SE HA ENTRADO —Director Deportivo o
+//  Administrador del Club—, nunca de quién sea la persona. Si esa misma
+//  persona pasa a ser sólo coordinador o entrenador, pierde la potestad
+//  automáticamente aunque siga siendo el mismo usuario físico.
+//
+//  ⚠️ ES OTRA FUNCIÓN QUE _sdEsDirector Y NO UN ALIAS, aunque se parezcan.
+//  Codifican reglas de producto DISTINTAS: la pestaña "Config." es del
+//  Director y SÓLO del Director (su guard lo fija: el club_admin NO la ve),
+//  mientras que la purga la comparte con el Administrador del Club. Fundirlas
+//  para "no repetir" le daría al club_admin una pestaña que no le toca, o le
+//  quitaría al director un botón que sí. Una función por regla.
+//
+//  🔑 SE MIRA `_activeRole` PRIMERO: un multi-rol que ha entrado como
+//  COORDINADOR no puede purgar, aunque su documento diga director. Eso es
+//  exactamente "tener ACTIVO el rol".
+// ────────────────────────────────────────────────────────────────────
+function _sdPuedePurgar(user) {
+    const me = user || window._cronosCurrentUser;
+    if (!me) return false;
+    if (['superadmin', 'admin'].includes(me.role)) return true;
+    const activo = me._activeRole || me.role;
+    return activo === 'director' || activo === 'club_admin';
+}
+window._sdPuedePurgar = _sdPuedePurgar;
 
 async function openStaffDashboard(initialTab) {
     const me         = window._cronosCurrentUser;
@@ -219,6 +269,7 @@ async function openStaffDashboard(initialTab) {
                     border-bottom:1px solid var(--glass-border);flex-shrink:0;overflow-x:auto;">
             <button onclick="switchStaffTab('convocatorias')" class="staff-tab active" id="tab-convocatorias">📋 Convoc.</button>
             <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
+            <button onclick="switchStaffTab('asistencia')" class="staff-tab" id="tab-asistencia">✅ Asistencia</button>
             <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
             <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
             ${((window._cronosCurrentUser?.extras?.partidos_terminados ?? true) !== false)
@@ -289,6 +340,7 @@ window.switchStaffTab = async (tab) => {
 
     if (tab === 'convocatorias')  await _sdLoadEvents('convocatoria');
     if (tab === 'entrenamientos') await _sdLoadEvents('planificacion_semanal');
+    if (tab === 'asistencia')     await _sdLoadAsistencia();
     if (tab === 'informes')       await _sdLoadReports();
     if (tab === 'mensajes')       await _sdLoadMessages();
     if (tab === 'partidos_terminados') {
@@ -356,6 +408,332 @@ window.switchStaffTab = async (tab) => {
 // ════════════════════════════════════════════════════════════════════
 //  TAB: MENSAJES (vista Director Deportivo / Coordinador)
 // ════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+//  ASISTENCIA DE TODO EL CLUB (Director / Coordinador)
+// ══════════════════════════════════════════════════════════════════
+//  Organizada por el ÁRBOL DE CATEGORÍAS, igual que Convocatorias,
+//  Entrenamientos e Informes, y con un indicador de actividad de HOY por
+//  equipo (verde = tiene sesión hoy · rojo = descansa).
+//
+//  🔑 LEE LA COLECCIÓN ENTERA DE UN MES, no equipo por equipo. Los
+//  documentos se llaman {teamId}__{YYYY-MM}, así que basta con filtrar por
+//  el campo `month`: una sola consulta para el club completo.
+//
+//  🔑🔑 LOS EQUIPOS NO SALEN SÓLO DE LA ASISTENCIA. Un equipo que hoy
+//  entrena pero al que aún no le han pasado lista NO tiene documento de
+//  asistencia, y es justo el que el director quiere ver. La lista de
+//  equipos es la UNIÓN de tres fuentes: los partes de asistencia del mes,
+//  el cuadrante de la semana y las plantillas publicadas. Construirla sólo
+//  con la primera dejaría fuera precisamente lo que se pregunta.
+//
+//  🔑 "HOY ENTRENA" SALE DEL CUADRANTE, no del parte de asistencia: el
+//  parte sólo existe cuando alguien ya ha marcado. Se lee el documento de
+//  la semana ENTERO (trainingPlans/{club}/weeks/{lunes}), que desde el
+//  arreglo del cuadrante trae los días de cada equipo en `teams.<teamId>`.
+//
+//  ⚠️ NO SE PINTAN LOS NOMBRES DE LOS JUGADORES NI SUS MOTIVOS aquí. Esta
+//  pantalla es de seguimiento agregado; el detalle con las causas —que es
+//  dato personal de un menor— se queda en la pantalla del entrenador.
+window._sdAsistMes = null;
+
+// teamId = '{club}__{categoria}__{subcategoria}'. Los tres tramos los genera
+// cronosTeamSlug, que colapsa todo lo que no sea [a-z0-9] en guiones: ningún
+// tramo puede contener '__', así que partir por ahí es seguro.
+function _sdPartirTeamId(teamId) {
+    const t = String(teamId || '').split('__');
+    if (t.length < 3) return null;
+    return { club: t[0], cat: t[1], sub: t[2] };
+}
+
+window._sdCambiarMesAsist = async function (delta) {
+    var y = parseInt(window._sdAsistMes.slice(0, 4), 10);
+    var m = parseInt(window._sdAsistMes.slice(5, 7), 10) + delta;
+    var d = new Date(y, m - 1, 1, 12, 0, 0);
+    window._sdAsistMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    await _sdLoadAsistencia();
+};
+
+async function _sdLoadAsistencia() {
+    const container = document.getElementById('staff-dashboard-content');
+    if (!container) return;
+    const me = window._cronosCurrentUser;
+    const clubId = window._testRoleClubId || me?.clubId || '';
+    const ea = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s == null ? '' : s) : String(s == null ? '' : s);
+
+    if (!window._sdAsistMes) {
+        const hoy = new Date();
+        window._sdAsistMes = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+    }
+    const mes = window._sdAsistMes;
+
+    // ── 1. Partes de asistencia del mes ─────────────────────────────
+    let docs = [];
+    try {
+        const { db, collection, getDocs, query, where } = await _sdFS();
+        const snap = await getDocs(query(
+            collection(db, 'clubs', clubId, 'attendance'),
+            where('month', '==', mes)));
+        snap.forEach(d => docs.push(d.data() || {}));
+    } catch (e) {
+        console.warn('[Dirección] asistencia:', e);
+        container.innerHTML = '<div style="text-align:center;padding:3rem;color:#f0883e;">' +
+            '⚠️ No se ha podido cargar la asistencia del club.</div>';
+        return;
+    }
+
+    // ── 2. Cuadrante de ESTA semana: quién tiene sesión hoy ─────────
+    // ⚠️ Sólo tiene sentido preguntarlo cuando se está mirando el mes en
+    // curso. En un mes pasado "hoy" no significa nada y el indicador se
+    // apaga en vez de mentir.
+    const hoyKey = window._cronosLocalDateKey(new Date());
+    const esMesActual = hoyKey.slice(0, 7) === mes;
+    let sesionHoy = {};          // teamId -> { tipo, hora, lugar }
+    if (esMesActual) {
+        try {
+            const { db, doc, getDoc } = await _sdFS();
+            // El lunes se calcula aquí y no se toma de CronosAttendance: esta
+            // pestaña no puede quedarse sin indicador porque otro módulo no
+            // haya cargado. Domingo es 0 y cuenta como el FINAL de la semana,
+            // igual que en la Planificación Semanal.
+            const hoy = new Date();
+            const lunes = new Date(hoy);
+            lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay() - 1));
+            lunes.setHours(0, 0, 0, 0);
+
+            const wk = window._cronosLocalDateKey(lunes);
+            const snap = await getDoc(doc(db, 'trainingPlans', clubId, 'weeks', wk));
+            if (snap.exists()) {
+                const v = snap.data() || {};
+                const porEquipo = v.teams || {};
+                Object.keys(porEquipo).forEach(tid => {
+                    const dd = (porEquipo[tid] || {})[hoyKey];
+                    if (dd && dd.tipo) {
+                        sesionHoy[tid] = { tipo: String(dd.tipo), hora: dd.hora || '', lugar: dd.lugar || '' };
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('[Dirección] cuadrante de la semana:', e);
+        }
+    }
+
+    // ── 3. Plantillas publicadas: equipos que existen aunque no hayan
+    //       pasado lista ni planificado nada esta semana ─────────────
+    let plantillas = {};
+    try {
+        if (typeof window.cronosFetchAllTeamRosters === 'function') {
+            plantillas = await window.cronosFetchAllTeamRosters(clubId) || {};
+        }
+    } catch (e) { plantillas = {}; }
+
+    // ── 4. Unión de las tres fuentes ────────────────────────────────
+    const equipos = new Map();   // teamId -> { teamId, cat, sub, doc, hoy }
+    const anota = (teamId, cat, sub) => {
+        if (!teamId) return;
+        if (equipos.has(teamId)) return;
+        const c = (typeof window.ctNormCat === 'function') ? window.ctNormCat(cat || '') : String(cat || '');
+        const s = (typeof window.ctNormSubcat === 'function') ? window.ctNormSubcat(sub || '') : String(sub || '');
+        equipos.set(teamId, { teamId, cat: c, sub: s, doc: null, hoy: null });
+    };
+
+    docs.forEach(d => anota(d.teamId, d.category, d.subcategory));
+    Object.keys(sesionHoy).forEach(tid => {
+        const p = _sdPartirTeamId(tid);
+        if (p) anota(tid, p.cat, p.sub);
+    });
+    Object.keys(plantillas).forEach(clave => {
+        const [c, s] = clave.split('|');
+        // El teamId se reconstruye con la MISMA función que lo generó, para
+        // que case con el de los partes y el del cuadrante.
+        const tid = (typeof window.cronosTeamId === 'function') ? window.cronosTeamId(clubId, c, s) : '';
+        if (tid) anota(tid, c, s);
+    });
+
+    docs.forEach(d => { const e = equipos.get(d.teamId); if (e) e.doc = d; });
+    Object.keys(sesionHoy).forEach(tid => { const e = equipos.get(tid); if (e) e.hoy = sesionHoy[tid]; });
+
+    // ── 5. Recuentos por equipo ─────────────────────────────────────
+    const resumen = (e) => {
+        const d = e.doc || {};
+        const marks = d.marks || {};
+        const sesiones = Object.keys(d.sessions || {}).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k));
+        let P = 0, I = 0, J = 0, hoyP = 0, hoyMarcados = 0;
+        Object.keys(marks).forEach(fecha => {
+            const dia = marks[fecha] || {};
+            Object.keys(dia).forEach(f => {
+                const s = dia[f] && dia[f].s;
+                if (s === 'P') P++; else if (s === 'I') I++; else if (s === 'J') J++;
+                if (fecha === hoyKey && s) {
+                    hoyMarcados++;
+                    if (s === 'P') hoyP++;
+                }
+            });
+        });
+        const tot = P + I + J;
+        return { sesiones: sesiones.length, P, I, J, tot,
+                 pct: tot ? Math.round(P / tot * 100) : null,
+                 hoyP, hoyMarcados };
+    };
+
+    const nombreMes = new Date(parseInt(mes.slice(0, 4), 10), parseInt(mes.slice(5, 7), 10) - 1, 1)
+        .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+    let html = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:1rem;">' +
+        '<div><div style="font-size:1rem;font-weight:700;color:white;">✅ Asistencia del club</div>' +
+        '<div style="font-size:0.72rem;color:var(--text-muted);">Por categorías · sesiones del cuadrante semanal</div></div>' +
+        '<div style="display:flex;gap:0.4rem;align-items:center;">' +
+          '<button class="btn" onclick="_sdCambiarMesAsist(-1)" style="padding:0.3rem 0.6rem;font-size:0.85rem;">◀</button>' +
+          '<span style="font-size:0.82rem;font-weight:700;color:white;min-width:150px;text-align:center;text-transform:capitalize;">' + ea(nombreMes) + '</span>' +
+          '<button class="btn" onclick="_sdCambiarMesAsist(1)" style="padding:0.3rem 0.6rem;font-size:0.85rem;">▶</button>' +
+        '</div></div>';
+
+    if (!equipos.size) {
+        html += '<div style="text-align:center;padding:3.5rem 1rem;color:var(--text-muted);line-height:1.8;">' +
+                '<div style="font-size:2.5rem;margin-bottom:0.5rem;">🗓️</div>' +
+                'Todavía no hay ningún equipo con actividad registrada.<br>' +
+                '<span style="font-size:0.8rem;">Los entrenadores pasan lista desde <strong>Gestionar Plantilla → ✅ ASISTENCIA</strong>.</span></div>';
+        container.innerHTML = html;
+        return;
+    }
+
+    const lista = Array.from(equipos.values());
+
+    // ── 6. Tira de HOY, para verlo sin desplegar nada ───────────────
+    if (esMesActual) {
+        const conHoy = lista.filter(e => !!e.hoy);
+        const sinHoy = lista.filter(e => !e.hoy);
+        const fechaLarga = new Date().toLocaleDateString('es-ES',
+            { weekday: 'long', day: 'numeric', month: 'long' });
+
+        html += '<div style="border:1px solid var(--glass-border);border-radius:12px;padding:0.9rem 1rem;margin-bottom:1rem;background:rgba(255,255,255,0.02);">' +
+          '<div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:0.6rem;text-transform:capitalize;">📆 HOY · ' + ea(fechaLarga) + '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">';
+
+        const chip = (texto, titulo, colFondo, colBorde, colTexto) =>
+            '<span title="' + ea(titulo) + '" style="font-size:0.72rem;font-weight:700;padding:0.28rem 0.6rem;' +
+            'border-radius:20px;background:' + colFondo + ';border:1px solid ' + colBorde + ';color:' + colTexto + ';">' +
+            ea(texto) + '</span>';
+
+        conHoy.forEach(e => {
+            const r = resumen(e);
+            const etiq = _sdEtiquetaEquipo(e);
+            const esPartido = String(e.hoy.tipo).toLowerCase().indexOf('partido') === 0;
+            const icono = esPartido ? '⚽' : '🏃';
+            // Verde: hay sesión hoy. Si además ya se pasó lista, se dice
+            // cuántos fueron; si no, se avisa de que está pendiente.
+            const cola = r.hoyMarcados
+                ? ' · ' + r.hoyP + '/' + r.hoyMarcados
+                : ' · sin pasar lista';
+            html += chip(icono + ' ' + etiq + cola,
+                e.hoy.tipo + (e.hoy.hora ? ' a las ' + e.hoy.hora : '') +
+                (e.hoy.lugar ? ' · ' + e.hoy.lugar : '') +
+                (r.hoyMarcados ? ' · ' + r.hoyP + ' de ' + r.hoyMarcados + ' presentes' : ' · lista sin pasar'),
+                'rgba(63,185,80,0.14)', 'rgba(63,185,80,0.45)', '#3fb950');
+        });
+
+        sinHoy.forEach(e => {
+            html += chip('💤 ' + _sdEtiquetaEquipo(e), 'Sin sesión programada hoy',
+                'rgba(255,88,88,0.10)', 'rgba(255,88,88,0.35)', '#ff5858');
+        });
+
+        html += '</div>' +
+          '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.6rem;">' +
+            '<strong style="color:#3fb950;">' + conHoy.length + '</strong> con sesión hoy · ' +
+            '<strong style="color:#ff5858;">' + sinHoy.length + '</strong> descansan' +
+          '</div></div>';
+    }
+
+    // ── 7. El árbol ─────────────────────────────────────────────────
+    // ⚠️ Mismo respaldo que las demás pestañas: si el módulo del árbol no
+    // estuviera cargado, esto degrada a la lista plana en vez de dejar la
+    // pestaña en blanco.
+    const usaArbol = typeof window.ctRenderTree === 'function' &&
+                     typeof window.ctNormCat === 'function';
+
+    if (usaArbol) {
+        html += window.ctRenderTree({
+            items:  lista,
+            getCat: (e) => e.cat,
+            getSub: (e) => e.sub,
+            renderLeaf: (e) => _sdFilaAsistencia(e, resumen(e), esMesActual),
+            // El indicador va en la CABECERA porque las ramas nacen plegadas.
+            renderSubBadge: (arr) => {
+                if (!esMesActual || !arr.length) return '';
+                const conSesion = arr.filter(e => !!e.hoy);
+                if (!conSesion.length) {
+                    return '<span title="Sin sesión hoy" style="font-size:0.62rem;font-weight:700;padding:1px 7px;' +
+                           'border-radius:20px;background:rgba(255,88,88,0.12);color:#ff5858;' +
+                           'border:1px solid rgba(255,88,88,0.3);">💤 HOY NO</span>';
+                }
+                const r = resumen(conSesion[0]);
+                const txt = r.hoyMarcados ? r.hoyP + '/' + r.hoyMarcados : 'pendiente';
+                return '<span title="Tiene sesión hoy" style="font-size:0.62rem;font-weight:700;padding:1px 7px;' +
+                       'border-radius:20px;background:rgba(63,185,80,0.16);color:#3fb950;' +
+                       'border:1px solid rgba(63,185,80,0.4);">🟢 HOY ' + ea(txt) + '</span>';
+            },
+            renderCatBadge: (catId, n, subMap) => {
+                if (!esMesActual || !n) return '';
+                let conSesion = 0;
+                subMap.forEach(arr => { arr.forEach(e => { if (e.hoy) conSesion++; }); });
+                if (!conSesion) return '';
+                return '<span title="Equipos con sesión hoy en esta categoría" style="font-size:0.62rem;' +
+                       'font-weight:700;padding:1px 7px;border-radius:20px;background:rgba(63,185,80,0.16);' +
+                       'color:#3fb950;border:1px solid rgba(63,185,80,0.4);">🟢 ' + conSesion + ' hoy</span>';
+            },
+            emptyText: 'El club no tiene equipo en esta subcategoría.',
+        });
+    } else {
+        lista.forEach(e => { html += _sdFilaAsistencia(e, resumen(e), esMesActual); });
+    }
+
+    container.innerHTML = html;
+}
+
+// Etiqueta legible del equipo, con la misma función que usa el resto del
+// proyecto para no inventar un mapa de nombres más.
+function _sdEtiquetaEquipo(e) {
+    if (typeof window._cronosTeamRosterLabel === 'function') {
+        const l = window._cronosTeamRosterLabel(e.cat, e.sub);
+        if (l) return l;
+    }
+    return String(e.cat || '') + ' ' + String(e.sub || '').toUpperCase();
+}
+
+// Ficha de un equipo dentro de su rama del árbol.
+function _sdFilaAsistencia(e, r, esMesActual) {
+    const ea = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s == null ? '' : s) : String(s == null ? '' : s);
+    const col = r.pct == null ? 'var(--text-muted)' : (r.pct >= 80 ? '#3fb950' : (r.pct >= 60 ? '#f0883e' : '#ff5858'));
+
+    let cabecera = '';
+    if (esMesActual) {
+        cabecera = e.hoy
+            ? '<div style="font-size:0.7rem;font-weight:700;color:#3fb950;margin-bottom:0.4rem;">🟢 HOY · ' +
+              ea(e.hoy.tipo) + (e.hoy.hora ? ' · ' + ea(e.hoy.hora) : '') +
+              (e.hoy.lugar ? ' · ' + ea(e.hoy.lugar) : '') +
+              (r.hoyMarcados ? ' — ' + r.hoyP + ' de ' + r.hoyMarcados + ' presentes'
+                             : ' — <span style="color:#f0883e;">lista sin pasar</span>') + '</div>'
+            : '<div style="font-size:0.7rem;font-weight:700;color:#ff5858;margin-bottom:0.4rem;">💤 HOY sin sesión programada</div>';
+    }
+
+    const celda = (etiq, valor, color) =>
+        '<div style="text-align:center;"><div style="font-size:1.05rem;font-weight:700;color:' + color + ';">' +
+        valor + '</div><div style="font-size:0.6rem;color:var(--text-muted);">' + etiq + '</div></div>';
+
+    return '<div style="border:1px solid var(--glass-border);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem;background:rgba(255,255,255,0.02);">' +
+        cabecera +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.8rem;flex-wrap:wrap;">' +
+          '<div style="font-weight:700;font-size:0.85rem;">' + ea(_sdEtiquetaEquipo(e)) + '</div>' +
+          '<div style="display:flex;gap:1.1rem;flex-wrap:wrap;">' +
+            celda('SESIONES', r.sesiones, 'var(--text)') +
+            celda('ASIST.', r.P, '#3fb950') +
+            celda('INJUST.', r.I, '#ff5858') +
+            celda('JUSTIF.', r.J, '#f0883e') +
+            celda('MEDIA', (r.pct == null ? '—' : r.pct + '%'), col) +
+          '</div>' +
+        '</div>' +
+      '</div>';
+}
+
 async function _sdLoadMessages() {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     const role = me?._activeRole || me?.role || 'director';

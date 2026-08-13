@@ -428,6 +428,20 @@
         opts = opts || {};
         var renderLeaf = opts.renderLeaf || function () { return ''; };
         var renderSubHeader = typeof opts.renderSubHeader === 'function' ? opts.renderSubHeader : null;
+        // renderSubBadge / renderCatBadge (2026-08-13): marcado extra DENTRO de
+        // la cabecera, junto al contador.
+        //
+        // 🔑 POR QUÉ NO VALÍA renderSubHeader PARA ESTO. Todas las ramas nacen
+        // PLEGADAS, así que lo que pinta renderSubHeader no se ve hasta que
+        // alguien despliega. El indicador de "quién entrena hoy" tiene que
+        // leerse de un vistazo con el árbol cerrado, y eso obliga a entrar en
+        // la cabecera.
+        //
+        // ⚠️ LOS DOS SON OPCIONALES Y EL MARCADO SIN ELLOS ES BYTE A BYTE EL
+        // DE SIEMPRE: este módulo lo comparten las pestañas de Convocatorias,
+        // Entrenamientos e Informes, y sus guards comparan el HTML generado.
+        var renderSubBadge = typeof opts.renderSubBadge === 'function' ? opts.renderSubBadge : null;
+        var renderCatBadge = typeof opts.renderCatBadge === 'function' ? opts.renderCatBadge : null;
         var emptyText  = opts.emptyText || 'Sin elementos en esta subcategoría.';
         var groups = window.ctGroupByCatSub(opts.items, opts.getCat, opts.getSub);
 
@@ -450,11 +464,13 @@
                 var body = arr.length
                     ? (cabecera + arr.map(renderLeaf).join(''))
                     : (cabecera + '<div class="ct-tree-empty">' + _eH(emptyText) + '</div>');
+                var badge = renderSubBadge ? (renderSubBadge(arr, catDef.id, subId) || '') : '';
                 return '' +
                 '<div class="ct-tree-sub">' +
                     '<div class="ct-tree-head" onclick="ctToggleNode(this)">' +
                         '<div class="ct-tree-title"><span class="ct-tree-chevron">&#9654;</span>' +
                             '<span>Subcategoría ' + _eH(subId) + '</span></div>' +
+                        badge +
                         '<span class="ct-tree-count' + (arr.length ? '' : ' ct-tree-zero') + '">' +
                             arr.length + '</span>' +
                     '</div>' +
@@ -462,11 +478,13 @@
                 '</div>';
             }).join('');
 
+            var catBadge = renderCatBadge ? (renderCatBadge(catDef.id, n, subMap) || '') : '';
             return '' +
             '<div class="ct-tree-cat">' +
                 '<div class="ct-tree-head" onclick="ctToggleNode(this)">' +
                     '<div class="ct-tree-title"><span class="ct-tree-chevron">&#9654;</span>' +
                         '<span>' + _eH(catDef.label) + '</span></div>' +
+                    catBadge +
                     '<span class="ct-tree-count' + (n ? '' : ' ct-tree-zero') + '">' + n + '</span>' +
                 '</div>' +
                 '<div class="ct-tree-body">' + subs + '</div>' +
@@ -671,6 +689,60 @@
         return c === 'roja' || c === 'red';
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  ¿EMPEZÓ EL PARTIDO COMO TITULAR? (columna PT, 2026-08-13)
+    // ════════════════════════════════════════════════════════════════
+    //  🔑🔑🔑 EL DATO NO ESTABA GUARDADO. Se comprobó leyendo los 300
+    //  informes de producción por REST antes de escribir nada: en
+    //  cronos_player_reports NO existe ni initialStatus, ni titular, ni
+    //  status, ni titularOrder. La titularidad se elegía en la convocatoria
+    //  y se perdía por el camino — el objeto de jugador de
+    //  event-listeners.js se construye con una LISTA FIJA de campos.
+    //
+    //  Por eso hay DOS vías, en este orden:
+    //
+    //   1. MARCA EXPLÍCITA (`wasStarter`), que a partir de ahora escriben los
+    //      informes nuevos. Es exacta y no se discute.
+    //
+    //   2. DEDUCCIÓN DEL HISTORIAL, para todo lo ya guardado. Es la MISMA
+    //      regla que report-engine.js llama "información airtight" para
+    //      pintar la barra de minutos: si tu primera TRANSICIÓN registrada es
+    //      una SALIDA, forzosamente estabas en el campo; si es una ENTRADA,
+    //      forzosamente estabas fuera.
+    //
+    //  ⚠️ SÓLO CUENTAN sub_in Y sub_out. El historial trae también goles y
+    //  tarjetas —comprobado en los datos reales: un jugador tenía
+    //  `goal,goal,goal,sub_out,…`—, y mirar "el primer suceso" a secas lo
+    //  daba por indeterminado. La transición es lo único que informa de
+    //  dónde estaba antes.
+    //
+    //  ⚠️ SIN NINGUNA TRANSICIÓN: si jugó minutos, empezó. Un suplente que
+    //  entra deja SIEMPRE un sub_in; no haberlo es la prueba de que ya
+    //  estaba dentro. Si no jugó ni un minuto, no fue titular.
+    function _ctEmpezoDeTitular(p) {
+        if (!p) return false;
+
+        // 1. Marca explícita de los informes nuevos.
+        if (p.wasStarter === true) return true;
+        if (p.wasStarter === false) return false;
+        if (p.initialStatus === 'field' || p.titular === true) return true;
+        if (p.initialStatus === 'bench') return false;
+
+        // 2. Deducción por la primera TRANSICIÓN del historial.
+        const hist = Array.isArray(p.history) ? p.history : [];
+        for (let i = 0; i < hist.length; i++) {
+            const e = hist[i];
+            const t = (e && typeof e === 'object') ? e.type
+                    : (typeof e === 'string' ? e.toLowerCase() : '');
+            if (t === 'sub_out' || (typeof t === 'string' && t.indexOf('sale') !== -1)) return true;
+            if (t === 'sub_in'  || (typeof t === 'string' && t.indexOf('entra') !== -1)) return false;
+        }
+
+        // 3. Sin transiciones: jugó = empezó.
+        return _ctToSeconds(p.minutesPlayed) > 0;
+    }
+    window._ctEmpezoDeTitular = _ctEmpezoDeTitular;
+
     // ctAccumulatePlayerStats(matches) → filas ordenadas por dorsal
     //   matches: los objetos agrupados por partido de reports-tab.js, cada uno
     //   con players[] (los documentos de cronos_player_reports de ese partido).
@@ -702,7 +774,7 @@
 
                 let f = porJugador.get(key);
                 if (!f) {
-                    f = { number: num, alias: alias, ficha: '', called: 0, pj: 0, seconds: 0,
+                    f = { number: num, alias: alias, ficha: '', called: 0, pj: 0, pt: 0, seconds: 0,
                           minutes: 0, goals: 0, yellow: 0, red: 0, injuries: 0 };
                     porJugador.set(key, f);
                 }
@@ -727,6 +799,11 @@
                 const secs = _ctToSeconds(p.minutesPlayed);
                 f.called  += 1;
                 if (secs > 0) f.pj += 1;      // convocado que no jugó NO suma partido
+                // ⚠️ PT se comprueba SOBRE LOS QUE JUGARON. Un convocado que
+                // se quedó en el banquillo los 90 minutos no puede sumar
+                // titularidad, y la deducción "sin transiciones = empezó"
+                // daría true para él si no se filtrara antes por minutos.
+                if (secs > 0 && _ctEmpezoDeTitular(p)) f.pt += 1;
                 f.seconds += secs;
                 f.goals   += Number(p.goals) || 0;
                 f.yellow  += _ctYellowsIn(p.history);
@@ -836,7 +913,7 @@
 
                 let f = porFicha.get(key);
                 if (!f) {
-                    f = { number: '', alias: alias, ficha: ficha, called: 0, pj: 0,
+                    f = { number: '', alias: alias, ficha: ficha, called: 0, pj: 0, pt: 0,
                           seconds: 0, minutes: 0, goals: 0, yellow: 0, red: 0,
                           injuries: 0, hosts: [] };
                     porFicha.set(key, f);
@@ -849,6 +926,9 @@
                 const secs = _ctToSeconds(p.minutesPlayed);
                 f.called += 1;
                 if (secs > 0) f.pj += 1;
+                // El jugador de apoyo cuenta su titularidad EN EL EQUIPO CON
+                // EL QUE COLABORÓ, que es donde salió de inicio.
+                if (secs > 0 && _ctEmpezoDeTitular(p)) f.pt += 1;
                 f.seconds += secs;
                 f.goals   += Number(p.goals) || 0;
                 f.yellow  += _ctYellowsIn(p.history);
@@ -924,7 +1004,7 @@
             if (dorsal && porDorsal.has(dorsal)) return;
 
             out.push({ number: dorsal, alias: alias || 'Sin nombre', ficha: ficha,
-                       called: 0, pj: 0, seconds: 0, minutes: 0, goals: 0,
+                       called: 0, pj: 0, pt: 0, seconds: 0, minutes: 0, goals: 0,
                        yellow: 0, red: 0, injuries: 0, sinDatos: true });
         });
 
@@ -1013,6 +1093,7 @@
                         : '') +
                 '</td>' +
                 cel(f.pj) +
+                cel(f.pt) +
                 cel(f.minutes) +
                 cel(f.goals) +
                 cel(f.yellow) +
@@ -1027,7 +1108,7 @@
         // sumarlos al total del equipo falsearía su temporada.
         const invitadas = Array.isArray(opts.guestRows) ? opts.guestRows : [];
         const cuerpoInv = invitadas.length ? (
-            '<tr class="ct-stats-guest-head"><td colspan="7">' +
+            '<tr class="ct-stats-guest-head"><td colspan="8">' +
                 '&#8593; Colaboraciones con otros equipos del club ' +
                 '(no suman en el total de este equipo)' +
             '</td></tr>' +
@@ -1041,6 +1122,7 @@
                         '<span class="ct-stats-guest-tag">&#8593; ' + _eH(conQuien) + '</span>' +
                     '</td>' +
                     cel(f.pj) +
+                    cel(f.pt) +
                     cel(f.minutes) +
                     cel(f.goals) +
                     cel(f.yellow) +
@@ -1062,6 +1144,7 @@
             '<thead><tr>' +
                 '<th class="ct-stats-name">Jugador</th>' +
                 '<th title="Partidos jugados">PJ</th>' +
+                '<th title="Partidos como titular (salió de inicio)">PT</th>' +
                 '<th title="Minutos jugados totales">Min</th>' +
                 '<th title="Goles">Goles</th>' +
                 // v476 · Los cuadrados grandes van SEGUIDOS en Unicode y es
@@ -1077,6 +1160,11 @@
             '<tfoot><tr class="ct-stats-total">' +
                 '<td class="ct-stats-name">Total equipo</td>' +
                 '<td title="Partidos disputados por el equipo">' + totPj + '</td>' +
+                // ⚠️ PT NO SE SUMA EN EL TOTAL, por la misma razón que PJ: la
+                // suma de titularidades de toda la plantilla es el número de
+                // alineaciones (11 por partido), no una magnitud del equipo, y
+                // leída bajo "PT" sólo confunde. Ya se pagó ese error con PJ.
+                '<td title="No se suma: son las titularidades de cada jugador">-</td>' +
                 '<td title="No se suman: los minutos son de cada jugador">-</td>' +
                 '<td>' + tot.goals + '</td>' +
                 '<td>' + tot.yellow + '</td>' +

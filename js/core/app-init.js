@@ -1167,23 +1167,112 @@ window.deleteFinishedMatchFromCloud = async function(matchId, docId, e) {
         console.warn('[v434] No se pudo comprobar el candado antes de borrar:', eLock && eLock.message);
     }
 
-    if (!confirm(docId && !_borrarPartido
-            ? '¿Eliminar definitivamente este informe?'
-            : '¿Eliminar definitivamente este partido del historial?')) return;
+    // ══════════════════════════════════════════════════════════════════
+    //  PURGA TOTAL (2026-08-13) — regla del autor
+    // ══════════════════════════════════════════════════════════════════
+    //  Antes esto borraba `live_matches/{matchId}` y UN SOLO documento de
+    //  cronos_player_reports. Pero un partido tiene hasta cuatro informes POR
+    //  JUGADOR con ids distintos, así que el resto sobrevivía y el ACUMULADO
+    //  DE TEMPORADA seguía contándolos: el partido desaparecía del historial y
+    //  sus datos se quedaban de fantasmas en la sumatoria del equipo.
+    //
+    //  La regla es: el borrado físico purga los acumulados correspondientes.
+    //  Se usa la MISMA función que el botón 💣 del panel de Informes
+    //  (js/coach/reports/match-purge.js) para que "purga total" signifique lo
+    //  mismo se entre por donde se entre.
+    //
+    //  ⚠️ EL AVISO SE GRADÚA SEGÚN LO QUE HAYA EN JUEGO, y por eso se cuenta
+    //  ANTES de preguntar: el registro de partido terminado es TEMPORAL (la
+    //  ventana de 10 h) y borrarlo solo no merece fricción; borrar informes
+    //  colectivos toca la temporada entera y sí la merece.
+    // ══════════════════════════════════════════════════════════════════
+    //  QUIÉN PUEDE DESTRUIR INFORMES: SÓLO EL DIRECTOR DEPORTIVO
+    // ══════════════════════════════════════════════════════════════════
+    //  Regla de producto (2026-08-13): entrenador y coordinador sólo OCULTAN;
+    //  la purga física, que descuenta del acumulado del club, es del Director.
+    //
+    //  🔑 PERO EL REGISTRO DE PARTIDO TERMINADO ES OTRA COSA: es temporal (la
+    //  ventana de 10 h) e independiente de los informes permanentes. Un
+    //  entrenador puede seguir retirándolo de su historial; lo que no puede es
+    //  llevarse por delante los informes. Por eso aquí no se corta en seco: se
+    //  separan las dos acciones.
+    const _esDirector = (typeof window._sdPuedePurgar === 'function')
+                        && window._sdPuedePurgar(window._cronosCurrentUser);
+
+    let _ids = [];
+    if (_esDirector) {
+        try {
+            if (typeof window.cronosRecogerInformesDePartido === 'function') {
+                _ids = await window.cronosRecogerInformesDePartido(matchId, docId ? [docId] : []);
+            } else if (docId) {
+                _ids = [docId];
+            }
+        } catch (eIds) {
+            console.warn('[DeleteMatch] no se pudieron contar los informes:', eIds && eIds.message);
+            if (docId) _ids = [docId];
+        }
+    } else if (docId && !_borrarPartido) {
+        // Ficha de INFORME y quien mira no es director: no hay nada que pueda
+        // hacer aquí. Se le manda a ocultar, que es su herramienta.
+        const _aviso = '⛔ El borrado permanente de informes es exclusivo del Director Deportivo.\n\n' +
+                       'Desde el panel de Informes puedes OCULTARLO de tu panel con 🗑️.';
+        if (typeof showToast === 'function') showToast(_aviso, 6000); else alert(_aviso);
+        return;
+    }
+
+    if (_ids.length) {
+        if (!confirm(
+            '⚠️ BORRADO PERMANENTE\n\n' +
+            'Se eliminarán ' + _ids.length + ' informe' + (_ids.length === 1 ? '' : 's') +
+            ' de este partido (entrenador, dirección y padres)' +
+            (_borrarPartido ? ',\ny también su registro de partido terminado' : '') + '.\n\n' +
+            'Sus datos se DESCONTARÁN del acumulado de temporada del equipo.\n' +
+            'Desaparecerá para todos los roles.\n\n' +
+            'ESTO NO SE PUEDE DESHACER. ¿Continuar?')) return;
+
+        const _t = prompt('Confirmación final.\n\nEscribe la palabra BORRAR para purgar el partido:');
+        if (String(_t || '').trim().toUpperCase() !== 'BORRAR') {
+            if (typeof showToast === 'function') showToast('Cancelado · no se ha borrado nada', 2500);
+            return;
+        }
+    } else {
+        // Sólo el registro temporal. Un aviso simple basta.
+        //
+        // ⚠️ EL TEXTO SE ADAPTA A POR QUÉ NO HAY NADA QUE PURGAR. Para quien
+        // no es director, `_ids` va vacío POR PERMISOS, no porque no existan
+        // informes: decirle "no hay informes asociados" sería mentirle y le
+        // haría creer que ha borrado el partido entero.
+        if (!confirm(_esDirector
+            ? '¿Eliminar este partido del historial?\n\n' +
+              'Es el registro temporal del partido; no hay informes asociados.'
+            : '¿Eliminar este partido de tu historial?\n\n' +
+              'Se retira el registro temporal del partido.\n' +
+              'Los informes colectivos NO se tocan: sólo el Director Deportivo puede eliminarlos.')) return;
+    }
 
     try {
-        const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const fa = window._cronos_auth;
-        if (fa && fa.db) {
+        if (typeof showSpinner === 'function') showSpinner('Purgando partido…');
+
+        let r = { borrados: 0, denegados: 0, partidoBorrado: false };
+        if (typeof window.cronosPurgarInformes === 'function') {
+            r = await window.cronosPurgarInformes(_ids);
             if (matchId && _borrarPartido) {
-                await deleteDoc(doc(fa.db, 'live_matches', matchId)).catch(() => {});
-            }
-            if (docId) {
-                await deleteDoc(doc(fa.db, 'cronos_player_reports', docId)).catch(() => {});
+                r.partidoBorrado = await window.cronosBorrarPartidoEnVivo(matchId);
             }
         }
-        if (typeof showToast === 'function') showToast('🗑️ Eliminado del historial', 3000);
 
+        if (typeof hideSpinner === 'function') hideSpinner();
+
+        const resumen = (typeof window.cronosResumenPurga === 'function')
+            ? window.cronosResumenPurga(r)
+            : '🗑️ Eliminado del historial';
+        if (typeof showToast === 'function') showToast(resumen, 6000); else alert(resumen);
+
+        // Se repinta SOLO el historial, que es esta pantalla. El acumulado de
+        // temporada vive en la pestana de Informes —otra pantalla, que no se
+        // ve a la vez— y se recalcula solo al abrirla, ya descontado.
+        // ⚠️ La guarda va CON LLAVES: la aserción 1d de
+        // test_finished_matches_module.js fija esa forma exacta.
         if (typeof _renderFinishedMatchesTab === 'function') {
             _renderFinishedMatchesTab();
         }
@@ -1191,6 +1280,7 @@ window.deleteFinishedMatchFromCloud = async function(matchId, docId, e) {
             showFinishedMatches();
         }
     } catch(err) {
+        if (typeof hideSpinner === 'function') hideSpinner();
         console.error('[DeleteMatch] Error:', err);
         alert('Error al eliminar el partido: ' + err.message);
     }
