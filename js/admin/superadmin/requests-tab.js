@@ -43,7 +43,29 @@
 // ── Helper compartido: cuenta las solicitudes pendientes que ve el SA ──
 // Usa EXACTAMENTE las mismas 6 fuentes y la misma deduplicación que
 // saRequests(), para que el badge del tab nunca se desincronice del panel.
-window.saCountPendingRequests = async function saCountPendingRequests() {
+// ════════════════════════════════════════════════════════════════════
+//  v533 · FUENTE ÚNICA DE LO QUE ESTÁ PENDIENTE
+//
+//  Antes había DOS implementaciones decidiendo qué está pendiente: este
+//  fichero para el badge y `extras.js` (patchSaRequests) para la lista que de
+//  verdad se pinta. Divergieron —badge 7, lista 4— y el arreglo de v532 sólo
+//  curó el síntoma: mientras fueran dos códigos, podían volver a separarse.
+//
+//  🔑 Ahora esta función es la ÚNICA que decide. El badge cuenta lo que ella
+//  devuelve y `extras.js` pinta lo que ella devuelve, así que **no pueden
+//  discrepar por construcción**: son la misma lista.
+//
+//  Devuelve { registros, cuota, sucesion }, ya normalizados y listos para
+//  pintar. Las BAJAS (deletion_requests) van aparte: tienen su propio bloque
+//  en la interfaz y nunca han contado para el badge.
+//
+//  Orden deliberado: MANDAN LAS SOLICITUDES. Llevan los datos del formulario
+//  (rol pedido, club, categoría) y son las que se aprueban; el documento de
+//  usuario sólo aporta el caso "huérfano", cuando alguien quedó pendiente sin
+//  solicitud que lo represente.
+// ════════════════════════════════════════════════════════════════════
+window.saPendingItems = async function saPendingItems() {
+    const vacio = { registros: [], cuota: [], sucesion: [] };
     try {
         const { db, collection, query, where, getDocs } = await saFS();
         const [snapD, snapD2, snapD3, snapP, snapQ, snapSucc] = await Promise.all([
@@ -54,65 +76,70 @@ window.saCountPendingRequests = async function saCountPendingRequests() {
             getDocs(query(collection(db,'platform_requests'),where('type','==','quota_increase'),where('status','==','unread'))).catch(()=>({forEach:()=>{}})),
             getDocs(query(collection(db,'succession_requests'),where('status','==','pending_sa'))).catch(()=>({forEach:()=>{}})),
         ]);
-        const _seen = new Set();
-        let count = 0;
-        const _addDirect = (d) => { if (!_seen.has(d.id)) { _seen.add(d.id); count++; } };
-        snapD.forEach(_addDirect);
-        snapD2.forEach(_addDirect);
+
+        const registros = [];
+        const representados = new Set();   // uid que ya tiene su solicitud en la lista
+
+        // 1 · Las solicitudes reenviadas al SA.
+        snapP.forEach(d => {
+            const r = Object.assign({ _id: d.id }, d.data());
+            registros.push(r);
+            if (r.userUid) representados.add(r.userUid);
+        });
+
+        // 2 · Los usuarios pendientes SIN solicitud que los represente
+        //     (huérfanos). Se normalizan con la misma forma que un registro
+        //     para que quien pinta no tenga que distinguirlos.
+        const _huerfano = (d) => {
+            if (representados.has(d.id)) return;   // ya está en la lista como solicitud
+            representados.add(d.id);
+            const u = d.data();
+            registros.push({
+                _id:               'orphan_' + d.id,
+                userUid:           d.id,
+                requestedEmail:    u.email || d.id,
+                // v534 · El nombre real vive en `allRoles[].firstName`, no en la
+                // raíz: sin el resolutor aquí salía 'Usuario' o el correo.
+                requestedName:     (typeof window.cronosNombreUsuario === 'function')
+                                       ? window.cronosNombreUsuario(u, 'Usuario')
+                                       : (u.displayName || u.firstName || 'Usuario'),
+                requestedRole:     u.role || u.requestedRole || 'user',
+                requestedClubName: u.requestedClubName || u.clubName || '–',
+                requestedCategory: u.requestedCategory || u.category || null,
+                requestedSubcat:   u.requestedSubcategory || u.subcategory || null,
+                clubId:            u.clubId || null,
+                status:            u.status,
+                isOrphan:          true,
+            });
+        };
+        snapD.forEach(_huerfano);
+        snapD2.forEach(_huerfano);
+        // ⚠️ `pending_individual` sólo cuenta si de verdad es de un ente
+        // individual: ese estado lo comparten flujos que no son solicitudes.
         snapD3.forEach(d => {
             const u = d.data();
             if (u.individualEntityId || u.individualOwnerId || u.isIndividual
                 || u.role === 'individual' || u.role === 'admin_individual') {
-                _addDirect(d);
+                _huerfano(d);
             }
         });
-        snapP.forEach(d => {
-            const r = d.data();
-            if ((r.type === 'self_registration' || r.type === 'ind_admin_registration')
-                && (r.requestedRole === 'club_admin' || r.requestedRole === 'individual')) {
-                return; // ya contado como direct_user
-            }
-            // ════════════════════════════════════════════════════════════
-            //  v532 · DEDUPLICAR POR PERSONA, NO POR TIPO DE SOLICITUD
-            //
-            //  Reporte del autor: el badge decía 7 y la lista pintaba 4.
-            //  Medido por REST sobre producción: había 3 usuarios en
-            //  `pending_sa` y 4 solicitudes en `platform_requests/pending_sa`
-            //  —los mismos 3, más uno—. El contador sumaba 3 + 4 = 7,
-            //  contando DOS VECES a las mismas tres personas: una por su
-            //  documento de usuario y otra por su solicitud.
-            //
-            //  🔑 La regla de arriba intentaba evitarlo, pero deduplicaba por
-            //  TIPO y ROL: sólo se saltaba `self_registration` de `club_admin`
-            //  o `individual`. Las cuatro reales eran `self_registration` con
-            //  `requestedRole: 'user'` (entrenador), así que no entraban. El
-            //  desfase aparecía con cualquier entrenador, director,
-            //  coordinador o padre: sólo los admins de club y los individuales
-            //  estaban cubiertos.
-            //
-            //  Ahora se deduplica por IDENTIDAD (`userUid`, que es el id del
-            //  documento de usuario), que es como lo hace la lista que de
-            //  verdad se pinta (extras.js · patchSaRequests). Una persona con
-            //  solicitud Y documento pendiente es UN elemento, no dos.
-            //
-            //  ⚠️ NO se filtra por "usuario ya activo": un usuario activo con
-            //  solicitud pendiente es un caso NORMAL —pedir un rol nuevo—, y
-            //  hay uno real en producción (brunoromar2012, entrenador en
-            //  CD DÍA sobre una cuenta que ya tenía otros seis roles).
-            // ════════════════════════════════════════════════════════════
-            //  ⚠️ Sólo se salta lo YA CONTADO por su documento de usuario. NO se
-            //  marca aquí el userUid como visto: dos solicitudes distintas de la
-            //  misma persona (p. ej. entrenador y director) son DOS filas en la
-            //  lista, y el badge tiene que decir dos. Marcarlo escondía la
-            //  segunda — lo cazó la aserción 2k.
-            if (r.userUid && _seen.has(r.userUid)) return;
-            count++;
-        });
-        snapQ.forEach(() => count++);
-        snapSucc.forEach(() => count++);
-        return count;
+
+        const cuota = [], sucesion = [];
+        snapQ.forEach(d => cuota.push(Object.assign({ _id: d.id }, d.data())));
+        snapSucc.forEach(d => sucesion.push(Object.assign({ _id: d.id }, d.data())));
+
+        return { registros, cuota, sucesion };
+    } catch (_) { return vacio; }
+};
+
+// El badge cuenta EXACTAMENTE lo que se va a pintar.
+window.saCountPendingRequests = async function saCountPendingRequests() {
+    try {
+        const it = await window.saPendingItems();
+        return it.registros.length + it.cuota.length + it.sucesion.length;
     } catch (_) { return 0; }
 };
+
 
 window.saRequests = async function saRequests() {
     const body = document.getElementById('sa-body');

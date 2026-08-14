@@ -240,19 +240,32 @@
             try {
                 var { db, collection, getDocs, query, where, doc, updateDoc, setDoc, getDoc } = await saFS();
 
-                var snapP_all = [], snapU_all = [], snapD_all = [];
+                // ════════════════════════════════════════════════════════
+                //  v533 · SE PINTA LO QUE CUENTA EL BADGE, LITERALMENTE
+                //
+                //  Aquí había una segunda implementación de "qué está
+                //  pendiente": leía las colecciones enteras y aplicaba sus
+                //  propios filtros. Como el badge tenía los suyos, los dos
+                //  números divergieron (badge 7, lista 4). Ahora ambos salen
+                //  de `saPendingItems()`, en requests-tab.js, que se carga
+                //  ANTES que este fichero. No pueden discrepar: es la misma
+                //  lista.
+                //
+                //  Las BAJAS siguen leyéndose aquí: tienen su propio bloque y
+                //  nunca han contado para el badge.
+                // ════════════════════════════════════════════════════════
+                var snapD_all = [];
+                var pend = { registros: [], cuota: [], sucesion: [] };
                 try {
-                    // Fetch directo
-                    const pDocs = await getDocs(collection(db, 'platform_requests'));
-                    pDocs.forEach(d => snapP_all.push(Object.assign({_id: d.id}, d.data())));
-                    
-                    const uDocs = await getDocs(collection(db, 'users'));
-                    uDocs.forEach(d => snapU_all.push(Object.assign({_id: d.id}, d.data())));
+                    if (typeof window.saPendingItems !== 'function') {
+                        throw new Error('saPendingItems no está cargada (orden de scripts)');
+                    }
+                    pend = await window.saPendingItems();
 
                     const dDocs = await getDocs(collection(db, 'deletion_requests'));
                     dDocs.forEach(d => snapD_all.push(Object.assign({_id: d.id}, d.data())));
-                    
-                } catch (e) { 
+
+                } catch (e) {
                     console.error('[SA-DEBUG] Error crítico de lectura:', e);
                     if (body) body.innerHTML = `<div style="padding:1rem;background:rgba(255,88,88,0.1);border:1px solid #ff5858;border-radius:8px;color:#ff5858;">
                         <strong>⚠️ Error de Permisos Firestore:</strong><br>${e.message}
@@ -260,44 +273,16 @@
                     return;
                 }
 
-                var regReqs = [];
-                var delReqs = [];
-                var pendingStatuses = ['pending_sa', 'pending', 'pending_individual'];
-                
-                // 1. Procesar registro
-                snapP_all.forEach(function(data) {
-                    if (pendingStatuses.includes(data.status)) {
-                        regReqs.push(data);
-                    }
-                });
-
-                // 2. Procesar bajas
-                snapD_all.forEach(function(data) {
-                    if (data.status === 'pending') {
-                        delReqs.push(data);
-                    }
-                });
-
-                // 2. Procesar usuarios (huérfanos)
-                var existingUids = new Set(regReqs.map(function(r){ return r.userUid; }).filter(Boolean));
-                snapU_all.forEach(function(ud) {
-                    if (pendingStatuses.includes(ud.status) && !existingUids.has(ud._id)) {
-                        regReqs.push({
-                            _id:               'orphan_' + ud._id,
-                            userUid:           ud._id,
-                            requestedEmail:    ud.email || ud._id,
-                            requestedName:     ud.displayName || ud.firstName || 'Usuario',
-                            requestedRole:     ud.role || ud.requestedRole || 'user',
-                            requestedClubName: ud.requestedClubName || ud.clubName || '–',
-                            clubId:            ud.clubId || null,
-                            status:            ud.status,
-                            isOrphan:          true
-                        });
-                    }
-                });
+                // Los registros (solicitudes + usuarios huérfanos, ya
+                // deduplicados y normalizados) vienen de la fuente única.
+                var regReqs = pend.registros;
+                var delReqs = snapD_all.filter(function (d) { return d.status === 'pending'; });
 
                 var resetBtn = '<div style="margin-top:1rem;padding-top:0.8rem;border-top:1px solid rgba(255,255,255,0.07);"><button onclick="saExtResetUser()" style="width:100%;padding:0.6rem;background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.25);border-radius:8px;color:#58a6ff;font-size:0.8rem;cursor:pointer;font-weight:600;text-align:left;">🔄 Resetear / limpiar usuario por email (solicitudes atascadas)</button></div>';
-                if (!regReqs.length && !delReqs.length) {
+                // ⚠️ El badge cuenta también cuota y sucesión: si sólo hubiera
+                // de ésas, decir "no hay solicitudes pendientes" con el badge
+                // en 2 sería el mismo desfase de antes con otra cara.
+                if (!regReqs.length && !delReqs.length && !pend.cuota.length && !pend.sucesion.length) {
                     if (body) body.innerHTML = '<div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.3);border-radius:8px;padding:0.8rem 1rem;">✅ No hay solicitudes pendientes</div>' + resetBtn;
                     return;
                 }
@@ -330,6 +315,36 @@
                             '<button class="sa-btn" onclick="saExtApprove(\'' + eid + '\',\'' + erole + '\',\'' + eemail + '\',\'' + eclubid + '\',\'' + eclubname + '\',true)" style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.08);font-weight:700;">✅ Aprobar</button>' +
                             '<button class="sa-btn" onclick="saExtApprove(\'' + eid + '\',\'' + erole + '\',\'' + eemail + '\',\'' + eclubid + '\',\'' + eclubname + '\',false)" style="color:#ff5858;border-color:rgba(255,88,88,0.4);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
                             '<button onclick="saExtDiscardRequest(\'' + eid + '\')" class="sa-btn" title="Solo borrar solicitud, no al usuario" style="color:#8b949e;border-color:rgba(255,255,255,0.15);background:rgba(255,255,255,0.03);">Descartar</button>' +
+                            '</div></div>';
+                    });
+                }
+                // ════════════════════════════════════════════════════════
+                //  v533 · LO QUE EL BADGE CUENTA Y ANTES NO SE VEÍA
+                //
+                //  Ampliaciones de cupo y sucesiones de administrador sumaban
+                //  en el badge pero no se pintaban en ningún sitio: un desfase
+                //  dormido, esperando a que apareciera la primera. Ahora se
+                //  listan. ⚠️ Se muestran para que consten y se puedan mirar;
+                //  su aprobación NO tiene flujo propio en esta pestaña y no se
+                //  inventa aquí uno a medias.
+                // ════════════════════════════════════════════════════════
+                if (pend.cuota.length || pend.sucesion.length) {
+                    html += '<div style="font-size:0.82rem;font-weight:700;color:#58a6ff;margin:1rem 0 0.5rem;">📌 Otras solicitudes que requieren tu atención (' + (pend.cuota.length + pend.sucesion.length) + ')</div>';
+                    pend.cuota.forEach(function (r) {
+                        html += '<div style="background:rgba(88,166,255,0.05);border:1px solid rgba(88,166,255,0.25);border-radius:8px;padding:0.8rem;margin-bottom:0.6rem;">' +
+                            '<div style="font-weight:700;color:white;">📈 Ampliación de cupo</div>' +
+                            '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">' +
+                            '🏟️ ' + (r.clubName || r.clubId || '—') +
+                            (r.requestedEmail ? '<br>📧 ' + r.requestedEmail : '') +
+                            (r.requestedSlots ? '<br>➕ Plazas pedidas: ' + r.requestedSlots : '') +
+                            '</div></div>';
+                    });
+                    pend.sucesion.forEach(function (r) {
+                        html += '<div style="background:rgba(88,166,255,0.05);border:1px solid rgba(88,166,255,0.25);border-radius:8px;padding:0.8rem;margin-bottom:0.6rem;">' +
+                            '<div style="font-weight:700;color:white;">👑 Sucesión de administrador</div>' +
+                            '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">' +
+                            '🏟️ ' + (r.clubName || r.clubId || '—') +
+                            (r.requestedEmail ? '<br>📧 ' + r.requestedEmail : '') +
                             '</div></div>';
                     });
                 }

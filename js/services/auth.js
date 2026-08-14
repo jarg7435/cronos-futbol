@@ -764,13 +764,19 @@ export async function checkAuthorization(user) {
                 if (indDoc && indData) {
 
                     // Crear documento de usuario como admin individual
-                    const fullName = indData.displayName || indData.name || user.email.split('@')[0];
+                    // ⚠️ v534 · AQUÍ EL CORREO SE ESCRIBÍA EN LA BASE DE DATOS.
+                    // Sin nombre en la entidad, el trozo anterior a la arroba
+                    // acababa guardado como "Administrador Individual
+                    // jose_arg027" y de ahí salía en todas las pantallas. Si no
+                    // hay nombre, no se inventa uno con el correo.
+                    const fullName = indData.displayName || indData.name || '';
                     const migratedData = {
                         email:           user.email,
                         role:            'individual',
                         isAuthorized:    true,
                         status:          'active',
-                        displayName:     'Administrador Individual ' + fullName,
+                        displayName:     fullName ? ('Administrador Individual ' + fullName)
+                                                  : 'Administrador Individual',
                         firstName:       indData.displayName || indData.name || null,
                         lastName:        null,
                         plan:            indData.plan || 'free',

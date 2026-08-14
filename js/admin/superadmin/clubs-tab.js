@@ -248,7 +248,7 @@ window.saClubs = async function saClubs() {
                                     border-top:1px solid rgba(255,255,255,0.05);">
                         <span>▾</span> Ver usuarios (${vis.length})
                     </summary>
-                    ${(function(){const _ex=_expandClubUsers(vis,c.id);return _ex.length?window.renderCategoryTreeReadOnly(_ex,{mode:'club'}):'<p style="margin:0;padding:0.6rem 0.9rem;color:#8b949e;font-size:0.8rem;">Sin usuarios asignados.</p>';})()}
+                    ${(function(){const _ex=_expandClubUsers(vis,c.id);return _ex.length?window.renderCategoryTreeReadOnly(_ex,{mode:'club',conBorrado:true}):'<p style="margin:0;padding:0.6rem 0.9rem;color:#8b949e;font-size:0.8rem;">Sin usuarios asignados.</p>';})()}
                 </details>
             </div>`;
         });

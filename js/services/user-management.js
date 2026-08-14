@@ -14,50 +14,14 @@
  * - Libera la plaza en el club
  * - Sincroniza automáticamente en SuperAdmin
  */
-async function deleteUserPermanently(uid, email, clubId, role) {
-    if (!confirm(`⚠️ ELIMINAR DEFINITIVAMENTE: ${email}\n\nEsta acción es IRREVERSIBLE.\nEl usuario podrá registrarse de nuevo con este email.\n\n¿Confirmar?`)) {
-        return false;
-    }
+/* ⚠️ v535 · deleteUserPermanently() RETIRADA.
+ * Borraba la cuenta SIN archivar su trabajo: exactamente la pérdida de datos
+ * que arregló v502 (la plantilla es una SUBCOLECCIÓN y quedaba ilegible para
+ * siempre). No la llamaba nadie — era una mina esperando a que alguien la
+ * cableara. El borrado único y seguro es window.cronosEliminarUsuarioSeguro(),
+ * en js/admin/shared/category-tree.js, que archiva y VERIFICA antes de borrar.
+ */
 
-    showSpinner('Eliminando usuario definitivamente...');
-    try {
-        const { fa, doc, deleteDoc, getDoc, updateDoc, httpsCallable } = await saFS();
-
-        // 1. Eliminar de Firebase Auth (usando Cloud Function)
-        const deleteAuthUser = httpsCallable(fa.functions, 'deleteAuthUser');
-        await deleteAuthUser({ uid, email });
-
-        // 2. Eliminar documento de usuario en Firestore
-        await deleteDoc(doc(fa.db, 'users', uid));
-
-        // 3. Liberar la plaza en el club
-        if (clubId) {
-            const clubRef = doc(fa.db, 'clubs', clubId);
-            const clubSnap = await getDoc(clubRef);
-            if (clubSnap.exists()) {
-                const usedSlots = clubSnap.data().usedSlots || {};
-                const roleKey = role === 'director' ? 'directors'
-                              : role === 'coordinator' ? 'coordinators'
-                              : role === 'parent' ? 'parents'
-                              : 'users';
-                
-                usedSlots[roleKey] = Math.max(0, (usedSlots[roleKey] || 0) - 1);
-                await updateDoc(clubRef, { usedSlots });
-            }
-        }
-
-        hideSpinner();
-        showToast(`🗑️ ${email} eliminado definitivamente. Puede registrarse de nuevo.`, 4000);
-        return true;
-
-    } catch (e) {
-        hideSpinner();
-        console.error('Error al eliminar usuario:', e);
-        showToast(`⚠️ Error: ${e.message}`, 4000);
-        return false;
-    }
-}
-window.deleteUserPermanently = deleteUserPermanently;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. SINCRONIZACIÓN AUTOMÁTICA: Cambios en Club → SuperAdmin

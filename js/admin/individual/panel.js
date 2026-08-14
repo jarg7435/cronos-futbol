@@ -445,7 +445,7 @@ async function openIndividualAdminPanel() {
     const _indUserRowHtml = (u) => {
         const r = u._activeRoleData || {};
         const roleMeta = window.ROLE_META[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' };
-        let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
+        let name = window.cronosNombreUsuario(u)   /* v534 · el correo NO es un nombre */;
         name = _eH(String(name).split(' ')[0]);
         let regDate = '–';
         if (u.createdAt) {
@@ -1140,8 +1140,29 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
 // ═══════════════════════════════════════════════════════════════════
 
 window.indEliminarUsuario = async function indEliminarUsuario(parentUid, email) {
-    // Misma lógica que indDeleteParent — elimina completamente
-    return indDeleteParent(parentUid, email);
+    // ════════════════════════════════════════════════════════════════
+    //  v535 · AHORA ARCHIVA ANTES DE BORRAR
+    //
+    //  Antes esto era un alias de `indDeleteParent`, que llama directamente a
+    //  `deleteAuthUser` y **se salta el archivado**. Es exactamente la pérdida
+    //  de datos que arregló v502 para el panel de Club: la plantilla vive en
+    //  una SUBCOLECCIÓN que no se borra con el documento padre y quedaba
+    //  ilegible para siempre.
+    //
+    //  El autor pidió PARIDAD entre los tres paneles. Paridad de verdad es que
+    //  los tres archiven y verifiquen antes de borrar, no que los tres tengan
+    //  botón. Se delega en el flujo compartido, que además confirma tecleando
+    //  el correo.
+    // ════════════════════════════════════════════════════════════════
+    //  ⚠️ Sin rol ni ente: la Cloud Function los resuelve del documento del
+    //  objetivo, y NUNCA de lo que mande el cliente. Pasar aquí un rol
+    //  adivinado no aportaría nada y podría contradecir al servidor.
+    if (typeof window.cronosEliminarUsuarioSeguro === 'function') {
+        return window.cronosEliminarUsuarioSeguro({ uid: parentUid, email: email });
+    }
+    alert('⚠️ No se puede eliminar ahora mismo: falta el módulo de borrado seguro. ' +
+          'Recarga la página e inténtalo de nuevo. No se ha borrado nada.');
+    return false;
 };
 
 // ═══════════════════════════════════════════════════════════════════

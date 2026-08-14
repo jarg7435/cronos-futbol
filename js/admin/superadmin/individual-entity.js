@@ -309,7 +309,7 @@ window.saShowEntityUsers = async function(entityId) {
                 return expanded;
             };
             const _expandedEnt = _expandEntityUsers(users);
-            html += window.renderCategoryTreeReadOnly(_expandedEnt, { mode: 'individual' });
+            html += window.renderCategoryTreeReadOnly(_expandedEnt, { mode: 'individual', conBorrado: true });
         }
         body.innerHTML = html;
     } catch(e) {

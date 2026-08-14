@@ -141,19 +141,205 @@
         return { staff, byCatSub, catHasAny, subHasAny, unassigned };
     }
 
-    // ── Fila plana de un usuario (Entrenador/Padre) — SIN acciones ───────
+    // ════════════════════════════════════════════════════════════════════
+    //  v534 · EL NOMBRE REAL, NUNCA EL CORREO
+    //
+    //  Reporte del autor: en la columna NOMBRE salía el trozo del correo
+    //  anterior a la arroba ("jose_arg027", "brunamp") en vez del nombre con
+    //  el que se registró.
+    //
+    //  🔑🔑🔑 Y el nombre SÍ ESTABA GUARDADO: leído por REST, **6 de los 7
+    //  usuarios no tienen `firstName` en la RAÍZ del documento**, pero todos lo
+    //  llevan dentro de `allRoles[].firstName` ("Nena", "José Alberto",
+    //  "Alberto", "Dámaso"…). El código miraba sólo la raíz, no lo encontraba y
+    //  caía en el último recurso: partir el correo por la arroba.
+    //
+    //  ⚠️ **NO HAY APELLIDOS EN NINGÚN SITIO**: `lastName` es `null` en todos
+    //  los roles de todos los usuarios. Se muestra lo que hay; inventarlos no
+    //  es una opción y decir que se muestran sería mentir.
+    //
+    //  Regla, y por eso este resolutor es único: el correo **jamás** vale como
+    //  nombre. Si no hay nombre, se dice que no lo hay.
+    // ════════════════════════════════════════════════════════════════════
+    function _nombreDeFuente(o) {
+        if (!o || typeof o !== 'object') return '';
+        const nombre   = o.firstName || o.nombre || '';
+        const apellido = o.lastName || o.surname || o.apellidos || o.apellido || '';
+        const junto = [nombre, apellido].filter(Boolean).join(' ').trim();
+        if (junto) return junto;
+        return String(o.fullName || o.name || o.displayName || '').trim();
+    }
+
+    window.cronosNombreUsuario = function (u, porDefecto) {
+        const _sin = (porDefecto === undefined) ? 'Sin nombre' : porDefecto;
+        if (!u || typeof u !== 'object') return _sin;
+        // 1 · La raíz del documento.
+        let n = _nombreDeFuente(u);
+        // 2 · El rol con el que se está mostrando (lo aporta el árbol).
+        if (!n) n = _nombreDeFuente(u._activeRoleData);
+        // 3 · Cualquiera de sus roles: AQUÍ es donde vive de verdad.
+        if (!n && Array.isArray(u.allRoles)) {
+            for (let i = 0; i < u.allRoles.length && !n; i++) {
+                n = _nombreDeFuente(u.allRoles[i]);
+            }
+        }
+        // 4 · Lo que traiga una solicitud de registro.
+        if (!n) n = _nombreDeFuente({ firstName: u.requestedName || u.userName,
+                                      lastName: u.requestedLastName });
+        return n || _sin;
+    };
+
+    // ════════════════════════════════════════════════════════════════════
+    //  v535 · BORRADO DE USUARIO, UNO SOLO Y CON ARCHIVADO PREVIO
+    //
+    //  Pedido por el autor para los tres paneles (SuperAdmin, Club e
+    //  Individual). Antes de escribirlo se comprobó qué había:
+    //   · el panel de CLUB ya lo tenía, y bien: archiva y verifica;
+    //   · el panel INDIVIDUAL tenía botón, pero llamaba directo a
+    //     `deleteAuthUser` **saltándose el archivado** — la pérdida de datos
+    //     que arregló v502: la plantilla es una SUBCOLECCIÓN y quedaba
+    //     ilegible para siempre;
+    //   · el árbol del SUPERADMIN no lo tenía.
+    //  Y había suelta una `deleteUserPermanently()` que borraba sin archivar y
+    //  no llamaba nadie: una mina esperando a que alguien la cableara.
+    //
+    //  🔑 REGLA: no se borra a nadie sin que su trabajo esté archivado y
+    //  VERIFICADO en el servidor. Esa comprobación vive en la Cloud Function
+    //  `archiveAndDeleteCoach`, que ya autoriza a superadmin, club_admin e
+    //  individual_admin — por eso NO hace falta tocar ni desplegar Functions.
+    //
+    //  ⚠️ CUENTAS ADMINISTRADORAS: la Function se niega a borrarlas por
+    //  diseño ("dejar un club sin administrador no se puede deshacer"). Para
+    //  un admin de club, el autor eligió (implementar.txt, 2026-08-14) que se
+    //  ofrezca el DESMANTELADO COMPLETO del club por la vía que ya existe,
+    //  `saDeleteClubComplete`, que sí se lleva informes, partidos y vínculos.
+    //
+    //  ⚠️ La confirmación es TECLEANDO EL CORREO, decisión suya: "máxima
+    //  seguridad". Un `confirm()` se acepta con un toque accidental en una
+    //  tablet, y esto es irreversible.
+    // ════════════════════════════════════════════════════════════════════
+    window.cronosEliminarUsuarioSeguro = async function (datos) {
+        const d = datos || {};
+        const uid = d.uid, email = d.email;
+        const rol = d.role || '';
+        if (!uid || !email) { alert('Faltan datos del usuario. No se ha hecho nada.'); return false; }
+
+        const esAdmin = (rol === 'club_admin' || rol === 'individual_admin' || rol === 'superadmin');
+        if (esAdmin) {
+            if (rol === 'club_admin' && d.clubId) {
+                if (typeof window.saDeleteClubComplete !== 'function') {
+                    alert('⚠️ Para dar de baja a un Administrador de Club hay que desmantelar su club, ' +
+                          'y esa herramienta no está disponible en esta pantalla.');
+                    return false;
+                }
+                if (!confirm('⚠️ ' + email + ' es ADMINISTRADOR DE CLUB.\n\n' +
+                             'Su cuenta no se puede borrar sola: el club se quedaría vivo y sin nadie ' +
+                             'que lo administre, y eso no tiene vuelta atrás.\n\n' +
+                             'Se te va a ofrecer el BORRADO COMPLETO del club "' +
+                             (d.clubName || d.clubId) + '", que sí se lleva informes, partidos y vínculos.\n\n' +
+                             '¿Continuar?')) return false;
+                return window.saDeleteClubComplete(d.clubId, d.clubName || d.clubId);
+            }
+            alert('⚠️ ' + email + ' es una cuenta administradora y no se borra desde aquí.\n\n' +
+                  'Hazlo desde su panel correspondiente, para que el club o el ente no se queden ' +
+                  'sin responsable.');
+            return false;
+        }
+
+        const tecleado = prompt(
+            '⚠️ ELIMINAR A ' + email + '\n\n' +
+            'Su trabajo se archivará primero en la categoría, y sólo entonces se liberará su plaza.\n' +
+            'Si era su último rol, la cuenta se borra y el correo queda libre.\n\n' +
+            'Escribe su correo EXACTO para confirmar:'
+        );
+        if (tecleado === null) return false;
+        if (String(tecleado).trim().toLowerCase() !== String(email).trim().toLowerCase()) {
+            alert('El correo no coincide. No se ha hecho nada.');
+            return false;
+        }
+
+        try {
+            if (typeof window.saFS !== 'function') {
+                alert('⚠️ No se pudo contactar con el servidor. No se ha borrado nada.');
+                return false;
+            }
+            const { fa, httpsCallable } = await window.saFS();
+            if (typeof httpsCallable !== 'function' || !fa || !fa.functions) {
+                alert('⚠️ No se pudo contactar con el servidor para archivar el trabajo. ' +
+                      'No se ha borrado nada: reinténtalo.');
+                return false;
+            }
+            // ════════════════════════════════════════════════════════════
+            //  🔑🔑🔑 v536 · PRIMERO SE REVOCA LA CASILLA. ESTE PASO FALTABA.
+            //
+            //  Reporte del autor: desde el árbol del SuperAdmin "la acción no
+            //  termina y el miembro sigue apareciendo"; desde el panel de Club
+            //  funcionaba. La diferencia era exactamente ésta.
+            //
+            //  `archiveAndDeleteCoach` decide con
+            //  `borrarCuenta = rolesVivos.length === 0 && !esCuentaAdmin`, y su
+            //  propio comentario avisa: *"quedan DESPUÉS de la revocación (el
+            //  panel revoca justo antes de llamar)"*. Sin revocar, el rol sigue
+            //  vivo → no se borra la cuenta Y el rol sigue pintándose en el
+            //  árbol. Archivaba de verdad, pero por fuera parecía no hacer nada.
+            //
+            //  ⚠️ Sin `clubId` no se puede revocar una casilla concreta (es el
+            //  caso de un sub-usuario de ente individual). Entonces se archiva
+            //  igual y se DICE lo que ha pasado, en vez de aparentar un borrado.
+            // ════════════════════════════════════════════════════════════
+            let _revocado = false;
+            if (typeof window.caSetUserStatus === 'function' && d.clubId) {
+                if (typeof showToast === 'function') showToast('⏳ Liberando su plaza…', 3000);
+                // `true` = no volver a preguntar: ya confirmó tecleando el correo.
+                await window.caSetUserStatus(uid, email, 'removed', d.clubId, rol || null, true);
+                _revocado = true;
+            }
+
+            if (typeof showToast === 'function') showToast('⏳ Archivando su trabajo…', 4000);
+
+            const res = await httpsCallable(fa.functions, 'archiveAndDeleteCoach')({
+                uid: uid, email: email, clubId: d.clubId || null, role: rol || null,
+            });
+            const r = (res && res.data) || {};
+            // El archivo deja constancia formal de la acción: guarda quién la
+            // ejecutó y cuándo (archivedBy/archivedAt, en la Function).
+            alert('✅ Hecho con ' + email + '.\n\n' +
+                  (_revocado ? 'Plaza liberada.\n' :
+                   '⚠️ No constaba el club de su rol, así que la plaza NO se ha liberado ' +
+                   'y puede seguir apareciendo en la lista.\n') +
+                  'Archivado: ' + (r.documentosArchivados || 0) + ' documento(s), ' +
+                  (r.clavesArchivadas || 0) + ' dato(s).\n' +
+                  (r.cuentaBorrada
+                      ? 'Era su último rol: cuenta eliminada y correo LIBERADO.'
+                      : 'Su cuenta sigue activa con ' + ((r.rolesRestantes || []).length) + ' rol(es): ' +
+                        ((r.rolesRestantes || []).join(', ') || '—')));
+            if (typeof navReload === 'function') navReload();
+            return true;
+        } catch (e) {
+            const msg = (e && e.message) || String(e);
+            alert('⚠️ No se ha completado.\n\n' + msg + '\n\n' +
+                  'Si dice que el archivado no se pudo verificar, NO se ha borrado la cuenta ' +
+                  'ni se ha perdido ningún dato: vuelve a intentarlo.');
+            console.error('[cronosEliminarUsuarioSeguro]', e);
+            return false;
+        }
+    };
+
+    // ── Fila plana de un usuario (Entrenador/Padre) ─────────────────────
+    //  ⚠️ El botón de borrar es OPT-IN (`opts.conBorrado`): este helper lo usan
+    //  varios paneles y meter una acción destructiva por defecto la colaría en
+    //  pantallas donde nadie la pidió.
+    //  ⚠️ Las opciones NO viajan como parámetro: las filas se pintan con
+    //  `usersArr.map(_userRowHtml)`, y `Array.map` pasa el ÍNDICE como segundo
+    //  argumento. Un `opts` que a veces es un número es un fallo silencioso
+    //  esperando; se guardan al entrar en el render y se leen aquí.
+    let _opcionesRender = {};
     function _userRowHtml(u) {
         const r = u._activeRoleData || {};
         const roleMeta = (window.ROLE_META || {})[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' };
 
-        // Nombre completo: busca en varios campos para cubrir todos los formatos de registro
-        const _firstName = u.firstName || u.nombre || '';
-        const _lastName  = u.lastName  || u.surname || u.apellidos || u.apellido || '';
-        let fullName = [_firstName, _lastName].filter(Boolean).join(' ').trim();
-        if (!fullName) fullName = u.fullName || u.name || u.displayName || '';
-        if (!fullName && u.email) fullName = u.email.split('@')[0];  // último recurso
-        if (!fullName) fullName = 'Usuario';
-        fullName = _eH(fullName);
+        // v534 · Resolutor único. El correo NO es un nombre: va en su columna.
+        const fullName = _eH(window.cronosNombreUsuario(u));
 
         const pending = (r.isAuthorized === false || r.status === 'pending_individual' || r.status === 'pending_club_admin' || r.status === 'pending_sa' || r.status === 'pending')
             ? '<span style="font-size:0.62rem;color:#ffa500;margin-left:0.3rem;">⏳</span>' : '';
@@ -175,9 +361,33 @@
             '<div style="font-size:0.74rem; color:#8b949e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + _eH(u.email || '') + '">' + _eH(u.email || '') + '</div>' +
             '<div style="font-size:0.68rem; color:#8b949e; white-space:nowrap;">' + _eH(_regDate(u)) + '</div>' +
             '</div>' +
-            '<div style="padding:0 0.6rem 0.45rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05); margin-top:-0.3rem;">' +
+            '<div style="padding:0 0.6rem 0.45rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05); margin-top:-0.3rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
             '<span style="font-size:0.6rem;color:#4d5566;margin-right:4px;">ID:</span>' + idEl +
+            _botonBorrarHtml(u) +
             '</div>';
+    }
+
+    // Botón de borrado. Va en la segunda línea de la fila para no tocar la
+    // rejilla de columnas ni su cabecera (Rol · Nombre · Email · Fecha).
+    function _botonBorrarHtml(u) {
+        if (!_opcionesRender || !_opcionesRender.conBorrado) return '';
+        const r = u._activeRoleData || {};
+        const esc = (s) => String(s == null ? '' : s).replace(/'/g, "\\'");
+        const carga = {
+            uid: u.id || u.uid || '',
+            email: u.email || '',
+            role: r.role || u.role || '',
+            clubId: r.clubId || u.clubId || '',
+            clubName: r.clubName || u.clubName || '',
+        };
+        if (!carga.uid || !carga.email) return '';
+        return '<button title="Eliminar usuario (archiva su trabajo antes)" ' +
+               'onclick="window.cronosEliminarUsuarioSeguro({' +
+               "uid:'" + esc(carga.uid) + "',email:'" + esc(carga.email) + "'," +
+               "role:'" + esc(carga.role) + "',clubId:'" + esc(carga.clubId) + "'," +
+               "clubName:'" + esc(carga.clubName) + "'})" + '" ' +
+               'style="margin-left:auto;font-size:0.66rem;padding:2px 8px;border-radius:6px;cursor:pointer;' +
+               'color:#ff5858;background:rgba(255,88,88,0.08);border:1px solid rgba(255,88,88,0.3);">🗑️ Eliminar</button>';
     }
 
     // ── Cabecera de columnas de una subcategoría ─────────────────────────
@@ -210,7 +420,7 @@
         const items = ordered.map(function (s) {
             const u = s.u, role = s.role, coordType = s.coordType;
             const roleMeta = (window.ROLE_META || {})[role] || { icon: '👤', color: '#8b949e', label: role };
-            let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
+            let name = window.cronosNombreUsuario(u);   // v534 · nunca el correo
             name = _eH(String(name).split(' ')[0]);
             const modBadge = coordType
                 ? '<span class="sa-badge" style="background:rgba(210,168,255,0.15); color:#d2a8ff;">' + (_coordLabel[coordType] || coordType) + '</span>'
@@ -285,6 +495,8 @@
 
     // ── API pública ──────────────────────────────────────────────────────
     function renderCategoryTreeReadOnly(expandedUsers, opts) {
+        // v535 · Se guardan para que las filas sepan si llevan botón de borrar.
+        _opcionesRender = opts || {};
         const mode = (opts && opts.mode) || 'club';
         const idx = _buildIndex(expandedUsers, mode);
         const treeHtml = CT_CATEGORIES.map(function (c) { return _categoryCardHtml(c, idx); }).join('');

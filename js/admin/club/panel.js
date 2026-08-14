@@ -591,7 +591,7 @@ async function openClubAdminPanel(preClubId = null) {
         const _userRowHtml = (u) => {
             const r = u._activeRoleData || {};
             const roleMeta = (window.ROLE_META || {})[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' };
-            let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
+            let name = window.cronosNombreUsuario(u)   /* v534 · el correo NO es un nombre */;
             name = escapeHtml(String(name).split(' ')[0]);
             let regDate = '–';
             if (u.createdAt) {
@@ -645,7 +645,7 @@ async function openClubAdminPanel(preClubId = null) {
                 (a.role === 'director' ? 0 : 1) - (b.role === 'director' ? 0 : 1));
             const items = ordered.map(({ u, role, coordType }) => {
                 const roleMeta = (window.ROLE_META || {})[role] || { icon: '👤', color: '#8b949e', label: role };
-                let name = u.firstName || u.displayName || (u.email ? u.email.split('@')[0] : 'Usuario');
+                let name = window.cronosNombreUsuario(u)   /* v534 · el correo NO es un nombre */;
                 name = escapeHtml(String(name).split(' ')[0]);
                 const euid  = (u._id || '').replace(/'/g, "\\'");
                 const email = (u.email || '').replace(/'/g, "\\'");

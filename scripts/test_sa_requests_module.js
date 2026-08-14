@@ -262,7 +262,14 @@ const lastWrite = (writes, col, id) => wrote(writes, col, id).slice(-1)[0];
             successionRequests: { s1: { status: 'pending_sa' } },
         });
         const n = await sandbox.window.saCountPendingRequests();
-        ok('2a · cuenta 6 (3 directos + 1 reenviada + 1 cuota + 1 sucesión; 1 duplicada excluida)', n === 6, n);
+        // ⚠️ v533: ANTES esperaba 6, porque la vieja regla se saltaba p2
+        // (self_registration/club_admin) dando por hecho que ya estaba contado
+        // como usuario directo. Esa suposición es la que rompió con el rol
+        // 'user' y provocó el desfase 7/4. Ahora la deduplicación es por
+        // IDENTIDAD (userUid) y p2 no la lleva, así que **no se puede saber**
+        // que sea un duplicado: es un elemento pendiente más, y la lista lo
+        // pinta. 7 es el número que se ve en pantalla.
+        ok('2a · cuenta 7 = lo que se pinta (2 solicitudes + 3 huérfanos + 1 cuota + 1 sucesión)', n === 7, n);
     }
     {
         const { sandbox } = buildSandbox({
@@ -307,7 +314,24 @@ const lastWrite = (writes, col, id) => wrote(writes, col, id).slice(-1)[0];
             },
         });
         const n = await sandbox.window.saCountPendingRequests();
-        ok('2g · excluye self/ind_admin_registration de club_admin/individual (ya contados como directos), no las demás', n === 1, n);
+        // ⚠️ REFINADA en v533, no borrada. Lo que protegía —no contar dos veces
+        // a la misma persona— lo hace ahora la deduplicación por `userUid`, que
+        // es la que sí funciona con cualquier rol. Sin `userUid` no hay forma de
+        // saber que sean duplicados, y la lista los pinta: son tres.
+        ok('2g · sin userUid no se puede deducir duplicado: las tres se pintan y las tres cuentan', n === 3, n);
+    }
+    {
+        // Y con `userUid`, que es el caso real, sí se deduplican.
+        const { sandbox } = buildSandbox({
+            users: { A: { status: 'pending_sa' }, B: { status: 'pending_sa' }, C: { status: 'pending_sa' } },
+            platformRequests: {
+                p1: { status: 'pending_sa', type: 'self_registration', requestedRole: 'club_admin', userUid: 'A' },
+                p2: { status: 'pending_sa', type: 'ind_admin_registration', requestedRole: 'individual', userUid: 'B' },
+                p3: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'C' },
+            },
+        });
+        const n = await sandbox.window.saCountPendingRequests();
+        ok('2g2 · 🔑 con userUid sí: tres personas, tres elementos (no seis)', n === 3, n);
     }
     {
         // ════════════════════════════════════════════════════════════════
@@ -360,6 +384,51 @@ const lastWrite = (writes, col, id) => wrote(writes, col, id).slice(-1)[0];
         const n = await sandbox.window.saCountPendingRequests();
         ok('2k · dos solicitudes de la misma persona: la lista pinta dos filas y el badge dice dos',
            n === 2, n);
+    }
+    {
+        // ════════════════════════════════════════════════════════════════
+        //  v533 · EL INVARIANTE QUE IMPIDE QUE VUELVAN A DIVERGIR
+        //  El badge no "coincide" con la lista: ES la lista. Se comprueba
+        //  sobre varios escenarios, incluido el que él reportó.
+        // ════════════════════════════════════════════════════════════════
+        const escenarios = {
+            'el caso real (badge 7 / lista 4)': {
+                users: { U1: { status: 'pending_sa' }, U2: { status: 'pending_sa' }, U3: { status: 'pending_sa' } },
+                platformRequests: {
+                    r1: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U1' },
+                    r2: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U2' },
+                    r3: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U3' },
+                    r4: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U4' },
+                },
+            },
+            'sólo huérfanos': { users: { A: { status: 'pending' }, B: { status: 'pending_sa' } } },
+            'sólo cuota y sucesión': {
+                platformRequests: { q: { status: 'unread', type: 'quota_increase' } },
+                successionRequests: { s: { status: 'pending_sa' } },
+            },
+            'vacío': {},
+        };
+        for (const [nombre, datos] of Object.entries(escenarios)) {
+            const { sandbox } = buildSandbox(datos);
+            const items = await sandbox.window.saPendingItems();
+            const pintados = items.registros.length + items.cuota.length + items.sucesion.length;
+            const badge = await sandbox.window.saCountPendingRequests();
+            ok('2l · 🔑🔑🔑 badge == lista, por construcción [' + nombre + ']',
+               badge === pintados, badge + ' vs ' + pintados);
+        }
+    }
+    {
+        // Y el consumidor real tiene que usar la fuente única, no la suya.
+        const EXTRAS = fs.readFileSync(path.join(ROOT, 'js/admin/superadmin/extras.js'), 'utf8');
+        ok('2m · 🔑 extras.js pinta lo que devuelve saPendingItems()',
+           /window\.saPendingItems\(\)/.test(EXTRAS),
+           'la lista volvería a decidir por su cuenta qué está pendiente');
+        ok('2m2 · ⚠️ y ya no filtra por su cuenta por estado pendiente',
+           !/pendingStatuses/.test(EXTRAS),
+           'queda un segundo criterio de "qué está pendiente" en el fichero que pinta');
+        ok('2m3 · lo que el badge cuenta se ve: cuota y sucesión tienen su bloque',
+           /pend\.cuota/.test(EXTRAS) && /pend\.sucesion/.test(EXTRAS),
+           'el badge contaría cosas que no aparecen en pantalla');
     }
     {
         const { sandbox } = buildSandbox({ getDocsThrows: 'permission-denied' });
