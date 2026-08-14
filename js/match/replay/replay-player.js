@@ -1137,9 +1137,21 @@
         _detenerRecorrido();
         if (_replayState.mediaRecorder && _replayState.mediaRecorder.state === 'recording') {
             _replayState.exportAbortada = true;
-            try { _replayState.mediaRecorder.stop(); } catch (e) {}
+            // `stop()` dispara `onstop`, y es ÉL quien libera: tiene que ver
+            // antes la marca de abortada para no descargar nada. Si ni siquiera
+            // se puede parar, se libera aquí y se retira la marca a mano —
+            // dejarla puesta enmudecería la SIGUIENTE exportación.
+            try { _replayState.mediaRecorder.stop(); }
+            catch (e) { _replayState.exportAbortada = false; _liberaRecursosExport(); }
+        } else {
+            _liberaRecursosExport();
         }
         if (_recordCanvasTimer) { clearInterval(_recordCanvasTimer); _recordCanvasTimer = null; }
+        // v530 · Al cerrar, el vídeo pendiente de compartir ya no sirve para
+        // nada y son megas retenidos. (No se suelta en _liberaRecursosExport
+        // porque ahí el vídeo TIENE que sobrevivir: se acaba de ofrecer.)
+        _replayState.exportBlob = null;
+        _replayState.exportNombre = '';
         _pauseReplay();
         const modal = document.getElementById('cronos-replay-modal');
         if (modal) modal.remove();
@@ -1148,6 +1160,53 @@
 
     // ── Exportar Vídeo (MP4) Nativo con Canvas & MediaRecorder ──────
     let _recordCanvasTimer = null;
+
+    // ════════════════════════════════════════════════════════════════
+    //  v526 · LA EXPORTACIÓN SUELTA LA MEMORIA AL TERMINAR
+    //
+    //  Reporte del autor (iPad, 2026-08-14): tras DESCARGAR el vídeo, al
+    //  cerrar la previsualización de iOS, Safari recarga la pestaña y se
+    //  pierde la sesión (le pide la contraseña otra vez). Lo aisló con una
+    //  prueba A/B impecable: cerrando con la ✕ SIN descargar, jamás pasa.
+    //
+    //  🔑 O sea que la ✕ era inocente —otra vez, como en la propia v459— y el
+    //  detonante es lo caro que sale exportar. Lo que había:
+    //   · la pista de `canvas.captureStream(30)` NO se detenía nunca;
+    //   · 🔑🔑 los trozos del vídeo —el fichero ENTERO en memoria— colgaban
+    //     del cierre de `onstop`, que cuelga de la grabadora, que colgaba de
+    //     `_replayState.mediaRecorder`, que no se soltaba NUNCA: se descargaba
+    //     el vídeo, se cerraba el reproductor con la ✕ y los megas seguían
+    //     ocupados;
+    //   · y el lienzo de 900×700 seguía vivo por esas mismas referencias.
+    //
+    //  ⚠️ HONESTIDAD: esto REDUCE la presión de memoria, no GARANTIZA que
+    //  Safari deje de descartar la pestaña. Ni la previsualización de iOS ni
+    //  el descarte de pestañas los controla la app. Si reaparece, el siguiente
+    //  paso es `navigator.share({files})`, que se salta la previsualización.
+    // ════════════════════════════════════════════════════════════════
+    function _liberaRecursosExport() {
+        if (_recordCanvasTimer) { clearInterval(_recordCanvasTimer); _recordCanvasTimer = null; }
+        // Mientras la pista viva, la captura del canvas sigue en marcha.
+        try {
+            const s = _replayState.exportStream;
+            if (s && typeof s.getTracks === 'function') {
+                s.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+            }
+        } catch (e) {}
+        _replayState.exportStream = null;
+        // Un canvas conserva su lienzo mientras exista; 0×0 devuelve el buffer
+        // sin esperar al recolector, que en iOS puede tardar de más.
+        try {
+            const c = _replayState.exportCanvas;
+            if (c) { c.width = 0; c.height = 0; }
+        } catch (e) {}
+        _replayState.exportCanvas = null;
+        // 🔑 Soltar los manejadores es lo que de verdad libera el vídeo: son
+        // ellos los que retienen el array de trozos y el propio lienzo.
+        const r = _replayState.mediaRecorder;
+        if (r) { try { r.ondataavailable = null; r.onstop = null; } catch (e) {} }
+        _replayState.mediaRecorder = null;
+    }
 
     // ════════════════════════════════════════════════════════════════
     //  v461 · EL VÍDEO SALE EN MP4 PARA QUE EL iPHONE Y EL iPAD LO ABRAN
@@ -1269,10 +1328,84 @@
         const btn = document.getElementById('btn-replay-record');
         if (!btn) return;
         btn.innerHTML = `📹 Descargar Vídeo (${_formatoSalida()})`;
+        btn.setAttribute('onclick', 'window._replayRecordVideo()');
         btn.style.background = 'rgba(231,76,60,0.15)';
         btn.style.borderColor = 'rgba(231,76,60,0.4)';
         btn.style.color = '#ff5858';
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  v530 · EN TÁCTIL SE COMPARTE, NO SE NAVEGA
+    //
+    //  Reporte suyo tras cuatro rondas: en el iPad y en el móvil, descargar el
+    //  vídeo acababa llevándole a la pantalla de la contraseña. **En el PC
+    //  nunca.** 🔑🔑🔑 La asimetría entre dispositivos descarta todo lo común
+    //  (lección de v455): lo que sólo ocurre en táctil es que un enlace de
+    //  descarga con `blob:` NAVEGA, iOS abre su previsualización y, al volver,
+    //  la pestaña arranca de cero y sin sesión.
+    //
+    //  Ni liberar memoria (v526) ni reintentar la verificación (v529) podían
+    //  salvarlo: si la pestaña vuelve sin usuario, `checkAuthorization` sale en
+    //  su primera línea y los reintentos ni se ejecutan. **No se sobrevive a la
+    //  navegación: hay que no navegar.**
+    //
+    //  `navigator.share({files})` entrega el fichero al menú del sistema —el
+    //  mismo "Guardar vídeo" que él ya usa y que le gustó— SIN mover la página.
+    //
+    //  ⚠️⚠️ Y NO PUEDE HACERSE SOLO: `navigator.share` exige un gesto del
+    //  usuario, y la grabación termina en un `onstop` asíncrono muchísimo
+    //  después del clic. Llamarlo ahí lanza NotAllowedError. Por eso el botón
+    //  pasa a "Guardar Vídeo" y comparte AL PULSARLO.
+    //
+    //  ⚠️ El PC no se toca: sin menú de compartir se cae al enlace de siempre,
+    //  que allí funciona y él ha verificado.
+    // ════════════════════════════════════════════════════════════════
+    function _puedeCompartirFichero(blob, nombre) {
+        try {
+            if (typeof navigator === 'undefined') return false;
+            if (typeof navigator.share !== 'function') return false;
+            if (typeof navigator.canShare !== 'function') return false;
+            if (typeof File !== 'function') return false;
+            return !!navigator.canShare({
+                files: [new File([blob], nombre, { type: blob.type })],
+            });
+        } catch (e) { return false; }
+    }
+
+    function _ofreceGuardarVideo() {
+        const btn = document.getElementById('btn-replay-record');
+        if (!btn) return;
+        btn.innerHTML = '📲 Guardar Vídeo';
+        btn.setAttribute('onclick', 'window._replayGuardarVideo()');
+        btn.style.background = 'rgba(46,160,67,0.18)';
+        btn.style.borderColor = 'rgba(46,160,67,0.5)';
+        btn.style.color = '#2ea043';
+    }
+
+    window._replayGuardarVideo = function () {
+        const blob   = _replayState.exportBlob;
+        const nombre = _replayState.exportNombre;
+        if (!blob || !nombre) return;
+        let fichero;
+        try { fichero = new File([blob], nombre, { type: blob.type }); }
+        catch (e) { return; }
+        Promise.resolve(navigator.share({ files: [fichero], title: nombre }))
+            .then(function () {
+                _replayState.exportBlob = null;
+                _replayState.exportNombre = '';
+                _restauraBotonGrabar();
+                if (typeof showToast === 'function') {
+                    showToast('✅ Vídeo enviado · elige "Guardar vídeo" para tenerlo en Fotos', 5000);
+                }
+            })
+            .catch(function (e) {
+                // Cancelar el menú no es un fallo: el vídeo sigue disponible y
+                // el botón se queda como está para poder reintentarlo.
+                if (e && e.name !== 'AbortError' && typeof showToast === 'function') {
+                    showToast('⚠️ No se pudo compartir el vídeo. Pulsa otra vez.', 5000);
+                }
+            });
+    };
 
     function _progresoExport(actual, total) {
         const btn = document.getElementById('btn-replay-record');
@@ -1617,6 +1750,11 @@
             // formato que el iPhone y el iPad abren sin instalar nada.
             const recorder = _creaGrabadora(stream);
             _replayState.mediaRecorder = recorder;
+            // v526 · guardados para poder SOLTARLOS al terminar (ver
+            // _liberaRecursosExport): sin esta referencia, la pista de captura
+            // y el lienzo quedaban vivos sin que nadie pudiera cerrarlos.
+            _replayState.exportCanvas = canvas;
+            _replayState.exportStream = stream;
             const chunks = [];
 
             recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
@@ -1627,7 +1765,12 @@
                 // v459 · si la grabación se abortó al cerrar el reproductor, no
                 // se descarga nada: un fichero a medias que nadie pidió es peor
                 // que ninguno.
-                if (_replayState.exportAbortada) { _replayState.exportAbortada = false; return; }
+                if (_replayState.exportAbortada) {
+                    _replayState.exportAbortada = false;
+                    chunks.length = 0;
+                    _liberaRecursosExport();
+                    return;
+                }
                 // 🔑 v461 · EL TIPO REAL ES EL DE LA GRABADORA, no el que se
                 // pidió: hay navegadores que aceptan el mp4 y graban otra cosa.
                 // La extensión y el `type` del Blob siguen a la REALIDAD.
@@ -1639,10 +1782,31 @@
                 // para decidir con qué app abre el fichero.
                 const tipoBlob = esMp4 ? 'video/mp4' : 'video/webm';
                 const blob = new Blob(chunks, { type: tipoBlob });
+                const nombre = `partido_repeticion_${Date.now()}.${ext}`;
+
+                // v530 · EN TÁCTIL, NI UN ENLACE: es la navegación a `blob:` la
+                // que hace que iOS abra su previsualización y que al volver la
+                // pestaña arranque de cero, sin sesión. Se guarda el vídeo y se
+                // espera a que él pulse (navigator.share exige gesto).
+                if (_puedeCompartirFichero(blob, nombre)) {
+                    _replayState.exportBlob = blob;
+                    _replayState.exportNombre = nombre;
+                    _ofreceGuardarVideo();
+                    if (typeof showToast === 'function') {
+                        showToast(esMp4
+                            ? '✅ Vídeo listo · pulsa "Guardar Vídeo" y elige Guardar vídeo para tenerlo en Fotos'
+                            : '⚠️ Vídeo en .webm: este navegador no sabe grabar MP4 y un iPhone o iPad no lo abrirá.',
+                            esMp4 ? 6000 : 7000);
+                    }
+                    chunks.length = 0;
+                    _liberaRecursosExport();
+                    return;
+                }
+
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `partido_repeticion_${Date.now()}.${ext}`;
+                a.download = nombre;
                 // v461 · En iOS la descarga de un blob sólo prende si el enlace
                 // está EN EL DOCUMENTO, y revocar la URL en el mismo tic aborta
                 // el guardado. Se ancla, se pulsa y se limpia después.
@@ -1658,6 +1822,11 @@
                         : '⚠️ Vídeo descargado en .webm: este navegador no sabe grabar MP4 y un iPhone o iPad no lo abrirá. Descárgalo desde Chrome o desde Safari.',
                         esMp4 ? 4000 : 7000);
                 }
+                // v526 · El fichero ya está en manos del navegador (el Blob
+                // COPIA los datos al construirse, así que vaciar los trozos
+                // aquí no estropea la descarga en curso). Se suelta todo.
+                chunks.length = 0;
+                _liberaRecursosExport();
             };
 
             recorder.start();

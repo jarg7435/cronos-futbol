@@ -575,6 +575,49 @@ window._retryConfigLoadAfterAuth = function() {
     if (typeof window._retryAccessCodeLoad === 'function') window._retryAccessCodeLoad();
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  v529 · UN FALLO TRANSITORIO NO PUEDE APARCARTE EN EL LOGIN
+//
+//  Reportado tres rondas seguidas: en el iPad, tras DESCARGAR el vídeo del
+//  partido, al cerrar el reproductor la app volvía a pedir la contraseña.
+//  Se descartó la ✕ (prueba A/B suya) y se descartó la memoria (v526 liberó
+//  pistas, trozos y lienzo y NO bastó, ya con la versión confirmada en
+//  pantalla por la insignia de v528).
+//
+//  🔑🔑🔑 LA SESIÓN NUNCA SE PERDÍA: SE LE APARCABA EN LA PANTALLA DE LA
+//  CLAVE. Aquí había dos caminos que enseñaban el panel de acceso y se
+//  rendían sin reintentar jamás:
+//    · el catch final, ante un fallo de red o al agotar el tope de 4 s de la
+//      lectura del documento de usuario ("Firestore no responde");
+//    · el CASO 0, cuando esa lectura vuelve vacía y marcada `fromCache`.
+//  Un iPad que acaba de recargar la pestaña después de exportar un vídeo es
+//  justo el escenario donde esa primera lectura tarda de más. Desde fuera es
+//  indistinguible de un cierre de sesión, y por eso se buscó tres veces en el
+//  sitio equivocado.
+//
+//  Ahora se reintenta con espera creciente antes de rendirse.
+//  ⚠️ SEC-M08 SIGUE EN PIE: reintentar NO es entrar. Si la verificación no
+//  llega a completarse, no se entra en la app con datos parciales nunca.
+// ════════════════════════════════════════════════════════════════════
+const _MAX_REINTENTOS_AUTH = 3;
+let _reintentosAuth = 0;
+
+// Devuelve true si ha programado un reintento (y entonces NO hay que enseñar
+// la pantalla de acceso); false si ya se agotaron y toca rendirse con mensaje.
+function _programaReintentoAuth(user, motivo) {
+    if (_reintentosAuth >= _MAX_REINTENTOS_AUTH) return false;
+    const intento = ++_reintentosAuth;
+    // Espera creciente: 1,5 s · 3 s · 6 s. Reintentar tres veces en el mismo
+    // instante no es reintentar nada.
+    const espera = 1500 * Math.pow(2, intento - 1);
+    console.warn('[Chronos] Verificación incompleta (' + (motivo || '') + '). Reintento ' +
+                 intento + '/' + _MAX_REINTENTOS_AUTH + ' en ' + espera + ' ms.');
+    setTimeout(function () {
+        try { checkAuthorization(user); } catch (e) {}
+    }, espera);
+    return true;
+}
+
 export async function checkAuthorization(user) {
     if (!user) return;
     const fa = window._cronos_auth;
@@ -625,6 +668,11 @@ export async function checkAuthorization(user) {
             }
         }
 
+        // Firestore ha contestado: la cuenta de reintentos vuelve a cero. Sin
+        // esto, tres cortes de red a lo largo del día la dejarían agotada y el
+        // siguiente arranque volvería a aparcar al usuario en el login.
+        _reintentosAuth = 0;
+
         // ── CASO 0: sin cobertura y sin el documento en caché ───
         // 🔑🔑 Con la caché en disco de Firestore, una lectura sin red NO
         // LANZA: devuelve un snapshot vacío marcado `fromCache`. Es decir,
@@ -640,6 +688,10 @@ export async function checkAuthorization(user) {
         // sesión y se explica qué pasa, para que baste con recuperar la red.
         if (!snap.exists() && snap.metadata && snap.metadata.fromCache) {
             console.warn('[Chronos] Sin conexión y sin datos de la cuenta en caché local.');
+            // v529 · Al arrancar —y sobre todo si la pestaña se acaba de
+            // recargar— esto puede ser un tropiezo de un segundo. Antes de
+            // mandarle a la pantalla de la clave, se reintenta.
+            if (_programaReintentoAuth(user, 'lectura vacía de caché')) return;
             showAuthError(
                 '⚠️ Sin conexión y sin datos de tu cuenta guardados en este ' +
                 'dispositivo. Conéctate a internet para entrar; no hace falta ' +
@@ -1416,6 +1468,14 @@ export async function checkAuthorization(user) {
                 console.error('[Chronos] Error signing out after auth failure:', signOutErr);
             }
         }
+
+        // 🔑🔑🔑 v529 · AQUÍ ESTABA EL DEFECTO QUE COSTÓ TRES RONDAS. Conservar
+        // la sesión (arriba) no servía de nada si acto seguido se enseñaba la
+        // pantalla de acceso: el usuario ve el panel de la clave y da por hecho
+        // que le han echado. Mientras queden intentos, se reintenta EN SILENCIO
+        // y no se le enseña nada. El return va ANTES del showAuthError a
+        // propósito.
+        if (user && _esDeRed && _programaReintentoAuth(user, _msgErr || 'red')) return;
 
         // Si Firebase no responde o hay error de permisos, dar mensaje útil
         const msg = _esDeRed

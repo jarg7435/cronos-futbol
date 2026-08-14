@@ -61,6 +61,19 @@ for (const file of files) {
     (_full, pre, mid, post) => { countVer++; return `${pre}${VERSION}${mid}${VERSION}${post}`; }
   );
 
+  // 🔑 Y LA FRANJA DE VERSION DE LA CABECERA (v526). El sello de arriba solo
+  // se ve en la PANTALLA DE ACCESO, asi que desaparece justo cuando se empieza
+  // a probar. La franja se ve siempre — y por eso mismo tiene que escribirla
+  // este script: la insignia que habia antes en ese sitio estaba clavada a
+  // mano en "v341", 185 versiones atras, y nadie lo noto nunca.
+  html = html.replace(
+    /(<div id="cronos-version-badge" data-version=")[^"]*(")([^>]*>)\s*CHRONOS v[\d.]+\s*(<\/div>)/g,
+    (_full, pre, comilla, resto, fin) => {
+      countVer++;
+      return `${pre}${VERSION}${comilla}${resto}CHRONOS ${VERSION}${fin}`;
+    }
+  );
+
   fs.writeFileSync(file, html);
   resumen.push(`${file}: ${count} scripts + ${countCss} hoja(s) de estilo + ${countVer} sello(s) de version`);
 }

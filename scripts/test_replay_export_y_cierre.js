@@ -65,13 +65,21 @@ function crearReloj() {
 // ── DOM de mentira: sólo lo que el reproductor toca ────────────────────────
 function elemento(id) {
     return { id, innerHTML: '', textContent: '', value: '', style: {}, children: [],
-             appendChild() {}, remove() { this.quitado = true; }, setAttribute() {},
-             getAttribute() { return ''; }, querySelector() { return null; },
+             attrs: {},
+             appendChild() {}, remove() { this.quitado = true; },
+             // v530 · Los atributos se GUARDAN: el guard necesita ver a qué
+             // función apunta el botón cuando el vídeo ya está listo.
+             setAttribute(k, v) { this.attrs[k] = v; },
+             getAttribute(k) { return this.attrs[k] !== undefined ? this.attrs[k] : ''; },
+             querySelector() { return null; },
              querySelectorAll() { return []; }, click() { this.clicked = true; },
              addEventListener() {} };
 }
 
-function entorno() {
+// `compartir` simula un dispositivo táctil capaz de entregar ficheros por el
+// menú nativo (iOS 15+, Android). Sin él se simula un PC, donde la descarga por
+// enlace es la vía buena y NO se puede tocar: ahí ya funciona.
+function entorno({ compartir = false } = {}) {
     const reloj = crearReloj();
     const reg = {};
     ['replay-pitch-players','replay-bench-home','replay-bench-away','replay-score-home',
@@ -82,6 +90,9 @@ function entorno() {
 
     const descargas = [];
     const grabadoras = [];
+    const lienzos = [];
+    const compartidos = [];
+    let rechazaCompartir = null;   // se puede forzar un "el usuario canceló"
     class GrabadoraFalsa {
         constructor() { this.state = 'inactive'; grabadoras.push(this); }
         start() { this.state = 'recording'; this.inicio = reloj.ahora(); }
@@ -103,7 +114,16 @@ function entorno() {
                 el.tag = tag;
                 if (tag === 'canvas') {
                     el.getContext = () => new Proxy({}, { get: () => () => {}, set: () => true });
-                    el.captureStream = () => ({ getTracks: () => [] });
+                    // v526 · La pista tiene que ser OBSERVABLE: mientras siga
+                    // viva, la captura del canvas sigue consumiendo memoria.
+                    // Antes esto devolvía `{ getTracks: () => [] }`, un objeto
+                    // nuevo y VACÍO en cada llamada: cualquier aserción sobre
+                    // el cierre de las pistas salía verde sin medir nada.
+                    const pistas = [{ kind: 'video', parada: false,
+                                      stop() { this.parada = true; } }];
+                    el._stream = { getTracks: () => pistas };
+                    el.captureStream = () => el._stream;
+                    lienzos.push(el);
                 }
                 if (tag === 'a') { descargas.push(el); }
                 return el;
@@ -117,13 +137,41 @@ function entorno() {
         setTimeout: (fn, ms) => reloj.setTimeout(fn, ms),
         clearTimeout: (id) => reloj.clear(id),
         MediaRecorder: GrabadoraFalsa,
-        Blob: class { constructor(p) { this.parts = p; } },
+        // 🔑 El Blob real COPIA los datos al construirse: vaciar el array de
+        // trozos después no lo estropea. El falso tiene que copiar también, o
+        // el guard mediría un artefacto suyo en lugar del comportamiento.
+        // ⚠️ Y GUARDA EL `type`: el Blob real lo expone, y de él sale el tipo
+        // del fichero que se comparte, que es lo que mira iOS para decidir con
+        // qué app abrirlo. Sin esto la aserción del tipo medía mi propio hueco.
+        Blob: class {
+            constructor(p, o) {
+                this.parts = Array.isArray(p) ? p.slice() : p;
+                this.type = (o && o.type) || '';
+            }
+        },
         URL: { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} },
         escapeHtml: (s) => String(s == null ? '' : s),
         showToast: () => {},
+        File: class { constructor(p, n, o) { this.parts = p; this.name = n; this.type = (o && o.type) || ''; } },
         _reg: reg, _reloj: reloj, _descargas: descargas, _grabadoras: grabadoras,
+        _lienzos: lienzos, _compartidos: compartidos,
         _navReloads: 0,
     };
+    // Menú nativo de compartir. En el táctil es la vía que NO navega; en el PC
+    // no existe y se cae al enlace de descarga de siempre.
+    sb.navigator = compartir ? {
+        canShare: (d) => !!(d && d.files && d.files.length),
+        share: (d) => {
+            if (rechazaCompartir) {
+                const e = new Error('cancelado'); e.name = rechazaCompartir;
+                rechazaCompartir = null;
+                return Promise.reject(e);
+            }
+            compartidos.push(d);
+            return Promise.resolve();
+        },
+    } : {};
+    sb._cancelaElProximoCompartir = (nombre) => { rechazaCompartir = nombre || 'AbortError'; };
     sb.navReload = () => { sb._navReloads++; };
     sb.window = sb;
     vm.createContext(sb);
@@ -354,6 +402,152 @@ console.log('\n── PARTE 3 · idéntico en PC, tablet y móvil ──');
        /class="replay-topbar"/.test(SRC) && /class="replay-topbar-actions"/.test(SRC));
     ok('3e · la ✕ sigue llamando a closeMatchReplay',
        /onclick="window\.closeMatchReplay\(\)"/.test(SRC));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+console.log('\n── PARTE 4 · la exportación SUELTA la memoria al terminar ──');
+// ───────────────────────────────────────────────────────────────────────────
+// 🔑 Reporte del autor (iPad, 2026-08-14): tras descargar el vídeo, al cerrar la
+// previsualización de iOS, Safari RECARGA la pestaña y se pierde la sesión. Lo
+// aisló con una prueba A/B: cerrando con la ✕ SIN descargar no pasa nunca, así
+// que la ✕ es inocente y el detonante es la exportación.
+//
+// Lo que había: la pista de `captureStream` seguía viva y los trozos del vídeo
+// —el fichero ENTERO en RAM— colgaban del cierre de `onstop`, que cuelga de la
+// grabadora, que colgaba de `_replayState.mediaRecorder` y no se soltaba nunca,
+// ni al terminar ni al cerrar el reproductor.
+//
+// ⚠️ Esto MIDE que se libera; no puede medir que Safari no descarte la pestaña.
+{
+    const sb = entorno();
+    sb.window.openMatchReplay(partidoF7());
+    sb.window._replayRecordVideo();
+    sb._reloj.avanza(3000);
+    const lienzo = sb._lienzos[0];
+    const pista  = lienzo && lienzo._stream.getTracks()[0];
+    ok('4a · mientras graba, la pista del canvas está VIVA (si no, no se mide nada)',
+       !!pista && pista.parada === false);
+
+    sb._reloj.avanza(5 * 60 * 1000);          // la exportación se cierra sola
+    ok('4b · 🔑 al terminar se detiene la captura del canvas',
+       !!pista && pista.parada === true);
+    ok('4c · 🔑 y se suelta el lienzo de 900×700',
+       lienzo.width === 0 && lienzo.height === 0,
+       lienzo.width + '×' + lienzo.height);
+    const rec = sb._grabadoras[0];
+    ok('4d · 🔑🔑 se sueltan los manejadores de la grabadora — son ELLOS los que retenían el vídeo entero',
+       !!rec && rec.onstop === null && rec.ondataavailable === null,
+       'onstop=' + typeof rec.onstop + ' ondataavailable=' + typeof rec.ondataavailable);
+    ok('4e · …y aun así el fichero se descarga igual (liberar no puede romper la descarga)',
+       sb._descargas.some(a => /\.(mp4|webm)$/.test(a.download || '') && a.clicked),
+       JSON.stringify(sb._descargas.map(a => a.download)));
+    ok('4e2 · el vídeo descargado no sale vacío por haber vaciado los trozos',
+       sb._descargas.some(a => a.clicked) && sb._reloj.vivos() === 0);
+}
+{
+    // Abortar con la ✕ en mitad de la grabación tiene que liberar TAMBIÉN.
+    const sb = entorno();
+    sb.window.openMatchReplay(partidoF7());
+    sb.window._replayRecordVideo();
+    sb._reloj.avanza(3000);
+    const pista = sb._lienzos[0]._stream.getTracks()[0];
+    sb.window.closeMatchReplay();
+    ok('4f · 🔑 cerrar con la ✕ en mitad de la grabación también detiene la captura',
+       pista.parada === true);
+    ok('4f2 · y suelta el lienzo',
+       sb._lienzos[0].width === 0 && sb._lienzos[0].height === 0,
+       sb._lienzos[0].width + '×' + sb._lienzos[0].height);
+
+    // ⚠️ RIESGO DE LA PROPIA LIBERACIÓN: si al soltar se perdiera el `onstop`
+    // sin limpiar la marca de "abortada", la SIGUIENTE exportación se saldría
+    // muda y no descargaría nada. Este escenario lo vigila.
+    sb.window.openMatchReplay(partidoF7());
+    sb.window._replayRecordVideo();
+    sb._reloj.avanza(5 * 60 * 1000);
+    ok('4g · 🔑 tras abortar una, la SIGUIENTE exportación vuelve a descargar',
+       sb._descargas.some(a => a.clicked),
+       JSON.stringify(sb._descargas.map(a => a.download)));
+}
+{
+    // Cerrar el reproductor SIN haber grabado no puede romperse por la nueva
+    // liberación (es el camino que él verificó como bueno el 2026-08-14).
+    const sb = entorno();
+    sb.window.openMatchReplay(partidoF7());
+    sb.window.closeMatchReplay();
+    ok('4h · cerrar sin haber grabado sigue funcionando igual',
+       sb._reg['setup-modal'].style.display === 'flex' && sb._reloj.vivos() === 0,
+       sb._reg['setup-modal'].style.display + ' · ' + sb._reloj.vivos() + ' temporizadores');
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+console.log('\n── PARTE 6 · en táctil se COMPARTE, no se navega ──');
+// ───────────────────────────────────────────────────────────────────────────
+// 🔑🔑🔑 El reporte que costó cuatro rondas: en el iPad y en el móvil, al
+// descargar el vídeo la app acababa pidiendo la contraseña. En el PC nunca.
+// La asimetría entre dispositivos descarta todo lo común (lección de v455): lo
+// que sólo pasa en táctil es que un enlace de descarga con blob: NAVEGA, iOS
+// abre su previsualización y al volver la pestaña arranca de cero — sin sesión.
+// No se puede "sobrevivir" a eso: hay que NO NAVEGAR. `navigator.share` entrega
+// el fichero al menú del sistema (el "Guardar vídeo" que él ya usa) sin mover
+// la página.
+//
+// ⚠️ Y NO SE PUEDE COMPARTIR SOLO: `navigator.share` exige un gesto del
+// usuario, y la grabación termina en un `onstop` asíncrono, mucho después del
+// clic. Por eso el botón pasa a "Guardar Vídeo" y comparte AL PULSARLO.
+{
+    const sb = entorno({ compartir: true });
+    sb.window.openMatchReplay(partidoF7());
+    sb.window._replayRecordVideo();
+    sb._reloj.avanza(5 * 60 * 1000);
+
+    ok('6a · 🔑🔑 en táctil NO se crea un enlace de descarga (es lo que navega y recarga la pestaña)',
+       sb._descargas.filter(a => a.clicked).length === 0,
+       JSON.stringify(sb._descargas.map(a => a.download)));
+    ok('6b · 🔑 no se comparte solo: hace falta que el usuario pulse (navigator.share exige gesto)',
+       sb._compartidos.length === 0, sb._compartidos.length + ' compartidos sin pulsar');
+    const btn = sb._reg['btn-replay-record'];
+    ok('6c · el botón invita a guardar el vídeo cuando ya está listo',
+       /Guardar V[íi]deo/i.test(String(btn.innerHTML)), String(btn.innerHTML).slice(0, 60));
+    ok('6c2 · y al pulsarlo llama a la función que comparte',
+       /_replayGuardarVideo/.test(String(btn.getAttribute('onclick'))),
+       String(btn.getAttribute('onclick')));
+
+    if (typeof sb.window._replayGuardarVideo === 'function') sb.window._replayGuardarVideo();
+    ok('6d · 🔑 al pulsar, el vídeo se entrega al menú del sistema',
+       sb._compartidos.length === 1, sb._compartidos.length + ' compartidos');
+    const f = sb._compartidos[0] && sb._compartidos[0].files && sb._compartidos[0].files[0];
+    ok('6e · con nombre de partido y tipo de vídeo (iOS decide por el tipo con qué lo abre)',
+       !!f && /^partido_repeticion_\d+\.(mp4|webm)$/.test(f.name) && /^video\//.test(f.type),
+       f ? f.name + ' · ' + f.type : '(sin fichero)');
+    ok('6f · y sigue sin navegar: ni un enlace pulsado en todo el proceso',
+       sb._descargas.filter(a => a.clicked).length === 0);
+}
+{
+    // ⚠️ EL PC NO SE TOCA: allí la descarga por enlace funciona y él lo ha
+    // verificado. Un arreglo que arregle el iPad y rompa el PC no es un arreglo.
+    const sb = entorno({ compartir: false });
+    sb.window.openMatchReplay(partidoF7());
+    sb.window._replayRecordVideo();
+    sb._reloj.avanza(5 * 60 * 1000);
+    ok('6g · 🔑 en un PC sin menú de compartir se descarga como siempre',
+       sb._descargas.some(a => /\.(mp4|webm)$/.test(a.download || '') && a.clicked),
+       JSON.stringify(sb._descargas.map(a => a.download)));
+}
+{
+    // Cancelar el menú de iOS no es un fallo: el vídeo tiene que seguir ahí.
+    const sb = entorno({ compartir: true });
+    sb.window.openMatchReplay(partidoF7());
+    sb.window._replayRecordVideo();
+    sb._reloj.avanza(5 * 60 * 1000);
+    sb._cancelaElProximoCompartir('AbortError');
+    if (typeof sb.window._replayGuardarVideo === 'function') sb.window._replayGuardarVideo();
+    sb._reloj.avanza(1000);
+    ok('6h · si cancela el menú, el botón sigue ofreciendo guardar el vídeo',
+       /Guardar V[íi]deo/i.test(String(sb._reg['btn-replay-record'].innerHTML)),
+       String(sb._reg['btn-replay-record'].innerHTML).slice(0, 60));
+    if (typeof sb.window._replayGuardarVideo === 'function') sb.window._replayGuardarVideo();
+    ok('6h2 · y a la segunda se comparte de verdad',
+       sb._compartidos.length === 1, sb._compartidos.length + ' compartidos');
 }
 
 // ───────────────────────────────────────────────────────────────────────────
