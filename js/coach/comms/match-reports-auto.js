@@ -570,9 +570,30 @@ async function saveAllMatchReportsInternal() {
     // (ver startMatchWithConvocation -> limpieza de 'cronos_reports_sent_').
     const _scoreHomeNow = document.getElementById('score-home')?.textContent || '0';
     const _scoreAwayNow = document.getElementById('score-away')?.textContent || '0';
-    const _matchId = window.liveMatchId || ('local_' + (window._cronosCurrentUser?.uid || 'u') + '_' + new Date().toISOString().split('T')[0] + '_' + (window.TEAM_NAMES?.home || '') + '-' + _scoreHomeNow + '-' + _scoreAwayNow);
+
+    // 🔑🔑🔑 `window.liveMatchId` ERA SIEMPRE `undefined`, y ese es el defecto
+    // que dejaba partidos sin consolidar (reportado el 2026-08-14: un 2-0 en
+    // Partidos Terminados que no llegó al acumulado del Director).
+    //
+    // `liveMatchId` se declara `let liveMatchId = null` en js/core/app-init.js:123,
+    // y una declaración LÉXICA de nivel superior NO crea propiedad de window.
+    // Así que este `||` cogía SIEMPRE la rama de respaldo y la clave del guard
+    // no era la del partido, sino
+    //     local_{uid}_{fecha UTC}_{nombre local}-{goles}-{goles}
+    // Dos pruebas rápidas el mismo día, con los mismos nombres y el mismo
+    // resultado, compartían clave: la segunda salía por el `return` de abajo
+    // SIN ESCRIBIR NADA Y SIN UN SOLO AVISO. El partido quedaba en el
+    // historial y sus datos no llegaban a ningún acumulado.
+    //
+    // ⚠️ El resto del fichero ya lo leía bien —con `typeof liveMatchId`, ver
+    // la huella en memoria de más abajo—: era esta línea la que se desviaba.
+    // ⚠️ Se conserva el respaldo por fecha+marcador para el caso sin sync en
+    // vivo: su razón de ser es sobrevivir a una recarga, y ahí sigue valiendo.
+    const _liveId = (typeof liveMatchId !== 'undefined' && liveMatchId) ? liveMatchId : '';
+    const _matchId = _liveId || ('local_' + (window._cronosCurrentUser?.uid || 'u') + '_' + new Date().toISOString().split('T')[0] + '_' + (window.TEAM_NAMES?.home || '') + '-' + _scoreHomeNow + '-' + _scoreAwayNow);
     const _guardKey = 'cronos_reports_sent_' + _matchId;
     if (localStorage.getItem(_guardKey)) {
+        console.warn('[AutoReport] Informes ya despachados para ' + _matchId + '; no se repite.');
         return;
     }
     localStorage.setItem(_guardKey, Date.now().toString());
@@ -616,5 +637,12 @@ async function saveAllMatchReportsInternal() {
         if (window._cronosLastDispatchedMatch === _matchFingerprint) {
             window._cronosLastDispatchedMatch = null;
         }
+        // ⚠️ Y LA CLAVE PERSISTENTE TAMBIÉN. Antes sólo se soltaba la huella
+        // EN MEMORIA: la de localStorage se quedaba puesta, así que un fallo
+        // aislado —permisos, un corte de red— bloqueaba ese partido PARA
+        // SIEMPRE, incluso tras recargar. El "reintento manual" que este
+        // comentario prometía era inalcanzable, porque la primera línea de
+        // esta función volvía a salir por el `return` del guard.
+        try { localStorage.removeItem(_guardKey); } catch (_) {}
     }
 }

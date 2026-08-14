@@ -435,11 +435,41 @@
         const redPct    = (typeof src.red    === 'number' && !isNaN(src.red))    ? src.red    : 33;
         const yellowPct = (typeof src.yellow === 'number' && !isNaN(src.yellow)) ? src.yellow : 50;
 
-        // v446: el semáforo mide el % del partido jugado, así que su base tiene
-        // que ser la duración REAL —descuento incluido—, no el reglamento. Con
-        // la base corta, un partido alargado ponía a todo el mundo en verde
-        // antes de tiempo.
-        const totalSec = _calculateMaxTime(data, _replayState.events);
+        // ════════════════════════════════════════════════════════════
+        //  LA BASE DEL SEMÁFORO NO ES LA DE LA BARRA DE TIEMPO
+        // ════════════════════════════════════════════════════════════
+        //  🔑🔑🔑 EL DEFECTO QUE ARREGLA (reportado el 2026-08-14): en un
+        //  partido configurado a 35+35 del que sólo se jugaron 6 minutos, la
+        //  repetición mostraba cambios de color que NUNCA ocurrieron en vivo.
+        //
+        //  Medido en el partido real `local-14082026-5txs-0106`:
+        //    · configurado  half1MaxTime + half2MaxTime = 4200 s
+        //    · jugado       timeH1 + timeH2             =  360 s
+        //  En VIVO, getTimerColor usa el REGLAMENTO: los umbrales caen en
+        //  1260 s y 2100 s, así que con 6 minutos nadie los alcanza y todo el
+        //  equipo se queda en rojo — correcto. La repetición usaba
+        //  _calculateMaxTime, que prefiere lo JUGADO: los umbrales bajaban a
+        //  108 s y 180 s, y jugadores con 94, 141 o 266 s cruzaban a ámbar y
+        //  verde. Colores inventados.
+        //
+        //  🔑 _calculateMaxTime ESTÁ BIEN PARA LO SUYO: la BARRA tiene que
+        //  abarcar lo que de verdad se jugó para que ningún suceso quede
+        //  fuera (v394/v446). Son dos preguntas distintas y necesitan dos
+        //  bases distintas: la barra mide TIEMPO TRANSCURRIDO; el semáforo
+        //  mide QUÉ PARTE DEL PARTIDO jugó cada uno, que es una magnitud
+        //  deportiva y se compara contra el reglamento.
+        //
+        //  ⚠️ SE CONSERVA v446 CON UN MÁXIMO, no revirtiéndolo. Aquel arreglo
+        //  atendía el caso contrario —un partido ALARGADO por descuento, donde
+        //  el reglamento se queda corto y todos verdeaban antes de tiempo—.
+        //  Con max() la base nunca baja del reglamento (se acabaron los
+        //  colores inventados) y sigue creciendo cuando el partido se alarga.
+        //
+        //  ⚠️ LA REPETICIÓN REPRODUCE, NO RECALCULA. Ante la duda, la regla es
+        //  enseñar lo que el entrenador vio en el campo.
+        const _semBarra      = _calculateMaxTime(data, _replayState.events);
+        const _semReglamento = _reglamentarioSec(data);
+        const totalSec = Math.max(_semReglamento, _semBarra);
 
         const t = timeSec || 0;
         if (t >= totalSec * (yellowPct / 100)) return { bg: '#2ea043', text: '#000000' };

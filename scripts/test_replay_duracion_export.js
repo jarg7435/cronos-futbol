@@ -113,9 +113,23 @@ console.log('── PARTE 1 · la duración cuenta el descuento ──');
        /const h1Max = _finPrimeraParteSec\(data\);/.test(S) &&
        /phaseTxt\.textContent = timeSec >= h1Max/.test(S),
        'si no, dice "2ª PARTE" durante el descuento de la primera');
-    ok('1m · 🔑 el semáforo del cronómetro individual mide sobre la duración REAL',
-       /const totalSec = _calculateMaxTime\(data, _replayState\.events\);/.test(S),
-       'con la base corta, un partido alargado ponía a todos en verde antes de tiempo');
+    // ⚠️ REFINADO EL 2026-08-14, sin perder lo que esta aserción protegía.
+    // v446 puso la base del semáforo en la duración REAL porque un partido
+    // ALARGADO por descuento ponía a todos en verde antes de tiempo. Cierto,
+    // pero el caso contrario destrozaba la lectura: en un partido de 35+35 del
+    // que sólo se juegan 6 minutos, la base caía a 360 s y aparecían cambios
+    // de color que NUNCA ocurrieron en vivo —donde getTimerColor usa el
+    // reglamento—. El autor lo reportó con un partido real.
+    //
+    // La regla que cubre los dos casos es el MÁXIMO: la base nunca baja del
+    // reglamento (no se inventan colores) y sigue creciendo cuando el partido
+    // se alarga (v446 intacto). Lo detalla test_semaforo_replay_y_consolidacion.js.
+    ok('1m · 🔑 el semáforo NUNCA baja del reglamento, y crece si el partido se alarga',
+       /const totalSec = Math\.max\(_semReglamento, _semBarra\);/.test(S) &&
+       /const _semBarra\s*=\s*_calculateMaxTime\(data, _replayState\.events\);/.test(S) &&
+       /const _semReglamento\s*=\s*_reglamentarioSec\(data\);/.test(S),
+       'con la base corta, un partido alargado ponía a todos en verde antes de tiempo; ' +
+       'con la base sólo de lo jugado, un partido corto inventaba colores');
     ok('1n · 🔑 y la barra del reproductor se calcula con los eventos delante',
        /_replayState\.maxTimeSec = _calculateMaxTime\(data, _replayState\.events\);/.test(S));
 }
