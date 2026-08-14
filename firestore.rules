@@ -1260,13 +1260,28 @@ service cloud.firestore {
       function lmFrozen() {
         return !lmIsLive() && !lmInGrace();
       }
-      // En la ventana de gracia lo unico que puede cambiar es la lista de
-      // sucesos. Sin este `hasOnly`, la ventana permitiria reescribir el
-      // marcador, las alineaciones o los minutos durante 2 h, que es justo la
-      // falsificacion que se quiere impedir.
+      // En la ventana de gracia solo puede cambiar lo que hace falta para
+      // registrar un EVENTO PERDIDO (perdida de bateria o cobertura). Sin este
+      // `hasOnly`, la ventana permitiria reescribir el partido entero durante
+      // 2 h, que es justo la falsificacion que se quiere impedir.
+      //
+      // v531 · Se anaden `players`, `homeTeam` y `awayTeam` a la lista, POR
+      // DECISION EXPRESA DEL AUTOR (2026-08-14). Motivo: un gol o una tarjeta
+      // que no se pudo anotar en su momento tiene que sumar en la ficha del
+      // jugador y en el marcador, o el informe se contradice con el acumulado.
+      // La ventana de gracia existe precisamente para eso.
+      //
+      // ⚠️ ES UNA RELAJACION REAL, no un matiz: durante esas 2 h un coach del
+      // club puede corregir marcador y fichas. Lo que la acota:
+      //   · sigue siendo SOLO dentro de las 2 h; pasadas, `lmFrozen()` cierra
+      //     el documento entero y no hay excepcion ni para el SuperAdmin;
+      //   · el resto de campos (cronometros, formacion, status, fechas) siguen
+      //     FUERA de la lista, asi que no se puede reescribir el partido;
+      //   · queda rastro: cada correccion anade su suceso a `events`.
       function lmOnlyEvents() {
         return request.resource.data.diff(resource.data)
-                 .affectedKeys().hasOnly(['events', 'updatedAt']);
+                 .affectedKeys().hasOnly(['events', 'updatedAt',
+                                          'players', 'homeTeam', 'awayTeam']);
       }
       // SEC (cierre de hueco): create/update ya NO son un `if isAuth()` abierto.
       // El documento contiene PII (coachEmail, nombres/dorsales de jugadores

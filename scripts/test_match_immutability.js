@@ -308,10 +308,33 @@ function casosReglas() {
           exp: 'ALLOW', auth: authCoach, method: 'update',
           existing: enGracia, entrante: soloEventos(enGracia) },
 
-        { n: '4d · [EL NUCLEO] en gracia NO se puede tocar el marcador',
-          exp: 'DENY', auth: authCoach, method: 'update',
+        // ⚠️⚠️ ESTA ASERCION SE REFINO EN v531, NO SE BORRO. Hasta entonces
+        // fijaba que en la ventana de gracia NO se pudiera tocar el marcador.
+        // El autor decidio (2026-08-14) que un EVENTO PERDIDO tiene que poder
+        // corregir marcador y ficha del jugador, o el informe se contradice con
+        // el acumulado. Lo que la asercion protegia de verdad —que la ventana
+        // no sea una barra libre para reescribir el partido— sigue vigente y lo
+        // fija ahora el caso 4d2, con un campo que NO esta en la lista.
+        { n: '4d · [v531] en gracia SI se corrige el marcador (evento perdido)',
+          exp: 'ALLOW', auth: authCoach, method: 'update',
           existing: enGracia, entrante: tocaMarcador(enGracia),
-          why: 'sin el hasOnly, la ventana permitiria reescribir el resultado durante 2 h' },
+          why: 'un gol que no se pudo anotar en su momento tiene que sumar' },
+
+        { n: '4d2 · [EL NUCLEO] pero en gracia NO se puede tocar NADA MAS (aqui, el cronometro)',
+          exp: 'DENY', auth: authCoach, method: 'update',
+          existing: enGracia,
+          entrante: Object.assign({}, enGracia, { timeH1: 9999 }),
+          why: 'sin este limite la ventana seria barra libre para reescribir el partido' },
+
+        { n: '4d3 · [v531] y tambien se corrige la ficha de los jugadores',
+          exp: 'ALLOW', auth: authCoach, method: 'update',
+          existing: enGracia,
+          entrante: Object.assign({}, enGracia, { players: [{ id: 1, goals: 2 }] }) },
+
+        { n: '4d4 · [EL NUCLEO] congelado NO admite corregir el marcador',
+          exp: 'DENY', auth: authCoach, method: 'update',
+          existing: congelado, entrante: tocaMarcador(congelado),
+          why: 'la relajacion de v531 vale SOLO dentro de las 2 h' },
 
         { n: '4e · [EL NUCLEO] congelado NO admite ni un suceso',
           exp: 'DENY', auth: authCoach, method: 'update',

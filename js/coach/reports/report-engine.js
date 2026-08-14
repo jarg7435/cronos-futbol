@@ -677,11 +677,17 @@ const _RP = (() => {
                     return {
                         tipo: ev.type,
                         ex: ef * sc,
+                        // v531 · EVENTO PERDIDO: registrado a posteriori por
+                        // pérdida de batería o cobertura. Viaja como campo
+                        // estructurado desde _parseHistoryForFirestore; el texto
+                        // de la nota NO es el contrato (lección de v418-v421).
+                        retro: ev.retro === true,
                         ts: ev.timeStr || `${ev.minute||0}'${ev.second>0?String(ev.second).padStart(2,'0')+'"':''}`
                     };
                 });
             eventos.forEach(e => {
-                arriba.push({ x: e.ex, anchor: 'middle', color: 'rgba(255,255,255,0.38)',
+                arriba.push({ x: e.ex, anchor: 'middle',
+                              color: e.retro ? RETRO_COLOR : 'rgba(255,255,255,0.38)',
                               txt: e.ts, fs: 5.5 });
             });
 
@@ -794,6 +800,14 @@ const _RP = (() => {
                 } else if (e.tipo === 'injury') {
                     svg += `<polygon points="${ex},${EVT_Y-7} ${(ex-5)},${EVT_Y+4} ${(ex+5)},${EVT_Y+4}" fill="#f97316"/>`;
                 }
+                // v531 · Aro NARANJA discontinuo alrededor de lo registrado a
+                // posteriori. Se conserva el icono propio del suceso —el
+                // director sigue viendo si fue gol o tarjeta— y el aro añade de
+                // dónde salió el dato. La etiqueta del minuto va del mismo color.
+                if (e.retro) {
+                    svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="8.5" fill="none" ` +
+                           `stroke="${RETRO_COLOR}" stroke-width="1.2" stroke-dasharray="2.5 1.5"/>`;
+                }
             });
 
             svg += '</svg>';
@@ -818,6 +832,12 @@ const _RP = (() => {
         return html;
     };
 
+    // v531 · Color de los EVENTOS PERDIDOS (registrados a posteriori). Naranja
+    // por petición expresa del autor: el director deportivo y el coordinador
+    // tienen que saber de un vistazo qué se anotó durante el partido y qué se
+    // añadió después por pérdida de batería o cobertura.
+    const RETRO_COLOR = '#f5a623';
+
     // ── Leyenda (actualizada para el nuevo formato) ───────────────────
     const buildLegend = () =>
         `<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin:6px 0 0.85rem;font-size:0.66rem;color:var(--text-muted);">` +
@@ -829,6 +849,7 @@ const _RP = (() => {
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;"></span>Amarilla</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;"></span>Roja</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid #f97316;display:inline-block;"></span>Lesión</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="width:11px;height:11px;border-radius:50%;border:1.2px dashed ${RETRO_COLOR};display:inline-block;"></span><span style="color:${RETRO_COLOR};font-weight:700;">Evento perdido</span> (retroactivo)</span>` +
         `</div>`;
 
     // ════════════════════════════════════════════════════════════════

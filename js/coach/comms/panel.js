@@ -63,7 +63,11 @@ function _parseHistoryForFirestore(raw) {
             // un re-parseo igual que `phase`. Si el objeto no la trae, se
             // re-deduce del `note`, que es donde quedó la cadena original.
             const _real = e.realTime || _horaRealDeNota(e.note);
-            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', subId: e.subId || null, note: e.note || '', phase: _fase, realTime: _real });
+            // v531 · `retro` tiene que sobrevivir a un re-parseo igual que
+            // `phase` y `realTime`: si el objeto no lo trae (informe guardado
+            // antes de v531) se re-deduce del `note`, que conserva la cadena.
+            const _retro = (e.retro === true) || /\(RETRO\)/i.test(String(e.note || ''));
+            pushEvent({ type: e.type, minute: e.minute || 0, second: e.second || 0, timeStr: e.timeStr || '', subId: e.subId || null, note: e.note || '', phase: _fase, realTime: _real, retro: _retro });
             return;
         }
         if (typeof e !== 'string') return;
@@ -104,8 +108,12 @@ function _parseHistoryForFirestore(raw) {
         // Ojo: (DESC) ≠ (DESCANSO). La primera es un cambio hecho DURANTE el
         // descanso y es real; la segunda es el apunte automático.
         const esFase = /\((?:DESCANSO|FIN)\)/i.test(e);
+        // v531 · Marca de EVENTO PERDIDO (registrado a posteriori por pérdida de
+        // batería o cobertura). Mismo patrón que `(DESCANSO)` y que el `#subId`:
+        // el texto lo lleva, pero fuera de aquí se usa el campo estructurado.
+        const esRetro = /\(RETRO\)/i.test(e);
         if (type) pushEvent({ type, minute, second, timeStr, subId, note: e, phase: esFase,
-                              realTime: _horaRealDeNota(e) });
+                              realTime: _horaRealDeNota(e), retro: esRetro });
     });
     return result;
 }
