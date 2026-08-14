@@ -310,6 +310,58 @@ const lastWrite = (writes, col, id) => wrote(writes, col, id).slice(-1)[0];
         ok('2g · excluye self/ind_admin_registration de club_admin/individual (ya contados como directos), no las demás', n === 1, n);
     }
     {
+        // ════════════════════════════════════════════════════════════════
+        //  v532 · EL DESFASE QUE REPORTÓ EL AUTOR: badge 7, lista 4.
+        //  Reproducido con la forma REAL de los datos de producción, leída
+        //  por REST: tres usuarios en `pending_sa` que ADEMÁS tienen su
+        //  solicitud reenviada en `platform_requests`, con
+        //  `type:'self_registration'` y `requestedRole:'user'` — que es
+        //  justo lo que la exclusión por tipo NO cubría.
+        // ════════════════════════════════════════════════════════════════
+        const { sandbox } = buildSandbox({
+            users: {
+                U1: { status: 'pending_sa', email: 'jose@x.com' },
+                U2: { status: 'pending_sa', email: 'bruna@x.com' },
+                U3: { status: 'pending_sa', email: 'jarg@x.com' },
+            },
+            platformRequests: {
+                r1: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U1' },
+                r2: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U2' },
+                r3: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U3' },
+                r4: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U4' },
+            },
+        });
+        const n = await sandbox.window.saCountPendingRequests();
+        ok('2i · 🔑🔑🔑 una persona con solicitud Y usuario pendiente cuenta UNA vez (era 7, debe ser 4)',
+           n === 4, n);
+    }
+    {
+        // ⚠️ Y el caso real de brunoromar2012: usuario YA ACTIVO que pide un
+        // rol nuevo. Su solicitud es legítima y tiene que contar.
+        const { sandbox } = buildSandbox({
+            users: { U9: { status: 'active', email: 'bruno@x.com' } },
+            platformRequests: {
+                r1: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U9' },
+            },
+        });
+        const n = await sandbox.window.saCountPendingRequests();
+        ok('2j · ⚠️ un usuario ACTIVO que pide un rol nuevo SÍ cuenta (no se filtra por estado del usuario)',
+           n === 1, n);
+    }
+    {
+        // Dos solicitudes distintas de la MISMA persona sin usuario pendiente:
+        // la lista pinta dos filas, así que el badge tiene que decir dos.
+        const { sandbox } = buildSandbox({
+            platformRequests: {
+                r1: { status: 'pending_sa', type: 'self_registration', requestedRole: 'user', userUid: 'U7' },
+                r2: { status: 'pending_sa', type: 'self_registration', requestedRole: 'director', userUid: 'U7' },
+            },
+        });
+        const n = await sandbox.window.saCountPendingRequests();
+        ok('2k · dos solicitudes de la misma persona: la lista pinta dos filas y el badge dice dos',
+           n === 2, n);
+    }
+    {
         const { sandbox } = buildSandbox({ getDocsThrows: 'permission-denied' });
         const n = await sandbox.window.saCountPendingRequests();
         ok('2h · fallo de todas las fuentes -> devuelve 0 sin lanzar', n === 0, n);

@@ -72,6 +72,40 @@ window.saCountPendingRequests = async function saCountPendingRequests() {
                 && (r.requestedRole === 'club_admin' || r.requestedRole === 'individual')) {
                 return; // ya contado como direct_user
             }
+            // ════════════════════════════════════════════════════════════
+            //  v532 · DEDUPLICAR POR PERSONA, NO POR TIPO DE SOLICITUD
+            //
+            //  Reporte del autor: el badge decía 7 y la lista pintaba 4.
+            //  Medido por REST sobre producción: había 3 usuarios en
+            //  `pending_sa` y 4 solicitudes en `platform_requests/pending_sa`
+            //  —los mismos 3, más uno—. El contador sumaba 3 + 4 = 7,
+            //  contando DOS VECES a las mismas tres personas: una por su
+            //  documento de usuario y otra por su solicitud.
+            //
+            //  🔑 La regla de arriba intentaba evitarlo, pero deduplicaba por
+            //  TIPO y ROL: sólo se saltaba `self_registration` de `club_admin`
+            //  o `individual`. Las cuatro reales eran `self_registration` con
+            //  `requestedRole: 'user'` (entrenador), así que no entraban. El
+            //  desfase aparecía con cualquier entrenador, director,
+            //  coordinador o padre: sólo los admins de club y los individuales
+            //  estaban cubiertos.
+            //
+            //  Ahora se deduplica por IDENTIDAD (`userUid`, que es el id del
+            //  documento de usuario), que es como lo hace la lista que de
+            //  verdad se pinta (extras.js · patchSaRequests). Una persona con
+            //  solicitud Y documento pendiente es UN elemento, no dos.
+            //
+            //  ⚠️ NO se filtra por "usuario ya activo": un usuario activo con
+            //  solicitud pendiente es un caso NORMAL —pedir un rol nuevo—, y
+            //  hay uno real en producción (brunoromar2012, entrenador en
+            //  CD DÍA sobre una cuenta que ya tenía otros seis roles).
+            // ════════════════════════════════════════════════════════════
+            //  ⚠️ Sólo se salta lo YA CONTADO por su documento de usuario. NO se
+            //  marca aquí el userUid como visto: dos solicitudes distintas de la
+            //  misma persona (p. ej. entrenador y director) son DOS filas en la
+            //  lista, y el badge tiene que decir dos. Marcarlo escondía la
+            //  segunda — lo cazó la aserción 2k.
+            if (r.userUid && _seen.has(r.userUid)) return;
             count++;
         });
         snapQ.forEach(() => count++);
