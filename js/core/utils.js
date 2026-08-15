@@ -208,11 +208,80 @@ if (typeof window._cronosMatchModality !== 'function') {
         // 2b) Heurística por etiqueta legible (sin acentos).
         const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         // 'futurefem' es F7 y 'regional_fem' F11 (éste ya entra por 'regional').
-        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin|futurefem)/.test(norm)) return 'f7';
-        if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado)/.test(norm)) return 'f11';
+        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(norm)) return 'f7';
+        if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado|futurefem)/.test(norm)) return 'f11';
         return '';
     };
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  v537 · UN ENTRENADOR: COMO MUCHO DOS EQUIPOS, Y UNO DE CADA MODALIDAD
+//
+//  Regla de negocio del autor (2026-08-15): en un MISMO club un entrenador
+//  puede llevar como máximo dos equipos, y obligatoriamente uno de Fútbol 7 y
+//  otro de Fútbol 11. Dos de F7 o dos de F11 están PROHIBIDOS.
+//
+//  ⚠️ NO ESTABA IMPLEMENTADA EN NINGÚN SITIO. Medido por REST antes de escribir
+//  nada: en producción existe un caso con esa forma —brunoromar2012 con
+//  `juvenil B` y `cadete C`, ambos F11 en el mismo club— y nada lo impidió.
+//
+//  🔑 La modalidad NO se pregunta ni se guarda aparte: se deriva de la
+//  categoría con `_cronosMatchModality`, que ya es la forma canónica del
+//  proyecto. Un campo nuevo habría creado una segunda verdad que mantener.
+//
+//  ⚠️ SÓLO CUENTAN LOS ROLES VIVOS del MISMO club: un rol revocado
+//  (`status:'removed'`) o no autorizado deja su plaza libre, y otro club es
+//  otro asunto. Contar los muertos bloquearía altas legítimas.
+//  ⚠️ Y SÓLO EL ROL DE ENTRENADOR (`user`): coordinador, director o padre no
+//  ocupan equipo en este sentido.
+//
+//  Devuelve { ok, motivo, actuales }. `motivo` es el texto que se enseña.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosPuedeLlevarEquipo !== 'function') {
+    window.cronosPuedeLlevarEquipo = function (allRoles, nuevaCategoria, clubId, opciones) {
+        const o = opciones || {};
+        const modal = (c) => (typeof window._cronosMatchModality === 'function')
+            ? window._cronosMatchModality(c) : '';
+        const nueva = modal(nuevaCategoria);
+        const roles = Array.isArray(allRoles) ? allRoles : [];
+        const mismoClub = (r) => String((r && r.clubId) || '') === String(clubId || '');
+        const vivo = (r) => r && r.status !== 'removed' && r.isAuthorized !== false;
+        const esEntrenador = (r) => r && r.role === 'user';
+
+        // Los equipos que YA lleva en ese club. Se puede excluir uno: al MOVER
+        // a alguien de equipo su plaza actual se libera, y sin esto un cambio
+        // de F7 a F7 se rechazaría contra sí mismo.
+        const actuales = roles.filter(function (r) {
+            if (!esEntrenador(r) || !vivo(r) || !mismoClub(r) || !r.category) return false;
+            if (o.excluyeCategoria && String(r.category) === String(o.excluyeCategoria)) return false;
+            return true;
+        });
+
+        // Sin modalidad no se puede juzgar. NO se bloquea: impedir un alta
+        // legítima por una categoría que no sepamos clasificar es peor que
+        // dejar pasar un caso raro que un humano puede revisar.
+        if (!nueva) return { ok: true, motivo: '', actuales: actuales };
+
+        if (actuales.length >= 2) {
+            return { ok: false, actuales: actuales,
+                motivo: 'Ya lleva ' + actuales.length + ' equipos en este club, que es el máximo. ' +
+                        'Un entrenador puede llevar como mucho dos: uno de Fútbol 7 y otro de Fútbol 11.' };
+        }
+
+        const choca = actuales.filter(function (r) { return modal(r.category) === nueva; })[0];
+        if (choca) {
+            return { ok: false, actuales: actuales,
+                motivo: 'Ya lleva un equipo de ' + (nueva === 'f7' ? 'Fútbol 7' : 'Fútbol 11') +
+                        ' en este club (' + String(choca.category) +
+                        (choca.subcategory ? ' ' + choca.subcategory : '') + '). ' +
+                        'El segundo equipo tiene que ser de ' +
+                        (nueva === 'f7' ? 'Fútbol 11' : 'Fútbol 7') + '.' };
+        }
+
+        return { ok: true, motivo: '', actuales: actuales };
+    };
+}
+
 
 // _cronosStaffCoordinatorType(staff) → 'f7' | 'f11' | 'f711' | ''
 //   Extrae el coordinatorType de un objeto staff resuelto por _cGetStaff.
@@ -386,8 +455,8 @@ if (typeof window._cronosMatchModality !== 'function') {
         // 2b) Heurística por etiqueta legible (sin acentos).
         const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         // 'futurefem' es F7 y 'regional_fem' F11 (éste ya entra por 'regional').
-        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin|futurefem)/.test(norm)) return 'f7';
-        if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado)/.test(norm)) return 'f11';
+        if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(norm)) return 'f7';
+        if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado|futurefem)/.test(norm)) return 'f11';
         return '';
     };
 }
@@ -454,10 +523,20 @@ if (typeof window.getCategoryGroupKey !== 'function') {
         const sub = (subcategory == null ? 'A' : String(subcategory)).trim().toUpperCase();
 
         // 🔑 LAS DOS CATEGORÍAS FEM NO ESTRENAN GRUPO DE SEMÁFORO, HEREDAN:
-        // FUTureFEM es F7 → grupo 'f7'; Regional FEM entra más abajo por
+        // FUTureFEM → grupo 'f7'; Regional FEM entra más abajo por
         // includes('regional') → grupo 'regional' (celeste, sin semáforo). Así
         // el Director sigue configurando 9 bloques y no hay claves huérfanas en
         // clubs/{id}.categoryConfigs.
+        //
+        // ⚠️⚠️ v538 · ESTE GRUPO SE QUEDA EN 'f7' A PROPÓSITO, aunque FUTureFEM
+        // haya pasado a ser modalidad F11. Son DOS cosas distintas:
+        //   · la MODALIDAD dice cuántos juegan (11) → `_cronosMatchModality`;
+        //   · este GRUPO elige los umbrales del semáforo, que dependen de la
+        //     DURACIÓN del partido, y FUTureFEM sigue jugando 2T x 35' = 70',
+        //     igual que Benjamín y Alevín, no los 80' de Infantil/Cadete.
+        // Moverlo aquí cambiaría los umbrales de partidos ya jugados y dejaría
+        // huérfana la configuración que el Director ya tenga guardada.
+        // Si el autor quiere también cambiar la duración, es otra decisión.
         if (cat.includes('f7') || cat.includes('f8') ||
             /(prebenjamin|benjamin|alevin|prebenj|chupete|querubin|futurefem)/.test(normCat)) {
             return 'f7';

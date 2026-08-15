@@ -492,8 +492,8 @@ function _getCategoryModality(cat) {
         return window._cronosMatchModality(cat);
     }
     const c = _normCat(cat);
-    if (['prebenjamin', 'benjamin', 'alevin', 'chupete', 'querubin', 'futurefem'].includes(c)) return 'f7';
-    if (['infantil', 'cadete', 'juvenil', 'regional', 'regional_fem', 'senior', 'amateur'].includes(c)) return 'f11';
+    if (['prebenjamin', 'benjamin', 'alevin', 'chupete', 'querubin'].includes(c)) return 'f7';
+    if (['infantil', 'cadete', 'juvenil', 'regional', 'regional_fem', 'senior', 'amateur', 'futurefem'].includes(c)) return 'f11';
     return 'f7';
 }
 

@@ -102,12 +102,15 @@ function openSetupModal() {
                 // Categorías F7: prebenjamin, benjamin, alevin, futurefem
                 // Categorías F11: infantil, cadete, juvenil, regional, regional_fem
                 // (aceptamos también con prefijo f7_/f11_)
-                // 🔑 FUTureFEM es F7 y Regional FEM es F11 (decisión del autor,
-                // 2026-08-12). 'regional_fem' ya entra por includes('regional');
-                // 'futurefem' no contiene ninguna de las otras claves y sin esta
-                // línea al entrenador se le ofrecerían LAS DOS modalidades.
-                if (rcat.includes('prebenjamin') || rcat.includes('benjamin') || rcat.includes('alevin') || rcat.includes('futurefem')) hasF7 = true;
-                if (rcat.includes('infantil') || rcat.includes('cadete') || rcat.includes('juvenil') || rcat.includes('regional')) hasF11 = true;
+                // 🔑 v538 · FUTureFEM PASA A F11. Sus futbolistas tienen de 12 a
+                // 15 años, así que por edad y normativa juegan Fútbol 11
+                // (corrección del autor, 2026-08-15; hasta v537 se clasificaba
+                // como F7 por error). Regional FEM ya entra por
+                // includes('regional'). 'futurefem' no comparte subcadena con
+                // ninguna otra clave, así que necesita su propia mención: sin
+                // ella al entrenador no se le ofrecería ninguna modalidad.
+                if (rcat.includes('prebenjamin') || rcat.includes('benjamin') || rcat.includes('alevin')) hasF7 = true;
+                if (rcat.includes('infantil') || rcat.includes('cadete') || rcat.includes('juvenil') || rcat.includes('regional') || rcat.includes('futurefem')) hasF11 = true;
                 if (rcat.startsWith('f7_')) hasF7 = true;
                 if (rcat.startsWith('f11_')) hasF11 = true;
             });

@@ -1385,6 +1385,32 @@ async function openClubAdminPanel(preClubId = null) {
             showToast(`⛔ No hay slots libres para el rol ${role}. Solicita ampliación al SuperAdmin.`, 4000);
             return;
         }
+        // ════════════════════════════════════════════════════════════════
+        //  v537 · LA REGLA SE COMPRUEBA AL AUTORIZAR, NO SÓLO AL MOVER.
+        //  Aquí es donde una solicitud se convierte en equipo asignado: sin
+        //  este candado, la combinación prohibida entra por la puerta grande.
+        //  Sólo aplica al rol de ENTRENADOR (`user`).
+        // ════════════════════════════════════════════════════════════════
+        if (role === 'user' && typeof window.cronosPuedeLlevarEquipo === 'function') {
+            try {
+                const _s0 = await getDoc(doc(db, 'users', uid));
+                const _d0 = _s0.exists() ? _s0.data() : {};
+                const _r0 = (_d0.allRoles || []).find(r => r && r.role === role) || {};
+                const _cat0 = _r0.category || _d0.requestedCategory || _d0.category || _d0.categoryLabel;
+                const _v0 = window.cronosPuedeLlevarEquipo(_d0.allRoles, _cat0, clubId,
+                                                           { excluyeCategoria: _cat0 });
+                // ⚠️ Se excluye la categoría que se está autorizando: su propia
+                // entrada ya está en allRoles (pendiente) y se contaría a sí misma.
+                if (!_v0.ok) {
+                    alert('🚫 No se puede autorizar a ' + email + ' en "' + _cat0 + '".\n\n' +
+                          _v0.motivo + '\n\nNo se ha autorizado nada.');
+                    return;
+                }
+            } catch (e) {
+                console.warn('[v537] No se pudo validar la modalidad al autorizar:', e && e.message);
+            }
+        }
+
         if (!confirm(`¿Autorizar acceso a ${email} como ${role}?`)) return;
         try {
             const targetDocRef = doc(db, 'users', uid);
@@ -1788,6 +1814,31 @@ async function openClubAdminPanel(preClubId = null) {
         if (newCat === null) return;
         let newSub = prompt('Subcategoría / Grupo (ej: A, B, Segunda...):', currentSub);
         if (newSub === null) return;
+
+        // ════════════════════════════════════════════════════════════════
+        //  v537 · UN F7 Y UN F11, NUNCA DOS DE LO MISMO
+        //  Se comprueba ANTES de confirmar nada: rechazar después de que el
+        //  administrador haya aceptado el movimiento sería peor.
+        //  ⚠️ Se excluye su categoría ACTUAL del recuento: al mover a alguien
+        //  su plaza de origen se libera, y sin esto un cambio dentro de la
+        //  misma modalidad se rechazaría contra sí mismo.
+        // ════════════════════════════════════════════════════════════════
+        if (typeof window.cronosPuedeLlevarEquipo === 'function') {
+            try {
+                const { db, doc, getDoc } = await saFS();
+                const _s = await getDoc(doc(db, 'users', uid));
+                const _d = _s.exists() ? _s.data() : {};
+                const _v = window.cronosPuedeLlevarEquipo(_d.allRoles, newCat, clubId,
+                                                          { excluyeCategoria: currentCat });
+                if (!_v.ok) {
+                    alert('🚫 No se puede mover a ' + email + ' a "' + newCat + '".\n\n' +
+                          _v.motivo + '\n\nNo se ha cambiado nada.');
+                    return;
+                }
+            } catch (e) {
+                console.warn('[v537] No se pudo validar la modalidad:', e && e.message);
+            }
+        }
 
         // Que el administrador vea la consecuencia ANTES de aceptar: esto no
         // es editar una etiqueta, es mover el acceso de una persona.
