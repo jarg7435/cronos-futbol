@@ -2202,6 +2202,34 @@ export async function doAuth() {
             // 1. Leer documento principal (permitido: uid == userId)
             const primarySnap = await fa.getDoc(fa.doc(fa.db, 'users', cred.user.uid));
 
+            // ═══════════════════════════════════════════════════════════
+            //  v539 · LA REGLA DE LOS DOS EQUIPOS, YA EN LA SOLICITUD
+            //
+            //  🔑 AQUÍ es donde puede darse la combinación prohibida desde el
+            //  formulario. Un usuario NUEVO no tiene con qué chocar; el riesgo
+            //  está cuando alguien que YA existe pide un segundo equipo, que es
+            //  exactamente esta rama (`isAddingRole`).
+            //
+            //  ⚠️ Y no se puede validar antes: hasta que no se autentica con su
+            //  contraseña no hay forma de leer sus roles —las reglas no dejan
+            //  leer el documento de otro—. Por eso el aviso llega aquí y no al
+            //  elegir la categoría en el desplegable.
+            //
+            //  Se corta ANTES de escribir nada: ni documento, ni solicitud.
+            // ═══════════════════════════════════════════════════════════
+            if (requestedRole === 'user' && primarySnap.exists() &&
+                typeof window.cronosPuedeLlevarEquipo === 'function') {
+                const _rolesPrev = primarySnap.data().allRoles || [];
+                const _val = window.cronosPuedeLlevarEquipo(_rolesPrev, selectedCategory, clubId);
+                if (!_val.ok) {
+                    window._addingRole = false;
+                    try { await fa.signOut(fa.auth); } catch (_) {}
+                    showAuthError('🚫 No se puede añadir ese equipo. ' + _val.motivo +
+                                  ' No se ha creado ninguna solicitud.');
+                    return;
+                }
+            }
+
             if (!primarySnap.exists()) {
                 // El email existe en Firebase Auth pero no hay documento en Firestore
                 // (fue borrado o nunca se creó). Tratar como REGISTRO NUEVO.

@@ -385,6 +385,44 @@
                             if (!prSnap2.exists()) { if (typeof showToast === 'function') showToast('⚠️ Solicitud no encontrada', 3000); return; }
                             r = prSnap2.data();
                         }
+
+                        // ═══════════════════════════════════════════════════
+                        //  v539 · LA REGLA DE LOS DOS EQUIPOS TAMBIÉN AQUÍ
+                        //
+                        //  Era el hueco que quedaba: el SuperAdmin aprueba
+                        //  mucho desde esta pestaña, y aquí no se comprobaba
+                        //  nada. Aprobar es lo que convierte una solicitud en
+                        //  equipo asignado, así que el candado tiene que estar
+                        //  en los DOS aprobares (club y SA), no en uno.
+                        //
+                        //  ⚠️ Se excluye la categoría que se está aprobando: su
+                        //  propia entrada ya está en allRoles (pendiente) y se
+                        //  contaría a sí misma.
+                        // ═══════════════════════════════════════════════════
+                        if (approve && role === 'user' &&
+                            typeof window.cronosPuedeLlevarEquipo === 'function') {
+                            var _uidObj = r.userUid || orphanUid;
+                            if (_uidObj) {
+                                var _uSnap = await getDoc(doc(db, 'users', _uidObj));
+                                if (_uSnap.exists()) {
+                                    var _uData = _uSnap.data();
+                                    var _rEnAll = (_uData.allRoles || []).filter(function (x) {
+                                        return x && x.role === 'user';
+                                    })[0] || {};
+                                    var _catAp = r.requestedCategory || _rEnAll.category ||
+                                                 _uData.requestedCategory || _uData.category;
+                                    var _clubAp = r.clubId || clubId || _uData.clubId;
+                                    var _vAp = window.cronosPuedeLlevarEquipo(
+                                        _uData.allRoles, _catAp, _clubAp, { excluyeCategoria: _catAp });
+                                    if (!_vAp.ok) {
+                                        alert('🚫 No se puede aprobar a ' + email + ' en "' + _catAp + '".\n\n' +
+                                              _vAp.motivo + '\n\nNo se ha aprobado nada.');
+                                        if (typeof saRequests === 'function') saRequests();
+                                        return;
+                                    }
+                                }
+                            }
+                        }
                         var me = (window._cronosCurrentUser || {}).email || 'superadmin';
                         if (!approve) {
                             await updateDoc(doc(db, 'platform_requests', reqId), { status: 'rejected', rejectedAt: new Date().toISOString() });

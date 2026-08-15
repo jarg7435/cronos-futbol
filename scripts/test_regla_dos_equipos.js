@@ -170,6 +170,40 @@ console.log('\n── PARTE 3 · el candado está en los puntos de escritura ─
     ok('3b3 · y antes de pedir confirmación',
        bloqueApr.indexOf('cronosPuedeLlevarEquipo(') < bloqueApr.indexOf('¿Autorizar acceso a'));
 
+    // ── v539 · Los dos huecos que quedaban ──────────────────────────────
+    const AUTH = sinCom(fs.readFileSync(path.join(RAIZ, 'js/services/auth.js'), 'utf8'));
+    // ⚠️ ANCLA DE CÓDIGO, NO DE COMENTARIO. La primera versión anclaba en
+    // "AÑADIR ROL A CUENTA EXISTENTE", que es un comentario — y `sinCom` acababa
+    // de borrarlo. Las tres aserciones salían rojas con el código correcto.
+    const iAdd = AUTH.indexOf('const primarySnap = await fa.getDoc(');
+    // Ventana lo bastante ancha para alcanzar la PRIMERA escritura: con 2600
+    // caracteres no llegaba y la comparación de orden no medía nada.
+    const bloqueAdd = iAdd === -1 ? '' : AUTH.slice(iAdd, iAdd + 9000);
+    ok('3e · 🔑 el FORMULARIO valida al añadir un equipo a una cuenta existente',
+       /cronosPuedeLlevarEquipo\(/.test(bloqueAdd),
+       'se podría SOLICITAR una combinación prohibida');
+    ok('3e2 · sólo para el rol de entrenador',
+       /requestedRole === 'user' && primarySnap\.exists\(\)/.test(bloqueAdd));
+    // 🔑 Antes de la PRIMERA escritura, sea el documento o la solicitud: si no,
+    // quedaría medio alta que luego hay que limpiar a mano.
+    ok('3e3 · ⚠️ y corta ANTES de escribir nada (ni documento ni solicitud)',
+       bloqueAdd.indexOf('cronosPuedeLlevarEquipo(') !== -1 &&
+       bloqueAdd.indexOf('setDoc') !== -1 &&
+       bloqueAdd.indexOf('platform_requests') !== -1 &&
+       bloqueAdd.indexOf('cronosPuedeLlevarEquipo(') < bloqueAdd.indexOf('setDoc') &&
+       bloqueAdd.indexOf('cronosPuedeLlevarEquipo(') < bloqueAdd.indexOf('platform_requests'),
+       'dejaría un alta a medias que hay que limpiar a mano');
+
+    const EXTRAS = sinCom(fs.readFileSync(path.join(RAIZ, 'js/admin/superadmin/extras.js'), 'utf8'));
+    const iAp = EXTRAS.indexOf('saExtApprove = async function');
+    const bloqueAp = iAp === -1 ? '' : EXTRAS.slice(iAp, iAp + 4000);
+    ok('3f · 🔑 el APROBAR del SuperAdmin también valida',
+       /cronosPuedeLlevarEquipo\(/.test(bloqueAp),
+       'el SA aprueba mucho desde ahí y era el hueco más grande');
+    ok('3f2 · sólo al APROBAR y sólo para entrenadores',
+       /approve && role === 'user'/.test(bloqueAp),
+       'bloquearía rechazos o altas de otros roles');
+
     ok('3c · ⚠️ el validador vive en utils.js, junto a la modalidad canónica',
        /cronosPuedeLlevarEquipo/.test(sinCom(fs.readFileSync(path.join(RAIZ, 'js/core/utils.js'), 'utf8'))));
     // utils.js se carga antes que el panel de club: si no, no existiría al pulsar.
