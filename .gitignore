@@ -58,6 +58,13 @@ rules_test/
 _*.txt
 bgout.txt
 
+# RESPALDOS DE DATOS DE PRODUCCION (JAMAS EN EL REPO)
+# Volcados que se hacen ANTES de borrar algo en produccion, para que la
+# operacion no sea irreversible (deleteDoc no tiene papelera). Contienen PII:
+# nombres y dorsales de JUGADORES MENORES DE EDAD y correos de entrenadores.
+# Se quedan en disco a proposito; subirlos a GitHub seria publicarlos.
+backups/
+
 # SCRIPTS DE INVESTIGACION/DEBUG PUNTUAL CONTRA PRODUCCION (Admin SDK)
 # Nunca deben vivir en functions/ (se empaqueta en cada deploy) ni commitearse:
 # acceden a produccion directamente y no forman parte del producto.
