@@ -208,8 +208,13 @@ console.log('\n── PARTE 5 · el panel usa la fusión ──');
     // abiertos a la vez, asi que el panel tiene que poder ensenyarlos todos o el
     // segundo seria irrecuperable. La intencion de la asercion no cambia: el
     // panel se pinta desde la FUSION, no desde una fuente suelta.
+    // v561 · La fusión sigue siendo el origen; lo que se le añade encima es el
+    // descarte de ranuras imposibles (incoherentes Y sin un segundo jugado, ver
+    // test_recuperar_sin_ranuras_fantasma.js). La intención de la aserción no
+    // cambia: el panel se pinta desde la FUSIÓN, no desde una fuente suelta.
     ok('5a · 🔑 el panel pinta a partir de las entradas fusionadas',
-       /const entradas = _fusionaCandidatosRecuperacion\(localMatches, docsNube\)/.test(SMC) &&
+       /_fusionaCandidatosRecuperacion\(localMatches, docsNube\)/.test(SMC) &&
+       /const entradas = _cronosDescartaRanurasImposibles\(/.test(SMC) &&
        /list\.innerHTML = entradas\.map\(/.test(SMC));
     ok('5a2 · v465 · y los candidatos locales salen de TODAS las ranuras',
        /_cronosMatchSlots\.listar\(\)/.test(SMC) && /const localMatches = \[\]/.test(SMC),

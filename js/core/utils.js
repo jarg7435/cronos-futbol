@@ -924,6 +924,111 @@ if (typeof window.cronosCategoriaSinSemaforo !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🪪 v561 · LA IDENTIDAD DEL PARTIDO — UN SOLO RESOLUTOR
+//
+//  Reporte del autor (captura 9075): en "Recuperar Partido en Curso" salía el
+//  Alevín C DUPLICADO — arriba una tarjeta de F-11 con 18 jugadores y 24
+//  minutos, abajo el partido real de F-7 con 14.
+//
+//  🔑🔑🔑 NO HABÍA NINGUNA RANURA FANTASMA. Medido en producción, las dos
+//  tarjetas eran DOS PARTIDOS DE VERDAD del mismo entrenador:
+//
+//     f7   14j  30min   category=alevin   matchCategory=alevin     ← Alevín C
+//     f11  18j  28min   category=alevin   matchCategory=regional   ← ¡Regional A!
+//
+//  El documento lleva DOS identidades y NO COINCIDEN:
+//    · `matchCategory` es la categoría DEL PARTIDO, la que fijó el panel de
+//      creación. Es la buena.
+//    · `category` es la del PERFIL del entrenador cuando se escribió el
+//      latido — y en un entrenador con dos equipos (v537) se queda con la del
+//      otro equipo. También se sellaba así el `teamId`.
+//  La tarjeta se etiquetaba con la del perfil, así que el partido del Regional
+//  se presentaba como un segundo Alevín. De ahí la "duplicación": no sobraba
+//  una tarjeta, sobraba una etiqueta equivocada. Descartarla habría sido peor
+//  que el defecto — se habría perdido un partido en curso de verdad.
+//
+//  ⚠️ NO SE PUEDE DEDUCIR LA MODALIDAD DE LA CATEGORÍA A SECAS. El panel
+//  ofrece "Juvenil (2T x 45')" TAMBIÉN en Fútbol 7: un Infantil o un Cadete
+//  jugando F7 es legítimo y lo decide el club. Por eso, cuando la categoría
+//  trae prefijo (`f7_`/`f11_`), ESE prefijo es la declaración; y la
+//  comprobación de coherencia compara la modalidad DECLARADA con la que la
+//  categoría permite, no con una tabla rígida.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosIdentidadDelPartido !== 'function') {
+    window.cronosIdentidadDelPartido = function (datos) {
+        const d = datos || {};
+
+        // 1 · La categoría DEL PARTIDO manda sobre la del perfil.
+        const catPartido = d.matchCategory || d.category || '';
+        const subPartido = (d.matchSubcategory != null && d.matchSubcategory !== '')
+            ? d.matchSubcategory
+            : (d.subcategory != null ? d.subcategory : '');
+
+        // 2 · Modalidad: la declarada; si no hay, la que pide la categoría.
+        const modalidadCat = (typeof window._cronosMatchModality === 'function')
+            ? window._cronosMatchModality(catPartido) : '';
+        const declarada = (d.mode === 'f11') ? 'f11' : (d.mode === 'f7' || d.mode === 'f8') ? 'f7' : '';
+        const modalidad = declarada || modalidadCat || '';
+
+        // 3 · Cuántos caben POR EQUIPO. Son los topes de convocatoria que ya
+        //     impone el arranque del partido (js/ai/import.js).
+        const maxPorEquipo = modalidad === 'f11' ? 18 : 14;
+
+        // 4 · El equipo más numeroso. ⚠️ SE CUENTA POR EQUIPO, no en total:
+        //     con "Analizar Contrario" el documento lleva las DOS plantillas y
+        //     un tope sobre el total daría por corrupto un partido perfecto.
+        let maxEnUnEquipo = null;
+        if (Array.isArray(d.players)) {
+            let home = 0, away = 0;
+            d.players.forEach(p => { if (p && p.team === 'away') away++; else home++; });
+            maxEnUnEquipo = Math.max(home, away);
+        } else if (typeof d.playerCount === 'number') {
+            // Sin el detalle por equipo sólo se puede juzgar el total, y para no
+            // acusar en falso a un partido con el contrario analizado se admite
+            // el doble.
+            maxEnUnEquipo = (d.playerCount > maxPorEquipo * 2) ? d.playerCount : null;
+        }
+
+        // 5 · Coherencia.
+        const motivos = [];
+        if (declarada && modalidadCat && declarada !== modalidadCat) {
+            motivos.push('se declara ' + declarada.toUpperCase() +
+                         ' pero la categoría del partido pide ' + modalidadCat.toUpperCase());
+        }
+        if (maxEnUnEquipo != null && maxEnUnEquipo > maxPorEquipo) {
+            motivos.push(maxEnUnEquipo + ' jugadores en un equipo, y en ' +
+                         modalidad.toUpperCase() + ' caben ' + maxPorEquipo);
+        }
+
+        // 6 · ¿El sello de equipo del documento apunta a OTRO equipo? Es el
+        //     defecto de origen, y quien lo lee tiene que poder saberlo.
+        const catPerfil = d.category || '';
+        const slug = (typeof cronosTeamSlug === 'function')
+            ? cronosTeamSlug
+            : (v) => String(v == null ? '' : v).trim().toLowerCase();
+        const _sinPrefijo = (v) => String(v || '').replace(/^f(?:7|8|11)_/i, '');
+        const selloAjeno = !!(catPerfil && catPartido &&
+            slug(_sinPrefijo(catPerfil)) !== slug(_sinPrefijo(catPartido)));
+
+        const etiqueta = (typeof window.cronosNombreCategoria === 'function')
+            ? window.cronosNombreCategoria(catPartido, subPartido)
+            : String(catPartido || '');
+
+        return {
+            category: catPartido, subcategory: subPartido,
+            categoriaCruda: _sinPrefijo(catPartido),
+            modalidad, modalidadDeLaCategoria: modalidadCat,
+            maxPorEquipo, maxEnUnEquipo,
+            etiqueta,
+            modalidadLabel: modalidad === 'f11' ? 'F-11' : 'F-7',
+            selloAjeno,
+            coherente: motivos.length === 0,
+            motivos,
+        };
+    };
+}
+
 if (typeof window.isParentReportEnabledForCategory !== 'function') {
     window.isParentReportEnabledForCategory = function(category, subcategory) {
         const configs = window._clubCategoryConfigs || {};

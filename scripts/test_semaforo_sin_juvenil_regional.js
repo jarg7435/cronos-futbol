@@ -239,12 +239,16 @@ ok('3a · 🔑 `semaforoActive` se calcula con las DOS categorías, no sólo con
    /cronosCategoriaSinSemaforo\(_matchCat, snapCat\)/.test(SYNC),
    'es la primera puerta que mira el visor: acertar aquí deja el partido celeste en todas las pantallas');
 
+// v561 · El sello se construye ahora con la categoría DEL PARTIDO, no con la
+// del perfil del entrenador (ver test_recuperar_sin_ranuras_fantasma.js).
 ok('3b · el documento lleva su `teamId` (club + categoría + subcategoría)',
-   /teamId: \(typeof cronosTeamId === 'function'\)/.test(SYNC),
+   /teamId: \(function \(\) \{/.test(SYNC) &&
+   /cronosTeamId\(_u\.clubId \|\| '', _cat, _sub\)/.test(SYNC),
    'deja escrita la pertenencia del partido en el propio dato');
 
 ok('3c · ⚠️ y nunca como `undefined` (un undefined en un payload de Firestore LANZA)',
-   /cronosTeamId\([\s\S]{0,400}\) \|\| null\)/.test(SYNC) && /: null,/.test(SYNC));
+   /cronosTeamId\(_u\.clubId \|\| '', _cat, _sub\) \|\| null;/.test(SYNC) &&
+   /if \(typeof cronosTeamId !== 'function'\) return null;/.test(SYNC));
 
 // El panel del Director ya declaraba la regla: los dos grupos sin interruptor.
 ok('3d · el panel del Director sigue declarando Juvenil y Regional SIN semáforo',

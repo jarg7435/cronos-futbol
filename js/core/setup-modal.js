@@ -1012,6 +1012,52 @@ function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
 window._fusionaCandidatosRecuperacion = _fusionaCandidatosRecuperacion;
 
 // ════════════════════════════════════════════════════════════════════
+//  🧹 v561 · FUERA LAS RANURAS QUE NO PUEDEN SER UN PARTIDO
+//
+//  Encargo del autor (captura 9075): que el panel valide la modalidad y el
+//  número de jugadores contra la categoría real y no enseñe ranuras cruzadas.
+//
+//  🔑 PERO EL CRITERIO NO PUEDE SER "INCOHERENTE = SE TIRA". Medido en
+//  producción, la tarjeta que él tomó por fantasma era un partido REAL —el del
+//  Regional A— con la etiqueta del otro equipo: descartarla habría dejado un
+//  partido en curso irrecuperable, que es peor que la confusión que venía a
+//  arreglar. Etiquetarlo bien ya deshace la duplicación.
+//
+//  Así que sólo se descarta lo que NO PUEDE SER UN PARTIDO: datos cruzados **y**
+//  ni un segundo jugado, ni un gol, ni un jugador. Eso no es un partido que
+//  alguien quiera retomar: es un resto. Todo lo que tenga juego se enseña, con
+//  su aviso.
+//
+//  Función pura: no toca el DOM ni Firestore, para poder ejercitarla entera en
+//  el guard.
+// ════════════════════════════════════════════════════════════════════
+function _cronosDescartaRanurasImposibles(entradas) {
+    if (!Array.isArray(entradas)) return [];
+    return entradas.filter(entrada => {
+        try {
+            const m = (entrada && entrada.datos) || {};
+            const ident = (typeof window.cronosIdentidadDelPartido === 'function')
+                ? window.cronosIdentidadDelPartido(m) : null;
+            if (!ident || ident.coherente) return true;
+
+            const jugado = (Number(m.timeH1) || 0) + (Number(m.timeH2) || 0);
+            const goles  = (Number(m.homeTeam && m.homeTeam.score) || 0) +
+                           (Number(m.awayTeam && m.awayTeam.score) || 0);
+            const jugadores = (Number(m.playerCount) || 0) ||
+                              (Array.isArray(m.players) ? m.players.length : 0);
+            const vacia = jugado === 0 && goles === 0 && jugadores === 0;
+            if (vacia) {
+                console.warn('[v561] Ranura descartada (imposible y sin juego): ' +
+                             ident.motivos.join(' · '));
+                return false;
+            }
+            return true;
+        } catch (e) { return true; }   // ante la duda, se ENSEÑA
+    });
+}
+window._cronosDescartaRanurasImposibles = _cronosDescartaRanurasImposibles;
+
+// ════════════════════════════════════════════════════════════════════
 //  RECUPERAR PARTIDO EN CURSO
 //  Consulta live_matches en Firestore filtrando por coachUid actual
 //  y status === 'active'. Muestra un panel para retomar el partido.
@@ -1109,7 +1155,16 @@ async function openLiveMatchRecovery() {
                         timeH1: parsed.masterTimeH1,
                         timeH2: parsed.masterTimeH2,
                         playerCount: Array.isArray(parsed.players) ? parsed.players.length : 0,
-                        category: parsed.category || ''
+                        // v561 · en la ranura local, `category` YA es la del
+                        // PARTIDO (sale del desplegable de creación). Se pasa
+                        // también como `matchCategory` para que el resolutor de
+                        // identidad la vea con el mismo nombre que en la nube.
+                        category: parsed.category || '',
+                        matchCategory: parsed.category || '',
+                        teamId: parsed.teamId || '',
+                        // Los jugadores en crudo: `cronosIdentidadDelPartido`
+                        // necesita contarlos POR EQUIPO, no en total.
+                        players: Array.isArray(parsed.players) ? parsed.players : null,
                     });
                 } else {
                     // Expiró localmente — se cierra SÓLO esta ranura.
@@ -1180,7 +1235,8 @@ async function openLiveMatchRecovery() {
 
         // v441 · Las dos fuentes se funden en UNA entrada por partido, ordenadas
         // por la más recientemente guardada.
-        const entradas = _fusionaCandidatosRecuperacion(localMatches, docsNube);
+        const entradas = _cronosDescartaRanurasImposibles(
+            _fusionaCandidatosRecuperacion(localMatches, docsNube));
 
         if (entradas.length === 0) {
             list.innerHTML = `
@@ -1217,19 +1273,40 @@ async function openLiveMatchRecovery() {
             // de nube decía "0 jugadores", y ahora la fusión puede elegir esa
             // fuente, así que el recuento se saca de donde esté.
             const playerCount = m.playerCount || (Array.isArray(m.players) ? m.players.length : 0);
-            const modeLabel = m.mode === 'f11' ? 'F-11' : 'F-7';
-            // v557 · DE QUÉ EQUIPO ES ESTA TARJETA. Este panel enseña los
-            // partidos de LOS DOS equipos del entrenador (v537), y sin esto
-            // dos partidos del mismo día contra rivales parecidos son
-            // indistinguibles: retomar el que no es sería un clic de nada.
-            // `cronosNombreCategoria` traga tanto 'f7_alevin' (lo que guarda
-            // el dispositivo) como 'alevin' (lo que manda la nube).
-            let equipoLbl = '';
-            try {
-                if (typeof window.cronosNombreCategoria === 'function' && m.category) {
-                    equipoLbl = window.cronosNombreCategoria(m.category, m.subcategory || '');
-                }
-            } catch (e) { equipoLbl = ''; }
+            // ══════════════════════════════════════════════════════════════
+            //  🪪 v561 · LA TARJETA SE IDENTIFICA POR EL PARTIDO, NO POR EL
+            //  PERFIL DEL ENTRENADOR (captura 9075)
+            //
+            //  Aquí nacía la "duplicación del Alevín C": la etiqueta salía de
+            //  `m.category`, que en el documento de la nube es la categoría del
+            //  PERFIL cuando se escribió el latido. A una entrenadora con dos
+            //  equipos eso le ponía "Alevín" también al partido del Regional, y
+            //  la modalidad venía del campo `mode`, así que la tarjeta decía
+            //  "Alevín · F-11 · 18 jugadores" — un equipo que no existe.
+            //
+            //  Ahora las tres cosas —etiqueta, modalidad y coherencia— salen
+            //  del MISMO resolutor (`cronosIdentidadDelPartido`, utils.js), que
+            //  antepone `matchCategory`. Las dos tarjetas pasan a leerse
+            //  "Alevín C" y "Regional A": no sobraba una tarjeta, sobraba una
+            //  etiqueta equivocada.
+            // ══════════════════════════════════════════════════════════════
+            const _ident = (typeof window.cronosIdentidadDelPartido === 'function')
+                ? window.cronosIdentidadDelPartido(m)
+                : { etiqueta: '', modalidadLabel: (m.mode === 'f11' ? 'F-11' : 'F-7'),
+                    coherente: true, motivos: [] };
+            const modeLabel = _ident.modalidadLabel;
+            const equipoLbl = _ident.etiqueta || '';
+            // ⚠️ EL AVISO SE ENSEÑA, NO SE OCULTA LA TARJETA. Un partido con los
+            // datos cruzados sigue siendo un partido en curso: esconderlo lo
+            // haría irrecuperable, que es peor que el defecto. Las ranuras que
+            // NO pueden ser un partido real (incoherentes y sin un segundo
+            // jugado) ya se han descartado antes de llegar aquí.
+            const avisoIncoherente = _ident.coherente ? '' :
+                `<div style="margin-top:5px;font-size:0.68rem;color:#f0883e;
+                            background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.3);
+                            border-radius:6px;padding:3px 7px;">
+                    ⚠️ Datos cruzados: ${typeof escapeHtml==='function'?escapeHtml(_ident.motivos.join(' · ')):_ident.motivos.join(' · ')}
+                 </div>`;
 
             // ── Retomar: por la fuente MÁS RECIENTE de la entrada ──
             // Retomar del dispositivo no necesita red y trae el estado tal cual
@@ -1287,6 +1364,7 @@ async function openLiveMatchRecovery() {
                             <span>👥 ${playerCount} jugadores</span>
                             <span>🕐 ${updStr}</span>
                         </div>
+                        ${avisoIncoherente}
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0;">
                         <button onclick="${clickResume}"
@@ -1314,7 +1392,13 @@ async function openLiveMatchRecovery() {
             // v465 · TODOS, no sólo el primero: sin red, esta lista es la única
             // forma de volver a un partido, y dejar fuera el segundo lo haría
             // irrecuperable justo cuando peor viene.
-            list.innerHTML = localMatches.map(localMatch => {
+            // v561 · el MISMO descarte que la lista con red. Se envuelve cada
+            // candidato en la forma `{datos}` que espera el filtro para no tener
+            // dos criterios distintos de "esto no puede ser un partido".
+            list.innerHTML = _cronosDescartaRanurasImposibles(
+                    localMatches.map(x => ({ datos: x })))
+                .map(_e => _e.datos)
+                .map(localMatch => {
             const updTs = new Date(localMatch.savedAt).getTime();
             const updStr = updTs
                 ? new Date(updTs).toLocaleString('es-ES', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
@@ -1330,15 +1414,22 @@ async function openLiveMatchRecovery() {
             const secsH2 = ((localMatch.timeH2 || 0) % 60).toString().padStart(2,'0');
             const timeStr = localMatch.phase === '2nd_half' ? `${minsH2}:${secsH2}` : `${minsH1}:${secsH1}`;
             const playerCount = localMatch.playerCount || 0;
-            const modeLabel = localMatch.mode === 'f11' ? 'F-11' : 'F-7';
             // v557 · el equipo, también en la lista SIN CONEXIÓN: es la única
             // que se ve cuando falla la red, y es cuando más falta hace.
-            let equipoLbl = '';
-            try {
-                if (typeof window.cronosNombreCategoria === 'function' && localMatch.category) {
-                    equipoLbl = window.cronosNombreCategoria(localMatch.category, '');
-                }
-            } catch (e) { equipoLbl = ''; }
+            // v561 · y por el MISMO resolutor que la lista con red, para que las
+            // dos pantallas no puedan decir cosas distintas del mismo partido.
+            const _identL = (typeof window.cronosIdentidadDelPartido === 'function')
+                ? window.cronosIdentidadDelPartido(localMatch)
+                : { etiqueta: '', modalidadLabel: (localMatch.mode === 'f11' ? 'F-11' : 'F-7'),
+                    coherente: true, motivos: [] };
+            const modeLabel = _identL.modalidadLabel;
+            const equipoLbl = _identL.etiqueta || '';
+            const avisoIncoherente = _identL.coherente ? '' :
+                `<div style="margin-top:5px;font-size:0.68rem;color:#f0883e;
+                            background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.3);
+                            border-radius:6px;padding:3px 7px;">
+                    ⚠️ Datos cruzados: ${typeof escapeHtml==='function'?escapeHtml(_identL.motivos.join(' · ')):_identL.motivos.join(' · ')}
+                 </div>`;
             const slotAttr = (typeof escapeHtml==='function'?escapeHtml(localMatch._slotId||''):(localMatch._slotId||''));
 
             return `
@@ -1359,6 +1450,7 @@ async function openLiveMatchRecovery() {
                             <span>👥 ${playerCount} jugadores</span>
                             <span>🕐 ${updStr}</span>
                         </div>
+                        ${avisoIncoherente}
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0;">
                         <button onclick="_doResumeLocalMatch('${slotAttr}')"

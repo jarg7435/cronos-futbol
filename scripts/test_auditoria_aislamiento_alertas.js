@@ -241,9 +241,15 @@ ok('C5 · 🔑 y un DOCUMENTO que dice ser otro partido no emite NADA (v559)',
        'después de procesar ya sería tarde');
 }
 
+// v561 · El sello sigue estando, pero ahora se construye con la categoría DEL
+// PARTIDO (`_matchCat`) y no con la del perfil del entrenador: con la del
+// perfil, el partido del Regional quedaba sellado como Alevín y el panel de
+// recuperación pintaba dos veces el mismo equipo (captura 9075).
 ok('C7 · el partido lleva escrito su equipo exacto: club + categoría + subcategoría',
-   /teamId: \(typeof cronosTeamId === 'function'\)/.test(SYNC),
-   'la unidad que nombra el autor, en el propio dato');
+   /teamId: \(function \(\) \{/.test(SYNC) &&
+   /cronosTeamId\(_u\.clubId \|\| '', _cat, _sub\) \|\| null/.test(SYNC) &&
+   /_sinPrefijo\(_matchCat\)/.test(SYNC),
+   'la unidad que nombra el autor, en el propio dato, y tomada DEL PARTIDO');
 
 console.log('\n────────────────────────────────');
 console.log('PASS: ' + pass + '   FAIL: ' + fail);

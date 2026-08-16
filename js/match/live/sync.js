@@ -433,15 +433,29 @@ async function pushLiveSnapshot(status = 'active') {
             // `teamId` es la MISMA clave canónica que usa el resto del proyecto
             // (clubId + categoría + subcategoría, `cronosTeamId` en utils.js), y
             // deja la pertenencia del partido escrita en el propio dato.
-            // Los documentos anteriores no lo llevan: se deduce al vuelo de
-            // category+subcategory, igual que hace `cronosTeamIdOfDoc`.
-            teamId: (typeof cronosTeamId === 'function')
-                ? (cronosTeamId(
-                       window._cronosCurrentUser?.clubId || '',
-                       window._cronosCurrentUser?.category || window._cronosCurrentUser?._activeRoleData?.category || window._cronosCurrentUser?.categoryLabel || '',
-                       window._cronosCurrentUser?.subcategory || window._cronosCurrentUser?._activeRoleData?.subcategory || ''
-                   ) || null)
-                : null,
+            //
+            // 🔴🔴 v561 · SE SELLA CON EL EQUIPO **DEL PARTIDO**, NO CON EL DEL
+            // PERFIL. Medido en producción (captura 9075): el partido del
+            // Regional A de una entrenadora con dos equipos quedó sellado
+            // `…__alevin__c`, porque esto leía `_cronosCurrentUser.category` —
+            // la categoría del perfil, que era la del OTRO equipo. Con el sello
+            // equivocado, "Recuperar Partido" pintaba dos veces el mismo equipo
+            // y el partido del Regional se presentaba como un segundo Alevín.
+            //
+            // ⚠️ SE LE QUITA EL PREFIJO DE MODALIDAD. `matchCategory` viene del
+            // desplegable como `f11_regional`, y `cronosTeamId` haría el slug
+            // `f11-regional`, que NO casa con el `…__regional__a` de la ficha de
+            // equipo: el partido quedaría huérfano de su plantilla.
+            teamId: (function () {
+                if (typeof cronosTeamId !== 'function') return null;
+                const _u = window._cronosCurrentUser || {};
+                const _sinPrefijo = (v) => String(v || '').replace(/^f(?:7|8|11)_/i, '');
+                const _cat = _sinPrefijo(_matchCat) ||
+                             _u.category || _u._activeRoleData?.category || _u.categoryLabel || '';
+                const _sub = (_matchCat ? (_matchSub || '') : '') ||
+                             _u.subcategory || _u._activeRoleData?.subcategory || '';
+                return cronosTeamId(_u.clubId || '', _cat, _sub) || null;
+            })(),
 
             // v463 · Categoría y Subcategoría DEL PARTIDO, tal y como las dejó el
             // entrenador en el panel de creación. Sólo para mostrar (la etiqueta
