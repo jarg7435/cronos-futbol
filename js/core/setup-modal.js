@@ -816,13 +816,36 @@ function confirmSetup() {
     //
     //  Sólo aplica a quien TIENE equipo asignado: el director, el coordinador
     //  y el SuperAdmin en pruebas siguen eligiendo con libertad.
+    //
+    // ══════════════════════════════════════════════════════════════════
+    //  🏷️ v562 · LAS DOS MITADES DEL EQUIPO, DE LA MISMA FUENTE
+    //
+    //  Reporte del autor (capturas 9077/9078/9083): con **Regional A**
+    //  asignado, el panel en vivo rotulaba **"Regional C"**.
+    //
+    //  🔑🔑🔑 Medido en los 10 partidos del respaldo: en los DIEZ, la
+    //  subcategoría del partido era IDÉNTICA a la del PERFIL; la categoría, en
+    //  cambio, sí seguía al panel. Aquí estaba el porqué: se resolvían por
+    //  CASCADAS DISTINTAS —la categoría con `_cronosCategoriaValor(_miCat)` y
+    //  la subcategoría con `_me.subcategory` a pelo—, así que en cuanto las dos
+    //  dejaban de describir el mismo equipo salía la mezcla: la categoría de
+    //  uno con la letra del otro.
+    //
+    //  Ahora las dos salen de `cronosParCategoriaDelPanel()`, que las devuelve
+    //  como PAREJA de una sola rama. Si no hay equipo asignado devuelve null y
+    //  el panel decide, como siempre.
+    // ══════════════════════════════════════════════════════════════════
+    let _subImpuesta = null;
     try {
         const _me = window._cronosCurrentUser;
         const _miCat = _me && (_me.category || _me.categoryLabel);
         if (_miCat && catEl && catEl.disabled) {
             const _modo = document.getElementById('setup-mode')?.value || currentMode || 'f7';
-            const _esperado = (typeof window._cronosCategoriaValor === 'function')
-                ? window._cronosCategoriaValor(_miCat, _modo) : null;
+            const _par = (typeof window.cronosParCategoriaDelPanel === 'function')
+                ? window.cronosParCategoriaDelPanel(_modo) : null;
+            const _esperado = (_par && _par.valorPanel) ||
+                ((typeof window._cronosCategoriaValor === 'function')
+                    ? window._cronosCategoriaValor(_miCat, _modo) : null);
             const _real = _esperado || catEl.value;
             if (_real && _real !== category) {
                 console.warn('[v548] La categoría del desplegable ("' + category +
@@ -831,17 +854,34 @@ function confirmSetup() {
                 catEl.value = _real;
             }
             const _subEl = document.getElementById('match-subcategory');
-            const _miSub = _me.subcategory ? String(_me.subcategory).toUpperCase().trim() : '';
-            if (_subEl && _miSub && _subEl.value !== _miSub) {
-                console.warn('[v548] Subcategoría corregida a la del equipo asignado: ' + _miSub);
-                _subEl.value = _miSub;
+            // 🔑 LA SUBCATEGORÍA SALE DEL MISMO SITIO QUE LA CATEGORÍA. Sólo se
+            // cae a `_me.subcategory` si el resolutor no supo formar la pareja.
+            const _miSub = (_par && _par.subcategory)
+                || (_me.subcategory ? String(_me.subcategory).toUpperCase().trim() : '');
+            if (_miSub) {
+                _subImpuesta = _miSub;
+                if (_subEl && _subEl.value !== _miSub) {
+                    // Si no está entre las opciones se AÑADE: dejarla fuera hacía
+                    // que el desplegable siguiera enseñando otra letra.
+                    if (!_subEl.querySelector('option[value="' + _miSub + '"]')) {
+                        const _o = document.createElement('option');
+                        _o.value = _miSub; _o.textContent = _miSub;
+                        _subEl.appendChild(_o);
+                    }
+                    console.warn('[v562] Subcategoría corregida a la del equipo asignado: ' + _miSub);
+                    _subEl.value = _miSub;
+                }
             }
         }
     } catch (e) { console.warn('[v548] No se pudo imponer la categoría del equipo:', e); }
 
+    // ⚠️ SE ESCRIBEN JUNTAS Y EN EL MISMO INSTANTE. Son el par que después lee
+    // `pushLiveSnapshot` para sellar el documento del partido: si una se
+    // actualizara sin la otra, el partido volvería a nacer con la categoría de
+    // un equipo y la letra de otro.
     window._currentMatchCategory = category;
-        window._currentMatchSubcategory = document.getElementById('match-subcategory')?.value || 'A';
-        window._currentMatchSubcategory = document.getElementById('match-subcategory')?.value || 'A';
+    window._currentMatchSubcategory =
+        _subImpuesta || document.getElementById('match-subcategory')?.value || 'A';
     let defaultTime = 30;
 
     if (category.includes('prebenjamin')) {

@@ -1029,6 +1029,87 @@ if (typeof window.cronosIdentidadDelPartido !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🏷️ v562 · CATEGORÍA Y SUBCATEGORÍA VIAJAN JUNTAS O NO VIAJAN
+//
+//  Reporte del autor (capturas 9077/9078/9083): el entrenador tiene asignado
+//  **Regional A** y el panel en vivo lo rotulaba **"Regional C"**.
+//
+//  🔑🔑🔑 MEDIDO EN LOS 10 PARTIDOS DEL RESPALDO: en los DIEZ,
+//  `matchSubcategory` era IDÉNTICA a la `subcategory` del PERFIL. En tres de
+//  ellos, en cambio, `matchCategory` sí difería de la del perfil:
+//
+//     category=alevin  sub=C   matchCategory=regional      matchSub=C  → "REGIONAL C"
+//     category=alevin  sub=C   matchCategory=f11_infantil  matchSub=C  → "INFANTIL C"
+//
+//  O sea: **la categoría del PARTIDO llegaba al documento y la subcategoría
+//  NO**. Cada una salía de un sitio distinto —la categoría de un desplegable
+//  que se puede mover, la subcategoría clavada al perfil del entrenador— y en
+//  cuanto las dos no describían el mismo equipo, la etiqueta mezclaba la
+//  categoría de uno con la letra del otro. No hacía falta ningún error de
+//  lectura: el visor pintaba fielmente un dato que ya nacía cruzado.
+//
+//  🔑 LA UNIDAD ES EL EQUIPO, y un equipo es categoría **y** subcategoría a la
+//  vez. Este resolutor las devuelve SIEMPRE COMO PAREJA y de UNA SOLA fuente,
+//  para que no puedan describir equipos distintos.
+//
+//  ⚠️ Sólo impone a quien TIENE equipo asignado. El director, el coordinador y
+//  el SuperAdmin siguen eligiendo libremente en el panel: para ellos no hay un
+//  equipo del que deducirlo, y devolver `null` es lo correcto.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosParCategoriaDelPanel !== 'function') {
+    window.cronosParCategoriaDelPanel = function (modo) {
+        try {
+            const me = window._cronosCurrentUser;
+            if (!me) return null;
+
+            // 1 · El equipo ABIERTO manda (el selector de v540). Es el único
+            //     sitio donde categoría y subcategoría se fijaron juntas.
+            let cat = '', sub = '';
+            const elegido = (typeof window.cronosEquipoElegido === 'function')
+                ? window.cronosEquipoElegido() : '';
+            if (elegido && typeof window.cronosEquiposDeEntrenador === 'function') {
+                const eq = (window.cronosEquiposDeEntrenador(me.allRoles, null) || [])
+                    .filter(e => e.teamId === elegido)[0];
+                if (eq && eq.category) { cat = eq.category; sub = eq.subcategory || ''; }
+            }
+
+            // 2 · Respaldo: el rol activo. También trae las dos juntas.
+            if (!cat) {
+                const rd = me._activeRoleData;
+                if (rd && (rd.role === 'user' || rd.role === 'coach') && (rd.category || rd.categoryLabel)) {
+                    cat = rd.category || rd.categoryLabel;
+                    sub = rd.subcategory || '';
+                }
+            }
+
+            // 3 · Último respaldo: la raíz del usuario.
+            //     ⚠️ AQUÍ NACÍA EL CRUCE. Antes la categoría se resolvía por una
+            //     cascada y la subcategoría por otra, así que podían acabar
+            //     describiendo equipos distintos. Se toman de la MISMA rama o no
+            //     se toma ninguna.
+            if (!cat && (me.category || me.categoryLabel)) {
+                cat = me.category || me.categoryLabel;
+                sub = me.subcategory || '';
+            }
+
+            if (!cat) return null;   // sin equipo: que elija el panel
+
+            const valor = (typeof window._cronosCategoriaValor === 'function')
+                ? window._cronosCategoriaValor(cat, modo || 'f7') : null;
+
+            return {
+                category:     cat,                     // 'regional'
+                valorPanel:   valor || '',             // 'f11_regional' (el <option>)
+                subcategory:  String(sub || '').toUpperCase().trim(),
+            };
+        } catch (e) {
+            console.warn('[v562] No se pudo resolver el par categoría/subcategoría:', e && e.message);
+            return null;
+        }
+    };
+}
+
 if (typeof window.isParentReportEnabledForCategory !== 'function') {
     window.isParentReportEnabledForCategory = function(category, subcategory) {
         const configs = window._clubCategoryConfigs || {};

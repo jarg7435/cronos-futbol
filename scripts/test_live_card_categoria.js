@@ -359,10 +359,24 @@ ok('6a · el snapshot lleva matchCategory y matchSubcategory',
    /matchCategory:\s*_matchCat/.test(SYNC) && /matchSubcategory:\s*_matchSub/.test(SYNC));
 
 // La fuente pedida por el autor: el panel de creacion del partido.
-ok('6b · _matchCat sale del panel de creacion (#match-category), con respaldo',
-   /_matchCat\s*=\s*_dom\('match-category'\)\s*\|\|\s*window\._currentMatchCategory/.test(SYNC));
-ok('6c · _matchSub sale del panel de creacion (#match-subcategory), con respaldo',
-   /_matchSub\s*=\s*_dom\('match-subcategory'\)\s*\|\|\s*window\._currentMatchSubcategory/.test(SYNC));
+//
+// ⚠️ v562 · ESTAS DOS ASERCIONES FIJABAN LA CASCADA QUE CAUSO EL FALLO, y por
+// eso se reescriben. Cada mitad tenia la suya —`_dom() || global || ''`— asi
+// que bastaba con que una resolviera por el DOM y la otra por la global para
+// que el documento naciera con la categoria de un equipo y la LETRA DE OTRO:
+// medido en los 10 partidos del respaldo, la subcategoria del partido era
+// SIEMPRE la del perfil, y de ahi el "Regional C" de un Regional A
+// (capturas 9077/9078/9083). Ahora se elige la FUENTE primero y se toman las
+// dos de ella. La intencion no cambia: el par sale del panel de creacion, con
+// respaldo; lo que se prohibe es mezclarlas.
+// Detalle completo en scripts/test_subcategoria_del_equipo.js.
+ok('6b · el par sale del panel de creacion, eligiendo la FUENTE primero',
+   /let _matchCat = '', _matchSub = '';/.test(SYNC) &&
+   /if \(window\._currentMatchCategory\) \{[\s\S]{0,220}_matchSub = window\._currentMatchSubcategory \|\| '';/.test(SYNC),
+   'la pareja global manda: confirmSetup la escribe con las dos a la vez');
+ok('6c · y el respaldo por DOM tambien toma las DOS del DOM',
+   /\} else if \(_dom\('match-category'\)\) \{[\s\S]{0,200}_matchSub = _dom\('match-subcategory'\) \|\| '';/.test(SYNC),
+   'una mitad de cada fuente es exactamente lo que producia la etiqueta hibrida');
 
 // ⚠️ A · LA ASERCION QUE MAS IMPORTA DE TODO EL FICHERO.
 // `category`/`subcategory` alimentan el semaforo. Tienen que seguir saliendo
@@ -394,9 +408,14 @@ ok('6f · ⚠️ snapCat (grupo del semaforo) sigue siendo el del perfil',
 
 // `undefined` en un payload de Firestore LANZA (v431). Los campos nuevos
 // tienen que terminar en `|| null`, nunca sin respaldo.
+// ⚠️ v562 · El respaldo al perfil pasa a ser DE LA PAREJA ENTERA. Con
+// `_matchSub || snapSub`, la letra del perfil se colaba en cuanto la del
+// partido venia vacia —aun teniendo la categoria del partido resuelta—, y ahi
+// volvia a formarse el hibrido. Lo que no cambia: nunca `undefined`.
 ok('6g · los campos nuevos terminan en `|| null` (undefined en Firestore LANZA)',
    /matchCategory:\s*_matchCat\s*\|\|\s*snapCat\s*\|\|\s*null/.test(SYNC) &&
-   /matchSubcategory:\s*_matchSub\s*\|\|\s*snapSub\s*\|\|\s*null/.test(SYNC));
+   /matchSubcategory:\s*_matchCat \? \(_matchSub \|\| null\) : \(snapSub \|\| null\)/.test(SYNC),
+   'y el respaldo al perfil es de la pareja entera, no de cada mitad');
 
 // ═══════════ Resultado ═══════════
 console.log('\n────────────────────────────────');

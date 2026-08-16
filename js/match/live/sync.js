@@ -378,8 +378,32 @@ async function pushLiveSnapshot(status = 'active') {
         const _dom = (id) => {
             try { return document.getElementById(id)?.value || ''; } catch(e) { return ''; }
         };
-        const _matchCat = _dom('match-category')    || window._currentMatchCategory    || '';
-        const _matchSub = _dom('match-subcategory') || window._currentMatchSubcategory || '';
+        // ══════════════════════════════════════════════════════════════
+        //  🏷️ v562 · LA PAREJA SE TOMA DE UNA SOLA FUENTE, ENTERA
+        //
+        //  Antes cada mitad hacía su propia cascada:
+        //      _matchCat = DOM || global || ''
+        //      _matchSub = DOM || global || ''
+        //  y bastaba con que una resolviera por el DOM y la otra por la global
+        //  —o que un desplegable estuviera desfasado— para que el documento
+        //  naciera con la categoría de un equipo y la LETRA DE OTRO. Medido en
+        //  los 10 partidos del respaldo: la subcategoría del partido era
+        //  siempre la del PERFIL, y de ahí el "Regional C" de un Regional A
+        //  (capturas 9077/9078/9083).
+        //
+        //  🔑 Ahora se elige la FUENTE primero y se toman las dos de ella. El
+        //  par global manda sobre el DOM: `confirmSetup` lo escribe con las dos
+        //  a la vez, mientras que los desplegables pueden haber quedado atrás
+        //  —o desaparecido, porque el panel se repinta— cada uno por su lado.
+        // ══════════════════════════════════════════════════════════════
+        let _matchCat = '', _matchSub = '';
+        if (window._currentMatchCategory) {
+            _matchCat = window._currentMatchCategory;
+            _matchSub = window._currentMatchSubcategory || '';
+        } else if (_dom('match-category')) {
+            _matchCat = _dom('match-category');
+            _matchSub = _dom('match-subcategory') || '';
+        }
 
         const _me = window._cronosCurrentUser;
         const _extras = (_me && _me.extras) || (_thresholds && _thresholds.extras) || {};
@@ -463,8 +487,16 @@ async function pushLiveSnapshot(status = 'active') {
             // arriba para por qué no comparten campo con las de encima.
             // Se cae al perfil del entrenador cuando el panel no las resuelve,
             // para que la etiqueta no desaparezca al recuperar un partido.
+            // ⚠️ v562 · EL RESPALDO AL PERFIL ES DE LA PAREJA ENTERA, NO DE
+            // CADA MITAD. Antes `matchSubcategory: _matchSub || snapSub` caía
+            // al perfil en cuanto la subcategoría del partido venía vacía —aun
+            // teniendo la categoría del partido resuelta—, y ahí volvía a
+            // formarse el híbrido "categoría de uno + letra de otro". Si se usa
+            // la categoría del PARTIDO, la letra sale del partido aunque quede
+            // en null; sólo cuando no hay categoría de partido se recurre al
+            // perfil, y entonces se toman sus DOS campos.
             matchCategory:    _matchCat || snapCat || null,
-            matchSubcategory: _matchSub || snapSub || null,
+            matchSubcategory: _matchCat ? (_matchSub || null) : (snapSub || null),
 
             // Partido
             mode:        currentMode,
