@@ -167,8 +167,26 @@ const CASOS = [
     // ══ B) MARCAR EL USUARIO COMO RECHAZADO (users) ═════════════════════
     { n: 'B1 · 🐛 el ADMIN DEL CLUB marca RECHAZADA la solicitud de un usuario de SU club', exp: 'ALLOW',
       req: upd(CA_A, 'u1', U_PEND, RECHAZO) },
-    { n: 'B2 · y tambien puede AUTORIZARLA (misma decision, misma regla)', exp: 'ALLOW',
+    // ⚠️⚠️ v546 · ESTA ASERCION SE INVIERTE, NO SE BORRA (mismo criterio que
+    //    los cuatro guards de v440 y los del SDK en v454).
+    //
+    //    Decia "y tambien puede AUTORIZARLA (misma decision, misma regla)" y
+    //    esperaba ALLOW: fijaba, sin querer, EL AGUJERO. Que rechazar y
+    //    autorizar compartieran regla parecia simetrico, pero no lo es —
+    //    rechazar no da acceso a nada y autorizar mete a una persona dentro
+    //    del club.
+    //
+    //    El autor lo reporto el 2026-08-16 al ver a un usuario en el plantel
+    //    sin haber pasado por su bandeja: *"ningun administrador de club debe
+    //    poder activar directamente a un usuario ni saltarse al SuperAdmin"*.
+    //    La activacion es competencia EXCLUSIVA del SuperAdmin.
+    { n: 'B2 · 🔒 el admin del club YA NO puede AUTORIZAR (es del SuperAdmin)', exp: 'DENY',
       req: upd(CA_A, 'u1', U_PEND, APROBADO) },
+    // 🔑 Y la contraparte: cuando el SuperAdmin YA aprobo (approvedBySA:true en
+    //    el documento existente), el club SI remata el alta. Eso no se salta a
+    //    nadie: es el paso 2 del flujo, el que consume la plaza del club.
+    { n: "B2b · …pero SI confirma a quien el SuperAdmin ya aprobo", exp: 'ALLOW',
+      req: upd(CA_A, 'u1', Object.assign({}, U_PEND, { approvedBySA: true }), APROBADO) },
     { n: 'B3 · y BLOQUEAR a un miembro de su club', exp: 'ALLOW',
       req: upd(CA_A, 'u1', U_PEND, { isAuthorized: false, status: 'blocked', blockedAt: '2026-08-08T10:00:00.000Z', blockedBy: 'ca_a' }) },
     { n: 'B4 · el admin SIN claims (adminUid del club) tambien rechaza', exp: 'ALLOW',

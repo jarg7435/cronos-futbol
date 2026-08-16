@@ -170,14 +170,54 @@ async function openClubAdminPanel(preClubId = null) {
         return;
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔑🔑🔑 v549 · ESTE PANEL LEE DEL SERVIDOR, NO DE LA CACHÉ EN DISCO
+    //
+    //  Reportado por el autor el 2026-08-16: una ventana se quedaba mostrando
+    //  5 categorías y sin Cadete **aunque hiciera Ctrl+Shift+R**, mientras que
+    //  en incógnito salían las 6 y los 6 entrenadores.
+    //
+    //  🔑 CTRL+SHIFT+R NO LIMPIA LO QUE FALLABA. Ese atajo vacía la caché HTTP
+    //  (ficheros), pero los datos venían de la **caché persistente de
+    //  Firestore, que vive en IndexedDB** (`persistentLocalCache` en
+    //  firebase-init.js) y **sobrevive a cualquier recarga**. En incógnito no
+    //  hay IndexedDB previo, así que allí se leía del servidor y salía bien:
+    //  la diferencia nunca estuvo en el código, sino en de dónde salían los
+    //  datos.
+    //
+    //  ⚠️ Y NO SE PUEDE ARREGLAR BORRANDO ESA CACHÉ: `live.html` comparte el
+    //  mismo IndexedDB y borrarla le mata el cliente al visor (la emergencia
+    //  de v470). Lo correcto es que ESTA lectura —la del panel de gestión, la
+    //  que decide altas y bajas— pida el dato al SERVIDOR y punto.
+    //
+    //  ⚠️ CON RESPALDO OBLIGATORIO: `*FromServer` LANZA si no hay cobertura.
+    //  Sin el `catch` que vuelve a la lectura normal, el panel dejaría de
+    //  abrirse sin red, que es peor que verlo un minuto desactualizado.
+    // ══════════════════════════════════════════════════════════════════
+    let _getDocSrv = getDoc, _getDocsSrv = getDocs;
+    try {
+        const _m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        if (_m.getDocFromServer)  _getDocSrv  = _m.getDocFromServer;
+        if (_m.getDocsFromServer) _getDocsSrv = _m.getDocsFromServer;
+    } catch (e) {
+        console.warn('[v549] Sin lecturas de servidor; se usa la caché:', e && e.message);
+    }
+    const _delServidor = async (fn, respaldo, ref) => {
+        try { return await fn(ref); }
+        catch (e) {
+            console.warn('[v549] Lectura de servidor fallida (¿sin cobertura?); se cae a la caché:', e && e.message);
+            return await respaldo(ref);
+        }
+    };
+
     let clubSnap, usersSnap, platformReqsSnap, users = [], features = [];
     try {
         [clubSnap, usersSnap] = await Promise.all([
-            getDoc(doc(db, 'clubs', clubId)),
-            getDocs(query(collection(db, 'users'), where('clubId', '==', clubId))),
+            _delServidor(_getDocSrv,  getDoc,  doc(db, 'clubs', clubId)),
+            _delServidor(_getDocsSrv, getDocs, query(collection(db, 'users'), where('clubId', '==', clubId))),
         ]);
         // platform_requests separado para que un fallo no cancele todo
-        platformReqsSnap = await getDocs(query(
+        platformReqsSnap = await _delServidor(_getDocsSrv, getDocs, query(
             collection(db, 'platform_requests'),
             where('clubId', '==', clubId)
         )).catch(e => {
@@ -278,18 +318,49 @@ async function openClubAdminPanel(preClubId = null) {
     };
     const slotOf = (role) => {
         const max = (club.slots || {})[role === 'director' ? 'directors' : role === 'coordinator' ? 'coordinators' : role === 'parent' ? 'parents' : 'users'] ?? -1;
-        const usedSet = new Set();
-        users.forEach(u => {
-            if (u.status === 'removed') return;
-            // El rol de la RAÍZ. Se exige además que la raíz no esté de baja,
-            // por si el documento quedó con status y bandera descuadrados.
-            if (u.role === role && u.isAuthorized === true && u.status !== 'removed') {
-                usedSet.add(u._id);
-            } else if (u.allRoles) {
-                if (u.allRoles.some(r => _rolOcupaPlaza(r, role))) usedSet.add(u._id);
-            }
-        });
-        const used = usedSet.size;
+        // ══════════════════════════════════════════════════════════════
+        //  🔑🔑 v553 · SE CUENTAN PLAZAS, NO PERSONAS
+        //
+        //  Esto contaba un Set de uid: cada persona sumaba UNA, llevara los
+        //  equipos que llevara. Desde v537 un entrenador puede tener dos (un
+        //  F7 y un F11), que son DOS equipos que atender y DOS plazas. A un
+        //  club con seis equipos y cinco entrenadores le decía "5" — la
+        //  incoherencia que reportó el autor entre este panel y el del
+        //  SuperAdmin.
+        //
+        //  🔑 El recuento vive ahora en `cronosPlazasOcupadas` (utils.js), el
+        //  MISMO que usa el panel del SuperAdmin: es lo único que garantiza
+        //  que los dos digan el mismo número.
+        //
+        //  ⚠️ ESTO TAMBIÉN DECIDE `full`, o sea si se pueden aceptar más
+        //  altas. Al pasar de personas a plazas el número sube, así que un
+        //  club justo en el límite puede empezar a rechazar: es lo correcto
+        //  —las plazas contratadas son equipos, no cabezas— pero conviene
+        //  saberlo al revisar las cuotas.
+        //
+        //  El respaldo conserva el criterio anterior por si utils.js no
+        //  hubiera cargado: mejor un número viejo que un cero falso que
+        //  desbloquearía altas sin control.
+        // ══════════════════════════════════════════════════════════════
+        // ⚠️ `typeof window` y no `window.` a secas: test_plaza_vacante_tras_baja
+        //    EXTRAE esta función y la ejecuta en un sandbox donde `window` no
+        //    existe, así que una referencia directa lanza ReferenceError y tumba
+        //    el guard entero (no una aserción: el proceso).
+        let used;
+        if (typeof window !== 'undefined' && typeof window.cronosPlazasOcupadas === 'function') {
+            used = window.cronosPlazasOcupadas(users, role, clubId);
+        } else {
+            const usedSet = new Set();
+            users.forEach(u => {
+                if (u.status === 'removed') return;
+                if (u.role === role && u.isAuthorized === true && u.status !== 'removed') {
+                    usedSet.add(u._id);
+                } else if (u.allRoles) {
+                    if (u.allRoles.some(r => _rolOcupaPlaza(r, role))) usedSet.add(u._id);
+                }
+            });
+            used = usedSet.size;
+        }
         return { max, used, full: max !== -1 && used >= max, unlimited: max === -1 };
     };
 
@@ -298,14 +369,55 @@ async function openClubAdminPanel(preClubId = null) {
         platformReqsSnap.forEach(d => {
             const pr = { _id: d.id, _isPlatformReq: true, ...d.data() };
             if (pr.status !== 'pending_club_admin') return;
+            // ═══════════════════════════════════════════════════════════════
+            //  🔑🔑🔑 v547 · SE COMPARA LA PLAZA, NO EL ROL
+            //
+            //  Este filtro descarta una solicitud cuando el usuario "ya tiene
+            //  ese rol". Comparaba SÓLO `role`, así que a un entrenador que ya
+            //  llevaba un equipo se le tiraba a la basura la solicitud del
+            //  SEGUNDO — la combinación F7+F11 que v537 hizo legal. Medido con
+            //  el caso real del autor (arinagazone, 2026-08-16): su solicitud
+            //  de `regional/A` EXISTÍA en la base de datos, en
+            //  `pending_club_admin`, y aun así no aparecía en el panel del
+            //  club, porque ya tenía `user` autorizado en `alevin/C`.
+            //
+            //  Es el mismo defecto de "el rol como identidad" que se cerró en
+            //  v540 en el registro, en los dos aprobares y en la deduplicación
+            //  del listado; este punto se quedó fuera. La plaza es
+            //  rol + club + categoría (cronosMismaPlaza, utils.js).
+            //
+            //  ⚠️ Para los roles SIN equipo (padre, director, coordinador) el
+            //  comportamiento no cambia: ahí la plaza ES rol+club, así que un
+            //  duplicado se sigue descartando igual que siempre.
+            // ═══════════════════════════════════════════════════════════════
+            const _plazaPR = { role: pr.requestedRole, clubId: pr.clubId || clubId,
+                               category: pr.requestedCategory || null,
+                               subcategory: pr.requestedSubcategory || null };
+            const _esMismaPlaza = (r) => (typeof window.cronosMismaPlaza === 'function')
+                ? window.cronosMismaPlaza(r, _plazaPR)
+                : (r && r.role === pr.requestedRole);
+
             const alreadyAuthorized = users.some(u => {
                 const isSameUser = (u._id === pr.userUid || u.email === (pr.requestedEmail || pr.email));
                 if (!isSameUser) return false;
-                if (u.role === pr.requestedRole && u.isAuthorized) return true;
-                return (u.allRoles || []).some(r => r.role === pr.requestedRole && r.isAuthorized && (r.clubId === clubId || !r.clubId));
+                // La raíz sólo cuenta si NO hay allRoles que lo contradiga: es
+                // un dato de compatibilidad y sólo puede describir UNA plaza.
+                if (!(u.allRoles || []).length &&
+                    u.role === pr.requestedRole && u.isAuthorized &&
+                    _esMismaPlaza({ role: u.role, clubId: u.clubId || clubId,
+                                    category: u.category || u.categoryLabel, subcategory: u.subcategory })) return true;
+                return (u.allRoles || []).some(r =>
+                    r.isAuthorized && (r.clubId === clubId || !r.clubId) &&
+                    _esMismaPlaza(Object.assign({}, r, { clubId: r.clubId || clubId })));
             });
             if (alreadyAuthorized) return;
-            const alreadyInPendingUsers = users.some(u => (u._id === pr.userUid || u.email === pr.requestedEmail) && (u.status === 'pending_club_admin' || (u.allRoles || []).some(r => r.status === 'pending_club_admin')));
+            // ⚠️ Mismo criterio aquí: si el usuario tiene OTRA plaza pendiente,
+            // ésta no es la misma y no puede taparla.
+            const alreadyInPendingUsers = users.some(u =>
+                (u._id === pr.userUid || u.email === pr.requestedEmail) &&
+                (u.status === 'pending_club_admin' ||
+                 (u.allRoles || []).some(r => r.status === 'pending_club_admin' &&
+                     _esMismaPlaza(Object.assign({}, r, { clubId: r.clubId || clubId })))));
             if (!alreadyInPendingUsers) pendingFromPlatformReqs.push(pr);
         });
     }
@@ -337,15 +449,24 @@ async function openClubAdminPanel(preClubId = null) {
         }
     });
 
+    // ⚠️ v540 · LA CLAVE LLEVA LA PLAZA, NO SÓLO EL ROL. Desde v537 un
+    // entrenador puede tener dos equipos pendientes a la vez (su F7 y su F11):
+    // con la clave `<uid>_user` la segunda solicitud se consideraba repetida y
+    // desaparecía del panel — el administrador no podía aprobarla nunca.
+    const _claveP = (id, rol, cat, sub) => id + '_' + rol +
+        (rol === 'user' && cat && typeof window.cronosTeamSlug === 'function'
+            ? '_' + window.cronosTeamSlug(String(cat) + '-' + (sub || '')) : '');
+
     const pendingClubAdmin = [];
     const seenPendingKeys = new Set();
     pendingFromPlatformReqs.forEach(pr => {
-        const key = (pr.userUid || pr.requestedEmail) + '_' + pr.requestedRole;
+        const key = _claveP(pr.userUid || pr.requestedEmail, pr.requestedRole,
+                            pr.requestedCategory, pr.requestedSubcategory);
         pendingClubAdmin.push(pr);
         seenPendingKeys.add(key);
     });
     pendingFromUserDocs.forEach(u => {
-        const key = (u._id || u.email) + '_' + u._pendingRole;
+        const key = _claveP(u._id || u.email, u._pendingRole, u._pendingCategory, u._pendingSubcat);
         if (!seenPendingKeys.has(key)) {
             pendingClubAdmin.push(u);
             seenPendingKeys.add(key);
@@ -383,7 +504,7 @@ async function openClubAdminPanel(preClubId = null) {
     // (vía pendingFromPlatformReqs/pendingFromUserDocs, ver seenPendingKeys arriba)
     // NO debe repetirse en "Nuevos Roles Solicitados". Misma clave: (_id||email)+'_'+rol.
     const pendingRolesInAllRolesDeduped = pendingRolesInAllRoles.filter(u => {
-        const key = (u._id || u.email) + '_' + u._pendingRole;
+        const key = _claveP(u._id || u.email, u._pendingRole, u._pendingCategory, u._pendingSubcat);
         if (seenPendingKeys.has(key)) return false;
         seenPendingKeys.add(key);
         return true;
@@ -426,20 +547,30 @@ async function openClubAdminPanel(preClubId = null) {
                 ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${_escH(u.displayName)}</span>` : ''}
                 ${statusBadge}
                 ${(function(){
-                    // Buscar categoría en el perfil o en allRoles
-                    let cat = u.category || u.categoryLabel;
-                    let sub = u.subcategory;
+                    // 🔑 v560 · LA PLAZA DE ESTA FILA, PRIMERO. La lista se
+                    // expande a UNA FILA POR PLAZA (`_activeRoleData`), pero
+                    // esto leía la RAÍZ del documento antes que nada: a un
+                    // entrenador con dos equipos le pintaba la MISMA categoría
+                    // en sus dos filas, y el botón "Cambiar equipo" de ambas
+                    // mandaba la misma plaza de origen. Desde ahí, mover uno
+                    // reetiquetaba el otro y el equipo se perdía (captura 9062).
+                    const _rowRole = u._activeRoleData || null;
+                    let cat = (_rowRole && (_rowRole.category || _rowRole.categoryLabel)) ||
+                              u.category || u.categoryLabel;
+                    let sub = (_rowRole && _rowRole.subcategory != null)
+                              ? _rowRole.subcategory : u.subcategory;
                     if (!cat && u.allRoles) {
                         let roleEntry = u.allRoles.find(r => r.role === u.role);
                         if (roleEntry) { cat = roleEntry.category; sub = roleEntry.subcategory; }
                     }
                     if (!cat) return '';
+                    const _rolFila = _escA((_rowRole && _rowRole.role) || u.role || '');
                     return `
                     <div style="margin-top:4px; display:flex; align-items:center; gap:0.5rem;">
                         <span style="font-size:0.68rem;background:rgba(63,185,80,0.1);color:#3fb950;border:1px solid rgba(63,185,80,0.2);padding:2px 8px;border-radius:100px;font-weight:600;">
                             ⚽ ${_escH(cat)}${sub ? ' · ' + _escH(sub) : ''}
                         </span>
-                        <button onclick="caEditUserCategory('${euid}','${email}','${_escA(cat)}','${_escA(sub||'')}')" 
+                        <button onclick="caEditUserCategory('${euid}','${email}','${_escA(cat)}','${_escA(sub||'')}','${_rolFila}')"
                                 style="background:none;border:none;color:#58a6ff;font-size:0.65rem;cursor:pointer;text-decoration:underline;padding:0;">
                             Cambiar equipo</button>
                     </div>`;
@@ -863,7 +994,7 @@ async function openClubAdminPanel(preClubId = null) {
                 (nameInfo ? ' · <span style="font-weight:400;color:#8b949e;font-size:0.78rem;">' + (escapeHtml(nameInfo)) + '</span>' : '') + '</div>' +
                 '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + roleIcon + ' ' + roleLabel + catInfo + '</div></div>' +
                 '<div style="display:flex;gap:0.4rem;flex-shrink:0;">' +
-                '<button onclick="caForwardToSA(\'' + fwdId + '\',\'' + roleKey + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);font-size:0.75rem;">📤 Reenviar al SA</button>' +
+                '<button onclick="caForwardToSA(\'' + fwdId + '\',\'' + roleKey + '\',\'' + escEmail + '\',\'' + clubId + '\',\'' + escapeAttr(cat || '') + '\',\'' + escapeAttr(sub || '') + '\')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);font-size:0.75rem;">📤 Reenviar al SA</button>' +
                 '<button onclick="caRejectRequest(\'' + escId + '\',\'' + escEmail + '\',' + isPR + ',\'' + escUserUid + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);font-size:0.75rem;">✕</button>' +
                 '</div></div></div>';
           }).join('')}
@@ -884,11 +1015,22 @@ async function openClubAdminPanel(preClubId = null) {
               const roleIcon  = (_meta[u.role] || {}).icon  || '👤';
               const escEmail  = (escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'" );
               const escId     = u._id.replace(/'/g,"\\'");
+              // ⚠️ v540 · DE QUÉ EQUIPO. Aquí es donde aparece el segundo
+              // equipo de un entrenador ya activo, y sin la categoría el
+              // administrador leía "Solicita: Entrenador" sin saber cuál de
+              // los dos estaba aprobando.
+              const _rCat = u._pendingCategory || '';
+              const _rSub = u._pendingSubcat   || '';
+              const _rCatInfo = _rCat
+                  ? ' · <strong style="color:#f0883e">' +
+                    escapeHtml(typeof window.cronosNombreCategoria === 'function'
+                        ? window.cronosNombreCategoria(_rCat, _rSub) : _rCat) + '</strong>'
+                  : '';
               return '<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(240,136,62,0.15);display:flex;justify-content:space-between;align-items:center;">' +
                 '<div><div style="font-size:0.85rem;font-weight:600;">' + (escapeHtml(u.email)) + '</div>' +
-                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Solicita: ' + roleIcon + ' ' + roleLabel + '</div></div>' +
+                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Solicita: ' + roleIcon + ' ' + roleLabel + _rCatInfo + '</div></div>' +
                 '<div style="display:flex;gap:0.4rem;">' +
-                '<button onclick="caForwardToSA(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\',\'' + clubId + '\')" class="sa-btn" style="color:#f0883e;border-color:rgba(240,136,62,0.3);background:rgba(240,136,62,0.08);">📤 Reenviar al SuperAdmin</button>' +
+                '<button onclick="caForwardToSA(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\',\'' + clubId + '\',\'' + escapeAttr(_rCat) + '\',\'' + escapeAttr(_rSub) + '\')" class="sa-btn" style="color:#f0883e;border-color:rgba(240,136,62,0.3);background:rgba(240,136,62,0.08);">📤 Reenviar al SuperAdmin</button>' +
                 '<button onclick="caRejectMultiRole(\'' + escId + '\',\'' + (u.role||'user') + '\',\'' + escEmail + '\')" class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">✕ Rechazar</button>' +
                 '</div></div>';
           }).join('')}
@@ -950,9 +1092,17 @@ async function openClubAdminPanel(preClubId = null) {
                   </div>
                 </div>
                 <div style="display:flex;gap:0.4rem;">
-                  <button onclick="caApproveRequest('${(escapeAttr(u._id)).replace(/'/g,"\\'")}','${u.requestedRole||'user'}','${(escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}' )"
-                      class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.08);">
-                      ✅ Aceptar</button>
+                  <!-- ⚠️ v546 · AQUÍ HABÍA UN BOTÓN "✅ Aceptar" QUE ACTIVABA AL
+                       USUARIO EN EL ACTO, saltándose la aprobación del
+                       SuperAdmin (escribía isAuthorized:true / status:'active').
+                       Retirado por orden del autor el 2026-08-16. Desde aquí
+                       sólo se REENVÍA al SuperAdmin o se RECHAZA; la activación
+                       es suya y de nadie más. La puerta también está cerrada en
+                       firestore.rules (clubNoActivaSinSuperAdmin), para que no
+                       baste con llamar a la API. -->
+                  <button onclick="caForwardToSA('${(escapeAttr(u._id)).replace(/'/g,"\\'")}','${u.requestedRole||'user'}','${(escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${clubId}','${(escapeAttr(u.requestedCategory||u.category||'')).replace(/'/g,"\\'")}','${(escapeAttr(u.requestedSubcategory||u.subcategory||'')).replace(/'/g,"\\'")}' )"
+                      class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);">
+                      📤 Reenviar al SuperAdmin</button>
                   <button onclick="caRejectRequest('${(escapeAttr(u._id)).replace(/'/g,"\\'")}','${(escapeAttr(u.email||'')).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}' )"
                       class="sa-btn" style="color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.08);">
                       ✕ Rechazar</button>
@@ -1272,8 +1422,13 @@ async function openClubAdminPanel(preClubId = null) {
             isAuthorized: true, status: 'pending_register',
             createdBy: me.uid, createdAt: new Date().toISOString()
         });
-        const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
-        await updateDoc(doc(db,'clubs',cid), { [key]: si.used + 1 });
+        // ⚠️ v553 · YA NO SE ESCRIBE `usedSlots`. Era un contador llevado a mano
+        //    y cada alta o baja que fallara, se repitiera o se saltara lo dejaba
+        //    mintiendo para siempre: en CD DÍA llegó a valer **-1**. Las plazas
+        //    ocupadas se CALCULAN ahora desde `allRoles`
+        //    (`cronosPlazasOcupadas`, utils.js), que es la única fuente que no
+        //    se puede desincronizar. El campo sobrevive en los documentos
+        //    antiguos, pero ya no lo lee ni lo escribe nadie.
 
         if (role === 'parent') {
             const pNum   = document.getElementById('nu-player-num')?.value?.trim()  || '';
@@ -1360,8 +1515,7 @@ async function openClubAdminPanel(preClubId = null) {
                 }
             }
             await updateDoc(targetDocRef, updateData);
-            const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
-            await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used||0) + 1 });
+            // ⚠️ v553 · Sin escritura de `usedSlots`: el recuento se calcula.
             showToast(`✅ ${email} tiene acceso completo a la app.`, 4000);
             
             // Limpiar platform_request si existe
@@ -1379,12 +1533,39 @@ async function openClubAdminPanel(preClubId = null) {
     };
 
     // ── Aprobar solicitud de acceso (auto-registro pendiente SA) ────────────
-    window.caApproveRequest = async (uid, role, email) => {
-        const si = slotOf(role);
-        if (si.full) {
-            showToast(`⛔ No hay slots libres para el rol ${role}. Solicita ampliación al SuperAdmin.`, 4000);
-            return;
-        }
+    // ⚠️ v540 · RECIBE LA CATEGORÍA DE LA SOLICITUD (`cat`/`sub`). Antes se
+    // deducía del PRIMER rol 'user' que hubiera en allRoles, y desde v537 un
+    // entrenador puede tener dos: se validaba y se activaba la plaza
+    // equivocada. Son opcionales para no romper llamadas antiguas.
+    window.caApproveRequest = async (uid, role, email, cat, sub) => {
+        // ══════════════════════════════════════════════════════════════
+        //  ⛔ v546 · CERRADA. EL CLUB NO ACTIVA A NADIE.
+        //
+        //  Esta función escribía `isAuthorized:true, status:'active'` en el
+        //  documento de otro usuario, y con eso lo metía en el club **sin que
+        //  el SuperAdmin llegara a verlo**. Es el agujero que reportó el autor
+        //  el 2026-08-16 y su instrucción fue tajante: *"ningún administrador
+        //  de club debe poder activar directamente a un usuario ni saltarse al
+        //  SuperAdmin"*.
+        //
+        //  🔑 Se deja la función —no se borra— porque puede quedar algún
+        //  `onclick` en una pestaña abierta o en una copia cacheada: así, en
+        //  vez de fallar con un críptico "Missing or insufficient permissions"
+        //  cuando las reglas la rechacen, explica lo que pasa y ofrece la vía
+        //  correcta. La barrera de verdad está en firestore.rules
+        //  (`clubNoActivaSinSuperAdmin`), no aquí.
+        //
+        //  ⚠️ NO confundir con `caConfirmClubAccess`, que sigue viva y es
+        //  legítima: remata el alta de quien el SuperAdmin YA aprobó
+        //  (`approvedBySA:true`) y consume la plaza del club.
+        // ══════════════════════════════════════════════════════════════
+        alert('⛔ La activación de usuarios es competencia exclusiva del SuperAdmin.\n\n' +
+              'Desde el panel del club puedes REENVIAR la solicitud de ' + (email || 'este usuario') +
+              ' al SuperAdmin o RECHAZARLA.\n\n' +
+              'Cuando él la apruebe, te aparecerá en "Pendientes de tu confirmación" ' +
+              'para que remates el alta.');
+        return;
+        /* eslint-disable no-unreachable */
         // ════════════════════════════════════════════════════════════════
         //  v537 · LA REGLA SE COMPRUEBA AL AUTORIZAR, NO SÓLO AL MOVER.
         //  Aquí es donde una solicitud se convierte en equipo asignado: sin
@@ -1395,8 +1576,12 @@ async function openClubAdminPanel(preClubId = null) {
             try {
                 const _s0 = await getDoc(doc(db, 'users', uid));
                 const _d0 = _s0.exists() ? _s0.data() : {};
+                // 🔑 v540 · LA CATEGORÍA DE LA SOLICITUD MANDA. El `.find()` por
+                // rol devolvía una plaza al azar cuando el entrenador ya tenía
+                // otra, y se validaba la combinación contra la categoría que no
+                // era. Sólo se recurre a allRoles si la llamada no la trae.
                 const _r0 = (_d0.allRoles || []).find(r => r && r.role === role) || {};
-                const _cat0 = _r0.category || _d0.requestedCategory || _d0.category || _d0.categoryLabel;
+                const _cat0 = cat || _r0.category || _d0.requestedCategory || _d0.category || _d0.categoryLabel;
                 const _v0 = window.cronosPuedeLlevarEquipo(_d0.allRoles, _cat0, clubId,
                                                            { excluyeCategoria: _cat0 });
                 // ⚠️ Se excluye la categoría que se está autorizando: su propia
@@ -1425,24 +1610,38 @@ async function openClubAdminPanel(preClubId = null) {
             // Si el usuario tiene metadatos de categoría en la solicitud, migrarlos a la raíz del perfil
             if (targetSnap.exists()) {
                 const data = targetSnap.data();
-                const roleInAll = (data.allRoles || []).find(r => r.role === role);
-                
-                // Prioridad: 1. Datos en allRoles, 2. Datos en raíz, 3. Datos de la solicitud
-                const cat = (roleInAll && roleInAll.category) || data.requestedCategory || data.categoryLabel;
-                const sub = (roleInAll && roleInAll.subcategory) || data.requestedSubcategory;
+                // ═══════════════════════════════════════════════════════════
+                //  v540 · SE AUTORIZA UNA PLAZA, NO UN ROL
+                //  Con dos equipos en el mismo club (un F7 y un F11, v537) el
+                //  `.map(r => r.role === role ? activar : r)` activaba LOS DOS
+                //  de una vez, y el `.find(r => r.role === role)` leía la
+                //  categoría de cualquiera de ellos.
+                // ═══════════════════════════════════════════════════════════
+                const _plaza = { role: role, clubId: clubId,
+                                 category: cat || null, subcategory: sub || null };
+                const _esLaPlaza = (r) => (typeof window.cronosMismaPlaza === 'function' && cat)
+                    ? window.cronosMismaPlaza(r, _plaza)
+                    : (r && r.role === role);
 
-                if (cat) {
-                    updateData.category      = cat;
-                    updateData.categoryLabel = cat;
-                    if (sub) {
-                        updateData.subcategory = sub;
+                const roleInAll = (data.allRoles || []).find(_esLaPlaza);
+
+                // Prioridad: 1. La categoría que viene con la solicitud,
+                // 2. la de la plaza en allRoles, 3. la de la raíz del perfil.
+                const _cat = cat || (roleInAll && roleInAll.category) || data.requestedCategory || data.categoryLabel;
+                const _sub = sub || (roleInAll && roleInAll.subcategory) || data.requestedSubcategory;
+
+                if (_cat) {
+                    updateData.category      = _cat;
+                    updateData.categoryLabel = _cat;
+                    if (_sub) {
+                        updateData.subcategory = _sub;
                     }
                 }
 
-                // También activar el rol dentro del array allRoles
+                // También activar esa plaza dentro del array allRoles
                 if (data.allRoles) {
                     const newAllRoles = data.allRoles.map(r => {
-                        if (r.role === role) return { ...r, isAuthorized: true, status: 'active' };
+                        if (_esLaPlaza(r)) return { ...r, isAuthorized: true, status: 'active' };
                         return r;
                     });
                     updateData.allRoles = newAllRoles;
@@ -1450,8 +1649,7 @@ async function openClubAdminPanel(preClubId = null) {
             }
 
             await updateDoc(targetDocRef, updateData);
-            const key = role==='director'?'usedSlots.directors':role==='coordinator'?'usedSlots.coordinators':role==='parent'?'usedSlots.parents':'usedSlots.users';
-            await updateDoc(doc(db,'clubs',clubId), { [key]: (si.used || 0) + 1 });
+            // ⚠️ v553 · Sin escritura de `usedSlots`: el recuento se calcula.
             showToast(`✅ ${email} autorizado correctamente.`, 3000);
             // Refresco tras la acción. Antes iba SIN clubId, así que al
             // SuperAdmin le devolvía al selector de clubes.
@@ -1576,7 +1774,9 @@ async function openClubAdminPanel(preClubId = null) {
         return (labels[cat] || cat) + (sub ? ' ' + sub : '');
     }
 
-    window.caForwardToSA = async (uid, role, email, cid) => {
+    // ⚠️ v540 · `cat`/`sub` opcionales: identifican QUÉ equipo se reenvía
+    // cuando el entrenador tiene dos en el mismo club.
+    window.caForwardToSA = async (uid, role, email, cid, cat, sub) => {
         const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
         if (!confirm(`¿Reenviar solicitud de ${email} como ${ROLE_LABELS[role]||role} al SuperAdmin?`)) return;
         try {
@@ -1591,8 +1791,14 @@ async function openClubAdminPanel(preClubId = null) {
             try {
                 if (hasOtherActiveRoles) {
                     const allRoles = userData.allRoles || [];
-                    const roleIdx = allRoles.findIndex(r => 
-                        r.role === role && (r.clubId || null) === (cid || null)
+                    // 🔑 v540 · por PLAZA: con dos equipos, buscar sólo por rol
+                    // marcaba como reenviado el que no era.
+                    const _plazaFwd = { role: role, clubId: cid || null,
+                                        category: cat || null, subcategory: sub || null };
+                    const roleIdx = allRoles.findIndex(r =>
+                        (typeof window.cronosMismaPlaza === 'function' && cat)
+                            ? window.cronosMismaPlaza(r, _plazaFwd)
+                            : (r.role === role && (r.clubId || null) === (cid || null))
                     );
                     if (roleIdx >= 0) {
                         allRoles[roleIdx].status = 'pending_sa';
@@ -1611,8 +1817,13 @@ async function openClubAdminPanel(preClubId = null) {
             const clubName = clubSnap.exists() ? (clubSnap.data().name || '') : '';
             
             // Usar un ID que el Club Admin "posea" para evitar el error de permisos al sobrescribir la del usuario
-            const fwdReqId = 'fwd_' + cid + '_' + uid + '_' + role;
-            
+            // 🔑 v540 · con la PLAZA dentro: `fwd_<club>_<uid>_user` era el
+            // mismo id para el F7 y el F11 del mismo entrenador, así que
+            // reenviar el segundo borraba el primero.
+            const _sufFwd = (role === 'user' && cat && typeof window.cronosTeamSlug === 'function')
+                ? '_' + window.cronosTeamSlug(String(cat) + '-' + (sub || '')) : '';
+            const fwdReqId = 'fwd_' + cid + '_' + uid + '_' + role + _sufFwd;
+
             const realEmail = (email && email !== '–' && email !== '-') ? email 
                             : (userData.email || userData.requestedEmail || '');
             const realName  = userData.displayName || 
@@ -1620,8 +1831,11 @@ async function openClubAdminPanel(preClubId = null) {
                              userData.requestedName || '';
 
             // Obtener categorías si existen (del doc del usuario, allRoles, o de la solicitud original)
-            let userCatFwd    = userData.requestedCategory || userData.category || null;
-            let userSubcatFwd = userData.requestedSubcategory   || userData.subcategory || null;
+            // 🔑 v540 · la categoría que llega con la llamada MANDA: es la del
+            // equipo que el administrador ha pulsado. La raíz del perfil sólo
+            // puede guardar una, y con dos equipos sería la del otro.
+            let userCatFwd    = cat || userData.requestedCategory || userData.category || null;
+            let userSubcatFwd = (cat ? (sub || null) : null) || userData.requestedSubcategory || userData.subcategory || null;
             let userCoordTypeFwd = userData.requestedCoordinatorType || userData.coordinatorType || null;
             const userSlotFwd = userData.requestedSlot     || null;
             // Buscar también en allRoles si no se encontró en el doc raíz
@@ -1667,9 +1881,22 @@ async function openClubAdminPanel(preClubId = null) {
                     _w('clubId', '==', cid), _w('userUid', '==', uid)));
                 const _viejas = [];
                 origPRSnap.forEach(d => {
-                    if (d.id !== fwdReqId && (d.data().status === 'pending_club_admin' || d.data().status === 'pending')) {
-                        _viejas.push(d.id);
+                    if (d.id === fwdReqId) return;
+                    const _dd = d.data();
+                    if (_dd.status !== 'pending_club_admin' && _dd.status !== 'pending') return;
+                    // ⚠️ v540 · NO ARRASTRAR LA SOLICITUD DEL OTRO EQUIPO. Un
+                    // entrenador puede tener dos pendientes (su F7 y su F11);
+                    // esta limpieza sólo debe retirar la que se acaba de
+                    // reenviar, no la de la otra plaza.
+                    if (role === 'user' && userCatFwd && _dd.requestedRole === 'user' &&
+                        _dd.requestedCategory &&
+                        typeof window.cronosMismaPlaza === 'function' &&
+                        !window.cronosMismaPlaza(
+                            { role: 'user', clubId: cid, category: _dd.requestedCategory, subcategory: _dd.requestedSubcategory },
+                            { role: 'user', clubId: cid, category: userCatFwd, subcategory: userSubcatFwd })) {
+                        return;
                     }
+                    _viejas.push(d.id);
                 });
                 for (const _vid of _viejas) {
                     try { await fDeleteDoc(fDoc(fDb, 'platform_requests', _vid)); }
@@ -1809,7 +2036,10 @@ async function openClubAdminPanel(preClubId = null) {
     // nuevo, con TODO el histórico que ese equipo acumule, lo firmara quien
     // lo firmara. No hay que mover ni copiar un solo informe: los informes
     // se consultan por equipo (ver cronosTeamId en js/core/utils.js).
-    window.caEditUserCategory = async function(uid, email, currentCat, currentSub) {
+    // `targetRole` (v560): el rol de LA FILA pulsada. Antes se daba por hecho
+    // que era el rol RAÍZ del documento, y a quien tiene varios roles en el
+    // mismo club (entrenador y padre, por ejemplo) eso apuntaba al equivocado.
+    window.caEditUserCategory = async function(uid, email, currentCat, currentSub, targetRole) {
         let newCat = prompt('Categoría (ej: Infantil, Cadete, Senior...):', currentCat);
         if (newCat === null) return;
         let newSub = prompt('Subcategoría / Grupo (ej: A, B, Segunda...):', currentSub);
@@ -1884,15 +2114,41 @@ async function openClubAdminPanel(preClubId = null) {
             //    Ahora se exige club Y rol, y sólo se tocan los roles ACTIVOS:
             //    un rol ya revocado conserva la categoría que tenía, que es su
             //    valor histórico.
+            //
+            // ═══════════════════════════════════════════════════════════
+            //  🔴🔴 v560 · SEGUÍA SIENDO DEMASIADO ANCHA: LE FALTABA LA PLAZA
+            //
+            //  Exigía club Y rol… y nada más. Desde v537 un entrenador puede
+            //  llevar DOS equipos en el mismo club (un F7 y un F11), así que
+            //  mover UNO reescribía la categoría de LOS DOS: el Regional A se
+            //  convertía en una copia del Alevín C y, en el siguiente inicio de
+            //  sesión, el deduplicador de plazas de auth.js (v554) borraba la
+            //  copia sobrante DE FIRESTORE. Resultado: "Regional A desapareció
+            //  sola" (captura 9062), con el rastro perdido entre dos acciones
+            //  que nadie relaciona.
+            //
+            //  🔑 Se mueve LA PLAZA que se está editando, identificada por la
+            //  categoría con la que se abrió el diálogo (`currentCat`/
+            //  `currentSub`), que es justo el equipo de la fila pulsada.
+            //  Sin categoría de origen (registros antiguos) se mantiene el
+            //  criterio anterior: es el único caso en que no hay plaza que
+            //  distinguir.
+            // ═══════════════════════════════════════════════════════════
             if (data.allRoles) {
+                var _rolDestino = targetRole || data.role;
+                var _plazaOrigen = { role: _rolDestino, clubId: clubId,
+                                     category: currentCat || null,
+                                     subcategory: currentSub || null };
                 updates.allRoles = data.allRoles.map(function(r) {
                     var mismoClub = String(r.clubId || '') === String(clubId || '');
-                    var mismoRol  = r.role === data.role;
+                    var mismoRol  = r.role === _rolDestino;
                     var activo    = r.status !== 'removed' && r.isAuthorized !== false;
-                    if (mismoClub && mismoRol && activo) {
-                        return Object.assign({}, r, { category: newCat, subcategory: newSub });
+                    if (!(mismoClub && mismoRol && activo)) return r;
+                    if (currentCat && typeof window.cronosMismaPlaza === 'function' &&
+                        !window.cronosMismaPlaza(r, _plazaOrigen)) {
+                        return r;   // es el OTRO equipo de esta persona: no se toca
                     }
-                    return r;
+                    return Object.assign({}, r, { category: newCat, subcategory: newSub });
                 });
             }
 
@@ -2099,14 +2355,11 @@ async function openClubAdminPanel(preClubId = null) {
                     var cidRol = rolesRemovidos[rIdx].clubId || cid;
                     if (!cidRol) continue;
                     try {
-                        var csR = await getDoc(doc(db, 'clubs', cidRol));
-                        if (csR.exists()) {
-                            var rkR  = _slotKey(rolesRemovidos[rIdx].role);
-                            var subR = rkR.split('.')[1];
-                            var curR = ((csR.data().usedSlots || {})[subR]) || 1;
-                            var updR = {}; updR[rkR] = Math.max(0, curR - 1);
-                            await updateDoc(doc(db, 'clubs', cidRol), updR);
-                        }
+                        // ⚠️ v553 · Ya no se decrementa `usedSlots`: el recuento
+                        //    se calcula desde `allRoles`. Este decremento a mano,
+                        //    combinado con los incrementos, es lo que dejó el
+                        //    contador de CD DÍA en **-1**.
+                        void rolesRemovidos[rIdx];
                     } catch (_) {}
                 }
 
@@ -2259,12 +2512,10 @@ async function openClubAdminPanel(preClubId = null) {
             // Actualizar slots del club
             var userSnap = await getDoc(doc(db,'users',userId)).catch(function() { return null; });
             var role = (userSnap && userSnap.data()) ? (userSnap.data().role || 'user') : 'user';
-            var key = _slotKey(role);
-            var si = slotOf(role);
-            if (isActive) {
-                var actSlot = {}; actSlot[key] = (si.used || 0) + 1;
-                await updateDoc(doc(db,'clubs',cid), actSlot);
-            }
+            // ⚠️ v553 · Sin escritura de `usedSlots`: el recuento se calcula
+            //    desde `allRoles` (cronosPlazasOcupadas). Se conserva la lectura
+            //    del rol porque la usan los avisos de más abajo.
+            void role;
             if (isBlocked) {
                 var blkSlot = {}; blkSlot[key] = Math.max(0, (si.used || 1) - 1);
                 await updateDoc(doc(db,'clubs',cid), blkSlot);

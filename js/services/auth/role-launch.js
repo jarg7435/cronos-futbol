@@ -89,17 +89,27 @@ export function showRoleSelection() {
     const activeRoles = (me.allRoles || [])
         .filter(r => r.isAuthorized === true && r.status === 'active');
 
-    // Si solo hay un rol activo, entrar directamente sin mostrar la pantalla de selección
-    if (activeRoles.length === 1) {
-        screen.style.display = 'none';
-        const r = activeRoles[0];
+    // Qué tarjeta le corresponde a una entrada de allRoles.
+    const _optionOf = (r) => {
         const isUnderIndividual = !!(r.individualEntityId || r.isIndividual);
-        let option = r.role;
-        if (r.role === 'club_admin')       option = 'clubadmin';
-        else if (['coach','user'].includes(r.role)) option = isUnderIndividual ? 'coach_individual' : 'coach';
-        else if (['parent','parent_individual','padre_individual'].includes(r.role)) option = isUnderIndividual ? 'parent_individual' : 'parent';
-        else if (['individual','admin_individual'].includes(r.role)) option = 'individual';
-        selectOption(option);
+        if (r.role === 'club_admin') return 'clubadmin';
+        if (['coach','user'].includes(r.role)) return isUnderIndividual ? 'coach_individual' : 'coach';
+        if (['parent','parent_individual','padre_individual'].includes(r.role)) return isUnderIndividual ? 'parent_individual' : 'parent';
+        if (['individual','admin_individual'].includes(r.role)) return 'individual';
+        return r.role;
+    };
+
+    // Si sólo hay UNA tarjeta posible, entrar directamente sin enseñar la
+    // pantalla de selección.
+    // ⚠️ v540 · SE CUENTAN TARJETAS, NO ENTRADAS. Un entrenador con dos
+    // equipos (un F7 y un F11, v537) tiene DOS entradas activas que llevan a
+    // la MISMA tarjeta: antes se le plantaba una pantalla de "elige tu rol"
+    // con una sola opción, que no elige nada. Entre sus dos equipos elige
+    // dentro del panel, que es donde sabe cuál es cuál.
+    const _opcionesActivas = Array.from(new Set(activeRoles.map(_optionOf)));
+    if (_opcionesActivas.length === 1) {
+        screen.style.display = 'none';
+        selectOption(_opcionesActivas[0]);
         return;
     }
 
@@ -294,7 +304,35 @@ function _launchWithRole(role) {
             'parent_individual': ['parent_individual', 'parent', 'padre_individual'],
         };
         const _matchRoles = _roleAliases[role] || [role];
+
+        // ══════════════════════════════════════════════════════════════
+        //  v540 · EL ENTRENADOR CON DOS EQUIPOS ARRANCA EN EL QUE ELIGIÓ
+        //
+        //  🔑 Desde v537 un entrenador puede llevar un F7 y un F11 en el
+        //  mismo club: eso son DOS entradas 'user' con el mismo clubId, y
+        //  el `find` de abajo devuelve SIEMPRE la primera del array. Sin
+        //  esto, su segundo equipo era inalcanzable — no había forma de
+        //  abrirlo desde ninguna pantalla.
+        //
+        //  ⚠️ La elección se VALIDA contra los equipos vivos en cada
+        //  arranque. Si el equipo elegido ya no es suyo (se lo han
+        //  retirado, o cambió de club), `_elegida` sale undefined y se cae
+        //  al camino de siempre.
+        // ══════════════════════════════════════════════════════════════
+        let _elegida;
+        if ((role === 'user' || role === 'coach') &&
+            typeof window.cronosEquipoElegido === 'function' &&
+            typeof window.cronosEquiposDeEntrenador === 'function') {
+            const _elegido = window.cronosEquipoElegido();
+            if (_elegido) {
+                const _eq = window.cronosEquiposDeEntrenador(me.allRoles, null)
+                    .find(e => e.teamId === _elegido);
+                if (_eq) _elegida = _eq._rol;
+            }
+        }
+
         const roleEntry =
+            _elegida ||
             me.allRoles.find(r => _matchRoles.includes(r.role) && r.clubId === currentClubId) ||
             me.allRoles.find(r => _matchRoles.includes(r.role)) ||
             // Fallback: buscar por prefijo (ej: 'user' coincide con 'user_XXX')
@@ -327,8 +365,33 @@ function _launchWithRole(role) {
 
             // ── Campos exclusivos del rol 'user' (entrenador) ──
             if (role === 'user' || role === 'coach') {
-                if (roleEntry.category)    me.category    = roleEntry.category;
-                if (roleEntry.subcategory) me.subcategory = roleEntry.subcategory;
+                // ⚠️ v540 · CATEGORÍA Y SUBCATEGORÍA SE ASIGNAN JUNTAS.
+                // Antes iban en dos `if` independientes, así que al pasar de
+                // "Cadete B" a un equipo sin subcategoría quedaba "Alevín B":
+                // media identidad del equipo anterior pegada a la nueva.
+                //
+                // ⚠️ PERO SÓLO SI LA ENTRADA TRAE CATEGORÍA. Hay perfiles
+                // antiguos cuya entrada de allRoles no la tiene y sí la raíz
+                // del documento; machacarla con null los dejaría sin equipo.
+                // Al cambiar de equipo la entrada siempre la trae, que es el
+                // caso que había que arreglar.
+                const _catRol = roleEntry.category || roleEntry.categoryLabel || '';
+                if (_catRol) {
+                    me.category    = _catRol;
+                    me.subcategory = roleEntry.subcategory || null;
+                }
+                // El equipo activo queda anotado para que el selector del
+                // panel sepa cuál está abierto (y lo marque).
+                if (typeof window.cronosFijarEquipoElegido === 'function' &&
+                    typeof cronosTeamId === 'function' && me.category) {
+                    window.cronosFijarEquipoElegido(
+                        cronosTeamId(roleEntry.clubId || me.clubId || '', me.category, me.subcategory || ''));
+                }
+                // 🔑 El resto del proyecto lee `_activeRoleData` como respaldo
+                // de la categoría (cronosMyTeam y 8 módulos más) y NADIE lo
+                // rellenaba en el usuario con la sesión abierta: quedaba
+                // siempre undefined y esa rama de la cascada era código muerto.
+                me._activeRoleData = roleEntry;
                 console.log('[auth] entrenador category:', me.category, 'subcategory:', me.subcategory);
                 // FIX: forzar updateCategoryOptions despues de asignar category
                 setTimeout(function() {

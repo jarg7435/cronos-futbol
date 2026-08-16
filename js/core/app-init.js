@@ -378,14 +378,38 @@ let activeActionPlayerId = null;
 // para que nadie la reintroduzca por costumbre.
 const _slots = () => window._cronosMatchSlots;
 
+// ════════════════════════════════════════════════════════════════════
+//  v557 · DE QUÉ EQUIPO ES EL PARTIDO QUE HAY EN MEMORIA
+//
+//  Desde v537 un entrenador lleva dos equipos y puede cambiar de uno a otro
+//  SIN CERRAR SESIÓN (v540) — o sea, con un partido a medias en la pantalla.
+//  A partir de ese instante "el equipo abierto en el panel" y "el equipo del
+//  partido que hay en memoria" son cosas DISTINTAS, y confundirlas es lo que
+//  hacía que el partido del Alevín se colara en el arranque del Regional.
+//
+//  🔑 ESTA VARIABLE ES EL DUEÑO DEL ESTADO EN MEMORIA. La fija el arranque de
+//  un partido (`_cronosNuevoPartidoDeEquipo`) y la restauración de uno
+//  guardado; el cambio de equipo NO la toca a propósito: el partido sigue
+//  siendo del equipo con el que se empezó y su autoguardado tiene que seguir
+//  cayendo en LA RANURA DE ESE EQUIPO. Así no se pierde nada al cambiar.
+// ════════════════════════════════════════════════════════════════════
+function _equipoDelPartidoEnMemoria() {
+    if (window._cronosMatchTeamId) return String(window._cronosMatchTeamId);
+    const S = _slots();
+    return (S && typeof S.equipoActual === 'function') ? S.equipoActual() : '';
+}
+
 // El id con el que ESTA pestaña guarda su partido. Mientras `liveMatchId` no
 // exista todavía (hay un hueco real entre "empieza el partido" y "startLiveSync
 // fija el id"), se usa la identidad de la pestaña y la ranura se muda sola en
 // cuanto llega el id definitivo.
+// v557 · Y esa ranura provisional es la DEL EQUIPO DUEÑO, no la del equipo que
+// el panel esté enseñando.
 function _miSlotId() {
     const S = _slots();
     if (!S) return null;
-    return S.slotIdActual(typeof liveMatchId !== 'undefined' ? liveMatchId : null);
+    return S.slotIdActual(typeof liveMatchId !== 'undefined' ? liveMatchId : null,
+                          _equipoDelPartidoEnMemoria());
 }
 
 function _saveMatchStateToStorage() {
@@ -394,6 +418,7 @@ function _saveMatchStateToStorage() {
         const S = _slots();
         const slotId = _miSlotId();
         if (!S || !slotId) return;
+        const _teamId = _equipoDelPartidoEnMemoria();
         const previo = S.leer(slotId);
         let createdAt = new Date().toISOString();
         if (previo && previo.createdAt) createdAt = previo.createdAt;
@@ -416,6 +441,10 @@ function _saveMatchStateToStorage() {
             COLORS:       typeof COLORS !== 'undefined' ? COLORS : {},
             category:     document.getElementById('match-category')?.value || window._currentMatchCategory || '',
             extraGoals:   window._cronosExtraGoals || { home: 0, away: 0 },
+            // v557 · EL SELLO DE EQUIPO. Es lo que permite que el Alevín y el
+            // Regional del mismo entrenador sean dos partidos separados
+            // aunque compartan pestaña.
+            teamId:       _teamId || '',
         };
         S.guardar(slotId, state);
     } catch(e) { /* silencioso */ }
@@ -616,8 +645,27 @@ window._restoreActiveMatch = function() {
         const slotId = window._cronosRestoreSlotId || S.getTabMatchId();
         const state = slotId ? S.leer(slotId) : null;
         if (!state) return;
-        if (state.liveMatchId) S.setTabMatchId(state.liveMatchId);
-        else if (slotId) S.setTabMatchId(slotId);
+        // v557 · Se consume: es una petición puntual ("retoma ESTA tarjeta"),
+        // no un estado. Dejarla puesta hacía que la siguiente restauración
+        // —la del otro equipo— volviera a retomar la anterior.
+        window._cronosRestoreSlotId = null;
+
+        // ── v557 · RETOMAR UN PARTIDO ES VOLVER A SU EQUIPO ───────────────
+        // El panel de "🔄 Recuperar Partido" enseña los partidos de LOS DOS
+        // equipos a propósito (si no, el del otro sería irrecuperable). Pero
+        // retomar el del Alevín estando abierto el Regional dejaría la app
+        // partida en dos: la pantalla con el partido del Alevín y el panel
+        // diciendo Regional — y a partir de ahí, cada módulo leyendo una cosa.
+        // Así que se cambia el equipo activo ANTES de restaurar nada.
+        const _eqPartido = state.teamId ? String(state.teamId) : '';
+        window._cronosMatchTeamId = _eqPartido ||
+            (typeof S.equipoActual === 'function' ? S.equipoActual() : '');
+        if (_eqPartido && typeof window._cronosAplicarEquipoActivo === 'function') {
+            window._cronosAplicarEquipoActivo(_eqPartido);
+        }
+
+        if (state.liveMatchId) S.setTabMatchId(state.liveMatchId, _eqPartido);
+        else if (slotId) S.setTabMatchId(slotId, _eqPartido);
         document.getElementById('cronos-restore-banner')?.remove();
 
         // Calcular tiempo real transcurrido si el partido estaba en curso
@@ -1553,12 +1601,25 @@ function _guardAgainstMatchReset() {
         // PRIMERO ("hay un partido en curso, 2ª PARTE, 1-0"), y aceptar
         // reanudaba el ajeno encima del nuevo. Un partido de otra pestaña no
         // tiene por qué impedir empezar éste.
+        //
+        // 🚨 v557 · Y SÓLO EL PARTIDO DE ESTE EQUIPO (captura 9042). El mismo
+        // daño, un eje más adentro: con el Alevín C en juego, cambiar al
+        // Regional A en el MISMO panel y preparar su partido disparaba este
+        // aviso con el marcador y la fase DEL ALEVÍN. `getTabMatchId()` mira
+        // ahora el puntero del equipo abierto, así que aquí no hay nada que
+        // reanudar cuando el partido de al lado es de otro equipo.
         const S = _slots();
         if (!S) return false;
         const propio = S.getTabMatchId();
         if (!propio) return false;
         const st = S.leer(propio);
         if (!st || !st.matchPhase) return false;
+        // ⚠️ CINTURÓN Y TIRANTES, y no sobra: una ranura sin sello de equipo
+        // (escrita antes de v557, o por un perfil sin club) pasa; una sellada
+        // con OTRO equipo no puede bloquear el arranque de éste ni aunque el
+        // puntero se hubiera quedado desfasado.
+        const _eqAbierto = (typeof S.equipoActual === 'function') ? S.equipoActual() : '';
+        if (_eqAbierto && st.teamId && String(st.teamId) !== _eqAbierto) return false;
         const inProgress = (st.matchPhase === '1st_half' || st.matchPhase === 'break' || st.matchPhase === '2nd_half');
         if (!inProgress) return false;
         const hasProgress = (st.masterTimeH1 > 0) || (st.masterTimeH2 > 0) ||
@@ -1574,6 +1635,12 @@ function _guardAgainstMatchReset() {
             'Pulsa CANCELAR para EMPEZAR UN PARTIDO NUEVO (se perderá el marcador y el tiempo actuales).'
         );
         if (resume) {
+            // ⚠️ v557 · SE DICE EXPLÍCITAMENTE QUÉ RANURA SE RETOMA. Sin esta
+            // línea, `_restoreActiveMatch` empieza por `_cronosRestoreSlotId`,
+            // que puede haber quedado apuntando a un partido de OTRO equipo
+            // desde la última visita al panel de recuperación: el aviso
+            // hablaría del Regional y se restauraría el Alevín.
+            window._cronosRestoreSlotId = propio;
             if (typeof window._restoreActiveMatch === 'function') window._restoreActiveMatch();
             return true; // abortar inicio de partido nuevo
         }
@@ -1583,6 +1650,125 @@ function _guardAgainstMatchReset() {
     }
 }
 window._guardAgainstMatchReset = _guardAgainstMatchReset;
+
+// ══════════════════════════════════════════════════════════════════
+//  v557/v558 · EMPIEZA UN PARTIDO NUEVO: EL ANTERIOR NO SE HEREDA
+//
+//  Se llama desde los DOS caminos de arranque (goToTitularSelection y
+//  startMatchWithConvocation, en js/ai/import.js), justo después del aviso
+//  anti-reinicio y antes de tocar nada. Llegar aquí significa siempre "empieza
+//  un partido NUEVO": si el usuario hubiera elegido REANUDAR, el aviso ya
+//  habría devuelto true y no se llegaría.
+//
+//  🚨🚨🚨 v558 · EL SEGUNDO PARTIDO DE LA SESIÓN NO SE RETRANSMITÍA
+//
+//  Reportado por el autor (captura 9043, probando 7 partidos a la vez): el
+//  partido del Cadete B "no aparece en vivo, ni creándolo de nuevo".
+//
+//  🔑🔑🔑 NADIE PONÍA EL ESTADO A CERO AL EMPEZAR. `spawnInitialPlayers()`
+//  reconstruye la plantilla, pero las variables globales del partido son de
+//  app-init.js y sólo las reiniciaba `resetMatch()` — un botón con su propio
+//  confirm que aquí no pasa nunca. Así que el partido nuevo arrancaba con el
+//  estado del anterior, y `matchPhase` seguía valiendo **'finished'**. A partir
+//  de ahí, en cadena y SIN UN SOLO ERROR VISIBLE:
+//
+//    · `pushLiveSnapshot` reutilizaba el `liveMatchId` del partido terminado
+//      (`_isNewMatch = !liveMatchId`) y escribía sobre SU documento… que las
+//      reglas de v434 tienen CONGELADO (`lmIsLive()` es false en un partido
+//      terminado). La escritura se DENIEGA, el `catch` la registra como un
+//      warning y el partido no llega nunca a `live_matches`. Eso es
+//      exactamente "no aparece entre los partidos activos";
+//    · `_saveMatchStateToStorage` sale por su primera línea con
+//      `matchPhase === 'finished'`: el partido nuevo tampoco se autoguardaba,
+//      así que no había ni recuperación local;
+//    · `tick()` sólo suma en '1st_half'/'2nd_half' (v448): el cronómetro no
+//      habría corrido;
+//    · y el marcador es DOM puro (`#score-home`), que nadie devuelve a 0: el
+//      partido nuevo empezaba con el resultado del anterior en pantalla.
+//
+//  ⚠️ SE REINICIA SIEMPRE, no sólo tras un partido terminado. Con el estado ya
+//  a cero es una operación nula, y ese es justo el punto: no depender de
+//  adivinar en qué estado quedó lo anterior.
+//
+//  🔑🔑 `liveMatchId` SE SUELTA SÓLO SI HUBO PARTIDO DE VERDAD (terminado, con
+//  tiempo jugado o con goles) O SI HA CAMBIADO EL EQUIPO. Si el entrenador
+//  vuelve a Configuración a los diez segundos, sin nada jugado, y reconfirma la
+//  convocatoria, eso es el MISMO partido: soltarlo dejaría un documento 0-0
+//  huérfano en la lista de Partidos en Vivo.
+//
+//  Y SI HA CAMBIADO EL EQUIPO (v557), soltarlo es obligatorio: el partido del
+//  Regional heredaría el identificador del Alevín y los dos escribirían en el
+//  MISMO documento —marcador, alineación y sucesos—, con el visor del Alevín
+//  llenándose de jugadores del Regional.
+//
+//  ⚠️ EL LATIDO ANTERIOR SE CORTA EN EL ACTO, y es síncrono a propósito: el
+//  temporizador de 5 s de la retransmisión vieja sigue vivo, y entre
+//  `spawnInitialPlayers()` y el `startLiveSync()` que va 800 ms detrás emitiría
+//  la plantilla NUEVA al documento VIEJO.
+// ══════════════════════════════════════════════════════════════════
+function _cronosNuevoPartidoDeEquipo() {
+    try {
+        const S = _slots();
+        const eq = (S && typeof S.equipoActual === 'function') ? S.equipoActual() : '';
+        const anterior = window._cronosMatchTeamId || '';
+        const cambiaDeEquipo = !!(eq && anterior && anterior !== eq);
+
+        // ¿Lo que había era un partido DE VERDAD? Los tres rastros que no puede
+        // dejar un partido que no llegó a empezar.
+        const _num = (id) => parseInt(document.getElementById(id)?.textContent, 10) || 0;
+        const huboPartido =
+            (typeof matchPhase !== 'undefined' && matchPhase === 'finished') ||
+            ((Number(typeof masterTimeH1 !== 'undefined' ? masterTimeH1 : 0) || 0) +
+             (Number(typeof masterTimeH2 !== 'undefined' ? masterTimeH2 : 0) || 0)) > 0 ||
+            _num('score-home') > 0 || _num('score-away') > 0;
+
+        // ── 1 · el estado del partido, a cero ────────────────────────────
+        if (typeof isRunning    !== 'undefined') isRunning = false;
+        if (typeof timerInterval !== 'undefined' && timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+        if (typeof matchPhase   !== 'undefined') matchPhase   = '1st_half';
+        if (typeof masterTimeH1 !== 'undefined') masterTimeH1 = 0;
+        if (typeof masterTimeH2 !== 'undefined') masterTimeH2 = 0;
+        if (typeof lastTickTime !== 'undefined') lastTickTime = 0;
+        window._cronosExtraGoals = { home: 0, away: 0 };
+        // El marcador vive SÓLO en el DOM: si no se pone a cero aquí, no lo
+        // hace nadie.
+        const _sh = document.getElementById('score-home');
+        const _sa = document.getElementById('score-away');
+        if (_sh) _sh.textContent = '0';
+        if (_sa) _sa.textContent = '0';
+        // Y el botón vuelve a decir EMPEZAR (lo deja en 'PAUSAR' el partido
+        // anterior si se terminó con el reloj corriendo).
+        const _btn = document.getElementById('btn-play-pause');
+        if (_btn) { _btn.textContent = 'EMPEZAR'; _btn.classList.remove('danger'); }
+        if (typeof updateMasterUI === 'function') { try { updateMasterUI(); } catch (e) {} }
+
+        // ── 2 · la retransmisión anterior, soltada ───────────────────────
+        if (huboPartido || cambiaDeEquipo) {
+            try {
+                if (typeof liveIsActive !== 'undefined') liveIsActive = false;
+                if (typeof liveSyncTimer !== 'undefined' && liveSyncTimer) {
+                    clearInterval(liveSyncTimer);
+                    liveSyncTimer = null;
+                }
+                if (typeof liveMatchId !== 'undefined') liveMatchId = null;
+            } catch (e) { /* el arranque del partido nunca puede romperse aquí */ }
+            // Cada partido lleva su propia cuenta de sucesos y su propio guard
+            // de despacho de informes: heredarlos mezclaría dos partidos en el
+            // mismo informe.
+            window._cronosMatchEvents = [];
+            window._cronosLastDispatchedMatch = null;
+        }
+
+        // ── 3 · el dueño del partido que nace ────────────────────────────
+        // Es lo que hace que su autoguardado caiga en la ranura de ESE equipo
+        // aunque el entrenador cambie de equipo en el panel a mitad de partido.
+        window._cronosMatchTeamId = eq || '';
+    } catch (e) { /* silencioso */ }
+}
+window._cronosNuevoPartidoDeEquipo = _cronosNuevoPartidoDeEquipo;
 
 // startMatchFromTitularSelection() → import.js
 
@@ -1723,10 +1909,27 @@ function getTimerColor(timeSec, matchCategory, matchSubcategory) {
     const cat = matchCategory || window._currentMatchCategory || (typeof document !== 'undefined' ? document.getElementById('match-category')?.value : '') || '';
     const sub = matchSubcategory || window._currentMatchSubcategory || (typeof document !== 'undefined' ? document.getElementById('match-subcategory')?.value : '') || 'A';
 
+    // 🚦 v559 · JUVENIL, REGIONAL Y REGIONAL FEM: CELESTE, TAJANTE.
+    //
+    // ⚠️ SE PREGUNTA POR TODAS LAS SEÑALES, no sólo por `cat`. Esta función se
+    // llama con UN argumento desde `updatePlayerUI` y desde el coloreador de
+    // js/core/patches.js —que repinta CADA jugador cada segundo—, así que todo
+    // depende de la cascada de arriba; y si esa cascada se queda vacía,
+    // `getCategoryGroupKey('')` devuelve **'infantil_a'**, que sí tiene
+    // semáforo. Ése era el rojo del Regional de la captura 9056. Añadiendo la
+    // categoría del PERFIL del entrenador, un hueco en el DOM ya no basta para
+    // encenderlo: hay que fallar todas las señales a la vez.
+    const _meCat = _me && (_me.category || (_me._activeRoleData && _me._activeRoleData.category) || _me.categoryLabel);
+    if (typeof window.cronosCategoriaSinSemaforo === 'function' &&
+        window.cronosCategoriaSinSemaforo(cat, _meCat)) {
+        return { bg: '#79c0ff', text: '#000000', fontSize: '0.8rem' };
+    }
+
     const getGroupFn = (typeof window.getCategoryGroupKey === 'function') ? window.getCategoryGroupKey : function(c,s) { return 'f7'; };
     const groupKey = getGroupFn(cat, sub);
 
-    // Juvenil o Regional -> Sin semáforo -> Celeste
+    // Respaldo por grupo: si `cronosCategoriaSinSemaforo` no estuviera cargada
+    // todavía, la regla sigue aplicándose por la vía de siempre.
     if (groupKey === 'juvenil' || groupKey === 'regional') {
         return { bg: '#79c0ff', text: '#000000', fontSize: '0.8rem' };
     }

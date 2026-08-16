@@ -170,10 +170,33 @@ window.saClubs = async function saClubs() {
             const vis  = c.users.filter(u => !['superadmin','admin'].includes(u.role));
             const pend = vis.filter(u => ['pending','pending_club'].includes(u.status)).length;
             // Contadores por rol
-            const countByRole = (role) => vis.filter(u => {
-                if (u.role === role && u.status !== 'removed') return true;
-                return u.status !== 'removed' && (u.allRoles||[]).some(r => r.role === role && r.isAuthorized && r.clubId === c.id);
-            }).length;
+            // ══════════════════════════════════════════════════════════════
+            //  🔑🔑🔑 v555 · ÉSTA ES LA BARRA QUE DECÍA "5 / 10 ENTRENADORES"
+            //
+            //  `vis.filter(...).length` cuenta USUARIOS: cada persona suma UNA
+            //  por mucho que lleve dos equipos. En CD DÍA hay 5 usuarios y
+            //  **7 plazas de entrenador** (dos de ellos llevan F7 + F11), así
+            //  que la barra decía 5 mientras el club tenía 7 equipos.
+            //
+            //  ⚠️ EL ARREGLO DE v553 NO LLEGABA AQUÍ. Allí se conectó
+            //  `saEditClubSlots` (la pantalla "Editar Club") y `slotOf` del
+            //  panel del club, pero **la barra de la LISTA de clubes es otro
+            //  render distinto** con su propio contador. Tercera copia del
+            //  mismo recuento; por eso el número seguía sin moverse.
+            //
+            //  Ahora las tres consumen `cronosPlazasOcupadas` (utils.js): una
+            //  sola definición de "plaza ocupada" para toda la aplicación.
+            // ══════════════════════════════════════════════════════════════
+            const countByRole = (role) => {
+                if (typeof window !== 'undefined' && typeof window.cronosPlazasOcupadas === 'function') {
+                    return window.cronosPlazasOcupadas(vis, role, c.id);
+                }
+                // Respaldo: el criterio anterior (personas), mejor que un cero.
+                return vis.filter(u => {
+                    if (u.role === role && u.status !== 'removed') return true;
+                    return u.status !== 'removed' && (u.allRoles||[]).some(r => r.role === role && r.isAuthorized && r.clubId === c.id);
+                }).length;
+            };
             const slotBar = (role, icon, label, color) => {
                 const used = countByRole(role);
                 const max  = c.slots?.[role === 'director' ? 'directors'

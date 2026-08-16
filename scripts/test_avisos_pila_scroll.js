@@ -152,6 +152,18 @@ function crearReloj() {
     };
 }
 
+// v558 · Las dos funciones que deciden si un aviso puede sonarme, tal cual
+// están en live.html. Van juntas y seguidas, hasta el comentario que encabeza
+// showEventToast.
+function _puertaAvisos(src) {
+    const ini = src.indexOf('function _soyDestinatarioDe(m) {');
+    const fin = src.indexOf('// v455 · `matchId` (6º argumento) es el partido AL QUE PERTENECE el suceso.');
+    if (ini < 0 || fin < 0 || fin < ini) {
+        throw new Error('No se pudo extraer la puerta de avisos (_puedeAvisarme) de live.html');
+    }
+    return src.slice(ini, fin);
+}
+
 function crearEntorno() {
     const reloj = crearReloj();
     const oyentes = {};
@@ -189,10 +201,21 @@ function crearEntorno() {
         _posicionaAvisos: () => {},
         _appendEventToHistoryPanel: () => {},
         _alertsMuted: true, vibrate: () => {}, playEventSound: () => {},
+        // v558 · showEventToast empieza por la puerta `_puedeAvisarme` (un
+        // partido no se mete en la pantalla de otro, captura 9043). Se inyecta
+        // LA REAL, no un stub, con el contexto mínimo: aquí los avisos van sin
+        // matchId, así que la puerta los deja pasar tal cual —que es justo lo
+        // que esta prueba necesita medir—. La puerta la cubre entera
+        // scripts/test_partido_nuevo_y_eventos_aislados.js.
+        userData: { uid: 'u1', email: 'e@x.com', role: 'user', clubId: 'c1' },
+        currentMatchId: null,
+        _matchLastData: {},
+        _avisosEnListado: () => false,
     };
     sb.window = sb;
     vm.createContext(sb);
-    vm.runInContext(extraeBloqueLectura(LIVE) + '\n' + extraeFuncion(LIVE, 'showEventToast'), sb);
+    vm.runInContext(_puertaAvisos(LIVE) + '\n' +
+                    extraeBloqueLectura(LIVE) + '\n' + extraeFuncion(LIVE, 'showEventToast'), sb);
 
     return {
         sb, pila, reloj,

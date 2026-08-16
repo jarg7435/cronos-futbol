@@ -138,6 +138,13 @@ export async function loadClubOptions() {
 
     select.innerHTML = '<option value="">⏳ Cargando opciones...</option>';
 
+    // ⚠️⚠️ v544 · ESTE BLOQUE ES EL DE PRODUCCIÓN, VERBATIM. NO SE "MEJORA".
+    //    En v543 lo cambié por una espera a `_cronosFirebaseReady` con botón de
+    //    reintento, persiguiendo un ERR_NETWORK_CHANGED. Producción (v539) no
+    //    tiene nada de eso y el registro le funciona al autor sin un fallo,
+    //    comprobado por él en A/B contra testeo el 2026-08-16. Si algún día hay
+    //    que tocarlo, se toca PRIMERO en producción y se comprueba allí; aquí
+    //    sólo se copia (regla de v492, pagada con siete rondas).
     let fa = window._cronos_auth;
     if (!fa) {
         for (let i = 0; i < 8; i++) {
@@ -981,16 +988,33 @@ export async function checkAuthorization(user) {
                     });
 
                     // Si ningún rol coincidió (rol no estaba en allRoles), añadirlo
+                    //
+                    // 🔴 v560 · POR PLAZA Y CON CATEGORÍA (captura 9062). Este
+                    // `exists` comparaba rol + club SIN CATEGORÍA, así que a un
+                    // entrenador con Alevín C aprobado nunca se le añadía el
+                    // Regional A; y el `push` creaba el rol SIN categoría, o sea
+                    // un entrenador sin equipo. Los dos defectos, en la misma
+                    // rama, y persistidos con el `updateObj` de más abajo.
                     approvedSnap.forEach(d => {
                         const req = d.data();
-                        const exists = updatedRoles.some(r =>
-                            r.role === req.requestedRole && (r.clubId||null) === (req.clubId||null)
-                        );
+                        const _rol = req.requestedRole;
+                        const _cat = req.requestedCategory || req.category || null;
+                        const _sub = req.requestedSubcategory || req.requestedSubcat || req.subcategory || null;
+                        const exists = updatedRoles.some(r => {
+                            if (r.role !== _rol) return false;
+                            if ((r.clubId || null) !== (req.clubId || null)) return false;
+                            if ((_rol !== 'user' && _rol !== 'coach') || !_cat) return true;
+                            return (typeof window.cronosMismaPlaza === 'function')
+                                ? window.cronosMismaPlaza(r, { role: _rol, clubId: req.clubId || null,
+                                                               category: _cat, subcategory: _sub })
+                                : true;
+                        });
                         if (!exists) {
                             updatedRoles.push({
-                                role: req.requestedRole, isAuthorized: true, status: 'active',
+                                role: _rol, isAuthorized: true, status: 'active',
                                 clubId: req.clubId || null,
                                 clubName: req.clubName || req.requestedClubName || null,
+                                category: _cat, subcategory: _sub,
                             });
                         }
                     });
@@ -1139,12 +1163,23 @@ export async function checkAuthorization(user) {
             let needsRoleSync = false;
             const existingRole = allRoles.find(r => r.role === data.role && (r.clubId || null) === (data.clubId || null));
             if (!existingRole) {
+                // 🔑 v560 · LA CATEGORÍA DE LA RAÍZ VIAJA CON EL ROL. Este push
+                // creaba un rol de entrenador SIN category/subcategory, y un
+                // entrenador sin categoría es un entrenador SIN EQUIPO:
+                // `cronosEquiposDeEntrenador` descarta esas entradas, así que la
+                // persona aparecía "desvinculada" de su equipo (captura 9062).
+                // El dato existe en la raíz del documento; sólo había que
+                // copiarlo. Sólo para el rol de entrenador: a un padre o a un
+                // director la categoría no le pertenece.
+                const _esCoach = (data.role === 'user' || data.role === 'coach');
                 allRoles.push({
                     role: data.role,
                     clubId: data.clubId || null,
                     clubName: data.clubName || '',
                     isAuthorized: true,
-                    status: 'active'
+                    status: 'active',
+                    category:    _esCoach ? (data.category || data.categoryLabel || null) : null,
+                    subcategory: _esCoach ? (data.subcategory || null) : null,
                 });
                 needsRoleSync = true;
             } else if (!existingRole.isAuthorized && !_rolRevocado(existingRole)) {
@@ -1205,10 +1240,35 @@ export async function checkAuthorization(user) {
                     // Rol respaldado por platform_request aprobada por el SA → verificado.
                     _verifiedRoleKeys.add(_roleKey(role, clubId, indivEntityId));
 
-                    // Buscar si el rol ya está activo
-                    const existingIdx = updatedAllRoles.findIndex(r =>
-                        r.role === role && (r.clubId || null) === clubId && (r.individualEntityId || null) === indivEntityId
-                    );
+                    // ══════════════════════════════════════════════════════
+                    //  🔴 v560 · POR PLAZA, NO POR ROL (captura 9062)
+                    //
+                    //  Esto buscaba por rol + club + entidad, SIN CATEGORÍA. Con
+                    //  dos equipos en el mismo club —Alevín C y Regional A— la
+                    //  solicitud aprobada del Regional casaba con la entrada del
+                    //  ALEVÍN, así que:
+                    //    · la plaza del Regional NO se añadía nunca (es el mismo
+                    //      defecto de v540/v547/v552, ahora en el arranque);
+                    //    · y si el Alevín estaba de baja, la rama de abajo
+                    //      retiraba la verificación de una plaza que no era.
+                    //
+                    //  ⚠️ Sólo se afina cuando la solicitud TRAE categoría. Las
+                    //  solicitudes antiguas no la llevan, y exigirla las dejaría
+                    //  todas sin casar: ahí se mantiene el criterio de siempre.
+                    // ══════════════════════════════════════════════════════
+                    const reqCat = req.requestedCategory || req.category || null;
+                    const reqSub = req.requestedSubcategory || req.requestedSubcat || req.subcategory || null;
+                    const _esLaPlaza = (r) => {
+                        if (!r) return false;
+                        if (r.role !== role) return false;
+                        if ((r.clubId || null) !== clubId) return false;
+                        if ((r.individualEntityId || null) !== indivEntityId) return false;
+                        if ((role !== 'user' && role !== 'coach') || !reqCat) return true;
+                        return (typeof window.cronosMismaPlaza === 'function')
+                            ? window.cronosMismaPlaza(r, { role, clubId, category: reqCat, subcategory: reqSub })
+                            : true;
+                    };
+                    const existingIdx = updatedAllRoles.findIndex(_esLaPlaza);
 
                     // ⚠️⚠️ SEGUNDA VÍA DE RESURRECCIÓN, Y LA MÁS DAÑINA.
                     //    La platform_request que aprobó a esta persona en su día
@@ -1222,21 +1282,51 @@ export async function checkAuthorization(user) {
                     if (existingIdx !== -1 && _rolRevocado(updatedAllRoles[existingIdx])) {
                         // Rol dado de baja: ni se reactiva ni cuenta como
                         // verificado para el resto del arranque.
-                        _verifiedRoleKeys.delete(_roleKey(role, clubId, indivEntityId));
+                        //
+                        // ⚠️ v560 · PERO SÓLO SI NO LE QUEDA NINGUNA PLAZA VIVA
+                        // CON ESA MISMA CLAVE. `_roleKey` es rol + club, sin
+                        // categoría, así que Alevín C y Regional A la comparten:
+                        // dar de baja el Alevín retiraba la verificación de las
+                        // DOS y el filtro de más abajo dejaba al entrenador sin
+                        // su Regional durante toda la sesión — "desaparece sola"
+                        // sin que nadie hubiera tocado ese equipo.
+                        const _quedaViva = updatedAllRoles.some((r, i) =>
+                            i !== existingIdx && r && r.role === role &&
+                            (r.clubId || null) === clubId &&
+                            (r.individualEntityId || null) === indivEntityId &&
+                            !_rolRevocado(r));
+                        if (!_quedaViva) {
+                            _verifiedRoleKeys.delete(_roleKey(role, clubId, indivEntityId));
+                        }
                     } else if (existingIdx === -1) {
-                        // Añadir el rol si no existe
+                        // Añadir el rol si no existe.
+                        // 🔑 v560 · CON SU CATEGORÍA Y SUBCATEGORÍA. Sin ellas
+                        // nacía un rol de entrenador SIN EQUIPO: la entrada
+                        // existe, pero `cronosEquiposDeEntrenador` la descarta
+                        // (`if (!cat) return`) y la persona se queda sin su
+                        // categoría — exactamente el "se desvincula sola" que
+                        // reportó el autor. Y como esto se PERSISTE dos bloques
+                        // más abajo, quedaba escrito así para siempre.
                         updatedAllRoles.push({
                             role, isAuthorized: true, status: 'active',
                             clubId: clubId, clubName: clubName,
+                            category: reqCat, subcategory: reqSub,
                         });
                         needsUpdate = true;
                     } else if (!updatedAllRoles[existingIdx].isAuthorized) {
-                        // Activar el rol si estaba pendiente
+                        // Activar el rol si estaba pendiente.
+                        // 🔧 v560 · Y REPARAR la categoría si le falta. Las
+                        // entradas que nacieron sin equipo (por el defecto que
+                        // se corrige arriba) se recomponen solas con el dato de
+                        // su propia solicitud aprobada, sin tocar las que ya la
+                        // tienen: ahí manda lo que hay guardado.
                         updatedAllRoles[existingIdx] = {
                             ...updatedAllRoles[existingIdx],
                             isAuthorized: true, status: 'active',
                             clubId: clubId || updatedAllRoles[existingIdx].clubId,
                             clubName: clubName || updatedAllRoles[existingIdx].clubName,
+                            category:    updatedAllRoles[existingIdx].category    || reqCat || null,
+                            subcategory: updatedAllRoles[existingIdx].subcategory || reqSub || null,
                         };
                         needsUpdate = true;
                     }
@@ -1328,9 +1418,20 @@ export async function checkAuthorization(user) {
 
                 // 2. Eliminar duplicados (mismo role + clubId/individualEntityId)
                 // FIX: Considerar individualEntityId además de clubId para deduplicación
+                // ⚠️ v554 · TERCER deduplicador con la clave sin categoría, y
+                //    también PERSISTE (setDoc justo debajo). Se usa la misma
+                //    clave de plaza que los otros dos: rol + club + categoría.
+                //    Con la anterior, entrar a la app borraba el segundo equipo.
+                const _clavePlazaHuerfana = (r) => (r.role || '') + '|' +
+                    (r.clubId || r.individualEntityId || '') + '|' +
+                    ((r.role === 'user' || r.role === 'coach')
+                        ? (typeof window.cronosTeamSlug === 'function'
+                            ? window.cronosTeamSlug(String(r.category || r.categoryLabel || '') + '-' + (r.subcategory || ''))
+                            : String(r.category || '').toLowerCase() + '-' + String(r.subcategory || '').toLowerCase())
+                        : '');
                 const seenOrphan = new Set();
                 cleanedRoles = cleanedRoles.filter(r => {
-                    const k = (r.role||'') + '|' + (r.clubId || r.individualEntityId || '');
+                    const k = _clavePlazaHuerfana(r);
                     if (seenOrphan.has(k)) return false;
                     seenOrphan.add(k);
                     return true;
@@ -1357,19 +1458,48 @@ export async function checkAuthorization(user) {
             (r.isAuthorized && (!_verificationLoaded ||
                 _verifiedRoleKeys.has(_roleKey(r.role, r.clubId, r.individualEntityId))))
         );
+        // ═══════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v554 · ESTA CLAVE BORRABA EL SEGUNDO EQUIPO AL ENTRAR
+        //
+        //  La clave era `rol|club`, SIN CATEGORÍA. Para un entrenador con dos
+        //  equipos en el mismo club —Alevín C (F7) y Regional A (F11), que
+        //  v537 hizo legales— **las dos entradas dan la MISMA clave**, así que
+        //  la segunda se descartaba por "duplicada"… y el bloque de abajo la
+        //  BORRABA DE FIRESTORE.
+        //
+        //  🔑 Por eso la plaza reaparecida se volvía a perder: no la borraba
+        //  ningún administrador, **se la llevaba por delante el ARRANQUE DE
+        //  SESIÓN de la propia víctima**. Es la lección de v477/v478 otra vez:
+        //  *la baja se guardaba y el arranque la deshacía*.
+        //
+        //  La plaza es rol + club + categoría (`cronosMismaPlaza`). Un
+        //  duplicado de verdad —dos entradas idénticas— se sigue quitando.
+        // ═══════════════════════════════════════════════════════════════
+        const _clavePlaza = (r) => (r.role || '') + '|' +
+            (r.clubId || r.individualEntityId || '') + '|' +
+            ((r.role === 'user' || r.role === 'coach')
+                ? (typeof window.cronosTeamSlug === 'function'
+                    ? window.cronosTeamSlug(String(r.category || r.categoryLabel || '') + '-' + (r.subcategory || ''))
+                    : String(r.category || '').toLowerCase() + '-' + String(r.subcategory || '').toLowerCase())
+                : '');
         const seenRoles = new Set();
         const authorizedRoles = allAuthorized.filter(r => {
-            const key = (r.role || '') + '|' + (r.clubId || r.individualEntityId || '');
+            const key = _clavePlaza(r);
             if (seenRoles.has(key)) return false;
             seenRoles.add(key);
             return true;
         });
 
         // Si se eliminaron duplicados, guardar el allRoles limpio en Firestore
+        // ⚠️ v554 · MISMA CLAVE QUE ARRIBA, Y AQUÍ ES DONDE SE PERSISTÍA.
+        //    Este bloque no sólo filtraba en memoria: escribía el resultado en
+        //    Firestore con el `setDoc` de abajo. Con la clave sin categoría,
+        //    entrar a la aplicación BORRABA para siempre el segundo equipo del
+        //    entrenador. Ahora usa la misma clave de plaza.
         const cleanAllRoles = (() => {
             const seen2 = new Set();
             return allRoles.filter(r => {
-                const k = (r.role||'') + '|' + (r.clubId || r.individualEntityId || '');
+                const k = _clavePlaza(r);
                 if (seen2.has(k)) return false;
                 seen2.add(k);
                 return true;
@@ -1848,11 +1978,20 @@ export async function doAuth() {
 
                     // Distinguir entre errores de contraseña y otros
                     if (signInErr.code === 'auth/wrong-password' || signInErr.code === 'auth/invalid-credential') {
+                        // ⚠️ v540 · AQUÍ NO HAY NINGÚN ERROR DEL SISTEMA, y el
+                        // aviso tiene que dejarlo claro: el correo ya tiene
+                        // cuenta y para añadirle un rol o un segundo equipo hay
+                        // que escribir SU contraseña, no una nueva. El 400 que
+                        // aparece en la consola del navegador es la respuesta
+                        // normal de Firebase al "este correo ya existe" — no es
+                        // un fallo, es cómo se detecta el caso.
                         showAuthError(
-                            '⚠️ Este email ya está registrado, pero la contraseña no coincide. ' +
-                            'Para añadir el rol de "' + (requestedRole === 'user' ? 'entrenador' : requestedRole === 'parent' ? 'padre/madre/tutor' : requestedRole === 'director' ? 'director deportivo' : requestedRole === 'coordinator' ? 'coordinador' : requestedRole) +
-                            '" a tu cuenta, debes iniciar sesión con la contraseña original y ' +
-                            'luego usar la pestaña de Registro para añadir el nuevo rol.'
+                            '⚠️ Este correo ya tiene cuenta en Chronos. No pasa nada: ' +
+                            'para añadirle el rol de "' + (requestedRole === 'user' ? 'entrenador' : requestedRole === 'parent' ? 'padre/madre/tutor' : requestedRole === 'director' ? 'director deportivo' : requestedRole === 'coordinator' ? 'coordinador' : requestedRole) +
+                            '" hay que rellenar este mismo formulario escribiendo LA CONTRASEÑA ' +
+                            'QUE YA USA esa cuenta (no una nueva). ' +
+                            'Si no la recuerda, use "¿Olvidaste tu contraseña?" en la pestaña ' +
+                            'de Iniciar Sesión y vuelva a intentarlo.'
                         );
                     } else if (signInErr.code === 'auth/user-not-found') {
                         showAuthError(
@@ -2406,8 +2545,40 @@ export async function doAuth() {
                 } catch(_) {}
                 window._addingRole = false;
 
-                // Create fresh registration (same logic as new user section below)
-                const freshAllRoles = [{ role: finalRole, clubId, clubName, isAuthorized: isAuthorized, firstName: firstName || null, lastName: lastName || null, displayName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, coordinatorType: _coordType || null, category: selectedCategory || null, subcategory: selectedSubcat || null }];
+                // ═══════════════════════════════════════════════════════════
+                //  🔴🔴🔴 v551 · AQUÍ SE PERDÍAN ROLES. NO SE REEMPLAZA: SE SUMA.
+                //
+                //  Esta rama trata a quien tiene la RAÍZ en `status:'removed'`
+                //  como un alta nueva, y montaba `freshAllRoles` con UNA SOLA
+                //  entrada — la que se acaba de pedir — para escribirla con un
+                //  `setDoc` SIN merge unas líneas más abajo. Resultado: **todo
+                //  lo demás que tuviera en `allRoles` desaparecía**, incluidos
+                //  roles VIVOS.
+                //
+                //  Está medido: brunoromar2012 pasó de SEIS entradas (entre
+                //  ellas su Administrador Individual y dos de padre, las tres
+                //  ACTIVAS) a UNA sola al volver a registrarse. La raíz decía
+                //  'removed' porque le habían revocado su casilla de
+                //  entrenador, pero sus otros roles seguían vivos.
+                //
+                //  🔑 Que la RAÍZ esté de baja no significa que la persona lo
+                //  esté: desde v477 la baja marca la CASILLA, y `allRoles` es
+                //  la fuente de verdad. Así que se conservan todas las entradas
+                //  que no estén revocadas o rechazadas, y la nueva se AÑADE.
+                // ═══════════════════════════════════════════════════════════
+                const _rolesPrevios = Array.isArray(primaryData.allRoles) ? primaryData.allRoles : [];
+                const _sobreviven = _rolesPrevios.filter(r =>
+                    r && r.status !== 'removed' && r.status !== 'rejected');
+                if (_sobreviven.length) {
+                    console.warn('[v551] La raíz estaba en "removed" pero conserva ' +
+                                 _sobreviven.length + ' rol(es) vivo(s): se mantienen.');
+                }
+                const _nuevoRol = { role: finalRole, clubId, clubName, isAuthorized: isAuthorized, firstName: firstName || null, lastName: lastName || null, displayName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, coordinatorType: _coordType || null, category: selectedCategory || null, subcategory: selectedSubcat || null };
+                // ⚠️ Si esa misma plaza ya estaba viva, no se duplica.
+                const _yaEsta = _sobreviven.some(r => (typeof window.cronosMismaPlaza === 'function')
+                    ? window.cronosMismaPlaza(r, _nuevoRol)
+                    : (r.role === finalRole && (r.clubId || null) === (clubId || null)));
+                const freshAllRoles = _yaEsta ? _sobreviven.slice() : _sobreviven.concat([_nuevoRol]);
                 const freshNeedsApproval = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
                 const freshIsUnderIndiv = !!selectedIndivId;
                 const freshStatus = isAuthorized ? 'active'
@@ -2416,8 +2587,12 @@ export async function doAuth() {
                     : (['club_admin','individual'].includes(requestedRole) ? 'pending_sa' : 'pending')));
                 const freshData = { email, isAuthorized, role: finalRole, clubId, clubName, playerAlias: (requestedRole === 'parent') ? (playerName || null) : null, inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null, allRoles: freshAllRoles, status: freshStatus, requestedSlot: null, firstName: firstName || null, createdAt: fa.serverTimestamp(), lastLogin: fa.serverTimestamp(), ..._gdprConsentFields };
                 if (requestedRole === 'club_admin') { freshData.requestedClubName = newClubName; freshData.requestedQuotas = { directors: reqDirectors, coordinators: reqCoordinators, coaches: reqCoaches, parents: reqParents }; }
-                if (requestedRole === 'individual') { freshData.firstName = firstName; freshData.lastName = lastName; freshData.displayName = displayName; freshData.isIndividual = true; freshData.individualEntityId = selectedIndivId || null; freshData.individualOwnerId = selectedIndivId || null; freshData.individualOwnerEmail = individualOwnerEmail || null; freshAllRoles[0].individualEntityId = selectedIndivId || null; }
-                if (freshIsUnderIndiv) { freshData.individualEntityId = selectedIndivId; freshData.individualOwnerId = selectedIndivId; freshData.individualOwnerEmail = individualOwnerEmail || null; freshAllRoles[0].individualEntityId = selectedIndivId; freshAllRoles[0].status = isAuthorized ? 'active' : 'pending_individual'; }
+                if (requestedRole === 'individual') { freshData.firstName = firstName; freshData.lastName = lastName; freshData.displayName = displayName; freshData.isIndividual = true; freshData.individualEntityId = selectedIndivId || null; freshData.individualOwnerId = selectedIndivId || null; freshData.individualOwnerEmail = individualOwnerEmail || null; _nuevoRol.individualEntityId = selectedIndivId || null; }
+                // ⚠️ v551 · SE TOCA `_nuevoRol`, NO `freshAllRoles[0]`. Desde que
+                //    los roles vivos se conservan, la posición 0 puede ser un rol
+                //    ANTIGUO: escribir ahí le cambiaba la entidad y el estado a
+                //    un rol que no tiene nada que ver con esta alta.
+                if (freshIsUnderIndiv) { freshData.individualEntityId = selectedIndivId; freshData.individualOwnerId = selectedIndivId; freshData.individualOwnerEmail = individualOwnerEmail || null; _nuevoRol.individualEntityId = selectedIndivId; _nuevoRol.status = isAuthorized ? 'active' : 'pending_individual'; }
                 await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), freshData);
 
                 // Create platform_request according to context
@@ -2494,18 +2669,78 @@ export async function doAuth() {
                 isAuthorized: primaryData.isAuthorized || false,
             }];
 
+            // ═══════════════════════════════════════════════════════════════
+            //  v540 · EL DUPLICADO ES POR PLAZA, Y LO REVOCADO NO CUENTA
+            //
+            //  🔑🔑🔑 Antes se comparaba sólo rol + club, así que a un
+            //  entrenador que ya llevaba un F7 y pedía un F11 —combinación
+            //  LEGAL desde v537— se le respondía "Ya tienes el rol de
+            //  entrenador en este club". La regla de los dos equipos ya se ha
+            //  comprobado más arriba: si hemos llegado hasta aquí, la
+            //  combinación es legal y lo único que queda por mirar es si esa
+            //  plaza CONCRETA ya la tiene.
+            //
+            //  🔑🔑 Y el estado importa. El comentario de arriba decía
+            //  "(only if NOT removed)" pero el código no lo hacía: medido por
+            //  REST, brunoromar2012 tiene sus TRES entradas de entrenador en
+            //  `removed` y aun así el formulario le cerraba la puerta con un
+            //  "ya tienes una solicitud registrada". Una plaza revocada o
+            //  rechazada está libre y se puede volver a pedir.
+            //
+            //  ⚠️ UNA SOLICITUD PENDIENTE SÍ SIGUE CONTANDO: si no, cada
+            //  intento crearía otra y el administrador vería la lista llena de
+            //  la misma persona.
+            // ═══════════════════════════════════════════════════════════════
+            const _plazaPedida = {
+                role:        requestedRole,
+                clubId:      clubId || null,
+                category:    selectedCategory || null,
+                subcategory: selectedSubcat   || null,
+            };
+            const _plazaLibre = (r) => !r || r.status === 'removed' || r.status === 'rejected';
             let duplicate = currentRoles.find(r =>
-                r.role === requestedRole &&
-                (r.clubId || null) === (clubId || null)
+                !_plazaLibre(r) && (
+                    typeof window.cronosMismaPlaza === 'function'
+                        ? window.cronosMismaPlaza(r, _plazaPedida)
+                        : (r.role === requestedRole && (r.clubId || null) === (clubId || null))
+                )
             );
 
+            // 🔑 v540 · LA PLAZA, TAMBIÉN EN EL IDENTIFICADOR DEL DOCUMENTO.
+            // `self_reg_<uid>_<rol>_<club>` y `users/<uid>_<rol>_<club>` son el
+            // MISMO id para los dos equipos de un entrenador: pedir el segundo
+            // sobrescribía en silencio la solicitud y el documento del primero.
+            // Sólo se añade para el rol de entrenador y sólo si hay categoría,
+            // para no mover de sitio los identificadores ya escritos.
+            const _sufijoPlaza = (requestedRole === 'user' && selectedCategory)
+                ? '_' + (typeof window.cronosTeamSlug === 'function'
+                    ? window.cronosTeamSlug(String(selectedCategory) + '-' + (selectedSubcat || ''))
+                    : String(selectedCategory).toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+                : '';
+
             // Si el club del duplicate ya no existe, ignorarlo y limpiar el rol
+            //
+            // 🔴 v560 · DOS AGUJEROS AQUÍ, y los dos borraban datos buenos:
+            //
+            //  1. El filtro era `r.role === requestedRole && r.clubId === …`,
+            //     SIN CATEGORÍA: se llevaba por delante TODAS las plazas de ese
+            //     rol en el club, no sólo la del duplicado. A un entrenador con
+            //     Alevín C y Regional A le borraba las dos.
+            //  2. `getDoc` sin comprobar el origen: sin cobertura se resuelve
+            //     contra la CACHÉ y `exists()` sale false para un club que sí
+            //     existe → se borraban los roles de un club perfectamente vivo,
+            //     y el `setDoc` lo subía al recuperar la red. Es la misma
+            //     lección que ya está escrita en la limpieza de roles huérfanos
+            //     del arranque de sesión.
             if (duplicate && duplicate.clubId) {
                 try {
                     const dupClubSnap = await fa.getDoc(fa.doc(fa.db, 'clubs', duplicate.clubId));
-                    if (!dupClubSnap.exists()) {
+                    const _desdeCache = !!(dupClubSnap.metadata && dupClubSnap.metadata.fromCache);
+                    if (!dupClubSnap.exists() && !_desdeCache) {
                         const cleanedRoles = currentRoles.filter(r =>
-                            !(r.role === requestedRole && r.clubId === duplicate.clubId)
+                            !(typeof window.cronosMismaPlaza === 'function'
+                                ? window.cronosMismaPlaza(r, duplicate)
+                                : (r.role === requestedRole && r.clubId === duplicate.clubId))
                         );
                         await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid),
                             { allRoles: cleanedRoles }, { merge: true });
@@ -2535,7 +2770,11 @@ export async function doAuth() {
                     try {
                         const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
                         // Probar los dos formatos de ID posibles
+                        // El formato CON plaza va primero (v540): es el que
+                        // escriben las solicitudes nuevas de entrenador. Los
+                        // otros tres se conservan para las ya escritas.
                         const prIds = [
+                            'self_reg_' + cred.user.uid + '_' + requestedRole + '_' + (clubId || '') + _sufijoPlaza,
                             'self_reg_' + cred.user.uid + '_' + requestedRole + '_' + (clubId || ''),
                             'self_reg_' + cred.user.uid + '_' + requestedRole,
                             'self_reg_' + cred.user.uid,
@@ -2634,7 +2873,7 @@ export async function doAuth() {
             const needsApprovalSecondary = ['director', 'coordinator', 'user', 'parent'].includes(requestedRole);
             const secondaryStatus = isAuthorized ? 'active' : (isAddingUnderIndiv ? 'pending_individual' : (needsApprovalSecondary && clubId ? 'pending_club_admin' : 'pending'));
             try {
-                const secondaryId = cred.user.uid + '_' + requestedRole + '_' + (clubId || selectedIndivId || 'global');
+                const secondaryId = cred.user.uid + '_' + requestedRole + '_' + (clubId || selectedIndivId || 'global') + _sufijoPlaza;
                 const secondaryData = {
                     email,
                     uid:       cred.user.uid,
@@ -2732,7 +2971,7 @@ export async function doAuth() {
                 // Entrenador, coordinador, director, padre: al Admin del Club primero
                 try {
                     const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
-                    const reqId = 'self_reg_' + cred.user.uid + '_' + requestedRole + '_' + (clubId || '');
+                    const reqId = 'self_reg_' + cred.user.uid + '_' + requestedRole + '_' + (clubId || '') + _sufijoPlaza;
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
                         type: 'self_registration',
                         clubId: clubId,

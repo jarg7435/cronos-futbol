@@ -282,6 +282,308 @@ if (typeof window.cronosPuedeLlevarEquipo !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  v540 · LA UNIDAD ES LA PLAZA, NO EL ROL
+//
+//  v537 permitió que un entrenador lleve DOS equipos (un F7 y un F11) en el
+//  mismo club. Eso significa DOS entradas `role:'user'` en el mismo
+//  `allRoles`, y a partir de ahí cualquier
+//      allRoles.find(r => r.role === 'user')
+//  coge una al azar, y cualquier
+//      allRoles.map(r => r.role === 'user' ? activar : r)
+//  toca las DOS. El proyecto estaba lleno de las dos formas.
+//
+//  🔑🔑🔑 NO ES TEÓRICO. Medido por REST en producción (brunoromar2012):
+//  su solicitud de `benjamin` figura `sa_approved` desde el 14/08 y en
+//  `allRoles` NO EXISTE ninguna entrada de benjamin — el aprobar casó por
+//  rol, reactivó las plazas viejas (juvenil, cadete) y nunca creó la nueva.
+//  La persona se quedó sin el equipo que le habían concedido.
+//
+//  🔑 LA PLAZA de un entrenador es (rol, club, categoría, subcategoría).
+//  Para los demás roles es sólo (rol, club): un padre o un director no
+//  ocupan equipo, y meterles la categoría en la identidad haría que pudieran
+//  pedir el mismo rol una y otra vez.
+//
+//  ⚠️ Se compara con `cronosTeamSlug`, la MISMA normalización con la que se
+//  construye el teamId. Los datos reales traen "Alevín" y "alevin" para el
+//  mismo equipo, y dos criterios distintos partirían el equipo en dos.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosMismaPlaza !== 'function') {
+    window.cronosMismaPlaza = function (a, b) {
+        if (!a || !b) return false;
+        const rolA = String(a.role || '');
+        const rolB = String(b.role || '');
+        if (!rolA || rolA !== rolB) return false;
+        if (String(a.clubId || '') !== String(b.clubId || '')) return false;
+        // Sólo el entrenador ocupa EQUIPO.
+        if (rolA !== 'user' && rolA !== 'coach') return true;
+        const slug = (typeof cronosTeamSlug === 'function')
+            ? cronosTeamSlug
+            : function (v) { return String(v == null ? '' : v).trim().toLowerCase(); };
+        return slug(a.category || a.categoryLabel) === slug(b.category || b.categoryLabel) &&
+               slug(a.subcategory) === slug(b.subcategory);
+    };
+}
+
+// Nombre legible de una categoría cruda ('benjamin' → 'Benjamín'). Sirve para
+// enseñar la plaza en el selector de equipo y en los avisos.
+// ⚠️ LAS DOS FEM VAN DELANTE: 'regional_fem' contiene 'regional', y con el
+// orden ingenuo una entrenadora de Regional FEM vería "Regional" a secas.
+if (typeof window.cronosNombreCategoria !== 'function') {
+    window.cronosNombreCategoria = function (category, subcategory) {
+        const crudo = (category == null ? '' : String(category)).trim();
+        if (!crudo) return '';
+        // ⚠️ Los acentos se quitan POR CÓDIGO DE CARÁCTER, nunca con una clase
+        // de regex: el bloque combinante escrito dentro de una expresión acaba
+        // en el fichero como marcas sueltas invisibles y cualquier paso que
+        // toque la codificación las destruye SIN ERROR (ver cronosTeamSlug).
+        const n = (typeof _cronosNoEsAcento === 'function')
+            ? crudo.normalize('NFD').split('').filter(_cronosNoEsAcento).join('').toLowerCase()
+            : crudo.toLowerCase();
+        let base = '';
+        if (n.includes('futurefem'))                        base = 'FUTureFEM';
+        else if (n.includes('regional') && n.includes('fem')) base = 'Regional FEM';
+        else if (n.includes('prebenj'))                     base = 'Prebenjamín';
+        else if (n.includes('benj'))                        base = 'Benjamín';
+        else if (n.includes('alev'))                        base = 'Alevín';
+        else if (n.includes('infant'))                      base = 'Infantil';
+        else if (n.includes('cadet'))                       base = 'Cadete';
+        else if (n.includes('juvenil'))                     base = 'Juvenil';
+        else if (n.includes('regional'))                    base = 'Regional';
+        else if (n.includes('senior'))                      base = 'Senior';
+        else if (n.includes('amateur') || n.includes('aficionado')) base = 'Aficionado';
+        else base = crudo.charAt(0).toUpperCase() + crudo.slice(1);
+        const sub = (subcategory == null ? '' : String(subcategory)).trim();
+        return sub ? base + ' ' + sub : base;
+    };
+}
+
+// Equipos VIVOS que lleva un entrenador en un club. Es de donde lee el
+// selector de doble modalidad del panel del entrenador (v540).
+//
+// ⚠️ FILTRO ESTRICTO, EL MISMO QUE showRoleSelection: sólo
+// `isAuthorized === true` Y `status === 'active'`. Un equipo pendiente de
+// aprobación o revocado no se puede elegir; enseñarlo dejaría entrar en un
+// equipo que todavía —o ya— no es suyo.
+if (typeof window.cronosEquiposDeEntrenador !== 'function') {
+    window.cronosEquiposDeEntrenador = function (allRoles, clubId) {
+        const roles = Array.isArray(allRoles) ? allRoles : [];
+        const modal = (c) => (typeof window._cronosMatchModality === 'function')
+            ? window._cronosMatchModality(c) : '';
+        const out = [];
+        roles.forEach(function (r) {
+            if (!r || (r.role !== 'user' && r.role !== 'coach')) return;
+            if (r.isAuthorized !== true || r.status !== 'active') return;
+            if (clubId && String(r.clubId || '') !== String(clubId)) return;
+            const cat = r.category || r.categoryLabel || '';
+            if (!cat) return;
+            out.push({
+                role:        r.role,
+                clubId:      r.clubId || clubId || '',
+                clubName:    r.clubName || '',
+                category:    cat,
+                subcategory: r.subcategory || '',
+                modalidad:   modal(cat),
+                etiqueta:    window.cronosNombreCategoria(cat, r.subcategory),
+                teamId:      (typeof cronosTeamId === 'function')
+                                ? cronosTeamId(r.clubId || clubId || '', cat, r.subcategory || '')
+                                : '',
+                _rol:        r,
+            });
+        });
+        return out;
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  v541 · ¿SE PUEDE RECARGAR LA PÁGINA AHORA MISMO?
+//
+//  La app se actualiza sola cuando hay versión nueva (ver el bloque de la
+//  insignia en index.html). Pero esto es un CRONÓMETRO DE PARTIDOS EN VIVO:
+//  una recarga a destiempo es peor que la caché vieja que venía a arreglar.
+//
+//  🔑🔑🔑 LOS FLAGS BUENOS SON `isRunning` y `matchPhase` (js/core/app-init.js,
+//  `var` en script clásico → globales). En v540 escribí una guarda con
+//  `window.matchStarted` / `window.isMatchRunning`: NINGUNA DE LAS DOS EXISTE
+//  en este proyecto, así que la guarda nunca se activó. Un nombre inventado no
+//  da error: da `undefined`, la condición sale falsa y el candado no cierra
+//  jamás — en silencio.
+//
+//  ⚠️ `matchPhase` NACE en '1st_half' aunque no haya empezado nada, así que por
+//  sí solo diría "hay partido" SIEMPRE.
+//
+// ════════════════════════════════════════════════════════════════════
+//  🚨🚨🚨 v556 · ESTA FUNCIÓN MENTÍA SIEMPRE QUE SÍ, Y BLOQUEÓ EL SELECTOR
+//
+//  Reportado por el autor (captura 9039): al entrenador con dos equipos el
+//  panel no le dejaba pulsar el segundo — le salía "Termina o cierra el
+//  partido en curso antes de cambiar de equipo" SIN HABER EMPEZADO NINGUNO.
+//
+//  🔑🔑🔑 EL CAMPO SE PONE VISIBLE EN EL LOGIN, NO AL EMPEZAR EL PARTIDO.
+//  `role-launch.js` hace `#main-container.style.display = 'flex'` para todo
+//  rol de campo nada más entrar (línea 466), y `matchPhase` nace en
+//  '1st_half' (app-init.js:110). O sea: las DOS condiciones de la versión
+//  anterior estaban cumplidas desde el primer segundo de la sesión, con el
+//  cronómetro a cero y sin un solo jugador en el campo. La función devolvía
+//  `true` SIEMPRE, y el candado que colgaba de ella cerraba SIEMPRE.
+//
+//  🔑🔑 "EL CAMPO ESTÁ A LA VISTA" NO ERA MEDIBLE ASÍ: el panel de setup se
+//  pinta ENCIMA (#setup-modal en 'flex'), sin ocultar el campo — es
+//  deliberado, para no destruir el estado del partido que haya debajo
+//  (team-persistence.js). Con el panel abierto, lo que se ve es el panel.
+//
+//  Lo que de verdad distingue un partido de una sesión recién abierta es que
+//  HAYA CORRIDO EL RELOJ: `isRunning`, o tiempo acumulado en cualquiera de
+//  las dos partes. Eso no se puede confundir con el estado inicial.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosHayPartidoEnCurso !== 'function') {
+    window.cronosHayPartidoEnCurso = function () {
+        try {
+            // 1) El cronómetro corriendo no admite discusión.
+            if (window.isRunning === true) return true;
+
+            // 2) El panel de configuración tapa el campo: si está abierto, lo
+            //    que el usuario tiene delante es el panel, no un partido.
+            const panel = document.getElementById('setup-modal');
+            if (panel && panel.style && panel.style.display &&
+                panel.style.display !== 'none') return false;
+
+            // 3) El campo a la vista y sin terminar: cuenta también el
+            //    DESCANSO y el partido en pausa.
+            const campo = document.getElementById('main-container');
+            const visible = !!campo && campo.style && campo.style.display !== 'none';
+            if (!visible) return false;
+            const fase = window.matchPhase;
+            if (fase === 'finished' || fase === 'idle') return false;
+
+            // 4) ⚠️ Y QUE EL RELOJ HAYA CORRIDO. Sin esto, la fase inicial
+            //    '1st_half' bastaría para afirmar que hay partido nada más
+            //    entrar — que es exactamente el defecto de v541.
+            const jugado = (Number(window.masterTimeH1) || 0) +
+                           (Number(window.masterTimeH2) || 0);
+            return jugado > 0;
+        } catch (_) {
+            // Ante la duda, NO se afirma que haya partido: quien llama sólo
+            // deja de recargar, y bloquear para siempre sería peor.
+            return false;
+        }
+    };
+}
+
+// ⚠️⚠️ v544 · AQUÍ VIVÍA `cronosEsSeguroRecargar`, Y SE HA RETIRADO.
+//
+//  Servía a la recarga automática que metí en v541 para que una pestaña ya
+//  abierta se enterase de las versiones nuevas. Esa recarga **causó el fallo
+//  siguiente**: el autor veía *"el checkbox aparece un segundo y desaparece"*
+//  porque, tras recargar, la aplicación arranca en modo LOGIN y ahí la casilla
+//  del RGPD está oculta POR DISEÑO. No la ocultaba ningún script: se la llevaba
+//  por delante mi recarga.
+//
+//  🔑 Producción (v539) NO TIENE NADA DE ESTO y al autor le funciona sin un
+//  fallo — lo comprobó en A/B el 2026-08-16 (capturas 8953/8954 contra 8955).
+//  Su instrucción: *"replica lo que ya sabemos que funciona"*. Retirado entero,
+//  igual que se retiraron las cinco capas de v477→v500.
+//
+//  `cronosHayPartidoEnCurso` SÍ se queda: no tiene nada que ver con recargas
+//  —la usa el selector de equipo de v540— y arregla una guarda que hasta ahora
+//  no protegía nada porque miraba flags inexistentes.
+
+// ════════════════════════════════════════════════════════════════════
+//  v553 · LAS PLAZAS OCUPADAS SE CUENTAN, NO SE GUARDAN
+//
+//  El panel del SuperAdmin enseñaba "5 / 10 entrenadores" leyendo
+//  `clubs/{id}.usedSlots.users`, un contador que se incrementa y decrementa A
+//  MANO en cada alta y cada baja. Basta con que una de esas operaciones falle,
+//  se repita o se salte para que el número quede mintiendo **para siempre**:
+//  medido en CD DÍA, `usedSlots.users` valía **-1**.
+//
+//  🔑 UN CONTADOR DERIVADO NO SE ALMACENA: SE CALCULA. La verdad está en
+//  `allRoles`, y contarla cuesta un bucle sobre usuarios que el panel YA tiene
+//  cargados. Así no hay nada que se pueda desincronizar.
+//
+//  🔑🔑 SE CUENTAN PLAZAS, NO PERSONAS. Desde v537 un entrenador puede llevar
+//  dos equipos (un F7 y un F11): son DOS equipos que atender y ocupan DOS
+//  plazas. El panel del club contaba PERSONAS (un Set de uid), así que a un
+//  club con seis equipos y cinco entrenadores le decía "5" — que es
+//  exactamente la incoherencia reportada.
+//
+//  ⚠️ Sólo cuentan las plazas VIVAS: `isAuthorized === true` y sin `removed`
+//  ni `rejected`. Un rol revocado no ocupa sitio.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosPlazasOcupadas !== 'function') {
+    window.cronosPlazasOcupadas = function (users, role, clubId) {
+        const lista = Array.isArray(users) ? users : [];
+        const vivo = (r) => r && r.isAuthorized === true &&
+                            r.status !== 'removed' && r.status !== 'rejected';
+        const delClub = (r) => !clubId || String(r.clubId || '') === String(clubId) || !r.clubId;
+        let n = 0;
+        lista.forEach(function (u) {
+            if (!u || u.status === 'removed' || u.status === 'blocked') return;
+            const roles = Array.isArray(u.allRoles) ? u.allRoles : [];
+            if (roles.length) {
+                roles.forEach(function (r) {
+                    if (r.role === role && vivo(r) && delClub(r)) n++;
+                });
+            } else if (u.role === role && u.isAuthorized === true && u.status !== 'removed') {
+                // Perfil antiguo sin allRoles: su rol raíz cuenta como una plaza.
+                n++;
+            }
+        });
+        return n;
+    };
+}
+
+// ── EL VALOR QUE LE CORRESPONDE EN EL DESPLEGABLE (v548) ────────────
+// 'benjamin' + 'f7' → 'f7_benjamin'. Es la clave con la que el desplegable de
+// categorías del panel del entrenador identifica cada opción.
+//
+// 🔑 VIVE AQUÍ Y NO EN setup-modal.js porque la usan DOS sitios: el bloqueo
+// visual del desplegable y la imposición de la categoría al confirmar el
+// partido. Con una copia en cada uno, el día que cambie la cascada uno de los
+// dos se quedaría atrás y el partido se montaría con una categoría distinta de
+// la que enseña la pantalla.
+//
+// ⚠️ LAS DOS FEM VAN DELANTE: 'regional_fem' contiene 'regional'.
+if (typeof window._cronosCategoriaValor !== 'function') {
+    window._cronosCategoriaValor = function (categoria, modo) {
+        const c = (categoria == null ? '' : String(categoria)).toLowerCase();
+        const m = modo || 'f7';
+        if (!c) return null;
+        if (c.includes('futurefem'))                    return m + '_futurefem';
+        if (c.includes('regional') && c.includes('fem')) return m + '_regional_fem';
+        if (c.includes('prebenj'))                      return m + '_prebenjamin';
+        if (c.includes('benj'))                         return m + '_benjamin';
+        if (c.includes('alev'))                         return m + '_alevin';
+        if (c.includes('infant'))                       return m + '_infantil';
+        if (c.includes('cadet'))                        return m + '_cadete';
+        if (c.includes('juvenil'))                      return m + '_juvenil';
+        if (c.includes('regional'))                     return m + '_regional';
+        return null;
+    };
+}
+
+// ── QUÉ EQUIPO TIENE ABIERTO AHORA MISMO (v540) ─────────────────────
+// Un entrenador con dos equipos entra a UNO de los dos, y tiene que poder
+// cambiar sin cerrar sesión.
+//
+// ⚠️ VIVE EN sessionStorage, NO en localStorage. Es una elección de ESTA
+// sesión: si se guardara para siempre, el día que le retiren ese equipo la
+// aplicación seguiría intentando abrir uno que ya no es suyo. Al arrancar,
+// la elección se valida siempre contra los equipos vivos.
+if (typeof window.cronosEquipoElegido !== 'function') {
+    window.cronosEquipoElegido = function () {
+        try { return sessionStorage.getItem('cronos_equipo_activo') || ''; }
+        catch (_) { return window._cronosEquipoActivo || ''; }
+    };
+    window.cronosFijarEquipoElegido = function (teamId) {
+        window._cronosEquipoActivo = teamId || '';
+        try {
+            if (teamId) sessionStorage.setItem('cronos_equipo_activo', teamId);
+            else sessionStorage.removeItem('cronos_equipo_activo');
+        } catch (_) { /* modo privado: queda sólo en memoria */ }
+    };
+}
+
 
 // _cronosStaffCoordinatorType(staff) → 'f7' | 'f11' | 'f711' | ''
 //   Extrae el coordinatorType de un objeto staff resuelto por _cGetStaff.
@@ -559,6 +861,66 @@ if (typeof window.getCategoryGroupKey !== 'function') {
         }
         if (cat.startsWith('f7_')) return 'f7';
         return 'infantil_a';
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🚦 v559 · ¿ESTA CATEGORÍA LLEVA SEMÁFORO? — LA REGLA, EN UN SOLO SITIO
+//
+//  Reporte del autor (capturas 9056, 9059 y 9060): en el partido de Regional A
+//  los círculos del cronómetro seguían saliendo en amarillo y rojo. Juvenil,
+//  Regional y Regional FEM **no llevan semáforo**: son celeste y punto — lo
+//  dice también su panel de configuración, donde esos dos grupos ni siquiera
+//  tienen interruptor (`hasSemaforo: false`).
+//
+//  🔑🔑🔑 LA REGLA ESTABA ESCRITA CUATRO VECES —app-init.js, live.html,
+//  replay-player.js y sync.js— y las cuatro la deducían de UN grupo calculado
+//  con `getCategoryGroupKey`, a partir de UNA sola cascada de categoría. Y ahí
+//  está el fallo: **cuando la cascada se queda vacía, el grupo por defecto SÍ
+//  tiene semáforo** (`'infantil_a'` en utils.js, `'f7'` en la copia de
+//  live.html — dos defectos distintos para la misma entrada). O sea: cualquier
+//  hueco en la cadena de la categoría pinta un Regional de rojo.
+//
+//  Y los huecos existen. El visor decide con `data.category` —la categoría del
+//  PERFIL del entrenador— e ignora `data.matchCategory`, que es la del partido
+//  y la que el panel de creación fija siempre. Si el perfil viene vacío, el
+//  visor clasifica una cadena vacía.
+//
+//  🔑 ASÍ QUE LA REGLA SE INVIERTE Y SE HACE TAJANTE: no se pregunta "¿en qué
+//  grupo cae?" sino "¿ALGUNA de las señales que tengo dice Juvenil o Regional?".
+//  Se le pasan TODAS —la del partido, la del perfil, la del rol activo— y con
+//  que una lo diga, es celeste. Un hueco ya no puede encender el semáforo,
+//  porque no hay que acertar el grupo: hay que fallar TODAS las señales.
+//
+//  ⚠️ NO SUSTITUYE a `getCategoryGroupKey`, que sigue eligiendo los UMBRALES de
+//  los grupos que sí tienen semáforo. Sólo se le adelanta.
+//
+//  ⚠️ `live.html` NO CARGA ESTE FICHERO (es un visor independiente y meterle
+//  utils.js entero es justo el riesgo que dejó la pantalla en negro en v454),
+//  así que allí vive una copia mínima. La copia no puede divergir: el guard
+//  scripts/test_semaforo_sin_juvenil_regional.js pasa la MISMA tabla de
+//  entradas por las dos y exige idéntico resultado.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosCategoriaSinSemaforo !== 'function') {
+    window.cronosCategoriaSinSemaforo = function () {
+        for (let i = 0; i < arguments.length; i++) {
+            const crudo = arguments[i];
+            if (crudo == null) continue;
+            // Acentos fuera POR CÓDIGO DE CARÁCTER, nunca con una clase de
+            // regex: el bloque combinante escrito dentro de una expresión acaba
+            // en el fichero como marcas sueltas invisibles y cualquier paso que
+            // toque la codificación las destruye SIN ERROR (ver cronosTeamSlug).
+            const n = String(crudo).normalize('NFD')
+                .split('').filter(_cronosNoEsAcento).join('').toLowerCase();
+            if (!n) continue;
+            // Regional FEM entra por 'regional'; no necesita mención aparte.
+            if (n.indexOf('juvenil')    !== -1) return true;
+            if (n.indexOf('regional')   !== -1) return true;
+            if (n.indexOf('senior')     !== -1) return true;
+            if (n.indexOf('aficionado') !== -1) return true;
+            if (n.indexOf('amateur')    !== -1) return true;
+        }
+        return false;
     };
 }
 

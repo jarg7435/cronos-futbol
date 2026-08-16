@@ -45,6 +45,36 @@
 //
 //  Este fichero se carga ANTES que app-init.js a propósito: es quien
 //  define las claves, y todos los demás módulos pasan por aquí.
+//
+// ══════════════════════════════════════════════════════════════════════════
+//  🚨 v557 · LA PERTENENCIA NO ES DE LA PESTAÑA: ES DEL EQUIPO
+//
+//  Reportado por el autor (captura 9042): un entrenador con dos equipos
+//  (v537) tiene un partido en curso con el Alevín C y, EN LA MISMA PESTAÑA,
+//  cambia al Regional A desde el selector del panel. Al preparar el partido
+//  del Regional le saltaba *"⚠️ Hay un PARTIDO EN CURSO sin finalizar"*, con
+//  el marcador y la fase DEL ALEVÍN, obligándole a reanudar aquél o a perder
+//  su progreso.
+//
+//  🔑🔑🔑 v465 AISLÓ POR PESTAÑA, Y ESE NO ES EL EJE. `cronos_tab_match` vive
+//  en sessionStorage, que es por pestaña: dos partidos en dos pestañas quedan
+//  separados, pero DOS EQUIPOS EN LA MISMA PESTAÑA comparten el puntero. Al
+//  cambiar de equipo, la pestaña seguía "reclamando" el partido del equipo
+//  anterior, y todo lo que cuelga de ese puntero —el aviso anti-reinicio, el
+//  repintado tras sincronizar, la puerta estanca de los sucesos— hablaba del
+//  equipo equivocado.
+//
+//  🔑🔑 LA UNIDAD ES (clubId + categoría + subcategoría), o sea el `teamId`
+//  canónico de `cronosTeamId()` (utils.js). El puntero pasa a ser
+//  `cronos_tab_match::<teamId>` y cada estado guardado lleva DENTRO su
+//  `teamId`. Así el Alevín y el Regional son dos partidos distintos aunque
+//  los lleve la misma persona en la misma pestaña, y el aislamiento por
+//  pestaña de v465 SIGUE INTACTO: la clave sigue viviendo en sessionStorage.
+//
+//  ⚠️ SIN EQUIPO ACTIVO NO CAMBIA NADA. Un entrenador individual (sin club)
+//  no tiene `teamId`, y entonces el puntero es el de siempre, `cronos_tab_match`
+//  a secas. Es deliberado: ese perfil no tiene equipos entre los que cambiar y
+//  no se le puede mover el suelo.
 // ══════════════════════════════════════════════════════════════════════════
 
 (function () {
@@ -65,9 +95,54 @@
     function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
     function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
     function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
+    function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
 
     function claveDe(matchId) { return BASE + SEP + matchId; }
     function claveFinDe(matchId) { return FIN_BASE + SEP + matchId; }
+
+    // ── v557 · EL EQUIPO QUE EL ENTRENADOR TIENE ABIERTO AHORA MISMO ──────
+    // Se resuelve EN CALIENTE y nunca se cachea: cambiar de equipo en el
+    // panel tiene que cambiar de ranura en el acto.
+    //
+    // ⚠️ ESTE MÓDULO CARGA ANTES QUE utils.js (index.html: match-slots va
+    // delante de app-init, y utils va detrás de los dos). Por eso no se puede
+    // guardar una referencia a `cronosEquipoElegido` al cargar: se pregunta en
+    // cada llamada, que es cuando ya existe. Devolver '' es siempre una salida
+    // válida — significa "sin equipo", el comportamiento previo a v557.
+    function equipoActual() {
+        try {
+            if (typeof window !== 'undefined') {
+                if (typeof window.cronosEquipoElegido === 'function') {
+                    var elegido = window.cronosEquipoElegido();
+                    if (elegido) return String(elegido);
+                }
+                // Respaldo: el entrenador que sólo lleva un equipo puede no
+                // haber pasado nunca por el selector.
+                if (typeof window.cronosMyTeamId === 'function') {
+                    var mio = window.cronosMyTeamId();
+                    if (mio) return String(mio);
+                }
+            }
+        } catch (e) { /* sin equipo: se cae al puntero sin sufijo */ }
+        return '';
+    }
+
+    // El puntero de la pestaña, POR EQUIPO. Sin equipo, la clave de siempre.
+    function claveTab(teamId) { return teamId ? (TAB_MATCH + SEP + teamId) : TAB_MATCH; }
+
+    // Normaliza el argumento `teamId` de la API pública: `undefined`/`null`
+    // significan "el equipo que esté abierto ahora"; una cadena manda.
+    function eqDe(teamId) {
+        return (teamId === undefined || teamId === null) ? equipoActual() : String(teamId || '');
+    }
+
+    // ¿De qué equipo es este partido? '' si el estado no lo dice (ranuras
+    // escritas antes de v557: se tratan como "de cualquiera", que es lo que
+    // eran).
+    function equipoDe(matchId) {
+        var st = leer(matchId);
+        return (st && st.teamId) ? String(st.teamId) : '';
+    }
 
     // ── Identidad de la pestaña ──────────────────────────────────────────
     // Respaldo para el hueco real que existe entre "el partido ha empezado"
@@ -89,15 +164,55 @@
         return v;
     }
 
-    // El partido que ESTA pestaña está jugando. Vive en sessionStorage
-    // porque es lo único que no comparten dos pestañas del mismo usuario.
-    function getTabMatchId() { return ssGet(TAB_MATCH) || ''; }
+    // v557 · El id provisional lleva el equipo pegado. Sin esto, el Alevín y
+    // el Regional de la MISMA pestaña compartirían ranura provisional durante
+    // el hueco previo a `startLiveSync`, que es justo cuando se monta el
+    // partido nuevo: el segundo escribiría encima del primero.
+    function idProvisional(teamId) {
+        var base = tabId();
+        return teamId ? (base + '@' + teamId) : base;
+    }
 
-    function setTabMatchId(matchId) {
+    // El partido que ESTA pestaña está jugando CON ESTE EQUIPO. Vive en
+    // sessionStorage porque es lo único que no comparten dos pestañas del
+    // mismo usuario; y lleva el equipo en la clave porque una misma pestaña
+    // atiende a los dos equipos del entrenador (v537).
+    function getTabMatchId(teamId) {
+        var eq = eqDe(teamId);
+        if (!eq) return ssGet(TAB_MATCH) || '';
+        var propio = ssGet(claveTab(eq));
+        if (propio) return propio;
+
+        // ⚠️ MIGRACIÓN EN CALIENTE (v556 → v557). Este despliegue puede caer
+        // con un partido EN JUEGO y la sesión ya abierta: su puntero está en
+        // la clave SIN equipo. Se adopta una sola vez —y sólo si la ranura a
+        // la que apunta no es de OTRO equipo— y se retira la clave vieja.
+        // Sin esto, ese entrenador vería su partido "desaparecer" del panel
+        // justo al actualizarse la app.
+        var legado = ssGet(TAB_MATCH);
+        if (legado) {
+            var duenyo = equipoDe(legado);
+            if (!duenyo || duenyo === eq) {
+                ssSet(claveTab(eq), legado);
+                ssDel(TAB_MATCH);
+                return legado;
+            }
+        }
+        return '';
+    }
+
+    function setTabMatchId(matchId, teamId) {
         if (!matchId) return;
-        var anterior = getTabMatchId();
+        var eq = eqDe(teamId);
+        // 🔑 UN EQUIPO NO PUEDE RECLAMAR EL PARTIDO DE OTRO. Un latido tardío
+        // de la retransmisión del Alevín no puede dejar al Regional apuntando
+        // a la ranura del Alevín: a partir de ahí el aviso anti-reinicio y la
+        // puerta estanca de los sucesos hablarían del equipo equivocado.
+        var duenyo = equipoDe(matchId);
+        if (eq && duenyo && duenyo !== eq) return;
+        var anterior = getTabMatchId(eq);
         if (anterior === matchId) return;
-        ssSet(TAB_MATCH, matchId);
+        ssSet(claveTab(eq), matchId);
         // El partido acaba de recibir su id definitivo: la ranura provisional
         // (la que se nombró con el id de la pestaña) se muda a la definitiva.
         // Sin esto quedaría un huérfano que el barrido no sabría de quién es
@@ -116,9 +231,21 @@
     }
 
     // Con qué nombre guarda ESTA pestaña. Nunca devuelve vacío.
-    function slotIdActual(liveMatchId) {
-        if (liveMatchId) { setTabMatchId(liveMatchId); return liveMatchId; }
-        var propio = getTabMatchId();
+    //
+    // v557 · `teamId` es OPCIONAL y significa "la ranura de ESTE equipo, no la
+    // del que esté abierto en el panel". Lo necesita el autoguardado: si el
+    // entrenador cambia de equipo con un partido a medias, ese partido sigue
+    // siendo del equipo anterior y tiene que seguir guardándose en SU ranura.
+    //
+    // ⚠️ CON `liveMatchId` SE DEVUELVE ÉL Y PUNTO. Nombra un partido concreto:
+    // es lo que usan `endMatch` y `resetMatch` para cerrar exactamente ese y
+    // no el que tenga delante el panel. Quien filtra por equipo es
+    // `setTabMatchId`, que puede negarse a mover el puntero sin afectar al
+    // valor devuelto.
+    function slotIdActual(liveMatchId, teamId) {
+        var eq = eqDe(teamId);
+        if (liveMatchId) { setTabMatchId(liveMatchId, eq); return liveMatchId; }
+        var propio = getTabMatchId(eq);
         if (propio) return propio;
         // ⚠️ EL ID PROVISIONAL SE REGISTRA COMO EL DE LA PESTAÑA, no se limita a
         // devolverse. Sin esto, `setTabMatchId` no veía ningún "anterior" cuando
@@ -126,8 +253,8 @@
         // hueco entre "empieza el partido" y "startLiveSync fija el id" quedaba
         // huérfano y el partido arrancaba con el estado en blanco.
         // Lo encontró el guard ejecutándolo; leyendo el código no se veía.
-        var prov = tabId();
-        ssSet(TAB_MATCH, prov);
+        var prov = idProvisional(eq);
+        ssSet(claveTab(eq), prov);
         return prov;
     }
 
@@ -145,8 +272,20 @@
         } catch (e) { return null; }
     }
 
+    // v557 · TODO ESTADO SALE SELLADO CON SU EQUIPO. Es el dato con el que
+    // después se decide de quién es cada ranura; si faltara, el partido del
+    // Alevín podría acabar contándose como del Regional. Quien ya trae
+    // `teamId` (el autoguardado, que conoce al dueño real aunque el panel esté
+    // enseñando otro equipo) manda: aquí sólo se rellena si viene vacío.
     function guardar(matchId, state) {
         if (!matchId || !state) return false;
+        if (!state.teamId) {
+            var eq = equipoActual();
+            if (eq) {
+                try { state = Object.assign({}, state, { teamId: eq }); }
+                catch (e) { /* navegador sin Object.assign: se guarda sin sello */ }
+            }
+        }
         return lsSet(claveDe(matchId), JSON.stringify(state));
     }
 
@@ -160,7 +299,13 @@
     }
 
     // ── Inventario ───────────────────────────────────────────────────────
-    function listar() {
+    // v557 · `teamId` es OPCIONAL y FILTRA. Sin él se devuelven TODAS las
+    // ranuras, que es lo que necesita el panel "🔄 Recuperar Partido": el
+    // entrenador tiene que poder rescatar desde ahí el partido del otro equipo.
+    // Con él se devuelven las de ese equipo — y las que no llevan sello,
+    // escritas antes de v557, que no son de nadie en concreto.
+    function listar(teamId) {
+        var filtro = teamId ? String(teamId) : '';
         var out = [];
         var claves;
         try { claves = Object.keys(localStorage); } catch (e) { return out; }
@@ -169,7 +314,9 @@
             if (k.indexOf(BASE + SEP) !== 0) continue;
             var id = k.slice((BASE + SEP).length);
             var st = leer(id);
-            if (st) out.push({ id: id, state: st });
+            if (!st) continue;
+            if (filtro && st.teamId && String(st.teamId) !== filtro) continue;
+            out.push({ id: id, state: st });
         }
         // Más reciente primero: es el criterio del banner de retomar cuando
         // la pestaña es nueva y no reclama ninguno.
@@ -182,13 +329,16 @@
     // Cuál ofrecer al recargar. 🔑 PRIMERO EL DE LA PESTAÑA: es lo que hace
     // que dos pestañas recargadas recuperen cada una LO SUYO y no se roben
     // el partido entre ellas.
+    // v557 · Y DENTRO DE LA PESTAÑA, EL DEL EQUIPO ABIERTO: si no, al volver
+    // al Regional se le ofrecería retomar el partido del Alevín.
     function elegir() {
-        var propio = getTabMatchId();
+        var eq = equipoActual();
+        var propio = getTabMatchId(eq);
         if (propio) {
             var mio = leer(propio);
             if (mio) return { id: propio, state: mio, esDeEstaPestana: true };
         }
-        var todas = listar();
+        var todas = listar(eq);
         if (!todas.length) return null;
         return { id: todas[0].id, state: todas[0].state, esDeEstaPestana: false };
     }
@@ -259,6 +409,9 @@
     window._cronosMatchSlots = {
         claveDe:        claveDe,
         claveFinDe:     claveFinDe,
+        claveTab:       claveTab,
+        equipoActual:   equipoActual,
+        equipoDe:       equipoDe,
         tabId:          tabId,
         getTabMatchId:  getTabMatchId,
         setTabMatchId:  setTabMatchId,

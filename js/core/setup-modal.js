@@ -76,6 +76,136 @@ window._cronosRefreshExtras = function() {
     }
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  v540 · CAMBIAR DE EQUIPO SIN CERRAR SESIÓN
+//
+//  Lo pulsa el entrenador que lleva un F7 y un F11 (v537). Cambiar de equipo
+//  cambia TODO lo que cuelga de él: modalidad, categoría, plantilla,
+//  convocatorias, informes y partidos — todos se resuelven por `teamId`
+//  (cronosTeamId), así que basta con mover el equipo activo y repintar.
+//
+//  ⚠️ SE TIRA EL ESTADO PENDIENTE DEL FORMULARIO. `_pendingSetupState`
+//  guarda la modalidad y la categoría del equipo ANTERIOR, y
+//  `restoreSetupState()` las volvería a poner encima de las nuevas: el panel
+//  diría "Fútbol 11" con la categoría del equipo de Fútbol 7.
+//
+// ════════════════════════════════════════════════════════════════════
+//  🚨 v556 · EL CAMBIO DE EQUIPO YA NO SE BLOQUEA NUNCA
+//
+//  Reportado por el autor (captura 9039): con un Alevín C (F7) y un Regional A
+//  (F11) asignados, pulsar el segundo equipo no hacía nada y salía el aviso
+//  "Termina o cierra el partido en curso antes de cambiar de equipo". Sin
+//  haber empezado ningún partido. El entrenador quedaba obligado a jugar con
+//  la primera opción por narices.
+//
+//  🔑🔑🔑 LA GUARDA NO SE EQUIVOCABA DE VEZ EN CUANDO: CERRABA SIEMPRE.
+//  `cronosHayPartidoEnCurso()` decía "sí" desde el primer segundo de la
+//  sesión, porque el campo se pone visible EN EL LOGIN y `matchPhase` nace en
+//  '1st_half' (ver la cabecera de la función en utils.js, corregida en v556).
+//
+//  🔑🔑 Y LA DECISIÓN DEL AUTOR ES QUE NO HAYA CANDADO AQUÍ, ni siquiera con
+//  el arreglo puesto: elegir equipo en su propio panel es navegación, no una
+//  operación destructiva, y ningún estado anterior puede quitarle el acceso a
+//  la mitad de sus equipos. El partido que hubiera debajo NO SE PIERDE: cada
+//  partido se autoguarda en su propia ranura de localStorage (match-slots.js,
+//  v465) y se recupera con "🔄 RECUPERAR PARTIDO". Por eso, cuando de verdad
+//  había un partido corriendo, esto INFORMA de dónde ha quedado — pero cambia
+//  igual.
+// ════════════════════════════════════════════════════════════════════
+// ── v557 · CAMBIAR EL EQUIPO ACTIVO, SIN PINTAR NADA ────────────────────
+//  Es la mitad de `_cronosCambiarEquipo` que MUEVE EL ESTADO. Vive aparte
+//  porque hace falta en un segundo sitio: al retomar un partido guardado del
+//  otro equipo (`_restoreActiveMatch`, app-init.js), donde repintar el panel
+//  sería justo lo contrario de lo que se quiere. Con una copia en cada sitio,
+//  el día que cambie la sincronización uno de los dos se quedaría atrás y la
+//  app acabaría con la pantalla en un equipo y los datos en el otro.
+//
+//  Devuelve el equipo de destino, o null si ese teamId ya no es suyo.
+window._cronosAplicarEquipoActivo = function(teamId) {
+    try {
+        var me = window._cronosCurrentUser;
+        if (!me || !teamId) return null;
+
+        var equipos = (typeof window.cronosEquiposDeEntrenador === 'function')
+            ? window.cronosEquiposDeEntrenador(me.allRoles, null) : [];
+        var destino = equipos.filter(function(e) { return e.teamId === teamId; })[0];
+        if (!destino) return null;
+
+        if (typeof window.cronosFijarEquipoElegido === 'function') {
+            window.cronosFijarEquipoElegido(teamId);
+        }
+
+        // El resto del proyecto lee la categoría de aquí (47 archivos usan
+        // _cronosCurrentUser): se sincroniza igual que en _launchWithRole.
+        window._cronosCurrentUser = Object.assign({}, me, {
+            category:        destino.category,
+            categoryLabel:   destino.category,
+            subcategory:     destino.subcategory || null,
+            clubId:          destino.clubId || me.clubId,
+            clubName:        destino.clubName || me.clubName,
+            _activeRoleData: destino._rol,
+        });
+
+        // ⚠️ SE TIRA EL ESTADO PENDIENTE DEL FORMULARIO (v540): guarda la
+        // modalidad y la categoría del equipo ANTERIOR.
+        window._pendingSetupState = null;
+        return destino;
+    } catch (e) {
+        console.error('[v557] No se pudo aplicar el equipo activo:', e);
+        return null;
+    }
+};
+
+window._cronosCambiarEquipo = function(teamId) {
+    try {
+        var me = window._cronosCurrentUser;
+        if (!me || !teamId) return;
+        if (typeof window.cronosEquipoElegido === 'function' &&
+            window.cronosEquipoElegido() === teamId) return;   // ya está abierto
+
+        // Sólo para redactar el aviso: NO decide nada, no puede impedir el
+        // cambio. Si algún día vuelve a mentir, lo peor que hará es sobrar una
+        // línea en un toast.
+        var _habiaPartido = (typeof window.cronosHayPartidoEnCurso === 'function')
+            ? window.cronosHayPartidoEnCurso() : false;
+
+        // 🔑 v557 · SE APARCA EL PARTIDO ANTES DE SOLTAR EL EQUIPO. Con el
+        // cronómetro corriendo, el autoguardado va a 5 s: sin esto se
+        // perderían hasta cinco segundos —y con ellos el último gol o el
+        // último cambio— justo en el momento en que el entrenador deja de
+        // mirar. A partir de aquí ese estado está a salvo en la ranura de SU
+        // equipo (lleva sello `teamId`), y el equipo nuevo empieza en blanco.
+        //
+        // ⚠️ SÓLO SI DE VERDAD HAY PARTIDO, y por eso se reutiliza el mismo
+        // `_habiaPartido` de arriba. Guardar a ciegas escribiría una ranura en
+        // CADA cambio de equipo —también nada más entrar, con el cronómetro a
+        // cero y sin un jugador—, y esas ranuras fantasma aparecerían luego
+        // como tarjetas en "🔄 Recuperar Partido". Con el reloj parado no hay
+        // nada que perder: el autoguardado de 5 s ya lo tiene todo escrito.
+        try {
+            if (_habiaPartido && typeof window._saveMatchStateToStorage === 'function') {
+                window._saveMatchStateToStorage();
+            }
+        } catch (e) { /* cambiar de equipo nunca puede fallar por el guardado */ }
+
+        var destino = window._cronosAplicarEquipoActivo(teamId);
+        if (!destino) return;
+
+        if (typeof showToast === 'function') {
+            showToast('✅ Ahora estás en ' + destino.etiqueta +
+                      (destino.modalidad === 'f7' ? ' (Fútbol 7)' :
+                       destino.modalidad === 'f11' ? ' (Fútbol 11)' : '') +
+                      (_habiaPartido
+                        ? '. El partido anterior queda guardado: lo retomas con "🔄 RECUPERAR PARTIDO".'
+                        : ''),
+                      _habiaPartido ? 5500 : 3000);
+        }
+        openSetupModal();
+    } catch (e) {
+        console.error('[v540] No se pudo cambiar de equipo:', e);
+    }
+};
+
 function openSetupModal() {
     // Pila de navegación (js/core/nav-stack.js): esta pantalla es la RAÍZ del
     // panel del Entrenador, así que al pintarse resetea la pila. Eso es lo que
@@ -92,10 +222,49 @@ function openSetupModal() {
     // Si el entrenador tiene categoría F7 (prebenjamin, benjamin, alevin),
     // solo puede crear partidos F7. Si tiene F11 (infantil, cadete, juvenil,
     // regional), solo puede crear F11. Si tiene ambas, puede elegir.
+    // ══════════════════════════════════════════════════════════════════
+    //  v540 · EL ENTRENADOR CON DOS EQUIPOS ELIGE CUÁL ESTÁ LLEVANDO
+    //
+    //  Requisito del autor (2026-08-15): con un F7 y un F11 en el mismo club
+    //  no se le puede cargar uno "por defecto y de forma rígida" — tiene que
+    //  poder cambiar, y ver en todo momento en cuál está.
+    //
+    //  🔑 UN SOLO SITIO DECIDE: `cronosEquiposDeEntrenador` (utils.js). El
+    //  equipo activo manda sobre la modalidad, la categoría y la plantilla,
+    //  porque `me.category` ya viene fijada por _launchWithRole a la del
+    //  equipo elegido.
+    // ══════════════════════════════════════════════════════════════════
+    var _misEquipos = [];
+    var _equipoActivoId = '';
+    try {
+        var _meSel = window._cronosCurrentUser;
+        if (_meSel && typeof window.cronosEquiposDeEntrenador === 'function') {
+            _misEquipos = window.cronosEquiposDeEntrenador(_meSel.allRoles, null) || [];
+            if (typeof window.cronosEquipoElegido === 'function') {
+                _equipoActivoId = window.cronosEquipoElegido();
+            }
+            // Si la elección guardada ya no existe (equipo retirado), se cae al
+            // primero: nunca se deja el panel apuntando a un equipo ajeno.
+            if (!_misEquipos.some(function(e) { return e.teamId === _equipoActivoId; })) {
+                _equipoActivoId = _misEquipos.length ? _misEquipos[0].teamId : '';
+            }
+        }
+    } catch (e) { console.warn('[v540] No se pudieron leer los equipos del entrenador:', e); }
+
     try {
         var me = window._cronosCurrentUser;
         var hasF7 = false, hasF11 = false;
-        if (me && me.allRoles) {
+
+        // 🔑 v540 · CON EQUIPO ACTIVO, LA MODALIDAD ES LA SUYA Y PUNTO. Antes,
+        // un entrenador con los dos equipos veía el desplegable de modalidad
+        // abierto de par en par: podía montar un partido de Fútbol 11 con la
+        // categoría de su equipo de Fútbol 7. Ahora la modalidad la fija el
+        // equipo que tiene abierto, y se cambia cambiando de equipo.
+        var _act = _misEquipos.filter(function(e) { return e.teamId === _equipoActivoId; })[0];
+        if (_act && _act.modalidad) {
+            hasF7  = (_act.modalidad === 'f7');
+            hasF11 = (_act.modalidad === 'f11');
+        } else if (me && me.allRoles) {
             me.allRoles.forEach(function(r) {
                 if (!r || (r.role !== 'user' && r.role !== 'coach')) return;
                 var rcat = (r.category || '').toLowerCase();
@@ -139,7 +308,37 @@ function openSetupModal() {
             if (typeof syncSetupMode === 'function') syncSetupMode(modeSel.value);
         }, 100);
     } catch(e) { console.warn('[v261] Error limitando modalidad:', e); }
-    
+
+    // ── Pestañas de equipo (sólo si de verdad lleva más de uno) ──────
+    // ⚠️ A un entrenador de un solo equipo no se le enseña nada: un selector
+    // con una única opción no elige nada y sólo roba sitio.
+    var _selectorEquipoHTML = '';
+    if (_misEquipos.length > 1) {
+        _selectorEquipoHTML =
+            '<div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;' +
+            '            background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.25);' +
+            '            border-radius:10px; padding:0.5rem 0.7rem; margin-bottom:1rem;">' +
+            '<span style="font-size:0.72rem; color:var(--text-muted); font-weight:700;">MIS EQUIPOS</span>' +
+            _misEquipos.map(function(eq) {
+                var activo = (eq.teamId === _equipoActivoId);
+                var modLbl = eq.modalidad === 'f7' ? 'Fútbol 7'
+                           : eq.modalidad === 'f11' ? 'Fútbol 11' : '';
+                return '<button type="button" onclick="_cronosCambiarEquipo(\'' +
+                    String(eq.teamId).replace(/'/g, "\\'") + '\')" ' +
+                    'style="padding:0.4rem 0.85rem; border-radius:8px; cursor:pointer;' +
+                    ' font-size:0.78rem; font-weight:800; transition:all 0.15s;' +
+                    (activo
+                        ? ' background:#58a6ff; color:#0d1117; border:1px solid #58a6ff;'
+                        : ' background:rgba(255,255,255,0.04); color:var(--text-muted);' +
+                          ' border:1px solid var(--glass-border);') + '">' +
+                    (activo ? '✅ ' : '') + escapeHtml(eq.etiqueta) +
+                    (modLbl ? '<span style="display:block; font-size:0.62rem; font-weight:600; opacity:0.8;">' +
+                              modLbl + '</span>' : '') +
+                    '</button>';
+            }).join('') +
+            '</div>';
+    }
+
     modal.style.display = 'flex';
     modal.innerHTML = `
         <div class="modal-content" style="width:960px; max-width:98vw; padding:1.5rem; border-radius:16px;">
@@ -158,6 +357,8 @@ function openSetupModal() {
                     <button onclick="cerrarSesion()" style="background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:var(--text-muted); padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.75rem;">Cerrar Sesión</button>
                 </div>
             </div>
+
+            ${_selectorEquipoHTML}
 
             <!-- CUADRICULA SIMÉTRICA DE EQUIPOS (LOCAL / VISITANTE) -->
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-bottom:1.2rem;">
@@ -404,45 +605,72 @@ function openSetupModal() {
         if (!catSel) return false;
         var userCat = String(_me.category).toLowerCase();
         var mode = document.getElementById('setup-mode')?.value || 'f7';
-        var targetValue = '';
-        // ⚠️ LAS DOS FEM VAN PRIMERO: 'regional_fem' CONTIENE 'regional', así que
-        // con el orden anterior a un entrenador de Regional FEM se le forzaba
-        // 'Regional' a secas y su informe acababa en la rama equivocada.
-        if (userCat.includes('futurefem'))    targetValue = mode + '_futurefem';
-        else if (userCat.includes('regional') && userCat.includes('fem'))
-                                              targetValue = mode + '_regional_fem';
-        else if (userCat.includes('prebenj'))      targetValue = mode + '_prebenjamin';
-        else if (userCat.includes('benj'))    targetValue = mode + '_benjamin';
-        else if (userCat.includes('alev'))    targetValue = mode + '_alevin';
-        else if (userCat.includes('infant'))  targetValue = mode + '_infantil';
-        else if (userCat.includes('cadet'))   targetValue = mode + '_cadete';
-        else if (userCat.includes('juvenil')) targetValue = mode + '_juvenil';
-        else if (userCat.includes('regional'))targetValue = mode + '_regional';
+        // ⚠️ v548 · LA CASCADA VIVE EN utils.js (`_cronosCategoriaValor`), y no
+        // aquí: la necesita también `confirmSetup()` para imponer la categoría
+        // del equipo al montar el partido. Dos copias divergirían y la pantalla
+        // acabaría diciendo una cosa y el informe otra.
+        // (Las dos FEM van delante dentro del resolutor: 'regional_fem'
+        // contiene 'regional'.)
+        var targetValue = (typeof window._cronosCategoriaValor === 'function')
+            ? (window._cronosCategoriaValor(userCat, mode) || '') : '';
+        // ══════════════════════════════════════════════════════════════════
+        //  🔒 v548 · EL BLOQUEO ES INCONDICIONAL
+        //
+        //  Reportado por el autor (captura 8983): un entrenador de Prebenjamín
+        //  A tenía los dos desplegables ABIERTOS y podía cambiarse de categoría
+        //  a voluntad. La causa: aquí se bloqueaba sólo DENTRO de dos "ifs".
+        //    · la categoría, sólo si `opt` existía —es decir, si el value
+        //      construido (`f7_prebenjamin`) casaba con una opción del
+        //      desplegable—; si el modo no era el suyo, o la categoría no se
+        //      sabía clasificar, `opt` salía null y el select quedaba ABIERTO;
+        //    · la subcategoría, sólo si era 'A', 'B' o 'C'. Cualquier otra
+        //      ('D', 'Única', minúsculas…) lo dejaba abierto.
+        //
+        //  🔑 Si el entrenador TIENE equipo asignado, los dos selectores se
+        //  cierran SIEMPRE, case o no case el valor. Que no se sepa pintar su
+        //  categoría no es motivo para dejarle elegir otra.
+        // ══════════════════════════════════════════════════════════════════
         if (targetValue) {
             var opt = catSel.querySelector('option[value="' + targetValue + '"]');
             if (opt) {
                 catSel.value = targetValue;
-                catSel.disabled = true;
                 console.log('[openSetupModal] categoria forzada:', targetValue);
+            } else {
+                console.warn('[v548] No hay opción para "' + targetValue +
+                             '"; se bloquea igualmente para que no pueda elegir otra.');
             }
         }
-        if (subSel && _me.subcategory) {
-            var userSub = String(_me.subcategory).toUpperCase().trim();
-            if (['A','B','C'].includes(userSub)) {
+        catSel.disabled = true;
+        catSel.title = 'Tu categoría la asigna el club y no se puede cambiar desde aquí.';
+
+        if (subSel) {
+            var userSub = String(_me.subcategory || '').toUpperCase().trim();
+            if (userSub) {
+                // Si su subcategoría no está entre las opciones, se AÑADE: antes
+                // se descartaba y el desplegable se quedaba mostrando otra.
+                if (!subSel.querySelector('option[value="' + userSub + '"]')) {
+                    var o = document.createElement('option');
+                    o.value = userSub; o.textContent = userSub;
+                    subSel.appendChild(o);
+                }
                 subSel.value = userSub;
-                subSel.disabled = true;
                 console.log('[openSetupModal] subcategoria forzada:', userSub);
             }
+            subSel.disabled = true;
+            subSel.title = catSel.title;
         }
         return true;
     }
-    // Intentar inmediatamente, luego a 200ms, 500ms, 1000ms y 2000ms
-    if (!_forceCategorySelect()) {
-        setTimeout(_forceCategorySelect, 200);
-        setTimeout(_forceCategorySelect, 500);
-        setTimeout(_forceCategorySelect, 1000);
-        setTimeout(_forceCategorySelect, 2000);
-    }
+    // ⚠️ v548 · LOS REINTENTOS CORREN SIEMPRE, no sólo cuando el primero falla.
+    //    `syncSetupMode()` repuebla el desplegable de categorías a los ~100 ms
+    //    (`catSel.innerHTML = …`), y eso BORRA el valor seleccionado. Con la
+    //    condición anterior, si el primer intento acertaba no había reintento y
+    //    el entrenador acababa viendo una categoría que no era la suya.
+    _forceCategorySelect();
+    setTimeout(_forceCategorySelect, 200);
+    setTimeout(_forceCategorySelect, 500);
+    setTimeout(_forceCategorySelect, 1000);
+    setTimeout(_forceCategorySelect, 2000);
 
     // ── Sincronizar categoría cuando se carga un equipo guardado ──
     // loadTeamFromDropdown() asigna modeEl.value programáticamente,
@@ -572,7 +800,45 @@ function confirmSetup() {
     document.body.classList.toggle('mode-f11', currentMode === 'f11');
 
     const catEl = document.getElementById('match-category');
-    const category = catEl ? catEl.value : 'f7_prebenjamin';
+    let category = catEl ? catEl.value : 'f7_prebenjamin';
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 v548 · LA CATEGORÍA DEL PARTIDO LA MANDA EL EQUIPO ASIGNADO
+    //
+    //  ⚠️ `disabled` en un <select> es COSMÉTICO: se quita desde las
+    //  herramientas del navegador en dos clics. Si el partido se montara con
+    //  lo que diga el desplegable, el bloqueo visual no garantizaría nada — y
+    //  el autor pidió que no se pueda alterar "bajo ningún concepto".
+    //
+    //  🔑 Aquí es donde la categoría deja de ser un adorno y pasa a marcar el
+    //  informe, el equipo (cronosTeamId) y los umbrales del semáforo. Así que
+    //  se impone la del entrenador, venga como venga el DOM.
+    //
+    //  Sólo aplica a quien TIENE equipo asignado: el director, el coordinador
+    //  y el SuperAdmin en pruebas siguen eligiendo con libertad.
+    try {
+        const _me = window._cronosCurrentUser;
+        const _miCat = _me && (_me.category || _me.categoryLabel);
+        if (_miCat && catEl && catEl.disabled) {
+            const _modo = document.getElementById('setup-mode')?.value || currentMode || 'f7';
+            const _esperado = (typeof window._cronosCategoriaValor === 'function')
+                ? window._cronosCategoriaValor(_miCat, _modo) : null;
+            const _real = _esperado || catEl.value;
+            if (_real && _real !== category) {
+                console.warn('[v548] La categoría del desplegable ("' + category +
+                             '") no es la del equipo asignado; se impone "' + _real + '".');
+                category = _real;
+                catEl.value = _real;
+            }
+            const _subEl = document.getElementById('match-subcategory');
+            const _miSub = _me.subcategory ? String(_me.subcategory).toUpperCase().trim() : '';
+            if (_subEl && _miSub && _subEl.value !== _miSub) {
+                console.warn('[v548] Subcategoría corregida a la del equipo asignado: ' + _miSub);
+                _subEl.value = _miSub;
+            }
+        }
+    } catch (e) { console.warn('[v548] No se pudo imponer la categoría del equipo:', e); }
+
     window._currentMatchCategory = category;
         window._currentMatchSubcategory = document.getElementById('match-subcategory')?.value || 'A';
         window._currentMatchSubcategory = document.getElementById('match-subcategory')?.value || 'A';
@@ -952,6 +1218,18 @@ async function openLiveMatchRecovery() {
             // fuente, así que el recuento se saca de donde esté.
             const playerCount = m.playerCount || (Array.isArray(m.players) ? m.players.length : 0);
             const modeLabel = m.mode === 'f11' ? 'F-11' : 'F-7';
+            // v557 · DE QUÉ EQUIPO ES ESTA TARJETA. Este panel enseña los
+            // partidos de LOS DOS equipos del entrenador (v537), y sin esto
+            // dos partidos del mismo día contra rivales parecidos son
+            // indistinguibles: retomar el que no es sería un clic de nada.
+            // `cronosNombreCategoria` traga tanto 'f7_alevin' (lo que guarda
+            // el dispositivo) como 'alevin' (lo que manda la nube).
+            let equipoLbl = '';
+            try {
+                if (typeof window.cronosNombreCategoria === 'function' && m.category) {
+                    equipoLbl = window.cronosNombreCategoria(m.category, m.subcategory || '');
+                }
+            } catch (e) { equipoLbl = ''; }
 
             // ── Retomar: por la fuente MÁS RECIENTE de la entrada ──
             // Retomar del dispositivo no necesita red y trae el estado tal cual
@@ -1005,6 +1283,7 @@ async function openLiveMatchRecovery() {
                         <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
                             <span>⏱ ${phase} · ${timeStr}</span>
                             <span>🏆 ${modeLabel}</span>
+                            ${equipoLbl ? `<span style="color:#58a6ff;font-weight:800;">⚽ ${typeof escapeHtml==='function'?escapeHtml(equipoLbl):equipoLbl}</span>` : ''}
                             <span>👥 ${playerCount} jugadores</span>
                             <span>🕐 ${updStr}</span>
                         </div>
@@ -1052,6 +1331,14 @@ async function openLiveMatchRecovery() {
             const timeStr = localMatch.phase === '2nd_half' ? `${minsH2}:${secsH2}` : `${minsH1}:${secsH1}`;
             const playerCount = localMatch.playerCount || 0;
             const modeLabel = localMatch.mode === 'f11' ? 'F-11' : 'F-7';
+            // v557 · el equipo, también en la lista SIN CONEXIÓN: es la única
+            // que se ve cuando falla la red, y es cuando más falta hace.
+            let equipoLbl = '';
+            try {
+                if (typeof window.cronosNombreCategoria === 'function' && localMatch.category) {
+                    equipoLbl = window.cronosNombreCategoria(localMatch.category, '');
+                }
+            } catch (e) { equipoLbl = ''; }
             const slotAttr = (typeof escapeHtml==='function'?escapeHtml(localMatch._slotId||''):(localMatch._slotId||''));
 
             return `
@@ -1068,6 +1355,7 @@ async function openLiveMatchRecovery() {
                         <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
                             <span>⏱ ${phase} · ${timeStr}</span>
                             <span>🏆 ${modeLabel}</span>
+                            ${equipoLbl ? `<span style="color:#58a6ff;font-weight:800;">⚽ ${typeof escapeHtml==='function'?escapeHtml(equipoLbl):equipoLbl}</span>` : ''}
                             <span>👥 ${playerCount} jugadores</span>
                             <span>🕐 ${updStr}</span>
                         </div>

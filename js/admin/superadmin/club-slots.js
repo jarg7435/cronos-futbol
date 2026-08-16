@@ -13,10 +13,49 @@ window.saEditClubSlots = async function(clubId, clubName) {
     // Pila de navegación — con sus argumentos, para repintarse igual al volver.
     if (typeof navScreen === 'function') navScreen('saEditClubSlots', clubId, clubName);
 
-    const { db, doc, getDoc, updateDoc } = await saFS();
+    const { db, doc, getDoc, updateDoc, collection, query, where, getDocs } = await saFS();
     const snap = await getDoc(doc(db,'clubs',clubId));
     if (!snap.exists()) { _saToast('Club no encontrado', 3000); return; }
     const c = snap.data();
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔑🔑🔑 v553 · LAS PLAZAS USADAS SE CUENTAN AQUÍ, NO SE LEEN DEL CLUB
+    //
+    //  Esta pantalla enseñaba "Usados: N" desde `c.usedSlots.*`, un contador
+    //  que se incrementa y decrementa A MANO en cada alta y cada baja. Basta
+    //  con que una de esas operaciones falle, se repita o se salte para que el
+    //  número mienta **para siempre**: medido en CD DÍA, `usedSlots.users`
+    //  valía **-1**. Eso es lo que producía el "5 / 10 entrenadores" con el
+    //  club lleno de equipos.
+    //
+    //  🔑 Un contador derivado no se almacena: se calcula. Y para calcularlo
+    //  hacen falta los USUARIOS, que esta pantalla no cargaba — sólo leía el
+    //  documento del club.
+    //
+    //  ⚠️ Lectura DE SERVIDOR con respaldo, igual que el panel del club
+    //  (v549): la caché en disco de Firestore sobrevive a Ctrl+Shift+R y le
+    //  enseñaría al SuperAdmin una foto vieja justo cuando decide cuotas.
+    // ══════════════════════════════════════════════════════════════════
+    let _usuariosClub = [];
+    try {
+        const _q = query(collection(db, 'users'), where('clubId', '==', clubId));
+        let _snapU;
+        try {
+            const _m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            _snapU = _m.getDocsFromServer ? await _m.getDocsFromServer(_q) : await getDocs(_q);
+        } catch (e) {
+            console.warn('[v553] Lectura de servidor fallida; se usa la caché:', e && e.message);
+            _snapU = await getDocs(_q);
+        }
+        _snapU.forEach(d => _usuariosClub.push(Object.assign({ _id: d.id }, d.data())));
+    } catch (e) {
+        console.warn('[v553] No se pudieron cargar los usuarios del club:', e && e.message);
+    }
+    // Si el resolutor no estuviera cargado, se cae al contador viejo antes que
+    // enseñar un cero falso.
+    const _usadas = (rol, campoViejo) => (typeof window.cronosPlazasOcupadas === 'function')
+        ? window.cronosPlazasOcupadas(_usuariosClub, rol, clubId)
+        : ((c.usedSlots || {})[campoViejo] || 0);
 
     const body = document.getElementById('sa-body');
     body.innerHTML = `
@@ -45,7 +84,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
-                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${c.usedSlots?.directors||0}</div>
+                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${_usadas('director','directors')}</div>
                     </div>
                     <div>
                         <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">🎯 Coordinadores</label>
@@ -53,7 +92,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
-                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${c.usedSlots?.coordinators||0}</div>
+                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${_usadas('coordinator','coordinators')}</div>
                     </div>
                     <div>
                         <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">⚙️ Entrenadores</label>
@@ -61,7 +100,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
-                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${c.usedSlots?.users||0}</div>
+                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${_usadas('user','users')}</div>
                     </div>
                     <div>
                         <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">👨‍👩‍👧 Padres/Tutores</label>
@@ -69,7 +108,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
-                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${c.usedSlots?.parents||0}</div>
+                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${_usadas('parent','parents')}</div>
                     </div>
                 </div>
                 <button onclick="saEditClubSlotsConfirm('${clubId}')"

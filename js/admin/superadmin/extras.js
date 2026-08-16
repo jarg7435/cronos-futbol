@@ -97,6 +97,21 @@
 
             // 1. Clubes válidos existentes
             var clubsSnap = await getDocs(collection(db, 'clubs'));
+            // ⚠️ v560 · CON DATOS DE CACHÉ NO SE LIMPIA NADA. Sin cobertura,
+            // `getDocs` se resuelve contra la caché local, que casi nunca tiene
+            // la colección entera: los clubes ausentes se tomarían por "clubes
+            // eliminados" y este barrido borraría los roles de MEDIA PLATAFORMA,
+            // con el `updateDoc` subiéndolo en cuanto volviera la red. Es la
+            // misma lección que ya está escrita en el arranque de sesión
+            // (js/services/auth.js, limpieza de roles huérfanos): una lista
+            // incompleta no sirve para decidir qué borrar.
+            if (clubsSnap.metadata && clubsSnap.metadata.fromCache) {
+                alert('⚠️ No hay conexión fiable con el servidor.\n\n' +
+                      'La lista de clubes se ha resuelto desde la caché local y ' +
+                      'puede estar incompleta. Limpiar con esos datos borraría ' +
+                      'roles legítimos.\n\nNo se ha tocado nada. Reinténtalo con conexión.');
+                return;
+            }
             var validClubIds = new Set();
             clubsSnap.forEach(function (d) { validClubIds.add(d.id); });
 
@@ -147,14 +162,50 @@
                     return;
                 }
 
+                // ═══════════════════════════════════════════════════════
+                //  🔴🔴🔴 v560 · EL SEXTO SITIO, Y EL DE MAYOR ALCANCE
+                //
+                //  Reportado por el autor (captura 9062): "Regional A"
+                //  desapareció sola, otra vez. Aquí estaba una de las causas.
+                //
+                //  🔑🔑🔑 LA CLAVE ERA `rol|club`, SIN CATEGORÍA. Para un
+                //  entrenador con dos equipos en el mismo club —Alevín C (F7) y
+                //  Regional A (F11), que v537 hizo legales— las dos entradas dan
+                //  la MISMA clave, así que la segunda se descartaba por
+                //  "duplicada"… y el `updateDoc` de más abajo LO PERSISTE.
+                //
+                //  ⚠️ Y ESTO RECORRE `users` ENTERA: una sola pulsación de
+                //  "Limpieza total" le quitaba el segundo equipo a TODOS los
+                //  entrenadores de la plataforma a la vez, en silencio y sin
+                //  que el aviso de confirmación lo mencionara siquiera —
+                //  promete borrar "roles de clubes eliminados", nada más.
+                //
+                //  Es el MISMO defecto que ya se pagó en extras.js/aprobar
+                //  (v540), panel.js (v540, v547), requests-tab.js (v552) y los
+                //  tres deduplicadores del arranque de sesión (v554): comparar
+                //  `allRoles` por rol e IGNORAR la categoría.
+                //
+                //  La plaza es rol + club + categoría (`cronosMismaPlaza`). Un
+                //  duplicado de verdad —dos entradas de la MISMA plaza— se
+                //  sigue quitando, que es para lo que existe esta limpieza.
+                // ═══════════════════════════════════════════════════════
                 var seen = new Set();
+                var _clavePlaza = function (r) {
+                    var base = (r.role || '') + '|' + (r.clubId || r.individualEntityId || '');
+                    if (r.role !== 'user' && r.role !== 'coach') return base;
+                    var cat = String(r.category || r.categoryLabel || '');
+                    var sub = String(r.subcategory || '');
+                    return base + '|' + (typeof window.cronosTeamSlug === 'function'
+                        ? window.cronosTeamSlug(cat + '-' + sub)
+                        : (cat + '-' + sub).toLowerCase());
+                };
                 var cleaned = u.allRoles.filter(function (r) {
                     // Mantener superadmin siempre
                     if (r.role === 'superadmin') return true;
                     // Quitar si clubId apunta a club eliminado
                     if (r.clubId && !validClubIds.has(r.clubId)) return false;
-                    // Quitar duplicados
-                    var k = (r.role || '') + '|' + (r.clubId || '');
+                    // Quitar duplicados DE LA MISMA PLAZA (no del mismo rol)
+                    var k = _clavePlaza(r);
                     if (seen.has(k)) return false;
                     seen.add(k);
                     return true;
@@ -546,11 +597,24 @@
                             var uSn2 = await getDoc(doc(db, 'users', r.userUid)).catch(function () { return null; });
                             if (uSn2 && uSn2.exists()) {
                                 var ud2 = uSn2.data();
+                                // v540 · también aquí la unidad es la PLAZA: con
+                                // dos equipos en el mismo club, casar por
+                                // rol+club activaba los dos de golpe.
+                                var _catA2 = r.requestedCategory || r.category || null;
+                                var _plazaA2 = { role: role, clubId: clubId || null, category: _catA2,
+                                                 subcategory: r.requestedSubcategory || r.subcategory || null };
+                                var _esPlazaA2 = function (ar) {
+                                    if (typeof window.cronosMismaPlaza === 'function' && _catA2) {
+                                        return window.cronosMismaPlaza(ar, _plazaA2);
+                                    }
+                                    return !!ar && ar.role === role && (ar.clubId || null) === (clubId || null);
+                                };
                                 var updR2 = (ud2.allRoles || []).map(function (ar) {
-                                    return (ar.role === role && (ar.clubId || null) === (clubId || null)) ? Object.assign({}, ar, { isAuthorized: true, status: 'active' }) : ar;
+                                    return _esPlazaA2(ar) ? Object.assign({}, ar, { isAuthorized: true, status: 'active' }) : ar;
                                 });
-                                if (!updR2.some(function (ar) { return ar.role === role && (ar.clubId || null) === (clubId || null); })) {
-                                    updR2.push({ role: role, isAuthorized: true, status: 'active', clubId: clubId || null });
+                                if (!updR2.some(_esPlazaA2)) {
+                                    updR2.push({ role: role, isAuthorized: true, status: 'active', clubId: clubId || null,
+                                                 category: _catA2, subcategory: _plazaA2.subcategory });
                                 }
                                 // FIX: Preservar el rol individual y todos los demás roles activos
                                 // Solo actualizamos el rol aprobado, sin tocar los demás
@@ -585,27 +649,57 @@
                             var finalSnap = await getDoc(doc(db, 'users', r.userUid)).catch(function(){ return null; });
                             if (finalSnap && finalSnap.exists()) {
                                 var finalData = finalSnap.data();
+                                // ═══════════════════════════════════════════════
+                                //  v540 · SE APRUEBA UNA PLAZA, NO UN ROL
+                                //
+                                //  🔑🔑🔑 ESTE ERA EL DEFECTO GORDO, y está medido
+                                //  en producción: brunoromar2012 tenía su
+                                //  solicitud de `benjamin` en `sa_approved` desde
+                                //  el 14/08 y NINGUNA entrada de benjamin en
+                                //  allRoles. Con `ar.role === role`:
+                                //    · el `map` reactivaba sus plazas VIEJAS
+                                //      (juvenil, cadete) y les encajaba el club y
+                                //      la categoría de esta solicitud, y
+                                //    · el `some` daba true —ya había un 'user'—
+                                //      así que la plaza nueva NUNCA se creaba.
+                                //  La persona se quedaba sin el equipo concedido.
+                                //
+                                //  ⚠️ La categoría de la solicitud viene en
+                                //  `requestedCategory`; `r.category` casi nunca
+                                //  existe, y por eso el aplastamiento pasaba
+                                //  desapercibido: dejaba la categoría vieja.
+                                // ═══════════════════════════════════════════════
+                                var _catAprob = r.requestedCategory || r.category || null;
+                                var _subAprob = r.requestedSubcategory || r.subcategory || null;
+                                var _plazaAprob = { role: role, clubId: clubId || null,
+                                                    category: _catAprob, subcategory: _subAprob };
+                                var _esLaPlazaAprob = function (ar) {
+                                    if (typeof window.cronosMismaPlaza === 'function' && _catAprob) {
+                                        return window.cronosMismaPlaza(ar, _plazaAprob);
+                                    }
+                                    return !!ar && ar.role === role;
+                                };
+                                var _plazaExiste = (finalData.allRoles || []).some(_esLaPlazaAprob);
                                 var finalRoles = (finalData.allRoles || []).map(function(ar) {
-                                    var isThisRole = (ar.role === role);
-                                    return isThisRole ? Object.assign({}, ar, { 
-                                        isAuthorized: true, 
-                                        status: 'active', 
-                                        clubId: clubId || ar.clubId, 
+                                    return _esLaPlazaAprob(ar) ? Object.assign({}, ar, {
+                                        isAuthorized: true,
+                                        status: 'active',
+                                        clubId: clubId || ar.clubId,
                                         clubName: clubName || ar.clubName,
-                                        category: r.category || ar.category || null,
-                                        subcategory: r.subcategory || ar.subcategory || null,
+                                        category: _catAprob || ar.category || null,
+                                        subcategory: _subAprob || ar.subcategory || null,
                                         coordinatorType: r.requestedCoordinatorType || r.coordinatorType || ar.coordinatorType || null
                                     }) : ar;
                                 });
-                                if (!finalRoles.some(function(ar){ return ar.role === role; })) {
-                                    finalRoles.push({ 
-                                        role: role, 
-                                        isAuthorized: true, 
-                                        status: 'active', 
-                                        clubId: clubId || null, 
+                                if (!_plazaExiste) {
+                                    finalRoles.push({
+                                        role: role,
+                                        isAuthorized: true,
+                                        status: 'active',
+                                        clubId: clubId || null,
                                         clubName: clubName || null,
-                                        category: r.category || null,
-                                        subcategory: r.subcategory || null
+                                        category: _catAprob,
+                                        subcategory: _subAprob
                                     });
                                 }
                                 await updateDoc(doc(db, 'users', r.userUid), {

@@ -108,7 +108,20 @@ console.log('── PARTE 1 · [A] la lista se queda quieta ──');
 // ═══════════ PARTE 2 · [B] avisos globales, cajón del partido ═══════════
 console.log('\n── PARTE 2 · [B] los avisos de TODOS los partidos ──');
 
-function pintar(matchId, currentMatchId) {
+// v558 · Las dos funciones que deciden si un aviso puede sonarme, tal cual
+// están en live.html (van juntas, hasta el comentario de showEventToast).
+function _puertaAvisos(src) {
+    const ini = src.indexOf('function _soyDestinatarioDe(m) {');
+    const fin = src.indexOf('// v455 · `matchId` (6º argumento) es el partido AL QUE PERTENECE el suceso.');
+    if (ini < 0 || fin < 0 || fin < ini) {
+        throw new Error('No se pudo extraer la puerta de avisos (_puedeAvisarme) de live.html');
+    }
+    return src.slice(ini, fin);
+}
+
+// `enListado` distingue las DOS pantallas, que es lo que decide el destino:
+// el listado de Partidos en Vivo o el detalle de un partido concreto.
+function pintar(matchId, currentMatchId, enListado, quien) {
     const nodos = [];
     const nuevo = (tag) => {
         const n = { tag, innerHTML: '', className: '', children: [], style: {},
@@ -134,10 +147,25 @@ function pintar(matchId, currentMatchId) {
         _posicionaAvisos: () => {},
         _appendEventToHistoryPanel: (type, line) => { reg.historial.push(type + '|' + line); },
         _alertsMuted: true, vibrate: () => {}, playEventSound: () => {},
+        // v558 · el contexto que necesita la puerta `_puedeAvisarme`. Los dos
+        // partidos son del MISMO club, que es el caso del reporte.
+        userData: quien || { uid: 'uid-dir', email: 'dir@x.com',
+                             role: 'director', clubId: 'cd-dia' },
+        _matchLastData: {
+            'm-f7':      { id: 'm-f7',      clubId: 'cd-dia', createdBy: 'uid-ana',  coachEmail: 'ana@x.com' },
+            'm-juvenil': { id: 'm-juvenil', clubId: 'cd-dia', createdBy: 'uid-luis', coachEmail: 'luis@x.com' },
+        },
+        _avisosEnListado: () => !!enListado,
+        // v466 · en el listado el aviso va a la pila DE SU TARJETA. Aquí se
+        // devuelve la misma pila para poder contarlos igual en las dos
+        // pantallas; dónde se coloca lo mide test_avisos_pila_scroll.js.
+        _avisoPilaDe: () => stack,
+        _avisoColocaPronto: () => {},
     };
     sb.window = sb;
     vm.createContext(sb);
-    vm.runInContext(extractFn(LIVE, '_etiquetaPartidoDe') + '\n' +
+    vm.runInContext(_puertaAvisos(LIVE) + '\n' +
+                    extractFn(LIVE, '_etiquetaPartidoDe') + '\n' +
                     extractFn(LIVE, 'showEventToast'), sb);
     vm.runInContext('showEventToast("goal", "GOL · Pedro", "ARINAGA 7 vs VISITANTE", "1T 20:00", "ARINAGA 7", ' +
                     JSON.stringify(matchId) + ')', sb);
@@ -147,24 +175,51 @@ function pintar(matchId, currentMatchId) {
 }
 
 {
-    // Suceso de OTRO partido (el de fondo).
-    const otro = pintar('m-juvenil', 'm-f7');
-    ok('2a · 🔑 [B] un gol de OTRO partido SÍ genera aviso flotante',
-       otro.avisos === 1, 'avisos: ' + otro.avisos);
-    ok('2b · 🔑 [B] …y NO se cuela en el cajón del partido que se está viendo',
+    // ══════════════════════════════════════════════════════════════════
+    //  ⚠️ v558 REVISA ESTA PARTE, Y HAY QUE LEER POR QUÉ ANTES DE TOCARLA.
+    //
+    //  v455 hizo el aviso flotante GLOBAL: se emitía para cualquier partido
+    //  seguido, estuvieras donde estuvieras. Arreglaba una queja REAL —el aviso
+    //  quedaba enganchado al último partido abierto y un gol en otro campo no
+    //  se anunciaba jamás—, pero se pasó de ancho.
+    //
+    //  Reporte del autor con 7 partidos a la vez (captura 9043): los sucesos
+    //  del Alevín C salían CON SONIDO Y PANEL en las pantallas que estaban
+    //  viendo el Regional A y el Juvenil B. Su regla: los eventos de un partido
+    //  sólo se comunican a los contactos de ESE equipo y a su staff técnico
+    //  (director deportivo y coordinador); jamás se cuelan en la pantalla de
+    //  otro equipo.
+    //
+    //  🔑 EL REPARTO QUEDA ASÍ, y las dos mitades importan:
+    //    · en el LISTADO  → sigue avisando de TODOS los partidos de los que uno
+    //      es destinatario, cada aviso en la pila de SU tarjeta (v466). La
+    //      queja de v455 sigue atendida;
+    //    · en el DETALLE  → sólo el partido que se está viendo.
+    // ══════════════════════════════════════════════════════════════════
+
+    // Suceso de OTRO partido, estando DENTRO del detalle de uno.
+    const otro = pintar('m-juvenil', 'm-f7', false);
+    ok('2a · 🔑🔑🔑 [B] viendo un partido, un gol de OTRO ya NO interrumpe (captura 9043)',
+       otro.avisos === 0, 'avisos: ' + otro.avisos);
+    ok('2b · 🔑 [B] …y sigue sin colarse en el cajón del partido que se está viendo',
        otro.historial.length === 0,
        'era el defecto real que v274 vino a tapar · ' + JSON.stringify(otro.historial));
-    ok('2c · el aviso dice de qué partido es',
-       /ARINAGA 7 vs VISITANTE/.test(otro.html), otro.html);
+
+    // ⚠️ Y EN EL LISTADO SÍ: es la mitad de v455 que NO se revierte.
+    const enLista = pintar('m-juvenil', null, true);
+    ok('2c · ⚠️ [B] en el LISTADO el director sí se entera del gol del otro partido (v455)',
+       enLista.avisos === 1, 'avisos: ' + enLista.avisos);
+    ok('2c-bis · y el aviso dice de qué partido es',
+       /ARINAGA 7 vs VISITANTE/.test(enLista.html), enLista.html);
 
     // Suceso del partido VISIBLE.
-    const propio = pintar('m-f7', 'm-f7');
+    const propio = pintar('m-f7', 'm-f7', false);
     ok('2d · un gol del partido visible genera aviso…', propio.avisos === 1);
     ok('2e · …y SÍ escribe en su cajón', propio.historial.length === 1,
        JSON.stringify(propio.historial));
 
     // Llamada antigua sin matchId: se comporta como antes (partido visible).
-    const sinId = pintar(undefined, 'm-f7');
+    const sinId = pintar(undefined, 'm-f7', false);
     ok('2f · sin `matchId` se asume el partido visible (compatibilidad)',
        sinId.avisos === 1 && sinId.historial.length === 1);
 

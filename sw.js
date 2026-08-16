@@ -2412,7 +2412,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v539';
+const CACHE_NAME = 'cronos-cache-v560';
 
 const ASSETS = [
     './',
@@ -2600,7 +2600,15 @@ self.addEventListener('install', event => {
 // vigente, y a repoblarlas desde cero.
 // ⚠️ Es un martillo: sólo se sube cuando hay sospecha de caché corrupta en
 // dispositivos reales, no en cada versión.
-const PURGA_TOTAL = 'v454-limpieza-integral';
+// v541 · Se sube el sello: el autor reportó (2026-08-16) que en pestaña normal
+// seguía viendo un registro sin la casilla del RGPD mientras el servidor servía
+// el bloque correcto —comprobado descargándolo y diffeándolo contra
+// producción—, y en incógnito se veía bien. Es la firma de una caché local
+// envenenada. Al cambiar este sello, TODOS los dispositivos borran TODAS sus
+// cachés una vez y las repueblan desde cero.
+// ⚠️ Sigue siendo un martillo: sólo se sube ante sospecha de caché corrupta en
+// dispositivos reales, nunca en cada versión.
+const PURGA_TOTAL = 'v541-caja-limpia';
 
 self.addEventListener('activate', event => {
     event.waitUntil((async () => {

@@ -2622,6 +2622,83 @@ window._avisoIrATarjeta = function(matchId) {
     } catch (e) {}
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  🚨🚨🚨 v558 · UN PARTIDO NO SE METE EN LA PANTALLA DE OTRO
+//
+//  Reportado por el autor (captura 9043, probando 7 partidos a la vez): los
+//  sucesos del **Alevín C** —un cambio, un gol— salían CON SONIDO Y PANEL en
+//  las pantallas que estaban viendo el Regional A, el Juvenil B y los demás.
+//
+//  🔑 LA REGLA DE NEGOCIO, en sus palabras: los eventos en vivo de un partido
+//  sólo se comunican a los contactos del panel DE ESE EQUIPO y a su staff
+//  técnico autorizado (director deportivo y coordinador del club). Jamás se
+//  cuelan en el stream o la pantalla de otro equipo.
+//
+//  ⚠️ ESTO REVISA —NO REVIERTE— LA DECISIÓN DE v455. Allí el aviso flotante se
+//  hizo GLOBAL a propósito, porque antes quedaba enganchado al último partido
+//  abierto y un gol en otro campo no se anunciaba JAMÁS. Aquella queja se
+//  sigue atendiendo: en el LISTADO cada aviso cae en la pila de SU tarjeta
+//  (v466), así que el director se entera de todo lo de su club de un vistazo.
+//  Lo que se cierra es la otra mitad: dentro del DETALLE de un partido, nada
+//  ajeno interrumpe.
+//
+//  Dos puertas, y hacen falta las dos:
+//    1. DÓNDE ESTOY. En el detalle de un partido sólo suena ese partido.
+//    2. DE QUIÉN SOY DESTINATARIO. En el listado, sólo los partidos que me
+//       corresponden por rol.
+// ════════════════════════════════════════════════════════════════════
+
+// ¿Los sucesos de este partido son PARA MÍ? Es la mitad "quién", y sale
+// directamente de la regla del autor.
+//
+// ⚠️ El ENTRENADOR se resuelve por `createdBy`/`coachEmail` y no por categoría:
+// sus partidos son los que él crea, y esa comparación es exacta. Deducir "su
+// equipo" normalizando la categoría aquí abriría una SEGUNDA normalización
+// —live.html no carga utils.js, así que sería una copia— y dos criterios del
+// mismo equipo acaban partiéndolo en dos.
+function _soyDestinatarioDe(m) {
+    if (!m || typeof userData === 'undefined' || !userData) return false;
+    const rol = userData.role || '';
+    // El SuperAdmin supervisa la plataforma entera (con su filtro de club si lo
+    // tiene puesto, que es lo que ya decide _userCanFollow).
+    if (rol === 'superadmin' || rol === 'admin') {
+        return !window._saClubFilter || m.clubId === window._saClubFilter;
+    }
+    // Staff técnico del club: director deportivo, coordinador y admin del club.
+    // La regla los nombra EXPRESAMENTE como destinatarios de todos sus equipos.
+    if (rol === 'director' || rol === 'coordinator' || rol === 'club_admin') {
+        return !!(userData.clubId && m.clubId === userData.clubId);
+    }
+    // Entrenador y padre: sólo lo suyo. Un entrenador del Regional no recibe
+    // los sucesos del Alevín aunque compartan club.
+    if (m.createdBy && m.createdBy === userData.uid) return true;
+    if (m.coachEmail && userData.email &&
+        String(m.coachEmail).toLowerCase() === String(userData.email).toLowerCase()) return true;
+    return false;
+}
+
+// ¿Este suceso puede avisarme AQUÍ Y AHORA? Junta las dos puertas.
+function _puedeAvisarme(matchId) {
+    // Sin partido declarado no hay a quién atribuirlo: se comporta como
+    // siempre (llamadas antiguas de showEventToast sin el 6º argumento).
+    if (matchId === undefined || matchId === null) return true;
+    // 1) El partido que estoy viendo, siempre. Es a lo que he entrado.
+    if (matchId === currentMatchId) return true;
+    // 2) 🔑 Dentro del DETALLE de un partido, NINGÚN otro lo interrumpe.
+    //    Ésta es la línea que cierra lo de la captura 9043.
+    if (!(typeof _avisosEnListado === 'function' && _avisosEnListado())) return false;
+    // 3) En el listado: sólo los partidos de los que soy destinatario.
+    //
+    // ⚠️ SIN DATOS DEL PARTIDO NO SE SILENCIA. `_matchLastData` lo rellena
+    // `detectAndAlert` antes de anunciar nada, así que aquí siempre lo hay;
+    // pero si algún día llegara un aviso por otra vía, el criterio es no
+    // callarse un suceso por no poder juzgarlo — a ese partido ya le dio el
+    // visto bueno `_userCanFollow` para estar suscrito.
+    const datos = _matchLastData[matchId];
+    if (!datos) return true;
+    return _soyDestinatarioDe(datos);
+}
+
 // v455 · `matchId` (6º argumento) es el partido AL QUE PERTENECE el suceso.
 // Decide el destino:
 //   · el AVISO FLOTANTE se emite SIEMPRE — es global y dice de qué partido es;
@@ -2632,6 +2709,10 @@ window._avisoIrATarjeta = function(matchId) {
 // Si no se pasa, se asume el partido visible: así las llamadas antiguas siguen
 // comportándose igual que siempre.
 function showEventToast(type, line, sub, matchTime, equipo, matchId) {
+    // 🚨 v558 · LA PUERTA, ANTES DE NADA. Se sale sin pintar, sin sonar y sin
+    // vibrar: el destello, el sonido y la vibración están al final de esta
+    // misma función, así que filtrar aquí es lo único que los corta de verdad.
+    if (!_puedeAvisarme(matchId)) return;
     const meta = EVENT_META[type] || EVENT_META.sub;
     const _esDelPartidoVisible = (matchId === undefined || matchId === null)
         ? true
@@ -3405,6 +3486,13 @@ function _handlePhaseTransition(matchId, matchData) {
     if (nextPhase === prevPhase) return;
     _matchPrevPhase[matchId] = nextPhase;
 
+    // 🚨 v558 · LA MISMA PUERTA QUE LOS SUCESOS. El silbato y el overlay de
+    // "FINAL DEL PARTIDO" son la interrupción MÁS ruidosa que hay: tapan la
+    // pantalla entera. Viendo el Regional A no puede saltar el final del
+    // Alevín C. La fase SÍ se anota arriba —el estado se sigue siguiendo—; lo
+    // que no se hace es anunciarlo.
+    if (typeof _puedeAvisarme === 'function' && !_puedeAvisarme(matchId)) return;
+
     // ¿Es el partido que el usuario está viendo ahora? El partido abierto no lleva
     // botón "Ver partido"; los de fondo sí (equipos + marcador + navegación).
     const isCurrent  = (matchId === currentMatchId);
@@ -3486,6 +3574,20 @@ function _buildState(data) {
 // Compara el snapshot nuevo con el anterior y dispara alertas.
 // matchId identifica el partido; matchData es el snapshot de Firestore.
 function detectAndAlert(matchId, matchData, fromCache) {
+    // ⚠️ v559 · UN DOCUMENTO QUE DICE SER OTRO PARTIDO NO AVISA DE NADA.
+    //
+    // `pushLiveSnapshot` escribe `id: liveMatchId` DENTRO del documento, así que
+    // el campo y el id del documento tienen que coincidir siempre. Que no
+    // coincidan sólo puede significar que dos partidos han escrito en el mismo
+    // sitio — la huella exacta del defecto de v558, donde el segundo partido de
+    // la sesión heredaba el `liveMatchId` del primero. Ante esa señal no se
+    // "arregla" nada: se deja de anunciar, porque no se puede saber de quién es
+    // lo que hay dentro. Se grita por consola para que no pase inadvertido.
+    if (matchData && matchData.id && matchData.id !== matchId) {
+        console.error('[v559] 🔒 Documento CRUZADO: live_matches/' + matchId +
+                      ' declara ser "' + matchData.id + '". No se emite ninguna alerta.');
+        return;
+    }
     // Descartar snapshots de cache local desactualizada: cuando hay un cambio
     // pendiente de confirmar en el servidor, Firestore puede emitir primero un
     // snapshot fromCache que puede estar atrasado. No avisamos con datos de cache.
@@ -4379,6 +4481,42 @@ function safeColor(value, fallback) {
 // snapshot en data.timerThresholds. Si no se incluyen, se aplica el default
 // rojo <33% · ámbar 33-50% · verde ≥50%.
 // total = half1Max + half2Max, con fallback f7=1800/parte, f11=2400/parte.
+// ════════════════════════════════════════════════════════════════════
+//  🚦 v559 · JUVENIL, REGIONAL Y REGIONAL FEM NO LLEVAN SEMÁFORO
+//
+//  ⚠️⚠️ ESTO ES UNA COPIA DE `cronosCategoriaSinSemaforo` (js/core/utils.js) Y
+//  NO PUEDE DIVERGIR. live.html es un visor independiente que NO carga utils.js
+//  —meterle el fichero entero es justo el riesgo que dejó esta página en negro
+//  en v454—, así que la regla se repite aquí en mínimo. El guard
+//  scripts/test_semaforo_sin_juvenil_regional.js pasa la MISMA tabla de
+//  entradas por las dos implementaciones y exige idéntico resultado: si alguien
+//  toca una y no la otra, se pone rojo.
+//
+//  Se pregunta por TODAS las señales, no por un grupo calculado: con que una
+//  diga Juvenil o Regional, es celeste. Ver la cabecera de la función canónica
+//  para por qué la regla va al revés que antes.
+function _sinSemaforoLive() {
+    for (var i = 0; i < arguments.length; i++) {
+        var crudo = arguments[i];
+        if (crudo == null) continue;
+        var n = String(crudo).normalize('NFD').split('').filter(function (c) {
+            var cod = c.charCodeAt(0);
+            return cod < 0x300 || cod > 0x36f;
+        }).join('').toLowerCase();
+        if (!n) continue;
+        if (n.indexOf('juvenil')    !== -1) return true;
+        if (n.indexOf('regional')   !== -1) return true;   // Regional FEM entra aquí
+        if (n.indexOf('senior')     !== -1) return true;
+        if (n.indexOf('aficionado') !== -1) return true;
+        if (n.indexOf('amateur')    !== -1) return true;
+    }
+    return false;
+}
+// Se publica porque la REPETICIÓN (js/match/replay/replay-player.js) se carga
+// también dentro de este visor y allí `cronosCategoriaSinSemaforo` no existe:
+// sin esto, "Revivir" volvería a pintar de rojo un Regional.
+window._sinSemaforoLive = _sinSemaforoLive;
+
 function _timerColorFor(timeSec, data) {
     // 0. Si el semáforo está desactivado para este partido -> Celeste (#79c0ff)
     if (data && (data.semaforo === false || data.semaforoEnabled === false || data.semaforoActive === false)) {
@@ -4386,6 +4524,25 @@ function _timerColorFor(timeSec, data) {
     }
 
     if (typeof window !== 'undefined' && window._liveClubExtras && window._liveClubExtras.semaforo === false) {
+        return { bg: '#79c0ff', text: '#000000' };
+    }
+
+    // 🚦 v559 · Y LA CATEGORÍA MANDA, mire quien mire.
+    //
+    // 🔑 SE MIRAN LAS DOS: `matchCategory` es la del PARTIDO (la que fija el
+    // panel de creación, siempre presente) y `category` la del PERFIL del
+    // entrenador. Hasta aquí sólo se usaba `category`, y con el perfil vacío la
+    // cadena caía en el respaldo local de `getGroupFn`, que devuelve **'f7'**
+    // para lo desconocido — un grupo CON semáforo. Ése era el amarillo/rojo del
+    // Regional A de la captura 9056.
+    //
+    // ⚠️ Esto va ANTES de calcular el grupo a propósito: el grupo sigue
+    // saliendo SÓLO de `category`, porque `matchCategory` empieza por f7_/f11_ y
+    // `getCategoryGroupKey` mira ese prefijo primero — usarla para el grupo le
+    // cambiaría los umbrales a los Infantil/Cadete que juegan Fútbol 7 (ver el
+    // comentario largo en js/match/live/sync.js). Para "¿hay semáforo?" no hay
+    // tal problema: Juvenil y Regional no lo llevan en ninguna modalidad.
+    if (data && _sinSemaforoLive(data.matchCategory, data.category)) {
         return { bg: '#79c0ff', text: '#000000' };
     }
 
@@ -5941,8 +6098,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v539"></script>
-<script src="js/match/replay/replay-player.js?v=v539"></script>
-<script src="js/match/events/retroactive-modal.js?v=v539"></script>
+<script src="js/match/immutability.js?v=v560"></script>
+<script src="js/match/replay/replay-player.js?v=v560"></script>
+<script src="js/match/events/retroactive-modal.js?v=v560"></script>
 </body>
 </html>

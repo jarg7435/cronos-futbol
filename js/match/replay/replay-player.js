@@ -406,8 +406,27 @@
         // La bandera guardada CON el partido gana a cualquier otra fuente.
         // Ojo con el `=== false`: un partido antiguo no trae el campo
         // (undefined) y debe caer a la cascada, no darse por activo.
+        //
+        // 🚦 v559 · Y POR ENCIMA DE TODO: Juvenil, Regional y Regional FEM
+        // nunca llevan semáforo. Va DELANTE incluso de `semaforoActive === true`
+        // porque los partidos grabados antes de v559 pudieron persistir ese
+        // flag en `true` por el mismo defecto que se está corrigiendo (el flag
+        // se calculaba sólo con la categoría del perfil del entrenador, y con
+        // el perfil vacío salía activo). Reproducir hoy aquel error sería
+        // repetir en la repetición el rojo que el autor reportó en directo.
+        //
+        // ⚠️ DOS ORÍGENES PARA LA MISMA REGLA, y hacen falta los dos: este
+        // fichero se carga en index.html (donde vive `cronosCategoriaSinSemaforo`,
+        // de utils.js) y TAMBIÉN dentro de live.html, que no carga utils.js y
+        // publica su copia como `_sinSemaforoLive`. Sin la segunda rama,
+        // "Revivir" desde el visor volvería a pintar de rojo un Regional.
+        const _sinSem = (typeof window !== 'undefined' &&
+                         (window.cronosCategoriaSinSemaforo || window._sinSemaforoLive)) || null;
         let semaforoOn;
-        if (data.semaforoActive === true)  semaforoOn = true;
+        if (typeof _sinSem === 'function' && _sinSem(data.matchCategory, cat)) {
+            semaforoOn = false;
+        }
+        else if (data.semaforoActive === true)  semaforoOn = true;
         else if (data.semaforoActive === false || data.semaforo === false || data.semaforoEnabled === false) semaforoOn = false;
         else {
             const me = (typeof window !== 'undefined' && window._cronosCurrentUser) || null;

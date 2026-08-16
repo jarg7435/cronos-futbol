@@ -511,8 +511,46 @@
     // consumidor las necesita": admin/club/panel.js y admin/individual/panel.js
     // tenían cada uno su propia copia literal de las mismas 7 categorías y ahora
     // leen de aquí. Añadir una categoría se hace en UN sitio.
-    window.CT_CATEGORIES = window.CT_CATEGORIES || CT_CATEGORIES;
-    window.CT_SUBCATS = window.CT_SUBCATS || CT_SUBCATS;
+    // ══════════════════════════════════════════════════════════════════
+    //  🔑🔑🔑 v550 · ESTE CATÁLOGO SE IMPONE. NO SE CEDE AL QUE LLEGÓ ANTES.
+    //
+    //  Aquí ponía `window.CT_CATEGORIES = window.CT_CATEGORIES || CT_CATEGORIES`,
+    //  y ese `||` era el fallo: **si algo había definido ya la variable, el
+    //  catálogo bueno no se aplicaba jamás**. Basta con que el navegador
+    //  evalúe una copia ANTIGUA de este fichero antes que la nueva —el Service
+    //  Worker sirviéndola de su Cache Storage, una doble carga, una pestaña
+    //  que quedó viva— para que el panel se quede con el vocabulario viejo
+    //  PARA SIEMPRE, sin un solo error en consola.
+    //
+    //  Es exactamente lo que reportó el autor el 2026-08-16: en la ventana
+    //  normal veía **5 categorías y sin Cadete**; en incógnito, las 9. Y seguía
+    //  igual DESPUÉS de borrar IndexedDB, caché y cookies — porque el problema
+    //  no era el dato, era el vocabulario con el que se pinta.
+    //
+    //  🔑 Ahora se FUSIONA: mandan las de este fichero (fuente única) y se
+    //  conservan al final las que alguien hubiera añadido y no estén aquí, sin
+    //  duplicar. Así el resultado no depende del orden de carga.
+    //
+    //  ⚠️ Añadir una categoría se sigue haciendo en UN solo sitio: la lista
+    //  `CT_CATEGORIES` de arriba. Esto no abre una segunda vía.
+    // ══════════════════════════════════════════════════════════════════
+    (function _imponeVocabulario() {
+        var previas = Array.isArray(window.CT_CATEGORIES) ? window.CT_CATEGORIES : [];
+        var mias = CT_CATEGORIES.map(function (c) { return c.id; });
+        var extras = previas.filter(function (c) {
+            return c && c.id && mias.indexOf(c.id) === -1;
+        });
+        if (previas.length && extras.length !== previas.length) {
+            console.warn('[v550] Había otro CT_CATEGORIES con ' + previas.length +
+                         ' categoría(s) (¿copia antigua del fichero?). Se impone el catálogo de ' +
+                         CT_CATEGORIES.length + '.');
+        }
+        window.CT_CATEGORIES = CT_CATEGORIES.concat(extras);
+
+        var subsPrev = Array.isArray(window.CT_SUBCATS) ? window.CT_SUBCATS : [];
+        var subsExtra = subsPrev.filter(function (s) { return CT_SUBCATS.indexOf(s) === -1; });
+        window.CT_SUBCATS = CT_SUBCATS.concat(subsExtra);
+    })();
 
     // ════════════════════════════════════════════════════════════════
     //  API GENÉRICA — añadida para el panel del Director Deportivo

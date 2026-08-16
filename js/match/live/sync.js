@@ -386,6 +386,16 @@ async function pushLiveSnapshot(status = 'active') {
         let _semaforoActive = true;
         if (_extras.semaforo === false) {
             _semaforoActive = false;
+        } else if (typeof window.cronosCategoriaSinSemaforo === 'function' &&
+                   // 🚦 v559 · CON LAS DOS CATEGORÍAS, no sólo con la del perfil.
+                   // Este flag viaja DENTRO del documento y es la primera puerta
+                   // que mira el visor (`data.semaforoActive === false`), así que
+                   // acertar aquí deja el partido en celeste en TODAS las
+                   // pantallas —visor, repetición y tarjetas— de una vez. Con
+                   // sólo `snapCat`, un perfil sin categoría dejaba el flag en
+                   // true y el Regional salía con semáforo (captura 9056).
+                   window.cronosCategoriaSinSemaforo(_matchCat, snapCat)) {
+            _semaforoActive = false;
         } else {
             const getGroupFn = (typeof window.getCategoryGroupKey === 'function')
                 ? window.getCategoryGroupKey
@@ -414,6 +424,24 @@ async function pushLiveSnapshot(status = 'active') {
             // Categoría y Subcategoría del Entrenador
             category:    window._cronosCurrentUser?.category || window._cronosCurrentUser?._activeRoleData?.category || window._cronosCurrentUser?.categoryLabel || null,
             subcategory: window._cronosCurrentUser?.subcategory || window._cronosCurrentUser?._activeRoleData?.subcategory || null,
+
+            // 🔑 v559 · EL EQUIPO, EXPLÍCITO EN EL DOCUMENTO.
+            // El autor pide garantía de que un suceso se retransmite "a ese
+            // partido, de esa categoría y de esa subcategoría exacta". El
+            // `matchId` ya identifica un partido, pero es un slug opaco: no se
+            // puede auditar de un vistazo ni comparar con el equipo de nadie.
+            // `teamId` es la MISMA clave canónica que usa el resto del proyecto
+            // (clubId + categoría + subcategoría, `cronosTeamId` en utils.js), y
+            // deja la pertenencia del partido escrita en el propio dato.
+            // Los documentos anteriores no lo llevan: se deduce al vuelo de
+            // category+subcategory, igual que hace `cronosTeamIdOfDoc`.
+            teamId: (typeof cronosTeamId === 'function')
+                ? (cronosTeamId(
+                       window._cronosCurrentUser?.clubId || '',
+                       window._cronosCurrentUser?.category || window._cronosCurrentUser?._activeRoleData?.category || window._cronosCurrentUser?.categoryLabel || '',
+                       window._cronosCurrentUser?.subcategory || window._cronosCurrentUser?._activeRoleData?.subcategory || ''
+                   ) || null)
+                : null,
 
             // v463 · Categoría y Subcategoría DEL PARTIDO, tal y como las dejó el
             // entrenador en el panel de creación. Sólo para mostrar (la etiqueta

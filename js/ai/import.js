@@ -908,6 +908,10 @@ function goToTitularSelection() {
     // su camino de siempre. false queda reservado a "convocatoria RECHAZADA,
     // seguimos en el modal", que es lo unico que debe frenarlos.
     if (typeof window._guardAgainstMatchReset === 'function' && window._guardAgainstMatchReset()) return;
+    // v557 · El partido que nace es DE ESTE EQUIPO. Si el entrenador venía de
+    // otro (v540), aquí se suelta el liveMatchId anterior para que el Regional
+    // no retransmita dentro del documento del Alevín. Ver app-init.js.
+    if (typeof window._cronosNuevoPartidoDeEquipo === 'function') window._cronosNuevoPartidoDeEquipo();
     saveConvData();
     saveConvPlayers();
 
@@ -995,6 +999,9 @@ function startMatchFromTitularSelection() {
 
 function startMatchWithConvocation() {
     if (typeof window._guardAgainstMatchReset === 'function' && window._guardAgainstMatchReset()) return;
+    // v557 · igual que en goToTitularSelection: el partido nuevo es del equipo
+    // que esté abierto, y no hereda la retransmisión del equipo anterior.
+    if (typeof window._cronosNuevoPartidoDeEquipo === 'function') window._cronosNuevoPartidoDeEquipo();
     const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');

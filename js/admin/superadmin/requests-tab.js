@@ -641,34 +641,72 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                     if (uSnap4 && uSnap4.exists()) {
                         const uData4 = uSnap4.data();
 
-                        // Actualizar allRoles: marcar el rol aprobado como activo
-                        let updRoles4 = (uData4.allRoles||[]).map(r4 => {
-                            const isMatch = r4.role === r.requestedRole && (
-                                (r4.clubId||null) === (r.clubId||null) ||
+                        // ═══════════════════════════════════════════════════════
+                        //  🔴🔴🔴 v552 · AQUÍ SE PERDÍA LA SEGUNDA PLAZA
+                        //
+                        //  Este `isMatch` comparaba **rol + club, SIN CATEGORÍA**.
+                        //  Para un entrenador que ya llevaba `alevin/C` y al que
+                        //  se le aprobaba `regional/A`:
+                        //    · el `map` marcaba como activo el rol de ALEVÍN (que
+                        //      ya lo estaba) y le pisaba clubId/clubName, y
+                        //    · `alreadyHas` salía **true**, así que la plaza nueva
+                        //      **NO SE AÑADÍA NUNCA**.
+                        //  El rol de Regional no "desaparecía": no llegaba a
+                        //  existir. Medido con arinagazone el 2026-08-16.
+                        //
+                        //  Es el mismo defecto de "el rol como identidad" que se
+                        //  cerró en v540 en `saExtApprove` (extras.js) y en v547 en
+                        //  el panel del club. Este es un TERCER aprobar —el de la
+                        //  pestaña de Solicitudes— y se había quedado fuera.
+                        //
+                        //  ⚠️ Y el `push` NO guardaba `category`/`subcategory`: aun
+                        //  añadiéndose, la plaza nacía sin equipo.
+                        // ═══════════════════════════════════════════════════════
+                        const _plazaAprob = {
+                            role: r.requestedRole,
+                            clubId: r.clubId || r.individualOwnerId || null,
+                            category: r.requestedCategory || r.category || null,
+                            subcategory: r.requestedSubcategory || r.requestedSubcat || r.subcategory || null,
+                        };
+                        const _casaPlaza = (r4) => {
+                            if (typeof window.cronosMismaPlaza === 'function' && _plazaAprob.category) {
+                                // Un mismo usuario puede colgar de un club o de una
+                                // entidad individual: se acepta cualquiera de los dos
+                                // identificadores, como hacía la versión anterior.
+                                const _mismoAmbito = (r4.clubId||null) === (_plazaAprob.clubId||null)
+                                    || (r4.individualEntityId||null) === (r.individualOwnerId||null)
+                                    || (r4.clubId||null) === (r.individualOwnerId||null);
+                                return _mismoAmbito && window.cronosMismaPlaza(
+                                    Object.assign({}, r4, { clubId: _plazaAprob.clubId }),
+                                    _plazaAprob);
+                            }
+                            return r4.role === r.requestedRole && (
+                                (r4.clubId||null) === (_plazaAprob.clubId||null) ||
                                 (r4.individualEntityId||null) === (r.individualOwnerId||null) ||
                                 (r4.clubId||null) === (r.individualOwnerId||null)
                             );
-                            return isMatch
+                        };
+
+                        let updRoles4 = (uData4.allRoles||[]).map(r4 => {
+                            return _casaPlaza(r4)
                                 ? {...r4, isAuthorized:true, status:'active',
                                    clubId: r.clubId || r4.clubId || r.individualOwnerId || null,
                                    clubName: r.clubName || r4.clubName || ''}
                                 : r4;
                         });
-                        // Si el rol no estaba en allRoles, añadirlo
-                        const alreadyHas = updRoles4.some(r4 =>
-                            r4.role === r.requestedRole && (
-                                (r4.clubId||null) === (r.clubId||null) ||
-                                (r4.individualEntityId||null) === (r.individualOwnerId||null) ||
-                                (r4.clubId||null) === (r.individualOwnerId||null)
-                            )
-                        );
+                        // Si esa PLAZA no estaba en allRoles, añadirla.
+                        const alreadyHas = updRoles4.some(_casaPlaza);
                         if (!alreadyHas) {
                             updRoles4.push({
                                 role: r.requestedRole,
                                 isAuthorized: true,
                                 status: 'active',
                                 clubId: r.clubId || r.individualOwnerId || null,
-                                clubName: r.clubName || ''
+                                clubName: r.clubName || '',
+                                // ⚠️ sin esto la plaza nace sin equipo y el
+                                // entrenador entra sin categoría asignada.
+                                category: _plazaAprob.category,
+                                subcategory: _plazaAprob.subcategory,
                             });
                         }
 

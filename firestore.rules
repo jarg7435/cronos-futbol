@@ -313,7 +313,56 @@ service cloud.firestore {
         'blockedAt', 'blockedBy',
         'category', 'categoryLabel', 'subcategory',
         'updatedAt'
-      ]);
+      ])
+      && clubNoActivaSinSuperAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  v546 · EL ADMINISTRADOR DE CLUB NO PUEDE ACTIVAR POR SU CUENTA
+    //
+    //  Reportado por el autor el 2026-08-16: *"la aplicacion mete al usuario
+    //  en el plantel activo saltandose por completo la aprobacion obligatoria
+    //  del SuperAdmin"*. Y era cierto por esta via: `isMembershipDecision()`
+    //  aceptaba `isAuthorized` y `status` sin mirar su VALOR, asi que el boton
+    //  "Aceptar" del panel de club escribia `isAuthorized:true, status:'active'`
+    //  en el documento de otro usuario y lo dejaba dentro. El SuperAdmin no
+    //  llegaba a verlo.
+    //
+    //  ⚠️ NO SE PUEDE CERRAR A LO BRUTO quitando los dos campos de la lista:
+    //  el club tiene que seguir pudiendo RECHAZAR (status:'rejected'),
+    //  BLOQUEAR (status:'blocked') y REVOCAR una casilla (allRoles), que son
+    //  suyas y no activan a nadie. Por eso se fijan los VALORES en vez de
+    //  prohibir los campos — el mismo patron que ya usa `allow create` mas
+    //  abajo, y por la misma razon.
+    //
+    //  🔑 LA UNICA EXCEPCION es la CONFIRMACION posterior: cuando el
+    //  SuperAdmin ya ha aprobado, deja `approvedBySA:true` en el documento y
+    //  el club remata el alta (consume su plaza). Eso NO se salta a nadie.
+    //  Se mira `resource` —el documento EXISTENTE—, nunca `request.resource`:
+    //  si se mirase el entrante, bastaria con enviar `approvedBySA:true` en la
+    //  misma escritura para saltarselo. Y ademas `approvedBySA` no esta en la
+    //  lista de `hasOnly()` de arriba, asi que el club tampoco puede
+    //  escribirlo: doble candado. Solo lo escribe el SuperAdmin
+    //  (js/admin/superadmin/clubs-tab.js y create-direct.js).
+    // ══════════════════════════════════════════════════════════════════
+    //  ⚠️⚠️ SE MIRA LA **TRANSICION**, NO EL VALOR FINAL. La primera version
+    //  de esta funcion exigia `isAuthorized == false` en el documento
+    //  entrante, y eso rompia al club para lo que SI es suyo: en un update,
+    //  `request.resource.data` trae el documento RESULTANTE COMPLETO, asi que
+    //  al cambiarle la categoria a un entrenador YA ACTIVO llegaba
+    //  `isAuthorized:true` sin que nadie estuviera activando nada, y se
+    //  denegaba. Lo detecto el banco de pruebas contra el motor real ANTES de
+    //  desplegar. Lo que hay que prohibir es el SALTO de "no activo" a
+    //  "activo", no que el campo valga true.
+    function activaAlUsuario() {
+      return (request.resource.data.get('isAuthorized', false) == true
+              && resource.data.get('isAuthorized', false) == false)
+             || (request.resource.data.get('status', '') == 'active'
+                 && resource.data.get('status', '') != 'active');
+    }
+    function clubNoActivaSinSuperAdmin() {
+      return !activaAlUsuario()
+             || resource.data.get('approvedBySA', false) == true;
     }
 
     // El usuario es el propietario del enlace padre→jugador
