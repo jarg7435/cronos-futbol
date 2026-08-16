@@ -81,8 +81,46 @@ window.saClubs = async function saClubs() {
                 || (u.clubId && _indivClubIds.has(u.clubId))
                 || (u.allRoles||[]).some(r => ['individual','admin_individual','parent_individual','entrenador_individual','padre_individual'].includes(r.role));
             if (isIndivUser) return;
-            if (u.clubId && clubs[u.clubId]) clubs[u.clubId].users.push(u);
-            else orphans.push(u);
+
+            // ═══════════════════════════════════════════════════════════
+            //  🔴🔴🔴 v563 · EL SUPERADMIN REPARTÍA SÓLO POR LA RAÍZ
+            //
+            //  Reporte del autor (capturas 9094 vs 9095): en el Panel de
+            //  Administrador de Club los entrenadores y sus categorías salen
+            //  perfectamente; en el del SuperAdmin, el MISMO club aparece con
+            //  las categorías VACÍAS. Los datos nunca se borraron —lo confirmó
+            //  él comparando los dos paneles—: lo que fallaba era la lectura.
+            //
+            //  🔑🔑🔑 Aquí estaba el porqué: `if (u.clubId && clubs[u.clubId])`
+            //  decidía la pertenencia mirando SÓLO `u.clubId`, la raíz del
+            //  documento. El panel del club NO usa la raíz para esto: recorre
+            //  `allRoles` (`r.clubId === clubId || !r.clubId`). Así que a quien
+            //  tuviera la raíz vacía, obsoleta o apuntando a otro club, el
+            //  SuperAdmin lo mandaba a "Sin club asignado" aunque sus PLAZAS
+            //  dijeran con claridad a qué club pertenece. Dos vistas del mismo
+            //  dato con dos criterios distintos: por fuerza tenían que
+            //  contradecirse, y el multiequipo es donde más se nota.
+            //
+            //  ⚠️⚠️ NO ES SÓLO EL ÁRBOL. `c.users` alimenta también `vis`, y de
+            //  `vis` salen los CONTADORES DE PLAZAS (`cronosPlazasOcupadas`):
+            //  un entrenador invisible tampoco se contaba, así que el club
+            //  parecía tener plazas libres que en realidad están ocupadas.
+            //
+            //  🔑 La unidad es la PLAZA. Una persona con dos equipos —o con
+            //  roles en dos clubes— pertenece a TODOS ellos, así que se reparte
+            //  a cada club implicado y no al primero que gane un `if/else`.
+            // ═══════════════════════════════════════════════════════════
+            const _destinos = new Set();
+            if (u.clubId && clubs[u.clubId]) _destinos.add(u.clubId);
+            (u.allRoles || []).forEach(r => {
+                const _rc = r && (r.clubId || r.requestedClubId);
+                if (_rc && clubs[_rc]) _destinos.add(_rc);
+            });
+            // Una plaza SIN clubId sólo puede atribuirse por la raíz, que ya se
+            // ha mirado arriba. Sin ningún destino válido sigue siendo huérfano,
+            // que es justo lo que ese apartado existe para enseñar.
+            if (_destinos.size === 0) { orphans.push(u); return; }
+            _destinos.forEach(cid => clubs[cid].users.push(u));
         });
 
         const stColor = { active:'#3fb950', blocked:'#f0883e', removed:'#ff5858', pending:'#ffd700', pending_club:'#ffa500', pending_register:'#79c0ff' };
