@@ -65,10 +65,46 @@
     // categorías de DOS PALABRAS ('Regional FEM'), el respaldo por categoryLabel
     // llega como 'regional fem a' y sin esto no casaría nunca con el id
     // 'regional_fem' — el usuario caería fuera del árbol sin ningún error.
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v565 · "ALEVÍN" NO CASABA CON 'alevin'
+    //
+    //  Reporte del autor (capturas 9112/9113): las categorías **Alevín** y
+    //  **Regional** salían VACÍAS en los DOS paneles, con los datos intactos en
+    //  la base y sin arreglarse al reiniciar sesión.
+    //
+    //  🔑🔑🔑 Los dos paneles pintan con ESTE MISMO componente, y aquí la
+    //  categoría se normalizaba sin quitar los acentos ni el prefijo de
+    //  modalidad. Así que lo guardado no casaba con el catálogo:
+    //
+    //      'Alevín'       -> 'alevín'        ✗ (el catálogo dice 'alevin')
+    //      'f11_regional' -> 'f11_regional'  ✗ (el catálogo dice 'regional')
+    //
+    //  y la persona caía en "Sin categoría/subcategoría asignada" mientras su
+    //  tarjeta se pintaba vacía. Nunca fue un problema de permisos ni de datos:
+    //  el entrenador estaba en la página, en otro bloque.
+    //
+    //  ⚠️ Que sólo fallaran DOS categorías es la firma del defecto: las que se
+    //  guardan con tilde o con prefijo. Las demás casaban por casualidad.
+    //
+    //  ⚠️⚠️ LOS ACENTOS SE QUITAN POR CÓDIGO DE CARÁCTER, nunca con una clase
+    //  de regex: el bloque combinante escrito dentro de una expresión acaba en
+    //  el fichero como marcas sueltas invisibles y cualquier paso que toque la
+    //  codificación las destruye SIN ERROR (misma razón que en cronosTeamSlug).
+    //
+    //  🔑🔑 NO SE ESCRIBE UNA NORMALIZACIÓN NUEVA: `window.ctNormCat` —más
+    //  abajo en este mismo fichero— ya hacía exactamente esto, y su comentario
+    //  de cabecera ya avisaba de que "con la de arriba" (esta `_normCat`) los
+    //  valores con tilde o con prefijo "caerían fuera del árbol". El resolutor
+    //  bueno existía; lo que faltaba era que `_buildIndex` lo usara. Duplicarlo
+    //  es justo lo que prohíben test_player_stats_accumulator.js (6b: UNA sola
+    //  normalización de tildes) y test_category_tree_resolver.js (4f), que
+    //  cazaron el primer intento.
+    // ══════════════════════════════════════════════════════════════════
     function _normCat(r) {
-        let cat = String(r.category || r.categoryLabel || '').trim().toLowerCase();
-        cat = cat.replace(/[\s-]+/g, '_');
-        return cat.replace(/_[abc]$/, '');
+        const crudo = r.category != null ? r.category : (r.categoryLabel || '');
+        if (typeof window.ctNormCat === 'function') return window.ctNormCat(crudo);
+        // Respaldo mínimo (no debería usarse: ctNormCat se define en este fichero).
+        return String(crudo).trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/_[abc]$/, '');
     }
     // Normaliza subcategoría: directa o derivada del sufijo '_a/_b/_c'.
     function _normSub(r) {

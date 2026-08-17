@@ -229,14 +229,103 @@ window.saEditIndividualEntityConfirm = async function(entityId) {
 
 // Eliminar ente individual
 window.saDeleteIndividualEntity = async function(entityId, entityName) {
-    if (!confirm('🗑️ ¿ELIMINAR el ente individual "' + entityName + '"?\n\nSe eliminara el ente pero NO los usuarios asociados. Los usuarios quedaran sin ente asignado.')) return;
+    if (!confirm('🗑️ ¿ELIMINAR el ente individual "' + entityName + '"?\n\n' +
+                 'Las CUENTAS de sus usuarios se conservan; lo que se retira es su\n' +
+                 'vínculo con este ente (rol individual y referencias). Sus roles en\n' +
+                 'clubes NO se tocan.')) return;
 
     _saShowSpinner('Eliminando ente individual...');
     try {
-        const { db, doc, deleteDoc } = await saFS();
+        const { db, doc, deleteDoc, collection, getDocs, updateDoc } = await saFS();
+
+        // ⚠️ SE ANULA CON `null`, NO CON `deleteField()`. Dos razones: `saFS()`
+        // no expone `deleteField`, y traerlo con un `import()` dinámico dejaba
+        // esta función IMPOSIBLE DE PROBAR —el guard la ejecuta en un sandbox
+        // sin red y reventaba antes de llegar al borrado—. Para todos los
+        // consumidores es equivalente: `isIndivUser` de clubs-tab.js y el
+        // reparto por club miran la VERDAD del valor, y `null` es falso.
+        const _BORRA = null;
+
+        // ══════════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v566 · BORRAR EL ENTE TIENE QUE LIMPIAR LO QUE COLGABA DE ÉL
+        //
+        //  Reporte del autor (2026-08-17, capturas 9129/9135): borrar un ente
+        //  individual dejaba usuarios "huérfanos", y una entrenadora del club
+        //  oficial —Alevín C y Regional A— desapareció de las dos vistas.
+        //
+        //  🔑🔑🔑 Aquí estaba: esto era `await deleteDoc(clubs/{entityId})` y
+        //  NADA MÁS. Ni tocaba `allRoles`, ni borraba `individualEntityId` /
+        //  `individualOwnerId` / `isIndividual`, ni el `clubId` de la raíz si
+        //  apuntaba al ente. El borrado de CLUB (delete-club.js) sí hace esa
+        //  cascada desde siempre; el de entes nunca la tuvo.
+        //
+        //  Consecuencia real y nada evidente: `clubs-tab.js` EXCLUYE del árbol
+        //  de clubes a todo usuario con cualquiera de esos campos puestos
+        //  (`isIndivUser`), y el panel del club consulta
+        //  `where('clubId','==',club)`. Con las referencias colgando, la persona
+        //  desaparecía de AMBOS paneles a la vez y sus categorías se pintaban
+        //  vacías, aunque sus plazas siguieran enteras en la base.
+        //
+        //  ⚠️⚠️ EL ORDEN NO ES CAPRICHOSO: primero se limpian los usuarios y
+        //  DESPUÉS se borra el ente. Al revés —como estaba— un fallo a mitad
+        //  deja el ente borrado y las referencias apuntando al vacío, que es
+        //  exactamente el estado del que venimos y que ya no se puede deshacer
+        //  desde la interfaz, porque el ente ya no sale en ninguna lista.
+        //
+        //  ⚠️ NO SE BORRA NINGUNA CUENTA NI NINGUNA PLAZA DE CLUB. Se retiran
+        //  las entradas de `allRoles` ancladas A ESTE ENTE y las referencias de
+        //  la raíz. Los roles en clubes se conservan intactos: la persona puede
+        //  ser entrenadora de un club Y haber tenido un ente, y lo segundo no
+        //  puede llevarse por delante lo primero.
+        // ══════════════════════════════════════════════════════════════════
+        const ROLES_INDIV = ['individual', 'admin_individual', 'parent_individual',
+                             'entrenador_individual', 'padre_individual'];
+        const _anclaAlEnte = (r) => !!r && (
+            String(r.clubId || '') === String(entityId) ||
+            String(r.individualEntityId || '') === String(entityId)
+        );
+
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const ops = [];
+        usersSnap.forEach((d) => {
+            const u = d.data() || {};
+            const roles = Array.isArray(u.allRoles) ? u.allRoles : [];
+            const upd = {};
+
+            // 1 · Las plazas ancladas a ESTE ente se retiran. Las de club, no.
+            const limpios = roles.filter(r => !(_anclaAlEnte(r) || (
+                ROLES_INDIV.includes(r && r.role) && !r.clubId && !r.individualEntityId
+            )));
+            if (limpios.length !== roles.length) upd.allRoles = limpios;
+
+            // 2 · Las referencias de la RAÍZ que señalan al ente.
+            if (String(u.individualEntityId || '') === String(entityId)) upd.individualEntityId = _BORRA;
+            if (String(u.individualOwnerId  || '') === String(entityId)) upd.individualOwnerId  = _BORRA;
+            if (String(u.clubId || '') === String(entityId)) {
+                // Si le queda alguna plaza en un club de verdad, la raíz pasa a
+                // ese club; si no, se deja sin club (aparecerá en "sin club
+                // asignado", que es honesto) en vez de apuntando a un fantasma.
+                const otro = (upd.allRoles || limpios).find(r => r && r.clubId &&
+                    String(r.clubId) !== String(entityId));
+                if (otro) upd.clubId = otro.clubId; else upd.clubId = _BORRA;
+            }
+            if (u.isIndividual === true &&
+                (String(u.individualEntityId || '') === String(entityId) ||
+                 String(u.individualOwnerId  || '') === String(entityId) ||
+                 roles.some(_anclaAlEnte))) {
+                upd.isIndividual = _BORRA;
+            }
+
+            if (Object.keys(upd).length) ops.push(updateDoc(doc(db, 'users', d.id), upd));
+        });
+
+        if (ops.length) await Promise.all(ops);
+
+        // Y AHORA sí, el ente. Si algo de arriba falló, el `catch` corta antes
+        // de llegar aquí y el ente sigue existiendo: se puede reintentar.
         await deleteDoc(doc(db, 'clubs', entityId));
         _saHideSpinner();
-        _saToast('✅ Ente individual eliminado.', 4000);
+        _saToast('✅ Ente individual eliminado. Usuarios desvinculados: ' + ops.length, 4500);
         saTab('individuals');
     } catch(e) {
         _saHideSpinner();

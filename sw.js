@@ -2412,7 +2412,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v563';
+const CACHE_NAME = 'cronos-cache-v566';
 
 const ASSETS = [
     './',

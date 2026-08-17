@@ -202,10 +202,27 @@ async function openClubAdminPanel(preClubId = null) {
     } catch (e) {
         console.warn('[v549] Sin lecturas de servidor; se usa la caché:', e && e.message);
     }
-    const _delServidor = async (fn, respaldo, ref) => {
+    // ⚠️ v565 · EL AVISO TIENE QUE DECIR **QUÉ** LECTURA FALLÓ.
+    //  Decía sólo "Lectura de servidor fallida", y aquí hay TRES: `clubs/{id}`,
+    //  `users where clubId` y `platform_requests where clubId`. La tercera falla
+    //  por permisos DE FORMA ESPERADA (ver el `.catch` de abajo, que la da por
+    //  vacía a propósito), así que un aviso anónimo hacía imposible distinguir
+    //  el ruido normal de una denegación que sí deja el panel sin datos. Se
+    //  perdió una ronda entera de diagnóstico por esto.
+    //
+    //  Y se distingue la DENEGACIÓN de la falta de cobertura: no son lo mismo.
+    //  Sin red se ve un panel desactualizado; denegado, se ve VACÍO.
+    const _delServidor = async (fn, respaldo, ref, queEs) => {
         try { return await fn(ref); }
         catch (e) {
-            console.warn('[v549] Lectura de servidor fallida (¿sin cobertura?); se cae a la caché:', e && e.message);
+            const _msg = (e && e.message) || String(e);
+            const _denegado = /permission|insufficient/i.test(_msg);
+            console.warn('[v549] Lectura de servidor fallida en «' + (queEs || '?') + '»' +
+                (_denegado
+                    ? ' · PERMISOS DENEGADOS (no es falta de cobertura). Si esta lectura es `users`, ' +
+                      'el panel se quedará vacío: revisar los claims del token (role/clubId).'
+                    : ' · ¿sin cobertura?') +
+                '; se cae a la caché:', _msg);
             return await respaldo(ref);
         }
     };
@@ -213,14 +230,14 @@ async function openClubAdminPanel(preClubId = null) {
     let clubSnap, usersSnap, platformReqsSnap, users = [], features = [];
     try {
         [clubSnap, usersSnap] = await Promise.all([
-            _delServidor(_getDocSrv,  getDoc,  doc(db, 'clubs', clubId)),
-            _delServidor(_getDocsSrv, getDocs, query(collection(db, 'users'), where('clubId', '==', clubId))),
+            _delServidor(_getDocSrv,  getDoc,  doc(db, 'clubs', clubId), 'clubs/' + clubId),
+            _delServidor(_getDocsSrv, getDocs, query(collection(db, 'users'), where('clubId', '==', clubId)), 'users where clubId'),
         ]);
         // platform_requests separado para que un fallo no cancele todo
         platformReqsSnap = await _delServidor(_getDocsSrv, getDocs, query(
             collection(db, 'platform_requests'),
             where('clubId', '==', clubId)
-        )).catch(e => {
+        ), 'platform_requests where clubId (fallo ESPERADO si las reglas son estrictas)').catch(e => {
             // Error de permisos es esperado si las reglas son estrictas, usamos users como respaldo
             return { forEach: () => {} }; // Simular snap vacío
         });

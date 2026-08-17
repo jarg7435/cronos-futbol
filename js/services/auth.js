@@ -1158,11 +1158,133 @@ export async function checkAuthorization(user) {
         //    que reparar. `status:'removed'` gana siempre sobre la raíz. El
         //    resto de la sincronización se mantiene igual (un rol PENDIENTE sí
         //    se activa desde la raíz, que es para lo que existía).
+        // ══════════════════════════════════════════════════════════════════
+        //  🛡️ v564 · ESTE BLOQUE NO PUEDE TUMBAR EL INICIO DE SESIÓN
+        //
+        //  Era el ÚNICO de los bloques de arranque que corría SIN `try`. Los
+        //  de al lado —limpieza de huérfanos, auto-activación del SA— sí lo
+        //  tienen. Consecuencia: cualquier excepción aquí abortaba el manejador
+        //  de sesión entero, `window._cronosCurrentUser` no llegaba a asignarse
+        //  y la aplicación quedaba VACÍA: sin categorías y sin entrenadores, en
+        //  todos los paneles a la vez. Un fallo de sincronización de roles no
+        //  puede costar la sesión: como mucho, que esa sincronización no se haga.
+        //
+        //  ⚠️ EL `try` VA AQUÍ, ANTES de la declaración de _rolRevocado, a
+        //  propósito. `test_baja_no_resucita_al_entrar.js` aísla el bloque
+        //  cortando desde esa declaración y contando llaves desde el `if`: si el
+        //  `try` quedara ENTRE los dos, el trozo saldría con una llave sin
+        //  cerrar y el guard reventaría sin estar probando nada.
+        //
+        //  ⚠️⚠️ Y POR ESO ESTE COMENTARIO NO ESCRIBE ESA MARCA LITERAL: el guard
+        //  la busca con `indexOf`, así que mencionarla aquí hacía que el corte
+        //  empezara DENTRO del comentario. Ya pasó al escribir esto.
+        // ══════════════════════════════════════════════════════════════════
+        try {
         const _rolRevocado = (r) => !!r && r.status === 'removed';
         if (data.isAuthorized && data.role) {
             let needsRoleSync = false;
-            const existingRole = allRoles.find(r => r.role === data.role && (r.clubId || null) === (data.clubId || null));
-            if (!existingRole) {
+
+            // ══════════════════════════════════════════════════════════════
+            //  🔴🔴🔴 v564 · ESTE `find` COGÍA LA PLAZA EQUIVOCADA
+            //
+            //  Era `allRoles.find(r => r.role === data.role && r.clubId === data.clubId)`:
+            //  rol y club, SIN CATEGORÍA. Con los dos equipos que v537 hizo
+            //  legales (un F7 y un F11 en el mismo club) eso son DOS entradas
+            //  `role:'user'` con el mismo clubId, así que:
+            //
+            //    · el `find` devolvía la PRIMERA, que no tiene por qué ser la
+            //      que describe la raíz. Si la plaza de la raíz aún no estaba
+            //      en `allRoles`, el `find` encontraba LA OTRA, se daba por
+            //      satisfecho y **nunca la creaba**: el entrenador se quedaba
+            //      sin el equipo que la raíz dice que tiene;
+            //    · el `map` de abajo casaba con las DOS y activaba ambas, así
+            //      que una plaza que un administrador hubiera dejado pendiente
+            //      a propósito se activaba sola al entrar su dueño.
+            //
+            //  🔑 La plaza es (rol, club, categoría, subcategoría) para el
+            //  entrenador y (rol, club) para los demás: `cronosMismaPlaza`, el
+            //  mismo criterio que ya usan el panel del club y los tres
+            //  deduplicadores de este fichero. Es el patrón de v540/v547.
+            //
+            //  ⚠️ CON UN RESPALDO IMPRESCINDIBLE: comparar en estricto crearía
+            //  un duplicado cada vez que en `allRoles` hubiera una entrada
+            //  ANTIGUA del mismo rol y club SIN categoría (las que describe
+            //  v560). Antes esa entrada casaba y no se duplicaba nada. Así que
+            //  si no hay plaza exacta se adopta esa entrada a medio escribir en
+            //  lugar de añadir otra.
+            //
+            //  ⚠️⚠️ Y NO SE LE ESTAMPA LA CATEGORÍA DE LA RAÍZ. Hoy mismo
+            //  (v562/v563) se ha medido que la raíz va desfasada con frecuencia:
+            //  completar la entrada con ella escribiría el equipo equivocado.
+            //  Adoptarla evita el duplicado, que es para lo que hace falta.
+            // ══════════════════════════════════════════════════════════════
+            const _esCoachRaiz = (data.role === 'user' || data.role === 'coach');
+            const _plazaRaiz = {
+                role:        data.role,
+                clubId:      data.clubId || null,
+                category:    _esCoachRaiz ? (data.category || data.categoryLabel || null) : null,
+                subcategory: _esCoachRaiz ? (data.subcategory || null) : null,
+            };
+            // ⚠️ `typeof window.X` LANZA si `window` no está declarado, y los
+            // guards de este proyecto ejecutan estos bloques en un sandbox SIN
+            // `window` (la trampa de v553). Hay que preguntar primero por
+            // `window` a secas y quedarse con la referencia.
+            const _win = (typeof window !== 'undefined') ? window : undefined;
+            const _slugPlaza = (v) => (_win && typeof _win.cronosTeamSlug === 'function')
+                ? _win.cronosTeamSlug(v)
+                : String(v == null ? '' : v).trim().toLowerCase();
+            const _mismaPlazaRaiz = (r) => {
+                if (!r) return false;
+                if (_win && typeof _win.cronosMismaPlaza === 'function') {
+                    return _win.cronosMismaPlaza(r, _plazaRaiz);
+                }
+                if (String(r.role || '') !== String(_plazaRaiz.role || '')) return false;
+                if (String(r.clubId || '') !== String(_plazaRaiz.clubId || '')) return false;
+                if (!_esCoachRaiz) return true;
+                return _slugPlaza(r.category || r.categoryLabel) === _slugPlaza(_plazaRaiz.category) &&
+                       _slugPlaza(r.subcategory) === _slugPlaza(_plazaRaiz.subcategory);
+            };
+
+            // 1 · La plaza EXACTA que describe la raíz.
+            let _idxPlaza = allRoles.findIndex(_mismaPlazaRaiz);
+            // 2 · Respaldo (sólo entrenador): una entrada del mismo rol y club
+            //     SIN categoría es esa misma plaza a medio escribir.
+            if (_idxPlaza < 0 && _esCoachRaiz) {
+                _idxPlaza = allRoles.findIndex(r =>
+                    r &&
+                    String(r.role || '') === String(data.role || '') &&
+                    String(r.clubId || '') === String(data.clubId || '') &&
+                    !(r.category || r.categoryLabel) && !r.subcategory);
+            }
+            const existingRole = _idxPlaza >= 0 ? allRoles[_idxPlaza] : null;
+
+            // ══════════════════════════════════════════════════════════════
+            //  🔴🔴🔴 v564 · LA BAJA MANDA SOBRE LA RAÍZ, TAMBIÉN AL CREAR
+            //
+            //  Comparar por plaza abrió un agujero que el `find` por rol+club
+            //  tapaba sin querer: si la entrada REVOCADA no casa exactamente
+            //  con la raíz, `existingRole` sale null y el bloque de abajo
+            //  CREARÍA una plaza nueva y activa. Es decir, la baja se
+            //  desharía sola por la puerta de al lado — el fallo de v477/v478
+            //  otra vez, y lo cazó `test_baja_no_resucita_al_entrar.js`.
+            //
+            //  🔑 EL CASO REAL DEL GUARD: la raíz NO trae categoría
+            //  (`{role:'user', clubId:'club1'}`) y la entrada revocada SÍ
+            //  (`Alevín/C`). No hay forma de distinguirlas, y ante la duda se
+            //  respeta la baja: es un hecho deliberado de un administrador.
+            //
+            //  Sólo bloquea cuando la raíz NO puede discriminar. Un entrenador
+            //  con el Regional A de baja y el Alevín C vivo sigue pudiendo
+            //  crear/activar su Alevín C con normalidad, porque ahí las dos
+            //  plazas se distinguen por categoría.
+            // ══════════════════════════════════════════════════════════════
+            const _bajaIndistinguible = !existingRole && allRoles.some(r =>
+                r && _rolRevocado(r) &&
+                String(r.role || '') === String(data.role || '') &&
+                String(r.clubId || '') === String(data.clubId || '') &&
+                (!_esCoachRaiz || !_plazaRaiz.category || !(r.category || r.categoryLabel)));
+
+            if (!existingRole && !_bajaIndistinguible) {
                 // 🔑 v560 · LA CATEGORÍA DE LA RAÍZ VIAJA CON EL ROL. Este push
                 // creaba un rol de entrenador SIN category/subcategory, y un
                 // entrenador sin categoría es un entrenador SIN EQUIPO:
@@ -1182,16 +1304,29 @@ export async function checkAuthorization(user) {
                     subcategory: _esCoach ? (data.subcategory || null) : null,
                 });
                 needsRoleSync = true;
-            } else if (!existingRole.isAuthorized && !_rolRevocado(existingRole)) {
-                allRoles = allRoles.map(r =>
-                    (r.role === data.role && (r.clubId || null) === (data.clubId || null))
-                    ? { ...r, isAuthorized: true, status: 'active' } : r
+            } else if (existingRole && !existingRole.isAuthorized && !_rolRevocado(existingRole)) {
+                // ⚠️ `existingRole` puede ser null aquí: es el caso en que se
+                // respetó una baja indistinguible y NO se creó nada. Sin esta
+                // comprobación, esa rama reventaría con un TypeError.
+                // ⚠️ v564 · SE ACTIVA **ESA** PLAZA, NO TODAS LAS DEL MISMO ROL.
+                // El predicado anterior (`r.role === data.role && r.clubId ===
+                // data.clubId`) casaba con las DOS entradas de un entrenador con
+                // dos equipos, así que entrar a la aplicación activaba también la
+                // plaza que un administrador hubiera dejado pendiente a propósito.
+                // Se actúa por ÍNDICE: el que ya resolvió `cronosMismaPlaza`.
+                allRoles = allRoles.map((r, i) =>
+                    i === _idxPlaza ? { ...r, isAuthorized: true, status: 'active' } : r
                 );
                 needsRoleSync = true;
             }
             if (needsRoleSync) {
                 fa.setDoc(ref, { allRoles }, { merge: true }).catch(() => {});
             }
+        }
+        } catch (_syncErr) {
+            // Se deja constancia y se sigue: la sesión vale más que esta
+            // sincronización, y `allRoles` conserva lo que ya tuviera.
+            try { console.warn('[v564] Sincronización raíz↔plaza omitida:', _syncErr && _syncErr.message); } catch (_) {}
         }
 
         // ── Auto-activar roles aprobados por el SA ──────────────────────
