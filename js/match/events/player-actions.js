@@ -309,6 +309,49 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
                 .then(function() {
                     console.log('[v246] Evento guardado en Firestore OK');
                 })
+                .then(function() {
+                    // ══════════════════════════════════════════════════════
+                    //  🪶 v572 · P2 · EL SUCESO TAMBIÉN VA AL ÍNDICE LIGERO
+                    // ══════════════════════════════════════════════════════
+                    //  🔑 SIN ESTO, P1 SERÍA UNA REGRESIÓN. Los avisos de la
+                    //  lista y de los partidos que no se están mirando salen
+                    //  del índice; si el índice sólo se refrescara con el
+                    //  latido, un gol tardaría hasta 15 s en anunciarse — tres
+                    //  veces peor que los 5 s de antes. El suceso tiene que
+                    //  empujar su propio índice, igual que empuja el gordo.
+                    //
+                    //  Se escribe la MISMA entrada recortada que arma
+                    //  `_buildLiveIndexDoc`, y con `arrayUnion`: si dos sucesos
+                    //  caen a la vez, ninguno pisa al otro. La poda a los N
+                    //  últimos la hace el siguiente latido, que reescribe
+                    //  `lastEvents` entero.
+                    //
+                    //  ⚠️ Los `tactical_move` NO entran (son el 45% de los
+                    //  sucesos y no se anuncian nunca), y el fallo es mudo: el
+                    //  suceso ya está guardado en el documento bueno.
+                    if (type === 'tactical_move') return;
+                    return import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
+                        .then(function(fs) {
+                            return fs.setDoc(fs.doc(fa.db, 'live_index', _id), {
+                                lastEvents: fs.arrayUnion({
+                                    eventId:   eventEntry.eventId   || '',
+                                    matchId:   eventEntry.matchId   || _id,
+                                    type:      eventEntry.type      || '',
+                                    text:      eventEntry.text      || '',
+                                    icon:      eventEntry.icon      || '•',
+                                    matchTime: eventEntry.matchTime || '',
+                                    team:      eventEntry.team      || null,
+                                    // Marca de agua para separar historial de
+                                    // novedad en el visor (ver `_matchSeedTs`).
+                                    createdAt: eventEntry.createdAt || 0
+                                }),
+                                updatedAt: fs.serverTimestamp()
+                            }, { merge: true });
+                        })
+                        .catch(function(e) {
+                            console.warn('[v572] Suceso no reflejado en el índice:', e && e.message);
+                        });
+                })
                 .catch(function(err) {
                     console.error('[v246] ERROR guardando evento:', err && err.code || '', err && err.message);
                     // v467 · `failed-precondition: The client has already been

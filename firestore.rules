@@ -1454,6 +1454,100 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCIÓN: live_index  (v572 · P2)
+    // ============================================================
+    // Espejo LIGERO de live_matches: ~1.000 B con marcador, reloj, pertenencia
+    // y los ultimos sucesos anunciables, para que la lista de Partidos en Vivo
+    // y las alertas no tengan que descargarse el partido entero (10.625 B) de
+    // CADA partido activo y en CADA latido. Lo escribe el mismo emisor
+    // (js/match/live/sync.js y js/match/events/player-actions.js).
+    //
+    // ⚠️⚠️ NO ES UN DOCUMENTO PUBLICO POR SER PEQUENO. Lleva nombres de equipo
+    // y textos de suceso que incluyen NOMBRES DE MENORES ("GOL · Fulanito"),
+    // asi que su lectura se cierra EXACTAMENTE igual que la de live_matches:
+    // solo usuario registrado. Aflojar esto seria reabrir P9 por la puerta de
+    // atras, con los mismos datos y sin que se note.
+    //
+    // ⚠️ La fuente de verdad sigue siendo `live_matches`. Este documento es una
+    // CACHE derivada: si se pierde o se queda atras, los lectores caen solos al
+    // documento gordo (live.html:_vigilaConRespaldo). Por eso aqui no se
+    // replica la ventana de gracia de 2 h con su `hasOnly` de campos — lo que
+    // no se puede falsificar es el partido, y ese esta en la otra coleccion.
+    // Lo que SI se replica es el candado de congelado, para que un partido
+    // terminado no se pueda hacer parecer que sigue en juego en la lista.
+    match /live_index/{matchId} {
+      allow read: if isRegisteredUser();
+
+      // Mismo criterio de "cuando esta cerrado" que live_matches, sobre los
+      // campos que el indice si copia (status/finishedAt/updatedAt).
+      // ⚠️ Todas las lecturas con .get(campo, default): leer una clave AUSENTE
+      // de un mapa LANZA en el lenguaje de reglas, y un error equivale a DENY.
+      // Es la trampa que ya se pago en el `create` de live_matches (2026-07-29).
+      function lxAnchor() {
+        return resource.data.get('finishedAt', resource.data.get('updatedAt', null));
+      }
+      function lxIsLive() {
+        return resource.data.get('status', 'active') == 'active';
+      }
+      function lxInGrace() {
+        return !lxIsLive()
+               && lxAnchor() != null
+               && request.time < lxAnchor() + duration.value(2, 'h');
+      }
+      function lxFrozen() {
+        return !lxIsLive() && !lxInGrace();
+      }
+
+      // CREATE: se valida contra el clubId ENTRANTE, igual que live_matches.
+      // La rama del "bootstrap del coach" es necesaria por el mismo motivo que
+      // alli: `_registerMatchEvent` puede tocar este documento con un merge que
+      // solo lleva `lastEvents` + `updatedAt`, sin clubId.
+      allow create: if isAuth() && (
+                       isSuperAdmin() ||
+                       sameClub(request.resource.data.get('clubId', null)) ||
+                       userDocClubId(request.resource.data.get('clubId', null)) ||
+                       (request.resource.data.get('clubId', null) == null && (
+                         (request.resource.data.get('createdBy', null) != null &&
+                          request.resource.data.get('createdBy', null) == request.auth.uid) ||
+                         (request.resource.data.get('coachEmail', null) != null &&
+                          ('email' in request.auth.token) && request.auth.token.email != null &&
+                          request.resource.data.get('coachEmail', null) == request.auth.token.email)
+                       ))
+                    );
+
+      // UPDATE: contra el clubId YA EXISTENTE (no el entrante), para que nadie
+      // "reclame" un indice ajeno cambiandole el club. Y no se toca un indice
+      // congelado: ni siquiera el SuperAdmin, misma regla que en live_matches.
+      allow update: if isAuth() && (
+                       isSuperAdmin() ||
+                       sameClub(resource.data.get('clubId', null)) ||
+                       userDocClubId(resource.data.get('clubId', null)) ||
+                       (resource.data.get('createdBy', null) != null &&
+                        resource.data.get('createdBy', null) == request.auth.uid) ||
+                       (resource.data.get('coachEmail', null) != null &&
+                        ('email' in request.auth.token) && request.auth.token.email != null &&
+                        resource.data.get('coachEmail', null) == request.auth.token.email)
+                    ) && !lxFrozen();
+
+      // DELETE: mas abierto que en live_matches A PROPOSITO. Borrar un indice
+      // NO destruye nada —el partido sigue entero en live_matches y el lector
+      // cae solo al gordo—, asi que aqui no aplica el argumento de v434 de que
+      // "lo que no se puede editar se falsificaria por omision". Se mantiene
+      // acotado a quien pertenece al partido para que nadie pueda ir borrando
+      // indices ajenos y devolver a todo un club al camino caro.
+      allow delete: if isAuth() && (
+                       isSuperAdmin() ||
+                       sameClub(resource.data.get('clubId', null)) ||
+                       userDocClubId(resource.data.get('clubId', null)) ||
+                       (resource.data.get('createdBy', null) != null &&
+                        resource.data.get('createdBy', null) == request.auth.uid) ||
+                       (resource.data.get('coachEmail', null) != null &&
+                        ('email' in request.auth.token) && request.auth.token.email != null &&
+                        resource.data.get('coachEmail', null) == request.auth.token.email)
+                    );
+    }
+
+    // ============================================================
     // COLECCIÓN: users/{uid}/cronos_data
     // ============================================================
     match /users/{userId}/cronos_data/{docId} {

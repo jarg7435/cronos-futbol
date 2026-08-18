@@ -121,7 +121,19 @@ function makeFakeDate(nowFn) {
 // dentro) para poder ejecutarla; pushLiveSnapshot se stubea porque su unica
 // tarea aqui es no explotar (depende de mas globals que no son objeto de
 // este test).
+// v572 · `startLiveSync` usa la constante de modulo LIVE_HEARTBEAT_MS (P1: el
+// latido pasa de 5 s a 15 s), que queda FUERA del corte de arriba. Se extrae
+// del fuente real en vez de escribir 15000 a mano: asi, si alguien renombra o
+// borra la constante, este test se entera en lugar de correr sobre un valor
+// inventado que ya no existe en el codigo.
+const mHeartbeat = src.match(/const\s+LIVE_HEARTBEAT_MS\s*=\s*\d+\s*;/);
+if (!mHeartbeat) {
+    console.log('  FAIL · no se encuentra la declaracion de LIVE_HEARTBEAT_MS en sync.js');
+    process.exit(1);
+}
+
 const runnable = `
+${mHeartbeat[0]}
 ${fnBody}
 async function pushLiveSnapshot(status) { return true; }
 `;

@@ -119,11 +119,20 @@ window.saDeleteClubComplete = async function(clubId, clubName) {
             return n;
         };
 
+        // v572 · P2 · `live_index` va en la misma tanda que `live_matches`: es
+        // el espejo ligero de cada partido y lleva su mismo `clubId`, así que
+        // se acota igual. Si no se borrara, un club eliminado dejaría tras de sí
+        // tarjetas de partido que nadie podría ver ni limpiar — exactamente los
+        // huérfanos que v435 vino a cerrar, sólo que en la colección nueva.
+        // El recuento del índice no se informa al usuario a propósito: es un
+        // espejo interno de los partidos, no un dato suyo. "12 partidos y 12
+        // índices eliminados" sólo confundiría.
         const [nRep, nLive, nLinks] = await Promise.all([
             _borrarPorClub('cronos_player_reports'),
             _borrarPorClub('live_matches'),
             _borrarPorClub('cronos_player_links'),
         ]);
+        await _borrarPorClub('live_index');
 
         // 4. Borrar el club
         await deleteDoc(doc(db,'clubs',clubId));

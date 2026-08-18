@@ -524,12 +524,21 @@ function _cancelInterruptedMatch(state) {
         const fa = window._cronos_auth;
         if (fa && fa.db && state.liveMatchId) {
             import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
-                .then(({ doc, updateDoc }) => {
+                .then(({ doc, updateDoc, setDoc }) => {
                     updateDoc(doc(fa.db, 'live_matches', state.liveMatchId), {
                         status:      'cancelled',
                         cancelledAt: new Date().toISOString(),
                         cancelReason: 'timeout_match_limit',
                     }).catch(() => {});
+                    // v572 · P2 · El índice ligero se cancela con el partido, o
+                    // su tarjeta seguiría "EN VIVO" en la lista para siempre: es
+                    // el índice el que se filtra por `status`, no el partido.
+                    // `setDoc` con merge porque el índice puede no existir.
+                    setDoc(doc(fa.db, 'live_index', state.liveMatchId), {
+                        status:      'cancelled',
+                        cancelledAt: new Date().toISOString(),
+                        cancelReason: 'timeout_match_limit',
+                    }, { merge: true }).catch(() => {});
                 });
         }
     } catch(e) { /* silencioso */ }

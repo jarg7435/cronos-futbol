@@ -129,9 +129,33 @@ console.log('\n── PARTE 2 · 10 h desde que TERMINA el partido ──');
        /if\s*\(!finMs\)\s*return;/.test(cuerpo));
 
     // Tope de 500 operaciones por batch: pasarse hace fallar el commit ENTERO.
-    ok('2g · acota el lote por debajo del tope de 500 del batch',
-       (cuerpo.match(/\.limit\(\s*4\d\d\s*\)/g) || []).length >= 2,
-       'con 150 partidos simultaneos una acumulacion puede pasar de 500');
+    //
+    // ⚠️ v572 · ESTE GUARD MIRABA EL NUMERO, NO EL INVARIANTE. Exigia
+    // `.limit(4xx)` literal, dando por hecho que cada partido gasta UNA
+    // operacion de lote. Desde P2 gasta DOS —el partido y su `live_index`—, asi
+    // que un `.limit(450)` que el guard aprobaba serian 900 operaciones y el
+    // commit fallaria entero: el guard habria seguido verde sobre el fallo
+    // exacto que existe para impedir. Ahora se mide lo que importa de verdad:
+    // documentos por pasada x operaciones por documento < 500.
+    const _seccionesLote = [
+        { nombre: 'A', re: /loteA\.(update|set|delete|create)\s*\(/g },
+        { nombre: 'B', re: /loteB\.(update|set|delete|create)\s*\(/g },
+    ];
+    const _limites = (cuerpo.match(/\.limit\(\s*(\d+)\s*\)/g) || [])
+        .map(s => parseInt(s.replace(/\D/g, ''), 10));
+    let _loteOk = _limites.length >= 2;
+    let _detalle = [];
+    _seccionesLote.forEach((sec, i) => {
+        const ops = (cuerpo.match(sec.re) || []).length;
+        const lim = _limites[i];
+        if (!lim || !ops) { _loteOk = false; return; }
+        _detalle.push(`paso ${sec.nombre}: ${lim} docs x ${ops} ops = ${lim * ops}`);
+        if (lim * ops > 500) _loteOk = false;
+    });
+    ok('2g · cada pasada cabe en el tope de 500 operaciones por batch (' +
+       _detalle.join(' · ') + ')',
+       _loteOk,
+       'documentos_por_pasada x operaciones_por_documento tiene que quedar por debajo de 500');
 }
 
 // ═══════════ PARTE 3 · el sello de finalizacion ═══════════

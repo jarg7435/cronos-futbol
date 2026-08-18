@@ -1869,6 +1869,7 @@ function teardownBackgroundWatch() {
             delete _bgWatchers[id];
             delete _matchPrevState[id];
             delete _matchSeeded[id];
+            delete _matchSeedTs[id];
             delete _matchLastTs[id];
             delete _matchPrevPhase[id];
             delete _matchLastData[id];
@@ -1900,6 +1901,19 @@ let _audioCtx = null;
 const _matchPrevState = {};
 // Para no avisar de eventos ya existentes la primera vez que vemos un partido.
 const _matchSeeded = {};
+// ⚠️ v572b · MARCA DE AGUA DE LA SIEMBRA, por matchId: `createdAt` (epoch ms)
+// del suceso más reciente que ya existía cuando empezamos a mirar el partido.
+// Todo lo anterior es HISTORIAL y no se anuncia jamás, lo traiga el documento
+// completo o la ventana de 3 del índice ligero.
+//
+// 🔑 POR QUÉ NO BASTA `_matchSeeded`. Desde P2 hay DOS vistas del mismo partido
+// —el índice ligero por el vigilante de fondo y el documento entero por el
+// visor de detalle— y CUÁL DE LAS DOS SIEMBRA ES UNA CARRERA. Si sembraba la
+// ventana de 3, el historial restante llegaba después con la siembra ya cerrada
+// y se anunciaba entero. Un booleano no puede distinguir "ya he pasado" de "ya
+// lo he visto TODO"; una marca temporal sí, y da el mismo resultado gane quien
+// gane la carrera.
+const _matchSeedTs = {};
 // Ultimo updatedAt (epoch ms) PROCESADO por matchId. Sirve para descartar
 // snapshots no monotonicos (reenvios de Firestore tras reconexion o emisiones
 // desde cache local desactualizada), que de otro modo re-dispararian alertas
@@ -3746,9 +3760,22 @@ async function _resincronizaVista(motivo) {
 }
 if (typeof window !== 'undefined') window._cronosResincronizaVista = _resincronizaVista;
 
-// Vigilante: si el partido visible lleva más de 25 s sin un solo snapshot
-// —cuando debería estar latiendo cada 5— su canal está muerto. Se relee.
-const _MS_SIN_SNAPSHOT_SOSPECHOSO = 25000;
+// Vigilante: si el partido visible lleva demasiado tiempo sin un solo snapshot
+// —cuando debería estar latiendo— su canal está muerto. Se relee.
+//
+// ⚠️⚠️ v572 · ESTE NÚMERO VA ATADO AL LATIDO DEL EMISOR. Era 25 s cuando el
+// latido era de 5 s (5 fallos seguidos). P1 sube el latido a 15 s
+// (`LIVE_HEARTBEAT_MS`, js/match/live/sync.js), así que 25 s se alcanzan con
+// cualquier jitter de red normal: el watchdog daría por muerto un canal
+// perfectamente vivo y llamaría a `_resincronizaVista` —que relee la vista y
+// rehace TODOS los vigilantes de fondo con `getDocs`— cada pocos segundos y
+// en cada espectador. Sería una tormenta de lecturas, exactamente lo contrario
+// de lo que P1 persigue.
+//
+// 50 s = algo más de 3 latidos perdidos, la misma holgura relativa que daban
+// los 25 s con el latido de 5 s. **Si se vuelve a tocar el latido, hay que
+// tocar este número.**
+const _MS_SIN_SNAPSHOT_SOSPECHOSO = 50000;
 let _watchdogTimer = null;
 function _startResyncWatchdog() {
     if (_watchdogTimer) return;
@@ -3870,11 +3897,55 @@ function detectAndAlert(matchId, matchData, fromCache) {
     // Se recorre el array de eventos del snapshot y se apunta cuáles son NUEVOS
     // para este partido. En la primera pasada (siembra) se marcan todos como
     // vistos SIN anunciar, para no cantar el historial al abrir el visor.
-    const _evArr   = Array.isArray(matchData.events) ? matchData.events : [];
+    // ════════════════════════════════════════════════════════════════════
+    //  🚨🚨🚨 v572b · DOS VISTAS DEL MISMO PARTIDO, UNA SOLA SIEMBRA
+    // ════════════════════════════════════════════════════════════════════
+    //  El índice ligero trae los sucesos anunciables en `lastEvents` (una
+    //  VENTANA de los 3 últimos, sin `tactical_move`); el documento gordo los
+    //  trae enteros en `events`. Cuando alguien ABRE un partido recibe LOS DOS:
+    //  el vigilante de fondo sigue dándole el índice y el visor de detalle le
+    //  da el documento completo.
+    //
+    //  🔑🔑🔑 Y AHÍ ESTABA EL DEFECTO QUE INTRODUJO P2. La siembra era un
+    //  booleano por partido (`_matchSeeded`). En la lista, el índice sembraba
+    //  con sus 3 sucesos y cerraba la siembra; al abrir el partido llegaba el
+    //  documento gordo con los 25 del historial y, como la siembra ya estaba
+    //  cerrada, los 22 restantes se anunciaban como NUEVOS: veintidós avisos
+    //  de golpe al entrar en un partido avanzado. Es el "efecto embudo" de
+    //  v567 otra vez, por una causa nueva.
+    //
+    //  ⚠️ Antes de v572 esto no podía pasar: las dos vías leían el MISMO
+    //  documento, así que la siembra veía siempre el historial entero. Sembrar
+    //  con una VENTANA es lo que rompe el invariante.
+    //
+    //  🔑 LA CORRECCIÓN: la siembra deja de ser "ya he pasado por aquí" y pasa
+    //  a ser UNA MARCA DE AGUA — el instante del suceso más reciente que había
+    //  cuando empezamos a mirar. Todo lo anterior a esa marca es HISTORIAL, lo
+    //  venga a contar quien lo venga a contar y en el orden que sea. El Set de
+    //  `eventId` se conserva como dedup exacto; la marca cubre lo que el Set no
+    //  puede ver, que es lo que nunca llegó a estar en la ventana.
+    const _evArr   = Array.isArray(matchData.events) ? matchData.events
+                   : (Array.isArray(matchData.lastEvents) ? matchData.lastEvents : []);
     const _evConId = _evArr.some(e => e && e.eventId);
     const _vistos  = _seenSetFor(matchId);
     const _siembra = !_matchSeeded[matchId];
     const _evNuevos = [];
+
+    // Marca de agua del partido. En la siembra se calcula; después se lee.
+    if (_siembra) {
+        let _tope = 0;
+        _evArr.forEach(ev => {
+            const t = (ev && Number(ev.createdAt)) || 0;
+            if (t > _tope) _tope = t;
+        });
+        // Sin ningún `createdAt` utilizable (partidos anteriores a v572) la
+        // marca queda en 0 y el comportamiento es EXACTAMENTE el de siempre:
+        // manda el Set de eventId. No se inventa una marca "ahora", que
+        // silenciaría sucesos legítimos de un partido ya en marcha.
+        _matchSeedTs[matchId] = _tope;
+    }
+    const _corte = _matchSeedTs[matchId] || 0;
+
     _evArr.forEach(ev => {
         // 🔑 AISLAMIENTO: un evento que declare otro matchId no se procesa aquí
         // jamás, aunque llegue dentro de este documento.
@@ -3883,7 +3954,12 @@ function detectAndAlert(matchId, matchData, fromCache) {
         const k = _eventKey(ev);
         if (!k || _vistos.has(k)) return;
         _vistos.add(k);
-        if (!_siembra) _evNuevos.push(ev);
+        if (_siembra) return;                // el historial nunca se anuncia
+        // 🔑 Y tampoco lo anterior a la marca de agua, aunque este Set no lo
+        // hubiera visto porque nunca cupo en la ventana del índice.
+        const _ts = Number(ev.createdAt) || 0;
+        if (_corte && _ts && _ts <= _corte) return;
+        _evNuevos.push(ev);
     });
     // La siembra se cierra AQUÍ, y no en la vía delta: ver el aviso de arriba.
     _matchSeeded[matchId] = true;
@@ -3941,6 +4017,24 @@ function detectAndAlert(matchId, matchData, fromCache) {
         // compararía contra el estado de hace minutos y cantaría de golpe todo
         // lo ocurrido entretanto.
         _matchPrevState[matchId] = _buildState(matchData);
+        return;
+    }
+
+    // ⛔ v572 · EL ÍNDICE LIGERO NO PASA DE AQUÍ.
+    //
+    // La vía delta deduce los sucesos COMPARANDO el estado de los jugadores
+    // entre dos snapshots (`_buildState` → `matchData.players`), y el índice no
+    // lleva `players`: no puede llevarlos, son los 3.330 B que P2 existe para
+    // no enviar. Sin este corte, un partido del índice que todavía no tuviera
+    // sucesos (`_evConId` falso) entraría en el delta y compararía contra un
+    // estado SIEMPRE vacío — cero jugadores en campo, cero goles—, así que
+    // cualquier snapshot posterior parecería un cambio masivo y se anunciarían
+    // sucesos que no han ocurrido.
+    //
+    // No se pierde nada: la vía delta es el respaldo para partidos anteriores a
+    // los `eventId`, y ésos se siguen vigilando por el documento gordo
+    // (`_vigilaConRespaldo` los degrada solos, porque no tienen índice).
+    if (matchData.idx) {
         return;
     }
 
@@ -4247,8 +4341,29 @@ function _userCanFollow(m) {
 //  la lista de Partidos en Vivo de showLiveNow. Estaban duplicados —la lista
 //  seguia escaneando la coleccion entera— y dos definiciones del mismo criterio
 //  acaban divergiendo: es exactamente lo que ya paso con _userCanFollow.
+// ══════════════════════════════════════════════════════════════════
+//  🪶 v572 · P2 · LA LISTA Y LAS ALERTAS LEEN DEL ÍNDICE LIGERO
+// ══════════════════════════════════════════════════════════════════
+//  `live_index/{matchId}` lleva lo mismo que necesita esta pantalla —marcador,
+//  reloj, categoría, pertenencia y los últimos sucesos anunciables— en ~1.000 B
+//  en vez de los 10.625 B del documento de partido. Los campos de filtro
+//  (`status`, `clubId`, `createdBy`, `coachEmail`) son los MISMOS, así que las
+//  consultas de v431/v433 no cambian de forma: sólo de colección.
+//
+//  🔑 QUIÉN SIGUE LEYENDO EL DOCUMENTO GORDO: el visor de detalle
+//  (`unsubscribeMatch`), que es el único que necesita jugadores, posiciones e
+//  historial completo. Un espectador estaba pagando 15 documentos gordos por
+//  latido para mirar uno; ahora paga 14 ligeros y uno gordo.
+//
+//  ⚠️ EL RESPALDO SIGUE APUNTANDO A `live_matches`, a propósito. Si el índice
+//  no estuviera —reglas o índices compuestos sin desplegar, partidos que ya
+//  estaban en curso cuando se desplegó v572— la consulta falla o vuelve vacía
+//  y se cae al escaneo de siempre: caro, pero la lista NO se queda en blanco
+//  y las alertas siguen sonando. Es la misma red de v431/v433.
+const _COL_INDICE = "live_index";
+
 function _followableQueries() {
-    const col = collection(db, "live_matches");
+    const col = collection(db, _COL_INDICE);
     const esSA = (userData.role === "superadmin" || userData.role === "admin");
     if (esSA) {
         // El SuperAdmin si puede seguirlos todos. Al menos se acota por estado
@@ -4303,6 +4418,54 @@ async function _fetchFollowableMatches() {
     return Array.from(vistos.values());
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  v572 · P2 · VIGILANCIA CON RESPALDO, PARTIDO A PARTIDO
+// ══════════════════════════════════════════════════════════════════
+//  Se suscribe al índice ligero y, SÓLO si ese partido no lo tiene, se pasa al
+//  documento gordo. La degradación es por partido y no global: un partido que
+//  ya estaba en curso cuando se desplegó v572 —y que por tanto nunca escribió
+//  índice hasta su siguiente latido— sigue avisando desde el primer segundo,
+//  mientras los demás ya van por la vía barata.
+//
+//  ⚠️ Devuelve SIEMPRE una función de baja que cancela la suscripción que esté
+//  viva en ese momento. `refreshBackgroundWatchers` guarda ese retorno en
+//  `_bgWatchers[id]` y lo llama al dar de baja el partido; si el respaldo se
+//  hubiera activado por medio, tiene que cancelar el listener del gordo, no el
+//  del índice que ya se cerró. Sin esta indirección quedaría un listener
+//  huérfano por cada partido degradado.
+function _vigilaConRespaldo(matchId, alRecibir) {
+    let cancelaActual = null;
+    let dadoDeBaja    = false;
+    let yaDegradado   = false;
+
+    const suscribe = (coleccion) => {
+        return onSnapshot(doc(db, coleccion, matchId), (snap) => {
+            if (dadoDeBaja) return;
+            // Índice ausente = este partido no lo tiene. Se degrada UNA vez.
+            if (!snap.exists() && coleccion === _COL_INDICE && !yaDegradado) {
+                yaDegradado = true;
+                try { cancelaActual && cancelaActual(); } catch (e) {}
+                cancelaActual = suscribe("live_matches");
+                return;
+            }
+            alRecibir(snap);
+        }, () => {
+            // Un error de permisos o de red sobre el índice tampoco puede dejar
+            // al usuario sin alertas: mismo camino de degradación.
+            if (dadoDeBaja || coleccion !== _COL_INDICE || yaDegradado) return;
+            yaDegradado = true;
+            cancelaActual = suscribe("live_matches");
+        });
+    };
+
+    cancelaActual = suscribe(_COL_INDICE);
+
+    return () => {
+        dadoDeBaja = true;
+        try { cancelaActual && cancelaActual(); } catch (e) {}
+    };
+}
+
 async function refreshBackgroundWatchers() {
     try {
         let candidatos;
@@ -4323,7 +4486,11 @@ async function refreshBackgroundWatchers() {
             if (!_userCanFollow(m)) return;
             activeIds.add(m.id);
             if (_bgWatchers[m.id]) return; // ya suscrito
-            _bgWatchers[m.id] = onSnapshot(doc(db, "live_matches", m.id), (s2) => {
+            // v572 · P2 · Se vigila el ÍNDICE LIGERO, no el partido entero.
+            // `_vigilaConRespaldo` cae solo al documento gordo si este partido
+            // no tiene índice (ver más abajo), así que un partido que ya
+            // estuviera en curso al desplegar v572 sigue avisando igual.
+            _bgWatchers[m.id] = _vigilaConRespaldo(m.id, (s2) => {
                 if (!s2.exists()) return;
                 const data = s2.data();
                 // v455 · SE RETIRA EL FILTRO POR `currentMatchId`.
@@ -4343,7 +4510,7 @@ async function refreshBackgroundWatchers() {
                 //   · CAJÓN DE HISTORIAL → sólo el partido que se está viendo.
                 // De eso se encarga showEventToast con el matchId que recibe.
                 detectAndAlert(m.id, data, s2.metadata && s2.metadata.fromCache);
-            }, () => {});
+            });
         });
         // Cancelar suscripciones de partidos que ya no están activos/seguidos.
         Object.keys(_bgWatchers).forEach(id => {
@@ -4352,6 +4519,7 @@ async function refreshBackgroundWatchers() {
                 delete _bgWatchers[id];
                 delete _matchPrevState[id];
                 delete _matchSeeded[id];
+                delete _matchSeedTs[id];
                 delete _matchLastTs[id];
                 delete _matchSeenEvents[id];
                 delete _matchPrevPhase[id];
@@ -4413,6 +4581,7 @@ window.loadMatch = function(matchId) {
     // onSnapshot de abajo y, como Firestore entrega callbacks en un turno de
     // event loop posterior, ningun snapshot puede colarse entre medias.
     delete _matchSeeded[matchId];
+    delete _matchSeedTs[matchId];
     delete _matchLastTs[matchId];
     delete _matchPrevState[matchId];
     // También el registro de eventos vistos: al reabrir un partido la pasada de
@@ -5479,8 +5648,14 @@ window.showLiveNow = async function() {
                 ? m.updatedAt.toDate().toLocaleTimeString('es-ES',
                     {hour:'2-digit', minute:'2-digit'})
                 : '—';
-            const homePlayers = (m.players||[]).filter(p=>p.team==='home'&&p.status==='field').length;
-            const awayPlayers = (m.players||[]).filter(p=>p.team==='away'&&p.status==='field').length;
+            // v572 · P2 · LOS "N EN CAMPO", YA CONTADOS EN ORIGEN.
+            // Esto era lo ÚNICO que la lista hacía con `players`: contar. Y por
+            // ese recuento viajaban 3.330 B por partido y por latido a cada
+            // espectador. El índice trae los dos números hechos; el `??` deja
+            // intacto el camino del documento gordo (respaldo y partidos sin
+            // índice), donde se sigue contando como siempre.
+            const homePlayers = m.onFieldHome ?? (m.players||[]).filter(p=>p.team==='home'&&p.status==='field').length;
+            const awayPlayers = m.onFieldAway ?? (m.players||[]).filter(p=>p.team==='away'&&p.status==='field').length;
             const card = document.createElement('div');
             card.className = 'history-card';
             // v466 · La tarjeta se identifica para poder ALINEARLE su pila de
@@ -6417,8 +6592,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v571"></script>
-<script src="js/match/replay/replay-player.js?v=v571"></script>
-<script src="js/match/events/retroactive-modal.js?v=v571"></script>
+<script src="js/match/immutability.js?v=v573"></script>
+<script src="js/match/replay/replay-player.js?v=v573"></script>
+<script src="js/match/events/retroactive-modal.js?v=v573"></script>
 </body>
 </html>

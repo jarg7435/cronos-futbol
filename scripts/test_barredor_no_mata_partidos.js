@@ -51,6 +51,7 @@ if (!fn) { console.log('\n' + pass + ' PASS / ' + fail + ' FAIL'); process.exit(
 // ── Arnés: un Firestore de mentira que registra qué se cierra ──────────────
 async function correr({ docs, fromCache = false, miPartido = null }) {
     const cerrados = [];
+    const indices  = [];   // v572 · cierres del espejo ligero `live_index`
     const ts = (fecha) => fecha === null ? null : { toDate: () => fecha };
     const snap = {
         metadata: { fromCache },
@@ -72,9 +73,15 @@ async function correr({ docs, fromCache = false, miPartido = null }) {
         __mods: {
             collection: () => ({}), query: (...a) => a, where: () => ({}),
             getDocs: async () => snap,
-            doc: (_db, _col, id) => ({ id }),
+            doc: (_db, col, id) => ({ id, col }),
             serverTimestamp: () => 'SENTINEL',
-            updateDoc: async (ref, payload) => { cerrados.push({ id: ref.id, payload }); }
+            updateDoc: async (ref, payload) => { cerrados.push({ id: ref.id, payload }); },
+            // v572 · P2 · el barredor cierra TAMBIEN el indice ligero
+            // (`live_index`) del partido que da por abandonado. Sin este stub el
+            // codigo real lanzaba "setDoc is not a function" a mitad del bucle y
+            // el arnes media un cierre a medias: la PARTE 2 se ponia roja por un
+            // fallo del stub, no del codigo.
+            setDoc: async (ref, payload) => { indices.push({ id: ref.id, col: ref.col, payload }); }
         }
     };
     sandbox.globalThis = sandbox;
@@ -88,6 +95,10 @@ async function correr({ docs, fromCache = false, miPartido = null }) {
     // vacía SIEMPRE, y con ella la PARTE 2 salía roja aunque el código cerrase
     // perfectamente. Un arnés que no espera mide el instante equivocado.
     await vm.runInContext(codigo + '\ncleanupStaleMatches();', sandbox);
+    // v572 · los cierres del indice viajan COLGADOS del array, no en su lugar:
+    // las doce llamadas de este fichero hacen `const cerrados = await correr()`
+    // y tienen que seguir recibiendo exactamente la misma lista.
+    cerrados.indices = indices;
     return cerrados;
 }
 
@@ -186,6 +197,18 @@ console.log('\n── PARTE 2 · pero SIGUE cerrando lo que debe ──');
        cerrados.length === 2 &&
        cerrados.every(c => c.id.startsWith('abandonado')),
        JSON.stringify(cerrados.map(c => c.id)));
+
+    // v572 · P2 · Y EL ESPEJO SE CIERRA CON EL PARTIDO, NI MAS NI MENOS.
+    // La lista de Partidos en Vivo y las alertas filtran por `status` en
+    // `live_index`, no en `live_matches`: un indice que se quedara 'active'
+    // dejaria en pantalla, indefinidamente, la tarjeta de un partido que el
+    // barredor acaba de dar por abandonado. Y cerrar de mas seria peor: apagaria
+    // la tarjeta de un partido que se esta jugando.
+    ok('2f · 🪶 el indice ligero se cierra con los MISMOS partidos',
+       cerrados.indices.length === 2 &&
+       cerrados.indices.every(i => i.col === 'live_index' && i.id.startsWith('abandonado')) &&
+       cerrados.indices.every(i => i.payload.status === 'finished'),
+       JSON.stringify(cerrados.indices.map(i => i.col + '/' + i.id)));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

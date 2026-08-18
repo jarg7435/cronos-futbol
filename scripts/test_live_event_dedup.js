@@ -74,8 +74,23 @@ console.log('\n── PARTE 2 · registro de vistos por partido ──');
        /delete _matchSeenEvents\[matchId\];/.test(l));
 
     // 🔑 La primera pasada marca todo como visto SIN anunciar.
+    //
+    // ⚠️ v572b · ESTE GUARD EXIGIA UNA LINEA LITERAL, no el invariante:
+    //     /if \(!_siembra\) _evNuevos\.push\(ev\);/
+    // La correccion del embudo de P2 reescribio ese bucle (la siembra pasa de
+    // un booleano a una marca de agua temporal, porque ahora hay DOS vistas del
+    // mismo partido y sembrar con la ventana de 3 del indice dejaba el resto
+    // del historial por anunciar). El invariante NO cambio ni un apice, pero el
+    // guard se puso rojo por la forma. Ahora se comprueban los dos hechos que
+    // de verdad importan, sin atarse a como estan escritos:
+    //   · el suceso se marca como VISTO siempre, tambien en la siembra;
+    //   · en la siembra no se anuncia nada.
     ok('2f · 🔑 en la siembra se marcan los eventos SIN anunciarlos',
-       /if \(!_siembra\) _evNuevos\.push\(ev\);/.test(l));
+       /_vistos\.add\(k\);/.test(l) &&
+       (/if \(!_siembra\) _evNuevos\.push\(ev\);/.test(l) ||
+        /if \(_siembra\) return;[\s\S]{0,400}?_evNuevos\.push\(ev\);/.test(l)),
+       'el comportamiento se verifica EJECUTANDOLO en la PARTE 3 de aqui y en ' +
+       'la PARTE 6 de test_p1_p2_consumo.js; esto solo vigila la estructura');
 }
 
 // ═══════ PARTE 3 · 🔑 comportamiento real del deduplicador ═══════

@@ -1579,15 +1579,22 @@ exports.cleanupLiveMatches = functions.pubsub
 
     /* ---- PASO A · cerrar abandonados (mismo umbral que el cliente) ---- */
     try {
-      // ⚠️ `limit(450)`: un batch de Firestore admite 500 operaciones como
+      // ⚠️ `limit(...)`: un batch de Firestore admite 500 operaciones como
       // maximo y falla ENTERO al superarlas. Con 150 partidos simultaneos
       // previstos, una acumulacion de fin de semana puede pasar de 500 y
       // dejaria la limpieza sin hacer NADA, justo cuando mas falta hace. Al
       // correr cada hora, lo que sobre se recoge en la pasada siguiente.
+      //
+      // ⚠️⚠️ v572 · EL TOPE BAJA DE 450 A 225 PORQUE AHORA SON DOS ESCRITURAS
+      // POR PARTIDO: la del partido y la de su indice ligero (`live_index`).
+      // Con 450 documentos serian 900 operaciones, MAS DEL DOBLE del limite, y
+      // el lote fallaria entero — la limpieza dejaria de funcionar del todo y
+      // en silencio, que es justo el escenario contra el que avisa el parrafo
+      // de arriba. 225 x 2 = 450, la misma holgura que habia.
       const abandonados = await db.collection('live_matches')
         .where('status', '==', 'active')
         .where('updatedAt', '<', corte4h)
-        .limit(450)
+        .limit(225)
         .get();
 
       const loteA = db.batch();
@@ -1598,6 +1605,19 @@ exports.cleanupLiveMatches = functions.pubsub
           expireAt:   new Date(ahora + 10 * 60 * 60 * 1000),
           autoClosed: true,
         });
+        // v572 · P2 · El indice tiene que cerrarse CON el partido. Si se
+        // quedara en `status:'active'`, las consultas de la lista y de las
+        // alertas —que filtran por ese campo en el INDICE, no en el partido—
+        // seguirian devolviendo un partido abandonado como si seguiera en
+        // juego, indefinidamente. `set` con merge y no `update`: un partido
+        // anterior a v572 no tiene indice, y `update` sobre un documento
+        // inexistente hace fallar el lote ENTERO.
+        loteA.set(db.collection('live_index').doc(d.id), {
+          status:     'finished',
+          finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+          expireAt:   new Date(ahora + 10 * 60 * 60 * 1000),
+          autoClosed: true,
+        }, { merge: true });
         cerrados++;
       });
       if (cerrados) await loteA.commit();
@@ -1633,7 +1653,7 @@ exports.cleanupLiveMatches = functions.pubsub
       const terminados = await db.collection('live_matches')
         .where('status', 'in', ['finished', 'cancelled'])
         .orderBy('updatedAt', 'asc')
-        .limit(450)   // mismo motivo que en el paso A: tope de 500 por batch
+        .limit(225)   // mismo motivo que en el paso A: 225 x 2 ops = 450 < 500
         .get();
 
       const loteB = db.batch();
@@ -1651,6 +1671,13 @@ exports.cleanupLiveMatches = functions.pubsub
         if (!finMs) return;
         if (finMs <= corte10h.getTime()) {
           loteB.delete(d.ref);
+          // v572 · P2 · El indice se va CON el partido. `delete` sobre un
+          // documento que no existe es una operacion valida y silenciosa en
+          // Firestore, asi que esto no puede romper el lote por los partidos
+          // anteriores a v572 que nunca tuvieron indice. Sin esta linea los
+          // indices se acumularian para siempre: son ~1 KB cada uno y nadie
+          // los recogeria jamas, porque el unico barredor mira `live_matches`.
+          loteB.delete(db.collection('live_index').doc(d.id));
           borrados++;
         }
       });

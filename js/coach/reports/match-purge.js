@@ -113,6 +113,14 @@
             var s = await mod.getDoc(ref);
             if (!s.exists()) return false;
             await mod.deleteDoc(ref);
+            // v572 · P2 · Y su índice ligero. Una purga que dejara el índice
+            // vivo sería peor que no purgar: el partido desaparece de los
+            // informes pero su tarjeta sigue en la lista de Partidos en Vivo,
+            // que consulta `live_index`. Aquí NO se comprueba existencia —
+            // `deleteDoc` es idempotente (ver la cabecera de este fichero) y el
+            // valor devuelto lo decide el borrado del partido, no el del índice.
+            try { await mod.deleteDoc(mod.doc(db, 'live_index', mid)); }
+            catch (eIdx) { console.warn('[Purga] índice no borrado:', eIdx && eIdx.code ? eIdx.code : eIdx); }
             return true;
         } catch (e) {
             console.warn('[Purga] el partido en vivo no se pudo borrar:',

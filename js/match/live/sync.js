@@ -8,14 +8,46 @@
 //  SINCRONIZACIÓN EN VIVO — Firestore
 // ══════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════
+//  ⏱️ v572 · P1 — EL LATIDO PASA DE 5 s A 15 s
+// ══════════════════════════════════════════════════════════════════
+//  Medido sobre la prueba de estrés del 17/08/2026 y la facturación real
+//  (74.000 lecturas ese día, 0,01 € cobrados): el latido es la ÚNICA fuente
+//  de coste de la aplicación. Cada latido de un partido se entrega a TODOS
+//  los espectadores suscritos, así que multiplicar por tres el intervalo
+//  divide entre tres las lecturas Y los bytes de todos a la vez.
+//
+//  🔑 POR QUÉ NO SE NOTA EN PANTALLA. El reloj del visor NO avanza con el
+//  latido: se deriva de `phaseStartedAt` (un instante absoluto en epoch ms
+//  que viaja en el snapshot) contra `Date.now()` del propio espectador
+//  —live.html:_startAutonomousPhaseWatch—. El cronómetro corre solo, segundo
+//  a segundo, aunque no llegue ni un snapshot. El latido sólo refresca
+//  marcador, alineación y posiciones, que cambian cada varios minutos.
+//
+//  🔑 Y LOS SUCESOS NO ESPERAN AL LATIDO. Gol, tarjeta, cambio y lesión se
+//  escriben en el acto desde `_registerMatchEvent`, y `liveSyncOnAction` /
+//  `liveSyncFlushNow` fuerzan un latido inmediato en cada acción. Lo que se
+//  espacia es el relleno entre sucesos, no los sucesos.
+//
+//  ⚠️⚠️ ACOPLAMIENTO CON EL VIGILANTE DE CANAL MUERTO. live.html tiene un
+//  watchdog (`_MS_SIN_SNAPSHOT_SOSPECHOSO`) que declara muerto el canal si
+//  pasa demasiado tiempo sin snapshots y entonces RELEE todo. Estaba en 25 s
+//  porque el latido era de 5 s. Con 15 s de latido, 25 s se alcanzan con
+//  cualquier jitter de red y el watchdog se dispararía en bucle: una tormenta
+//  de lecturas, justo lo contrario de lo que busca P1. Se sube a 50 s en el
+//  mismo cambio. **Si se vuelve a tocar este número hay que tocar aquél.**
+const LIVE_HEARTBEAT_MS = 15000;
+
 async function cleanupStaleMatches() {
     try {
         const fa = window._cronos_auth;
         if (!fa || !fa.db) return;
         // v434 · `deleteDoc` ya no se importa: el borrado desde el cliente se
         // retiró (ver abajo). `serverTimestamp` entra para sellar finishedAt.
+        // v572 · `setDoc` entra para cerrar también el índice ligero: se usa
+        // con merge porque el índice puede no existir (partidos anteriores).
         const { collection, query, where, getDocs,
-                updateDoc, doc, serverTimestamp } = await import(
+                updateDoc, setDoc, doc, serverTimestamp } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
         const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
@@ -137,6 +169,18 @@ async function cleanupStaleMatches() {
                     })
                         .then(() => closed++)
                         .catch(() => {})
+                );
+                // v572 · P2 · El índice se cierra CON el partido: la lista y las
+                // alertas filtran por `status` en el ÍNDICE, así que un índice
+                // que siguiera 'active' mantendría en pantalla un partido ya
+                // cerrado. `setDoc` con merge y no `updateDoc`: un partido
+                // anterior a v572 no tiene índice y `updateDoc` fallaría.
+                promises.push(
+                    setDoc(doc(fa.db, 'live_index', d.id), {
+                        status: 'finished',
+                        finishedAt: serverTimestamp(),
+                        autoClosed: true
+                    }, { merge: true }).catch(() => {})
                 );
             }
         });
@@ -301,14 +345,14 @@ async function startLiveSync() {
     // Guardar el snapshot inicial
     await pushLiveSnapshot('active');
 
-    // v276 (unificación): latido cada 5000ms — SOLO con isRunning (en pausa/descanso
+    // v276 (unificación): latido — SOLO con isRunning (en pausa/descanso
     // los cambios ya se auto-flushean por liveSyncOnAction/liveSyncFlushNow, así que
     // no hace falta latir en pausa). Guard anti-doble-intervalo: si startLiveSync se
     // llama 2× (p.ej. share-modal + import), evita dejar timers huérfanos.
     if (liveSyncTimer) clearInterval(liveSyncTimer);
     liveSyncTimer = setInterval(() => {
         if (liveIsActive && isRunning) pushLiveSnapshot('active');
-    }, 5000);
+    }, LIVE_HEARTBEAT_MS);
 
     // Mostrar botón de compartir en el header
     updateLiveButton(true);
@@ -400,6 +444,165 @@ async function _loadEventsFromFirestore() {
         }
     })();
     return _eventsLoadPromise;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  🪶 v572 · P2 — EL DOCUMENTO LIGERO (`live_index/{matchId}`)
+// ══════════════════════════════════════════════════════════════════
+//  EL PROBLEMA QUE RESUELVE. Un espectador no mira un partido: está suscrito a
+//  TODOS los partidos activos de su club (un `onSnapshot` por partido para las
+//  alertas + los listeners de la lista, live.html). Y cada latido le entrega el
+//  documento ENTERO —10.625 B de media, medidos sobre los 10 partidos del
+//  respaldo—, cuando para pintar una tarjeta y sonar un aviso hace falta una
+//  fracción de eso. Con 15 partidos son 375 MB por espectador en una mañana.
+//
+//  🔑 LA ASIMETRÍA QUE LO HACE POSIBLE: el 97% del peso del documento es lo que
+//  la lista NO usa. `players` son 3.330 B que viajan enteros en cada latido, y
+//  la lista sólo los usa para CONTAR cuántos hay en campo —dos enteros—. El
+//  array `events` crece sin tope y la lista no lo mira siquiera.
+//
+//  Así que se escribe un segundo documento con lo justo: ~1.000 B frente a
+//  10.625. La lista y las alertas leen de aquí; el visor de detalle —el único
+//  que necesita jugadores, posiciones e historial completo— sigue leyendo
+//  `live_matches`, como siempre.
+//
+//  ⚠️⚠️ NO VA EN UN `writeBatch` CON EL DOCUMENTO GORDO, A PROPÓSITO.
+//  Un batch es atómico: si la escritura del índice fallara —reglas todavía sin
+//  desplegar, un índice compuesto que falta, cuota— **se caería también el
+//  latido del partido**. Eso convierte una optimización en una caída total del
+//  directo. Aquí el índice se escribe aparte y con su propio `catch` mudo: si
+//  falla, el partido sigue exactamente como antes de v572 y los lectores caen
+//  solos al documento gordo (ver el respaldo de live.html). Cuesta la misma
+//  operación de escritura que dentro del batch.
+//
+//  ⚠️ ESTE DOCUMENTO TAMBIÉN LLEVA PII (nombres de equipo y textos de suceso con
+//  nombres de menores), así que sus reglas son las MISMAS que las de
+//  `live_matches`: lectura sólo para usuario registrado. No es un documento
+//  "público" por ser pequeño.
+const _IDX_TIPOS_NO_VISIBLES = new Set(['tactical_move']);
+const _IDX_MAX_EVENTOS = 3;
+
+function _buildLiveIndexDoc(snapshot, players) {
+    // Sólo los sucesos que de verdad se ANUNCIAN. `tactical_move` es el 45% de
+    // los eventos y de su peso (44 de 98 medidos), y live.html lo descarta con
+    // `_esEventoVisible` sin pintarlo jamás: meterlo aquí sería pagar casi la
+    // mitad del tamaño por algo que nadie lee. Es P3 aplicado, gratis, al
+    // camino de las alertas.
+    //
+    // 🔑 POR QUÉ BASTAN LOS 3 ÚLTIMOS. El aviso no depende de que el evento
+    // esté en este documento para siempre: live.html deduplica por `eventId`
+    // contra su propio Set (`_matchSeenEvents`), así que sólo hace falta que
+    // cada suceso APAREZCA UNA VEZ. Y aparece: `_registerMatchEvent` reescribe
+    // este índice en el acto con cada suceso, no espera al latido. Tres es
+    // margen de sobra para que dos sucesos casi simultáneos entren los dos.
+    const _todos = Array.isArray(window._cronosMatchEvents) ? window._cronosMatchEvents : [];
+    const _visibles = [];
+    for (let i = _todos.length - 1; i >= 0 && _visibles.length < _IDX_MAX_EVENTOS; i--) {
+        const ev = _todos[i];
+        if (!ev || _IDX_TIPOS_NO_VISIBLES.has(ev.type)) continue;
+        // Se recorta al mínimo que consume `detectAndAlert`: identidad para
+        // deduplicar, tipo y texto para la línea, minuto para la etiqueta y
+        // `team` para el chip de equipo (v439/v445 — es la fuente fiable, y en
+        // el índice es la ÚNICA, porque aquí no viaja `players`).
+        _visibles.unshift({
+            eventId:   ev.eventId   || '',
+            matchId:   ev.matchId   || snapshot.id || '',
+            type:      ev.type      || '',
+            text:      ev.text      || '',
+            icon:      ev.icon      || '•',
+            matchTime: ev.matchTime || '',
+            team:      ev.team      || null,
+            // ⚠️ `createdAt` NO es decorativo: es la marca de agua con la que el
+            // visor decide qué es historial y qué es nuevo. `lastEvents` es una
+            // VENTANA de 3 sucesos, no el historial; sin una marca temporal, el
+            // visor que sembrara con esta ventana daría por nuevos todos los
+            // sucesos anteriores en cuanto llegara el documento completo. Ver
+            // `_matchSeedTs` en live.html.
+            createdAt: ev.createdAt || 0
+        });
+    }
+
+    const _enCampo = (lado) => {
+        try {
+            return (players || []).filter(p => p.team === lado && p.status === 'field').length;
+        } catch (e) { return 0; }
+    };
+
+    const idx = {
+        // 🔒 MARCA DE ORIGEN. live.html la mira para saber que está leyendo un
+        // documento ligero y NO puede usar la detección por delta (que compara
+        // `players` entre snapshots, y aquí no hay `players`). Sin esta marca,
+        // un partido sin sucesos aún caería a la vía delta y compararía contra
+        // un estado vacío.
+        idx: true,
+
+        id:        snapshot.id,
+        status:    snapshot.status,
+        updatedAt: snapshot.updatedAt,
+
+        // Pertenencia — las tres condiciones de `_userCanFollow` y las cuatro
+        // consultas de `_followableQueries`. Sin estos campos el índice no se
+        // podría consultar y habría que volver al documento gordo.
+        clubId:     snapshot.clubId,
+        clubName:   snapshot.clubName,
+        createdBy:  snapshot.createdBy,
+        coachEmail: snapshot.coachEmail,
+        teamId:     snapshot.teamId,
+
+        // Semáforo y etiqueta de la tarjeta.
+        category:         snapshot.category,
+        subcategory:      snapshot.subcategory,
+        matchCategory:    snapshot.matchCategory,
+        matchSubcategory: snapshot.matchSubcategory,
+        semaforoActive:   snapshot.semaforoActive,
+        timerThresholds:  snapshot.timerThresholds,
+
+        // Reloj. `phaseStartedAt` es lo que hace que el cronómetro de la tarjeta
+        // corra solo entre latidos: es justo lo que permite que P1 no se note.
+        mode:           snapshot.mode,
+        phase:          snapshot.phase,
+        isRunning:      snapshot.isRunning,
+        timeH1:         snapshot.timeH1,
+        timeH2:         snapshot.timeH2,
+        half1MaxTime:   snapshot.half1MaxTime,
+        half2MaxTime:   snapshot.half2MaxTime,
+        phaseStartedAt: snapshot.phaseStartedAt,
+
+        // Marcador. Sin colores: la tarjeta de la lista no los usa.
+        homeTeam: {
+            name:  snapshot.homeTeam?.name  || '',
+            score: snapshot.homeTeam?.score ?? 0
+        },
+        awayTeam: {
+            name:  snapshot.awayTeam?.name  || '',
+            score: snapshot.awayTeam?.score ?? 0
+        },
+
+        // 🔑 LOS 3.330 B DE `players`, REDUCIDOS A DOS ENTEROS. Es lo único que
+        // la lista hacía con el array: contar cuántos hay en campo por equipo.
+        onFieldHome: _enCampo('home'),
+        onFieldAway: _enCampo('away'),
+
+        lastEvents: _visibles
+    };
+
+    // El sello de finalización y la caducidad viajan igual que en el gordo, para
+    // que el barrido de la nube pueda recoger los dos con el mismo criterio.
+    if (snapshot.finishedAt) idx.finishedAt = snapshot.finishedAt;
+    if (snapshot.expireAt)   idx.expireAt   = snapshot.expireAt;
+
+    return idx;
+}
+
+// Escritura del índice: aislada, silenciosa y jamás bloqueante (ver arriba).
+async function _pushLiveIndex(setDoc, doc, db, matchId, idxDoc) {
+    try {
+        await setDoc(doc(db, 'live_index', matchId), idxDoc, { merge: true });
+    } catch (e) {
+        // Un fallo aquí NO puede afectar al partido. Los lectores se dan cuenta
+        // solos (no encuentran el documento) y caen al gordo.
+        console.warn('[v572] Índice ligero no escrito (' + matchId + '):', e && e.message);
+    }
 }
 
 async function pushLiveSnapshot(status = 'active') {
@@ -736,6 +939,13 @@ async function pushLiveSnapshot(status = 'active') {
         } catch (e) { /* nunca puede cortar la emisión por sí misma */ }
 
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
+
+        // v572 · P2 · El índice ligero, DESPUÉS y por separado. Va detrás del
+        // gordo a propósito: si algo tuviera que fallar por cuota o por reglas,
+        // que falle lo prescindible y no el partido. `snapshot.players` ya está
+        // construido, así que contar los que hay en campo no cuesta nada.
+        await _pushLiveIndex(setDoc, doc, fa.db, liveMatchId,
+                             _buildLiveIndexDoc(snapshot, snapshot.players));
     } catch (err) {
         console.warn('Error sync live:', err.message);
         // v467 · Si el cliente de Firestore está TERMINADO, esto no es un fallo

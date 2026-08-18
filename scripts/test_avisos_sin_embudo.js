@@ -73,6 +73,10 @@ console.log('── PARTE 1 · el efecto embudo (comportamiento real) ──');
             console,
             // ── estado por partido, tal cual lo declara live.html ──
             _matchLastTs: {}, _matchPrevState: {}, _matchSeeded: {},
+            // v572b · marca de agua de la siembra. Desde P2 hay DOS vistas del
+            // mismo partido (indice ligero y documento entero) y la siembra ya
+            // no puede ser un booleano: ver `_matchSeedTs` en live.html.
+            _matchSeedTs: {},
             _matchSeenEvents: {}, _matchLastData: {}, _matchPrevPhase: {},
             currentMatchId: 'M1',
             // ── colaboradores, estabulados ──

@@ -163,6 +163,23 @@ window.saResetClubSeason = async function(clubId, clubName) {
             .filter(c => c.checked).map(c => c.value);
         if (!cols.length) { alert('No has elegido nada que borrar.'); return; }
 
+        // ══════════════════════════════════════════════════════════════
+        //  v572 · P2 · COLECCIONES ACOMPAÑANTES (no se eligen a mano)
+        // ══════════════════════════════════════════════════════════════
+        //  `live_index` es el espejo ligero de `live_matches`: mismo id, mismo
+        //  clubId, y existe sólo para que la lista en vivo no descargue los
+        //  partidos enteros. NO se ofrece como casilla propia a propósito —
+        //  "Índices" no significa nada para quien vacía una temporada, y dejar
+        //  que se pudiera desmarcar por separado sólo permite un estado
+        //  incoherente: partidos borrados con sus tarjetas todavía en la lista.
+        //  Se arrastra con su titular, en silencio.
+        const ACOMPANANTES = { live_matches: ['live_index'] };
+        cols.forEach(c => {
+            (ACOMPANANTES[c] || []).forEach(extra => {
+                if (cols.indexOf(extra) === -1) cols.push(extra);
+            });
+        });
+
         cerrar();
         if (typeof _saShowSpinner === 'function') _saShowSpinner('Vaciando la temporada…');
         try {

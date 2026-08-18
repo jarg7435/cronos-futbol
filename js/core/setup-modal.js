@@ -1919,6 +1919,18 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         await deleteDoc(doc(fa.db, 'live_matches', matchId));
 
+        // v572 · P2 · Y su índice ligero, o el partido seguiría apareciendo en
+        // la lista de Partidos en Vivo después de borrarlo: esa lista consulta
+        // `live_index`, no `live_matches`. Va DESPUÉS y con su propio `catch`
+        // —el borrado que importa es el de arriba, y un índice huérfano lo
+        // recoge igualmente `cleanupLiveMatches`—, pero sin esto el usuario
+        // vería reaparecer una tarjeta de un partido que acaba de eliminar.
+        try {
+            await deleteDoc(doc(fa.db, 'live_index', matchId));
+        } catch (eIdx) {
+            console.warn('[v572] Índice no borrado (' + matchId + '):', eIdx && eIdx.message);
+        }
+
         // Limpiar también el estado del dispositivo, para que no reaparezca por
         // la otra fuente.
         // 🐛 v441 · PERO SÓLO SI ES EL MISMO PARTIDO. Antes se borraba SIEMPRE, y

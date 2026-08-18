@@ -216,8 +216,18 @@ console.log('\n── PARTE 3 · el borrado en servidor ──');
     ok('3e · sin fecha utilizable NO se borra',
        /if \(!finMs\) return;/.test(pasoB),
        'mas vale un documento de mas que destruir el partido de alguien');
-    ok('3f · se conserva el tope de 450 por el limite de 500 del batch',
-       /limit\(450\)/.test(pasoB));
+    // ⚠️ v572 · ESTE GUARD EXIGIA `limit(450)` LITERAL, no el invariante.
+    // Daba por hecho que cada partido gasta UNA operacion de lote; desde P2
+    // gasta DOS (el partido y su espejo `live_index`), asi que precisamente el
+    // 450 que el guard defendia serian 900 operaciones y el commit fallaria
+    // entero. Se comprueba lo que de verdad no puede romperse: documentos por
+    // pasada x operaciones por documento < 500.
+    const _lim = (pasoB.match(/limit\((\d+)\)/) || [])[1];
+    const _ops = (pasoB.match(/loteB\.(update|set|delete|create)\s*\(/g) || []).length;
+    ok('3f · el paso B cabe en el tope de 500 operaciones por batch (' +
+       _lim + ' docs x ' + _ops + ' ops = ' + (_lim * _ops) + ')',
+       !!_lim && _ops > 0 && (_lim * _ops) <= 500,
+       'pasarse del tope hace fallar el commit ENTERO y la limpieza deja de correr');
 }
 
 // ═══════════ PARTE 4 · LAS REGLAS, evaluadas en el servidor ═══════════

@@ -66,6 +66,15 @@ if (fail) { console.log('\n' + pass + ' PASS / ' + fail + ' FAIL'); process.exit
 const SRC_Q = LIVE.slice(iniQ, finQ);
 const SRC_C = LIVE.slice(iniC, finC);
 
+// v572 · P2 · `_followableQueries` usa la constante de modulo `_COL_INDICE`,
+// que queda FUERA del recorte de arriba. Se extrae del fuente real —no se
+// escribe 'live_index' a mano— para que renombrarla o borrarla ponga rojo este
+// test en lugar de dejarlo corriendo sobre un nombre inventado.
+const mColIdx = LIVE.match(/const\s+_COL_INDICE\s*=\s*"([^"]+)"\s*;/);
+ok('0c · existe la constante _COL_INDICE con la coleccion ligera',
+   !!mColIdx, 'P2 la necesita para la lista y las alertas');
+const COL_INDICE = mColIdx ? mColIdx[1] : 'live_index';
+
 // Firestore de mentira: `query` devuelve la lista de condiciones tal cual, para
 // poder mirar DESPUES por que se ha preguntado.
 function nuevoEntorno(userData, saFilter) {
@@ -74,7 +83,11 @@ function nuevoEntorno(userData, saFilter) {
         userData,
         window: { _saClubFilter: saFilter || null },
         db: {},
-        collection: () => ({ __col: 'live_matches' }),
+        // v572 · el stub RECUERDA a que coleccion se pregunto. Antes devolvia
+        // 'live_matches' fijo, asi que no habria notado que P2 movio la lista y
+        // las alertas a `live_index` — ni lo habria notado si un dia volvieran
+        // a la coleccion cara por error.
+        collection: (_db, nombre) => ({ __col: nombre }),
         where: (campo, op, valor) => ({ campo, op, valor }),
         query: (col, ...conds) => ({ __col: col.__col, conds }),
         onSnapshot: (q, onNext, onErr) => {
@@ -84,6 +97,7 @@ function nuevoEntorno(userData, saFilter) {
         },
         console: { warn: () => {}, log: () => {} },
         pintados: [],
+        _COL_INDICE: COL_INDICE,   // v572 · constante de modulo, ver arriba
         Map, Array, Object, String, Number
     };
     env._repintarLista = (docs) => env.pintados.push(docs.map(d => d.id));
@@ -117,6 +131,20 @@ console.log('\n── PARTE 1 · se pregunta solo por lo que el usuario puede ve
     ok('1d · todas acotan por status active',
        qs.every(q => q.conds.some(c => c.campo === 'status' && c.valor === 'active')),
        'sin acotar por estado se traen tambien los partidos terminados');
+
+    // ══════════════════════════════════════════════════════════════
+    //  🪶 v572 · P2 · Y SE PREGUNTA A LA COLECCION LIGERA
+    // ══════════════════════════════════════════════════════════════
+    //  Aqui esta TODO el ahorro de P2. Un espectador esta suscrito a todos los
+    //  partidos activos de su club a la vez; preguntando a `live_matches` cada
+    //  latido le entrega el documento entero de cada uno (10.625 B de media),
+    //  y de ahi los 375 MB por manana que midio el autor. Preguntando al indice
+    //  son ~1.000 B. Si alguien devolviera estas consultas a `live_matches` la
+    //  aplicacion seguiria funcionando igual de bien —por eso hace falta un
+    //  guard: el defecto no se ve, solo se paga.
+    ok('1e · 🪶 las consultas van al INDICE ligero, no a los partidos enteros',
+       qs.every(q => q.__col === COL_INDICE),
+       'se pregunto a: ' + JSON.stringify(qs.map(q => q.__col)));
 }
 {
     const { env } = nuevoEntorno({ role: 'superadmin', uid: 'U9', email: 'sa@b.c' });
