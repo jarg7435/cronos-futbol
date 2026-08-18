@@ -363,21 +363,23 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
                     //  sucesos y no se anuncian nunca), y el fallo es mudo: el
                     //  suceso ya está guardado en el documento bueno.
                     if (type === 'tactical_move') return;
+                    // ⚠️ v578 · LA FORMA DEL SUCESO SE DEFINE EN UN SOLO SITIO
+                    // (`_cronosRecortaSuceso`, js/match/live/sync.js). Estaba
+                    // escrita aquí Y allí, y al añadir los nombres de la
+                    // sustitución para el mini-feed de la tarjeta habría que
+                    // acordarse de tocar las dos: así es como el badge de
+                    // solicitudes acabó siendo dos implementaciones divergiendo
+                    // (v532). Si la función no estuviera, sync.js no ha cargado
+                    // y el partido en vivo no funciona de todos modos: se sale
+                    // sin escribir y el latido rellenará `lastEvents`.
+                    var _recorta = window._cronosRecortaSuceso;
+                    if (typeof _recorta !== 'function') return;
+                    var _recortado = _recorta(eventEntry, _id);
+                    if (!_recortado) return;
                     return import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
                         .then(function(fs) {
                             return fs.setDoc(fs.doc(fa.db, 'live_index', _id), {
-                                lastEvents: fs.arrayUnion({
-                                    eventId:   eventEntry.eventId   || '',
-                                    matchId:   eventEntry.matchId   || _id,
-                                    type:      eventEntry.type      || '',
-                                    text:      eventEntry.text      || '',
-                                    icon:      eventEntry.icon      || '•',
-                                    matchTime: eventEntry.matchTime || '',
-                                    team:      eventEntry.team      || null,
-                                    // Marca de agua para separar historial de
-                                    // novedad en el visor (ver `_matchSeedTs`).
-                                    createdAt: eventEntry.createdAt || 0
-                                }),
+                                lastEvents: fs.arrayUnion(_recortado),
                                 updatedAt: fs.serverTimestamp()
                             }, { merge: true });
                         })

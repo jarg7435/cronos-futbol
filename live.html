@@ -5485,7 +5485,25 @@ function _liveFeedLado(m, ev) {
 
 // Los N sucesos más recientes que merece la pena enseñar.
 function _liveFeedItems(m, max) {
-    const eventos = Array.isArray(m && m.events) ? m.events : [];
+    // ══════════════════════════════════════════════════════════════
+    //  🚨 v578 · "SIN SUCESOS TODAVÍA" CON EL PARTIDO EN LA 2ª PARTE
+    // ══════════════════════════════════════════════════════════════
+    //  Reporte del autor (captura 9246): en el panel general, la sección
+    //  ÚLTIMOS SUCESOS de cada tarjeta salía vacía aunque hubiera goles, pero
+    //  los avisos flotantes sonaban perfectamente.
+    //
+    //  🔑 ESA ASIMETRÍA ERA EL DIAGNÓSTICO. Los dos leen lo mismo, así que si
+    //  uno funciona el dato SÍ está llegando: lo que falla es quien lo lee.
+    //  P2 (v572) mudó la lista a `live_index`, que trae los sucesos en
+    //  `lastEvents`; `detectAndAlert` se adaptó para aceptar los dos nombres y
+    //  **este segundo consumidor se quedó atrás**, mirando un `events` que en
+    //  el índice no existe. Migrar una fuente de datos obliga a repasar TODOS
+    //  sus consumidores, no sólo el que uno tiene en la cabeza.
+    //
+    //  Se aceptan los dos: `events` del documento gordo (visor de detalle y
+    //  respaldo por escaneo) y `lastEvents` del índice (panel general).
+    const eventos = Array.isArray(m && m.events) ? m.events
+                  : (Array.isArray(m && m.lastEvents) ? m.lastEvents : []);
     // `tactical_move` se descarta SIEMPRE: su `text` es un JSON con las
     // coordenadas del arrastre, no una frase. Colarlo llenaría el feed de
     // ruido ilegible y taparía los goles, que es justo lo que se quiere ver.
@@ -6757,9 +6775,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v577"></script>
-<script src="js/match/replay/replay-player.js?v=v577"></script>
-<script src="js/match/events/retroactive-modal.js?v=v577"></script>
+<script src="js/match/immutability.js?v=v578"></script>
+<script src="js/match/replay/replay-player.js?v=v578"></script>
+<script src="js/match/events/retroactive-modal.js?v=v578"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -6772,7 +6790,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v577" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v577</div>
+<div id="cronos-version-badge" data-version="v578" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v578</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

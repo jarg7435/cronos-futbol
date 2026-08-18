@@ -444,9 +444,14 @@ console.log('\n── PARTE 6 · 🚨 el embudo que introdujo P2 (v572b) ──'
            d1.length === viejos.length - 3,
            'no se puede inventar una marca: silenciaria sucesos legitimos');
 
+        // ⚠️ v578 · ESTE GUARD EXIGIA LA MARCA EN LOS DOS FICHEROS, porque la
+        // forma del suceso estaba escrita dos veces. Ahora hay UNA sola
+        // definicion compartida (`_cronosRecortaSuceso`) y player-actions la
+        // reutiliza: el invariante es el mismo —el indice manda `createdAt`—
+        // pero ya no puede haber dos copias divergiendo. Se comprueba eso.
         ok('6g · el indice ligero manda `createdAt` en cada suceso',
-           /createdAt:\s*ev\.createdAt/.test(SYNC) &&
-           /createdAt:\s*eventEntry\.createdAt/.test(ACTIONS),
+           /function _recortaSuceso[\s\S]{0,900}?createdAt:\s*ev\.createdAt/.test(SYNC) &&
+           /window\._cronosRecortaSuceso/.test(ACTIONS),
            'sin esa marca en el dato, la correccion de arriba no tiene con que trabajar');
     }
 }

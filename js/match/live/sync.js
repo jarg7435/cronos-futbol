@@ -538,6 +538,51 @@ function _buildPositions(lista) {
     }));
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  ✂️ v578 · LA FORMA DE UN SUCESO EN EL ÍNDICE, EN UN SOLO SITIO
+// ══════════════════════════════════════════════════════════════════
+//  Lo escriben DOS caminos: el latido (`_buildLiveIndexDoc`) y cada suceso en
+//  el acto (`_registerMatchEvent`, player-actions.js). Tenerlo escrito dos
+//  veces es pedir que diverjan — y este proyecto ya sabe cómo acaba eso: el
+//  badge de solicitudes eran DOS implementaciones divergiendo (v532), y el
+//  criterio de `_userCanFollow` acabó duplicado (v433). Una sola función.
+//
+//  🔑 QUÉ LLEVA Y POR QUÉ. Alimenta a los DOS consumidores del panel:
+//    · los avisos flotantes (`detectAndAlert`) → identidad, tipo, texto, hora;
+//    · el mini-feed de la tarjeta (`_liveFeedItems`/`_liveFeedTexto`) → además
+//      `subInName`/`subOutName`/`playerName`, o una sustitución se enseñaría
+//      con su texto crudo ("EQUIPO | ▲ SALE: X | ▼ ENTRA: Y") en vez de con
+//      "Sale X · Entra Y".
+//
+//  ⚠️⚠️ NI UN `undefined` PUEDE SALIR DE AQUÍ. El SDK de Firestore **LANZA**
+//  con un valor `undefined` ("Unsupported field value"), y este proyecto no usa
+//  `ignoreUndefinedProperties`. Por eso los campos opcionales se copian sólo
+//  si existen, en vez de escribirlos siempre: es la misma trampa que costó el
+//  `finishedAt` de v431.
+function _recortaSuceso(ev, matchIdPorDefecto) {
+    if (!ev) return null;
+    const out = {
+        eventId:   ev.eventId   || '',
+        matchId:   ev.matchId   || matchIdPorDefecto || '',
+        type:      ev.type      || '',
+        text:      ev.text      || '',
+        icon:      ev.icon      || '•',
+        matchTime: ev.matchTime || '',
+        team:      ev.team      || null,
+        // Marca de agua con la que el visor separa historial de novedad
+        // (ver `_matchSeedTs` en live.html). Sin ella, sembrar con la ventana
+        // de 3 haría anunciar todo el historial al abrir el partido.
+        createdAt: ev.createdAt || 0
+    };
+    // Nombres de la sustitución: sólo si vienen. Son los que convierten el
+    // texto crudo en una línea legible en la tarjeta.
+    ['subInName', 'subOutName', 'playerName'].forEach(function (k) {
+        if (ev[k] !== undefined && ev[k] !== null) out[k] = ev[k];
+    });
+    return out;
+}
+if (typeof window !== 'undefined') window._cronosRecortaSuceso = _recortaSuceso;
+
 const _IDX_TIPOS_NO_VISIBLES = new Set(['tactical_move']);
 const _IDX_MAX_EVENTOS = 3;
 
@@ -563,22 +608,7 @@ function _buildLiveIndexDoc(snapshot, players) {
         // deduplicar, tipo y texto para la línea, minuto para la etiqueta y
         // `team` para el chip de equipo (v439/v445 — es la fuente fiable, y en
         // el índice es la ÚNICA, porque aquí no viaja `players`).
-        _visibles.unshift({
-            eventId:   ev.eventId   || '',
-            matchId:   ev.matchId   || snapshot.id || '',
-            type:      ev.type      || '',
-            text:      ev.text      || '',
-            icon:      ev.icon      || '•',
-            matchTime: ev.matchTime || '',
-            team:      ev.team      || null,
-            // ⚠️ `createdAt` NO es decorativo: es la marca de agua con la que el
-            // visor decide qué es historial y qué es nuevo. `lastEvents` es una
-            // VENTANA de 3 sucesos, no el historial; sin una marca temporal, el
-            // visor que sembrara con esta ventana daría por nuevos todos los
-            // sucesos anteriores en cuanto llegara el documento completo. Ver
-            // `_matchSeedTs` en live.html.
-            createdAt: ev.createdAt || 0
-        });
+        _visibles.unshift(_recortaSuceso(ev, snapshot.id));
     }
 
     const _enCampo = (lado) => {
