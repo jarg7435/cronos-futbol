@@ -65,6 +65,15 @@ bgout.txt
 # Se quedan en disco a proposito; subirlos a GitHub seria publicarlos.
 backups/
 
+# CAPTURAS DE PANTALLA DE LAS PRUEBAS (JAMAS EN EL REPO)
+# Mismo caso que backups/, y por eso va aqui al lado. El autor deja aqui las
+# capturas con las que reporta los fallos, y en ellas se leen NOMBRES Y
+# DORSALES DE JUGADORES MENORES DE EDAD, correos de entrenadores y, a veces,
+# la consola con identificadores de sesion. Una captura es un volcado de datos
+# igual que un JSON: que sea una imagen no la hace anonima.
+# Se quedan en disco; simplemente no se siguen.
+CAPTURAS/
+
 # SCRIPTS DE INVESTIGACION/DEBUG PUNTUAL CONTRA PRODUCCION (Admin SDK)
 # Nunca deben vivir en functions/ (se empaqueta en cada deploy) ni commitearse:
 # acceden a produccion directamente y no forman parte del producto.

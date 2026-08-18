@@ -165,9 +165,83 @@ console.log('\n── PARTE 4 · el delta sólo para partidos sin eventId ──
     // ⚠️ El `return` se ancla JUSTO tras el bucle de anuncios. Una ventana laxa
     // encontraba un `return;` posterior del código de delta y dejaba pasar la
     // mutación que quitaba el corte — o sea, el doble aviso (evento + delta).
+    // ⚠️ v567 · ESTA ASERCIÓN SE REESCRIBE, Y NO SE AFLOJA.
+    //
+    // Antes exigía el `return;` PEGADO al cierre del bucle
+    // (/showEventToast\(_t,[\s\S]{0,200}?\}\);\s*return;/), o sea la FORMA
+    // exacta del código y no su propiedad. v567 metió dos sentencias legítimas
+    // entre el bucle y el `return` —el guard de `status === 'active'`, que subió
+    // desde la vía delta, y el refresco de `_matchPrevState` para que el
+    // respaldo tenga base con la que comparar— y la aserción se puso roja con el
+    // código CORRECTO.
+    //
+    // 🔑 Lo que hay que proteger no es dónde está el `return`, es que la rama
+    // de eventos NO SE CUELE en la detección por delta: ése es el doble aviso
+    // (evento + delta) que el guard nació para impedir. Así que ahora se recorta
+    // el bloque `if (_evConId) { … }` por conteo de llaves y se comprueba sobre
+    // él, que es más estricto que el regex anterior: aquél sólo miraba una
+    // ventana de 200 caracteres y habría dado verde con el delta metido dentro
+    // del propio bloque.
+    const _bloqueEvConId = (function () {
+        const i = l.indexOf('if (_evConId) {');
+        if (i < 0) return null;
+        let prof = 0, j = l.indexOf('{', i);
+        for (let k = j; k < l.length; k++) {
+            if (l[k] === '{') prof++;
+            else if (l[k] === '}') { prof--; if (prof === 0) return l.slice(i, k + 1); }
+        }
+        return null;
+    })();
     ok('4a · 🔑 si el partido emite eventos con id, se anuncia por evento y SE SALE',
-       /showEventToast\(_t,[\s\S]{0,200}?\}\);\s*return;/.test(l),
-       (l.match(/showEventToast\(_t,[\s\S]{0,240}/) || ['(no aparece)'])[0]);
+       !!_bloqueEvConId &&
+       /showEventToast\(_t,/.test(_bloqueEvConId) &&          // anuncia por evento
+       /\breturn;\s*\}$/.test(_bloqueEvConId) &&              // y sale del bloque
+       !/const subPending = \[\]/.test(_bloqueEvConId) &&     // sin delta dentro
+       !/_metaWithTime/.test(_bloqueEvConId),
+       _bloqueEvConId ? _bloqueEvConId.slice(-160) : '(no se encontró el bloque if (_evConId))');
+    // ⚠️⚠️ EL CUERPO DE `detectAndAlert`, RECORTADO. Las aserciones de ORDEN de
+    // abajo se miden SOBRE ÉL y no sobre el fichero entero, y no es un detalle:
+    // el primer intento comparaba `l.indexOf('_handlePhaseTransition(matchId,
+    // matchData);')` contra el fichero completo… y ese texto aparece ANTES en la
+    // propia DECLARACIÓN `function _handlePhaseTransition(matchId, matchData) {`,
+    // varios cientos de líneas más arriba. La aserción daba VERDE con el defecto
+    // puesto — lo cazó el red-check, no la lectura. Sexta reincidencia de lo
+    // mismo en este proyecto: un patrón sin anclar encuentra el gemelo, no el
+    // original.
+    const _cuerpoDetect = (function () {
+        const i = l.indexOf('function detectAndAlert(');
+        if (i < 0) return null;
+        let prof = 0;
+        for (let k = l.indexOf('{', i); k < l.length; k++) {
+            if (l[k] === '{') prof++;
+            else if (l[k] === '}') { prof--; if (prof === 0) return l.slice(i, k + 1); }
+        }
+        return null;
+    })();
+    ok('4a0 · el cuerpo de detectAndAlert se puede recortar (base de 4a2/4a3)',
+       !!_cuerpoDetect);
+
+    // v567 · las guardas de frescura quedan DEBAJO de la rama de eventos: es lo
+    // que arregla el "efecto embudo". Si alguien las volviera a subir por
+    // encima, los avisos volverían a llegar a golpes.
+    const _iEv    = _cuerpoDetect ? _cuerpoDetect.indexOf('const _evConId') : -1;
+    const _iCache = _cuerpoDetect ? _cuerpoDetect.indexOf('if (fromCache) return;') : -1;
+    const _iTs    = _cuerpoDetect ? _cuerpoDetect.indexOf('_matchLastTs[matchId] = ts') : -1;
+    const _iFase  = _cuerpoDetect ? _cuerpoDetect.indexOf('_handlePhaseTransition(matchId, matchData);') : -1;
+    ok('4a2 · 🔑 v567 · fromCache y la guarda monotónica van DESPUÉS de los sucesos',
+       _iEv >= 0 && _iCache > _iEv && _iTs > _iEv,
+       'evConId=' + _iEv + ' fromCache=' + _iCache + ' ts=' + _iTs);
+    // v567 · y la transición de fase, por encima de TODO: era la causa de que el
+    // aviso de fin de 1ª parte saliera en el PC y casi nunca en los iPads.
+    // ⚠️ SE EXIGE QUE VAYA ANTES DE **LOS SUCESOS**, no sólo antes de
+    // `if (fromCache)`. Con la comparación laxa, mover la llamada a la línea de
+    // encima de la guarda daba VERDE —seguía "antes"— aunque el orden real
+    // hubiera cambiado. `const _evConId` es la primera línea del bloque de
+    // sucesos, así que es el ancla que fija el orden de verdad: fase → sucesos →
+    // guardas. Lo cazó el red-check al segundo intento.
+    ok('4a3 · 🔑 v567 · la transición de fase se evalúa antes que TODO lo demás',
+       _iFase >= 0 && _iEv > _iFase && _iCache > _iFase && _iTs > _iFase,
+       'fase=' + _iFase + ' evConId=' + _iEv + ' fromCache=' + _iCache);
     ok('4b · 🔑 y _evConId se calcula mirando si ALGÚN evento trae eventId',
        /const _evConId = _evArr\.some\(e => e && e\.eventId\)/.test(l));
     ok('4c · el delta de siempre sigue ahí, detrás, para el caso heredado',

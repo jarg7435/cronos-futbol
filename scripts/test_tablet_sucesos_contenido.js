@@ -136,23 +136,46 @@ for (const d of TACTILES.concat(RATON)) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-console.log('\n── PARTE 4 · el PC no cambia (el arreglo va por PUNTERO, no por ancho) ──');
+console.log('\n── PARTE 4 · [INVERTIDA v571] el PC se ancla IGUAL que el resto ──');
 // ───────────────────────────────────────────────────────────────────────────
-// La contrapartida de la PARTE 1. Un `min-width:951px` a secas habría metido
-// también a los portátiles —un iPad en horizontal tiene el mismo ancho— y
-// habría cambiado la maquetación de PC en vísperas de una demo.
+// 🔄🔄 ESTA PARTE ESTABA AL REVÉS Y SE INVIERTE A PROPÓSITO. NO ES AFLOJARLA.
+//
+// v456 arregló para el iPad exactamente el fallo que esta parte permitía en el
+// PC, y dejó el escritorio fuera DELIBERADAMENTE: el comentario original decía
+// que meterlo por ancho "habría cambiado la maquetación de PC en vísperas de
+// una demo". Era una cautela de calendario, no una afirmación de que la
+// maquetación de PC estuviera bien.
+//
+// 🔑 El 2026-08-18, con la prueba de 7 partidos, el autor reportó el MISMO
+// síntoma en el ordenador del director (capturas 9213/9214): al desplegar el
+// cajón de SUCESOS la página se desplazaba y desaparecían la cabecera y el
+// marcador. En la 9214, con el cajón PLEGADO, la cabecera ya estaba fuera —
+// prueba de que el defecto era del `min-height:100vh`, no del cajón.
+//
+// O sea: era la CUARTA banda que v456 dejó sin cubrir, y la demo ya pasó. Lo
+// que aquí se protegía era un aplazamiento, y el aplazamiento ha vencido.
+//
+// Se conserva 4e: en PC hay alto de sobra y el cajón puede permitirse 116 px,
+// mientras que en táctil el alto es lo escaso (PARTE 3). Esa distinción SÍ
+// sigue viva y no la toca v571.
 for (const d of RATON) {
-    ok(`4a · [${d.n}] el body sigue con min-height:100vh`,
-       v('body', 'min-height', d) === '100vh', String(v('body', 'min-height', d)));
-    ok(`4b · [${d.n}] sin overflow:hidden en el body`,
-       v('body', 'overflow', d) === undefined, String(v('body', 'overflow', d)));
-    ok(`4c · [${d.n}] sin altura de viewport impuesta`,
-       v('body', 'height', d) === undefined, String(v('body', 'height', d)));
-    ok(`4d · [${d.n}] el campo conserva su tamaño de PC (sin max-height)`,
-       v('#live-pitch', 'max-height', d) === undefined, String(v('#live-pitch', 'max-height', d)));
-    ok(`4e · [${d.n}] y la lista mantiene los 116px de PC`,
+    ok(`4a · [${d.n}] 🔄 el body YA NO puede crecer (fuera min-height:100vh)`,
+       v('body', 'min-height', d) !== '100vh', String(v('body', 'min-height', d)));
+    ok(`4b · [${d.n}] 🔄 el body no desborda: el scroll lo pone cada vista`,
+       v('body', 'overflow', d) === 'hidden', String(v('body', 'overflow', d)));
+    ok(`4c · [${d.n}] 🔄 el alto queda anclado al viewport visible`,
+       String(v('body', 'height', d) || '') === '100dvh', String(v('body', 'height', d)));
+    ok(`4d · [${d.n}] 🔄 y el campo se acota al hueco, como en táctil`,
+       v('#live-pitch', 'max-height', d) === '100%', String(v('#live-pitch', 'max-height', d)));
+    ok(`4e · [${d.n}] y la lista mantiene los 116px de PC (esto NO cambia)`,
        String(v('#match-events-list', 'height', d)) === '116px',
        String(v('#match-events-list', 'height', d)));
+    // ⚠️ La contrapartida del anclaje: con el body sin scroll, el campo tiene
+    // que poder ENCOGERSE de verdad o se saldría por abajo y lo recortaría el
+    // overflow del #live-main. Es la misma comprobación que la PARTE 2 hace
+    // para los táctiles, ahora exigida también en PC.
+    ok(`4f · [${d.n}] 🔑 y puede encogerse (height:auto, sin alto impuesto)`,
+       v('#live-pitch', 'height', d) === 'auto', String(v('#live-pitch', 'height', d)));
 }
 
 // ───────────────────────────────────────────────────────────────────────────

@@ -320,8 +320,21 @@ ok('2n · ⚠️ la puerta va ANTES de todo en showEventToast (el sonido está a
 ok('2o · playEventSound y la vibración siguen DENTRO de showEventToast (los corta la misma puerta)',
    /playEventSound\(type\);[\s\S]{0,120}vibrate\(meta\.vib\)/.test(LIVE));
 
+// ⚠️ v567 · SE RECORTA LA FUNCIÓN ENTERA POR CONTEO DE LLAVES, NO 2200 BYTES.
+// La ventana fija se quedó corta en cuanto la función creció (v567 le añadió el
+// tope de marcha atrás de fase y su explicación), y la aserción se puso ROJA con
+// el código correcto: `_puedeAvisarme` seguía donde debía, sólo que a partir del
+// carácter 2200. Un recuento de bytes no es un ancla; el bloque sí.
 const iFase = LIVE.indexOf('function _handlePhaseTransition(matchId, matchData) {');
-const bloqueFase = iFase < 0 ? '' : LIVE.slice(iFase, iFase + 2200);
+const bloqueFase = (function () {
+    if (iFase < 0) return '';
+    let prof = 0;
+    for (let k = LIVE.indexOf('{', iFase); k < LIVE.length; k++) {
+        if (LIVE[k] === '{') prof++;
+        else if (LIVE[k] === '}') { prof--; if (prof === 0) return LIVE.slice(iFase, k + 1); }
+    }
+    return '';
+})();
 ok('2p · ⚠️ el silbato y el overlay de FINAL pasan por la misma puerta',
    /_puedeAvisarme\(matchId\)/.test(bloqueFase) &&
    bloqueFase.indexOf('_matchPrevPhase[matchId] = nextPhase;') < bloqueFase.indexOf('_puedeAvisarme(matchId)'),

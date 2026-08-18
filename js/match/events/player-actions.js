@@ -274,7 +274,36 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
             import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
                 .then(function(fs) {
                     return fs.setDoc(fs.doc(fa.db, 'live_matches', _id), {
-                        events: fs.arrayUnion(eventEntry)
+                        events: fs.arrayUnion(eventEntry),
+                        // ══════════════════════════════════════════════════
+                        //  🔑🔑🔑 v567 · EL SUCESO TAMBIÉN SELLA LA HORA
+                        // ══════════════════════════════════════════════════
+                        //  Hasta v566 esta escritura tocaba ÚNICAMENTE `events`.
+                        //  Consecuencia medida en la prueba de 7 partidos: el
+                        //  snapshot que llevaba el gol al visor llegaba con el
+                        //  MISMO `updatedAt` que el anterior, y la guarda
+                        //  monotónica de `detectAndAlert` (live.html) lo
+                        //  descartaba entero por "no ser más reciente". El aviso
+                        //  flotante no salía hasta que un latido posterior
+                        //  —hasta 5 s— cambiaba `updatedAt`, y entonces se
+                        //  anunciaban de golpe todos los goles acumulados. Es el
+                        //  "efecto embudo" que reportó el autor: 4 avisos juntos
+                        //  al llegar al séptimo gol.
+                        //
+                        //  El visor ya no depende de esto (v567 reordenó sus
+                        //  guardas), pero el dato estaba MAL en origen: un
+                        //  documento que acaba de cambiar tiene que decir que ha
+                        //  cambiado. De aquí también comen el "↻ hora" de la
+                        //  cabecera y el cierre por abandono a las 4 h de
+                        //  `cleanupLiveMatches`, que con un partido lleno de
+                        //  sucesos y sin latido lo daba por muerto.
+                        //
+                        //  ⚠️ NO altera la inmutabilidad de v434: el ancla de la
+                        //  ventana de gracia es `finishedAt` (lo sella
+                        //  pushLiveSnapshot al terminar) y sólo cae en
+                        //  `updatedAt` cuando aquél no existe, cosa que no pasa
+                        //  en ningún partido posterior a v431.
+                        updatedAt: fs.serverTimestamp()
                     }, { merge: true });
                 })
                 .then(function() {

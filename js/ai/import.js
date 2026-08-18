@@ -405,7 +405,7 @@ function confirmRosterImport(mode) {
 
 function saveMasterRoster(mode) {
     showSpinner('Guardando plantilla…');
-    setTimeout(() => {
+    setTimeout(async () => {
         // ⚠️ LA RECOGIDA VIVE EN _cronosHarvestRosterRows (staff-and-comms.js) Y
         // NO AQUÍ. La copia que había leía sólo las cinco casillas visibles, así
         // que una PLAZA DE APOYO perdía en cada guardado su ficha de origen, su
@@ -427,7 +427,10 @@ function saveMasterRoster(mode) {
             });
         const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
         roster[mode] = playersData;
-        cloudSet('cronos_master_roster', JSON.stringify(roster));
+        // 🔑 v570 · SE GUARDA EL ASA PARA PODER CONFIRMARLA (ver el aviso final
+        // de esta función). `cloudSet` sigue sin esperarse: sólo se recoge lo
+        // que devuelve.
+        const _subida = await cloudSet('cronos_master_roster', JSON.stringify(roster));
 
         // Copia SIN DATOS PERSONALES para que el resto de entrenadores del club
         // puedan convocar a estos jugadores en sus plazas de apoyo. Sólo salen
@@ -441,8 +444,44 @@ function saveMasterRoster(mode) {
         }
         saveStaffConfig();
         hideSpinner();
-        // Toast en lugar de alert
-        showToast('✅ Plantilla y cuerpo técnico guardados');
+
+        // ════════════════════════════════════════════════════════════════
+        //  🔑🔑🔑 v570 · EL AVISO DICE LA VERDAD
+        // ════════════════════════════════════════════════════════════════
+        //  Reportado por el autor (2ª prueba de estrés): guardó las plantillas
+        //  de Benjamín C, Infantil, Regional y Alevín, la app dijo "✅ Plantilla
+        //  y cuerpo técnico guardados"… y al volver aparecían SIN GUARDAR. Tuvo
+        //  que rehacerlas una por una.
+        //
+        //  🔑 EL AVISO SE MOSTRABA SIEMPRE, 300 ms después, sin comprobar nada.
+        //  `cloudSet` entrega la escritura al SDK y no espera el ACK (con
+        //  razón: sin cobertura esa promesa no resuelve nunca y colgaría el
+        //  guardado). Pero eso convertía CUALQUIER fallo de subida en un
+        //  "guardado" silencioso. Y la copia local no salva el día: la purga
+        //  por cambio de usuario —que existe por privacidad y debe seguir
+        //  ahí— la borra en el siguiente inicio de sesión. La plantilla
+        //  desaparecía de los dos sitios y lo último que se había leído era
+        //  un tick verde.
+        //
+        //  Ahora se espera la confirmación CON TOPE (2,5 s) y se dice cuál de
+        //  las tres cosas ha pasado. Sin cobertura no se cuelga: se contesta
+        //  'pendiente', que es la verdad.
+        const _estado = (typeof window.cronosConfirmaSubida === 'function')
+            ? await window.cronosConfirmaSubida(_subida, 2500)
+            : 'pendiente';
+
+        if (_estado === 'ok') {
+            showToast('✅ Plantilla y cuerpo técnico guardados y subidos');
+        } else if (_estado === 'pendiente') {
+            // Está en la cola del SDK: se subirá sola en cuanto haya red. Pero
+            // el entrenador tiene que saber que TODAVÍA no está a salvo.
+            showToast('💾 Plantilla guardada en este dispositivo. Subiendo a la nube… ' +
+                      'No cierres sesión hasta que tengas conexión.', 6000);
+        } else {
+            showToast('⚠️ Plantilla guardada SÓLO en este dispositivo: no se ha ' +
+                      'podido subir a la nube. Vuelve a guardarla con conexión ' +
+                      'antes de cerrar sesión.', 8000);
+        }
         openSetupModal();
     }, 300);
 }

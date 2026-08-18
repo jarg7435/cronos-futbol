@@ -27,10 +27,45 @@
             --text:       #cdd9e5;
             --muted:      #7d8590;
         }
+        /* ════════════════════════════════════════════════════════════════
+           🔑🔑🔑 v571 · EL VISOR CABE EN LA PANTALLA, SIEMPRE
+
+           Reportado con capturas (9213/9214, prueba de 7 partidos): al abrir
+           el cajón de SUCESOS la pantalla se descuadraba y desaparecían por
+           ARRIBA la cabecera y el marcador.
+
+           🔑 No lo causaba el cajón: lo causaba `min-height: 100vh`. Con
+           `min-height` el body puede CRECER por debajo del viewport, así que
+           todo lo que no cabía empujaba el documento y la página scrolleaba —
+           en las dos capturas se ve la barra de scroll a la derecha, y en la
+           9214, con el cajón PLEGADO, la cabecera ya estaba fuera. El cajón
+           sólo hacía más visible algo que ya pasaba.
+
+           ⚠️ La regla correcta YA EXISTÍA… pero encerrada en
+           `@media (orientation: landscape) and (max-width: 950px)`: el móvil
+           tumbado sí bloqueaba el alto al viewport y el PC no. De ahí que él
+           lo viera en el ordenador del director y no en las tablets.
+
+           Ahora el alto se fija SIEMPRE. Con la columna acotada, `flex: 1` de
+           #live-main y `flex-shrink: 0` del cajón hacen exactamente lo que
+           pidió: el cajón se lleva su sitio y el campo cede el suyo, sin que
+           la cabecera se mueva ni un píxel.
+
+           ⚠️ `overflow: hidden` aquí obliga a que cada vista con contenido
+           largo tenga scroll PROPIO. Lo tienen: #history-list (flex:1 +
+           overflow-y:auto), #match-events-list (alto fijo + scroll) y, desde
+           esta versión, #auth-overlay — que al ser `position:fixed` se habría
+           quedado sin salida en una pantalla baja. Es la lección de la casilla
+           del RGPD: lo que no se ve puede estar fuera del viewport, no oculto.
+           ════════════════════════════════════════════════════════════════ */
         body {
             background: var(--bg); color: var(--text);
             font-family: 'Inter', sans-serif;
-            min-height: 100vh; display: flex; flex-direction: column;
+            height: 100vh;            /* respaldo para navegadores sin dvh */
+            height: 100dvh;           /* el alto REAL visible (iOS incluido) */
+            min-height: 0;
+            overflow: hidden;
+            display: flex; flex-direction: column;
             padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
 
@@ -39,6 +74,16 @@
             position: fixed; inset: 0; background: var(--bg);
             display: flex; align-items: center; justify-content: center;
             padding: 1rem; z-index: 999;
+            /* ⚠️ v571 · SCROLL PROPIO. Desde que el body es `overflow:hidden`
+               (ver arriba), un overlay más alto que la pantalla dejaría el
+               botón de ENTRAR fuera y sin manera de alcanzarlo. Ya se pagó una
+               vez con la casilla del RGPD: no estaba oculta, estaba fuera del
+               viewport. `align-items:flex-start` en pantallas bajas evita que
+               el centrado recorte la tarjeta por arriba. */
+            overflow-y: auto;
+        }
+        @media (max-height: 620px) {
+            #auth-overlay { align-items: flex-start; }
         }
         .auth-card {
             width: 100%; max-width: 360px;
@@ -158,6 +203,27 @@
         #live-pitch {
             width: 100%; max-width: 100%;
             aspect-ratio: 3/2;
+            /* 🔑 v571 · EL CAMPO CEDE ALTURA ANTES QUE DESBORDAR.
+               `aspect-ratio` con `width:100%` calcula la altura A PARTIR DEL
+               ANCHO: en el PC del director, 1.700 px de ancho pedían ~1.130 px
+               de alto, más que la pantalla entera. Por eso el documento crecía
+               y la cabecera se iba por arriba.
+               Con `max-height` el campo se recorta en alto y se ensancha un
+               poco respecto al 3:2 — exactamente lo que pidió el autor: "el
+               campo debe comprimirse ligeramente en altura para adaptarse".
+               ⚠️ Las fichas se colocan en PORCENTAJES (x/y), así que siguen en
+               su sitio relativo: comprimir el campo no las descoloca.
+
+               🔑 NO ES UNA INVENCIÓN: las CUATRO reglas de #live-pitch de los
+               media queries móviles YA llevaban `max-height:100%`, y una lo
+               documenta con estas palabras — "limitado por max-height: 100%
+               para no desbordar el viewport". La regla BASE, la única que usa
+               un PC, se quedó sin ella. Por eso fallaba en el ordenador del
+               director y no en las tablets. Esto sólo pone la base al día. */
+            height: auto;
+            max-height: 100%;
+            min-height: 0;
+            flex-shrink: 1;
             background:
                 linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
@@ -2065,17 +2131,51 @@ function unlockAudio() {
 // interactuar, y el audio queda desbloqueado para las alertas que lleguen
 // por Firestore (sin gesto directo).
 let _audioAutoUnlocked = false;
+
+// ════════════════════════════════════════════════════════════════════
+//  🔑 v567 · LA ÚNICA VERDAD SOBRE EL SONIDO ES EL PROPIO AudioContext
+// ════════════════════════════════════════════════════════════════════
+//  Fallo 2 de la prueba de 7 partidos: "al abrir la pantalla en vivo el sonido
+//  aparece silenciado por defecto". No lo estaba —`_alertsMuted` nace en false
+//  desde siempre—: lo que estaba era BLOQUEADO por el navegador, que exige un
+//  gesto del usuario dentro de ESTE documento antes de dejar sonar nada.
+//
+//  Y había un defecto real que lo hacía permanente: `_audioAutoUnlocked` se
+//  ponía a true al PRIMER gesto, ANTES de comprobar nada y sin mirar si el
+//  desbloqueo había funcionado. Como el banner de activación y el propio
+//  auto-desbloqueo se guiaban por esa bandera, bastaba con que el primer toque
+//  fuera el del login —o que iOS ignorara ese resume()— para que el aparato se
+//  quedara mudo el resto de la sesión, sin banner y sin manera de enterarse.
+//
+//  🔑 La bandera decía "ya lo intenté", no "el audio funciona". Ahora sólo se
+//  da por desbloqueado cuando el contexto está REALMENTE en 'running', y
+//  mientras no lo esté se reintenta en cada gesto. No se puede sonar sin gesto
+//  —eso es política del navegador, no del código—, pero sí se puede garantizar
+//  que el primer toque del usuario, sea donde sea, lo consiga.
+function _cronosAudioListo() {
+    return !!(_audioCtx && _audioCtx.state === "running");
+}
+if (typeof window !== 'undefined') window._cronosAudioListo = _cronosAudioListo;
+
 function _autoUnlockOnFirstGesture() {
-    if (_audioAutoUnlocked) return;
-    _audioAutoUnlocked = true;
+    // Ya suena de verdad: nada que hacer.
+    if (_cronosAudioListo()) { _audioAutoUnlocked = true; return; }
+    // Silenciado a propósito por el usuario: se respeta y no se toca el audio.
+    if (_alertsMuted) return;
     try {
-        if (!_alertsMuted) {
-            unlockAudio();
+        unlockAudio();
+        // ⚠️ El estado NO cambia de forma síncrona en iOS: `resume()` devuelve
+        // una promesa. Se vuelve a mirar en el turno siguiente, y sólo entonces
+        // se decide si la bandera se puede dar por buena.
+        setTimeout(function () {
+            _audioAutoUnlocked = _cronosAudioListo();
             // v424: un solo botón de sonido — se refresca solo según el estado
             // real del AudioContext, sin tocar texto ni clases a mano.
             _refreshSoundBtn();
-            console.log('[LIVE] Audio auto-desbloqueado por gesto del usuario');
-        }
+            if (_audioAutoUnlocked) {
+                console.log('[LIVE] Audio auto-desbloqueado por gesto del usuario');
+            }
+        }, 0);
     } catch(e) { /* sin audio */ }
 }
 // v229: exponer unlockAudio y _audioAutoUnlocked a window para que el
@@ -2088,9 +2188,12 @@ Object.defineProperty(window, '_audioAutoUnlocked', {
     set: (v) => { _audioAutoUnlocked = v; },
     configurable: true
 });
-// Escuchamos una sola vez los siguientes gestos (cualquiera de ellos desbloquea):
+// v567 · SE ESCUCHA EN CADA GESTO, NO SÓLO EN EL PRIMERO ({once:true} era el
+// complemento del defecto de arriba: si el primer toque no conseguía
+// desbloquear, no había un segundo intento en toda la sesión). La función sale
+// en su primera línea cuando el audio ya suena, así que reintentar no cuesta.
 ['touchstart', 'click', 'keydown', 'pointerdown'].forEach(function(ev) {
-    window.addEventListener(ev, _autoUnlockOnFirstGesture, { once: true, passive: true });
+    window.addEventListener(ev, _autoUnlockOnFirstGesture, { once: false, passive: true });
 });
 
 // Loop de silencio permanente que evita que iOS suspenda el AudioContext.
@@ -3473,6 +3576,23 @@ function _effectivePhase(matchData) {
 // SIEMBRA sin disparar la primera vez que ve un partido (igual que _matchSeeded).
 // matchData es opcional para fin autónomo derivado solo del cacheado.
 function _handlePhaseTransition(matchId, matchData) {
+    // ⚠️ v567 · EL ORDINAL DE FASE VIVE **DENTRO** DE LA FUNCIÓN, A PROPÓSITO.
+    // `scripts/test_live_phase_transition.js` recorta esta función SOLA y la
+    // ejecuta en un sandbox: cualquier constante declarada fuera es un
+    // ReferenceError que la mata en la primera transición. Ya pasó al añadirla.
+    // Misma familia que las guardas `typeof window !== 'undefined'` del resto
+    // del fichero.
+    //
+    // 🔑 UN PARTIDO NO RETROCEDE DE FASE. Hace falta desde que esta función se
+    // evalúa TAMBIÉN con snapshots de caché (ver detectAndAlert): un snapshot
+    // `fromCache` atrasado puede traer phase='1st_half' después de que el
+    // servidor ya haya dicho 'break'. Sin este tope, `_matchPrevPhase` volvería
+    // a '1st_half' y el siguiente snapshot bueno anunciaría el FINAL DE PRIMERA
+    // PARTE por segunda vez, con su silbato y su overlay a pantalla completa. El
+    // orden de un partido es un invariante real, no una heurística: nunca se
+    // vuelve del descanso a la primera parte.
+    const _ordenFase = { '1st_half': 0, 'break': 1, '2nd_half': 2, 'finished': 3 };
+
     const data = matchData || _matchLastData[matchId];
     if (!data) return;
     if (matchData) _matchLastData[matchId] = matchData;
@@ -3484,6 +3604,10 @@ function _handlePhaseTransition(matchId, matchData) {
     // Primera vez: sembrar SIN disparar (no avisar del estado preexistente).
     if (prevPhase === undefined) { _matchPrevPhase[matchId] = nextPhase; return; }
     if (nextPhase === prevPhase) return;
+    // v567 · marcha atrás: se ignora sin tocar el estado ni anunciar nada.
+    const _oNext = _ordenFase[nextPhase];
+    const _oPrev = _ordenFase[prevPhase];
+    if (typeof _oNext === 'number' && typeof _oPrev === 'number' && _oNext < _oPrev) return;
     _matchPrevPhase[matchId] = nextPhase;
 
     // 🚨 v558 · LA MISMA PUERTA QUE LOS SUCESOS. El silbato y el overlay de
@@ -3549,6 +3673,104 @@ function _stopAutonomousPhaseWatch() {
     if (_autonomousPhaseTimer) { clearInterval(_autonomousPhaseTimer); _autonomousPhaseTimer = null; }
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔄 v567 · RED DE SEGURIDAD CONTRA LA PANTALLA CONGELADA
+// ════════════════════════════════════════════════════════════════════
+//  Fallo 4 de la prueba de 7 partidos: "al abrir los partidos en dispositivos
+//  independientes los cronómetros se quedan congelados o no arrancan si la
+//  conexión o la pestaña sufre pausas".
+//
+//  🔑 EL CRONÓMETRO NUNCA FUE EL PROBLEMA. Su intervalo de 250 ms deriva la
+//  cuenta de `Date.now()` contra una base absoluta, así que aunque iOS lo
+//  suspenda al pasar a segundo plano, al volver pinta la hora correcta él solo.
+//  Lo que se congela es lo que lo ALIMENTA: iOS cierra los WebSockets de una
+//  pestaña en segundo plano y el `onSnapshot` puede no volver. Sin snapshots no
+//  hay `renderMatch`, y la pantalla se queda con la última foto — que es
+//  exactamente lo que se ve como "congelado".
+//
+//  Y al ARRANCAR es peor, porque no hay foto previa: la vista se queda en
+//  "cargando" hasta que llegue el primer snapshot, sin decir nada.
+//
+//  La salida no es tocar el cronómetro, es no depender de un único canal:
+//    · al volver a primer plano y al recuperar la red → resincronizar;
+//    · un vigilante que, si el partido visible lleva demasiado sin dar señales,
+//      lo relee del servidor por su cuenta.
+//  Una LECTURA suelta cada 25 s en el peor caso es irrelevante al lado de los
+//  720 latidos/hora que ya recibe cada espectador.
+
+// Instante del último snapshot procesado para el partido que se está viendo.
+let _ultimoSnapshotMs = 0;
+function _marcaSnapshotRecibido() { _ultimoSnapshotMs = Date.now(); }
+
+// ¿Está el usuario DENTRO del detalle de un partido? Se pregunta al DOM y no a
+// `currentMatchId`, que sobrevive a la vuelta al listado: repintar el detalle
+// desde aquí estando en la lista sacaría al usuario de donde está.
+function _enDetalleDePartido() {
+    const m = document.getElementById('live-main');
+    return !!(m && m.offsetParent !== null);
+}
+
+let _resyncEnCurso = false;
+async function _resincronizaVista(motivo) {
+    if (_resyncEnCurso) return;
+    _resyncEnCurso = true;
+    try {
+        // 1 · Repintar YA con lo último que se sabe. Es gratis, es inmediato y
+        //     recoloca la base del cronómetro sin esperar a la red.
+        if (_enDetalleDePartido() && window._liveLastData) {
+            try { renderMatch(window._liveLastData); } catch (e) {}
+        }
+        // 2 · Releer del servidor el partido visible, por si su canal murió.
+        if (_enDetalleDePartido() && currentMatchId && typeof db !== 'undefined' && db) {
+            const s = await getDoc(doc(db, 'live_matches', currentMatchId));
+            if (s.exists()) {
+                const d = s.data();
+                lastSnapshot = d;
+                _marcaSnapshotRecibido();
+                // `fromCache` en false: viene de una lectura directa.
+                detectAndAlert(currentMatchId, d, false);
+                renderMatch(d);
+            }
+        }
+        // 3 · Rehacer los watchers de fondo: los que murieran en segundo plano
+        //     se vuelven a suscribir, y los partidos nuevos entran.
+        if (typeof refreshBackgroundWatchers === 'function') {
+            await refreshBackgroundWatchers();
+        }
+        console.log('[LIVE v567] Vista resincronizada (' + motivo + ')');
+    } catch (e) {
+        console.warn('[LIVE v567] Resincronización (' + motivo + '):', e && e.message);
+    } finally {
+        _resyncEnCurso = false;
+    }
+}
+if (typeof window !== 'undefined') window._cronosResincronizaVista = _resincronizaVista;
+
+// Vigilante: si el partido visible lleva más de 25 s sin un solo snapshot
+// —cuando debería estar latiendo cada 5— su canal está muerto. Se relee.
+const _MS_SIN_SNAPSHOT_SOSPECHOSO = 25000;
+let _watchdogTimer = null;
+function _startResyncWatchdog() {
+    if (_watchdogTimer) return;
+    _watchdogTimer = setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        if (!_enDetalleDePartido() || !currentMatchId) return;
+        if (!_ultimoSnapshotMs) return;                   // aún no llegó el primero
+        const d = window._liveLastData;
+        if (d && d.status !== 'active') return;           // partido terminado: no late
+        if (Date.now() - _ultimoSnapshotMs < _MS_SIN_SNAPSHOT_SOSPECHOSO) return;
+        _resincronizaVista('sin snapshots durante ' +
+            Math.round((Date.now() - _ultimoSnapshotMs) / 1000) + ' s');
+    }, 5000);
+}
+
+// Vuelta a primer plano y recuperación de red: los dos momentos en que un canal
+// puede haber muerto sin avisar.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _resincronizaVista('vuelta a primer plano');
+});
+window.addEventListener('online', () => _resincronizaVista('red recuperada'));
+
 // Construye el mapa de estado por jugador a partir de un snapshot.
 function _buildState(data) {
     const players = {};
@@ -3588,37 +3810,70 @@ function detectAndAlert(matchId, matchData, fromCache) {
                       ' declara ser "' + matchData.id + '". No se emite ninguna alerta.');
         return;
     }
-    // Descartar snapshots de cache local desactualizada: cuando hay un cambio
-    // pendiente de confirmar en el servidor, Firestore puede emitir primero un
-    // snapshot fromCache que puede estar atrasado. No avisamos con datos de cache.
-    if (fromCache) { return; }
-    // Descartar snapshots no monotonicos: si este snapshot no es mas reciente
-    // que el ultimo procesado para este partido, ignorarlo (evita re-disparar
-    // alertas tras reconexiones o reenvios de Firestore).
-    const ts = (typeof matchData.updatedAt?.toMillis === 'function')
-        ? matchData.updatedAt.toMillis()
-        : (typeof matchData.updatedAt?.toDate === 'function')
-            ? matchData.updatedAt.toDate().getTime()
-            : 0;
-    const prevTs = _matchLastTs[matchId] || 0;
-    if (ts && prevTs && ts <= prevTs) return;
-    if (ts) _matchLastTs[matchId] = ts;
+    // ════════════════════════════════════════════════════════════════════
+    //  🚨 v567 · EL ORDEN DE ESTE BLOQUE ES EL ARREGLO DEL "EFECTO EMBUDO"
+    // ════════════════════════════════════════════════════════════════════
+    //  Medido en la prueba de 7 partidos simultáneos (6 iPads + 1 móvil): el
+    //  HISTORIAL de la barra inferior iba instantáneo mientras los avisos
+    //  flotantes se retrasaban, se atropellaban y salían CUATRO DE GOLPE al
+    //  séptimo gol. Esa asimetría es la firma exacta del defecto: los dos
+    //  pintan el mismo suceso, pero por caminos distintos.
+    //
+    //    · la BARRA la alimenta renderMatch -> _loadMatchEventsFromSnapshot,
+    //      que no tiene ninguna guarda de frescura;
+    //    · los AVISOS pasaban por las DOS guardas de aquí abajo, que
+    //      descartaban el snapshot ENTERO.
+    //
+    //  🔑🔑🔑 Y `_registerMatchEvent` escribe SÓLO `events: arrayUnion(...)`
+    //  (js/match/events/player-actions.js). Hasta v567 no tocaba `updatedAt`,
+    //  así que el snapshot que traía el gol llegaba con el MISMO `updatedAt`
+    //  que el anterior: `ts <= prevTs` era cierto y el gol se tiraba a la
+    //  basura. Sólo salía cuando un latido posterior —hasta 5 s después—
+    //  cambiaba `updatedAt`, y entonces se anunciaban todos los acumulados a
+    //  la vez. Eso es, literalmente, el embudo.
+    //
+    //  🔑 LA REORDENACIÓN: las dos guardas existen para proteger la DETECCIÓN
+    //  POR DELTA (comparar el estado de los jugadores), que sí se re-dispara
+    //  con un snapshot repetido o atrasado. Los SUCESOS CON IDENTIDAD no las
+    //  necesitan: tienen un dedup infalible y propio, el Set `_matchSeenEvents`
+    //  por clave de evento. Aplicarles la guarda no los protegía de nada y les
+    //  costaba el retraso. Así que fase y sucesos suben POR ENCIMA, y las
+    //  guardas se quedan donde de verdad hacen falta: en la vía delta.
+    //
+    //  ⚠️ Lo que NO cambia: la SIEMBRA. La primera pasada sobre un partido
+    //  sigue marcando todos los sucesos como vistos sin anunciar ninguno, para
+    //  no cantar el historial entero al abrir el visor. Antes la cerraba la
+    //  vía delta (más abajo); ahora la cierra este bloque, porque si la dejara
+    //  allí un iPad con muchos snapshots `fromCache` no llegaría nunca a
+    //  cerrarla y se quedaría marcando sucesos como vistos SIN anunciarlos
+    //  jamás — cambiar un retraso por un silencio permanente.
 
-    // TRANSICIONES DE FASE (silbato + overlay). Se evalúa SIEMPRE, por ENCIMA del
-    // guard `status !== "active"` de más abajo, porque el fin de partido implica
-    // precisamente status='finished' y debe disparar el overlay de FIN DE PARTIDO.
-    // _handlePhaseTransition cachea el snapshot en _matchLastData para el timer
-    // autónomo y siembra/compara _matchPrevPhase con su propia lógica.
+    // ── 1 · TRANSICIONES DE FASE (silbato + overlay) ─────────────────────
+    // Se evalúa SIEMPRE: por encima del guard `status !== "active"` (el fin de
+    // partido implica precisamente status='finished') y, desde v567, también por
+    // encima de `fromCache` y de la guarda monotónica.
+    //
+    // 🔑 ÉSTE ERA EL FALLO 3 DEL AUTOR: "el aviso de fin de primera parte sólo
+    // sale en el PC, casi nunca en los iPads". En un PC con conexión estable
+    // casi ningún snapshot llega `fromCache`; en un iPad con cobertura
+    // irregular llegan a montones, y con cada uno se tiraba la transición de
+    // fase. No era un problema de dispositivo: era de red.
+    //
+    // _handlePhaseTransition trae su propio control (siembra, comparación con
+    // _matchPrevPhase y, desde v567, el tope de marcha atrás de _ORDEN_FASE),
+    // así que evaluarlo con un snapshot de caché no puede anunciar de más.
+    // También cachea el snapshot en _matchLastData para el timer autónomo y
+    // para _puedeAvisarme, que antes se quedaban con datos viejos.
     _handlePhaseTransition(matchId, matchData);
 
-    // ── 🔑 EVENTOS CON IDENTIDAD (ver _matchSeenEvents) ──────────────────
+    // ── 2 · SUCESOS CON IDENTIDAD (ver _matchSeenEvents) ─────────────────
     // Se recorre el array de eventos del snapshot y se apunta cuáles son NUEVOS
     // para este partido. En la primera pasada (siembra) se marcan todos como
     // vistos SIN anunciar, para no cantar el historial al abrir el visor.
     const _evArr   = Array.isArray(matchData.events) ? matchData.events : [];
     const _evConId = _evArr.some(e => e && e.eventId);
     const _vistos  = _seenSetFor(matchId);
-    const _siembra = !_matchSeeded[matchId] || !_matchPrevState[matchId];
+    const _siembra = !_matchSeeded[matchId];
     const _evNuevos = [];
     _evArr.forEach(ev => {
         // 🔑 AISLAMIENTO: un evento que declare otro matchId no se procesa aquí
@@ -3630,14 +3885,8 @@ function detectAndAlert(matchId, matchData, fromCache) {
         _vistos.add(k);
         if (!_siembra) _evNuevos.push(ev);
     });
-
-    const next = _buildState(matchData);
-    const prev = _matchPrevState[matchId];
-    _matchPrevState[matchId] = next;
-
-    // La primera vez que vemos un partido NO avisamos del estado preexistente.
-    if (!prev || !_matchSeeded[matchId]) { _matchSeeded[matchId] = true; return; }
-    if (matchData.status !== "active") return; // solo partidos en vivo
+    // La siembra se cierra AQUÍ, y no en la vía delta: ver el aviso de arriba.
+    _matchSeeded[matchId] = true;
 
     const matchLabel = (matchData.homeTeam?.name || "Local") + " vs " + (matchData.awayTeam?.name || "Visitante");
     // v230: calcular el minuto del partido a partir del snapshot para mostrarlo
@@ -3666,20 +3915,67 @@ function detectAndAlert(matchId, matchData, fromCache) {
     // empezados antes de este fix— se continúa con la detección por delta de
     // siempre, para no dejar sin avisos a un partido ya en curso.
     if (_evConId) {
-        _evNuevos.forEach(ev => {
-            const _t = ev.type || 'sub';
-            // v424: TODO pasa por el formateador único, no sólo las
-            // sustituciones. Antes el resto se mostraba con el texto crudo, y
-            // ése era justo el "otro formato" del gol duplicado.
-            const _linea = _formateaLineaEvento(_t, ev.text || '');
-            // v445 · el equipo sale del PROPIO evento (campo `team`, v439), que
-            // es la fuente fiable; showEventToast sólo lo deduce cuando no se
-            // le pasa.
-            showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime,
-                           _equipoDeSuceso(matchData, ev), matchId);
-        });
+        // v567 · Sólo los partidos EN VIVO cantan sus sucesos. Este guard estaba
+        // antes en la vía delta (`status !== "active"`) y cubría también a esta
+        // rama por quedar más arriba; al subir los sucesos por encima de las
+        // guardas hay que traérselo explícitamente, o un partido ya terminado
+        // anunciaría su historial al reconectar.
+        if (matchData.status === "active") {
+            _evNuevos.forEach(ev => {
+                const _t = ev.type || 'sub';
+                // v424: TODO pasa por el formateador único, no sólo las
+                // sustituciones. Antes el resto se mostraba con el texto crudo, y
+                // ése era justo el "otro formato" del gol duplicado.
+                const _linea = _formateaLineaEvento(_t, ev.text || '');
+                // v445 · el equipo sale del PROPIO evento (campo `team`, v439), que
+                // es la fuente fiable; showEventToast sólo lo deduce cuando no se
+                // le pasa.
+                showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime,
+                               _equipoDeSuceso(matchData, ev), matchId);
+            });
+        }
+        // v567 · El estado por jugador se mantiene al día aunque esta rama no lo
+        // use: si un partido dejara de emitir `eventId` a mitad (el escritor es
+        // otro dispositivo y puede ser una versión anterior), la vía delta
+        // necesita una base con la que comparar. Sin esto, su primer ciclo
+        // compararía contra el estado de hace minutos y cantaría de golpe todo
+        // lo ocurrido entretanto.
+        _matchPrevState[matchId] = _buildState(matchData);
         return;
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  VÍA DELTA (respaldo) · AQUÍ SÍ MANDAN LAS GUARDAS DE FRESCURA
+    // ════════════════════════════════════════════════════════════════════
+    //  Esta vía deduce los sucesos COMPARANDO el estado de los jugadores entre
+    //  dos snapshots, así que un snapshot repetido, atrasado o de caché sí la
+    //  haría anunciar cosas que no han pasado. Las dos guardas viven aquí desde
+    //  v567 —antes envolvían la función entera— y siguen haciendo exactamente
+    //  el trabajo para el que se escribieron.
+
+    // Descartar snapshots de cache local desactualizada: cuando hay un cambio
+    // pendiente de confirmar en el servidor, Firestore puede emitir primero un
+    // snapshot fromCache que puede estar atrasado. No avisamos con datos de cache.
+    if (fromCache) return;
+    // Descartar snapshots no monotonicos: si este snapshot no es mas reciente
+    // que el ultimo procesado para este partido, ignorarlo (evita re-disparar
+    // alertas tras reconexiones o reenvios de Firestore).
+    const ts = (typeof matchData.updatedAt?.toMillis === 'function')
+        ? matchData.updatedAt.toMillis()
+        : (typeof matchData.updatedAt?.toDate === 'function')
+            ? matchData.updatedAt.toDate().getTime()
+            : 0;
+    const prevTs = _matchLastTs[matchId] || 0;
+    if (ts && prevTs && ts <= prevTs) return;
+    if (ts) _matchLastTs[matchId] = ts;
+
+    const next = _buildState(matchData);
+    const prev = _matchPrevState[matchId];
+    _matchPrevState[matchId] = next;
+
+    // La primera vez que vemos un partido NO avisamos del estado preexistente.
+    if (!prev) return;
+    if (matchData.status !== "active") return; // solo partidos en vivo
 
     // v230: meta extendido con matchTime para que _appendEventToHistoryPanel
     // lo muestre en naranja junto a la hora real.
@@ -4073,6 +4369,8 @@ function startBackgroundWatch() {
     // Timer autónomo: dispara transiciones de fase por reloj absoluto aunque el
     // entrenador haya cerrado la app y dejen de llegar snapshots.
     _startAutonomousPhaseWatch();
+    // v567 · vigilante de canal muerto (ver _resincronizaVista).
+    _startResyncWatchdog();
 }
 
 // ── Enter live view ────────────────────────────────────────────────
@@ -4137,6 +4435,8 @@ window.loadMatch = function(matchId) {
             }
             const data = snap.data();
             lastSnapshot = data;
+            // v567 · señal de vida del canal, para el vigilante de resincronización.
+            if (typeof _marcaSnapshotRecibido === 'function') _marcaSnapshotRecibido();
             detectAndAlert(matchId, data, snap.metadata && snap.metadata.fromCache);
             renderMatch(data);
         },
@@ -5990,10 +6290,26 @@ setInterval(function() {
         if (!isMobile()) return;
         // v222: usar window._alertsMuted (el <script> del módulo expone la variable aquí).
         if (window._alertsMuted) return;  // usuario silenció manualmente
-        // v229: usar window._audioAutoUnlocked (expuesto desde el módulo en v229).
-        if (window._audioAutoUnlocked) return;  // ya se desbloqueó
+        // 🔑 v567 · SE PREGUNTA POR EL AUDIO, NO POR LA BANDERA "ya lo intenté".
+        // Antes esto miraba `window._audioAutoUnlocked`, que se ponía a true en
+        // el PRIMER gesto —el clic del login, sin ir más lejos— hubiera
+        // desbloqueado o no. Resultado: en el iPad el banner no aparecía nunca y
+        // el usuario se quedaba sin sonido y sin nada que se lo dijera. Ahora
+        // manda el estado real del AudioContext, así que el banner sigue ahí
+        // mientras el audio siga bloqueado, y desaparece en cuanto suene.
+        if (typeof window._cronosAudioListo === 'function' && window._cronosAudioListo()) return;
+        // Respaldo por si el módulo aún no ha publicado el ayudante.
+        if (typeof window._cronosAudioListo !== 'function' && window._audioAutoUnlocked) return;
         banner.style.display = 'flex';
-        console.log('[LIVE] Banner de activación de sonido visible');
+    }
+
+    // v567 · y si el audio se desbloquea por cualquier otra vía (el botón de la
+    // cabecera, un toque en la pantalla), el banner se retira solo: lo comprueba
+    // el mismo intervalo de 1 s que lo enseña.
+    function hideBannerIfSoundReady() {
+        if (typeof window._cronosAudioListo === 'function' && window._cronosAudioListo()) {
+            if (banner.style.display !== 'none') banner.style.display = 'none';
+        }
     }
 
     // Ocultar banner
@@ -6034,7 +6350,10 @@ setInterval(function() {
     }
 
     // También comprobar cada 500ms por si el MutationObserver no pilla el cambio
-    setInterval(showBannerIfNeeded, 1000);
+    setInterval(function () {
+        hideBannerIfSoundReady();
+        showBannerIfNeeded();
+    }, 1000);
 })();
 </script>
 <style>
@@ -6098,8 +6417,8 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v566"></script>
-<script src="js/match/replay/replay-player.js?v=v566"></script>
-<script src="js/match/events/retroactive-modal.js?v=v566"></script>
+<script src="js/match/immutability.js?v=v571"></script>
+<script src="js/match/replay/replay-player.js?v=v571"></script>
+<script src="js/match/events/retroactive-modal.js?v=v571"></script>
 </body>
 </html>

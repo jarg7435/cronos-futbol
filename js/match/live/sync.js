@@ -38,12 +38,80 @@ async function cleanupStaleMatches() {
             where('clubId', '==', _clubIdLimpieza)
         ));
 
+        // ════════════════════════════════════════════════════════════════
+        //  🚨🚨🚨 v568 · ESTE BARREDOR MATABA PARTIDOS RECIÉN CREADOS
+        // ════════════════════════════════════════════════════════════════
+        //  MEDIDO en los datos reales de la 2ª prueba de estrés (17/08/2026).
+        //  Tres partidos quedaron así:
+        //
+        //    cadete-b-…-2204    status=finished  phase=1st_half  isRunning=true
+        //    local-…-2203       status=finished  phase=1st_half  isRunning=true
+        //    benjamin-c-…-2146  status=finished  phase=1st_half  autoClosed=true
+        //
+        //  Cerrados los TRES con `autoClosed:true` **en 133 milisegundos**, en
+        //  plena primera parte, y uno de ellos **un segundo después de crearlo**.
+        //  Eso no lo hace una persona: es este bucle.
+        //
+        //  🔑🔑🔑 LA CAUSA, en una línea:
+        //        const updated = data.updatedAt?.toDate?.() || new Date(0);
+        //
+        //  `updatedAt` se escribe con `serverTimestamp()`, que es un CENTINELA:
+        //  hasta que el servidor lo confirma, quien lee el documento de la caché
+        //  local ve `updatedAt: null`. Entonces `?.toDate?.()` da `undefined` y
+        //  el `|| new Date(0)` lo convierte en **1 de enero de 1970**. Un
+        //  partido creado hace un segundo pasaba a estar "sin actualizar desde
+        //  1970" y el `updated < fourHoursAgo` lo cerraba como abandonado.
+        //
+        //  ⚠️ Y se dispara MÁS cuanto más se prueba: `cleanupStaleMatches` corre
+        //  en el ARRANQUE de la app, así que abrir una pestaña para crear el
+        //  partido nº 4 barría los tres anteriores. De ahí "he querido crear
+        //  siete, sólo tengo cinco y no puedo crear más": cada partido nuevo
+        //  mataba a los que ya estaban en marcha.
+        //
+        //  🔑 LA LECCIÓN: la AUSENCIA de fecha no es prueba de abandono, es
+        //  ausencia de prueba. `new Date(0)` convierte "no lo sé" en "abandonado
+        //  hace 56 años". Las REGLAS ya lo tenían bien resuelto —"sin fecha
+        //  utilizable NO hay ventana; ante la duda, cerrado" (v434)—; este
+        //  camino del cliente hacía justo lo contrario.
+        //
+        //  ⚠️ La Cloud Function `cleanupLiveMatches` NO tiene este fallo: filtra
+        //  con `where('updatedAt','<',corte4h)` en el SERVIDOR, y Firestore
+        //  excluye de un índice los documentos sin ese campo. Por eso el barrido
+        //  de la nube nunca tocó un partido fresco y éste sí.
+        // ════════════════════════════════════════════════════════════════
+
+        // ⚠️ Una decisión DESTRUCTIVA no se toma con datos de caché. Si este
+        // resultado no viene confirmado por el servidor, los `updatedAt` de los
+        // documentos recién escritos —por esta pestaña o por otra, que comparten
+        // el IndexedDB— todavía pueden estar sin resolver. Se deja para la
+        // siguiente pasada; el barrido de la nube corre igualmente cada hora.
+        if (snap.metadata && snap.metadata.fromCache) return;
+
+        // El partido que ESTA pestaña está jugando no se cierra jamás desde
+        // aquí, pase lo que pase con su marca de tiempo.
+        let _miPartido = null;
+        try { _miPartido = window._cronosMatchSlots?.getTabMatchId() || null; } catch (e) {}
+
         let closed = 0;
         const promises = [];
 
         snap.forEach(d => {
             const data    = d.data();
-            const updated = data.updatedAt?.toDate?.() || new Date(0);
+
+            // 🔑 SIN FECHA UTILIZABLE NO SE CIERRA NADA. Ni `new Date(0)`, ni
+            // ningún otro valor por defecto: se sale y se vuelve a mirar en la
+            // pasada siguiente, cuando el servidor haya sellado la hora.
+            const _ts = data.updatedAt && typeof data.updatedAt.toDate === 'function'
+                ? data.updatedAt.toDate()
+                : null;
+            if (!_ts || isNaN(_ts.getTime())) return;
+            const updated = _ts;
+
+            // Un documento con escrituras aún sin confirmar es, por definición,
+            // reciente: no puede llevar 4 h abandonado.
+            if (d.metadata && d.metadata.hasPendingWrites) return;
+
+            if (_miPartido && d.id === _miPartido) return;
 
             // v434 · SE RETIRA EL BORRADO A 7 DÍAS DESDE EL CLIENTE.
             // Ya era inalcanzable desde v431 —`cleanupLiveMatches` borra en

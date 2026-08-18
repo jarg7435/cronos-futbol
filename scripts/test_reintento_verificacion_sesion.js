@@ -49,8 +49,34 @@ function ok(nombre, cond, detalle) {
 // caracteres se quedaba corta en cuanto crecieron los comentarios, el indexOf
 // devolvía -1 y la comparación de orden salía roja sin que el código fallara:
 // una ventana mal medida es un falso rojo esperando su turno.
-const iCatch  = AUTH.indexOf('Auth verify error');
-const bloqueCatch = iCatch === -1 ? '' : AUTH.slice(iCatch, iCatch + 4200);
+// ⚠️⚠️ v568 · SE ANCLA A LA LLAMADA REAL, NO AL TEXTO DEL MENSAJE.
+// Antes buscaba `AUTH.indexOf('Auth verify error')` a secas. En v568 se añadió
+// un comentario que CITA ese mensaje de consola para documentar el fallo que
+// arreglaba, y el indexOf empezó a devolver la posición del COMENTARIO —cientos
+// de líneas antes—, con lo que la ventana de 4200 caracteres ya no contenía el
+// catch: cuatro aserciones en rojo con el código intacto. Quinta reincidencia
+// de "el patrón encuentra el gemelo, no el original". `console.error(` sólo
+// aparece en la llamada de verdad.
+// ⚠️⚠️⚠️ v570 · SE ACABÓ LA VENTANA DE BYTES. Este guard ya se puso rojo con
+// el código correcto DOS veces por lo mismo: primero con 2600 caracteres, luego
+// con 4200. Cada vez que el catch crece —y crece cada vez que se documenta un
+// arreglo— la ventana deja fuera el `showAuthError` del final y las aserciones
+// de ORDEN fallan sin que nada esté mal. Un recuento de bytes no es un ancla.
+// Ahora se recorta el bloque `catch` ENTERO contando llaves.
+const iCatch = (function () {
+    const iErr = AUTH.indexOf("console.error('[Chronos] Auth verify error:'");
+    if (iErr < 0) return -1;
+    return AUTH.lastIndexOf('catch (err) {', iErr);
+})();
+const bloqueCatch = (function () {
+    if (iCatch < 0) return '';
+    let prof = 0;
+    for (let k = AUTH.indexOf('{', iCatch); k < AUTH.length; k++) {
+        if (AUTH[k] === '{') prof++;
+        else if (AUTH[k] === '}') { prof--; if (prof === 0) return AUTH.slice(iCatch, k + 1); }
+    }
+    return '';
+})();
 
 // ⚠️⚠️ DESPOJAR DE COMENTARIOS ANTES DE COMPARAR EL ORDEN. La primera versión
 // de este guard daba rojo con el código correcto porque el comentario que
@@ -137,6 +163,57 @@ ok('4b · un fallo de RED sigue sin destruir la sesión (lo de v447)',
 ok('4c · un fallo REAL de autorización sigue expulsando',
    /signOut/.test(bloqueCatch),
    'sin esto, una cuenta revocada se quedaría dentro');
+
+// ───────────────────────────────────────────────────────────────────────────
+console.log('\n── PARTE 5 · v568 · el token, antes de leer (la carrera del login) ──');
+// ───────────────────────────────────────────────────────────────────────────
+// 🔑 EL FALLO QUE CIERRA ESTA PARTE (capturas 9200/9201, 2ª prueba de estrés):
+// `arinagazone@gmail.com` no podía entrar. La regla de users/{userId} es
+// `allow read: if isAuth();` —no pide rol ni club—, así que un
+// "Missing or insufficient permissions" ahí sólo puede significar que la
+// lectura salió SIN token. Es una carrera, no un permiso, y se ensancha con
+// varias pestañas abiertas porque browserLocalPersistence comparte la sesión
+// por ORIGEN y el SDK la sincroniza entre todas.
+//
+// Se mide sobre el TROZO de checkAuthorization que va desde la referencia al
+// documento hasta la lectura, recortado por anclas y no por bytes.
+const iRef  = AUTH.indexOf("const ref  = fa.doc(fa.db, 'users', user.uid);");
+const iNext = AUTH.indexOf('_reintentosAuth = 0;', iRef < 0 ? 0 : iRef);
+const bloqueLectura = (iRef >= 0 && iNext > iRef) ? AUTH.slice(iRef, iNext) : '';
+const codLectura = sinCom(bloqueLectura);
+
+ok('5a · se recorta el bloque de la primera lectura', !!bloqueLectura);
+
+ok('5b · 🔑🔑🔑 se ESPERA el token ANTES de la primera lectura',
+   /getIdToken\(\)/.test(codLectura) &&
+   codLectura.indexOf('getIdToken()') < codLectura.indexOf('fa.getDoc(ref)'),
+   'sin esto la lectura puede salir sin token y las reglas la deniegan');
+
+ok('5c · 🔑🔑 y al reintentar se FUERZA el refresco del token',
+   /getIdToken\(true\)/.test(codLectura),
+   'reintentar sin refrescar repite la misma lectura sin token: falla igual');
+
+ok('5d · 🔑 el refresco va DENTRO del camino de permission-denied',
+   /permission-denied[\s\S]*?getIdToken\(true\)/.test(codLectura),
+   'refrescar en cualquier otro error no arregla nada y esconde fallos reales');
+
+ok('5e · hay más de un reintento, con espera creciente',
+   /_ESPERAS_PERMISOS\s*=\s*\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\]/.test(codLectura),
+   'un solo reintento a 1 s era lo que ya fallaba en v567');
+
+ok('5f · ⚠️ con TOPE de intentos: un fallo permanente no puede ser un bucle',
+   /intento >= _ESPERAS_PERMISOS\.length/.test(codLectura));
+
+ok('5g · ⚠️ un error que NO sea de permisos se propaga tal cual',
+   /if \(!_esPermisos \|\| intento >= _ESPERAS_PERMISOS\.length\)[\s\S]{0,80}?throw errLectura;/.test(codLectura),
+   'un corte de red no puede disfrazarse de problema de token');
+
+ok('5h · ⚠️ preparar el token NUNCA puede colgar el arranque (va con tope)',
+   /_conTope\(user\.getIdToken\(\), \d+/.test(codLectura));
+
+ok('5i · ⚠️ si el token no se puede preparar, se sigue: no se aborta la entrada',
+   /catch \(e\) \{[\s\S]{0,200}?No se pudo preparar el token/.test(bloqueLectura),
+   'un getIdToken lento no puede impedir entrar a quien sí tiene permiso');
 
 // ───────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(70));

@@ -171,7 +171,7 @@ async function cloudSet(key, value) {
 
     const fa  = window._cronos_auth;
     const uid = window._cronosCurrentUser?.uid;
-    if (!fa || !uid) return;
+    if (!fa || !uid) return { estado: 'solo-local', motivo: 'sin sesión' };
 
     try {
         const { setDoc, doc } = await import(
@@ -180,21 +180,66 @@ async function cloudSet(key, value) {
         // 2. Entregar la escritura al SDK SIN esperar el ACK del servidor.
         //    El aviso de permisos se maneja aquí porque el llamador ya no
         //    puede recibirlo: esta función deja de rechazar por ese motivo.
-        setDoc(
+        const escritura = setDoc(
             doc(fa.db, 'users', uid, 'cronos_data', 'main'),
             { [key]: _raw },
             { merge: true }
-        ).catch((err) => {
+        );
+        escritura.catch((err) => {
             const _msg = err && err.message ? err.message : String(err);
             console.warn('cloudSet: la escritura en la nube falló:', _msg);
             if (_msg.includes('permission') && typeof showToast === 'function') {
                 showToast('⚠️ Guardado en este dispositivo, pero error de permisos en la nube. Contacta con soporte.', 5000);
             }
         });
+
+        // ══════════════════════════════════════════════════════════════
+        //  🔑 v570 · SE DEVUELVE EL ASA DE LA ESCRITURA. Sigue SIN esperarse
+        //  aquí —eso es lo que colgaba a quien guardaba sin cobertura, y no se
+        //  toca—, pero ahora quien llama PUEDE comprobar si llegó.
+        //
+        //  Lo pide un fallo real: el autor guardó las plantillas de cuatro
+        //  equipos, la app dijo "✅ Plantilla y cuerpo técnico guardados"… y al
+        //  volver no estaban. El aviso se mostraba SIEMPRE, 300 ms después,
+        //  hubiera llegado la escritura o no. Y si no llegaba, la copia local
+        //  la borraba después la purga por cambio de usuario
+        //  (_purgeStaleLocalDataIfNeeded), que existe por privacidad y debe
+        //  seguir haciéndolo. Resultado: la plantilla desaparecía de los dos
+        //  sitios y el único aviso que había dicho era "guardado".
+        //
+        //  🔑 "Guardado" tiene que significar guardado. Con este asa,
+        //  `saveMasterRoster` distingue las tres situaciones reales: subida
+        //  confirmada, pendiente de cola, o fallida.
+        // ══════════════════════════════════════════════════════════════
+        return { estado: 'entregada', escritura: escritura };
     } catch (e) {
         console.warn('cloudSet: no se pudo entregar la escritura a la nube:', e.message);
+        return { estado: 'error', motivo: e && e.message };
     }
 }
+
+// ══════════════════════════════════════════════════════════════════
+//  v570 · ¿Llegó de verdad a la nube? Con TOPE DE TIEMPO.
+//  Devuelve 'ok' | 'pendiente' | 'solo-local'.
+//  ⚠️ NUNCA se queda esperando: sin cobertura la promesa de Firestore no
+//  resuelve jamás, así que a los `ms` se contesta 'pendiente' y se sigue.
+//  Es la diferencia entre informar y colgar.
+// ══════════════════════════════════════════════════════════════════
+window.cronosConfirmaSubida = async function (res, ms) {
+    const tope = (typeof ms === 'number' && ms > 0) ? ms : 2500;
+    if (!res || !res.escritura) return 'solo-local';
+    let t = null;
+    try {
+        return await Promise.race([
+            res.escritura.then(() => 'ok', () => 'solo-local'),
+            new Promise(r => { t = setTimeout(() => r('pendiente'), tope); })
+        ]);
+    } catch (e) {
+        return 'solo-local';
+    } finally {
+        if (t) clearTimeout(t);
+    }
+};
 
 // ── Leer un campo (primero localStorage como caché, luego Firestore) ─
 async function cloudGet(key, defaultValue) {

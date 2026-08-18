@@ -654,24 +654,91 @@ export async function checkAuthorization(user) {
         // PERO si las reglas están rotas (por documento inexistente en isSuperAdminEmail),
         // puede fallar con permission-denied. En ese caso, reintentar una vez.
         const ref  = fa.doc(fa.db, 'users', user.uid);
-        const _mainTimeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('[Chronos] Firestore no responde. Comprueba tu conexión.')), 4000)
-        );
-        let snap;
+
+        // ════════════════════════════════════════════════════════════════
+        //  🔑🔑🔑 v568 · EL TOKEN, ANTES DE LEER. Y AL REINTENTAR, REFRESCADO.
+        // ════════════════════════════════════════════════════════════════
+        //  Medido en la 2ª prueba de estrés (capturas 9200/9201, 2026-08-17):
+        //  `arinagazone@gmail.com` no podía entrar. Consola:
+        //      "Primera lectura de usuario falló (permisos), reintentando..."
+        //      "Auth verify error: FirebaseError: Missing or insufficient
+        //       permissions."
+        //
+        //  🔑 La regla de `users/{userId}` es `allow read: if isAuth();` — no
+        //  pide rol, ni club, ni nada. La ÚNICA forma de que deniegue es que
+        //  `request.auth` llegue NULO: es decir, que la lectura salga ANTES de
+        //  que el cliente de Firestore tenga instalado el token. No era un
+        //  problema de permisos de esa cuenta; era una CARRERA.
+        //
+        //  ⚠️ Por qué aparece ahora y no antes: `setPersistence(auth,
+        //  browserLocalPersistence)` guarda la sesión en IndexedDB POR ORIGEN, y
+        //  el SDK sincroniza el estado de sesión entre TODAS las pestañas del
+        //  mismo navegador. Con cinco ventanas de la app abiertas —cada una con
+        //  su Firestore y su refresco de token— la ventana entre "el login
+        //  resuelve" y "el token está puesto" se ensancha muchísimo. Con una
+        //  sola pestaña en un PC ocioso no se ve jamás.
+        //
+        //  El arreglo son dos cosas, y hacen falta las dos:
+        //    1. ESPERAR el token antes de la primera lectura (`getIdToken()`
+        //       resuelve cuando hay uno válido). Con tope de tiempo: no puede
+        //       colgar el arranque si el SDK no contesta.
+        //    2. Al reintentar, FORZAR el refresco (`getIdToken(true)`). Sin
+        //       esto, el reintento de v567 repetía la misma lectura con el mismo
+        //       cliente sin token y volvía a fallar exactamente igual — que es
+        //       justo lo que se ve en la captura: dos intentos, dos denegaciones.
+        //
+        //  ⚠️ SEC-M08 INTACTO: reintentar no es entrar. Si tras los intentos no
+        //  hay documento, se sigue por el camino de siempre y no se accede a la
+        //  app con datos parciales.
+        const _conTope = (promesa, ms, mensaje) => Promise.race([
+            promesa,
+            new Promise((_, reject) => setTimeout(() => reject(new Error(mensaje)), ms))
+        ]);
+
+        // 1 · Calentar el token. Si falla o tarda, NO se aborta: se sigue y que
+        //     decida la lectura — un token ausente aquí puede llegar en 200 ms.
         try {
-            snap = await Promise.race([fa.getDoc(ref), _mainTimeout]);
-        } catch(primaryErr) {
-            // Si es error de permisos, las reglas pueden estar fallando por el
-            // documento cronos_config/superadmins inexistente. Reintentar tras 1s.
-            if (primaryErr.code === 'permission-denied' || (primaryErr.message||'').includes('permission')) {
-                console.warn('[Chronos] Primera lectura de usuario falló (permisos), reintentando en 1s...');
-                await new Promise(r => setTimeout(r, 1000));
-                const _retryTimeout = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('[Chronos] Firestore no responde tras reintento.')), 6000)
+            if (typeof user.getIdToken === 'function') {
+                await _conTope(user.getIdToken(), 3000, '[Chronos] token lento');
+            }
+        } catch (e) {
+            console.warn('[Chronos] No se pudo preparar el token antes de leer:', e && e.message);
+        }
+
+        // 2 · Leer, y ante DENEGACIÓN refrescar el token y volver a intentarlo.
+        //     Tres intentos con espera creciente (0,8 s · 1,6 s · 3,2 s).
+        let snap;
+        const _ESPERAS_PERMISOS = [800, 1600, 3200];
+        for (let intento = 0; ; intento++) {
+            try {
+                snap = await _conTope(
+                    fa.getDoc(ref),
+                    intento === 0 ? 4000 : 6000,
+                    intento === 0
+                        ? '[Chronos] Firestore no responde. Comprueba tu conexión.'
+                        : '[Chronos] Firestore no responde tras reintento.'
                 );
-                snap = await Promise.race([fa.getDoc(ref), _retryTimeout]);
-            } else {
-                throw primaryErr; // Otro error (timeout, red, etc.) → propagar
+                break;                                   // lectura conseguida
+            } catch (errLectura) {
+                const _esPermisos = errLectura.code === 'permission-denied' ||
+                                    (errLectura.message || '').includes('permission');
+                if (!_esPermisos || intento >= _ESPERAS_PERMISOS.length) {
+                    throw errLectura;   // otro error, o se agotaron los intentos
+                }
+                const espera = _ESPERAS_PERMISOS[intento];
+                console.warn('[Chronos] Lectura de usuario denegada (token aún sin instalar). ' +
+                             'Refrescando token y reintentando en ' + espera + ' ms… (' +
+                             (intento + 1) + '/' + _ESPERAS_PERMISOS.length + ')');
+                await new Promise(r => setTimeout(r, espera));
+                // 🔑 EL REFRESCO FORZADO es lo que rompe el bucle: reintentar sin
+                // él repite la misma lectura sin token y falla igual.
+                try {
+                    if (typeof user.getIdToken === 'function') {
+                        await _conTope(user.getIdToken(true), 5000, '[Chronos] refresco de token lento');
+                    }
+                } catch (e) {
+                    console.warn('[Chronos] Refresco de token sin éxito:', e && e.message);
+                }
             }
         }
 
@@ -1748,12 +1815,56 @@ export async function checkAuthorization(user) {
         // propósito.
         if (user && _esDeRed && _programaReintentoAuth(user, _msgErr || 'red')) return;
 
-        // Si Firebase no responde o hay error de permisos, dar mensaje útil
+        // ════════════════════════════════════════════════════════════════
+        //  🔑 v570 · UN "ERROR DE PERMISOS" AQUÍ CASI NUNCA ES UN PERMISO
+        // ════════════════════════════════════════════════════════════════
+        //  La regla de `users/{userId}` es `allow read: if isAuth();` —lo he
+        //  comprobado contra las reglas VIVAS de producción, no contra el
+        //  fichero del repo—: no pide rol, ni club, ni autorización. Así que
+        //  una denegación al leer el propio documento sólo puede significar
+        //  UNA cosa: la lectura salió sin sesión válida.
+        //
+        //  Y la causa habitual de eso es tener VARIAS SESIONES de Chronos en el
+        //  mismo navegador. Firebase guarda la sesión POR ORIGEN (no por
+        //  pestaña, ni por ventana, ni por ventana de incógnito: todas las de
+        //  incógnito comparten un único perfil), así que entrar con una segunda
+        //  cuenta expulsa a la primera y las pestañas se pisan entre sí.
+        //
+        //  Medido en la 2ª prueba de estrés del autor: tres ventanas de
+        //  incógnito con partidos abiertos y una cuarta intentando entrar. Los
+        //  tres reintentos con refresco de token fallaban igual, y el mensaje
+        //  le mandaba a "contactar al administrador" — que no podía hacer nada,
+        //  porque no era un problema de su cuenta.
+        //
+        //  Decirlo bien no arregla la limitación, pero convierte media hora de
+        //  callejón sin salida en un aviso accionable.
+        const _hayOtraSesion = (function () {
+            try {
+                const _actual = window._cronos_auth && window._cronos_auth.auth &&
+                                window._cronos_auth.auth.currentUser;
+                // La sesión activa ya no es la del usuario que se estaba
+                // verificando: otra pestaña ha entrado con otra cuenta.
+                if (user && _actual && _actual.uid !== user.uid) return true;
+                // O directamente ya no hay sesión: alguien la cerró por debajo.
+                if (user && !_actual) return true;
+            } catch (e) {}
+            return false;
+        })();
+
         const msg = _esDeRed
             ? '⚠️ Sin conexión. Tu sesión sigue abierta: vuelve a intentarlo cuando ' +
               'recuperes internet, no hace falta volver a entrar.'
             : (err.code === 'permission-denied' || _msgErr.includes('permission'))
-            ? '⚠️ Error de permisos. Se está reintentando... Si persiste, contacta al administrador.'
+            ? (_hayOtraSesion
+                ? '⚠️ Hay OTRA cuenta de Chronos abierta en este navegador y ha ' +
+                  'desplazado a la tuya. Sólo se puede tener una sesión por ' +
+                  'navegador (las ventanas de incógnito también la comparten). ' +
+                  'Cierra las demás pestañas de Chronos y vuelve a entrar, o usa ' +
+                  'otro navegador o dispositivo.'
+                : '⚠️ No se ha podido verificar tu sesión. Si tienes Chronos abierto ' +
+                  'en otra pestaña o ventana de este mismo navegador, ciérrala y ' +
+                  'vuelve a entrar: sólo se admite una cuenta por navegador. Si no ' +
+                  'es el caso, vuelve a intentarlo en unos segundos.')
             : 'Error de verificación: ' + (_msgErr || 'Desconocido');
         showAuthError(msg);
     }
