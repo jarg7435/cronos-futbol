@@ -1699,7 +1699,7 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, brows
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, persistentLocalCache,
          persistentMultipleTabManager, doc, getDoc, collection,
-         onSnapshot, getDocs, query, orderBy, where }
+         onSnapshot, getDocs, query, orderBy, where, limit }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -4481,6 +4481,28 @@ function _userCanFollow(m) {
 //  y las alertas siguen sonando. Es la misma red de v431/v433.
 const _COL_INDICE = "live_index";
 
+// ══════════════════════════════════════════════════════════════════
+//  🚦 v579 · EL TECHO DE 100 OYENTES DE FIRESTORE
+// ══════════════════════════════════════════════════════════════════
+//  Firestore corta a ~100 listeners simultaneos por cliente. Cada partido
+//  seguido abre UNO (`_bgWatchers`), asi que un SuperAdmin SIN filtro de club
+//  —que sigue TODOS los partidos activos de la plataforma— revienta ese techo
+//  en cuanto hay unos 100 partidos a la vez: 7 clubes de 15 partidos ya son
+//  105. Y no falla con un error claro: deja de recibir datos.
+//
+//  Es el limite de escala real del producto, no un problema de dinero.
+//
+//  🔑 SE ATACA POR LOS DOS LADOS, porque cada uno tapa lo que el otro no ve:
+//    · la CONSULTA se acota (aqui abajo): el SuperAdmin sin filtro pide solo
+//      los N partidos con actividad mas reciente, no la plataforma entera;
+//    · y ademas hay un TOPE DURO al abrir vigilantes (`_MAX_VIGILANTES`), que
+//      cubre el caso que la consulta no puede prever — un club gigante, o el
+//      respaldo por escaneo completo, que no lleva limite ninguno.
+//
+//  El presupuesto deja holgura a proposito: la pantalla mantiene ademas los
+//  listeners de la lista, el del partido abierto y el de su indice.
+const _MAX_VIGILANTES = 60;
+
 function _followableQueries() {
     const col = collection(db, _COL_INDICE);
     const esSA = (userData.role === "superadmin" || userData.role === "admin");
@@ -4493,7 +4515,22 @@ function _followableQueries() {
                 where("status", "==", "active"),
                 where("clubId", "==", window._saClubFilter))];
         }
-        return [query(col, where("status", "==", "active"))];
+        // ⚠️⚠️ `limit` SIEMPRE CON `orderBy`, Y EN ESTE ORDEN.
+        // Un `limit` sin `orderBy` no da "los N mas relevantes": da los N
+        // primeros en el orden interno de Firestore, que en esta coleccion
+        // empieza por el id —y el id empieza por la FECHA—, o sea que abriria
+        // la ventana sobre los partidos MAS VIEJOS. Es exactamente el defecto
+        // que costo tres rondas en v508. Con `updatedAt` descendente, los N que
+        // llegan son los que acaban de moverse, que es lo que un SuperAdmin
+        // quiere vigilar.
+        //
+        // ⚠️ `orderBy` EXCLUYE los documentos que no tengan el campo. Todos los
+        // indices llevan `updatedAt` (lo sella cada latido y cada suceso), asi
+        // que no deja fuera a ninguno vivo.
+        return [query(col,
+            where("status", "==", "active"),
+            orderBy("updatedAt", "desc"),
+            limit(_MAX_VIGILANTES))];
     }
 
     const consultas = [];
@@ -4600,9 +4637,41 @@ async function refreshBackgroundWatchers() {
             todos.forEach(d => candidatos.push({ id: d.id, ...d.data() }));
         }
 
+        // ══════════════════════════════════════════════════════════════
+        //  🚦 v579 · TOPE DURO DE VIGILANTES (ver _MAX_VIGILANTES)
+        // ══════════════════════════════════════════════════════════════
+        //  La consulta del SuperAdmin ya viene acotada, pero este tope cubre lo
+        //  que ella no puede: el RESPALDO por escaneo completo de aqui arriba
+        //  —que se trae la coleccion entera sin limite— y un club que algun dia
+        //  tenga mas partidos simultaneos de los previstos.
+        //
+        //  🔑 SE PRIORIZA POR ACTIVIDAD RECIENTE, no por el orden en que
+        //  lleguen. Si hay que dejar partidos fuera, que sean los que llevan
+        //  rato quietos y no los que se estan jugando ahora mismo. Sin este
+        //  orden, "los primeros 60" serian arbitrarios.
+        const _ts = (m) => {
+            const u = m && m.updatedAt;
+            if (!u) return 0;
+            if (typeof u.toMillis === 'function') return u.toMillis();
+            if (typeof u.seconds === 'number') return u.seconds * 1000;
+            const t = Date.parse(u); return isNaN(t) ? 0 : t;
+        };
+        const seguibles = candidatos.filter(_userCanFollow)
+                                    .sort((a, b) => _ts(b) - _ts(a));
+        const _sobran = Math.max(0, seguibles.length - _MAX_VIGILANTES);
+        const _aVigilar = seguibles.slice(0, _MAX_VIGILANTES);
+        // ⚠️ NO SE CALLA. Un tope que recorta en silencio es indistinguible de
+        // un fallo: el SuperAdmin creeria estar vigilando toda la plataforma
+        // mientras deja de oir la mitad. Se publica para que la lista lo diga.
+        window._cronosVigilantesRecortados = _sobran;
+        if (_sobran) {
+            console.warn('[LIVE v579] ' + seguibles.length + ' partidos seguibles y el tope ' +
+                         'son ' + _MAX_VIGILANTES + ': se vigilan los ' + _MAX_VIGILANTES +
+                         ' de actividad mas reciente (' + _sobran + ' fuera).');
+        }
+
         const activeIds = new Set();
-        candidatos.forEach(m => {
-            if (!_userCanFollow(m)) return;
+        _aVigilar.forEach(m => {
             activeIds.add(m.id);
             if (_bgWatchers[m.id]) return; // ya suscrito
             // v572 · P2 · Se vigila el ÍNDICE LIGERO, no el partido entero.
@@ -5823,6 +5892,30 @@ window.showLiveNow = async function() {
             return;
         }
 
+        // ══════════════════════════════════════════════════════════════
+        //  🚦 v579 · SI SE HA RECORTADO, LA LISTA LO DICE
+        // ══════════════════════════════════════════════════════════════
+        //  Firestore corta a ~100 oyentes por cliente y la aplicacion abre uno
+        //  por partido vigilado, asi que hay un tope. Recortar en silencio seria
+        //  peor que el propio limite: el SuperAdmin creeria estar oyendo toda la
+        //  plataforma mientras se pierde la mitad de los avisos. Aqui se le dice
+        //  cuantos quedan fuera y como verlos todos — filtrando por club, que es
+        //  la salida real.
+        const _fuera = window._cronosVigilantesRecortados || 0;
+        if (_fuera > 0) {
+            const aviso = document.createElement('div');
+            aviso.style.cssText =
+                'margin-bottom:1rem;padding:0.7rem 0.9rem;border-radius:8px;' +
+                'background:rgba(240,180,41,0.12);border:1px solid rgba(240,180,41,0.45);' +
+                'color:#f0b429;font-size:0.8rem;line-height:1.5;';
+            aviso.innerHTML =
+                '⚠️ <strong>Hay más partidos de los que se pueden vigilar a la vez.</strong><br>' +
+                'Se están siguiendo los <strong>' + _MAX_VIGILANTES + '</strong> de actividad más ' +
+                'reciente; <strong>' + _fuera + '</strong> quedan fuera y no darán aviso sonoro. ' +
+                'Se siguen viendo todos en esta lista. Para no perder ninguno, filtra por club.';
+            listEl.appendChild(aviso);
+        }
+
         liveMatches.forEach(m => {
             const time = m.updatedAt?.toDate
                 ? m.updatedAt.toDate().toLocaleTimeString('es-ES',
@@ -6775,9 +6868,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v578"></script>
-<script src="js/match/replay/replay-player.js?v=v578"></script>
-<script src="js/match/events/retroactive-modal.js?v=v578"></script>
+<script src="js/match/immutability.js?v=v579"></script>
+<script src="js/match/replay/replay-player.js?v=v579"></script>
+<script src="js/match/events/retroactive-modal.js?v=v579"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -6790,7 +6883,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v578" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v578</div>
+<div id="cronos-version-badge" data-version="v579" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v579</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

@@ -41,6 +41,15 @@
       ]
     },
     {
+      "_comentario": "v579 · Para la consulta ACOTADA del SuperAdmin sin filtro de club: where(status==active) + orderBy(updatedAt DESC) + limit(N). Firestore suele servir el sentido inverso con el indice ascendente de arriba, pero se declara explicito para no depender de ese detalle: si el indice faltara, la consulta FALLA y la aplicacion cae al escaneo completo de la coleccion entera — justo el coste que este limite existe para evitar.",
+      "collectionGroup": "live_index",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",    "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "live_index",
       "queryScope": "COLLECTION",
       "fields": [

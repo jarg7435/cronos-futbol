@@ -346,11 +346,28 @@ console.log('\n── PARTE 5 · la coleccion nueva esta protegida y consultable
     const idxJson = JSON.parse(INDEXES);
     const deLive = idxJson.indexes.filter(i => i.collectionGroup === 'live_index');
     const campos = deLive.map(i => i.fields.map(f => f.fieldPath).sort().join('+')).sort();
-    ok('5f · los 4 indices compuestos de live_index estan declarados (' + deLive.length + ')',
+    ok('5f · los indices compuestos de live_index estan declarados (' + deLive.length + ')',
        deLive.length >= 4, JSON.stringify(campos));
+
+    // Las tres consultas de pertenencia (club / creador / email) + la de
+    // `updatedAt`, que usan el barrido y —desde v579— la consulta ACOTADA del
+    // SuperAdmin sin filtro (orderBy updatedAt DESC + limit).
+    const necesarias = ['clubId+status', 'coachEmail+status', 'createdBy+status', 'status+updatedAt'];
+    const faltan = necesarias.filter(n => campos.indexOf(n) === -1);
     ok('5g · cubren las mismas consultas que las de live_matches',
-       campos.join(' | ') === 'clubId+status | coachEmail+status | createdBy+status | status+updatedAt',
-       campos.join(' | '));
+       faltan.length === 0,
+       'faltan: ' + faltan.join(', ') + ' · declaradas: ' + campos.join(' | '));
+
+    // ⚠️ v579 · El SuperAdmin sin filtro ordena por `updatedAt` DESCENDENTE.
+    // Firestore suele servir el sentido inverso con el indice ascendente, pero
+    // si no lo hiciera la consulta FALLA y la aplicacion cae al escaneo
+    // completo de la coleccion entera — justo el coste que el limite existe
+    // para evitar, y sin sintoma visible. Se declara explicito.
+    const hayDesc = deLive.some(i =>
+        i.fields.some(f => f.fieldPath === 'updatedAt' && f.order === 'DESCENDING'));
+    ok('5h · 🔑 y el DESCENDENTE de la consulta acotada del SuperAdmin',
+       hayDesc,
+       'sin el, esa consulta puede fallar y caer al escaneo completo en silencio');
 }
 
 // ═══════════════ PARTE 6 · la siembra con DOS vistas del mismo partido ═══════════════

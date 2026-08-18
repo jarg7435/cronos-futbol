@@ -75,6 +75,14 @@ ok('0c · existe la constante _COL_INDICE con la coleccion ligera',
    !!mColIdx, 'P2 la necesita para la lista y las alertas');
 const COL_INDICE = mColIdx ? mColIdx[1] : 'live_index';
 
+// v579 · el tope de vigilantes vive fuera del recorte. Se lee del fuente real
+// —no se escribe a mano— para que este test mida el numero que se despliega de
+// verdad y no uno inventado que ya no exista.
+const mTope = LIVE.match(/const\s+_MAX_VIGILANTES\s*=\s*(\d+)\s*;/);
+ok('0d · existe el tope _MAX_VIGILANTES', !!mTope,
+   'sin el, el SuperAdmin sin filtro revienta el techo de ~100 oyentes');
+const MAX_VIGILANTES = mTope ? parseInt(mTope[1], 10) : 60;
+
 // Firestore de mentira: `query` devuelve la lista de condiciones tal cual, para
 // poder mirar DESPUES por que se ha preguntado.
 function nuevoEntorno(userData, saFilter) {
@@ -89,6 +97,12 @@ function nuevoEntorno(userData, saFilter) {
         // a la coleccion cara por error.
         collection: (_db, nombre) => ({ __col: nombre }),
         where: (campo, op, valor) => ({ campo, op, valor }),
+        // v579 · el SuperAdmin sin filtro acota con orderBy+limit para no pasarse
+        // del techo de ~100 oyentes de Firestore. Se estabulan devolviendo un
+        // marcador que la consulta guarda, para poder comprobar DESPUES que la
+        // acotacion se pidio de verdad.
+        orderBy: (campo, dir) => ({ __orderBy: campo, dir: dir || 'asc' }),
+        limit: (n) => ({ __limit: n }),
         query: (col, ...conds) => ({ __col: col.__col, conds }),
         onSnapshot: (q, onNext, onErr) => {
             const l = { q, onNext, onErr, cancelado: false };
@@ -98,6 +112,7 @@ function nuevoEntorno(userData, saFilter) {
         console: { warn: () => {}, log: () => {} },
         pintados: [],
         _COL_INDICE: COL_INDICE,   // v572 · constante de modulo, ver arriba
+        _MAX_VIGILANTES: MAX_VIGILANTES,  // v579 · idem
         Map, Array, Object, String, Number
     };
     env._repintarLista = (docs) => env.pintados.push(docs.map(d => d.id));
@@ -149,8 +164,33 @@ console.log('\n── PARTE 1 · se pregunta solo por lo que el usuario puede ve
 {
     const { env } = nuevoEntorno({ role: 'superadmin', uid: 'U9', email: 'sa@b.c' });
     const qs = vm.runInContext('_followableQueries()', env);
-    ok('1e · el SuperAdmin sin filtro los ve todos, pero solo los ACTIVOS',
-       qs.length === 1 && qs[0].conds.length === 1 && qs[0].conds[0].campo === 'status');
+    // ══════════════════════════════════════════════════════════════
+    //  🚦 v579 · Y SOBRE TODO: ACOTADO, O REVIENTA EL TECHO DE OYENTES
+    // ══════════════════════════════════════════════════════════════
+    //  Firestore corta a ~100 listeners simultaneos por cliente y la aplicacion
+    //  abre UNO por partido vigilado. Un SuperAdmin sin filtro de club seguia
+    //  TODOS los partidos activos de la plataforma: con 7 clubes de 15 partidos
+    //  son 105 y el panel deja de recibir datos — sin error, en silencio. Era
+    //  el limite de escala real del producto.
+    ok('1e · el SuperAdmin sin filtro sigue acotando por estado ACTIVO',
+       qs.length === 1 && qs[0].conds.some(c => c.campo === 'status' && c.valor === 'active'),
+       JSON.stringify(qs[0] && qs[0].conds));
+
+    const _lim = qs[0].conds.find(c => c.__limit !== undefined);
+    ok('1e2 · 🔑 y acota CUANTOS, para no pasarse del techo de ~100 oyentes',
+       !!_lim && _lim.__limit === MAX_VIGILANTES && MAX_VIGILANTES < 100,
+       'limite pedido: ' + JSON.stringify(_lim) + ' · tope declarado: ' + MAX_VIGILANTES);
+
+    // ⚠️⚠️ `limit` SIN `orderBy` NO da "los N mas relevantes": da los N primeros
+    // en el orden interno de Firestore, que aqui empieza por el id — y el id
+    // empieza por la FECHA. Seria una ventana sobre los partidos MAS VIEJOS,
+    // justo el defecto que costo tres rondas en v508. Tiene que ir por
+    // `updatedAt` DESCENDENTE para que los N vigilados sean los que acaban de
+    // moverse.
+    const _ord = qs[0].conds.find(c => c.__orderBy !== undefined);
+    ok('1e3 · 🔑🔑 el limite va con orderBy(updatedAt, DESC), nunca solo',
+       !!_ord && _ord.__orderBy === 'updatedAt' && _ord.dir === 'desc',
+       'un limit sin orderBy abre la ventana en lo MAS VIEJO (v508): ' + JSON.stringify(_ord));
 }
 {
     const { env } = nuevoEntorno({ role: 'superadmin', uid: 'U9' }, 'CLUB7');

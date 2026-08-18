@@ -197,8 +197,14 @@ console.log('\n── PARTE 4 · se acabo el escaneo completo ──');
        (LIVEc.match(/where\("status",\s*"==",\s*"active"\)/g) || []).length >= 3,
        'sin acotar por estado se siguen trayendo los terminados');
 
+    // ⚠️ v579 · ESTE GUARD EXIGIA LA FORMA `candidatos.forEach(... _userCanFollow`.
+    // El tope de vigilantes obligo a ORDENAR los seguibles por actividad antes
+    // de recortar, asi que el filtro paso de vivir dentro del forEach a un
+    // `.filter(_userCanFollow)` delante. El invariante que importa no cambia y
+    // es el que se comprueba ahora: que el resultado de la consulta siga
+    // pasando por _userCanFollow y no por un criterio paralelo.
     ok('4g · el criterio sigue siendo UNO SOLO: el resultado pasa por _userCanFollow',
-       /candidatos\.forEach\([\s\S]{0,120}_userCanFollow/.test(LIVEc),
+       /candidatos\s*(\.filter\(\s*_userCanFollow|\.forEach\([\s\S]{0,120}_userCanFollow)/.test(LIVEc),
        'dos criterios distintos acabarian divergiendo');
 
     ok('4h · [TRAMPA D] `where` esta IMPORTADO en live.html',
