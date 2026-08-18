@@ -157,6 +157,9 @@ console.log('\n── PARTE 4 · soltar el partido al salir de el ──');
 
     const s = {
         unsubscribeMatch: null, timerInterval: null,
+        // v576 · listener del indice ligero (posiciones de las fichas): se
+        // cancela en el mismo sitio que el del partido.
+        unsubscribeMatchIdx: null,
         clearInterval: (t) => { s.limpiados.push(t); },
         limpiados: [], cancelado: 0,
         currentMatchId: 'm1',

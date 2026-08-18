@@ -1742,6 +1742,9 @@ setPersistence(auth, browserLocalPersistence).catch(() => {});
 // ── State ─────────────────────────────────────────────────────────
 let currentMatchId   = null;
 let unsubscribeMatch = null;
+// v576 · listener del indice ligero del partido visible: por ahi llegan las
+// POSICIONES de las fichas sin arrastrar el documento gordo de 23 KB.
+let unsubscribeMatchIdx = null;
 let unsubscribeEvents = null; // v241: listener de subcolección events
 let timerInterval    = null;
 let lastSnapshot     = null;
@@ -1847,6 +1850,7 @@ window.backToMatch = function() {
 // ════════════════════════════════════════════════════════════════════
 function _soltarPartidoVisible() {
     if (unsubscribeMatch) { unsubscribeMatch(); unsubscribeMatch = null; }
+    if (unsubscribeMatchIdx) { unsubscribeMatchIdx(); unsubscribeMatchIdx = null; }
     clearInterval(timerInterval); timerInterval = null;
     // v442 · y se apaga la barra de sucesos. Es el punto por el que pasan las
     // DOS salidas del detalle (showLiveNow y showHistory), así que basta con
@@ -1879,6 +1883,7 @@ function teardownBackgroundWatch() {
 
 window.doSignOut = async () => {
     if (unsubscribeMatch) unsubscribeMatch();
+    if (unsubscribeMatchIdx) unsubscribeMatchIdx();
     clearInterval(timerInterval); timerInterval = null;
     teardownBackgroundWatch();
     await signOut(auth);
@@ -3724,6 +3729,118 @@ function _enDetalleDePartido() {
     return !!(m && m.offsetParent !== null);
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  🏃 v575 · EL CAMINO CORTO DE LA PIZARRA, DEL LADO DEL VISOR
+// ══════════════════════════════════════════════════════════════════
+//  Mover una ficha ya no reenvía el partido entero (8.668 B): manda sólo
+//  `positions`, un array compacto de {i, x, y, s} de 675 B. Aquí se vuelca
+//  encima de `players` para que TODO lo que pinta jugadores —el campo, el
+//  banquillo, el estado de las alertas— siga leyendo `data.players` sin
+//  enterarse de que existe un camino corto. Un solo punto de mezcla en vez de
+//  tocar los cinco consumidores.
+//
+//  🔑 POR QUÉ SE PUEDE APLICAR SIN COMPARAR FECHAS: el emisor escribe
+//  `positions` SIEMPRE que escribe `players`, derivado del mismo array
+//  (js/match/live/sync.js). Así `positions` nunca puede ser más viejo que
+//  `players`, y volcarlo encima es siempre correcto o inocuo.
+//
+//  ⚠️ SI `positions` NO VIENE, NO SE TOCA NADA. Un partido empezado antes de
+//  v575 —o el respaldo de `liveSyncOnAction`— sigue trayendo las posiciones
+//  dentro de `players`, que es exactamente lo que se pinta. Devolver el mismo
+//  objeto sin copiarlo mantiene intacto el camino de siempre.
+// ══════════════════════════════════════════════════════════════════
+//  📊 v576 · MEDIDOR DE CONSUMO DEL VISOR
+// ══════════════════════════════════════════════════════════════════
+//  Por qué existe: dos diagnósticos seguidos se hicieron con un cronómetro a
+//  ojo y el primero fue EQUIVOCADO (se culpó a la subida cuando el problema
+//  estaba en la bajada). Esto pone el dato en pantalla: cuántos KB baja el
+//  visor, por qué canal y a cuántos snapshots por segundo.
+//
+//  Se enciende añadiendo `?diag=1` a la URL —queda recordado, así que sobrevive
+//  a moverse por la app— y se apaga con `?diag=0`. Apagado no cuesta nada: ni
+//  se crea el elemento.
+//
+//  🔑 LO QUE MIDE ES LO QUE IMPORTA: Firestore NO envía deltas, así que cada
+//  cambio en un documento entrega el documento ENTERO. La columna `gordo` es
+//  lo que cuesta tocar `live_matches`; la columna `idx`, el índice ligero. Si
+//  el reparto está bien, al arrastrar fichas sólo debe crecer `idx`.
+const _cronosDiag = (function () {
+    let activo = false;
+    try {
+        const q = new URLSearchParams(location.search);
+        if (q.has('diag')) localStorage.setItem('cronos_diag', q.get('diag') === '0' ? '' : '1');
+        activo = localStorage.getItem('cronos_diag') === '1';
+    } catch (e) { activo = false; }
+    if (!activo) return null;
+
+    const est = { gordo: 0, idx: 0, nG: 0, nI: 0, t0: Date.now(), ventana: [] };
+    let caja = null;
+
+    function pinta() {
+        if (!caja) {
+            caja = document.createElement('div');
+            caja.style.cssText =
+                'position:fixed;left:6px;bottom:6px;z-index:2147483000;' +
+                'background:rgba(0,0,0,.78);color:#7ee787;font:11px/1.45 monospace;' +
+                'padding:6px 9px;border-radius:5px;pointer-events:none;white-space:pre;';
+            document.body.appendChild(caja);
+        }
+        const seg = Math.max(1, (Date.now() - est.t0) / 1000);
+        // Ventana de 5 s para el ritmo instantáneo: el acumulado de toda la
+        // sesión esconde justo lo que interesa, que es el pico al arrastrar.
+        const corte = Date.now() - 5000;
+        est.ventana = est.ventana.filter(v => v.t > corte);
+        const bV = est.ventana.reduce((a, v) => a + v.b, 0);
+        caja.textContent =
+            'gordo ' + (est.gordo / 1024).toFixed(0).padStart(5) + ' KB  ' + String(est.nG).padStart(4) + ' snap\n' +
+            'idx   ' + (est.idx   / 1024).toFixed(0).padStart(5) + ' KB  ' + String(est.nI).padStart(4) + ' snap\n' +
+            'ahora ' + (bV / 1024 / 5).toFixed(1).padStart(5) + ' KB/s ' +
+                       (est.ventana.length / 5).toFixed(1).padStart(4) + ' snap/s\n' +
+            'total ' + ((est.gordo + est.idx) / 1024).toFixed(0) + ' KB en ' + Math.round(seg) + ' s';
+    }
+
+    return {
+        // `origen`: 'gordo' (live_matches) o 'idx' (live_index).
+        anota(data, origen) {
+            let b = 0;
+            // Aproximación por JSON: no es el byte exacto que factura Firestore,
+            // pero para COMPARAR los dos canales entre sí sirve igual.
+            try { b = JSON.stringify(data).length; } catch (e) { b = 0; }
+            if (origen === 'idx') { est.idx += b; est.nI++; }
+            else                  { est.gordo += b; est.nG++; }
+            est.ventana.push({ t: Date.now(), b: b });
+            pinta();
+        }
+    };
+})();
+
+// 🔑 v576 · Las posiciones ya NO viajan dentro del documento del partido: viven
+// en el índice ligero y llegan por su propio listener (`unsubscribeMatchIdx`),
+// porque Firestore no envía deltas y tocar el documento gordo obligaba a cada
+// espectador a bajarse 23 KB por cada movimiento de ficha. Aquí se guarda lo
+// último recibido para poder volcarlo sobre `players` en cada repintado.
+// ⚠️ Se sigue aceptando `data.positions` como respaldo: un partido escrito por
+// v575 las llevaba dentro del documento gordo.
+let _posicionesVivas = null;
+
+function _aplicaPosiciones(data) {
+    const _pos = _posicionesVivas || (data && data.positions);
+    if (!data || !Array.isArray(_pos) || !Array.isArray(data.players)) return data;
+    const porId = new Map();
+    _pos.forEach(p => { if (p && p.i !== undefined) porId.set(String(p.i), p); });
+    if (!porId.size) return data;
+    // Copia superficial: `data` viene de Firestore y lo comparten otros
+    // consumidores (`lastSnapshot`, `_matchLastData`). Mutar el array en su
+    // sitio dejaría a esos guardando un objeto que cambia bajo sus pies.
+    return Object.assign({}, data, {
+        players: data.players.map(pl => {
+            const np = porId.get(String(pl.id));
+            if (!np) return pl;
+            return Object.assign({}, pl, { x: np.x, y: np.y, status: np.s || pl.status });
+        })
+    });
+}
+
 let _resyncEnCurso = false;
 async function _resincronizaVista(motivo) {
     if (_resyncEnCurso) return;
@@ -3738,7 +3855,9 @@ async function _resincronizaVista(motivo) {
         if (_enDetalleDePartido() && currentMatchId && typeof db !== 'undefined' && db) {
             const s = await getDoc(doc(db, 'live_matches', currentMatchId));
             if (s.exists()) {
-                const d = s.data();
+                // v575 · las posiciones del camino corto, volcadas sobre
+                // `players` antes de que nadie lea el documento.
+                const d = _aplicaPosiciones(s.data());
                 lastSnapshot = d;
                 _marcaSnapshotRecibido();
                 // `fromCache` en false: viene de una lectura directa.
@@ -4493,6 +4612,10 @@ async function refreshBackgroundWatchers() {
             _bgWatchers[m.id] = _vigilaConRespaldo(m.id, (s2) => {
                 if (!s2.exists()) return;
                 const data = s2.data();
+                // 📊 v576 · los vigilantes de fondo son N canales a la vez (uno
+                // por partido seguido): si el reparto de P2 falla y caen al
+                // documento gordo, se ve aquí en KB, no en suposiciones.
+                if (_cronosDiag) _cronosDiag.anota(data, data.idx ? 'idx' : 'gordo');
                 // v455 · SE RETIRA EL FILTRO POR `currentMatchId`.
                 //
                 // v274 lo puso para arreglar un problema REAL: los sucesos de un
@@ -4595,6 +4718,38 @@ window.loadMatch = function(matchId) {
 
     if (unsubscribeMatch) unsubscribeMatch();
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🏃 v576 · LAS POSICIONES, POR SU PROPIO CANAL LIGERO
+    // ══════════════════════════════════════════════════════════════════
+    //  El movimiento de fichas llega por `live_index` (~1-2 KB) en vez de por
+    //  el documento del partido (17-23 KB medidos). Firestore entrega el
+    //  documento ENTERO en cada cambio, así que ésta es la única forma de que
+    //  arrastrar una ficha no obligue al espectador a bajarse el partido
+    //  completo — que era el cuello de botella de los 10-12 s con 4 partidos.
+    //
+    //  ⚠️ NO sustituye al listener del partido: el gordo sigue trayendo
+    //  jugadores, marcador, cronómetro y sucesos. Éste sólo mueve las fichas.
+    if (unsubscribeMatchIdx) unsubscribeMatchIdx();
+    _posicionesVivas = null;   // del partido anterior, no del que se abre
+    unsubscribeMatchIdx = onSnapshot(
+        doc(db, 'live_index', matchId),
+        (s) => {
+            if (!s.exists()) return;
+            const d = s.data();
+            if (!Array.isArray(d.positions)) return;
+            _posicionesVivas = d.positions;
+            if (typeof _cronosDiag === 'object' && _cronosDiag) _cronosDiag.anota(d, 'idx');
+            // Repinta con lo último que se sabe del partido. Si todavía no ha
+            // llegado ningún snapshot del gordo no hay nada que mover: el
+            // primero que llegue ya aplicará estas posiciones.
+            if (lastSnapshot && _enDetalleDePartido()) {
+                try { renderMatch(_aplicaPosiciones(lastSnapshot)); } catch (e) {}
+            }
+        },
+        () => { /* sin índice se sigue viendo el partido: las fichas se mueven
+                   con el latido, como antes de v576 */ }
+    );
+
     unsubscribeMatch = onSnapshot(
         doc(db, 'live_matches', matchId),
         (snap) => {
@@ -4602,7 +4757,14 @@ window.loadMatch = function(matchId) {
                 showLoadingScreen('Partido no encontrado.');
                 return;
             }
-            const data = snap.data();
+            // v575 · las posiciones del camino corto, volcadas sobre `players`
+            // ANTES de que nadie lea el documento: así renderMatch, el estado
+            // de las alertas y el cronómetro siguen leyendo `data.players` sin
+            // saber que existe un camino corto.
+            // 📊 v576 · se mide el documento CRUDO, antes de mezclarlo: es lo
+            // que de verdad ha bajado por la red.
+            if (_cronosDiag) _cronosDiag.anota(snap.data(), 'gordo');
+            const data = _aplicaPosiciones(snap.data());
             lastSnapshot = data;
             // v567 · señal de vida del canal, para el vigilante de resincronización.
             if (typeof _marcaSnapshotRecibido === 'function') _marcaSnapshotRecibido();
@@ -6009,6 +6171,9 @@ window.deleteLiveMatch = async function(matchId, e) {
     const isCurrent = (window.currentMatchId === matchId);
     if (isCurrent && typeof unsubscribeMatch === 'function') {
         try { unsubscribeMatch(); } catch(e){}
+        // v576 · y el del índice ligero, o quedaría un listener vivo sobre el
+        // documento de un partido que se acaba de borrar.
+        try { if (unsubscribeMatchIdx) unsubscribeMatchIdx(); } catch(e){}
         try { window.currentMatchId = null; } catch(e){}
     }
 
@@ -6592,8 +6757,41 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v573"></script>
-<script src="js/match/replay/replay-player.js?v=v573"></script>
-<script src="js/match/events/retroactive-modal.js?v=v573"></script>
+<script src="js/match/immutability.js?v=v577"></script>
+<script src="js/match/replay/replay-player.js?v=v577"></script>
+<script src="js/match/events/retroactive-modal.js?v=v577"></script>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
+     ══════════════════════════════════════════════════════════════════
+     index.html la tiene desde v527 y este fichero NO, y eso ha costado caro:
+     el autor trabaja el visor en el PC y las tablets, y **no había forma de
+     saber qué versión estaba corriendo cada dispositivo**. Ya pasó factura una
+     vez — una prueba de campo con 4 partidos donde tres pestañas seguían con
+     código viejo y la medición salió contaminada sin que nadie lo notara.
+     El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
+     sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
+     olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
+<div id="cronos-version-badge" data-version="v577" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v577</div>
+<script>
+/* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
+   El problema real del autor no era no ver la versión: era no saber si la
+   tablet estaba en TESTEO o en PRODUCCIÓN. Los dos hosts sirven la misma
+   aplicación contra la MISMA base de datos, así que a simple vista son
+   idénticos — y se pasó una tarde entera probando en producción creyendo que
+   probaba lo recién implementado. En ámbar y bien visible para que no vuelva
+   a pasar. En producción no se añade nada: la franja se queda como siempre. */
+(function () {
+    try {
+        var b = document.getElementById('cronos-version-badge');
+        if (!b) return;
+        if (location.hostname.indexOf('cronos-futbol-test') === 0) {
+            b.textContent += ' · TESTEO';
+            b.style.color = '#f0b429';
+            b.style.background = 'rgba(90,50,0,0.85)';
+        }
+    } catch (e) { /* la franja nunca puede tumbar el visor */ }
+})();
+</script>
 </body>
 </html>

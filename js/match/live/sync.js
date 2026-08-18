@@ -29,6 +29,19 @@
 //  `liveSyncFlushNow` fuerzan un latido inmediato en cada acción. Lo que se
 //  espacia es el relleno entre sucesos, no los sucesos.
 //
+//  ⚠️⚠️ CORRECCIÓN v574 · ESO ERA CIERTO PARA LOS SUCESOS Y FALSO PARA LA
+//  PIZARRA, y aquí se dio por bueno sin comprobarlo. `js/ui/drag-drop.js` no
+//  llamaba a `liveSyncOnAction` NI UNA VEZ: mover una ficha por el campo o
+//  permutar dos jugadores sólo llegaba al visor con el siguiente latido. El
+//  defecto ya existía —hasta 5 s de espera— pero por debajo del umbral en que
+//  se nota; al triplicar el latido, P1 lo convirtió en "tarda varios segundos"
+//  y el autor lo detectó en la prueba de campo con 4 partidos.
+//
+//  🔑 LA LECCIÓN: al espaciar un latido hay que auditar TODO lo que viajaba
+//  sólo con él, no sólo lo que uno recuerda. Lo que ya iba justo pasa a ir mal.
+//  Corregido en drag-drop.js (`_repintaPizarra`); lo vigila
+//  `scripts/test_pizarra_sincroniza.js`.
+//
 //  ⚠️⚠️ ACOPLAMIENTO CON EL VIGILANTE DE CANAL MUERTO. live.html tiene un
 //  watchdog (`_MS_SIN_SNAPSHOT_SOSPECHOSO`) que declara muerto el canal si
 //  pasa demasiado tiempo sin snapshots y entonces RELEE todo. Estaba en 25 s
@@ -479,6 +492,52 @@ async function _loadEventsFromFirestore() {
 //  nombres de menores), así que sus reglas son las MISMAS que las de
 //  `live_matches`: lectura sólo para usuario registrado. No es un documento
 //  "público" por ser pequeño.
+// ══════════════════════════════════════════════════════════════════
+//  🏃 v575 · EL CAMINO CORTO DE LA PIZARRA
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (4 partidos simultáneos, PC + iPad): el primer arrastre
+//  se sincroniza al instante, pero al mover fichas en los otros tres el
+//  desfase sube a **8-9 segundos**. Goles, tarjetas, lesiones y cambios siguen
+//  inmediatos.
+//
+//  🔑🔑🔑 LA CAUSA, medida: para mover una ficha veinte píxeles se enviaba el
+//  partido ENTERO — 8.668 B con nombres, colores, categorías, umbrales del
+//  semáforo, marcadores y los 18 jugadores completos— cuando lo único que
+//  cambia son dos números. Y los cuatro partidos comparten UNA sola conexión:
+//  Firestore usa `persistentMultipleTabManager` (firebase-init.js), así que una
+//  pestaña es la primaria y las demás encolan sus escrituras a través de ella.
+//  Con 4 partidos arrastrando son ~68 KB/s por un solo canal, y ahí se forma
+//  la cola. Por eso el PRIMER arrastre iba bien: sin cola no hay desfase.
+//
+//  🔑 Y POR QUÉ UN GOL SÍ LLEGA AL INSTANTE: viaja por DOS caminos. El suceso
+//  se escribe aparte en ~300 B (`_registerMatchEvent`) y de ahí salen el aviso
+//  y el sonido; ese paquete diminuto atraviesa la cola sin despeinarse. La
+//  posición de una ficha no tenía camino corto: sólo viajaba dentro del gordo.
+//
+//  LA SOLUCIÓN: darle a la pizarra su propio paquete pequeño — sólo id, x, y y
+//  estado. **675 B frente a 8.668: trece veces menos.**
+//
+//  ⚠️⚠️ EL INVARIANTE QUE LO HACE SEGURO: `positions` se escribe SIEMPRE que se
+//  escribe `players`, derivado del MISMO array (ver `pushLiveSnapshot`). Así
+//  `positions` nunca puede ser más viejo que `players`, y el visor puede
+//  aplicarlo encima sin comprobar fechas. Si algún día se escribe `players` sin
+//  `positions`, el visor pintaría posiciones ANTIGUAS sobre jugadores nuevos —
+//  una ficha que "vuelve atrás" sola. Lo vigila test_pizarra_camino_corto.js.
+//
+//  ⚠️ NO se tocan los sucesos `tactical_move`: los CONSUME la Repetición para
+//  animar el movimiento (js/match/replay/replay-player.js:145 y :848). Se
+//  evaluó quitarlos como P3 y se descartó: rompería "Revivir".
+function _buildPositions(lista) {
+    // Nombres de una letra a propósito: con 18 jugadores y varios envíos por
+    // segundo, `i/x/y/s` en vez de `id/x/y/status` ahorra ~25% del paquete.
+    return (lista || []).map(p => ({
+        i: p.id,
+        x: p.x || 0,
+        y: p.y || 0,
+        s: p.status || 'bench'
+    }));
+}
+
 const _IDX_TIPOS_NO_VISIBLES = new Set(['tactical_move']);
 const _IDX_MAX_EVENTOS = 3;
 
@@ -583,6 +642,27 @@ function _buildLiveIndexDoc(snapshot, players) {
         onFieldHome: _enCampo('home'),
         onFieldAway: _enCampo('away'),
 
+        // ══════════════════════════════════════════════════════════════
+        //  🔑🔑🔑 v576 · LAS POSICIONES VIVEN AQUÍ, NO EN EL PARTIDO
+        // ══════════════════════════════════════════════════════════════
+        //  MEDIDO en los documentos reales de la prueba del autor: un partido
+        //  activo pesa **17,7–23,4 KB**. Y Firestore NO ENVÍA DELTAS: escribir
+        //  675 B en `live_matches` hace que cada espectador se descargue el
+        //  documento ENTERO otra vez. Por eso v575 —que sólo encogió la
+        //  ESCRITURA— no mejoró nada: el visor seguía bajando 23 KB por cada
+        //  movimiento de ficha.
+        //
+        //  Poniéndolas en el índice ligero, mover una ficha hace que el visor
+        //  baje ~1-2 KB en vez de 23. El documento gordo deja de tocarse al
+        //  arrastrar.
+        //
+        //  ⚠️ EL INVARIANTE SE MANTIENE: `positions` se escribe SIEMPRE que se
+        //  escribe `players` —las dos salen de este mismo `pushLiveSnapshot`, del
+        //  mismo array—, así que nunca puede ser más viejo. Entre latidos sólo
+        //  puede ser MÁS nuevo (los arrastres). Por eso el visor puede volcarlo
+        //  encima sin comparar fechas.
+        positions: _buildPositions(players),
+
         lastEvents: _visibles
     };
 
@@ -610,7 +690,9 @@ async function pushLiveSnapshot(status = 'active') {
     if (!fa || !fa.db || !liveMatchId) return;
 
     try {
-        const { setDoc, doc, serverTimestamp } = await import(
+        // v576 · `arrayUnion` entra para vaciar el aparcamiento de movimientos
+        // tácticos en UNA sola escritura agrupada (ver más abajo).
+        const { setDoc, doc, serverTimestamp, arrayUnion } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
         // v232: cargar eventos existentes de Firestore antes del primer push
@@ -938,7 +1020,44 @@ async function pushLiveSnapshot(status = 'active') {
             }
         } catch (e) { /* nunca puede cortar la emisión por sí misma */ }
 
+        // ════════════════════════════════════════════════════════════════
+        //  🐌 v576 · AQUÍ SE VACÍA EL APARCAMIENTO DE MOVIMIENTOS TÁCTICOS
+        // ════════════════════════════════════════════════════════════════
+        //  ⚠️ SÍ, ESTO ESCRIBE `events` DESDE EL SNAPSHOT, Y v246 DICE QUE NO SE
+        //  HAGA NUNCA. La prohibición de v246 es sobre mandar un ARRAY PLANO:
+        //  `setDoc merge` REEMPLAZA arrays enteros, así que un `events: [...]`
+        //  aquí borraría todo lo acumulado por `arrayUnion` desde los sucesos.
+        //  `arrayUnion` NO reemplaza: AÑADE. Por eso esto es seguro y aquello
+        //  no lo era. Si alguien lo cambia por un array plano, se lleva por
+        //  delante el historial entero del partido.
+        //
+        //  Los `tactical_move` se aparcan en `_registerMatchEvent` en vez de
+        //  escribirse uno a uno (eran el 75-90% de los sucesos y cada uno hacía
+        //  bajar 23 KB a cada espectador). Aquí salen todos juntos, gratis:
+        //  aprovechan una escritura que ya se iba a hacer.
+        const _tacticasPendientes = Array.isArray(window._cronosTacticalPending)
+            ? window._cronosTacticalPending.slice() : [];
+        if (_tacticasPendientes.length) {
+            snapshot.events = arrayUnion.apply(null, _tacticasPendientes);
+        }
+
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
+
+        // Vaciado DESPUÉS de que la escritura haya ido bien, y sólo de lo que
+        // se mandó: si mientras tanto entró un movimiento nuevo, se queda para
+        // el siguiente latido en vez de perderse.
+        if (_tacticasPendientes.length) {
+            window._cronosTacticalPending =
+                (window._cronosTacticalPending || []).slice(_tacticasPendientes.length);
+        }
+
+        // v575 · Sella el estado que acaba de salir. A partir de aquí el camino
+        // corto puede comparar contra esto para saber si le basta con mandar
+        // posiciones o si un `status` cambió y hace falta el completo.
+        // Va DESPUÉS de la escritura: si falló, no se puede dar por enviado.
+        try {
+            snapshot.players.forEach(p => { _ultimoEstadoEnviado[p.id] = p.status; });
+        } catch (e) { /* nunca puede cortar la sincronización */ }
 
         // v572 · P2 · El índice ligero, DESPUÉS y por separado. Va detrás del
         // gordo a propósito: si algo tuviera que fallar por cuota o por reglas,
@@ -1219,6 +1338,99 @@ function liveSyncOnAction() {
         if (liveIsActive) pushLiveSnapshot('active');
     }, 500);
 }
+
+// ══════════════════════════════════════════════════════════════════
+//  🏃 v575 · EL VOLCADO CORTO: SÓLO POSICIONES
+// ══════════════════════════════════════════════════════════════════
+//  Lo que llama la pizarra al soltar una ficha. Escribe ~675 B en vez de los
+//  8.668 B del snapshot completo (ver `_buildPositions` para el porqué).
+//
+//  ⚠️ Tiene su PROPIO throttle, separado del de `liveSyncOnAction`. Si
+//  compartieran timer, arrastrar cancelaría el volcado completo pendiente de un
+//  gol —o al revés— y una de las dos cosas se perdería hasta el siguiente
+//  latido. Son dos caminos independientes a propósito.
+let _posThrottleTimer = null;
+
+// Estado de cada jugador tal y como salió en el ÚLTIMO volcado completo. Es la
+// referencia con la que `_pushPositions` decide si el camino corto basta o si
+// hace falta mandar el partido entero (ver el bloque de arriba).
+const _ultimoEstadoEnviado = {};
+
+function liveSyncPositions() {
+    if (!liveIsActive) return;
+    if (_posThrottleTimer) return;
+    _posThrottleTimer = setTimeout(() => {
+        _posThrottleTimer = null;
+        if (liveIsActive) _pushPositions();
+    }, 500);
+}
+
+async function _pushPositions() {
+    const fa = window._cronos_auth;
+    if (!fa || !fa.db || !liveMatchId) return;
+
+    // 🔒 v469 · LA MISMA PUERTA ESTANCA QUE EL LATIDO Y LOS SUCESOS. Escribir
+    // posiciones en el documento equivocado recolocaría las fichas del partido
+    // de otro entrenador en pleno directo. Si esta pestaña declara jugar otro
+    // partido, no se emite.
+    try {
+        const _S = window._cronosMatchSlots;
+        const _propio = _S && _S.getTabMatchId();
+        if (_propio && _propio !== liveMatchId && String(_propio).indexOf('tab:') !== 0) {
+            console.error('[v575] 🔒 Posiciones BLOQUEADAS: iban a "' + liveMatchId +
+                          '" y esta pestaña juega "' + _propio + '".');
+            return;
+        }
+    } catch (e) { /* la puerta nunca puede impedir el envío por sí misma */ }
+
+    try {
+        const { setDoc, doc, serverTimestamp } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        // ⚠️ `players` es la global del partido en curso, la misma de la que
+        // come `pushLiveSnapshot`: las dos escrituras salen de la misma fuente.
+        const _lista = (typeof players !== 'undefined' && Array.isArray(players)) ? players : [];
+        if (!_lista.length) return;
+
+        // ══════════════════════════════════════════════════════════════
+        //  ⚠️ SI CAMBIÓ ALGÚN ESTADO, EL CAMINO CORTO NO BASTA
+        // ══════════════════════════════════════════════════════════════
+        //  El camino corto sólo lleva posiciones. Pero un arrastre de banquillo
+        //  a campo cambia también `status`, y de ahí salen cosas que NO viajan
+        //  en este paquete: los contadores `onFieldHome`/`onFieldAway` del
+        //  índice ligero —los "N en campo" de la tarjeta— y el reparto de
+        //  minutos. Con el reloj en marcha eso ya lo cubre `logMovement`, que
+        //  fuerza un volcado completo; pero **en pausa o en el descanso
+        //  `logMovement` no se llama Y el latido tampoco late** (sólo late con
+        //  `isRunning`), así que la tarjeta se quedaría mintiendo hasta que el
+        //  entrenador reanudara. Aquí se detecta y se manda el completo.
+        const _hayCambioDeEstado = _lista.some(p =>
+            _ultimoEstadoEnviado[p.id] !== undefined &&
+            _ultimoEstadoEnviado[p.id] !== p.status);
+        if (_hayCambioDeEstado) {
+            await pushLiveSnapshot('active');
+            return;
+        }
+        // 🔑🔑🔑 v576 · SE ESCRIBE EN `live_index`, NO EN `live_matches`.
+        // Firestore no envía deltas: tocar el documento gordo (17-23 KB
+        // medidos) obliga a CADA espectador a descargarlo entero, por muy
+        // pequeña que sea la escritura. Ése fue el fallo de v575 — encogió la
+        // subida y dejó la bajada igual. En el índice ligero, el visor baja
+        // ~1-2 KB por movimiento.
+        await setDoc(doc(fa.db, 'live_index', liveMatchId), {
+            positions: _buildPositions(_lista),
+            // Sella la hora: el visor tiene una guarda monotónica que descarta
+            // el snapshot entero si `updatedAt` no avanza (v567). Sin esto, un
+            // movimiento entre latidos llegaría y se tiraría a la basura.
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    } catch (err) {
+        console.warn('[v575] Posiciones no enviadas:', err && err.message);
+        if (typeof window._cronosRecuperaSiClienteMuerto === 'function') {
+            window._cronosRecuperaSiClienteMuerto(err, '_pushPositions');
+        }
+    }
+}
+window.liveSyncPositions = liveSyncPositions;
 
 // v225: flush inmediato para eventos críticos (gol, tarjeta, lesión, cambio).
 // Estos eventos deben llegar al live lo antes posible, sin esperar al throttle.

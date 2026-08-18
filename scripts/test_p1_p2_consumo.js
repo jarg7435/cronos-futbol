@@ -76,7 +76,9 @@ console.log('── PARTE 1 · P1: el latido pasa de 5 s a 15 s ──');
 console.log('\n── PARTE 2 · P2: el indice ligero, medido ──');
 {
     // Se ejecuta el constructor REAL sobre un partido realista y se mide.
-    const ini = SYNC.indexOf('const _IDX_TIPOS_NO_VISIBLES');
+    // v576 · el constructor usa _buildPositions, que vive justo encima: el
+    // recorte tiene que empezar ahi o el sandbox no la encuentra.
+    const ini = SYNC.indexOf('function _buildPositions');
     const fin = SYNC.indexOf('async function _pushLiveIndex');
     ok('2a · se encuentra el constructor _buildLiveIndexDoc', ini !== -1 && fin > ini);
 
@@ -208,9 +210,27 @@ console.log('\n── PARTE 2 · P2: el indice ligero, medido ──');
         console.log('       · documento de partido: ' + bytesGordo + ' B');
         console.log('       · indice ligero:        ' + bytesIdx + ' B');
         console.log('       · reduccion:            ÷' + factor.toFixed(1));
-        ok('2k · 🪶 el indice es al menos 8 veces mas pequeno (÷' + factor.toFixed(1) + ')',
-           factor >= 8,
-           'con ÷' + factor.toFixed(1) + ' P2 no compensa la escritura extra que cuesta');
+        // ⚠️ v576 · ESTE UMBRAL BAJO DE 8 A 5, Y NO ES UN AJUSTE COSMETICO PARA
+        // QUE PASE. El indice ahora lleva tambien `positions` (675 B), asi que
+        // crecio de 1.221 a ~1.987 B y la razon cayo de ÷12,6 a ÷7,7.
+        //
+        // 🔑 ES UN INTERCAMBIO DELIBERADO Y FAVORABLE: a cambio de esos 675 B
+        // en cada entrega del indice, **arrastrar una ficha deja de tocar el
+        // documento gordo**. Antes cada movimiento hacia bajar 15.348 B a quien
+        // mirase ese partido; ahora baja 1.987 B. Lo que el guard tiene que
+        // defender no es un numero concreto, es que el indice siga siendo
+        // MUCHO menor que el partido — que es lo que hace baratos la lista, las
+        // alertas y ahora tambien la pizarra.
+        ok('2k · 🪶 el indice sigue siendo mucho menor que el partido (÷' + factor.toFixed(1) + ')',
+           factor >= 5,
+           'por debajo de ÷5 el indice deja de compensar la escritura extra');
+
+        // 🔑 LO QUE DE VERDAD ARREGLO v576: el coste de mover una ficha.
+        console.log('       · mover una ficha cuesta: ' + bytesIdx + ' B (antes ' + bytesGordo + ' B)');
+        ok('2l · 🏃 arrastrar cuesta al menos 5 veces menos que antes de v576',
+           (bytesGordo / bytesIdx) >= 5,
+           'si las posiciones vuelven al documento gordo, cada movimiento hace ' +
+           'bajar el partido entero a cada espectador: el defecto de los 10-12 s');
     }
 }
 

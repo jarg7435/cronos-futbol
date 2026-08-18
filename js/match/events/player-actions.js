@@ -208,6 +208,39 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
         }
         console.log('[v246] Evento registrado:', type, '| Total local:', window._cronosMatchEvents.length);
 
+        // ══════════════════════════════════════════════════════════════
+        //  🐌 v576 · LOS MOVIMIENTOS TÁCTICOS NO ESCRIBEN EN CALIENTE
+        // ══════════════════════════════════════════════════════════════
+        //  MEDIDO en los partidos reales de la prueba del autor: los
+        //  `tactical_move` son el **75-90%** de los sucesos, y cada uno hacía
+        //  aquí un `arrayUnion` sobre `live_matches`. Como Firestore NO ENVÍA
+        //  DELTAS, cada uno obligaba a todos los espectadores a descargarse el
+        //  documento ENTERO — 17-23 KB medidos. Con cuatro partidos, eso son
+        //  cientos de KB por segundo bajando al dispositivo del director, más
+        //  parsearlos y repintar el campo cada vez. Ése era el cuello de
+        //  botella real de los 10-12 s, no la subida.
+        //
+        //  🔑 Ahora se APARCAN y viajan con el siguiente latido, en UNA sola
+        //  escritura agrupada (`pushLiveSnapshot`, con `arrayUnion`). El
+        //  arrastre deja de tocar el documento gordo por completo: sus
+        //  posiciones van al índice ligero por su propio camino.
+        //
+        //  ⚠️ NO SE PIERDE NINGUNO Y LA REPETICIÓN NO SE ENTERA. Llegan todos,
+        //  sólo que agrupados; `replay-player.js` los lee del array `events`
+        //  igual que siempre. Ya están en `window._cronosMatchEvents` (arriba),
+        //  así que el historial LOCAL del entrenador es inmediato.
+        //
+        //  ⚠️ TOPE DE SEGURIDAD: con el reloj parado no hay latido, así que el
+        //  aparcamiento podría crecer sin fin. Al llegar al tope se deja pasar
+        //  el más viejo por la vía normal para no perderlo.
+        if (type === 'tactical_move') {
+            if (!Array.isArray(window._cronosTacticalPending)) window._cronosTacticalPending = [];
+            window._cronosTacticalPending.push(eventEntry);
+            if (window._cronosTacticalPending.length <= 150) return;
+            // Rebosa: se sigue hacia abajo con el más viejo, que se escribe ya.
+            eventEntry = window._cronosTacticalPending.shift();
+        }
+
         // v246: escribir a Firestore con setDoc + merge + arrayUnion.
         var fa = window._cronos_auth;
         // v434 · EL PARTIDO DESTINO PUEDE NO SER EL QUE SE ESTÁ JUGANDO.

@@ -76,6 +76,62 @@ function logTacticalMove(player, x, y) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  🐢 v574 · LA PIZARRA TENÍA QUE ESPERAR AL LATIDO
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (prueba de campo con 4 partidos): "mover una ficha o
+//  intercambiar dos tarda VARIOS SEGUNDOS, y el resto de la app va inmediato".
+//
+//  🔑🔑🔑 LA CAUSA: este fichero no sincronizaba NUNCA. Ni una llamada a
+//  `liveSyncOnAction` en las 352 líneas. La posición de un jugador
+//  (`player.x/y/status`) sólo llegaba al visor cuando pasaba el LATIDO y
+//  `pushLiveSnapshot` reenviaba el array `players` entero.
+//
+//  ⚠️⚠️ Y ESO LO EMPEORÓ P1 (v572): el latido pasó de 5 s a 15 s, así que la
+//  espera se triplicó. El defecto ya existía —siempre hubo hasta 5 s de
+//  retraso— pero por debajo del umbral en que se nota. **Una optimización
+//  puede convertir un defecto tolerado en un defecto visible**, y el comentario
+//  de P1 en sync.js afirmaba justo lo contrario ("las acciones fuerzan un
+//  latido inmediato"): cierto para los SUCESOS, falso para la pizarra.
+//
+//  🔑 POR QUÉ SE NOTABA SÓLO AQUÍ. Gol, tarjeta, lesión y sustitución llaman a
+//  `liveSyncOnAction`/`liveSyncFlushNow` y salen al instante. Los dos casos que
+//  reportó el autor son EXACTAMENTE los dos que no pasaban por ahí:
+//    · mover una ficha por el campo — no registra movimiento, sólo posición;
+//    · permutar dos jugadores DEL CAMPO — v425 la excluye de `logMovement` a
+//      propósito (una permuta no es un cambio: nadie entra ni sale), y
+//      `logMovement` era el único de este camino que sincronizaba.
+//
+//  ⚠️ NO se usa `liveSyncFlushNow`: arrastrar produce ráfagas continuas y un
+//  volcado por gesto machacaría el documento (el límite sano es 1 escritura
+//  sostenida por segundo y documento). Los dos caminos de abajo llevan
+//  throttle de 500 ms, que agrupa la ráfaga.
+//
+// ══════════════════════════════════════════════════════════════════
+//  🏃 v575 · Y EL VOLCADO ES EL CORTO, NO EL COMPLETO
+// ══════════════════════════════════════════════════════════════════
+//  v574 arregló el "no sincroniza nunca" llamando a `liveSyncOnAction`, que
+//  manda el partido ENTERO (8.668 B). Con UN partido iba instantáneo, pero el
+//  autor midió que con CUATRO a la vez el desfase subía a 8-9 segundos: las
+//  pestañas comparten una sola conexión (`persistentMultipleTabManager`) y
+//  ~68 KB/s de snapshots forman cola.
+//
+//  🔑 `liveSyncPositions` manda sólo id, x, y y estado: **675 B, trece veces
+//  menos**. Es el mismo camino corto que ya tenían los sucesos —por el que un
+//  gol llega al instante— aplicado por fin a la pizarra.
+//
+//  ⚠️ SE MANTIENE EL RESPALDO A `liveSyncOnAction`. Si `liveSyncPositions` no
+//  existiera (sync.js de una versión anterior servido desde caché), la pizarra
+//  volvería a quedarse muda —el defecto de v574— en vez de degradar al camino
+//  largo, que es lento pero correcto.
+function _repintaPizarra() {
+    renderPlayers();
+    // Guard `typeof`: este fichero puede cargar antes que sync.js, y un
+    // ReferenceError aquí abortaría el drop entero dejando la ficha a medias.
+    if (typeof liveSyncPositions === 'function') liveSyncPositions();
+    else if (typeof liveSyncOnAction === 'function') liveSyncOnAction();
+}
+
 function dropToField(e) {
     e.preventDefault();
     const playerId = e.dataTransfer.getData('playerId') || touchData.draggedPlayerId;
@@ -147,7 +203,7 @@ function dropToField(e) {
         }
     }
 
-    renderPlayers();
+    _repintaPizarra();
 }
 
 function dropToBench(e) {
@@ -178,7 +234,7 @@ function handleBenchDrop(e, player) {
     if (player.cards === 'roja' && player.status === 'field') {
         player.status = 'bench'; player.x = 0; player.y = 0;
         if (isRunning) logMovement(player, undefined, 'field');
-        renderPlayers(); sortBenchUI(player.team); return;
+        _repintaPizarra(); sortBenchUI(player.team); return;
     }
 
     if (potentialTargets.length === 0) {
@@ -191,7 +247,7 @@ function handleBenchDrop(e, player) {
             player.status = 'bench'; player.x = 0; player.y = 0;
             if (isRunning) logMovement(player, undefined, _prev);
         }
-        renderPlayers(); return;
+        _repintaPizarra(); return;
     }
 
     let targetPlayer = null;
@@ -241,7 +297,7 @@ function handleBenchDrop(e, player) {
         }
     }
 
-    renderPlayers();
+    _repintaPizarra();
 }
 
 function handleSmartSwap(dragged, target, forcedSubId) {
@@ -250,7 +306,7 @@ function handleSmartSwap(dragged, target, forcedSubId) {
             const _prevDrag = dragged.status;   // v425: no registrar si ya estaba en la banca
             dragged.status = 'bench'; dragged.x = 0; dragged.y = 0;
             if (isRunning) logMovement(dragged, forcedSubId, _prevDrag);
-            renderPlayers(); sortBenchUI(dragged.team); return;
+            _repintaPizarra(); sortBenchUI(dragged.team); return;
         } else {
             alert("Un jugador expulsado no puede volver al campo."); return;
         }

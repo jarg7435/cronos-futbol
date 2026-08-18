@@ -109,6 +109,16 @@
         ]
       },
       {
+        "_comentario": "v577 · LA RAIZ, QUE ES LA URL QUE USA TODO EL MUNDO. MEDIDO en los dos hosts el 2026-08-18: `/index.html` y `/live.html` se servian con `no-cache`, pero `/` a secas con `max-age=3600`. Firebase casa las cabeceras contra la RUTA PEDIDA, y `/` no casa ni con `/index.html` ni con `**/*.html` — aunque sirva ese mismo fichero. Nadie escribe `/index.html` en la barra: se abre `cronos-futbol-test.web.app` a secas, y ESA es justo la peticion que quedaba cacheada una hora. Sintoma real, reportado por el autor: el iPad seguia mostrando una version anterior mientras el PC ya veia la nueva. Es el MISMO agujero de v443 (donde live.html se colaba por no tener regla propia) un nivel mas arriba: el versionado de este proyecto vive en los `?v=` que van DENTRO del HTML, asi que el HTML —y la raiz que lo sirve— es lo unico que nunca puede quedarse cacheado.",
+        "source": "/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
         "source": "/app.js",
         "headers": [
           {
