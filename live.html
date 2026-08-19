@@ -5255,6 +5255,10 @@ function _timerColorFor(timeSec, data) {
     const sub = data.subcategory || 'A';
     const getGroupFn = (typeof window.getCategoryGroupKey === 'function') ? window.getCategoryGroupKey : function(c,s) {
         const raw = String(c||'').toLowerCase();
+        // v586 · las dos FEM, DELANTE: 'regional fem' contiene 'regional' y
+        // 'futurefem' casaba antes con la rama de F7.
+        if (raw.includes('futurefem') || raw.includes('futur')) return 'futurefem';
+        if (raw.includes('regional') && raw.includes('fem')) return 'regional_fem';
         if (raw.includes('f7') || raw.includes('prebenj') || raw.includes('benj') || raw.includes('alev')) return 'f7';
         if (raw.includes('infant')) return s === 'B' ? 'infantil_b' : s === 'C' ? 'infantil_c' : 'infantil_a';
         if (raw.includes('cadet')) return s === 'B' ? 'cadete_b' : s === 'C' ? 'cadete_c' : 'cadete_a';
@@ -5265,13 +5269,17 @@ function _timerColorFor(timeSec, data) {
     const groupKey = getGroupFn(cat, sub);
 
     // Juvenil o Regional -> Sin semáforo -> Celeste
-    if (groupKey === 'juvenil' || groupKey === 'regional') {
+    // v586 · también 'regional_fem' (grupo propio desde v586). live.html NO
+    // comparte código con index.html: esta copia hay que tocarla aparte.
+    if (groupKey === 'juvenil' || groupKey === 'regional' || groupKey === 'regional_fem') {
         return { bg: '#79c0ff', text: '#000000' };
     }
 
     const configs = (data && data.categoryConfigs) || (typeof window !== 'undefined' && window._liveCategoryConfigs) || {};
     const _cached = (typeof window !== 'undefined' && window._liveCachedThresholds) || null;
-    const groupCfg = configs[groupKey] || (data.timerThresholds ? { semaforoActive: true, red: data.timerThresholds.red, yellow: data.timerThresholds.yellow } : (_cached ? { semaforoActive: true, red: _cached.red, yellow: _cached.yellow } : { semaforoActive: true, red: 33, yellow: 50 }));
+    // v586 · con herencia (ver cronosCfgGrupo en utils.js). live.html puede
+    // no tener utils.js cargado: por eso el `typeof` y el respaldo directo.
+    const groupCfg = (typeof window.cronosCfgGrupo === 'function' ? window.cronosCfgGrupo(configs, groupKey) : configs[groupKey]) || (data.timerThresholds ? { semaforoActive: true, red: data.timerThresholds.red, yellow: data.timerThresholds.yellow } : (_cached ? { semaforoActive: true, red: _cached.red, yellow: _cached.yellow } : { semaforoActive: true, red: 33, yellow: 50 }));
 
     // Si el Director Deportivo desactivó el semáforo para este grupo -> Celeste
     if (groupCfg.semaforoActive === false) {
@@ -5831,7 +5839,35 @@ window.showLiveNow = async function() {
         //  club) desaparezca de verdad de la lista; con un mapa compartido se
         //  quedaria pegado para siempre, porque un snapshot solo dice lo que
         //  HAY, no lo que se ha ido.
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v589 · LA TARJETA BORRADA VOLVÍA EN EL SIGUIENTE LATIDO
+        //
+        //  Reporte del autor (capturas 9297/9298): pulsa ELIMINAR, el partido
+        //  SÍ se borra —medido por REST: los dos fantasmas desaparecieron de
+        //  `live_index`— pero **la tarjeta sigue en pantalla**.
+        //
+        //  🔑 Porque esta lista «se repinta entera en CADA latido de CUALQUIER
+        //  partido» (lo dice el comentario de v466, unas líneas más abajo). El
+        //  borrado quita el documento, pero hasta que el `onSnapshot` propaga
+        //  la baja hay repintados que aún traen el partido en `allDocs`, y cada
+        //  uno vuelve a dibujar la tarjeta que el usuario acaba de eliminar.
+        //  Con la lista recargándose cada pocos segundos, el efecto es que el
+        //  botón «no hace nada».
+        //
+        //  🔑 LA LÁPIDA: los ids que se acaban de borrar se apuntan aquí y
+        //  ningún repintado los vuelve a pintar. No sustituye al borrado —ése
+        //  ya ocurre en Firestore—: sólo tapa la ventana entre que se borra y
+        //  que el servidor lo cuenta.
+        //
+        //  ⚠️ VIVE EN MEMORIA Y SE OLVIDA A LOS 60 s. Si fuera permanente, un
+        //  borrado que en realidad falló escondería un partido vivo para
+        //  siempre. Pasado el minuto, manda otra vez lo que diga el servidor:
+        //  si el partido sigue ahí, reaparece — y eso es lo correcto.
+        // ══════════════════════════════════════════════════════════════
         const _repintarLista = (allDocs) => {
+            if (window._liveBorrados && window._liveBorrados.size) {
+                allDocs = allDocs.filter(m => !window._liveBorrados.has(m.id));
+            }
             const liveMatches = [];
         // Ordenar cliente (sin índice Firestore)
         // v455 · orden ESTABLE: por updatedAt las tarjetas bailaban cada 5 s.
@@ -6316,9 +6352,93 @@ window.deleteLiveMatch = async function(matchId, e) {
         } catch(eUpd) {
             console.warn('[LIVE] No se pudo marcar como cancelado (probablemente ya no existe):', eUpd.message);
         }
-        // Ahora sí, borrar definitivamente.
-        await deleteDoc(doc(db, 'live_matches', matchId));
-        console.log('[LIVE] Partido eliminado:', matchId);
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v588 · ESTE BORRADO NO TOCABA EL ÍNDICE, Y DEJABA FANTASMAS
+        //
+        //  Reporte del autor (captura 9292): "No se pudo eliminar el partido:
+        //  Missing or insufficient permissions", con la tarjeta clavada en la
+        //  lista por mucho que la borrara.
+        //
+        //  🔑🔑🔑 MEDIDO POR REST: el partido que fallaba
+        //  (`local-19082026-rrh8-1529`) **ya no existía en `live_matches`** —
+        //  seguía sólo en `live_index`. Y desde v572 la lista de Partidos en
+        //  Vivo se pinta desde `live_index`. Aquí sólo se borraba
+        //  `live_matches`, así que:
+        //    1ª pulsación → se borra el partido, el índice se queda, la
+        //                   tarjeta sigue ahí;
+        //    2ª y siguientes → `deleteDoc` sobre un documento que YA NO EXISTE.
+        //                   En el lenguaje de reglas eso no es "no encontrado",
+        //                   es DENEGADO (`resource.data` es null y la condición
+        //                   revienta), así que sale "Missing or insufficient
+        //                   permissions" — un mensaje de permisos para un
+        //                   problema que no tiene nada que ver con permisos.
+        //                   Es la trampa de v521→v524, otra vez.
+        //  Resultado: la tarjeta se volvía IMBORRABLE para siempre.
+        //
+        //  🔑 EL ÍNDICE VA PRIMERO, y a propósito: es lo que el usuario ve.
+        //  Si se borra el índice y falla el partido, queda un documento
+        //  invisible que `cleanupLiveMatches` recoge solo a las 10 h. Al revés
+        //  queda un fantasma visible y permanente. Entre las dos, la mala es la
+        //  segunda.
+        //
+        //  🔑 Y CADA BORRADO LLEVA SU PROPIO `catch`: uno no puede impedir el
+        //  otro. Sólo se avisa de un fallo si NINGUNO de los dos salió — que es
+        //  el único caso en el que el usuario sigue teniendo el partido delante.
+        // ══════════════════════════════════════════════════════════════
+        let okIndice = false, okPartido = false;
+        let ultimoError = null;
+        try {
+            await deleteDoc(doc(db, 'live_index', matchId));
+            okIndice = true;
+        } catch (eIdx) {
+            ultimoError = eIdx;
+            console.warn('[LIVE] Índice no borrado (' + matchId + '):', eIdx && eIdx.message);
+        }
+        try {
+            await deleteDoc(doc(db, 'live_matches', matchId));
+            okPartido = true;
+        } catch (ePar) {
+            ultimoError = ePar;
+            console.warn('[LIVE] Partido no borrado (' + matchId + '):', ePar && ePar.message);
+        }
+        if (!okIndice && !okPartido) {
+            // Nada se ha podido borrar: eso sí es un fallo que hay que contar.
+            throw ultimoError || new Error('No se pudo borrar ni el partido ni su índice.');
+        }
+        console.log('[LIVE] Partido eliminado:', matchId,
+                    '(índice: ' + okIndice + ', partido: ' + okPartido + ')');
+
+        // ══════════════════════════════════════════════════════════════
+        //  v589 · LA TARJETA SE VA AHORA, NO CUANDO EL SERVIDOR CONTESTE
+        //
+        //  El autor pidió que «la tarjeta se desvanezca y desaparezca
+        //  instantáneamente». Se hace en dos pasos, y los dos hacen falta:
+        //    1. se apunta el id en la lápida, para que ningún repintado la
+        //       vuelva a dibujar mientras el servidor propaga la baja;
+        //    2. se quita del DOM con una transición corta, para que el usuario
+        //       VEA que su pulsación ha hecho algo.
+        //  Sin el paso 1 la tarjeta reaparece sola al siguiente latido; sin el
+        //  paso 2 se queda hasta el siguiente repintado, que puede tardar
+        //  segundos. Es la diferencia entre «no funciona» y «funciona».
+        // ══════════════════════════════════════════════════════════════
+        try {
+            if (!window._liveBorrados) window._liveBorrados = new Set();
+            window._liveBorrados.add(matchId);
+            // Se olvida al minuto: una lápida permanente escondería para
+            // siempre un partido cuyo borrado en realidad hubiera fallado.
+            setTimeout(() => {
+                try { window._liveBorrados.delete(matchId); } catch (e4) {}
+            }, 60000);
+
+            document.querySelectorAll('[data-match-id="' + matchId + '"]').forEach(el => {
+                el.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+                el.style.opacity = '0';
+                el.style.transform = 'scale(0.97)';
+                setTimeout(() => { try { el.remove(); } catch (e5) {} }, 260);
+            });
+        } catch (eDom) {
+            console.warn('[LIVE] No se pudo retirar la tarjeta de la vista:', eDom && eDom.message);
+        }
 
         // Limpiar el estado local SÓLO del partido que se acaba de borrar.
         // v465 · Hay UNA RANURA POR PARTIDO (`cronos_active_match_v2::<id>`),
@@ -6426,8 +6546,14 @@ window.showHistory = async function() {
 
         // Separar: en vivo vs finalizados dentro de la ventana de retención
         const liveMatches = [], finishedMatches = [];
-        const allDocs2 = [];
+        let allDocs2 = [];
         snap.forEach(d => { allDocs2.push({ id: d.id, ...d.data() }); });
+
+        // v589 · La misma lápida que la lista en vivo: el Historial tampoco
+        // puede repintar un partido que el usuario acaba de eliminar.
+        if (window._liveBorrados && window._liveBorrados.size) {
+            allDocs2 = allDocs2.filter(m => !window._liveBorrados.has(m.id));
+        }
 
         window._allFetchedMatches = allDocs2;
 
@@ -6868,9 +6994,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v585"></script>
-<script src="js/match/replay/replay-player.js?v=v585"></script>
-<script src="js/match/events/retroactive-modal.js?v=v585"></script>
+<script src="js/match/immutability.js?v=v589"></script>
+<script src="js/match/replay/replay-player.js?v=v589"></script>
+<script src="js/match/events/retroactive-modal.js?v=v589"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -6883,7 +7009,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v585" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v585</div>
+<div id="cronos-version-badge" data-version="v589" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v589</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

@@ -946,8 +946,35 @@ if (typeof window.getCategoryGroupKey !== 'function') {
         // Moverlo aquí cambiaría los umbrales de partidos ya jugados y dejaría
         // huérfana la configuración que el Director ya tenga guardada.
         // Si el autor quiere también cambiar la duración, es otra decisión.
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v586 · LAS DOS FEM ESTRENAN GRUPO PROPIO
+        //
+        //  Petición expresa del autor (2026-08-19): FUTureFEM y Regional FEM
+        //  deben tener su propio bloque en el panel de Configuración, con sus
+        //  umbrales y su interruptor de informes a padres, "exactamente igual
+        //  que el resto".
+        //
+        //  ⚠️ ESTO REVIERTE LA DECISIÓN DE v538, que las hacía HEREDAR de 'f7'
+        //  y 'regional' precisamente para no dejar claves huérfanas. Se le ha
+        //  advertido. Para que ningún club pierda lo que ya tenía configurado,
+        //  el grupo nuevo HEREDA del antiguo mientras no se guarde el bloque
+        //  nuevo (ver `cronosCfgGrupo`, más abajo): el comportamiento de hoy no
+        //  cambia hasta que el Director toque el bloque a propósito.
+        //
+        //  ⚠️⚠️ VAN DELANTE, Y NO ES COSMÉTICO: 'regional_fem'.includes(
+        //  'regional') es TRUE y 'futurefem' casaba con la rama de F7. Si estas
+        //  dos comprobaciones no son las PRIMERAS, no se alcanzan nunca — es la
+        //  trampa de v511, que costó siete cascadas.
+        // ══════════════════════════════════════════════════════════════
+        if (normCat.includes('futurefem') || normCat.includes('future_fem') ||
+            normCat.includes('futurfem')) {
+            return 'futurefem';
+        }
+        if (normCat.includes('regional') && normCat.includes('fem')) {
+            return 'regional_fem';
+        }
         if (cat.includes('f7') || cat.includes('f8') ||
-            /(prebenjamin|benjamin|alevin|prebenj|chupete|querubin|futurefem)/.test(normCat)) {
+            /(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(normCat)) {
             return 'f7';
         }
         if (normCat.includes('infantil')) {
@@ -968,6 +995,33 @@ if (typeof window.getCategoryGroupKey !== 'function') {
         }
         if (cat.startsWith('f7_')) return 'f7';
         return 'infantil_a';
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🔑 v586 · LA CONFIGURACIÓN DE UN GRUPO, CON HERENCIA
+//
+//  FUTureFEM y Regional FEM acaban de estrenar grupo propio. Los clubes que
+//  llevan meses funcionando NO tienen esas claves en
+//  `clubs/{id}.categoryConfigs`, así que una lectura directa devolvería
+//  `undefined` y caería en los valores por defecto.
+//
+//  🚨 Y eso NO es inocuo: si un Director había DESACTIVADO los informes
+//  individualizados a padres para F7, su FUTureFEM los tendría ACTIVOS otra
+//  vez desde el primer minuto — un dato de un menor saliendo hacia su familia
+//  porque hemos partido un grupo en dos. Un cambio de organización interna no
+//  puede reabrir un permiso que alguien cerró.
+//
+//  Así que mientras el bloque nuevo no se guarde, el grupo hereda del que le
+//  daba servicio hasta hoy. En cuanto el Director lo configure, manda el suyo.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosCfgGrupo !== 'function') {
+    window.CRONOS_GRUPO_HEREDA_DE = { futurefem: 'f7', regional_fem: 'regional' };
+    window.cronosCfgGrupo = function (configs, groupKey) {
+        const c = configs || {};
+        if (c[groupKey]) return c[groupKey];
+        const padre = window.CRONOS_GRUPO_HEREDA_DE[groupKey];
+        return (padre && c[padre]) ? c[padre] : undefined;
     };
 }
 
@@ -1221,7 +1275,11 @@ if (typeof window.isParentReportEnabledForCategory !== 'function') {
     window.isParentReportEnabledForCategory = function(category, subcategory) {
         const configs = window._clubCategoryConfigs || {};
         const groupKey = window.getCategoryGroupKey(category, subcategory);
-        const groupCfg = configs[groupKey];
+        // v586 · con herencia: un grupo recién estrenado (las dos FEM) respeta
+        // lo que el Director tuviera puesto en el grupo del que salió.
+        const groupCfg = (typeof window.cronosCfgGrupo === 'function')
+            ? window.cronosCfgGrupo(configs, groupKey)
+            : configs[groupKey];
         if (groupCfg && typeof groupCfg.sendIndividualReports === 'boolean') {
             return groupCfg.sendIndividualReports;
         }

@@ -1939,12 +1939,17 @@ function getTimerColor(timeSec, matchCategory, matchSubcategory) {
 
     // Respaldo por grupo: si `cronosCategoriaSinSemaforo` no estuviera cargada
     // todavía, la regla sigue aplicándose por la vía de siempre.
-    if (groupKey === 'juvenil' || groupKey === 'regional') {
+    // v586 · 'regional_fem' se añade porque las dos FEM estrenaron grupo
+    // propio: sin esto, Regional FEM dejaría de ser celeste y se le encendería
+    // el semáforo — justo el defecto que cerró v559.
+    if (groupKey === 'juvenil' || groupKey === 'regional' || groupKey === 'regional_fem') {
         return { bg: '#79c0ff', text: '#000000', fontSize: '0.8rem' };
     }
 
     const configs = window._clubCategoryConfigs || {};
-    const groupCfg = configs[groupKey] || (window._clubTimerThresholds ? { semaforoActive: true, red: window._clubTimerThresholds.red, yellow: window._clubTimerThresholds.yellow } : { semaforoActive: true, red: 33, yellow: 50 });
+    // v586 · con herencia: las dos FEM estrenaron grupo y no pueden perder
+    // lo que el Director ya tenía configurado en el grupo del que salieron.
+    const groupCfg = (typeof window.cronosCfgGrupo === 'function' ? window.cronosCfgGrupo(configs, groupKey) : configs[groupKey]) || (window._clubTimerThresholds ? { semaforoActive: true, red: window._clubTimerThresholds.red, yellow: window._clubTimerThresholds.yellow } : { semaforoActive: true, red: 33, yellow: 50 });
 
     // Si el Director Deportivo desactivó el semáforo para este grupo -> Celeste
     if (groupCfg.semaforoActive === false) {

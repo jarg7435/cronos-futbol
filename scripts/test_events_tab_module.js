@@ -280,7 +280,7 @@ function walk(dir, out) {
         await g._sdLoadEvents('convocatoria');
         ok('2e · deduplica por id de documento (Set)',
             (container.innerHTML.match(/Unico/g) || []).length === 1
-            && container.innerHTML.includes('1 registros'),
+            && container.innerHTML.includes('1 convocatorias'),
             (container.innerHTML.match(/Unico/g) || []).length);
     }
     {
@@ -323,8 +323,27 @@ function walk(dir, out) {
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    console.log('\n── PARTE 3 · ⚠️ AUTO-PURGADO DESTRUCTIVO (MAX_ITEMS = 40) ──');
-    ok('3a · el umbral sigue siendo 40', /const MAX_ITEMS = 40;/.test(BLOCK));
+    // ═════════════════════════════════════════════════════════════════════
+    //  🔴 v586 · EL TOPE ES POR SUBCATEGORÍA — Y SIN CLASIFICAR NO SE BORRA
+    //
+    //  Este guard fijaba un tope GLOBAL de 40 y que se borrase el exceso. El
+    //  autor reportó (capturas 9283/9284) que ese tope global es incorrecto:
+    //  con hasta 27 equipos compartiendo 40 huecos, un equipo activo borraba
+    //  de Firestore las convocatorias de los demás.
+    //
+    //  ⚠️⚠️ EL SANDBOX DE ESTE GUARD **NO CARGA** EL MÓDULO DEL ÁRBOL, así que
+    //  aquí no hay clasificación por subcategoría. Y ésa es justo la situación
+    //  en la que v586 decide **NO BORRAR NADA**: sin saber de qué equipo es
+    //  cada registro, "borrar los más antiguos" se lleva por delante al equipo
+    //  que menos publica. El borrado es irreversible; ante la duda se acumula,
+    //  que sí se puede deshacer.
+    //  El purgado real por subcategoría lo ejercita test_events_tab_tree.js,
+    //  cuyo sandbox SÍ carga el árbol.
+    // ═════════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 3 · ⚠️ PURGADO POR SUBCATEGORÍA (máx. 50 cada una) ──');
+    ok('3a · 🔑 el tope es POR SUBCATEGORÍA y vale 50',
+        /const MAX_POR_SUBCAT = 50;/.test(BLOCK));
+    ok('3a2 · ⚠️ ya no queda ningún tope global', !/MAX_ITEMS/.test(BLOCK));
     const manyNotifs = (n) => {
         const o = {};
         for (let i = 0; i < n; i++) o['n' + String(i).padStart(2, '0')] = {
@@ -335,32 +354,26 @@ function walk(dir, out) {
     {
         const { g, deleted, container } = buildSandbox({ notifs: manyNotifs(40) });
         await g._sdLoadEvents('convocatoria');
-        ok('3b · con exactamente 40 NO borra nada', deleted.length === 0, deleted);
-        ok('3c · y los muestra todos', container.innerHTML.includes('40 registros'));
+        ok('3b · con 40 no borra nada', deleted.length === 0, deleted);
+        ok('3c · y los muestra todos', container.innerHTML.includes('40 convocatorias'));
     }
     {
-        const { g, deleted, container } = buildSandbox({ notifs: manyNotifs(45) });
+        const { g, deleted, container } = buildSandbox({ notifs: manyNotifs(60) });
         await g._sdLoadEvents('convocatoria');
-        ok('3d · con 45 borra exactamente 5', deleted.length === 5, deleted);
-        // Tras ordenar desc, los 5 últimos son los de createdAt más antiguo: n00..n04
-        ok('3e · borra los 5 MÁS ANTIGUOS, no otros',
-            deleted.slice().sort().join(',') === ['n00', 'n01', 'n02', 'n03', 'n04']
-                .map(x => 'cronos_notifications/' + x).join(','),
-            deleted.slice().sort());
-        ok('3f · borra de la colección cronos_notifications',
-            deleted.every(d => d.startsWith('cronos_notifications/')));
-        ok('3g · renderiza los 40 que quedan', container.innerHTML.includes('40 registros'));
-        ok('3h · el más reciente (n44) sobrevive y el más antiguo (n00) no se muestra',
-            container.innerHTML.includes('R44') && !container.innerHTML.includes('R00'));
+        ok('3d · 🔑🔑🔑 SIN clasificación no se borra NADA, ni pasando de 50',
+            deleted.length === 0, deleted);
+        ok('3e · no se pierde ninguno: los 60 siguen ahí',
+            container.innerHTML.includes('60 convocatorias'));
+        ok('3f · 🔑 el más antiguo sobrevive (antes lo borraba el tope global)',
+            container.innerHTML.includes('R00') && container.innerHTML.includes('R59'));
+        ok('3g · y la cabecera lo DICE, en vez de callárselo',
+            container.innerHTML.includes('no se elimina nada'),
+            container.innerHTML.slice(0, 220));
     }
-    {
-        const { g, container } = buildSandbox({ notifs: manyNotifs(45), deleteDocThrows: true });
-        await g._sdLoadEvents('convocatoria');
-        ok('3i · si el borrado falla, el error se silencia y el render continúa',
-            container.innerHTML.includes('40 registros'), container.innerHTML.slice(0, 120));
-    }
-    ok('3j · el borrado es fire-and-forget con el error silenciado',
-        /deleteDoc\(firestoreDoc\(db,'cronos_notifications',it\._id\)\)\.catch\(\(\)=>\{\}\)/.test(BLOCK));
+    ok('3j · el borrado sigue siendo fire-and-forget con el error silenciado',
+        /deleteDoc\(firestoreDoc\(db,'cronos_notifications',x\.it\._id\)\)\.catch\(\(\)=>\{\}\)/.test(BLOCK));
+    ok('3k · ⚠️ y sigue borrando de cronos_notifications, no de otra colección',
+        /cronos_notifications',x\.it\._id/.test(BLOCK));
 
     // ═════════════════════════════════════════════════════════════════════
     console.log('\n── PARTE 4 · render de tarjetas ──');
@@ -373,8 +386,9 @@ function walk(dir, out) {
         });
         await g._sdLoadEvents('convocatoria');
         const h = container.innerHTML;
-        ok('4a · cabecera con nº de registros y el máximo',
-            h.includes('1 registros') && h.includes('máx. 40'));
+        // v586 · la cabecera nombra el TIPO, no "registros" a secas.
+        ok('4a · la cabecera dice cuántas CONVOCATORIAS hay',
+            h.includes('1 convocatorias'), h.slice(0, 160));
         ok('4b · etiqueta CONVOCATORIA con su icono', h.includes('📋 CONVOCATORIA'));
         ok('4c · título "vs rival" escapado con escapeHtml',
             h.includes('vs ' + escHtml('CD <Rival>')) && !h.includes('vs CD <Rival>'));

@@ -1016,7 +1016,9 @@ function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
             if (porClave.has(k)) { destino = porClave.get(k); break; }
         }
         if (!destino) {
-            destino = { datos: null, tieneLocal: false, idsNube: [], idsLocal: [], ts: -1 };
+            // `nJug` = cuántos jugadores trae la foto elegida. Decide junto con
+            // `ts` cuál se enseña y cuál se retoma (ver la nota de v588 abajo).
+            destino = { datos: null, tieneLocal: false, idsNube: [], idsLocal: [], ts: -1, nJug: 0 };
             entradas.push(destino);
         }
         // TODAS las claves del candidato apuntan ya a esta entrada: así un
@@ -1037,9 +1039,40 @@ function _fusionaCandidatosRecuperacion(localMatch, docsNube) {
         }
         else if (cand._id && destino.idsNube.indexOf(cand._id) === -1) destino.idsNube.push(cand._id);
 
-        // Lo que se ENSEÑA sale de la fuente más reciente.
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v588 · UNA FUENTE SIN JUGADORES NUNCA GANA A UNA QUE LOS TIENE
+        //
+        //  Reporte del autor (captura 9293): retomó el partido y **el campo
+        //  salió vacío, sin ningún convocado**.
+        //
+        //  🔑 Aquí estaba: lo que se enseña —y lo que se retoma— salía de la
+        //  fuente MÁS RECIENTE, sin mirar nada más. Y la más reciente puede ser
+        //  justo la que no tiene la alineación: el estado se guarda también en
+        //  momentos en que `players` aún está vacío (el arranque de la sincro
+        //  ocurre 800 ms después de pintar a los jugadores, y cualquier
+        //  guardado en esa ventana escribe una foto sin nadie). Un segundo de
+        //  diferencia decidía entre recuperar el partido entero o un campo en
+        //  blanco.
+        //
+        //  🔑 LA REGLA: entre dos fotos del MISMO partido, la que trae
+        //  alineación gana siempre; y sólo entre iguales decide la hora. Es la
+        //  misma lección de v582 —un registro vacío no describe nada— aplicada
+        //  al reloj en vez de a la categoría.
+        //
+        //  ⚠️ No se MEZCLAN las dos fuentes (jugadores de una, marcador de
+        //  otra): eso construiría un partido que nunca existió. Se elige una
+        //  foto entera, la que de verdad describe el partido.
+        // ══════════════════════════════════════════════════════════════
         const ts = _recoveryTs(cand);
-        if (ts > destino.ts) { destino.datos = cand; destino.ts = ts; }
+        const nJug = (Array.isArray(cand.players) ? cand.players.length : 0);
+        const mejorQueLoQueHay =
+            (destino.datos === null) ||
+            (nJug > 0 && destino.nJug === 0) ||          // trae alineación y lo de ahora no
+            ((nJug > 0) === (destino.nJug > 0) && ts > destino.ts);  // empate: manda la hora
+        if (mejorQueLoQueHay) { destino.datos = cand; destino.nJug = nJug; }
+        // El sello de tiempo de la ENTRADA es siempre el más reciente de sus
+        // fuentes: ordena la lista y no debe retroceder por elegir otra foto.
+        if (ts > destino.ts) destino.ts = ts;
     };
 
     if (Array.isArray(localMatch)) localMatch.forEach(meter);
@@ -1075,10 +1108,18 @@ function _cronosDescartaRanurasImposibles(entradas) {
     if (!Array.isArray(entradas)) return [];
     return entradas.filter(entrada => {
         try {
-            const m = (entrada && entrada.datos) || {};
+            // ⚠️ UNA ENTRADA ROTA NO ES UNA RANURA VACÍA. Si ni siquiera hay
+            //    objeto de datos, este filtro no tiene nada que juzgar: se
+            //    ENSEÑA. Perder un partido por un fallo del propio filtro es
+            //    peor que enseñar una tarjeta rara — es la regla que fija la
+            //    aserción 3d de test_recuperar_sin_ranuras_fantasma.js, y la
+            //    primera versión de v589 la rompió al tratar "sin datos" y
+            //    "datos que dicen que no hay nada" como lo mismo.
+            if (!entrada || !entrada.datos || typeof entrada.datos !== 'object') return true;
+
+            const m = entrada.datos;
             const ident = (typeof window.cronosIdentidadDelPartido === 'function')
                 ? window.cronosIdentidadDelPartido(m) : null;
-            if (!ident || ident.coherente) return true;
 
             const jugado = (Number(m.timeH1) || 0) + (Number(m.timeH2) || 0);
             const goles  = (Number(m.homeTeam && m.homeTeam.score) || 0) +
@@ -1086,16 +1127,77 @@ function _cronosDescartaRanurasImposibles(entradas) {
             const jugadores = (Number(m.playerCount) || 0) ||
                               (Array.isArray(m.players) ? m.players.length : 0);
             const vacia = jugado === 0 && goles === 0 && jugadores === 0;
+
+            // ══════════════════════════════════════════════════════════
+            //  🔴 v589 · UNA RANURA VACÍA NO ES UN PARTIDO, SEA COHERENTE
+            //            O NO
+            //
+            //  Reporte del autor (captura 9296): tres tarjetas y sólo una
+            //  servía. Una de las inútiles era "LOCAL 0–0 · 00:00 · 0
+            //  jugadores" — perfectamente coherente, así que este filtro ni
+            //  la miraba: exigía PRIMERO que fuera incoherente.
+            //
+            //  🔑 Pero el criterio que importa no es la coherencia, es si hay
+            //  algo que recuperar. Sin jugadores, sin tiempo y sin goles no
+            //  hay partido: retomarla da un campo vacío, exactamente igual
+            //  que empezar de cero. No puede aportar nada, así que no debe
+            //  ocupar sitio ni hacer dudar a nadie con prisa.
+            // ══════════════════════════════════════════════════════════
             if (vacia) {
-                console.warn('[v561] Ranura descartada (imposible y sin juego): ' +
-                             ident.motivos.join(' · '));
+                console.warn('[v589] Ranura descartada (sin nada que recuperar): ' +
+                             ((ident && !ident.coherente) ? ident.motivos.join(' · ') : 'vacía'));
                 return false;
             }
+            // ⚠️ UNA RANURA INCOHERENTE **CON JUEGO** NO SE DESCARTA AQUÍ.
+            //    Un partido con 15 minutos y 18 fichas es trabajo real: hacerlo
+            //    desaparecer sería peor que enseñarlo con su aviso. Se aparta
+            //    en el render, plegado, para no competir con la copia buena
+            //    (ver `_recuperacionSeparaDudosas`).
             return true;
         } catch (e) { return true; }   // ante la duda, se ENSEÑA
     });
 }
 window._cronosDescartaRanurasImposibles = _cronosDescartaRanurasImposibles;
+
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v589 · SÓLO LA COPIA BUENA A LA VISTA
+//
+//  Reporte del autor (captura 9296): "El usuario va con prisa y no puede
+//  ponerse a adivinar cuál sirve". Tenía tres tarjetas y sólo una servía.
+//
+//  🔑 Se separan en dos grupos: las FIABLES —con alineación y sin datos
+//  cruzados— y las DUDOSAS. Se enseñan sólo las fiables; las dudosas quedan
+//  plegadas detrás de un "ver copias descartadas".
+//
+//  ⚠️⚠️ NO SE BORRAN NI SE OCULTAN DEL TODO, Y ES DELIBERADO. Una copia con
+//  15 minutos jugados y 18 fichas es trabajo real de un entrenador, aunque
+//  declare mal la modalidad. Hacerla desaparecer para "no confundir" sería
+//  cambiar una confusión por una pérdida — y la pérdida no se puede deshacer.
+//  Plegada cumple lo que se pide (a la vista queda UNA) sin cerrar la puerta.
+//
+//  ⚠️ Y SI TODAS SON DUDOSAS, SE ENSEÑAN TODAS. Esconder la única opción que
+//  hay dejaría al entrenador sin ninguna, que es el peor resultado posible.
+// ════════════════════════════════════════════════════════════════════
+function _recuperacionSeparaDudosas(entradas) {
+    const fiables = [], dudosas = [];
+    (entradas || []).forEach(entrada => {
+        const m = (entrada && entrada.datos) || {};
+        let coherente = true;
+        try {
+            const ident = (typeof window.cronosIdentidadDelPartido === 'function')
+                ? window.cronosIdentidadDelPartido(m) : null;
+            if (ident && ident.coherente === false) coherente = false;
+        } catch (e) { /* ante la duda, fiable */ }
+        const jugadores = (Number(m.playerCount) || 0) ||
+                          (Array.isArray(m.players) ? m.players.length : 0);
+        if (coherente && jugadores > 0) fiables.push(entrada);
+        else dudosas.push(entrada);
+    });
+    // Sin ninguna fiable, las dudosas dejan de serlo: es lo único que hay.
+    if (!fiables.length) return { fiables: dudosas, dudosas: [] };
+    return { fiables: fiables, dudosas: dudosas };
+}
+window._recuperacionSeparaDudosas = _recuperacionSeparaDudosas;
 
 // ════════════════════════════════════════════════════════════════════
 //  RECUPERAR PARTIDO EN CURSO
@@ -1290,7 +1392,9 @@ async function openLiveMatchRecovery() {
             return;
         }
 
-        list.innerHTML = entradas.map(entrada => {
+        // v589 · A la vista, sólo las copias fiables. Las dudosas van plegadas.
+        const _grupos = _recuperacionSeparaDudosas(entradas);
+        const _pintaEntrada = (entrada) => {
             // `m` son los datos de la fuente MÁS RECIENTE de esta entrada; la
             // procedencia (dispositivo, nube o ambas) va aparte.
             const m = entrada.datos;
@@ -1375,11 +1479,39 @@ async function openLiveMatchRecovery() {
             const idsLocalAttr = (entrada.idsLocal || []).join(',');
             const clickDelete = `_doDeleteRecoveryEntry('${idsAttr}', ${entrada.tieneLocal ? 'true' : 'false'}, '${idsLocalAttr}')`;
 
-            // Una sola etiqueta que dice DÓNDE está guardado, en vez de dos
-            // tarjetas compitiendo. La información no se pierde: se consolida.
+            // ══════════════════════════════════════════════════════════
+            //  🔴 v588 · LA ETIQUETA DECÍA DÓNDE, PERO NO QUÉ SIGNIFICA
+            //
+            //  Reporte del autor: "dos opciones que generan muchísima
+            //  confusión porque el usuario no sabe cuál escoger". Y tenía
+            //  razón: "☁️ NUBE" y "📱 SOLO EN ESTE DISPOSITIVO" describen
+            //  dónde está el fichero, no qué le va a pasar a su partido.
+            //  Nadie debería tener que deducirlo.
+            //
+            //  Ahora, además de la etiqueta, cada tarjeta lleva UNA LÍNEA que
+            //  explica en castellano qué implica retomarla — y el número de
+            //  jugadores deja de ser un dato suelto para convertirse en un
+            //  AVISO cuando es cero, que es exactamente el caso en que el
+            //  autor se encontró el campo vacío.
+            // ══════════════════════════════════════════════════════════
             const origenTexto = (entrada.tieneLocal && entrada.idsNube.length) ? '📱 DISPOSITIVO + ☁️ NUBE'
                               : entrada.tieneLocal ? '📱 SOLO EN ESTE DISPOSITIVO'
                               : '☁️ NUBE';
+            const origenExplica = (entrada.tieneLocal && entrada.idsNube.length)
+                ? 'Guardado aquí y en la nube, y ya están unificados: al retomar recuperas la copia más completa de las dos. Es el caso normal.'
+                : entrada.tieneLocal
+                ? 'Guardado sólo en ESTE dispositivo (aún no había llegado a la nube, normalmente por falta de cobertura). Si lo retomas desde otro móvil u ordenador, no aparecerá.'
+                : 'Guardado sólo en la nube: este partido se llevó desde OTRO dispositivo. Al retomarlo aquí, continúas desde el último momento que se sincronizó.';
+            const avisoSinJugadores = (playerCount === 0)
+                ? `<div style="margin-top:6px;font-size:0.7rem;color:#ff5858;background:rgba(255,88,88,0.08);
+                              border:1px solid rgba(255,88,88,0.3);border-radius:8px;padding:0.4rem 0.6rem;">
+                     ⚠️ <strong>Esta copia no tiene jugadores guardados.</strong> Si la retomas, el campo saldrá
+                     vacío y tendrás que volver a convocar. Sólo debería usarse si no hay otra opción.
+                   </div>`
+                : '';
+            const explicacion = `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);line-height:1.45;">
+                    ${typeof escapeHtml==='function'?escapeHtml(origenExplica):origenExplica}
+                 </div>${avisoSinJugadores}`;
             const origenColor = (entrada.tieneLocal && entrada.idsNube.length)
                 ? 'background:rgba(63,185,80,0.18);color:#3fb950;'
                 : entrada.tieneLocal ? 'background:rgba(88,166,255,0.2);color:#58a6ff;'
@@ -1401,9 +1533,10 @@ async function openLiveMatchRecovery() {
                             <span>⏱ ${phase} · ${timeStr}</span>
                             <span>🏆 ${modeLabel}</span>
                             ${equipoLbl ? `<span style="color:#58a6ff;font-weight:800;">⚽ ${typeof escapeHtml==='function'?escapeHtml(equipoLbl):equipoLbl}</span>` : ''}
-                            <span>👥 ${playerCount} jugadores</span>
+                            <span style="${playerCount === 0 ? 'color:#ff5858;font-weight:800;' : ''}">👥 ${playerCount} jugadores</span>
                             <span>🕐 ${updStr}</span>
                         </div>
+                        ${explicacion}
                         ${avisoIncoherente}
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0;">
@@ -1423,7 +1556,23 @@ async function openLiveMatchRecovery() {
                     </div>
                 </div>
             </div>`;
-        }).join('');
+        };
+
+        // v589 · Las fiables, a la vista. Las dudosas, plegadas y con su
+        // motivo: quien las necesite las tiene a un clic, y quien va con prisa
+        // no las ve. `<details>` no necesita JavaScript ni handlers nuevos.
+        list.innerHTML = _grupos.fiables.map(_pintaEntrada).join('') +
+            (_grupos.dudosas.length ? `
+            <details style="margin-top:0.6rem;">
+                <summary style="cursor:pointer;font-size:0.75rem;color:var(--text-muted);
+                                padding:0.5rem 0.2rem;user-select:none;">
+                    ▸ Ver ${_grupos.dudosas.length} copia${_grupos.dudosas.length === 1 ? '' : 's'} descartada${_grupos.dudosas.length === 1 ? '' : 's'}
+                    <span style="opacity:0.75;">— sin jugadores o con datos cruzados. Normalmente no hacen falta.</span>
+                </summary>
+                <div style="display:flex;flex-direction:column;gap:0.6rem;margin-top:0.5rem;opacity:0.85;">
+                    ${_grupos.dudosas.map(_pintaEntrada).join('')}
+                </div>
+            </details>` : '');
 
     } catch (err) {
         const list = document.getElementById('live-recovery-list');
@@ -1917,18 +2066,30 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
     try {
         const { doc, deleteDoc } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        await deleteDoc(doc(fa.db, 'live_matches', matchId));
 
-        // v572 · P2 · Y su índice ligero, o el partido seguiría apareciendo en
-        // la lista de Partidos en Vivo después de borrarlo: esa lista consulta
-        // `live_index`, no `live_matches`. Va DESPUÉS y con su propio `catch`
-        // —el borrado que importa es el de arriba, y un índice huérfano lo
-        // recoge igualmente `cleanupLiveMatches`—, pero sin esto el usuario
-        // vería reaparecer una tarjeta de un partido que acaba de eliminar.
+        // ⚠️⚠️ v588 · EL ÍNDICE VA PRIMERO Y CON SU PROPIO `catch`.
+        //
+        //  v572 lo puso DESPUÉS del borrado del partido y sin protegerlo del
+        //  fallo del primero. Con eso, si `live_matches` fallaba —y falla
+        //  siempre que el documento ya no existe, porque en reglas borrar lo
+        //  inexistente DENIEGA (v521→v524)— la ejecución saltaba al `catch`
+        //  exterior y **el índice no se borraba nunca**. La tarjeta quedaba
+        //  clavada en la lista de Partidos en Vivo, imborrable. Es el fantasma
+        //  que reportó el autor (captura 9292) y que se midió por REST:
+        //  `local-19082026-rrh8-1529` vivía sólo en `live_index`.
+        //
+        //  El índice es lo que el usuario VE, así que se borra primero: si algo
+        //  falla después, queda un documento invisible que `cleanupLiveMatches`
+        //  recoge a las 10 h — y no un fantasma permanente en pantalla.
         try {
             await deleteDoc(doc(fa.db, 'live_index', matchId));
         } catch (eIdx) {
-            console.warn('[v572] Índice no borrado (' + matchId + '):', eIdx && eIdx.message);
+            console.warn('[v588] Índice no borrado (' + matchId + '):', eIdx && eIdx.message);
+        }
+        try {
+            await deleteDoc(doc(fa.db, 'live_matches', matchId));
+        } catch (ePar) {
+            console.warn('[v588] Partido no borrado (' + matchId + '):', ePar && ePar.message);
         }
 
         // Limpiar también el estado del dispositivo, para que no reaparezca por

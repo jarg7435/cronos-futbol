@@ -77,17 +77,39 @@ async function _renderDirectorConfig() {
     const semaforoEnabled = extras.semaforo !== false;
     const informesPadresEnabled = extras.informes_padres !== false;
 
-    // Definición de las 9 categorías/subcategorías exigidas
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴 v586 · LAS DOS FEM TIENEN SU PROPIO BLOQUE
+    //
+    //  Reporte del autor (captura 9285): faltaban **FUTureFEM** y
+    //  **Regional FEM**. Hasta ahora no eran bloques: FUTureFEM iba dentro de
+    //  "Fútbol 7" y Regional FEM dentro de "Regional / Senior" — se las
+    //  mencionaba en el subtítulo, pero el Director no podía configurarlas por
+    //  separado. Ahora son once bloques.
+    //
+    //  ⚠️ REGIONAL FEM MANTIENE `hasSemaforo: false`, y no es un olvido: la
+    //  regla del proyecto (v559, confirmada por el autor) dice que Juvenil,
+    //  Regional y Regional FEM **no llevan semáforo** — son celeste. Darle un
+    //  interruptor de semáforo sería contradecir esa regla desde la propia
+    //  pantalla que la enuncia. Lo que sí estrena es su interruptor de
+    //  informes a padres, que es independiente.
+    //
+    //  ⚠️⚠️ Y NADIE PIERDE SU CONFIGURACIÓN: mientras estos bloques no se
+    //  guarden, cada uno HEREDA del grupo del que salió (`cronosCfgGrupo`,
+    //  utils.js). El comportamiento de hoy no cambia hasta que el Director
+    //  toque el bloque nuevo a propósito.
+    // ══════════════════════════════════════════════════════════════════
     const GROUPS = [
-        { key: 'f7',          label: '⚽ Fútbol 7',                  sub: 'Prebenjamín, Benjamín, Alevín y FUTureFEM', hasSemaforo: true },
+        { key: 'f7',          label: '⚽ Fútbol 7',                  sub: 'Prebenjamín, Benjamín y Alevín', hasSemaforo: true },
         { key: 'infantil_a',  label: '🏆 Infantil — Subcategoría A', sub: 'Categoría Infantil A',           hasSemaforo: true },
         { key: 'infantil_b',  label: '🏆 Infantil — Subcategoría B', sub: 'Categoría Infantil B',           hasSemaforo: true },
         { key: 'infantil_c',  label: '🏆 Infantil — Subcategoría C', sub: 'Categoría Infantil C',           hasSemaforo: true },
         { key: 'cadete_a',    label: '🥇 Cadete — Subcategoría A',   sub: 'Categoría Cadete A',             hasSemaforo: true },
         { key: 'cadete_b',    label: '🥇 Cadete — Subcategoría B',   sub: 'Categoría Cadete B',             hasSemaforo: true },
         { key: 'cadete_c',    label: '🥇 Cadete — Subcategoría C',   sub: 'Categoría Cadete C',             hasSemaforo: true },
+        { key: 'futurefem',   label: '🌸 FUTureFEM',                 sub: 'FUTureFEM · todas las subcategorías (A, B, C)', hasSemaforo: true },
         { key: 'juvenil',     label: '🔥 Juveniles',                 sub: 'Todas las subcategorías (A, B, C)', hasSemaforo: false },
-        { key: 'regional',    label: '⭐ Regional / Senior',          sub: 'Regional y Regional FEM · todas las subcategorías (A, B, C)', hasSemaforo: false },
+        { key: 'regional',    label: '⭐ Regional / Senior',          sub: 'Regional · todas las subcategorías (A, B, C)', hasSemaforo: false },
+        { key: 'regional_fem', label: '🌺 Regional FEM',             sub: 'Regional FEM · todas las subcategorías (A, B, C)', hasSemaforo: false },
     ];
 
     let html = `
@@ -110,8 +132,18 @@ async function _renderDirectorConfig() {
       <div style="display:flex; flex-direction:column; gap:1rem;">
     `;
 
+    // 🔑 v586 · La lista de claves, publicada para que el GUARDADO use ésta y
+    //    no una copia suya. Ver la nota en _dirSaveCategoryConfigs.
+    window.CRONOS_GRUPOS_CONFIG = GROUPS.map(g => g.key);
+
     GROUPS.forEach(g => {
-        const cfg = categoryConfigs[g.key] || {};
+        // v586 · CON HERENCIA: un bloque recién estrenado (las dos FEM) enseña
+        // lo que HOY está en vigor —heredado del grupo del que salió—, no unos
+        // valores por defecto que nadie ha elegido. Si el formulario mintiera
+        // aquí, el Director guardaría sin saber que está cambiando algo.
+        const cfg = ((typeof window.cronosCfgGrupo === 'function')
+            ? window.cronosCfgGrupo(categoryConfigs, g.key)
+            : categoryConfigs[g.key]) || {};
         const semActive = g.hasSemaforo ? (cfg.semaforoActive !== false) : false;
         const redVal    = cfg.red    ?? legacyThresholds.red    ?? 33;
         const yellowVal = cfg.yellow ?? legacyThresholds.yellow ?? 50;
@@ -196,7 +228,25 @@ async function _renderDirectorConfig() {
 }
 
 window._dirSaveCategoryConfigs = async function(clubId) {
-    const GROUPS = ['f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c', 'juvenil', 'regional'];
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v586 · ESTA LISTA ERA UNA SEGUNDA COPIA, Y SE HABRÍA QUEDADO
+    //               ATRÁS EN SILENCIO
+    //
+    //  Los grupos se declaran arriba, en el render, y AQUÍ estaban otra vez a
+    //  mano. Al añadir FUTureFEM y Regional FEM, sus bloques se habrían
+    //  pintado perfectamente… y al pulsar "Guardar Toda la Configuración" no
+    //  se habría guardado ninguno de los dos, sin un solo error: el Director
+    //  tocando interruptores que no hacen nada. Es el patrón que este proyecto
+    //  ya ha pagado varias veces (v532/v533, v553, v555).
+    //
+    //  🔑 UNA SOLA LISTA, `window.CRONOS_GRUPOS_CONFIG`, publicada por el
+    //  render. El respaldo literal se conserva por si esta función se llamara
+    //  sin haber pintado antes, pero incluye YA los once grupos.
+    // ══════════════════════════════════════════════════════════════════
+    const GROUPS = (Array.isArray(window.CRONOS_GRUPOS_CONFIG) && window.CRONOS_GRUPOS_CONFIG.length)
+        ? window.CRONOS_GRUPOS_CONFIG
+        : ['f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c',
+           'futurefem', 'juvenil', 'regional', 'regional_fem'];
     const categoryConfigs = {};
 
     let hasError = false;

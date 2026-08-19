@@ -187,7 +187,7 @@ console.log('── PARTE 1 · el árbol aparece en Entrenamientos ──');
     // 🔑 La cabecera de recuento es lo que fijan 3c/3g/4a del otro guard: el
     // autoborrado destructivo sólo es visible por ahí.
     ok('1f · 🔑 conserva la cabecera con el recuento y el máximo',
-       /2 registros/.test(h) && /máx\. 40/.test(h));
+       /2 (convocatorias|entrenamientos)/.test(h) && /máx\. 50 por subcategor/.test(h));
 
     // Las dos hojas caen en ramas distintas y el recuento de cada rama lo dice.
     ok('1g · el aviso de Alevín cuenta en su categoría',
@@ -261,7 +261,7 @@ console.log('\n── PARTE 3 · "Sin clasificar" y el respaldo por autor ──
        /sdViewEventDetail\('t_res'\)/.test(h) &&
        /sdViewEventDetail\('t_amb'\)/.test(h) &&
        /sdViewEventDetail\('t_hue'\)/.test(h));
-    ok('3f · la cabecera sigue contando los 3', /3 registros/.test(h));
+    ok('3f · la cabecera sigue contando los 3', /3 entrenamientos/.test(h));
 
     // 🔑 Si la consulta de usuarios falla, el árbol se pinta igual: los avisos
     // nuevos traen su categoría en el documento y no dependen del respaldo.
@@ -272,7 +272,7 @@ console.log('\n── PARTE 3 · "Sin clasificar" y el respaldo por autor ──
     await tf.g._sdLoadEvents('planificacion_semanal');
     const hf = tf.container.innerHTML;
     ok('3g · 🔑 si la consulta de usuarios falla, el árbol se pinta igual',
-       /ct-tree-cat/.test(hf) && /2 registros/.test(hf));
+       /ct-tree-cat/.test(hf) && /2 entrenamientos/.test(hf));
     ok('3h · el que traía su categoría en el documento se clasifica igual',
        /Alev[íi]n<\/span>[\s\S]{0,200}?ct-tree-count[^>]*>1</.test(hf));
     ok('3i · y el que dependía del respaldo va a "Sin clasificar", no se pierde',
@@ -301,7 +301,7 @@ console.log('\n── PARTE 4 · Convocatorias también en árbol ──');
     ok('4e · el título "vs rival" escapado', h.includes('vs ' + escHtml('CD Rival')));
     ok('4f · las dos tarjetas siguen ahí', cuenta(h, /class="sd-card"/g) === 2);
     ok('4g · la cabecera de recuento se conserva',
-       /2 registros/.test(h) && /máx\. 40/.test(h));
+       /2 (convocatorias|entrenamientos)/.test(h) && /máx\. 50 por subcategor/.test(h));
     ok('4h · cada una en su rama',
        /Alev[íi]n<\/span>[\s\S]{0,200}?ct-tree-count[^>]*>1</.test(h) &&
        /Cadete<\/span>[\s\S]{0,200}?ct-tree-count[^>]*>1</.test(h));
@@ -341,7 +341,13 @@ console.log('\n── PARTE 5 · respaldo si el módulo no cargó ──');
     // rompe, aquel guard entero se cae con él.
     ok('5a · 🔑 sin el módulo NO revienta y pinta la lista plana',
        cuenta(h, /class="sd-card"/g) === 2 && !/ct-tree-cat/.test(h), h.slice(0, 160));
-    ok('5b · con la cabecera de recuento intacta', /2 registros/.test(h) && /máx\. 40/.test(h));
+    // ⚠️ v586 · SIN el módulo no hay clasificación, así que NO se anuncia un
+    //    tope por subcategoría que no se está aplicando: la cabecera dice la
+    //    verdad —cuántos hay y que no se elimina nada—. Prometer un tope que
+    //    no se aplica sería peor que no decir nada.
+    ok('5b · con la cabecera de recuento intacta y HONESTA',
+       /2 entrenamientos/.test(h) && /no se elimina nada/.test(h) &&
+       !/máx\. 50 por subcategor/.test(h), h.slice(0, 220));
     ok('5c · y los handlers asignados igual',
        typeof t.g.window.sdViewEventDetail === 'function' &&
        typeof t.g.window.sdDeleteNotif === 'function');
@@ -352,13 +358,15 @@ console.log('\n── PARTE 5 · respaldo si el módulo no cargó ──');
     })());
 }
 
-// ═══════ PARTE 6 · el autoborrado destructivo no cambia ═══════
-console.log('\n── PARTE 6 · el autoborrado sigue igual (con árbol) ──');
+// ═══════ PARTE 6 · el autoborrado, AHORA POR SUBCATEGORÍA (v586) ═══════
+console.log('\n── PARTE 6 · el tope es de cada subcategoría, no del club ──');
 {
-    // ⚠️ Esta pestaña BORRA de Firestore los avisos por encima de 40. Meter el
-    // árbol NO puede alterar ni el umbral ni cuáles se borran.
+    // ⚠️ Esta pestaña BORRA de Firestore, y el borrado es irreversible.
+    //    Con el tope GLOBAL de 40, un equipo activo se comía el cupo y
+    //    arrastraba los registros de los demás: eso es lo que reportó el autor
+    //    (capturas 9283/9284). El cupo pasa a ser de 50 POR SUBCATEGORÍA.
     const notifs = {};
-    for (let i = 0; i < 45; i++) {
+    for (let i = 0; i < 55; i++) {
         notifs['n' + String(i).padStart(2, '0')] = TR({
             category: 'alevin', subcategory: 'A', createdAt: iso(i),
         });
@@ -366,15 +374,46 @@ console.log('\n── PARTE 6 · el autoborrado sigue igual (con árbol) ──'
     const t = buildSandbox({ users: USERS, notifs });
     await t.g._sdLoadEvents('planificacion_semanal');
 
-    ok('6a · 🔑 con 45 borra exactamente 5', t.deleted.length === 5, t.deleted);
-    ok('6b · 🔑 y borra los 5 MÁS ANTIGUOS',
+    ok('6a · 🔑 con 55 en UNA subcategoría borra exactamente 5', t.deleted.length === 5, t.deleted);
+    ok('6b · 🔑 y borra los 5 MÁS ANTIGUOS de esa subcategoría',
        ['n00', 'n01', 'n02', 'n03', 'n04'].every(id =>
            t.deleted.includes('cronos_notifications/' + id)), t.deleted);
-    ok('6c · pinta los 40 que quedan en el árbol',
-       /40 registros/.test(t.container.innerHTML) &&
+    ok('6c · pinta los 50 que quedan en el árbol',
+       /50 entrenamientos/.test(t.container.innerHTML) &&
        /ct-tree-cat/.test(t.container.innerHTML));
     ok('6d · el más antiguo ya no se muestra',
        !/sdViewEventDetail\('n00'\)/.test(t.container.innerHTML));
+    ok('6e · 🔑 y la cabecera avisa de que esa subcategoría está en el tope',
+       /Cerca del tope/.test(t.container.innerHTML), t.container.innerHTML.slice(0, 260));
+}
+{
+    // 🔑🔑🔑 EL DEFECTO QUE ESTO CIERRA: dos equipos, uno muy activo. Con el
+    //    tope global de 40, el Alevín A se llevaba por delante al Cadete C.
+    //    Con el tope por subcategoría, ninguno toca al otro.
+    const notifs = {};
+    for (let i = 0; i < 45; i++) {
+        notifs['a' + String(i).padStart(2, '0')] = TR({
+            category: 'alevin', subcategory: 'A', createdAt: iso(100 + i),
+        });
+    }
+    for (let i = 0; i < 8; i++) {
+        notifs['c' + String(i).padStart(2, '0')] = TR({
+            category: 'cadete', subcategory: 'C', createdAt: iso(i),
+        });
+    }
+    const t = buildSandbox({ users: USERS, notifs });
+    await t.g._sdLoadEvents('planificacion_semanal');
+
+    ok('6f · 🔑🔑🔑 53 registros en total y NO se borra ni uno (ninguna subcategoría pasa de 50)',
+       t.deleted.length === 0, t.deleted);
+    ok('6g · 🔑🔑🔑 el equipo que apenas publica conserva TODOS los suyos',
+       [0,1,2,3,4,5,6,7].every(i =>
+           new RegExp("sdViewEventDetail\\('c0" + i + "'\\)").test(t.container.innerHTML)),
+       'faltan registros del Cadete C');
+    ok('6h · y el activo también conserva los 45 suyos',
+       /53 entrenamientos/.test(t.container.innerHTML), t.container.innerHTML.slice(0, 200));
+    ok('6i · la cabecera dice en cuántas subcategorías están repartidos',
+       /en 2 subcategor/.test(t.container.innerHTML), t.container.innerHTML.slice(0, 200));
 }
 
 // ═══════ PARTE 7 · censos de fuente ═══════

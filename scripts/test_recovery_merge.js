@@ -212,10 +212,19 @@ console.log('\n── PARTE 5 · el panel usa la fusión ──');
     // descarte de ranuras imposibles (incoherentes Y sin un segundo jugado, ver
     // test_recuperar_sin_ranuras_fantasma.js). La intención de la aserción no
     // cambia: el panel se pinta desde la FUSIÓN, no desde una fuente suelta.
-    ok('5a · 🔑 el panel pinta a partir de las entradas fusionadas',
+    // v589 · El panel ya no vuelca `entradas` de golpe: las separa en FIABLES
+    // y DUDOSAS y sólo enseña las primeras (las otras van plegadas). Lo que
+    // sigue fijando esta aserción es lo que importa: que lo que se pinta sale
+    // de la fusión y del descarte, no de una fuente suelta.
+    ok('5a · 🔑 el panel pinta a partir de las entradas fusionadas y filtradas',
        /_fusionaCandidatosRecuperacion\(localMatches, docsNube\)/.test(SMC) &&
        /const entradas = _cronosDescartaRanurasImposibles\(/.test(SMC) &&
-       /list\.innerHTML = entradas\.map\(/.test(SMC));
+       /_recuperacionSeparaDudosas\(entradas\)/.test(SMC) &&
+       /list\.innerHTML = _grupos\.fiables\.map\(_pintaEntrada\)/.test(SMC));
+    ok('5a3 · 🔑 v589 · y las dudosas NO se pierden: quedan plegadas y accesibles',
+       /_grupos\.dudosas\.map\(_pintaEntrada\)/.test(SMC) &&
+       /<details/.test(SMC),
+       'ocultarlas del todo cambiaría una confusión por una pérdida');
     ok('5a2 · v465 · y los candidatos locales salen de TODAS las ranuras',
        /_cronosMatchSlots\.listar\(\)/.test(SMC) && /const localMatches = \[\]/.test(SMC),
        'con una sola ranura, el segundo partido del entrenador no aparecia');

@@ -195,13 +195,88 @@ function updateMasterUI() {
     if (cancelSubBtn) actionsEl.appendChild(cancelSubBtn);
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴🔴 v587 · CAMBIAR LA DURACIÓN EN CALIENTE DESINCRONIZABA EL VISOR
+//
+//  Reporte del autor (partido real de Regional FEM A, v586): arrancó con
+//  45 minutos por parte y a mitad de la 1ª los cambió a 5. En ese instante
+//  **el visor en vivo se desvinculó**: su reloj se congeló mientras el panel
+//  del entrenador seguía sumando los 42-43 minutos reales.
+//
+//  🔑🔑🔑 ESTA FUNCIÓN CAMBIABA UNA VARIABLE LOCAL Y REPINTABA. Nada más.
+//  Ni guardaba el estado, ni empujaba un snapshot. Así que:
+//    · el visor seguía con la duración VIEJA hasta que otra cosa cualquiera
+//      provocara un envío (de ahí que al pulsar "Reiniciar" apareciera "de
+//      golpe"), y
+//    · al llegarle por fin la duración nueva, `live.html` topa el reloj en
+//      `maxTime + añadido`; con 42 minutos jugados y un tope nuevo de 5, ese
+//      `Math.min` congela el número en seco.
+//  El panel no se desincronizaba "por su cuenta": es que nadie le había
+//  contado al visor que la duración había cambiado.
+//
+//  🔑 LO QUE NO SE PUEDE ARREGLAR CON CÓDIGO, y por eso ahora se PREGUNTA:
+//  si ya se han jugado 42 minutos y la parte pasa a durar 5, esa parte está
+//  terminada — el tiempo transcurrido es un hecho, no un ajuste. Hay dos
+//  respuestas razonables y sólo el entrenador sabe cuál quiere:
+//    · dar la parte por acabada (conserva lo jugado), o
+//    · volver a contar desde cero con la duración nueva.
+//  Antes no se preguntaba y no pasaba ninguna de las dos: se quedaba a medias.
+//
+//  ⚠️ Reiniciar el contador re-ancla el visor solo: `phaseStartedAt`
+//  (sync.js) se DERIVA de masterTimeH1/H2, así que ponerlo a cero mueve el
+//  ancla absoluta del espectador sin tocar nada más.
+// ════════════════════════════════════════════════════════════════════
 function editTimer(half) {
+    const enCurso = (half === 1 && matchPhase === '1st_half') ||
+                    (half === 2 && matchPhase === '2nd_half');
     const currentMin = Math.floor((half === 1 ? half1MaxTime : half2MaxTime) / 60);
     const newMin = prompt(`Minutos para la ${half}ª parte:`, currentMin);
-    if (newMin !== null && !isNaN(newMin) && newMin > 0) {
-        if (half === 1) half1MaxTime = parseInt(newMin) * 60;
-        else half2MaxTime = parseInt(newMin) * 60;
-        updateMasterUI();
+    if (newMin === null) return;                       // canceló: no se toca nada
+    const min = parseInt(newMin, 10);
+    if (isNaN(min) || min <= 0) {
+        if (typeof showToast === 'function') showToast('⚠️ Duración no válida. No se ha cambiado nada.', 3500);
+        return;
+    }
+    const nuevoMax     = min * 60;
+    const transcurrido = ((half === 1 ? masterTimeH1 : masterTimeH2) || 0);
+
+    // ¿La parte EN CURSO ya lleva jugado más de lo que va a durar?
+    let reiniciar = false;
+    if (enCurso && transcurrido >= nuevoMax) {
+        const mm = String(Math.floor(transcurrido / 60));
+        const ss = String(transcurrido % 60).padStart(2, '0');
+        reiniciar = confirm(
+            '⏱️ Esta parte ya lleva ' + mm + ':' + ss + ' jugados, más de los ' +
+            min + ' minutos que le acabas de poner.\n\n' +
+            'ACEPTAR → el cronómetro vuelve a CERO y cuenta los ' + min + ' minutos nuevos.\n' +
+            'CANCELAR → se conserva lo jugado y la parte se dará por terminada.\n\n' +
+            'En los dos casos el visor en vivo se sincroniza al instante.'
+        );
+    }
+
+    if (half === 1) half1MaxTime = nuevoMax; else half2MaxTime = nuevoMax;
+    if (reiniciar) {
+        if (half === 1) masterTimeH1 = 0; else masterTimeH2 = 0;
+        // El ancla del visor se deriva de masterTime + lo que el tick no pudo
+        // procesar: se pone a cero también, o el espectador vería el desfase.
+        if (typeof lastTickTime !== 'undefined') lastTickTime = Date.now();
+    }
+    updateMasterUI();
+
+    // ── Y AHORA SÍ: SE GUARDA Y SE CUENTA. Esto era lo que faltaba. ──
+    // Mismo par que usan endFirstHalf/startSecondHalf y todos los puntos que
+    // tocan el reloj (event-listeners.js): persistir y empujar snapshot.
+    if (typeof window !== 'undefined' && typeof window._saveMatchStateToStorage === 'function') {
+        try { window._saveMatchStateToStorage(); } catch (_) {}
+    }
+    if (typeof liveIsActive !== 'undefined' && liveIsActive &&
+        typeof pushLiveSnapshot === 'function') {
+        pushLiveSnapshot('active').catch(() => {});
+    }
+    if (typeof showToast === 'function') {
+        showToast('⏱️ ' + half + 'ª parte: ' + min + ' min' +
+                  (reiniciar ? ' · cronómetro reiniciado' : '') +
+                  '. Visor en vivo sincronizado.', 3500);
     }
 }
 

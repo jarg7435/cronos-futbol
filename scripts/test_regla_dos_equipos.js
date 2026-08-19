@@ -130,13 +130,44 @@ console.log('\n── PARTE 2b · FUTureFEM: F11 en TODOS los clasificadores ─
        /includes\('regional'\) \|\| rcat\.includes\('futurefem'\)\) hasF11/.test(SM) &&
        !/includes\('alevin'\) \|\| rcat\.includes\('futurefem'\)\) hasF7/.test(SM),
        'el modo del partido seguiría saliendo F7');
-    // ⚠️ El GRUPO DEL SEMÁFORO se queda en 'f7' a propósito: depende de la
-    // DURACIÓN (2T x 35' = 70'), no del número de jugadores. Moverlo cambiaría
-    // los umbrales de partidos ya jugados. Se fija para que el día que se toque
-    // sea una decisión, no un descuido.
-    ok('2b5 · ⚠️ el grupo del SEMÁFORO sigue siendo f7 (depende de la duración, no de la modalidad)',
-       /querubin\|futurefem\)\/\.test\(normCat\)\) \{/.test(UT),
-       'si esto cambia, revisar umbrales y la config guardada del Director');
+    // ══════════════════════════════════════════════════════════════════
+    //  🔄 v586 · FUTureFEM ESTRENA GRUPO DE SEMÁFORO — Y FUE UNA DECISIÓN
+    //
+    //  Este guard exigía que el grupo siguiera siendo 'f7'. Su razón era
+    //  buena: los umbrales dependen de la DURACIÓN (2T x 35' = 70', como
+    //  Benjamín y Alevín), no del número de jugadores, y moverlo cambiaría los
+    //  umbrales de partidos ya jugados y dejaría huérfana la configuración
+    //  guardada del Director. Y avisaba: *"si esto cambia, revisar umbrales y
+    //  la config guardada"*.
+    //
+    //  El autor pidió expresamente (2026-08-19) que FUTureFEM tenga su propio
+    //  bloque de configuración. Así que cambia — pero la preocupación que este
+    //  guard protegía NO se abandona, se traslada: mientras el bloque nuevo no
+    //  se guarde, el grupo HEREDA de 'f7' (`cronosCfgGrupo`). Los umbrales de
+    //  hoy siguen siendo exactamente los de hoy, y la configuración guardada
+    //  del Director se sigue aplicando. Por eso ahora se fijan LAS DOS COSAS.
+    // ══════════════════════════════════════════════════════════════════
+    ok('2b5 · 🔄 FUTureFEM tiene grupo de semáforo PROPIO (decisión del autor, v586)',
+       /normCat\.includes\('futurefem'\)[\s\S]{0,160}return 'futurefem';/.test(UT),
+       'el bloque de configuración de FUTureFEM no tendría a qué clave escribir');
+    ok('2b6 · ⚠️ pero HEREDA de f7 mientras no se configure: los umbrales de 70\' no cambian',
+       /CRONOS_GRUPO_HEREDA_DE\s*=\s*\{\s*futurefem:\s*'f7'/.test(UT),
+       'sin la herencia, un club con F7 personalizado perdería esos umbrales en FUTureFEM');
+    // ⚠️ ACOTADO A `getCategoryGroupKey`: `return 'f7';` aparece en varias
+    //    funciones de utils.js (`_cronosMatchModality` entre ellas), así que
+    //    comparar índices sobre el fichero entero no mide nada.
+    const _gck = (function () {
+        const i = UT.indexOf('window.getCategoryGroupKey = function');
+        return i < 0 ? '' : UT.slice(i, UT.indexOf('\n}', i));
+    })();
+    ok('2b7 · 🔑 y la comprobación de FUTureFEM va ANTES que la de F7 (si no, no se alcanza)',
+       _gck.indexOf("return 'futurefem';") >= 0 &&
+       _gck.indexOf("return 'futurefem';") < _gck.indexOf("return 'f7';"),
+       'la rama de F7 la capturaría primero');
+    ok('2b8 · 🔑 y Regional FEM va antes que Regional, que lo contiene',
+       _gck.indexOf("return 'regional_fem';") >= 0 &&
+       _gck.indexOf("return 'regional_fem';") < _gck.indexOf("return 'regional';"),
+       "'regional_fem'.includes('regional') es TRUE: el orden es la regla");
 }
 
 // ───────────────────────────────────────────────────────────────────────────

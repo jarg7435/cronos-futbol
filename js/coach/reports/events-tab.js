@@ -30,12 +30,19 @@
 //     sdDeleteNotif. Todo en tiempo de llamada: el orden de <script> es
 //     indiferente.
 //
-//  ⚠️ AUTO-PURGADO DESTRUCTIVO — LEER ANTES DE TOCAR: con más de MAX_ITEMS
-//  (40) avisos, esta pestaña BORRA de Firestore con deleteDoc los más
-//  antiguos, para TODOS los roles, de forma irreversible, fire-and-forget y
-//  con el error silenciado (.catch(()=>{})). Ocurre en cada apertura de la
-//  pestaña. La parte 3 del test fija el umbral, el orden previo por createdAt
-//  descendente y que se borre el excedente y SÓLO el excedente.
+//  ⚠️ AUTO-PURGADO DESTRUCTIVO — LEER ANTES DE TOCAR: por encima de
+//  MAX_POR_SUBCAT (50) avisos **en una misma subcategoría**, esta pestaña
+//  BORRA de Firestore con deleteDoc los más antiguos DE ESA subcategoría, para
+//  TODOS los roles, de forma irreversible, fire-and-forget y con el error
+//  silenciado (.catch(()=>{})). Ocurre en cada apertura de la pestaña.
+//
+//  🔴 v586 · EL TOPE ERA GLOBAL (40 para todo el club) y el autor lo reportó:
+//  con hasta 27 equipos compartiendo esos 40 huecos, uno activo borraba las
+//  convocatorias de los demás. Ahora cada subcategoría tiene su cupo.
+//
+//  ⚠️⚠️ Y SI NO SE PUEDE CLASIFICAR, NO SE BORRA NADA. Sin saber de qué equipo
+//  es cada registro, "borrar los más antiguos" se lleva por delante al equipo
+//  que menos publica. Ante la duda se acumula, que se puede deshacer.
 //  Por contraste, sdDeleteNotif NO borra: marca dismissedBy con
 //  arrayUnion(me.uid) — descarte personal que no afecta a los demás roles, el
 //  borrado lógico que pedía el hallazgo #6 de la auditoría. La aserción 6c
@@ -56,7 +63,21 @@
 async function _sdLoadEvents(type) {
     const me        = window._cronosCurrentUser;
     const container = document.getElementById('staff-dashboard-content');
-    const MAX_ITEMS = 40;
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v586 · EL TOPE ES DE CADA SUBCATEGORÍA, NO DEL CLUB ENTERO
+    //
+    //  Reporte del autor (capturas 9283/9284): la cabecera decía
+    //  "12 registros · máx. 40" para TODO el árbol. Con 9 categorías × 3
+    //  subcategorías eso son hasta 27 equipos compartiendo 40 huecos: un
+    //  Alevín C activo se comía el cupo y **borraba de Firestore, para
+    //  siempre, las convocatorias de los demás equipos**. Y el borrado es
+    //  irreversible y silencioso (`deleteDoc` con el error tragado).
+    //
+    //  🔑 El cupo pasa a ser POR SUBCATEGORÍA y sube a 50, que es lo que él
+    //  pidió: cubre de sobra las 30-35 jornadas de liga de un equipo y sus
+    //  semanas de entrenamientos, con margen.
+    // ══════════════════════════════════════════════════════════════════
+    const MAX_POR_SUBCAT = 50;
     try {
         const { db, collection, getDocs, query, where, orderBy, deleteDoc, doc: firestoreDoc, limit } = await _sdFS();
         const clubId = me.clubId || '';
@@ -84,12 +105,64 @@ async function _sdLoadEvents(type) {
 
         items.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 
-        // Auto-borrar exceso (> MAX_ITEMS)
-        if (items.length > MAX_ITEMS) {
-            const toDelete = items.splice(MAX_ITEMS);
-            toDelete.forEach(it => {
-                if (it._id) deleteDoc(firestoreDoc(db,'cronos_notifications',it._id)).catch(()=>{});
+        // ══════════════════════════════════════════════════════════════
+        //  CLASIFICAR ANTES DE PURGAR (v586)
+        //
+        //  El índice de entrenadores y la resolución de categoría vivían más
+        //  abajo, DENTRO del bloque que pinta el árbol. Pero para saber qué
+        //  sobra hay que saber primero de quién es cada registro, así que
+        //  suben aquí. El árbol reutiliza esta misma resolución: se calcula
+        //  una vez, no dos.
+        //
+        //  ⚠️ Es SÓLO el respaldo para el histórico: los avisos nuevos ya
+        //  traen category/subcategory en el documento.
+        // ══════════════════════════════════════════════════════════════
+        const _sdUsaArbol = typeof window.ctRenderTree === 'function' &&
+                            typeof window.ctResolveCatSub === 'function';
+        let _sdResueltos = null;
+        if (_sdUsaArbol) {
+            let _sdCoachIndex = new Map();
+            try {
+                const uSnap = await getDocs(query(collection(db, 'users'),
+                    where('clubId', '==', clubId), limit(200)));
+                const uDocs = [];
+                uSnap.forEach(ud => uDocs.push({ id: ud.id, ...ud.data() }));
+                _sdCoachIndex = window.ctBuildCoachIndex(uDocs);
+            } catch (_) { /* respaldo ausente: se resuelve con lo que traiga el doc */ }
+            _sdResueltos = items.map(it => ({ it: it, r: window.ctResolveCatSub(it, _sdCoachIndex) }));
+        }
+
+        // ── Auto-borrar el exceso DE CADA SUBCATEGORÍA (v586) ──────────
+        //
+        //  ⚠️⚠️ SIN CLASIFICACIÓN NO SE BORRA NADA, Y ES DELIBERADO. Antes,
+        //  si el módulo del árbol no estaba cargado, se purgaba igualmente
+        //  por un tope global. Eso es exactamente lo peligroso: sin saber de
+        //  qué equipo es cada registro, "borrar los más antiguos" se lleva por
+        //  delante al equipo que menos publica. Este borrado es irreversible;
+        //  ante la duda, se acumula —que se puede deshacer— en vez de
+        //  destruir —que no—.
+        const _purgados = { total: 0, porGrupo: new Map() };
+        if (_sdResueltos) {
+            const grupos = new Map();   // 'cat|sub' -> [entradas, ya en orden desc]
+            _sdResueltos.forEach(x => {
+                const k = String(x.r.cat || '?') + '|' + String(x.r.sub || '?');
+                if (!grupos.has(k)) grupos.set(k, []);
+                grupos.get(k).push(x);
             });
+            const _sobran = new Set();
+            grupos.forEach((lista, k) => {
+                if (lista.length <= MAX_POR_SUBCAT) return;
+                lista.slice(MAX_POR_SUBCAT).forEach(x => {
+                    _sobran.add(x.it);
+                    if (x.it._id) deleteDoc(firestoreDoc(db,'cronos_notifications',x.it._id)).catch(()=>{});
+                });
+                _purgados.total += lista.length - MAX_POR_SUBCAT;
+                _purgados.porGrupo.set(k, lista.length - MAX_POR_SUBCAT);
+            });
+            if (_sobran.size) {
+                items = items.filter(it => !_sobran.has(it));
+                _sdResueltos = _sdResueltos.filter(x => !_sobran.has(x.it));
+            }
         }
 
         if (!items.length) {
@@ -106,8 +179,49 @@ async function _sdLoadEvents(type) {
         const accent = isConv ? 'var(--primary)' : '#f0883e';
         const icon   = isConv ? '📋' : '📅';
 
-        let html = `<div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.8rem;text-align:right;">
-            ${items.length} registros · máx. ${MAX_ITEMS} (los más antiguos se eliminan automáticamente)
+        // ══════════════════════════════════════════════════════════════
+        //  LA CABECERA DICE QUÉ HAY Y DÓNDE APRIETA (v586)
+        //
+        //  El autor pidió mantener el recuento y mejorarlo. Antes decía
+        //  "12 registros · máx. 40" — un número global comparado con un tope
+        //  global, que era justo lo incorrecto. Ahora dice:
+        //    · CUÁNTAS convocatorias (o entrenamientos) hay en el árbol,
+        //      nombrando el tipo en vez de "registros" a secas;
+        //    · en cuántas subcategorías están repartidas;
+        //    · que el tope es POR subcategoría;
+        //    · y, si alguna se acerca al tope, CUÁL — que es la única
+        //      información accionable: dice qué equipo va a empezar a perder
+        //      los registros más antiguos.
+        // ══════════════════════════════════════════════════════════════
+        const _sdEtiquetaTipo = isConv ? 'convocatorias' : 'entrenamientos';
+        let _sdCabecera = `${items.length} ${_sdEtiquetaTipo}`;
+        if (_sdResueltos) {
+            const _porGrupo = new Map();
+            _sdResueltos.forEach(x => {
+                const k = String(x.r.cat || '?') + '|' + String(x.r.sub || '?');
+                _porGrupo.set(k, (_porGrupo.get(k) || 0) + 1);
+            });
+            _sdCabecera += ` en ${_porGrupo.size} subcategoría${_porGrupo.size === 1 ? '' : 's'}` +
+                           ` · máx. ${MAX_POR_SUBCAT} por subcategoría`;
+            // Al 80% del tope ya conviene avisar: quedan 10 de margen.
+            const _alLimite = [];
+            _porGrupo.forEach((n, k) => {
+                if (n >= Math.floor(MAX_POR_SUBCAT * 0.8)) {
+                    const [c, s] = k.split('|');
+                    _alLimite.push(`${c} ${s} (${n}/${MAX_POR_SUBCAT})`);
+                }
+            });
+            if (_alLimite.length) {
+                _sdCabecera += `<br><span style="color:#f0883e;">⚠️ Cerca del tope: ` +
+                               escapeHtml(_alLimite.join(' · ')) +
+                               ` — al pasar de ${MAX_POR_SUBCAT} se eliminan los más antiguos de ESA subcategoría.</span>`;
+            }
+        } else {
+            // Sin el módulo del árbol no se clasifica y, por tanto, no se purga.
+            _sdCabecera += ' · sin clasificar por subcategoría (no se elimina nada)';
+        }
+        let html = `<div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.8rem;text-align:right;line-height:1.5;">
+            ${_sdCabecera}
         </div>`;
 
         // ⚠️ LA TARJETA DE UN AVISO, EN UN SOLO SITIO (fase 3 del árbol del panel
@@ -177,25 +291,13 @@ async function _sdLoadEvents(type) {
         // ⚠️ NO añadir aquí un filtro por `type`. Las dos pestañas usan el
         // árbol; un filtro dejaría una plana sin que nadie se enterase, y eso
         // es justo lo que fija la aserción 7b del guard.
-        const _sdUsaArbol = typeof window.ctRenderTree === 'function' &&
-                            typeof window.ctResolveCatSub === 'function';
-
-        if (_sdUsaArbol) {
-            // Índice de entrenadores del club: es SÓLO el respaldo para el
-            // histórico. Los avisos nuevos ya traen category/subcategory en el
-            // documento (fase 2), así que si esta consulta falla —permisos, o un
-            // club con más usuarios que el limit— el árbol se pinta igual y lo
-            // que no se pueda clasificar cae en "Sin clasificar".
-            let _sdCoachIndex = new Map();
-            try {
-                const uSnap = await getDocs(query(collection(db, 'users'),
-                    where('clubId', '==', clubId), limit(200)));
-                const uDocs = [];
-                uSnap.forEach(ud => uDocs.push({ id: ud.id, ...ud.data() }));
-                _sdCoachIndex = window.ctBuildCoachIndex(uDocs);
-            } catch (_) { /* respaldo ausente: se resuelve con lo que traiga el doc */ }
-
-            const _sdResueltos = items.map(it => ({ it: it, r: window.ctResolveCatSub(it, _sdCoachIndex) }));
+        //
+        // 🔑 v586 · `_sdUsaArbol`, el índice de entrenadores y la resolución de
+        // categoría YA SE HAN CALCULADO ARRIBA — hacían falta antes, para poder
+        // purgar por subcategoría. Aquí sólo se pinta con lo ya resuelto: si se
+        // recalculara, serían dos consultas de usuarios por cada apertura de la
+        // pestaña, y las lecturas son lo único que se factura.
+        if (_sdUsaArbol && _sdResueltos) {
             html += window.ctRenderTree({
                 items:      _sdResueltos,
                 getCat:     (x) => x.r.cat,

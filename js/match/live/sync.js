@@ -808,11 +808,13 @@ async function pushLiveSnapshot(status = 'active') {
                 ? window.getCategoryGroupKey
                 : function(c, s) { return 'f7'; };
             const groupKey = getGroupFn(snapCat, snapSub);
-            if (groupKey === 'juvenil' || groupKey === 'regional') {
+            // v586 · también 'regional_fem' (grupo propio desde v586).
+            if (groupKey === 'juvenil' || groupKey === 'regional' || groupKey === 'regional_fem') {
                 _semaforoActive = false;
             } else {
                 const configs = window._clubCategoryConfigs || (_thresholds && _thresholds.categoryConfigs) || {};
-                const groupCfg = configs[groupKey];
+                // v586 · con herencia (ver cronosCfgGrupo en utils.js).
+                const groupCfg = (typeof window.cronosCfgGrupo === 'function' ? window.cronosCfgGrupo(configs, groupKey) : configs[groupKey]);
                 if (groupCfg && groupCfg.semaforoActive === false) {
                     _semaforoActive = false;
                 }

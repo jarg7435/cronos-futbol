@@ -29,12 +29,15 @@
 // explícitamente para que nadie las pierda en un futuro "cleanup".
 //
 // ── RAREZAS PREEXISTENTES FIJADAS, NO CORREGIDAS ──
-//  · GROUPS está DUPLICADO: 9 objetos en _renderDirectorConfig y las mismas 9
-//    claves como array de strings en _dirSaveCategoryConfigs. Bug latente
-//    real (añadir una categoría a una lista y no a la otra = guardado
-//    silenciosamente incompleto). Unificarlo roza el cambio de comportamiento,
-//    así que queda fuera del refactor; la parte 2c compara ambas listas para
-//    que una desincronización futura salte aquí.
+//  · ✅ RESUELTO EN v586 · GROUPS ESTABA DUPLICADO: 9 objetos en
+//    _renderDirectorConfig y las mismas 9 claves como array de strings en
+//    _dirSaveCategoryConfigs. Este guard lo describía como "bug latente real"
+//    y dejaba la parte 2c vigilándolo. **El bug latente se materializó**: al
+//    añadir FUTureFEM y Regional FEM (petición del autor, 2026-08-19) los dos
+//    bloques nuevos se pintaban y NO se guardaban, en silencio. Ya no se
+//    vigila la duplicación: se ha eliminado. El render publica
+//    `window.CRONOS_GRUPOS_CONFIG` y el guardado la consume; la parte 2b fija
+//    que no vuelva a declarar la suya.
 //  · showToast se invoca SIN guarda mientras showSpinner/hideSpinner sí la
 //    llevan (parte 5b). Inofensivo hoy: timer/core.js carga en 1310, mucho
 //    antes de cualquier click.
@@ -66,8 +69,12 @@ function readBlock() {
 }
 const BLOCK = readBlock();
 
-const CATS = ['f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c', 'juvenil', 'regional'];
-const NO_SEMAFORO = ['juvenil', 'regional'];
+// v586 · ONCE grupos: el autor pidió (2026-08-19) que FUTureFEM y Regional
+// FEM dejen de ir escondidas dentro de 'f7' y 'regional' y tengan su propio
+// bloque de configuración. El ORDEN es el del panel.
+const CATS = ['f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c', 'futurefem', 'juvenil', 'regional', 'regional_fem'];
+// v586 · Regional FEM estrena bloque pero NO semáforo (regla de v559).
+const NO_SEMAFORO = ['juvenil', 'regional', 'regional_fem'];
 
 function buildSandbox({
     clubDoc = undefined,              // undefined => el doc no existe
@@ -202,19 +209,40 @@ function walk(dir, out) {
         const renderPart = BLOCK.slice(idxOf(BLOCK, 'const GROUPS = ['), idxOf(BLOCK, 'let html'));
         const savePart = BLOCK.slice(idxOf(BLOCK, 'window._dirSaveCategoryConfigs'));
         const renderKeys = (renderPart.match(/key:\s*'([a-z0-9_]+)'/g) || []).map(m => m.match(/'([a-z0-9_]+)'/)[1]);
-        const saveLine = savePart.slice(idxOf(savePart, 'const GROUPS = ['), idxOf(savePart, '];') + 2);
-        const saveKeys = (saveLine.match(/'([a-z0-9_]+)'/g) || []).map(m => m.replace(/'/g, ''));
-        ok('2a · el render declara las 9 categorías esperadas',
+        ok('2a · el render declara las ONCE categorías esperadas',
             JSON.stringify(renderKeys) === JSON.stringify(CATS), renderKeys);
-        ok('2b · el guardado declara las 9 categorías esperadas',
-            JSON.stringify(saveKeys) === JSON.stringify(CATS), saveKeys);
-        // Fija el olor a DRY: si alguien añade una categoría a una lista y no
-        // a la otra, el guardado la ignora en silencio. Este assert lo caza.
-        ok('2c · ⚠️ las DOS listas duplicadas de GROUPS siguen coincidiendo exactamente',
-            JSON.stringify(renderKeys) === JSON.stringify(saveKeys),
-            { renderKeys, saveKeys });
+
+        // ══════════════════════════════════════════════════════════════
+        //  🔑 v586 · YA NO HAY DOS LISTAS QUE PUEDAN DESCUADRARSE
+        //
+        //  Antes, el render y el guardado declaraban CADA UNO su lista de
+        //  claves a mano, y este guard vigilaba que coincidieran. Al añadir
+        //  FUTureFEM y Regional FEM eso falló exactamente como estaba previsto:
+        //  los bloques nuevos se pintaban y NO se guardaban, sin un solo error
+        //  — el Director tocando interruptores que no hacen nada.
+        //
+        //  La duplicación se ha eliminado en vez de vigilarla: el render
+        //  publica `window.CRONOS_GRUPOS_CONFIG` y el guardado la consume. Lo
+        //  que ahora hay que fijar es eso, más que el literal quede completo
+        //  como red de seguridad por si alguien llama al guardado sin haber
+        //  pintado antes.
+        // ══════════════════════════════════════════════════════════════
+        ok('2b · 🔑 el guardado NO mantiene su propia lista: consume la del render',
+            /window\.CRONOS_GRUPOS_CONFIG/.test(savePart) &&
+            /window\.CRONOS_GRUPOS_CONFIG\s*=\s*GROUPS\.map/.test(BLOCK),
+            'si vuelve a declarar la suya, los grupos nuevos se guardarán a medias');
+        const fallbackLine = savePart.slice(idxOf(savePart, ': [\'f7\''), idxOf(savePart, '];') + 2);
+        const fallbackKeys = (fallbackLine.match(/'([a-z0-9_]+)'/g) || []).map(m => m.replace(/'/g, ''));
+        ok('2c · ⚠️ y su respaldo literal lleva las ONCE, en el mismo orden',
+            JSON.stringify(fallbackKeys) === JSON.stringify(CATS), fallbackKeys);
         const noSem = (renderPart.match(/hasSemaforo:\s*false/g) || []).length;
-        ok('2d · sólo Juvenil y Regional van sin semáforo', noSem === 2, noSem);
+        // ⚠️ TRES sin semáforo: Juvenil, Regional y Regional FEM. Es la regla de
+        //    v559, confirmada por el autor: esas tres son celeste. Regional FEM
+        //    estrena bloque propio pero NO estrena semáforo.
+        ok('2d · sin semáforo van Juvenil, Regional y Regional FEM (v559)', noSem === 3, noSem);
+        ok('2d2 · 🔑 y Regional FEM es una de ellas, no una cuarta con semáforo',
+            /key: 'regional_fem'[^}]*hasSemaforo: false/.test(renderPart),
+            'Regional FEM con semáforo contradiría la regla que enuncia su propio panel');
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -234,7 +262,7 @@ function walk(dir, out) {
         ok('3c · pinta una tarjeta por cada una de las 9 categorías',
             CATS.every(c => html.includes('parent-rep-' + c)),
             CATS.filter(c => !html.includes('parent-rep-' + c)));
-        ok('3d · las 7 categorías con semáforo llevan sus sliders',
+        ok('3d · las 8 categorías con semáforo llevan sus sliders',
             CATS.filter(c => !NO_SEMAFORO.includes(c)).every(c =>
                 html.includes('sem-red-' + c) && html.includes('sem-yellow-' + c) && html.includes('sem-active-' + c)));
         ok('3e · Juvenil y Regional NO llevan sliders y muestran el aviso celeste',
@@ -318,8 +346,8 @@ function walk(dir, out) {
         await w._dirSaveCategoryConfigs('clubX');
         const wr = writes[0];
         ok('4a · escribe en clubs/{clubId}', wr && wr.col === 'clubs' && wr.id === 'clubX', wr);
-        ok('4b · persiste categoryConfigs con las 9 categorías',
-            wr && Object.keys(wr.data.categoryConfigs).length === 9
+        ok('4b · persiste categoryConfigs con las ONCE categorías',
+            wr && Object.keys(wr.data.categoryConfigs).length === 11
             && CATS.every(c => wr.data.categoryConfigs[c]),
             wr && Object.keys(wr.data.categoryConfigs));
         ok('4c · cada categoría lleva los 4 campos leídos del DOM',
@@ -339,7 +367,7 @@ function walk(dir, out) {
             toasts.some(t => t.includes('guardada correctamente')), toasts);
         // ⚠️ EL ASSERT CRÍTICO: estas dos globales deciden el color del semáforo.
         ok('4h · ⚠️ publica window._clubCategoryConfigs y window._clubTimerThresholds',
-            w._clubCategoryConfigs && Object.keys(w._clubCategoryConfigs).length === 9
+            w._clubCategoryConfigs && Object.keys(w._clubCategoryConfigs).length === 11
             && w._clubTimerThresholds && w._clubTimerThresholds.red === 30
             && w._clubTimerThresholds.yellow === 60,
             { cfgs: w._clubCategoryConfigs && Object.keys(w._clubCategoryConfigs).length, th: w._clubTimerThresholds });

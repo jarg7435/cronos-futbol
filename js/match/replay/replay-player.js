@@ -382,10 +382,15 @@
             return window.getCategoryGroupKey(cat, sub);
         }
         const raw = String(cat || '').toLowerCase();
+        // v586 · FUTureFEM, delante: no contiene 'f7' y caía en el `return 'f7'`
+        // final por accidente, no por una regla.
+        if (raw.includes('futurefem') || raw.includes('futur')) return 'futurefem';
         if (raw.includes('f7') || raw.includes('prebenj') || raw.includes('benj') || raw.includes('alev')) return 'f7';
         if (raw.includes('infant')) return sub === 'B' ? 'infantil_b' : sub === 'C' ? 'infantil_c' : 'infantil_a';
         if (raw.includes('cadet'))  return sub === 'B' ? 'cadete_b'   : sub === 'C' ? 'cadete_c'   : 'cadete_a';
         if (raw.includes('juvenil')) return 'juvenil';
+        // v586 · Regional FEM va DELANTE de Regional: lo contiene.
+        if (raw.includes('regional') && raw.includes('fem')) return 'regional_fem';
         if (raw.includes('regional') || raw.includes('senior') || raw.includes('aficionad')) return 'regional';
         return 'f7';
     }
@@ -400,7 +405,8 @@
                      || (typeof window !== 'undefined' && window._clubCategoryConfigs)
                      || (typeof window !== 'undefined' && window._liveCategoryConfigs)
                      || {};
-        const groupCfg = configs[groupKey] || null;
+        // v586 · con herencia (ver cronosCfgGrupo en utils.js).
+        const groupCfg = (typeof window.cronosCfgGrupo === 'function' ? window.cronosCfgGrupo(configs, groupKey) : configs[groupKey]) || null;
 
         // ── 1. ¿Semáforo activo? ──
         // La bandera guardada CON el partido gana a cualquier otra fuente.
@@ -434,7 +440,8 @@
                         || (typeof window !== 'undefined' && window._liveClubExtras)
                         || {};
             if (extras.semaforo === false) semaforoOn = false;
-            else if (groupKey === 'juvenil' || groupKey === 'regional') semaforoOn = false;
+            // v586 · también 'regional_fem' (grupo propio desde v586).
+            else if (groupKey === 'juvenil' || groupKey === 'regional' || groupKey === 'regional_fem') semaforoOn = false;
             else if (groupCfg && groupCfg.semaforoActive === false) semaforoOn = false;
             else semaforoOn = true;
         }
