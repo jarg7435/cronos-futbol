@@ -144,7 +144,12 @@ console.log('\n=== 5. La platform_request antigua no puede reactivar una baja ==
 console.log('\n=== 6. Revocar el rol raíz desautoriza la raíz ===');
 {
     const ini = PANEL.indexOf('window.caSetUserStatus = async');
-    const cuerpo = PANEL.slice(ini, ini + 14000);
+    // ⚠️ La ventana se mide, no se adivina. Con 14000 caracteres los dos
+    //    últimos marcadores se quedaban FUERA en cuanto la función crecía
+    //    (pasó en v581 al documentar la revocación por plaza) y el guard
+    //    salía en rojo sobre código que seguía intacto: un falso positivo,
+    //    que es justo lo que un guard no puede permitirse.
+    const cuerpo = PANEL.slice(ini, ini + 26000);
     ok('se calcula si lo revocado incluye el rol de la raíz',
         /var revocaRolRaiz\s*=/.test(cuerpo));
     ok('la raíz se desautoriza también en ese caso',

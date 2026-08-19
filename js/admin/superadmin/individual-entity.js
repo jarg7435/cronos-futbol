@@ -316,10 +316,96 @@ window.saDeleteIndividualEntity = async function(entityId, entityName) {
                 upd.isIndividual = _BORRA;
             }
 
+            // ══════════════════════════════════════════════════════════════
+            //  🔴🔴🔴 v583 · 3 · EL ROL DE LA RAÍZ TAMBIÉN CUELGA DEL ENTE
+            //
+            //  Reporte del autor (captura 9269): borró el ente y quedó un
+            //  residuo imposible de quitar — "brunoromar2012@gmail.com ·
+            //  Administrador Individual · Activo · **Sin ente**" — en un bloque
+            //  cuya única acción es "Asignar a un ente"… con CERO entes.
+            //
+            //  🔑🔑🔑 v566 limpió las plazas y las REFERENCIAS de la raíz
+            //  (`individualEntityId`, `individualOwnerId`, `clubId`), pero dejó
+            //  intacto `role:'individual'`. Ese campo es el que pinta el
+            //  fantasma: describe una pertenencia a un ente que ya no existe.
+            //
+            //  🚨 Y NO ERA SÓLO UN FANTASMA: `role:'individual'` en la raíz es
+            //  exactamente lo que hacía desaparecer su Benjamín C del panel del
+            //  SuperAdmin (v582, defecto B). El residuo de hoy ERA la causa del
+            //  fallo de ayer.
+            //
+            //  🔑 La raíz pasa a describir lo que a la persona LE QUEDA: si
+            //  conserva una plaza en un club de verdad, ese es su rol. Si no le
+            //  queda ninguna, no se inventa nada —se deja como está— y el
+            //  SuperAdmin lo resuelve desde el bloque de huérfanos, que desde
+            //  v583 sí ofrece salida.
+            //
+            //  ⚠️ Esto lo ejecuta el SuperAdmin: `role` está en la lista de
+            //  campos que las reglas PROHÍBEN al propio usuario
+            //  (firestore.rules, `allow update ... hasAny([...])`), y sólo
+            //  `isSuperAdmin()` puede escribirlo.
+            // ══════════════════════════════════════════════════════════════
+            const _ROL_INDIV_RAIZ = ROLES_INDIV.indexOf(u.role) >= 0;
+            if (_ROL_INDIV_RAIZ) {
+                const _quedan = upd.allRoles || limpios;
+                const _plazaClub = _quedan.find(r => r && r.clubId &&
+                    String(r.clubId) !== String(entityId) &&
+                    ROLES_INDIV.indexOf(r.role) < 0);
+                if (_plazaClub) {
+                    upd.role = _plazaClub.role;
+                    if (!upd.clubId) upd.clubId = _plazaClub.clubId;
+                }
+            }
+
             if (Object.keys(upd).length) ops.push(updateDoc(doc(db, 'users', d.id), upd));
         });
 
         if (ops.length) await Promise.all(ops);
+
+        // ══════════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v583 · 4 · LAS SOLICITUDES APROBADAS SOBREVIVÍAN AL ENTE
+        //
+        //  Una `platform_request` aprobada se queda en 'sa_approved' PARA
+        //  SIEMPRE: nadie la retira. Medido en la base el 2026-08-19, tras
+        //  borrar el ente seguía viva
+        //  `self_reg_..._individual` con `clubId:'individual_mszx62ex_6o3m'`,
+        //  un ente que ya no existe.
+        //
+        //  🚨 Y el arranque de sesión LAS LEE: el bloque "Auto-activar roles
+        //  aprobados por el SA" (auth.js) vuelve a añadir el rol y, peor, mueve
+        //  la RAÍZ del usuario al ente muerto — con lo que su plaza de club
+        //  desaparecería otra vez del panel. Hoy eso lo frena de milagro la
+        //  regla que prohíbe al usuario escribir su propio `clubId`, en
+        //  silencio y dentro de un `catch` vacío. No se puede dejar la
+        //  integridad de los datos colgando de que una escritura sea denegada.
+        //
+        //  🔑 La solicitud se retira AQUÍ, una sola vez y sin coste por inicio
+        //  de sesión: se marca, no se borra, para conservar el rastro de que
+        //  aquel alta existió.
+        // ══════════════════════════════════════════════════════════════════
+        try {
+            const reqsSnap = await getDocs(collection(db, 'platform_requests'));
+            const reqOps = [];
+            reqsSnap.forEach((d) => {
+                const r = d.data() || {};
+                const apunta = String(r.clubId || '') === String(entityId) ||
+                               String(r.individualOwnerId || '') === String(entityId) ||
+                               String(r.individualEntityId || '') === String(entityId);
+                if (!apunta) return;
+                if (r.status === 'entity_deleted') return;
+                reqOps.push(updateDoc(doc(db, 'platform_requests', d.id), {
+                    status: 'entity_deleted',
+                    entityDeletedAt: new Date().toISOString(),
+                    statusAnterior: r.status || null,
+                }));
+            });
+            if (reqOps.length) await Promise.all(reqOps);
+        } catch (eReq) {
+            // No se aborta el borrado por esto, pero SE DICE: una solicitud
+            // que sobreviva puede resucitar el vínculo en el próximo login.
+            console.warn('[saDeleteIndividualEntity] No se pudieron retirar las ' +
+                         'solicitudes del ente:', eReq && eReq.message);
+        }
 
         // Y AHORA sí, el ente. Si algo de arriba falló, el `catch` corta antes
         // de llegar aquí y el ente sigue existiendo: se puede reintentar.
@@ -383,7 +469,28 @@ window.saShowEntityUsers = async function(entityId) {
                             subcategory: u.subcategory,
                         }];
                     }
+                    // ══════════════════════════════════════════════════════
+                    //  🔴🔴🔴 v583 · EL ÁRBOL DEL ENTE ENSEÑABA EQUIPOS DE CLUB
+                    //
+                    //  Mismo defecto que los contadores de individuals-tab.js:
+                    //  esto pintaba TODAS las plazas autorizadas de la persona,
+                    //  sin mirar a qué club o ente pertenecían. Un entrenador
+                    //  que además tenga equipo en un club —el caso que reportó
+                    //  el autor— aparecía dentro del ente, en la categoría de
+                    //  SU CLUB. Los datos de un club y los de un ente no pueden
+                    //  cruzarse: es la norma que él ha pedido explícitamente.
+                    //
+                    //  ⚠️ Y no es sólo cosmético: este árbol lleva el botón
+                    //  🗑️ Eliminar (`conBorrado:true`). Enseñar aquí una plaza
+                    //  de club es ofrecer borrarla desde la pantalla del ente.
+                    // ══════════════════════════════════════════════════════
+                    const _delEnte = (r) => (typeof window.cronosRolDelEnte === 'function')
+                        ? window.cronosRolDelEnte(r, entityId)
+                        : !!r && (String(r.clubId||'') === String(entityId) ||
+                                  String(r.individualEntityId||'') === String(entityId) ||
+                                  String(r.individualOwnerId||'')  === String(entityId));
                     roles.forEach(r => {
+                        if (!_delEnte(r)) return;
                         const isAuth = r.isAuthorized === true || r.authorized === true;
                         if (isAuth && r.status !== 'rejected') {
                             const _roleData = (r.category == null && r.subcategory == null)

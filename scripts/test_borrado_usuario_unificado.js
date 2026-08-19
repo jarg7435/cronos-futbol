@@ -44,7 +44,13 @@ const sinCom = t => t.replace(/\/\*[\s\S]*?\*\//g, '')
                      .split(/\r?\n/).map(l => l.replace(/^\s*\/\/.*$/, '')).join('\n');
 
 // ── Sandbox que EJECUTA el flujo, con el servidor y los diálogos simulados ──
-function entorno({ tecleado = null, confirma = true } = {}) {
+// ⚠️ v581 · `revocaOK` modela lo que DEVUELVE `caSetUserStatus`. Desde v581 la
+//    revocación de una plaza puede no ocurrir (la fila no corresponde a ninguna
+//    plaza viva) y el borrado tiene que DETENERSE ahí: archivar y borrar la
+//    cuenta después de una revocación que no pasó es media operación, y era
+//    justo el daño que reportó el autor. El doble suelta `true` por defecto,
+//    que es el caso normal.
+function entorno({ tecleado = null, confirma = true, revocaOK = true } = {}) {
     const llamadas = { function: [], club: [], prompts: [], alerts: [], revocaciones: [] };
     const sb = {
         console: { log() {}, warn() {}, error() {} },
@@ -55,9 +61,10 @@ function entorno({ tecleado = null, confirma = true } = {}) {
         confirm: (txt) => { llamadas.prompts.push(txt); return confirma; },
         alert: (txt) => { llamadas.alerts.push(txt); },
         navReload: () => {},
-        caSetUserStatus: async (uid, email, estado, cid, rol, sinConfirmar) => {
-            llamadas.revocaciones.push({ uid, email, estado, cid, rol, sinConfirmar,
+        caSetUserStatus: async (uid, email, estado, cid, rol, sinConfirmar, plaza) => {
+            llamadas.revocaciones.push({ uid, email, estado, cid, rol, sinConfirmar, plaza,
                                          orden: llamadas.function.length });
+            return revocaOK;
         },
         saDeleteClubComplete: (clubId, clubName) => { llamadas.club.push({ clubId, clubName }); return true; },
         saFS: async () => ({
@@ -113,13 +120,55 @@ console.log('\n── PARTE 1 · nadie se borra sin archivar antes ──');
            !!rev && rev.sinConfirmar === true);
     }
     {
+        // ════════════════════════════════════════════════════════════════
+        //  🔑🔑🔑 v581 · SE REVOCA UNA **PLAZA**, NO UN ROL
+        //
+        //  Reporte del autor (CD Días): borrar desde una fila descolocada
+        //  del árbol del SA amenazaba el equipo que el entrenador SÍ tenía
+        //  bien asignado. La causa: `caSetUserStatus` selecciona por (club +
+        //  nombre de rol), y desde v537 un entrenador tiene DOS entradas
+        //  'user' en el mismo club (un F7 y un F11). Sin la categoría de la
+        //  fila, la puntería coge las dos.
+        // ════════════════════════════════════════════════════════════════
+        const sb = entorno({ tecleado: 'nena@club.es' });
+        await sb.window.cronosEliminarUsuarioSeguro({
+            uid: 'U1', email: 'nena@club.es', role: 'user', clubId: 'club_1',
+            category: 'Prebenjamín', subcategory: 'A',
+        });
+        const rev = sb._llamadas.revocaciones[0];
+        ok('1d6 · 🔑🔑🔑 la revocación viaja con la CATEGORÍA de la fila (la plaza, no el rol)',
+           !!rev && !!rev.plaza && rev.plaza.category === 'Prebenjamín' && rev.plaza.subcategory === 'A',
+           rev ? JSON.stringify(rev.plaza) : '(no se revocó nada)');
+        const f = sb._llamadas.function[0];
+        ok('1d7 · y la Function también la recibe, para archivar en el equipo correcto',
+           !!f && f.payload.category === 'Prebenjamín' && f.payload.subcategory === 'A',
+           f ? JSON.stringify(f.payload) : '—');
+    }
+    {
+        // ⚠️ v581 · SI LA PLAZA NO SE LIBERA, NO SE ARCHIVA NI SE BORRA.
+        //    Antes se daba la revocación por hecha pasara lo que pasara: el
+        //    aviso "la plaza NO se ha liberado" llegaba DESPUÉS de archivar y
+        //    con la cuenta ya en manos de la Function.
+        const sb = entorno({ tecleado: 'nena@club.es', revocaOK: false });
+        const r = await sb.window.cronosEliminarUsuarioSeguro({
+            uid: 'U1', email: 'nena@club.es', role: 'user', clubId: 'club_1',
+            category: 'Prebenjamín', subcategory: 'A',
+        });
+        ok('1d8 · 🔑🔑🔑 si la plaza no se libera, NO se llama al servidor',
+           sb._llamadas.function.length === 0 && r === false,
+           'llamadas=' + sb._llamadas.function.length + ' r=' + r);
+        ok('1d9 · y se dice que su vínculo real sigue intacto',
+           sb._llamadas.alerts.some(a => /No se ha tocado nada|INTACTO/i.test(a)),
+           JSON.stringify(sb._llamadas.alerts).slice(0, 140));
+    }
+    {
         // Sin clubId no se puede revocar una casilla concreta: se archiva
         // igual, pero se DICE, en vez de aparentar un borrado que no ocurrió.
         const sb = entorno({ tecleado: 'sub@ente.es' });
         await sb.window.cronosEliminarUsuarioSeguro({ uid: 'S1', email: 'sub@ente.es' });
-        ok('1d5 · ⚠️ sin club no se revoca, y el aviso lo advierte',
+        ok('1d5 · ⚠️ sin club no se revoca, y el aviso lo dice',
            sb._llamadas.revocaciones.length === 0 &&
-           sb._llamadas.alerts.some(a => /NO se ha liberado|puede seguir apareciendo/i.test(a)),
+           sb._llamadas.alerts.some(a => /no había plaza que liberar|NO se ha liberado/i.test(a)),
            JSON.stringify(sb._llamadas.alerts).slice(0, 140));
     }
     {

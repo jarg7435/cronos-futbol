@@ -489,6 +489,48 @@ if (typeof window.cronosHayPartidoEnCurso !== 'function') {
 //  no protegía nada porque miraba flags inexistentes.
 
 // ════════════════════════════════════════════════════════════════════
+//  🔴🔴🔴 v583 · ¿ESTA PLAZA ES DE ESTE ENTE INDIVIDUAL?
+//
+//  Reporte del autor (2026-08-19): al crear un ente individual con un correo
+//  que YA tenía plaza en un club (`brunoromar2012`, entrenador del Benjamín C
+//  de CD DÍA), el panel enseñaba **dos plazas**: la de Administrador
+//  Individual —correcta— y una de **Entrenador Individual que nadie había
+//  creado**.
+//
+//  🔑🔑🔑 NO SE CREÓ NINGÚN ROL: se CONTÓ el de otro sitio. Medido en la base
+//  el mismo día: su documento tiene UNA sola entrada de entrenador y dice
+//  `clubId:'club_mqvr9m11_g9kj'` — CD DÍA. Los contadores del ente miraban
+//  `allRoles.some(r => r.role === 'user' && r.isAuthorized)` **sin preguntar a
+//  qué club o ente pertenecía esa entrada**, así que su equipo del club se
+//  contaba como equipo del ente. Lo mismo hacía el árbol de "Ver usuarios".
+//
+//  🔑 LA REGLA, que es la que el autor lleva pidiendo desde el principio: los
+//  datos y roles de clubes y entes distintos NO se cruzan. Una plaza pertenece
+//  a UN sitio, y ese sitio está escrito en la propia entrada.
+//
+//  ⚠️ LA CLÁUSULA DE COMPATIBILIDAD ES ESTRECHA A PROPÓSITO: una entrada de un
+//  rol EXPLÍCITAMENTE individual y sin ningún ancla se acepta como del ente
+//  (las hay antiguas, y es el mismo criterio que ya usa el borrado de entes en
+//  v566). `user` y `parent` NO entran ahí: sin ancla podrían ser de cualquier
+//  club, y darlas por del ente es justo el cruce que esto viene a cerrar.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosRolDelEnte !== 'function') {
+    // Roles que sólo existen dentro de un ente individual.
+    window.CRONOS_ROLES_INDIVIDUALES = ['individual', 'admin_individual',
+        'parent_individual', 'entrenador_individual', 'padre_individual'];
+    window.cronosRolDelEnte = function (r, entityId) {
+        if (!r || !entityId) return false;
+        const id = String(entityId);
+        if (String(r.clubId || '')             === id) return true;
+        if (String(r.individualEntityId || '') === id) return true;
+        if (String(r.individualOwnerId || '')  === id) return true;
+        // Legado: rol individual sin ningún ancla (ver el aviso de arriba).
+        return window.CRONOS_ROLES_INDIVIDUALES.indexOf(r.role) >= 0 &&
+               !r.clubId && !r.individualEntityId && !r.individualOwnerId;
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  v553 · LAS PLAZAS OCUPADAS SE CUENTAN, NO SE GUARDAN
 //
 //  El panel del SuperAdmin enseñaba "5 / 10 entrenadores" leyendo
@@ -511,19 +553,84 @@ if (typeof window.cronosHayPartidoEnCurso !== 'function') {
 //  ni `rejected`. Un rol revocado no ocupa sitio.
 // ════════════════════════════════════════════════════════════════════
 if (typeof window.cronosPlazasOcupadas !== 'function') {
+    // ════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v582 · SE CUENTAN PLAZAS **DISTINTAS**, NO ENTRADAS
+    //
+    //  Reporte del autor (capturas 9263/9264): "9 entrenadores cuando
+    //  deberían ser 7", y el panel del Club diciendo **11/10 · Límite
+    //  alcanzado** — un club con 7 equipos que ya no admite ninguno más.
+    //
+    //  Medido por REST en CD DÍA: 5 documentos, 7 plazas de entrenador con
+    //  equipo… y CUATRO entradas más, todas de la misma forma:
+    //      { role:'user', clubId:'…', category:null, subcategory:null,
+    //        isAuthorized:true, status:'active' }
+    //  una por entrenador. 7 + 4 = 11. El número no se equivocaba: contaba
+    //  fielmente unas entradas que no son equipos de nadie.
+    //
+    //  🔑🔑🔑 LA UNIDAD ES LA PLAZA (rol + club + categoría), no el renglón
+    //  del array. Este bucle sumaba UNA POR ENTRADA, así que cualquier
+    //  registro repetido o a medio escribir inflaba la cuota y podía llegar
+    //  a cerrarle el club al autor. Dos reglas, las mismas que ya aplica el
+    //  árbol de categorías desde v581:
+    //
+    //   1. La MISMA plaza escrita dos veces es UNA plaza.
+    //   2. Para un rol CON equipo (entrenador), una entrada sin categoría
+    //      no es un equipo: si esa persona ya tiene un equipo de ese rol en
+    //      ese club, la entrada vacía es un resto y no ocupa plaza. Si es lo
+    //      único que tiene, SÍ ocupa: es alguien real esperando asignación,
+    //      y sale en el bloque "sin categoría" del panel.
+    //
+    //  ⚠️ La causa que FABRICABA esos restos se cierra aparte, en auth.js
+    //  (v582): esto es la mitad que impide que los ya existentes sigan
+    //  mintiendo, no un parche que los tape.
+    //  ⚠️ Sólo cuentan las plazas VIVAS: `isAuthorized === true` y sin
+    //  `removed` ni `rejected`. Un rol revocado no ocupa sitio.
+    // ════════════════════════════════════════════════════════════════
     window.cronosPlazasOcupadas = function (users, role, clubId) {
         const lista = Array.isArray(users) ? users : [];
         const vivo = (r) => r && r.isAuthorized === true &&
                             r.status !== 'removed' && r.status !== 'rejected';
         const delClub = (r) => !clubId || String(r.clubId || '') === String(clubId) || !r.clubId;
+        // Los roles que llevan equipo son los únicos donde la categoría forma
+        // parte de la identidad de la plaza (mismo criterio que cronosMismaPlaza).
+        const conEquipo = (role === 'user' || role === 'coach');
+        // Una categoría escrita de dos formas ('Alevín' / 'alevin' / 'f7_alevin_c')
+        // es la MISMA: se compara normalizada, o dos grafías contarían doble.
+        const slug = (v) => (typeof window.ctNormCat === 'function')
+            ? window.ctNormCat(v)
+            : String(v == null ? '' : v).trim().toLowerCase();
+        // ⚠️ Y LA SUBCATEGORÍA SE DERIVA DEL SUFIJO cuando no viene aparte
+        //    ('f7_alevin_a' lleva dentro la A), exactamente igual que hace
+        //    `_normSub` en el árbol de categorías. Sin esto, la misma plaza
+        //    escrita de las dos maneras contaría DOS veces, que es el defecto
+        //    que este recuento viene a cerrar.
+        const slugSub = (r) => {
+            const bruto = r.subcategory;
+            let s = (typeof window.ctNormSubcat === 'function')
+                ? window.ctNormSubcat(bruto)
+                : String(bruto == null ? '' : bruto).trim().toUpperCase();
+            if (!s) {
+                const m = String(r.category == null ? '' : r.category).match(/_([abc])$/i);
+                if (m) s = m[1].toUpperCase();
+            }
+            return s;
+        };
         let n = 0;
         lista.forEach(function (u) {
             if (!u || u.status === 'removed' || u.status === 'blocked') return;
             const roles = Array.isArray(u.allRoles) ? u.allRoles : [];
             if (roles.length) {
-                roles.forEach(function (r) {
-                    if (r.role === role && vivo(r) && delClub(r)) n++;
-                });
+                const vivas = roles.filter(r => r.role === role && vivo(r) && delClub(r));
+                if (!vivas.length) return;
+                const equipoDe = (r) => slug(r.category != null ? r.category : r.categoryLabel) +
+                                        '|' + slugSub(r);
+                const tieneEquipo = (r) => !!slug(r.category != null ? r.category : r.categoryLabel);
+                const conCategoria = conEquipo ? vivas.filter(tieneEquipo) : vivas;
+                // Regla 2: los restos sin categoría sólo cuentan si no hay equipo.
+                const efectivas = (conEquipo && conCategoria.length) ? conCategoria : vivas;
+                // Regla 1: plazas DISTINTAS.
+                const unicas = new Set(efectivas.map(equipoDe));
+                n += unicas.size;
             } else if (u.role === role && u.isAuthorized === true && u.status !== 'removed') {
                 // Perfil antiguo sin allRoles: su rol raíz cuenta como una plaza.
                 n++;

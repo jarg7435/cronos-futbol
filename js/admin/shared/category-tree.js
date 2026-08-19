@@ -131,6 +131,48 @@
         return '–';
     }
 
+    // Identidad de la PERSONA en la lista expandida. El árbol recibe una fila
+    // por PLAZA, así que la misma persona aparece varias veces: para saber si
+    // dos filas son del mismo humano hace falta esta clave, no el objeto.
+    function _idPersona(u) {
+        return String((u && (u.id || u.uid)) || (u && u.email) || '');
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v581 · EL MISMO ENTRENADOR, ARRIBA "SIN CATEGORÍA" Y ABAJO
+    //               EN SU EQUIPO
+    //
+    //  Reporte del autor (CD Días): el panel del SuperAdmin contaba **11
+    //  entrenadores donde hay 7**. Cuatro (JOSÉ, Alberto, Bruno, Dámaso)
+    //  salían en el bloque "⚠️ Sin categoría/subcategoría asignada (4)" Y
+    //  ADEMÁS, más abajo, correctamente colocados en su equipo (JOSÉ en
+    //  Prebenjamín · A). No eran ocho personas: eran cuatro, contadas dos
+    //  veces.
+    //
+    //  🔑🔑🔑 EL ÁRBOL NO RECIBE PERSONAS, RECIBE PLAZAS. Quien llama
+    //  expande `allRoles` a una fila por entrada, y en `allRoles` conviven
+    //  la plaza buena (con categoría) y restos incompletos de la misma
+    //  plaza —entradas nacidas del flujo de solicitud, sin `category` y a
+    //  veces sin `clubId`—. Cada resto caía aquí en `unassigned` porque, mirado
+    //  por separado, no tiene equipo válido. El dato estaba bien; lo que
+    //  fallaba era leer dos registros de una misma plaza como si fueran dos.
+    //
+    //  🔑 LA REGLA: "sin categoría" describe a una PERSONA, no a un registro.
+    //  Si esa persona ya tiene equipo en este árbol con ese mismo rol, no
+    //  está sin categoría — punto. Por eso hace falta un pase previo: la fila
+    //  buena puede llegar DESPUÉS de la incompleta, y decidirlo sobre la
+    //  marcha depende del orden en que vengan, que no controla nadie.
+    //
+    //  ⚠️ NO se colapsan plazas distintas: un entrenador con F7 y F11 tiene
+    //  DOS equipos de verdad (regla de v537) y sigue saliendo dos veces, una
+    //  en cada categoría. Lo que se descarta es sólo el registro SIN equipo
+    //  de un rol que sí lo tiene, y el duplicado exacto de una misma plaza.
+    //
+    //  ⚠️⚠️ ESTO SE ARREGLA EN EL COMPONENTE COMPARTIDO, no en el panel del
+    //  SuperAdmin, porque los dos árboles con acciones (clubs-tab.js y
+    //  individual-entity.js) expanden por su cuenta y ambos pueden traer el
+    //  mismo par. Ponerlo en uno solo es dejar el defecto vivo en el otro.
+    // ══════════════════════════════════════════════════════════════════
     // ── Índice O(n): staff + (catId → subId → [usuarios]) ────────────────
     function _buildIndex(eUsers, mode) {
         const staff      = [];          // {u, role, coordType}  (solo modo 'club')
@@ -138,6 +180,21 @@
         const catHasAny  = new Set();
         const subHasAny  = new Set();
         const unassigned = [];          // entrenadores/padres sin categoría válida
+
+        // Pase previo: qué pares (persona, rol) YA tienen equipo válido.
+        const _conEquipo = new Set();   // 'uid|rol'
+        (eUsers || []).forEach(u => {
+            const r = u._activeRoleData || {};
+            const role = r.role || u.role;
+            if (!_COACH_ROLES.has(role) && !_PARENT_ROLES.has(role)) return;
+            const cat = _normCat(r);
+            const sub = _normSub(r);
+            if (_validCatIds.has(cat) && CT_SUBCATS.includes(sub)) {
+                _conEquipo.add(_idPersona(u) + '|' + role);
+            }
+        });
+        // Plazas ya pintadas, para no repetir una misma dos veces.
+        const _yaPintada = new Set();
 
         (eUsers || []).forEach(u => {
             const r = u._activeRoleData || {};
@@ -162,11 +219,22 @@
             if (!_COACH_ROLES.has(role) && !_PARENT_ROLES.has(role)) return;
             const cat = _normCat(r);
             const sub = _normSub(r);
+            const pid = _idPersona(u);
             // Si no tiene categoría/subcategoría válida, va a 'unassigned' (visible en el panel)
             if (!_validCatIds.has(cat) || !CT_SUBCATS.includes(sub)) {
+                // v581 · Si esta misma persona ya lleva ese rol CON equipo, este
+                // registro es un resto incompleto de esa plaza, no una plaza
+                // huérfana: sale más abajo, en su categoría, y aquí no se pinta.
+                if (_conEquipo.has(pid + '|' + role)) return;
+                const kSin = pid + '|' + role + '|SIN';
+                if (_yaPintada.has(kSin)) return;   // ni dos veces sin equipo
+                _yaPintada.add(kSin);
                 unassigned.push(u);
                 return;
             }
+            const kCon = pid + '|' + role + '|' + cat + '|' + sub;
+            if (_yaPintada.has(kCon)) return;       // la MISMA plaza, una sola fila
+            _yaPintada.add(kCon);
             if (!byCatSub.has(cat)) byCatSub.set(cat, new Map());
             const subMap = byCatSub.get(cat);
             if (!subMap.has(sub)) subMap.set(sub, []);
@@ -323,26 +391,63 @@
             //  caso de un sub-usuario de ente individual). Entonces se archiva
             //  igual y se DICE lo que ha pasado, en vez de aparentar un borrado.
             // ════════════════════════════════════════════════════════════
+            // ════════════════════════════════════════════════════════════
+            //  ⚠️⚠️ v581 · SE REVOCA **UNA PLAZA**, NO UN ROL ENTERO
+            //
+            //  `caSetUserStatus` seleccionaba los roles a revocar por
+            //  (club + nombre de rol). Un entrenador con dos equipos tiene DOS
+            //  entradas 'user' en el mismo club, así que borrar desde una fila
+            //  se llevaba también la otra; y desde una fila descolocada —sin
+            //  categoría— se llevaba la ÚNICA buena. Por eso ahora se le pasa
+            //  la categoría de ESTA fila y sólo se toca esa casilla.
+            //
+            //  🔑 Y si la fila no dice a qué equipo pertenece, NO se revoca a
+            //  ciegas: sin categoría la puntería volvería a ser "todos los
+            //  roles de ese nombre", que es justo el daño que esto evita.
+            // ════════════════════════════════════════════════════════════
+            const _plaza = {
+                category:    d.category    || '',
+                subcategory: d.subcategory || '',
+            };
             let _revocado = false;
             if (typeof window.caSetUserStatus === 'function' && d.clubId) {
                 if (typeof showToast === 'function') showToast('⏳ Liberando su plaza…', 3000);
                 // `true` = no volver a preguntar: ya confirmó tecleando el correo.
-                await window.caSetUserStatus(uid, email, 'removed', d.clubId, rol || null, true);
-                _revocado = true;
+                _revocado = (await window.caSetUserStatus(
+                    uid, email, 'removed', d.clubId, rol || null, true, _plaza)) === true;
+                // ⚠️ v581 · SI LA PLAZA NO SE HA LIBERADO, NO SE ARCHIVA NI SE
+                //    BORRA NADA. Antes se daba la revocación por hecha y se
+                //    seguía adelante pase lo que pase: de ahí salía el aviso
+                //    que reportó el autor —"la plaza NO se ha liberado y puede
+                //    seguir apareciendo"— DESPUÉS de haber archivado, y con la
+                //    cuenta ya en manos de la Function. Media operación es peor
+                //    que ninguna: si no se puede revocar, se para aquí.
+                if (!_revocado) {
+                    alert('⚠️ No se ha tocado nada.\n\n' +
+                          'No se ha podido liberar la plaza de ' + email + ' en este equipo, ' +
+                          'así que no se archiva ni se borra su cuenta.\n\n' +
+                          'Suele significar que esta fila no corresponde a una plaza viva ' +
+                          '(un registro antiguo o ya dado de baja). Su vínculo real con el club ' +
+                          'sigue INTACTO.');
+                    return false;
+                }
             }
 
             if (typeof showToast === 'function') showToast('⏳ Archivando su trabajo…', 4000);
 
             const res = await httpsCallable(fa.functions, 'archiveAndDeleteCoach')({
                 uid: uid, email: email, clubId: d.clubId || null, role: rol || null,
+                category: _plaza.category || null, subcategory: _plaza.subcategory || null,
             });
             const r = (res && res.data) || {};
             // El archivo deja constancia formal de la acción: guarda quién la
             // ejecutó y cuándo (archivedBy/archivedAt, en la Function).
             alert('✅ Hecho con ' + email + '.\n\n' +
                   (_revocado ? 'Plaza liberada.\n' :
-                   '⚠️ No constaba el club de su rol, así que la plaza NO se ha liberado ' +
-                   'y puede seguir apareciendo en la lista.\n') +
+                   // Único camino que llega aquí sin revocar: un sub-usuario de
+                   // ente individual, que no tiene club del que liberar plaza.
+                   // (El caso del club ya se ha detenido antes: v581.)
+                   'ℹ️ No pertenece a ningún club, así que no había plaza que liberar.\n') +
                   'Archivado: ' + (r.documentosArchivados || 0) + ' documento(s), ' +
                   (r.clavesArchivadas || 0) + ' dato(s).\n' +
                   (r.cuentaBorrada
@@ -409,18 +514,26 @@
         if (!_opcionesRender || !_opcionesRender.conBorrado) return '';
         const r = u._activeRoleData || {};
         const esc = (s) => String(s == null ? '' : s).replace(/'/g, "\\'");
+        // ⚠️⚠️ v581 · LA FILA VIAJA CON SU CATEGORÍA. La unidad es la PLAZA
+        //    (rol + club + categoría), no el rol (v540/v547). Sin estos dos
+        //    campos, `caSetUserStatus` revoca TODOS los roles con ese nombre en
+        //    ese club: borrar una fila descolocada de un entrenador se llevaba
+        //    por delante el equipo que sí tenía bien asignado.
         const carga = {
             uid: u.id || u.uid || '',
             email: u.email || '',
             role: r.role || u.role || '',
             clubId: r.clubId || u.clubId || '',
             clubName: r.clubName || u.clubName || '',
+            category: r.category != null ? r.category : (r.categoryLabel || ''),
+            subcategory: r.subcategory != null ? r.subcategory : '',
         };
         if (!carga.uid || !carga.email) return '';
         return '<button title="Eliminar usuario (archiva su trabajo antes)" ' +
                'onclick="window.cronosEliminarUsuarioSeguro({' +
                "uid:'" + esc(carga.uid) + "',email:'" + esc(carga.email) + "'," +
                "role:'" + esc(carga.role) + "',clubId:'" + esc(carga.clubId) + "'," +
+               "category:'" + esc(carga.category) + "',subcategory:'" + esc(carga.subcategory) + "'," +
                "clubName:'" + esc(carga.clubName) + "'})" + '" ' +
                'style="margin-left:auto;font-size:0.66rem;padding:2px 8px;border-radius:6px;cursor:pointer;' +
                'color:#ff5858;background:rgba(255,88,88,0.08);border:1px solid rgba(255,88,88,0.3);">🗑️ Eliminar</button>';

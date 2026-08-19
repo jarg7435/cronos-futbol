@@ -140,30 +140,57 @@ window.saIndividuals = async function saIndividuals() {
                     parent_individual:{ icon:'👨‍👩‍👧', label:'Padres/Madres Individuales',   slot:'parents' },
                     parent:           { icon:'👨‍👩‍👧', label:'Padres/Madres Individuales',   slot:'parents' },
                 };
+                // ══════════════════════════════════════════════════════════
+                //  🔴🔴🔴 v583 · ESTOS CONTADORES CRUZABAN CLUB Y ENTE
+                //
+                //  Reporte del autor: al crear un ente con un correo que ya
+                //  tenía plaza en un club, salían DOS plazas — la de
+                //  Administrador Individual (correcta) y una de **Entrenador
+                //  Individual que él no había creado**.
+                //
+                //  🔑🔑🔑 No se creaba ningún rol: se CONTABA el de otro sitio.
+                //  Cada rama de aquí preguntaba `allRoles.some(r => r.role ===
+                //  'user' && r.isAuthorized)` **sin mirar a qué club o ente
+                //  pertenecía esa entrada**. `brunoromar2012` entrena el
+                //  Benjamín C de CD DÍA —está escrito en su propia entrada— y
+                //  ese equipo se contaba como equipo del ente.
+                //
+                //  🔑 Ahora sólo cuentan las plazas ANCLADAS a este ente
+                //  (`cronosRolDelEnte`, utils.js — una sola definición para el
+                //  contador y para el árbol de "Ver usuarios", que tenía el
+                //  mismo defecto).
+                //
+                //  ⚠️ La RAÍZ sólo manda si no hay ninguna plaza anclada, que
+                //  es la regla de todo el proyecto para un campo de
+                //  compatibilidad (v553/v564/v582). Y `entUsers` ya ha
+                //  comprobado que esa raíz apunta a ESTE ente.
+                // ══════════════════════════════════════════════════════════
+                const _delEnte = (r) => (typeof window.cronosRolDelEnte === 'function')
+                    ? window.cronosRolDelEnte(r, ent.id)
+                    : !!r && (String(r.clubId||'') === String(ent.id) ||
+                              String(r.individualEntityId||'') === String(ent.id) ||
+                              String(r.individualOwnerId||'')  === String(ent.id));
+                // Qué nombres de rol alimentan cada barra. 'individual' es como
+                // auth.js llama al Administrador Individual.
+                const _ROLES_DE_BARRA = {
+                    admin_individual:      ['admin_individual', 'individual'],
+                    individual:            ['admin_individual', 'individual'],
+                    user:                  ['user', 'entrenador_individual'],
+                    entrenador_individual: ['user', 'entrenador_individual'],
+                    parent:                ['parent', 'parent_individual'],
+                    parent_individual:     ['parent', 'parent_individual'],
+                };
                 const slotBar = (roleKey) => {
                     const meta = roleLabels[roleKey];
+                    const acepta = _ROLES_DE_BARRA[roleKey] || [roleKey];
                     const used = entUsers.filter(u => {
                         if (u.status === 'removed') return false;
-                        // CRITICAL: For admin_individual slot, count both 'admin_individual' and 'individual' roles
-                        if (roleKey === 'admin_individual') {
-                            return u.role === 'admin_individual' || u.role === 'individual'
-                                || (u.allRoles||[]).some(r => (r.role === 'admin_individual' || r.role === 'individual') && r.isAuthorized);
+                        const roles = Array.isArray(u.allRoles) ? u.allRoles : [];
+                        const anclados = roles.filter(_delEnte);
+                        if (anclados.length) {
+                            return anclados.some(r => acepta.indexOf(r.role) >= 0 && r.isAuthorized);
                         }
-                        // For coaches/parents, check main role and allRoles
-                        // Also handle 'user'/'entrenador_individual' as entrenador individual
-                        // and 'parent'/'parent_individual' as padre individual
-                        if (roleKey === 'user' || roleKey === 'entrenador_individual') {
-                            // Count users with role 'user' or 'entrenador_individual' that are authorized
-                            return u.role === 'user' || u.role === 'entrenador_individual'
-                                || (u.allRoles||[]).some(r =>
-                                    (r.role === 'user' || r.role === 'entrenador_individual') && r.isAuthorized);
-                        }
-                        if (roleKey === 'parent' || roleKey === 'parent_individual') {
-                            return u.role === 'parent' || u.role === 'parent_individual'
-                                || (u.allRoles||[]).some(r =>
-                                    (r.role === 'parent' || r.role === 'parent_individual') && r.isAuthorized);
-                        }
-                        return u.role === roleKey || (u.allRoles||[]).some(r => r.role === roleKey && r.isAuthorized);
+                        return acepta.indexOf(u.role) >= 0;
                     }).length;
                     const max = ent.slots?.[meta.slot] ?? '∞';
                     const pct = max !== '∞' && max > 0 ? Math.round((used/max)*100) : 0;
@@ -247,6 +274,15 @@ window.saIndividuals = async function saIndividuals() {
                             ${entityOpts}
                         </select>
                         <button onclick="saAssignOrphanToEntity('${eid}','${em}')" style="padding:0.28rem 0.6rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:6px;color:#3fb950;font-size:0.72rem;cursor:pointer;font-weight:700;">✅ Asignar</button>
+                        <!-- 🔴 v583 · LA SALIDA QUE NO EXISTÍA.
+                             Reporte del autor (captura 9269): borró el ente y este
+                             bloque se quedó con un residuo que NO SE PODÍA QUITAR.
+                             La única acción era "Asignar a un ente" y el desplegable
+                             estaba VACÍO, porque no queda ningún ente: un callejón
+                             sin salida, con el fantasma fijo en pantalla.
+                             "Desvincular" retira el vínculo individual muerto y
+                             devuelve a la persona a lo que de verdad le queda. -->
+                        <button onclick="saDesvincularHuerfanoIndividual('${eid}','${em}')" title="Retirar el vínculo individual huérfano (sus plazas de club NO se tocan)" style="padding:0.28rem 0.6rem;background:rgba(240,136,62,0.15);border:1px solid rgba(240,136,62,0.45);border-radius:6px;color:#f0883e;font-size:0.72rem;cursor:pointer;font-weight:700;">🔗 Desvincular</button>
                     </div>
                 </div>`;
             });
@@ -313,6 +349,138 @@ window.saActivateIndividual = async function(uid, email) {
 };
 
 // Asignar usuario huérfano a un ente individual
+// ═══════════════════════════════════════════════════════════════════
+//  🔴🔴🔴 v583 · DESVINCULAR UN HUÉRFANO INDIVIDUAL
+//
+//  Reporte del autor (captura 9269): tras borrar el ente le quedó
+//  "brunoromar2012@gmail.com · Administrador Individual · Activo · Sin ente"
+//  y **ninguna forma de quitarlo**. La única acción del bloque era "Asignar a
+//  un ente" con el desplegable VACÍO —no queda ningún ente—: un callejón sin
+//  salida con el fantasma clavado en pantalla.
+//
+//  🔑 Qué hace, exactamente: retira el vínculo individual MUERTO y devuelve a
+//  la persona a lo que de verdad le queda.
+//    · Las entradas de `allRoles` con rol individual y sin ente vivo se
+//      retiran. **Las plazas de club NO se tocan** — ni una.
+//    · Las referencias de la raíz (`individualEntityId`, `individualOwnerId`,
+//      `isIndividual`) se anulan.
+//    · Si su `role` de raíz era individual y conserva una plaza de club, la
+//      raíz pasa a describir ESA plaza: vuelve a ser lo que es.
+//    · Si no le queda absolutamente nada, no se inventa un rol: se dice, y se
+//      ofrece el borrado seguro de siempre (que archiva antes de borrar).
+//
+//  ⚠️ `role` y `clubId` sólo los puede escribir el SuperAdmin: están en la
+//  lista que las reglas prohíben al propio usuario (firestore.rules). Esta
+//  función vive en su panel, que es donde tiene que estar.
+// ═══════════════════════════════════════════════════════════════════
+window.saDesvincularHuerfanoIndividual = async function(uid, email) {
+    if (!confirm('🔗 Desvincular a ' + email + ' del ente individual\n\n' +
+                 'Se retira su vínculo individual (que ya no apunta a ningún ente).\n' +
+                 'Sus plazas en clubes NO se tocan: si es entrenador de un club,\n' +
+                 'sigue siéndolo exactamente igual.\n\n' +
+                 '¿Continuar?')) return;
+
+    _saShowSpinner('Desvinculando…');
+    try {
+        const { db, doc, getDoc, getDocs, collection, updateDoc } = await saFS();
+        const uSnap = await getDoc(doc(db, 'users', uid));
+        if (!uSnap.exists()) throw new Error('Usuario no encontrado');
+        const u = uSnap.data() || {};
+
+        // Qué entes existen HOY. Un vínculo sólo se respeta si su ente vive.
+        const clubsSnap = await getDocs(collection(db, 'clubs'));
+        const entesVivos = new Set();
+        const clubesVivos = new Set();
+        clubsSnap.forEach(d => {
+            const c = d.data() || {};
+            if (c.type === 'individual') entesVivos.add(d.id); else clubesVivos.add(d.id);
+        });
+
+        const ROLES_INDIV = window.CRONOS_ROLES_INDIVIDUALES ||
+            ['individual', 'admin_individual', 'parent_individual',
+             'entrenador_individual', 'padre_individual'];
+        const roles = Array.isArray(u.allRoles) ? u.allRoles : [];
+
+        // Se retira SÓLO lo individual sin ente vivo. Todo lo demás se queda.
+        const limpios = roles.filter(r => {
+            if (!r) return false;
+            const ancla = String(r.individualEntityId || r.individualOwnerId || r.clubId || '');
+            if (ROLES_INDIV.indexOf(r.role) >= 0) return entesVivos.has(ancla);
+            return true;                                  // plaza de club: intacta
+        });
+        // Su plaza de club, si la tiene: es lo que la raíz debe describir.
+        const plazaClub = limpios.find(r => r && r.clubId && clubesVivos.has(String(r.clubId)) &&
+                                             ROLES_INDIV.indexOf(r.role) < 0);
+
+        const upd = {};
+        if (limpios.length !== roles.length) upd.allRoles = limpios;
+        if (u.individualEntityId && !entesVivos.has(String(u.individualEntityId))) upd.individualEntityId = null;
+        if (u.individualOwnerId  && !entesVivos.has(String(u.individualOwnerId)))  upd.individualOwnerId  = null;
+        if (u.isIndividual === true) upd.isIndividual = null;
+        if (ROLES_INDIV.indexOf(u.role) >= 0) {
+            if (plazaClub) {
+                upd.role = plazaClub.role;
+                upd.clubId = plazaClub.clubId;
+            } else {
+                // No le queda NADA. No se inventa un rol: se dice.
+                _saHideSpinner();
+                alert('⚠️ ' + email + ' no conserva ninguna plaza en ningún club ni ente.\n\n' +
+                      'No hay nada a lo que devolverlo, así que no se ha cambiado su rol.\n' +
+                      'Si esta cuenta ya no debe existir, elimínala con el borrado seguro ' +
+                      '(archiva su trabajo antes de borrar).');
+                if (typeof window.cronosEliminarUsuarioSeguro === 'function' &&
+                    confirm('¿Abrir ahora el borrado seguro de ' + email + '?')) {
+                    await window.cronosEliminarUsuarioSeguro({
+                        uid: uid, email: email, role: u.role || '', clubId: u.clubId || '',
+                    });
+                }
+                if (typeof saIndividuals === 'function') saIndividuals();
+                return;
+            }
+        }
+
+        if (!Object.keys(upd).length) {
+            _saHideSpinner();
+            _saToast('ℹ️ No había nada que desvincular en ' + email + '.', 4000);
+            return;
+        }
+        await updateDoc(doc(db, 'users', uid), upd);
+
+        // Las solicitudes aprobadas que apuntan a un ente muerto se retiran:
+        // si no, el arranque de sesión puede reconstruir el vínculo (auth.js,
+        // "Auto-activar roles aprobados por el SA").
+        try {
+            const reqs = await getDocs(collection(db, 'platform_requests'));
+            const ops = [];
+            reqs.forEach(d => {
+                const r = d.data() || {};
+                if (String(r.userUid || '') !== String(uid)) return;
+                if (ROLES_INDIV.indexOf(r.requestedRole) < 0) return;
+                const ancla = String(r.individualOwnerId || r.individualEntityId || r.clubId || '');
+                if (entesVivos.has(ancla)) return;        // su ente vive: se respeta
+                if (r.status === 'entity_deleted') return;
+                ops.push(updateDoc(doc(db, 'platform_requests', d.id), {
+                    status: 'entity_deleted',
+                    entityDeletedAt: new Date().toISOString(),
+                    statusAnterior: r.status || null,
+                }));
+            });
+            if (ops.length) await Promise.all(ops);
+        } catch (eReq) {
+            console.warn('[saDesvincularHuerfanoIndividual] solicitudes:', eReq && eReq.message);
+        }
+
+        _saHideSpinner();
+        _saToast('✅ ' + email + ' desvinculado' +
+                 (upd.role ? '. Vuelve a ser "' + upd.role + '" de su club.' : '.'), 5000);
+        if (typeof saIndividuals === 'function') saIndividuals();
+    } catch(e) {
+        _saHideSpinner();
+        _saToast('❌ Error: ' + e.message, 5000);
+        console.error('[saDesvincularHuerfanoIndividual]', e);
+    }
+};
+
 window.saAssignOrphanToEntity = async function(uid, email) {
     const selectEl = document.getElementById('orph-ent-' + uid);
     const entityId = selectEl ? selectEl.value : '';
@@ -329,24 +497,57 @@ window.saAssignOrphanToEntity = async function(uid, email) {
         const entSnap = await getDoc(doc(db, 'clubs', entityId));
         const entName = entSnap.exists() ? (entSnap.data().name || entityId) : entityId;
 
-        // Update user: set clubId AND individualEntityId to the entity
+        // ══════════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v583 · ESTO SE LLEVABA POR DELANTE LAS PLAZAS DE CLUB
+        //
+        //  El `map` reescribía `clubId: entityId` en **toda** entrada con rol
+        //  'user' o 'parent', mirase a donde mirase. Para
+        //  `brunoromar2012` —entrenador del Benjamín C de CD DÍA— asignarlo a
+        //  un ente le habría ARRANCADO ese equipo del club para pegárselo al
+        //  ente, de forma permanente y sin avisar. Es literalmente el cruce que
+        //  el autor prohíbe: "los datos y roles de diferentes clubes o entes
+        //  deben mantenerse totalmente independientes y aislados".
+        //
+        //  🔑 Sólo se reancla lo que NO pertenece ya a otro sitio: los roles
+        //  individuales y las entradas sin club. Una plaza anclada a un club
+        //  real NO SE TOCA NUNCA.
+        //
+        //  ⚠️ Y LA RAÍZ TAMPOCO SE MUEVE SI TIENE CLUB. El panel del club
+        //  carga a su gente con `where('clubId','==',club)` sobre la RAÍZ
+        //  (panel.js:234): llevársela al ente hace desaparecer a la persona del
+        //  panel de su club — el mismo síntoma de v582. El ente no necesita la
+        //  raíz para reconocer a los suyos: le basta `individualEntityId` /
+        //  `individualOwnerId`, que es por donde los busca `entUsers`.
+        // ══════════════════════════════════════════════════════════════════
+        const _ROLES_INDIV = window.CRONOS_ROLES_INDIVIDUALES ||
+            ['individual', 'admin_individual', 'parent_individual',
+             'entrenador_individual', 'padre_individual'];
+        const _anclaAOtroSitio = (r) => !!r && !!r.clubId &&
+            String(r.clubId) !== String(entityId);
         const updAllRoles = (uData.allRoles || []).map(r => {
+            if (_anclaAOtroSitio(r)) return r;          // plaza de un club: intacta
             if (r.role === 'individual' || r.role === 'admin_individual') {
                 return { ...r, clubId: entityId, individualEntityId: entityId, isAuthorized: true, status: 'active' };
             }
-            if (r.role === 'user' || r.role === 'parent' || r.role === 'parent_individual') {
+            if (_ROLES_INDIV.indexOf(r.role) >= 0 || r.role === 'user' || r.role === 'parent') {
                 return { ...r, clubId: entityId, individualEntityId: entityId };
             }
             return r;
         });
 
+        // ¿Le queda alguna plaza en un club de verdad? Entonces la raíz se
+        // queda donde está y el vínculo con el ente viaja por sus campos.
+        const _plazaDeClub = (uData.allRoles || []).find(_anclaAOtroSitio);
+
         const updateData = {
-            clubId: entityId,
-            clubName: entName,
             individualEntityId: entityId,
             individualOwnerId: entityId,
             allRoles: updAllRoles,
         };
+        if (!_plazaDeClub) {
+            updateData.clubId   = entityId;
+            updateData.clubName = entName;
+        }
 
         // If user is admin individual, also mark entity as having admin
         if (uData.role === 'individual' || uData.role === 'admin_individual') {

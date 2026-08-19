@@ -314,15 +314,49 @@ async function openIndividualAdminPanel() {
     const _isAdmin = (u) => (u.uid || u._id) === me.uid;
     // Contar entrenadores basándose en su rol principal o allRoles y su estado de autorización
     // Contar entrenadores basándose en su rol principal o allRoles y su estado de autorización
-    const coachCount = activeParents.filter(u =>
-        (u.role === 'user' || u.role === 'entrenador_individual'
-         || (u.allRoles||[]).some(r => (r.role === 'user' || r.role === 'entrenador_individual') && (r.isAuthorized || u.isAuthorized)))
-    ).length;
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v584 · ESTE PANEL CONTABA PLAZAS DE CLUB COMO SUYAS
+    //
+    //  Es el MISMO defecto que v583 cerró en el panel del SuperAdmin, pero
+    //  aquí lo ve un usuario REAL: el administrador del ente. La pertenencia
+    //  al ente sí está bien acotada —las consultas de arriba buscan por
+    //  `individualOwnerId` / `individualEntityId` / `clubId`—, pero una vez
+    //  dentro, estos contadores preguntaban "¿tiene algún rol de entrenador
+    //  autorizado?" **sin mirar a qué club o ente pertenece esa plaza**.
+    //
+    //  Caso real (brunoromar2012): entrenador del Benjamín C de un CLUB y
+    //  además usuario de un ente. Su equipo del club se contaba —y se
+    //  pintaba— como equipo del ente. Los datos de un club y los de un ente
+    //  no pueden cruzarse por compartir el correo: es la regla que el autor
+    //  ha pedido blindar antes de abrir a usuarios reales.
+    //
+    //  ⚠️ El ancla admite `_queryId` Y `uid`: hay altas antiguas que guardaron
+    //  el uid del administrador en vez del id del ente (por eso las consultas
+    //  de arriba buscan por los dos). Aceptar sólo uno dejaría fuera a gente
+    //  legítima del ente.
+    // ══════════════════════════════════════════════════════════════════
+    const _delEsteEnte = (r) => {
+        if (!r) return false;
+        if (typeof window.cronosRolDelEnte === 'function') {
+            return window.cronosRolDelEnte(r, _queryId) ||
+                   (uid !== _queryId && window.cronosRolDelEnte(r, uid));
+        }
+        const anclas = [String(r.clubId||''), String(r.individualEntityId||''), String(r.individualOwnerId||'')];
+        return anclas.indexOf(String(_queryId)) >= 0 || anclas.indexOf(String(uid)) >= 0;
+    };
+    // Los roles anclados a ESTE ente. Si no hay ninguno, manda el rol de la
+    // raíz (compat) — y la pertenencia al ente ya está comprobada arriba.
+    const _rolesAqui = (u) => (Array.isArray(u.allRoles) ? u.allRoles : []).filter(_delEsteEnte);
+    const _tieneAqui = (u, nombres) => {
+        const propios = _rolesAqui(u);
+        if (propios.length) {
+            return propios.some(r => nombres.indexOf(r.role) >= 0 && (r.isAuthorized || u.isAuthorized));
+        }
+        return nombres.indexOf(u.role) >= 0;
+    };
+    const coachCount  = activeParents.filter(u => _tieneAqui(u, ['user', 'entrenador_individual'])).length;
     // Contar padres basándose en su rol principal o allRoles y su estado de autorización
-    const parentCount = activeParents.filter(u =>
-        (u.role === 'parent' || u.role === 'parent_individual'
-         || (u.allRoles||[]).some(r => (r.role === 'parent' || r.role === 'parent_individual') && (r.isAuthorized || u.isAuthorized)))
-    ).length;
+    const parentCount = activeParents.filter(u => _tieneAqui(u, ['parent', 'parent_individual'])).length;
 
     // ── Deduplicate and expand users ──────────────────────────────
     const userMap = new Map();
@@ -365,8 +399,21 @@ async function openIndividualAdminPanel() {
             return true;
         });
 
-        // Expand all unique roles for display in the table, including the admin's secondary roles
-        const rolesToExpand = uniqueRoles;
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v584 · Y EL ÁRBOL PINTABA ESAS MISMAS PLAZAS AJENAS
+        //
+        //  Mismo cruce que los contadores de arriba: se expandían TODAS las
+        //  plazas de la persona, así que el equipo que lleva en un CLUB
+        //  aparecía dentro del árbol de categorías del ENTE. Sólo entran las
+        //  plazas ancladas a este ente.
+        //
+        //  ⚠️ Si la persona no tiene NINGUNA plaza anclada (altas antiguas que
+        //  no guardaban el ancla), se conserva el comportamiento anterior: se
+        //  expanden sus roles. Vaciarle la fila a alguien que sí pertenece al
+        //  ente sería cambiar un cruce por una desaparición, que es peor.
+        // ══════════════════════════════════════════════════════════════
+        const _propias = uniqueRoles.filter(_delEsteEnte);
+        const rolesToExpand = _propias.length ? _propias : uniqueRoles;
 
         rolesToExpand.forEach(r => {
             expandedUsers.push({ ...u, _activeRoleData: r });

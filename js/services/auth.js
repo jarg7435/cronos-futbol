@@ -1351,7 +1351,59 @@ export async function checkAuthorization(user) {
                 String(r.clubId || '') === String(data.clubId || '') &&
                 (!_esCoachRaiz || !_plazaRaiz.category || !(r.category || r.categoryLabel)));
 
-            if (!existingRole && !_bajaIndistinguible) {
+            // ══════════════════════════════════════════════════════════════
+            //  🔴🔴🔴 v582 · AQUÍ NACÍAN LOS ENTRENADORES FANTASMA
+            //
+            //  Medido por REST en CD DÍA (2026-08-19): 5 documentos, 7 plazas
+            //  de entrenador reales… y **11 contadas**. Las cuatro de más son
+            //  todas iguales y todas están en la base de datos:
+            //
+            //      { role:'user', clubId:'club_mqvr9m11_g9kj',
+            //        category:null, subcategory:null,
+            //        isAuthorized:true, status:'active' }
+            //
+            //  Una por cada entrenador (JOSÉ, Alberto, Bruno, Dámaso). Las
+            //  escribe ESTE `push`, y las escribe otra vez en cada inicio de
+            //  sesión de quien no las tenga: por eso "ya se había arreglado" y
+            //  volvía.
+            //
+            //  🔑🔑🔑 LA RAÍZ DE ESOS CUATRO NO TIENE CATEGORÍA. Está medido:
+            //  `category=undefined, subcategory=undefined` en los cinco
+            //  documentos. Así que `_plazaRaiz` describe un entrenador SIN
+            //  EQUIPO, y desde v564 —que hizo la comparación POR PLAZA, y bien—
+            //  esa descripción ya no casa con ninguna plaza de verdad
+            //  ('cadete/B', 'prebenjamin/A'…). `existingRole` sale null y este
+            //  bloque concluye que falta un rol y lo CREA.
+            //
+            //  🔑 LA REGLA QUE FALTABA, y que cierra esto de raíz: **una raíz
+            //  sin categoría no describe un equipo**. Si la persona YA tiene
+            //  una plaza de entrenador viva en ese club, la raíz es lo que
+            //  siempre fue —un campo de compatibilidad, desfasado con
+            //  frecuencia (v562/v563)— y no la prueba de un equipo nuevo.
+            //  Crear una plaza desde ahí es INVENTARLE una asignación.
+            //
+            //  ⚠️ NO se toca el caso legítimo: quien no tiene NINGUNA plaza de
+            //  entrenador sí estrena la suya desde la raíz (es lo que hace
+            //  visible a un entrenador recién aprobado, aunque sea en el bloque
+            //  "sin categoría"). Lo que se prohíbe es añadir una plaza vacía a
+            //  quien ya tiene equipo.
+            //
+            //  ⚠️⚠️ ESTO NO BORRA LAS CUATRO QUE YA EXISTEN. Deja de fabricar
+            //  más; que las viejas dejen de contar y de pintarse es cosa del
+            //  recuento (cronosPlazasOcupadas) y del árbol (v581). Borrar datos
+            //  vivos de la base es una decisión del autor, no un efecto
+            //  colateral de un inicio de sesión.
+            // ══════════════════════════════════════════════════════════════
+            const _raizSinEquipo = _esCoachRaiz && !_plazaRaiz.category;
+            const _yaLlevaEquipo = _esCoachRaiz && allRoles.some(r =>
+                r &&
+                String(r.role || '')   === String(data.role || '') &&
+                String(r.clubId || '') === String(data.clubId || '') &&
+                (r.category || r.categoryLabel) &&
+                !_rolRevocado(r));
+            const _raizNoDescribeEquipo = _raizSinEquipo && _yaLlevaEquipo;
+
+            if (!existingRole && !_bajaIndistinguible && !_raizNoDescribeEquipo) {
                 // 🔑 v560 · LA CATEGORÍA DE LA RAÍZ VIAJA CON EL ROL. Este push
                 // creaba un rol de entrenador SIN category/subcategory, y un
                 // entrenador sin categoría es un entrenador SIN EQUIPO:
@@ -2295,7 +2347,104 @@ export async function doAuth() {
             isAuthorized = true;
             finalRole = 'superadmin';
             // SECURITY FIX (SEC-M02): Removed log that exposed superadmin email and claim status
-            // 
+            //
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  🛡️🛡️🛡️ v585 · UN CORREO, UNA SOLA ENTIDAD
+        //
+        //  REGLA DE NEGOCIO fijada por el autor (2026-08-19), y viene del
+        //  reglamento de la competición: **una misma persona no puede estar en
+        //  dos clubes, ni en dos entes, ni en un club y un ente a la vez.**
+        //
+        //  🔑 HASTA AQUÍ ERA UNA NORMA, NO UNA GARANTÍA. El sistema no lo
+        //  impedía: bastaba con que alguien se registrara dos veces con el
+        //  mismo correo eligiendo otra entidad. Y ese solapamiento es
+        //  exactamente el que produjo los tres fallos de esta semana —el
+        //  Benjamín C que desaparecía del panel (v582), las plazas contadas
+        //  por el ente que no eran suyas (v583/v584) y el residuo huérfano—,
+        //  porque el documento de usuario tiene UNA raíz (`role` + `clubId`) y
+        //  sólo puede describir UNA pertenencia. Se convierte la norma en una
+        //  comprobación, que es lo que la hace de verdad blindada.
+        //
+        //  DÓNDE VA: aquí, con la credencial ya resuelta pero **antes de
+        //  escribir absolutamente nada** —ni el documento de usuario, ni la
+        //  platform_request—. Un bloqueo a medias sería peor que no bloquear.
+        //
+        //  ⚠️ SE DECIDE POR `allRoles`, NO POR LA RAÍZ. La raíz va desfasada
+        //  con frecuencia (medido en v562/v563/v582): usarla bloquearía altas
+        //  legítimas. La raíz sólo manda si no hay `allRoles`, que es la regla
+        //  de todo el proyecto.
+        //
+        //  ⚠️⚠️ Y UNA REFERENCIA A UNA ENTIDAD BORRADA NO BLOQUEA NADA. Se
+        //  comprueba que esa otra entidad EXISTA. Sin esto, un resto de un ente
+        //  eliminado —justo el estado en el que estuvo `brunoromar2012` esta
+        //  misma mañana— dejaría a la persona sin poder registrarse nunca más,
+        //  y encima sin poder explicarse por qué.
+        //
+        //  ⚠️ El SuperAdmin queda exento: no pertenece a ninguna entidad.
+        // ══════════════════════════════════════════════════════════════════
+        if (isAddingRole && clubId && finalRole !== 'superadmin') {
+            try {
+                const _m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                const _prev = await _m.getDoc(_m.doc(fa.db, 'users', cred.user.uid));
+                const _d = _prev.exists() ? (_prev.data() || {}) : {};
+                const _vivo = (r) => r && r.status !== 'removed' && r.status !== 'rejected';
+                const _ancla = (r) => String((r && (r.clubId || r.individualEntityId || r.individualOwnerId)) || '');
+                const _roles = Array.isArray(_d.allRoles) ? _d.allRoles : [];
+
+                const _ajenas = new Set();
+                if (_roles.length) {
+                    _roles.forEach(r => {
+                        if (!_vivo(r)) return;
+                        const a = _ancla(r);
+                        if (a && a !== String(clubId)) _ajenas.add(a);
+                    });
+                } else {
+                    // Sin allRoles utilizable, la raíz es lo único que hay.
+                    const a = String(_d.clubId || _d.individualEntityId || _d.individualOwnerId || '');
+                    if (a && a !== String(clubId) && _d.status !== 'removed') _ajenas.add(a);
+                }
+
+                // Sólo cuentan las entidades que EXISTEN hoy.
+                let _bloquea = null;
+                for (const _id of _ajenas) {
+                    try {
+                        const _s = await _m.getDoc(_m.doc(fa.db, 'clubs', _id));
+                        if (_s.exists()) {
+                            const _e = _s.data() || {};
+                            _bloquea = { id: _id, nombre: _e.name || _id,
+                                         tipo: _e.type === 'individual' ? 'ente individual' : 'club' };
+                            break;
+                        }
+                    } catch (_) { /* ilegible: no se bloquea por una duda */ }
+                }
+
+                if (_bloquea) {
+                    try { await fa.signOut(fa.auth); } catch (_) {}
+                    window._addingRole = false;
+                    window._loginThisSession = false;
+                    clearTimeout(_altaTimer);
+                    showAuthError(
+                        '⛔ Este correo ya pertenece a otra entidad: ' + _bloquea.tipo + ' "' +
+                        _bloquea.nombre + '".\n\n' +
+                        'El reglamento de la competición no permite que una misma persona esté ' +
+                        'en dos clubes, ni en dos entes, ni en un club y un ente a la vez. ' +
+                        'No se ha creado ni modificado nada.\n\n' +
+                        'Si de verdad ha cambiado de entidad, su administrador anterior debe darle ' +
+                        'de baja primero; después podrá registrarse aquí con este mismo correo.'
+                    );
+                    return;
+                }
+            } catch (_e1) {
+                // ⚠️ FAIL-OPEN, y a propósito: si esta comprobación no se puede
+                //    hacer (sin red, permisos, tiempo agotado), NO se bloquea un
+                //    alta legítima. Impedir que alguien se registre por un fallo
+                //    de lectura es un daño seguro para evitar uno hipotético.
+                //    Queda constancia para poder auditarlo.
+                console.warn('[v585] No se pudo comprobar la exclusividad de entidad:',
+                             _e1 && _e1.message);
+            }
         }
 
         // ── Padre/tutor: guardar nombre del jugador que representa ──

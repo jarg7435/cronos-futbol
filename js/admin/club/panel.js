@@ -2187,7 +2187,11 @@ async function openClubAdminPanel(preClubId = null) {
     // `sinConfirmar` lo usa caRevocarCasilla, que ya ha pedido su propia
     // doble confirmación: encadenar aquí un tercer diálogo sólo consigue que
     // se acepte sin leer.
-    window.caSetUserStatus = async (userId, userEmail, newStatus, cid, targetRole, sinConfirmar) => {
+    // ⚠️ v581 · `plaza` (opcional) = { category, subcategory } de la FILA desde
+    //    la que se actúa. Cuando llega, la revocación apunta a ESA casilla y no
+    //    a "todos los roles con ese nombre en este club". Los llamantes que no
+    //    lo pasan conservan exactamente el comportamiento anterior.
+    window.caSetUserStatus = async (userId, userEmail, newStatus, cid, targetRole, sinConfirmar, plaza) => {
         // 'removed' ya NO es "dar de baja definitivamente": es revocar el
         // acceso. El texto lo dice, porque de él depende que el administrador
         // entienda qué está aceptando.
@@ -2197,11 +2201,11 @@ async function openClubAdminPanel(preClubId = null) {
             /* el llamante ya ha confirmado */
         } else if (newStatus === 'removed' && targetRole) {
             if (!confirm('¿Quitar el rol "' + targetRole + '" a ' + userEmail + '?\n\n' +
-                         'Se conservará su cuenta y los demás roles activos.')) return;
+                         'Se conservará su cuenta y los demás roles activos.')) return false;
         } else if (newStatus === 'removed') {
             if (!confirm('¿Dar de baja a ' + userEmail + '?\n\n' +
                          'Se le retira el acceso y se libera su plaza.\n' +
-                         'Su cuenta y el histórico del equipo se conservan.')) return;
+                         'Su cuenta y el histórico del equipo se conservan.')) return false;
         } else {
             if (!confirm('¿Deseas ' + (labels[newStatus] || newStatus) + ' a ' + userEmail + '?')) return;
         }
@@ -2221,7 +2225,7 @@ async function openClubAdminPanel(preClubId = null) {
             // ═══════════════════════════════════════════════════════════
             if (newStatus === 'removed') {
                 var reason = prompt('Motivo de baja para ' + userEmail + ' (se registra en el sistema):');
-                if (reason === null) return;
+                if (reason === null) return false;
 
                 // 1. Leer documento para obtener uid real
                 var docSnap = await getDoc(doc(db, 'users', userId));
@@ -2257,14 +2261,54 @@ async function openClubAdminPanel(preClubId = null) {
                     var rc = String(r.clubId || '');
                     return rc === String(cid || '') || rc === '';
                 };
+                // ══════════════════════════════════════════════════════════
+                // 🔑🔑🔑 v581 · LA UNIDAD ES LA PLAZA, NO EL ROL
+                //
+                //  Con (club + rol) bastaba mientras cada persona tuviera una
+                //  sola casilla por rol, pero desde v537 un entrenador lleva
+                //  DOS equipos (un F7 y un F11): dos entradas 'user' en el
+                //  MISMO club. Revocar por nombre de rol las cogía LAS DOS.
+                //
+                //  Y peor: el árbol del SuperAdmin pintaba filas descolocadas
+                //  del mismo entrenador (v581, arriba). Pulsar "Eliminar" en
+                //  una de ellas llegaba aquí con rol='user' y sin categoría, y
+                //  revocaba la plaza que el entrenador tenía BIEN asignada. El
+                //  reporte del autor decía exactamente eso: que gestionar un
+                //  registro desincronizado no puede tocar su vínculo real.
+                //
+                //  ⚠️ Sólo se estrecha si el llamante DICE de qué equipo habla.
+                //  Sin `plaza`, la baja sigue siendo "todo el rol en este club",
+                //  que es lo que hace el botón 🗑️ Baja del panel de Club.
+                //  ⚠️ Se compara NORMALIZADO (window.ctNormCat/ctNormSubcat):
+                //  la misma categoría llega como 'Prebenjamín', 'prebenjamin'
+                //  o 'f7_prebenjamin_a' según quién la escribiera, y comparar
+                //  en crudo no casaría NINGUNA — cero roles seleccionados y
+                //  una baja que no ocurre.
+                // ══════════════════════════════════════════════════════════
+                var _nc = (typeof window.ctNormCat === 'function')
+                    ? window.ctNormCat
+                    : function(x) { return String(x == null ? '' : x).trim().toLowerCase(); };
+                var _ns = (typeof window.ctNormSubcat === 'function')
+                    ? window.ctNormSubcat
+                    : function(x) { return String(x == null ? '' : x).trim().toUpperCase(); };
+                var _plazaCat = _nc((plaza && plaza.category) || '');
+                var _plazaSub = _ns((plaza && plaza.subcategory) || '');
+                var _acotaPorPlaza = !!(_plazaCat && _plazaSub);
+                var _esEstaPlaza = function(r) {
+                    if (!_acotaPorPlaza) return true;
+                    return _nc(r.category != null ? r.category : r.categoryLabel) === _plazaCat &&
+                           _ns(r.subcategory) === _plazaSub;
+                };
                 var rolesRemovidos = allRoles.filter(function(r) {
                     if (!_esDeEsteClub(r)) return false;
                     if (targetRole && r.role !== targetRole) return false;
+                    if (!_esEstaPlaza(r)) return false;
                     return true;
                 });
                 var rolesRestantes = allRoles.filter(function(r) {
                     if (!_esDeEsteClub(r)) return true;
                     if (targetRole && r.role !== targetRole) return true;
+                    if (!_esEstaPlaza(r)) return true;
                     return false;
                 });
                 // Sólo cuentan como "restantes" los que siguen VIVOS: un rol ya
@@ -2287,7 +2331,18 @@ async function openClubAdminPanel(preClubId = null) {
                 //    la raíz TIENE que quedar desautorizada.
                 var _raizEsDeEsteClub = String(docData.clubId || '') === String(cid || '')
                                         || String(docData.clubId || '') === '';
-                var revocaRolRaiz = _raizEsDeEsteClub && !!docData.role &&
+                // ⚠️ v581 · …PERO SÓLO SI LO REVOCADO ES **LA PLAZA DE LA RAÍZ**.
+                //    Cuando se acota a una casilla concreta, un entrenador con
+                //    dos equipos conserva el otro: desautorizar la raíz le
+                //    cerraría la puerta entera por quitarle UNA plaza. La raíz
+                //    describe una sola plaza (rol + club + su categoría), así
+                //    que se compara también por categoría —normalizada— cuando
+                //    el llamante ha dicho de qué equipo hablaba.
+                var _raizEsEstaPlaza = !_acotaPorPlaza || (
+                    _nc(docData.category != null ? docData.category : docData.categoryLabel) === _plazaCat &&
+                    _ns(docData.subcategory) === _plazaSub
+                );
+                var revocaRolRaiz = _raizEsDeEsteClub && !!docData.role && _raizEsEstaPlaza &&
                     rolesRemovidos.some(function(r) { return r.role === docData.role; });
                 // Sin allRoles utilizable, la baja recae entera sobre la raíz.
                 if (allRoles.length === 0) revocaRolRaiz = true;
@@ -2325,12 +2380,15 @@ async function openClubAdminPanel(preClubId = null) {
                 };
                 // El array COMPLETO que se va a guardar: los revocados marcados
                 // y los demás intactos. Se respeta el orden original.
+                // ⚠️ v581 · SE MARCAN LAS ENTRADAS SELECCIONADAS, NO LAS QUE SE
+                //    LE PAREZCAN. Esto casaba por (rol + club), así que aunque
+                //    `rolesRemovidos` acotase bien la plaza, el marcado volvía a
+                //    ensancharse y tumbaba TAMBIÉN el otro equipo del mismo
+                //    entrenador. `Array.filter` conserva las referencias del
+                //    array original, así que la identidad es exacta y no hay que
+                //    reconstruir ningún criterio de igualdad.
                 var allRolesTrasRevocar = allRoles.map(function(r) {
-                    var esRevocado = rolesRemovidos.some(function(x) {
-                        return x.role === r.role &&
-                               String(x.clubId || '') === String(r.clubId || '');
-                    });
-                    return esRevocado ? marcaRevocado(r) : r;
+                    return (rolesRemovidos.indexOf(r) >= 0) ? marcaRevocado(r) : r;
                 });
 
                 // ══════════════════════════════════════════════════════════
@@ -2399,8 +2457,9 @@ async function openClubAdminPanel(preClubId = null) {
                 if (rolesRemovidos.length === 0 && !revocaRolRaiz && !revocaTodosLosRoles) {
                     showToast('⚠️ No se encontró ningún rol activo de ' + userEmail +
                               ' en este club' + (targetRole ? ' con el rol "' + targetRole + '"' : '') +
+                              (_acotaPorPlaza ? ' en ' + _plazaCat + ' ' + _plazaSub : '') +
                               '. No se ha cambiado nada.', 6000);
-                    return;
+                    return false;
                 }
 
                 var revocaRaiz = {
@@ -2477,7 +2536,7 @@ async function openClubAdminPanel(preClubId = null) {
                 if (falloRevocacion) {
                     showToast('❌ No se pudo revocar el acceso de ' + userEmail +
                               ': ' + (falloRevocacion.message || falloRevocacion), 6000);
-                    return;
+                    return false;
                 }
 
                 if (revocaTodosLosRoles) {
@@ -2487,7 +2546,12 @@ async function openClubAdminPanel(preClubId = null) {
                     showToast('➖ Rol/Roles de ' + userEmail + ' revocados. Conserva sus otros roles.', 4000);
                 }
                 if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId);
-                return;
+                // ⚠️ v581 · DEVUELVE SI LA REVOCACIÓN OCURRIÓ DE VERDAD. El
+                //    borrado del árbol (cronosEliminarUsuarioSeguro) llamaba y
+                //    daba por hecho que la plaza quedaba libre; si aquí no se
+                //    tocaba nada, seguía adelante y archivaba igual. Los
+                //    caminos que no escriben devuelven `false`.
+                return true;
 
                 // ── (retirado) CAMINO B: borrado TOTAL del usuario ──────────
                 // Aquí vivía el borrado de los documentos de users, de los

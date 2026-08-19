@@ -80,7 +80,40 @@ window.saClubs = async function saClubs() {
                 || !!(u.individualEntityId || u.individualOwnerId || u.isIndividual)
                 || (u.clubId && _indivClubIds.has(u.clubId))
                 || (u.allRoles||[]).some(r => ['individual','admin_individual','parent_individual','entrenador_individual','padre_individual'].includes(r.role));
-            if (isIndivUser) return;
+            // ═══════════════════════════════════════════════════════════
+            //  🔴🔴🔴 v582 · ESTE `return` BORRABA EL BENJAMÍN C DEL PANEL
+            //
+            //  Reporte del autor (capturas 9263/9264, v581): "el entrenador
+            //  del Benjamín C ha desaparecido de su sitio", y los dos paneles
+            //  no coinciden — el del Club cuenta 11 entrenadores y el del
+            //  SuperAdmin, 9.
+            //
+            //  🔑🔑🔑 Medido por REST: `brunoromar2012@gmail.com` lleva el
+            //  **benjamin/C** de CD DÍA, y su documento tiene en la RAÍZ
+            //  `role:'individual'`. Sus DOS plazas son `role:'user'` en un club
+            //  de verdad, pero la primera condición de arriba mira la raíz, lo
+            //  daba por usuario de ente individual y lo sacaba de la lista
+            //  ANTES de repartir. Resultado exacto y comprobable:
+            //    · Benjamín se queda vacío en el SuperAdmin y lleno en el Club;
+            //    · y sus 2 plazas explican, al caracter, el 11 contra 9.
+            //
+            //  ⚠️ ES EL DEFECTO DE v563 OTRA VEZ, un paso más arriba. Allí se
+            //  corrigió el REPARTO para que mirase `allRoles` en vez de la
+            //  raíz; pero el filtro que decide quién entra siquiera al reparto
+            //  se quedó mirando la raíz, y ninguna corrección del reparto puede
+            //  alcanzar a quien ya se ha descartado.
+            //
+            //  🔑 LA REGLA: la raíz no decide la pertenencia; las PLAZAS sí.
+            //  Quien tenga una plaza en un club real ES de ese club, diga lo
+            //  que diga un campo de compatibilidad. `clubs` sólo contiene
+            //  clubes reales (los de tipo 'individual' se apartaron arriba, en
+            //  `_indivClubIds`), así que esto no puede colar a un usuario de
+            //  ente individual en la pestaña de Clubes.
+            // ═══════════════════════════════════════════════════════════
+            const _esClubReal = (cid) => !!(cid && clubs[cid]);
+            const _tienePlazaEnClubReal = _esClubReal(u.clubId) ||
+                (u.allRoles || []).some(r => r && (_esClubReal(r.clubId) || _esClubReal(r.requestedClubId)));
+            if (isIndivUser && !_tienePlazaEnClubReal) return;
 
             // ═══════════════════════════════════════════════════════════
             //  🔴🔴🔴 v563 · EL SUPERADMIN REPARTÍA SÓLO POR LA RAÍZ
@@ -164,9 +197,18 @@ window.saClubs = async function saClubs() {
                 roles.forEach(r => {
                     const rCid = String(r.clubId || r.requestedClubId || '');
                     // Include both authorized AND pending users (not rejected)
+                    // ⚠️ v581 · 'removed' TAMBIÉN excluye, no sólo 'rejected'.
+                    //    Desde que la baja MARCA el rol en vez de borrarlo
+                    //    (v477/v478: la baja es una revocación), una plaza dada
+                    //    de baja SIGUE en `allRoles` con status:'removed'. El
+                    //    panel de Club ya la descartaba; esta copia del
+                    //    SuperAdmin no, así que la pintaba otra vez —y como al
+                    //    revocar no se conserva categoría útil, aterrizaba en
+                    //    "Sin categoría" inflando el recuento del club.
                     const notRejected = r.status !== 'rejected' && u.status !== 'rejected';
+                    const notRemoved  = r.status !== 'removed';
                     const matchClub = rCid === cidStr || (rCid === '' && String(u.clubId||'') === cidStr);
-                    if (matchClub && notRejected) {
+                    if (matchClub && notRejected && notRemoved) {
                         const _roleData = (r.category == null && r.subcategory == null)
                             ? { ...r,
                                 category:    u.category || u.categoryLabel,
