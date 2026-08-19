@@ -83,7 +83,7 @@ async function sendMatchReportsToParents() {
         if (isSetupMode) {
             // 1. Obtener convocados
             const convRows = document.querySelectorAll('.conv-row.conv-selected');
-            const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+            const roster = window.cronosPlantillaAmbas();   // v580 · la del EQUIPO abierto
             
             // Intentamos detectar el modo de varias formas (global o por el título si falla)
             let mode = (typeof currentMode !== 'undefined') ? currentMode : (window.currentMode || 'f11');

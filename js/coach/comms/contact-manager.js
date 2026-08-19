@@ -238,7 +238,7 @@ async function openContactManager() {
         }
 
         // --- CARGAR PLANTILLA PARA VINCULACIÓN ---
-        const rosterData = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+        const rosterData = window.cronosPlantillaAmbas();   // v580 · la del EQUIPO abierto
         const currentSquad = rosterData[currentMode || 'f11'] || [];
         window._cronos_squad_cache = currentSquad; // Caché global para renderParentRowMarkup
 

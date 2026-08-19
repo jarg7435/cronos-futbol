@@ -344,7 +344,7 @@ window.openMisInformes = async function openMisInformes() {
             // plantilla de F7 y de F11, y "Mis Informes" no distingue.
             try {
                 if (typeof window.ctMergeSquadRows === 'function') {
-                    const _r = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+                    const _r = window.cronosPlantillaAmbas();   // v580 · la del EQUIPO abierto
                     const _vistos = Object.create(null);
                     const _sq = [];
                     ['f7', 'f11'].forEach(function (m) {
@@ -698,7 +698,7 @@ window.openIndividualReports = async function openIndividualReports() {
         // en cronos_player_links de Firestore. Los combinamos aquí.
         if (typeof emailConfig !== 'undefined' && Array.isArray(emailConfig.contacts)) {
             const squad = window._cronos_squad_cache ||
-                JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}')[
+                window.cronosPlantillaAmbas()[   /* v580 · la del EQUIPO abierto */
                     (typeof currentMode !== 'undefined' ? currentMode : 'f11')] || [];
 
             emailConfig.contacts.filter(c => c.type === 'parent' && c.playerId).forEach(c => {

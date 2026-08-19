@@ -217,6 +217,13 @@ function buildSandbox({
     vm.createContext(sandbox);
     sandbox.window = sandbox;
     sandbox.globalThis = sandbox;
+    // v580 · la plantilla es DEL EQUIPO y se lee por accesor. Se estabula
+    // contra el mismo almacen de mentira del arnes (ver js/core/utils.js).
+    sandbox.window.cronosPlantillaAmbas = function () {
+        try { return JSON.parse(sandbox.localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}'); }
+        catch (e) { return { f7: [], f11: [] }; }
+    };
+
     vm.runInContext(BLOCK, sandbox);
 
     return { g: sandbox, w: sandbox, toasts, spinners, opened, written, logs, convoCalls,

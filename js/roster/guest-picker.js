@@ -136,7 +136,7 @@
         if (!t || !p) return;
 
         var mode = (typeof window.cronosActiveMode === 'function') ? window.cronosActiveMode() : 'f7';
-        var roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+        var roster = window.cronosPlantillaAmbas();   // v580 · la del EQUIPO abierto
 
         // Se vuelca la tabla ANTES de tocar nada: si no, lo tecleado en las
         // filas base desde el último guardado se perdería al repintar.
@@ -203,7 +203,10 @@
             originSubcategory: t.subcategory,
             originPlayerId:    p.ficha || ''
         };
-        localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+        // v580 · el invitado entra en la plantilla DE ESTE EQUIPO. Antes caía
+        // en la lista de la modalidad, que compartían todos los equipos de la
+        // persona: el invitado del Alevín aparecía también en el otro equipo.
+        window.cronosPlantillaGuardar(mode, roster[mode], { nube: false });
         _cerrar();
         if (typeof showToast === 'function') {
             showToast(ajustado

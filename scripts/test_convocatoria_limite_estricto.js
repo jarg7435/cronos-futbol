@@ -174,6 +174,15 @@ function montarPantalla(opts) {
         parseInt, JSON, Set, Array, String, Number, Math, Object
     };
     sb.window = { innerWidth: 1200, loadedTeamPlayers: opts.equipoCargado || undefined };
+    // v580 · la plantilla pasa a ser DEL EQUIPO y se lee por accesor
+    // (`cronosPlantillaAmbas`, js/core/utils.js) en vez de por localStorage.
+    // Se estabula leyendo del MISMO almacen de mentira de este arnes, para que
+    // los datos que prepara cada caso sigan llegando igual que antes.
+    sb.window.cronosPlantillaAmbas = function () {
+        try { return JSON.parse(sb.localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}'); }
+        catch (e) { return { f7: [], f11: [] }; }
+    };
+
     sb.globalThis = sb;
     vm.createContext(sb);
     vm.runInContext(SRC_MODAL + '\nopenConvocationModal();', sb);
@@ -295,6 +304,15 @@ function montarGoto(nConvocados, nTitulares) {
         parseInt, JSON, Array, String, Number, Object
     };
     sb.window = { _titularSelectionOrder: [] };
+    // v580 · la plantilla pasa a ser DEL EQUIPO y se lee por accesor
+    // (`cronosPlantillaAmbas`, js/core/utils.js) en vez de por localStorage.
+    // Se estabula leyendo del MISMO almacen de mentira de este arnes, para que
+    // los datos que prepara cada caso sigan llegando igual que antes.
+    sb.window.cronosPlantillaAmbas = function () {
+        try { return JSON.parse(sb.localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}'); }
+        catch (e) { return { f7: [], f11: [] }; }
+    };
+
     sb.globalThis = sb;
     vm.createContext(sb);
     vm.runInContext(SRC_GOTO, sb);
@@ -346,6 +364,15 @@ function montarEnvoltorio(veredicto) {
         parseInt, Array, String, Number, Object
     };
     sb.window = {};
+    // v580 · la plantilla pasa a ser DEL EQUIPO y se lee por accesor
+    // (`cronosPlantillaAmbas`, js/core/utils.js) en vez de por localStorage.
+    // Se estabula leyendo del MISMO almacen de mentira de este arnes, para que
+    // los datos que prepara cada caso sigan llegando igual que antes.
+    sb.window.cronosPlantillaAmbas = function () {
+        try { return JSON.parse(sb.localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}'); }
+        catch (e) { return { f7: [], f11: [] }; }
+    };
+
     sb.globalThis = sb;
     vm.createContext(sb);
     vm.runInContext(SRC_WRAPPER + '\npatchGoToTitularSelection();', sb);

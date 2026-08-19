@@ -286,8 +286,13 @@ function openRosterManager() {
     // Pila de navegación (js/core/nav-stack.js).
     if (typeof navScreen === 'function') navScreen('openRosterManager');
 
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
     const mode = window.cronosActiveMode();
+    // 👥 v580 · LA PLANTILLA ES DEL EQUIPO ABIERTO, no de la modalidad.
+    // `roster` se conserva como objeto para no tocar ni una línea del cuerpo
+    // de abajo, que lo usa como `roster[mode]` en catorce sitios: lo único
+    // que cambia es DE DÓNDE sale la lista y ADÓNDE se guarda.
+    const roster = {};
+    roster[mode] = window.cronosPlantillaLeer(mode);
     const limit = window._cronosRosterBase(mode);
     const maxExtra = window.CRONOS_ROSTER_EXTRA;
 
@@ -321,7 +326,8 @@ function openRosterManager() {
             p.id = newId;
         }
     });
-    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+    // v580 · se guarda en la plantilla DEL EQUIPO (y el legado, en paralelo).
+    window.cronosPlantillaGuardar(mode, roster[mode], { nube: false });
 
     const modal = document.getElementById('setup-modal');
     modal.innerHTML = `
@@ -479,9 +485,8 @@ window.cronosIrAAsistencia = function () {
         var mode = window.cronosActiveMode();
         var actuales = window._cronosHarvestRosterRows();
         if (actuales && actuales.length) {
-            var roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
-            roster[mode] = actuales;
-            localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+            // v580 · al equipo abierto, no a la modalidad.
+            window.cronosPlantillaGuardar(mode, actuales, { nube: false });
         }
     } catch (e) {
         console.warn('[Asistencia] no se pudo volcar la plantilla antes de navegar:', e);
@@ -498,7 +503,10 @@ window.cronosIrAAsistencia = function () {
 window.cronosAddSupportSlot = function () {
     const mode = window.cronosActiveMode();
     const base = window._cronosRosterBase(mode);
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    // v580 · la lista del EQUIPO abierto; `roster` sigue siendo un objeto para
+    // no tocar el cuerpo, que la usa como `roster[mode]`.
+    const roster = {};
+    roster[mode] = window.cronosPlantillaLeer(mode);
 
     const actuales = window._cronosHarvestRosterRows();
     if (actuales.length) roster[mode] = actuales;
@@ -511,14 +519,17 @@ window.cronosAddSupportSlot = function () {
         return;
     }
     roster[mode].push({ id: '', number: '', name: '', surname: '', alias: '', isSupport: true });
-    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+    window.cronosPlantillaGuardar(mode, roster[mode], { nube: false });
     openRosterManager();
 };
 
 window.cronosClearSupportSlot = function (index) {
     const mode = window.cronosActiveMode();
     const base = window._cronosRosterBase(mode);
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    // v580 · la lista del EQUIPO abierto; `roster` sigue siendo un objeto para
+    // no tocar el cuerpo, que la usa como `roster[mode]`.
+    const roster = {};
+    roster[mode] = window.cronosPlantillaLeer(mode);
 
     const actuales = window._cronosHarvestRosterRows();
     if (actuales.length) roster[mode] = actuales;
@@ -526,16 +537,15 @@ window.cronosClearSupportSlot = function (index) {
     // Se ELIMINA la fila, no se vacía: dejar un hueco a medias en mitad de las
     // supletorias descoloca los índices con los que el selector escribe.
     if (index >= base && index < roster[mode].length) roster[mode].splice(index, 1);
-    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
+    window.cronosPlantillaGuardar(mode, roster[mode], { nube: false });
     openRosterManager();
 };
 
 window.clearMasterRoster = function(mode) {
     if (!confirm('¿Seguro que quieres borrar a TODOS los jugadores de la plantilla actual (' + (mode==='f7'?'F7':'F11') + ')?')) return;
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
-    roster[mode] = [];
-    localStorage.setItem('cronos_master_roster', JSON.stringify(roster));
-    if (typeof cloudSet === 'function') cloudSet('cronos_master_roster', JSON.stringify(roster));
+    // v580 · borrar la plantilla borra la DE ESE EQUIPO, no la que compartían
+    // todos los equipos de esa modalidad. No hace falta leer antes: se vacía.
+    window.cronosPlantillaGuardar(mode, []);
     if (typeof showToast === 'function') showToast('🗑️ Plantilla borrada');
     if (typeof openRosterManager === 'function') openRosterManager();
 };

@@ -178,6 +178,11 @@ function buildSandbox({
         window: {
             _cronosCurrentUser: noUser ? null : me,
             _cronos_auth: noAuth ? null : { db: { __db: true } },
+            // v580 · la plantilla pasa a ser DEL EQUIPO y se lee por accesor
+            // (`cronosPlantillaAmbas`, js/core/utils.js) en vez de tirar de
+            // localStorage. Se estabula sobre el mismo `roster` que prepara
+            // cada caso, para que los datos sigan llegando igual que antes.
+            cronosPlantillaAmbas: () => (roster || { f7: [], f11: [] }),
         },
         document: {
             getElementById: (id) => el(id),

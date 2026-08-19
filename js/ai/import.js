@@ -373,7 +373,10 @@ function confirmRosterImport(mode) {
 
     // Cargar en la plantilla existente: rellenar desde el principio
     const limit = mode === 'f7' ? 18 : 25;
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    // v580 · la plantilla DEL EQUIPO abierto, con la misma forma {f7,f11} de
+    // antes: el cuerpo sigue indexando por su propia variable de modalidad
+    // (`mode` en unas funciones, `currentMode` en otras) sin cambiar nada.
+    const roster = window.cronosPlantillaAmbas();
 
     // Asegurar que hay suficientes filas
     while (roster[mode].length < limit) {
@@ -396,7 +399,7 @@ function confirmRosterImport(mode) {
 
     showSpinner('Importando jugadores…');
     setTimeout(() => {
-        cloudSet('cronos_master_roster', JSON.stringify(roster));
+        window.cronosPlantillaGuardar(mode, roster[mode]);
         hideSpinner();
         showToast('✅ ' + imported.length + ' jugadores importados correctamente');
         openSetupModal();
@@ -425,12 +428,15 @@ function saveMasterRoster(mode) {
                 if (!alias && name) alias = name.split(' ')[0];
                 return { id, number, name, surname, alias };
             });
-        const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+        // v580 · la plantilla DEL EQUIPO abierto, con la misma forma {f7,f11} de
+    // antes: el cuerpo sigue indexando por su propia variable de modalidad
+    // (`mode` en unas funciones, `currentMode` en otras) sin cambiar nada.
+    const roster = window.cronosPlantillaAmbas();
         roster[mode] = playersData;
         // 🔑 v570 · SE GUARDA EL ASA PARA PODER CONFIRMARLA (ver el aviso final
         // de esta función). `cloudSet` sigue sin esperarse: sólo se recoge lo
         // que devuelve.
-        const _subida = await cloudSet('cronos_master_roster', JSON.stringify(roster));
+        const _subida = await window.cronosPlantillaGuardar(mode, roster[mode]);
 
         // Copia SIN DATOS PERSONALES para que el resto de entrenadores del club
         // puedan convocar a estos jugadores en sus plazas de apoyo. Sólo salen
@@ -491,7 +497,10 @@ function openConvocationModal() {
     if (typeof navScreen === 'function') navScreen('openConvocationModal');
 
     document.body.classList.add('setup-mode');
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    // v580 · la plantilla DEL EQUIPO abierto, con la misma forma {f7,f11} de
+    // antes: el cuerpo sigue indexando por su propia variable de modalidad
+    // (`mode` en unas funciones, `currentMode` en otras) sin cambiar nada.
+    const roster = window.cronosPlantillaAmbas();
     const myPlayers = roster[currentMode] || [];
     const maxConvoked = currentMode === 'f7' ? 14 : 18;
     const minForMatch = currentMode === 'f7' ? 5 : 7;
@@ -920,7 +929,10 @@ function saveConvData() {
 
 // ── Guardar jugadores convocados (para el panel de envío) ──
 function saveConvPlayers() {
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    // v580 · la plantilla DEL EQUIPO abierto, con la misma forma {f7,f11} de
+    // antes: el cuerpo sigue indexando por su propia variable de modalidad
+    // (`mode` en unas funciones, `currentMode` en otras) sin cambiar nada.
+    const roster = window.cronosPlantillaAmbas();
     const myPlayers = roster[currentMode] || [];
     const convRows = document.querySelectorAll('#conv-grid-container .conv-row[data-state="convocado"], #conv-grid-container .conv-row[data-state="titular"]');
     window._savedConvokedPlayers = Array.from(convRows).map(r => {
@@ -954,7 +966,10 @@ function goToTitularSelection() {
     saveConvData();
     saveConvPlayers();
 
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    // v580 · la plantilla DEL EQUIPO abierto, con la misma forma {f7,f11} de
+    // antes: el cuerpo sigue indexando por su propia variable de modalidad
+    // (`mode` en unas funciones, `currentMode` en otras) sin cambiar nada.
+    const roster = window.cronosPlantillaAmbas();
     const myPlayers = roster[currentMode] || [];
     const maxTitulares = currentMode === 'f7' ? 7 : 11;
 
@@ -1041,7 +1056,10 @@ function startMatchWithConvocation() {
     // v557 · igual que en goToTitularSelection: el partido nuevo es del equipo
     // que esté abierto, y no hereda la retransmisión del equipo anterior.
     if (typeof window._cronosNuevoPartidoDeEquipo === 'function') window._cronosNuevoPartidoDeEquipo();
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[], "f11":[]}');
+    // v580 · la plantilla DEL EQUIPO abierto, con la misma forma {f7,f11} de
+    // antes: el cuerpo sigue indexando por su propia variable de modalidad
+    // (`mode` en unas funciones, `currentMode` en otras) sin cambiar nada.
+    const roster = window.cronosPlantillaAmbas();
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('.conv-row.conv-selected');
     

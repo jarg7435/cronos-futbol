@@ -1455,6 +1455,152 @@ function cronosTeamId(clubId, category, subcategory) {
     return c + '__' + cat + '__' + sub;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  👥 v580 · LA PLANTILLA ES DEL EQUIPO, NO DE LA MODALIDAD
+// ════════════════════════════════════════════════════════════════════
+//  EL DEFECTO. `cronos_master_roster` era `{f7:[…], f11:[…]}` en
+//  `users/{uid}/cronos_data/main`: UNA lista por modalidad y por PERSONA,
+//  común a todos sus equipos y a todos sus clubes. Con dos equipos de la
+//  misma modalidad, la plantilla de uno **borra la del otro, en silencio**.
+//
+//  🔑 Y NO ERA SOLO TEÓRICO. `cronosPuedeLlevarEquipo` impide dos equipos de
+//  la misma modalidad… pero su filtro es `mismoClub`: **sólo mira DENTRO de un
+//  club**. Un entrenador con plaza en dos clubes, ambos de Fútbol 7, pasa la
+//  regla y comparte una sola lista. Ese camino está abierto hoy.
+//
+//  LA FORMA NUEVA, calcada de lo que hizo v557 con las ranuras de partido:
+//      { f7: […], f11: […],                    ← legado, se conserva
+//        porEquipo: { "<teamId>": { f7: […], f11: […] } } }
+//
+//  🔑 EL LEGADO NO SE BORRA NUNCA. Se sigue escribiendo en paralelo por dos
+//  motivos: cualquier código que aún lea la forma vieja sigue funcionando, y
+//  una app antigua servida desde caché no se queda sin plantilla. Cuesta unos
+//  kilobytes y evita la clase de pérdida silenciosa que esto viene a arreglar.
+//
+//  ⚠️ LA MIGRACIÓN SIEMBRA TODOS LOS EQUIPOS DESDE EL LEGADO, no sólo el
+//  primero. Es deliberado: HOY los dos equipos comparten esa lista, así que
+//  sembrarlos a los dos reproduce exactamente lo que el entrenador ve ahora
+//  —no le desaparece nada— y a partir del primer cambio cada equipo va por su
+//  lado. Sembrar sólo al primero dejaría al otro con la plantilla en blanco
+//  después de una actualización, que es justo el susto que hay que evitar.
+const _ROSTER_KEY = 'cronos_master_roster';
+
+function _cronosRosterVacio() { return { f7: [], f11: [] }; }
+
+// El equipo abierto ahora mismo. Se resuelve EN CALIENTE (nunca se cachea:
+// cambiar de equipo en el panel tiene que cambiar de plantilla en el acto) y
+// se apoya en el mismo resolutor que usan las ranuras de partido, que ya trae
+// toda la cascada de respaldos. '' significa "sin equipo": entrenador
+// individual sin club, o sesión a medio arrancar.
+function cronosPlantillaEquipo() {
+    try {
+        if (window._cronosMatchSlots &&
+            typeof window._cronosMatchSlots.equipoActual === 'function') {
+            return String(window._cronosMatchSlots.equipoActual() || '');
+        }
+    } catch (e) { /* sin equipo: se usa el legado */ }
+    return '';
+}
+
+// La raíz completa, siempre con una forma utilizable.
+function cronosPlantillaRaiz() {
+    var raiz;
+    try { raiz = JSON.parse(localStorage.getItem(_ROSTER_KEY) || 'null'); }
+    catch (e) { raiz = null; }
+    if (!raiz || typeof raiz !== 'object') raiz = _cronosRosterVacio();
+    if (!Array.isArray(raiz.f7))  raiz.f7  = [];
+    if (!Array.isArray(raiz.f11)) raiz.f11 = [];
+    if (!raiz.porEquipo || typeof raiz.porEquipo !== 'object') raiz.porEquipo = {};
+    return raiz;
+}
+
+// ⚠️⚠️ LA SEMILLA: UNA FOTO CONGELADA DEL LEGADO, Y NO EL LEGADO VIVO.
+//
+// 🔑 Aquí había un fallo de diseño que cazó el guard, y merece quedar escrito
+// porque es sutil. La primera versión hacía que un equipo todavía sin plantilla
+// propia heredase de `raiz[m]`… que es la clave que TODO guardado sigue
+// refrescando. Secuencia real: el equipo B guarda su plantilla → `raiz.f7` pasa
+// a ser la de B → el equipo A, que aún no se había materializado, leía la de B.
+// **Es exactamente el defecto original reintroducido por la puerta de atrás.**
+//
+// La foto se toma UNA vez, la primera que alguien toca la plantilla tras
+// actualizar, y ya no cambia nunca. Un equipo sin lista propia hereda de ESA
+// foto —lo que el entrenador veía antes de v580—, no de lo último que se haya
+// guardado. Cuando todos los equipos se han materializado, deja de usarse.
+function _cronosPlantillaSemilla(raiz) {
+    if (raiz.migrado) return raiz;
+    raiz.semilla = { f7: raiz.f7.slice(), f11: raiz.f11.slice() };
+    raiz.migrado = true;
+    try { localStorage.setItem(_ROSTER_KEY, JSON.stringify(raiz)); } catch (e) {}
+    return raiz;
+}
+
+// La plantilla del equipo abierto, en la modalidad pedida.
+function cronosPlantillaLeer(mode) {
+    var m = (mode === 'f11') ? 'f11' : 'f7';
+    var raiz = cronosPlantillaRaiz();
+    var eq = cronosPlantillaEquipo();
+    if (!eq) return raiz[m];                      // sin equipo: el legado ES su plantilla
+    raiz = _cronosPlantillaSemilla(raiz);
+    if (raiz.porEquipo[eq] && Array.isArray(raiz.porEquipo[eq][m])) {
+        return raiz.porEquipo[eq][m];             // ya tiene la suya
+    }
+    // Aún sin materializar: hereda la FOTO, nunca lo último guardado por otro.
+    return (raiz.semilla && Array.isArray(raiz.semilla[m])) ? raiz.semilla[m] : raiz[m];
+}
+
+// Escribe la plantilla del equipo abierto. `opciones.nube` sube a Firestore.
+function cronosPlantillaGuardar(mode, lista, opciones) {
+    var m = (mode === 'f11') ? 'f11' : 'f7';
+    var o = opciones || {};
+    var raiz = cronosPlantillaRaiz();
+    var eq = cronosPlantillaEquipo();
+    var arr = Array.isArray(lista) ? lista : [];
+
+    // La foto del legado se toma ANTES de escribir encima: si el primer gesto
+    // tras actualizar es un guardado, sin esto la semilla nacería ya con el
+    // dato nuevo y los demás equipos heredarían de él.
+    if (eq) raiz = _cronosPlantillaSemilla(raiz);
+
+    if (eq) {
+        if (!raiz.porEquipo[eq] || typeof raiz.porEquipo[eq] !== 'object') {
+            raiz.porEquipo[eq] = {};
+        }
+        raiz.porEquipo[eq][m] = arr;
+    }
+    // 🔑 El legado se mantiene SIEMPRE al día con lo último guardado: es lo que
+    // deja seguir funcionando a cualquier lector que no haya migrado y a una
+    // app vieja servida desde caché.
+    raiz[m] = arr;
+
+    var texto = JSON.stringify(raiz);
+    try { localStorage.setItem(_ROSTER_KEY, texto); } catch (e) { /* cuota/privado */ }
+    if (o.nube !== false && typeof window.cloudSet === 'function') {
+        // Se devuelve la promesa: quien necesite confirmar la subida antes de
+        // decir "guardada" puede esperarla (la lección de v570).
+        return window.cloudSet(_ROSTER_KEY, texto);
+    }
+    return Promise.resolve(true);
+}
+
+// Las DOS modalidades del equipo abierto, con la misma forma `{f7, f11}` que
+// tenía la raíz. Existe para que los diez consumidores que sólo LEEN —fichas,
+// informes, contactos, asistencia, invitados— no tengan que cambiar ni una
+// línea de su cuerpo: siguen escribiendo `roster[mode]`, pero ahora `roster`
+// es el de SU equipo. Cambiar la lectura sin tocar la lógica es lo que hace
+// que esta migración sea revisable.
+function cronosPlantillaAmbas() {
+    return { f7: cronosPlantillaLeer('f7'), f11: cronosPlantillaLeer('f11') };
+}
+
+if (typeof window !== 'undefined') {
+    window.cronosPlantillaEquipo  = cronosPlantillaEquipo;
+    window.cronosPlantillaRaiz    = cronosPlantillaRaiz;
+    window.cronosPlantillaLeer    = cronosPlantillaLeer;
+    window.cronosPlantillaAmbas   = cronosPlantillaAmbas;
+    window.cronosPlantillaGuardar = cronosPlantillaGuardar;
+}
+
 // Clave de equipo de un documento CUALQUIERA, venga de donde venga.
 //
 // 🔑 Este es el corazón de la "doble lectura": prefiere el campo `teamId` que

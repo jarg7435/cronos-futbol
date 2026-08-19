@@ -107,8 +107,13 @@
     //  con huecos en blanco) y las PLAZAS DE APOYO sin jugador asignado.
     function jugadores() {
         var roster = {};
-        try { roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{}'); }
-        catch (e) { roster = {}; }
+        // v580 · la plantilla DEL EQUIPO abierto. Guard `typeof`: este modulo
+        // puede correr antes de que utils.js haya definido el accesor, y
+        // quedarse sin lista es preferible a lanzar en el arranque.
+        try {
+            roster = (typeof window.cronosPlantillaAmbas === 'function')
+                ? window.cronosPlantillaAmbas() : {};
+        } catch (e) { roster = {}; }
 
         var vistos = {}, out = [];
         ['f7', 'f11'].forEach(function (modo) {

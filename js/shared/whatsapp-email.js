@@ -446,7 +446,7 @@ window._cronosOpenRecipientPicker = async function(role, context) {
 
 function openConvocationMessage(target) {
     // FIX: usar _savedConvokedPlayers + pre-cargar caché de contactos
-    const roster = JSON.parse(localStorage.getItem('cronos_master_roster') || '{"f7":[],"f11":[]}');
+    const roster = window.cronosPlantillaAmbas();   // v580 · la del EQUIPO abierto
     const mode   = document.getElementById('setup-mode')?.value || 'f11';
     const myPlayers = roster[mode] || [];
 
