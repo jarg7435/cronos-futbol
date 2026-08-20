@@ -19,9 +19,66 @@
 // saSecretary() — Pestaña de Secretaría
 // ═══════════════════════════════════════════════════════════════════
 
-window.saSecretary = async function saSecretary() {
-    const body = document.getElementById('sa-body');
+// ════════════════════════════════════════════════════════════════════
+//  🔑 v590 · SECRETARÍA TAMBIÉN PARA EL DIRECTOR DEPORTIVO
+//
+//  Petición del autor (2026-08-19): que el Director pueda enviar él mismo
+//  las invitaciones con el enlace de la app, sin depender del SuperAdmin.
+//
+//  🔑 NO SE DUPLICA EL MÓDULO. Este formulario, sus plantillas y el envío
+//  por correo/WhatsApp son 300 líneas que ya funcionan y que el autor ya ha
+//  probado; una segunda copia se iría separando de ésta a la primera
+//  corrección. Se PARAMETRIZA lo único que cambia:
+//    · `contenedorId` — dónde se pinta (el SA usa #sa-body; el Director, el
+//      contenedor de su propio panel);
+//    · `roles`       — qué roles se pueden invitar (el Director NO puede
+//      crear administradores de club ni entes individuales: eso es del
+//      SuperAdmin, y ofrecérselo sería prometer algo que las reglas le
+//      van a denegar);
+//    · `club`        — el nombre de su club, ya escrito, porque un Director
+//      sólo invita al suyo.
+//  Sin argumentos se comporta EXACTAMENTE como siempre.
+// ════════════════════════════════════════════════════════════════════
+window.CRONOS_SECRETARIA_ROLES = {
+    individual:       '👤 Entrenador Individual',
+    individual_admin: '🛡️ Administrador Individual',
+    club_admin:       '🏟️ Administrador de Club',
+    user:             '⚽ Entrenador',
+    parent:           '👨‍👩‍👧 Padre/Madre/Tutor',
+    director:         '📋 Director Deportivo',
+    coordinator:      '🎯 Coordinador',
+};
+// Lo que un Director puede invitar A SU club. Deliberadamente sin
+// `club_admin`, `individual` ni `individual_admin`.
+window.CRONOS_SECRETARIA_ROLES_DIRECTOR = ['user', 'coordinator', 'parent'];
+
+window.saSecretary = async function saSecretary(opciones) {
+    const _opts = opciones || {};
+    const body = document.getElementById(_opts.contenedorId || 'sa-body');
     if (!body) return;
+    // ⚠️ EL CATÁLOGO SE RESUELVE CON RESPALDO. `test_sa_secretary_module.js`
+    //    ejecuta ESTA función aislada, en un sandbox donde las constantes de
+    //    fuera del bloque no existen: leerlas a pelo la reventaba con
+    //    "Cannot convert undefined or null to object". Y no es sólo cosa del
+    //    guard —es la misma clase de fallo que un orden de <script> distinto—,
+    //    así que el respaldo se queda.
+    const _CAT = (typeof window !== 'undefined' && window.CRONOS_SECRETARIA_ROLES) || {
+        individual:       '👤 Entrenador Individual',
+        individual_admin: '🛡️ Administrador Individual',
+        club_admin:       '🏟️ Administrador de Club',
+        user:             '⚽ Entrenador',
+        parent:           '👨‍👩‍👧 Padre/Madre/Tutor',
+        director:         '📋 Director Deportivo',
+        coordinator:      '🎯 Coordinador',
+    };
+    const _rolesVisibles = Array.isArray(_opts.roles) && _opts.roles.length
+        ? _opts.roles
+        : Object.keys(_CAT);
+    const _opcionesRol = _rolesVisibles
+        .filter(r => _CAT[r])
+        .map(r => '<option value="' + r + '">' + _CAT[r] + '</option>')
+        .join('');
+    const _clubPrefijado = String(_opts.club || '');
     body.innerHTML = `
     <div style="max-width:600px;">
         <h3 style="margin:0 0 1rem;font-size:1rem;color:white;">✉️ Secretaría</h3>
@@ -78,20 +135,14 @@ window.saSecretary = async function saSecretary() {
                     style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                            border:1px solid rgba(255,255,255,0.15);border-radius:8px;
                            color:white;font-size:0.9rem;box-sizing:border-box;">
-                    <option value="individual">👤 Entrenador Individual</option>
-                    <option value="individual_admin">🛡️ Administrador Individual</option>
-                    <option value="club_admin">🏟️ Administrador de Club</option>
-                    <option value="user">⚽ Entrenador</option>
-                    <option value="parent">👨‍👩‍👧 Padre/Madre/Tutor</option>
-                    <option value="director">📋 Director Deportivo</option>
-                    <option value="coordinator">🎯 Coordinador</option>
+                    ${_opcionesRol}
                 </select>
             </div>
 
             <!-- Nombre del Club -->
             <div>
                 <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Nombre del Club (opcional)</label>
-                <input id="sec-club" type="text" placeholder="Nombre del club si aplica" oninput="window.saUpdateInviteTemplate()"
+                <input id="sec-club" type="text" value="${_clubPrefijado}" placeholder="Nombre del club si aplica" oninput="window.saUpdateInviteTemplate()"
                     style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                            border:1px solid rgba(255,255,255,0.15);border-radius:8px;
                            color:white;font-size:0.9rem;box-sizing:border-box;">

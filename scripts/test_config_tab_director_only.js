@@ -94,11 +94,30 @@ if (typeof sb._sdCanSeeConfigTab === 'function') {
 // Si cada una calculase el permiso por su cuenta podrian divergir, que es
 // exactamente como nacen estos defectos.
 {
-    ok('2a · el boton solo se pinta si _sdCanSeeConfigTab lo permite',
-        /_sdCanSeeConfigTab\(me\)\s*\n?\s*\?\s*`<button onclick="switchStaffTab\('config'\)/.test(crSrc)
-        || /\$\{_sdCanSeeConfigTab\(me\)[\s\S]{0,80}?switchStaffTab\('config'\)/.test(crSrc));
-    ok('2b · ⚠️ ya NO existe un boton de Config. incondicional',
-        !/^\s*<button onclick="switchStaffTab\('config'\)/m.test(crSrc));
+    // ══════════════════════════════════════════════════════════════════
+    //  🔄 v591 · YA NO HAY PESTAÑAS: LA PUERTA VISIBLE ES EL TABLERO
+    //
+    //  El autor retiró la barra de pestañas (v591) y el panel entra por un
+    //  tablero de botones. La aserción miraba el BOTÓN DE PESTAÑA, que ya no
+    //  existe; lo que hay que fijar sigue siendo lo mismo: **que la entrada a
+    //  Configuración sólo se OFREZCA al director**. Ahora esa oferta es la
+    //  opción del tablero, que se añade dentro de `if (_esDir)`.
+    //
+    //  ⚠️ Y esto es sólo la puerta VISIBLE. La que de verdad cierra el acceso
+    //  es la de la ruta (2c/2d, más abajo), porque `switchStaffTab('config')`
+    //  se puede llamar a mano desde la consola. Las dos siguen fijadas.
+    // ══════════════════════════════════════════════════════════════════
+    ok('2a · la entrada a Config. solo se OFRECE si es director (opcion del tablero)',
+        /if \(_esDir\) \{[\s\S]{0,700}?switchStaffTab\('config'\)/.test(crSrc),
+        'la opcion de Configuracion tiene que nacer dentro del if de director');
+    // ⚠️ SE CUENTAN LLAMADAS, NO MENCIONES: el fichero cita
+    //    switchStaffTab('config') en tres comentarios que explican justamente
+    //    esta regla. Contar el texto crudo daba 4 y el guard saleía en rojo
+    //    describiendo un defecto que no existe.
+    const _crSinCom = crSrc.split(/\r?\n/).filter(function (l) { return !/^\s*\/\//.test(l); }).join('\n');
+    ok('2b · ⚠️ y no hay ninguna otra via visible incondicional a Config.',
+        (_crSinCom.match(/switchStaffTab\('config'\)/g) || []).length === 1,
+        'una segunda entrada fuera del if la ofreceria a cualquiera');
     // la ruta: switchStaffTab tiene que cortar ANTES de renderizar
     // ⚠️ DOS trampas juntas en esta sola asercion, las dos ya conocidas:
     //  · el limite va ACOTADO a proposito (un `[\s\S]*?` sin techo puede abarcar

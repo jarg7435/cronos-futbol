@@ -6,7 +6,7 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Chronos Fútbol - Coach Assistant</title>
-    <link rel="stylesheet" href="style.css?v=v589">
+    <link rel="stylesheet" href="style.css?v=v592">
     
     <link rel="manifest" href="manifest.json">
     <!-- v224: favicon SVG para evitar 404 de /favicon.ico que aparecía en consola. -->
@@ -141,7 +141,7 @@
          ROBAR ESPACIO: o es una esquina, o se va solo. Aquí, las dos cosas.
          ⚠️ pointer-events:none es obligatorio en ambas: un elemento fijo se
          traga los toques de lo que tiene debajo (la trampa de v422). -->
-    <div id="cronos-version-badge" data-version="v589" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v589</div>
+    <div id="cronos-version-badge" data-version="v592" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v592</div>
     <script>
     (function () {
         var insignia = document.getElementById('cronos-version-badge');
@@ -290,7 +290,7 @@
                  enteras discutiendo sobre versiones distintas. Lo reescribe
                  cache-bust.js en cada despliegue. -->
             <p style="color:#7d8590; font-size:0.82rem; text-align:center; margin:0 0 1.5rem; letter-spacing:1px;">
-                Coach Assistant · <span id="build-version" data-version="v589">v589</span>
+                Coach Assistant · <span id="build-version" data-version="v592">v592</span>
             </p>
 
             <!-- Tabs -->
@@ -1445,157 +1445,157 @@
          de v464; app-init.js ya pregunta por el partido activo con la mudanza
          hecha. Cargarlo después dejaría a app-init.js leyendo un almacén a
          medio migrar. -->
-    <script src="js/core/match-slots.js?v=v589"></script>
+    <script src="js/core/match-slots.js?v=v592"></script>
 
     <!-- ══ CORE: app.js (lógica principal, carga primero) ══════════════════════ -->
-    <script src="js/core/app-init.js?v=v589"></script>
+    <script src="js/core/app-init.js?v=v592"></script>
 
     <!-- ══ CORE: pila de navegación (antes de cualquier pantalla que la use) ══ -->
-    <script src="js/core/nav-stack.js?v=v589"></script>
+    <script src="js/core/nav-stack.js?v=v592"></script>
 
     <!-- ══ CORE: configuración y parches ══════════════════════════════════════ -->
-    <script src="js/core/setup-modal.js?v=v589"></script>
-    <script src="js/core/patches.js?v=v589"></script>
+    <script src="js/core/setup-modal.js?v=v592"></script>
+    <script src="js/core/patches.js?v=v592"></script>
 
     <!-- ══ SERVICES: Firebase + Auth ══════════════════════════════════════════ -->
-    <script type="module" src="js/services/firebase-init.js?v=v589"></script>
-    <script type="module" src="js/services/auth.js?v=v589"></script>
-    <script src="js/services/auth-improvements.js?v=v589"></script>
+    <script type="module" src="js/services/firebase-init.js?v=v592"></script>
+    <script type="module" src="js/services/auth.js?v=v592"></script>
+    <script src="js/services/auth-improvements.js?v=v592"></script>
     <!-- v451 · Recuperación y cambio de contraseña. Script CLÁSICO (no módulo):
          necesita publicar en window para los onclick del HTML, y recibe las
          funciones de Firebase Auth por window._cronos_auth. Va DESPUÉS de
          auth-improvements.js porque reutiliza su validatePasswordStrength y su
          setupPasswordValidator. -->
-    <script src="js/services/auth/password.js?v=v589"></script>
+    <script src="js/services/auth/password.js?v=v592"></script>
 
     <!-- ══ CORE: seguridad, utilidades, seudonimizador ═══════════════════════ -->
-    <script src="js/core/security-and-state.js?v=v589"></script>
-    <script src="js/core/utils.js?v=v589"></script>
+    <script src="js/core/security-and-state.js?v=v592"></script>
+    <script src="js/core/utils.js?v=v592"></script>
     <!-- v545 · Garantiza que la casilla del RGPD se vea mientras se ve el
          registro, y avisa si ha quedado fuera de la pantalla al crecer el
          formulario. Va en fichero y NO en línea: el bloque de acceso no admite
          scripts inline (guard test_consentimiento_visible_en_registro.js). -->
-    <script src="js/core/rgpd-visible.js?v=v589"></script>
-    <script src="js/core/pseudonymizer.js?v=v589"></script>
+    <script src="js/core/rgpd-visible.js?v=v592"></script>
+    <script src="js/core/pseudonymizer.js?v=v592"></script>
     <!-- SPRINT 4: Accesibilidad WCAG 2.1 básica (debe cargar temprano) -->
-    <script src="js/core/accessibility-wcag.js?v=v589"></script>
+    <script src="js/core/accessibility-wcag.js?v=v592"></script>
 
     <!-- ══ SPRINT 3: Auditoría y Optimización de Renders ════════════════════ -->
-    <script src="js/services/audit-logger.js?v=v589"></script>
-    <script src="js/core/render-optimizer.js?v=v589"></script>
-    <script src="js/core/sprint3-init.js?v=v589"></script>
-    <script src="js/core/sprint3-tests.js?v=v589"></script>
+    <script src="js/services/audit-logger.js?v=v592"></script>
+    <script src="js/core/render-optimizer.js?v=v592"></script>
+    <script src="js/core/sprint3-init.js?v=v592"></script>
+    <script src="js/core/sprint3-tests.js?v=v592"></script>
 
     <!-- ══ MATCH: eventos del partido ═════════════════════════════════════════ -->
     <!-- v434 · Inmutabilidad del partido terminado. Va ANTES que todo lo que
          escribe en live_matches (player-actions, sync, retroactive-modal): esos
          módulos consultan window.CronosMatchLock antes de tocar Firestore. -->
-    <script src="js/match/immutability.js?v=v589"></script>
-    <script src="js/match/events/player-actions.js?v=v589"></script>
-    <script src="js/match/demo-tutorial.js?v=v589"></script>
-    <script src="js/match/timer/core.js?v=v589"></script>
-    <script src="js/match/persistence/active-match.js?v=v589"></script>
-    <script src="js/match/events/movement-log.js?v=v589"></script>
-    <script src="js/match/persistence/team-persistence.js?v=v589"></script>
-    <script src="js/match/live/sync.js?v=v589"></script>
-    <script src="js/match/replay/replay-player.js?v=v589"></script>
-    <script src="js/match/events/retroactive-modal.js?v=v589"></script>
+    <script src="js/match/immutability.js?v=v592"></script>
+    <script src="js/match/events/player-actions.js?v=v592"></script>
+    <script src="js/match/demo-tutorial.js?v=v592"></script>
+    <script src="js/match/timer/core.js?v=v592"></script>
+    <script src="js/match/persistence/active-match.js?v=v592"></script>
+    <script src="js/match/events/movement-log.js?v=v592"></script>
+    <script src="js/match/persistence/team-persistence.js?v=v592"></script>
+    <script src="js/match/live/sync.js?v=v592"></script>
+    <script src="js/match/replay/replay-player.js?v=v592"></script>
+    <script src="js/match/events/retroactive-modal.js?v=v592"></script>
 
     <!-- ══ SERVICES: Firestore, cloud, offline ════════════════════════════════ -->
-    <script src="js/services/firestore-sync.js?v=v589"></script>
-    <script src="js/services/firestore-storage.js?v=v589"></script>
-    <script src="js/services/offline-manager.js?v=v589"></script>
+    <script src="js/services/firestore-sync.js?v=v592"></script>
+    <script src="js/services/firestore-storage.js?v=v592"></script>
+    <script src="js/services/offline-manager.js?v=v592"></script>
     <!-- SPRINT 4: Notificaciones y Training Plans sincronizados -->
-    <script src="js/services/notification-dismiss-sync.js?v=v589"></script>
-    <script src="js/services/user-management.js?v=v589"></script>
+    <script src="js/services/notification-dismiss-sync.js?v=v592"></script>
+    <script src="js/services/user-management.js?v=v592"></script>
 
     <!-- ══ STAFF & COMMS ══════════════════════════════════════════════════════ -->
-    <script src="js/core/staff-and-comms.js?v=v589"></script>
+    <script src="js/core/staff-and-comms.js?v=v592"></script>
 
     <!-- ══ AI: importación de jugadores ════════════════════════════════════════ -->
-    <script src="js/ai/import.js?v=v589"></script>
+    <script src="js/ai/import.js?v=v592"></script>
 
     <!-- ══ ROSTER: plantilla y formaciones ═════════════════════════════════════ -->
-    <script src="js/roster/formations.js?v=v589"></script>
-    <script src="js/roster/legacy-formations.js?v=v589"></script>
+    <script src="js/roster/formations.js?v=v592"></script>
+    <script src="js/roster/legacy-formations.js?v=v592"></script>
     <!-- Plazas de apoyo: fichas de equipo sin datos personales + selector -->
-    <script src="js/roster/team-rosters.js?v=v589"></script>
-    <script src="js/roster/guest-picker.js?v=v589"></script>
+    <script src="js/roster/team-rosters.js?v=v592"></script>
+    <script src="js/roster/guest-picker.js?v=v592"></script>
 
     <!-- ══ UI: render, drag-drop, scroll ══════════════════════════════════════ -->
-    <script src="js/ui/bench-scroll.js?v=v589"></script>
-    <script src="js/ui/render.js?v=v589"></script>
-    <script src="js/ui/drag-drop.js?v=v589"></script>
+    <script src="js/ui/bench-scroll.js?v=v592"></script>
+    <script src="js/ui/render.js?v=v592"></script>
+    <script src="js/ui/drag-drop.js?v=v592"></script>
 
     <!-- ══ SHARED: WhatsApp, email, admin constants ═══════════════════════════ -->
-    <script src="js/shared/whatsapp-email.js?v=v589"></script>
-        <script src="js/shared/admin-shared.js?v=v589"></script>
+    <script src="js/shared/whatsapp-email.js?v=v592"></script>
+        <script src="js/shared/admin-shared.js?v=v592"></script>
 
     <!-- ══ ADMIN: SuperAdmin, Club, Individual, Billing ═══════════════════════ -->
-    <script src="js/admin/shared/category-tree.js?v=v589"></script>
-    <script src="js/admin/superadmin/superadmin.panel.js?v=v589"></script>
-    <script src="js/admin/superadmin/trash.js?v=v589"></script>
-    <script src="js/admin/superadmin/club-slots.js?v=v589"></script>
-    <script src="js/admin/superadmin/extras-toggle.js?v=v589"></script>
-    <script src="js/admin/superadmin/delete-club.js?v=v589"></script>
+    <script src="js/admin/shared/category-tree.js?v=v592"></script>
+    <script src="js/admin/superadmin/superadmin.panel.js?v=v592"></script>
+    <script src="js/admin/superadmin/trash.js?v=v592"></script>
+    <script src="js/admin/superadmin/club-slots.js?v=v592"></script>
+    <script src="js/admin/superadmin/extras-toggle.js?v=v592"></script>
+    <script src="js/admin/superadmin/delete-club.js?v=v592"></script>
     <!-- v436 · Vaciado de temporada: conserva el club y sus usuarios. NO
          confundir con delete-club.js, que borra el club entero. -->
-    <script src="js/admin/superadmin/season-reset.js?v=v589"></script>
-    <script src="js/admin/superadmin/create-direct.js?v=v589"></script>
-    <script src="js/admin/superadmin/individual-entity.js?v=v589"></script>
-    <script src="js/admin/superadmin/secretary.js?v=v589"></script>
-    <script src="js/admin/superadmin/individuals-tab.js?v=v589"></script>
-    <script src="js/admin/superadmin/clubs-tab.js?v=v589"></script>
-    <script src="js/admin/superadmin/requests-tab.js?v=v589"></script>
-    <script src="js/admin/superadmin/messaging.js?v=v589"></script>
-    <script src="js/admin/superadmin/extras.js?v=v589"></script>
-    <script src="js/admin/superadmin/billing.js?v=v589"></script>
-    <script src="js/admin/club/panel.js?v=v589"></script>
-    <script src="js/admin/individual/panel.js?v=v589"></script>
-    <script src="js/admin/billing/payments.js?v=v589"></script>
-    <script src="js/admin/billing/ui.js?v=v589"></script>
+    <script src="js/admin/superadmin/season-reset.js?v=v592"></script>
+    <script src="js/admin/superadmin/create-direct.js?v=v592"></script>
+    <script src="js/admin/superadmin/individual-entity.js?v=v592"></script>
+    <script src="js/admin/superadmin/secretary.js?v=v592"></script>
+    <script src="js/admin/superadmin/individuals-tab.js?v=v592"></script>
+    <script src="js/admin/superadmin/clubs-tab.js?v=v592"></script>
+    <script src="js/admin/superadmin/requests-tab.js?v=v592"></script>
+    <script src="js/admin/superadmin/messaging.js?v=v592"></script>
+    <script src="js/admin/superadmin/extras.js?v=v592"></script>
+    <script src="js/admin/superadmin/billing.js?v=v592"></script>
+    <script src="js/admin/club/panel.js?v=v592"></script>
+    <script src="js/admin/individual/panel.js?v=v592"></script>
+    <script src="js/admin/billing/payments.js?v=v592"></script>
+    <script src="js/admin/billing/ui.js?v=v592"></script>
 
     <!-- ══ COACH: comunicaciones, reportes, entrenamiento ════════════════════ -->
-    <script src="js/coach/comms/panel.js?v=v589"></script>
-    <script src="js/coach/comms/training-notify.js?v=v589"></script>
-    <script src="js/coach/comms/collective-report.js?v=v589"></script>
-    <script src="js/coach/comms/individual-reports.js?v=v589"></script>
-    <script src="js/coach/comms/contact-manager.js?v=v589"></script>
-    <script src="js/coach/comms/bulk-messaging.js?v=v589"></script>
-    <script src="js/coach/comms/match-reports-send.js?v=v589"></script>
-    <script src="js/coach/comms/match-reports-auto.js?v=v589"></script>
+    <script src="js/coach/comms/panel.js?v=v592"></script>
+    <script src="js/coach/comms/training-notify.js?v=v592"></script>
+    <script src="js/coach/comms/collective-report.js?v=v592"></script>
+    <script src="js/coach/comms/individual-reports.js?v=v592"></script>
+    <script src="js/coach/comms/contact-manager.js?v=v592"></script>
+    <script src="js/coach/comms/bulk-messaging.js?v=v592"></script>
+    <script src="js/coach/comms/match-reports-send.js?v=v592"></script>
+    <script src="js/coach/comms/match-reports-auto.js?v=v592"></script>
     <!-- report-engine.js define `const _RP` y debe ir ANTES de club-reports.js
          (que lo consume). No mover después: ver cabecera de report-engine.js. -->
-    <script src="js/coach/reports/report-engine.js?v=v589"></script>
-    <script src="js/coach/reports/club-reports.js?v=v589"></script>
-    <script src="js/coach/reports/director-config.js?v=v589"></script>
-    <script src="js/coach/reports/events-tab.js?v=v589"></script>
-    <script src="js/coach/reports/finished-matches-tab.js?v=v589"></script>
-    <script src="js/coach/reports/reports-tab.js?v=v589"></script>
+    <script src="js/coach/reports/report-engine.js?v=v592"></script>
+    <script src="js/coach/reports/club-reports.js?v=v592"></script>
+    <script src="js/coach/reports/director-config.js?v=v592"></script>
+    <script src="js/coach/reports/events-tab.js?v=v592"></script>
+    <script src="js/coach/reports/finished-matches-tab.js?v=v592"></script>
+    <script src="js/coach/reports/reports-tab.js?v=v592"></script>
     <!-- v472 · Descarga en PDF / CSV del resumen de temporada y de los informes
          grupales. Sólo lo consumen los onclick que pinta reports-tab.js, así que
          el orden entre ambos es indiferente; se deja junto a su consumidor. -->
-    <script src="js/coach/reports/reports-export.js?v=v589"></script>
+    <script src="js/coach/reports/reports-export.js?v=v592"></script>
     <!-- Purga de un partido: definicion UNICA que usan el boton de Informes
          y el de Partidos Terminados. Se resuelve en tiempo de click, asi que
          el orden respecto a sus dos llamadores es indiferente. -->
-    <script src="js/coach/reports/match-purge.js?v=v589"></script>
+    <script src="js/coach/reports/match-purge.js?v=v592"></script>
     <!-- SPRINT 4: Training Plans sync con Firestore (debe ir ANTES de panel.js) -->
-    <script src="js/services/training-firestore-sync.js?v=v589"></script>
-    <script src="js/coach/training/panel.js?v=v589"></script>
+    <script src="js/services/training-firestore-sync.js?v=v592"></script>
+    <script src="js/coach/training/panel.js?v=v592"></script>
 
     <!-- ══ ASISTENCIA ══════════════════════════════════════════════════════════
          El almacén va ANTES que la pantalla, y los dos DESPUÉS de
          training-firestore-sync.js: las sesiones sobre las que se pasa lista
          salen del cuadrante semanal (TrainingSync.readWeekDays). -->
-    <script src="js/coach/attendance/attendance-store.js?v=v589"></script>
-    <script src="js/coach/attendance/panel.js?v=v589"></script>
+    <script src="js/coach/attendance/attendance-store.js?v=v592"></script>
+    <script src="js/coach/attendance/panel.js?v=v592"></script>
 
     <!-- ══ PARENT: portal de padres ═══════════════════════════════════════════ -->
-    <script src="js/parent/panel.js?v=v589"></script>
+    <script src="js/parent/panel.js?v=v592"></script>
 
     <!-- ══ CORE: event listeners (debe ir al final) ══════════════════════════ -->
-    <script src="js/core/event-listeners.js?v=v589"></script>
+    <script src="js/core/event-listeners.js?v=v592"></script>
 
     <!-- ══ BANNER: nueva versión disponible (aparece automáticamente) ══ -->
 

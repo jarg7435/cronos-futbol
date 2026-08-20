@@ -178,14 +178,26 @@ console.log('\n── PARTE 3 · las superficies bloqueadas ──');
        /\.btn-comms-card\[disabled\]/.test(PANEL),
        'dos atributos style en el mismo boton: gana el primero y se pierden --color/--bg');
 
-    // Las 5 pestañas del panel de Familias
+    // ══════════════════════════════════════════════════════════════════
+    //  🔄 v591 · YA NO HAY PESTAÑAS: LA PUERTA VISIBLE ES EL TABLERO
+    //
+    //  El autor retiró la barra de pestañas del Área de Familias. El
+    //  invariante NO cambia —una opción sin extra contratado no puede
+    //  ofrecerse abierta—, cambia dónde vive: ahora es el botón del tablero.
+    //
+    //  ⚠️ El cerrojo de verdad sigue siendo `ppTab` (3g, aquí debajo). El
+    //  tablero es interfaz, no permiso.
+    // ══════════════════════════════════════════════════════════════════
     for (const [tab, key] of [['conv','convocatorias'], ['train','entrenamientos'],
                               ['player','informes'], ['chat','mensajeria'],
                               ['live','partidos_en_vivo']]) {
-        ok('3f·' + tab + ' · la pestaña se pinta con su extra (' + key + ')',
-           new RegExp('id="pp-tab-' + tab + '"[^>]*_ppTabAttrs\\(\'' + tab + '\',\'' + key + '\'').test(PARENT),
-           'esa pestaña no consulta ningun extra');
+        ok('3f·' + tab + ' · la opción del tablero consulta su extra (' + key + ')',
+           new RegExp("'" + tab + "',\\s*'" + key + "'").test(PARENT),
+           'esa opcion del tablero no consulta ningun extra');
     }
+    ok('3f2 · 🔑 una opción sin extra sale BLOQUEADA, no oculta',
+       /bloqueado: _libre\(extraKey\) \? '' :/.test(PARENT),
+       'una opcion que desaparece sin explicacion parece una averia');
 
     ok('3g · el router ppTab tambien cierra (se llega desde la pila, sin click)',
        /_PP_TAB_EXTRA\[tab\][\s\S]{0,220}_cronosExtraGate/.test(PARENT),
@@ -195,12 +207,12 @@ console.log('\n── PARTE 3 · las superficies bloqueadas ──');
        /_ppArrancarEnPestanaValida/.test(PARENT),
        'sin extra de convocatorias, el Area de Familias abriria sobre un candado');
 
-    // El id literal es lo que permite reactivar la pestaña sin `this` (14e de
-    // test_nav_stack). Si alguien lo monta concatenando, deja de ser greppable.
-    ok('3i · los id de pestaña siguen LITERALES en el fuente',
-       ['conv','train','player','chat','live']
-         .every(t => PARENT.includes('id="pp-tab-' + t + '"')),
-       'ids construidos por concatenacion: invisibles para un grep');
+    // v591 · Los id de pestaña ya no existen: se retiró la barra. El invariante
+    // que los sustituye es el que el autor pidió expresamente — que desde
+    // CUALQUIER sección se pueda volver al tablero, para no quedarse atrapado.
+    ok('3i · 🔑 desde cualquier sección hay vuelta al tablero',
+       /_ppNav\.innerHTML =/.test(PARENT) && /Volver al Men/.test(PARENT),
+       'sin vuelta, el usuario queda atrapado dentro de una seccion');
 }
 
 // ═══════════ PARTE 4 · el permiso de envio del padre ═══════════

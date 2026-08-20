@@ -684,12 +684,30 @@ console.log('\n── PARTE 14 · panel de Padres ──');
     ok('14d · el panel arranca en la pestaña registrada, no en una fija',
        /ppTab\(_tab\);/.test(pp) && !/^\s*ppNotifsByType\('convocatoria'\);\s*$/m.test(pp));
 
-    for (const tab of ['conv', 'train', 'player', 'chat', 'live']) {
-        ok(`14e·${tab} · el boton de pestaña lleva id para reactivarse sin \`this\``,
-           new RegExp('id="pp-tab-' + tab + '"').test(pp));
-    }
-    ok('14f · y ppTab localiza el boton por ese id cuando no hay `this`',
-       /panel\.querySelector\('#pp-tab-' \+ tab\)/.test(pp));
+    // ══════════════════════════════════════════════════════════════════
+    //  🔄 v591 · SE RETIRÓ LA BARRA DE PESTAÑAS (decisión del autor)
+    //
+    //  14e exigía que cada pestaña llevase su `id` literal, porque era lo que
+    //  permitía REACTIVARLA cuando la pila repinta el panel sin un `this`. Ya
+    //  no hay pestañas que reactivar.
+    //
+    //  🔑 PERO EL INVARIANTE DE FONDO NO DESAPARECE, sólo cambia de forma: al
+    //  volver por la pila, el panel tiene que aterrizar en la vista guardada
+    //  —eso lo siguen fijando 14b, 14c y 14d— y desde esa vista tiene que
+    //  haber salida al tablero, o el usuario se queda atrapado. Eso es lo que
+    //  se fija aquí ahora.
+    //
+    //  ⚠️ 14f se conserva: `ppTab` sigue buscando el botón por id y esa
+    //  búsqueda ha de seguir siendo inofensiva cuando no encuentra nada.
+    // ══════════════════════════════════════════════════════════════════
+    ok('14e · 🔑 desde cualquier sección se vuelve al tablero (no se queda atrapado)',
+       /_ppNav\.innerHTML =/.test(pp) && /Volver al Men/.test(pp),
+       'sin vuelta al menu, entrar en una seccion seria un callejon sin salida');
+    ok('14e2 · y el tablero es una ruta más del router, no un caso aparte',
+       /menu:\s*ppMenu,/.test(pp));
+    ok('14f · y ppTab sigue localizando el boton por id sin romperse si no existe',
+       /panel\.querySelector\('#pp-tab-' \+ tab\)/.test(pp) &&
+       /if \(_btn\) _btn\.classList\.add\('active'\);/.test(pp));
 
     ok('14g · el hilo de chat SI se apila, con sus argumentos',
        /navScreen\(\s*['"]ppOpenChatThread['"]\s*,\s*threadId\s*,\s*coachLabel\s*\)/.test(pp));

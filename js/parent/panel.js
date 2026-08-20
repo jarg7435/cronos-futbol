@@ -39,7 +39,10 @@ async function openParentPanel(initialTab) {
     // ARGUMENTO de la raíz. Ver la nota larga en club-reports.js.
     // El registro va tras varios `await`; es seguro por ser RAÍZ (invariante
     // async documentado en superadmin.panel.js).
-    const _tab = initialTab || 'conv';
+    // v590 · SE ENTRA POR EL TABLERO, igual que el panel del entrenador y
+    //  el de Dirección. Las pestañas siguen ahí y siguen funcionando; el
+    //  menú es la pantalla de entrada, no un sustituto.
+    const _tab = initialTab || 'menu';
     if (typeof navRootScreen === 'function') navRootScreen('openParentPanel', _tab);
 
     // Crear / reutilizar contenedor
@@ -58,18 +61,14 @@ async function openParentPanel(initialTab) {
     // candado por delante y en estado bloqueado, para que la familia sepa que
     // la función existe y que depende del plan del club.
     //
-    // ⚠️ DOS RESTRICCIONES QUE OBLIGAN A ESTA FORMA, no es rodeo gratuito:
-    //  1. El `id="pp-tab-conv"` de cada botón tiene que estar LITERAL en el
-    //     fuente. Lo exige la aserción 14e de test_nav_stack.js, y con razón:
-    //     ppTab reactiva la pestaña buscándola por ese id cuando la pila
-    //     repinta sin `this`, así que el id debe poder encontrarse con un
-    //     grep. Un helper que lo montara con 'pp-tab-' + tab funcionaría en
-    //     ejecución pero dejaría el id invisible para cualquier búsqueda.
-    //  2. NADA de backticks aquí dentro: estos helpers se interpolan en el
-    //     template literal del innerHTML y un backtick lo cerraría, rompiendo
-    //     el fichero entero (ver la nota de las propias pestañas).
-    // Por eso se devuelven los ATRIBUTOS y el PREFIJO por separado, y el id y
-    // la etiqueta se quedan escritos tal cual en cada botón.
+    // ⚠️ v591 · LA BARRA DE PESTAÑAS YA NO EXISTE (el autor la retiró: se entra
+    //    por el tablero). Estos dos helpers SE CONSERVAN porque siguen siendo
+    //    la forma de leer si un extra está contratado, que es lo que consulta
+    //    el tablero; lo que se ha ido es el marcado que los interpolaba.
+    //    La restricción que sí sigue viva:
+    //    NADA de backticks aquí dentro: estos helpers se interpolan en el
+    //    template literal del innerHTML y un backtick lo cerraría, rompiendo
+    //    el fichero entero. Pagado dos veces el 2026-08-20 en club-reports.js.
     const _ppTabOn = (extraKey) => (typeof window._cronosExtraEnabled !== 'function')
         || window._cronosExtraEnabled(extraKey);
     const _ppTabAttrs = (tab, extraKey, title) => _ppTabOn(extraKey)
@@ -145,22 +144,27 @@ async function openParentPanel(initialTab) {
         </div>
     </div>
 
-    <!-- TABS -->
-    <div style="display:flex;gap:0.4rem;padding:0.7rem 1.2rem;
-                border-bottom:1px solid rgba(255,255,255,0.08);
-                flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;">
-        <!-- Los id permiten que ppTab reactive la pestaña correcta cuando la
-             pila repinta el panel y no hay un "this" que pasarle.
-             ⚠️ SIN BACKTICKS: este comentario va DENTRO del template literal
-             del innerHTML, y un backtick aquí lo cierra y rompe el fichero
-             entero. Lo fija la aserción 14p. -->
-        <button id="pp-tab-conv"   class="pp-tab${_tab === 'conv'   ? ' active' : ''}" ${_ppTabAttrs('conv','convocatorias','Convocatorias')}>${_ppTabLock('convocatorias')}📋 Convoc.</button>
-        <button id="pp-tab-train"  class="pp-tab${_tab === 'train'  ? ' active' : ''}" ${_ppTabAttrs('train','entrenamientos','Entrenamientos')}>${_ppTabLock('entrenamientos')}📅 Entreno.</button>
-        <button id="pp-tab-asist"  class="pp-tab${_tab === 'asist'  ? ' active' : ''}" ${_ppTabAttrs('asist','entrenamientos','Asistencia de tu hijo/a')}>${_ppTabLock('entrenamientos')}✅ Asistencia</button>
-        <button id="pp-tab-player" class="pp-tab${_tab === 'player' ? ' active' : ''}" ${_ppTabAttrs('player','informes','Informes del jugador')}>${_ppTabLock('informes')}📊 Informes</button>
-        <button id="pp-tab-chat"   class="pp-tab${_tab === 'chat'   ? ' active' : ''}" ${_ppTabAttrs('chat','mensajeria','Mensajes con el entrenador')}>${_ppTabLock('mensajeria')}💬 Mensajes</button>
-        <button id="pp-tab-live"   class="pp-tab${_tab === 'live'   ? ' active' : ''}" ${_ppTabAttrs('live','partidos_en_vivo','Partidos en vivo')}>${_ppTabLock('partidos_en_vivo')}🔴 En Vivo</button>
-    </div>
+    <!-- ══════════════════════════════════════════════════════════════
+         🔴 v591 · FUERA LAS PESTAÑAS, DENTRO LA VUELTA AL MENU
+
+         Decision del autor tras probar v590. En el sitio de la barra de
+         pestañas queda UNA barra que solo aparece cuando NO estas en el
+         tablero, con la vuelta y el nombre de la seccion.
+
+         🔑 VA AQUI, FUERA de #pp-body, y no dentro de cada vista: cada
+         seccion reasigna el innerHTML de #pp-body y borraria cualquier
+         boton inyectado ahi. Fuera, ninguna vista puede pisarlo y no hay
+         que tocar ni una de ellas.
+
+         ⚠️ SIN BACKTICKS: este comentario va DENTRO del template literal del
+         innerHTML y un solo acento grave lo cierra, rompiendo el fichero
+         entero. Lo fijan la asercion 14p y la 5b de
+         test_extras_lock_and_messaging.js. Pagado DOS veces el 2026-08-20,
+         en club-reports.js, mientras se hacia justamente este cambio.
+         ══════════════════════════════════════════════════════════════ -->
+    <div id="pp-navbar" style="display:none;gap:0.6rem;align-items:center;
+                padding:0.6rem 1.2rem;border-bottom:1px solid rgba(255,255,255,0.08);
+                flex-shrink:0;"></div>
 
     <!-- CUERPO -->
     <div id="pp-body" style="flex:1;overflow-y:auto;padding:1.1rem 1.2rem;">
@@ -200,6 +204,41 @@ async function openParentPanel(initialTab) {
         // repintar el panel ese nodo ya no existe— además de no serializable.
         if (typeof navRootScreen === 'function') navRootScreen('openParentPanel', tab);
 
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v591 · LA BARRA DE VUELTA AL TABLERO
+        //  Sustituye a las pestañas: sólo aparece fuera del menú, y dice en
+        //  qué sección se está. Ver la nota del marcado, más arriba.
+        // ══════════════════════════════════════════════════════════════
+        const _PP_TITULOS = {
+            conv:   '📋 Convocatorias',
+            train:  '📅 Entrenamientos',
+            asist:  '✅ Asistencia',
+            player: '📊 Informes',
+            chat:   '💬 Mensajes',
+            live:   '🔴 En Vivo',
+        };
+        const _ppNav = panel.querySelector('#pp-navbar');
+        if (_ppNav) {
+            if (tab === 'menu') {
+                _ppNav.style.display = 'none';
+                _ppNav.innerHTML = '';
+            } else {
+                _ppNav.style.display = 'flex';
+                _ppNav.innerHTML =
+                    '<button onclick="ppTab(\'menu\')" ' +
+                    'style="display:inline-flex;align-items:center;gap:0.4rem;' +
+                           'padding:0.42rem 0.9rem;border-radius:8px;cursor:pointer;' +
+                           'background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);' +
+                           'color:#58a6ff;font-size:0.8rem;font-weight:800;">' +
+                    '← Volver al Menú</button>' +
+                    '<span style="font-size:0.9rem;font-weight:800;color:white;">' +
+                    (_PP_TITULOS[tab] || '') + '</span>';
+            }
+        }
+
+        // ⚠️ Estas dos líneas se quedan aunque ya no haya pestañas: sin ellas
+        //    no encuentran nada y son inofensivas, y quitarlas obligaría a
+        //    tocar los guards que las citan sin ganar nada a cambio.
         panel.querySelectorAll('.pp-tab').forEach(b => b.classList.remove('active'));
         // Sin `btn` (repintado desde la pila) se localiza el botón por su id.
         const _btn = btn || panel.querySelector('#pp-tab-' + tab);
@@ -207,6 +246,7 @@ async function openParentPanel(initialTab) {
         document.getElementById('pp-body').innerHTML =
             '<p style="color:#7d8590;text-align:center;padding:3rem;">⏳ Cargando…</p>';
         ({
+            menu:   ppMenu,
             conv:   () => ppNotifsByType('convocatoria'),
             train:  () => ppNotifsByType('planificacion_semanal'),
             asist:  ppAsistencia,
@@ -214,6 +254,50 @@ async function openParentPanel(initialTab) {
             chat:   ppChat,
             live:   ppLive,
         })[tab]?.();
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    // 🎛️ TAB 0 · EL TABLERO (v590)
+    //
+    //  Petición del autor: que el Área de Familias entre por un tablero de
+    //  botones, como el panel del entrenador. El aspecto lo pone
+    //  `cronosTableroHtml` (utils.js), la MISMA pieza que usan Dirección y
+    //  Coordinación, para que los tres no se vayan separando.
+    //
+    //  ⚠️ Los extras se respetan aquí igual que en las pestañas: si un club no
+    //  tiene contratada la mensajería, su botón sale BLOQUEADO y dice por qué,
+    //  en vez de desaparecer sin explicación. El cerrojo de verdad sigue
+    //  estando en `ppTab` (v429): esto es la interfaz, no el permiso.
+    // ══════════════════════════════════════════════════════════════
+    window.ppMenu = () => {
+        const body = document.getElementById('pp-body');
+        if (!body) return;
+        const _libre = (extraKey) => (typeof window._cronosExtraEnabled !== 'function')
+            ? true : !!window._cronosExtraEnabled(extraKey);
+        const _op = (icono, titulo, desc, tab, extraKey, color) => ({
+            icono, titulo, desc, color,
+            onclick: "ppTab('" + tab + "')",
+            bloqueado: _libre(extraKey) ? '' : 'Tu club no tiene activada esta opción.',
+        });
+        const opciones = [
+            _op('📋', 'Convocatorias', 'Las convocatorias que recibe tu hijo o hija.',            'conv',   'convocatorias',    '#3fb950'),
+            _op('📅', 'Entrenamientos', 'La planificación semanal que envía el entrenador.',      'train',  'entrenamientos',   '#f0883e'),
+            _op('✅', 'Asistencia',    'Si ha asistido a los entrenamientos de la semana.',       'asist',  'entrenamientos',   '#58a6ff'),
+            _op('📊', 'Informes',      'Los informes de partido de tu hijo o hija.',              'player', 'informes',         '#ffd700'),
+            _op('💬', 'Mensajes',      'Habla directamente con el entrenador.',                   'chat',   'mensajeria',       '#b478c8'),
+            _op('🔴', 'En Vivo',       'Sigue el partido mientras se está jugando.',              'live',   'partidos_en_vivo', '#ff5858'),
+        ];
+        body.innerHTML = (typeof window.cronosTableroHtml === 'function')
+            ? window.cronosTableroHtml({
+                titulo: '👨‍👩‍👧 Área de Familias',
+                // ⚠️ v592 · SIN MENCIONAR PESTAÑAS (retiradas en v591). Ver la
+                //    misma nota en club-reports.js.
+                subtitulo: 'Elige qué quieres ver:',
+                opciones: opciones,
+              })
+            // Respaldo: sin el helper, se cae a la vista de siempre en vez de
+            // dejar el panel en blanco.
+            : (ppNotifsByType('convocatoria'), '');
     };
 
     // ══════════════════════════════════════════════════════════════

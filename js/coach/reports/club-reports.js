@@ -215,7 +215,10 @@ async function openStaffDashboard(initialTab) {
     // Como en openClubAdminPanel, el registro va después de varios `await`
     // porque antes no se conocen ni el rol ni el clubId. Es seguro por ser
     // RAÍZ (ver la nota del invariante async en superadmin.panel.js).
-    const _tab = initialTab || 'convocatorias';
+    // v590 · SE ENTRA POR EL TABLERO, no por una pestaña suelta. `navReload`
+    //  y la pila siguen guardando la pestaña activa como argumento, así que
+    //  volver a una vista concreta sigue funcionando igual que antes.
+    const _tab = initialTab || 'menu';
     if (typeof navRootScreen === 'function') navRootScreen('openStaffDashboard', _tab);
 
     const modal = document.getElementById('setup-modal');
@@ -265,23 +268,28 @@ async function openStaffDashboard(initialTab) {
             </div>
         </div>
 
-        <div style="display:flex;gap:0.2rem;padding:0.5rem 1.5rem;background:#161b22;
-                    border-bottom:1px solid var(--glass-border);flex-shrink:0;overflow-x:auto;">
-            <button onclick="switchStaffTab('convocatorias')" class="staff-tab active" id="tab-convocatorias">📋 Convoc.</button>
-            <button onclick="switchStaffTab('entrenamientos')" class="staff-tab" id="tab-entrenamientos">🕒 Entreno.</button>
-            <button onclick="switchStaffTab('asistencia')" class="staff-tab" id="tab-asistencia">✅ Asistencia</button>
-            <button onclick="switchStaffTab('informes')" class="staff-tab" id="tab-informes">📊 Informes</button>
-            <button onclick="switchStaffTab('mensajes')" class="staff-tab" id="tab-mensajes">💬 Mensajes</button>
-            ${((window._cronosCurrentUser?.extras?.partidos_terminados ?? true) !== false)
-                ? `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#79c0ff;">🎬 Partidos Terminados</button>`
-                : `<button onclick="switchStaffTab('partidos_terminados')" class="staff-tab" id="tab-partidos_terminados" style="color:#555;cursor:not-allowed;opacity:0.5;" title="Extra no activado">🔒 Partidos Terminados</button>`}
-            ${_sdCanSeeConfigTab(me)
-                ? `<button onclick="switchStaffTab('config')" class="staff-tab" id="tab-config">⚙️ Config.</button>`
-                : ''}
-            <button onclick="openLiveMatchesView()" class="staff-tab"
-                style="color:#ff5858;border-left:1px solid rgba(255,255,255,0.1);margin-left:0.5rem;">
-                🔴 En Vivo</button>
-        </div>
+        <!-- ══════════════════════════════════════════════════════════
+             🔴 v591 · FUERA LA BARRA DE PESTAÑAS
+
+             Decision del autor tras probar v590: el tablero le convencio y
+             quiere el panel limpio, "como el de un entrenador profesional".
+             Asi que las pestañas se retiran y en su sitio queda UNA barra
+             que solo aparece cuando NO estas en el tablero, con la vuelta y
+             el nombre de la seccion.
+
+             🔑 POR QUE LA BARRA VA AQUI Y NO DENTRO DE CADA VISTA: cada
+             seccion se pinta reasignando el innerHTML del contenedor, o sea
+             sobrescribe todo lo que hubiera dentro. Un boton inyectado ahi
+             lo borraria la primera seccion que se cargara. Colocandolo
+             FUERA del contenedor de contenido, ninguna vista puede
+             pisarlo y no hay que tocar ni una de ellas.
+
+             ⚠️ SIN ACENTOS GRAVES AQUI DENTRO: esto vive en una plantilla
+             literal y uno solo la cerraria en seco (pagado en v590).
+             ══════════════════════════════════════════════════════════ -->
+        <div id="staff-navbar" style="display:none;gap:0.6rem;align-items:center;
+                    padding:0.55rem 1.5rem;background:#161b22;
+                    border-bottom:1px solid var(--glass-border);flex-shrink:0;"></div>
 
         <div id="staff-dashboard-content"
              style="flex:1;overflow-y:auto;padding:1.5rem;background:#0d1117;">
@@ -331,12 +339,145 @@ window.switchStaffTab = async (tab) => {
     // con el panel visible, o sea cuando la raíz ya es la cima de la pila.
     if (typeof navRootScreen === 'function') navRootScreen('openStaffDashboard', tab);
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴 v591 · LA BARRA DE VUELTA AL TABLERO
+    //
+    //  Ya no hay pestañas (decisión del autor tras probar v590): en su sitio,
+    //  una barra que SÓLO aparece cuando no estás en el tablero, con la vuelta
+    //  y el nombre de la sección para que se sepa dónde se está.
+    //
+    //  ⚠️ Los `querySelectorAll('.staff-tab')` de más abajo se quedan a
+    //  propósito y son inofensivos: sin pestañas no encuentran nada. Quitarlos
+    //  obligaría a tocar los guards que los citan sin ganar nada.
+    // ══════════════════════════════════════════════════════════════════
+    const _SD_TITULOS = {
+        convocatorias:       '📋 Convocatorias',
+        entrenamientos:      '🕒 Entrenamientos',
+        asistencia:          '✅ Asistencia',
+        informes:            '📊 Informes',
+        mensajes:            '💬 Mensajes',
+        partidos_terminados: '🎬 Partidos Terminados',
+        config:              '⚙️ Configuración',
+        secretaria:          '✉️ Secretaría',
+    };
+    const _navbar = document.getElementById('staff-navbar');
+    if (_navbar) {
+        if (tab === 'menu') {
+            _navbar.style.display = 'none';
+            _navbar.innerHTML = '';
+        } else {
+            _navbar.style.display = 'flex';
+            _navbar.innerHTML =
+                '<button onclick="switchStaffTab(\'menu\')" ' +
+                'style="display:inline-flex;align-items:center;gap:0.4rem;' +
+                       'padding:0.42rem 0.9rem;border-radius:8px;cursor:pointer;' +
+                       'background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);' +
+                       'color:#58a6ff;font-size:0.8rem;font-weight:800;">' +
+                '← Volver al Menú</button>' +
+                '<span style="font-size:0.9rem;font-weight:800;color:white;">' +
+                (_SD_TITULOS[tab] || '') + '</span>';
+        }
+    }
+
     document.querySelectorAll('.staff-tab').forEach(b => b.classList.remove('active'));
     const btn = document.getElementById(`tab-${tab}`);
     if (btn) btn.classList.add('active');
 
     const container = document.getElementById('staff-dashboard-content');
     container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⏳ Cargando…</div>`;
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🎛️ v590 · EL TABLERO DE ENTRADA
+    //
+    //  Petición del autor: entrar por un tablero de botones como el del
+    //  entrenador, en vez de caer directamente en un árbol de categorías.
+    //  El aspecto lo pone `cronosTableroHtml` (utils.js), compartido con los
+    //  otros paneles; aquí sólo se declara QUÉ opciones tiene este panel.
+    //
+    //  ⚠️ Un extra no contratado sale BLOQUEADO con su motivo, no oculto:
+    //  una opción que desaparece sin explicación parece una avería.
+    // ══════════════════════════════════════════════════════════════════
+    if (tab === 'menu') {
+        const _me       = window._cronosCurrentUser || {};
+        const _esDir    = _sdCanSeeConfigTab(_me);
+        const _extras   = _me.extras || {};
+        const _ptOn     = (_extras.partidos_terminados ?? true) !== false;
+        const _opciones = [
+            { icono: '📋', titulo: 'Convocatorias', color: '#3fb950',
+              desc: 'Las convocatorias recibidas, por categoría y subcategoría.',
+              onclick: "switchStaffTab('convocatorias')" },
+            { icono: '🕒', titulo: 'Entrenamientos', color: '#f0883e',
+              desc: 'Las planificaciones semanales que envían los entrenadores.',
+              onclick: "switchStaffTab('entrenamientos')" },
+            { icono: '✅', titulo: 'Asistencia', color: '#58a6ff',
+              desc: 'El cuadrante de asistencia diaria del club.',
+              onclick: "switchStaffTab('asistencia')" },
+            { icono: '📊', titulo: 'Informes', color: '#ffd700',
+              desc: 'Informes de partido, por equipo y por jugador.',
+              onclick: "switchStaffTab('informes')" },
+            { icono: '💬', titulo: 'Mensajes', color: '#b478c8',
+              desc: 'Mensajería interna con el cuerpo técnico.',
+              onclick: "switchStaffTab('mensajes')" },
+            { icono: '🎬', titulo: 'Partidos Terminados', color: '#79c0ff',
+              desc: 'Repetición y cierre de los partidos ya jugados.',
+              onclick: "switchStaffTab('partidos_terminados')",
+              bloqueado: _ptOn ? '' : 'Extra no activado para tu club. Habla con el administrador.' },
+            { icono: '🔴', titulo: 'En Vivo', color: '#ff5858',
+              desc: 'Los partidos que se están jugando ahora mismo.',
+              onclick: 'openLiveMatchesView()' },
+        ];
+        if (_esDir) {
+            _opciones.push({ icono: '✉️', titulo: 'Secretaría', color: '#58a6ff',
+                desc: 'Invita a entrenadores, coordinadores o familias con el enlace de la app.',
+                onclick: "switchStaffTab('secretaria')" });
+            _opciones.push({ icono: '⚙️', titulo: 'Configuración', color: '#8b949e',
+                desc: 'Semáforos e informes a padres, por grupo de edad.',
+                onclick: "switchStaffTab('config')" });
+        }
+        container.innerHTML = (typeof window.cronosTableroHtml === 'function')
+            ? window.cronosTableroHtml({
+                titulo: '📋 Panel de ' + (_esDir ? 'Dirección' : 'Coordinación'),
+                // ⚠️ v592 · SIN MENCIONAR PESTAÑAS: se retiraron en v591 y este
+                //    subtítulo seguía invitando a usarlas. Un texto que describe
+                //    algo que ya no está confunde más que no decir nada.
+                subtitulo: 'Elige qué quieres consultar:',
+                opciones: _opciones,
+              })
+            // Respaldo: sin el helper cargado, el panel NO se queda en blanco —
+            // se cae a la vista de siempre. Un menú que no pinta no puede
+            // dejar a un director sin panel.
+            : (await switchStaffTab('convocatorias'), '');
+        return;
+    }
+
+    // v590 · Secretaría del Director: se REUTILIZA el módulo del SuperAdmin
+    // (js/admin/superadmin/secretary.js, que index.html carga para todos),
+    // acotado a los roles que un club puede dar de alta y con su club ya
+    // escrito. Ver la nota de v590 en ese fichero.
+    if (tab === 'secretaria') {
+        const _me = window._cronosCurrentUser || {};
+        if (!_sdCanSeeConfigTab(_me)) {
+            container.innerHTML = `
+                <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+                    🔒 Secretaría es del Director Deportivo.
+                </div>`;
+            return;
+        }
+        if (typeof window.saSecretary !== 'function') {
+            container.innerHTML = `
+                <div style="text-align:center;padding:3rem;color:#ff5858;">
+                    ⚠️ El módulo de Secretaría no está disponible. Recarga el panel.
+                </div>`;
+            return;
+        }
+        container.innerHTML = '<div id="sd-secretaria-body"></div>';
+        await window.saSecretary({
+            contenedorId: 'sd-secretaria-body',
+            roles: window.CRONOS_SECRETARIA_ROLES_DIRECTOR || ['user', 'coordinator', 'parent'],
+            club:  _me.clubName || '',
+        });
+        return;
+    }
 
     if (tab === 'convocatorias')  await _sdLoadEvents('convocatoria');
     if (tab === 'entrenamientos') await _sdLoadEvents('planificacion_semanal');

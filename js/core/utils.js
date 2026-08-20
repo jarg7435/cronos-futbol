@@ -489,6 +489,95 @@ if (typeof window.cronosHayPartidoEnCurso !== 'function') {
 //  no protegía nada porque miraba flags inexistentes.
 
 // ════════════════════════════════════════════════════════════════════
+//  🎛️ v590 · EL TABLERO DE BOTONES, EN UN SOLO SITIO
+//
+//  Petición del autor (2026-08-19): los paneles de Dirección, Coordinación y
+//  Familias enseñaban sus árboles directamente en pestañas planas. Quiere que
+//  entren por un TABLERO de botones grandes, como el del entrenador, y que
+//  cada botón lleve a su vista.
+//
+//  🔑 UNA SOLA PIEZA PARA LOS TRES. Tres tableros copiados se irían separando
+//  al primer retoque —es la historia de este proyecto: los contadores del
+//  ente, las listas de grupos, la regla del semáforo en cuatro copias—. Aquí
+//  se define el aspecto una vez y cada panel sólo aporta SUS opciones.
+//
+//  🔑 ES ADITIVO, NO SUSTITUTIVO: las pestañas siguen existiendo y siguen
+//  funcionando. El tablero es la pantalla de entrada y un atajo; si algo
+//  fallara en él, el panel de siempre está a un clic. Sustituir la navegación
+//  entera de tres paneles a ciegas —sin poder verlos— habría sido temerario.
+//
+//  ⚠️ CADA OPCIÓN PUEDE IR BLOQUEADA (`bloqueado: 'motivo'`): un extra no
+//  contratado se enseña apagado y DICE por qué, en vez de desaparecer. Que
+//  una opción se esfume sin explicación es lo que hace pensar que la
+//  aplicación está rota.
+//
+//  Uso:
+//    window.cronosTableroHtml({
+//      titulo: '📋 Panel de Dirección',
+//      subtitulo: 'Elige qué quieres consultar',
+//      opciones: [{ icono:'📋', titulo:'Convocatorias', desc:'…',
+//                   onclick:"switchStaffTab('convocatorias')",
+//                   color:'#3fb950', bloqueado:'' }]
+//    })  →  string HTML
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosTableroHtml !== 'function') {
+    window.cronosTableroHtml = function (cfg) {
+        const c = cfg || {};
+        const esc = (s) => (typeof escapeHtml === 'function')
+            ? escapeHtml(s == null ? '' : s)
+            : String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const opciones = Array.isArray(c.opciones) ? c.opciones : [];
+        const tarjetas = opciones.map(function (o) {
+            const color = o.color || '#58a6ff';
+            const bloqueado = !!o.bloqueado;
+            // Un botón bloqueado no lleva onclick: apagarlo sólo con CSS deja
+            // la acción viva para quien pulse igual (la lección de v548 —
+            // `disabled` es cosmético).
+            const accion = bloqueado ? '' : ' onclick="' + String(o.onclick || '') + '"';
+            return '' +
+            '<button type="button"' + accion +
+            ' title="' + esc(bloqueado ? o.bloqueado : (o.desc || o.titulo)) + '"' +
+            ' style="display:flex;flex-direction:column;align-items:flex-start;gap:0.35rem;' +
+                    'padding:1.05rem 1.1rem;border-radius:14px;text-align:left;width:100%;' +
+                    'background:' + (bloqueado ? 'rgba(255,255,255,0.03)' : 'rgba(' + _cronosHexRgb(color) + ',0.10)') + ';' +
+                    'border:1px solid ' + (bloqueado ? 'rgba(255,255,255,0.08)' : 'rgba(' + _cronosHexRgb(color) + ',0.45)') + ';' +
+                    'color:' + (bloqueado ? '#6b7280' : color) + ';' +
+                    'cursor:' + (bloqueado ? 'not-allowed' : 'pointer') + ';' +
+                    'transition:transform 0.12s ease, box-shadow 0.12s ease;"' +
+            (bloqueado ? '' :
+              ' onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 8px 22px rgba(0,0,0,0.35)\';"' +
+              ' onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';"') + '>' +
+                '<span style="font-size:1.5rem;line-height:1;">' + (bloqueado ? '🔒' : esc(o.icono || '•')) + '</span>' +
+                '<span style="font-size:0.95rem;font-weight:800;letter-spacing:0.2px;">' + esc(o.titulo || '') + '</span>' +
+                '<span style="font-size:0.72rem;color:#8b949e;font-weight:500;line-height:1.35;">' +
+                    esc(bloqueado ? o.bloqueado : (o.desc || '')) + '</span>' +
+            '</button>';
+        }).join('');
+
+        return '' +
+        '<div style="max-width:900px;margin:0 auto;">' +
+            (c.titulo ? '<h3 style="margin:0 0 0.25rem;font-size:1.05rem;color:white;">' + esc(c.titulo) + '</h3>' : '') +
+            (c.subtitulo ? '<p style="margin:0 0 1.2rem;font-size:0.8rem;color:#8b949e;">' + esc(c.subtitulo) + '</p>' : '') +
+            '<div style="display:grid;gap:0.7rem;' +
+                 'grid-template-columns:repeat(auto-fill,minmax(210px,1fr));">' +
+                tarjetas +
+            '</div>' +
+        '</div>';
+    };
+    // '#58a6ff' → '88,166,255'. Sin esto no se puede componer un rgba() con
+    // transparencia a partir del color de cada opción.
+    function _cronosHexRgb(hex) {
+        const h = String(hex || '').replace('#', '').trim();
+        if (h.length !== 6) return '88,166,255';
+        const n = parseInt(h, 16);
+        if (isNaN(n)) return '88,166,255';
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(',');
+    }
+    window._cronosHexRgb = _cronosHexRgb;
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  🔴🔴🔴 v583 · ¿ESTA PLAZA ES DE ESTE ENTE INDIVIDUAL?
 //
 //  Reporte del autor (2026-08-19): al crear un ente individual con un correo
