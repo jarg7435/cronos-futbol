@@ -132,6 +132,43 @@ async function _sdLoadEvents(type) {
             _sdResueltos = items.map(it => ({ it: it, r: window.ctResolveCatSub(it, _sdCoachIndex) }));
         }
 
+        // ══════════════════════════════════════════════════════════════
+        //  🎯 v593 · EL COORDINADOR DE F7 NO VE LAS DE F11 (y al revés)
+        //
+        //  Petición del autor: el coordinador absorbe SÓLO los equipos de su
+        //  modalidad. La consulta de arriba trae todo el club porque el
+        //  Director sí lo necesita, así que el acotamiento se hace aquí, con
+        //  el predicado único de utils.js (_cronosVeCategoria).
+        //
+        //  🔑🔑 VA ANTES DE LA PURGA, Y ESO IMPORTA. Debajo hay un borrado
+        //  IRREVERSIBLE del exceso por subcategoría. Si el filtro fuese
+        //  después, un coordinador de F7 estaría destruyendo registros de F11
+        //  que ni siquiera puede ver — decidiendo sobre datos que no son
+        //  suyos. Filtrando antes, sólo purga lo que tiene delante; de lo
+        //  demás se encargan el Director o el coordinador de esa modalidad.
+        //
+        //  ⚠️ Los dos caminos, no sólo el del árbol: sin el módulo cargado se
+        //  filtra por el `category` que trae el propio documento. Dejar el
+        //  respaldo sin filtro es la forma clásica de que la regla se caiga
+        //  justo cuando algo va mal.
+        // ══════════════════════════════════════════════════════════════
+        const _sdAlcance = (typeof window._cronosCoordScope === 'function')
+            ? window._cronosCoordScope(me) : '';
+        let _sdOcultos = 0;
+        if (_sdAlcance && typeof window._cronosVeCategoria === 'function') {
+            if (_sdResueltos) {
+                const _antes = _sdResueltos.length;
+                _sdResueltos = _sdResueltos.filter(x => window._cronosVeCategoria(me, x.r.cat));
+                _sdOcultos = _antes - _sdResueltos.length;
+                const _visibles = new Set(_sdResueltos.map(x => x.it));
+                items = items.filter(it => _visibles.has(it));
+            } else {
+                const _antes = items.length;
+                items = items.filter(it => window._cronosVeCategoria(me, it.category));
+                _sdOcultos = _antes - items.length;
+            }
+        }
+
         // ── Auto-borrar el exceso DE CADA SUBCATEGORÍA (v586) ──────────
         //
         //  ⚠️⚠️ SIN CLASIFICACIÓN NO SE BORRA NADA, Y ES DELIBERADO. Antes,
@@ -167,8 +204,21 @@ async function _sdLoadEvents(type) {
 
         if (!items.length) {
             const label = type === 'convocatoria' ? 'convocatorias' : 'avisos de entrenamiento';
+            // ⚠️ v593 · UN VACÍO POR ACOTAMIENTO NO ES EL MISMO VACÍO. Si al
+            // coordinador de F7 le decimos "no hay nada" cuando lo que pasa es
+            // que todo lo recibido es de F11, buscará una avería donde no la
+            // hay. Se nombra su modalidad y se dice cuántos quedaron fuera.
+            const _amb = _sdAlcance
+                ? ` de <strong>${escapeHtml(window._cronosCoordScopeLabel(_sdAlcance))}</strong>`
+                : '';
+            const _resto = (_sdAlcance && _sdOcultos)
+                ? `<span style="font-size:0.78rem;margin-top:0.4rem;display:block;color:#f0883e;">
+                       Hay ${_sdOcultos} de la otra modalidad: los ve el coordinador que la lleva y el Director Deportivo.
+                   </span>`
+                : '';
             container.innerHTML = `<div style="text-align:center;padding:4rem;color:var(--text-muted);">
-                📭 Sin ${label} recibidos aún.<br>
+                📭 Sin ${label}${_amb} recibidos aún.<br>
+                ${_resto}
                 <span style="font-size:0.78rem;margin-top:0.5rem;display:block;">
                     El entrenador debe activar las palomillas en <strong>Gestión de Contactos</strong> y enviar via Envío Interno.
                 </span></div>`;
@@ -195,6 +245,12 @@ async function _sdLoadEvents(type) {
         // ══════════════════════════════════════════════════════════════
         const _sdEtiquetaTipo = isConv ? 'convocatorias' : 'entrenamientos';
         let _sdCabecera = `${items.length} ${_sdEtiquetaTipo}`;
+        // v593 · Decir en voz alta que la lista está acotada. Un recuento que
+        // no menciona su filtro parece el recuento del club entero.
+        if (_sdAlcance) {
+            _sdCabecera += ` de <strong style="color:#d2a8ff;">` +
+                           escapeHtml(window._cronosCoordScopeLabel(_sdAlcance)) + `</strong>`;
+        }
         if (_sdResueltos) {
             const _porGrupo = new Map();
             _sdResueltos.forEach(x => {
@@ -303,6 +359,9 @@ async function _sdLoadEvents(type) {
                 getCat:     (x) => x.r.cat,
                 getSub:     (x) => x.r.sub,
                 renderLeaf: (x) => _sdEventCard(x.it),
+                // v593 · Al coordinador de una modalidad no se le enseñan las
+                // ramas de la otra a cero: se le enseña SU árbol.
+                modalidad:  _sdAlcance,
                 emptyText:  isConv ? 'Sin convocatorias en esta subcategoría.'
                                    : 'Sin avisos de entrenamiento en esta subcategoría.',
             });

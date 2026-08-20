@@ -434,8 +434,15 @@ function _launchWithRole(role) {
             })();
 
             // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──
+            //
+            // 🔑 v593 · LA MODALIDAD ES DE LA PLAZA, NO DE LA PERSONA (v540:
+            // la unidad es la PLAZA). Alguien puede coordinar el F7 en un club
+            // y las dos modalidades en otro. Si la plaza con la que entra NO
+            // trae tipo, se BORRA el de la raíz en vez de dejarlo: heredar el
+            // de la otra plaza le acotaría el panel por un dato que no es suyo
+            // — y acotar de más no se ve, sólo se echa en falta.
             if (role === 'coordinator') {
-                if (roleEntry.coordinatorType) me.coordinatorType = roleEntry.coordinatorType;
+                me.coordinatorType = roleEntry.coordinatorType || null;
             }
 
         } else {
@@ -532,7 +539,13 @@ function _launchWithRole(role) {
 // Se inyecta en la cabecera del Panel de Dirección (openStaffDashboard).
 function _renderCoordinatorTypePill(me) {
     try {
-        const ct = me && me.coordinatorType;
+        // v593 · Se pregunta al resolutor compartido en vez de mirar sólo el
+        // campo raíz: así la pill dice la verdad también cuando la modalidad
+        // vive dentro de allRoles[] o llegó como `requestedCoordinatorType`
+        // (histórico), que era cuando antes no salía ninguna.
+        const ct = (typeof window._cronosStaffCoordinatorType === 'function')
+            ? (window._cronosStaffCoordinatorType(me) || (me && me.coordinatorType))
+            : (me && me.coordinatorType);
         if (!ct) return;
         const LABELS = { f7: 'Fútbol 7', f11: 'Fútbol 11', f711: 'Fútbol 7 y 11' };
         const label = LABELS[ct] || ct;

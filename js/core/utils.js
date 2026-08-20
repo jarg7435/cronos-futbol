@@ -1012,6 +1012,109 @@ if (typeof window._cronosResolveStaffForMatch !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🎯 v593 · EL COORDINADOR TIENE MODALIDAD: F7, F11 o LAS DOS
+//
+//  Petición del autor (implementar.txt, 2026-08-20): el rol "Coordinador"
+//  era GENÉRICO y en los clubes reales no lo es — hay coordinador de Fútbol
+//  7, coordinador de Fútbol 11 y coordinador de ambas. Su panel debe recibir
+//  SÓLO lo de su modalidad: equipos, informes colectivos, entrenamientos y
+//  convocatorias.
+//
+//  🔑🔑🔑 UN SOLO PREDICADO PARA TODAS LAS PUERTAS. En este proyecto ya se
+//  pagó cuatro veces el mismo defecto por tener la misma regla copiada en
+//  varios ficheros (v551→v552: pérdida de roles en CUATRO sitios; v559: la
+//  regla del semáforo en CUATRO copias). Convocatorias, Entrenamientos,
+//  Asistencia, Informes y la lista de contactos del entrenador preguntan
+//  todas AQUÍ. El día que cambie el criterio, cambia en un sitio.
+//
+//  🔑 SE MIRA EL ROL ACTIVO (`_activeRole`), no `role`: un mismo correo puede
+//  ser director en un club y coordinador en otro (v540: la unidad es la
+//  PLAZA). Filtrar por `role` le recortaría el panel al director.
+//
+//  ⚠️ FAIL-OPEN, Y ES DELIBERADO. Si no se puede clasificar la categoría —o
+//  el coordinador no tiene tipo, que es el caso de TODOS los que ya existen
+//  hoy— NO se oculta nada. Esconder por defecto convierte un dato sin
+//  clasificar en un dato perdido, y eso parece una avería. Ocultar de menos
+//  se ve y se corrige; ocultar de más no se ve.
+//
+//  ⚠️ EL COORDINADOR QUE HAY HOY EN LA APP ES DE F7 Y F11 (dicho por el autor):
+//  sin `coordinatorType` el alcance es '' → lo ve todo, igual que antes. La
+//  migración es, por tanto, no hacer nada.
+// ════════════════════════════════════════════════════════════════════
+
+// _cronosCoordScope(user) → 'f7' | 'f11' | ''
+//   El ACOTAMIENTO por modalidad que se le aplica a este usuario:
+//     • '' → sin acotar (director, club_admin, superadmin, entrenador,
+//       coordinador de ambas, o coordinador legado sin tipo).
+//     • 'f7' / 'f11' → sólo ve esa modalidad.
+if (typeof window._cronosCoordScope !== 'function') {
+    window._cronosCoordScope = function(user) {
+        const me = user || window._cronosCurrentUser;
+        if (!me) return '';
+        const activo = me._activeRole || me.role;
+        if (activo !== 'coordinator') return '';
+        // 🔑 LA MODALIDAD ES DE LA PLAZA ACTIVA. _cronosStaffCoordinatorType
+        // se conforma con la PRIMERA entrada 'coordinator' que encuentre en
+        // allRoles, y quien coordina en dos clubes tiene dos: sin acotar por
+        // clubId, la plaza de un club le recortaría el panel del otro (mismo
+        // eje que la auditoría de aislamiento de v584).
+        let fuente = me;
+        if (me.clubId && Array.isArray(me.allRoles)) {
+            const mismoClub = me.allRoles.filter(r => r && r.role === 'coordinator' &&
+                String(r.clubId || '') === String(me.clubId));
+            if (mismoClub.length) fuente = { coordinatorType: me.coordinatorType, allRoles: mismoClub };
+        }
+        const ct = (typeof window._cronosStaffCoordinatorType === 'function')
+            ? window._cronosStaffCoordinatorType(fuente) : '';
+        return (ct === 'f7' || ct === 'f11') ? ct : '';
+    };
+}
+
+// _cronosVeCategoria(user, category[, mode]) → boolean
+//   ¿Debe este usuario ver lo que pertenece a esta categoría?
+//   Es la pregunta que hacen las pestañas del Panel de Coordinación.
+if (typeof window._cronosVeCategoria !== 'function') {
+    window._cronosVeCategoria = function(user, category, mode) {
+        const scope = window._cronosCoordScope(user);
+        if (!scope) return true;                       // sin acotar
+        const modal = (typeof window._cronosMatchModality === 'function')
+            ? window._cronosMatchModality(category, mode) : '';
+        if (!modal) return true;                       // fail-open: sin clasificar, no se oculta
+        return modal === scope;
+    };
+}
+
+// _cronosCoordScopeLabel(scope) → texto legible del acotamiento
+if (typeof window._cronosCoordScopeLabel !== 'function') {
+    window._cronosCoordScopeLabel = function(scope) {
+        const s = (scope == null ? '' : String(scope)).trim().toLowerCase();
+        if (s === 'f7')   return 'Fútbol 7';
+        if (s === 'f11')  return 'Fútbol 11';
+        if (s === 'f711') return 'Fútbol 7 y Fútbol 11';
+        return '';
+    };
+}
+
+// _cronosParseRoleValue(valor) → { role, coordinatorType }
+//   El desplegable de REGISTRARSE desglosa el coordinador en tres opciones
+//   ('coordinator_f7' | 'coordinator_f11' | 'coordinator_f711'). Esta función
+//   las parte en el rol de siempre + su tipo, para que NADA aguas abajo —las
+//   solicitudes, las aprobaciones, las reglas, los recuentos de plazas— vea
+//   un rol que no conoce.
+//   El valor legado 'coordinator' a secas devuelve tipo vacío: quien lo use
+//   tendrá que preguntarlo aparte, que es justo lo que hacía la app hasta hoy.
+if (typeof window._cronosParseRoleValue !== 'function') {
+    window._cronosParseRoleValue = function(valor) {
+        const v = (valor == null ? '' : String(valor)).trim();
+        if (!v.startsWith('coordinator')) return { role: v, coordinatorType: '' };
+        if (v === 'coordinator') return { role: 'coordinator', coordinatorType: '' };
+        const t = v.slice('coordinator'.length).replace(/^[_:-]/, '').toLowerCase();
+        return { role: 'coordinator',
+                 coordinatorType: (t === 'f7' || t === 'f11' || t === 'f711') ? t : '' };
+    };
+}
+
 // ── Resolutor de grupo de categoría para Semáforo e Informes ───
 // Grupos: 'f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c', 'juvenil', 'regional'
 if (typeof window.getCategoryGroupKey !== 'function') {

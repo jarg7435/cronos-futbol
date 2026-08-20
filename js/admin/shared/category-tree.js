@@ -844,7 +844,36 @@
         var emptyText  = opts.emptyText || 'Sin elementos en esta subcategoría.';
         var groups = window.ctGroupByCatSub(opts.items, opts.getCat, opts.getSub);
 
-        var cats = (window.CT_CATEGORIES || []).map(function (catDef) {
+        // ══════════════════════════════════════════════════════════════
+        //  🎯 v593 · opts.modalidad — el árbol de UNA modalidad
+        //
+        //  El Coordinador de Fútbol 7 no coordina al Juvenil. Filtrar sólo
+        //  los ELEMENTOS no bastaba: este árbol recorre el catálogo ENTERO
+        //  (window.CT_CATEGORIES), así que le seguían saliendo Infantil,
+        //  Cadete, Juvenil, Regional… con un 0 al lado. Nueve ramas de las
+        //  que seis no son asunto suyo no es un panel acotado, es el panel
+        //  del club con los números a cero.
+        //
+        //  ⚠️ APAGADO POR DEFECTO Y BYTE A BYTE IGUAL QUE SIEMPRE: sin
+        //  `opts.modalidad` no se filtra nada. Este módulo lo comparten cinco
+        //  pestañas y sus guards comparan el HTML generado.
+        //
+        //  ⚠️ La modalidad de una categoría se pregunta a _cronosMatchModality
+        //  (utils.js), que es la forma canónica del proyecto — aquí NO se
+        //  reescribe la lista de qué es F7 y qué es F11. Si esa función no
+        //  estuviera cargada, no se filtra: mejor de más que dejar a alguien
+        //  sin árbol.
+        // ══════════════════════════════════════════════════════════════
+        var _modal = (opts.modalidad == null ? '' : String(opts.modalidad)).trim().toLowerCase();
+        var _catalogo = (window.CT_CATEGORIES || []);
+        if ((_modal === 'f7' || _modal === 'f11') && typeof window._cronosMatchModality === 'function') {
+            _catalogo = _catalogo.filter(function (c) {
+                var m = window._cronosMatchModality(c.id);
+                return !m || m === _modal;   // sin clasificar → se conserva
+            });
+        }
+
+        var cats = _catalogo.map(function (catDef) {
             var n = window.ctCountInCat(groups, catDef.id);
             if (opts.hideEmpty && n === 0) return '';
             var subMap = groups.byCatSub.get(catDef.id) || new Map();

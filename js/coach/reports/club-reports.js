@@ -400,6 +400,8 @@ window.switchStaffTab = async (tab) => {
     if (tab === 'menu') {
         const _me       = window._cronosCurrentUser || {};
         const _esDir    = _sdCanSeeConfigTab(_me);
+        const _sdAlcanceMenu = (typeof window._cronosCoordScope === 'function')
+            ? window._cronosCoordScope(_me) : '';
         const _extras   = _me.extras || {};
         const _ptOn     = (_extras.partidos_terminados ?? true) !== false;
         const _opciones = [
@@ -440,7 +442,14 @@ window.switchStaffTab = async (tab) => {
                 // ⚠️ v592 · SIN MENCIONAR PESTAÑAS: se retiraron en v591 y este
                 //    subtítulo seguía invitando a usarlas. Un texto que describe
                 //    algo que ya no está confunde más que no decir nada.
-                subtitulo: 'Elige qué quieres consultar:',
+                // 🎯 v593 · Si el panel está acotado a una modalidad, se dice
+                //    NADA MÁS ENTRAR. Un coordinador de F7 que no vea el
+                //    Juvenil tiene que saber que es su alcance, no un fallo.
+                subtitulo: _sdAlcanceMenu
+                    ? ('Tu coordinación es de <strong style="color:#d2a8ff;">' +
+                       escapeHtml(window._cronosCoordScopeLabel(_sdAlcanceMenu)) +
+                       '</strong>: ves los equipos, informes, entrenamientos y convocatorias de esa modalidad.')
+                    : 'Elige qué quieres consultar:',
                 opciones: _opciones,
               })
             // Respaldo: sin el helper cargado, el panel NO se queda en blanco —
@@ -719,8 +728,18 @@ async function _sdLoadAsistencia() {
     const nombreMes = new Date(parseInt(mes.slice(0, 4), 10), parseInt(mes.slice(5, 7), 10) - 1, 1)
         .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
 
+    // 🎯 v593 · El coordinador de una modalidad no cuadra los equipos de la
+    // otra. El acotamiento se aplica a `lista` (más abajo) ANTES de la tira de
+    // HOY y del árbol: si sólo se filtrara el árbol, la tira de arriba seguiría
+    // enseñando "💤 Juvenil A" a quien coordina el Fútbol 7, y el recuento de
+    // "descansan" mentiría.
+    const _asAlcance = (typeof window._cronosCoordScope === 'function')
+        ? window._cronosCoordScope(window._cronosCurrentUser) : '';
+
     let html = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:1rem;">' +
-        '<div><div style="font-size:1rem;font-weight:700;color:white;">✅ Asistencia del club</div>' +
+        '<div><div style="font-size:1rem;font-weight:700;color:white;">✅ Asistencia del club' +
+        (_asAlcance ? ' · <span style="color:#d2a8ff;">' + ea(window._cronosCoordScopeLabel(_asAlcance)) + '</span>' : '') +
+        '</div>' +
         '<div style="font-size:0.72rem;color:var(--text-muted);">Por categorías · sesiones del cuadrante semanal</div></div>' +
         '<div style="display:flex;gap:0.4rem;align-items:center;">' +
           '<button class="btn" onclick="_sdCambiarMesAsist(-1)" style="padding:0.3rem 0.6rem;font-size:0.85rem;">◀</button>' +
@@ -737,7 +756,21 @@ async function _sdLoadAsistencia() {
         return;
     }
 
-    const lista = Array.from(equipos.values());
+    const lista = Array.from(equipos.values()).filter(e =>
+        typeof window._cronosVeCategoria !== 'function' ||
+        window._cronosVeCategoria(window._cronosCurrentUser, e.cat));
+
+    // Todos los equipos del club son de la OTRA modalidad: no es que no haya
+    // actividad, es que no es asunto suyo. Decirlo evita que busque una avería.
+    if (!lista.length) {
+        html += '<div style="text-align:center;padding:3.5rem 1rem;color:var(--text-muted);line-height:1.8;">' +
+                '<div style="font-size:2.5rem;margin-bottom:0.5rem;">🎯</div>' +
+                'Ningún equipo de <strong>' + ea(window._cronosCoordScopeLabel(_asAlcance)) +
+                '</strong> tiene actividad registrada este mes.<br>' +
+                '<span style="font-size:0.8rem;">Los equipos de la otra modalidad los lleva su coordinador y el Director Deportivo.</span></div>';
+        container.innerHTML = html;
+        return;
+    }
 
     // ── 6. Tira de HOY, para verlo sin desplegar nada ───────────────
     if (esMesActual) {
@@ -796,6 +829,8 @@ async function _sdLoadAsistencia() {
             items:  lista,
             getCat: (e) => e.cat,
             getSub: (e) => e.sub,
+            // v593 · El árbol del coordinador es el de SU modalidad.
+            modalidad: _asAlcance,
             renderLeaf: (e) => _sdFilaAsistencia(e, resumen(e), esMesActual),
             // El indicador va en la CABECERA porque las ramas nacen plegadas.
             renderSubBadge: (arr) => {

@@ -639,15 +639,35 @@ async function _sdLoadReports() {
             // Sólo en el camino del árbol — en la lista plana no hay tabla de
             // resumen en pantalla, así que tampoco se ofrece descargarla.
             if (_sdPuedeExpResumen) {
+                // v593 · "TODOS los equipos" tiene que ser verdad. Para un
+                // coordinador de una modalidad, el documento sale con SUS
+                // equipos (sólo se exporta lo que el árbol ha pintado), así
+                // que la etiqueta lo dice en vez de prometer el club entero.
+                const _sdAmbitoExp = (typeof window._cronosCoordScope === 'function' &&
+                                      window._cronosCoordScope(me))
+                    ? 'TODOS los equipos de ' + window._cronosCoordScopeLabel(window._cronosCoordScope(me))
+                    : 'TODOS los equipos';
                 html += `
                 <div class="sd-exp-bar">
-                    <span class="sd-exp-lbl">⬇️ Resumen acumulado de la temporada · TODOS los equipos</span>
+                    <span class="sd-exp-lbl">⬇️ Resumen acumulado de la temporada · ${_sdAmbitoExp}</span>
                     <button class="sd-exp-btn" onclick="sdExportResumen('*','pdf')">🖨️ PDF</button>
                     <button class="sd-exp-btn" onclick="sdExportResumen('*','csv')">📊 CSV / Excel</button>
                 </div>`;
             }
 
-            const _sdResueltos = sorted.map(m => ({ m: m, r: window.ctResolveCatSub(m, _sdCoachIndex) }));
+            // 🎯 v593 · El coordinador ve los informes de SU modalidad.
+            //
+            // 🔑 SE FILTRAN LOS ELEMENTOS DEL ÁRBOL, NO `sorted`. `sorted` se
+            // sigue usando entero unas líneas más abajo para buscar las
+            // COLABORACIONES (ctAccumulateGuestStats): un alevín que sube con
+            // el infantil deja su informe DENTRO del partido del infantil, o
+            // sea en un partido de F11. Filtrando `sorted` el coordinador de
+            // F7 perdería la fila de su propio jugador — que sí es asunto
+            // suyo. Lo que se acota son los EQUIPOS que se listan.
+            const _sdResueltos = sorted
+                .map(m => ({ m: m, r: window.ctResolveCatSub(m, _sdCoachIndex) }))
+                .filter(x => typeof window._cronosVeCategoria !== 'function' ||
+                             window._cronosVeCategoria(me, x.r.cat));
             html += window.ctRenderTree({
                 items:      _sdResueltos,
                 getCat:     (x) => x.r.cat,
@@ -680,10 +700,19 @@ async function _sdLoadReports() {
                         _filas, { matchCount: arr.length, guestRows: _inv });
                 },
                 renderLeaf: (x) => _sdReportCard(x.m),
+                // v593 · El árbol del coordinador es el de SU modalidad.
+                modalidad:  (typeof window._cronosCoordScope === 'function')
+                                ? window._cronosCoordScope(me) : '',
                 emptyText:  'Sin informes de este equipo todavía.',
             });
         } else {
-            sorted.forEach(m => { html += _sdReportCard(m); });
+            // Respaldo sin árbol: el acotamiento por modalidad no se puede
+            // perder sólo porque el módulo no esté cargado.
+            sorted.forEach(m => {
+                if (typeof window._cronosVeCategoria === 'function' &&
+                    !window._cronosVeCategoria(me, m.category || m.matchCategory)) return;
+                html += _sdReportCard(m);
+            });
         }
 
         container.innerHTML = html;
@@ -765,7 +794,12 @@ async function _sdLoadReports() {
             }
             const meta = {
                 club:   me.clubName || clubId,
-                ambito: skey === '*' ? 'Todos los equipos del club' : bloques[0].equipo,
+                ambito: skey === '*'
+                    ? ('Todos los equipos del club' +
+                       ((typeof window._cronosCoordScope === 'function' && window._cronosCoordScope(me))
+                            ? ' · ' + window._cronosCoordScopeLabel(window._cronosCoordScope(me))
+                            : ''))
+                    : bloques[0].equipo,
             };
             if (fmt === 'csv') window.rxExportarResumenCSV(bloques, meta);
             else               window.rxExportarResumenPDF(bloques, meta);

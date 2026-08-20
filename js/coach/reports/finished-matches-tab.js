@@ -265,13 +265,29 @@ async function _renderFinishedMatchesTab() {
             });
         }
 
+        // ── FILTRO POR MODALIDAD DEL COORDINADOR (v593) ──────────────────
+        // Mismo criterio que Convocatorias, Entrenamientos, Asistencia e
+        // Informes, y por el mismo predicado único (js/core/utils.js). Un
+        // coordinador de Fútbol 7 al que se le acotan los informes pero se le
+        // deja el archivo de partidos entero no está acotado: sólo lo parece.
+        const _fmAlcance = (typeof window._cronosCoordScope === 'function')
+            ? window._cronosCoordScope(me) : '';
+        if (_fmAlcance && typeof window._cronosVeCategoria === 'function') {
+            finishedMatches = finishedMatches.filter(m =>
+                window._cronosVeCategoria(me, m.category || m.matchCategory));
+        }
+
         if (finishedMatches.length === 0) {
             container.innerHTML = `
                 <div style="text-align:center; padding:3rem 1rem;">
                     <div style="font-size:3rem; margin-bottom:0.8rem;">🎬</div>
                     <h3 style="color:white; margin-bottom:0.4rem;">No hay partidos terminados guardados</h3>
                     <p style="color:#7d8590; font-size:0.85rem;">
-                        ${isCoach ? 'Solo se muestran los partidos de tu categoría y subcategoría asignada.' : 'En cuanto finalice un partido o se genere su informe, aparecerá aquí organizados por categoría.'}
+                        ${isCoach
+                            ? 'Solo se muestran los partidos de tu categoría y subcategoría asignada.'
+                            : (_fmAlcance
+                                ? 'Solo se muestran los partidos de ' + window._cronosCoordScopeLabel(_fmAlcance) + ', que es tu modalidad de coordinación.'
+                                : 'En cuanto finalice un partido o se genere su informe, aparecerá aquí organizados por categoría.')}
                     </p>
                 </div>`;
             return;

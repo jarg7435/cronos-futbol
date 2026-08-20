@@ -124,8 +124,33 @@ async function openContactManager() {
 
         // 1. Cargar Staff real de Firestore (Director y Coordinador)
         try {
-            const realStaff = await _cGetStaff(db, me.clubId, fns, ['director', 'coordinator', 'club_admin', 'admin']);
-            
+            let realStaff = await _cGetStaff(db, me.clubId, fns, ['director', 'coordinator', 'club_admin', 'admin']);
+
+            // ══════════════════════════════════════════════════════════
+            //  🎯 v593 · EL COORDINADOR QUE LE TOCA A ESTE EQUIPO
+            //
+            //  Petición del autor: las convocatorias y los entrenamientos
+            //  tienen que llegar al coordinador de SU modalidad. Aquí es donde
+            //  se decide de verdad: esta lista es la que alimenta las
+            //  palomillas de Gestión de Contactos y, por tanto, a quién se le
+            //  crea el aviso en cronos_notifications.
+            //
+            //  🔑 SE REUTILIZA _cronosResolveStaffForMatch (utils.js), que ya
+            //  hacía exactamente esto para los informes de partido desde la
+            //  Pieza 2. El Director entra siempre; el coordinador, sólo si su
+            //  modalidad cubre la categoría del entrenador. Sin categoría no
+            //  se puede juzgar y entran todos (fail-open).
+            //
+            //  ⚠️ EL FILTRO SE APLICA ANTES DE LA PURGA DE ABAJO, A PROPÓSITO:
+            //  así un entrenador de F7 que ya tuviera guardado al coordinador
+            //  de F11 —de cuando el rol era genérico— deja de tenerlo. Si sólo
+            //  se filtrara el alta, la lista vieja seguiría enrutando mal y el
+            //  cambio no se notaría en los clubes que ya están funcionando.
+            // ══════════════════════════════════════════════════════════
+            if (typeof window._cronosResolveStaffForMatch === 'function') {
+                realStaff = window._cronosResolveStaffForMatch(realStaff, coachCat);
+            }
+
             // Purgar contactos de staff que NO están realmente en Firestore
             const realStaffUids = new Set(realStaff.map(s => s.uid || s.id));
             const realStaffEmails = new Set(realStaff.map(s => (s.email || '').toLowerCase()).filter(Boolean));

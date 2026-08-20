@@ -339,7 +339,12 @@ export function handleEntityChange() {
         if (roleSelect) {
             const roleOptions = roleSelect.querySelectorAll('option');
             roleOptions.forEach(opt => {
-                if (['club_admin', 'director', 'coordinator'].includes(opt.value)) {
+                // ⚠️ v593 · startsWith, no includes: el coordinador son ahora
+                // TRES opciones ('coordinator_f7', '_f11', '_f711') y una lista
+                // cerrada las habría dejado seleccionables bajo un ente
+                // individual, donde el rol no existe.
+                if (['club_admin', 'director'].includes(opt.value) ||
+                    String(opt.value).startsWith('coordinator')) {
                     opt.disabled = true;
                     opt.style.color = '#4d5566';
                 } else {
@@ -382,7 +387,15 @@ export function handleEntityChange() {
 
 // ── Manejar Cambio de Rol ────────────────────────────────────
 export function handleRoleChange() {
-    const role = document.getElementById('auth-role')?.value;
+    // 🎯 v593 · El desplegable desglosa el coordinador en tres opciones
+    // ('coordinator_f7' | '..._f11' | '..._f711'). TODO lo que sigue razona
+    // con el rol de siempre; el tipo se guarda aparte. Ver la nota de
+    // _cronosParseRoleValue en js/core/utils.js.
+    const _rawRole = document.getElementById('auth-role')?.value;
+    const _parsed  = (typeof window._cronosParseRoleValue === 'function')
+        ? window._cronosParseRoleValue(_rawRole)
+        : { role: _rawRole, coordinatorType: '' };
+    const role = _parsed.role;
 
     const isParent              = (role === 'parent');
     const isClubAdmin           = (role === 'club_admin');
@@ -452,11 +465,18 @@ export function handleRoleChange() {
     if (indivCont)     indivCont.style.display      = 'block';
     // Categoría: entrenador, padre, y sub-usuarios individual
     if (catCont)       catCont.style.display        = needsCategory ? 'block' : 'none';
-    // Tipo de Coordinador (F7/F11/F7&11): visible solo para rol 'coordinator'
+    // Tipo de Coordinador (F7/F11/F7&11) — v593: SÓLO como respaldo.
+    // La opción elegida en el desplegable ya trae la modalidad, así que
+    // preguntarla otra vez sería pedir dos veces lo mismo (y dejar abierta la
+    // puerta a que las dos respuestas se contradigan). Este selector sólo
+    // aparece si el rol llegó como 'coordinator' a secas y por tanto NO trae
+    // modalidad: ahí sigue siendo la única forma de completarla.
     const coordTypeCont = document.getElementById('auth-coordinator-type-container');
-    if (coordTypeCont) coordTypeCont.style.display = (role === 'coordinator') ? 'block' : 'none';
+    const _esCoord      = (role === 'coordinator');
+    const _faltaTipo    = _esCoord && !_parsed.coordinatorType;
+    if (coordTypeCont) coordTypeCont.style.display = _faltaTipo ? 'block' : 'none';
     const coordTypeEl = document.getElementById('auth-coordinator-type');
-    if (coordTypeEl && role !== 'coordinator') coordTypeEl.value = '';
+    if (coordTypeEl && !_faltaTipo) coordTypeEl.value = '';
     // Campo email del administrador individual: NO necesario si ya se seleccionó del desplegable
     // Solo mostrar si el usuario necesita buscar al individual manualmente
     if (indOwnerCont)  indOwnerCont.style.display   = 'none';
@@ -2135,7 +2155,17 @@ export async function doAuth() {
         // ═══════════════════════════════════════════════════════
         // REGISTRO
         // ═══════════════════════════════════════════════════════
-        const requestedRole   = document.getElementById('auth-role')?.value          || 'user';
+        // 🎯 v593 · SE NORMALIZA AQUÍ, EN LA ÚNICA PUERTA DE ENTRADA. A partir
+        // de esta línea `requestedRole` vale 'coordinator' como toda la vida:
+        // las ~30 comparaciones que siguen, las solicitudes, las aprobaciones
+        // del club y del SuperAdmin, las reglas y el recuento de plazas no se
+        // enteran de que el desplegable tiene ahora tres coordinadores. La
+        // modalidad viaja aparte, en `_coordType`.
+        const _rawRoleValue   = document.getElementById('auth-role')?.value          || 'user';
+        const _roleParsed     = (typeof window._cronosParseRoleValue === 'function')
+            ? window._cronosParseRoleValue(_rawRoleValue)
+            : { role: _rawRoleValue, coordinatorType: '' };
+        const requestedRole   = _roleParsed.role;
 
         // ── RGPD: el consentimiento es obligatorio para registrarse ──
         //
@@ -2194,8 +2224,11 @@ export async function doAuth() {
         // Categoría y subcategoría (solo entrenadores y padres)
         const selectedCategory = document.getElementById('auth-category')?.value || '';
         const selectedSubcat   = document.getElementById('auth-subcat')?.value   || '';
-        // Tipo de Coordinador (solo rol coordinator): 'f7' | 'f11' | 'f711'
-        const _coordType       = document.getElementById('auth-coordinator-type')?.value || '';
+        // Tipo de Coordinador (solo rol coordinator): 'f7' | 'f11' | 'f711'.
+        // v593: manda la opción del desplegable de rol; el selector suelto sólo
+        // se usa si aquélla no traía modalidad (rol 'coordinator' a secas).
+        const _coordType       = _roleParsed.coordinatorType ||
+                                 document.getElementById('auth-coordinator-type')?.value || '';
         const inviteCode       = document.getElementById('auth-invite-code')?.value.trim().toUpperCase() || '';
         const requestedSlot    = selectedCategory
             ? (selectedSubcat ? `${selectedCategory}_${selectedSubcat}` : selectedCategory)
