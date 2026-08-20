@@ -196,8 +196,16 @@ service cloud.firestore {
     // Quedan fuera, por tanto: directorUids, coordinatorUids, adminUid, plan,
     // status, expiresAt y features.live_view.
     function isClubConfigOnlyUpdate() {
+      // v594 · `inviteTemplate` — la plantilla de invitacion de Secretaria.
+      // El autor pidio que el Director pueda redactar el mensaje a su gusto
+      // y GUARDARLO para las proximas invitaciones. Va en el CLUB y no en la
+      // persona a proposito: asi sobrevive a un cambio de director.
+      // Por que no reabre nada: esta rama ya exige isClubDirectorOf(clubId)
+      // -o sea, el director de ESTE club-, y `hasOnly` sigue dejando fuera
+      // directorUids, coordinatorUids, adminUid, plan, status y expiresAt.
+      // Es un texto: no concede ningun privilegio.
       return request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['categoryConfigs', 'timerThresholds', 'features'])
+               .hasOnly(['categoryConfigs', 'timerThresholds', 'features', 'inviteTemplate'])
              && request.resource.data.get('features', {})
                   .diff(resource.data.get('features', {})).affectedKeys()
                   .hasOnly(['sendIndividualReports']);

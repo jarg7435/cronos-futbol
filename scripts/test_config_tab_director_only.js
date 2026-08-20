@@ -188,9 +188,20 @@ if (typeof sb._sdCanSeeConfigTab === 'function') {
         /isAuthorized/.test(helper) && /'status', ''\) == 'active'/.test(helper));
 
     // ── lo que impide la escalada DE PRIVILEGIOS
-    const acot = (rules.match(/function isClubConfigOnlyUpdate\(\)[\s\S]*?\n    \}/) || [''])[0];
-    ok('4g · ⚠️ la escritura se limita a categoryConfigs, timerThresholds y features',
-        /hasOnly\(\['categoryConfigs', 'timerThresholds', 'features'\]\)/.test(acot));
+    // ⚠️ SIN COMENTARIOS, y no es un detalle: la comprobación 4i de más abajo
+    // pregunta si un campo peligroso "aparece" en la acotación, y sobre el
+    // texto crudo eso incluye la PROSA. Al documentar en v594 por qué la nueva
+    // clave no reabre nada —nombrando ahí mismo los campos que siguen fuera—
+    // el guard dio SEIS falsos rojos. Lo que quiere fijar 4i es la lista real,
+    // no el vocabulario del comentario; el propio fichero ya traía el helper.
+    const acotBruta = (rules.match(/function isClubConfigOnlyUpdate\(\)[\s\S]*?\n    \}/) || [''])[0];
+    // (el `sinComentarios` de la PARTE 3 vive en otro bloque; aquí uno propio)
+    const acot = acotBruta.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n');
+    // v594 · `inviteTemplate` entra en la lista: el Director redacta y GUARDA
+    // el mensaje de invitación de su club (Secretaría). Es un texto y no
+    // concede ningún privilegio; la rama sigue exigiendo isClubDirectorOf.
+    ok('4g · ⚠️ la escritura se limita a categoryConfigs, timerThresholds, features e inviteTemplate',
+        /hasOnly\(\['categoryConfigs', 'timerThresholds', 'features', 'inviteTemplate'\]\)/.test(acot));
     ok('4h · ⚠️ y DENTRO de features, solo a sendIndividualReports (features contiene live_view, que gestiona el club_admin)',
         /\.diff\(resource\.data\.get\('features', \{\}\)\)[\s\S]{0,80}hasOnly\(\['sendIndividualReports'\]\)/.test(acot));
 

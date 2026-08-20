@@ -1115,6 +1115,51 @@ if (typeof window._cronosParseRoleValue !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔗 v594 · EL ENLACE DE INVITACIÓN, CONSTRUIDO EN UN SOLO SITIO
+//
+//  Se descubrió al abrir la Secretaría por el fallo de envío: el enlace
+//  se fabricaba en DOS sitios y NO era el mismo.
+//    · El cliente (secretary.js) ponía `?invite=true&email=…`
+//    · La Cloud Function ponía `?register=true&email=…&role=…&clubName=…`
+//
+//  🔑 Y LA BUENA ES LA SEGUNDA. `index.html` acepta `invite` O `register`
+//  para saltarse el onboarding, pero **sólo `register=true` cambia a la
+//  pestaña REGISTRARSE**, y sólo con `role`/`clubName` llega el formulario
+//  relleno. O sea: al invitado por WhatsApp —el único camino que hoy
+//  funciona— se le mandaba el enlace flojo, que le deja en la pantalla de
+//  acceso teniendo que buscar dónde se registra uno.
+//
+//  ⚠️ El destinatario NO ve ningún error: el enlace abre, la app carga y
+//  simplemente no hace lo que debía. Por eso nadie lo había reportado.
+//
+//  Ahora lo construyen aquí el campo visible, el texto de WhatsApp y el
+//  cuerpo del correo. La Cloud Function sigue construyendo el suyo con
+//  ESTA MISMA forma (functions/index.js): no se acepta el del cliente,
+//  porque un enlace que llega en el payload y se reenvía por correo es
+//  una vía de suplantación.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.CRONOS_APP_URL !== 'string') {
+    window.CRONOS_APP_URL = 'https://cronos-futbol-app.web.app';
+}
+if (typeof window.cronosInviteUrl !== 'function') {
+    window.cronosInviteUrl = function(datos) {
+        const d = datos || {};
+        const p = new URLSearchParams();
+        // `register=true` es lo que de verdad deja al invitado EN el
+        // formulario de alta. No cambiar por `invite` sin leer la nota de
+        // arriba: `invite` sólo quita el onboarding.
+        p.set('register', 'true');
+        const email = (d.email == null ? '' : String(d.email)).trim();
+        if (email) p.set('email', email);
+        const role = (d.role == null ? '' : String(d.role)).trim();
+        if (role) p.set('role', role);
+        const club = (d.clubName == null ? '' : String(d.clubName)).trim();
+        if (club) p.set('clubName', club);
+        return window.CRONOS_APP_URL + '/?' + p.toString();
+    };
+}
+
 // ── Resolutor de grupo de categoría para Semáforo e Informes ───
 // Grupos: 'f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c', 'juvenil', 'regional'
 if (typeof window.getCategoryGroupKey !== 'function') {

@@ -1027,11 +1027,88 @@ exports.sendInviteEmail = functions
   }
 
   const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-  if (!callerDoc.exists || !['superadmin', 'admin'].includes(callerDoc.data().role)) {
-    throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin puede enviar invitaciones');
+
+  /* ==================================================================== */
+  /* 🔴 v594 · LA PUERTA SOLO DEJABA PASAR AL SUPERADMIN                  */
+  /*                                                                      */
+  /* v590 le dio al Director Deportivo la pantalla de Secretaria, pero    */
+  /* NADIE abrio esta puerta: sus envios morian aqui con permission-denied*/
+  /* y el cliente los enseñaba como "Error de conexion con el servidor",  */
+  /* que mandaba a mirar la red cuando el problema era un permiso.        */
+  /* Medido en los registros de produccion (2026-08-20): dos llamadas del */
+  /* autor con auth VALID y status code 403, sin una sola linea de este   */
+  /* fichero — porque el throw ocurria ANTES del primer console.log.      */
+  /*                                                                      */
+  /* 🔑 SE MIRA allRoles, NO SOLO LA RAIZ. En este proyecto el campo      */
+  /* `role` de la raiz va desfasado con frecuencia y la verdad esta en    */
+  /* las PLAZAS (v563, v581, v540). Mismo criterio que ya usa             */
+  /* registerStaffUid unas lineas mas abajo: si no, un director cuya raiz */
+  /* diga 'user' seguiria sin poder invitar, con el mismo 403 opaco.      */
+  /*                                                                      */
+  /* 🔑🔑 Y EL CLUB SE IMPONE, NO SE ACEPTA. Un director invita al SUYO:  */
+  /* el `clubName` que llega del cliente se IGNORA para todo el que no    */
+  /* sea SuperAdmin y se sustituye por el de su plaza. Sin esto, el       */
+  /* formulario —cuyo campo de club es editable— permitiria mandar        */
+  /* invitaciones en nombre de otro club.                                 */
+  /* ==================================================================== */
+  const _cd = callerDoc.exists ? (callerDoc.data() || {}) : {};
+  const _esSA = ['superadmin', 'admin'].includes(_cd.role);
+  /* Plaza VIVA de director o administrador de club (revocada no cuenta). */
+  const _plazaStaff = (Array.isArray(_cd.allRoles) ? _cd.allRoles : []).find(
+    (r) => r && ['director', 'club_admin'].includes(r.role) &&
+           r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed'
+  ) || null;
+  const _esStaffRaiz = ['director', 'club_admin'].includes(_cd.role);
+  const _puedeInvitar = _esSA || _esStaffRaiz || !!_plazaStaff;
+
+  if (!callerDoc.exists || !_puedeInvitar) {
+    /* Mensaje que dice QUE pasa, para que el cliente no tenga que adivinar. */
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Solo el SuperAdmin, el Administrador de Club o el Director Deportivo pueden enviar invitaciones.'
+    );
   }
 
-  const { to, subject, body, role, clubName, inviterName } = data;
+  /* El club del invitante, para imponerlo mas abajo. */
+  const _clubPropio = _esSA
+    ? null
+    : (_cd.clubName || (_plazaStaff && _plazaStaff.clubName) || null);
+
+  const { to, subject, role, inviterName } = data;
+
+  /* ==================================================================== */
+  /* 🧹 v595 · EL MARCADOR RESIDUAL NO PUEDE LLEGAR NUNCA AL DESTINATARIO */
+  /*                                                                      */
+  /* El autor lo vio en el correo real (capturas 9333/9334): en mitad del  */
+  /* parrafo salia el texto literal                                       */
+  /*   "🔗 [ENLACE DE INVITACION - SE AÑADE AUTOMATICAMENTE AL ENVIAR]"    */
+  /* Era un marcador de ayuda de la plantilla del CLIENTE, que en v594 ya  */
+  /* se sustituyo por el enlace de verdad ({enlace}).                      */
+  /*                                                                      */
+  /* 🔑 PERO SE LIMPIA TAMBIEN AQUI, Y A PROPOSITO. La plantilla la escribe */
+  /* el cliente, y hay tres formas de que ese texto siga llegando:         */
+  /*   · un navegador con la version vieja en cache (produccion sirve v593 */
+  /*     mientras esto se escribe, y ES de donde salio su captura);        */
+  /*   · una plantilla del club GUARDADA que ya lo contenga;               */
+  /*   · alguien que lo copie y pegue sin saber que es.                    */
+  /* El servidor es el ultimo sitio por el que pasa el correo: es el unico */
+  /* punto donde la limpieza vale para todos los casos a la vez.           */
+  /*                                                                      */
+  /* ⚠️ SOLO se borra ESE marcador, no cualquier corchete: el mensaje es   */
+  /* del club y no se le tocan sus palabras.                              */
+  /* ==================================================================== */
+  const _quitarMarcador = (t) => String(t == null ? '' : t)
+    /* La linea entera si el marcador la ocupa el solo (con o sin 🔗). */
+    .replace(/^[ \t]*(?:🔗[ \t]*)?\[[^\]\n]*ENLACE DE INVITACI[ÓO]N[^\]\n]*\][ \t]*\r?\n?/gim, '')
+    /* Y suelto, si quedo incrustado en mitad de un parrafo. */
+    .replace(/(?:🔗[ \t]*)?\[[^\]\n]*ENLACE DE INVITACI[ÓO]N[^\]\n]*\]/gi, '')
+    /* El hueco que deja no puede convertirse en tres saltos de linea. */
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const body = _quitarMarcador(data.body);
+  /* ⚠️ `clubName` NO se desestructura arriba a proposito: para quien no es */
+  /* SuperAdmin manda su club, no lo que venga en el payload.              */
+  const clubName = _esSA ? data.clubName : (_clubPropio || data.clubName);
   /* SECURITY: escapar toda entrada de usuario que se interpole en HTML */
   const _esc = (v) => { if (v === null || v === undefined) return ''; return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
   if (!to) {
@@ -1071,10 +1148,21 @@ exports.sendInviteEmail = functions
   const inviteUrl = APP_URL + '/?' + inviteParams.toString();
 
   /* ---- Nombre del invitante ---- */
-  const senderName = inviterName || callerDoc.data().displayName || callerDoc.data().firstName || 'SuperAdmin';
+  /* v594: el remitente por defecto ya no es "SuperAdmin" para todo el     */
+  /* mundo. Si quien invita es un club, firma el club; el generico solo    */
+  /* queda para el SuperAdmin sin nombre.                                  */
+  const senderName = inviterName || _cd.displayName || _cd.firstName ||
+                     (clubName ? ('Dirección Deportiva de ' + clubName) : null) ||
+                     (_esSA ? 'SuperAdmin' : 'Chronos Fútbol');
 
   /* ---- Asunto del correo ---- */
-  const emailSubject = subject || ('Invitacion a Chronos Futbol - ' + roleLabel + (clubName ? ' (' + clubName + ')' : ''));
+  /* ✍️ v595 · CON TILDES. Estaban quitadas en TODO el texto fijo del correo
+     -asunto, cabecera, pie y respaldo en texto plano-, y el autor lo reporto
+     al leer el correo real. No habia ninguna razon tecnica: `from:` ya
+     enviaba "Chronos Fútbol" con tilde y le llegaba bien, igual que el
+     cuerpo que escribe el club. Nodemailer manda UTF-8 por defecto.
+     ⚠️ La marca lleva HACHE -CHRONOS- por decision de v476, con guard. */
+  const emailSubject = subject || ('Invitación a Chronos Fútbol · ' + roleLabel + (clubName ? ' (' + clubName + ')' : ''));
 
   /* ---- URL del logo (alojado en Firebase Hosting) ---- */
   const LOGO_URL = APP_URL + '/public/assets/img_0f3942d4.png';
@@ -1082,21 +1170,21 @@ exports.sendInviteEmail = functions
   /* ---- Cuerpo en texto plano (fallback para clientes que no soportan HTML) ---- */
   const textBody = body || (
     'Hola,\n\n' +
-    'Has sido invitado a unirte a Chronos Futbol como ' + roleLabel +
+    'Has sido invitado a unirte a Chronos Fútbol como ' + roleLabel +
     (clubName ? ' del club ' + clubName : '') + '.\n\n' +
     'Para completar tu registro, haz clic en el siguiente enlace:\n' +
     inviteUrl + '\n\n' +
     'Si no puedes hacer clic, copia y pega la URL en tu navegador.\n\n' +
     'Si no esperabas este correo, puedes ignorarlo.\n\n' +
     'Saludos,\n' +
-    senderName + ' - Equipo Chronos Futbol'
+    senderName + ' · Chronos Fútbol'
   );
 
   /* ---- Cuerpo principal del mensaje (por defecto o personalizado) ---- */
   const customBodyHtml = body
     ? _esc(body).replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
           .replace(/\n/g, '<br/>')
-    : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Futbol</strong> como:`;
+    : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Fútbol</strong> como:`;
 
   /* ---- Cuerpo en HTML con logo y diseño profesional ---- */
   const htmlBody = (
@@ -1104,8 +1192,8 @@ exports.sendInviteEmail = functions
 
       /* -- Cabecera con logo y color de marca -- */
       '<div style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); padding: 30px 20px; text-align: center;">' +
-        '<img src="' + LOGO_URL + '" alt="Chronos Futbol" style="max-width: 180px; height: auto; display: block; margin: 0 auto 12px auto;" />' +
-        '<h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600;">Invitacion a Chronos Futbol</h1>' +
+        '<img src="' + LOGO_URL + '" alt="Chronos Fútbol" style="max-width: 180px; height: auto; display: block; margin: 0 auto 12px auto;" />' +
+        '<h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600;">Invitación a Chronos Fútbol</h1>' +
       '</div>' +
 
       /* -- Cuerpo del mensaje -- */
@@ -1131,14 +1219,14 @@ exports.sendInviteEmail = functions
         '</div>' +
 
         '<p style="font-size: 14px; color: #888888; line-height: 1.5; margin: 15px 0 0 0; text-align: center;">' +
-          'Si el boton no funciona, copia y pega este enlace en tu navegador:<br/>' +
+          'Si el botón no funciona, copia y pega este enlace en tu navegador:<br/>' +
           '<a href="' + inviteUrl + '" style="color: #3949ab; word-break: break-all;">' + inviteUrl + '</a>' +
         '</p>' +
       '</div>' +
 
       /* -- Pie del correo -- */
       '<div style="background-color: #f5f5f5; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">' +
-        '<p style="margin: 0 0 6px 0; font-size: 13px; color: #999999;">Enviado por ' + _esc(senderName) + ' desde Chronos Futbol</p>' +
+        '<p style="margin: 0 0 6px 0; font-size: 13px; color: #999999;">Enviado por ' + _esc(senderName) + ' desde Chronos Fútbol</p>' +
         '<p style="margin: 0; font-size: 12px; color: #bbbbbb;">Si no esperabas este correo, puedes ignorarlo de forma segura.</p>' +
       '</div>' +
 

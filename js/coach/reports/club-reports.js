@@ -484,6 +484,11 @@ window.switchStaffTab = async (tab) => {
             contenedorId: 'sd-secretaria-body',
             roles: window.CRONOS_SECRETARIA_ROLES_DIRECTOR || ['user', 'coordinator', 'parent'],
             club:  _me.clubName || '',
+            // v594 · `clubId` para poder GUARDAR la plantilla del club, y
+            // `clubFijo` porque el servidor le impone su club: dejar el campo
+            // editable prometeria invitar en nombre de otro y no se cumpliria.
+            clubId:   _me.clubId || '',
+            clubFijo: true,
         });
         return;
     }
