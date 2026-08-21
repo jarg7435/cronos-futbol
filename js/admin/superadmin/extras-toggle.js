@@ -36,6 +36,28 @@ window._CRONOS_EXTRAS_DEF = [
     { key: 'actualizaciones', icon: '🔄', label: 'Actualizaciones de la App', desc: 'Permitir recibir actualizaciones automáticas' },
     { key: 'partidos_terminados', icon: '🎬', label: 'Partidos Terminados', desc: 'Ver y reproducir el historial de partidos finalizados (director, coordinador, entrenador)' },
     { key: 'partidos_en_vivo', icon: '🔴', label: 'Partidos en Vivo', desc: 'Ver partidos en vivo del club (director, coordinador, padres, entrenador)' },
+    // ════════════════════════════════════════════════════════════════
+    //  v596 · LOS ROLES TAMBIÉN SE CONTRATAN
+    //
+    //  Hasta aquí un extra apagaba una FUNCIÓN. Estos cuatro apagan un
+    //  ROL entero: quien lo tenga concedido sigue teniéndolo, pero su
+    //  tarjeta del selector sale BLOQUEADA CON EL MOTIVO y no entra.
+    //
+    //  ⚠️ NO se apaga el rol de ENTRENADOR ni el de ADMINISTRADOR DE
+    //  CLUB: sin ellos no hay producto que vender. Un club sin
+    //  entrenadores no tiene quién cronometre, y sin administrador no
+    //  tiene quién dé de alta a nadie.
+    //
+    //  ⚠️ 'secretaria' es SUB-OPCIÓN de 'rol_director': es una sección
+    //  DENTRO del panel de Dirección (el envío de invitaciones). Se
+    //  vende aparte porque un club puede querer al Director sin darle
+    //  la capacidad de invitar. Apagar 'rol_director' la deja
+    //  inalcanzable de todas formas — el panel entero se cierra.
+    // ════════════════════════════════════════════════════════════════
+    { key: 'rol_padres',      icon: '👨‍👩‍👧', label: 'Rol: Padres / Madres',    desc: 'Permitir el acceso al panel de Familias (padres, madres y tutores)' },
+    { key: 'rol_coordinador', icon: '🎯', label: 'Rol: Coordinador',         desc: 'Permitir el acceso al panel de Coordinación' },
+    { key: 'rol_director',    icon: '📋', label: 'Rol: Director Deportivo',  desc: 'Permitir el acceso al panel de Dirección' },
+    { key: 'secretaria',      icon: '✉️', label: '↳ Secretaría del Director', desc: 'Sub-opción de Dirección: invitar por correo o WhatsApp a entrenadores, coordinadores y familias' },
 ];
 
 window.saExtras = async function saExtras() {

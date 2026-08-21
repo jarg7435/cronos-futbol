@@ -428,10 +428,22 @@ window.switchStaffTab = async (tab) => {
               desc: 'Los partidos que se están jugando ahora mismo.',
               onclick: 'openLiveMatchesView()' },
         ];
+        // v596 · Secretaría es SUB-OPCIÓN de Dirección y se contrata aparte: un
+        // club puede querer al Director sin darle la capacidad de invitar.
+        // Bloqueada CON EL MOTIVO, no escondida (misma regla que arriba).
+        // ⚠️ SE CALCULA AQUÍ, FUERA del `if (_esDir)`: la aserción 2a de
+        // test_config_tab_director_only.js mide la DISTANCIA entre ese `if` y
+        // el switchStaffTab('config') que va detrás, con un techo estrecho a
+        // propósito. Meter aquí dentro un comentario largo lo pone en rojo sin
+        // que nada se haya roto.
+        const _secMotivo = (_extras.secretaria !== false) ? ''
+            : ((window.CRONOS_ROL_EXTRA_MOTIVO || {}).secretaria
+               || 'Extra no activado para tu club. Habla con el administrador.');
         if (_esDir) {
             _opciones.push({ icono: '✉️', titulo: 'Secretaría', color: '#58a6ff',
                 desc: 'Invita a entrenadores, coordinadores o familias con el enlace de la app.',
-                onclick: "switchStaffTab('secretaria')" });
+                onclick: "switchStaffTab('secretaria')",
+                bloqueado: _secMotivo });
             _opciones.push({ icono: '⚙️', titulo: 'Configuración', color: '#8b949e',
                 desc: 'Semáforos e informes a padres, por grupo de edad.',
                 onclick: "switchStaffTab('config')" });
@@ -472,6 +484,20 @@ window.switchStaffTab = async (tab) => {
                 </div>`;
             return;
         }
+        // ⚠️ v596 · SEGUNDA PUERTA. Bloquear el botón del tablero no impide
+        // llamar a switchStaffTab('secretaria') desde la consola, ni que la
+        // pila de navegación repinte esta pestaña directamente — que es como
+        // se entra al volver de una pantalla hija.
+        if ((_me.extras || {}).secretaria === false) {
+            container.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;gap:1rem;">
+                    <div style="font-size:3.5rem;">🔒</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:white;">Secretaría no disponible</div>
+                    <div style="font-size:0.85rem;color:#8b949e;max-width:340px;">${(window.CRONOS_ROL_EXTRA_MOTIVO || {}).secretaria
+                        || 'Este extra no está activado para tu club. Contacta con el administrador para habilitarlo.'}</div>
+                </div>`;
+            return;
+        }
         if (typeof window.saSecretary !== 'function') {
             container.innerHTML = `
                 <div style="text-align:center;padding:3rem;color:#ff5858;">
@@ -479,10 +505,22 @@ window.switchStaffTab = async (tab) => {
                 </div>`;
             return;
         }
+        // v596 · Un rol que el club no tiene contratado NO SE PUEDE INVITAR:
+        // mandar una invitación a un coordinador cuando el extra 'rol_coordinador'
+        // está apagado crearía una plaza que luego no puede entrar — y quien la
+        // recibiera creería que el fallo es suyo. Aquí sí se RETIRA del desplegable
+        // en vez de bloquearse: un <option> deshabilitado en un select de móvil no
+        // se distingue de uno normal (la lección del <optgroup> de v531).
+        // ⚠️ 'user' (Entrenador) nunca se filtra: no tiene extra y es el mínimo.
+        const _rolesDir = (window.CRONOS_SECRETARIA_ROLES_DIRECTOR || ['user', 'coordinator', 'parent'])
+            .filter(_r => {
+                const _k = (window.CRONOS_ROL_EXTRA || {})[_r];
+                return !_k || (_me.extras || {})[_k] !== false;
+            });
         container.innerHTML = '<div id="sd-secretaria-body"></div>';
         await window.saSecretary({
             contenedorId: 'sd-secretaria-body',
-            roles: window.CRONOS_SECRETARIA_ROLES_DIRECTOR || ['user', 'coordinator', 'parent'],
+            roles: _rolesDir.length ? _rolesDir : ['user'],
             club:  _me.clubName || '',
             // v594 · `clubId` para poder GUARDAR la plantilla del club, y
             // `clubFijo` porque el servidor le impone su club: dejar el campo

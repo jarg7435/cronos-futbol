@@ -2413,6 +2413,14 @@ function _umCardIcon(extraKey, icon) {
         ? window._cronosExtraEnabled(extraKey) : true;
     return on ? icon : '🔒';
 }
+// v596 · Y el subtítulo dice el MOTIVO. El gris y el 🔒 cuentan que está
+// bloqueada; no cuentan por qué. Sin esta línea el usuario lee la descripción
+// de una función que no tiene y va a soporte a preguntar por qué no le abre.
+function _umCardDesc(extraKey, desc) {
+    const on = (typeof window._cronosExtraEnabled === 'function')
+        ? window._cronosExtraEnabled(extraKey) : true;
+    return on ? desc : 'No contratado en el plan de tu club';
+}
 
 async function openUnifiedCommsMenu() {
     // v429 · EXTRA 'comunicaciones'. Era el ÚNICO extra del panel del
@@ -2474,11 +2482,11 @@ async function openUnifiedCommsMenu() {
             </button>
 
             <!-- 2. PARTIDOS TERMINADOS -->
-            <button onclick="typeof showFinishedMatches==='function'?showFinishedMatches():(typeof openPastMatchesModal==='function'?openPastMatchesModal():alert('No hay partidos terminados'))" class="btn-comms-card" ${_umCardLock('partidos_terminados')} style="--color:#ff5858;--bg:rgba(255,88,88,0.08);">
-                <span class="icon">📋</span>
+            <button onclick="if(typeof window._cronosExtraGate==='function' && !window._cronosExtraGate('partidos_terminados','Partidos Terminados'))return; typeof showFinishedMatches==='function'?showFinishedMatches():(typeof openPastMatchesModal==='function'?openPastMatchesModal():alert('No hay partidos terminados'))" class="btn-comms-card" ${_umCardLock('partidos_terminados')} style="--color:#ff5858;--bg:rgba(255,88,88,0.08);">
+                <span class="icon">${_umCardIcon('partidos_terminados', '📋')}</span>
                 <div class="content">
                     <div class="title" style="color:#ff5858;">Partidos Terminados</div>
-                    <div class="desc">Ver y volver a partidos finalizados</div>
+                    <div class="desc">${_umCardDesc('partidos_terminados', 'Ver y volver a partidos finalizados')}</div>
                 </div>
             </button>
 
@@ -2492,11 +2500,11 @@ async function openUnifiedCommsMenu() {
             </button>
 
             <!-- 4. PARTIDOS EN VIVO -->
-            <button onclick="if(typeof showLiveShareModal==='function') showLiveShareModal(); else window.open('./live.html','_blank');" class="btn-comms-card" ${_umCardLock('partidos_en_vivo')} style="--color:#ff5858;--bg:rgba(255,88,88,0.12);">
+            <button onclick="if(typeof window._cronosExtraGate==='function' && !window._cronosExtraGate('partidos_en_vivo','Partidos en Vivo'))return; if(typeof showLiveShareModal==='function') showLiveShareModal(); else window.open('./live.html','_blank');" class="btn-comms-card" ${_umCardLock('partidos_en_vivo')} style="--color:#ff5858;--bg:rgba(255,88,88,0.12);">
                 <span class="icon">${_umCardIcon('partidos_en_vivo', '🔴')}</span>
                 <div class="content">
                     <div class="title" style="color:#ff5858;">Partidos en Vivo</div>
-                    <div class="desc">Ver partidos del club en directo</div>
+                    <div class="desc">${_umCardDesc('partidos_en_vivo', 'Ver partidos del club en directo')}</div>
                 </div>
             </button>
 
@@ -2534,13 +2542,26 @@ async function openUnifiedCommsMenu() {
            ya traen su propio style= con las variables --color/--bg: un segundo
            atributo style en el mismo botón no se suma, gana el primero y se
            perderían esas variables. */
+        /* v596 · SOMBREADO ADEMÁS DE GRIS. Con grayscale(0.7) los rojos de
+           "Partidos Terminados" y "Partidos en Vivo" seguían siendo rojo:
+           su color va en un style INLINE sobre .title, que gana a esta hoja,
+           y el filtro sólo lo desaturaba a medias. A 1 se apaga del todo, y
+           el inset oscurece la tarjeta entera —fondo, borde y texto— sin
+           tener que pelear con ningún inline. */
         .btn-comms-card[disabled] {
-            opacity:0.45; cursor:not-allowed; filter:grayscale(0.7);
+            opacity:0.45; cursor:not-allowed; filter:grayscale(1);
+            box-shadow:inset 0 0 0 9999px rgba(0,0,0,0.25);
         }
         .btn-comms-card[disabled]:hover {
             background:var(--bg,rgba(88,166,255,0.08));
             border-color:rgba(255,255,255,0.08);
-            transform:none; box-shadow:none;
+            /* ⚠️ El inset se REPITE aquí: un box-shadow:none lo borraba al pasar
+               el ratón y la tarjeta bloqueada se iluminaba sola.
+               ⚠️⚠️ NI UN BACKTICK EN ESTE BLOQUE: estamos DENTRO de un template
+               literal y un backtick dentro de un comentario CSS cierra la
+               cadena. node --check no lo ve venir (lo que queda detrás sigue
+               siendo JS válido) — está advertido en la cabecera del fichero. */
+            transform:none; box-shadow:inset 0 0 0 9999px rgba(0,0,0,0.25);
         }
     </style>`;
 }

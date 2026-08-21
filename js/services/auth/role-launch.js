@@ -38,11 +38,188 @@
 //  Test: scripts/test_role_launch_module.js
 // ════════════════════════════════════════════════════════════════════
 
-export function enterApp() {
+export async function enterApp() {
     const authScreen = document.getElementById('auth-screen');
     if (authScreen) authScreen.style.display = 'none';
     document.body.classList.remove('locked');
+    // v596 · Los extras de las entidades de sus plazas ANTES de pintar el
+    // selector. Ver _precargarExtrasDeRoles: sin esto las tarjetas se
+    // pintarían siempre abiertas y el candado llegaría tarde.
+    await _precargarExtrasDeRoles();
     showRoleSelection();
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  v596 · LOS ROLES COMO EXTRAS — LA CACHÉ DE EXTRAS POR ENTIDAD
+// ════════════════════════════════════════════════════════════════════
+//  🔑 EL PROBLEMA QUE OBLIGA A ESTA PIEZA: `window._cronosCurrentUser.extras`
+//  NO EXISTE TODAVÍA cuando se pinta el selector de rol. Se carga dentro de
+//  _launchWithRole (más abajo), en una autoejecutable async, o sea DESPUÉS
+//  de que el usuario ya haya elegido. Gatear las tarjetas con `me.extras`
+//  las dejaría SIEMPRE abiertas —`undefined !== false` es true— y el candado
+//  aparecería, si acaso, medio segundo tarde. Un guard así da verde sobre el
+//  defecto real.
+//
+//  🔑 Y NO BASTA CON UN SOLO MAPA DE EXTRAS: los extras son de la ENTIDAD, y
+//  una persona puede tener plazas en varios clubes (v540: la unidad es la
+//  PLAZA). Puede ser coordinador en un club que sí lo contrata y en otro que
+//  no. Por eso se cachea POR ENTIDAD y cada plaza se juzga con la suya.
+//
+//  ⚠️⚠️ FALLA HACIA EL "SÍ", SIEMPRE. Si la lectura falla, si no hay red, si
+//  el documento no existe o si se agota el plazo, NO SE BLOQUEA NADA. Es la
+//  misma regla que `!== false` en _cronosExtraEnabled y por el mismo motivo:
+//  bloquear por un fallo de lectura deja a un director fuera de su panel sin
+//  ningún error a la vista. Un fallo no es una decisión comercial.
+//  Por eso un error NO se cachea: el siguiente intento vuelve a preguntar.
+const _EXTRAS_TIMEOUT_MS = 4000;
+
+function _entidadDeLaPlaza(r) {
+    return String((r && (r.clubId || r.individualEntityId)) || '');
+}
+
+async function _cargarExtrasEntidad(entityId) {
+    if (!entityId) return null;
+    const cache = window._cronosExtrasEntidad || (window._cronosExtrasEntidad = {});
+    if (Object.prototype.hasOwnProperty.call(cache, entityId)) return cache[entityId];
+    try {
+        const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const _db = window._cronos_auth?.db;
+        if (!_db) return null;
+        let snap = await getDoc(doc(_db, 'clubs', entityId));
+        if (!snap.exists()) snap = await getDoc(doc(_db, 'individuals', entityId));
+        cache[entityId] = snap.exists() ? (snap.data().extras || {}) : {};
+        return cache[entityId];
+    } catch (e) {
+        // ⚠️ NO se cachea el fallo: se falla hacia el "sí" y se reintenta luego.
+        console.warn('[extras] no se pudieron leer los extras de', entityId, e && e.message);
+        return null;
+    }
+}
+
+async function _precargarExtrasDeRoles() {
+    try {
+        const me = window._cronosCurrentUser;
+        if (!me) return;
+        const ids = new Set();
+        (me.allRoles || [])
+            .filter(r => r && r.isAuthorized === true && r.status === 'active')
+            .forEach(r => { const id = _entidadDeLaPlaza(r); if (id) ids.add(id); });
+        if (me.clubId) ids.add(String(me.clubId));
+        if (!ids.size) return;
+        // ⚠️ CON PLAZO. Sin él, una lectura colgada dejaría al usuario mirando
+        // una pantalla vacía para siempre: el selector se pinta DESPUÉS de esto.
+        await Promise.race([
+            Promise.all([...ids].map(id => _cargarExtrasEntidad(id))),
+            new Promise(resolve => setTimeout(resolve, _EXTRAS_TIMEOUT_MS)),
+        ]);
+    } catch (e) {
+        console.warn('[extras] precarga incompleta:', e && e.message);
+    }
+}
+window._cronosPrecargarExtrasDeRoles = _precargarExtrasDeRoles;
+
+// ¿Está bloqueada ESTA plaza por su extra de rol? Devuelve el MOTIVO (cadena
+// no vacía) o '' si puede entrar. Cadena vacía = adelante, en todos los
+// caminos de fallo.
+function _motivoPlazaBloqueada(role, entityId) {
+    const mapa = window.CRONOS_ROL_EXTRA || {};
+    const key  = mapa[role];
+    if (!key) return '';                                   // rol sin extra: nunca se bloquea
+    const extras = (window._cronosExtrasEntidad || {})[String(entityId || '')];
+    if (!extras) return '';                                // sin datos → FAIL-OPEN
+    if (extras[key] !== false) return '';                  // ausente o true → activo
+    return (window.CRONOS_ROL_EXTRA_MOTIVO || {})[key]
+        || 'Este acceso no está contratado en el plan de tu club.';
+}
+
+// Qué tarjeta del selector le corresponde a una entrada de allRoles.
+// ⚠️ v596 · VIVÍA DENTRO DE showRoleSelection. Se sube al ámbito del módulo
+// porque _motivoOpcionBloqueada (la segunda puerta, que corre desde
+// selectOption) necesita exactamente el MISMO criterio: si las dos versiones
+// divergieran, una tarjeta bloqueada podría abrirse por el otro camino.
+function _optionOf(r) {
+    const isUnderIndividual = !!(r.individualEntityId || r.isIndividual);
+    if (r.role === 'club_admin') return 'clubadmin';
+    if (['coach','user'].includes(r.role)) return isUnderIndividual ? 'coach_individual' : 'coach';
+    if (['parent','parent_individual','padre_individual'].includes(r.role)) return isUnderIndividual ? 'parent_individual' : 'parent';
+    if (['individual','admin_individual'].includes(r.role)) return 'individual';
+    return r.role;
+}
+
+// ⚠️ UNA OPCIÓN PUEDE VENIR DE VARIAS PLAZAS, y sólo se bloquea si TODAS lo
+// están. Quien coordina en dos clubes y sólo uno lo contrata tiene que poder
+// entrar: dentro del panel elige el club. Bloquear la tarjeta le quitaría el
+// club que sí paga por una decisión del que no.
+function _motivoOpcionBloqueada(me, option) {
+    if (!me) return '';
+    if (['superadmin', 'admin'].includes(me.role)) return '';   // el SA entra a todo por diseño
+    const activos = (me.allRoles || [])
+        .filter(r => r && r.isAuthorized === true && r.status === 'active');
+    const propias = activos.filter(r => _optionOf(r) === option);
+    if (propias.length) {
+        let motivo = '';
+        for (const r of propias) {
+            const m = _motivoPlazaBloqueada(r.role, _entidadDeLaPlaza(r));
+            if (!m) return '';                                   // una abierta basta
+            motivo = motivo || m;
+        }
+        return motivo;
+    }
+    // Sin entradas en allRoles: se juzga el rol RAÍZ con el club de la raíz.
+    return _motivoPlazaBloqueada(_ROL_DE_OPCION[option] || me.role, me.clubId || '');
+}
+
+// Tarjeta del selector → nombre de rol, para poder juzgar el rol raíz y la
+// segunda puerta de selectOption sin depender de allRoles.
+const _ROL_DE_OPCION = {
+    clubadmin:          'club_admin',
+    director:           'director',
+    coordinator:        'coordinator',
+    coach:              'user',
+    coach_individual:   'user',
+    parent:             'parent',
+    parent_individual:  'parent_individual',
+    individual:         'individual',
+};
+
+// Pinta (o quita) el candado sobre una tarjeta del selector.
+// ⚠️ SE GUARDA EL ORIGINAL EN dataset. showRoleSelection se llama muchas
+// veces —cada "volver al selector de roles"—: sin guardar el icono y la
+// descripción de fábrica, la primera vez que se bloquea la tarjeta se queda
+// con el 🔒 y el motivo escritos para siempre, aunque el club lo contrate
+// después.
+function _aplicarCandadoTarjeta(el, motivo) {
+    if (!el) return;
+    const icono = el.querySelector('.role-card-icon');
+    const desc  = el.querySelector('p');
+    if (icono && el.dataset.origIcono === undefined) el.dataset.origIcono = icono.textContent;
+    if (desc  && el.dataset.origDesc  === undefined) el.dataset.origDesc  = desc.textContent;
+
+    if (motivo) {
+        // 🔑 SE QUITA LA ACCIÓN, no sólo el aspecto. La lección de v548:
+        // apagar con CSS deja la función viva para quien pulse igual.
+        el.removeAttribute('onclick');
+        el.onclick = null;
+        el.style.opacity    = '0.45';
+        el.style.filter     = 'grayscale(1)';
+        el.style.cursor     = 'not-allowed';
+        el.style.boxShadow  = 'inset 0 0 0 9999px rgba(0,0,0,0.25)';
+        el.setAttribute('title', motivo);
+        el.setAttribute('data-bloqueado', '1');
+        if (icono) icono.textContent = '🔒';
+        if (desc)  desc.textContent  = motivo;
+    } else if (el.getAttribute('data-bloqueado')) {
+        const opt = String(el.id || '').replace(/^card-opt-/, '').replace(/-/g, '_');
+        el.setAttribute('onclick', "selectOption('" + opt + "')");
+        el.style.opacity    = '';
+        el.style.filter     = '';
+        el.style.cursor     = '';
+        el.style.boxShadow  = '';
+        el.removeAttribute('title');
+        el.removeAttribute('data-bloqueado');
+        if (icono && el.dataset.origIcono !== undefined) icono.textContent = el.dataset.origIcono;
+        if (desc  && el.dataset.origDesc  !== undefined) desc.textContent  = el.dataset.origDesc;
+    }
 }
 
 // ── Pantalla de Selección de Rol ──────────────────────────────
@@ -73,14 +250,22 @@ export function showRoleSelection() {
         if (el) el.style.display = 'none';
     });
 
-    const show = (id) => {
+    // v596 · `show` pinta además el candado del extra de rol, si lo hay. Se le
+    // pasa la OPCIÓN (no el id) porque el motivo se calcula por opción: ver
+    // _motivoOpcionBloqueada y su regla de "una plaza abierta basta".
+    const show = (id, option) => {
         const el = document.getElementById(id);
-        if (el) el.style.display = 'block';
+        if (!el) return;
+        el.style.display = 'block';
+        _aplicarCandadoTarjeta(el, option ? _motivoOpcionBloqueada(me, option) : '');
     };
 
     // 1. Caso SuperAdmin
     if (['superadmin', 'admin'].includes(me.role)) {
-        allCards.forEach(id => show(id));
+        // El SA nunca se bloquea: _motivoOpcionBloqueada ya lo deja pasar, pero
+        // se pasa '' explícito para que además se le RETIRE cualquier candado
+        // que le quedara puesto de una sesión anterior en el mismo navegador.
+        allCards.forEach(id => show(id, ''));
         return;
     }
 
@@ -88,16 +273,6 @@ export function showRoleSelection() {
     // Solo mostrar paneles de roles ACTIVOS (isAuthorized=true AND status='active')
     const activeRoles = (me.allRoles || [])
         .filter(r => r.isAuthorized === true && r.status === 'active');
-
-    // Qué tarjeta le corresponde a una entrada de allRoles.
-    const _optionOf = (r) => {
-        const isUnderIndividual = !!(r.individualEntityId || r.isIndividual);
-        if (r.role === 'club_admin') return 'clubadmin';
-        if (['coach','user'].includes(r.role)) return isUnderIndividual ? 'coach_individual' : 'coach';
-        if (['parent','parent_individual','padre_individual'].includes(r.role)) return isUnderIndividual ? 'parent_individual' : 'parent';
-        if (['individual','admin_individual'].includes(r.role)) return 'individual';
-        return r.role;
-    };
 
     // Si sólo hay UNA tarjeta posible, entrar directamente sin enseñar la
     // pantalla de selección.
@@ -107,7 +282,11 @@ export function showRoleSelection() {
     // con una sola opción, que no elige nada. Entre sus dos equipos elige
     // dentro del panel, que es donde sabe cuál es cuál.
     const _opcionesActivas = Array.from(new Set(activeRoles.map(_optionOf)));
-    if (_opcionesActivas.length === 1) {
+    // 🔑 v596 · EL ATAJO NO PUEDE SALTAR POR ENCIMA DEL CANDADO. Si la única
+    // opción está bloqueada, entrar directamente la metería en el panel sin
+    // pasar por ninguna tarjeta. Se cae al pintado normal: verá SU tarjeta,
+    // bloqueada y con el motivo, que es justo lo que hay que decirle.
+    if (_opcionesActivas.length === 1 && !_motivoOpcionBloqueada(me, _opcionesActivas[0])) {
         screen.style.display = 'none';
         selectOption(_opcionesActivas[0]);
         return;
@@ -117,13 +296,13 @@ export function showRoleSelection() {
         activeRoles.forEach(r => {
             // Determinar si el rol está bajo una entidad individual
             const isUnderIndividual = !!(r.individualEntityId || r.isIndividual);
-            if (r.role === 'club_admin')                        show('card-opt-clubadmin');
-            else if (r.role === 'director')                     show('card-opt-director');
-            else if (r.role === 'coordinator')                  show('card-opt-coordinator');
-            else if (['coach','user'].includes(r.role))         isUnderIndividual ? show('card-opt-coach-individual') : show('card-opt-coach');
-            else if (['parent','parent_individual','padre_individual'].includes(r.role)) isUnderIndividual ? show('card-opt-parent-individual') : show('card-opt-parent');
-            else if (['individual','admin_individual'].includes(r.role)) show('card-opt-individual');
-            else if (r.role === 'entrenador_individual')        show('card-opt-coach-individual');
+            if (r.role === 'club_admin')                        show('card-opt-clubadmin', 'clubadmin');
+            else if (r.role === 'director')                     show('card-opt-director', 'director');
+            else if (r.role === 'coordinator')                  show('card-opt-coordinator', 'coordinator');
+            else if (['coach','user'].includes(r.role))         isUnderIndividual ? show('card-opt-coach-individual', 'coach_individual') : show('card-opt-coach', 'coach');
+            else if (['parent','parent_individual','padre_individual'].includes(r.role)) isUnderIndividual ? show('card-opt-parent-individual', 'parent_individual') : show('card-opt-parent', 'parent');
+            else if (['individual','admin_individual'].includes(r.role)) show('card-opt-individual', 'individual');
+            else if (r.role === 'entrenador_individual')        show('card-opt-coach-individual', 'coach_individual');
         });
     } else {
         // Fallback al rol raíz SOLO si está activo y autorizado
@@ -135,12 +314,12 @@ export function showRoleSelection() {
             return;
         }
         const _isIndiv = !!(me.clubId && me.isIndividual);
-        if (r === 'club_admin')                        show('card-opt-clubadmin');
-        else if (r === 'director')                     show('card-opt-director');
-        else if (r === 'coordinator')                  show('card-opt-coordinator');
-        else if (['coach','user'].includes(r))         _isIndiv ? show('card-opt-coach-individual') : show('card-opt-coach');
-        else if (['parent','parent_individual'].includes(r)) _isIndiv ? show('card-opt-parent-individual') : show('card-opt-parent');
-        else if (['individual','admin_individual'].includes(r)) show('card-opt-individual');
+        if (r === 'club_admin')                        show('card-opt-clubadmin', 'clubadmin');
+        else if (r === 'director')                     show('card-opt-director', 'director');
+        else if (r === 'coordinator')                  show('card-opt-coordinator', 'coordinator');
+        else if (['coach','user'].includes(r))         _isIndiv ? show('card-opt-coach-individual', 'coach_individual') : show('card-opt-coach', 'coach');
+        else if (['parent','parent_individual'].includes(r)) _isIndiv ? show('card-opt-parent-individual', 'parent_individual') : show('card-opt-parent', 'parent');
+        else if (['individual','admin_individual'].includes(r)) show('card-opt-individual', 'individual');
     }
 }
 
@@ -148,6 +327,21 @@ export function showRoleSelection() {
 export function selectOption(option) {
     const me = window._cronosCurrentUser;
     if (!me) return;
+
+    // ⚠️⚠️ v596 · SEGUNDA PUERTA, Y LA QUE DE VERDAD CIERRA. Quitarle el
+    // onclick a la tarjeta no impide llamar a selectOption('director') desde
+    // la consola, ni que un `showRoleSelector()` de otro panel repinte antes
+    // de que la caché de extras esté lista. Mismo criterio que la primera
+    // (_motivoOpcionBloqueada) para que las dos no puedan divergir.
+    const _motivo = _motivoOpcionBloqueada(me, option);
+    if (_motivo) {
+        const txt = '🔒 ' + _motivo;
+        if (typeof window.showToast === 'function') window.showToast(txt, 4000);
+        else alert(txt);
+        const _pantalla = document.getElementById('role-selection-screen');
+        if (_pantalla) _pantalla.style.display = 'flex';
+        return;
+    }
 
     const map = {
         'superadmin':  'superadmin',
@@ -405,31 +599,22 @@ function _launchWithRole(role) {
             // FIX (Error #26): cargar extras del club para mostrar/ocultar opciones
             // del panel del entrenador segun el plan contratado.
             // Usar funcion async autoejecutable porque _launchWithRole no es async.
+            // v596 · Pasa por _cargarExtrasEntidad, la MISMA caché por entidad
+            // que usa el selector de rol. Dos ventajas: si enterApp ya los
+            // precargó no se vuelve a leer el documento, y `me.extras` no puede
+            // decir una cosa distinta de la que decidió el candado de la tarjeta.
             (async () => {
-                try {
-                    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    const _db = window._cronos_auth?.db;
-                    if (!_db) { me.extras = {}; return; }
-                    const clubId2 = roleEntry.clubId || me.clubId;
-                    if (clubId2) {
-                        const clubDoc = await getDoc(doc(_db, 'clubs', clubId2));
-                        if (clubDoc.exists()) {
-                            me.extras = clubDoc.data().extras || {};
-                        } else {
-                            const indDoc = await getDoc(doc(_db, 'individuals', clubId2));
-                            if (indDoc.exists()) {
-                                me.extras = indDoc.data().extras || {};
-                            }
-                        }
-                        console.log('[auth] extras del club cargados:', me.extras);
-                        // FIX: re-renderizar el modal si esta abierto
-                        if (typeof window._cronosRefreshExtras === 'function') {
-                            setTimeout(window._cronosRefreshExtras, 100);
-                        }
-                    }
-                } catch(extrasErr) {
-                    console.warn('[auth] error cargando extras:', extrasErr.message);
-                    me.extras = {};
+                const clubId2 = roleEntry.clubId || me.clubId;
+                if (!clubId2) return;
+                const _ex = await _cargarExtrasEntidad(clubId2);
+                // ⚠️ null = la lectura FALLÓ. Se deja `me.extras` como estaba en
+                // vez de vaciarlo: con `{}` todo sigue activo (`!== false`), pero
+                // pisaría unos extras buenos que ya estuvieran cargados.
+                if (_ex) me.extras = _ex;
+                console.log('[auth] extras del club cargados:', me.extras);
+                // FIX: re-renderizar el modal si esta abierto
+                if (typeof window._cronosRefreshExtras === 'function') {
+                    setTimeout(window._cronosRefreshExtras, 100);
                 }
             })();
 

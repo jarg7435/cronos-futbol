@@ -78,7 +78,15 @@ console.log('── Seleccion de rol y arranque — fuente: ' + path.relative(RO
 
 function readBlock() {
     const src = fs.readFileSync(SOURCE, 'utf8');
-    const s = src.indexOf('export function enterApp()');
+    // v596 · enterApp pasa a ser `export async function`: ahora ESPERA a la
+    // precarga de extras por entidad antes de pintar el selector de rol (sin
+    // ese await las tarjetas se pintarian siempre abiertas, porque los extras
+    // se cargaban DESPUES, dentro de _launchWithRole). Se aceptan las dos
+    // formas para que el guard no dependa de esa palabra.
+    const s = (() => {
+        const m = src.match(/export\s+(?:async\s+)?function\s+enterApp\(\)/);
+        return m ? m.index : -1;
+    })();
     if (s === -1) throw new Error('No se encontro enterApp en ' + SOURCE);
     if (IS_EXTRACTED) return src.slice(s);
     const e = src.indexOf('// ── Logout ──', s);
@@ -118,7 +126,16 @@ function buildSandbox({
         classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); } },
         listeners: {},
         addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
-        appendChild() {}, setAttribute() {}, querySelector: () => null, querySelectorAll: () => [],
+        // v596 · El elemento simulado ahora GUARDA atributos y sabe quitarlos.
+        // Antes `setAttribute` era un sumidero y no existian getAttribute ni
+        // removeAttribute: en cuanto el codigo real quiso QUITARLE el onclick a
+        // una tarjeta bloqueada, el arnes reventaba con "no es una funcion".
+        // Un mock que no sabe borrar no puede probar un candado.
+        attrs: {},
+        setAttribute(n, v) { this.attrs[n] = String(v); },
+        getAttribute(n) { return Object.prototype.hasOwnProperty.call(this.attrs, n) ? this.attrs[n] : null; },
+        removeAttribute(n) { delete this.attrs[n]; },
+        appendChild() {}, querySelector: () => null, querySelectorAll: () => [],
     });
     const get = (id) => {
         if (!present(id)) return null;
@@ -183,7 +200,7 @@ const visibles = (t) => CARDS.filter(id => t.el(id) && t.el(id).style.display ==
     // ═════════════════════════════════════════════════════════════════════
     console.log('── PARTE 1 · estructura, modulo y acoplamiento ──');
     ok('1a · las seis piezas estan en el bloque',
-        /^export function enterApp\(\)/m.test(BLOCK)
+        /^export (?:async )?function enterApp\(\)/m.test(BLOCK)
         && /^export function showRoleSelection\(\)/m.test(BLOCK)
         && /^export function selectOption\(option\)/m.test(BLOCK)
         && /^async function _saPickTestClub\(/m.test(BLOCK)
@@ -247,7 +264,10 @@ const visibles = (t) => CARDS.filter(id => t.el(id) && t.el(id).style.display ==
     console.log('\n── PARTE 2 · enterApp ──');
     {
         const t = buildSandbox({ me: { role: 'user', allRoles: [] } });
-        t.w.enterApp();
+        // v596 · SE ESPERA. enterApp es async desde que precarga los extras por
+        // entidad antes de pintar el selector; sin el await, 2c miraba el DOM
+        // antes de que showRoleSelection hubiera corrido.
+        await t.w.enterApp();
         ok('2a · oculta la pantalla de login', t.el('auth-screen').style.display === 'none');
         ok('2b · desbloquea el body', !t.g.document.body.classList.contains('locked'));
         ok('2c · encadena con la pantalla de seleccion de rol',
@@ -256,7 +276,7 @@ const visibles = (t) => CARDS.filter(id => t.el(id) && t.el(id).style.display ==
     {
         const t = buildSandbox({ me: { role: 'user', allRoles: [] }, ids: ['role-selection-screen'] });
         let threw = null;
-        try { t.w.enterApp(); } catch (e) { threw = e; }
+        try { await t.w.enterApp(); } catch (e) { threw = e; }
         ok('2d · sin la pantalla de login en el DOM no rompe', !threw, threw && threw.message);
     }
 

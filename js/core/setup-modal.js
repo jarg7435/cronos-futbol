@@ -69,6 +69,37 @@ window._cronosExtraBtn = function(extraKey, label, onclickAction, styleStr) {
     }
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  v596 · LOS ROLES COMO EXTRAS — MAPA ÚNICO
+// ════════════════════════════════════════════════════════════════════
+//  Cuatro extras nuevos (extras-toggle.js) apagan un ROL entero en vez
+//  de una función suelta. Este mapa es el ÚNICO sitio donde se dice qué
+//  clave gatea qué rol: el selector de rol (role-launch.js), su segunda
+//  puerta y el panel de Dirección leen todos de aquí.
+//
+//  ⚠️ EL MAPA VA POR NOMBRE DE ROL, NO POR TARJETA. Un mismo rol se
+//  guarda con varias claves históricas ('parent', 'parent_individual',
+//  'padre_individual'): las tres son la MISMA plaza de familia y las
+//  tres tienen que caer del mismo lado del interruptor. Olvidar un alias
+//  no da error — deja una puerta abierta, que es peor.
+window.CRONOS_ROL_EXTRA = {
+    director:             'rol_director',
+    coordinator:          'rol_coordinador',
+    parent:               'rol_padres',
+    parent_individual:    'rol_padres',
+    padre_individual:     'rol_padres',
+};
+
+// El motivo que se ENSEÑA. La política del autor desde v429: un extra no
+// contratado no se esconde — se ve, bloqueado y diciendo por qué. Una
+// opción que desaparece sin explicación parece una avería.
+window.CRONOS_ROL_EXTRA_MOTIVO = {
+    rol_director:    'El acceso de Director Deportivo no está contratado en el plan de tu club.',
+    rol_coordinador: 'El acceso de Coordinador no está contratado en el plan de tu club.',
+    rol_padres:      'El acceso de Familias no está contratado en el plan de tu club.',
+    secretaria:      'Secretaría no está contratada en el plan de tu club. Habla con el administrador.',
+};
+
 // FIX: re-renderizar el modal cuando los extras se carguen
 window._cronosRefreshExtras = function() {
     if (typeof openSetupModal === 'function' && document.querySelector('.setup-mode')) {
@@ -552,14 +583,28 @@ function openSetupModal() {
                                text-transform:uppercase;">
                         🔄 RECUPERAR PARTIDO
                     </button>
+                    <!-- v596 · El botón también lleva el candado. La puerta que
+                         de verdad cierra está dentro de _openCoachCommsMenu; esto
+                         es lo que hace que el entrenador SEPA que la función
+                         existe y que es cosa de su plan, en vez de pulsar y
+                         recibir un aviso (política de candados de v429). -->
                     <button class="btn" onclick="if(typeof _openCoachCommsMenu==='function') _openCoachCommsMenu();"
-                        title="Mensajes, Partidos Terminados y Retransmisión en Vivo"
+                        ${window._cronosExtraEnabled('comunicaciones') ? '' : 'disabled'}
+                        title="${window._cronosExtraEnabled('comunicaciones')
+                                 ? 'Mensajes, Partidos Terminados y Retransmisión en Vivo'
+                                 : 'No disponible en el plan de tu club'}"
                         style="width:100%; padding:0.9rem; font-size:1rem; font-weight:900;
                                letter-spacing:0.3px; border-radius:10px;
                                background:rgba(180,120,200,0.15); color:#b478c8;
                                border:2px solid rgba(180,120,200,0.5); cursor:pointer;
-                               text-transform:uppercase;">
-                        💬 COMUNICACIONES
+                               text-transform:uppercase;
+                               ${/* ⚠️ VA AL FINAL A PROPÓSITO: en un mismo style
+                                     gana la ÚLTIMA declaración, y arriba hay un
+                                     cursor:pointer que se comería este
+                                     cursor:not-allowed si fuese antes. */''}
+                               ${window._cronosExtraEnabled('comunicaciones') ? ''
+                                 : 'opacity:0.45; filter:grayscale(1); cursor:not-allowed; box-shadow:inset 0 0 0 9999px rgba(0,0,0,0.25);'}">
+                        ${window._cronosExtraEnabled('comunicaciones') ? '💬' : '🔒'} COMUNICACIONES
                     </button>
                 </div>
             </div>
@@ -2134,6 +2179,26 @@ async function _doDeleteLiveMatch(matchId, btn, isSilent = false) {
 // Abre un modal con 3 opciones: Mensajes, Partidos Terminados, Retransmisión
 // ════════════════════════════════════════════════════════════════════
 window._openCoachCommsMenu = function() {
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴 v596 · ESTA PANTALLA NO TENÍA PUERTA
+    //
+    //  v429 puso el candado del extra `comunicaciones` en
+    //  openUnifiedCommsMenu (js/coach/comms/panel.js)... que es OTRA
+    //  pantalla. La que abre el entrenador desde su panel es ÉSTA, y
+    //  entraba siempre: el SuperAdmin podía apagar Comunicaciones y el
+    //  entrenador seguía dentro, con sus cuatro opciones.
+    //
+    //  🔑 DOS PANTALLAS CON EL MISMO NOMBRE Y UNA SOLA CON CANDADO es
+    //  exactamente la forma que tiene un extra de parecer contratado sin
+    //  estarlo. La puerta va AQUÍ, la primera línea, antes incluso de
+    //  apilar en la pila de navegación: apilar una pantalla en la que no
+    //  se va a entrar deja la pila describiendo algo que no está (v425).
+    // ══════════════════════════════════════════════════════════════════
+    if (typeof window._cronosExtraGate === 'function' &&
+        !window._cronosExtraGate('comunicaciones', 'El área de Comunicaciones')) {
+        return;
+    }
+
     // Pila de navegación (js/core/nav-stack.js).
     if (typeof navScreen === 'function') navScreen('_openCoachCommsMenu');
 
@@ -2176,23 +2241,32 @@ window._openCoachCommsMenu = function() {
                     </div>
                 </button>
 
-                <!-- PARTIDOS TERMINADOS -->
+                <!-- PARTIDOS TERMINADOS · v596 · APAGADA, NO SÓLO MUDA.
+                     Antes se veía a todo color, con su icono y su cursor de
+                     mano, y sólo al pulsarla saltaba el aviso. Una tarjeta que
+                     parece contratada y no lo está manda al usuario a soporte;
+                     ahora se ve gris, sombreada y con 🔒, como Mensajes.
+                     ⚠️ El aviso al pulsar SE QUEDA: el atributo disabled es
+                     cosmético (v548) y se puede llegar desde la consola.
+                     ⚠️⚠️ NI UN BACKTICK EN ESTE COMENTARIO: va dentro de un
+                     template literal y lo cerraría. -->
                 <button onclick="(function(){
-                    const _extras = (window._cronosCurrentUser?.extras) || {};
-                    if (_extras.partidos_terminados === false) {
-                        if(typeof showToast==='function') showToast('🔒 Partidos Terminados no disponible en tu plan', 3500);
-                        else alert('No disponible en tu plan');
-                        return;
-                    }
+                    if (typeof window._cronosExtraGate === 'function' &&
+                        !window._cronosExtraGate('partidos_terminados', 'Partidos Terminados')) return;
                     if(typeof showFinishedMatches==='function'){showFinishedMatches();}else{alert('Módulo no disponible');}
                 })()"
+                    ${window._cronosExtraEnabled('partidos_terminados') ? '' : 'disabled title="No disponible en el plan de tu club"'}
                     style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
                            background:rgba(255,88,88,0.08);border:1px solid rgba(255,88,88,0.3);
-                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
-                    <span style="font-size:1.5rem;">📋</span>
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;
+                           ${window._cronosExtraEnabled('partidos_terminados') ? ''
+                             : 'opacity:0.45; filter:grayscale(1); cursor:not-allowed; box-shadow:inset 0 0 0 9999px rgba(0,0,0,0.25);'}">
+                    <span style="font-size:1.5rem;">${window._cronosExtraEnabled('partidos_terminados') ? '📋' : '🔒'}</span>
                     <div>
                         <div style="font-weight:700;font-size:0.9rem;">Partidos Terminados</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Ver y volver a partidos finalizados</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">${window._cronosExtraEnabled('partidos_terminados')
+                            ? 'Ver y volver a partidos finalizados'
+                            : 'No contratado en el plan de tu club'}</div>
                     </div>
                 </button>
 
@@ -2209,15 +2283,23 @@ window._openCoachCommsMenu = function() {
                     </div>
                 </button>
 
-                <!-- PARTIDOS EN VIVO -->
+                <!-- PARTIDOS EN VIVO · v596 · Mismo trato: el candado se VE.
+                     La comprobación de _cronosOpenLiveMatchesPanel sigue viva
+                     (es la puerta de verdad), pero llegaba tarde: el usuario ya
+                     había pulsado una tarjeta que parecía suya. -->
                 <button onclick="_cronosOpenLiveMatchesPanel()"
+                    ${window._cronosExtraEnabled('partidos_en_vivo') ? '' : 'disabled title="No disponible en el plan de tu club"'}
                     style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
                            background:rgba(255,88,88,0.12);border:1px solid rgba(255,88,88,0.35);
-                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
-                    <span style="font-size:1.5rem;">🔴</span>
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;
+                           ${window._cronosExtraEnabled('partidos_en_vivo') ? ''
+                             : 'opacity:0.45; filter:grayscale(1); cursor:not-allowed; box-shadow:inset 0 0 0 9999px rgba(0,0,0,0.25);'}">
+                    <span style="font-size:1.5rem;">${window._cronosExtraEnabled('partidos_en_vivo') ? '🔴' : '🔒'}</span>
                     <div>
                         <div style="font-weight:700;font-size:0.9rem;">Partidos en Vivo</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Ver partidos del club en directo</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">${window._cronosExtraEnabled('partidos_en_vivo')
+                            ? 'Ver partidos del club en directo'
+                            : 'No contratado en el plan de tu club'}</div>
                     </div>
                 </button>
 
@@ -2246,18 +2328,21 @@ window._cronosOpenLiveMatchesPanel = async function() {
     //
     // Va ANTES del primer await (invariante de la ronda 3 del módulo): después
     // del await, navBack podría haber corrido ya con la pila vieja.
+    // ⚠️ v596 · LA PUERTA VA ANTES DE APILAR. Estaba después de navScreen, así
+    // que un extra apagado dejaba la pantalla METIDA EN LA PILA sin haber
+    // entrado nunca: el navBack() siguiente desapilaba una pantalla que no
+    // estaba en el DOM — el mismo fallo que la nota de v425 de aquí arriba
+    // vino a eliminar. Y usa el portero común en vez de leer `me.extras` a
+    // pelo: así respeta el usuario EFECTIVO en cuentas multi-rol.
+    if (typeof window._cronosExtraGate === 'function' &&
+        !window._cronosExtraGate('partidos_en_vivo', 'Partidos en Vivo')) {
+        return;
+    }
+
     if (typeof navScreen === 'function') navScreen('_cronosOpenLiveMatchesPanel');
 
     const me = window._cronosCurrentUser;
     if (!me) return;
-
-    // Verificar extra
-    const extras = (me && me.extras) || {};
-    if (extras.partidos_en_vivo === false) {
-        if (typeof showToast === 'function') showToast('🔒 No disponible en tu plan', 3000);
-        else alert('No disponible en tu plan');
-        return;
-    }
 
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
