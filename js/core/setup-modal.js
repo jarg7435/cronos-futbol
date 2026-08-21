@@ -399,8 +399,12 @@ function openSetupModal() {
         var _yo = window._cronosCurrentUser;
         var _rolActivo = _yo ? (_yo._activeRole || _yo.role) : '';
         if (_rolActivo === 'individual' && typeof window.openIndividualAdminPanel === 'function') {
+            // ⚠️ v601 · Por `cronosAbrirPanelIndividual` (role-launch.js), que
+            // además ESCONDE el terreno de juego y anuncia el panel mientras
+            // carga. Llamar al panel a pelo dejaba el campo detrás y un hueco
+            // en blanco durante sus lecturas de Firestore.
             _volverAlPanelHTML =
-                '<button onclick="openIndividualAdminPanel()" title="Volver a mi panel de gestión"' +
+                '<button onclick="if(typeof cronosAbrirPanelIndividual===\'function\') cronosAbrirPanelIndividual(); else openIndividualAdminPanel()" title="Volver a mi panel de gestión"' +
                 ' style="background:rgba(121,192,255,0.15); border:1px solid rgba(121,192,255,0.45);' +
                 ' color:#79c0ff; padding:6px 12px; border-radius:8px; cursor:pointer;' +
                 ' font-size:0.75rem; font-weight:700;">← Volver al Panel</button>';

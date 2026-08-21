@@ -229,8 +229,11 @@ ok('6d · ⚠️ SÓLO para el rol individual, y mirando _activeRole (cuentas mu
 // ───────────────────────────────────────────────────────────────────────────
 console.log('\n── PARTE 7 · "Mis Equipos" en el panel: enseña el límite y lo aplica ──');
 // ───────────────────────────────────────────────────────────────────────────
+// ⚠️ v602 · REESCRITO: la sección pasó a llamarse 'equipo' y absorbió a
+//    "Mis Usuarios" y "Resumen". Se exige lo mismo que antes —que exista y que
+//    el tablero la abra— con el nombre nuevo. Ver PARTE 10 para la unificación.
 ok('7a · el panel tiene su sección y su tarjeta en el tablero',
-   /equipos:\s*\{ titulo: '⚽ Mis Equipos'/.test(IND) && /indTab\('equipos'\)/.test(IND));
+   /equipo:\s*\{ titulo: '⚽ Mi Equipo'/.test(IND) && /indTab\('equipo'\)/.test(IND));
 // 🔑 Que la limitación se VEA: las categorías prohibidas salen deshabilitadas
 //    y DICEN por qué, en vez de desaparecer sin explicación.
 ok('7b · 🔑 las categorías prohibidas salen deshabilitadas y dicen el motivo',
@@ -291,17 +294,48 @@ console.log('\n── PARTE 8 · v600 · aterriza en SU PANEL, no en la pantalla
         //    equivocado, que es una forma de estar rota aunque el color acierte.
         const rama = (LAUNCH.match(/\} else if \(activeRole === 'individual'\) \{[\s\S]*?\n    \} else \{/) || [''])[0];
         ok('8c0 · ⚠️ la rama de arranque del ente se localiza', rama.length > 0);
+        // ⚠️ v601 · REESCRITO, NO RELAJADO. La apertura del panel ya no se hace
+        //    a pelo: pasa por `cronosAbrirPanelIndividual`, que además esconde
+        //    el terreno de juego y anuncia el panel mientras carga (ver 8f/8g).
+        //    Lo que se exige sigue siendo lo MISMO —se abre YA, sin espera a
+        //    ciegas—, sólo que ahora hay que seguir el salto: se comprueba que
+        //    la rama llama a esa puerta Y que la puerta abre el panel de verdad.
+        //    Aceptar sólo "aparece el nombre de la función" habría dejado pasar
+        //    una puerta vacía.
         ok('8c · 🔑🔑 el panel se abre YA, sin setTimeout que lo haga carrera',
-           rama.length > 0 && /openIndividualAdminPanel\(\)/.test(rama) && !/setTimeout/.test(rama),
+           rama.length > 0 && /cronosAbrirPanelIndividual\(\)/.test(rama) && !/setTimeout/.test(rama)
+           && /window\.cronosAbrirPanelIndividual = function[\s\S]{0,900}?openIndividualAdminPanel\(\)/.test(LAUNCH),
            rama.length ? rama.replace(/\s+/g, ' ').slice(0, 220) : 'no se localizó la rama');
     }
     // ⚠️ Y el orden importa: init() ANTES que el panel, para que el panel se
     //    pinte el ÚLTIMO y quede encima.
     ok('8d · ⚠️ y se llama a init() ANTES que al panel (el panel pinta el último)',
-       LAUNCH.indexOf("if (typeof init === 'function') init(activeRole);\n        if (typeof openIndividualAdminPanel") >= 0);
+       LAUNCH.indexOf("if (typeof init === 'function') init(activeRole);\n        window.cronosAbrirPanelIndividual();") >= 0);
     // 🔑 La vuelta desde partidos tiene que devolverle a ESE panel.
     ok('8e · 🔑 y el "Volver al Panel" de partidos regresa a ese mismo panel',
        /openIndividualAdminPanel\(\)/.test(SETUP));
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  🔴🔴 v601 · «ADIÓS AL CAMPO DE FÚTBOL PREVIO» (capturas 9394/9395)
+    //
+    //  La v600 quitó la CARRERA pero no la ESPERA: nadie pintaba ya la pantalla
+    //  de partido, pero `_launchWithRole` ponía el terreno de juego a la vista
+    //  de forma SÍNCRONA y `openIndividualAdminPanel` es async (importa el SDK
+    //  y encadena varios getDoc). En ese hueco —segundos en un móvil— lo que se
+    //  veía era el campo. Por eso su captura no cambió.
+    // ═══════════════════════════════════════════════════════════════════
+    ok('8f · 🔴🔴 el ente NO ve el terreno de juego al aterrizar',
+       /const _verCampo = \(isFieldRole[^\n]*\) && !isEnteAdmin;/.test(LAUNCH)
+       && /_verCampo \? 'flex' : 'none'/.test(LAUNCH));
+    ok('8g · ⚠️ y en su lugar se anuncia el panel: ni campo ni hueco negro mudo',
+       /window\.cronosAbrirPanelIndividual = function[\s\S]{0,900}?panel de administraci/i.test(LAUNCH));
+    // ⚠️ SIGUE SIENDO ROL DE CAMPO. Lo que cambia es dónde aterriza, no lo que
+    //    puede hacer: cronometra igual, y por eso hay puerta de ida.
+    ok('8h · 🔑 y "Crear Partido" devuelve el campo por UNA puerta compartida',
+       /window\.cronosEntrarAPartidos = function/.test(LAUNCH)
+       && /cronosEntrarAPartidos\(\)/.test(sinCom(leer('js/admin/individual/panel.js'))));
+    ok('8i · ⚠️ el ente sigue contando como rol de campo (cronometra igual)',
+       /const isFieldRole = \[[^\]]*'individual'[^\]]*\]/.test(LAUNCH));
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -337,6 +371,71 @@ console.log('\n── PARTE 9 · v600 · el ente y su dueño son UNA fila en el 
        (SA.match(/const _usuariosDeBarra = /g) || []).length === 1 &&
        /const _usadasEnBarra = \(roleKey\) => _usuariosDeBarra\(roleKey\)\.length;/.test(SA) &&
        /const used = _usadasEnBarra\(roleKey\);/.test(SA));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+console.log('\n── PARTE 10 · v602 · una sola sección, y el título completo ──');
+// ───────────────────────────────────────────────────────────────────────────
+//  Encargo del autor (capturas 9397-9401): unificar "Mis Usuarios", "Mis
+//  Equipos" y "Resumen"; que dentro de cada categoría/subcategoría salgan el
+//  entrenador y sus familias; y que la cabecera diga el nombre COMPLETO del rol.
+{
+    // 10a · el título, literal y en los DOS sitios donde se anuncia el panel.
+    ok('10a · la cabecera y el tablero dicen "Panel del Entrenador Administrador Individual"',
+       (IND.match(/Panel del Entrenador Administrador Individual/g) || []).length >= 2 &&
+       !/Panel del Administrador Individual/.test(IND));
+
+    // 10b · UNA tarjeta donde había tres. Se comprueba por el TABLERO (lo que
+    //       se ve), no sólo por el mapa de secciones.
+    const tablero = (IND.match(/const _indOpciones = \[[\s\S]*?\n    \];/) || [''])[0];
+    ok('10b0 · el tablero se localiza', tablero.length > 0);
+    ok('10b · 🔑 el tablero ya no ofrece "Mis Usuarios" ni "Resumen" ni "Mis Equipos"',
+       tablero.length > 0
+       && !/titulo: 'Mis Usuarios'/.test(tablero)
+       && !/titulo: 'Resumen'/.test(tablero)
+       && !/titulo: 'Mis Equipos'/.test(tablero)
+       && /titulo: 'Mi Equipo'/.test(tablero),
+       tablero.replace(/\s+/g, ' ').slice(0, 200));
+
+    // 10c · ⚠️ UNIFICAR NO ES BORRAR: las tres cosas siguen estando, juntas.
+    ok('10c · ⚠️ y la sección única las conserva las tres: cifras + gestión + fichas',
+       /const _secMiEquipo =\s*\n\s*statsHTML \+\s*\n\s*_secMisEquipos \+/.test(IND) &&
+       /_misEquiposNorm\.map\(_fichaEquipo\)/.test(IND));
+
+    // 10d · 🔑 dentro de cada equipo, el entrenador Y las familias.
+    ok('10d · 🔑🔑 cada equipo lista su entrenador y sus padres/tutores por separado',
+       /bloque\('⚽ Entrenador', entrenadores/.test(IND) &&
+       /bloque\('👨‍👩‍👧 Padres \/ Madres \/ Tutores', familias/.test(IND));
+
+    // 10e · 🔑 el dueño ES el entrenador de su equipo: si no, saldría vacío.
+    ok('10e · 🔑 el dueño del ente cuenta como entrenador y se añade aunque falte en la lista',
+       /_IND_COACH = new Set\(\[[^\]]*'individual'[^\]]*\]\)/.test(IND) &&
+       /filas\.unshift\(_yoComoFila\(/.test(IND));
+
+    // 10f · ⚠️⚠️ NADIE DESAPARECE. Es la comprobación más importante de las
+    //       tres: pasar de 21 casillas a 2 fichas puede tragarse gente.
+    ok('10f · ⚠️⚠️ quien no cae en ninguno de sus equipos va a "Otros usuarios del ente"',
+       /Otros usuarios del ente/.test(IND) &&
+       /_filasHuerfanas\.push/.test(IND) &&
+       /Puedes reasignarles la categoría/.test(IND));
+
+    // 10g · ⚠️ el árbol de 7×3 se BORRA, no se deja huérfano.
+    ok('10g · ⚠️ el árbol de 21 casillas se retira entero (nada de código muerto)',
+       !/const _indCategoryCardHtml =/.test(IND) &&
+       !/const _indSubcategoryCardHtml =/.test(IND) &&
+       !/const unifiedUserTable =/.test(IND) &&
+       /const _indIdx = _buildIndIndex\(sortedUsers\);/.test(IND));
+
+    // 10h · ⚠️ las claves viejas siguen abriendo algo: indTab echa al menú lo
+    //       que no reconoce, y `_indSeccionActual` guarda la sección.
+    ok('10h · ⚠️ "usuarios", "equipos" y "resumen" siguen siendo alias de la sección única',
+       /usuarios:\s*\{ titulo: '⚽ Mi Equipo'/.test(IND) &&
+       /equipos:\s*\{ titulo: '⚽ Mi Equipo'/.test(IND) &&
+       /resumen:\s*\{ titulo: '⚽ Mi Equipo'/.test(IND));
+
+    // 10i · ⚠️ y no se le ofrece borrarse a sí mismo desde su propio panel.
+    ok('10i · ⚠️ el dueño no tiene papelera sobre su propia fila',
+       /\$\{_esElDueno \? '<span[^']*tú<\/span>' : `/.test(IND));
 }
 
 // ───────────────────────────────────────────────────────────────────────────

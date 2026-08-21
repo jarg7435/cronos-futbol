@@ -191,9 +191,13 @@ function buildSandbox({
 }
 
 const rol = (role, extra = {}) => Object.assign({ role, isAuthorized: true, status: 'active' }, extra);
+// ⚠️ v602 · 'card-opt-coach-individual' YA NO ESTÁ EN LA LISTA porque ya no
+// existe la tarjeta (ver 7i). Se retira de aquí en vez de dejarla: una entrada
+// fantasma haría que 3c ("el SA ve TODAS") contase una tarjeta imposible y se
+// pusiera roja para siempre por el motivo equivocado.
 const CARDS = ['card-opt-superadmin', 'card-opt-clubadmin', 'card-opt-director', 'card-opt-coordinator',
                'card-opt-coach', 'card-opt-parent', 'card-opt-individual',
-               'card-opt-coach-individual', 'card-opt-parent-individual'];
+               'card-opt-parent-individual'];
 const visibles = (t) => CARDS.filter(id => t.el(id) && t.el(id).style.display === 'block');
 
 (async () => {
@@ -455,6 +459,130 @@ const visibles = (t) => CARDS.filter(id => t.el(id) && t.el(id).style.display ==
         /catch \(_\) \{ \/\* no-op: la pill es informativa \*\/ \}/.test(BLOCK));
     ok('6c · el selector de club de pruebas escribe clubId y clubName en el usuario',
         /window\._cronosCurrentUser = \{ \.\.\.me, clubId: btn\.dataset\.id, clubName: btn\.dataset\.name \}/.test(BLOCK));
+
+    // ═════════════════════════════════════════════════════════════════════
+    //  v601 · EL ENTE UNIFICADO: UNA SOLA TARJETA, Y NADA DE CAMPO AL ENTRAR
+    // ═════════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 7 · v601 · el ente unificado: una puerta, y aterriza en su panel ──');
+    {
+        // Su caso REAL (captura 9392): plaza de administrador del ente + plaza
+        // de entrenador heredada, las dos en el MISMO ente.
+        const t = buildSandbox({
+            me: { role: 'individual', clubId: 'E1', allRoles: [
+                rol('individual', { clubId: 'E1' }),
+                rol('user', { clubId: 'E1', individualEntityId: 'E1', category: 'alevin_a' }),
+            ] },
+        });
+        t.w.showRoleSelection();
+        ok('7a · 🔑🔑 el dueño del ente ve UNA sola puerta, no "Administrador" + "Entrenador"',
+            visibles(t).length === 0 && t.el('role-selection-screen').style.display === 'none'
+            && t.w._cronosCurrentUser._activeRole === 'individual',
+            { visibles: visibles(t), activo: t.w._cronosCurrentUser._activeRole });
+    }
+    {
+        // ⚠️⚠️ LA OTRA MITAD DE LA REGLA, Y LA QUE DE VERDAD IMPORTA AL RETIRAR
+        // UNA TARJETA (v602): un entrenador individual que es MIEMBRO del ente
+        // de otro NO administra nada, así que no se le puede fundir con el
+        // dueño. Pero su tarjeta ya no existe — luego tiene que caer en la de
+        // "Entrenador" de siempre. Lo que NO puede pasar bajo ningún concepto
+        // es que se quede sin ninguna: sería un selector vacío y una cuenta
+        // sin acceso, con toda la pinta de "la aplicación no me deja entrar".
+        const t = buildSandbox({
+            me: { role: 'user', clubId: 'E1', allRoles: [
+                rol('user', { clubId: 'E1', individualEntityId: 'E1' }),
+                rol('parent', { clubId: 'E1', individualEntityId: 'E1' }),
+            ] },
+        });
+        t.w.showRoleSelection();
+        ok('7b · 🔴🔴 el entrenador MIEMBRO de un ente ajeno NO se queda sin puerta: cae en "Entrenador"',
+            visibles(t).sort().join() === ['card-opt-coach', 'card-opt-parent-individual'].sort().join(),
+            visibles(t));
+    }
+    {
+        // Y el que sólo tiene esa plaza entra DIRECTO, con el mismo rol interno
+        // ('user') que le daba la tarjeta retirada: no pierde nada por el camino.
+        const t = buildSandbox({
+            me: { role: 'user', clubId: 'E1', allRoles: [rol('user', { clubId: 'E1', individualEntityId: 'E1' })] },
+        });
+        t.w.showRoleSelection();
+        ok('7b2 · 🔑 y si es su única plaza entra directo, con el MISMO rol interno de antes',
+            t.el('role-selection-screen').style.display === 'none'
+            && t.w._cronosCurrentUser._activeRole === 'user',
+            t.w._cronosCurrentUser._activeRole);
+    }
+    {
+        // ⚠️ Y SE FUNDE POR ENTE, no "por ser individual": administra el suyo y
+        // entrena en el de otro -> son dos cosas distintas y dos tarjetas.
+        const t = buildSandbox({
+            me: { role: 'individual', clubId: 'E1', allRoles: [
+                rol('individual', { clubId: 'E1' }),
+                rol('user', { clubId: 'E2', individualEntityId: 'E2' }),
+            ] },
+        });
+        t.w.showRoleSelection();
+        ok('7c · ⚠️⚠️ la fusión es POR ENTE: entrenar en el ente de OTRO sigue siendo otra puerta',
+            visibles(t).sort().join() === ['card-opt-individual', 'card-opt-coach'].sort().join(),
+            visibles(t));
+    }
+    {
+        // 🔴 v602 · LA TARJETA HUÉRFANA SE FUE DE VERDAD, no sólo del selector.
+        const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+        ok('7i · 🔴 "Entrenador Individual" ya no existe como tarjeta ni como opción',
+            !/id="card-opt-coach-individual"/.test(idx)
+            && !/<h3>Entrenador Individual<\/h3>/.test(idx)
+            && !/selectOption\('coach_individual'\)/.test(idx));
+        ok('7j · 🔑 y `_optionOf` no puede devolver esa opción por ningún camino',
+            !/return\s+_fusionaConElEnte\s*\?\s*'individual'\s*:\s*'coach_individual'/.test(BLOCK)
+            && !/'coach_individual':\s*'card-opt/.test(BLOCK)
+            && !/coach_individual:\s*'card-opt/.test(BLOCK));
+        // ⚠️ Pero la traducción opción→rol SE QUEDA: `selectOption('coach_individual')`
+        //    puede llegar de un enlace viejo, y caer al rol raíz sería peor.
+        const t = buildSandbox({ me: { role: 'user', clubId: 'C1', allRoles: [] } });
+        t.w.selectOption('coach_individual');
+        ok('7k · ⚠️ y una llamada vieja a selectOption("coach_individual") sigue lanzando "user"',
+            t.w._cronosCurrentUser._activeRole === 'user', t.w._cronosCurrentUser._activeRole);
+    }
+    ok('7d · 🔑🔑 el pintado NO reimplementa el criterio: recorre _opcionesActivas y el mapa',
+        /_opcionesActivas\.forEach\(op => \{[\s\S]{0,120}_TARJETA_DE_OPCION\[op\]/.test(BLOCK)
+        && !/isUnderIndividual \? show\(/.test(BLOCK),
+        { hayMapa: /_TARJETA_DE_OPCION/.test(BLOCK), quedaCadena: /isUnderIndividual \? show\(/.test(BLOCK) });
+    {
+        // 🔴 EL DEFECTO DE LA CAPTURA 9394: el campo se veía mientras el panel
+        // —async, con varias lecturas de Firestore— tardaba en llegar.
+        const t = buildSandbox({
+            me: { uid: 'u1', role: 'individual', clubId: 'E1', _activeRole: 'individual',
+                  allRoles: [rol('individual', { clubId: 'E1' })] },
+        });
+        t.w._launchWithRole('individual');
+        ok('7e · 🔴🔴 al entrar, el terreno de juego queda OCULTO (adiós al campo previo)',
+            t.el('main-container').style.display === 'none'
+            && t.el('main-header').style.display === 'none',
+            { campo: t.el('main-container').style.display, cabecera: t.el('main-header').style.display });
+        ok('7f · ⚠️ y en su hueco se anuncia el panel: nunca un hueco negro sin explicar',
+            t.el('setup-modal').style.display === 'flex'
+            && /panel de administraci/i.test(t.el('setup-modal').innerHTML),
+            t.el('setup-modal').innerHTML.slice(0, 80));
+        // Y la puerta de ida: cuando ÉL lo pide, el campo vuelve.
+        let abierto = false;
+        t.w.openSetupModal = () => { abierto = true; };
+        t.w.cronosEntrarAPartidos();
+        ok('7g · 🔑 y "Crear Partido" devuelve el campo y abre el formulario',
+            abierto && t.el('main-container').style.display === 'flex'
+            && t.el('main-header').style.display === 'flex',
+            { abierto, campo: t.el('main-container').style.display });
+    }
+    {
+        // ⚠️ NO SE LE QUITA EL CAMPO A QUIEN SÍ ATERRIZA EN ÉL. El entrenador
+        // —de club o de ente— sigue entrando a la pantalla de partido.
+        const t = buildSandbox({
+            me: { uid: 'u2', role: 'user', clubId: 'C1', _activeRole: 'user', allRoles: [rol('user', { clubId: 'C1' })] },
+        });
+        t.w._launchWithRole('user');
+        ok('7h · ⚠️ el entrenador normal SIGUE aterrizando en el campo (no se le toca)',
+            t.el('main-container').style.display === 'flex'
+            && t.el('main-header').style.display === 'flex',
+            { campo: t.el('main-container').style.display });
+    }
 
     console.log('\n────────────────────────────────────────────');
     console.log('Resultado: ' + pass + '/' + (pass + fail) + (fail ? '  ❌ ' + fail + ' FALLOS' : '  ✅'));

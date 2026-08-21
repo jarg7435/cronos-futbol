@@ -132,15 +132,61 @@ function _motivoPlazaBloqueada(role, entityId) {
         || 'Este acceso no está contratado en el plan de tu club.';
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  👤 v601 · ¿ES ESTA PERSONA EL DUEÑO DE ESTE ENTE?
+//
+//  Reportado por el autor (captura 9392): en el selector le seguían saliendo
+//  DOS tarjetas —"Administrador Individual" y "Entrenador Individual"— para
+//  una sola persona. No era un rótulo repetido: eran DOS PLAZAS suyas, una
+//  'individual' y otra 'user' anclada al MISMO ente (el legado que la v599
+//  dejó vivo a propósito, para no tocar producción).
+//
+//  🔑 LO QUE CAMBIÓ EN v599 NO FUE EL NOMBRE, FUE EL MODELO. Antes el ente era
+//  un contenedor con tres roles colgando; desde la unificación el Entrenador
+//  Administrador Individual **ES** el ente. Su plaza de entrenador ya no
+//  describe a otra persona: lo describe a él. Dos tarjetas para el mismo
+//  hombre son dos puertas a la misma habitación.
+//
+//  ⚠️ PERO SÓLO SI EL ENTE ES SUYO. Un entrenador individual que sea MIEMBRO
+//  del ente de otro conserva su tarjeta propia: no administra nada, y
+//  fundirlo con el dueño le abriría un panel que no le corresponde. Por eso
+//  la pregunta no es "¿esta plaza está bajo un ente?" sino "¿tengo yo, en ESE
+//  mismo ente, una plaza de administrador?".
+// ════════════════════════════════════════════════════════════════════
+function _esDuenoDelEnte(me, entityId) {
+    if (!me || !entityId) return false;
+    return (me.allRoles || []).some(r =>
+        r && ['individual', 'admin_individual'].includes(r.role) &&
+        r.isAuthorized === true && r.status === 'active' &&
+        _entidadDeLaPlaza(r) === String(entityId));
+}
+
 // Qué tarjeta del selector le corresponde a una entrada de allRoles.
 // ⚠️ v596 · VIVÍA DENTRO DE showRoleSelection. Se sube al ámbito del módulo
 // porque _motivoOpcionBloqueada (la segunda puerta, que corre desde
 // selectOption) necesita exactamente el MISMO criterio: si las dos versiones
 // divergieran, una tarjeta bloqueada podría abrirse por el otro camino.
-function _optionOf(r) {
+//
+// ⚠️ v601 · `me` ES OBLIGATORIO PARA DECIDIR, y por eso se pasa en vez de
+// leerlo de la global: la respuesta ya NO depende sólo de la plaza. Una plaza
+// de entrenador bajo un ente lleva a una tarjeta u otra según quién la tenga.
+function _optionOf(r, me) {
+    const _yo = me || window._cronosCurrentUser;
     const isUnderIndividual = !!(r.individualEntityId || r.isIndividual);
+    // Bajo un ente PROPIO, entrenador y administrador son la MISMA puerta.
+    const _fusionaConElEnte = isUnderIndividual && _esDuenoDelEnte(_yo, _entidadDeLaPlaza(r));
     if (r.role === 'club_admin') return 'clubadmin';
-    if (['coach','user'].includes(r.role)) return isUnderIndividual ? 'coach_individual' : 'coach';
+    if (['coach','user','entrenador_individual'].includes(r.role)) {
+        // ⚠️⚠️ v602 · YA NO HAY TARJETA "Entrenador Individual". El dueño del
+        // ente entra por la suya; cualquier otra plaza de entrenador —incluida
+        // la de quien entrena en el ente de OTRO— cae en la tarjeta
+        // "Entrenador" de siempre. 🔑 No pierde absolutamente nada: las dos
+        // opciones lanzaban el MISMO rol interno ('user'); lo único que las
+        // distinguía era el rótulo y el icono. Mandarlas a una tarjeta que ya
+        // no existe sí le habría costado el acceso: se quedaría mirando un
+        // selector vacío, sin puerta y sin explicación.
+        return _fusionaConElEnte ? 'individual' : 'coach';
+    }
     if (['parent','parent_individual','padre_individual'].includes(r.role)) return isUnderIndividual ? 'parent_individual' : 'parent';
     if (['individual','admin_individual'].includes(r.role)) return 'individual';
     return r.role;
@@ -155,7 +201,7 @@ function _motivoOpcionBloqueada(me, option) {
     if (['superadmin', 'admin'].includes(me.role)) return '';   // el SA entra a todo por diseño
     const activos = (me.allRoles || [])
         .filter(r => r && r.isAuthorized === true && r.status === 'active');
-    const propias = activos.filter(r => _optionOf(r) === option);
+    const propias = activos.filter(r => _optionOf(r, me) === option);
     if (propias.length) {
         let motivo = '';
         for (const r of propias) {
@@ -171,6 +217,27 @@ function _motivoOpcionBloqueada(me, option) {
 
 // Tarjeta del selector → nombre de rol, para poder juzgar el rol raíz y la
 // segunda puerta de selectOption sin depender de allRoles.
+// ⚠️ v601 · Y la tarjeta que le corresponde a cada opción. Antes esta relación
+// vivía DESPLEGADA en la cadena de `if/else` de showRoleSelection, o sea la
+// misma regla de `_optionOf` escrita por segunda vez y con otras palabras —
+// exactamente la pareja que ya costó la v599 (['user'] contra ['user','coach']).
+// Al unificar el ente había que corregirla en los DOS sitios; ahora hay uno.
+const _TARJETA_DE_OPCION = {
+    superadmin:         'card-opt-superadmin',
+    clubadmin:          'card-opt-clubadmin',
+    director:           'card-opt-director',
+    coordinator:        'card-opt-coordinator',
+    coach:              'card-opt-coach',
+    parent:             'card-opt-parent',
+    individual:         'card-opt-individual',
+    parent_individual:  'card-opt-parent-individual',
+    // ⚠️ v602 · 'coach_individual' YA NO TIENE TARJETA. No se deja apuntando a
+    // un id inexistente: `_optionOf` ya no devuelve esa opción nunca. Se conserva
+    // en `_ROL_DE_OPCION` y en el mapa de `selectOption` porque son OTRA cosa
+    // —traducen opción→rol— y ahí sigue siendo una entrada válida para quien
+    // llame a `selectOption('coach_individual')` desde un enlace viejo.
+};
+
 const _ROL_DE_OPCION = {
     clubadmin:          'club_admin',
     director:           'director',
@@ -241,8 +308,7 @@ export function showRoleSelection() {
         'card-opt-superadmin', 'card-opt-clubadmin',
         'card-opt-director',   'card-opt-coordinator',
         'card-opt-coach',      'card-opt-parent',
-        'card-opt-individual',
-        'card-opt-coach-individual', 'card-opt-parent-individual',
+        'card-opt-individual',   'card-opt-parent-individual',
     ];
 
     allCards.forEach(id => {
@@ -281,7 +347,7 @@ export function showRoleSelection() {
     // la MISMA tarjeta: antes se le plantaba una pantalla de "elige tu rol"
     // con una sola opción, que no elige nada. Entre sus dos equipos elige
     // dentro del panel, que es donde sabe cuál es cuál.
-    const _opcionesActivas = Array.from(new Set(activeRoles.map(_optionOf)));
+    const _opcionesActivas = Array.from(new Set(activeRoles.map(r => _optionOf(r, me))));
     // 🔑 v596 · EL ATAJO NO PUEDE SALTAR POR ENCIMA DEL CANDADO. Si la única
     // opción está bloqueada, entrar directamente la metería en el panel sin
     // pasar por ninguna tarjeta. Se cae al pintado normal: verá SU tarjeta,
@@ -293,33 +359,35 @@ export function showRoleSelection() {
     }
 
     if (activeRoles.length > 0) {
-        activeRoles.forEach(r => {
-            // Determinar si el rol está bajo una entidad individual
-            const isUnderIndividual = !!(r.individualEntityId || r.isIndividual);
-            if (r.role === 'club_admin')                        show('card-opt-clubadmin', 'clubadmin');
-            else if (r.role === 'director')                     show('card-opt-director', 'director');
-            else if (r.role === 'coordinator')                  show('card-opt-coordinator', 'coordinator');
-            else if (['coach','user'].includes(r.role))         isUnderIndividual ? show('card-opt-coach-individual', 'coach_individual') : show('card-opt-coach', 'coach');
-            else if (['parent','parent_individual','padre_individual'].includes(r.role)) isUnderIndividual ? show('card-opt-parent-individual', 'parent_individual') : show('card-opt-parent', 'parent');
-            else if (['individual','admin_individual'].includes(r.role)) show('card-opt-individual', 'individual');
-            else if (r.role === 'entrenador_individual')        show('card-opt-coach-individual', 'coach_individual');
+        // 🔑 v601 · SE PINTA LA MISMA LISTA QUE DECIDIÓ EL ATAJO DE ARRIBA.
+        // `_opcionesActivas` ya está calculada con `_optionOf`; recorrer otra vez
+        // `activeRoles` con una cadena de `if/else` propia era tener dos jueces
+        // para el mismo pleito. Y con el ente unificado la diferencia se veía:
+        // el atajo contaba UNA opción y la cadena pintaba DOS tarjetas.
+        _opcionesActivas.forEach(op => {
+            const id = _TARJETA_DE_OPCION[op];
+            if (id) show(id, op);
         });
     } else {
         // Fallback al rol raíz SOLO si está activo y autorizado
         // CRITICAL FIX: No mostrar paneles si el usuario no está confirmado
-        const r = me.role;
         const isRootActive = me.isAuthorized === true && me.status === 'active';
         if (!isRootActive) {
             console.warn('[RoleSelection] User has no active confirmed roles. Not showing any panels.');
             return;
         }
-        const _isIndiv = !!(me.clubId && me.isIndividual);
-        if (r === 'club_admin')                        show('card-opt-clubadmin', 'clubadmin');
-        else if (r === 'director')                     show('card-opt-director', 'director');
-        else if (r === 'coordinator')                  show('card-opt-coordinator', 'coordinator');
-        else if (['coach','user'].includes(r))         _isIndiv ? show('card-opt-coach-individual', 'coach_individual') : show('card-opt-coach', 'coach');
-        else if (['parent','parent_individual'].includes(r)) _isIndiv ? show('card-opt-parent-individual', 'parent_individual') : show('card-opt-parent', 'parent');
-        else if (['individual','admin_individual'].includes(r)) show('card-opt-individual', 'individual');
+        // ⚠️ v601 · TAMBIÉN POR `_optionOf`, con la raíz vestida de plaza. Aquí
+        // `allRoles` está vacío, así que `_esDuenoDelEnte` dirá que no y un
+        // entrenador de ente conservará su tarjeta: es lo correcto, porque sin
+        // plaza de administrador no hay nada que fusionar.
+        const _raizComoPlaza = {
+            role: me.role,
+            individualEntityId: me.individualEntityId,
+            isIndividual: !!(me.clubId && me.isIndividual),
+        };
+        const _op = _optionOf(_raizComoPlaza, me);
+        const _id = _TARJETA_DE_OPCION[_op];
+        if (_id) show(_id, _op);
     }
 }
 
@@ -644,6 +712,9 @@ function _launchWithRole(role) {
     const isParent    = (activeRole === 'parent' || activeRole === 'parent_individual');
     const isSA        = (activeRole === 'superadmin');
     const isAdminJob  = ['director', 'coordinator', 'club_admin'].includes(activeRole);
+    // ⚠️ v601 · El ente unificado ES un rol de campo (cronometra), pero NO
+    // aterriza en el campo. Ver el bloque del terreno de juego, más abajo.
+    const isEnteAdmin = ['individual', 'admin_individual'].includes(activeRole);
 
     // ── Verificar acceso al club y cargar umbrales del semáforo ──────────
     // checkClubAccess (js/core/app-init.js) valida que el club no este
@@ -655,12 +726,39 @@ function _launchWithRole(role) {
         window.checkClubAccess(window._cronosCurrentUser).catch(() => {});
     }
 
-    document.getElementById('main-container').style.display = isFieldRole || (isUnderIndividual && activeRole === 'user') ? 'flex' : 'none';
-    document.getElementById('main-header').style.display    = isFieldRole || (isUnderIndividual && activeRole === 'user') ? 'flex' : 'none';
+    // ════════════════════════════════════════════════════════════════════
+    //  🔴🔴 v601 · «ADIÓS AL CAMPO DE FÚTBOL PREVIO»
+    //
+    //  Reportado por el autor sobre la v600 (capturas 9394/9395): al entrar
+    //  sigue viendo PRIMERO el terreno de juego y después el panel.
+    //
+    //  🔑🔑 LA v600 QUITÓ LA CARRERA, PERO NO LA ESPERA. Eliminó el
+    //  `setTimeout(300)` y sacó a 'individual' del `openSetupModal()` de
+    //  `init()`; con eso ya nadie PINTA la pantalla de partido. Pero estas dos
+    //  líneas ponían el terreno de juego a la vista de forma SÍNCRONA, y
+    //  `openIndividualAdminPanel` es `async`: importa el SDK de Firestore y
+    //  encadena varios `getDoc` (usuario, ente, miembros) antes de tener nada
+    //  que pintar. Entre una cosa y la otra hay un hueco de segundos —más en
+    //  un móvil con mala cobertura— y lo que se ve en ese hueco es el campo.
+    //  O sea que no quedaba ninguna carrera que perder: quedaba una ESPERA con
+    //  el fondo equivocado delante. Por eso su captura seguía siendo la misma.
+    //
+    //  🔑 EL CAMPO NO SE DESTRUYE, SE OCULTA (misma doctrina que navExitToRoles):
+    //  jugadores, cronómetro y marcador siguen intactos en el DOM. Se vuelve a
+    //  enseñar cuando él lo pide, desde la tarjeta "⚽ Crear Partido" de su
+    //  panel — que es el único camino a partidos desde aquí.
+    //
+    //  ⚠️ Y NO SE LE SACA DE `isFieldRole`: sigue siendo un rol de campo para
+    //  todo lo demás (el botón 🛡️ ADMIN de la cabecera, los extras, el
+    //  cronómetro). Lo único que cambia es DÓNDE ATERRIZA.
+    // ════════════════════════════════════════════════════════════════════
+    const _verCampo = (isFieldRole || (isUnderIndividual && activeRole === 'user')) && !isEnteAdmin;
+    document.getElementById('main-container').style.display = _verCampo ? 'flex' : 'none';
+    document.getElementById('main-header').style.display    = _verCampo ? 'flex' : 'none';
 
-    if (isAdminJob || isSA) {
+    if (isAdminJob || isSA || isEnteAdmin) {
         document.body.style.background = '#0d1117';
-    } else if (isFieldRole || (isUnderIndividual && activeRole === 'user')) {
+    } else if (_verCampo) {
         document.body.style.background = '';
     }
 
@@ -726,13 +824,76 @@ function _launchWithRole(role) {
         //  ⚠️ `init()` SE SIGUE LLAMANDO, y antes: carga los listeners y la
         //  sincronización que necesitará al crear el partido. Lo único que ya
         //  no hace es abrir el formulario de partido por su cuenta.
+        //
+        //  🔴 v601 · Y SU PANEL SE ANUNCIA YA, ANTES DE TENER LOS DATOS.
+        //  `openIndividualAdminPanel` es async y encadena varias lecturas de
+        //  Firestore; ocultar el campo (arriba) evitaba ver la pantalla
+        //  equivocada, pero dejaba unos segundos de NADA, que se leen igual de
+        //  mal ("no ha entrado"). Se pinta el marco de su panel de inmediato y
+        //  el contenido real lo sustituye al llegar.
         // ══════════════════════════════════════════════════════════════
         if (typeof init === 'function') init(activeRole);
-        if (typeof openIndividualAdminPanel === 'function') openIndividualAdminPanel();
+        window.cronosAbrirPanelIndividual();
     } else {
         if (typeof init === 'function') init(activeRole);
     }
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  🛡️ v601 · LA PUERTA DE VUELTA AL PANEL DEL ENTE
+//
+//  Hace las TRES cosas que hay que hacer siempre y en este orden:
+//    1) esconde el terreno de juego (sin destruirlo: jugadores, cronómetro y
+//       marcador siguen en el DOM, igual que en navExitToRoles),
+//    2) pinta YA el marco del panel — `openIndividualAdminPanel` es async y
+//       encadena varias lecturas de Firestore; sin este cartel el usuario mira
+//       un hueco negro de segundos y concluye que no ha entrado,
+//    3) y pide el panel de verdad, que sustituye el cartel al llegar.
+//
+//  ⚠️ El cartel NO se puede quedar colgado: si la carga falla, el panel pinta
+//  su propio error en este mismo #setup-modal (tiene rama de fallo propia).
+// ════════════════════════════════════════════════════════════════════
+window.cronosAbrirPanelIndividual = function cronosAbrirPanelIndividual() {
+    const header = document.getElementById('main-header');
+    const campo  = document.getElementById('main-container');
+    if (header) header.style.display = 'none';
+    if (campo)  campo.style.display  = 'none';
+    if (document.body) document.body.style.background = '#0d1117';
+
+    const modal = document.getElementById('setup-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.innerHTML =
+            '<div style="margin:auto;text-align:center;color:#8b949e;font-size:0.9rem;">' +
+              '<div style="font-size:2rem;margin-bottom:0.6rem;">🛡️</div>' +
+              'Abriendo tu panel de administración…' +
+            '</div>';
+    }
+    if (typeof window.openIndividualAdminPanel === 'function') window.openIndividualAdminPanel();
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  ⚽ v601 · LA PUERTA DE IDA A PARTIDOS PARA EL ENTE UNIFICADO
+//
+//  Desde la v601 el ente aterriza con el terreno de juego OCULTO. Cuando pide
+//  crear un partido hay que volver a enseñarlo: sin esto, el formulario de
+//  setup se abriría sobre un fondo negro y, al empezar, el campo no estaría.
+//
+//  🔑 UNA SOLA FUNCIÓN Y EXPUESTA EN `window`, no tres líneas copiadas dentro
+//  de un `onclick`. La tarjeta "⚽ Crear Partido" del panel la llama; cualquier
+//  camino nuevo a partidos llamará a la misma y no habrá que acordarse de
+//  repetir el ritual —que es justo como se pierden estos detalles.
+// ════════════════════════════════════════════════════════════════════
+window.cronosEntrarAPartidos = function cronosEntrarAPartidos() {
+    const header = document.getElementById('main-header');
+    const campo  = document.getElementById('main-container');
+    if (header) header.style.display = 'flex';
+    if (campo)  campo.style.display  = 'flex';
+    if (document.body) document.body.style.background = '';
+    const modal = document.getElementById('setup-modal');
+    if (modal) modal.style.display = 'none';
+    if (typeof window.openSetupModal === 'function') window.openSetupModal();
+};
 
 // ── Pill de solo lectura: tipo de coordinación (F7/F11/F7&11) ya fijo ──
 // Mismo estilo visual que el badge de categoría en individual/panel.js.

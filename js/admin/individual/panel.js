@@ -472,8 +472,15 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     };
 
     // ── Indice O(n): catId -> (subId -> [filas]) — solo Entrenador/Padre ──
-    const _IND_COACH = new Set(['user', 'entrenador_individual']);
+    // ⚽ v602 · EL DUEÑO DEL ENTE ENTRA EN EL ÍNDICE COMO ENTRENADOR. Antes se
+    //   excluía a propósito ("admin individual u otros: fuera del arbol"), y
+    //   con el modelo viejo era correcto: el administrador no entrenaba, sólo
+    //   gestionaba. Desde la unificación (v599) el Entrenador Administrador
+    //   Individual ES el entrenador de sus equipos; dejarlo fuera pinta
+    //   equipos SIN entrenador, que es justo lo contrario de lo que ocurre.
+    const _IND_COACH = new Set(['user', 'entrenador_individual', 'individual', 'admin_individual']);
     const _IND_PARENT = new Set(['parent', 'parent_individual']);
+    const _IND_DUENO = new Set(['individual', 'admin_individual']);
     const _buildIndIndex = (eUsers) => {
         const byCatSub = new Map();
         const catHasAny = new Set();
@@ -499,7 +506,15 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     // ── Fila plana de un usuario (Entrenador/Padre) ──────────────────
     const _indUserRowHtml = (u) => {
         const r = u._activeRoleData || {};
-        const roleMeta = window.ROLE_META[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' };
+        // ⚽ v602 · El dueño se presenta por lo que HACE en ese equipo, no por
+        //   su rol técnico: ROLE_META['individual'] dice "Administrador
+        //   Individual", y dentro de la ficha de un equipo eso no explica por
+        //   qué aparece ahí. Y NO se le ofrece la papelera sobre sí mismo:
+        //   borrarse desde su propio panel no es una acción, es un accidente.
+        const _esElDueno = _IND_DUENO.has(r.role) || (u._id || u.uid) === uid;
+        const roleMeta = _esElDueno
+            ? { icon: '⚽', color: '#3fb950', label: 'Entrenador Administrador' }
+            : (window.ROLE_META[r.role] || { icon: '👤', color: '#8b949e', label: r.role || 'Usuario' });
         let name = window.cronosNombreUsuario(u)   /* v534 · el correo NO es un nombre */;
         name = _eH(String(name).split(' ')[0]);
         let regDate = '–';
@@ -527,10 +542,11 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
                 <div style="font-size:0.74rem; color:#8b949e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${_eH(u.email || '')}">${_eH(u.email || '')}</div>
                 <div style="font-size:0.72rem; color:#8b949e; white-space:nowrap;">${regDate}</div>
                 <div style="display:flex; gap:0.4rem; flex-shrink:0; justify-content:flex-end;">
+                    ${_esElDueno ? '<span style="font-size:0.66rem;color:#6e7681;white-space:nowrap;">tú</span>' : `
                     <button class="sa-btn" onclick="indEditCategory('${euid}','${email}')"
                         title="Cambiar categoria" style="padding:0.25rem 0.5rem; color:#79c0ff; border-color:rgba(121,192,255,0.2);">✏️</button>
                     <button class="sa-btn" onclick="indDeleteParent('${euid}','${email}')"
-                        title="Eliminar usuario completamente" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.2);">🗑️</button>
+                        title="Eliminar usuario completamente" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.2);">🗑️</button>`}
                 </div>
             </div>`;
     };
@@ -547,69 +563,22 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
                 <div></div>
             </div>`;
 
-    // ── Subtarjeta (nivel 2): subcategoria A/B/C ─────────────────────
-    const _indSubcategoryCardHtml = (subId, usersArr, hasAny) => {
-        const dot = hasAny
-            ? `<span class="sa-badge" style="background:rgba(63,185,80,0.18); color:#3fb950;">${usersArr.length}</span>`
-            : `<span style="font-size:0.7rem; color:#6e7681;">vacia</span>`;
-        const body = hasAny
-            ? _indRowHeaderHtml() + usersArr.map(_indUserRowHtml).join('')
-            : '<div style="font-size:0.75rem; color:#6e7681; padding:0.5rem 0.6rem;">Sin usuarios en esta subcategoria.</div>';
-        return `
-            <div class="sa-card" style="margin-bottom:0.5rem; padding:0.6rem 0.7rem; border-color:rgba(255,255,255,0.08);">
-                <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
-                    <div class="sa-card-title" style="font-size:0.82rem;">
-                        <span class="sa-chevron">▼</span>
-                        <span>Subcategoria ${subId}</span>
-                        ${dot}
-                    </div>
-                </div>
-                <div class="sa-card-body">${body}</div>
-            </div>`;
-    };
-
-    // ── Tarjeta (nivel 1): categoria ─────────────────────────────────
-    const _indCategoryCardHtml = (catDef, idx) => {
-        const subMap = idx.byCatSub.get(catDef.id) || new Map();
-        const catHas = idx.catHasAny.has(catDef.id);
-        const subsHtml = IND_SUB_CATS.map(subId => {
-            const usersArr = subMap.get(subId) || [];
-            const subHas = idx.subHasAny.has(catDef.id + '|' + subId);
-            return _indSubcategoryCardHtml(subId, usersArr, subHas);
-        }).join('');
-        const dot = catHas
-            ? '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#3fb950; box-shadow:0 0 6px rgba(63,185,80,0.7);"></span>'
-            : '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,0.12);"></span>';
-        return `
-            <div class="sa-card" style="margin-bottom:0.6rem; border-color:rgba(88,166,255,0.2);">
-                <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
-                    <div class="sa-card-title">
-                        <span class="sa-chevron">▼</span>
-                        <span>${_eH(catDef.label)}</span>
-                        ${dot}
-                    </div>
-                </div>
-                <div class="sa-card-body">${subsHtml}</div>
-            </div>`;
-    };
-
-    // ── Render final: solo arbol de 7x3 (sin Staff) ──────────────────
+    // ⚠️⚠️ v602 · AQUÍ VIVÍA EL ÁRBOL DE 7×3 (`_indSubcategoryCardHtml`,
+    //   `_indCategoryCardHtml`, `_indTreeHtml` y la tabla `unifiedUserTable`
+    //   que los envolvía), Y SE HA RETIRADO ENTERO.
+    //
+    //   🔑🔑 SOBRABA PORQUE EL ENTE NO ES UN CLUB. Se portó del panel de Club,
+    //   donde pintar las 21 casillas tiene sentido: un club puede llenarlas.
+    //   Un ente individual lleva UNO o DOS equipos, así que 19 de las 21 salían
+    //   vacías y las dos que importaban había que buscarlas entre ellas. Lo
+    //   sustituyen las fichas de equipo de `_secMiEquipo` (más abajo).
+    //
+    //   🔑 SE BORRAN EN VEZ DE DEJARSE SIN LLAMAR: un constructor de vistas
+    //   huérfano es justo lo que alguien revive por error dentro de seis meses
+    //   creyendo que sigue en uso. Lo que SÍ se conserva es el ÍNDICE
+    //   (`_buildIndIndex`) y la fila (`_indUserRowHtml`), que son las piezas
+    //   que de verdad hacían el trabajo y ahora sirven a las fichas de equipo.
     const _indIdx = _buildIndIndex(sortedUsers);
-    const _indTreeHtml = IND_CATEGORIES.map(c => _indCategoryCardHtml(c, _indIdx)).join('');
-
-    const unifiedUserTable = `
-    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;margin-bottom:1.5rem;">
-        <div style="padding:0.7rem 1rem;background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">
-            <div style="font-size:0.85rem;font-weight:700;color:white;display:flex;align-items:center;gap:0.5rem;">
-                👥 Usuarios del Administrador Individual
-                <span class="sa-badge" style="background:rgba(121,192,255,0.12);color:#79c0ff;">${sortedUsers.length}</span>
-            </div>
-            <button class="sa-btn" onclick="openIndividualAdminPanel(true)" style="font-size:0.72rem;color:#79c0ff;border-color:rgba(121,192,255,0.3);background:rgba(121,192,255,0.07);">🔄</button>
-        </div>
-        <div style="padding:0.8rem 1rem;">
-            ${_indTreeHtml}
-        </div>
-    </div>`;
 
     // ── Stats cards ───────────────────────────────────────────────
     const statsHTML = `
@@ -798,22 +767,10 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
               Todavía no tienes ningún equipo asignado.
             </div>` : ''}
 
-          ${_misEquipos.map(r => {
-              const mod = _indModalidad(r.category);
-              const etiqueta = (typeof window.cronosNombreCategoria === 'function')
-                  ? window.cronosNombreCategoria(r.category, r.subcategory || '')
-                  : (r.categoryLabel || r.category);
-              return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);' +
-                     'border-radius:10px;padding:0.75rem 0.85rem;margin-bottom:0.5rem;' +
-                     'display:flex;align-items:center;gap:0.6rem;">' +
-                '<span style="font-size:1.1rem;">⚽</span>' +
-                '<div style="flex:1;min-width:0;">' +
-                  '<div style="font-weight:700;font-size:0.85rem;color:white;">' + _indEsc(etiqueta) + '</div>' +
-                  (mod ? '<div style="font-size:0.68rem;color:#3fb950;margin-top:1px;">' +
-                         _indEsc(_MOD_LBL[mod] || mod) + '</div>' : '') +
-                '</div>' +
-              '</div>';
-          }).join('')}
+          <!-- ⚠️ v602 · AQUÍ HABÍA UNA LISTA PLANA DE SUS EQUIPOS, Y SE HA
+               RETIRADO. Cada equipo tiene ahora su propia ficha justo debajo,
+               con su entrenador y sus familias dentro; repetir arriba los
+               mismos dos nombres era parte de la duplicación a quitar. -->
 
           ${_puedeAnadir ? `
             <div style="margin-top:1rem;padding-top:0.9rem;border-top:1px solid rgba(255,255,255,0.07);">
@@ -834,6 +791,156 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     `;
 
     // ════════════════════════════════════════════════════════════════
+    //  ⚽👥 v602 · UNA SOLA SECCIÓN: "MI EQUIPO"
+    //
+    //  Encargo del autor (2026-08-21, capturas 9397-9401): «unificar al máximo
+    //  Mis Usuarios, Mis Equipos y Resumen en una sola. Que dentro de cada
+    //  categoría y subcategoría aparezcan el entrenador y todos los padres o
+    //  tutores vinculados. Eliminar las tarjetas duplicadas del tablero».
+    //
+    //  Las tres eran vistas del MISMO puñado de gente: el resumen los contaba,
+    //  los equipos decían de qué categoría eran y los usuarios los listaban en
+    //  un árbol de 21 casillas. Ahora se dice una vez, y en el orden en que se
+    //  pregunta: cuántos hay → qué equipos llevo → quién está en cada uno.
+    //
+    //  ⚠️⚠️ Y NADIE PUEDE DESAPARECER. Un usuario del ente cuya categoría no
+    //  sea ninguno de sus dos equipos (un padre mal asignado, un entrenador de
+    //  legado, alguien sin categoría válida) existía antes y sigue existiendo:
+    //  va al bloque "Otros usuarios del ente", con su aviso y su ✏️. Cambiar un
+    //  exceso de ruido por una desaparición silenciosa es el peor negocio
+    //  posible — es la lección de v581 y de v584.
+    // ════════════════════════════════════════════════════════════════
+
+    // Sus equipos, en forma canónica {catId, sub}. La categoría se guarda de
+    // dos maneras históricas ('alevin' + subcategory, o 'alevin_a' de una
+    // pieza): se normalizan las dos, igual que hacen _normCat/_normSub.
+    const _misEquiposNorm = _misEquipos.map(r => {
+        const catId = String(r.category || '').trim().toLowerCase().replace(/_[abc]$/, '');
+        let sub = String(r.subcategory || '').trim().toUpperCase();
+        if (!sub) {
+            const m = String(r.category || '').match(/_([abc])$/i);
+            if (m) sub = m[1].toUpperCase();
+        }
+        return { catId, sub, mod: _indModalidad(r.category), label: _indCatLabel(catId, sub) };
+    }).filter(e => e.catId);
+
+    const _clavesMias = new Set(_misEquiposNorm.map(e => e.catId + '|' + e.sub));
+
+    const _filasIndice = (catId, sub) => {
+        const subMap = _indIdx.byCatSub.get(catId);
+        return (subMap && subMap.get(sub)) ? subMap.get(sub).slice() : [];
+    };
+
+    // ⚠️ EL DUEÑO PUEDE NO ESTAR EN `parents`. Las consultas de arriba lo traen
+    //    casi siempre (buscan por clubId / individualEntityId / ownerId), pero
+    //    "casi siempre" no basta cuando lo que se pinta es QUIÉN ENTRENA ESTE
+    //    EQUIPO: si faltara, su propio equipo saldría sin entrenador. Se añade
+    //    la fila a partir de sus PLAZAS, que son el dato que de verdad dice qué
+    //    equipos lleva.
+    const _yoComoFila = (plaza) => ({
+        _id: uid, uid, email: me.email,
+        firstName: userData.firstName, lastName: userData.lastName,
+        displayName: userData.displayName,
+        createdAt: userData.createdAt, authorizedAt: userData.authorizedAt,
+        status: 'active', isAuthorized: true,
+        _activeRoleData: plaza,
+    });
+
+    const _esFilaEntrenador = (f) => _IND_COACH.has((f._activeRoleData || {}).role || f.role);
+
+    const _fichaEquipo = (eq) => {
+        const filas = _filasIndice(eq.catId, eq.sub);
+        if (!filas.some(f => (f._id || f.uid) === uid)) {
+            filas.unshift(_yoComoFila({
+                role: 'individual', isAuthorized: true, status: 'active',
+                category: eq.catId, subcategory: eq.sub,
+            }));
+        }
+        const entrenadores = filas.filter(_esFilaEntrenador);
+        const familias     = filas.filter(f => !_esFilaEntrenador(f));
+
+        const bloque = (titulo, arr, vacio) => `
+            <div style="margin-bottom:0.7rem;">
+              <div style="font-size:0.63rem;font-weight:700;color:#79c0ff;text-transform:uppercase;
+                          letter-spacing:0.6px;padding:0 0.6rem 0.35rem;">${titulo}
+                <span class="sa-badge" style="background:rgba(121,192,255,0.12);color:#79c0ff;">${arr.length}</span>
+              </div>
+              ${arr.length
+                ? _indRowHeaderHtml() + arr.map(_indUserRowHtml).join('')
+                : '<div style="font-size:0.74rem;color:#6e7681;padding:0.45rem 0.6rem;">' + vacio + '</div>'}
+            </div>`;
+
+        return `
+            <div class="sa-card expanded" style="margin-bottom:0.7rem;border-color:rgba(63,185,80,0.28);">
+              <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
+                <div class="sa-card-title">
+                  <span class="sa-chevron">▼</span>
+                  <span>⚽ ${_eH(eq.label)}</span>
+                  ${eq.mod ? '<span class="sa-badge" style="background:rgba(63,185,80,0.15);color:#3fb950;">'
+                             + _eH(_MOD_LBL[eq.mod] || eq.mod) + '</span>' : ''}
+                  <span class="sa-badge" style="background:rgba(255,255,255,0.06);color:#8b949e;">${filas.length}</span>
+                </div>
+              </div>
+              <div class="sa-card-body">
+                ${bloque('⚽ Entrenador', entrenadores, 'Este equipo no tiene entrenador asignado.')}
+                ${bloque('👨‍👩‍👧 Padres / Madres / Tutores', familias, 'Todavía no hay familias vinculadas a este equipo.')}
+              </div>
+            </div>`;
+    };
+
+    // ── Los que NO caen en ninguno de sus equipos: se muestran igual ──
+    const _filasHuerfanas = [];
+    const _enElArbol = new Set();
+    const _claveFila = (f) => {
+        const r = f._activeRoleData || {};
+        return (f._id || f.uid) + '|' + (r.role || '') + '|' + (r.category || '') + '|' + (r.subcategory || '');
+    };
+    _indIdx.byCatSub.forEach((subMap, catId) => {
+        subMap.forEach((arr, sub) => {
+            arr.forEach(f => {
+                _enElArbol.add(_claveFila(f));
+                if (_clavesMias.has(catId + '|' + sub)) return;
+                _filasHuerfanas.push(f);
+            });
+        });
+    });
+    // ⚠️ Y los que el índice descartó por no tener categoría válida: para el
+    //    árbol no existían. Aquí sí, porque son personas del ente — y son
+    //    precisamente las que hay que poder reasignar.
+    sortedUsers.forEach(u => {
+        if ((u._id || u.uid) === uid) return;      // sus propias plazas no son huérfanas
+        if (_enElArbol.has(_claveFila(u))) return;
+        _filasHuerfanas.push(u);
+    });
+
+    const _secOtros = _filasHuerfanas.length ? `
+        <div class="sa-card" style="border-color:rgba(240,136,62,0.25);">
+          <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
+            <div class="sa-card-title" style="font-size:0.84rem;">
+              <span class="sa-chevron">▼</span>
+              <span>📋 Otros usuarios del ente</span>
+              <span class="sa-badge" style="background:rgba(240,136,62,0.15);color:#f0883e;">${_filasHuerfanas.length}</span>
+            </div>
+          </div>
+          <div class="sa-card-body">
+            <div style="font-size:0.72rem;color:var(--text-muted);padding:0.5rem 0.6rem 0.7rem;line-height:1.5;">
+              Pertenecen a tu entidad pero su categoría no coincide con ninguno de tus equipos.
+              Puedes reasignarles la categoría con ✏️.
+            </div>
+            ${_indRowHeaderHtml()}
+            ${_filasHuerfanas.map(_indUserRowHtml).join('')}
+          </div>
+        </div>` : '';
+
+    const _secMiEquipo =
+        statsHTML +
+        _secMisEquipos +
+        (_misEquiposNorm.length
+            ? '<div style="margin-top:1rem;">' + _misEquiposNorm.map(_fichaEquipo).join('') + '</div>'
+            : '') +
+        (_secOtros ? '<div style="margin-top:0.6rem;">' + _secOtros + '</div>' : '');
+
+    // ════════════════════════════════════════════════════════════════
     //  🎛️ v597 · TABLERO DE ENTRADA, IGUAL QUE EL DEL ADMIN DE CLUB
     //
     //  Aquí el reparto salió casi gratis: este panel ya tenía sus bloques en
@@ -851,29 +958,41 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     //    dentro de 📩 Solicitar Alta, que hoy desaparece; tirarlo con ella
     //    habría sido perder la única explicación escrita del procedimiento
     //    bueno, y justo en la pantalla donde hace falta leerla.
+    // ⚽👥 v602 · TRES SECCIONES EN UNA.
+    //   ⚠️ Las claves viejas se conservan como ALIAS de la nueva. `indTab`
+    //   echa al MENÚ cualquier argumento que no reconozca, y `_indSeccionActual`
+    //   guarda la sección entre repintados: sin los alias, quien viniera de un
+    //   'usuarios' o 'resumen' guardado acabaría en el menú sin saber por qué.
     const _IND_SECCIONES = {
-        usuarios:    { titulo: '👥 Mis Usuarios',    html: unifiedUserTable },
-        equipos:     { titulo: '⚽ Mis Equipos',     html: _secMisEquipos },
+        equipo:      { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
+        usuarios:    { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
+        equipos:     { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
+        resumen:     { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
         solicitudes: { titulo: '✅ Solicitudes',     html: (saForwardHTML || '') + (pendingRegHTML || '') + (infoHTML || '') },
-        resumen:     { titulo: '📊 Resumen',         html: statsHTML },
         plan:        { titulo: '💳 Mi Suscripción',  html: billingHTML },
     };
 
     const _indOpciones = [
+        // ⚽ v601 · La ida a partidos pasa por `cronosEntrarAPartidos`
+        //    (role-launch.js): desde la v601 el ente aterriza con el terreno de
+        //    juego OCULTO —para no verlo antes que su panel— y hay que volver a
+        //    enseñarlo aquí. El respaldo es el comportamiento de siempre, que
+        //    sólo se queda corto en el fondo de pantalla.
         { icono: '⚽', titulo: 'Crear Partido', color: '#3fb950',
           desc: 'Ir al panel de partido y empezar a cronometrar.',
-          onclick: "(function(){ const m=document.getElementById('setup-modal'); if(m) m.style.display='none'; if(typeof openSetupModal==='function') openSetupModal(); })()" },
-        { icono: '👥', titulo: 'Mis Usuarios', color: '#58a6ff',
-          desc: 'Entrenadores y familias de tu entidad.',
-          onclick: "indTab('usuarios')" },
-        // ⚽ v598 · Sus DOS equipos (uno F7 y otro F11). El badge dice cuántos
-        //    lleva ya: es el dato que decide si puede añadir otro.
-        { icono: '⚽', titulo: 'Mis Equipos', color: '#3fb950',
+          onclick: "if(typeof cronosEntrarAPartidos==='function') cronosEntrarAPartidos(); else (function(){ const m=document.getElementById('setup-modal'); if(m) m.style.display='none'; if(typeof openSetupModal==='function') openSetupModal(); })()" },
+        // ⚽👥 v602 · UNA TARJETA DONDE HABÍA TRES (Mis Usuarios / Mis Equipos /
+        //    Resumen): las tres llevaban a la misma gente vista de tres
+        //    maneras. El badge sigue siendo el número de equipos, que es el
+        //    dato que decide si puede añadir otro.
+        { icono: '⚽', titulo: 'Mi Equipo', color: '#3fb950',
           badge: _misEquipos.length,
           desc: _misEquipos.length >= 2
-              ? 'Ya llevas tus dos equipos: uno de Fútbol 7 y otro de Fútbol 11.'
-              : 'Hasta dos equipos: uno de Fútbol 7 y otro de Fútbol 11.',
-          onclick: "indTab('equipos')" },
+              ? 'Tus dos equipos (F7 y F11), con su entrenador y sus familias.'
+              : _misEquipos.length === 1
+                  ? 'Tu equipo y sus familias — y puedes añadir el segundo.'
+                  : 'Elige tu equipo y gestiona a sus familias.',
+          onclick: "indTab('equipo')" },
         // 🔴 v598 · El número de pendientes deja de ser texto pegado al título
         //    y pasa a ser píldora roja (`badge`, utils.js). Mismo cambio que en
         //    el panel del Admin de Club: se ve desde el tablero sin entrar.
@@ -883,9 +1002,10 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
               ? 'Tienes ' + _indPendientes + ' pendiente(s) de reenviar al SuperAdmin.'
               : 'Altas pendientes de reenviar al SuperAdmin.',
           onclick: "indTab('solicitudes')" },
-        { icono: '📊', titulo: 'Resumen', color: '#31d0aa',
-          desc: 'Plazas usadas y disponibles de tu entidad.',
-          onclick: "indTab('resumen')" },
+        // ⚠️ v602 · "👥 Mis Usuarios" y "📊 Resumen" YA NO SON TARJETAS. Su
+        //    contenido no se ha perdido: abre "⚽ Mi Equipo", donde el cuadro de
+        //    cifras es lo primero que se ve y las familias están dentro de su
+        //    equipo. Se retiran del TABLERO, no del panel.
         { icono: '💳', titulo: 'Mi Plan', color: '#ffd700',
           desc: 'Suscripción, facturas y forma de pago.',
           onclick: "indTab('plan')" },
@@ -903,7 +1023,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     const _indMenuHtml = (typeof window.cronosTableroHtml === 'function')
         ? window.cronosTableroHtml({
             titulo: '👤 ' + displayName,
-            subtitulo: 'Panel del Administrador Individual — elige qué quieres gestionar:',
+            subtitulo: 'Panel del Entrenador Administrador Individual — elige qué quieres gestionar:',
             opciones: _indOpciones,
           })
         : Object.keys(_IND_SECCIONES).map(k => _IND_SECCIONES[k].html).join('');
@@ -945,7 +1065,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
       <div class="sa-topbar">
         <div>
           <div style="font-size:1.15rem;font-weight:700;">👤 ${_eH(displayName)}</div>
-          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador Individual</div>
+          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Entrenador Administrador Individual</div>
         </div>
         <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
           <!-- ⚠️ v597 · Crear Partido, Mensajes y Transmitir al SuperAdmin se
@@ -1443,7 +1563,7 @@ window.indAnadirMiEquipo = async function indAnadirMiEquipo() {
         });
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('✅ Equipo añadido: ' + label, 3000);
-        window._indSeccionActual = 'equipos';
+        window._indSeccionActual = 'equipo';
         openIndividualAdminPanel(true);
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
