@@ -258,6 +258,88 @@ ok('7e · 🔑🔑 el equipo nuevo se guarda como PLAZA en allRoles, no en un ca
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+console.log('\n── PARTE 8 · v600 · aterriza en SU PANEL, no en la pantalla de partido ──');
+// ───────────────────────────────────────────────────────────────────────────
+//  Reportado por el autor tras probar la v599 (capturas 9388/9389): al entrar
+//  «me abre primero la configuración de partidos y luego me obliga a ir al
+//  panel». Debe ser al revés.
+//
+//  🔑 NO ERA UNA PREFERENCIA MAL ELEGIDA, ERA UNA CARRERA: `init()` pintaba la
+//  pantalla de partido y `role-launch.js` abría el panel ENCIMA 300 ms después.
+//  Siempre ganaba la pantalla equivocada, porque salía primero.
+{
+    const APPINIT = sinCom(leer('js/core/app-init.js'));
+    const LAUNCH  = sinCom(leer('js/services/auth/role-launch.js'));
+
+    // 8a · init() ya no le pinta el formulario de partido por su cuenta.
+    const m = APPINIT.match(/if \(!\[([^\]]*)\]\.includes\(role\)\) \{[\s\S]{0,400}?openSetupModal\(\);/);
+    const excluidos = m ? m[1].replace(/['"\s]/g, '').split(',').filter(Boolean) : null;
+    ok('8a · 🔑 init() NO abre la pantalla de partido para el ente individual',
+       !!excluidos && excluidos.indexOf('individual') >= 0, excluidos);
+    // ⚠️ Pero init() SÍ se sigue llamando: es entrenador y necesita listeners,
+    //    service worker y sincronización para cuando cronometre.
+    ok('8b · ⚠️ pero init() SE SIGUE LLAMANDO para él (lo necesita al cronometrar)',
+       /activeRole === 'individual'[\s\S]{0,1200}?if \(typeof init === 'function'\) init\(activeRole\);/.test(LAUNCH));
+
+    // 8c · 🔑 EL setTimeout ERA LA CARRERA. Una espera a ciegas enseña la
+    //      pantalla equivocada en un móvil lento, y para siempre si algo tarda.
+    {
+        // ⚠️ SE ANCLA EN `} else if (…)`, NO en `activeRole === 'individual'` a
+        //    secas: esa cadena aparece ANTES en este fichero (el botón
+        //    🛡️ ADMIN de la cabecera), y una ventana abierta ahí examinaba un
+        //    bloque que no es el del arranque. Se ponía roja por el motivo
+        //    equivocado, que es una forma de estar rota aunque el color acierte.
+        const rama = (LAUNCH.match(/\} else if \(activeRole === 'individual'\) \{[\s\S]*?\n    \} else \{/) || [''])[0];
+        ok('8c0 · ⚠️ la rama de arranque del ente se localiza', rama.length > 0);
+        ok('8c · 🔑🔑 el panel se abre YA, sin setTimeout que lo haga carrera',
+           rama.length > 0 && /openIndividualAdminPanel\(\)/.test(rama) && !/setTimeout/.test(rama),
+           rama.length ? rama.replace(/\s+/g, ' ').slice(0, 220) : 'no se localizó la rama');
+    }
+    // ⚠️ Y el orden importa: init() ANTES que el panel, para que el panel se
+    //    pinte el ÚLTIMO y quede encima.
+    ok('8d · ⚠️ y se llama a init() ANTES que al panel (el panel pinta el último)',
+       LAUNCH.indexOf("if (typeof init === 'function') init(activeRole);\n        if (typeof openIndividualAdminPanel") >= 0);
+    // 🔑 La vuelta desde partidos tiene que devolverle a ESE panel.
+    ok('8e · 🔑 y el "Volver al Panel" de partidos regresa a ese mismo panel',
+       /openIndividualAdminPanel\(\)/.test(SETUP));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+console.log('\n── PARTE 9 · v600 · el ente y su dueño son UNA fila en el SuperAdmin ──');
+// ───────────────────────────────────────────────────────────────────────────
+//  El autor (captura 9387): «todavía se ven los roles separados». La tarjeta
+//  apilaba dos barras de cupo como iguales —el admin y los padres—, que
+//  describe el modelo VIEJO de tres roles colgando de un contenedor. Tras la
+//  unificación el entrenador administrador ES el ente, no un miembro suyo.
+{
+    // ⚠️ Se quitan también los comentarios HTML: si no, estas aserciones casan
+    //    con la explicación de lo que se retiró en vez de con el código.
+    const SA = sinComHtml(SATAB);
+    ok('9a · 🔑🔑 su barra de cupo ya no se pinta',
+       !/\$\{slotBar\('admin_individual'\)\}/.test(SA));
+    ok('9b · 🔑 y su identidad sube a la cabecera del ente',
+       /\$\{_duenoHtml\}/.test(SA) && /const _duenos = _usuariosDeBarra\('admin_individual'\)/.test(SA));
+    // ⚠️ Sin dueño hay que DECIRLO: un ente sin administrador es un problema,
+    //    y antes se leía como un "0 / 1" que no llamaba la atención.
+    ok('9c · ⚠️ un ente SIN dueño lo dice en palabras',
+       /Sin Entrenador Administrador asignado/.test(SA));
+    // ⚠️ Y el caso imposible —dos dueños— deja de disimularse en un "2 / 1".
+    ok('9d · ⚠️ y un ente con DOS dueños se señala en rojo, no se disimula',
+       /administradores\. Debería tener uno/.test(SA));
+    // 🔑 El dueño sale del recuento de miembros, pero NO de la lista: sacarlo
+    //    de la cuenta no puede ser esconderlo.
+    ok('9e · 🔑🔑 los miembros se cuentan sin él, pero "Ver usuarios" los ofrece a todos',
+       /const _miembros = Math\.max\(0, entUsers\.length - _duenos\.length\)/.test(SA) &&
+       /Ver usuarios \(\$\{entUsers\.length\}\)/.test(SA));
+    // ⚠️⚠️ UNA sola implementación de "quiénes hay". Contar es un caso
+    //     particular de listar; al revés obliga a duplicar el filtro.
+    ok('9f · ⚠️⚠️ y sigue habiendo UN solo filtro de pertenencia, no varios',
+       (SA.match(/const _usuariosDeBarra = /g) || []).length === 1 &&
+       /const _usadasEnBarra = \(roleKey\) => _usuariosDeBarra\(roleKey\)\.length;/.test(SA) &&
+       /const used = _usadasEnBarra\(roleKey\);/.test(SA));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 console.log('\n════════════════════════════════════════════');
 console.log('Resultado: ' + (total - fallos) + '/' + total + (fallos ? '  ❌ ' + fallos + ' FALLOS' : '  ✅'));
 process.exit(fallos ? 1 : 0);

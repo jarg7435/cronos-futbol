@@ -709,11 +709,26 @@ function _launchWithRole(role) {
         // Pill de solo lectura con el tipo de coordinación (F7/F11/F7&11) ya fijo.
         if (activeRole === 'coordinator') _renderCoordinatorTypePill(window._cronosCurrentUser);
     } else if (activeRole === 'individual') {
-        // Individual: primero cargar el campo, luego abrir el panel de gestión
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v600 · SU PANTALLA DE ENTRADA ES EL PANEL, NO EL PARTIDO
+        //
+        //  Antes: `init()` pintaba la pantalla de partido y 300 ms después el
+        //  panel se abría ENCIMA. El autor lo describió como «me abre primero
+        //  la configuración de partidos y luego me obliga a ir al panel».
+        //
+        //  🔑 EL setTimeout ERA UNA CARRERA, y encima innecesaria. Se puso para
+        //  dejar que `init()` terminara de pintar; pero `init()` ya no pinta la
+        //  modal para este rol (app-init.js), así que no hay nada que esperar.
+        //  Y una espera a ciegas es lo peor de los dos mundos: en un móvil lento
+        //  se ve la pantalla equivocada durante un tercio de segundo, y si algo
+        //  se retrasa más de lo previsto, se ve para siempre.
+        //
+        //  ⚠️ `init()` SE SIGUE LLAMANDO, y antes: carga los listeners y la
+        //  sincronización que necesitará al crear el partido. Lo único que ya
+        //  no hace es abrir el formulario de partido por su cuenta.
+        // ══════════════════════════════════════════════════════════════
         if (typeof init === 'function') init(activeRole);
-        setTimeout(() => {
-            if (typeof openIndividualAdminPanel === 'function') openIndividualAdminPanel();
-        }, 300);
+        if (typeof openIndividualAdminPanel === 'function') openIndividualAdminPanel();
     } else {
         if (typeof init === 'function') init(activeRole);
     }

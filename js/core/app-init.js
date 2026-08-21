@@ -1509,7 +1509,28 @@ function init(role) {
     loadStaffConfig();
     setupEventListeners();
 
-    if (!['director', 'coordinator', 'club_admin'].includes(role)) {
+    // ══════════════════════════════════════════════════════════════
+    //  🔴 v600 · QUIÉN ATERRIZA EN LA PANTALLA DE PARTIDO Y QUIÉN NO
+    //
+    //  Reportado por el autor (2026-08-21, capturas 9388/9389): al entrar como
+    //  administrador individual «la aplicación le abre PRIMERO la pantalla de
+    //  configuración de partidos y luego le obliga a ir al panel». Debe ser al
+    //  revés: aterrizar en su panel, y de ahí a partidos si él lo pide.
+    //
+    //  🔑 EL CULPABLE ERA ESTA LÍNEA. 'individual' no estaba en la lista de
+    //  exclusión, así que `init()` le pintaba la pantalla de partido; y
+    //  `role-launch.js` abría el panel ENCIMA 300 ms después. O sea que el
+    //  orden que él describe no era una preferencia mal elegida: era una
+    //  CARRERA que siempre ganaba la pantalla equivocada, porque salía primero.
+    //
+    //  ⚠️ SE EXCLUYE SÓLO LA APERTURA DE LA MODAL, NO `init()` ENTERO. El resto
+    //  de lo que hay en esta función —listeners, service worker, sincronización
+    //  con Firestore— le hace falta igual: es entrenador y va a cronometrar.
+    //  Lo que no necesita es que se le pinte el formulario de partido sin
+    //  haberlo pedido. Cuando lo pida, la tarjeta "⚽ Crear Partido" de su panel
+    //  llama a `openSetupModal()` directamente.
+    // ══════════════════════════════════════════════════════════════
+    if (!['director', 'coordinator', 'club_admin', 'individual', 'admin_individual'].includes(role)) {
         // [P14] Banner flotante "Partido interrumpido" eliminado: la recuperacion
         // de partidos ya esta disponible dentro de openSetupModal() (boton
         // "RECUPERAR PARTIDO"), por lo que _checkActiveMatch() era redundante.

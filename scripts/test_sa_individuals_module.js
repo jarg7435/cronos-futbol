@@ -169,7 +169,42 @@ function buildSandbox({ elements = {}, clubsStore = {}, usersStore = {}, getDocs
         const html = els['sa-body'].innerHTML;
         ok('3a · muestra el nombre del ente', /Ente X/.test(html));
         ok('3b · cuenta 1 ente individual en el título', /Entes Individuales \(1\)/.test(html));
-        ok('3c · muestra el conteo de usuarios del ente (2)', /2 usuarios totales/.test(html));
+
+        // ══════════════════════════════════════════════════════════════
+        //  ⚠️⚠️ v600 · 3c REESCRITA, NO RELAJADA
+        //
+        //  Decía: /2 usuarios totales/. Hoy la cabecera no dice "usuarios
+        //  totales" sino "miembro(s)", y el DUEÑO ya no se cuenta ahí: tras la
+        //  unificación el Entrenador Administrador Individual **es el ente**,
+        //  no un miembro suyo, así que subió a la cabecera.
+        //
+        //  🔑 LO QUE 3c VIGILABA SIGUE VIGILADO, y con más detalle: que la
+        //  tarjeta diga la verdad sobre quién pertenece al ente. Dar por buena
+        //  "aparece algún número" habría pasado en verde el día que el reparto
+        //  entre dueño y miembros se descuadre — que es justo el riesgo que
+        //  introduce mover a alguien de la lista a la cabecera.
+        //
+        //  ⚠️ Y LA ÚLTIMA ES LA IMPORTANTE: sacar al dueño del recuento NO
+        //  puede esconderlo. "Ver usuarios" tiene que seguir ofreciendo LOS DOS.
+        // ══════════════════════════════════════════════════════════════
+        // ⚠️⚠️ SE BORRAN LOS COMENTARIOS HTML ANTES DE MIRAR. La primera
+        //    versión de 3c pedía /Entrenador Administrador/ y salía VERDE...
+        //    casando con el comentario que explica por qué se quitó la barra.
+        //    Un comentario dentro de un template literal SÍ llega al innerHTML.
+        //    Es la misma trampa que mordió en la v597, ahora del otro lado:
+        //    entonces daba rojo sobre código correcto, aquí daba VERDE sobre
+        //    una aserción que no comprobaba nada.
+        const vis = html.replace(/<!--[\s\S]*?-->/g, '');
+        ok('3c · 🔑 el dueño del ente sube a la CABECERA, identificado',
+           /⚽ admin@x\.com/.test(vis),
+           vis.slice(vis.indexOf('Ente X'), vis.indexOf('Ente X') + 300));
+        ok('3c2 · 🔑 y ya NO se pinta como una barra de cupo más',
+           !/Entrenador Administrador Individual/.test(vis),
+           vis.indexOf('Entrenador Administrador Individual'));
+        ok('3c3 · ⚠️ los MIEMBROS se cuentan sin él (2 usuarios − 1 dueño = 1)',
+           /1 miembro\(s\)/.test(html) && !/2 miembro\(s\)/.test(html));
+        ok('3c4 · ⚠️⚠️ pero "Ver usuarios" sigue ofreciendo LOS DOS (nada se esconde)',
+           /Ver usuarios \(2\)/.test(html));
     }
 
     console.log('\n── PARTE 4 · saIndividuals() — huérfanos sin ente ──');

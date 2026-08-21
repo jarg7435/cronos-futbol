@@ -183,13 +183,19 @@ window.saIndividuals = async function saIndividuals() {
                     parent:                ['parent', 'parent_individual'],
                     parent_individual:     ['parent', 'parent_individual'],
                 };
-                // ⚠️ v598 · EL RECUENTO SE EXTRAE A SU PROPIA FUNCIÓN porque ahora
-                //    lo necesitan DOS sitios: la barra, y la decisión de si la
-                //    barra de legado se pinta siquiera. Copiar el filtro habría
-                //    creado dos implementaciones de "cuántos hay" que divergirían
-                //    a la primera — que es literalmente el defecto del badge de
-                //    Solicitudes de la v533 (badge 7, lista 4).
-                const _usadasEnBarra = (roleKey) => {
+                // ⚠️ v598/v600 · EL FILTRO SE EXTRAE A SU PROPIA FUNCIÓN porque ya
+                //    lo necesitan TRES sitios: la barra de cupo, la decisión de
+                //    si la barra de legado se pinta, y —desde la v600— la
+                //    cabecera del ente, que tiene que saber QUIÉN es su dueño.
+                //    Copiar el filtro habría creado varias implementaciones de
+                //    "quiénes hay" que divergirían a la primera: es literalmente
+                //    el defecto del badge de Solicitudes de la v533 (badge 7,
+                //    lista 4).
+                //
+                //    🔑 DEVUELVE LOS USUARIOS, NO EL NÚMERO. Contar es un caso
+                //    particular de listar; al revés no se puede, y era lo que
+                //    obligaba a duplicar el filtro para saber quién era el dueño.
+                const _usuariosDeBarra = (roleKey) => {
                     const acepta = _ROLES_DE_BARRA[roleKey] || [roleKey];
                     return entUsers.filter(u => {
                         if (u.status === 'removed') return false;
@@ -199,8 +205,9 @@ window.saIndividuals = async function saIndividuals() {
                             return anclados.some(r => acepta.indexOf(r.role) >= 0 && r.isAuthorized);
                         }
                         return acepta.indexOf(u.role) >= 0;
-                    }).length;
+                    });
                 };
+                const _usadasEnBarra = (roleKey) => _usuariosDeBarra(roleKey).length;
                 const slotBar = (roleKey) => {
                     const meta = roleLabels[roleKey];
                     const used = _usadasEnBarra(roleKey);
@@ -222,19 +229,89 @@ window.saIndividuals = async function saIndividuals() {
                 const _escA = typeof escapeAttr==='function'?escapeAttr:function(s){return s;};
                 const eId = _escA(ent.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 
+                // ════════════════════════════════════════════════════════════
+                //  ⚽⚽ v600 · EL ENTE Y SU DUEÑO SON LA MISMA FILA
+                //
+                //  Reportado por el autor (2026-08-21, captura 9387): en la
+                //  pestaña Individuales «todavía se ven los roles separados» y
+                //  hay que unificarlos «visual y estructuralmente acorde al
+                //  nuevo ente unificado».
+                //
+                //  🔑 Y LA SEPARACIÓN NO ERA COSMÉTICA, ERA CONCEPTUAL. La
+                //  tarjeta apilaba DOS barras de cupo como iguales:
+                //      ⚽ Entrenador Administrador Individual   1 / 1
+                //      👨‍👩‍👧 Padres/Madres Individuales           3 / 20
+                //  Eso describe el modelo VIEJO, el de tres roles que cuelgan
+                //  de un contenedor. Pero tras la unificación el entrenador
+                //  administrador NO es una categoría de miembro: **ES el ente**.
+                //  Enseñarlo como un cupo al lado de los padres es decir que
+                //  hay 1 de ellos de un máximo de 1 — un dato sin significado.
+                //
+                //  Así que su barra desaparece y él sube a la CABECERA, que es
+                //  donde vive la identidad del ente: nombre, correo, estado y
+                //  sus equipos. Debajo quedan sólo sus MIEMBROS, que es lo que
+                //  de verdad tiene cupo.
+                //
+                //  ⚠️ NO SE PIERDE INFORMACIÓN: lo que decía la barra (cuántos
+                //  administradores hay y si falta) se dice ahora en palabras, y
+                //  el caso raro —un ente con DOS dueños, que no debería pasar—
+                //  se señala en rojo en vez de esconderse tras un "2 / 1".
+                // ════════════════════════════════════════════════════════════
+                const _duenos = _usuariosDeBarra('admin_individual');
+                const _nombreDe = (u) => u.displayName || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || u.id;
+                // Sus equipos: las plazas ancladas a ESTE ente que llevan categoría.
+                const _equiposDe = (u) => (u.allRoles || [])
+                    .filter(r => _delEnte(r) && r.category && r.status !== 'removed' && r.isAuthorized !== false)
+                    .map(r => (typeof window.cronosNombreCategoria === 'function')
+                        ? window.cronosNombreCategoria(r.category, r.subcategory || '')
+                        : (r.categoryLabel || r.category));
+
+                const _duenoHtml = _duenos.length === 0
+                    ? `<div style="font-size:0.7rem;color:#f0883e;margin-top:3px;">
+                         ⚠️ Sin Entrenador Administrador asignado todavía</div>`
+                    : _duenos.map(u => {
+                        const eq = _equiposDe(u);
+                        const st = u.status || 'active';
+                        return `<div style="font-size:0.7rem;color:#cdd9e5;margin-top:3px;
+                                     display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
+                            <span style="color:#3fb950;font-weight:700;">⚽ ${_escH(_nombreDe(u))}</span>
+                            <span style="color:#8b949e;">${_escH(u.email || '')}</span>
+                            <span style="color:${stColor[st] || '#8b949e'};font-size:0.66rem;">
+                                ${_escH(stLabel[st] || st)}</span>
+                            ${eq.length
+                                ? eq.map(e => `<span style="font-size:0.64rem;color:#79c0ff;
+                                        background:rgba(121,192,255,0.1);border:1px solid rgba(121,192,255,0.2);
+                                        border-radius:4px;padding:1px 5px;">${_escH(e)}</span>`).join('')
+                                : `<span style="font-size:0.64rem;color:#f0883e;">sin equipo asignado</span>`}
+                        </div>`;
+                    }).join('')
+                      // ⚠️ Un ente con DOS dueños no debería existir. Antes se
+                      //    disimulaba en un "2 / 1" de la barra; ahora se dice.
+                      + (_duenos.length > 1
+                          ? `<div style="font-size:0.68rem;color:#ff5858;margin-top:3px;">
+                               🔴 Este ente tiene ${_duenos.length} administradores. Debería tener uno.</div>`
+                          : '');
+
+                // Los MIEMBROS son los que tienen cupo: el dueño ya no se cuenta aquí.
+                const _miembros = Math.max(0, entUsers.length - _duenos.length);
+
                 html += `
                 <div style="margin-bottom:1rem;border:1px solid rgba(121,192,255,0.15);border-radius:10px;overflow:hidden;">
                     <div style="background:rgba(121,192,255,0.07);padding:0.6rem 0.9rem;display:flex;justify-content:space-between;align-items:center;">
                         <div>
                             <div style="font-weight:700;color:white;font-size:0.9rem;">👤 ${_escH(ent.name||ent.id)}</div>
-                            <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Plan: ${ent.plan||'free'} · ${entUsers.length} usuarios totales · Ente Individual</div>
+                            ${_duenoHtml}
+                            <div style="font-size:0.68rem;color:#8b949e;margin-top:3px;">Plan: ${ent.plan||'free'} · ${_miembros} miembro(s) · Ente Individual</div>
                         </div>
                         <div style="display:flex;gap:0.4rem;align-items:center;">
                             <button onclick="saEditIndividualEntity('${eId}')" title="Editar ente" style="padding:0.22rem 0.45rem;background:rgba(121,192,255,0.15);border:1px solid rgba(121,192,255,0.4);border-radius:5px;color:#79c0ff;font-size:0.72rem;cursor:pointer;font-weight:700;">✏️ Editar</button>
                             <button onclick="saDeleteIndividualEntity('${eId}','${_escA(ent.name||ent.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="Eliminar ente" style="padding:0.22rem 0.45rem;background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.4);border-radius:5px;color:#ff5858;font-size:0.72rem;cursor:pointer;font-weight:700;">🗑️</button>
                         </div>
                     </div>
-                    ${slotBar('admin_individual')}
+                    <!-- ⚽ v600 · AQUÍ ESTABA slotBar('admin_individual'). Ya no:
+                         el Entrenador Administrador Individual ES el ente, y su
+                         identidad vive arriba, en la cabecera. Un cupo "1 / 1"
+                         para el dueño de la entidad no dice nada. -->
                     <!-- 🕰️ v598 · LA BARRA DE "ENTRENADOR INDIVIDUAL" SÓLO SALE SI
                          QUEDA ALGUNA. Con la unificación de roles ese rol ya no
                          se ofrece en el registro, así que en un ente nuevo la
