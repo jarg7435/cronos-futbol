@@ -274,8 +274,26 @@ async function openContactManager() {
             <!-- ── CABECERA FIJA ── -->
             <div style="padding:1rem 1.2rem 0.7rem;flex-shrink:0;
                         border-bottom:1px solid var(--glass-border);">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div style="display:flex;align-items:center;gap:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;">
+                    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                        <!-- 🔴 v598 · EL "VOLVER AL MENÚ" DE LA CABECERA.
+                             Reportado por el autor (2026-08-21): «al entrar en
+                             Contactos no hay un botón para regresar al menú
+                             principal y obliga a salir totalmente del rol».
+                             Y tenía razón en lo que se VE: sí existía un
+                             "← VOLVER" al pie, pero esta pantalla mide 92vh y
+                             tiene una zona de scroll larguísima (staff + todas
+                             las familias), así que al entrar el pie queda fuera
+                             de la vista. Lo único visible arriba era la ✕, que
+                             literalmente dice "Salir al selector de roles". Con
+                             lo que estaba a mano, salir del rol era la única
+                             salida — exactamente su síntoma.
+                             Ahora la vuelta está donde se mira primero. -->
+                        <button onclick="cmVolverAlMenu()" title="Volver al menú anterior"
+                            style="flex:0 0 auto;display:inline-flex;align-items:center;gap:0.35rem;
+                                   padding:0.35rem 0.7rem;border-radius:8px;cursor:pointer;
+                                   background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);
+                                   color:#58a6ff;font-size:0.76rem;font-weight:800;">← Volver</button>
                         <span style="font-size:1.4rem;">📱</span>
                         <h2 style="margin:0;font-size:1.1rem;font-family:'Outfit',sans-serif;">
                             Gestión de Contactos
@@ -511,7 +529,7 @@ async function openContactManager() {
             <!-- ── BOTONES FIJOS ABAJO ── -->
             <div style="padding:0.8rem 1rem;border-top:1px solid var(--glass-border);
                         display:flex;gap:0.7rem;flex-shrink:0;background:var(--surface);">
-                <button onclick="navBack()" class="btn" style="flex:1;">← VOLVER</button>
+                <button onclick="cmVolverAlMenu()" class="btn" style="flex:1;">← VOLVER AL MENÚ</button>
                 <button onclick="if(typeof navExitToRoles==='function') navExitToRoles(); else navExit();" class="btn" title="Salir al selector de roles"
                     style="flex:0 0 auto;color:var(--text-muted);">✕</button>
                 <button onclick="saveContactManagerData()" class="btn primary"
@@ -525,6 +543,46 @@ async function openContactManager() {
         showToast('⚠️ Error: ' + e.message, 4000);
     }
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  🔙 v598 · LA VUELTA AL MENÚ DE ESTA PANTALLA, CON RED DEBAJO
+//
+//  Los dos botones de volver de Contactos (el nuevo de la cabecera y el
+//  "← VOLVER AL MENÚ" del pie) llaman aquí en vez de a `navBack()` a pelo.
+//
+//  🔑 POR QUÉ NO BASTA `navBack()`. Cuando la pila tiene UN solo nivel,
+//  `navBack` se degrada a `navExit()` (nav-stack.js:95), que se limita a
+//  ocultar #setup-modal. En el panel del Entrenador, debajo de ese modal está
+//  la pantalla del partido, así que "volver" te deja mirando el campo, fuera
+//  del menú y sin forma evidente de regresar: es el mismo síntoma que el autor
+//  describe como "obliga a salir totalmente del rol". Normalmente la pila SÍ
+//  trae un nivel previo (se entra desde `openSetupModal`, que es raíz, o desde
+//  el menú de Comunicaciones), pero basta un camino de entrada que no lo haga
+//  —o un `navRootScreen` posterior que la resetee— para caer en ese agujero.
+//
+//  🔑 LA RED: si no hay a dónde volver, se PINTA el menú de entrada en lugar
+//  de cerrar el modal. Nunca se sale del rol desde un botón que dice "volver".
+//  Para salir está la ✕, que lo dice y para eso está.
+//
+//  ⚠️ VIVE DEBAJO DE `openContactManager` A PROPÓSITO: el guard
+//  (scripts/test_contact_manager_module.js) recorta el fichero DESDE esa
+//  función, así que lo que se escriba por encima queda fuera del sandbox y no
+//  se puede ejecutar en las pruebas. Colocada aquí, 3f4 y 3f5 la corren de
+//  verdad y miran qué decide.
+// ════════════════════════════════════════════════════════════════════
+window.cmVolverAlMenu = function cmVolverAlMenu() {
+    // Camino normal: hay pantalla anterior, se vuelve exactamente por donde
+    // se vino (Comunicaciones, el modal de setup, o de donde sea).
+    if (typeof navCanGoBack === 'function' && navCanGoBack()) return navBack();
+
+    // Sin nivel previo: se REPINTA un menú, no se cierra nada.
+    if (typeof openUnifiedCommsMenu === 'function') return openUnifiedCommsMenu();
+    if (typeof openSetupModal      === 'function') return openSetupModal();
+
+    // Último recurso: el comportamiento de siempre. Peor que lo anterior,
+    // pero mejor que un botón que no hace nada.
+    if (typeof navBack === 'function') return navBack();
+};
 
 async function saveContactManagerData() {
     const parentInputs = document.querySelectorAll('.contact-phone');

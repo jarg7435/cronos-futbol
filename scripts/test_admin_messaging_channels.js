@@ -192,9 +192,27 @@ console.log('\n── PARTE 4 · acceso desde los dos paneles ──');
     // da igual: la llamada ocurre al pulsar el botón, no al cargar. Lo que sí
     // importa es que siga siendo así — invocarla en tiempo de carga rompería por
     // orden de <script>. Se comprueba que la llamada viva dentro de un onclick.
+    // ⚠️ v597 · LOS DOS BOTONES SE BAJARON AL TABLERO (`cronosTableroHtml`), y
+    // allí el manejador viaja como una PROPIEDAD `onclick: "..."` del objeto de
+    // la opción, que el helper convierte en un atributo onclick al pintar. La
+    // invariante que protege esta aserción —que la llamada ocurra AL PULSAR y
+    // no al cargar el fichero— sigue siendo exactamente la misma; lo que ha
+    // cambiado es cómo se escribe.
+    //
+    // 🔑 SE COMPRUEBAN TODAS LAS APARICIONES, NO QUE HAYA UNA BUENA. La
+    // tentación era relajarlo a /openClubAdminMessaging\(/ y darlo por bueno,
+    // pero eso pasaría en verde justo el día que alguien añada una llamada
+    // suelta en tiempo de carga, que es el defecto que esto vigila.
+    const _todasBajoOnclick = (src, fn) => {
+        const lineas = src.split(/\r?\n/).filter(l => l.includes(fn + '('));
+        if (!lineas.length) return false;
+        return lineas.every(l => /onclick\s*[:=]\s*"/.test(l));
+    };
     ok('4d · 🔑 la mensajería se invoca al pulsar, no al cargar el panel',
-       /onclick="[^"]*openClubAdminMessaging\(/.test(club) &&
-       /onclick="[^"]*openIndividualAdminMessaging\(/.test(ind));
+       _todasBajoOnclick(club, 'openClubAdminMessaging') &&
+       _todasBajoOnclick(ind,  'openIndividualAdminMessaging'),
+       { club: club.split(/\r?\n/).filter(l => l.includes('openClubAdminMessaging(') && !/onclick\s*[:=]\s*"/.test(l)),
+         ind:  ind.split(/\r?\n/).filter(l => l.includes('openIndividualAdminMessaging(') && !/onclick\s*[:=]\s*"/.test(l)) });
 }
 
 // ═══════ PARTE 5 · 🔑 participants: lo que sostiene el permiso ═══════

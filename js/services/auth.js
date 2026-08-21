@@ -248,15 +248,30 @@ export async function loadClubOptions() {
                 const currentRole = roleSelect.value;
 
                 if (val.startsWith('individual:')) {
-                    // ── Se seleccionó una entidad individual ──
-                    // Habilitar SOLO los roles compatibles con individual:
-                    //   - user (Entrenador Individual)
-                    //   - parent (Padre/Madre/Tutor Individual)
-                    //   - individual (Administrador Individual)
-                    // Deshabilitar roles de club que no aplican
+                    // ══════════════════════════════════════════════════════
+                    //  🔑🔑 v598 · BAJO UN ENTE YA NO HAY "ENTRENADOR INDIVIDUAL"
+                    //
+                    //  Encargo del autor (2026-08-21): el Entrenador Individual y
+                    //  el Administrador Individual «pasan a ser obligatoriamente
+                    //  el mismo ente único», porque un entrenador personal
+                    //  gestiona su propia cuenta y su propio panel. Debajo de él
+                    //  sólo cuelgan «el resto de padres/tutores».
+                    //
+                    //  Así que aquí quedan DOS roles, no tres:
+                    //    · individual → Entrenador Administrador Individual (él)
+                    //    · parent     → Padre/Madre/Tutor de su entorno
+                    //  `user` (Entrenador Individual) deja de ofrecerse.
+                    //
+                    //  ⚠️ DEJAR DE OFRECERLO NO ES REVOCARLO. Las plazas `user`
+                    //  que ya cuelguen de un ente siguen vivas y siguen viéndose
+                    //  en el SuperAdmin (decisión del autor): se cierra la puerta
+                    //  a altas nuevas sin tocar ni un dato de producción, que es
+                    //  lo mismo que se hizo con los `permissions` de la v597.
+                    // ══════════════════════════════════════════════════════
+                    const ROLES_BAJO_ENTE = ['parent', 'individual'];
                     const roleOptions = roleSelect.querySelectorAll('option');
                     roleOptions.forEach(opt => {
-                        if (['user', 'parent', 'individual'].includes(opt.value)) {
+                        if (ROLES_BAJO_ENTE.includes(opt.value)) {
                             opt.disabled = false;
                             opt.style.color = '';
                         } else {
@@ -265,9 +280,12 @@ export async function loadClubOptions() {
                         }
                     });
 
-                    // Si el rol actual no es compatible con individual, cambiar a entrenador
-                    if (!['user', 'parent', 'individual'].includes(currentRole)) {
-                        roleSelect.value = 'user';
+                    // ⚠️ El repliegue es a 'parent', NO a 'user': 'user' acaba de
+                    //    quedar deshabilitado, y dejar seleccionada una opción
+                    //    `disabled` deja el formulario en un estado que el
+                    //    usuario no puede corregir sin tocar otra cosa antes.
+                    if (!ROLES_BAJO_ENTE.includes(currentRole)) {
+                        roleSelect.value = 'parent';
                     }
 
                     // Sincronizar el selector de tipo de entidad
@@ -444,8 +462,25 @@ export function handleRoleChange() {
             nameHint.style.display = 'none';
         }
     }
-    // Categoría para entrenador de club, padre, y roles bajo individual
-    const needsCategory = ['user', 'parent'].includes(role) || (isUnderIndividual && ['user','parent'].includes(role));
+    // ══════════════════════════════════════════════════════════════════
+    //  ⚽ v598 · EL ENTE UNIFICADO TAMBIÉN ELIGE CATEGORÍA
+    //
+    //  Hasta hoy el rol 'individual' NO pasaba por aquí: era "sólo
+    //  administrador", así que no se le preguntaba a qué equipo entrena. Con la
+    //  unificación **es entrenador**, crea partidos y necesita su pareja
+    //  categoría+subcategoría como cualquier otro.
+    //
+    //  🔑 Y ES LO QUE HACE POSIBLE EL PUNTO 4 DEL ENCARGO. La regla de los dos
+    //  equipos (`cronosPuedeLlevarEquipo`, v537) razona sobre `r.category` de
+    //  cada plaza. Sin categoría en el alta no hay contra qué comparar el
+    //  segundo equipo, y el candado F7/F11 no podría aplicarse nunca.
+    //
+    //  ⚠️ AQUÍ SE PIDE **UNA**, no dos. La segunda la añade después desde su
+    //  propio panel (decisión del autor, 2026-08-21), que es el mismo camino
+    //  que ya recorre el entrenador de club.
+    // ══════════════════════════════════════════════════════════════════
+    const needsCategory = ['user', 'parent', 'individual'].includes(role)
+                       || (isUnderIndividual && ['user', 'parent'].includes(role));
 
     const clubCont       = document.getElementById('club-container');
     const newClubCont    = document.getElementById('new-club-container');

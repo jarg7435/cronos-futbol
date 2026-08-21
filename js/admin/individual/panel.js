@@ -106,7 +106,15 @@ function _catLabelInd(cat, sub) {
 // openIndividualAdminPanel() — Modal tipo Club Admin
 // ═══════════════════════════════════════════════════════════════════
 
-async function openIndividualAdminPanel() {
+// v597 · `mantenerSeccion` distingue un REFRESCO de una ENTRADA. Las siete
+// reinvocaciones internas (tras reenviar, rechazar, activar, borrar…) pasan
+// `true` para devolverte a la sección donde estabas; sin eso cada acción te
+// echaba al tablero. Al ENTRAR desde el selector de rol se llama sin argumento
+// y se empieza en el menú, que es lo que se pidió.
+// ⚠️ Es un parámetro EXPLÍCITO y no una heurística ("¿estaba el modal
+// visible?") a propósito: una heurística acierta hasta el día que no.
+async function openIndividualAdminPanel(mantenerSeccion = false) {
+    if (!mantenerSeccion) window._indSeccionActual = 'menu';
     const me = window._cronosCurrentUser;
     if (!me) {
         if (typeof _saToast === 'function') _saToast('⛔ Usuario no identificado', 3000);
@@ -596,7 +604,7 @@ async function openIndividualAdminPanel() {
                 👥 Usuarios del Administrador Individual
                 <span class="sa-badge" style="background:rgba(121,192,255,0.12);color:#79c0ff;">${sortedUsers.length}</span>
             </div>
-            <button class="sa-btn" onclick="openIndividualAdminPanel()" style="font-size:0.72rem;color:#79c0ff;border-color:rgba(121,192,255,0.3);background:rgba(121,192,255,0.07);">🔄</button>
+            <button class="sa-btn" onclick="openIndividualAdminPanel(true)" style="font-size:0.72rem;color:#79c0ff;border-color:rgba(121,192,255,0.3);background:rgba(121,192,255,0.07);">🔄</button>
         </div>
         <div style="padding:0.8rem 1rem;">
             ${_indTreeHtml}
@@ -680,47 +688,6 @@ async function openIndividualAdminPanel() {
         </div>`;
     }
 
-    // ── Section: Solicitar nuevo usuario ──────────────────────────
-    const catOptions = IND_CATEGORIES.flatMap(cat =>
-        IND_SUB_CATS.map(sub => `<option value="${_indSlotKey(cat.id, sub)}">${cat.label} ${sub}</option>`)
-    ).join('');
-
-    const requestFormHTML = `
-    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(88,166,255,0.25);border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
-        <div style="font-weight:700;color:#58a6ff;margin-bottom:0.4rem;font-size:0.9rem;">
-            📩 Solicitar nuevo usuario al SuperAdmin</div>
-        <div style="font-size:0.75rem;color:#8b949e;margin-bottom:0.8rem;
-                    padding:0.5rem 0.7rem;background:rgba(88,166,255,0.05);
-                    border:1px solid rgba(88,166,255,0.15);border-radius:8px;line-height:1.5;">
-            <strong style="color:#58a6ff;">Flujo de solicitud:</strong>
-            1️⃣ Tú solicitas aquí → 2️⃣ SuperAdmin aprueba → 3️⃣ El usuario se registra → 4️⃣ Queda activo automáticamente
-        </div>
-        <div class="sa-g4" style="margin-bottom:0.6rem;">
-            <div><label class="sa-label">Email del padre / tutor *</label>
-                <input class="sa-input" id="ind-req-email" type="email" placeholder="padre@email.com"></div>
-            <div><label class="sa-label">Nombre completo</label>
-                <input class="sa-input" id="ind-req-name" placeholder="Nombre y apellidos"></div>
-        </div>
-        <div class="sa-g4" style="margin-bottom:0.6rem;">
-            <div><label class="sa-label">Categoría *</label>
-                <select class="sa-input" id="ind-req-category">${catOptions}</select></div>
-            <div><label class="sa-label">Nº Dorsal del jugador *</label>
-                <input class="sa-input" id="ind-req-dorsal" type="number" placeholder="ej: 7" min="1" max="99"></div>
-        </div>
-        <div class="sa-g4" style="margin-bottom:0.6rem;">
-            <div><label class="sa-label">Alias del jugador</label>
-                <input class="sa-input" id="ind-req-alias" placeholder="ej: García"></div>
-            <div><label class="sa-label">WhatsApp del padre (sin +)</label>
-                <input class="sa-input" id="ind-req-wa" type="tel" placeholder="ej: 34612345678"></div>
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.8rem;">
-            <button onclick="indSolicitarPadre()" class="sa-btn"
-                style="color:#58a6ff;border-color:rgba(88,166,255,0.4);background:rgba(88,166,255,0.1);font-weight:700;padding:0.45rem 1.2rem;">
-                📩 Enviar solicitud</button>
-        </div>
-        <div id="ind-req-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1.2rem;color:#3fb950;"></div>
-    </div>`;
-
     // ── Info box ──────────────────────────────────────────────────
     const infoHTML = `
     <div style="background:rgba(121,192,255,0.05);border:1px solid rgba(121,192,255,0.15);border-radius:8px;padding:0.7rem;font-size:0.75rem;color:#8b949e;line-height:1.5;margin-bottom:1rem;">
@@ -731,53 +698,9 @@ async function openIndividualAdminPanel() {
         4️⃣ Los iconos de rol solo aparecen <strong>después de estar registrados y confirmados</strong>.
     </div>`;
 
-    // ── Assemble full modal ───────────────────────────────────────
-    setupModal.innerHTML = SA_CSS + `
-    <div class="modal-content sa-modal">
-      <div class="sa-topbar">
-        <div>
-          <div style="font-size:1.15rem;font-weight:700;">👤 ${_eH(displayName)}</div>
-          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador Individual</div>
-        </div>
-        <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
-          <button onclick="(function(){ const m=document.getElementById('setup-modal'); if(m) m.style.display='none'; if(typeof openSetupModal==='function') openSetupModal(); })()"
-              style="padding:0.45rem 1rem;background:rgba(63,185,80,0.15);
-                     border:1px solid rgba(63,185,80,0.5);border-radius:10px;
-                     color:#3fb950;font-size:0.85rem;font-weight:700;cursor:pointer;">
-              ⚽ Crear Partido</button>
-          <!-- Mensajes internos (implementar.txt 2026-07-30): canales con el
-               SuperAdmin y con su Entrenador. Se invoca AL PULSAR, no al
-               cargar: comms/panel.js va después que este fichero en
-               index.html y llamarlo en carga rompería por orden. -->
-          <button onclick="if(typeof openIndividualAdminMessaging==='function') openIndividualAdminMessaging('coaches'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);"
-              style="padding:0.45rem 1rem;background:rgba(63,185,80,0.15);
-                     border:1px solid rgba(63,185,80,0.45);border-radius:10px;
-                     color:#3fb950;font-size:0.75rem;font-weight:700;cursor:pointer;">
-              💬 Mensajes</button>
-          <button onclick="indNotifySuperAdmin()"
-              style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
-                     border:1px solid rgba(88,166,255,0.4);border-radius:10px;
-                     color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
-              📡 Transmitir al SuperAdmin</button>
-          
-          <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
-              style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
-                     border:1px solid rgba(255,88,88,0.4);border-radius:10px;
-                     color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
-              🚪 SALIR</button>
-        </div>
-      </div>
-
-      <div class="sa-body">
-        ${statsHTML}
-        ${saForwardHTML}
-        ${pendingRegHTML}
-        ${unifiedUserTable}
-        ${requestFormHTML}
-        ${infoHTML}
-
-        <!-- ── SECCIÓN FACTURACIÓN ── -->
-        <div style="margin-top:1.5rem;border-top:1px solid rgba(255,255,255,0.08);padding-top:1.2rem;">
+    // ── SECCIÓN: MI PLAN ──────────────────────────────────────────
+    const billingHTML = `
+        <div style="margin-top:0;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.5rem;">
             <div style="font-size:0.88rem;font-weight:700;color:white;display:flex;align-items:center;gap:0.4rem;">
               💳 Mi suscripción
@@ -797,10 +720,253 @@ async function openIndividualAdminPanel() {
               </button>
             </div>
           </div>
-        </div>
+        </div>`;
 
+    // ════════════════════════════════════════════════════════════════
+    //  ⚽⚽ v598 · MIS EQUIPOS — LAS DOS CATEGORÍAS DEL ENTE UNIFICADO
+    //
+    //  Encargo del autor (2026-08-21): el Entrenador Administrador Individual
+    //  «podrá registrarse y operar en dos categorías y dos subcategorías
+    //  diferentes (por ejemplo, una de Fútbol 7 y otra de Fútbol 11), mientras
+    //  que el resto de categorías/subcategorías se quedarán inhabilitadas».
+    //
+    //  🔑 ESA REGLA YA EXISTÍA, para los entrenadores de club: `cronosPuedeLlevarEquipo`
+    //  (utils.js, v537). Aquí NO se reimplementa — se INVOCA. Escribir un
+    //  segundo "máximo dos, uno de cada modalidad" habría creado la típica
+    //  pareja de reglas que diverge a la primera corrección.
+    //
+    //  🔑 QUÉ HACE VISIBLE LA LIMITACIÓN: el desplegable no ofrece "todas las
+    //  categorías y luego te riño". Cuando ya tiene un equipo, sólo se listan
+    //  las categorías de la OTRA modalidad; las de la suya salen `disabled` y
+    //  dicen por qué. Que una opción desaparezca sin explicación es lo que
+    //  hace pensar que la aplicación está rota (misma doctrina que el tablero).
+    //
+    //  ⚠️ Y AUN ASÍ SE VALIDA AL GUARDAR. `disabled` es cosmético (la lección
+    //  de la v548): quien manipule el DOM se salta el desplegable, no el
+    //  validador.
+    // ════════════════════════════════════════════════════════════════
+    const _indModalidad = (c) => (typeof window._cronosMatchModality === 'function')
+        ? window._cronosMatchModality(c) : '';
+    const _MOD_LBL = { f7: 'Fútbol 7', f11: 'Fútbol 11' };
+
+    // Sus plazas de entrenador ANCLADAS A SU ENTE. Se reutiliza el mismo
+    // criterio de "quién lleva equipo" que el resto del proyecto.
+    const _ROLES_EQUIPO = window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach', 'individual', 'admin_individual'];
+    const _misEquipos = (userData.allRoles || []).filter(r =>
+        r && _ROLES_EQUIPO.indexOf(r.role) >= 0 &&
+        r.status !== 'removed' && r.isAuthorized !== false &&
+        r.category &&
+        String(r.clubId || r.individualEntityId || '') === String(individualEntityId || '')
+    );
+
+    // La modalidad que YA cubre. Si tiene una, la segunda tiene que ser la otra.
+    const _modsOcupadas = new Set(_misEquipos.map(r => _indModalidad(r.category)).filter(Boolean));
+    const _puedeAnadir  = _misEquipos.length < 2;
+
+    const _indOpcionesCat = IND_CATEGORIES.flatMap(cat =>
+        IND_SUB_CATS.map(sub => {
+            const val  = _indSlotKey(cat.id, sub);
+            const mod  = _indModalidad(cat.id);
+            // ⚠️ Se compara la PAREJA categoría+subcategoría, no sólo la
+            //    categoría: "Alevín A" y "Alevín B" son equipos distintos.
+            const yaEs = _misEquipos.some(r =>
+                String(r.category || '') === String(val) ||
+                (String(r.category || '') === String(cat.id) &&
+                 String(r.subcategory || '').toUpperCase() === String(sub).toUpperCase()));
+            const chocaMod = mod && _modsOcupadas.has(mod);
+            const bloq = yaEs || chocaMod;
+            const nota = yaEs ? ' — ya es tuyo'
+                       : chocaMod ? ' — ya llevas un equipo de ' + (_MOD_LBL[mod] || mod)
+                       : '';
+            return '<option value="' + _indEscA(val) + '"' + (bloq ? ' disabled' : '') + '>' +
+                   _indEsc(cat.label + ' ' + sub + nota) + '</option>';
+        })
+    ).join('');
+
+    const _secMisEquipos = `
+        <div class="sa-card" style="border-color:rgba(63,185,80,0.3);">
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.9rem;
+                      padding:0.5rem 0.7rem;background:rgba(63,185,80,0.05);
+                      border-radius:6px;border:1px solid rgba(63,185,80,0.15);line-height:1.5;">
+            Como <strong style="color:#3fb950;">Entrenador Administrador Individual</strong> puedes llevar
+            <strong>hasta dos equipos</strong>: uno de <strong>Fútbol 7</strong> y otro de <strong>Fútbol 11</strong>.
+            Dos de la misma modalidad no está permitido.
+          </div>
+
+          ${_misEquipos.length === 0 ? `
+            <div style="text-align:center;padding:1.6rem 1rem;color:var(--text-muted);font-size:0.85rem;">
+              Todavía no tienes ningún equipo asignado.
+            </div>` : ''}
+
+          ${_misEquipos.map(r => {
+              const mod = _indModalidad(r.category);
+              const etiqueta = (typeof window.cronosNombreCategoria === 'function')
+                  ? window.cronosNombreCategoria(r.category, r.subcategory || '')
+                  : (r.categoryLabel || r.category);
+              return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);' +
+                     'border-radius:10px;padding:0.75rem 0.85rem;margin-bottom:0.5rem;' +
+                     'display:flex;align-items:center;gap:0.6rem;">' +
+                '<span style="font-size:1.1rem;">⚽</span>' +
+                '<div style="flex:1;min-width:0;">' +
+                  '<div style="font-weight:700;font-size:0.85rem;color:white;">' + _indEsc(etiqueta) + '</div>' +
+                  (mod ? '<div style="font-size:0.68rem;color:#3fb950;margin-top:1px;">' +
+                         _indEsc(_MOD_LBL[mod] || mod) + '</div>' : '') +
+                '</div>' +
+              '</div>';
+          }).join('')}
+
+          ${_puedeAnadir ? `
+            <div style="margin-top:1rem;padding-top:0.9rem;border-top:1px solid rgba(255,255,255,0.07);">
+              <label class="sa-label">${_misEquipos.length === 0 ? 'Elige tu equipo' : 'Añadir mi segundo equipo'} *</label>
+              <select class="sa-input" id="ind-mi-equipo">${_indOpcionesCat}</select>
+              <div style="display:flex;justify-content:flex-end;margin-top:0.7rem;">
+                <button onclick="indAnadirMiEquipo()" class="sa-btn"
+                    style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-weight:700;">
+                    ➕ Añadir equipo</button>
+              </div>
+              <div id="ind-mi-equipo-msg" style="font-size:0.78rem;margin-top:0.5rem;min-height:1.1rem;"></div>
+            </div>` : `
+            <div style="margin-top:0.6rem;font-size:0.74rem;color:var(--text-muted);
+                        padding:0.5rem 0.7rem;background:rgba(255,255,255,0.03);border-radius:6px;">
+              ✅ Ya llevas los dos equipos que permite la regla: uno de Fútbol 7 y otro de Fútbol 11.
+            </div>`}
+        </div>
+    `;
+
+    // ════════════════════════════════════════════════════════════════
+    //  🎛️ v597 · TABLERO DE ENTRADA, IGUAL QUE EL DEL ADMIN DE CLUB
+    //
+    //  Aquí el reparto salió casi gratis: este panel ya tenía sus bloques en
+    //  constantes con nombre (statsHTML, saForwardHTML, pendingRegHTML,
+    //  unifiedUserTable, infoHTML). Lo único que se hizo fue
+    //  dejar de concatenarlas todas en el cuerpo y repartirlas por secciones.
+    //  El marcado de cada bloque NO se ha tocado.
+    // ════════════════════════════════════════════════════════════════
+    const _indPendientes = (pendingAutoReg || []).length + (pendingSAForward || []).length;
+
+    // ⚠️ v598 · `infoHTML` SE QUEDA, PERO EN SOLICITUDES. Explica el flujo de
+    //    registro del ente ("el entrenador o el padre se registra eligiendo tu
+    //    entidad → su solicitud aparece aquí → tú la reenvías al SuperAdmin"),
+    //    que es EXACTAMENTE el camino que el autor quiere como único. Vivía
+    //    dentro de 📩 Solicitar Alta, que hoy desaparece; tirarlo con ella
+    //    habría sido perder la única explicación escrita del procedimiento
+    //    bueno, y justo en la pantalla donde hace falta leerla.
+    const _IND_SECCIONES = {
+        usuarios:    { titulo: '👥 Mis Usuarios',    html: unifiedUserTable },
+        equipos:     { titulo: '⚽ Mis Equipos',     html: _secMisEquipos },
+        solicitudes: { titulo: '✅ Solicitudes',     html: (saForwardHTML || '') + (pendingRegHTML || '') + (infoHTML || '') },
+        resumen:     { titulo: '📊 Resumen',         html: statsHTML },
+        plan:        { titulo: '💳 Mi Suscripción',  html: billingHTML },
+    };
+
+    const _indOpciones = [
+        { icono: '⚽', titulo: 'Crear Partido', color: '#3fb950',
+          desc: 'Ir al panel de partido y empezar a cronometrar.',
+          onclick: "(function(){ const m=document.getElementById('setup-modal'); if(m) m.style.display='none'; if(typeof openSetupModal==='function') openSetupModal(); })()" },
+        { icono: '👥', titulo: 'Mis Usuarios', color: '#58a6ff',
+          desc: 'Entrenadores y familias de tu entidad.',
+          onclick: "indTab('usuarios')" },
+        // ⚽ v598 · Sus DOS equipos (uno F7 y otro F11). El badge dice cuántos
+        //    lleva ya: es el dato que decide si puede añadir otro.
+        { icono: '⚽', titulo: 'Mis Equipos', color: '#3fb950',
+          badge: _misEquipos.length,
+          desc: _misEquipos.length >= 2
+              ? 'Ya llevas tus dos equipos: uno de Fútbol 7 y otro de Fútbol 11.'
+              : 'Hasta dos equipos: uno de Fútbol 7 y otro de Fútbol 11.',
+          onclick: "indTab('equipos')" },
+        // 🔴 v598 · El número de pendientes deja de ser texto pegado al título
+        //    y pasa a ser píldora roja (`badge`, utils.js). Mismo cambio que en
+        //    el panel del Admin de Club: se ve desde el tablero sin entrar.
+        { icono: '✅', titulo: 'Solicitudes', color: '#f0883e',
+          badge: _indPendientes,
+          desc: _indPendientes
+              ? 'Tienes ' + _indPendientes + ' pendiente(s) de reenviar al SuperAdmin.'
+              : 'Altas pendientes de reenviar al SuperAdmin.',
+          onclick: "indTab('solicitudes')" },
+        { icono: '📊', titulo: 'Resumen', color: '#31d0aa',
+          desc: 'Plazas usadas y disponibles de tu entidad.',
+          onclick: "indTab('resumen')" },
+        { icono: '💳', titulo: 'Mi Plan', color: '#ffd700',
+          desc: 'Suscripción, facturas y forma de pago.',
+          onclick: "indTab('plan')" },
+        { icono: '💬', titulo: 'Mensajes', color: '#d2a8ff',
+          desc: 'Canales internos con el SuperAdmin y con tu entrenador.',
+          onclick: "if(typeof openIndividualAdminMessaging==='function') openIndividualAdminMessaging('coaches'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);" },
+        // ⚠️ v598 · FALTAN DOS TARJETAS RESPECTO A LA v597, A PROPÓSITO:
+        //   · 📩 Solicitar Alta        — el interesado se registra solo.
+        //   · 📡 Transmitir al SuperAdmin — escribía un aviso que NADIE leía.
+        // Las dos retiradas se explican junto a las funciones que las servían.
+    ];
+
+    // ⚠️ Mismo respaldo que en el panel de Club: sin el helper cargado se
+    // pintan todas las secciones seguidas en vez de dejar el panel en blanco.
+    const _indMenuHtml = (typeof window.cronosTableroHtml === 'function')
+        ? window.cronosTableroHtml({
+            titulo: '👤 ' + displayName,
+            subtitulo: 'Panel del Administrador Individual — elige qué quieres gestionar:',
+            opciones: _indOpciones,
+          })
+        : Object.keys(_IND_SECCIONES).map(k => _IND_SECCIONES[k].html).join('');
+
+    window.indTab = function indTab(sec) {
+        const cuerpo = document.getElementById('ind-body');
+        const barra  = document.getElementById('ind-navbar');
+        if (!cuerpo) return;
+        window._indSeccionActual = sec;
+        if (sec === 'menu' || !_IND_SECCIONES[sec]) {
+            window._indSeccionActual = 'menu';
+            if (barra) { barra.style.display = 'none'; barra.innerHTML = ''; }
+            cuerpo.innerHTML = _indMenuHtml;
+            return;
+        }
+        if (barra) {
+            barra.style.display = 'flex';
+            barra.innerHTML =
+                '<button onclick="indTab(\'menu\')" ' +
+                'style="display:inline-flex;align-items:center;gap:0.4rem;' +
+                       'padding:0.42rem 0.9rem;border-radius:8px;cursor:pointer;' +
+                       'background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);' +
+                       'color:#58a6ff;font-size:0.8rem;font-weight:800;">' +
+                '← Volver al Menú</button>' +
+                '<span style="font-size:0.9rem;font-weight:800;color:white;">' +
+                _IND_SECCIONES[sec].titulo + '</span>';
+        }
+        cuerpo.innerHTML = _IND_SECCIONES[sec].html;
+        cuerpo.scrollTop = 0;
+    };
+
+    // ── Assemble full modal ───────────────────────────────────────
+    setupModal.innerHTML = SA_CSS + `
+    <style>
+      #ind-navbar { display:none; align-items:center; gap:0.7rem;
+                    padding:0 0 0.9rem; flex-wrap:wrap; }
+    </style>
+    <div class="modal-content sa-modal">
+      <div class="sa-topbar">
+        <div>
+          <div style="font-size:1.15rem;font-weight:700;">👤 ${_eH(displayName)}</div>
+          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador Individual</div>
+        </div>
+        <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+          <!-- ⚠️ v597 · Crear Partido, Mensajes y Transmitir al SuperAdmin se
+               han bajado al tablero, cada uno con su explicación. Aquí arriba
+               eran cuatro botones seguidos sin decir para qué servían. -->
+          <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
+              style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
+                     border:1px solid rgba(255,88,88,0.4);border-radius:10px;
+                     color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              🚪 SALIR</button>
+        </div>
+      </div>
+
+      <div class="sa-body">
+        <div id="ind-navbar"></div>
+        <div id="ind-body"></div>
       </div>
     </div>`;
+
+    // Pintar la sección: después del innerHTML, porque indTab busca #ind-body.
+    window.indTab(window._indSeccionActual || 'menu');
 
     // ── Store data globally for action functions ──────────────────
     window._indData = {
@@ -839,33 +1005,22 @@ function _isActiveParent(u) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// indNotifySuperAdmin() — Notificar al SuperAdmin
+// 🗑️ indNotifySuperAdmin() — "📡 Transmitir al SuperAdmin" — YA NO EXISTE
 // ═══════════════════════════════════════════════════════════════════
+//  🔴🔴🔴 v598 · RETIRADA. Es el gemelo exacto de `caNotifySuperAdmin` del
+//  panel del Admin de Club, y falla por lo mismo: escribía en
+//  `platform_requests` un documento con `type:'individual_notification'` y
+//  `status:'unread'`, y el SuperAdmin sólo lee de esa colección
+//  `status=='pending_sa'` o `type=='quota_increase' && status=='unread'`
+//  (`saPendingItems`, js/admin/superadmin/requests-tab.js:75-76). Ni una ni
+//  otra. Censo del proyecto: `individual_notification` aparecía ÚNICAMENTE en
+//  la línea que la escribía.
+//
+//  🔑 Y encima confirmaba el envío: «✅ Notificación enviada al SuperAdmin».
+//  El administrador se quedaba esperando una respuesta a un mensaje que no
+//  había llegado a ninguna bandeja. Para hablar con el SuperAdmin está
+//  💬 Mensajes (`openIndividualAdminMessaging`), que sí funciona y se queda.
 
-window.indNotifySuperAdmin = async function indNotifySuperAdmin() {
-    const d = window._indData;
-    if (!d) return;
-    const { me, displayName, userData } = d;
-    const _entityId = userData?.individualEntityId || me.uid;
-    if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando notificación…');
-    try {
-        const { db, doc, setDoc } = await saFS();
-        await setDoc(doc(db, 'platform_requests', `ind_notify_${_entityId}_${Date.now()}`), {
-            type: 'individual_notification',
-            individualOwnerId: _entityId,
-            individualEmail: me.email,
-            individualName: displayName || me.email,
-            message: `El administrador individual ${displayName || me.email} solicita atención del SuperAdmin.`,
-            status: 'unread',
-            createdAt: new Date().toISOString(),
-        });
-        if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (typeof _saToast === 'function') _saToast('✅ Notificación enviada al SuperAdmin', 4000);
-    } catch (e) {
-        if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
-    }
-};
 
 // ═══════════════════════════════════════════════════════════════════
 // indForwardToSA() — Forward pending registration to SuperAdmin
@@ -945,7 +1100,7 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
         }
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('✅ Solicitud enviada al SuperAdmin para ' + email, 4000);
-        openIndividualAdminPanel();
+        openIndividualAdminPanel(true);
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
@@ -962,7 +1117,7 @@ window.indRejectRequest = async function indRejectRequest(prId, userUid, email) 
             await updateDoc(doc(db, 'users', userUid), { status: 'rejected', isAuthorized: false }).catch(()=>{});
         }
         if (typeof _saToast === 'function') _saToast('✕ Solicitud rechazada', 3000);
-        openIndividualAdminPanel();
+        openIndividualAdminPanel(true);
     } catch(e) {
         if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
     }
@@ -1009,7 +1164,7 @@ window.indConfirmAccess = async function indConfirmAccess(parentUid, email) {
         await updateDoc(targetDocRef, updateData);
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast(`✅ ${email} tiene acceso completo a la app.`, 4000);
-        openIndividualAdminPanel();
+        openIndividualAdminPanel(true);
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
@@ -1044,7 +1199,7 @@ window.indSetParentStatus = async function indSetParentStatus(parentUid, email, 
         }
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast(`✅ ${email} ${newStatus === 'blocked' ? 'bloqueado' : 'activado'}.`, 3000);
-        openIndividualAdminPanel();
+        openIndividualAdminPanel(true);
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
@@ -1114,7 +1269,7 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
             }
             if (typeof _saToast === 'function') _saToast('➖ Usuario removido de esta entidad. Conserva sus roles en otros clubes.', 4000);
             if (typeof _saHideSpinner === 'function') _saHideSpinner();
-            openIndividualAdminPanel();
+            openIndividualAdminPanel(true);
             return;
         }
 
@@ -1174,7 +1329,7 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
 
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast(`🗑️ ${email} eliminado completamente de la base de datos.`, 5000);
-        openIndividualAdminPanel();
+        openIndividualAdminPanel(true);
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
@@ -1213,6 +1368,91 @@ window.indEliminarUsuario = async function indEliminarUsuario(parentUid, email) 
 };
 
 // ═══════════════════════════════════════════════════════════════════
+//  ⚽⚽ v598 · indAnadirMiEquipo() — el ente unificado se añade un equipo
+// ═══════════════════════════════════════════════════════════════════
+//  Escribe UNA plaza más en su propio `allRoles`, anclada a su ente.
+//
+//  🔑 POR QUÉ UNA PLAZA Y NO UN CAMPO `category2`. La unidad de este proyecto
+//  es la PLAZA (v540): rol + ancla + categoría. Guardar la segunda categoría en
+//  un campo aparte habría dejado fuera al selector de equipo del partido, a la
+//  plantilla, al semáforo y al informe — todos leen `allRoles`. Añadiéndola
+//  como plaza, el selector de `openSetupModal` la ofrece sin tocar una línea.
+//
+//  🔑 LAS REGLAS SÍ LE DEJAN. `firestore.rules` prohíbe al usuario escribir en
+//  su propio documento los campos de RAÍZ que dan acceso —'role',
+//  'isAuthorized', 'status', 'clubId', 'clubName'…— pero `allRoles` está
+//  expresamente permitido (rules:487-489). Y no hay escalada: es su MISMO rol,
+//  en su MISMO ente, con otra categoría; el `isAuthorized` de la raíz —el
+//  único en el que confía el arranque de sesión— no se toca.
+//
+//  ⚠️⚠️ NADA DE `catch {}` MUDO AQUÍ. Una escritura denegada por reglas es
+//  exactamente el fallo que este proyecto ya ha pagado dos veces (v583: "no se
+//  guarda y no da error"). Si Firestore rechaza, se ve el motivo en pantalla.
+window.indAnadirMiEquipo = async function indAnadirMiEquipo() {
+    const d = window._indData;
+    const sel = document.getElementById('ind-mi-equipo');
+    const msg = document.getElementById('ind-mi-equipo-msg');
+    const decir = (txt, color) => { if (msg) { msg.style.color = color; msg.textContent = txt; } };
+    if (!d)   return decir('⚠️ Recarga el panel e inténtalo de nuevo.', '#ff5858');
+    if (!sel || !sel.value) return decir('⚠️ Elige una categoría.', '#ff5858');
+
+    const catVal = sel.value;                       // p.ej. 'alevin_a'
+    const partes = String(catVal).split('_');
+    const catId  = partes[0];
+    const subCat = partes[1] ? partes[1].toUpperCase() : 'A';
+    const label  = _indCatLabel(catId, subCat);
+    const { uid, userData } = d;
+    const enteId = userData.individualEntityId || userData.clubId || null;
+
+    // ── EL CANDADO DE VERDAD ────────────────────────────────────────
+    // ⚠️ Se valida aquí aunque el desplegable ya deshabilite lo prohibido:
+    //    `disabled` es cosmético (v548). Y se usa la MISMA función que el
+    //    entrenador de club, no una copia.
+    if (typeof window.cronosPuedeLlevarEquipo === 'function') {
+        const v = window.cronosPuedeLlevarEquipo(userData.allRoles || [], catVal, enteId);
+        if (!v.ok) return decir('🚫 ' + v.motivo, '#ff5858');
+    }
+    // Y la comprobación que el validador no hace: el MISMO equipo dos veces.
+    const yaLoTiene = (userData.allRoles || []).some(r =>
+        r && r.status !== 'removed' && r.isAuthorized !== false &&
+        String(r.clubId || r.individualEntityId || '') === String(enteId || '') &&
+        (String(r.category || '') === String(catVal) ||
+         (String(r.category || '') === String(catId) &&
+          String(r.subcategory || '').toUpperCase() === subCat)));
+    if (yaLoTiene) return decir('🚫 Ya llevas ese equipo.', '#ff5858');
+
+    if (typeof _saShowSpinner === 'function') _saShowSpinner('Añadiendo equipo…');
+    try {
+        const { db, doc, updateDoc } = await saFS();
+        // La plaza nueva es del MISMO rol y del MISMO ente: sólo cambia el equipo.
+        const nueva = {
+            role:          'individual',
+            clubId:        enteId,
+            individualEntityId: enteId,
+            clubName:      userData.clubName || '',
+            isAuthorized:  true,
+            status:        'active',
+            firstName:     userData.firstName || null,
+            lastName:      userData.lastName  || null,
+            category:      catVal,
+            subcategory:   subCat,
+            categoryLabel: label,
+        };
+        await updateDoc(doc(db, 'users', uid), {
+            allRoles: (userData.allRoles || []).concat([nueva]),
+        });
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        if (typeof _saToast === 'function') _saToast('✅ Equipo añadido: ' + label, 3000);
+        window._indSeccionActual = 'equipos';
+        openIndividualAdminPanel(true);
+    } catch (e) {
+        if (typeof _saHideSpinner === 'function') _saHideSpinner();
+        console.error('[indAnadirMiEquipo]', e);
+        decir('❌ No se pudo guardar: ' + (e && e.message ? e.message : e), '#ff5858');
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
 // indEditCategory() — Edit user category
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1231,7 +1471,7 @@ window.indEditCategory = async function indEditCategory(parentUid, email) {
     <div class="modal-content sa-modal" style="max-width:480px;">
       <div class="sa-topbar">
         <div style="font-weight:700;font-size:1rem;">✏️ Cambiar categoría de ${_indEsc(email)}</div>
-        <button onclick="openIndividualAdminPanel()"
+        <button onclick="openIndividualAdminPanel(true)"
             style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;">✕</button>
       </div>
       <div class="sa-body" style="padding:1.5rem;">
@@ -1240,7 +1480,7 @@ window.indEditCategory = async function indEditCategory(parentUid, email) {
             <select class="sa-input" id="ind-edit-category">${catOptions}</select>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
-            <button onclick="openIndividualAdminPanel()" class="sa-btn"
+            <button onclick="openIndividualAdminPanel(true)" class="sa-btn"
                 style="color:#8b949e;border-color:rgba(139,148,158,0.3);background:rgba(139,148,158,0.07);">Cancelar</button>
             <button onclick="indSaveCategory('${_indEscA(parentUid).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${_indEscA(email).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"
                 class="sa-btn" style="color:#3fb950;border-color:rgba(63,185,80,0.4);background:rgba(63,185,80,0.1);font-weight:700;">💾 Guardar</button>
@@ -1282,74 +1522,11 @@ window.indSaveCategory = async function indSaveCategory(parentUid, email) {
         await updateDoc(doc(db, 'users', parentUid), updateData);
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast(`✅ Categoría actualizada a ${catLabel}`, 3000);
-        openIndividualAdminPanel();
+        openIndividualAdminPanel(true);
     } catch (e) {
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
         if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
         console.error('[indSaveCategory]', e);
-    }
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// indSolicitarPadre() — Solicitar nuevo usuario al SA
-// ═══════════════════════════════════════════════════════════════════
-
-window.indSolicitarPadre = async function indSolicitarPadre() {
-    const email = document.getElementById('ind-req-email')?.value?.trim();
-    const name  = document.getElementById('ind-req-name')?.value?.trim();
-    const cat   = document.getElementById('ind-req-category')?.value;
-    const dorsal = document.getElementById('ind-req-dorsal')?.value?.trim();
-    const alias = document.getElementById('ind-req-alias')?.value?.trim();
-    const wa    = document.getElementById('ind-req-wa')?.value?.trim();
-    const msgEl = document.getElementById('ind-req-msg');
-
-    if (!email || !cat || !dorsal) {
-        if (msgEl) { msgEl.style.color = '#ff5858'; msgEl.textContent = '⚠️ Email, categoría y dorsal son obligatorios.'; }
-        return;
-    }
-
-    const d = window._indData;
-    if (!d) return;
-    const { me, displayName, userData } = d;
-    const _entityId = userData?.individualEntityId || me.uid;
-
-    if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando solicitud…');
-    try {
-        const { db, doc, setDoc } = await saFS();
-        const catParts = cat.split('_');
-        const catLabel = _indCatLabel(catParts[0], catParts[1] ? catParts[1].toUpperCase() : 'A');
-
-        await setDoc(doc(db, 'platform_requests', `ind_req_${_entityId}_${Date.now()}`), {
-            type: 'individual_user_request',
-            individualOwnerId: _entityId,
-            individualEmail: me.email,
-            individualName: displayName || me.email,
-            requestedEmail: email,
-            requestedName: name,
-            requestedRole: 'parent',
-            requestedCategory: cat,
-            requestedCategoryLabel: catLabel,
-            requestedSubcat: catParts[1] ? catParts[1].toUpperCase() : 'A',
-            playerNumber: parseInt(dorsal) || 0,
-            playerAlias: alias || '',
-            whatsapp: wa || '',
-            status: 'pending_sa',
-            createdAt: new Date().toISOString(),
-        });
-
-        if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (msgEl) { msgEl.style.color = '#3fb950'; msgEl.textContent = '✅ Solicitud enviada al SuperAdmin para ' + email; }
-        // Limpiar formulario
-        const em = document.getElementById('ind-req-email'); if (em) em.value = '';
-        const nm = document.getElementById('ind-req-name'); if (nm) nm.value = '';
-        const dr = document.getElementById('ind-req-dorsal'); if (dr) dr.value = '';
-        const al = document.getElementById('ind-req-alias'); if (al) al.value = '';
-        const wh = document.getElementById('ind-req-wa'); if (wh) wh.value = '';
-        if (typeof _saToast === 'function') _saToast('✅ Solicitud enviada al SuperAdmin', 3000);
-    } catch (e) {
-        if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (msgEl) { msgEl.style.color = '#ff5858'; msgEl.textContent = '❌ ' + e.message; }
-        console.error('[indSolicitarPadre]', e);
     }
 };
 
@@ -1359,14 +1536,36 @@ window.indSolicitarPadre = async function indSolicitarPadre() {
 // obtienen a través del flujo de registro correcto:
 //   Entrenador/Padre se registra → Admin Individual reenvía → SA confirma
 // No se pueden auto-activar roles; deben venir del SuperAdmin.
+//
+// 🗑️ v598 · Y CON ELLOS SE VA `indSolicitarPadre` Y SU FORMULARIO
+// (`requestFormHTML`, la sección 📩 Solicitar Alta). Encargo del autor
+// (2026-08-21), y es el MISMO criterio que ya rige en la nota de arriba
+// llevado hasta el final: si el alta sólo puede nacer de que el interesado se
+// registre por su cuenta, un formulario donde el administrador teclea el
+// correo de otro es una segunda puerta al mismo sitio — y la que no debía
+// existir. El camino bueno no se toca: el entrenador o el padre se registra
+// eligiendo la entidad, su solicitud cae en ✅ Solicitudes, y desde allí se
+// reenvía al SuperAdmin con `indForwardToSA`, que sigue intacta.
 // ═══════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════
-// Compatibilidad: funciones antiguas de tabs (no-ops para evitar errores)
+// 🗑 v597 · BLOQUE DE "COMPATIBILIDAD" RETIRADO — ver la nota de abajo
 // ═══════════════════════════════════════════════════════════════════
 
-window.indTab = function indTab() { /* v3: sin tabs */ };
-window.indRenderOverview = function indRenderOverview() { openIndividualAdminPanel(); };
-window.indRenderPending = function indRenderPending() { openIndividualAdminPanel(); };
-window.indRenderRequestForm = function indRenderRequestForm() { openIndividualAdminPanel(); };
-window.indRenderMembers = function indRenderMembers() { openIndividualAdminPanel(); };
+//  Cinco envoltorios de una versión con pestañas que ya no existe:
+//  indTab (un no-op), indRenderOverview, indRenderPending,
+//  indRenderRequestForm e indRenderMembers. Censo del 2026-08-21: NO LOS
+//  LLAMABA NADIE — ni este fichero, ni ningún otro, ni ningún onclick.
+//
+//  🔴🔴 Y uno era una bomba de relojería con nombre: `window.indTab`. El
+//  tablero de v597 define su propio `window.indTab` DENTRO de
+//  openIndividualAdminPanel, así que hoy gana el bueno por puro orden —éste
+//  se asignaba al CARGAR el fichero y el mío al ABRIR el panel—. Bastaba con
+//  mover esta línea detrás, o con que alguien llamase a indTab antes de abrir
+//  el panel, para que el menú entero dejase de responder SIN UN SOLO ERROR en
+//  la consola: un no-op no falla, simplemente no hace nada.
+//
+//  🔑 Dos funciones con el mismo nombre en el mismo fichero no son
+//  "compatibilidad": son un defecto esperando al orden de carga que le
+//  convenga. Lo fija la parte 6 de scripts/test_paneles_admin_tablero.js,
+//  que exige que window.indTab se asigne UNA sola vez en todo el proyecto.

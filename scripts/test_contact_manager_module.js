@@ -140,8 +140,12 @@ function buildSandbox({
     phoneRows = [], staffRows = [], manualRows = [], queryMap = {},
     updateThrows = null,
     noCloudSet = false,
+    // v598 · para poder EJECUTAR cmVolverAlMenu y mirar qué decide según haya
+    // o no pantalla anterior en la pila de navegación.
+    canGoBack = true,
 } = {}) {
     const toasts = [], spinners = [], logs = [], menuCalls = [], parentListCalls = [];
+    const navCalls = [];
     const written = [], cloudWrites = [], catMatchCalls = [];
     const els = {};
     const el = (id) => (els[id] = els[id] || mkEl('div'));
@@ -222,7 +226,14 @@ function buildSandbox({
         },
         _catAndSubcatMatch: (cc, cs, tc, ts) => { catMatchCalls.push([cc, cs, tc, ts]); return matchAll; },
         _loadParentList: () => parentListCalls.push(1),
-        openUnifiedCommsMenu: () => menuCalls.push(1),
+        openUnifiedCommsMenu: () => { menuCalls.push(1); navCalls.push('commsMenu'); },
+        // v598 · la pila de navegación, estabulada como espía. `navCanGoBack`
+        // es la que decide qué rama toma cmVolverAlMenu.
+        navCanGoBack:    () => canGoBack,
+        navBack:         () => navCalls.push('back'),
+        navExit:         () => navCalls.push('exit'),
+        navExitToRoles:  () => navCalls.push('exitToRoles'),
+        openSetupModal:  () => navCalls.push('setupModal'),
     };
     if (!noCloudSet) sandbox.cloudSet = async (k, v) => cloudWrites.push({ k, v });
 
@@ -237,6 +248,7 @@ function buildSandbox({
     return {
         g: sandbox, w: sandbox.window, cfg: () => sandbox.emailConfig,
         toasts, spinners, logs, menuCalls, parentListCalls, written, cloudWrites, catMatchCalls,
+        navCalls,
         modal, el: (id) => els[id],
     };
 }
@@ -552,7 +564,64 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         // La INTENCIÓN es la misma en las tres versiones: salir no es navegar.
         ok('3f · la X SALE del área (navExitToRoles), no navega a un destino fijo',
             /navExitToRoles\(\)/.test(h) && !/onclick="openUnifiedCommsMenu\(\)"/.test(h));
-        ok('3f2 · y el boton Volver usa navBack()', /onclick="navBack\(\)"/.test(h));
+        // ⚠️⚠️ v598 · TERCERA REESCRITURA DE 3f2, Y NO ES UNA RELAJACIÓN.
+        // La aserción exigía literalmente `onclick="navBack()"`. Hoy los dos
+        // botones de volver pasan por `cmVolverAlMenu()`, que llama a navBack
+        // cuando SE PUEDE y, cuando la pila está vacía, pinta un menú en vez de
+        // degradarse a navExit() —que es lo que dejaba al usuario mirando el
+        // campo de fútbol, fuera del rol: justo lo que reportó el autor.
+        // Dar por buena "aparece la cadena navBack" habría pasado en VERDE el
+        // día que alguien vuelva a cablear un destino fijo, que es lo que esta
+        // aserción vigila desde su primera versión. Así que se comprueba la
+        // INTENCIÓN, y en dos planos: el cableado (3f2) y la DECISIÓN que toma
+        // la función de verdad, ejecutada (3f4 y 3f5).
+        ok('3f2 · los botones de volver pasan por cmVolverAlMenu(), no por un destino fijo',
+            (h.match(/onclick="cmVolverAlMenu\(\)"/g) || []).length === 2 &&
+            !/onclick="openUnifiedCommsMenu\(\)"/.test(h) &&
+            !/onclick="openSetupModal\(\)"/.test(h));
+
+        // 🔴 EL ARREGLO QUE PIDIÓ EL AUTOR. Volver ya existía... al PIE de una
+        // pantalla de 92vh con una zona de scroll larga, o sea fuera de la
+        // vista al entrar. Arriba sólo estaba la ✕ ("Salir al selector de
+        // roles"). Ahora hay uno en la CABECERA, antes de la zona de scroll.
+        // ⚠️ Se comprueba primero que las dos marcas EXISTEN: comparar dos
+        // indexOf sin eso da verde con -1 cuando falta la primera.
+        {
+            const iVolver = h.indexOf('onclick="cmVolverAlMenu()"');
+            const iScroll = h.indexOf('ZONA DE SCROLL');
+            ok('3f3 · hay un Volver en la CABECERA, antes de la zona de scroll',
+                iVolver >= 0 && iScroll >= 0 && iVolver < iScroll, { iVolver, iScroll });
+        }
+    }
+    {
+        // La rama normal: hay pantalla anterior → se deshace la vía real.
+        const t = buildSandbox({ contacts: [], canGoBack: true });
+        await t.g.openContactManager();
+        t.w.cmVolverAlMenu();
+        ok('3f4 · con pantalla anterior en la pila, Volver llama a navBack() y NADA MÁS',
+            t.navCalls.length === 1 && t.navCalls[0] === 'back', t.navCalls);
+    }
+    {
+        // 🔑 LA RAMA DEL DEFECTO. Con la pila en un solo nivel, `navBack()` a
+        // pelo se degrada a `navExit()`, que sólo oculta #setup-modal y deja
+        // debajo la pantalla del partido: el usuario se queda fuera del menú
+        // sin manera evidente de volver. Volver NUNCA puede acabar ahí.
+        const t = buildSandbox({ contacts: [], canGoBack: false });
+        await t.g.openContactManager();
+        t.w.cmVolverAlMenu();
+        ok('3f5 · sin pantalla anterior, Volver PINTA un menú y NO sale del rol',
+            t.navCalls.length > 0 &&
+            !t.navCalls.includes('exit') && !t.navCalls.includes('exitToRoles') &&
+            (t.navCalls.includes('commsMenu') || t.navCalls.includes('setupModal')),
+            t.navCalls);
+    }
+    {
+        const t = buildSandbox({
+            contacts: [{ id: 's1', uid: 'd1', name: 'Dir', email: 'd@x.com', type: 'staff', tags: ['rpt'] }],
+            links: [{ _id: 'club1_7', playerNumber: '7', parentName: 'Madre', playerAlias: 'Ana', inviteCode: 'J7' }],
+        });
+        await t.g.openContactManager();
+        const h = t.modal.innerHTML;
         ok('3g · los inputs de telefono del padre llevan la clase que lee el guardado',
             h.includes('class="contact-phone"'));
     }

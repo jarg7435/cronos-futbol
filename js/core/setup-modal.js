@@ -370,6 +370,43 @@ function openSetupModal() {
             '</div>';
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔙 v598 · LA VUELTA AL PANEL DEL ADMINISTRADOR INDIVIDUAL
+    //
+    //  Reportado por el autor (2026-08-21): el ente individual también ejerce
+    //  de entrenador y crea partidos desde su propio panel, «pero se queda
+    //  atrapado» — hay que poder «regresar con fluidez a su panel completo».
+    //
+    //  🔑 POR QUÉ NO BASTA CON `navBack()`, que es lo primero que uno prueba:
+    //  esta pantalla se declara RAÍZ (`navRootScreen('openSetupModal')`, arriba
+    //  en esta misma función). Declararse raíz VACÍA la pila, así que en el
+    //  momento en que se pinta ya no queda ninguna pantalla anterior a la que
+    //  volver. Por eso el botón invoca el panel directamente en vez de deshacer
+    //  un paso que no existe.
+    //
+    //  🔑 POR QUÉ TAMPOCO SERVÍA EL "🛡️ ADMIN" QUE YA HABÍA. Ese botón existe
+    //  (index.html:804) pero vive en `#main-header`, y esta modal se pinta
+    //  ENCIMA a pantalla completa. Estaba ahí, tapado: desde aquí lo único
+    //  alcanzable era "Cerrar Sesión" — que es exactamente lo que él describe.
+    //
+    //  ⚠️ SÓLO PARA EL ROL 'individual'. Un entrenador de club que pulsara
+    //  esto se toparía con el candado de `openIndividualAdminPanel`, que
+    //  responde «⛔ Sin permisos» — un botón que sólo sabe dar un error no se
+    //  le enseña a nadie. Se mira `_activeRole` y no `role` porque una cuenta
+    //  multi-rol puede haber entrado hoy como otra cosa.
+    var _volverAlPanelHTML = '';
+    try {
+        var _yo = window._cronosCurrentUser;
+        var _rolActivo = _yo ? (_yo._activeRole || _yo.role) : '';
+        if (_rolActivo === 'individual' && typeof window.openIndividualAdminPanel === 'function') {
+            _volverAlPanelHTML =
+                '<button onclick="openIndividualAdminPanel()" title="Volver a mi panel de gestión"' +
+                ' style="background:rgba(121,192,255,0.15); border:1px solid rgba(121,192,255,0.45);' +
+                ' color:#79c0ff; padding:6px 12px; border-radius:8px; cursor:pointer;' +
+                ' font-size:0.75rem; font-weight:700;">← Volver al Panel</button>';
+        }
+    } catch (_e) { /* la vuelta es una comodidad: nunca puede impedir crear un partido */ }
+
     modal.style.display = 'flex';
     modal.innerHTML = `
         <div class="modal-content" style="width:960px; max-width:98vw; padding:1.5rem; border-radius:16px;">
@@ -380,6 +417,11 @@ function openSetupModal() {
                     <span style="font-size:1.4rem; font-weight:900; color:var(--text); letter-spacing:-0.5px;">CHRONOS <span style="color:#58a6ff;">FÚTBOL</span></span>
                 </div>
                 <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <!-- 🔙 v598 · La vuelta al panel del ente individual. Va la
+                         PRIMERA y separada de "Cerrar Sesión" a propósito: el
+                         defecto que arregla es precisamente que salir de la
+                         sesión era la única salida visible desde aquí. -->
+                    ${_volverAlPanelHTML}
                     <!-- v451 · el entrenador vive en esta pantalla; la otra vía
                          está en el landing de roles, que no todos vuelven a ver. -->
                     <button onclick="if(typeof openChangePasswordModal==='function')openChangePasswordModal();"

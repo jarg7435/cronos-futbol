@@ -16,6 +16,14 @@ async function openClubAdminPanel(preClubId = null) {
     const activeRole = me._activeRole || me.role;
     const isSA       = me.role === 'superadmin' || me.role === 'admin';
 
+    // v597 · ENTRADA LIMPIA POR EL TABLERO. `caTab` recuerda la sección para
+    // que un navReload() de una acción no te eche al principio, pero al ENTRAR
+    // al panel hay que empezar en el menú. Se distinguen por el argumento: el
+    // arranque desde el selector de rol llama `openClubAdminPanel()` a secas
+    // (role-launch.js), mientras que los navReload() y el selector de clubes
+    // del SuperAdmin siempre pasan el clubId.
+    if (!preClubId) window._caSeccionActual = 'menu';
+
     if (!me || (!isSA && activeRole !== 'club_admin' && activeRole !== 'individual')) {
         showToast('⛔ Sin permisos', 3000);
         return;
@@ -887,49 +895,30 @@ async function openClubAdminPanel(preClubId = null) {
     // ── Modal principal ─────────────────────────────────────────────
     let modalHTML;
     try {
-    modalHTML = SA_CSS + `
-    <style>
-      /* Fix minimo: selector de hijo directo para que el plegado funcione con
-         tarjetas .sa-card anidadas (cada nivel controla solo su propio body/chevron).
-         Sobrescribe la regla descendente compartida sin tocar los otros archivos. */
-      .sa-card.expanded > .sa-card-body { display: block; }
-      .sa-card.expanded > .sa-card-head .sa-chevron { transform: rotate(0deg); }
-    </style>
-    <div class="modal-content sa-modal">
-      <div class="sa-topbar">
-        <div>
-          <div style="font-size:1.15rem;font-weight:700;">🏟️ ${escapeHtml(club.name)}</div>
-          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador del Club</div>
-        </div>
-        <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
-          <!-- Mensajes internos (implementar.txt 2026-07-30): canales con el
-               SuperAdmin y con el Director Deportivo del club. Se invoca AL
-               PULSAR, no al cargar: comms/panel.js se carga después que este
-               fichero en index.html y llamarlo en carga rompería por orden. -->
-          <button onclick="if(typeof openClubAdminMessaging==='function') openClubAdminMessaging('director'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);"
-              style="padding:0.45rem 1rem;background:rgba(63,185,80,0.15);
-                     border:1px solid rgba(63,185,80,0.45);border-radius:10px;
-                     color:#3fb950;font-size:0.75rem;font-weight:700;cursor:pointer;">
-              💬 Mensajes</button>
-          <button onclick="caNotifySuperAdmin('${clubId}')"
-              style="padding:0.45rem 1rem;background:rgba(88,166,255,0.15);
-                     border:1px solid rgba(88,166,255,0.4);border-radius:10px;
-                     color:var(--primary);font-size:0.75rem;font-weight:700;cursor:pointer;">
-              📡 Transmitir al SuperAdmin</button>
-          <button onclick="caShowSuccession('${escapeAttr(clubId)}')"
-              style="padding:0.45rem 1rem;background:rgba(210,168,255,0.12);
-                     border:1px solid rgba(210,168,255,0.4);border-radius:10px;
-                     color:#d2a8ff;font-size:0.75rem;font-weight:700;cursor:pointer;">
-              🔄 Ceder Administración</button>
-          <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
-              style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
-                     border:1px solid rgba(255,88,88,0.4);border-radius:10px;
-                     color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
-              🚪 SALIR</button>
-        </div>
-      </div>
-
-      <div class="sa-body">
+    // ════════════════════════════════════════════════════════════════
+    //  🎛️ v597 · EL PANEL SE PARTE EN SECCIONES
+    //
+    //  Petición del autor (implementar.txt): que este panel adopte la misma
+    //  estética que los de Entrenador, Dirección, Coordinación y Familias,
+    //  que entran por un TABLERO de botones (`cronosTableroHtml`, utils.js).
+    //  Hasta v596 esto era UNA PÁGINA de once bloques seguidos que había que
+    //  recorrer entera para encontrar cualquier cosa.
+    //
+    //  🔑 EL CONTENIDO DE CADA BLOQUE NO SE TOCA. Lo único que cambia es
+    //  DÓNDE se pega: cada bloque pasa a ser una constante con su marcado
+    //  intacto, y el tablero decide cuál se pinta. Reescribir los bloques
+    //  además de moverlos habría mezclado un cambio de aspecto con un cambio
+    //  de comportamiento, y luego no se sabe cuál de los dos rompió qué.
+    //  (La excepción, deliberada y pedida: la tabla de permisos — ver
+    //  _secContactos.)
+    //
+    //  ⚠️ SON CONSTANTES, NO FUNCIONES, y se calculan AQUÍ: cierran sobre
+    //  `users`, `clubId`, `pendingClubApproval`, `slotOf`, `unifiedUserTable`
+    //  y una docena más de locales de esta función. Por eso `caTab` también
+    //  se define aquí dentro (ver abajo): un `window.caTab` de ámbito global
+    //  no vería nada de esto y tendría que volver a leerlo todo de la base.
+    // ════════════════════════════════════════════════════════════════
+    const _secSolicitudes = `
 
         <!-- ── BLOQUE DE TRANSPARENCIA: Enviadas al SuperAdmin ── -->
         ${(function(){
@@ -1128,15 +1117,33 @@ async function openClubAdminPanel(preClubId = null) {
           }).join('')}
         </div>` : ''}
 
-        <!-- ── TABLA DE USUARIOS UNIFICADA ── -->
-        <h3 style="font-size:0.85rem; margin:1.5rem 0 0.8rem; color:#58a6ff; display:flex; align-items:center; gap:0.5rem;">
-            👥 Usuarios del Club
-            <span style="background:rgba(88,166,255,0.15); color:#58a6ff; padding:2px 8px; border-radius:10px; font-size:0.7rem;">${users.filter(u => u.status !== 'removed').length}</span>
-        </h3>
-        ${unifiedUserTable()}
+    `;
 
-        <!-- ── BLOQUE B: Resumen de cuotas ── -->
-        <div class="sa-stats" style="margin-bottom:1.2rem;">
+    // ════════════════════════════════════════════════════════════════
+    //  👥 v598 · USUARIOS, CON LAS CUOTAS DENTRO
+    //
+    //  Encargo del autor (2026-08-21): "la información de cuotas debe dejar de
+    //  ser una opción independiente del tablero y pasar a estar incluida dentro
+    //  del panel de Usuarios, como un resumen de los usuarios ya dados de alta".
+    //
+    //  🔑 Y tiene sentido más allá del aspecto: las cuotas SE CALCULAN de los
+    //  usuarios de esta misma tabla (`slotOf` mira las plazas ocupadas, v553).
+    //  Eran dos vistas del mismo dato en dos puertas distintas del tablero, y
+    //  el número de una sólo se entendía mirando la otra.
+    //
+    //  ⚠️ EL MARCADO DE LAS CUOTAS NO SE HA TOCADO: es el mismo `.sa-stats`
+    //  que había en `_secCuotas`, movido de sitio. Cambiar el aspecto en el
+    //  mismo paso que la ubicación haría imposible saber cuál de las dos cosas
+    //  rompió algo.
+    // ════════════════════════════════════════════════════════════════
+    const _secUsuarios = `
+        <!-- ── RESUMEN DE CUOTAS (antes era la sección suelta 💰 Cuotas) ── -->
+        <h3 style="font-size:0.85rem; margin:0 0 0.6rem; color:#f0883e; display:flex; align-items:center; gap:0.5rem;">
+            💰 Plazas del club
+            <span style="font-size:0.68rem;color:var(--text-muted);font-weight:400;">
+                ocupadas / contratadas por rol</span>
+        </h3>
+        <div class="sa-stats" style="margin-bottom:1.4rem;">
           ${['director','coordinator','user','parent'].map(role => {
               const si    = slotOf(role);
               const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Padres':'Entrenadores';
@@ -1149,133 +1156,203 @@ async function openClubAdminPanel(preClubId = null) {
           }).join('')}
         </div>
 
-        <!-- ── BLOQUE C: Solicitar nuevo usuario al SuperAdmin ── -->
-        <div class="sa-card" style="border-color:rgba(88,166,255,0.25);margin-bottom:1.2rem;">
-          <div style="font-weight:700;color:var(--primary);margin-bottom:0.4rem;font-size:0.9rem;">
-            📩 Solicitar nuevo usuario al SuperAdmin</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.8rem;
+        <!-- ── TABLA DE USUARIOS UNIFICADA ── -->
+        <h3 style="font-size:0.85rem; margin:0 0 0.8rem; color:#58a6ff; display:flex; align-items:center; gap:0.5rem;">
+            👥 Usuarios del Club
+            <span style="background:rgba(88,166,255,0.15); color:#58a6ff; padding:2px 8px; border-radius:10px; font-size:0.7rem;">${users.filter(u => u.status !== 'removed').length}</span>
+        </h3>
+        ${unifiedUserTable()}
+
+    `;
+
+    // ════════════════════════════════════════════════════════════════
+    //  🗑️ v598 · AQUÍ VIVÍAN DOS SECCIONES QUE YA NO ESTÁN
+    //
+    //  1) 📩 SOLICITAR ALTA (`_secSolicitarAlta`). Retirada por encargo del
+    //     autor (2026-08-21). Su motivo, textual: «el procedimiento correcto es
+    //     que sea el propio usuario interesado quien se registre en la app y
+    //     esa solicitud llegue automáticamente al administrador para su
+    //     aprobación, por lo que no debe hacerlo el administrador manualmente».
+    //     Ese camino ya existe y es el que se usa: el interesado se registra,
+    //     su solicitud aterriza en ✅ Solicitudes y desde ahí se confirma. El
+    //     formulario abría un SEGUNDO camino para lo mismo, con la peculiaridad
+    //     de que su rótulo prometía «1️⃣ Tú solicitas aquí» — o sea, describía
+    //     como "flujo correcto" justo el que el autor quiere eliminar.
+    //     Con él se van sus manejadores, que no los llamaba nadie más:
+    //     `caRoleChanged`, `caSolicitarUsuario` y `caAddUser`.
+    //
+    //  2) ⚙️ CONFIGURACIÓN DEL CLUB (`_secConfig`). Contenía UN solo control:
+    //     el interruptor «📊 Enviar informes individualizados a padres»
+    //     (`caToggleFeature(..., 'sendIndividualReports', ...)`). Retirado por
+    //     encargo del autor: «esa decisión recae exclusivamente en el director
+    //     deportivo».
+    //
+    //     🔑 Y el código le da la razón: `js/coach/reports/director-config.js`
+    //     ya deja al DIRECTOR decidir esto **categoría por categoría**, y él
+    //     mismo escribe `features.sendIndividualReports` como agregado de sus
+    //     categorías (director-config.js:287-292). Eran DOS mandos sobre la
+    //     misma llave, y el del administrador de club —que es global— pisaba de
+    //     un plumazo el criterio por categorías del director. Quitarlo no deja
+    //     la función huérfana: deja UN solo dueño, que es el que debía tenerla.
+    //
+    //     ⚠️ Al quedarse sin su único control, la sección entera desaparece.
+    //     Dejar una tarjeta "⚙️ Configuración" vacía sería exactamente la clase
+    //     de puerta que no lleva a ningún sitio que acabamos de limpiar en la
+    //     v597. `caToggleFeature` se retira también: era su único llamante.
+    //
+    //     ⚠️ NO SE TOCAN LOS DATOS. `features.sendIndividualReports` sigue
+    //     viviendo en los documentos de club y sigue leyéndose (utils.js:1520,
+    //     director-config.js:73). Sólo desaparece este mando de aquí.
+    // ════════════════════════════════════════════════════════════════
+
+    // ════════════════════════════════════════════════════════════════
+    //  📇 v597 · CONTACTOS DEL CLUB — SE MIRA, NO SE CONFIGURA
+    //
+    //  🔴🔴🔴 LO QUE HABÍA AQUÍ NO HACÍA NADA. Seis casillas por persona
+    //  (receiveConvocatorias, receiveEntrenamientos, receiveMessages,
+    //  receiveReports, receiveIndividualReports, liveView) que `caSetPermission`
+    //  escribía en `users/{uid}.permissions`... y que NO LEÍA NADIE. Censo del
+    //  2026-08-21 sobre todo el proyecto: las seis claves aparecían ÚNICAMENTE
+    //  en las seis líneas que las pintaban. Ni el envío de convocatorias, ni el
+    //  de entrenamientos, ni los informes, ni el visor en vivo las consultaban
+    //  jamás.
+    //
+    //  🔑 O sea: el administrador marcaba y desmarcaba creyendo conceder o
+    //  retirar algo, y no cambiaba nada en ninguna parte. No era sólo confuso
+    //  —que es como lo reportó el autor—: era decorativo. Y por eso quitarlo NO
+    //  REQUIERE MIGRAR NADA: no hay que inventar una herencia por rol para
+    //  sustituir a un mecanismo que nunca existió. Quien reparte de verdad hoy
+    //  es el ROL de cada plaza y los EXTRAS del club (v596).
+    //
+    //  ⚠️ NO CONFUNDIR con las casillas del panel de CONTACTOS DEL ENTRENADOR
+    //  (`contact-msg`, `canSendMsg`, las diez columnas de v429/v430). ÉSAS SÍ
+    //  funcionan, deciden quién recibe y qué padre puede escribir, y viven en
+    //  js/coach/comms/contact-manager.js. Aquí no se tocan.
+    //
+    //  ⚠️ Los campos `permissions` que quedaron escritos en los documentos NO
+    //  se borran (decisión del autor): no los lee nadie, así que no estorban, y
+    //  no hay que tocar datos reales de producción para quitar una interfaz.
+    //
+    //  Lo que se pinta ahora es la MISMA lista, en lectura, diciendo lo que da
+    //  cada rol — y respetando los extras: si el club no tiene contratado
+    //  "Partidos en Vivo", no se le promete a nadie.
+    // ════════════════════════════════════════════════════════════════
+    const _caExtras = (club && club.extras) || {};
+    const _caExtraOn = (k) => _caExtras[k] !== false;   // ⚠️ !== false, como en todo el proyecto
+
+    // Qué le da su ROL a cada quien. Es una DESCRIPCIÓN de lo que ya decide el
+    // sistema, no una fuente de verdad nueva: si algún día cambia el reparto,
+    // esto hay que actualizarlo — por eso el pie lo dice en voz alta.
+    const _caLoQueDaElRol = (rol) => {
+        const chips = [];
+        const add = (icono, texto) => chips.push(icono + ' ' + texto);
+        switch (rol) {
+            case 'club_admin':
+                add('👥', 'Usuarios y altas'); add('💰', 'Cuotas'); add('💳', 'Plan y facturas');
+                add('💬', 'Mensajes');
+                break;
+            case 'director':
+                add('📋', 'Convocatorias'); add('🏃', 'Entrenamientos'); add('✅', 'Asistencia');
+                add('📊', 'Informes'); add('💬', 'Mensajes');
+                if (_caExtraOn('secretaria')) add('✉️', 'Secretaría');
+                add('⚙️', 'Configuración');
+                if (_caExtraOn('partidos_terminados')) add('🎬', 'Partidos Terminados');
+                if (_caExtraOn('partidos_en_vivo'))    add('🔴', 'En Vivo');
+                break;
+            case 'coordinator':
+                add('📋', 'Convocatorias'); add('🏃', 'Entrenamientos'); add('✅', 'Asistencia');
+                add('📊', 'Informes'); add('💬', 'Mensajes');
+                if (_caExtraOn('partidos_terminados')) add('🎬', 'Partidos Terminados');
+                if (_caExtraOn('partidos_en_vivo'))    add('🔴', 'En Vivo');
+                break;
+            case 'user':
+            case 'coach':
+                if (_caExtraOn('plantilla'))       add('👥', 'Plantilla');
+                if (_caExtraOn('convocatorias'))   add('📋', 'Convocatorias');
+                if (_caExtraOn('entrenamientos'))  add('🏃', 'Entrenamientos');
+                if (_caExtraOn('informes'))        add('📊', 'Informes');
+                if (_caExtraOn('mensajeria'))      add('💬', 'Mensajes');
+                if (_caExtraOn('partidos_en_vivo'))add('🔴', 'En Vivo');
+                break;
+            case 'parent':
+            case 'parent_individual':
+            case 'padre_individual':
+                if (_caExtraOn('convocatorias')) add('📋', 'Convocatorias');
+                if (_caExtraOn('mensajeria'))    add('💬', 'Mensajes');
+                if (features.sendIndividualReports) add('📊', 'Informe de su hijo/a');
+                if (_caExtraOn('partidos_en_vivo')) add('🔴', 'En Vivo');
+                break;
+            default:
+                break;
+        }
+        return chips;
+    };
+
+    const _caContactos = users
+        .filter(u => u.status === 'active' && u.isAuthorized !== false)
+        .sort((a, b) => (a.role || '').localeCompare(b.role || ''));
+
+    // ── SECCIÓN: CONTACTOS ───────────────────────────────────────────
+    const _secContactos = `
+        <div class="sa-card" style="border-color:rgba(88,166,255,0.3);">
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.9rem;
                       padding:0.5rem 0.7rem;background:rgba(88,166,255,0.05);
-                      border:1px solid rgba(88,166,255,0.15);border-radius:8px;line-height:1.5;">
-            <strong style="color:var(--primary);">Flujo correcto:</strong>
-            1️⃣ Tú solicitas aquí → 2️⃣ SuperAdmin aprueba → 3️⃣ El usuario se registra en la app → 4️⃣ Tú le das acceso
+                      border-radius:6px;border:1px solid rgba(88,166,255,0.15);line-height:1.5;">
+            Quién es quién en el club y qué le da su rol.
+            <strong style="color:#58a6ff;">No hay nada que configurar aquí:</strong>
+            lo que recibe cada persona lo decide el <strong>rol</strong> con el que está
+            dada de alta y los <strong>extras</strong> contratados por el club.
           </div>
-          <div class="sa-g4" style="align-items:end;">
-            <div><label class="sa-label">Email del nuevo usuario *</label>
-              <input class="sa-input" id="nu-email" type="email" placeholder="usuario@email.com"></div>
-            <div><label class="sa-label">Nombre completo</label>
-              <input class="sa-input" id="nu-name" placeholder="Nombre y apellidos"></div>
-            <div><label class="sa-label">Rol solicitado</label>
-              <select class="sa-input" id="nu-role" onchange="caRoleChanged()">
-                <option value="user">⚽ Entrenador</option>
-                <option value="parent">👨‍👩‍👧 Padre/Madre/Tutor</option>
-                ${features.live_view ? '<option value="coordinator">🎯 Coordinador</option>' : ''}
-                ${features.live_view ? '<option value="director">📋 Director Dep.</option>' : ''}
-              </select></div>
-            <button onclick="caSolicitarUsuario('${clubId}')" class="sa-btn"
-                style="color:var(--primary);border-color:rgba(88,166,255,0.4);
-                       background:rgba(88,166,255,0.1);font-weight:700;height:34px;">
-                📩 Solicitar</button>
-          </div>
-          <!-- Campos extra para Padre/Madre -->
-          <div id="nu-parent-fields" style="display:none;margin-top:0.6rem;">
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.4rem;
-                        padding:0.4rem 0.6rem;background:rgba(210,168,255,0.08);
-                        border:1px solid rgba(210,168,255,0.2);border-radius:6px;">
-              👨‍👩‍👧 Datos adicionales para Padre/Tutor — vincula al jugador de su hijo/a
-            </div>
-            <div class="sa-g4" style="margin-top:0.4rem;">
-              <div><label class="sa-label">Nº Dorsal del jugador *</label>
-                <input class="sa-input" id="nu-player-num" type="number" placeholder="ej: 7" min="1" max="99"></div>
-              <div><label class="sa-label">Alias / Nombre del jugador</label>
-                <input class="sa-input" id="nu-player-alias" placeholder="ej: García"></div>
-              <div><label class="sa-label">WhatsApp del padre (sin +)</label>
-                <input class="sa-input" id="nu-parent-wa" type="tel" placeholder="ej: 34612345678"></div>
-            </div>
-          </div>
-          <div id="nu-msg" style="font-size:0.78rem;margin-top:0.4rem;min-height:1rem;color:#3fb950;"></div>
-        </div>
-
-
-
-        <!-- ── BLOQUE E: Toggle envío informes individualizados a padres ── -->
-        <div class="sa-card" style="border-color:rgba(210,168,255,0.3);margin-top:1rem;">
-          <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
-            <div class="sa-card-title">
-              <span class="sa-chevron">▼</span>
-              <span style="color:#d2a8ff;">⚙️ Configuración del Club</span>
-            </div>
-          </div>
-          <div class="sa-card-body" id="ca-features-section">
-            <div style="background:rgba(210,168,255,0.06);border:1px solid rgba(210,168,255,0.2);
-                        border-radius:8px;padding:0.8rem;margin-bottom:0.6rem;">
-              <div style="display:flex;align-items:center;gap:0.7rem;">
-                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;flex:1;">
-                  <input type="checkbox" id="ca-toggle-individual-reports"
-                    ${features.sendIndividualReports ? 'checked' : ''}
-                    onchange="caToggleFeature('${clubId}','sendIndividualReports',this.checked)"
-                    style="width:20px;height:20px;accent-color:#d2a8ff;">
-                  <div>
-                    <div style="font-size:0.85rem;font-weight:700;color:white;">
-                      📊 Enviar informes individualizados a padres
-                    </div>
-                    <div style="font-size:0.72rem;color:#7d8590;margin-top:0.15rem;">
-                      Si está activado, los entrenadores podrán enviar el informe de cada jugador
-                      directamente al padre/tutor vinculado a ese jugador.
-                    </div>
-                  </div>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── BLOQUE F: Contactos del Club con permisos ── -->
-        <div class="sa-card" style="border-color:rgba(88,166,255,0.3);margin-top:1rem;">
-          <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
-            <div class="sa-card-title">
-              <span class="sa-chevron">▼</span>
-              <span style="color:#58a6ff;">📇 Contactos del Club — Permisos</span>
-              <span class="sa-badge" style="background:rgba(88,166,255,0.15);color:#58a6ff;">
-                ${users.filter(u=>u.status==='active'&&u.isAuthorized!==false).length} usuarios
-              </span>
-            </div>
-          </div>
-          <div class="sa-card-body" id="ca-contacts-section">
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.8rem;
-                        padding:0.4rem 0.6rem;background:rgba(88,166,255,0.05);
-                        border-radius:6px;border:1px solid rgba(88,166,255,0.15);">
-              Configura qué puede recibir o acceder cada usuario del club.
-              Los cambios se guardan automáticamente.
-            </div>
-            ${users.filter(u=>u.status==='active'&&u.isAuthorized!==false).sort((a,b)=>(a.role||'').localeCompare(b.role||'')).map(u => {
-                const meta = ROLE_META[u.role] || {icon:'👤',color:'#8b949e',label:u.role||'?'};
-                const perms = u.permissions || {};
-                const uid = u._id;
-                const permToggle = (key, icon, label, color) =>
-                  '<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:#7d8590;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);padding:0.25rem 0.5rem;border-radius:5px;cursor:pointer;">' +
-                  '<input type="checkbox" ' + (perms[key]?'checked':'') + ' onchange="caSetPermission(\'' + uid.replace(/'/g,"\\'") + '\',\'' + key + '\',this.checked)" style="width:14px;height:14px;accent-color:' + color + ';"> ' +
-                  icon + ' ' + label + '</label>';
-                return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:0.7rem 0.8rem;margin-bottom:0.5rem;">' +
-                  '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">' +
-                  '<span>' + meta.icon + '</span>' +
+          ${_caContactos.length === 0 ? `
+            <div style="text-align:center;padding:2.5rem 1rem;color:var(--text-muted);font-size:0.85rem;">
+              Todavía no hay usuarios activos en el club.
+            </div>` : ''}
+          ${_caContactos.map(u => {
+              const meta  = ROLE_META[u.role] || { icon: '👤', color: '#8b949e', label: u.role || '?' };
+              const chips = _caLoQueDaElRol(u.role);
+              // ⚠️ El nombre real vive en allRoles[].firstName (v534): la raíz va
+              //    desfasada en cuentas multi-rol y ahí salía el correo.
+              const _rolCat = (u.allRoles || []).find(r => r && (r.clubId === clubId) && r.role === u.role) || {};
+              const _nombre = u.displayName
+                  || [_rolCat.firstName, _rolCat.lastName].filter(Boolean).join(' ')
+                  || [u.firstName, u.lastName].filter(Boolean).join(' ')
+                  || '';
+              const _equipo = _rolCat.category
+                  ? (typeof window.cronosNombreCategoria === 'function'
+                      ? window.cronosNombreCategoria(_rolCat.category, _rolCat.subcategory || '')
+                      : _rolCat.category)
+                  : '';
+              return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);' +
+                     'border-radius:10px;padding:0.75rem 0.85rem;margin-bottom:0.5rem;">' +
+                '<div style="display:flex;align-items:center;gap:0.55rem;margin-bottom:' + (chips.length ? '0.5rem' : '0') + ';">' +
+                  '<span style="font-size:1.1rem;">' + meta.icon + '</span>' +
                   '<div style="flex:1;min-width:0;">' +
-                  '<div style="font-weight:700;font-size:0.82rem;color:white;">' + (escapeHtml(u.email||u._id)) +
-                  (u.displayName ? ' <span style="color:#7d8590;font-weight:400;font-size:0.75rem;"> · ' + (escapeHtml(u.displayName)) + '</span>' : '') +
-                  '</div><div style="font-size:0.68rem;color:' + meta.color + ';">' + meta.label + '</div></div></div>' +
-                  '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' +
-                  permToggle('receiveConvocatorias','📋','Convocatorias','#3fb950') +
-                  permToggle('receiveEntrenamientos','🏃','Entrenamientos','#58a6ff') +
-                  permToggle('receiveMessages','💬','Mensajes','#d2a8ff') +
-                  permToggle('receiveReports','📊','Informes','#f0883e') +
-                  permToggle('receiveIndividualReports','📝','Inf. Individual','#ffa500') +
-                  permToggle('liveView','🔴','En Vivo','#ff5858') +
-                  '</div></div>';
-            }).join('')}
-          </div>
+                    '<div style="font-weight:700;font-size:0.82rem;color:white;word-break:break-word;">' +
+                      escapeHtml(_nombre || u.email || u._id) +
+                      (_nombre ? '<span style="color:#7d8590;font-weight:400;font-size:0.74rem;"> · ' +
+                                 escapeHtml(u.email || '') + '</span>' : '') +
+                    '</div>' +
+                    '<div style="font-size:0.68rem;color:' + meta.color + ';margin-top:1px;">' + meta.label +
+                      (_equipo ? ' · ' + escapeHtml(_equipo) : '') + '</div>' +
+                  '</div>' +
+                '</div>' +
+                (chips.length
+                  ? '<div style="display:flex;flex-wrap:wrap;gap:0.35rem;">' +
+                    chips.map(c => '<span style="font-size:0.68rem;color:#8b949e;background:rgba(255,255,255,0.04);' +
+                                   'border:1px solid rgba(255,255,255,0.07);padding:0.2rem 0.5rem;border-radius:5px;">' +
+                                   escapeHtml(c) + '</span>').join('') +
+                    '</div>'
+                  : '') +
+              '</div>';
+          }).join('')}
         </div>
 
+    `;
+
+    // ── SECCIÓN: MI PLAN ─────────────────────────────────────────────
+    const _secPlan = `
         <!-- ── SECCIÓN FACTURACIÓN ── -->
-        <div style="margin-top:1.5rem;border-top:1px solid rgba(255,255,255,0.08);padding-top:1.2rem;">
+        <div style="margin-top:0;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.5rem;">
             <div style="font-size:0.88rem;font-weight:700;color:white;display:flex;align-items:center;gap:0.4rem;">
               💳 Mi suscripción
@@ -1297,6 +1374,135 @@ async function openClubAdminPanel(preClubId = null) {
           </div>
         </div>
 
+    `;
+
+    // ════════════════════════════════════════════════════════════════
+    //  🎛️ EL TABLERO DE ENTRADA Y EL CAMBIO DE SECCIÓN
+    // ════════════════════════════════════════════════════════════════
+    const _caPendientes = pendingClubApproval.length + pendingClubAdmin.length
+                        + pendingRolesInAllRoles.length + pendingMembers.length;
+
+    const _CA_SECCIONES = {
+        solicitudes: { titulo: '✅ Solicitudes',        html: _secSolicitudes },
+        usuarios:    { titulo: '👥 Usuarios del Club',  html: _secUsuarios },
+        contactos:   { titulo: '📇 Contactos del Club', html: _secContactos },
+        plan:        { titulo: '💳 Mi Suscripción',     html: _secPlan },
+    };
+
+    // ⚠️ v598 · TRES TARJETAS MENOS QUE EN LA v597, Y NINGUNA POR ESTÉTICA:
+    //   · 📩 Solicitar Alta — duplicaba el registro del propio interesado.
+    //   · 💰 Cuotas         — su contenido vive ahora DENTRO de 👥 Usuarios.
+    //   · ⚙️ Configuración  — se quedó sin su único control (ver arriba).
+    // Y una cuarta, 📡 Transmitir al SuperAdmin, que se explica en su sitio.
+    const _caOpciones = [
+        { icono: '👥', titulo: 'Usuarios', color: '#58a6ff',
+          desc: 'Altas, bajas, plazas del club y estado de todo el personal.',
+          onclick: "caTab('usuarios')" },
+        // 🔴 v598 · El aviso ya NO se pega al título. `badge` lo pinta como
+        //    píldora roja (utils.js): desde el tablero se ve sin entrar, que es
+        //    justo lo que pedía el autor.
+        { icono: '✅', titulo: 'Solicitudes', color: '#3fb950',
+          badge: _caPendientes,
+          desc: _caPendientes
+              ? 'Tienes ' + _caPendientes + ' pendiente(s) de reenviar o confirmar.'
+              : 'Altas pendientes de reenviar al SuperAdmin o de confirmar.',
+          onclick: "caTab('solicitudes')" },
+        { icono: '📇', titulo: 'Contactos', color: '#31d0aa',
+          desc: 'Quién es quién y qué le da su rol. Sólo lectura.',
+          onclick: "caTab('contactos')" },
+        { icono: '💳', titulo: 'Mi Plan', color: '#ffd700',
+          desc: 'Suscripción, facturas y forma de pago.',
+          onclick: "caTab('plan')" },
+        { icono: '💬', titulo: 'Mensajes', color: '#3fb950',
+          desc: 'Canales internos con el SuperAdmin y con tu Director.',
+          onclick: "if(typeof openClubAdminMessaging==='function') openClubAdminMessaging('director'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);" },
+        { icono: '🔄', titulo: 'Ceder Administración', color: '#ff7b72',
+          desc: 'Traspasar el club a otro administrador.',
+          onclick: "caShowSuccession('" + escapeAttr(clubId) + "')" },
+    ];
+
+    // ⚠️ RESPALDO SIN EL HELPER. Si utils.js no ha cargado, el panel NO se
+    // queda en blanco: se pintan todas las secciones seguidas, que es
+    // exactamente como se veía hasta v596. Un menú que no pinta dejaría al
+    // administrador sin panel, y este panel es el único sitio desde el que se
+    // dan de alta usuarios.
+    const _caMenuHtml = (typeof window.cronosTableroHtml === 'function')
+        ? window.cronosTableroHtml({
+            titulo: '🏟️ ' + (club.name || 'Club'),
+            subtitulo: 'Panel del Administrador del Club — elige qué quieres gestionar:',
+            opciones: _caOpciones,
+          })
+        : Object.keys(_CA_SECCIONES).map(k => _CA_SECCIONES[k].html).join('');
+
+    // 🔑 caTab SE DEFINE AQUÍ DENTRO, no en el ámbito global, porque las siete
+    // secciones son constantes que cierran sobre los datos ya leídos. Definida
+    // fuera tendría que volver a consultar Firestore en cada pulsación — y este
+    // panel lee la colección de usuarios entera.
+    window.caTab = function caTab(sec) {
+        const cuerpo = document.getElementById('ca-body');
+        const barra  = document.getElementById('ca-navbar');
+        if (!cuerpo) return;
+        // Se recuerda para que un navReload() posterior (confirmar un acceso,
+        // rechazar, activar…) devuelva a la sección donde se estaba y no al
+        // tablero. Sin esto, cada acción te echaba al principio.
+        window._caSeccionActual = sec;
+        if (sec === 'menu' || !_CA_SECCIONES[sec]) {
+            window._caSeccionActual = 'menu';
+            if (barra) { barra.style.display = 'none'; barra.innerHTML = ''; }
+            cuerpo.innerHTML = _caMenuHtml;
+            return;
+        }
+        if (barra) {
+            barra.style.display = 'flex';
+            barra.innerHTML =
+                '<button onclick="caTab(\'menu\')" ' +
+                'style="display:inline-flex;align-items:center;gap:0.4rem;' +
+                       'padding:0.42rem 0.9rem;border-radius:8px;cursor:pointer;' +
+                       'background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);' +
+                       'color:#58a6ff;font-size:0.8rem;font-weight:800;">' +
+                '← Volver al Menú</button>' +
+                '<span style="font-size:0.9rem;font-weight:800;color:white;">' +
+                _CA_SECCIONES[sec].titulo + '</span>';
+        }
+        cuerpo.innerHTML = _CA_SECCIONES[sec].html;
+        cuerpo.scrollTop = 0;
+    };
+
+    modalHTML = SA_CSS + `
+    <style>
+      /* Fix minimo: selector de hijo directo para que el plegado funcione con
+         tarjetas .sa-card anidadas (cada nivel controla solo su propio body/chevron).
+         Sobrescribe la regla descendente compartida sin tocar los otros archivos. */
+      .sa-card.expanded > .sa-card-body { display: block; }
+      .sa-card.expanded > .sa-card-head .sa-chevron { transform: rotate(0deg); }
+      /* v597 · La barra de vuelta al tablero, igual que la del panel de
+         Dirección (v591). Sólo se ve cuando NO estás en el tablero. */
+      #ca-navbar { display:none; align-items:center; gap:0.7rem;
+                   padding:0 0 0.9rem; flex-wrap:wrap; }
+    </style>
+    <div class="modal-content sa-modal">
+      <div class="sa-topbar">
+        <div>
+          <div style="font-size:1.15rem;font-weight:700;">🏟️ ${escapeHtml(club.name)}</div>
+          <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.1rem;">Panel del Administrador del Club</div>
+        </div>
+        <div style="display:flex;gap:0.7rem;flex-wrap:wrap;">
+          <!-- ⚠️ v597 · LA BARRA SUPERIOR SE QUEDA CON UN SOLO BOTÓN. Mensajes,
+               Transmitir al SuperAdmin y Ceder Administración se han bajado al
+               tablero, donde cada uno lleva escrito PARA QUÉ sirve. Aquí arriba
+               eran cuatro botones sin explicación, y "Ceder Administración"
+               —que traspasa el club entero— estaba a un clic de "Salir". -->
+          <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
+              style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
+                     border:1px solid rgba(255,88,88,0.4);border-radius:10px;
+                     color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;">
+              🚪 SALIR</button>
+        </div>
+      </div>
+
+      <div class="sa-body">
+        <div id="ca-navbar"></div>
+        <div id="ca-body"></div>
       </div><!-- /sa-body -->
     </div>`;
     } catch (renderErr) {
@@ -1345,138 +1551,12 @@ async function openClubAdminPanel(preClubId = null) {
         modal.innerHTML = modalHTML;
     }
 
-    // ── Bindings ─────────────────────────────────────────────────────
-    window.caRoleChanged = () => {
-        const role   = document.getElementById('nu-role')?.value;
-        const fields = document.getElementById('nu-parent-fields');
-        if (fields) fields.style.display = role === 'parent' ? 'block' : 'none';
-    };
-
-    // ── Solicitar nuevo usuario al SuperAdmin (nuevo flujo correcto) ──────
-    window.caSolicitarUsuario = async (cid) => {
-        const email   = document.getElementById('nu-email').value.trim();
-        const name    = document.getElementById('nu-name').value.trim();
-        const role    = document.getElementById('nu-role').value;
-        const msgEl   = document.getElementById('nu-msg');
-
-        if (!email) { msgEl.style.color='#ff5858'; msgEl.textContent='⚠️ Email obligatorio.'; return; }
-
-        const si = slotOf(role);
-        if (si.full) {
-            msgEl.style.color = '#ff5858';
-            msgEl.textContent = '⛔ Cuota llena para este rol. Solicita ampliación al SuperAdmin.';
-            return;
-        }
-
-        msgEl.style.color = 'var(--primary)'; msgEl.textContent = 'Enviando solicitud…';
-
-        const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
-        const pNum   = document.getElementById('nu-player-num')?.value?.trim() || '';
-        const pAlias = document.getElementById('nu-player-alias')?.value?.trim() || '';
-        const pWA    = document.getElementById('nu-parent-wa')?.value?.trim() || '';
-
-        try {
-            // Crear solicitud para el SuperAdmin en platform_requests
-            const reqId = 'user_req_' + cid + '_' + Date.now().toString(36);
-            await setDoc(doc(db, 'platform_requests', reqId), {
-                type:             'user_request',
-                clubId:           cid,
-                clubName:         club.name || '',
-                requestedEmail:   email,
-                requestedName:    name,
-                requestedRole:    role,
-                requestedRoleLabel: ROLE_LABELS[role] || role,
-                playerNumber:     pNum   || null,
-                playerAlias:      pAlias || null,
-                parentWA:         pWA    || null,
-                requestedBy:      me.uid,
-                requestedByEmail: me.email,
-                status:           'pending_sa',
-                createdAt:        new Date().toISOString(),
-            });
-
-            msgEl.style.color   = '#3fb950';
-            msgEl.textContent   = '✅ Solicitud enviada al SuperAdmin. Cuando la apruebe, el usuario podrá registrarse.';
-            document.getElementById('nu-email').value = '';
-            document.getElementById('nu-name').value  = '';
-            if (document.getElementById('nu-player-num'))   document.getElementById('nu-player-num').value   = '';
-            if (document.getElementById('nu-player-alias'))  document.getElementById('nu-player-alias').value  = '';
-            if (document.getElementById('nu-parent-wa'))    document.getElementById('nu-parent-wa').value    = '';
-        } catch(e) {
-            msgEl.style.color   = '#ff5858';
-            msgEl.textContent   = '❌ Error: ' + e.message;
-        }
-    };
-
-    // ── Alta directa (mantenida para compatibilidad interna) ─────────────
-    window.caAddUser = async (cid) => {
-        const email  = document.getElementById('nu-email').value.trim();
-        const name   = document.getElementById('nu-name').value.trim();
-        const role   = document.getElementById('nu-role').value;
-        const msgEl  = document.getElementById('nu-msg');
-        if (!email) { msgEl.style.color='#ff5858'; msgEl.textContent='⚠️ Email obligatorio.'; return; }
-
-        if (role === 'parent') {
-            const pNum = document.getElementById('nu-player-num')?.value?.trim();
-            if (!pNum) {
-                msgEl.style.color='#ff5858';
-                msgEl.textContent='⚠️ El número de dorsal del jugador es obligatorio para Padre/Tutor.';
-                return;
-            }
-        }
-
-        const si = slotOf(role);
-        if (si.full) {
-            msgEl.style.color='#ff5858';
-            msgEl.textContent='⛔ Límite alcanzado. Solicita al SuperAdmin ampliar el plan.';
-            return;
-        }
-        msgEl.style.color='var(--primary)'; msgEl.textContent='Registrando…';
-
-        const uid = 'pre_' + Date.now().toString(36);
-        await setDoc(doc(db,'users',uid), {
-            email, displayName: name, role, clubId: cid, clubName: club.name || '',
-            isAuthorized: true, status: 'pending_register',
-            createdBy: me.uid, createdAt: new Date().toISOString()
-        });
-        // ⚠️ v553 · YA NO SE ESCRIBE `usedSlots`. Era un contador llevado a mano
-        //    y cada alta o baja que fallara, se repitiera o se saltara lo dejaba
-        //    mintiendo para siempre: en CD DÍA llegó a valer **-1**. Las plazas
-        //    ocupadas se CALCULAN ahora desde `allRoles`
-        //    (`cronosPlazasOcupadas`, utils.js), que es la única fuente que no
-        //    se puede desincronizar. El campo sobrevive en los documentos
-        //    antiguos, pero ya no lo lee ni lo escribe nadie.
-
-        if (role === 'parent') {
-            const pNum   = document.getElementById('nu-player-num')?.value?.trim()  || '';
-            const pAlias = document.getElementById('nu-player-alias')?.value?.trim() || '';
-            const pWA    = document.getElementById('nu-parent-wa')?.value?.trim()    || '';
-            const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            const linkId     = `${cid}_${pNum}`;
-            await setDoc(doc(db,'cronos_player_links',linkId), {
-                clubId: cid, playerNumber: pNum, playerAlias: pAlias,
-                playerName: pAlias, teamName: club.name || '',
-                parentUid: uid, parentEmail: email, parentWA: pWA,
-                inviteCode, coachUid: '', coachEmail: '',
-                linkedAt: new Date().toISOString(),
-            });
-            const codeDisplay   = document.getElementById('nu-invite-code-display');
-            const codeContainer = document.getElementById('generated-invite-container');
-            if (codeDisplay && codeContainer) {
-                codeDisplay.textContent = inviteCode;
-                codeContainer.style.display = 'flex';
-            }
-            if (document.getElementById('nu-player-num'))   document.getElementById('nu-player-num').value   = '';
-            if (document.getElementById('nu-player-alias'))  document.getElementById('nu-player-alias').value  = '';
-            if (document.getElementById('nu-parent-wa'))    document.getElementById('nu-parent-wa').value    = '';
-        }
-
-        msgEl.style.color = '#3fb950';
-        msgEl.textContent = `✅ ${email} dado de alta. Debe registrarse con ese email.`;
-        document.getElementById('nu-email').value = '';
-        document.getElementById('nu-name').value  = '';
-        setTimeout(() => { if (typeof navReload === 'function') navReload(); else openClubAdminPanel(clubId); }, 1800);
-    };
+    // v597 · Pintar la sección. Va DESPUÉS del innerHTML porque caTab busca
+    // #ca-body en el DOM. Se vuelve a la sección donde se estaba: los
+    // navReload() de las acciones (confirmar acceso, rechazar, activar…)
+    // re-ejecutan esta función entera, y sin esto cada acción devolvía al
+    // tablero y había que navegar otra vez hasta donde estabas.
+    window.caTab(window._caSeccionActual || 'menu');
 
     // ── Confirmar acceso (paso 2: club admin confirma tras SA) ──────────
     window.caConfirmClubAccess = async (uid, role, email) => {
@@ -2667,35 +2747,40 @@ async function openClubAdminPanel(preClubId = null) {
         showToast(`✅ Solicitud enviada al SuperAdmin: +${requestedExtra} slots para ${roleLabel}.`, 5000);
     };
 
-    // ── Transmitir estado al SuperAdmin ─────────────────────────────
-    window.caNotifySuperAdmin = async (cid) => {
-        if (!confirm('¿Enviar resumen de estado del club al SuperAdmin?')) return;
-        showSpinner('Transmitiendo…');
-        try {
-            const pendingUsers  = users.filter(u => !u.isAuthorized || u.status === 'pending_register');
-            const summary = `Club: ${club.name}\n` +
-                `Pendientes de acceso: ${pendingUsers.length}\n` +
-                `Directores: ${slotOf('director').used} · ` +
-                `Coordinadores: ${slotOf('coordinator').used} · ` +
-                `Entrenadores: ${slotOf('user').used} · ` +
-                `Padres: ${slotOf('parent').used}\n\n` +
-                pendingUsers.map(u => `- ${u.email} (${u.requestedRole||u.role})`).join('\n');
-
-            await setDoc(doc(db,'platform_requests',`sync_${cid}_${Date.now()}`), {
-                clubId: cid, clubName: club.name,
-                type: 'sync_request', summary,
-                pendingCount: pendingUsers.length,
-                status: 'unread',
-                createdAt: new Date().toISOString(),
-                requestedBy: me.uid, requestedByEmail: me.email
-            });
-            hideSpinner();
-            showToast('✅ Estado del club transmitido al SuperAdmin.', 5000);
-        } catch(e) {
-            hideSpinner();
-            showToast('❌ Error: ' + e.message, 5000);
-        }
-    };
+    // ════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v598 · AQUÍ ESTABA `caNotifySuperAdmin` — "📡 TRANSMITIR AL
+    //  SUPERADMIN" — Y ERA UN BOTÓN FANTASMA
+    //
+    //  El autor preguntó (2026-08-21) para qué servía, sospechando que fuese
+    //  REDUNDANTE con la mensajería interna. La medición dio algo peor: no
+    //  servía para nada en absoluto.
+    //
+    //  🔑 LA PRUEBA, QUE ES DE DOS LÍNEAS. Escribía en `platform_requests` un
+    //  documento con `type:'sync_request'` y `status:'unread'`. Y el SuperAdmin
+    //  lee de esa colección EXACTAMENTE dos consultas
+    //  (`saPendingItems`, js/admin/superadmin/requests-tab.js:75-76):
+    //        where('status','==','pending_sa')
+    //        where('type','==','quota_increase') AND where('status','==','unread')
+    //  `sync_request`/`unread` no casa con ninguna de las dos. Censo sobre todo
+    //  el proyecto: la cadena `sync_request` aparecía ÚNICAMENTE en la línea
+    //  que la escribía. Nadie la leyó jamás.
+    //
+    //  🔑 LO QUE LO HACÍA DAÑINO NO ERA GASTAR UNA ESCRITURA, ERA MENTIR: el
+    //  administrador pulsaba, leía «✅ Estado del club transmitido al
+    //  SuperAdmin» y se quedaba esperando una respuesta que no podía llegar,
+    //  porque al otro lado no aparecía nada. Un botón que no hace nada y lo
+    //  dice es un botón roto; uno que no hace nada y CONFIRMA que lo ha hecho
+    //  es una trampa. Misma familia que la tabla de permisos decorativa de la
+    //  v597 y que su gemelo `indNotifySuperAdmin` del panel Individual, que se
+    //  retira en el mismo paso.
+    //
+    //  Lo que sí funciona y se queda: 💬 Mensajes (`openClubAdminMessaging`),
+    //  que es mensajería interna de verdad con el SuperAdmin y con el Director.
+    //
+    //  ⚠️ Los `sync_request` ya escritos NO se borran: no los lee nadie, y no
+    //  se tocan datos de producción para retirar una interfaz (mismo criterio
+    //  que con los `permissions` de la v597).
+    // ════════════════════════════════════════════════════════════════
 }
 window.openClubAdminPanel = openClubAdminPanel;
 
@@ -2864,41 +2949,40 @@ window.caShowSuccession = async function caShowSuccession(clubId) {
 };
 
 // ════════════════════════════════════════════════════════════════════
-//  TOGGLE DE FEATURES DEL CLUB (ej: informes individualizados)
+//  🗑️ v598 · AQUÍ VIVÍA `caToggleFeature` — RETIRADA
+//
+//  Era el escritor de `clubs/{id}.features.sendIndividualReports` desde el
+//  panel del Administrador del Club, y su único llamante era el interruptor
+//  «📊 Enviar informes individualizados a padres» de la sección ⚙️
+//  Configuración, retirada hoy por encargo del autor.
+//
+//  🔑 EL DUEÑO DE ESA LLAVE ES EL DIRECTOR, y ya lo era: `director-config.js`
+//  la decide **por categoría** y escribe el agregado en el mismo campo. Este
+//  mando era global y pisaba aquel de una pulsación. Al retirarlo no se pierde
+//  la función: queda con un solo dueño.
+//
+//  ⚠️ NO CONFUNDIR CON EL CAMPO: `features.sendIndividualReports` sigue vivo,
+//  se sigue escribiendo (desde el panel del Director) y se sigue leyendo
+//  (utils.js:1520, director-config.js:73). Lo que desaparece es este atajo.
 // ════════════════════════════════════════════════════════════════════
-window.caToggleFeature = async function caToggleFeature(clubId, featureKey, value) {
-    try {
-        const { db, doc, updateDoc, getDoc } = await saFS();
-        await updateDoc(doc(db, 'clubs', clubId), {
-            [`features.${featureKey}`]: value
-        });
-        const label = featureKey === 'sendIndividualReports'
-            ? 'Envío de informes individualizados'
-            : featureKey;
-        showToast(`${value ? '✅' : '⏹️'} ${label} ${value ? 'activado' : 'desactivado'}`, 3000);
-    } catch (e) {
-        showToast('❌ Error: ' + e.message, 4000);
-    }
-};
 
 // ════════════════════════════════════════════════════════════════════
-//  PERMISOS INDIVIDUALES POR USUARIO
+//  🗑 v597 · AQUÍ VIVÍA caSetPermission — RETIRADA
+//
+//  Escribía `users/{uid}.permissions[clave] = true|false` desde las seis
+//  casillas por persona del bloque "Contactos del Club — Permisos". Censo del
+//  2026-08-21: las seis claves NO LAS LEÍA NADIE en todo el proyecto, así que
+//  esta función guardaba en la base un dato que no cambiaba absolutamente
+//  nada. Retirada junto con las casillas (ver la nota larga de _secContactos).
+//
+//  ⚠️ Su único invocador estaba en el marcado que se ha quitado. Si alguna vez
+//  hicieran falta permisos por persona, el sitio ya NO es éste: hoy el reparto
+//  lo deciden el ROL de la plaza y los EXTRAS del club (v596), y meter una
+//  tercera fuente de verdad volvería a dejarlas divergiendo.
+//
+//  Los datos ya escritos en los documentos NO se han borrado (decisión del
+//  autor): no los lee nadie y no hay motivo para tocar producción.
 // ════════════════════════════════════════════════════════════════════
-window.caSetPermission = async function caSetPermission(userId, permKey, value) {
-    try {
-        const { db, doc, getDoc, updateDoc } = await saFS();
-        const uSnap = await getDoc(doc(db, 'users', userId));
-        if (!uSnap.exists()) { showToast('⚠️ Usuario no encontrado', 3000); return; }
-
-        const currentPerms = uSnap.data().permissions || {};
-        currentPerms[permKey] = value;
-
-        await updateDoc(doc(db, 'users', userId), { permissions: currentPerms });
-        showToast('✅ Permiso actualizado', 2000);
-    } catch (e) {
-        showToast('❌ Error: ' + e.message, 4000);
-    }
-};
 
 // ── Verificar acceso al club: definición única en js/core/app-init.js ─
 //    (esta copia se eliminó: eclipsaba a la versión completa que sí

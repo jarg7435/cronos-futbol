@@ -232,11 +232,35 @@ if (typeof window._cronosMatchModality !== 'function') {
 //  ⚠️ SÓLO CUENTAN LOS ROLES VIVOS del MISMO club: un rol revocado
 //  (`status:'removed'`) o no autorizado deja su plaza libre, y otro club es
 //  otro asunto. Contar los muertos bloquearía altas legítimas.
-//  ⚠️ Y SÓLO EL ROL DE ENTRENADOR (`user`): coordinador, director o padre no
-//  ocupan equipo en este sentido.
+//  ⚠️ Y SÓLO LOS ROLES QUE LLEVAN EQUIPO (ver `CRONOS_ROLES_CON_EQUIPO`):
+//  coordinador, director o padre no ocupan equipo en este sentido.
 //
 //  Devuelve { ok, motivo, actuales }. `motivo` es el texto que se enseña.
 // ════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════
+//  ⚽ v598 · QUÉ ROLES LLEVAN EQUIPO — UNA SOLA LISTA PARA TODO EL PROYECTO
+//
+//  Existía la MISMA idea escrita dos veces y con dos contenidos distintos:
+//    · `cronosPuedeLlevarEquipo` (el candado de los dos equipos) → ['user']
+//    · `cronosEquiposDeEntrenador` (el selector de equipo)       → ['user','coach']
+//  O sea que un rol podía aparecer en el selector y ser invisible para el
+//  candado, o al revés. Con el ente unificado ('individual') eso dejaba de ser
+//  teórico: sin tocar las dos, o el candado no le cerraba o el selector no le
+//  ofrecía sus equipos — y cada mitad parecería correcta por separado.
+//
+//  🔑 ES EL PATRÓN QUE ESTE PROYECTO LLEVA APRENDIENDO A GOLPES: la misma regla
+//  en dos sitios diverge (v511 con las categorías FEM en 7 cascadas, v533 con
+//  el badge 7 vs lista 4, v538 con FUTureFEM en cuatro clasificadores).
+//
+//  ⚠️ 'coach' es un alias histórico de 'user' que sólo leía el selector.
+//  Al unificar entra también en el candado, que es lo correcto: una plaza de
+//  entrenador ocupa equipo se llame como se llame.
+// ════════════════════════════════════════════════════════════════════
+if (!Array.isArray(window.CRONOS_ROLES_CON_EQUIPO)) {
+    window.CRONOS_ROLES_CON_EQUIPO = ['user', 'coach', 'individual', 'admin_individual'];
+}
+
 if (typeof window.cronosPuedeLlevarEquipo !== 'function') {
     window.cronosPuedeLlevarEquipo = function (allRoles, nuevaCategoria, clubId, opciones) {
         const o = opciones || {};
@@ -246,7 +270,31 @@ if (typeof window.cronosPuedeLlevarEquipo !== 'function') {
         const roles = Array.isArray(allRoles) ? allRoles : [];
         const mismoClub = (r) => String((r && r.clubId) || '') === String(clubId || '');
         const vivo = (r) => r && r.status !== 'removed' && r.isAuthorized !== false;
-        const esEntrenador = (r) => r && r.role === 'user';
+        // ══════════════════════════════════════════════════════════════
+        //  ⚽ v598 · EL ENTE UNIFICADO TAMBIÉN LLEVA EQUIPOS
+        //
+        //  Encargo del autor (2026-08-21): el Entrenador Administrador
+        //  Individual «podrá registrarse y operar en dos categorías y dos
+        //  subcategorías diferentes (por ejemplo, una de Fútbol 7 y otra de
+        //  Fútbol 11), mientras que el resto se quedarán inhabilitadas».
+        //
+        //  🔑 ESO ES **EXACTAMENTE** LA REGLA QUE YA VIVÍA AQUÍ desde la v537:
+        //  máximo dos equipos, y obligatoriamente uno de cada modalidad. No se
+        //  ha escrito una regla nueva ni un segundo validador — habría sido la
+        //  segunda fuente de verdad y el siguiente fallo. Sólo se amplía QUIÉN
+        //  cuenta como entrenador.
+        //
+        //  🔴 Y HACÍA FALTA, porque el filtro era `r.role === 'user'` a secas:
+        //  con el rol unificado escribiéndose como 'individual', el validador
+        //  le contaba CERO equipos y le dejaba pasar cualquier cosa. El candado
+        //  parecía puesto y no cerraba sobre él.
+        //
+        //  ⚠️ EL ANCLA SIGUE SIENDO `clubId` para los dos casos: en un ente
+        //  individual, `clubId` guarda el id del ENTE (v583). Por eso `mismoClub`
+        //  vale tal cual y no hay que tocarlo.
+        // ══════════════════════════════════════════════════════════════
+        const esEntrenador = (r) => !!r &&
+            (window.CRONOS_ROLES_CON_EQUIPO || ['user']).indexOf(r.role) >= 0;
 
         // Los equipos que YA lleva en ese club. Se puede excluir uno: al MOVER
         // a alguien de equipo su plaza actual se libera, y sin esto un cambio
@@ -372,7 +420,11 @@ if (typeof window.cronosEquiposDeEntrenador !== 'function') {
             ? window._cronosMatchModality(c) : '';
         const out = [];
         roles.forEach(function (r) {
-            if (!r || (r.role !== 'user' && r.role !== 'coach')) return;
+            // ⚽ v598 · La MISMA lista que usa el candado de los dos equipos
+            //    (`CRONOS_ROLES_CON_EQUIPO`, arriba). Antes aquí decía
+            //    ['user','coach'] a mano y allí ['user']: dos versiones de
+            //    "quién lleva equipo" que ya no pueden separarse.
+            if (!r || (window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach']).indexOf(r.role) < 0) return;
             if (r.isAuthorized !== true || r.status !== 'active') return;
             if (clubId && String(r.clubId || '') !== String(clubId)) return;
             const cat = r.category || r.categoryLabel || '';
@@ -511,13 +563,27 @@ if (typeof window.cronosHayPartidoEnCurso !== 'function') {
 //  una opción se esfume sin explicación es lo que hace pensar que la
 //  aplicación está rota.
 //
+//  🔴 v598 · CADA OPCIÓN PUEDE LLEVAR AVISO (`badge: 3`)
+//  Antes, quien tenía pendientes lo señalaba pegando ' · 3' al TÍTULO. Eso se
+//  pinta con la misma tipografía, el mismo tamaño y el mismo color que el
+//  resto del rótulo: es texto, no un aviso, y desde el tablero no se ve. El
+//  autor lo reportó el 2026-08-21 ("que aparezca un badge o aviso visual
+//  claro"). Ahora es una píldora roja con su número, arriba a la derecha de la
+//  tarjeta, y el título vuelve a ser sólo el título.
+//
+//  ⚠️ EL BADGE NO SE PINTA SI LA OPCIÓN ESTÁ BLOQUEADA. Anunciar "3
+//  pendientes" sobre una puerta cerrada con llave es prometer algo que no se
+//  puede ir a ver. `badge` se ignora también cuando vale 0, '' o null: un
+//  contador a cero no es una novedad, y una píldora con un 0 dentro llama la
+//  atención exactamente igual que una con un 5.
+//
 //  Uso:
 //    window.cronosTableroHtml({
 //      titulo: '📋 Panel de Dirección',
 //      subtitulo: 'Elige qué quieres consultar',
 //      opciones: [{ icono:'📋', titulo:'Convocatorias', desc:'…',
 //                   onclick:"switchStaffTab('convocatorias')",
-//                   color:'#3fb950', bloqueado:'' }]
+//                   color:'#3fb950', bloqueado:'', badge:0 }]
 //    })  →  string HTML
 // ════════════════════════════════════════════════════════════════════
 if (typeof window.cronosTableroHtml !== 'function') {
@@ -531,6 +597,10 @@ if (typeof window.cronosTableroHtml !== 'function') {
         const tarjetas = opciones.map(function (o) {
             const color = o.color || '#58a6ff';
             const bloqueado = !!o.bloqueado;
+            // 0, '', null y undefined NO son aviso. `Number(x) === 0` descarta
+            // también el '0' que llega como cadena desde un `.length` formateado.
+            const badge = (bloqueado || o.badge == null || o.badge === '' || Number(o.badge) === 0)
+                ? '' : String(o.badge);
             // Un botón bloqueado no lleva onclick: apagarlo sólo con CSS deja
             // la acción viva para quien pulse igual (la lección de v548 —
             // `disabled` es cosmético).
@@ -548,7 +618,19 @@ if (typeof window.cronosTableroHtml !== 'function') {
             (bloqueado ? '' :
               ' onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 8px 22px rgba(0,0,0,0.35)\';"' +
               ' onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';"') + '>' +
-                '<span style="font-size:1.5rem;line-height:1;">' + (bloqueado ? '🔒' : esc(o.icono || '•')) + '</span>' +
+                // Fila del icono: el badge se ancla a la DERECHA de esta fila.
+                // Va dentro del flujo (no `position:absolute`) para que no se
+                // solape con el título cuando la tarjeta se estrecha en móvil.
+                '<span style="display:flex;align-items:center;justify-content:space-between;' +
+                      'width:100%;gap:0.5rem;">' +
+                    '<span style="font-size:1.5rem;line-height:1;">' + (bloqueado ? '🔒' : esc(o.icono || '•')) + '</span>' +
+                    (badge ? '<span style="flex:0 0 auto;background:#ff5858;color:white;' +
+                                    'font-size:0.72rem;font-weight:800;line-height:1;' +
+                                    'padding:0.25rem 0.5rem;border-radius:999px;min-width:1.25rem;' +
+                                    'text-align:center;box-shadow:0 2px 8px rgba(255,88,88,0.45);">' +
+                                esc(badge) + '</span>'
+                            : '') +
+                '</span>' +
                 '<span style="font-size:0.95rem;font-weight:800;letter-spacing:0.2px;">' + esc(o.titulo || '') + '</span>' +
                 '<span style="font-size:0.72rem;color:#8b949e;font-weight:500;line-height:1.35;">' +
                     esc(bloqueado ? o.bloqueado : (o.desc || '')) + '</span>' +

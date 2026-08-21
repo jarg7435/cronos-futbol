@@ -132,11 +132,14 @@ window.saIndividuals = async function saIndividuals() {
                 const entUsers = individualUsers.filter(u =>
                     u.clubId === ent.id || u.individualEntityId === ent.id || u.individualOwnerId === ent.id
                 );
+                // ⚽ v598 · El rótulo del ente unificado. 'individual' es como
+                //    auth.js llama al Entrenador Administrador Individual: el
+                //    mismo rol de siempre, con el alcance que le faltaba.
                 const roleLabels = {
-                    admin_individual: { icon:'⚙️', label:'Administradores Individuales', slot:'admins' },
-                    individual:       { icon:'⚙️', label:'Administradores Individuales', slot:'admins' },  // 'individual' from auth.js = admin individual
-                    user:             { icon:'⚽', label:'Entrenadores Individuales',      slot:'coaches' },
-                    entrenador_individual: { icon:'⚽', label:'Entrenadores Individuales', slot:'coaches' },
+                    admin_individual: { icon:'⚽', label:'Entrenador Administrador Individual', slot:'admins' },
+                    individual:       { icon:'⚽', label:'Entrenador Administrador Individual', slot:'admins' },
+                    user:             { icon:'🕰️', label:'Entrenadores Individuales (legado)',  slot:'coaches' },
+                    entrenador_individual: { icon:'🕰️', label:'Entrenadores Individuales (legado)', slot:'coaches' },
                     parent_individual:{ icon:'👨‍👩‍👧', label:'Padres/Madres Individuales',   slot:'parents' },
                     parent:           { icon:'👨‍👩‍👧', label:'Padres/Madres Individuales',   slot:'parents' },
                 };
@@ -180,10 +183,15 @@ window.saIndividuals = async function saIndividuals() {
                     parent:                ['parent', 'parent_individual'],
                     parent_individual:     ['parent', 'parent_individual'],
                 };
-                const slotBar = (roleKey) => {
-                    const meta = roleLabels[roleKey];
+                // ⚠️ v598 · EL RECUENTO SE EXTRAE A SU PROPIA FUNCIÓN porque ahora
+                //    lo necesitan DOS sitios: la barra, y la decisión de si la
+                //    barra de legado se pinta siquiera. Copiar el filtro habría
+                //    creado dos implementaciones de "cuántos hay" que divergirían
+                //    a la primera — que es literalmente el defecto del badge de
+                //    Solicitudes de la v533 (badge 7, lista 4).
+                const _usadasEnBarra = (roleKey) => {
                     const acepta = _ROLES_DE_BARRA[roleKey] || [roleKey];
-                    const used = entUsers.filter(u => {
+                    return entUsers.filter(u => {
                         if (u.status === 'removed') return false;
                         const roles = Array.isArray(u.allRoles) ? u.allRoles : [];
                         const anclados = roles.filter(_delEnte);
@@ -192,6 +200,10 @@ window.saIndividuals = async function saIndividuals() {
                         }
                         return acepta.indexOf(u.role) >= 0;
                     }).length;
+                };
+                const slotBar = (roleKey) => {
+                    const meta = roleLabels[roleKey];
+                    const used = _usadasEnBarra(roleKey);
                     const max = ent.slots?.[meta.slot] ?? '∞';
                     const pct = max !== '∞' && max > 0 ? Math.round((used/max)*100) : 0;
                     const full = max !== '∞' && used >= max;
@@ -223,7 +235,17 @@ window.saIndividuals = async function saIndividuals() {
                         </div>
                     </div>
                     ${slotBar('admin_individual')}
-                    ${slotBar('user')}
+                    <!-- 🕰️ v598 · LA BARRA DE "ENTRENADOR INDIVIDUAL" SÓLO SALE SI
+                         QUEDA ALGUNA. Con la unificación de roles ese rol ya no
+                         se ofrece en el registro, así que en un ente nuevo la
+                         barra marcaría 0/N para siempre: una fila que promete un
+                         cupo que nadie puede ya ocupar.
+                         ⚠️ PERO NO SE BORRA. Las plazas antiguas siguen vivas
+                         (decisión del autor: no se toca producción para retirar
+                         una interfaz), y si las hay TIENEN que verse — un cupo
+                         ocupado que no se muestra es peor que uno vacío que
+                         sobra: el SuperAdmin no entendería las cuentas. -->
+                    ${_usadasEnBarra('user') > 0 ? slotBar('user') : ''}
                     ${slotBar('parent_individual')}
                     <div style="padding:0.5rem 0.9rem;">
                         <button onclick="saShowCreateIndividualForEntity('${eId}')" style="padding:0.28rem 0.7rem;background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.4);border-radius:6px;color:#3fb950;font-size:0.72rem;cursor:pointer;font-weight:700;">👤 + Añadir Usuario</button>
