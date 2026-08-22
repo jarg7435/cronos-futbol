@@ -490,8 +490,19 @@ async function _sdLoadEvents(type) {
 
                 const weekDaysHTML = Array.isArray(d.days)
                     ? d.days.map(dy => {
-                        const hasData = dy.time || dy.venue || dy.note ||
-                                        dy.tipo || dy.duracion || dy.minutos || dy.equipaciones;
+                        // 💤 v604 · "Descanso" pasó a ser un TIPO explícito en la
+                        // Planificación Semanal. Se pinta con el mismo
+                        // "_Descanso_" de siempre en vez de listarlo como una
+                        // actividad más: para quien lee, un día de descanso y un
+                        // día vacío significan lo mismo, y mezclarlo con las
+                        // sesiones reales haría contar cuatro entrenamientos
+                        // donde hay tres.
+                        // ⚠️ El tipo viaja dentro de `note` (training-notify.js
+                        // lo une con ' · '), así que se mira también ahí.
+                        const _esDescanso = /^\s*descanso\b/i.test(String(dy.tipo || '')) ||
+                                            /^\s*descanso\s*(·|$)/i.test(String(dy.note || ''));
+                        const hasData = !_esDescanso && (dy.time || dy.venue || dy.note ||
+                                        dy.tipo || dy.duracion || dy.minutos || dy.equipaciones);
                         const match   = hasData && _esPartido(dy);
                         // Cada dato en SU línea. Se conservan los mismos emojis y
                         // el mismo "_Descanso_" de siempre: hay guards que los

@@ -339,6 +339,14 @@ window.switchStaffTab = async (tab) => {
     // con el panel visible, o sea cuando la raíz ya es la cima de la pila.
     if (typeof navRootScreen === 'function') navRootScreen('openStaffDashboard', tab);
 
+    // 🔄 v604 · SE DA DE BAJA LA ESCUCHA EN VIVO DEL CUADRANTE AL SALIR DE ÉL.
+    // Va aquí arriba, antes de decidir la pestaña, para que cubra TODAS las
+    // salidas (otra sección, vuelta al menú, repintado desde la pila de
+    // navegación). Un onSnapshot que sobrevive a su pantalla sigue costando
+    // lecturas y repinta un contenedor que ya es de otra sección (v439).
+    // Si se vuelve a entrar en 'cuadrante', _sdLoadCuadrante lo reconecta.
+    if (typeof window._cqDesconectar === 'function') window._cqDesconectar();
+
     // ══════════════════════════════════════════════════════════════════
     //  🔴 v591 · LA BARRA DE VUELTA AL TABLERO
     //
@@ -352,6 +360,7 @@ window.switchStaffTab = async (tab) => {
     // ══════════════════════════════════════════════════════════════════
     const _SD_TITULOS = {
         convocatorias:       '📋 Convocatorias',
+        cuadrante:           '🗓️ Cuadrante',
         entrenamientos:      '🕒 Entrenamientos',
         asistencia:          '✅ Asistencia',
         informes:            '📊 Informes',
@@ -405,6 +414,12 @@ window.switchStaffTab = async (tab) => {
         const _extras   = _me.extras || {};
         const _ptOn     = (_extras.partidos_terminados ?? true) !== false;
         const _opciones = [
+            // 🗓️ v603 · La PAUTA del club. Va la primera porque es el principio
+            // de la cadena: el club reparte espacios y horarios, el entrenador
+            // monta su semana sobre eso, y de ahí salen asistencia e informes.
+            { icono: '🗓️', titulo: 'Cuadrante', color: '#58a6ff',
+              desc: 'Reparte los espacios del campo y los horarios de la semana, y envíaselo a los entrenadores.',
+              onclick: "switchStaffTab('cuadrante')" },
             { icono: '📋', titulo: 'Convocatorias', color: '#3fb950',
               desc: 'Las convocatorias recibidas, por categoría y subcategoría.',
               onclick: "switchStaffTab('convocatorias')" },
@@ -528,6 +543,19 @@ window.switchStaffTab = async (tab) => {
             clubId:   _me.clubId || '',
             clubFijo: true,
         });
+        return;
+    }
+
+    // 🗓️ v603 · Cuadrante semanal del club (js/coach/reports/cuadrante-club.js).
+    // Sin guarda de extra: es una herramienta del propio panel de dirección,
+    // como Convocatorias o Asistencia, y no se contrata aparte.
+    if (tab === 'cuadrante') {
+        if (typeof window._sdLoadCuadrante !== 'function') {
+            container.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
+                '⚠️ El módulo de Cuadrante no está disponible. Recarga el panel.</div>';
+            return;
+        }
+        await window._sdLoadCuadrante();
         return;
     }
 
@@ -700,7 +728,14 @@ async function _sdLoadAsistencia() {
                 const porEquipo = v.teams || {};
                 Object.keys(porEquipo).forEach(tid => {
                     const dd = (porEquipo[tid] || {})[hoyKey];
-                    if (dd && dd.tipo) {
+                    // 💤 v604 · UN DESCANSO NO ES UNA SESIÓN DE HOY. Sin este
+                    // filtro, un equipo que ha marcado "descanso" saldría en la
+                    // tira de HOY en VERDE y con "sin pasar lista", como si el
+                    // entrenador se hubiera olvidado. Cae al grupo 💤, que es
+                    // exactamente lo que significa. Mismo criterio que
+                    // _tipoDeSesion (attendance-store.js).
+                    const _t = String((dd && dd.tipo) || '').toLowerCase();
+                    if (dd && dd.tipo && _t.indexOf('descanso') !== 0) {
                         sesionHoy[tid] = { tipo: String(dd.tipo), hora: dd.hora || '', lugar: dd.lugar || '' };
                     }
                 });

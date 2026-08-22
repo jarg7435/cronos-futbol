@@ -1,5 +1,108 @@
 // ─────────────────────────────────────────────────────────────
 //  CHRONOS FUTBOL - Service Worker v229
+//  v608: "CAMPO COMPLETO" YA NO SE SALE DE LA CASILLA (captura 9425).
+//        🔑 La causa de fondo no era el texto, era el <button>: uno sin
+//        `display` explicito coloca su contenido en una caja anonima que el
+//        navegador centra verticalmente y que NO crece — el sobrante se
+//        desborda por el borde inferior, y el `min-height` no lo salva. Por
+//        eso pasaba solo en las casillas de cuatro lineas (rotulo + hora +
+//        espacios + nota). Ahora la casilla es
+//        `display:flex; flex-direction:column; justify-content:center`, con
+//        `box-sizing:border-box`: crece si hace falta y centra si sobra sitio.
+//        Ademas el rotulo largo ("campo completo", 16 caracteres) pierde el
+//        `nowrap` que lo empujaba y baja un punto de tamano; el numerico
+//        ("1·2·3") lo conserva porque partido no se lee. Todo en `em`, asi que
+//        el zoom de v606 lo sigue escalando.
+//        Guard: scripts/test_cuadrante_club.js (196 aserciones).
+//  v607: EL PARTIDO EN CASA OCUPA EL CAMPO + COPIAR LA SEMANA ENTERA
+//        (capturas 9421-9423).
+//        1) 🏟️ UN PARTIDO EN CASA OCUPA EL CAMPO AUNQUE NADIE MARQUE NADA.
+//           Los partidos de casa del fin de semana caian en "Sin espacio
+//           asignado" y no se pintaban en la parrilla de ocupacion. La v605
+//           dejo la regla a medias: escribio que un partido FUERA no ocupa,
+//           pero no la otra mitad. Y no era solo visual — NO COMPUTABA EN EL
+//           INFORME DEL AYUNTAMIENTO, que es donde un partido oficial mas
+//           tiene que constar. Por defecto ocupa el CAMPO COMPLETO; si el
+//           director marca espacios, mandan los suyos. Se resuelve en UNA
+//           funcion (_cqEspaciosDe) que consultan parrilla, casilla, aviso al
+//           entrenador y calculo de horas municipal.
+//           ⚠️ Puede hacer aparecer conflictos que antes no se veian: son
+//           reales — dos partidos a la vez sobre el campo entero no caben.
+//        2) 🗓️ COPIAR / PEGAR LA SEMANA ENTERA. Se guarda por INDICE DE DIA,
+//           no por fecha: copiar las claves con su fecha meteria casillas de
+//           la semana origen dentro del documento de la destino, invisibles
+//           en las dos. 🔑 Solo se copian y se pisan las filas que ese
+//           usuario VE: un coordinador de F7 no puede llevarse ni sobrescribir
+//           los equipos de F11. Vive en localStorage (copiar, navegar, pegar).
+//           Pegar NO guarda: marca sucio y se revisa.
+//        Guard: scripts/test_cuadrante_club.js (188 aserciones).
+//  v606: LA PARRILLA CABE EN PANTALLA Y EL ROJO DICE QUIEN CHOCA
+//        (capturas 9417-9419).
+//        1) 📐 FUERA EL SCROLL HORIZONTAL en "Por equipos". El min-width que
+//           puso la v605 para que no se cortara el texto era justo lo que
+//           forzaba el desplazamiento — y al irse a la derecha se perdia la
+//           columna del equipo. Ancho fijo y letra fija son incompatibles:
+//           ahora la tabla es fluida (colgroup en %, table-layout:fixed) y lo
+//           que cede es el TAMANO DE LETRA. Un solo font-size en px sobre la
+//           tabla y TODO lo de dentro en `em`. Se calcula por ancho de
+//           ventana y se multiplica por el zoom manual (🔍 − / +), que se
+//           recuerda. Con suelo de 7px y techo de 15px: el zoom no puede
+//           devolver el scroll que veniamos a quitar.
+//        2) 🔴 LA CELDA ROJA ESCRIBE LOS EQUIPOS QUE SE SOLAPAN. Los nombres
+//           YA se calculaban: no cabian en un <td> de 15px con
+//           overflow:hidden y nowrap. Las franjas contiguas con los mismos
+//           ocupantes se fusionan con `rowspan`, asi el bloque es alto y los
+//           nombres caben en lineas separadas. Se agrupa por FIRMA de
+//           ocupantes: si a mitad de sesion entra otro equipo, el rojo
+//           empieza ahi. Ademas, lista de conflictos arriba (espacio, hora y
+//           equipos) y el recuento pasa a ser de CONFLICTOS, no de franjas
+//           de 15 min.
+//        Guard: scripts/test_cuadrante_club.js (158 aserciones).
+//  v605: TRES CORRECCIONES AL CUADRANTE (capturas 9412-9415).
+//        1) 🏟️ UN PARTIDO FUERA NO OCUPA EL CAMPO. La vista de Ocupacion
+//           marcaba COLISION EN ROJO entre un equipo en casa y otro fuera a
+//           la misma hora. El que juega fuera esta en instalaciones ajenas:
+//           no puede chocar con nadie. Un aviso falso sobre el unico dato que
+//           esa pantalla vigila acaba ensenando a ignorar los rojos de verdad.
+//           Se filtra AL PINTAR (no solo al guardar) porque los cuadrantes de
+//           v603/v604 pueden traer espacios marcados en un partido fuera.
+//           Los desplazamientos siguen viendose, en su propio bloque.
+//        2) 📐 Texto de las celdas completo: `overflow-wrap` en vez de
+//           `word-break` (partia ENTRENAMIENT/O), rotulo corto "ENTRENO" en
+//           la parrilla, columnas mas anchas y mas aire.
+//        3) 🖨️ EXPORTAR el cuadrante en PDF para el Ayuntamiento. Reutiliza
+//           window.rxImprimir (reports-export.js): cero dependencias nuevas.
+//           ⚠️ El documento NO es la pantalla volcada a papel: lleva la
+//           OCUPACION dia a dia y el TOTAL DE HORAS, que es lo que se
+//           justifica. Los partidos fuera no computan y se dice por que.
+//        Guard: scripts/test_cuadrante_club.js (134 aserciones).
+//  v604: SEIS AJUSTES AL CUADRANTE, tras probar el autor la v603.
+//        1) El fin de semana arranca a las 9:00 (entre semana sigue a las
+//           16:30): los partidos de la manana YA CABEN en la parrilla.
+//        2/3) El entrenador consulta el cuadrante DENTRO de Entrenamientos,
+//           en una ventana AL LADO de su semana. Sin secciones nuevas.
+//           El interruptor recuerda su estado; arranca abierto.
+//        4) "Descanso" es un tipo mas en la Planificacion Semanal.
+//           ⚠️ NO cuenta como sesion de asistencia (attendance-store.js) ni
+//           sale en verde en la tira de HOY del Director (club-reports.js):
+//           sin eso habria hundido el % de asistencia de todo el club.
+//        5) Director y Coordinador, en vivo (onSnapshot). Un cambio ajeno
+//           NUNCA pisa lo que el otro esta escribiendo sin guardar: sale una
+//           franja y se elige. Baja del oyente al salir de la seccion.
+//        6) Copiar/pegar en la parrilla: una casilla o la semana entera de un
+//           equipo. El modo pegar se anuncia y se sale de el.
+//        Guard: scripts/test_cuadrante_club.js (97 aserciones).
+//  v603: CUADRANTE SEMANAL DEL CLUB (fase 1 de 3). Nueva seccion en el
+//        panel del Director Deportivo y del Coordinador: reparto de los 4
+//        espacios del campo y de los horarios de lunes a domingo, matriz
+//        por equipos, deteccion de colisiones y envio con casillas a los
+//        entrenadores. El entrenador lo ve encima de su Planificacion
+//        Semanal — ESA es la entrega, no el aviso.
+//        Fichero nuevo: js/coach/reports/cuadrante-club.js.
+//        El dato vive en trainingPlans/{clubId}/weeks/CUADRANTE__{fecha}:
+//        cubierto por las reglas que YA existen (cero despliegue de reglas)
+//        y a salvo del deleteDoc de TrainingSync.deleteWeek().
+//        Guard: scripts/test_cuadrante_club.js (52 aserciones).
 //  v501: SINCRONIZACION LIMPIA: EL PANEL DE ACCESO ES EL DE PRODUCCION.
 //        Orden del autor tras ver testeo v500 sin casilla y produccion v476
 //        con ella (capturas 8683/8684): "deja de inventar parches, clona la
@@ -2412,7 +2515,7 @@
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v602';
+const CACHE_NAME = 'cronos-cache-v608';
 
 const ASSETS = [
     './',
@@ -2495,6 +2598,11 @@ const ASSETS = [
     './js/coach/reports/club-reports.js',
     './js/coach/reports/director-config.js',
     './js/coach/reports/events-tab.js',
+    // v603 · Cuadrante semanal del club. Va al precache como el resto de
+    // modulos del panel: sin el, el Director que abra la seccion sin cobertura
+    // veria "modulo no disponible". El fichero existe en disco — `cache.addAll`
+    // es ATOMICO y una ruta que devuelva 404 tumba la precarga ENTERA (v452).
+    './js/coach/reports/cuadrante-club.js',
     './js/coach/reports/finished-matches-tab.js',
     './js/coach/reports/reports-tab.js',
     './js/coach/reports/reports-export.js',

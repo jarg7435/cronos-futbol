@@ -146,9 +146,20 @@
     //  con 22 vacías. Si el equipo entrena martes y jueves y juega el sábado,
     //  la semana tiene TRES sesiones, y el % de asistencia se calcula sobre
     //  esas tres. Sobre días naturales, "faltas" no significaría nada.
+    //  💤 v604 · UN DÍA DE DESCANSO NO ES UNA SESIÓN.
+    //  Al añadir "descanso" al desplegable de la Planificación Semanal
+    //  (js/coach/training/panel.js), esta función lo habría clasificado como
+    //  'entrenamiento' —cualquier cosa que no empiece por "partido" lo era— y
+    //  el cuadrante habría abierto una fila para pasar lista de un día en el
+    //  que nadie entrena. Los ausentes de ese día habrían contado como faltas
+    //  y el % de asistencia de todo el club habría bajado sin motivo.
+    //
+    //  🔑 Se compara por PREFIJO como con "partido", no por igualdad: el valor
+    //  guardado puede venir con mayúsculas o con algo detrás.
     function _tipoDeSesion(dd) {
         var t = String((dd && dd.tipo) || '').toLowerCase();
         if (!t) return '';
+        if (t.indexOf('descanso') === 0) return '';
         return t.indexOf('partido') === 0 ? 'partido' : 'entrenamiento';
     }
 

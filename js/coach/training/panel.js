@@ -59,7 +59,17 @@ function renderTrainingWeek() {
     // TrainingSync.readWeekDays devuelve SÓLO los días de mi equipo.
     const weekData = _cronosLeerCuadrante(weekKey);
 
-    const typeOpts = ['','entrenamiento','partido liga','partido amistoso'];
+    // 💤 v604 · "DESCANSO" ES UN TIPO MÁS, a petición del autor. Antes el
+    // descanso era IMPLÍCITO —un día sin nada— y eso no distingue "hoy no se
+    // entrena" de "todavía no lo he rellenado". Ahora se dice.
+    //
+    // ⚠️⚠️ NO ES UNA SESIÓN. Ver la nota de _tipoDeSesion en
+    // js/coach/attendance/attendance-store.js: cualquier tipo que no empiece
+    // por "partido" se contaba como entrenamiento, así que un descanso habría
+    // abierto una casilla de asistencia para un día en que nadie va — y el %
+    // de asistencia de todo el club habría bajado sin motivo. Se corrige allí,
+    // y en la tira de "📆 HOY" del Director (club-reports.js).
+    const typeOpts = ['','entrenamiento','partido liga','partido amistoso','descanso'];
 
     modal.innerHTML = `
         <div class="modal-content" style="width:min(98vw,1150px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '0.6rem' : '1.5rem'};">
@@ -69,6 +79,16 @@ function renderTrainingWeek() {
                     <p style="font-size:0.72rem; color:var(--text-muted);">Entrenamientos y partidos de la semana</p>
                 </div>
                 <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
+                    <!-- 🗓️ v604 · CONSULTAR EL CUADRANTE DEL CLUB SIN SALIR DE AQUÍ.
+                         Petición del autor: "una opción accesible que le permita
+                         abrir/consultar de manera simultánea el cuadrante que le
+                         envió el coordinador". NO es una sección nueva ni un menú
+                         nuevo: es un interruptor DENTRO de Entrenamientos que abre
+                         la ventana al lado. Se pinta siempre; si el club no ha
+                         enviado nada, el panel lo dice en vez de mentir. -->
+                    <button class="btn" id="cq-lado-btn" onclick="if(typeof cqToggleDirectriz==='function') cqToggleDirectriz();"
+                        title="Ver el cuadrante que ha enviado el club, al lado, mientras montas tu semana"
+                        style="padding:0.35rem 0.7rem; font-size:0.68rem; font-weight:700; background:rgba(88,166,255,0.12); border:1px solid rgba(88,166,255,0.4); color:#58a6ff;">🗓️ CUADRANTE DEL CLUB</button>
                     <button class="btn" onclick="window._trWeekOffset=(window._trWeekOffset||0)-1; renderTrainingWeek();" style="padding:0.35rem 0.6rem; font-size:0.85rem; line-height:1;">◀</button>
                     <span style="font-size:0.82rem; font-weight:700; color:white; min-width:${isMobile?'140px':'200px'}; text-align:center;">
                         ${fmtD(monday)} — ${fmtD(sunday)}
@@ -80,7 +100,15 @@ function renderTrainingWeek() {
                 </div>
             </div>
 
-            <div style="flex:1; overflow-x:auto; border:1px solid rgba(63,185,80,0.15); border-radius:12px;">
+            <!-- 🗓️ v604 · VISTA DUAL: su semana a la izquierda, el cuadrante del
+                 club a la derecha, a la vez. Es un flex con wrap y SIN media
+                 query: en una pantalla estrecha la ventana del club cae debajo
+                 sola, que es la lección de v422 (con estilos en línea, una
+                 media query no gana). Lo rellena cronosPintarDirectrizClub
+                 (cuadrante-club.js) DESPUÉS de pintar esto. -->
+            <div style="flex:1; display:flex; gap:0.7rem; align-items:stretch; flex-wrap:wrap; min-height:0;">
+
+            <div style="flex:1 1 480px; min-width:0; overflow-x:auto; border:1px solid rgba(63,185,80,0.15); border-radius:12px;">
                 <table style="width:100%; border-collapse:collapse; font-size:${isMobile ? '0.7rem' : '0.8rem'};">
                     <thead>
                         <tr style="background:rgba(63,185,80,0.08);">
@@ -115,6 +143,11 @@ function renderTrainingWeek() {
                 </table>
             </div>
 
+                <!-- La ventana del club. Vacía y sin ocupar sitio mientras el
+                     interruptor está apagado o el club no ha enviado nada. -->
+                <div id="cq-directriz" style="display:none; flex:0 1 300px; min-width:240px;"></div>
+            </div>
+
             <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
                 <button class="btn" onclick="(function(){if(typeof saveTrainingWeek==='function'){try{saveTrainingWeek();}catch(e){}} if(typeof _cronosOpenRoleSelector==='function'){_cronosOpenRoleSelector('entrenamiento');}else if(typeof openTrainingNotification==='function'){openTrainingNotification();}})()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
                 <button class="btn" onclick="copyTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3); color:#f0883e;">📋 COPIAR</button>
@@ -123,6 +156,16 @@ function renderTrainingWeek() {
                 <button class="btn" onclick="saveTrainingWeek()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.4); color:#3fb950; font-weight:700;">💾 GUARDAR</button>
             </div>
         </div>`;
+
+    // 🗓️ v603 · La pauta que ha enviado el club para ESTA semana, encima de la
+    // parrilla propia. Va DESPUÉS del innerHTML (necesita el hueco ya en el
+    // DOM), con guarda typeof y sin await: si el módulo no está cargado o la
+    // lectura falla, la Planificación Semanal se pinta exactamente igual que
+    // antes. Nunca puede dejar al entrenador sin su pantalla.
+    if (typeof window.cronosPintarDirectrizClub === 'function') {
+        window.cronosPintarDirectrizClub(weekKey, 'cq-directriz')
+            .catch(e => console.warn('[Training] directriz del club:', e && e.message ? e.message : e));
+    }
 }
 
 function saveTrainingWeek() {
