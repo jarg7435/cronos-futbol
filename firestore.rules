@@ -207,7 +207,7 @@ service cloud.firestore {
     function isClubConfigOnlyUpdate() {
       // v594 · `inviteTemplate` — la plantilla de invitacion de Secretaria.
       // El autor pidio que el Director pueda redactar el mensaje a su gusto
-      // y GUARDARLO para las proxmas invitaciones. Va en el CLUB y no en la
+      // y GUARDARLO para las proximas invitaciones. Va en el CLUB y no en la
       // persona a proposito: asi sobrevive a un cambio de director.
       // Por que no reabre nada: esta rama ya exige isClubDirectorOf(clubId)
       // -o sea, el director de ESTE club-, y `hasOnly` sigue dejando fuera
