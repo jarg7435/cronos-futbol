@@ -81,7 +81,7 @@ vm.runInContext(CQ + '\n;window.__probe = { _cqMin, _cqHHMM, _cqDocId, _cqFilasV
                      '_cqEsPartido, _cqHistInit, _cqHistPush, _cqHistGuardado, ' +
                      '_cqPuedeDeshacer, _cqPuedeRehacer, CQ_HIST_MAX, ' +
                      '_cqEtiquetaCelda, _cqOcupaCampo, _cqMinutosOcupados, ' +
-                     '_cqEspaciosDe, _cqEspacioImplicito, CQ_ESPACIOS, ' +
+                     '_cqEspaciosDe, _cqEspacioImplicito, _cqNombreEspacios, CQ_ESPACIOS, ' +
                      'CQ_HORA_INI_SEMANA, CQ_HORA_INI_FINDE, CQ_HORA_FIN, CQ_PASO_MIN, ' +
                      'CQ_TIPOS, CQ_ORDEN_CAT, CQ_PAPEL };' +
                      '\n;window.__baseFuente = _cqBaseFuente;', sb);
@@ -653,10 +653,20 @@ console.log('\n16) 🖨️ v605 · Descarga del cuadrante para el Ayuntamiento (
        /Ocupación de instalaciones/.test(CQ) && /TOTAL DE OCUPACIÓN DE LA SEMANA/.test(CQ),
        'al Ayuntamiento no le interesa qué equipo entrena, sino cuánto se ocupa el campo');
 
-    ok('16i · ejecutable: los minutos se cuentan POR ESPACIO',
-       P._cqMinutosOcupados({ tipo: 'entreno', ini: '18:00', fin: '19:00', esp: [1, 2] }) === 120 &&
+    // ⏱️ v620 · EL TIEMPO ES EL TIEMPO Y NO SE MULTIPLICA POR LOS SECTORES.
+    //  Hasta v619 esto exigía lo CONTRARIO —`(fin-ini) × nº de espacios`— y era
+    //  deliberado: se contaban "horas de campo". El autor lo reportó como error
+    //  (implementar.txt, 2026-08-24) con su ejemplo: un equipo de 16:30 a 18:00
+    //  en los cuatro sectores ocupa hora y media, no seis. Ahora se miden HORAS
+    //  DE EQUIPO: la duración de la sesión, ocupe un sector o los cuatro.
+    ok('16i · ⏱️ ejecutable: los minutos son los de la FRANJA, no × espacios',
+       P._cqMinutosOcupados({ tipo: 'entreno', ini: '18:00', fin: '19:00', esp: [1, 2] }) === 60 &&
        P._cqMinutosOcupados({ tipo: 'entreno', ini: '18:00', fin: '19:00', esp: [1] }) === 60,
-       'una hora ocupando dos espacios son dos horas de campo');
+       'una hora es una hora, ocupe uno o dos espacios');
+
+    ok('16i-bis · …y el ejemplo exacto que dio el autor',
+       P._cqMinutosOcupados({ tipo: 'entreno', ini: '16:30', fin: '18:00', esp: [1, 2, 3, 4] }) === 90,
+       '16:30→18:00 en los 4 sectores = 90 min, no 360');
 
     ok('16j · 🚌 ejecutable: un partido fuera NO suma ocupación',
        P._cqMinutosOcupados({ tipo: 'partido_fuera', ini: '10:00', fin: '12:00', esp: [1, 2] }) === 0);
@@ -665,8 +675,12 @@ console.log('\n16) 🖨️ v605 · Descarga del cuadrante para el Ayuntamiento (
        P._cqMinutosOcupados({ tipo: 'entreno', ini: '19:00', fin: '18:00', esp: [1] }) === 0 &&
        P._cqMinutosOcupados({ tipo: 'entreno', ini: '', fin: '', esp: [1] }) === 0);
 
+    // ⚠️ Y el papel tiene que EXPLICAR la regla nueva. La frase anterior decía
+    //    que una hora en dos espacios contaba como dos: dejarla habría hecho
+    //    que el documento del Ayuntamiento contradijera a su propio total.
     ok('16l · el papel explica cómo se cuenta el total (o el técnico municipal no lo entiende)',
-       /suma las horas de cada <strong>espacio<\/strong> por separado/.test(CQ));
+       /suma la <strong>duración real<\/strong> de cada sesión/.test(CQ) &&
+       !/cuenta como dos horas de campo/.test(CQ));
 
     ok('16m · 🚌 los desplazamientos se listan aparte y se dice que no computan',
        /Desplazamientos \(no ocupan instalaciones\)/.test(CQ),
@@ -845,12 +859,43 @@ console.log('\n19) 🏟️ v607 · El partido en casa se pinta en la ocupación 
        /function _cqOcupaCampo\(c, nEsp\) \{\s*return _cqEspaciosDe\(c, nEsp\)\.length > 0;/.test(CQ_COD),
        'dos criterios para lo mismo es como se separan las verdades en este proyecto');
 
-    ok('19g · 🔴🔴 ejecutable: y el informe del Ayuntamiento YA lo cuenta',
-       P._cqMinutosOcupados({ tipo: 'partido_casa', ini: '09:00', fin: '11:00', esp: [] }, 4) === 480,
-       '2 h × 4 espacios = 480 min; antes daba CERO y el partido oficial no constaba');
+    // 🔴 Lo que fijó v607 y SIGUE EN PIE: un partido en casa sin espacios
+    //    marcados ocupa igual (antes daba CERO y el partido oficial del fin de
+    //    semana no constaba en el informe). Lo que cambia en v620 es sólo la
+    //    CANTIDAD: dos horas son 120 minutos, no 2 h × 4 espacios.
+    ok('19g · 🔴🔴 ejecutable: el partido en casa sin espacios marcados SIGUE contando',
+       P._cqMinutosOcupados({ tipo: 'partido_casa', ini: '09:00', fin: '11:00', esp: [] }, 4) === 120,
+       'la duración de la franja; lo que no puede es dar CERO');
 
-    ok('19h · ejecutable: con espacios marcados cuenta sólo esos',
-       P._cqMinutosOcupados({ tipo: 'partido_casa', ini: '09:00', fin: '11:00', esp: [1, 2] }, 4) === 240);
+    ok('19h · ejecutable: y con espacios marcados vale lo mismo, porque el tiempo es el mismo',
+       P._cqMinutosOcupados({ tipo: 'partido_casa', ini: '09:00', fin: '11:00', esp: [1, 2] }, 4) === 120);
+
+    // 🏟️ v620 · CÓMO SE NOMBRAN LOS SECTORES (encargo del autor).
+    //  "1, 2" no le dice a nadie —y menos al técnico municipal— que eso es
+    //  medio campo.
+    ok('19k · 🏟️ un sector es un cuarto de campo',
+       /^Cuarto de campo/.test(P._cqNombreEspacios([3], 4)), P._cqNombreEspacios([3], 4));
+    ok('19l · dos sectores son medio campo',
+       /^Medio campo/.test(P._cqNombreEspacios([1, 2], 4)) &&
+       /^Medio campo/.test(P._cqNombreEspacios([3, 4], 4)),
+       'da igual QUÉ mitad: dos sectores son media');
+    ok('19m · tres sectores son 3/4 de campo',
+       /^3\/4 de campo/.test(P._cqNombreEspacios([2, 3, 4], 4)));
+    ok('19n · los cuatro son el campo completo',
+       P._cqNombreEspacios([1, 2, 3, 4], 4) === 'Campo completo',
+       'y sin números detrás: son todos, sobran');
+    // ⚠️ Los números SE CONSERVAN salvo con el campo entero. Sin ellos, dos
+    //    equipos a la misma hora ponen "Medio campo" los dos y no hay forma de
+    //    ver si van en mitades distintas o chocan — que es para lo que existe
+    //    el cuadrante.
+    ok('19o · ⚠️ y se dice QUÉ sectores, o no se ve si dos equipos chocan',
+       P._cqNombreEspacios([1, 2], 4) === 'Medio campo (1, 2)' &&
+       P._cqNombreEspacios([3, 4], 4) === 'Medio campo (3, 4)');
+    // ⚠️ Los nombres describen un campo de CUATRO. Con otra configuración
+    //    describirían algo que no existe.
+    ok('19p · ⚠️ con un campo que no sea de 4 sectores se cae a la lista',
+       P._cqNombreEspacios([1, 2], 6) === '1, 2');
+    ok('19q · sin espacios no inventa nombre', P._cqNombreEspacios([], 4) === '');
 
     ok('19i · el papel del Ayuntamiento usa los espacios efectivos, no `c.esp`',
        /const espL  = _cqEspaciosDe\(c, nEsp\);/.test(CQ_COD) &&

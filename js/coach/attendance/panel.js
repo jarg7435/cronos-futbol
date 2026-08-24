@@ -243,9 +243,15 @@ function _attRenderSemana() {
             '</span>' +
           '</div>';
 
-        // Etiqueta del motivo, cuando la falta es justificada
+        // Etiqueta del motivo, cuando la falta es justificada.
+        // 🎨 CON EL ICONO DE SU MOTIVO, no con uno genérico. Los iconos ya
+        //    existían en `MOTIVOS` —y el desglose del parte mensual sí los
+        //    usaba—, pero aquí se pintaba siempre el mismo: cuatro causas
+        //    distintas con la misma cara no se distinguen de un vistazo, que
+        //    es justo para lo que sirve esta lista.
         if (estado === 'J' && m.m) {
-            html += '<div style="margin-top:0.3rem; font-size:0.68rem; color:#f0883e;">🩹 ' +
+            html += '<div style="margin-top:0.3rem; font-size:0.68rem; color:#f0883e;">' +
+                    _attEsc(window.CronosAttendance.motivoIcon(m.m)) + ' ' +
                     _attEsc(window.CronosAttendance.motivoLabel(m.m)) + '</div>';
         }
 
@@ -454,131 +460,31 @@ function _attRenderMes() {
     var modal = document.getElementById('setup-modal');
     if (!modal) return;
 
+    // 🔑🔑 LA TABLA YA NO SE PINTA AQUÍ.
+    //
+    //  Vive en `CronosAttendance.parteMensualHtml` porque el Panel de Dirección
+    //  Deportiva y el del Coordinador pintan EXACTAMENTE el mismo parte, y dos
+    //  copias del mismo documento se separan en cuanto alguien toca una sola.
+    //  Aquí se queda lo que de verdad es del entrenador: SU equipo, sus datos y
+    //  su botón de PASAR LISTA —que el director no tiene, porque no es él quien
+    //  pasa lista—.
     var isMobile = window.innerWidth < 640;
-    var mes      = window._attMonth;
-    var sesiones = window.CronosAttendance.sesionesDeMes(mes);
-    var plantel  = window.CronosAttendance.jugadores();
-    var marks    = (window._attMes && window._attMes.marks) || {};
 
-    var nombreMes = new Date(parseInt(mes.slice(0, 4), 10), parseInt(mes.slice(5, 7), 10) - 1, 1)
-        .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-
-    var html = '' +
-    '<div class="modal-content" style="width:min(98vw,1200px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:' + (isMobile ? '0.6rem' : '1.3rem') + ';">' +
-      '<div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.8rem;">' +
-        '<div>' +
-          '<h2 style="margin:0 0 0.05rem; font-size:' + (isMobile ? '1rem' : '1.3rem') + ';">📅 Parte mensual de asistencia</h2>' +
-          '<p style="font-size:0.72rem; color:var(--text-muted); margin:0;">' + _attEsc(_attNombreEquipo()) + '</p>' +
-        '</div>' +
-        '<div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">' +
-          '<button class="btn" onclick="_attCambiarMes(-1)" style="padding:0.35rem 0.6rem; font-size:0.85rem; line-height:1;">◀</button>' +
-          '<span style="font-size:0.8rem; font-weight:700; color:white; min-width:' + (isMobile ? '120px' : '160px') + '; text-align:center; text-transform:capitalize;">' + _attEsc(nombreMes) + '</span>' +
-          '<button class="btn" onclick="_attCambiarMes(1)" style="padding:0.35rem 0.6rem; font-size:0.85rem; line-height:1;">▶</button>' +
-          '<button class="btn" onclick="openAttendancePanel()" style="padding:0.35rem 0.7rem; font-size:0.68rem; background:rgba(63,185,80,0.12); border-color:rgba(63,185,80,0.35); color:#3fb950; font-weight:700;">✅ PASAR LISTA</button>' +
-          '<button class="btn" onclick="navBack()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>' +
-        '</div>' +
-      '</div>';
-
-    if (!sesiones.length || !plantel.length) {
-        html += '<div style="padding:2rem 1rem; text-align:center; border:1px dashed var(--glass-border); border-radius:12px;">' +
-                '<div style="font-size:2rem; margin-bottom:0.5rem;">🗓️</div>' +
-                '<div style="font-weight:700;">Sin sesiones registradas en este mes</div>' +
-                '<div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.4rem;">Las sesiones salen de la Planificación Semanal.</div>' +
-                '</div></div>';
-        modal.innerHTML = html;
-        return;
-    }
-
-    // ── Rejilla ─────────────────────────────────────────────────────
-    // ⚠️ La tabla scrollea DENTRO de su contenedor. Un mes con 20 sesiones
-    // no cabe en un móvil y sin este overflow el modal entero se desplazaría
-    // en horizontal.
-    html += '<div style="flex:1; overflow:auto; border:1px solid var(--glass-border); border-radius:12px;">' +
-            '<table style="border-collapse:collapse; font-size:0.72rem; min-width:100%;">' +
-            '<thead><tr style="background:rgba(88,166,255,0.08);">' +
-            '<th style="position:sticky; left:0; z-index:2; background:#12161c; padding:0.5rem 0.6rem; text-align:left; white-space:nowrap; border-bottom:2px solid rgba(88,166,255,0.25);">JUGADOR</th>';
-
-    sesiones.forEach(function (s) {
-        var icono = s.tipo === 'partido' ? '⚽' : '🏃';
-        var col = s.tipo === 'partido' ? '#f0883e' : '#3fb950';
-        html += '<th title="' + _attEsc(s.tipoRaw) + (s.lugar ? ' · ' + _attEsc(s.lugar) : '') + '" style="padding:0.4rem 0.25rem; border-bottom:2px solid rgba(88,166,255,0.25); color:' + col + '; font-size:0.62rem; white-space:nowrap;">' +
-                icono + '<br>' + _attDiaMes(s.fecha) + '</th>';
+    var cuerpo = window.CronosAttendance.parteMensualHtml({
+        mes:        window._attMonth,
+        equipo:     _attNombreEquipo(),
+        sesiones:   window.CronosAttendance.sesionesDeMes(window._attMonth),
+        plantel:    window.CronosAttendance.jugadores(),
+        marks:      (window._attMes && window._attMes.marks) || {},
+        isMobile:   isMobile,
+        cambiarMes: '_attCambiarMes',
+        acciones:
+            '<button class="btn" onclick="openAttendancePanel()" style="padding:0.35rem 0.7rem; font-size:0.68rem; background:rgba(63,185,80,0.12); border-color:rgba(63,185,80,0.35); color:#3fb950; font-weight:700;">✅ PASAR LISTA</button>' +
+            '<button class="btn" onclick="navBack()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>'
     });
 
-    html += '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#3fb950; white-space:nowrap;">✅</th>' +
-            '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#ff5858; white-space:nowrap;">❌</th>' +
-            '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#f0883e; white-space:nowrap;">🩹</th>' +
-            '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:var(--primary); white-space:nowrap;">%</th>' +
-            '</tr></thead><tbody>';
-
-    plantel.forEach(function (p) {
-        var r = window.CronosAttendance.resumenJugador(marks, sesiones, p.ficha);
-        html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-                '<td style="position:sticky; left:0; z-index:1; background:#12161c; padding:0.35rem 0.6rem; white-space:nowrap;">' +
-                  '<span style="color:var(--primary); font-weight:700;">' + _attEsc(p.dorsal) + '</span> ' + _attEsc(p.alias || p.nombre) +
-                '</td>';
-        sesiones.forEach(function (s) {
-            var m = (marks[s.fecha] || {})[p.ficha];
-            var txt = '·', col = 'rgba(255,255,255,0.15)', tit = 'Sin marcar';
-            if (m && m.s === 'P') { txt = '✅'; col = '#3fb950'; tit = 'Presente'; }
-            else if (m && m.s === 'I') { txt = '❌'; col = '#ff5858'; tit = 'Falta injustificada'; }
-            else if (m && m.s === 'J') { txt = '🩹'; col = '#f0883e'; tit = 'Justificada: ' + window.CronosAttendance.motivoLabel(m.m); }
-            html += '<td title="' + _attEsc(tit) + '" style="text-align:center; padding:0.3rem 0.2rem; color:' + col + ';">' + txt + '</td>';
-        });
-        html += '<td style="text-align:center; font-weight:700; color:#3fb950;">' + r.P + '</td>' +
-                '<td style="text-align:center; font-weight:700; color:#ff5858;">' + r.I + '</td>' +
-                '<td style="text-align:center; font-weight:700; color:#f0883e;">' + r.J + '</td>' +
-                '<td style="text-align:center; font-weight:700; color:var(--primary);">' + (r.pct == null ? '—' : r.pct + '%') + '</td>' +
-                '</tr>';
-    });
-
-    // ── Sumatoria final ─────────────────────────────────────────────
-    var fichas = plantel.map(function (x) { return x.ficha; });
-    var totP = 0, totI = 0, totJ = 0;
-    html += '<tr style="background:rgba(88,166,255,0.06); border-top:2px solid rgba(88,166,255,0.25);">' +
-            '<td style="position:sticky; left:0; z-index:1; background:#12161c; padding:0.45rem 0.6rem; font-weight:700; white-space:nowrap;">TOTAL PRESENTES</td>';
-    sesiones.forEach(function (s) {
-        var rs = window.CronosAttendance.resumenSesion(marks, s.fecha, fichas);
-        totP += rs.P; totI += rs.I; totJ += rs.J;
-        html += '<td style="text-align:center; padding:0.35rem 0.2rem; font-weight:700; color:#58a6ff;">' + rs.P + '</td>';
-    });
-    html += '<td style="text-align:center; font-weight:700; color:#3fb950;">' + totP + '</td>' +
-            '<td style="text-align:center; font-weight:700; color:#ff5858;">' + totI + '</td>' +
-            '<td style="text-align:center; font-weight:700; color:#f0883e;">' + totJ + '</td>' +
-            '<td style="text-align:center; font-weight:700; color:var(--primary);">' +
-              ((totP + totI + totJ) ? Math.round(totP / (totP + totI + totJ) * 100) + '%' : '—') + '</td>' +
-            '</tr>';
-
-    html += '</tbody></table></div>';
-
-    // ── Desglose de faltas ──────────────────────────────────────────
-    var porMotivo = {}, faltasPartido = 0, faltasEntreno = 0;
-    plantel.forEach(function (p) {
-        var r = window.CronosAttendance.resumenJugador(marks, sesiones, p.ficha);
-        faltasPartido += r.faltasPartido;
-        faltasEntreno += r.faltasEntreno;
-        Object.keys(r.motivos).forEach(function (k) { porMotivo[k] = (porMotivo[k] || 0) + r.motivos[k]; });
-    });
-
-    html += '<div style="margin-top:0.9rem; padding:0.8rem 1rem; border-radius:10px; background:var(--glass); border:1px solid var(--glass-border);">' +
-            '<div style="font-size:0.75rem; font-weight:700; color:var(--text-muted); margin-bottom:0.5rem;">📊 DESGLOSE DE FALTAS DEL MES</div>' +
-            '<div style="display:flex; gap:1.2rem; flex-wrap:wrap; font-size:0.78rem;">' +
-              '<span>Total faltas: <strong style="color:#ff5858;">' + (totI + totJ) + '</strong></span>' +
-              '<span>Injustificadas: <strong style="color:#ff5858;">' + totI + '</strong></span>' +
-              '<span>Justificadas: <strong style="color:#f0883e;">' + totJ + '</strong></span>' +
-              '<span title="Faltar a un partido no pesa igual que faltar a un entrenamiento">⚽ a partidos: <strong style="color:#f0883e;">' + faltasPartido + '</strong></span>' +
-              '<span>🏃 a entrenamientos: <strong style="color:#f0883e;">' + faltasEntreno + '</strong></span>' +
-            '</div>';
-
-    var motivosTxt = window.CronosAttendance.MOTIVOS
-        .filter(function (mo) { return porMotivo[mo.id]; })
-        .map(function (mo) { return mo.icon + ' ' + _attEsc(mo.label) + ': <strong>' + porMotivo[mo.id] + '</strong>'; })
-        .join(' &nbsp;·&nbsp; ');
-    if (motivosTxt) {
-        html += '<div style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-muted);">' + motivosTxt + '</div>';
-    }
-    html += '</div>';
-
-    html += '</div>';
-    modal.innerHTML = html;
+    modal.innerHTML =
+        '<div class="modal-content" style="width:min(98vw,1200px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:' + (isMobile ? '0.6rem' : '1.3rem') + ';">' +
+        cuerpo +
+        '</div>';
 }

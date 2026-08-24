@@ -1998,8 +1998,14 @@ function openWeeklyPlanModal() {
         const dateInput = document.getElementById('wp-start-date');
         if (dateInput) dateInput.value = weekKey;
 
-        const allWeeks = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-        const weekData = allWeeks[weekKey] || {};
+        // 🔑 Por el lector único. Desde v518 los días cuelgan de
+        //    `teams.<teamId>`: leer `allWeeks[weekKey][fecha]` a pelo devolvía
+        //    SIEMPRE vacío y esta modal se abría en blanco con la semana
+        //    puesta. Mismo defecto que bloqueaba el envío interno
+        //    (js/coach/comms/training-notify.js) — se arreglaron juntos.
+        const weekData = (window.TrainingSync && typeof window.TrainingSync.readWeekDays === 'function')
+            ? (window.TrainingSync.readWeekDays(weekKey) || {})
+            : (JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}')[weekKey] || {});
 
         document.querySelectorAll('.wp-day-row').forEach((row) => {
             const idx = parseInt(row.dataset.idx || '0');

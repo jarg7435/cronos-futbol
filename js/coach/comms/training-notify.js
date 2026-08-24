@@ -1,4 +1,44 @@
 // ════════════════════════════════════════════════════════════════════
+//  🔑🔑 LOS DÍAS DE UNA SEMANA SE LEEN POR UN SOLO SITIO
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt, 2026-08-24): al enviar la planificación
+//  semanal saltaba «⚠️ La semana está vacía» con la semana RELLENA y GUARDADA.
+//
+//  🔴 LA CAUSA: este fichero leía `localStorage['cronos_training_weeks']` a
+//  pelo y esperaba los días colgando de la raíz de la semana. Desde **v518**
+//  los días cuelgan de `teams.<teamId>` —el cuadrante era POR CLUB y dos
+//  entrenadores se pisaban—, así que `semana[fecha]` devolvía SIEMPRE vacío y
+//  la validación concluía, con toda lógica, que no había nada que enviar.
+//  Este fichero no se tocaba desde v510: llevaba roto desde aquel cambio.
+//
+//  ⚠️ El defecto estaba en TRES sitios con la misma forma (aquí dos veces y en
+//  js/parent/panel.js). Se arreglan juntos: en este proyecto un mismo defecto
+//  copiado en varios ficheros ya ha costado varias rondas.
+//
+//  `TrainingSync.readWeekDays` es el lector único: sabe de `teams.<teamId>`,
+//  cae al formato viejo cuando no lo hay y filtra por FORMATO DE FECHA —sin
+//  ese filtro, `createdBy` y `lastModified` viajaban como si fueran días y el
+//  mensaje a las familias salía con «📅 undefined Invalid Date»—.
+function _trDiasDeLaSemana(weekKey) {
+    if (!weekKey) return {};
+    if (window.TrainingSync && typeof window.TrainingSync.readWeekDays === 'function') {
+        return window.TrainingSync.readWeekDays(weekKey) || {};
+    }
+    // Respaldo por si el servicio no hubiera cargado: SÓLO el formato legado
+    // (días en la raíz). La forma nueva no se reimplementa aquí — duplicarla
+    // es exactamente lo que produjo este fallo.
+    try {
+        const todas = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
+        const semana = todas[weekKey] || {};
+        const out = {};
+        Object.keys(semana).forEach(k => {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(k)) out[k] = semana[k];
+        });
+        return out;
+    } catch (_) { return {}; }
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  js/coach/comms/training-notify.js
 //  Aviso de entrenamiento: modal para componer la notificación
 //  (openTrainingNotification) y su envío interno a los contactos con la
@@ -72,8 +112,9 @@ async function openTrainingNotification() {
         m.setHours(0,0,0,0); return m;
     })();
     const _trWeekKey = _trMon.toISOString().substring(0,10);
-    const _trWeekAll = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-    const _trWeekData = _trWeekAll[_trWeekKey] || {};
+    // Mismo lector único: si esto leyera la raíz, la modal se abriría con el
+    // lugar y la hora en blanco aunque la semana estuviera puesta.
+    const _trWeekData = _trDiasDeLaSemana(_trWeekKey);
     const _trFirstDs = Object.keys(_trWeekData).sort()[0];
     const _trFirst = _trFirstDs ? (_trWeekData[_trFirstDs] || {}) : {};
     const _autoLoc = _trFirst.lugar || saved.location || '';
@@ -344,11 +385,7 @@ window._sendTrainingNotificationV2 = async function() {
     }
     const weekKey = _cronosLocalDateKey(monday);
 
-    let weekData = {};
-    try {
-        const todas = JSON.parse(localStorage.getItem('cronos_training_weeks') || '{}');
-        weekData = todas[weekKey] || {};
-    } catch (_) { weekData = {}; }
+    const weekData = _trDiasDeLaSemana(weekKey);
 
     const NOMBRE_DIA = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
     const days = [];

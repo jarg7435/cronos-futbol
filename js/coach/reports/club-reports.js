@@ -652,9 +652,23 @@ window.switchStaffTab = async (tab) => {
 //  la semana ENTERO (trainingPlans/{club}/weeks/{lunes}), que desde el
 //  arreglo del cuadrante trae los días de cada equipo en `teams.<teamId>`.
 //
-//  ⚠️ NO SE PINTAN LOS NOMBRES DE LOS JUGADORES NI SUS MOTIVOS aquí. Esta
-//  pantalla es de seguimiento agregado; el detalle con las causas —que es
-//  dato personal de un menor— se queda en la pantalla del entrenador.
+//  ⚠️⚠️ AQUÍ SÍ SE VEN LOS NOMBRES Y LOS MOTIVOS, Y NO SIEMPRE FUE ASÍ.
+//
+//  Hasta v618 esta pantalla era SÓLO agregada, a propósito: el detalle con las
+//  causas es dato personal de un menor, y «Motivo médico / lesión» es dato de
+//  SALUD (RGPD art. 9). El árbol enseñaba cuatro cifras por equipo y se
+//  acababa ahí.
+//
+//  El autor pidió el parte completo para Dirección Deportiva y Coordinación
+//  (implementar.txt, 2026-08-24). Se le expuso expresamente que eso revocaba
+//  esa decisión y qué dato concreto pasaba a verse; lo confirmó a sabiendas.
+//  Queda escrito aquí para que el día que alguien se pregunte por qué el
+//  director ve el motivo de la falta de un menor, encuentre la respuesta y no
+//  lo tome por un descuido.
+//
+//  🔒 El alcance NO se ha ampliado: sigue rigiendo `_cronosVeCategoria` y el
+//  acotamiento por modalidad del coordinador (v593). Un coordinador de F7 no
+//  ve el parte de un equipo de F11.
 window._sdAsistMes = null;
 
 // teamId = '{club}__{categoria}__{subcategoria}'. Los tres tramos los genera
@@ -940,8 +954,88 @@ async function _sdLoadAsistencia() {
         lista.forEach(e => { html += _sdFilaAsistencia(e, resumen(e), esMesActual); });
     }
 
+    // 📅 Se guarda LO YA DESCARGADO para que el parte mensual por equipo no
+    //    tenga que pedir nada: el detalle por jugador sale de estos mismos
+    //    documentos (`doc.sessions` + `doc.marks`) y de estas mismas
+    //    plantillas. Cero lecturas nuevas, cero reglas nuevas.
+    const _datos = { mes: mes, plantillas: plantillas, equipos: {} };
+    lista.forEach(e => { _datos.equipos[e.teamId] = e; });
+    window._sdAsistDatos = _datos;
+
     container.innerHTML = html;
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  📅 EL PARTE MENSUAL DE UN EQUIPO, DESDE DIRECCIÓN
+// ════════════════════════════════════════════════════════════════════
+//  Pinta EXACTAMENTE la misma tabla que ve el entrenador, con la MISMA
+//  función (`CronosAttendance.parteMensualHtml`). No es una copia parecida:
+//  es la misma, y por eso no pueden separarse.
+//
+//  ⚠️ Sin PASAR LISTA: el director no es quien pasa lista. Esa acción se
+//  queda en la pantalla del entrenador, que es su dueño.
+window._sdAbrirParteMensual = function (teamId) {
+    const container = document.getElementById('staff-dashboard-content');
+    const d = window._sdAsistDatos;
+    if (!container || !d) return;
+    const e = d.equipos[teamId];
+    if (!e) return;
+
+    if (!window.CronosAttendance || typeof window.CronosAttendance.parteMensualHtml !== 'function') {
+        // Un botón que no puede hacer nada es peor que no tenerlo: si el
+        // módulo no está, se dice y no se deja la pantalla en blanco.
+        if (typeof showToast === 'function') showToast('⚠️ El módulo de asistencia no está disponible.', 4000);
+        return;
+    }
+
+    const parte    = e.doc || {};
+    const sesiones = window.CronosAttendance.sesionesDeParte(parte);
+    const marks    = parte.marks || {};
+    // La plantilla viene indexada por 'categoria|subcategoria', que es como la
+    // dejó cronosFetchAllTeamRosters en la carga del árbol.
+    const bruta    = (d.plantillas || {})[e.cat + '|' + e.sub] || [];
+    const plantel  = bruta.map(p => ({
+        ficha:  String((p && p.ficha) || '').trim(),
+        dorsal: String((p && p.dorsal) == null ? '' : (p && p.dorsal)).trim(),
+        nombre: String((p && p.nombre) || '').trim(),
+        alias:  String((p && p.alias) || '').trim()
+    })).filter(p => p.ficha && (p.nombre || p.alias));
+
+    const cuerpo = window.CronosAttendance.parteMensualHtml({
+        mes:        d.mes,
+        equipo:     _sdEtiquetaEquipo(e),
+        sesiones:   sesiones,
+        plantel:    plantel,
+        marks:      marks,
+        isMobile:   window.innerWidth < 640,
+        cambiarMes: '_sdParteCambiarMes',
+        acciones:   '<button class="btn" onclick="_sdParteVolver()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>'
+    });
+
+    window._sdParteEquipo = teamId;
+    container.innerHTML = '<div style="display:flex; flex-direction:column;">' + cuerpo + '</div>';
+};
+
+// Cambiar de mes DENTRO del parte. Recarga la pestaña —que es quien sabe
+// traerse los documentos del mes nuevo— y vuelve a abrir el mismo equipo.
+// ⚠️ Si en el mes nuevo ese equipo no tiene actividad, no existe en el árbol:
+// entonces se cae al árbol en vez de dejar una pantalla vacía sin salida.
+window._sdParteCambiarMes = async function (delta) {
+    const tid = window._sdParteEquipo;
+    const y = parseInt(window._sdAsistMes.slice(0, 4), 10);
+    const m = parseInt(window._sdAsistMes.slice(5, 7), 10) + delta;
+    const nd = new Date(y, m - 1, 1, 12, 0, 0);
+    window._sdAsistMes = nd.getFullYear() + '-' + String(nd.getMonth() + 1).padStart(2, '0');
+    await _sdLoadAsistencia();
+    if (tid && window._sdAsistDatos && window._sdAsistDatos.equipos[tid]) {
+        window._sdAbrirParteMensual(tid);
+    }
+};
+
+window._sdParteVolver = function () {
+    window._sdParteEquipo = null;
+    _sdLoadAsistencia();
+};
 
 // Etiqueta legible del equipo, con la misma función que usa el resto del
 // proyecto para no inventar un mapa de nombres más.
@@ -973,16 +1067,26 @@ function _sdFilaAsistencia(e, r, esMesActual) {
         '<div style="text-align:center;"><div style="font-size:1.05rem;font-weight:700;color:' + color + ';">' +
         valor + '</div><div style="font-size:0.6rem;color:var(--text-muted);">' + etiq + '</div></div>';
 
+    // 📅 La puerta al parte mensual detallado. El resumen numérico se queda
+    //    como vistazo rápido —para eso se hizo en v519— y deja de ser el
+    //    final del camino: desde aquí se entra al detalle por jugador.
+    const verParte = '<button class="btn" onclick="_sdAbrirParteMensual(\'' +
+        ea(e.teamId).replace(/'/g, '&#39;') + '\')" ' +
+        'style="padding:0.3rem 0.7rem;font-size:0.66rem;font-weight:700;' +
+        'background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);color:#58a6ff;">' +
+        '📅 VER PARTE MENSUAL</button>';
+
     return '<div style="border:1px solid var(--glass-border);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem;background:rgba(255,255,255,0.02);">' +
         cabecera +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.8rem;flex-wrap:wrap;">' +
           '<div style="font-weight:700;font-size:0.85rem;">' + ea(_sdEtiquetaEquipo(e)) + '</div>' +
-          '<div style="display:flex;gap:1.1rem;flex-wrap:wrap;">' +
+          '<div style="display:flex;gap:1.1rem;flex-wrap:wrap;align-items:center;">' +
             celda('SESIONES', r.sesiones, 'var(--text)') +
             celda('ASIST.', r.P, '#3fb950') +
             celda('INJUST.', r.I, '#ff5858') +
             celda('JUSTIF.', r.J, '#f0883e') +
             celda('MEDIA', (r.pct == null ? '—' : r.pct + '%'), col) +
+            verParte +
           '</div>' +
         '</div>' +
       '</div>';

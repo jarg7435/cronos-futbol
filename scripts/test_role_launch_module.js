@@ -260,8 +260,14 @@ const visibles = (t) => CARDS.filter(id => t.el(id) && t.el(id).style.display ==
         ok('1i · esta en la lista de _check_syntax.js',
             fs.readFileSync(path.join(ROOT, 'scripts', '_check_syntax.js'), 'utf8')
                 .includes('js/services/auth/role-launch.js'));
+        // ⚠️ Se busca la ETIQUETA <script>, no la cadena suelta. La version
+        //    anterior prohibia la subcadena en TODO index.html, asi que un
+        //    simple comentario HTML que citara la ruta del modulo ponia el
+        //    guard en rojo sin que hubiera ningun script de mas. Lo que se
+        //    quiere prohibir es la etiqueta, no la mencion.
         ok('1j · NO se anade un <script> suelto: entra por el import de auth.js',
-            !fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').includes('auth/role-launch.js'));
+            !/<script[^>]*src=["'][^"']*auth\/role-launch\.js/i
+                .test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -582,6 +588,57 @@ const visibles = (t) => CARDS.filter(id => t.el(id) && t.el(id).style.display ==
             t.el('main-container').style.display === 'flex'
             && t.el('main-header').style.display === 'flex',
             { campo: t.el('main-container').style.display });
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 8 · v620 · el CLUB bajo la bienvenida ──');
+    {
+        // Encargo del autor (implementar.txt, 2026-08-24): que bajo
+        // "Bienvenido a Chronos" salga el club al que pertenece.
+        const SRC = fs.readFileSync(path.join(ROOT, 'js/services/auth/role-launch.js'), 'utf8');
+        const HTML = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+        const COD = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+        ok('8a · existe el hueco en el landing', /id="landing-club"/.test(HTML));
+        ok('8b · nace OCULTO (un rotulo vacio se ve como un hueco raro)',
+            /id="landing-club"[^>]*display:\s*none/.test(HTML));
+        // ⚠️ La LLAMADA, y dentro de showRoleSelection. Buscarla en todo el
+        //    fichero daba verde con la llamada borrada: la propia DEFINICION
+        //    `function _pintarClubEnLanding(me)` casaba el patron.
+        const cuerpoShow = (COD.match(/export function showRoleSelection\(\)[\s\S]*?\n\}/) || [''])[0];
+        ok('8c · showRoleSelection lo rellena',
+            /_pintarClubEnLanding\(me\)/.test(cuerpoShow), cuerpoShow.slice(0, 80));
+        // ⚠️ Es un nombre que escribe una persona: textContent, nunca innerHTML.
+        ok('8d · ⚠️ se escribe con textContent, no con innerHTML',
+            /el\.textContent = nombre/.test(COD) && !/landing-club[\s\S]{0,400}innerHTML/.test(COD));
+
+        // ⚠️⚠️ SE EJECUTA LA FUNCION DEL PRODUCTO, NO UNA COPIA.
+        //  La primera version de esta parte reproducia la cascada aqui dentro
+        //  "porque el modulo es ESM y no se puede importar". Eso probaba que MI
+        //  COPIA funcionaba: el red-check quito la salida del superadministrador
+        //  del fichero real y el guard siguio verde. La funcion es autonoma, asi
+        //  que se extrae del fuente y se ejecuta de verdad.
+        const _fn = (COD.match(/export function _cronosNombreClubLanding\(me\)[\s\S]*?\n\}/) || [''])[0]
+            .replace('export function', 'function');
+        let nombreDe = null;
+        try {
+            const sandbox = {};
+            vm.createContext(sandbox);
+            vm.runInContext(_fn + '\n;this.__f = _cronosNombreClubLanding;', sandbox);
+            nombreDe = sandbox.__f;
+        } catch (e) { nombreDe = null; }
+        ok('8d-bis · la funcion real se puede extraer y ejecutar', typeof nombreDe === 'function',
+            _fn.slice(0, 90));
+        if (typeof nombreDe !== 'function') nombreDe = () => '<<no se pudo cargar>>';
+        ok('8e · sale el club del usuario', nombreDe({ role: 'user', clubName: 'Estrella CF' }) === 'Estrella CF');
+        // ⚠️ Al pintar el landing TODAVIA no se ha elegido rol, asi que
+        //    clubName puede venir vacio: se cae a la primera plaza con nombre.
+        ok('8f · ⚠️ sin clubName en la raiz, sale el de su plaza',
+            nombreDe({ role: 'user', allRoles: [{ clubName: '' }, { clubName: 'CD Doramas' }] }) === 'CD Doramas');
+        ok('8g · ⚠️ el superadministrador no pertenece a ningun club: NADA',
+            nombreDe({ role: 'superadmin', clubName: 'CD DÍA' }) === '',
+            'mejor un hueco que un rotulo falso');
+        ok('8h · y sin dato no se inventa nada', nombreDe({ role: 'user' }) === '' && nombreDe(null) === '');
     }
 
     console.log('\n────────────────────────────────────────────');

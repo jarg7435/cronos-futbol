@@ -290,6 +290,37 @@ function _aplicarCandadoTarjeta(el, motivo) {
 }
 
 // ── Pantalla de Selección de Rol ──────────────────────────────
+// 🏟️ EL CLUB DE QUIEN ACABA DE ENTRAR, bajo la bienvenida.
+//  Encargo del autor (implementar.txt, 2026-08-24).
+//
+//  ⚠️ AQUÍ TODAVÍA NO SE HA ELEGIDO ROL, y `clubName` se asienta en
+//  `_cronosCurrentUser` al elegirlo (ver más abajo, «Campos comunes: clubId y
+//  clubName del rol activo»). Así que puede venir vacío: se cae a la primera
+//  plaza que traiga nombre. Un superadministrador no pertenece a ningún club y
+//  no se le pinta nada — mejor un hueco que un rótulo falso.
+export function _cronosNombreClubLanding(me) {
+    if (!me) return '';
+    if (['superadmin', 'admin'].includes(me.role)) return '';
+    const propio = String(me.clubName || '').trim();
+    if (propio) return propio;
+    const roles = Array.isArray(me.allRoles) ? me.allRoles : [];
+    for (let i = 0; i < roles.length; i++) {
+        const n = String((roles[i] && roles[i].clubName) || '').trim();
+        if (n) return n;
+    }
+    return '';
+}
+
+function _pintarClubEnLanding(me) {
+    const el = document.getElementById('landing-club');
+    if (!el) return;
+    const nombre = _cronosNombreClubLanding(me);
+    if (!nombre) { el.style.display = 'none'; el.textContent = ''; return; }
+    // textContent y no innerHTML: es un nombre que escribe una persona.
+    el.textContent = nombre;
+    el.style.display = 'block';
+}
+
 export function showRoleSelection() {
     // alias usado por saGoBackToRoles en 16_superadmin.js
     window.showRoleSelector = showRoleSelection;
@@ -303,6 +334,7 @@ export function showRoleSelection() {
     const screen = document.getElementById('role-selection-screen');
     if (!screen) return;
     screen.style.display = 'flex';
+    _pintarClubEnLanding(me);
 
     const allCards = [
         'card-opt-superadmin', 'card-opt-clubadmin',

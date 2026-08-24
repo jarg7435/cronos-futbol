@@ -202,6 +202,31 @@ function _cqEspaciosDe(c, nEsp) {
     return todos;
 }
 
+// 🏟️ CÓMO SE NOMBRA LO QUE OCUPA UN EQUIPO, según CUÁNTOS sectores usa.
+//  Encargo del autor (implementar.txt, 2026-08-24): el campo va partido en
+//  cuatro y "1, 2" no le dice a nadie —y menos al técnico municipal— que eso
+//  es medio campo.
+//
+//  ⚠️ SE CONSERVAN LOS NÚMEROS salvo con el campo entero, donde son todos y
+//  sobran. Sin ellos no se puede ver si dos equipos que entrenan A LA MISMA
+//  HORA van en mitades distintas o chocan, y distinguir eso es justo para lo
+//  que existe el cuadrante: dos "Medio campo" a las 16:30 son indistinguibles.
+//
+//  ⚠️ Y los nombres describen un campo de CUATRO sectores. Si un club
+//  configurase otro número, "medio campo" describiría algo que no es: se cae
+//  a la lista de siempre, que nunca miente.
+function _cqNombreEspacios(esp, nEsp) {
+    const lista = esp || [];
+    if (!lista.length) return '';
+    const total = nEsp || (window._cqState.doc && window._cqState.doc.espacios) || CQ_ESPACIOS;
+    if (total !== 4) return lista.join(', ');
+    const nombre = lista.length === 1 ? 'Cuarto de campo'
+                 : lista.length === 2 ? 'Medio campo'
+                 : lista.length === 3 ? '3/4 de campo'
+                 : 'Campo completo';
+    return lista.length === 4 ? nombre : nombre + ' (' + lista.join(', ') + ')';
+}
+
 // ¿Este bloque ocupa espacio del club? Es cierto sólo si _cqEspaciosDe
 // devuelve algo: una única puerta, para que no haya dos criterios.
 function _cqOcupaCampo(c, nEsp) {
@@ -2288,7 +2313,21 @@ function _cqMinutosOcupados(c, nEsp) {
     if (!esp.length) return 0;
     const a = _cqMin(c.ini), b = _cqMin(c.fin);
     if (a == null || b == null || b <= a) return 0;
-    return (b - a) * esp.length;     // por ESPACIO: dos espacios una hora son dos horas de campo
+
+    // ⏱️ EL TIEMPO ES EL TIEMPO, Y NO SE MULTIPLICA POR LOS SECTORES.
+    //
+    //  Hasta aquí esto devolvía `(b - a) * esp.length`, a propósito: contaba
+    //  "horas de campo" y una sesión de hora y media en los cuatro sectores
+    //  sumaba seis horas. El autor lo reportó como error (implementar.txt,
+    //  2026-08-24) con ese mismo ejemplo: un equipo de 16:30 a 18:00 ocupando
+    //  el campo entero ocupa **hora y media**, no seis.
+    //
+    //  🔑 Lo que se mide ahora son HORAS DE EQUIPO: cada sesión aporta su
+    //  duración, ocupe un sector o los cuatro. Dos equipos entrenando a la vez
+    //  en mitades distintas siguen sumando por separado —decisión suya, se le
+    //  preguntó expresamente— porque son dos sesiones. `esp.length` se sigue
+    //  consultando arriba, pero sólo para saber si ocupa campo o no.
+    return b - a;
 }
 
 window.cqExportar = function () {
@@ -2339,13 +2378,13 @@ window.cqExportar = function () {
             const papel = CQ_PAPEL[c.tipo] || CQ_PAPEL.entreno;
             const horas = (c.ini && c.fin) ? (c.ini + ' a ' + c.fin) : (c.ini || '');
             const espL  = _cqEspaciosDe(c, nEsp);
-            const esp   = espL.length ? espL.join(', ') : '';
+            const esp   = _cqNombreEspacios(espL, nEsp);
             matriz += '<td style="border:1px solid ' + papel.bd + ';background:' + papel.bg + ';color:' + papel.fg + ';' +
                     'padding:4px 3px;text-align:center;vertical-align:top;font-size:8.5px;line-height:1.4;' +
                     'overflow-wrap:break-word;word-break:normal;">' +
                 '<div style="font-weight:800;">' + _cqE(c.txt || meta.corto || meta.label) + '</div>' +
                 (horas ? '<div>' + _cqE(horas) + '</div>' : '') +
-                (esp   ? '<div>Espacio ' + _cqE(esp) + '</div>' : '') +
+                (esp   ? '<div>' + _cqE(esp) + '</div>' : '') +
                 (meta.ocupa === false ? '<div style="font-style:italic;">(fuera)</div>' : '') +
                 (c.nota ? '<div>' + _cqE(c.nota) + '</div>' : '') +
             '</td>';
@@ -2403,7 +2442,7 @@ window.cqExportar = function () {
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;text-align:center;">' +
                             _cqE((o.c.ini || '—') + (o.c.fin ? ' – ' + o.c.fin : '')) + '</td>' +
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;text-align:center;font-weight:700;">' +
-                            _cqE(o.esp.join(', ')) + '</td>' +
+                            _cqE(_cqNombreEspacios(o.esp, nEsp)) + '</td>' +
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;">' + _cqE(o.f.label) + '</td>' +
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;">' +
                             _cqE(o.c.txt || meta.label) + (o.c.nota ? ' · ' + _cqE(o.c.nota) : '') + '</td>' +
@@ -2436,9 +2475,9 @@ window.cqExportar = function () {
                 (mins ? ' ' + mins + ' min' : '') + '</div>' +
         '</div>' +
         '<div style="font-size:8.5px;color:#6b7280;margin-bottom:10px;line-height:1.5;">' +
-            'El total suma las horas de cada <strong>espacio</strong> por separado: una sesión de una hora que ' +
-            'ocupa dos espacios cuenta como dos horas de campo. El campo se considera dividido en <strong>' +
-            nEsp + ' espacios</strong>.' +
+            'El total suma la <strong>duración real</strong> de cada sesión, de su hora de inicio a su hora de ' +
+            'fin: una sesión de hora y media ocupa hora y media, use un sector del campo o los cuatro. El campo ' +
+            'se considera dividido en <strong>' + nEsp + ' sectores</strong>.' +
             (hayVisitas ? ' Los partidos disputados fuera de casa <strong>no computan</strong>: se juegan en ' +
                           'instalaciones ajenas y se listan sólo como referencia.' : '') +
         '</div>';

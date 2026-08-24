@@ -55,7 +55,24 @@ function readBlock() {
     const marker = 'window.openTrainingNotification = openTrainingNotification;';
     const e = src.indexOf(marker, s);
     if (e === -1) throw new Error('No se encontró la línea de export');
-    return src.slice(s, e + marker.length);
+
+    // v621 · Las funciones de apoyo del módulo viven ANTES de la modal y el
+    // corte se las dejaba fuera: al añadirse `_trDiasDeLaSemana` —el lector
+    // único de los días de la semana— el sandbox reventaba con un
+    // ReferenceError. Se anteponen las que existan, en vez de ensanchar el
+    // corte a todo el fichero (que arrastraría dependencias de la modal).
+    const APOYO = ['function _trDiasDeLaSemana(weekKey)'];
+    let cabecera = '';
+    APOYO.forEach(firma => {
+        const i = src.indexOf(firma);
+        if (i === -1) return;
+        let prof = 0, dentro = false;
+        for (let k = src.indexOf('{', i); k < src.length; k++) {
+            if (src[k] === '{') { prof++; dentro = true; }
+            else if (src[k] === '}') { prof--; if (dentro && prof === 0) { cabecera += src.slice(i, k + 1) + '\n'; break; } }
+        }
+    });
+    return cabecera + src.slice(s, e + marker.length);
 }
 const BLOCK = readBlock();
 
