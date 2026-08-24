@@ -54,6 +54,11 @@ function resetMatch() {
     clearInterval(timerInterval);
     masterTimeH1 = 0; masterTimeH2 = 0;
     lastTickTime = 0; matchPhase = '1st_half';
+    // 🟨 Partido nuevo, cupo de cambios nuevo: si no se pusiera a cero, el
+    //    Cadete de la segunda jornada arrancaría con los 7 cambios gastados.
+    if (window.CronosSubRules && typeof window.CronosSubRules.reset === 'function') {
+        window.CronosSubRules.reset();
+    }
     // Bloque B: limpiar goles no asignados (propia puerta) del partido anterior
     // para que no se arrastren al marcador del partido reiniciado.
     window._cronosExtraGoals = { home: 0, away: 0 };

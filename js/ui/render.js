@@ -123,6 +123,23 @@ function executeGroupSubstitution(team) {
         return;
     }
 
+    // 🟨 Normativa de la categoría. UN cambio grupal es UNA ventana, meta a
+    //    los jugadores que meta: es la razón de ser del modo grupal y lo que
+    //    permite a un Cadete gastar 3 ventanas haciendo hasta 7 cambios.
+    //    Avisa y deja decidir; si se cancela, no se toca nada del partido.
+    if (window.CronosSubRules && typeof window.CronosSubRules.confirmarYRegistrar === 'function') {
+        const _nom = (id) => { const p = players.find(x => x.id === id); return p ? (p.name || 'Ese jugador') : 'Ese jugador'; };
+        if (!window.CronosSubRules.confirmarYRegistrar(team, outArr.slice(0, count), inArr.slice(0, count), _nom)) {
+            clearGroupSubSelection();
+            groupSubMode = false;
+            groupSubTeam = null;
+            const bId = team === 'away' ? 'btn-group-sub-away' : 'btn-group-sub';
+            const b = document.getElementById(bId);
+            if (b) { b.textContent = '\u{1F504} GRUPAL'; b.classList.remove('mode-group-active'); }
+            return;
+        }
+    }
+
     for (let i = 0; i < count; i++) {
         const outPlayer = players.find(p => p.id === outArr[i]);
         const inPlayer  = players.find(p => p.id === inArr[i]);

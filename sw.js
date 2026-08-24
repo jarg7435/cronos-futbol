@@ -2640,7 +2640,7 @@
 //          las ramas de director y coordinador que anadio v610/v611 se AVERIABAN
 //          en el simulador y nadie las probaba. 8 casos nuevos -> 46/46.
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v621';
+const CACHE_NAME = 'cronos-cache-v622';
 
 const ASSETS = [
     './',
@@ -2675,6 +2675,7 @@ const ASSETS = [
     './js/services/notification-dismiss-sync.js',
     './js/services/training-firestore-sync.js',
     './js/services/user-management.js',
+    './js/match/events/sub-rules.js',
     './js/match/events/player-actions.js',
     './js/match/demo-tutorial.js',
     './js/match/persistence/active-match.js',

@@ -1086,6 +1086,19 @@ function selectForSubstitution(benchPlayer) {
 function confirmSubstitutionWith(fieldPlayer) {
     if (!pendingSubstitution) return;
     const inPlayer = pendingSubstitution.player;
+
+    // 🟨 Normativa de la categoría (Cadete, Juvenil, Regional y Regional FEM).
+    //    Un cambio individual suelto es UNA ventana; si el entrenador quiere
+    //    que dos cuenten como una sola, los hace en modo GRUPAL. Avisa y deja
+    //    decidir — nunca bloquea, ver la cabecera de sub-rules.js.
+    if (window.CronosSubRules && typeof window.CronosSubRules.confirmarYRegistrar === 'function') {
+        const _nom = (id) => { const p = players.find(x => x.id === id); return p ? (p.name || 'Ese jugador') : 'Ese jugador'; };
+        if (!window.CronosSubRules.confirmarYRegistrar(inPlayer.team, [fieldPlayer.id], [inPlayer.id], _nom)) {
+            cancelPendingSubstitution();
+            return;
+        }
+    }
+
     handleSmartSwap(pendingSubstitution.player, fieldPlayer);
     cancelPendingSubstitution();
     renderPlayers();
