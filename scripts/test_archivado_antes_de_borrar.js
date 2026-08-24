@@ -39,7 +39,7 @@ ok('existe archiveAndDeleteCoach', /exports\.archiveAndDeleteCoach\s*=/.test(FN)
     const cuerpo = FN.slice(i, FN.indexOf('\n});', i));
     ok('exige autenticación', /context\.auth/.test(cuerpo));
     ok('exige rol de administrador',
-        /\['superadmin', 'club_admin', 'individual_admin'\]\.includes/.test(cuerpo));
+        /\['superadmin', 'club_admin', 'individual_admin', 'director', 'coordinator'\]\.includes/.test(cuerpo));
     // El club se resuelve del LLAMANTE, no de lo que mande el cliente.
     ok('el club_admin solo puede borrar en SU club',
         /callerDoc\.data\(\)\.clubId/.test(cuerpo) && /Solo puedes eliminar usuarios de tu club/.test(cuerpo));

@@ -185,6 +185,15 @@ service cloud.firestore {
              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', '') == 'active';
     }
 
+    function isClubCoordinatorOf(clubId) {
+      return isAuth() && clubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'coordinator'
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == clubId
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', '') == 'active';
+    }
+
     // Los TRES unicos campos que escribe la pestanya "Config." del Director
     // (js/coach/reports/director-config.js): categoryConfigs, timerThresholds y
     // features.sendIndividualReports.
@@ -198,7 +207,7 @@ service cloud.firestore {
     function isClubConfigOnlyUpdate() {
       // v594 · `inviteTemplate` — la plantilla de invitacion de Secretaria.
       // El autor pidio que el Director pueda redactar el mensaje a su gusto
-      // y GUARDARLO para las proximas invitaciones. Va en el CLUB y no en la
+      // y GUARDARLO para las proxmas invitaciones. Va en el CLUB y no en la
       // persona a proposito: asi sobrevive a un cambio de director.
       // Por que no reabre nada: esta rama ya exige isClubDirectorOf(clubId)
       // -o sea, el director de ESTE club-, y `hasOnly` sigue dejando fuera
@@ -300,7 +309,9 @@ service cloud.firestore {
       return isAuth() && clubId != null && (
                isClubAdmin(clubId) ||
                isIndividualAdmin(clubId) ||
-               isClubAdminOf(clubId)
+               isClubAdminOf(clubId) ||
+               isClubDirectorOf(clubId) ||
+               isClubCoordinatorOf(clubId)
              );
     }
 

@@ -53,6 +53,27 @@ function _stripSensitiveFields(player) {
   return safe;
 }
 
+function _callerHasClubPermission(callerDoc, targetClubId) {
+  if (!callerDoc || !callerDoc.exists) return false;
+  const callerData = callerDoc.data() || {};
+  const callerRole = callerData.role;
+  if (callerRole === 'superadmin') return true;
+
+  const validRoles = ['club_admin', 'individual_admin', 'director', 'coordinator'];
+  const callerClubId = callerData.clubId || callerData.individualEntityId;
+
+  if (validRoles.includes(callerRole) && (!targetClubId || !callerClubId || String(callerClubId) === String(targetClubId))) {
+    return true;
+  }
+
+  const allRoles = Array.isArray(callerData.allRoles) ? callerData.allRoles : [];
+  return allRoles.some(r =>
+    r && r.status !== 'removed' && (r.isAuthorized === true || r.authorized === true) &&
+    validRoles.includes(r.role) &&
+    (!targetClubId || !r.clubId || String(r.clubId) === String(targetClubId))
+  );
+}
+
 /* ==================================================================== */
 /* 0️⃣ Cloud Function: setCustomClaims – Asignar Custom Claims (roles) a un usuario  */
 /* ==================================================================== */
@@ -291,52 +312,27 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
 
   const callerUid = context.auth.uid;
   const callerDoc = await admin.firestore().collection('users').doc(callerUid).get();
-
-  // SEC-003: Correct role check — only superadmin, club_admin, individual_admin
-  if (!callerDoc.exists || !['superadmin', 'club_admin', 'individual_admin'].includes(callerDoc.data().role)) {
+  if (!callerDoc.exists) {
     throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
   }
 
-  const callerRole = callerDoc.data().role;
-
-  // SEC-003: club_admin solo puede eliminar usuarios de SU PROPIO club.
-  // El clubId se lee del documento del caller en Firestore (fuente fiable),
-  // NO de data.clubId enviado por el cliente. Ademas se valida que el
-  // usuario objetivo realmente pertenece a ese club.
-  if (callerRole === 'club_admin') {
-    const callerClubId = callerDoc.data().clubId;
-    try {
-      const targetDoc = await admin.firestore().collection('users').doc(data.uid).get();
-      if (targetDoc.exists) {
-        if (targetDoc.data().clubId !== callerClubId) {
-          throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
-        }
-      }
-    } catch(e) {
-      if (e.code === 'permission-denied') throw e;
-    }
-  }
-
-  // individual_admin can only delete users in their own entity
-  if (callerRole === 'individual_admin') {
-    const callerEntityId = callerDoc.data().individualEntityId || callerDoc.data().clubId;
-    try {
-      const targetDoc = await admin.firestore().collection('users').doc(data.uid).get();
-      if (targetDoc.exists) {
-        const targetEntityId = targetDoc.data().individualEntityId || targetDoc.data().clubId;
-        if (targetEntityId !== callerEntityId) {
-          throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu propio ente individual');
-        }
-      }
-    } catch(e) {
-      if (e.code === 'permission-denied') throw e;
-    }
-  }
-
-  const { uid, email } = data;
-
+  const { uid, email } = data || {};
   if (!uid || !email) {
     throw new functions.https.HttpsError('invalid-argument', 'uid y email son requeridos');
+  }
+
+  let targetClubId = (data && data.clubId) || null;
+  if (!targetClubId && uid) {
+    try {
+      const targetDoc = await admin.firestore().collection('users').doc(uid).get();
+      if (targetDoc.exists) {
+        targetClubId = targetDoc.data().clubId || targetDoc.data().individualEntityId || null;
+      }
+    } catch (_) {}
+  }
+
+  if (!_callerHasClubPermission(callerDoc, targetClubId)) {
+    throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
   }
 
   // Determina el UID real de Firebase Auth. El uid recibido del cliente puede
@@ -376,6 +372,24 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     }
   }
 
+  // Purga completa en Firestore cuando se borra Auth
+  if (deletedFromAuth || alreadyAbsent) {
+    try {
+      await admin.firestore().collection('users').doc(uid).delete();
+      if (resolvedUid && resolvedUid !== uid) {
+        await admin.firestore().collection('users').doc(resolvedUid).delete().catch(() => {});
+      }
+      const secSnap = await admin.firestore().collection('users')
+        .where('email', '==', email)
+        .get();
+      for (const sDoc of secSnap.docs) {
+        try { await sDoc.ref.delete(); } catch (_) {}
+      }
+    } catch (e) {
+      console.warn('[deleteAuthUser] Error al limpiar documentos de Firestore:', e && e.message);
+    }
+  }
+
   await admin.firestore().collection('audit_logs').add({
     action: 'delete_user',
     targetUid: resolvedUid,
@@ -393,6 +407,7 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     success: true,
     alreadyAbsent: alreadyAbsent,
     uid: resolvedUid,
+    deletedFromAuth: deletedFromAuth,
     message: alreadyAbsent
       ? `${email} ya no existia en Firebase Auth (email liberado)`
       : `${email} eliminado de Firebase Auth`,
@@ -513,7 +528,7 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
   const callerUid = context.auth.uid;
   const callerDoc = await db.collection('users').doc(callerUid).get();
   if (!callerDoc.exists ||
-      !['superadmin', 'club_admin', 'individual_admin'].includes(callerDoc.data().role)) {
+      !['superadmin', 'club_admin', 'individual_admin', 'director', 'coordinator'].includes(callerDoc.data().role)) {
     throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
   }
   const callerRole = callerDoc.data().role;
@@ -527,26 +542,22 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
   const targetSnap = await db.collection('users').doc(targetUid).get();
   const target = targetSnap.exists ? targetSnap.data() : {};
 
-  // El club se resuelve del documento del LLAMANTE, nunca de lo que mande el
-  // cliente (misma política que deleteAuthUser).
+  // El club se resuelve del documento del LLAMANTE o del target
   if (callerRole === 'club_admin') {
     const callerClubId = callerDoc.data().clubId;
-    if (targetSnap.exists && target.clubId !== callerClubId) {
-      throw new functions.https.HttpsError('permission-denied',
-        'Solo puedes eliminar usuarios de tu club');
-    }
-  }
-  if (callerRole === 'individual_admin') {
-    const callerEntityId = callerDoc.data().individualEntityId || callerDoc.data().clubId;
-    const targetEntityId = target.individualEntityId || target.clubId;
-    if (targetSnap.exists && targetEntityId !== callerEntityId) {
-      throw new functions.https.HttpsError('permission-denied',
-        'Solo puedes eliminar usuarios de tu propio ente individual');
+    if (targetSnap.exists && target.clubId && target.clubId !== callerClubId) {
+      throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
     }
   }
 
   // De qué equipo es este entrenador (ver _resuelveEquipo, más arriba).
   const { clubId, category, subcategory, teamId } = _resuelveEquipo(target, data);
+  const effectiveClubId = clubId || target.clubId || (data && data.clubId) || callerDoc.data().clubId;
+
+  if (!_callerHasClubPermission(callerDoc, effectiveClubId)) {
+    throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
+  }
+
   const allRoles = Array.isArray(target.allRoles) ? target.allRoles : [];
 
   // ══════════════════════════════════════════════════════════════════
@@ -694,12 +705,7 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
     }
   }
 
-  // ── 4. LIMPIAR la subcolección — SÓLO SI LA CUENTA SE HA BORRADO ─
-  //
-  // 🔑 Si la cuenta sigue viva, ARCHIVAR ES COPIAR, NO MOVER: su plantilla
-  //    es de la CUENTA y la sigue necesitando para sus otros equipos. Sólo
-  //    cuando la cuenta desaparece hay que limpiarla, porque si no queda
-  //    huérfana e ilegible para siempre (esa es la razón de ser de todo esto).
+  // ── 4. LIMPIAR la subcolección Y DOCUMENTOS FIRESTORE SÓLO SI SE BORRÓ LA CUENTA ─
   let limpiados = 0;
   if (deletedFromAuth || alreadyAbsent) {
     for (const d of origen.docs) {
@@ -707,6 +713,35 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
         console.warn('[archiveAndDeleteCoach] No se pudo limpiar', d.id, e.message);
       }
     }
+    // Borrar el documento principal en users/{targetUid} para liberar completamente la cuenta
+    try {
+      await db.collection('users').doc(targetUid).delete();
+      if (resolvedUid && resolvedUid !== targetUid) {
+        await db.collection('users').doc(resolvedUid).delete().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('[archiveAndDeleteCoach] Error borrando doc primario:', e.message);
+    }
+    // Borrar documentos secundarios en users (uid_rol_club) y referencias por email
+    try {
+      const secSnap = await db.collection('users')
+        .where('email', '==', targetEmail)
+        .get();
+      for (const sDoc of secSnap.docs) {
+        try { await sDoc.ref.delete(); } catch (_) {}
+      }
+    } catch (e) {
+      console.warn('[archiveAndDeleteCoach] Error borrando docs secundarios:', e.message);
+    }
+    // Limpiar solicitudes pendientes
+    try {
+      const reqSnap = await db.collection('registration_requests')
+        .where('userEmail', '==', targetEmail)
+        .get();
+      for (const rDoc of reqSnap.docs) {
+        try { await rDoc.ref.delete(); } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   // ── 5. Dejar constancia ──────────────────────────────────────────
