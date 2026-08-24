@@ -269,10 +269,16 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
     
     const { ids, numbers } = filterCriteria || { ids: [], numbers: [] };
 
+    // ⛔ SIN ROL DE FAMILIAS NO HAY NI UN PADRE EN LA LISTA. El staff se queda:
+    //    esta pantalla manda el informe del partido también al director y al
+    //    coordinador, y eso no tiene nada que ver con el colectivo de familias
+    //    (decisión suya al pedir la exclusión, 2026-08-24).
+    const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
+
     // Filtramos los padres: solo si su playerId o playerNumber coincide con la convocatoria
-    const activeParents = contacts.filter(c => {
+    const activeParents = !_hayFamilias ? [] : contacts.filter(c => {
         if (c.type !== 'parent') return false;
-        
+
         // 1. Intentar por ID único (J-01, etc)
         const matchById = c.playerId && ids.includes(c.playerId);
         if (matchById) return true;

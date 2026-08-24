@@ -366,8 +366,20 @@ async function autoDispatchMatchReports() {
         // lanzaba (contactos o links mal formados), se llevaba por delante la
         // FASE C. El bucle de abajo sí guarda cada padre por separado.
         let _parentTargets = [];
+        // ⛔⛔ SIN ROL DE FAMILIAS, ESTA FASE NO EXISTE.
+        //  Es la más importante de cortar de las tres: no la pulsa nadie —
+        //  corre sola al terminar el partido—, así que esconder el botón del
+        //  post-partido no la habría detenido y el club habría seguido
+        //  mandando informes individuales a unas familias que su propia
+        //  configuración dice que no existen.
+        const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
+        if (!_hayFamilias) {
+            console.info('[autoDispatch] Rol de familias desactivado: se omite la fase de padres.');
+        }
         try {
-            _parentTargets = _cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds) || [];
+            _parentTargets = _hayFamilias
+                ? (_cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds) || [])
+                : [];
         } catch (targetsErr) {
             console.error('[autoDispatch] No se pudieron resolver los padres destinatarios ' +
                 '(se continúa con la copia del entrenador):', targetsErr && targetsErr.message, targetsErr);

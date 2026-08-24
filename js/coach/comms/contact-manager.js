@@ -362,7 +362,13 @@ async function openContactManager() {
                     </div>
                 </div>
 
-                <!-- ══ SECCIÓN 2: PADRES / TUTORES ══ -->
+                <!-- ══ SECCIÓN 2: PADRES / TUTORES ══
+                     ⛔ Desaparece entera cuando el club no tiene rol de
+                     familias: es el rastro más visible del colectivo y lo que
+                     el autor pidió eliminar (2026-08-24). Con la sección
+                     oculta no hay dónde dar de alta un padre, que es la raíz
+                     de todo lo demás. -->
+                ${(typeof window.cronosHayPadres === 'function' && !window.cronosHayPadres()) ? '' : `
                 <div style="border:1px solid rgba(240,136,62,0.25);border-radius:12px;
                             background:rgba(240,136,62,0.02);margin-bottom:1rem;">
 
@@ -522,7 +528,7 @@ async function openContactManager() {
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </div>`}<!-- fin SECCIÓN 2, condicionada al rol de familias -->
 
             </div><!-- fin scroll único -->
 

@@ -75,7 +75,13 @@ async function _renderDirectorConfig() {
 
     const extras = (me && me.extras) || {};
     const semaforoEnabled = extras.semaforo !== false;
-    const informesPadresEnabled = extras.informes_padres !== false;
+    // ⛔ SUBORDINADO AL ROL. `informes_padres` decide si se ofrece el envío a
+    //    familias; `rol_padres` decide si el colectivo EXISTE. Sin rol no hay
+    //    informe que ofrecer, tenga el club contratado el extra o no — si no,
+    //    el Director vería un interruptor por categoría para mandar informes a
+    //    unas familias que su propia configuración dice que no existen.
+    const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres(me);
+    const informesPadresEnabled = _hayFamilias && extras.informes_padres !== false;
 
     // ══════════════════════════════════════════════════════════════════
     //  🔴 v586 · LAS DOS FEM TIENEN SU PROPIO BLOQUE

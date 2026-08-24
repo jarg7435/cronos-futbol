@@ -1590,8 +1590,40 @@ if (typeof window.cronosParCategoriaDelPanel !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  👨‍👩‍👧 ¿EXISTE EL COLECTIVO DE FAMILIAS EN ESTA ENTIDAD?
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (2026-08-24): cuando se anula el rol de padres/madres/
+//  tutores en la configuración del club o del ente, la aplicación debe
+//  IGNORAR POR COMPLETO todo rastro de ese colectivo.
+//
+//  🔑 UNA SOLA PUERTA. El interruptor `rol_padres` existía desde v596 pero
+//  sólo lo miraba la pantalla de acceso, para bloquear la tarjeta de
+//  Familias: el resto de la aplicación seguía ofreciendo padres, y el
+//  despacho automático seguía mandándoles informes. Todo lo que hable de
+//  familias pregunta ahora AQUÍ, para que no haya dos criterios.
+//
+//  ⚠️ El valor por defecto es SÍ. Un club al que todavía no se le ha escrito
+//  el extra tiene familias, como hasta hoy: sólo la desactivación EXPRESA
+//  (`=== false`) las apaga. Al revés, un `extras` que aún no ha bajado de
+//  Firestore dejaría a un club entero sin familias durante unos segundos.
+if (typeof window.cronosHayPadres !== 'function') {
+    window.cronosHayPadres = function (usuario) {
+        try {
+            const me = usuario || window._getEffectiveUser?.() || window._cronosCurrentUser;
+            const extras = (me && me.extras) || {};
+            return extras.rol_padres !== false;
+        } catch (e) { return true; }
+    };
+}
+
 if (typeof window.isParentReportEnabledForCategory !== 'function') {
     window.isParentReportEnabledForCategory = function(category, subcategory) {
+        // ⛔ Sin colectivo de familias no hay informe a familias que valga, y
+        //    esto va ANTES que la configuración por categoría: el Director
+        //    puede tener el interruptor de su categoría encendido de antes, y
+        //    seguiría diciendo que sí sobre un rol que ya no existe.
+        if (typeof window.cronosHayPadres === 'function' && !window.cronosHayPadres()) return false;
         const configs = window._clubCategoryConfigs || {};
         const groupKey = window.getCategoryGroupKey(category, subcategory);
         // v586 · con herencia: un grupo recién estrenado (las dos FEM) respeta
