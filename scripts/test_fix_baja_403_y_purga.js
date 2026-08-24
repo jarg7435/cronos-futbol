@@ -65,6 +65,35 @@ ok('2g · _callerHasClubPermission evalúa allRoles para director/coordinador se
     })
 }, 'CLUB1') === true);
 
+// 2h-2l · EL PUNTO CIEGO: club del objetivo SIN RESOLVER.
+//
+// Los casos 2b-2g de arriba comprobaban club igual y club distinto, pero
+// ninguno el caso "no sé de qué club es". La primera versión de esta función
+// llevaba tres comodines (`!targetClubId || !callerClubId || !r.clubId`) que
+// en ese caso devolvían TRUE: cualquier administrador de cualquier club
+// quedaba autorizado a borrar la cuenta. Y no es un caso raro — NINGÚN cliente
+// envía `clubId`, y el uid que llega puede ser el de un doc secundario que no
+// existe en `users/{uid}`. Sin club resuelto la respuesta tiene que ser NO.
+ok('2h · rechaza a director de otro club cuando el club del objetivo no se resuelve',
+   callerHasPerm({ exists: true, data: () => ({ role: 'director', clubId: 'CLUB_OTRO' }) }, null) === false);
+ok('2i · rechaza a club_admin cuando el club del objetivo no se resuelve',
+   callerHasPerm({ exists: true, data: () => ({ role: 'club_admin', clubId: 'CLUB1' }) }, null) === false);
+ok('2j · rechaza a un llamante SIN clubId propio frente a un objetivo con club',
+   callerHasPerm({ exists: true, data: () => ({ role: 'club_admin' }) }, 'CLUB1') === false);
+ok('2k · rechaza allRoles sin clubId frente a un objetivo con club',
+   callerHasPerm({ exists: true, data: () => ({
+       role: 'coach',
+       allRoles: [{ role: 'coordinator', status: 'active', isAuthorized: true }]
+   }) }, 'CLUB1') === false);
+ok('2l · el superadmin sigue pasando aunque no haya club resuelto',
+   callerHasPerm({ exists: true, data: () => ({ role: 'superadmin' }) }, null) === true);
+
+// 2m · Y que la autorización no se alimente de lo que manda el cliente.
+ok('2m · deleteAuthUser no autoriza con el clubId enviado por el cliente',
+   !/let targetClubId = \(data && data\.clubId\)/.test(fnContent));
+ok('2n · archiveAndDeleteCoach no cierra la cadena con el clubId del propio llamante',
+   !/effectiveClubId = clubId \|\| target\.clubId \|\| \(data && data\.clubId\) \|\| callerDoc\.data\(\)\.clubId/.test(fnContent));
+
 // 3. Verificar purga de Firestore en archiveAndDeleteCoach y deleteAuthUser
 ok('3a · archiveAndDeleteCoach purga el documento primario users/{targetUid}',
    fnContent.includes("db.collection('users').doc(targetUid).delete()"));

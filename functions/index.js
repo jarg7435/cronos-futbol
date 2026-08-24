@@ -53,16 +53,34 @@ function _stripSensitiveFields(player) {
   return safe;
 }
 
+// 🔒 ¿Puede el LLAMANTE administrar la entidad `targetClubId`?
+//
+// ⚠️⚠️ ESTA FUNCIÓN AUTORIZA BORRADOS DE CUENTA. Se escribió (v610/v611) con
+//    tres comodines `!targetClubId || !callerClubId || !r.clubId` que la
+//    volvían FAIL-OPEN: cuando el club del objetivo no se lograba resolver
+//    —cosa habitual, porque NINGÚN cliente envía `clubId` y el uid recibido
+//    puede ser el de un doc secundario que no existe en `users/{uid}`— el
+//    `!targetClubId` daba `true` y CUALQUIER administrador de CUALQUIER club
+//    quedaba autorizado a borrar a esa persona. Es justo el aislamiento por
+//    entidad que se auditó en v584/v585.
+//
+// 🔑 La comparación es OBLIGATORIA: sin club resuelto no hay autorización.
+//    El superadmin ya ha salido antes; para todos los demás, "no sé de qué
+//    club es" tiene que significar NO, nunca SÍ.
 function _callerHasClubPermission(callerDoc, targetClubId) {
   if (!callerDoc || !callerDoc.exists) return false;
   const callerData = callerDoc.data() || {};
   const callerRole = callerData.role;
   if (callerRole === 'superadmin') return true;
 
+  // Sin club de destino no se puede comprobar nada: se deniega.
+  if (!targetClubId) return false;
+  const objetivo = String(targetClubId);
+
   const validRoles = ['club_admin', 'individual_admin', 'director', 'coordinator'];
   const callerClubId = callerData.clubId || callerData.individualEntityId;
 
-  if (validRoles.includes(callerRole) && (!targetClubId || !callerClubId || String(callerClubId) === String(targetClubId))) {
+  if (validRoles.includes(callerRole) && callerClubId && String(callerClubId) === objetivo) {
     return true;
   }
 
@@ -70,7 +88,7 @@ function _callerHasClubPermission(callerDoc, targetClubId) {
   return allRoles.some(r =>
     r && r.status !== 'removed' && (r.isAuthorized === true || r.authorized === true) &&
     validRoles.includes(r.role) &&
-    (!targetClubId || !r.clubId || String(r.clubId) === String(targetClubId))
+    r.clubId && String(r.clubId) === objetivo
   );
 }
 
@@ -321,14 +339,31 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'uid y email son requeridos');
   }
 
-  let targetClubId = (data && data.clubId) || null;
-  if (!targetClubId && uid) {
-    try {
-      const targetDoc = await admin.firestore().collection('users').doc(uid).get();
-      if (targetDoc.exists) {
-        targetClubId = targetDoc.data().clubId || targetDoc.data().individualEntityId || null;
+  // 🔑 El club del OBJETIVO se resuelve SIEMPRE contra el servidor, nunca con
+  //    el `data.clubId` que manda el cliente: quien llama no puede declarar de
+  //    qué club es su víctima y autorizarse solo. (Es la misma política que ya
+  //    dejó escrita la versión anterior de esta función.)
+  //
+  //    Se busca en dos sitios, porque el uid recibido puede ser el de un doc
+  //    secundario y `users/{uid}` no existir — ese hueco era justo el que
+  //    dejaba el club sin resolver y abría el fail-open de arriba.
+  let targetClubId = null;
+  try {
+    const targetDoc = await admin.firestore().collection('users').doc(uid).get();
+    if (targetDoc.exists) {
+      targetClubId = targetDoc.data().clubId || targetDoc.data().individualEntityId || null;
+    }
+    if (!targetClubId) {
+      const porEmail = await admin.firestore().collection('users')
+        .where('email', '==', email).get();
+      for (const d of porEmail.docs) {
+        const dd = d.data() || {};
+        targetClubId = dd.clubId || dd.individualEntityId || null;
+        if (targetClubId) break;
       }
-    } catch (_) {}
+    }
+  } catch (e) {
+    console.warn('[deleteAuthUser] No se pudo resolver el club del objetivo:', e && e.message);
   }
 
   if (!_callerHasClubPermission(callerDoc, targetClubId)) {
@@ -372,9 +407,16 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     }
   }
 
-  // Purga completa en Firestore cuando se borra Auth
+  // Purga en Firestore cuando se borra Auth.
+  //
+  // ⚠️ EL CORREO ES LA PERSONA; LA PLAZA ES DEL CLUB (v584/v585). Barrer
+  //    `users where email == X` a secas borra también las plazas que esa
+  //    persona tenga en OTROS clubes, que este llamante no administra. Se
+  //    purgan sólo los documentos de la entidad autorizada; el superadmin,
+  //    que sí manda sobre todas, los purga todos.
   if (deletedFromAuth || alreadyAbsent) {
     try {
+      const esSuperadmin = (callerDoc.data() || {}).role === 'superadmin';
       await admin.firestore().collection('users').doc(uid).delete();
       if (resolvedUid && resolvedUid !== uid) {
         await admin.firestore().collection('users').doc(resolvedUid).delete().catch(() => {});
@@ -383,6 +425,13 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
         .where('email', '==', email)
         .get();
       for (const sDoc of secSnap.docs) {
+        const sd = sDoc.data() || {};
+        const sClub = sd.clubId || sd.individualEntityId || null;
+        // Fuera de mi entidad y con dueño conocido: no es mío, no lo toco.
+        if (!esSuperadmin && sClub && targetClubId && String(sClub) !== String(targetClubId)) {
+          console.info('[deleteAuthUser] Se respeta la plaza de otra entidad:', sDoc.id, sClub);
+          continue;
+        }
         try { await sDoc.ref.delete(); } catch (_) {}
       }
     } catch (e) {
@@ -551,10 +600,23 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
   }
 
   // De qué equipo es este entrenador (ver _resuelveEquipo, más arriba).
+  // Este `clubId` puede venir de `data`: vale para SABER DÓNDE ARCHIVAR, que es
+  // una pista, no un permiso.
   const { clubId, category, subcategory, teamId } = _resuelveEquipo(target, data);
-  const effectiveClubId = clubId || target.clubId || (data && data.clubId) || callerDoc.data().clubId;
 
-  if (!_callerHasClubPermission(callerDoc, effectiveClubId)) {
+  // 🔒 Pero AUTORIZAR es otra cosa, y se hace sólo con lo que dice el servidor.
+  //
+  // ⚠️ La versión anterior remataba la cadena con `|| callerDoc.data().clubId`:
+  //    si nada se resolvía, el club del objetivo pasaba a ser EL DEL PROPIO
+  //    LLAMANTE y la comprobación se aprobaba a sí misma. Un objetivo sin
+  //    documento (`targetSnap.exists === false`) llegaba además con `allRoles`
+  //    vacío, o sea `borrarCuenta = true`: cuenta de Auth borrada por correo,
+  //    sin dueño comprobado. Sin club resuelto en el servidor, aquí se deniega.
+  const authClubId = target.clubId || target.individualEntityId ||
+    ((Array.isArray(target.allRoles) ? target.allRoles : [])
+      .find((r) => r && r.clubId && r.status !== 'removed') || {}).clubId || null;
+
+  if (!_callerHasClubPermission(callerDoc, authClubId)) {
     throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
   }
 
@@ -705,7 +767,12 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
     }
   }
 
-  // ── 4. LIMPIAR la subcolección Y DOCUMENTOS FIRESTORE SÓLO SI SE BORRÓ LA CUENTA ─
+  // ── 4. LIMPIAR la subcolección Y LOS DOCUMENTOS — SÓLO SI SE BORRÓ LA CUENTA ─
+  //
+  // 🔑 Si la cuenta sigue viva, ARCHIVAR ES COPIAR, NO MOVER: su plantilla
+  //    es de la CUENTA y la sigue necesitando para sus otros equipos. Sólo
+  //    cuando la cuenta desaparece hay que limpiarla, porque si no queda
+  //    huérfana e ilegible para siempre (esa es la razón de ser de todo esto).
   let limpiados = 0;
   if (deletedFromAuth || alreadyAbsent) {
     for (const d of origen.docs) {
@@ -722,23 +789,36 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
     } catch (e) {
       console.warn('[archiveAndDeleteCoach] Error borrando doc primario:', e.message);
     }
-    // Borrar documentos secundarios en users (uid_rol_club) y referencias por email
+    // Borrar documentos secundarios en users (uid_rol_club) y referencias por email.
+    //
+    // ⚠️ Sólo los de ESTA entidad: el correo es la PERSONA y puede tener plazas
+    //    en otros clubes que este llamante no administra (v584/v585). El
+    //    superadmin sí barre todas.
+    const esSuperadmin = callerRole === 'superadmin';
     try {
       const secSnap = await db.collection('users')
         .where('email', '==', targetEmail)
         .get();
       for (const sDoc of secSnap.docs) {
+        const sd = sDoc.data() || {};
+        const sClub = sd.clubId || sd.individualEntityId || null;
+        if (!esSuperadmin && sClub && authClubId && String(sClub) !== String(authClubId)) {
+          console.info('[archiveAndDeleteCoach] Se respeta la plaza de otra entidad:', sDoc.id, sClub);
+          continue;
+        }
         try { await sDoc.ref.delete(); } catch (_) {}
       }
     } catch (e) {
       console.warn('[archiveAndDeleteCoach] Error borrando docs secundarios:', e.message);
     }
-    // Limpiar solicitudes pendientes
+    // Limpiar solicitudes pendientes — igual, sin pisar las dirigidas a otro club.
     try {
       const reqSnap = await db.collection('registration_requests')
         .where('userEmail', '==', targetEmail)
         .get();
       for (const rDoc of reqSnap.docs) {
+        const rClub = (rDoc.data() || {}).clubId || null;
+        if (!esSuperadmin && rClub && authClubId && String(rClub) !== String(authClubId)) continue;
         try { await rDoc.ref.delete(); } catch (_) {}
       }
     } catch (_) {}
