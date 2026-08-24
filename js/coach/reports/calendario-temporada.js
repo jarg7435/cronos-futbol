@@ -366,6 +366,16 @@ window.calAbrirGestor = async function () {
             '</div>';
         });
         html += '</div>';
+
+        // 📤 La salida. Sólo se ofrece si hay algo que sacar: un botón que no
+        //    puede hacer nada es peor que no tenerlo (misma regla que v472).
+        if (equipos.some(f => idx.equipos[f.id] && idx.equipos[f.id].jornadas)) {
+            html += '<div style="margin-top:0.9rem;padding-top:0.8rem;border-top:1px solid rgba(255,255,255,0.08);">' +
+                '<button class="btn" onclick="calAbrirExportador()" ' +
+                    'style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;' +
+                    'background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.4);color:#3fb950;">' +
+                    '📤 Exportar la temporada (CSV / PDF)</button></div>';
+        }
     }
 
     const cuerpo = document.getElementById('cal-cuerpo');
@@ -885,3 +895,203 @@ window.calBorrarEquipo = async function (filaId, label) {
         _calToast('⚠️ No se pudo borrar: ' + (e && e.message ? e.message : e), 5000);
     }
 };
+
+// ════════════════════════════════════════════════════════════════════
+//  📤 SACAR LA TEMPORADA · CSV y PDF, por equipo y de todo el club
+// ════════════════════════════════════════════════════════════════════
+//  El calendario anual tenía TRES vías de entrada (el PDF de la federación,
+//  pegar el texto y editar a mano) y NINGUNA de salida. Esto es la salida.
+//
+//  🔑 NO SE ESCRIBE UN EXPORTADOR: se enchufa el que ya existe.
+//  `js/coach/reports/reports-export.js` lleva desde v473 resolviendo las dos
+//  cosas que aquí importan y que no son evidentes:
+//    · `rxDescargarCSV` escribe en **UTF-16LE**, porque el Excel del autor
+//      IGNORÓ el BOM de UTF-8 —que es opcional— y le abrió el fichero con
+//      todas las tildes rotas, leyendo los bytes como Windows-1252.
+//      (El ejemplo literal está en reports-export.js; aquí no se copia, que
+//       este fichero tiene un guard de mojibake y saltaría con razón.)
+//    · `rxImprimir` abre el documento imprimible sin librería alguna, con el
+//      `print-color-adjust: exact` sin el cual el navegador tira los fondos.
+//  Duplicar cualquiera de las dos sería reabrir un caso ya cerrado.
+//
+//  ⚠️⚠️ EL GESTO DEL USUARIO ES EL EJE DEL DISEÑO. En iPad y móvil el fichero
+//  se entrega con `navigator.share`, que EXIGE un gesto y lo pierde si antes
+//  te vas a leer de Firestore. Por eso esto va en DOS PASOS: al abrir la
+//  ventana se lee la temporada entera y se deja EN MEMORIA, y sólo entonces se
+//  pintan los botones. Cuando el usuario pulsa, el fichero se construye sin
+//  esperar a nadie y la entrega ocurre dentro de su clic.
+// ════════════════════════════════════════════════════════════════════
+
+window._calExp = window._calExp || null;   // temporada ya leída y lista
+
+// Filas planas de un equipo, ordenadas por fecha. Los campos son los que
+// guarda el importador: jornada, hora, rival, local, sede.
+function _calFilasDe(partidosPorMes, filaId, label) {
+    const filas = [];
+    Object.keys(partidosPorMes).forEach(mes => {
+        const delEquipo = (partidosPorMes[mes] || {})[filaId] || {};
+        Object.keys(delEquipo).forEach(fecha => {
+            const d = delEquipo[fecha] || {};
+            filas.push({
+                equipo: label, fecha: fecha, jornada: d.jornada || '',
+                hora: d.hora || '', rival: d.rival || '',
+                local: d.local === true ? 'Casa' : (d.local === false ? 'Fuera' : ''),
+                esCasa: d.local === true, esFuera: d.local === false,
+                sede: d.sede || ''
+            });
+        });
+    });
+    return filas.sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.hora).localeCompare(String(b.hora)));
+}
+
+// Lee de una vez todos los meses que ocupan los equipos visibles.
+async function _calLeerTemporadaCompleta(clubId, equipos, idx) {
+    const meses = new Set();
+    equipos.forEach(f => {
+        const info = idx.equipos[f.id];
+        const suyos = (info && info.meses) ||
+            _calMesesDe(window.CalParser.temporadaDe(new Date()));
+        suyos.forEach(m => meses.add(m));
+    });
+    const porMes = {};
+    for (const m of meses) porMes[m] = await _calLeerMes(clubId, m);
+    return porMes;
+}
+
+// ── Paso 1 · abrir la ventana: aquí se lee, y sólo aquí ──────────────
+window.calAbrirExportador = async function () {
+    const clubId = _calClubId();
+    const st = window._cqState;
+    if (!clubId || !st || !st.doc) { _calToast('⚠️ Abre primero el cuadrante.'); return; }
+    if (typeof window.rxCsv !== 'function' || typeof window.rxImprimir !== 'function') {
+        // Un botón que no puede hacer nada es peor que no tenerlo (v472).
+        _calToast('⚠️ El módulo de exportación no está disponible.', 4500); return;
+    }
+
+    _calOverlay('📤 Exportar la temporada',
+        '<div style="text-align:center;padding:2rem;color:var(--text-muted);">⏳ Leyendo la temporada…</div>', '');
+
+    const idx = await _calLeerIndice(clubId);
+    const filas = (typeof window._cqFilasVisibles === 'function')
+        ? window._cqFilasVisibles(st.doc.filas) : st.doc.filas;
+    const equipos = filas.filter(f => f.tipo === 'equipo');
+    const porMes = await _calLeerTemporadaCompleta(clubId, equipos, idx);
+
+    // 🔑 TODO QUEDA EN MEMORIA ANTES DE PINTAR UN SOLO BOTÓN.
+    const bloques = equipos
+        .map(f => ({ filaId: f.id, label: f.label, filas: _calFilasDe(porMes, f.id, f.label) }))
+        .filter(b => b.filas.length);
+    window._calExp = { club: (window._cronosCurrentUser || {}).clubName || 'Club', bloques: bloques };
+
+    const total = bloques.reduce((n, b) => n + b.filas.length, 0);
+    let html = '<div style="font-size:0.74rem;color:var(--text-muted);line-height:1.6;margin-bottom:0.9rem;">' +
+        'El <strong>CSV</strong> se abre en Excel o en cualquier hoja de cálculo. El <strong>PDF</strong> sale con el ' +
+        'código de color del club: <span style="color:#3fb950;font-weight:700;">verde en casa</span>, ' +
+        '<span style="color:#f0883e;font-weight:700;">naranja fuera</span>.' +
+        (_calExpTactil() ? '<br>En tableta y móvil se abrirá el menú de <strong>Compartir</strong> para que puedas ' +
+                           'guardarlo en Archivos o enviarlo.' : '') +
+        '</div>';
+
+    if (!total) {
+        html += '<div style="text-align:center;padding:2rem;color:var(--text-muted);">' +
+                'Todavía no hay ningún calendario importado.</div>';
+    } else {
+        html += '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.9rem;">' +
+            _calExpBoton('📊 CSV · todo el club', "calExportarCSV('')", '#3fb950') +
+            _calExpBoton('🖨️ PDF · todo el club', "calExportarPDF('')", '#58a6ff') +
+            '</div><div style="display:flex;flex-direction:column;gap:0.4rem;">';
+        bloques.forEach(b => {
+            html += '<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;' +
+                        'border:1px solid rgba(255,255,255,0.09);border-radius:10px;padding:0.55rem 0.75rem;">' +
+                '<div style="flex:1;min-width:150px;">' +
+                    '<div style="font-size:0.8rem;font-weight:700;color:white;">' + _calE(b.label) + '</div>' +
+                    '<div style="font-size:0.68rem;color:var(--text-muted);">' + b.filas.length + ' partidos</div>' +
+                '</div>' +
+                _calExpBoton('📊 CSV', "calExportarCSV('" + _calA(b.filaId) + "')", '#3fb950') +
+                _calExpBoton('🖨️ PDF', "calExportarPDF('" + _calA(b.filaId) + "')", '#58a6ff') +
+            '</div>';
+        });
+        html += '</div>';
+    }
+
+    const cuerpo = document.getElementById('cal-cuerpo');
+    if (cuerpo) cuerpo.innerHTML = html;
+};
+
+function _calExpTactil() {
+    try {
+        return (navigator.maxTouchPoints || 0) > 0 &&
+               typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    } catch (e) { return false; }
+}
+
+function _calExpBoton(txt, accion, color) {
+    return '<button class="btn" onclick="' + accion + '" style="padding:0.35rem 0.8rem;font-size:0.7rem;' +
+        'font-weight:700;background:' + color + '1a;border:1px solid ' + color + '66;color:' + color + ';">' +
+        txt + '</button>';
+}
+
+// Los bloques a exportar: uno solo, o todos si `filaId` viene vacío.
+function _calExpBloques(filaId) {
+    const est = window._calExp;
+    if (!est || !est.bloques.length) return null;
+    return filaId ? est.bloques.filter(b => b.filaId === filaId) : est.bloques;
+}
+
+// ── Paso 2 · el clic. Sin esperas: los datos ya están ────────────────
+window.calExportarCSV = function (filaId) {
+    const bloques = _calExpBloques(filaId);
+    if (!bloques || !bloques.length) { _calToast('⚠️ No hay nada que exportar.'); return; }
+
+    // La columna EQUIPO va siempre, también en el CSV de un solo equipo: así
+    // dos exportaciones distintas se pueden apilar en la misma hoja.
+    const filas = [['Equipo', 'Jornada', 'Fecha', 'Hora', 'Rival', 'Casa/Fuera', 'Sede']];
+    bloques.forEach(b => b.filas.forEach(f => {
+        filas.push([f.equipo, f.jornada, f.fecha, f.hora, f.rival, f.local, f.sede]);
+    }));
+
+    const ambito = filaId ? bloques[0].label : (window._calExp.club + '_completo');
+    const nombre = 'calendario_' + window.rxSlug(ambito) + '_' + window.rxHoy() + '.csv';
+    if (window.rxDescargarCSV(nombre, window.rxCsv(filas))) {
+        _calToast('📊 ' + (filas.length - 1) + ' partidos exportados.');
+    }
+};
+
+window.calExportarPDF = function (filaId) {
+    const bloques = _calExpBloques(filaId);
+    if (!bloques || !bloques.length) { _calToast('⚠️ No hay nada que exportar.'); return; }
+
+    // 🎨 EL COLOR ES EL DATO (verde casa / naranja fuera), no un adorno: por eso
+    //    va además la palabra. Si una impresora en blanco y negro se come el
+    //    color, el documento tiene que seguir diciendo dónde se juega.
+    let cuerpo = '';
+    bloques.forEach(b => {
+        cuerpo += '<h2 style="font-size:13px;margin:14px 0 6px;">' + _calE(b.label) +
+                  ' <span style="font-weight:400;color:#57606a;">· ' + b.filas.length + ' partidos</span></h2>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:10px;">' +
+            '<thead><tr style="background:#f0f3f6;">' +
+            ['Jor.', 'Fecha', 'Hora', 'Rival', 'Dónde', 'Sede']
+                .map(h => '<th style="border:1px solid #d0d7de;padding:3px 5px;text-align:left;">' + h + '</th>').join('') +
+            '</tr></thead><tbody>';
+        b.filas.forEach(f => {
+            const color = f.esCasa ? '#1a7f37' : (f.esFuera ? '#bc4c00' : '#57606a');
+            const td = (v, extra) => '<td style="border:1px solid #d0d7de;padding:3px 5px;' + (extra || '') + '">' +
+                                     _calE(v == null ? '' : String(v)) + '</td>';
+            cuerpo += '<tr>' + td(f.jornada) + td(f.fecha) + td(f.hora) + td(f.rival) +
+                '<td style="border:1px solid #d0d7de;padding:3px 5px;font-weight:700;color:' + color + ';">' +
+                    _calE(f.local || '—') + '</td>' +
+                td(f.sede) + '</tr>';
+        });
+        cuerpo += '</tbody></table>';
+    });
+
+    const ambito = filaId ? bloques[0].label : 'Todos los equipos';
+    const total = bloques.reduce((n, b) => n + b.filas.length, 0);
+    window.rxImprimir({
+        titulo: 'Calendario de la temporada',
+        subtitulo: ambito,
+        meta: [window._calExp.club, total + ' partidos'],
+        cuerpo: cuerpo
+    });
+};
+

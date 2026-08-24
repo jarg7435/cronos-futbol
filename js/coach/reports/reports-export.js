@@ -148,11 +148,60 @@
         return bytes;
     }
 
+    // ── 📲 EN TÁCTIL SE COMPARTE; EN PC SE DESCARGA ──────────────────
+    //  ⚠️⚠️ UN `<a download>` CON URL `blob:` **NAVEGA** EN iOS. Eso ya costó
+    //  la saga v526→v530: tras exportar el vídeo, el iPad volvía a la pantalla
+    //  de contraseña. No se perdía la sesión — la pestaña arrancaba de cero
+    //  porque Safari había abierto su previsualización encima. **No se
+    //  sobrevive a la navegación: hay que NO NAVEGAR.** La salida es entregar
+    //  el fichero al menú del sistema con `navigator.share`, que no mueve la
+    //  página, y que además es el "Guardar en Archivos" que el usuario espera.
+    //
+    //  🔑 SÓLO EN TÁCTIL. En un PC, `canShare({files})` puede decir que sí
+    //  (Chrome en Windows lo soporta) y abriría un menú de compartir cuando lo
+    //  que el usuario quiere es su CSV en Descargas para abrirlo con Excel. El
+    //  camino del `<a>` lleva probado desde v473 y no se toca: *un arreglo que
+    //  arregle el iPad y rompa el PC no es un arreglo* (v530).
+    //
+    //  ⚠️ `navigator.share` EXIGE GESTO DEL USUARIO. Por eso se llama de forma
+    //  SÍNCRONA dentro del manejador del clic y quien llame debe traer el texto
+    //  ya preparado: si se pone a leer de Firestore primero, el permiso caduca
+    //  y salta `NotAllowedError`.
+    function _rxEsTactil() {
+        try {
+            return (navigator.maxTouchPoints || 0) > 0 &&
+                   typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+        } catch (e) { return false; }
+    }
+
+    // Intenta entregar el fichero por el menú del sistema. Devuelve true si la
+    // entrega se ha puesto en marcha; false si aquí no se puede y hay que caer
+    // al `<a download>` de siempre.
+    function _rxCompartirFichero(nombre, bytes, mime) {
+        try {
+            if (!_rxEsTactil()) return false;
+            if (typeof File !== 'function' || !navigator.share || !navigator.canShare) return false;
+            const fichero = new File([bytes], nombre, { type: mime });
+            if (!navigator.canShare({ files: [fichero] })) return false;
+            // Llamada SÍNCRONA: es lo que consume el gesto del usuario.
+            navigator.share({ files: [fichero], title: nombre })
+                .catch(function (e) {
+                    // Cancelar el menú NO es un fallo: el usuario cambió de idea.
+                    if (e && e.name === 'AbortError') return;
+                    _rxToast('⚠️ No se pudo compartir el archivo: ' +
+                             (e && e.message ? e.message : e), 4000);
+                });
+            return true;
+        } catch (e) { return false; }
+    }
+
     // rxDescargarCSV(nombre, texto) → dispara la descarga. Devuelve true/false
     // para que quien llame pueda avisar si no se pudo.
     window.rxDescargarCSV = function (nombre, texto) {
         try {
-            const blob = new Blob([_rxUtf16le(texto)], { type: 'text/csv;charset=utf-16le' });
+            const bytes = _rxUtf16le(texto);
+            if (_rxCompartirFichero(nombre, bytes, 'text/csv;charset=utf-16le')) return true;
+            const blob = new Blob([bytes], { type: 'text/csv;charset=utf-16le' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
