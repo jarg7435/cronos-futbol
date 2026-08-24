@@ -74,6 +74,12 @@ backups/
 # Se quedan en disco; simplemente no se siguen.
 CAPTURAS/
 
+# CALENDARIOS OFICIALES EN PDF (material de trabajo, no producto)
+# El autor deja aqui los PDF de la federacion con los que se calibra el lector
+# del calendario de temporada. Son documentos de terceros, pesan, y no
+# describen el estado del codigo: se quedan en disco y no se siguen.
+CALENDARIOS/
+
 # SCRIPTS DE INVESTIGACION/DEBUG PUNTUAL CONTRA PRODUCCION (Admin SDK)
 # Nunca deben vivir en functions/ (se empaqueta en cada deploy) ni commitearse:
 # acceden a produccion directamente y no forman parte del producto.

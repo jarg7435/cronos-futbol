@@ -1,5 +1,50 @@
 // ─────────────────────────────────────────────────────────────
 //  CHRONOS FUTBOL - Service Worker v229
+//  v611: FUNDAR UN CLUB TAMBIEN PASA POR LA REGLA "UN CORREO, UNA ENTIDAD".
+//        El agujero: la comprobacion de v585 corria con
+//        `isAddingRole && clubId && ...`, y al CREAR una entidad todavia no
+//        hay clubId, asi que se saltaba ENTERA. La regla vigilaba la puerta de
+//        entrada a un club existente, pero no la de fundar uno.
+//        🔑 MEDIDO EN DATOS REALES: un correo acabo siendo coordinador F11 de
+//        un club y administrador de OTRO a la vez —justo lo que la regla
+//        existe para impedir— y solo choco DESPUES, al querer anadirse como
+//        entrenador en su propio club. El bloqueo llegaba un paso tarde.
+//        Con clubId vacio, CUALQUIER plaza viva es ajena: para fundar no
+//        puedes tener plaza en ninguna otra entidad. Siguen intactas las tres
+//        salvaguardas de v585 (manda allRoles, una entidad BORRADA no
+//        bloquea, y fail-open ante cualquier duda).
+//  v610: DOS FALLOS DE ROLES Y ALTAS (reportados 2026-08-23).
+//        1. LA BAJA SE LLEVABA TODOS LOS ROLES DEL CLUB. El boton "🗑️ Baja"
+//        llamaba a caSetUserStatus SIN targetRole ni plaza, y sin ellos el
+//        filtro se lleva TODAS las entradas de allRoles de ese club. La
+//        maquinaria para acotar existia desde v581 y el boton "Cambiar
+//        equipo" de la MISMA fila ya la usaba: fallaba una llamada.
+//        2. "MISSING OR INSUFFICIENT PERMISSIONS" AL CREAR UN CLUB con un
+//        correo que ya existe. La rama de re-registro borraba el documento
+//        para recrearlo —porque el create admite role/clubId/status y el
+//        update los prohibe (SEC-C1)— pero `allow delete: if isSuperAdmin()`:
+//        el borrado fallaba EN SILENCIO dentro de un catch vacio y el setDoc
+//        pasaba a ser un update DENEGADO. Medido contra el servidor de reglas
+//        de Google, no deducido. Ahora se escribe solo lo que el dueno puede
+//        escribir; la raiz la pone al dia el SuperAdmin al aprobar.
+//        2b. Y esa solicitud no llevaba el nombre del club: aprobarla habria
+//        creado un club llamado "Solicitud Directa".
+//  v609: CALENDARIO OFICIAL DE TEMPORADA POR SUBCATEGORIA.
+//        Se arrastra el PDF de la federacion, la app lo interpreta y los
+//        partidos salen solos en el Cuadrante (verde casa / naranja fuera).
+//        🔑 EL MOTOR NO RECONOCE EL MAQUETADO, RECONOCE EL DATO: una fecha se
+//        escribe como una fecha en todas partes, y el NOMBRE DEL PROPIO CLUB
+//        es la brujula que dice cual de los dos equipos de la linea es el
+//        rival y de que lado se juega. Eso elimina el mapeo de columnas y es
+//        lo que permite que valga el PDF de CUALQUIER federacion sin tocar
+//        codigo. Si el nombre no casa, hay segunda brujula: en el calendario
+//        de un equipo, ese equipo sale en todas las jornadas.
+//        🔴 NADA se guarda sin que una persona vea la tabla de revision, y el
+//        calendario NUNCA pisa lo que el director escribio a mano: se propone
+//        con borde punteado y solo se fija a peticion.
+//        ⛔ pdf.js va ALOJADO en el proyecto (no CDN, v543) y FUERA de este
+//        precache: 1,5 MB en un `cache.addAll` ATOMICO (v452) podrian tumbar
+//        la precarga entera por un lector que se usa dos veces al ano.
 //  v608: "CAMPO COMPLETO" YA NO SE SALE DE LA CASILLA (captura 9425).
 //        🔑 La causa de fondo no era el texto, era el <button>: uno sin
 //        `display` explicito coloca su contenido en una caja anonima que el
@@ -2514,8 +2559,70 @@
 // CHRONOS FÚTBOL — SERVICE WORKER
 // v142: SPRINT 4 — Offline Fallback + Local Icons
 // ─────────────────────────────────────────────────────────────
+// v612: 📅 La importación del calendario oficial, de verdad hasta el cuadrante.
+//        (1) El PDF se apilaba sobre si mismo: `agruparEnLineas` agrupaba los
+//            fragmentos por su altura `y` SIN MIRAR LA PAGINA, y todo PDF
+//            reutiliza las mismas alturas en todas sus hojas. Una temporada de
+//            22/30 jornadas no cabe en una hoja: las 3-5 paginas se metian unas
+//            dentro de otras y de ahi salian "3 partidos sueltos".
+//        (2) Y las `filas` del cuadrante -la lista de equipos- se guardaban
+//            DENTRO del documento de la semana: al pasar de semana el equipo
+//            anyadido se esfumaba, y como los partidos se guardan bajo `filaId`,
+//            su partido no tenia fila donde pintarse. La temporada quedaba bien
+//            guardada en Firestore y NO SE VEIA NADA. Ahora viven en el club
+//            (doc hermano CUADRANTE__FILAS, cero reglas nuevas).
+// v613: 📅 La tabla del calendario oficial, leida por COLUMNAS.
+//        El calendario de la federacion es una TABLA sin guion: los dos
+//        equipos van en dos columnas y solo los separa blanco. Partir por "el
+//        hueco mas ancho de ESTA fila" es una loteria -con nombres de club
+//        largos el hueco baja del umbral y la fila se cae ENTERA-, y de ahi
+//        salian 3 partidos sueltos de una temporada de 30.
+//        Ahora las columnas se miden UNA VEZ sobre la pagina entera: una
+//        columna deja una CALLE vertical por la que no pasa ni una letra en
+//        ninguna fila. Calle minima adaptativa (3,5 pt con >=6 filas).
+//        + Contadores `sinPar` y `sinFecha`: una fila que se cae ya no se cae
+//          en silencio, se dice cuantas y por que.
+//        + Boton "Copiar diagnostico": vuelca lo que el motor leyo del PDF
+//          CON LAS COORDENADAS, unica forma de diagnosticar un maquetado
+//          desconocido sin tener el documento delante.
+// v614: 📅 CALIBRADO CONTRA EL PDF OFICIAL DE VERDAD (Futbol Las Palmas).
+//        Con el documento delante se acabaron las suposiciones. Dos cosas que
+//        ninguna maqueta mia habia visto:
+//        (1) Los huecos entre columnas NO estan vacios: tFPDF mete un
+//            fragmento de ESPACIOS CON ANCHURA que encaja al milimetro con la
+//            columna siguiente. `agruparEnLineas` los tiraba por "vacios" y
+//            con ellos tiraba el mapa de la tabla. Ahora parten la fila en
+//            CAMPOS: el reparto lo marca el documento, no la geometria.
+//        (2) Hay una fila de CABECERA -JOR FECHA HORA LOCAL VISITANTE
+//            ESTADIO- que dice que es cada columna. La localia se LEE, no se
+//            deduce. Sin esto el motor tomaba el NUMERO DE JORNADA por un
+//            equipo: el autor recibio 3 partidos con rivales "11", "19", "26".
+//        Resultado medido: 30/30 jornadas, todas en verde, 15 casa y 15
+//        fuera, con su rival y su estadio correctos. Antes: 3.
+//        + Arreglado: `\b` en JS es ASCII y una tilde le parece frontera de
+//          palabra, asi que el limpiador de dias se comia el "Mar" de
+//          «Juv. Maritima» y guardaba «Juv. itima» (y «Dominguez»->«inguez»).
+//        + firebase.json: CAPTURAS/ y CALENDARIOS/ fuera del despliegue.
+//          Estar en .gitignore NO impide publicar: `public` es "." y se sube
+//          lo que hay en DISCO. El PDF de la federacion habria quedado
+//          descargable en una URL publica en el siguiente deploy.
+// v615: 🗓️ Copiar semana SIN partidos + ↩️ Deshacer / Rehacer.
+//        (1) COPIAR SEMANA se llevaba los partidos y al pegar VACIABA la
+//            semana destino entera. Como cada jornada cae en un dia distinto
+//            -el Estrella CF juega la J7 el sabado a las 11:00 y la J8 el
+//            viernes a las 21:00- eso borraba el partido que ya estaba bien
+//            puesto y le plantaba encima el de otra semana. Ahora la copia
+//            lleva SOLO entrenamientos, y al pegar los partidos del destino
+//            no se borran NI se sobrescriben. El aviso previo lo dice.
+//        (2) DESHACER / REHACER en el cuadrante (botones + Ctrl+Z / Ctrl+Y).
+//            Instantaneas, no operaciones inversas: la accion que mas falta
+//            hacia deshacer -pegar una semana entera- es justo la mas dificil
+//            de invertir a mano. No toca Firestore: devuelve la pantalla y
+//            marca "sin guardar"; si deshaces hasta el punto guardado, el
+//            aviso se apaga. Se reinicia al cambiar de semana y al adoptar un
+//            cambio ajeno: la pila describe UN documento.
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v608';
+const CACHE_NAME = 'cronos-cache-v615';
 
 const ASSETS = [
     './',
@@ -2603,6 +2710,18 @@ const ASSETS = [
     // veria "modulo no disponible". El fichero existe en disco — `cache.addAll`
     // es ATOMICO y una ruta que devuelva 404 tumba la precarga ENTERA (v452).
     './js/coach/reports/cuadrante-club.js',
+    // v609 · Calendario oficial de temporada. Los dos modulos son pequenos y
+    // van al precache como el resto del panel.
+    //
+    // ⛔ LO QUE NO ENTRA AQUI, Y ES DELIBERADO: js/vendor/pdfjs/*.js. Son 1,5
+    // MB entre la biblioteca y su worker, y `cache.addAll` es ATOMICO: si esa
+    // descarga fallara —red lenta, movil con datos justos— tumbaria la
+    // precarga ENTERA y el usuario se quedaria sin shell offline por un lector
+    // de PDF que solo usa el director dos veces al ano. Al ir por
+    // `_networkFirst`, el Service Worker lo guarda igual despues de la primera
+    // descarga: se cachea, pero sin poder romper nada.
+    './js/coach/reports/calendario-parser.js',
+    './js/coach/reports/calendario-temporada.js',
     './js/coach/reports/finished-matches-tab.js',
     './js/coach/reports/reports-tab.js',
     './js/coach/reports/reports-export.js',

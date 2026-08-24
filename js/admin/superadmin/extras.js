@@ -307,21 +307,46 @@
                 // ════════════════════════════════════════════════════════
                 var snapD_all = [];
                 var pend = { registros: [], cuota: [], sucesion: [] };
+                var fallaBajas = '';
                 try {
                     if (typeof window.saPendingItems !== 'function') {
                         throw new Error('saPendingItems no está cargada (orden de scripts)');
                     }
                     pend = await window.saPendingItems();
+                } catch (e) {
+                    console.error('[SA-DEBUG] Error leyendo las solicitudes pendientes:', e);
+                    if (body) body.innerHTML = await _saCajaError('las solicitudes pendientes', e);
+                    return;
+                }
 
+                // ════════════════════════════════════════════════════════
+                //  🔴 2026-08-23 · UNA LECTURA SECUNDARIA NO PUEDE TUMBAR
+                //  LA SECCIÓN ENTERA
+                //
+                //  DEFECTO REPORTADO: la pantalla de Solicitudes se quedaba
+                //  ENTERA en rojo con "Missing or insufficient permissions", y
+                //  el SuperAdmin no podía ni ver —ni mucho menos aprobar— la
+                //  solicitud que venía a atender.
+                //
+                //  🔑 ERA ESTA LECTURA, Y ERA LA ÚNICA SIN PROTEGER. Las seis
+                //  consultas de `saPendingItems` llevan cada una su `.catch`, y
+                //  la función entera devuelve vacío si algo falla. Ésta iba a
+                //  pelo dentro del mismo `try`, así que su fallo se llevaba por
+                //  delante TODO — incluidas las solicitudes, que sí se habían
+                //  leído bien un instante antes.
+                //
+                //  🔑 Y ES UN BLOQUE SECUNDARIO: `deletion_requests` alimenta
+                //  las BAJAS, que ni siquiera cuentan para el badge (v533). Que
+                //  lo accesorio tumbe lo principal es el defecto, no el permiso.
+                //  Ahora se degrada: se pintan las solicitudes y se avisa en
+                //  pequeño de que las bajas no se han podido leer.
+                // ════════════════════════════════════════════════════════
+                try {
                     const dDocs = await getDocs(collection(db, 'deletion_requests'));
                     dDocs.forEach(d => snapD_all.push(Object.assign({_id: d.id}, d.data())));
-
                 } catch (e) {
-                    console.error('[SA-DEBUG] Error crítico de lectura:', e);
-                    if (body) body.innerHTML = `<div style="padding:1rem;background:rgba(255,88,88,0.1);border:1px solid #ff5858;border-radius:8px;color:#ff5858;">
-                        <strong>⚠️ Error de Permisos Firestore:</strong><br>${e.message}
-                    </div>`;
-                    return;
+                    console.warn('[SA-DEBUG] No se pudieron leer las bajas (deletion_requests):', e);
+                    fallaBajas = (e && e.message) || String(e);
                 }
 
                 // Los registros (solicitudes + usuarios huérfanos, ya

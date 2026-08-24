@@ -222,12 +222,84 @@ function _cqEspacioImplicito(c) {
 const CQ_ORDEN_CAT = ['regional','regional_fem','futurefem','juvenil','cadete',
                       'infantil','alevin','benjamin','prebenjamin'];
 
+// ════════════════════════════════════════════════════════════════════
+//  📅 v609 · EL CALENDARIO OFICIAL SE PROPONE, NO SE IMPONE
+//
+//  Decisión expresa del autor (2026-08-23): «si el calendario oficial arroja
+//  un partido en una celda que ya hubiera sido modificada o escrita a mano
+//  previamente por el director deportivo, el sistema debe respetar el cambio
+//  manual y mostrar un aviso, dándole prioridad al criterio del coordinador».
+//
+//  De ahí sale toda la mecánica de estas tres funciones:
+//   · Una PROPUESTA sólo existe donde la casilla está VACÍA. Donde hay algo
+//     escrito, el calendario calla y se limita a avisar (ver _cqConflictos).
+//   · Una propuesta NO está en `st.doc.celdas`, así que no se guarda al pasar
+//     por la semana, no cuenta como ocupación del campo y NO entra en el
+//     informe del Ayuntamiento. Se convierte en casilla de verdad al pulsar
+//     FIJAR, o al abrirla y guardarla como cualquier otra.
+// ════════════════════════════════════════════════════════════════════
+function _cqPropuesta(filaId, fecha) {
+    const st = window._cqState;
+    if (!st.calendario) return null;
+    if (st.doc && st.doc.celdas && st.doc.celdas[filaId + '|' + fecha]) return null;  // manda lo escrito
+    return st.calendario[filaId + '|' + fecha] || null;
+}
+
+// La casilla que se escribiría si se fijara esta propuesta.
+function _cqCeldaDePropuesta(p) {
+    const ini = p.hora || '';
+    return {
+        tipo: p.local ? 'partido_casa' : 'partido_fuera',
+        ini,
+        fin: ini ? _cqHHMM(Math.min(_cqMin(ini) + 90, 23 * 60 + 59)) : '',
+        esp: [],
+        txt: (p.jornada != null ? 'J' + p.jornada + ' · ' : '') + (p.rival || 'Partido oficial'),
+        nota: p.sede || '',
+    };
+}
+
+// Cuántos partidos oficiales de esta semana están todavía sin fijar.
+function _cqContarPropuestas(fechas) {
+    const st = window._cqState;
+    if (!st.calendario || !st.doc) return 0;
+    let n = 0;
+    _cqFilasVisibles(st.doc.filas).forEach(fila => {
+        fechas.forEach(fecha => { if (_cqPropuesta(fila.id, fecha)) n++; });
+    });
+    return n;
+}
+
+// Dónde el calendario dice una cosa y el cuadrante ya dice otra. No se toca
+// nada: se enumera, para que el director decida.
+function _cqConflictos(fechas) {
+    const st = window._cqState;
+    if (!st.calendario || !st.doc) return [];
+    const out = [];
+    _cqFilasVisibles(st.doc.filas).forEach(fila => {
+        fechas.forEach(fecha => {
+            const clave = fila.id + '|' + fecha;
+            const c = st.doc.celdas[clave], p = st.calendario[clave];
+            if (!c || !p) return;
+            const tipoCal = p.local ? 'partido_casa' : 'partido_fuera';
+            const mismoTipo = c.tipo === tipoCal;
+            const mismaHora = !p.hora || !c.ini || c.ini === p.hora;
+            if (mismoTipo && mismaHora) return;   // dicen lo mismo: no hay nada que avisar
+            out.push({ fila, fecha, celda: c, cal: p });
+        });
+    });
+    return out;
+}
+
 window._cqState = window._cqState || {
     offset: 0,          // semanas respecto a la actual
+    calendario: null,   // 📅 v609 · partidos oficiales de la semana visible
     vista:  'equipos',  // 'equipos' | 'espacios'
     dia:    0,          // día visible en la vista de espacios (0 = lunes)
     doc:    null,       // documento en edición (en memoria hasta GUARDAR)
     sucio:  false,      // hay cambios sin guardar
+    // 🔴 v612 · La lista de equipos del CLUB (doc CUADRANTE__FILAS), en caché
+    // de sesión. `null` = todavía no leída; `[]` = leída y vacía.
+    filasClub: null,
     // 📋 v604 · Portapapeles de la parrilla: { modo:'celda'|'fila', datos, etiqueta }
     // Mientras hay algo copiado, la parrilla entra en MODO PEGAR: pulsar una
     // casilla (o una fila) pega en vez de abrir el editor.
@@ -275,6 +347,94 @@ function _cqFechaKey(d) {
         : d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 function _cqDocId(weekKey) { return 'CUADRANTE__' + weekKey; }
+
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v612 · LA COMPOSICIÓN DE EQUIPOS ES DEL CLUB, NO DE LA SEMANA
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor: «al asignar o añadir la categoría y el equipo, guardar
+//  y volver a abrir, los datos desaparecen y no se quedan retenidos de forma
+//  permanente».
+//
+//  🔑 Y era literal. `filas` —la lista de equipos del cuadrante— se guardaba
+//  DENTRO del documento de la semana (`CUADRANTE__2026-08-24`). Añadir el
+//  Juvenil A y guardar lo escribía ahí y sólo ahí. Al pasar de semana, o al
+//  volver otro día, `_cqLeer` no encontraba documento y la lista se rehacía
+//  desde `_cqFilasPorDefecto()`, que sólo devuelve equipos CON PLANTILLA
+//  PUBLICADA. El equipo recién añadido se esfumaba.
+//
+//  🔑🔑 Y esto es lo que rompía TAMBIÉN el calendario, que es por lo que se
+//  llegó aquí. Los partidos importados se guardan bajo `filaId`, y el gestor
+//  de calendarios lista `st.doc.filas`. Un equipo que no sobrevive a cambiar
+//  de semana no tiene fila donde pintar su partido: la temporada quedaba
+//  correctamente guardada en Firestore y NO SE VEÍA NADA en el cuadrante.
+//  Importar y no ver nada es indistinguible de "la importación no funciona".
+//
+//  La lista de equipos es una propiedad del CLUB. Vive en un documento
+//  HERMANO, por las dos mismas razones que el calendario (v609):
+//   1. `match /trainingPlans/{clubId}/weeks/{weekKey}` ya da read+write a
+//      todo el club y `{weekKey}` es comodín: CERO reglas nuevas —que en
+//      este proyecto no se pueden probar antes de desplegarlas.
+//   2. `TrainingSync.deleteWeek()` borra `weeks/{weekKey}` EXACTO, y
+//      'CUADRANTE__FILAS' no es igual a ninguna fecha de semana.
+// ════════════════════════════════════════════════════════════════════
+const CQ_DOC_FILAS = 'CUADRANTE__FILAS';
+
+// Sólo se queda lo que define una fila. Guardar el objeto entero metería
+// basura de pintado en un documento que leen todos los coordinadores.
+function _cqFilaLimpia(f) {
+    return { id: String(f.id || ''), tipo: f.tipo === 'libre' ? 'libre' : 'equipo',
+             cat: String(f.cat || ''), sub: String(f.sub || ''), label: String(f.label || '') };
+}
+
+async function _cqLeerFilasClub(clubId) {
+    const st = window._cqState;
+    if (st.filasClub) return st.filasClub;
+    try {
+        const fs = await _cqFS();
+        const snap = await fs.getDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', CQ_DOC_FILAS));
+        const d = snap.exists() ? (snap.data() || {}) : {};
+        st.filasClub = Array.isArray(d.filas) ? d.filas.filter(f => f && f.id).map(_cqFilaLimpia) : [];
+    } catch (e) {
+        // ⚠️ No puede tumbar el cuadrante: se sigue con las filas de la semana.
+        console.warn('[Cuadrante] no se pudieron leer las filas del club:', e && e.message ? e.message : e);
+        st.filasClub = null;
+        return [];
+    }
+    return st.filasClub;
+}
+
+async function _cqGuardarFilasClub(clubId, filas) {
+    const me = window._cronosCurrentUser || {};
+    const limpias = (filas || []).filter(f => f && f.id).map(_cqFilaLimpia);
+    const fs = await _cqFS();
+    await fs.setDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', CQ_DOC_FILAS), {
+        v: 1, filas: limpias,
+        actualizado: new Date().toISOString(),
+        actualizadoPor: me.uid || '',
+        actualizadoPorNombre: me.firstName || me.displayName || me.email || '',
+    }, { merge: false });
+    window._cqState.filasClub = limpias;
+    return limpias;
+}
+
+// ── Qué filas se enseñan en una semana ───────────────────────────────
+//  La lista del club MANDA. Pero se le añaden las filas que esa semana
+//  concreta todavía tiene CASILLAS ESCRITAS y ya no están en la lista: si no,
+//  quitar un equipo hoy volvería invisible —que no borrado— el trabajo que
+//  alguien cuadró en marzo. Un dato que existe y no se ve es peor que
+//  cualquiera de las dos cosas por separado.
+function _cqFilasEfectivas(filasClub, filasSemana, celdas) {
+    if (!filasClub || !filasClub.length) return filasSemana || [];
+    const salida = filasClub.map(_cqFilaLimpia);
+    const vistos = {};
+    salida.forEach(f => { vistos[f.id] = true; });
+    (filasSemana || []).forEach(f => {
+        if (!f || !f.id || vistos[f.id]) return;
+        const tieneDatos = Object.keys(celdas || {}).some(k => k.indexOf(f.id + '|') === 0);
+        if (tieneDatos) { salida.push(_cqFilaLimpia(f)); vistos[f.id] = true; }
+    });
+    return salida;
+}
 
 // 'HH:MM' → minutos desde medianoche. Devuelve null si no es una hora.
 function _cqMin(hhmm) {
@@ -329,6 +489,9 @@ function _cqFilasVisibles(filas) {
     if (typeof window._cronosVeCategoria !== 'function') return filas;
     return filas.filter(f => f.tipo !== 'equipo' || window._cronosVeCategoria(me, f.cat));
 }
+// 📅 v609 · El gestor de calendarios necesita el MISMO filtro: un coordinador
+// de F7 tampoco importa ni borra los calendarios de F11.
+window._cqFilasVisibles = _cqFilasVisibles;
 
 // ── Lectura / escritura del documento ────────────────────────────────
 async function _cqLeer(clubId, weekKey) {
@@ -414,20 +577,70 @@ async function _sdLoadCuadrante() {
                 '<span style="font-size:0.8rem;color:var(--text-muted);">' + _cqE(e && e.message ? e.message : '') + '</span></div>';
             return;
         }
+        // 🔴 v612 · La lista de equipos es del CLUB (ver CQ_DOC_FILAS). Se lee
+        // ANTES de decidir las filas de esta semana: es la que manda.
+        const filasClub = await _cqLeerFilasClub(clubId);
+
         if (!leido) {
-            leido = { v: 1, weekKey, espacios: CQ_ESPACIOS, filas: await _cqFilasPorDefecto(clubId),
+            leido = { v: 1, weekKey, espacios: CQ_ESPACIOS, filas: [],
                       celdas: {}, publicadoEn: '', publicadoPor: '', publicadoA: [] };
-        } else if (!leido.filas.length) {
-            leido.filas = await _cqFilasPorDefecto(clubId);
         }
+        leido.filas = _cqFilasEfectivas(filasClub, leido.filas, leido.celdas);
+        if (!leido.filas.length) leido.filas = await _cqFilasPorDefecto(clubId);
+
+        // ── Migración silenciosa desde el modelo viejo ──────────────
+        //  Un club que ya venía usando el cuadrante tiene sus equipos dentro
+        //  del documento de esta semana y NINGUNO en el del club. Sembrar el
+        //  documento del club aquí es lo que hace que su composición actual
+        //  sobreviva a la primera vez que pasen de semana, sin pedirles que
+        //  la vuelvan a montar a mano.
+        //  ⚠️ `st.filasClub === null` significa que la LECTURA FALLÓ, no que
+        //  el club no tenga lista. Sembrar ahí machacaría la composición real
+        //  con la de esta semana por un fallo de red pasajero.
+        if (st.filasClub !== null && !filasClub.length && leido.filas.length) {
+            try { await _cqGuardarFilasClub(clubId, leido.filas); }
+            catch (e) { console.warn('[Cuadrante] no se pudo sembrar la lista de equipos del club:', e && e.message ? e.message : e); }
+        }
+
         st.doc   = leido;
         st.sucio = false;
         st.remoto = null;
+        // ↩️ v615 · La pila describe ESTE documento. Conservarla al cambiar de
+        // semana dejaria un "deshacer" que escribiria las casillas de la
+        // semana pasada dentro de esta.
+        _cqHistInit();
+        _cqEngancharTeclas();
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  📅 v609 · LOS PARTIDOS OFICIALES DE ESTA SEMANA
+    //
+    //  Se piden DESPUÉS de tener el cuadrante y ANTES de pintar. El orden no
+    //  es casual: si se pidieran en paralelo, la parrilla se pintaría una vez
+    //  sin partidos y otra con ellos, y el director vería parpadear su semana.
+    //
+    //  ⚠️ Y NO PUEDE TUMBAR EL CUADRANTE. Esta pantalla existía antes que el
+    //  calendario y tiene que seguir funcionando si el calendario falla: por
+    //  eso `calPartidosDeSemana` devuelve {} ante cualquier error en vez de
+    //  propagarlo, y aquí se comprueba además que el módulo esté cargado.
+    // ════════════════════════════════════════════════════════════════
+    try {
+        st.calendario = (typeof window.calPartidosDeSemana === 'function')
+            ? await window.calPartidosDeSemana(clubId, lunes) : {};
+    } catch (e) { st.calendario = {}; }
 
     _cqPintar();
     _cqConectar(clubId, weekKey);
 }
+
+// 📅 v609 · Repintar tras importar o borrar un calendario. Sin esto el
+// director guardaría la temporada y no vería su partido hasta salir y volver.
+window._sdRecargarCuadrante = function () {
+    const st = window._cqState;
+    if (!st) return;
+    st.calendario = null;
+    if (document.getElementById('staff-dashboard-content')) _sdLoadCuadrante();
+};
 
 // ════════════════════════════════════════════════════════════════════
 //  🔄 v604 · SINCRONIZACIÓN EN VIVO ENTRE DIRECTOR Y COORDINADOR
@@ -504,6 +717,13 @@ function _cqLlegaCambio(snap, weekKey) {
     // Camino 1: es el eco de mi propio guardado, o no ha cambiado nada.
     if (!sello || sello === st.selloPropio || sello === st.doc.actualizado) return;
 
+    // 🔴 v612 · El cambio es AJENO: si esa persona añadió un equipo, también
+    // reescribió la lista del club y mi caché de sesión ya no vale. Se tira
+    // para que la próxima semana que abra la lea de nuevo; si no, su equipo
+    // nuevo desaparecería en cuanto yo pasara de semana —justo el defecto
+    // que este cambio viene a cerrar.
+    st.filasClub = null;
+
     const entrante = {
         v: 1, weekKey,
         espacios: d.espacios || CQ_ESPACIOS,
@@ -524,6 +744,10 @@ function _cqLlegaCambio(snap, weekKey) {
     // Camino 2: adoptar y decirlo.
     st.doc = entrante;
     st.remoto = null;
+    // ↩️ v615 · Lo que hay en pantalla ya no es mi cadena de cambios sino la
+    // de otra persona: deshacer sobre ella reescribiria su trabajo con mi
+    // estado viejo, y encima sin avisar. La pila arranca de cero aqui.
+    _cqHistInit();
     _cqPintar();
     _cqToast('🔄 ' + (entrante.actualizadoPorNombre || 'Otra persona') + ' ha actualizado el cuadrante.', 4000);
 }
@@ -535,6 +759,10 @@ window.cqAdoptarRemoto = function () {
     st.doc = st.remoto;
     st.remoto = null;
     st.sucio = false;
+    // ↩️ v615 · Igual que en el camino 2: la pila era de MI documento, y el que
+    // hay en pantalla es el de otra persona. Un "deshacer" aquí le devolvería
+    // su cuadrante a un estado que nunca existió para ella.
+    _cqHistInit();
     _cqPintar();
 };
 
@@ -555,6 +783,14 @@ function _cqPintar() {
     const fmt   = f => f.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 
     const _semCopiada = _cqSemanaCopiada();   // v607 · portapapeles de semana entera
+
+    // 📅 v609 · Fechas de la semana, propuestas pendientes y choques con lo
+    // que el director ya escribió. Se calcula una vez y lo usan la cabecera,
+    // el aviso y las dos parrillas.
+    const _fechasSem = [];
+    for (let i = 0; i < 7; i++) { const f = new Date(lunes); f.setDate(lunes.getDate() + i); _fechasSem.push(_cqFechaKey(f)); }
+    const nProp = _cqContarPropuestas(_fechasSem);
+    const _confl = _cqConflictos(_fechasSem);
 
     const alcance = (typeof window._cronosCoordScope === 'function')
         ? window._cronosCoordScope(window._cronosCurrentUser) : '';
@@ -592,6 +828,7 @@ function _cqPintar() {
             (st.vista === 'equipos' ? _cqBotonesZoom() : '') +
         '</div>' +
         '<div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">' +
+            _cqBotonesHistorial() +
             (st.sucio ? '<span style="font-size:0.7rem;color:#f0883e;font-weight:700;">● Sin guardar</span>' : '') +
             // 🗓️ v607 · Copiar / pegar la SEMANA ENTERA. El botón de pegar sólo
             // aparece cuando hay algo copiado, y dice DE QUÉ SEMANA es: pegar a
@@ -603,6 +840,18 @@ function _cqPintar() {
                     '<button onclick="cqOlvidarSemana()" title="Olvidar la semana copiada" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:0.8rem;padding:0 3px;">✕</button>' +
                   '</span>'
                 : '') +
+            // 📅 v609 · La puerta a los calendarios oficiales. Va aquí, entre
+            // las acciones de la semana, y NO como sección nueva: el autor
+            // pidió por escrito en v604 «no crees botones nuevos» refiriéndose
+            // a no repartir la funcionalidad por más pantallas.
+            // ⚠️ Y SÓLO SI EL MÓDULO ESTÁ. Un botón que existe y no hace nada
+            // porque su fichero no cargó es el defecto de v598 otra vez
+            // ("Transmitir al SuperAdmin" confirmaba envíos que nadie recibía):
+            // mejor que no esté a que esté roto.
+            (typeof window.calAbrirGestor === 'function'
+                ? '<button class="btn" onclick="calAbrirGestor()" title="Importar el calendario oficial de la federación en PDF" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.4);color:#d2a8ff;">📅 CALENDARIO</button>'
+                : '') +
+            (nProp ? '<button class="btn" onclick="cqFijarPartidos()" title="Pasar los partidos del calendario oficial a las casillas de esta semana" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(63,185,80,0.10);border:1px solid rgba(63,185,80,0.45);color:#3fb950;">📌 FIJAR ' + nProp + ' PARTIDO' + (nProp === 1 ? '' : 'S') + '</button>' : '') +
             '<button class="btn" onclick="cqGuardar()" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);color:#3fb950;">💾 GUARDAR</button>' +
             // 🖨️ v605 · Para el Ayuntamiento. Ver la nota sobre cqExportar.
             '<button class="btn" onclick="cqExportar()" title="Descargar el cuadrante en PDF para justificar la ocupación del campo" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.45);color:#d2a8ff;">🖨️ EXPORTAR</button>' +
@@ -639,6 +888,39 @@ function _cqPintar() {
             '<button onclick="cqDescartarAvisoRemoto()" style="padding:0.32rem 0.7rem;border-radius:7px;cursor:pointer;' +
                     'font-size:0.7rem;font-weight:700;background:transparent;border:1px solid rgba(255,255,255,0.18);' +
                     'color:#8b949e;">Seguir con la mía</button>' +
+        '</div>';
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  📅 v609 · EL CALENDARIO OFICIAL DICE OTRA COSA
+    //
+    //  Decisión del autor: manda lo que escribió el director. Así que esto es
+    //  un AVISO, no una pregunta y mucho menos un cambio automático. Y dice
+    //  las dos versiones —la suya y la del papel— porque un aviso que sólo
+    //  dijera «hay una discrepancia» obligaría a ir a buscarla.
+    //
+    //  ⚠️ Sólo salta cuando difieren de verdad (tipo u hora). Que el calendario
+    //  coincida con lo ya escrito es lo NORMAL en cuanto se fija una semana:
+    //  avisar entonces convertiría el aviso en ruido permanente y se dejaría
+    //  de leer, que es como mueren los avisos útiles.
+    // ════════════════════════════════════════════════════════════════
+    if (_confl.length) {
+        html += '<div style="margin-bottom:0.8rem;background:rgba(210,168,255,0.07);border:1px solid rgba(210,168,255,0.35);' +
+                    'border-radius:10px;padding:0.55rem 0.8rem;">' +
+            '<div style="font-size:0.73rem;color:#d2a8ff;font-weight:700;margin-bottom:0.3rem;">' +
+                '📅 El calendario oficial no coincide con ' + (_confl.length === 1 ? 'una casilla' : _confl.length + ' casillas') +
+                ' de esta semana · <span style="font-weight:400;">se respeta lo que has puesto tú</span></div>' +
+            _confl.map(x => {
+                const dia = new Date(x.fecha + 'T12:00:00');
+                const metaC = CQ_TIPOS[x.celda.tipo] || CQ_TIPOS.entreno;
+                return '<div style="font-size:0.7rem;color:var(--text-muted);line-height:1.5;">' +
+                    '<strong style="color:white;">' + _cqE(x.fila.label) + '</strong> · ' +
+                    _cqE(dia.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })) + ' — ' +
+                    'tú: <span style="color:' + metaC.color + ';">' + _cqE(metaC.corto + (x.celda.ini ? ' ' + x.celda.ini : '')) + '</span> · ' +
+                    'el calendario: <span style="color:' + (x.cal.local ? '#3fb950' : '#f0883e') + ';">' +
+                        _cqE((x.cal.local ? 'CASA' : 'FUERA') + (x.cal.hora ? ' ' + x.cal.hora : '') +
+                             (x.cal.rival ? ' vs ' + x.cal.rival : '')) + '</span></div>';
+            }).join('') +
         '</div>';
     }
 
@@ -773,6 +1055,29 @@ function _cqHtmlCelda(filaId, fecha, c) {
                    'background:rgba(210,168,255,0.08);color:#d2a8ff;cursor:copy;font-size:1em;font-weight:700;">📌</button>';
     }
     if (!c) {
+        // ── 📅 v609 · PARTIDO OFICIAL PROPUESTO ─────────────────────
+        //  Se pinta con el color que le toca —verde en casa, naranja fuera,
+        //  como pidió el autor— pero con el borde PUNTEADO y su 📅, porque
+        //  todavía no está en el documento. Confundir una propuesta con una
+        //  casilla guardada haría creer al director que la semana está
+        //  cuadrada cuando aún no ha guardado nada.
+        const p = _cqPropuesta(filaId, fecha);
+        if (p) {
+            const metaP = CQ_TIPOS[p.local ? 'partido_casa' : 'partido_fuera'];
+            const rgbP = (typeof window._cronosHexRgb === 'function') ? window._cronosHexRgb(metaP.color) : '63,185,80';
+            return '<button onclick="' + abrir + '" title="' + _cqA('Del calendario oficial · ' +
+                    (p.jornada != null ? 'Jornada ' + p.jornada + ' · ' : '') + metaP.label +
+                    (p.rival ? ' · ' + p.rival : '') + (p.sede ? ' · ' + p.sede : '') +
+                    '\nPúlsala para ajustarla y fijarla en el cuadrante.') + '" ' +
+                'style="' + CAJA + 'text-align:center;border-radius:6px;cursor:pointer;padding:0.35em 0.25em;' +
+                       'background:rgba(' + rgbP + ',0.07);border:1px dashed rgba(' + rgbP + ',0.55);color:' + metaP.color + ';">' +
+                '<div style="font-weight:800;font-size:0.9em;line-height:1.25;overflow-wrap:break-word;word-break:normal;">' +
+                    '📅 ' + _cqE(metaP.corto) + '</div>' +
+                (p.hora ? '<div style="font-size:0.78em;opacity:0.9;">' + _cqE(p.hora) + '</div>' : '') +
+                '<div style="font-size:0.74em;opacity:0.85;overflow-wrap:break-word;word-break:normal;">' +
+                    _cqE(p.rival || '') + '</div>' +
+                '</button>';
+        }
         return '<button onclick="' + abrir + '" title="Añadir actividad" ' +
             'style="' + CAJA + 'border:1px dashed rgba(255,255,255,0.10);border-radius:6px;' +
                    'background:transparent;color:rgba(255,255,255,0.18);cursor:pointer;font-size:1.2em;">+</button>';
@@ -968,6 +1273,7 @@ window.cqPegarCelda = function (filaId, fecha) {
         tipo: d.tipo, ini: d.ini, fin: d.fin, esp: (d.esp || []).slice(), txt: d.txt, nota: d.nota,
     };
     st.sucio = true;
+    _cqHistPush('pegar casilla');
     _cqPintar();
     // ⚠️ NO se sale del modo pegar: lo normal es pegar el mismo bloque en
     // varios días seguidos. Se sale con "✕ Salir" de la barra.
@@ -1015,6 +1321,7 @@ window.cqPegarFila = function (filaId) {
             tipo: c.tipo, ini: c.ini, fin: c.fin, esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
     });
     st.sucio = true;
+    _cqHistPush('pegar fila en ' + fila.label);
     _cqToast('📌 Semana pegada en ' + fila.label + '. Ajusta las horas y guarda.', 4000);
     _cqPintar();
 };
@@ -1056,6 +1363,178 @@ window.cqCancelarCopia = function () {
 // ════════════════════════════════════════════════════════════════════
 const CQ_SEMANA_KEY = 'cronos_cq_semana';
 
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v615 · UNA SEMANA SE COPIA SIN SUS PARTIDOS. NUNCA CON ELLOS.
+// ════════════════════════════════════════════════════════════════════
+//  Petición del autor (implementar.txt, 2026-08-24), y la razón que da es
+//  exactamente la correcta: «los partidos oficiales cambian de día cada
+//  semana — una semana se juega en casa un viernes y a la siguiente un
+//  sábado». Está descrito en el calendario que acabamos de importar: el
+//  Estrella CF juega la jornada 7 un sábado a las 11:00 y la 8 un viernes a
+//  las 21:00.
+//
+//  Lo que hacía antes era doblemente destructivo, y las dos mitades importan:
+//   1. Se LLEVABA el partido del viernes de la semana origen…
+//   2. …y al pegar VACIABA la semana destino entera, así que se cargaba el
+//      partido del sábado que ya estaba bien puesto, y encima le plantaba
+//      encima el del viernes, que no le toca.
+//
+//  El resultado era un cuadrante con el partido en el día equivocado — y el
+//  cuadrante es la pauta que siguen todos los entrenadores del club y el
+//  papel que se le manda al Ayuntamiento con la ocupación del campo.
+//
+//  🔑 UN PARTIDO NO ES UNA ACTIVIDAD SEMANAL REPETIBLE: es un hecho con
+//  fecha propia que viene del calendario oficial. Los entrenamientos sí se
+//  repiten —esa es justo la razón de ser de "copiar semana"—. Así que la
+//  copia lleva SÓLO entrenamientos y otras actividades, y al pegar los
+//  partidos del destino son intocables: ni se borran ni se sobrescriben.
+// ════════════════════════════════════════════════════════════════════
+function _cqEsPartido(c) {
+    return !!c && (c.tipo === 'partido_casa' || c.tipo === 'partido_fuera');
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  ↩️ v615 · DESHACER / REHACER
+// ════════════════════════════════════════════════════════════════════
+//  Petición del autor: «dar marcha atrás de forma fluida a las últimas
+//  acciones, facilitando y haciendo mucho más seguro un trabajo que de por sí
+//  es laborioso». Y lo es: aquí se pega una semana entera de un clic, se
+//  vacían filas con sus actividades y se fijan los partidos del calendario en
+//  bloque. Hasta ahora, una de esas operaciones sólo se podía revertir
+//  rehaciéndola a mano casilla por casilla, o saliendo sin guardar y
+//  perdiendo TAMBIÉN todo lo bueno que se hubiera hecho antes.
+//
+//  🔑 SE GUARDAN INSTANTÁNEAS, NO OPERACIONES INVERSAS. Un historial de
+//  "acciones con su contraria" obliga a escribir —y a mantener correcto— un
+//  deshacer distinto por cada operación, y la que más falta hace (pegar
+//  semana) es justo la que más difícil sería de invertir a mano. Un cuadrante
+//  entero son unos pocos kilobytes de JSON: clonarlo es barato y no puede
+//  desincronizarse de la operación que lo produjo.
+//
+//  ⚠️ EL HISTORIAL NO TOCA FIRESTORE. Deshacer devuelve la pantalla a un
+//  estado anterior y marca `sucio`; nada se escribe hasta GUARDAR. Por eso
+//  `guardado` recuerda EN QUÉ PUNTO de la pila se guardó: si deshaces hasta
+//  volver justo a lo guardado, el aviso "● Sin guardar" tiene que apagarse,
+//  porque de verdad no hay nada pendiente.
+//
+//  ⚠️ Y SE REINICIA AL CAMBIAR DE SEMANA O AL ADOPTAR UN CAMBIO AJENO. La
+//  pila describe UN documento; conservarla al cambiar de semana dejaría un
+//  "deshacer" que escribiría las casillas de la semana pasada dentro de ésta.
+// ════════════════════════════════════════════════════════════════════
+const CQ_HIST_MAX = 40;
+
+function _cqInstantanea() {
+    const d = window._cqState.doc;
+    if (!d) return '';
+    return JSON.stringify({ filas: d.filas || [], celdas: d.celdas || {},
+                            espacios: d.espacios || CQ_ESPACIOS });
+}
+
+// Arranca el historial con el documento recién cargado como punto cero.
+function _cqHistInit() {
+    const st = window._cqState;
+    const s = _cqInstantanea();
+    st.hist = s ? { pila: [{ s, etiqueta: 'al abrir' }], i: 0, guardado: 0 }
+                : { pila: [], i: -1, guardado: -1 };
+}
+
+function _cqHistPush(etiqueta) {
+    const st = window._cqState;
+    if (!st.doc) return;
+    if (!st.hist) _cqHistInit();
+    const h = st.hist, s = _cqInstantanea();
+    // Una acción que no cambió nada no merece un paso de historial: si no,
+    // "deshacer" empezaría a no hacer nada visible y parecería roto.
+    if (h.i >= 0 && h.pila[h.i] && h.pila[h.i].s === s) return;
+    h.pila.length = h.i + 1;        // al escribir se pierde el rehacer pendiente
+    h.pila.push({ s, etiqueta: etiqueta || 'cambio' });
+    if (h.pila.length > CQ_HIST_MAX) {
+        h.pila.shift();
+        if (h.guardado >= 0) h.guardado--;
+    }
+    h.i = h.pila.length - 1;
+}
+
+function _cqHistIr(destino) {
+    const st = window._cqState, h = st.hist;
+    if (!h || destino < 0 || destino >= h.pila.length || !st.doc) return false;
+    let d;
+    try { d = JSON.parse(h.pila[destino].s); } catch (e) { return false; }
+    st.doc.filas    = d.filas || [];
+    st.doc.celdas   = d.celdas || {};
+    st.doc.espacios = d.espacios || CQ_ESPACIOS;
+    h.i = destino;
+    st.sucio = (h.i !== h.guardado);
+    _cqPintar();
+    return true;
+}
+
+function _cqPuedeDeshacer() { const h = window._cqState.hist; return !!h && h.i > 0; }
+function _cqPuedeRehacer()  { const h = window._cqState.hist; return !!h && h.i >= 0 && h.i < h.pila.length - 1; }
+
+window.cqDeshacer = function () {
+    const h = window._cqState.hist;
+    if (!_cqPuedeDeshacer()) { _cqToast('No hay nada más que deshacer.'); return; }
+    const eti = h.pila[h.i].etiqueta;
+    if (_cqHistIr(h.i - 1)) _cqToast('↩️ Deshecho: ' + eti);
+};
+
+window.cqRehacer = function () {
+    const h = window._cqState.hist;
+    if (!_cqPuedeRehacer()) { _cqToast('No hay nada que rehacer.'); return; }
+    if (_cqHistIr(h.i + 1)) _cqToast('↪️ Rehecho: ' + h.pila[h.i].etiqueta);
+};
+
+// Tras guardar, ESTE es el punto sin cambios pendientes.
+function _cqHistGuardado() {
+    const h = window._cqState.hist;
+    if (h) h.guardado = h.i;
+}
+
+// ⌨️ Ctrl/⌘+Z y Ctrl/⌘+Y (o ⇧+Z). Se ignora mientras se escribe en un campo
+// o con un editor abierto: ahí Ctrl+Z tiene que deshacer el TEXTO, no el
+// cuadrante — robárselo al usuario sería peor que no tener atajo.
+function _cqTeclas(ev) {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    const st = window._cqState;
+    if (!st || !st.doc) return;
+    if (!document.getElementById('staff-dashboard-content')) return;
+    if (document.getElementById('cq-overlay')) return;
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || '')) return;
+    const k = String(ev.key || '').toLowerCase();
+    if (k === 'z' && !ev.shiftKey) { ev.preventDefault(); window.cqDeshacer(); }
+    else if (k === 'y' || (k === 'z' && ev.shiftKey)) { ev.preventDefault(); window.cqRehacer(); }
+}
+//  ⚠️ SE ENGANCHA AL ABRIR EL CUADRANTE, NO AL CARGAR EL FICHERO. Este módulo
+//  no toca el DOM mientras se carga —sólo declara—, y es lo que permite que el
+//  guard lo ejecute de verdad en Node en vez de comprobarlo por regex. Un
+//  `addEventListener` en la raíz rompía esa propiedad y tumbaba la suite
+//  entera. Además, un oyente global vivo cuando esta sección ni está abierta
+//  es justo la clase de fuga que ya costó un disgusto en v439.
+function _cqEngancharTeclas() {
+    if (window._cqTeclasPuestas) return;
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+    document.addEventListener('keydown', _cqTeclas);
+    window._cqTeclasPuestas = true;
+}
+
+function _cqBotonesHistorial() {
+    const b = (activo, onclick, icono, titulo) =>
+        '<button class="btn"' + (activo ? ' onclick="' + onclick + '"' : ' disabled') +
+        ' title="' + _cqA(titulo) + '" style="padding:0.4rem 0.7rem;font-size:0.8rem;line-height:1;' +
+        (activo ? 'background:rgba(88,166,255,0.10);border:1px solid rgba(88,166,255,0.35);color:#58a6ff;cursor:pointer;'
+                : 'background:transparent;border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.20);cursor:default;') +
+        '">' + icono + '</button>';
+    const h = window._cqState.hist;
+    const sig = (h && _cqPuedeDeshacer()) ? h.pila[h.i].etiqueta : '';
+    const red = (h && _cqPuedeRehacer()) ? h.pila[h.i + 1].etiqueta : '';
+    return '<span style="display:inline-flex;gap:0.25rem;">' +
+        b(_cqPuedeDeshacer(), 'cqDeshacer()', '↩️', sig ? 'Deshacer: ' + sig + '  (Ctrl+Z)' : 'Nada que deshacer') +
+        b(_cqPuedeRehacer(), 'cqRehacer()', '↪️', red ? 'Rehacer: ' + red + '  (Ctrl+Y)' : 'Nada que rehacer') +
+    '</span>';
+}
+
 function _cqSemanaCopiada() {
     try {
         const v = JSON.parse(localStorage.getItem(CQ_SEMANA_KEY) || 'null');
@@ -1070,11 +1549,14 @@ window.cqCopiarSemana = function () {
     const lunes  = _cqLunes(st.offset);
     const visibles = _cqFilasVisibles(st.doc.filas);
     const entradas = [];
+    let partidosFuera = 0;
     for (let i = 0; i < 7; i++) {
         const fecha = _cqFechaKey(new Date(lunes.getTime() + i * 86400000));
         visibles.forEach(f => {
             const c = st.doc.celdas[f.id + '|' + fecha];
             if (!c) return;
+            // 🔴 El partido NO viaja: cambia de día cada jornada (ver la nota).
+            if (_cqEsPartido(c)) { partidosFuera++; return; }
             entradas.push({ filaId: f.id, dia: i,
                 celda: { tipo: c.tipo, ini: c.ini, fin: c.fin,
                          esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota } });
@@ -1082,7 +1564,9 @@ window.cqCopiarSemana = function () {
     }
 
     if (!entradas.length) {
-        _cqToast('⚠️ Esta semana está vacía: no hay nada que copiar.', 4000);
+        _cqToast(partidosFuera
+            ? '⚠️ Esta semana sólo tiene partidos, y los partidos no se copian: cada jornada cae en un día distinto.'
+            : '⚠️ Esta semana está vacía: no hay nada que copiar.', 5000);
         return;
     }
 
@@ -1104,7 +1588,9 @@ window.cqCopiarSemana = function () {
         _cqToast('⚠️ No se pudo copiar la semana: ' + (e && e.message ? e.message : e), 5000);
         return;
     }
-    _cqToast('🗓️ Semana copiada (' + entradas.length + ' actividades). Ve a otra semana y pulsa PEGAR SEMANA.', 5000);
+    _cqToast('🗓️ Semana copiada: ' + entradas.length + ' entrenamiento(s)' +
+             (partidosFuera ? ' · ' + partidosFuera + ' partido(s) NO se copian (cada jornada cae en otro día)' : '') +
+             '. Ve a otra semana y pulsa PEGAR SEMANA.', 6000);
     _cqPintar();
 };
 
@@ -1123,15 +1609,25 @@ window.cqPegarSemana = function () {
     const idsVisibles = {};
     visibles.forEach(f => { idsVisibles[f.id] = true; });
 
-    const yaHabia = Object.keys(st.doc.celdas).filter(k => {
+    // 🔴 LO QUE SE VACÍA NO INCLUYE LOS PARTIDOS. Un partido de esta semana
+    // está en SU día porque lo dice el calendario oficial; borrarlo para
+    // meter el entrenamiento de otra semana es exactamente el destrozo que
+    // el autor pidió evitar.
+    const yaHabia = [], partidosDestino = [];
+    Object.keys(st.doc.celdas).forEach(k => {
         const filaId = k.slice(0, k.lastIndexOf('|'));
-        return idsVisibles[filaId];
+        if (!idsVisibles[filaId]) return;
+        if (_cqEsPartido(st.doc.celdas[k])) partidosDestino.push(k);
+        else yaHabia.push(k);
     });
 
-    if (!confirm('Vas a pegar la semana del ' + p.etiqueta + ' (' + p.entradas.length + ' actividades) aquí.' +
+    if (!confirm('Vas a pegar los entrenamientos de la semana del ' + p.etiqueta +
+        ' (' + p.entradas.length + ' actividades) aquí.' +
         (yaHabia.length ? '\n\n⚠️ Esta semana ya tiene ' + yaHabia.length +
-            ' actividad(es) y se SUSTITUIRÁN.' : '') +
-        '\n\nDespués tendrás que ajustar los partidos del fin de semana. No se guarda hasta que pulses GUARDAR.')) return;
+            ' entrenamiento(s) y se SUSTITUIRÁN.' : '') +
+        (partidosDestino.length ? '\n\n✅ Los ' + partidosDestino.length +
+            ' partido(s) oficiales de esta semana NO se tocan.' : '') +
+        '\n\nNo se guarda hasta que pulses GUARDAR.')) return;
 
     // 1. Las filas que trae el paquete y aquí no existen, se crean. Sin esto,
     //    las celdas de una fila libre del origen no tendrían fila donde salir.
@@ -1152,21 +1648,30 @@ window.cqPegarSemana = function () {
     // 3. Y se escribe el paquete, remapeando el índice de día a la fecha de
     //    ESTA semana.
     const lunes = _cqLunes(st.offset);
-    let pegadas = 0;
+    let pegadas = 0, respetados = 0;
     p.entradas.forEach(en => {
         if (!idsVisibles[en.filaId]) return;   // fila fuera de su alcance: no se toca
         const fecha = _cqFechaKey(new Date(lunes.getTime() + en.dia * 86400000));
+        const clave = en.filaId + '|' + fecha;
+        // 🔴 Y AQUÍ LA SEGUNDA MITAD DE LA MISMA REGLA. Aunque el paquete ya
+        // no trae partidos, el entrenamiento del martes de la semana origen
+        // puede caer justo donde ESTA semana hay partido. El partido manda:
+        // viene del calendario oficial y su día no es negociable.
+        if (_cqEsPartido(st.doc.celdas[clave])) { respetados++; return; }
         const c = en.celda || {};
-        st.doc.celdas[en.filaId + '|' + fecha] = {
+        st.doc.celdas[clave] = {
             tipo: c.tipo, ini: c.ini, fin: c.fin,
             esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
         pegadas++;
     });
 
     st.sucio = true;
-    _cqToast('🗓️ Pegadas ' + pegadas + ' actividades' +
+    _cqHistPush('pegar semana');
+    _cqToast('🗓️ Pegados ' + pegadas + ' entrenamiento(s)' +
              (filasNuevas ? ' y ' + filasNuevas + ' fila(s) nueva(s)' : '') +
-             '. Revisa los partidos y guarda.', 5000);
+             (partidosDestino.length ? ' · ' + partidosDestino.length + ' partido(s) intactos' : '') +
+             (respetados ? ' · ' + respetados + ' celda(s) no se pisaron por haber partido' : '') +
+             '. Revisa y guarda.', 6000);
     _cqPintar();
 };
 
@@ -1429,6 +1934,44 @@ window.cqSemana = function (delta) {
     _sdLoadCuadrante();
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  📌 v609 · FIJAR LOS PARTIDOS OFICIALES DE ESTA SEMANA
+//
+//  Convierte las propuestas del calendario en casillas de verdad. A partir de
+//  aquí son del cuadrante: se les puede cambiar la hora, marcarles espacios,
+//  cuentan como ocupación del campo y salen en el informe del Ayuntamiento.
+//
+//  🔑 NO ESCRIBE SOBRE NINGUNA CASILLA EXISTENTE. `_cqPropuesta` ya devuelve
+//  null donde hay algo escrito, así que fijar NUNCA puede pisar el trabajo del
+//  director — ni siquiera pulsando el botón dos veces.
+//
+//  ⚠️ Y NO GUARDA SOLO: deja la semana marcada como «sin guardar» para que
+//  pase por el mismo GUARDAR que todo lo demás. Escribir en Firestore por
+//  detrás desde un botón que dice «fijar» sería hacer más de lo que promete.
+// ════════════════════════════════════════════════════════════════════
+window.cqFijarPartidos = function () {
+    const st = window._cqState;
+    if (!st.doc || !st.calendario) return;
+    const lunes = _cqLunes(st.offset);
+    let n = 0;
+    _cqFilasVisibles(st.doc.filas).forEach(fila => {
+        for (let i = 0; i < 7; i++) {
+            const f = new Date(lunes); f.setDate(lunes.getDate() + i);
+            const fecha = _cqFechaKey(f);
+            const p = _cqPropuesta(fila.id, fecha);
+            if (!p) continue;
+            st.doc.celdas[fila.id + '|' + fecha] = _cqCeldaDePropuesta(p);
+            n++;
+        }
+    });
+    if (!n) { _cqToast('No hay partidos del calendario pendientes esta semana.'); return; }
+    st.sucio = true;
+    _cqHistPush('fijar ' + n + ' partido(s)');
+    _cqPintar();
+    _cqToast('📌 ' + n + ' partido' + (n === 1 ? '' : 's') + ' fijado' + (n === 1 ? '' : 's') +
+             '. Ajusta las horas si hace falta y pulsa GUARDAR.', 5000);
+};
+
 window.cqVista = function (v) { window._cqState.vista = v; _cqPintar(); };
 window.cqDia   = function (i) { window._cqState.dia   = i; _cqPintar(); };
 
@@ -1444,7 +1987,7 @@ window.cqMoverFila = function (idx, delta) {
     const a = st.doc.filas.indexOf(fila), b = st.doc.filas.indexOf(vecina);
     if (a < 0 || b < 0) return;
     st.doc.filas[a] = vecina; st.doc.filas[b] = fila;
-    st.sucio = true; _cqPintar();
+    st.sucio = true; _cqHistPush('mover ' + fila.label); _cqPintar();
 };
 
 window.cqQuitarFila = function (filaId) {
@@ -1456,7 +1999,7 @@ window.cqQuitarFila = function (filaId) {
                  (conDatos ? '\n\n⚠️ Tiene actividades asignadas y también se borrarán.' : ''))) return;
     st.doc.filas = st.doc.filas.filter(f => f.id !== filaId);
     Object.keys(st.doc.celdas).forEach(k => { if (k.indexOf(filaId + '|') === 0) delete st.doc.celdas[k]; });
-    st.sucio = true; _cqPintar();
+    st.sucio = true; _cqHistPush('quitar ' + fila.label); _cqPintar();
 };
 
 window.cqAnadirFilaLibre = function () {
@@ -1465,7 +2008,7 @@ window.cqAnadirFilaLibre = function () {
     const st = window._cqState;
     const id = 'libre_' + Date.now().toString(36);
     st.doc.filas.push({ id, tipo: 'libre', cat: '', sub: '', label: nombre.trim() });
-    st.sucio = true; _cqPintar();
+    st.sucio = true; _cqHistPush('anadir fila ' + nombre.trim()); _cqPintar();
 };
 
 window.cqAnadirFilaEquipo = function () {
@@ -1500,7 +2043,7 @@ window.cqConfirmarFilaEquipo = function (clubId) {
     const id = _cqIdFilaEquipo(clubId, cat, sub);
     if (st.doc.filas.some(f => f.id === id)) { _cqToast('⚠️ Ese equipo ya está en el cuadrante.'); return; }
     st.doc.filas.push({ id, tipo: 'equipo', cat, sub, label: _cqLabelEquipo(cat, sub) });
-    st.sucio = true; cqCerrarOverlay(); _cqPintar();
+    st.sucio = true; _cqHistPush('anadir ' + _cqLabelEquipo(cat, sub)); cqCerrarOverlay(); _cqPintar();
 };
 
 // ── Editor de una celda ──────────────────────────────────────────────
@@ -1508,7 +2051,14 @@ window.cqEditarCelda = function (filaId, fecha) {
     const st = window._cqState;
     const fila = st.doc.filas.find(f => f.id === filaId);
     if (!fila) return;
-    const c = st.doc.celdas[filaId + '|' + fecha] || { tipo: 'entreno', ini: '', fin: '', esp: [], txt: '', nota: '' };
+    // 📅 v609 · Si la casilla está vacía pero el calendario oficial dice que
+    // ahí hay partido, el editor se abre YA RELLENO con él. Obligar a
+    // reescribir a mano un dato que la app acaba de leer del PDF sería tener
+    // el calendario y no usarlo.
+    const prop = _cqPropuesta(filaId, fecha);
+    const c = st.doc.celdas[filaId + '|' + fecha]
+           || (prop ? _cqCeldaDePropuesta(prop) : null)
+           || { tipo: 'entreno', ini: '', fin: '', esp: [], txt: '', nota: '' };
     const nEsp = st.doc.espacios || CQ_ESPACIOS;
     const dia  = new Date(fecha + 'T12:00:00');
 
@@ -1624,12 +2174,12 @@ window.cqAplicarCelda = function (filaId, fecha) {
         txt:  g('cq-ce-txt').trim(),
         nota: g('cq-ce-nota').trim(),
     };
-    st.sucio = true; cqCerrarOverlay(); _cqPintar();
+    st.sucio = true; _cqHistPush('editar casilla'); cqCerrarOverlay(); _cqPintar();
 };
 
 window.cqBorrarCelda = function (filaId, fecha) {
     delete window._cqState.doc.celdas[filaId + '|' + fecha];
-    window._cqState.sucio = true; cqCerrarOverlay(); _cqPintar();
+    window._cqState.sucio = true; _cqHistPush('vaciar casilla'); cqCerrarOverlay(); _cqPintar();
 };
 
 window.cqGuardar = async function () {
@@ -1640,7 +2190,17 @@ window.cqGuardar = async function () {
     if (typeof showSpinner === 'function') showSpinner('Guardando el cuadrante…');
     try {
         await _cqGuardar(clubId, st.doc);
+        // 🔴 v612 · Y la composición de equipos, en el documento del CLUB.
+        //  Va DESPUÉS del cuadrante y en su propio try: si esto fallara, la
+        //  semana ya está a salvo y lo único que se pierde es que un equipo
+        //  nuevo tarde en propagarse — no el trabajo de cuadrar la semana.
+        try { await _cqGuardarFilasClub(clubId, st.doc.filas); }
+        catch (e) {
+            console.warn('[Cuadrante] no se pudo guardar la lista de equipos del club:', e && e.message ? e.message : e);
+            _cqToast('⚠️ La semana se guardó, pero la lista de equipos no. Vuelve a guardar.', 5000);
+        }
         st.sucio = false;
+        _cqHistGuardado();
         if (typeof hideSpinner === 'function') hideSpinner();
         _cqToast('✅ Cuadrante guardado.');
         _cqPintar();

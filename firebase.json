@@ -8,6 +8,8 @@
       ".git/**",
       ".github/**",
       "**/node_modules/**",
+      "CAPTURAS/**",
+      "CALENDARIOS/**",
       "firestore.rules",
       "firestore.rules.*",
       "firestore.indexes.json",

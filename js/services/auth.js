@@ -2452,7 +2452,32 @@ export async function doAuth() {
         //
         //  ⚠️ El SuperAdmin queda exento: no pertenece a ninguna entidad.
         // ══════════════════════════════════════════════════════════════════
-        if (isAddingRole && clubId && finalRole !== 'superadmin') {
+        // ══════════════════════════════════════════════════════════════════
+        //  🕳️ 2026-08-23 · EL AGUJERO: FUNDAR UN CLUB NO PASABA POR AQUÍ
+        //
+        //  La condición era `isAddingRole && clubId && …`. Al **crear una
+        //  entidad nueva** todavía NO hay `clubId` —el club no existe hasta que
+        //  lo aprueba el SuperAdmin—, así que la comprobación **se saltaba
+        //  entera**. La regla vigilaba la puerta de entrada a un club que ya
+        //  existe, pero no la de fundar uno.
+        //
+        //  🔑 MEDIDO EN DATOS REALES, no supuesto: damasorv@gmail.com acabó
+        //  siendo **coordinador F11 de CD DÍA y administrador de ESTRELLA CF a
+        //  la vez** — exactamente lo que la regla existe para impedir— y lo
+        //  descubrió al chocar DESPUÉS, cuando quiso añadirse como entrenador
+        //  en su propio club y el sistema le dijo que seguía perteneciendo a
+        //  CD DÍA. El bloqueo llegaba un paso tarde: le dejó entrar por la
+        //  puerta que no miraba nadie y le paró en la que sí.
+        //
+        //  ⚠️ Con `clubId` vacío, CUALQUIER ancla viva es ajena — que es
+        //  justo lo que se quiere: para fundar una entidad no puedes tener
+        //  plaza viva en ninguna otra. El resto de salvaguardas de v585 siguen
+        //  intactas: manda `allRoles`, una entidad BORRADA no bloquea, y ante
+        //  la duda NO se bloquea (fail-open).
+        // ══════════════════════════════════════════════════════════════════
+        const _fundaEntidadNueva = !clubId && !selectedIndivId &&
+            ((requestedRole === 'club_admin' && !!newClubName) || requestedRole === 'individual');
+        if (isAddingRole && (clubId || _fundaEntidadNueva) && finalRole !== 'superadmin') {
             try {
                 const _m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
                 const _prev = await _m.getDoc(_m.doc(fa.db, 'users', cred.user.uid));
@@ -2461,17 +2486,24 @@ export async function doAuth() {
                 const _ancla = (r) => String((r && (r.clubId || r.individualEntityId || r.individualOwnerId)) || '');
                 const _roles = Array.isArray(_d.allRoles) ? _d.allRoles : [];
 
+                // ⚠️ EXPLÍCITO A PROPÓSITO. Al fundar una entidad no hay
+                // destino todavía, y `String(undefined)` da 'undefined' — que
+                // no casa ningún id, así que el efecto correcto salía por
+                // accidente. Con el destino VACÍO se lee lo que de verdad se
+                // quiere decir: sin entidad de destino, cualquier plaza viva
+                // en otra entidad es ajena.
+                const _destino = String(clubId || '');
                 const _ajenas = new Set();
                 if (_roles.length) {
                     _roles.forEach(r => {
                         if (!_vivo(r)) return;
                         const a = _ancla(r);
-                        if (a && a !== String(clubId)) _ajenas.add(a);
+                        if (a && a !== _destino) _ajenas.add(a);
                     });
                 } else {
                     // Sin allRoles utilizable, la raíz es lo único que hay.
                     const a = String(_d.clubId || _d.individualEntityId || _d.individualOwnerId || '');
-                    if (a && a !== String(clubId) && _d.status !== 'removed') _ajenas.add(a);
+                    if (a && a !== _destino && _d.status !== 'removed') _ajenas.add(a);
                 }
 
                 // Sólo cuentan las entidades que EXISTEN hoy.
@@ -2493,14 +2525,21 @@ export async function doAuth() {
                     window._addingRole = false;
                     window._loginThisSession = false;
                     clearTimeout(_altaTimer);
+                    // El texto cambia según lo que se estuviera intentando:
+                    // "podrá registrarse aquí" no significa nada cuando lo que
+                    // se está creando es el club, que todavía no existe.
                     showAuthError(
                         '⛔ Este correo ya pertenece a otra entidad: ' + _bloquea.tipo + ' "' +
                         _bloquea.nombre + '".\n\n' +
                         'El reglamento de la competición no permite que una misma persona esté ' +
                         'en dos clubes, ni en dos entes, ni en un club y un ente a la vez. ' +
                         'No se ha creado ni modificado nada.\n\n' +
-                        'Si de verdad ha cambiado de entidad, su administrador anterior debe darle ' +
-                        'de baja primero; después podrá registrarse aquí con este mismo correo.'
+                        (_fundaEntidadNueva
+                            ? 'Para fundar una entidad nueva con este correo hay que dejar antes ' +
+                              '"' + _bloquea.nombre + '": su administrador debe darle de baja. ' +
+                              'También puede fundarla con otro correo.'
+                            : 'Si de verdad ha cambiado de entidad, su administrador anterior debe darle ' +
+                              'de baja primero; después podrá registrarse aquí con este mismo correo.')
                     );
                     return;
                 }
@@ -2940,12 +2979,26 @@ export async function doAuth() {
                     });
                 } else if (['club_admin','individual'].includes(requestedRole) && !isAuthorized) {
                     const saReqId = 'self_reg_' + cred.user.uid + '_' + requestedRole;
+                    // ⚠️ 2026-08-23 · CON EL NOMBRE DEL CLUB Y LAS CUOTAS.
+                    //    La solicitud es lo que MANDA en el panel del
+                    //    SuperAdmin (saPendingItems antepone platform_requests
+                    //    al documento de usuario), y `saExtApprove` crea el
+                    //    club con `r.requestedClubName`. Sin este campo la
+                    //    tarjeta decía "Solicitud Directa" y aprobarla habría
+                    //    creado un club LLAMADO "Solicitud Directa". El alta
+                    //    desde una cuenta NUEVA sí los mandaba; ésta, la de un
+                    //    correo que ya existe, no — y es la que usó el autor.
                     const _saReqData = {
                         type: 'self_registration',
                         requestedEmail: email,
                         requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
                         requestedRole: finalRole,
                         requestedRoleLabel: requestedRole === 'club_admin' ? 'Administrador de Club' : 'Administrador Individual',
+                        requestedClubName: (requestedRole === 'club_admin') ? (newClubName || null) : null,
+                        requestedQuotas: (requestedRole === 'club_admin') ? {
+                            directors: reqDirectors, coordinators: reqCoordinators,
+                            coaches: reqCoaches, parents: reqParents,
+                        } : null,
                         userUid: cred.user.uid,
                         status: 'pending_sa',
                         createdAt: new Date().toISOString(),
@@ -2994,11 +3047,43 @@ export async function doAuth() {
 
             // ── CHECK: If user was removed, treat as NEW registration ──
             if (primaryData.status === 'removed') {
-                // Delete the stale doc completely
-                try {
-                    const _mdel = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    await _mdel.deleteDoc(_mdel.doc(fa.db, 'users', cred.user.uid));
-                } catch(_) {}
+                // ═══════════════════════════════════════════════════════════
+                //  🔴🔴🔴 2026-08-23 · "MISSING OR INSUFFICIENT PERMISSIONS"
+                //  AL REGISTRAR UN CLUB NUEVO CON UN CORREO QUE YA EXISTE
+                //
+                //  DEFECTO REPORTADO por el autor: damasorv@gmail.com, al que
+                //  acababan de dar de baja de CD Día, intenta registrar
+                //  "ESTRELLA CF" y la consola escupe permisos insuficientes.
+                //
+                //  🔑 LA CAUSA, MEDIDA CONTRA EL SERVIDOR DE REGLAS DE GOOGLE
+                //  (Rules REST API, método :test — no deducida):
+                //
+                //   1. Aquí había un `deleteDoc(users/{uid})` para poder
+                //      RECREAR el documento, porque el `allow create` sí
+                //      admite role/clubId/status mientras el `allow update`
+                //      los PROHÍBE (lista `hasAny`, cierre de SEC-C1).
+                //   2. Pero `allow delete: if isSuperAdmin()`. **Un usuario no
+                //      puede borrar su propio documento.** Y el borrado iba
+                //      envuelto en `try {} catch(_) {}`: fallaba EN SILENCIO.
+                //   3. Así que el `setDoc` de abajo dejaba de ser un create y
+                //      pasaba a ser un UPDATE que escribía `role`, `clubId`,
+                //      `clubName`, `isAuthorized` y `status` → DENEGADO.
+                //
+                //  El plan era correcto; lo que no existía era el permiso para
+                //  ejecutarlo. Verificado con los cinco casos de la sonda: el
+                //  delete DENIEGA, el update DENIEGA, el create habría pasado,
+                //  y un update que sólo toca `allRoles` y campos no sensibles
+                //  PASA. Por eso ahora se hace lo último y no se borra nada.
+                //
+                //  ⚠️ LA RAÍZ SE QUEDA COMO ESTÁ (status 'removed', el clubId
+                //  antiguo) Y ES CORRECTO: esos campos son del Admin SDK desde
+                //  SEC-C1. Quien los pone al día es el SuperAdmin al aprobar
+                //  (`saExtApprove` en extras.js), y la solicitud le llega por
+                //  `platform_requests`, que sí se puede crear — es la lista que
+                //  MANDA en su panel (`saPendingItems`), no el documento de
+                //  usuario. Intentar arreglar la raíz desde el cliente es
+                //  exactamente la escalada de privilegios que la regla cierra.
+                // ═══════════════════════════════════════════════════════════
                 // Also delete any platform_requests for this user
                 try {
                     const m2 = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -3056,7 +3141,38 @@ export async function doAuth() {
                 //    ANTIGUO: escribir ahí le cambiaba la entidad y el estado a
                 //    un rol que no tiene nada que ver con esta alta.
                 if (freshIsUnderIndiv) { freshData.individualEntityId = selectedIndivId; freshData.individualOwnerId = selectedIndivId; freshData.individualOwnerEmail = individualOwnerEmail || null; _nuevoRol.individualEntityId = selectedIndivId; _nuevoRol.status = isAuthorized ? 'active' : 'pending_individual'; }
-                await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), freshData);
+
+                // ⚠️ SE ESCRIBE SÓLO LO QUE EL DUEÑO DEL DOCUMENTO PUEDE
+                //    ESCRIBIR. `role`, `clubId`, `clubName`, `isAuthorized`,
+                //    `status`, `authorizedAt`, `authorizedBy` y `blockedAt`
+                //    están prohibidos al cliente por la regla de users/{userId}
+                //    (SEC-C1). Colarlos hacía DENEGAR LA ESCRITURA ENTERA, así
+                //    que el rol nuevo tampoco se guardaba: el alta no fallaba
+                //    "un poco", fallaba del todo.
+                //    `createdAt` tampoco se toca: el documento ya existe y su
+                //    fecha de alta no es de hoy.
+                const _permitido = {
+                    email,
+                    allRoles:      freshAllRoles,
+                    playerAlias:   freshData.playerAlias,
+                    inviteCode:    freshData.inviteCode,
+                    requestedSlot: null,
+                    firstName:     firstName || null,
+                    lastLogin:     fa.serverTimestamp(),
+                    ..._gdprConsentFields,
+                };
+                // Datos que el SuperAdmin necesita para crear el club al aprobar.
+                // NO están en la lista prohibida, así que sí se pueden escribir.
+                if (freshData.requestedClubName !== undefined) _permitido.requestedClubName = freshData.requestedClubName;
+                if (freshData.requestedQuotas   !== undefined) _permitido.requestedQuotas   = freshData.requestedQuotas;
+                if (freshData.isIndividual      !== undefined) _permitido.isIndividual      = freshData.isIndividual;
+                if (freshData.lastName          !== undefined) _permitido.lastName          = freshData.lastName;
+                if (freshData.displayName       !== undefined) _permitido.displayName       = freshData.displayName;
+                if (freshData.individualEntityId   !== undefined) _permitido.individualEntityId   = freshData.individualEntityId;
+                if (freshData.individualOwnerId    !== undefined) _permitido.individualOwnerId    = freshData.individualOwnerId;
+                if (freshData.individualOwnerEmail !== undefined) _permitido.individualOwnerEmail = freshData.individualOwnerEmail;
+
+                await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), _permitido, { merge: true });
 
                 // Create platform_request according to context
                 if (freshIsUnderIndiv && freshNeedsApproval) {
@@ -3079,10 +3195,19 @@ export async function doAuth() {
                         userUid: cred.user.uid, status: 'pending_club_admin', createdAt: new Date().toISOString(),
                     }).catch(function(e) { console.warn('[Chronos] Error creating platform_request:', e); });
                 } else if (['club_admin','individual'].includes(requestedRole) && !isAuthorized) {
+                    // ⚠️ Mismo caso que _saReqData: sin nombre de club, aprobar
+                    //    esta solicitud crearía un club llamado "Solicitud
+                    //    Directa". Ésta es LA RAMA EXACTA del alta que reportó
+                    //    el autor (correo existente + raíz en 'removed').
                     const _saReqData2 = {
                         type: 'self_registration', requestedEmail: email,
                         requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
                         requestedRole: finalRole, requestedRoleLabel: requestedRole === 'club_admin' ? 'Administrador de Club' : 'Administrador Individual',
+                        requestedClubName: (requestedRole === 'club_admin') ? (newClubName || null) : null,
+                        requestedQuotas: (requestedRole === 'club_admin') ? {
+                            directors: reqDirectors, coordinators: reqCoordinators,
+                            coaches: reqCoaches, parents: reqParents,
+                        } : null,
                         userUid: cred.user.uid, status: 'pending_sa', createdAt: new Date().toISOString(),
                     };
                     // CRITICAL: Include individualOwnerId and clubId for individual role
@@ -3090,7 +3215,24 @@ export async function doAuth() {
                         _saReqData2.individualOwnerId = selectedIndivId;
                         _saReqData2.clubId = selectedIndivId;
                     }
-                    await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid + '_' + requestedRole), _saReqData2).catch(function(e) { if(window._CRONOS_DEBUG) console.warn('[Chronos] Error creating platform_request:', e); });
+                    // 🔴 ESTE FALLO YA NO SE TRAGA. Antes iba a un console.warn
+                    //    detrás de `window._CRONOS_DEBUG` —o sea, invisible— y
+                    //    aun así se le decía al usuario "✅ Solicitud enviada".
+                    //    Desde que la raíz NO se toca, esta solicitud es EL
+                    //    ÚNICO rastro que le llega al SuperAdmin: si no se
+                    //    escribe, no hay alta, y hay que decirlo.
+                    try {
+                        await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid + '_' + requestedRole), _saReqData2);
+                    } catch (_ePr) {
+                        console.error('[Chronos] No se pudo crear la solicitud para el SuperAdmin:', _ePr);
+                        try { await fa.signOut(fa.auth); } catch (_) {}
+                        window._addingRole = false;
+                        window._loginThisSession = false;
+                        showAuthError('❌ No se ha podido registrar la solicitud: ' +
+                            (_ePr && _ePr.message ? _ePr.message : _ePr) +
+                            '\n\nNo se ha creado nada. Vuelve a intentarlo o avisa al administrador.');
+                        return;
+                    }
                 }
 
                 const rl3 = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Padre/Madre/Tutor', club_admin:'Administrador de Club', individual:'Administrador Individual' };

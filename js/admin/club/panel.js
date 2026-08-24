@@ -610,10 +610,40 @@ async function openClubAdminPanel(preClubId = null) {
                     onclick="caSetUserStatus('${euid}','${email}','blocked','${ecid}')"
                     style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);">
                     🔒 Bloquear</button>` : ''}
-                ${!isRemoved ? `<button class="sa-btn"
-                    onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}')"
+                ${!isRemoved ? (function(){
+                    // ═══════════════════════════════════════════════════
+                    //  🔴🔴 2026-08-23 · LA BAJA ES DE ESTA PLAZA, NO DE LA
+                    //  PERSONA ENTERA
+                    //
+                    //  DEFECTO REPORTADO por el autor: al dar de baja a
+                    //  damasorv@gmail.com de CD Día "el sistema ha borrado de
+                    //  golpe TODOS sus roles, incluido el de coordinador de
+                    //  fútbol 11 que debía mantenerse".
+                    //
+                    //  🔑 Y LA CAUSA ERA UNA LLAMADA INCOMPLETA, no una lógica
+                    //  equivocada. Esta lista se expande a UNA FILA POR PLAZA
+                    //  (`_activeRoleData`, ver v560) y `caSetUserStatus` ACEPTA
+                    //  desde v581 el rol y la plaza a los que acotar la baja
+                    //  —el botón "Cambiar equipo" de esta misma fila ya los
+                    //  pasaba—, pero este botón llamaba sin ninguno de los dos.
+                    //  Sin `targetRole`, `rolesRemovidos` se lleva TODAS las
+                    //  entradas de allRoles de este club: entrenador,
+                    //  coordinador, director… todas.
+                    //
+                    //  Es el patrón de siempre en este proyecto: la maquinaria
+                    //  ya existía y fallaba UNA línea. Ahora la fila dice de
+                    //  qué plaza habla, que es justo lo que el administrador
+                    //  está viendo cuando pulsa.
+                    // ═══════════════════════════════════════════════════
+                    const _rd   = u._activeRoleData || {};
+                    const _rol  = _escA(_rd.role || u.role || '');
+                    const _rcat = _escA(_rd.category != null ? _rd.category : (_rd.categoryLabel || ''));
+                    const _rsub = _escA(_rd.subcategory != null ? _rd.subcategory : '');
+                    return `<button class="sa-btn"
+                    onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${_rol}',false,{category:'${_rcat}',subcategory:'${_rsub}'})"
                     style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">
-                    🗑️ Baja</button>` : ''}
+                    🗑️ Baja</button>`;
+                })() : ''}
                 <!-- ⚠️ EL BOTÓN "🗑️ Eliminar" (cuenta entera) SE HA RETIRADO.
                      El borrado global de cuentas es cosa del SuperAdministrador
                      al cerrar temporada. Desde el Panel de Club sólo se vacían
@@ -2280,8 +2310,21 @@ async function openClubAdminPanel(preClubId = null) {
         if (sinConfirmar) {
             /* el llamante ya ha confirmado */
         } else if (newStatus === 'removed' && targetRole) {
-            if (!confirm('¿Quitar el rol "' + targetRole + '" a ' + userEmail + '?\n\n' +
-                         'Se conservará su cuenta y los demás roles activos.')) return false;
+            // ⚠️ EL AVISO TIENE QUE DECIR QUÉ CASILLA SE QUITA. Ponía el
+            // identificador crudo del rol ('user') y ni mencionaba el equipo:
+            // quien lo lee no puede saber si va a perder una plaza o todas, y
+            // ése es exactamente el susto que se llevó el autor.
+            var _rl = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador',
+                        director:'Director Deportivo', club_admin:'Administrador de Club' };
+            var _eq = (plaza && plaza.category)
+                ? ((typeof window.cronosNombreCategoria === 'function')
+                    ? window.cronosNombreCategoria(plaza.category, plaza.subcategory)
+                    : (plaza.category + (plaza.subcategory ? ' ' + plaza.subcategory : '')))
+                : '';
+            if (!confirm('¿Dar de baja la casilla de ' + (_rl[targetRole] || targetRole) +
+                         (_eq ? ' de ' + _eq : '') + ' a ' + userEmail + '?\n\n' +
+                         'Se libera ESA plaza. Su cuenta y CUALQUIER OTRO rol o equipo suyo ' +
+                         'en el club quedan intactos.')) return false;
         } else if (newStatus === 'removed') {
             if (!confirm('¿Dar de baja a ' + userEmail + '?\n\n' +
                          'Se le retira el acceso y se libera su plaza.\n' +
@@ -2534,7 +2577,7 @@ async function openClubAdminPanel(preClubId = null) {
                 //    escribía un allRoles idéntico al que ya había y mostraba el
                 //    toast de éxito: el administrador daba por hecha una baja que
                 //    no se había producido. Ahora se dice, y no se toca nada.
-                if (rolesRemovidos.length === 0 && !revocaRolRaiz && !revocaTodosLosRoles) {
+                if (rolesRemovidos.length === 0 && !revocaTodosLosRoles) {
                     showToast('⚠️ No se encontró ningún rol activo de ' + userEmail +
                               ' en este club' + (targetRole ? ' con el rol "' + targetRole + '"' : '') +
                               (_acotaPorPlaza ? ' en ' + _plazaCat + ' ' + _plazaSub : '') +
@@ -2546,19 +2589,9 @@ async function openClubAdminPanel(preClubId = null) {
                     allRoles: allRolesTrasRevocar,
                     updatedAt: new Date().toISOString()
                 };
-                if (revocaTodosLosRoles || revocaRolRaiz) {
-                    // Se cierra la puerta. isAuthorized:false es lo que de
-                    // verdad revoca, porque userDocClubId() de las reglas lo
-                    // exige para conceder acceso a los datos del club.
-                    //
-                    // ⚠️ También cuando `revocaRolRaiz`, aunque le queden otros
-                    //    roles: dejar la raíz autorizada con el rol revocado es
-                    //    lo que hacía que auth.js lo resucitara al entrar. No se
-                    //    puede "mover" la raíz al rol que le queda porque las
-                    //    reglas prohíben al administrador escribir 'role' y
-                    //    'clubId' (isMembershipDecision). Si conserva otros
-                    //    roles, se le reactiva desde el panel y auth.js
-                    //    reconstruye la raíz en el siguiente inicio de sesión.
+                if (revocaTodosLosRoles) {
+                    // Se cierra la puerta únicamente si no le queda ningún rol activo en el club.
+                    // Si conserva otros roles (ej: Administrador o Coordinador), la raíz permanece activa.
                     revocaRaiz.isAuthorized = false;
                     revocaRaiz.status = 'removed';
                 }

@@ -77,6 +77,9 @@ sb.window = sb;
 sb.globalThis = sb;
 vm.createContext(sb);
 vm.runInContext(CQ + '\n;window.__probe = { _cqMin, _cqHHMM, _cqDocId, _cqFilasVisibles, _cqHoraIni, ' +
+                     '_cqFilasEfectivas, _cqFilaLimpia, CQ_DOC_FILAS, ' +
+                     '_cqEsPartido, _cqHistInit, _cqHistPush, _cqHistGuardado, ' +
+                     '_cqPuedeDeshacer, _cqPuedeRehacer, CQ_HIST_MAX, ' +
                      '_cqEtiquetaCelda, _cqOcupaCampo, _cqMinutosOcupados, ' +
                      '_cqEspaciosDe, _cqEspacioImplicito, CQ_ESPACIOS, ' +
                      'CQ_HORA_INI_SEMANA, CQ_HORA_INI_FINDE, CQ_HORA_FIN, CQ_PASO_MIN, ' +
@@ -895,9 +898,14 @@ console.log('\n20) 🗓️ v607 · Copiar y pegar la semana entera (punto 2)');
        /const visibles = _cqFilasVisibles\(st\.doc\.filas\);\s*const entradas = \[\];/.test(CQ_COD),
        'un coordinador de F7 no puede llevarse los equipos de F11');
 
+    // ⚠️ SE COMPRUEBA LA PROPIEDAD, NO LA REDACCIÓN. La v615 reescribió este
+    // recorrido para apartar los partidos, y una aserción atada a la forma
+    // exacta del `filter` anterior se puso roja sin que nada se hubiera roto.
+    // Lo que hay que exigir es que las dos mitades —lo que se BORRA y lo que
+    // se ESCRIBE— sigan pasando por `idsVisibles`.
     ok('20d · 🔴🔴 y al pegar, las filas fuera de su alcance NO se tocan',
        /if \(!idsVisibles\[en\.filaId\]\) return;/.test(CQ_COD) &&
-       /const yaHabia = Object\.keys\(st\.doc\.celdas\)\.filter\(k => \{[\s\S]{0,200}return idsVisibles\[filaId\];/.test(CQ_COD),
+       /Object\.keys\(st\.doc\.celdas\)\.forEach\(k => \{[\s\S]{0,220}if \(!idsVisibles\[filaId\]\) return;/.test(CQ_COD),
        'sobrescribir en masa lo que no se ve es donde más daño haría el fallo de alcance');
 
     ok('20e · el portapapeles vive en localStorage y sobrevive al cambio de semana',
@@ -933,8 +941,15 @@ console.log('\n20) 🗓️ v607 · Copiar y pegar la semana entera (punto 2)');
     ok('20m · y sólo aparece cuando hay algo copiado',
        /\(_semCopiada\s*\n?\s*\? '<span/.test(CQ_COD));
 
-    ok('20n · se avisa de que después hay que ajustar los partidos',
-       /ajustar los partidos del fin de semana/.test(CQ_COD));
+    // 🔄 v615 · ESTA ASERCIÓN CAMBIÓ DE SIGNO A PROPÓSITO. Hasta la v614 el
+    // aviso decía «después tendrás que ajustar los partidos del fin de
+    // semana», porque el pegado se los llevaba por delante. Ahora los partidos
+    // no se tocan, así que ese texto sería un consejo FALSO: mandaría a
+    // revisar algo que ya está bien. Lo que hay que prometer es lo contrario.
+    ok('20n · se avisa de que los partidos oficiales quedan intactos',
+       /partido\(s\) oficiales de esta semana NO se tocan/.test(CQ_COD) &&
+       !/ajustar los partidos del fin de semana/.test(CQ_COD),
+       'el aviso tiene que describir lo que hace la v615, no lo que hacía la v614');
 
     ok('20ñ · ⚠️ una copia guardada corrupta se ignora, no revienta el panel',
        /if \(!v \|\| !Array\.isArray\(v\.entradas\) \|\| !v\.entradas\.length\) return null;/.test(CQ_COD));
@@ -952,8 +967,15 @@ console.log('\n21) 📐 v608 · "campo completo" ya no se sale de la casilla (ca
     ok('21b · y el relleno no se suma a la altura',
        /box-sizing:border-box/.test(CELDA));
 
-    ok('21c · 🔑 la misma caja para las TRES casillas (vacía, modo pegar y con contenido)',
-       (CELDA.match(/style="' \+ CAJA \+ '/g) || []).length === 3,
+    // 📅 v609 · Esta aserción esperaba TRES casillas y saltó al añadirse la
+    // cuarta (el partido oficial propuesto por el calendario). Hizo justo lo
+    // que tenía que hacer, así que no se relaja: se cuenta CONTRA EL NÚMERO DE
+    // CASILLAS QUE HAYA, que es lo que de verdad quería decir. Un número fijo
+    // habría que subirlo cada vez, y "subir el número hasta que pase" es como
+    // un guard deja de proteger nada.
+    const _nBotones = (CELDA.match(/'<button onclick="' \+ abrir \+ '"/g) || []).length;
+    ok('21c · 🔑 la misma caja para TODAS las casillas (vacía, modo pegar, propuesta y con contenido)',
+       _nBotones >= 4 && (CELDA.match(/style="' \+ CAJA \+ '/g) || []).length === _nBotones,
        'si sólo se arreglara la que desbordaba, la siguiente línea que se añada repetiría el defecto');
 
     ok('21d · ⚠️ el rótulo largo YA NO lleva `nowrap`: puede pasar a dos líneas',
@@ -973,6 +995,263 @@ console.log('\n21) 📐 v608 · "campo completo" ya no se sale de la casilla (ca
     ok('21h · 🔑 y "campo completo" se sigue distinguiendo de los espacios elegidos a mano',
        /espCompleto \? 'campo completo'/.test(CELDA) && /_cqEspacioImplicito\(c\)/.test(CELDA),
        'el arreglo visual no puede borrar la distinción que trajo la v607');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+console.log('\n22 · 🔴 v612 · LA LISTA DE EQUIPOS ES DEL CLUB, NO DE LA SEMANA');
+// ════════════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt, 2026-08-24): «al asignar o añadir la
+//  categoría y el equipo, guardar y volver a abrir, los datos desaparecen y no
+//  se quedan retenidos de forma permanente».
+//
+//  🔑 `filas` se guardaba DENTRO de `CUADRANTE__{weekKey}`. Añadir el Juvenil A
+//  y guardar lo escribía en la semana del 24 de agosto y sólo ahí; al pasar de
+//  semana no había documento y la lista se rehacía desde `_cqFilasPorDefecto`,
+//  que sólo devuelve equipos CON PLANTILLA PUBLICADA. El equipo se esfumaba.
+//
+//  🔑🔑 Y ES LO QUE ROMPÍA EL CALENDARIO. Los partidos importados se guardan
+//  bajo `filaId` y el gestor lista `st.doc.filas`: un equipo que no sobrevive a
+//  cambiar de semana no tiene fila donde pintar su partido. La temporada
+//  quedaba bien guardada en Firestore y NO SE VEÍA NADA — indistinguible de
+//  "la importación no funciona", que es justo como se reportó.
+{
+    ok('22a · la lista vive en un documento HERMANO, fuera de la semana',
+       P.CQ_DOC_FILAS === 'CUADRANTE__FILAS', P.CQ_DOC_FILAS);
+
+    // ⚠️⚠️ La misma trampa que ya vigila la aserción 1 para el cuadrante:
+    // `TrainingSync.deleteWeek()` hace deleteDoc del documento ENTERO. Si este
+    // id pudiera confundirse con una fecha de semana, un entrenador pulsando
+    // "🗑️ LIMPIAR" se llevaría por delante los equipos de todo el club.
+    ok('22b · ⚠️ y su id NO puede parecerse a una fecha de semana',
+       !/^\d{4}-\d{2}-\d{2}$/.test(P.CQ_DOC_FILAS.replace('CUADRANTE__', '')));
+
+    // 🔑 CERO REGLAS NUEVAS: el comodín {weekKey} ya cubre este id. Cualquier
+    // otra ubicación caería en el `allow read, write: if false` del final, y en
+    // este proyecto las reglas NO se pueden probar antes de desplegarlas.
+    ok('22c · 🔑 cae bajo la regla de weeks que ya existe (cero reglas nuevas)',
+       /match \/trainingPlans\/\{clubId\}\/weeks\/\{weekKey\}/.test(RULES));
+
+    const F = P._cqFilasEfectivas;
+    const club = [
+        { id: 'juvenil__A', tipo: 'equipo', cat: 'juvenil', sub: 'A', label: 'Juvenil A' },
+        { id: 'cadete__B',  tipo: 'equipo', cat: 'cadete',  sub: 'B', label: 'Cadete B' },
+    ];
+
+    // 🔴 EL DEFECTO, EN UNA LÍNEA: semana sin documento propio → antes salían
+    // las filas por defecto y el equipo añadido no estaba. Ahora manda el club.
+    const nueva = F(club, [], {});
+    ok('22d · 🔴 una semana SIN documento hereda los equipos del club',
+       nueva.length === 2 && nueva[0].id === 'juvenil__A', nueva.map(f => f.id));
+
+    // Y el orden que el club fijó con ▲▼ se respeta: no se reordena solo.
+    ok('22e · en el orden que el club fijó',
+       F(club, [], {}).map(f => f.id).join(',') === 'juvenil__A,cadete__B');
+
+    // Una semana vieja trae su propia lista: manda la del club igualmente,
+    // o el equipo nuevo seguiría sin aparecer en las semanas ya guardadas.
+    const vieja = F(club, [{ id: 'cadete__B', tipo: 'equipo', cat: 'cadete', sub: 'B', label: 'Cadete B' }], {});
+    ok('22f · la lista del club MANDA sobre la que traía la semana',
+       vieja.length === 2 && vieja.some(f => f.id === 'juvenil__A'), vieja.map(f => f.id));
+
+    // ⚠️⚠️ PERO UN DATO QUE EXISTE NO PUEDE VOLVERSE INVISIBLE. Si en marzo se
+    // cuadró un equipo que hoy ya no está en la lista, sus casillas siguen en
+    // el documento: sin esta salvaguarda, quitar un equipo HOY borraría de la
+    // vista —que no de la base— el trabajo de aquella semana, sin avisar.
+    const conHistoria = F(club,
+        [{ id: 'libre_x9', tipo: 'libre', cat: '', sub: '', label: 'Porteros' }],
+        { 'libre_x9|2026-03-10': { tipo: 'entreno' } });
+    ok('22g · ⚠️⚠️ una fila que ya no está en el club pero TIENE casillas, se conserva',
+       conHistoria.some(f => f.id === 'libre_x9'), conHistoria.map(f => f.id));
+
+    ok('22h · …y una que ya no está y NO tiene casillas, no vuelve',
+       !F(club, [{ id: 'libre_x9', tipo: 'libre', cat: '', sub: '', label: 'Porteros' }], {})
+            .some(f => f.id === 'libre_x9'));
+
+    // Sin lista de club todavía (o si su lectura falló) se sigue con lo que
+    // traiga la semana: esto NUNCA puede dejar el cuadrante en blanco.
+    ok('22i · ⚠️ sin lista de club, se respeta la de la semana (no se vacía)',
+       F([], [{ id: 'infantil__A', tipo: 'equipo', cat: 'infantil', sub: 'A', label: 'Infantil A' }], {})
+            .length === 1);
+    ok('22j · …y con la lista a null tampoco se vacía',
+       F(null, [{ id: 'infantil__A', tipo: 'equipo', cat: 'infantil', sub: 'A', label: 'Infantil A' }], {})
+            .length === 1);
+
+    // Sólo se guarda lo que DEFINE una fila: el objeto de pintado no puede
+    // acabar en un documento que leen todos los coordinadores.
+    const limpia = P._cqFilaLimpia({ id: 'a', tipo: 'equipo', cat: 'c', sub: 's', label: 'L', basura: 1, _dom: {} });
+    ok('22k · la fila que se guarda no arrastra basura de pintado',
+       Object.keys(limpia).sort().join(',') === 'cat,id,label,sub,tipo', Object.keys(limpia));
+
+    // ── Y que el enganche esté puesto de verdad ──────────────────────
+    ok('22l · guardar el cuadrante guarda TAMBIÉN la lista del club',
+       /_cqGuardarFilasClub\(clubId, st\.doc\.filas\)/.test(CQ_COD));
+
+    // ⚠️ En su propio try: si falla la lista, la semana ya está a salvo. Que
+    // una escritura secundaria tumbe el guardado del trabajo sería peor que
+    // el defecto que arregla.
+    ok('22m · ⚠️ y si eso falla, la semana ya está guardada (try aparte)',
+       /await _cqGuardar\(clubId, st\.doc\);[\s\S]{0,200}?try \{ await _cqGuardarFilasClub/.test(CQ_COD));
+
+    ok('22n · al abrir una semana se lee la lista del club',
+       /_cqLeerFilasClub\(clubId\)/.test(CQ_COD) && /_cqFilasEfectivas\(filasClub/.test(CQ_COD));
+
+    // 🔑 Migración: un club que ya usaba el cuadrante tiene sus equipos dentro
+    // de la semana y ninguno en el documento del club. Se siembra solo.
+    ok('22o · 🔑 los clubes que ya venían usándolo migran solos',
+       /!filasClub\.length && leido\.filas\.length/.test(CQ_COD));
+
+    // ⚠️ …pero NUNCA tras un fallo de lectura: sembrar ahí machacaría la
+    // composición real del club con la de una sola semana por un corte de red.
+    ok('22p · ⚠️ y no se siembra si la LECTURA falló (null ≠ vacío)',
+       /st\.filasClub !== null && !filasClub\.length/.test(CQ_COD));
+
+    // 🔗 El calendario depende de esto: su gestor lista `st.doc.filas`.
+    ok('22q · 🔗 el gestor de calendarios sigue leyendo esas filas',
+       /st\.doc\.filas/.test(sinCom(leer('js/coach/reports/calendario-temporada.js'))));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+console.log('\n23 · 🔴 v615 · COPIAR SEMANA NO SE LLEVA NI PISA LOS PARTIDOS');
+// ════════════════════════════════════════════════════════════════════════
+//  Petición del autor (implementar.txt, 2026-08-24), con la razón exacta: «los
+//  partidos oficiales cambian de día cada semana — una semana se juega en casa
+//  un viernes y a la siguiente un sábado». Está en el calendario que se acaba
+//  de importar: el Estrella CF juega la J7 un sábado a las 11:00 y la J8 un
+//  viernes a las 21:00.
+//
+//  🔴 El defecto era DOBLE, y las dos mitades hacían daño por separado:
+//   1. La copia se LLEVABA el partido del viernes de la semana origen.
+//   2. Y el pegado VACIABA la semana destino entera, cargándose el partido del
+//      sábado que ya estaba bien puesto, para plantarle encima el del viernes.
+//  Resultado: el partido en el día equivocado, en la pauta que siguen todos
+//  los entrenadores y en el papel de ocupación que se manda al Ayuntamiento.
+{
+    ok('23a · un partido se reconoce por su tipo, en casa y fuera',
+       P._cqEsPartido({ tipo: 'partido_casa' }) && P._cqEsPartido({ tipo: 'partido_fuera' }));
+    ok('23b · …y un entrenamiento no lo es',
+       !P._cqEsPartido({ tipo: 'entreno' }) && !P._cqEsPartido({ tipo: 'otro' }) && !P._cqEsPartido(null));
+
+    const COPIA = _seccion(CQ_COD, 'window.cqCopiarSemana', 'window.cqPegarSemana');
+    const PEGA  = _seccion(CQ_COD, 'window.cqPegarSemana',  'window.cqOlvidarSemana');
+
+    // 1 · La copia deja el partido fuera del paquete.
+    ok('23c · 🔴 copiar NO mete los partidos en el paquete',
+       /if \(_cqEsPartido\(c\)\) \{ partidosFuera\+\+; return; \}/.test(COPIA), 'la copia sigue llevándose los partidos');
+    ok('23d · …y se dice cuántos se han quedado fuera',
+       /partidosFuera \?/.test(COPIA));
+
+    // 2 · El pegado NO borra los partidos del destino.
+    ok('23e · 🔴🔴 al vaciar el destino, los partidos se apartan',
+       /if \(_cqEsPartido\(st\.doc\.celdas\[k\]\)\) partidosDestino\.push\(k\);\s*\n\s*else yaHabia\.push\(k\);/.test(PEGA),
+       'el vaciado sigue arrasando con los partidos');
+    ok('23f · y sólo se borra lo que NO es partido',
+       /yaHabia\.forEach\(k => \{ delete st\.doc\.celdas\[k\]; \}\)/.test(PEGA) &&
+       !/partidosDestino\.forEach\(k => \{ delete/.test(PEGA));
+
+    // 3 · Y tampoco se escribe ENCIMA de un partido del destino.
+    //  ⚠️ Esta es la mitad que se escapa fácil: aunque el paquete ya no traiga
+    //  partidos, el entrenamiento del martes de la semana origen puede caer
+    //  justo donde ESTA semana hay partido.
+    ok('23g · ⚠️ un entrenamiento no se escribe encima de un partido',
+       /if \(_cqEsPartido\(st\.doc\.celdas\[clave\]\)\) \{ respetados\+\+; return; \}/.test(PEGA),
+       'el pegado puede sobrescribir un partido');
+    ok('23h · y el aviso previo lo promete por escrito',
+       /partido\(s\) oficiales de esta semana NO se tocan/.test(PEGA));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+console.log('\n24 · ↩️ v615 · DESHACER Y REHACER');
+// ════════════════════════════════════════════════════════════════════════
+//  Petición del autor: «dar marcha atrás de forma fluida a las últimas
+//  acciones». Aquí se pega una semana entera de un clic y se vacían filas con
+//  todas sus actividades: sin historial, revertir una de esas operaciones era
+//  rehacerla a mano casilla por casilla, o salir sin guardar perdiendo TAMBIÉN
+//  todo lo bueno hecho antes.
+{
+    const W = sb.window;
+    const inst = (celdas) => { W._cqState.doc = { weekKey: '2026-08-24', filas: [], celdas: celdas, espacios: P.CQ_ESPACIOS }; };
+
+    inst({ a: { tipo: 'entreno' } });
+    P._cqHistInit();
+    ok('24a · al abrir hay punto de partida y nada que deshacer',
+       !P._cqPuedeDeshacer() && !P._cqPuedeRehacer());
+
+    W._cqState.doc.celdas.b = { tipo: 'entreno' };
+    P._cqHistPush('añadir b');
+    ok('24b · tras un cambio ya se puede deshacer', P._cqPuedeDeshacer() && !P._cqPuedeRehacer());
+
+    W.cqDeshacer();
+    ok('24c · 🔑 deshacer devuelve el cuadrante al estado anterior',
+       !W._cqState.doc.celdas.b && !!W._cqState.doc.celdas.a, Object.keys(W._cqState.doc.celdas));
+    ok('24d · y entonces se puede rehacer', P._cqPuedeRehacer());
+
+    W.cqRehacer();
+    ok('24e · rehacer lo vuelve a traer', !!W._cqState.doc.celdas.b, Object.keys(W._cqState.doc.celdas));
+
+    // ⚠️ Una acción que no cambia nada no puede gastar un paso: si no,
+    // "deshacer" dejaría de hacer nada visible y parecería roto.
+    const antes = W._cqState.hist.pila.length;
+    P._cqHistPush('sin efecto');
+    ok('24f · ⚠️ una acción que no cambia nada no gasta un paso',
+       W._cqState.hist.pila.length === antes, [antes, W._cqState.hist.pila.length]);
+
+    // 🔑 Escribir después de deshacer corta la rama de rehacer.
+    W.cqDeshacer();
+    W._cqState.doc.celdas.c = { tipo: 'otro' };
+    P._cqHistPush('añadir c');
+    ok('24g · 🔑 al escribir tras deshacer se pierde el rehacer pendiente', !P._cqPuedeRehacer());
+
+    // ⚠️ EL AVISO "● Sin guardar" TIENE QUE DECIR LA VERDAD. Si deshaces hasta
+    // volver justo a lo guardado, no hay nada pendiente y el aviso debe irse.
+    inst({ a: { tipo: 'entreno' } });
+    P._cqHistInit();
+    W._cqState.doc.celdas.x = { tipo: 'entreno' };
+    P._cqHistPush('cambio');
+    W._cqState.sucio = true;
+    P._cqHistGuardado();                       // se guarda AQUÍ
+    W._cqState.doc.celdas.y = { tipo: 'entreno' };
+    P._cqHistPush('otro cambio');
+    W._cqState.sucio = true;
+    W.cqDeshacer();                            // vuelve al punto guardado
+    ok('24h · ⚠️ deshacer hasta lo guardado apaga "sin guardar"',
+       W._cqState.sucio === false, W._cqState.sucio);
+    W.cqDeshacer();                            // un paso MÁS atrás
+    ok('24i · …y un paso más atrás lo vuelve a encender', W._cqState.sucio === true);
+
+    // ⚠️ La pila no puede crecer sin fin en una sesión larga de cuadrar.
+    inst({});
+    P._cqHistInit();
+    for (let i = 0; i < P.CQ_HIST_MAX + 15; i++) {
+        W._cqState.doc.celdas['k' + i] = { tipo: 'entreno' };
+        P._cqHistPush('c' + i);
+    }
+    ok('24j · ⚠️ el historial tiene tope y no crece sin fin',
+       W._cqState.hist.pila.length <= P.CQ_HIST_MAX, W._cqState.hist.pila.length);
+    ok('24k · …y aun así se puede seguir deshaciendo', P._cqPuedeDeshacer());
+
+    // ── Enganches ───────────────────────────────────────────────────
+    ok('24l · 🔑 cambiar de semana reinicia el historial',
+       /st\.remoto = null;[\s\S]{0,400}?_cqHistInit\(\);/.test(CQ_COD),
+       'la pila sobreviviría a la semana que describe');
+    ok('24m · 🔑 adoptar el cambio de otra persona también lo reinicia',
+       (CQ_COD.match(/_cqHistInit\(\);/g) || []).length >= 3, 'falta algún reinicio');
+    ok('24n · guardar fija el punto "sin cambios pendientes"',
+       /st\.sucio = false;\s*\n\s*_cqHistGuardado\(\);/.test(CQ_COD));
+    ok('24o · los botones están en la barra del cuadrante',
+       /_cqBotonesHistorial\(\) \+/.test(CQ_COD));
+
+    // Las acciones que de verdad hacen daño tienen que dejar rastro.
+    ['pegar semana', 'fijar ', 'quitar ', 'pegar fila', 'editar casilla', 'vaciar casilla']
+        .forEach(acc => ok('24p · queda en el historial: ' + acc.trim(),
+            new RegExp('_cqHistPush\\(\'' + acc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(CQ_COD)));
+
+    // ⌨️ Ctrl+Z no puede robarle el deshacer al texto que se está escribiendo.
+    ok('24q · ⚠️ el atajo se aparta si estás escribiendo o con un editor abierto',
+       /INPUT\|TEXTAREA\|SELECT/.test(CQ_COD) && /getElementById\('cq-overlay'\)/.test(_seccion(CQ_COD, 'function _cqTeclas', 'function _cqBotonesHistorial')));
+
+    // 🔴 Deshacer NO escribe en Firestore: sólo devuelve la pantalla atrás.
+    ok('24r · 🔴 deshacer no toca Firestore',
+       !/setDoc|getDoc/.test(_seccion(CQ_COD, 'function _cqHistIr', 'function _cqPuedeDeshacer')));
 }
 
 console.log('\n' + '─'.repeat(70));
