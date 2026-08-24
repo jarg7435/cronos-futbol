@@ -85,6 +85,17 @@ const IND_2    = { uid: 'ia_2',   token: P({ email: 'ind2@x.es',   role: 'indivi
 const SA       = { uid: 'sa',     token: P({ email: 'sa@x.es',     role: 'superadmin' }) };
 const DAMASO   = { uid: 'u1',     token: P({ email: 'damasorv@gmail.com' }) };     // el solicitante pendiente
 
+// 🎯 v616 · Los actores de las ramas que v610/v611 anadieron a isAdminOfClub()
+// y que hasta ahora NO PROBABA NADIE. Ojo: isClubDirectorOf/isClubCoordinatorOf
+// deciden mirando el DOCUMENTO del usuario, no el claim del token — por eso el
+// caso del director suspendido lleva claims impecables y aun asi debe DENEGAR.
+const DIR_A    = { uid: 'dir_a',   token: P({ email: 'dir@a.es', role: 'director',    clubId: 'CLUB_A' }) };
+const COO_A    = { uid: 'coo_a',   token: P({ email: 'coo@a.es', role: 'coordinator', clubId: 'CLUB_A' }) };
+const DIR_B    = { uid: 'dir_b',   token: P({ email: 'dir@b.es', role: 'director',    clubId: 'CLUB_B' }) };
+const DIR_SUS  = { uid: 'dir_sus', token: P({ email: 'sus@a.es', role: 'director',    clubId: 'CLUB_A' }) };
+const DIR_NOA  = { uid: 'dir_noa', token: P({ email: 'noa@a.es', role: 'director',    clubId: 'CLUB_A' }) };
+const FANTASMA = { uid: 'fantasma', token: P({ email: 'nadie@a.es', role: 'director', clubId: 'CLUB_A' }) };
+
 // ── Documentos ───────────────────────────────────────────────────────────
 const PR_SELF = { type: 'self_registration', clubId: 'CLUB_A', clubName: 'Club A',
                   requestedEmail: 'damasorv@gmail.com', requestedRole: 'user',
@@ -108,6 +119,17 @@ const APROBADO = { isAuthorized: true, status: 'active',
                    category: 'infantil', categoryLabel: 'infantil', subcategory: 'A',
                    allRoles: [{ role: 'user', clubId: 'CLUB_A', isAuthorized: true, status: 'active' }] };
 
+// Un usuario mockeado son SIEMPRE dos entradas —`exists` y `get`— porque las
+// reglas usan las dos. Con `datos === null` el documento NO existe: `exists`
+// devuelve false y el `get` se deja vacío (no debería llegar a llamarse nunca,
+// y si se llama es que alguien rompió el cortocircuito).
+function mockUser(uid, datos) {
+    return [
+        { function: 'exists', args: [{ exactValue: `${DB}/users/${uid}` }], result: { value: !!datos } },
+        { function: 'get',    args: [{ exactValue: `${DB}/users/${uid}` }], result: { value: { data: datos || {} } } },
+    ];
+}
+
 // Mocks compartidos: cronos_config/superadmins (isSuperAdminEmail) y los clubs
 // (isClubAdminOf). El SA de este test lo es por CLAIM, no por email, para que
 // ninguna rama dependa de la lista.
@@ -122,6 +144,51 @@ const MOCKS = [
     { function: 'get',    args: [{ exactValue: `${DB}/clubs/IND_1` }], result: { value: { data: {} } } },
     { function: 'exists', args: [{ exactValue: `${DB}/clubs/IND_2` }], result: { value: false } },
     { function: 'get',    args: [{ exactValue: `${DB}/clubs/IND_2` }], result: { value: { data: {} } } },
+
+    // ════════════════════════════════════════════════════════════════════
+    //  🔴 v616 · LOS DOCUMENTOS DE /users/, QUE FALTABAN
+    // ════════════════════════════════════════════════════════════════════
+    //  v610/v611 metieron `isClubDirectorOf()` e `isClubCoordinatorOf()` dentro
+    //  de `isAdminOfClub()`, y esas dos SÍ leen `/users/{uid}` —las anteriores
+    //  se apañaban con `/clubs/{clubId}`—. Este bloque de mocks no las
+    //  acompañó, así que en el simulador la llamada se quedaba sin respuesta:
+    //
+    //    "Service call error. Function: [exists], Argument: [.../users/ca_b]"
+    //
+    //  🔑 Y ESO NO ES UN FALLO DE LAS REGLAS. La Rules API no tiene base de
+    //  datos detrás: todo `get`/`exists` que no venga mockeado se AVERÍA. En
+    //  Firestore de verdad, `exists()` sobre un documento que no está devuelve
+    //  `false` y el `&&` corta sin llegar al `get()`.
+    //
+    //  ⚠️ PERO EL GUARD NO PODÍA SABERLO, y ahí está la lección: 8 casos DENY
+    //  salían en rojo por avería, no por denegar. Un caso DENY no distingue
+    //  "la regla dijo que no" de "la regla se rompió" —por eso este fichero
+    //  trata `errorPosition` como fallo—, y sin mocks TODA rama nueva que lea
+    //  un documento nuevo se avería en silencio en cuanto alguien la añade.
+    //
+    //  Se mockean TODOS los uid que aparecen en los casos, incluidos los que
+    //  no tienen documento: `exists:false` es una respuesta legítima y es la
+    //  que ejercita el cortocircuito.
+    ...mockUser('ca_a',  { email: 'admin@a.es', role: 'club_admin', clubId: 'CLUB_A', isAuthorized: true, status: 'active' }),
+    ...mockUser('ca_b',  { email: 'admin@b.es', role: 'club_admin', clubId: 'CLUB_B', isAuthorized: true, status: 'active' }),
+    ...mockUser('coach', { email: 'coach@a.es', role: 'user',       clubId: 'CLUB_A', isAuthorized: true, status: 'active' }),
+    ...mockUser('ia_1',  { email: 'ind1@x.es',  role: 'individual',  clubId: 'IND_1',  isAuthorized: true, status: 'active' }),
+    ...mockUser('ia_2',  { email: 'ind2@x.es',  role: 'individual',  clubId: 'IND_2',  isAuthorized: true, status: 'active' }),
+    ...mockUser('sa',    { email: 'sa@x.es',    role: 'superadmin',                    isAuthorized: true, status: 'active' }),
+    // 🎯 Las dos ramas NUEVAS de v610/v611, que hasta ahora no las probaba nadie.
+    ...mockUser('dir_a', { email: 'dir@a.es',   role: 'director',    clubId: 'CLUB_A', isAuthorized: true, status: 'active' }),
+    ...mockUser('coo_a', { email: 'coo@a.es',   role: 'coordinator', clubId: 'CLUB_A', isAuthorized: true, status: 'active' }),
+    ...mockUser('dir_b', { email: 'dir@b.es',   role: 'director',    clubId: 'CLUB_B', isAuthorized: true, status: 'active' }),
+    // ⚠️ Un director SUSPENDIDO y otro SIN autorizar: la regla exige las dos
+    // cosas, y sin un caso que lo compruebe esas dos condiciones son adorno.
+    ...mockUser('dir_sus', { email: 'sus@a.es', role: 'director',    clubId: 'CLUB_A', isAuthorized: true,  status: 'suspended' }),
+    ...mockUser('dir_noa', { email: 'noa@a.es', role: 'director',    clubId: 'CLUB_A', isAuthorized: false, status: 'active' }),
+    // El solicitante pendiente: existe, pero no es nada.
+    ...mockUser('u1',    U_PEND),
+    // 🔑 Y uno que NO EXISTE. Es el camino que de verdad recorre el
+    // cortocircuito `exists() && get()`: si alguien invirtiera ese orden, el
+    // `get()` sobre un documento ausente reventaría y aquí se vería.
+    ...mockUser('fantasma', null),
 ];
 
 const del  = (auth, id, existing) => ({ auth, path: `${DB}/platform_requests/${id}`, method: 'delete', existing });
@@ -217,6 +284,39 @@ const CASOS = [
       req: upd(DAMASO, 'u1', U_PEND, { isAuthorized: true, status: 'active' }) },
     { n: 'C10 · el usuario sigue editando campos NO sensibles de su doc', exp: 'ALLOW',
       req: upd(DAMASO, 'u1', U_PEND, { displayName: 'Damaso' }) },
+
+    // ══ D) v610/v611 · DIRECTOR Y COORDINADOR ═══════════════════════════
+    //  isAdminOfClub() dejo de ser solo el administrador: v610/v611 le
+    //  anadieron isClubDirectorOf() e isClubCoordinatorOf(). Eso amplia QUIEN
+    //  puede aceptar y rechazar altas de un club, que es de las cosas mas
+    //  sensibles del producto, y hasta la v616 no habia UN SOLO caso que lo
+    //  comprobara: el guard ni siquiera podia evaluarlo, porque faltaban los
+    //  mocks de /users/ y las dos ramas se averiaban.
+    //
+    //  🔑 Estas dos funciones deciden por el DOCUMENTO del usuario, no por el
+    //  claim del token. Por eso los tres casos de abajo llevan claims
+    //  perfectos de director de CLUB_A y aun asi tienen que DENEGAR.
+    { n: 'D1 · 🎯 el DIRECTOR de un club puede rechazar altas de SU club', exp: 'ALLOW',
+      req: del(DIR_A, 'self_reg_u1', PR_SELF) },
+    { n: 'D2 · 🎯 y el COORDINADOR de ese club, tambien', exp: 'ALLOW',
+      req: del(COO_A, 'self_reg_u1', PR_SELF) },
+    { n: 'D3 · 🔴 pero el director de OTRO club NO', exp: 'DENY',
+      req: del(DIR_B, 'self_reg_u1', PR_SELF) },
+    { n: 'D4 · ⚠️ ni un director SUSPENDIDO (status != active)', exp: 'DENY',
+      req: del(DIR_SUS, 'self_reg_u1', PR_SELF) },
+    { n: 'D5 · ⚠️ ni uno sin autorizar (isAuthorized == false)', exp: 'DENY',
+      req: del(DIR_NOA, 'self_reg_u1', PR_SELF) },
+    // 🔑 EL CASO QUE PRUEBA EL CORTOCIRCUITO. Claims de director impecables,
+    // pero SIN documento en /users/. Si alguien invirtiera el orden de
+    // `exists() && get()`, el get() sobre un documento ausente se averiaria y
+    // este caso saldria en rojo por avería en vez de por denegar.
+    { n: 'D6 · 🔑 ni quien tiene el claim pero NO tiene documento de usuario', exp: 'DENY',
+      req: del(FANTASMA, 'self_reg_u1', PR_SELF) },
+    // Y la otra puerta que abre isAdminOfClub(): decidir la membresia.
+    { n: 'D7 · 🎯 el director tambien decide la membresia de su club', exp: 'ALLOW',
+      req: upd(DIR_A, 'u1', U_PEND, RECHAZO) },
+    { n: 'D8 · 🔴 pero sigue sin poder cambiarle el ROL a nadie (escalada)', exp: 'DENY',
+      req: upd(DIR_A, 'u1', U_PEND, { role: 'club_admin', isAuthorized: true }) },
 ];
 
 (async () => {
@@ -248,6 +348,16 @@ const CASOS = [
         // errorPosition = la evaluacion LANZO. En un caso DENY eso sale como
         // SUCCESS por el motivo equivocado, asi que cuenta como fallo.
         const averiada = !!t.errorPosition;
+        // 🔑 v616 · CUANDO SE AVERIA, SE DICE POR QUE. Antes solo salia la
+        // posicion —"linea 181, columna 17"— y con eso se puede diagnosticar
+        // exactamente al reves: yo llegue a concluir que las reglas reventaban
+        // por el tope de accesos a documento, y lo que decia el servidor era
+        // "Service call error ... /users/ca_b", o sea que FALTABA UN MOCK.
+        // El mensaje del servidor lo aclara en una linea; adivinarlo costo
+        // una ronda entera y un diagnostico publico equivocado.
+        if (averiada && (t.debugMessages || []).length) {
+            console.log('       ↳ ' + String(t.debugMessages[0]).split('\n')[0]);
+        }
         ok(CASOS[i].n + '  [espera ' + CASOS[i].exp + ']', t.state === 'SUCCESS' && !averiada,
            averiada ? { evaluacion_averiada: t.errorPosition }
                     : 'la regla NO se comporto como se esperaba');

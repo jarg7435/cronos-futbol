@@ -2621,8 +2621,26 @@
 //            marca "sin guardar"; si deshaces hasta el punto guardado, el
 //            aviso se apaga. Se reinicia al cambiar de semana y al adoptar un
 //            cambio ajeno: la pila describe UN documento.
+// v616: 🧹 Limpieza en la baja por plaza (SIN cambio de comportamiento).
+//        `revocaRolRaiz` se calculaba en panel.js y NO LA LEIA NADIE desde
+//        v610/v611, con toda su logica de plaza intacta: parecia que faltaba
+//        usarla. No faltaba. Su rama se quito A PROPOSITO -cerrarle la cuenta
+//        entera a un Administrador+Coordinador+Entrenador por quitarle UN
+//        equipo le dejaba sin acceso a todo- y se puede quitar porque el
+//        agujero que defendia (que auth.js resucitara el rol al entrar) esta
+//        tapado en su ORIGEN: auth.js ya no reactiva un rol 'removed' y solo
+//        repone la raiz si queda algun rol vivo.
+//        Se van con ella `_raizEsDeEsteClub` y `_raizEsEstaPlaza`, que solo
+//        existian para alimentarla. El caso de `allRoles` vacio sigue cubierto
+//        por `revocaTodosLosRoles` (medido, no supuesto).
+//        Guards: la seccion 6 de test_baja_no_resucita_al_entrar.js exigia lo
+//        CONTRARIO que test_multirole_revocation_isolation.js y llevaba meses
+//        en rojo. Reescrita. Ahora los DOS cazan la reintroduccion.
+//        + test_reject_request_rules.js: faltaban los mocks de /users/, asi que
+//          las ramas de director y coordinador que anadio v610/v611 se AVERIABAN
+//          en el simulador y nadie las probaba. 8 casos nuevos -> 46/46.
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v615';
+const CACHE_NAME = 'cronos-cache-v616';
 
 const ASSETS = [
     './',

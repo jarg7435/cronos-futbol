@@ -2441,34 +2441,50 @@ async function openClubAdminPanel(preClubId = null) {
                 });
                 var revocaTodosLosRoles = rolesRestantesVivos.length === 0;
 
-                // ⚠️⚠️ EL ROL DE LA RAÍZ MANDA SOBRE allRoles.
-                //    users/{uid} tiene, además del array, un rol de RAÍZ
-                //    (`role` + `clubId` + `isAuthorized`). Si se revoca ese
-                //    mismo rol y la raíz se queda con isAuthorized:true,
-                //    auth.js lo RESUCITA en el siguiente inicio de sesión
-                //    (ver el bloque "Sincronizar roles autorizados entre raíz y
-                //    allRoles"): reescribe la entrada a isAuthorized:true /
-                //    status:'active' y la persiste. Ese era el fallo reportado:
-                //    el entrenador reaparecía en su misma categoría al recargar.
-                //    Por eso, si lo revocado incluye el rol raíz de este club,
-                //    la raíz TIENE que quedar desautorizada.
-                var _raizEsDeEsteClub = String(docData.clubId || '') === String(cid || '')
-                                        || String(docData.clubId || '') === '';
-                // ⚠️ v581 · …PERO SÓLO SI LO REVOCADO ES **LA PLAZA DE LA RAÍZ**.
-                //    Cuando se acota a una casilla concreta, un entrenador con
-                //    dos equipos conserva el otro: desautorizar la raíz le
-                //    cerraría la puerta entera por quitarle UNA plaza. La raíz
-                //    describe una sola plaza (rol + club + su categoría), así
-                //    que se compara también por categoría —normalizada— cuando
-                //    el llamante ha dicho de qué equipo hablaba.
-                var _raizEsEstaPlaza = !_acotaPorPlaza || (
-                    _nc(docData.category != null ? docData.category : docData.categoryLabel) === _plazaCat &&
-                    _ns(docData.subcategory) === _plazaSub
-                );
-                var revocaRolRaiz = _raizEsDeEsteClub && !!docData.role && _raizEsEstaPlaza &&
-                    rolesRemovidos.some(function(r) { return r.role === docData.role; });
-                // Sin allRoles utilizable, la baja recae entera sobre la raíz.
-                if (allRoles.length === 0) revocaRolRaiz = true;
+                // ══════════════════════════════════════════════════════════
+                // 📜 v616 · POR QUÉ AQUÍ NO HAY UN `revocaRolRaiz`
+                // ══════════════════════════════════════════════════════════
+                //  Hasta la v608 existía. La raíz de users/{uid} describe una
+                //  plaza propia (`role` + `clubId` + su categoría), y si se
+                //  revocaba ESA plaza dejando la raíz con isAuthorized:true,
+                //  auth.js la RESUCITABA en el siguiente inicio de sesión: el
+                //  entrenador reaparecía en su categoría al recargar. Para
+                //  taparlo, revocar la plaza de la raíz desautorizaba la CUENTA
+                //  ENTERA, aunque a la persona le quedaran otros roles.
+                //
+                //  🔑 ESO SE QUITÓ A PROPÓSITO en v610/v611, y la razón es
+                //  buena: cerrarle la cuenta a un Administrador + Coordinador +
+                //  Entrenador por quitarle el equipo de entrenador le dejaba sin
+                //  acceso a todo y obligaba a reactivarlo a mano. Lo fija
+                //  `test_multirole_revocation_isolation.js`.
+                //
+                //  🔑🔑 Y SE PUEDE QUITAR PORQUE EL AGUJERO SE TAPÓ EN SU
+                //  ORIGEN, no aquí. Hoy `auth.js` ya no resucita nada:
+                //   · un rol con status:'removed' NUNCA se reactiva al entrar
+                //     (`_rolRevocado`, auth.js ~1591), y
+                //   · la raíz sólo vuelve a isAuthorized:true / 'active' si de
+                //     verdad queda algún rol vivo (`_quedaAlgunRolVivo`, ~1653).
+                //  Es la misma protección, pero fina: distingue "esta plaza está
+                //  de baja" de "esta persona está de baja".
+                //
+                //  ⚠️ LO QUE SE PIERDE, DICHO EN VOZ ALTA: si la plaza está sólo
+                //  en la raíz y NO en allRoles, `rolesRemovidos` sale vacío y la
+                //  operación se para con el aviso "no se encontró ningún rol
+                //  activo" en vez de dar la baja. Se prefiere pararse y decirlo
+                //  antes que desautorizar una cuenta por deducción.
+                //
+                //  ⚠️ El caso de `allRoles` VACÍO sigue cubierto sin código
+                //  extra: sin array no hay roles restantes vivos, así que
+                //  `revocaTodosLosRoles` ya sale true y la baja recae sobre la
+                //  raíz igual que antes. (Medido, no supuesto.)
+                //
+                //  🔴 NO REINTRODUCIR `if (revocaTodosLosRoles || revocaRolRaiz)`.
+                //  Entre v609 y v615 la variable se quedó calculándose sin que
+                //  nadie la leyera, con toda su lógica intacta, y parecía un
+                //  descuido: yo mismo la "restauré" en la v616 y puse en rojo el
+                //  guard de multi-rol. Dos guards decían cosas opuestas porque
+                //  el viejo no se actualizó cuando el comportamiento cambió.
+                // ══════════════════════════════════════════════════════════
 
                 // ══════════════════════════════════════════════════════════
                 // 🔑 allRoles: SE MARCA, NO SE QUITA

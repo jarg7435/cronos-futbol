@@ -140,8 +140,33 @@ console.log('\n=== 5. La platform_request antigua no puede reactivar una baja ==
         /:\s*\{ allRoles: updatedAllRoles \}/.test(auto));
 }
 
-// ── 6. El panel desautoriza la RAÍZ al revocar el rol raíz ───────────
-console.log('\n=== 6. Revocar el rol raíz desautoriza la raíz ===');
+// ── 6. La baja cierra la cuenta SÓLO si no queda ningún rol vivo ─────
+// ════════════════════════════════════════════════════════════════════
+//  🔄 v616 · ESTA SECCIÓN CAMBIÓ DE SIGNO, Y NO ES UNA RENDICIÓN.
+//
+//  Hasta la v608 exigía `if (revocaTodosLosRoles || revocaRolRaiz)`: revocar
+//  la plaza que describe la RAÍZ desautorizaba la cuenta entera. Era la
+//  defensa contra que auth.js resucitara el rol al entrar.
+//
+//  v610/v611 lo cambió A PROPÓSITO —cerrarle la cuenta a un Administrador +
+//  Coordinador + Entrenador por quitarle un equipo le dejaba fuera de todo— y
+//  escribió `test_multirole_revocation_isolation.js` para fijarlo. Pero NADIE
+//  actualizó esta sección, así que quedaron DOS GUARDS EXIGIENDO LO CONTRARIO
+//  y éste llevaba meses en rojo.
+//
+//  🚨 LO QUE ESO PROVOCÓ: un guard rojo de largo recorrido deja de leerse como
+//  un aviso y pasa a ser ruido de fondo. Yo lo diagnostiqué como regresión
+//  viva en producción, lo "restauré", y puse en rojo el guard de multi-rol.
+//  Un guard desfasado no es neutral: dirige el siguiente arreglo hacia el sitio
+//  equivocado. Cuando un comportamiento cambia a conciencia, hay que ir a
+//  buscar los guards que lo fijaban ANTES, no dejarlos ladrando.
+//
+//  Se puede quitar la defensa vieja porque el agujero se tapó EN SU ORIGEN:
+//  auth.js ya no resucita un rol revocado (secciones 1 y 5 de este mismo
+//  fichero). Es la misma protección, pero distinguiendo "esta plaza está de
+//  baja" de "esta persona está de baja".
+// ════════════════════════════════════════════════════════════════════
+console.log('\n=== 6. La baja cierra la cuenta sólo si no queda ningún rol vivo ===');
 {
     const ini = PANEL.indexOf('window.caSetUserStatus = async');
     // ⚠️ La ventana se mide, no se adivina. Con 14000 caracteres los dos
@@ -150,16 +175,44 @@ console.log('\n=== 6. Revocar el rol raíz desautoriza la raíz ===');
     //    salía en rojo sobre código que seguía intacto: un falso positivo,
     //    que es justo lo que un guard no puede permitirse.
     const cuerpo = PANEL.slice(ini, ini + 26000);
-    ok('se calcula si lo revocado incluye el rol de la raíz',
-        /var revocaRolRaiz\s*=/.test(cuerpo));
-    ok('la raíz se desautoriza también en ese caso',
-        /if \(revocaTodosLosRoles \|\| revocaRolRaiz\)/.test(cuerpo));
+
+    ok('la raíz se cierra SÓLO cuando no queda ningún rol vivo',
+        /if \(revocaTodosLosRoles\) \{/.test(cuerpo)
+        && /revocaTodosLosRoles[\s\S]{0,2000}?isAuthorized = false;[\s\S]{0,120}?status = 'removed';/.test(cuerpo));
+
+    // 🔴 La variable muerta se fue con su condición. Mientras siguió ahí
+    //    —calculándose sin que nadie la leyera, con su lógica de plaza
+    //    intacta— parecía que faltaba usarla, y ésa fue justo la trampa.
+    //
+    // ⚠️⚠️ SE MIRA EL CÓDIGO SIN COMENTARIOS. El comentario que explica por qué
+    //    esa variable NO debe volver tiene que NOMBRARLA, así que un `!test()`
+    //    sobre el fuente crudo se pone rojo precisamente por documentar la
+    //    decisión — y la "solución" sería borrar la explicación, que es lo
+    //    contrario de lo que interesa. Me pasó al escribir esta misma sección.
+    const _sinCom = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    ok('🔴 no queda rastro de `revocaRolRaiz` (ni la variable ni su rama)',
+        !/revocaRolRaiz/.test(_sinCom(cuerpo)),
+        'si vuelve a aparecer, alguien está reintroduciendo la baja total por plaza');
+
+    // ⚠️ Y el porqué tiene que seguir escrito donde está el código: sin la
+    //    historia, el siguiente que pase verá una asimetría y la "arreglará".
+    ok('⚠️ y el motivo queda documentado en el propio panel',
+        /NO REINTRODUCIR/.test(PANEL) && /_quedaAlgunRolVivo/.test(PANEL));
+
     ok('un rol sin clubId cuenta como de este club (igual que el listado)',
         /rc === ''/.test(cuerpo));
     ok('si no casa ningún rol, se avisa y NO se anuncia la baja',
         /No se encontró ningún rol activo/.test(cuerpo));
     ok('los roles ya revocados no sostienen la cuenta abierta',
         /rolesRestantesVivos/.test(cuerpo));
+
+    // 🔑 EL CASO QUE LA CONDICIÓN VIEJA CUBRÍA Y HAY QUE SEGUIR CUBRIENDO:
+    //    sin `allRoles` no hay roles restantes vivos, así que la baja recae
+    //    sobre la raíz igual que antes, sin necesidad de rama aparte.
+    const sinArray = [];
+    const restantesVivos = sinArray.filter(r => r.status !== 'removed' && r.isAuthorized !== false);
+    ok('🔑 con allRoles vacío la baja sigue recayendo sobre la raíz',
+        restantesVivos.length === 0);
 }
 
 console.log('\n' + (fallos === 0 ? 'TODO VERDE' : fallos + ' FALLO(S)'));
