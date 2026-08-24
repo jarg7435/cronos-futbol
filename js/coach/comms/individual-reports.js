@@ -701,7 +701,12 @@ window.openIndividualReports = async function openIndividualReports() {
                 window.cronosPlantillaAmbas()[   /* v580 · la del EQUIPO abierto */
                     (typeof currentMode !== 'undefined' ? currentMode : 'f11')] || [];
 
-            emailConfig.contacts.filter(c => c.type === 'parent' && c.playerId).forEach(c => {
+            // ⛔ Sin rol de familias no se enriquece con padres: si no, los
+            //    contactos de tipo 'parent' guardados en localStorage de antes
+            //    de apagar el rol volverían a entrar en `links` y reaparecerían
+            //    como destinatarios.
+            const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
+            (!_hayFamilias ? [] : emailConfig.contacts.filter(c => c.type === 'parent' && c.playerId)).forEach(c => {
                 // Buscar el número de dorsal a partir del playerId (ej: "10" o "j-10" → 10)
                 const numFromId = parseInt((c.playerId||'').replace(/[^0-9]/g,'')) || null;
                 const squadPlayer = squad.find(sp =>

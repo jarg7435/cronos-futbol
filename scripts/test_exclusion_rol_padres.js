@@ -139,6 +139,44 @@ ok('5c · ⚠️ los tres alias de la plaza de familia siguen mapeados',
    /padre_individual:\s*'rol_padres'/.test(SETUP),
    'olvidar un alias no da error: deja una puerta abierta');
 
+// ── PARTE 6 · v624 · lo que quedó abierto en la primera vuelta ──────
+console.log('\nPARTE 6 · el resolvedor y el selector (2a vuelta)');
+const SRC_PANEL = fs.readFileSync(path.join(RAIZ, 'js/coach/comms/panel.js'), 'utf8');
+const SRC_IND   = fs.readFileSync(path.join(RAIZ, 'js/coach/comms/individual-reports.js'), 'utf8');
+const SRC_WA    = fs.readFileSync(path.join(RAIZ, 'js/shared/whatsapp-email.js'), 'utf8');
+const PANEL = sinCom(SRC_PANEL), IND = sinCom(SRC_IND), WA = sinCom(SRC_WA);
+
+// 🔑🔑 LA PUERTA VA EN EL ORIGEN. `_cronosResolveParentReportTargets` lo llaman
+//  TRES sitios; en v623 se taparon dos y se escapó el del envío MANUAL, que
+//  resuelve sus propios targets (`_parentTargetsManual`) aparte de la lista que
+//  enseña: podía seguir alcanzando a familias que ya no se mostraban.
+const _cuerpoResolver = (function () {
+    const i = PANEL.indexOf('function _cronosResolveParentReportTargets');
+    return i === -1 ? '' : PANEL.slice(i, i + 900);
+})();
+ok('6a · 🔑🔑 el RESOLVEDOR de destinatarios-padre corta en origen',
+   /cronosHayPadres\(\)\) \{\s*return \[\];/.test(_cuerpoResolver), _cuerpoResolver.slice(0, 120));
+ok('6b · …y el envio MANUAL sigue pasando por ese resolvedor',
+   /_parentTargetsManual = _cronosResolveParentReportTargets\(/.test(SEND),
+   'si se resolviera por su cuenta, el corte del origen no le llegaria');
+ok('6c · el enriquecido con padres de localStorage tambien se corta',
+   /!_hayFamilias \? \[\] : emailConfig\.contacts\.filter\(c => c\.type === 'parent'/.test(IND),
+   'volverian a entrar en `links` los padres guardados antes de apagar el rol');
+
+// ⚠️⚠️ EL SELECTOR COMPARTIDO Y SU RESPALDO. Pedir padres sin rol daba CERO, y
+//  el respaldo caia al `else` de «Todos»: la peticion devolvia el CLUB ENTERO.
+ok('6d · el selector no "quiere padres" cuando no los hay',
+   /wantsPadres = _hayFamilias &&/.test(WA));
+ok('6e · ⚠️⚠️ …y su RESPALDO no se aplica: sin familias la lista queda VACIA',
+   /_pedianSoloFamilias/.test(WA) && /&& !_pedianSoloFamilias\)/.test(WA),
+   'sin esto, pedir padres devolvia todos los usuarios del club');
+
+// ⚠️ Lo que se comprobo y NO era un rastro: collective-report.js filtra con
+//    `!== 'parent'`, o sea que YA excluye a las familias. No se toco.
+const COL = sinCom(fs.readFileSync(path.join(RAIZ, 'js/coach/comms/collective-report.js'), 'utf8'));
+ok('6f · [comprobado] el informe colectivo ya excluia a las familias de suyo',
+   /filter\(c => c\.type !== 'parent'\)/.test(COL), 'si esto cambiara, habria que darle puerta');
+
 console.log('\n------------------------------------------------------------');
 console.log('Resultado: ' + ok_ + '/' + n + ' pruebas superadas.');
 process.exit(mal > 0 ? 1 : 0);

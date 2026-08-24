@@ -145,6 +145,23 @@ function _cronosExtractDorsal(inviteCode) {
 }
 
 function _cronosResolveParentReportTargets(contacts, links, homePlayers, authorizedIds) {
+    // ⛔⛔ SIN ROL DE FAMILIAS NO HAY DESTINATARIOS, Y SE CORTA AQUÍ.
+    //
+    //  Éste es EL resolvedor de destinatarios-padre y lo llaman TRES sitios:
+    //  el despacho automático (fase B), el envío manual del post-partido y su
+    //  lista de la interfaz. En v623 se taparon los dos primeros por separado
+    //  y **se escapó el tercero**: `match-reports-send.js` resuelve sus propios
+    //  targets (`_parentTargetsManual`) aparte de la lista que enseña, así que
+    //  el envío manual podía seguir alcanzando a familias que ya no se
+    //  mostraban en pantalla.
+    //
+    //  🔑 Por eso la puerta va en el ORIGEN y no en cada llamante: tapar los
+    //  consumidores uno a uno es justo como se coló éste. Los guardas de los
+    //  llamantes se quedan —cuestan nada y evitan trabajo inútil—, pero la
+    //  garantía está aquí.
+    if (typeof window.cronosHayPadres === 'function' && !window.cronosHayPadres()) {
+        return [];
+    }
     const out = [];
     const seenParentUid = new Set(); // 1 informe por padre
     const _normEmail = (e) => (typeof window._cronosNormEmail === 'function')

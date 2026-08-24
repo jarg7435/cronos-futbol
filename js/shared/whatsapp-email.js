@@ -257,7 +257,15 @@ window._cronosOpenRecipientPicker = async function(role, context) {
     // FIX (Error #12): 'todos' = Directores + Coordinadores + Padres
     const wantsDirectores = role === 'todos' || role.includes('directores');
     const wantsCoordinadores = role === 'todos' || role.includes('coordinadores');
-    const wantsPadres = role === 'todos' || role.includes('padres');
+    // ⛔⛔ SIN ROL DE FAMILIAS, NADIE "QUIERE PADRES" — ni siquiera 'todos'.
+    //
+    //  ⚠️ Y no es sólo por no listarlos: más abajo hay un respaldo que, cuando
+    //  el filtro devuelve CERO, enseña «TODOS los usuarios del club» como
+    //  último recurso. Sin este corte, pedir padres en un club que no los
+    //  tiene daría cero y ese respaldo pintaría al STAFF en su lugar — una
+    //  lista de "familias" formada por directores y entrenadores.
+    const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
+    const wantsPadres = _hayFamilias && (role === 'todos' || role.includes('padres'));
 
     // FIX (Error #12/13): mejorar deteccion de roles. Ahora busca en role,
     // name, cargo Y allRoles (para usuarios del club desde Firestore).
@@ -308,7 +316,16 @@ window._cronosOpenRecipientPicker = async function(role, context) {
     // FIX (Error #14/17): si el filtro devuelve 0 pero hay usuarios del club,
     // mostrar TODOS los del club como fallback. Si se busca padres, incluir
     // tambien a los que tienen 'parent' en allRoles (multi-rol).
-    if (filtered.length === 0 && clubUsers.length > 0) {
+    // ⛔⛔ Y EL RESPALDO TAMPOCO SE APLICA si lo que se pedía eran FAMILIAS y el
+    //  club no las tiene. Sin esto, `wantsPadres=false` hacía caer la cadena
+    //  hasta el `else` de «Todos» y una petición de padres devolvía el CLUB
+    //  ENTERO — el rastro que se quería borrar, multiplicado.
+    const _pedianSoloFamilias = !_hayFamilias &&
+        role.includes('padres') && !role.includes('directores') && !role.includes('coordinadores');
+    if (_pedianSoloFamilias) {
+        console.info('[_cronosOpenRecipientPicker] Rol de familias desactivado: lista vacía, sin respaldo.');
+    }
+    if (filtered.length === 0 && clubUsers.length > 0 && !_pedianSoloFamilias) {
         console.warn('[_cronosOpenRecipientPicker] filtro devolvio 0 - mostrando TODOS los usuarios del club como fallback');
         if (wantsPadres && !wantsDirectores && !wantsCoordinadores) {
             // Solo padres: incluir type=parent O allRoles con parent
