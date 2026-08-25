@@ -102,6 +102,87 @@ function _catLabelInd(cat, sub) {
     return label;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔧 v627 · ENDEREZAR LAS PLAZAS QUE LA v598 ESCRIBIÓ EN LA OTRA FORMA
+//
+//  `indAnadirMiEquipo` guardaba `category:'regional_a'` (la clave combinada
+//  del desplegable) mientras TODO el resto del proyecto guarda 'regional' +
+//  subcategoría 'A' aparte. Con `indAnadirMiEquipo` ya corregido, las plazas
+//  NUEVAS salen bien; ésta es la que arregla las que ya están escritas.
+//
+//  🔑 SE MIGRA EL DATO, NO SE ENSEÑA A CADA LECTOR A ENTENDER DOS FORMAS.
+//  Los consumidores del teamId son cinco (`cronosEquiposDeEntrenador`,
+//  `cronosMyTeam`, el selector del panel de partido, las plantillas y el
+//  cuadrante) y parchear los cinco es exactamente cómo nacen las verdades
+//  paralelas que este proyecto lleva pagando desde la v511. Aquí desaparece la
+//  segunda forma.
+//
+//  ⚠️ CONDICIONES ESTRICTAS, porque esto ESCRIBE en `users/{uid}`:
+//   · sólo plazas ANCLADAS A ESTE ENTE (nunca una plaza de club del mismo
+//     correo — la unidad es la PLAZA, v540/v583);
+//   · sólo roles que llevan equipo (`CRONOS_ROLES_CON_EQUIPO`);
+//   · sólo si la categoría termina en `_a`, `_b` o `_c` Y el tronco que queda
+//     es una categoría REAL del catálogo. Así 'regional_fem' y 'futurefem' no
+//     se tocan ni por accidente (ninguna acaba en _a/_b/_c, pero la
+//     comprobación del catálogo es la que de verdad cierra la puerta).
+//   · no se pierde información: la subcategoría se conserva, y si la plaza no
+//     la traía se toma la letra del sufijo que se está quitando.
+//
+//  ⚠️ IDEMPOTENTE Y SILENCIOSA SI NO HAY NADA QUE HACER: sin plazas en la
+//  forma vieja no se escribe nada, y el panel se abre muchas veces por sesión.
+//
+//  ⚠️ UN FALLO NO PUEDE TUMBAR EL PANEL. Si Firestore rechaza, se avisa por
+//  consola y se sigue: el panel se pinta igual (su vista ya normaliza por su
+//  cuenta con `_misEquiposNorm`). Lo que sí queda escrito en el log es el
+//  motivo — nada de `catch {}` mudo (la lección de v610 y v583).
+// ════════════════════════════════════════════════════════════════════
+async function _indMigrarPlazasALaFormaCanonica(_fs, uid, userData, enteId) {
+    try {
+        if (!enteId || !Array.isArray(userData.allRoles) || !userData.allRoles.length) return;
+        const rolesEq = window.CRONOS_ROLES_CON_EQUIPO
+            || ['user', 'coach', 'individual', 'admin_individual'];
+        const idsCatalogo = new Set((window.CT_CATEGORIES || IND_CATEGORIES || []).map(c => c.id));
+        if (!idsCatalogo.size) return;   // sin catálogo no se juzga nada
+
+        let tocado = false;
+        const nuevas = userData.allRoles.map(r => {
+            if (!r || rolesEq.indexOf(r.role) < 0) return r;
+            if (String(r.clubId || r.individualEntityId || '') !== String(enteId)) return r;
+            const cat = String(r.category || '');
+            const m = cat.match(/^(.+)_([abc])$/i);
+            if (!m || !idsCatalogo.has(m[1].toLowerCase())) return r;
+            tocado = true;
+            return Object.assign({}, r, {
+                category:    m[1].toLowerCase(),
+                subcategory: String(r.subcategory || m[2]).toUpperCase(),
+            });
+        });
+        if (!tocado) return;
+
+        await _fs.updateDoc(_fs.doc(_fs.db, 'users', uid), { allRoles: nuevas });
+        userData.allRoles = nuevas;
+
+        // 🔑 Y TAMBIÉN EN MEMORIA. `_launchWithRole` ya leyó `allRoles` al
+        // entrar; sin esto, el panel de partido seguiría resolviendo el teamId
+        // con la forma vieja hasta el siguiente inicio de sesión — o sea, el
+        // arreglo no se vería HOY, que es cuando se está probando.
+        const yo = window._cronosCurrentUser;
+        if (yo && yo.uid === uid) {
+            yo.allRoles = nuevas;
+            const mia = nuevas.find(r => r && rolesEq.indexOf(r.role) >= 0 && r.category &&
+                String(r.clubId || r.individualEntityId || '') === String(enteId));
+            if (mia) {
+                yo.category    = mia.category;
+                yo.subcategory = mia.subcategory || null;
+            }
+        }
+        console.log('[IndPanel v627] plazas enderezadas a la forma canónica.');
+    } catch (e) {
+        console.warn('[IndPanel v627] no se pudieron enderezar las plazas:',
+                     e && e.message ? e.message : e);
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // openIndividualAdminPanel() — Modal tipo Club Admin
 // ═══════════════════════════════════════════════════════════════════
@@ -161,6 +242,10 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     // ── Load individual entity ──────────────────────────────────
     // FIX: Also check me.clubId (set by SA club picker when SA enters as individual)
     const individualEntityId = userData.individualEntityId || userData.clubId || me.clubId || null;
+
+    // 🔧 v627 · Las plazas escritas por la v598 en la forma combinada se
+    // enderezan aquí, una sola vez. Ver la nota larga sobre _indMigrarPlazas.
+    await _indMigrarPlazasALaFormaCanonica(_fs, uid, userData, individualEntityId);
     let entityData = null;
     if (individualEntityId) {
         // Buscar en clubs (type=individual) primero, luego individuals
@@ -963,7 +1048,32 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     //   echa al MENÚ cualquier argumento que no reconozca, y `_indSeccionActual`
     //   guarda la sección entre repintados: sin los alias, quien viniera de un
     //   'usuarios' o 'resumen' guardado acabaría en el menú sin saber por qué.
+    // ════════════════════════════════════════════════════════════════
+    //  🗓️ v626 · EL CUADRANTE, TAL CUAL, DENTRO DEL PANEL DEL ENTE
+    //
+    //  Encargo del autor (implementar.txt, 2026-08-25, punto 1): «llevar e
+    //  integrar de forma íntegra la opción de cuadrante que ya tenemos
+    //  implementada y funcionando en los clubes, adaptándola por completo al
+    //  entorno y funcionamiento del ente individual».
+    //
+    //  🔑 NO SE COPIA NADA. La sección sólo aporta el HUECO; quien pinta es el
+    //  mismo js/coach/reports/cuadrante-club.js que usa el panel de Dirección,
+    //  al que desde la v626 se le puede decir en qué contenedor pintar. Un
+    //  segundo cuadrante para el ente habría divergido del del club a la
+    //  primera corrección — que es exactamente la lección de v511 y v533.
+    //
+    //  ⚠️ EL CUERPO SE RELLENA DESPUÉS, NO AQUÍ. `_IND_SECCIONES[x].html` es
+    //  una cadena que `indTab` asigna de golpe, y el cuadrante es ASÍNCRONO
+    //  (lee Firestore). Por eso aquí sólo va el div y la carga se dispara en
+    //  `indTab`, ya con el div en el DOM.
+    // ════════════════════════════════════════════════════════════════
+    const _secCuadrante =
+        '<div id="ind-cuadrante-body">' +
+          '<div style="text-align:center;padding:3rem;color:var(--text-muted);">⏳ Cargando el cuadrante…</div>' +
+        '</div>';
+
     const _IND_SECCIONES = {
+        cuadrante:   { titulo: '🗓️ Cuadrante',      html: _secCuadrante },
         equipo:      { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
         usuarios:    { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
         equipos:     { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
@@ -985,6 +1095,13 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         //    Resumen): las tres llevaban a la misma gente vista de tres
         //    maneras. El badge sigue siendo el número de equipos, que es el
         //    dato que decide si puede añadir otro.
+        // 🗓️ v626 · La PAUTA de la semana. Va justo detrás de "Crear Partido"
+        //    y por delante de "Mi Equipo" por el mismo motivo que en el panel
+        //    de Dirección: es el principio de la cadena —se reparten espacios y
+        //    horarios, y de ahí sale la Planificación Semanal de cada equipo.
+        { icono: '🗓️', titulo: 'Cuadrante', color: '#58a6ff',
+          desc: 'Reparte los espacios del campo y los horarios de la semana de tus equipos.',
+          onclick: "indTab('cuadrante')" },
         { icono: '⚽', titulo: 'Mi Equipo', color: '#3fb950',
           badge: _misEquipos.length,
           desc: _misEquipos.length >= 2
@@ -1032,6 +1149,17 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         const cuerpo = document.getElementById('ind-body');
         const barra  = document.getElementById('ind-navbar');
         if (!cuerpo) return;
+        // 🔄 v626 · SE DA DE BAJA LA ESCUCHA EN VIVO DEL CUADRANTE AL SALIR DE
+        // ÉL. Va aquí arriba —antes de decidir la sección— para cubrir TODAS
+        // las salidas (otra sección, vuelta al menú, repintado tras una
+        // acción), igual que hace switchStaffTab en el panel de Dirección. Un
+        // onSnapshot que sobrevive a su pantalla sigue costando lecturas y
+        // repinta un div que ya es de otra sección (la lección de v439).
+        // Si se vuelve a entrar, _sdLoadCuadrante lo reconecta.
+        if (typeof window._cqDesconectar === 'function') window._cqDesconectar();
+        // El ancho extra es SÓLO del cuadrante (ver la regla .ind-ancho).
+        const _marco = document.querySelector('#setup-modal .sa-modal');
+        if (_marco) _marco.classList.toggle('ind-ancho', sec === 'cuadrante');
         window._indSeccionActual = sec;
         if (sec === 'menu' || !_IND_SECCIONES[sec]) {
             window._indSeccionActual = 'menu';
@@ -1053,13 +1181,67 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         }
         cuerpo.innerHTML = _IND_SECCIONES[sec].html;
         cuerpo.scrollTop = 0;
+
+        // 🗓️ v626 · El cuadrante se pinta DESPUÉS del innerHTML, porque el
+        // módulo busca su contenedor en el DOM, y se le dice cuál es el suyo.
+        // ⚠️ Si el fichero no ha cargado, se dice POR QUÉ está vacío: un hueco
+        // mudo es indistinguible de una avería (la doctrina de v598).
+        if (sec === 'cuadrante') {
+            if (typeof window._sdLoadCuadrante === 'function') {
+                Promise.resolve(window._sdLoadCuadrante('ind-cuadrante-body')).catch(e => {
+                    console.warn('[IndPanel] el cuadrante no se pudo cargar:', e && e.message ? e.message : e);
+                });
+            } else {
+                const _c = document.getElementById('ind-cuadrante-body');
+                if (_c) _c.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
+                    '⚠️ El módulo de Cuadrante no está disponible. Recarga el panel.</div>';
+            }
+        }
     };
+
+    // ════════════════════════════════════════════════════════════════
+    //  🔙 v626 · ESTE PANEL ENTRA EN LA PILA DE NAVEGACIÓN
+    //
+    //  Encargo del autor (implementar.txt, 2026-08-25, punto 2): desde
+    //  💬 Mensajes no había forma de volver; el único botón le sacaba de la
+    //  sesión y tenía que volver a entrar.
+    //
+    //  🔑🔑 Y LA CAUSA NO ESTABA EN MENSAJERÍA, ESTABA AQUÍ. El motor de
+    //  mensajes SÍ se registra (`navScreen('openIndividualAdminMessaging')`,
+    //  comms/panel.js), pero este panel —su pantalla anterior— NO se registraba
+    //  nunca: era el único de los cuatro paneles sin `navRootScreen` (el de
+    //  Club lo tiene, el de Dirección lo tiene, el del SuperAdmin lo tiene).
+    //  Con la pila en UN solo nivel, `navBack()` cae en `navExit()`, que se
+    //  limita a OCULTAR el modal — o sea: pantalla negra. Por eso el único
+    //  botón que quedaba era el ✕, cableado a `navExitToRoles()`.
+    //  Poner aquí la raíz es lo que hace que exista un "atrás" al que volver;
+    //  el botón que se añade en comms/panel.js sin esto no llevaría a ninguna
+    //  parte.
+    //
+    //  ⚠️ Se registra con `true` (mantenerSeccion): al volver de Mensajes se
+    //  cae en la sección donde se estaba, no en el tablero.
+    //  ⚠️ Va DESPUÉS de los `await` porque antes no se conocen ni el ente ni
+    //  sus datos. Es seguro POR SER RAÍZ: si navBack la re-invoca, el flag de
+    //  restauración ya está limpio y navRootScreen deja la pila exactamente en
+    //  [openIndividualAdminPanel], que es donde debe quedar (misma nota que en
+    //  admin/club/panel.js).
+    // ════════════════════════════════════════════════════════════════
+    if (typeof navRootScreen === 'function') navRootScreen('openIndividualAdminPanel', true);
 
     // ── Assemble full modal ───────────────────────────────────────
     setupModal.innerHTML = SA_CSS + `
     <style>
       #ind-navbar { display:none; align-items:center; gap:0.7rem;
                     padding:0 0 0.9rem; flex-wrap:wrap; }
+      /* 🗓️ v626 · El cuadrante son OCHO columnas (equipo + siete días) y
+         necesita el mismo ancho que tiene en el panel de Dirección, que se
+         monta a min(96vw,960px). El panel del ente vive a 860px porque sus
+         otras secciones son listas; se ensancha SÓLO mientras se ve el
+         cuadrante, no siempre. Lleva !important porque la regla de .sa-modal
+         (SA_CSS) tambien lo lleva.
+         SIN ACENTOS GRAVES AQUI DENTRO: esto vive en una plantilla literal y
+         uno solo la cerraria en seco. */
+      .sa-modal.ind-ancho { max-width: min(96vw, 960px) !important; }
     </style>
     <div class="modal-content sa-modal">
       <div class="sa-topbar">
@@ -1554,7 +1736,28 @@ window.indAnadirMiEquipo = async function indAnadirMiEquipo() {
             status:        'active',
             firstName:     userData.firstName || null,
             lastName:      userData.lastName  || null,
-            category:      catVal,
+            // ══════════════════════════════════════════════════════════
+            //  🔴🔴 v627 · LA CATEGORÍA VA EN LA FORMA CANÓNICA DEL PROYECTO
+            //
+            //  Aquí decía `category: catVal`, o sea la clave COMBINADA del
+            //  desplegable ('regional_a'). Todas las demás plazas de la app se
+            //  escriben con la categoría a secas y la subcategoría al lado
+            //  ('regional' + 'A'): así lo hace el formulario de alta
+            //  (index.html:492 → auth.js `selectedCategory`/`selectedSubcat`),
+            //  que es de donde salen las plazas de TODOS los entrenadores de
+            //  club. Esta era la única del proyecto en la otra forma.
+            //
+            //  🔑 Y NO ERA COSMÉTICO: `cronosTeamId` hace slug de lo que le
+            //  den, así que 'regional_a' daba `…__regional-a__a` mientras el
+            //  resto del proyecto —las filas del cuadrante, las plantillas, la
+            //  asistencia— calculaba `…__regional__a`. Dos claves para el mismo
+            //  equipo. Por eso el cuadrante que el ente se enviaba a sí mismo
+            //  NO aparecía en su Planificación Semanal: `cronosMyTeamId()` no
+            //  encontraba su fila porque buscaba con la otra clave.
+            //  (Es el mismo patrón de v562: cada mitad resuelta por una cascada
+            //  distinta, y las dos "funcionando" por separado.)
+            // ══════════════════════════════════════════════════════════
+            category:      catId,
             subcategory:   subCat,
             categoryLabel: label,
         };

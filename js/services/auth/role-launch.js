@@ -613,8 +613,38 @@ function _launchWithRole(role) {
         //  retirado, o cambió de club), `_elegida` sale undefined y se cae
         //  al camino de siempre.
         // ══════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v627 · «QUIÉN LLEVA EQUIPO» TAMBIÉN AQUÍ, Y AQUÍ FALTABA
+        //
+        //  Reportado por el autor (implementar.txt 2026-08-25, punto 2): al
+        //  entrar como entrenador de "Regional A" bajo su ente, el panel no
+        //  fija su categoría ni su subcategoría y las deja abiertas.
+        //
+        //  🔑 LA CAUSA: TODO el bloque que carga la plaza del entrenador
+        //  —categoría, subcategoría, `_activeRoleData` y el equipo activo—
+        //  estaba encerrado en `role === 'user' || role === 'coach'`. El
+        //  Entrenador Administrador Individual entra con rol 'individual', así
+        //  que NADA de eso se ejecutaba para él: `me.category` se quedaba vacía.
+        //
+        //  🔑🔑 Y NO ERA SÓLO COSMÉTICO. `_forceCategorySelect` (setup-modal.js)
+        //  arranca con `if (!_me.category) return false`, así que ni fijaba ni
+        //  BLOQUEABA los desplegables. Y `cronosMyTeam()` (utils.js) cae a
+        //  `me.category` como último escalón de su cascada: sin ella devolvía
+        //  null, o sea el ente NO TENÍA teamId. De ahí salía el punto 1 del
+        //  mismo encargo — ver la nota de v627 en admin/individual/panel.js.
+        //
+        //  ⚠️ Se pregunta a `CRONOS_ROLES_CON_EQUIPO` (utils.js, v598), la lista
+        //  única del proyecto, y NO se añade 'individual' a mano: es el mismo
+        //  criterio que ya usan el candado de los dos equipos, el selector de
+        //  equipo y la lista de destinatarios del cuadrante. Para 'user' y
+        //  'coach' no cambia absolutamente nada.
+        // ══════════════════════════════════════════════════════════════
+        const _rolesConEquipo = window.CRONOS_ROLES_CON_EQUIPO
+            || ['user', 'coach', 'individual', 'admin_individual'];
+        const _esRolDeEquipo = _rolesConEquipo.indexOf(role) >= 0;
+
         let _elegida;
-        if ((role === 'user' || role === 'coach') &&
+        if (_esRolDeEquipo &&
             typeof window.cronosEquipoElegido === 'function' &&
             typeof window.cronosEquiposDeEntrenador === 'function') {
             const _elegido = window.cronosEquipoElegido();
@@ -657,8 +687,10 @@ function _launchWithRole(role) {
                 }
             }
 
-            // ── Campos exclusivos del rol 'user' (entrenador) ──
-            if (role === 'user' || role === 'coach') {
+            // ── Campos exclusivos de quien LLEVA EQUIPO ──
+            // v627 · Antes: `role === 'user' || role === 'coach'`. Ahora la
+            // lista única (ver la nota de arriba), que suma al ente unificado.
+            if (_esRolDeEquipo) {
                 // ⚠️ v540 · CATEGORÍA Y SUBCATEGORÍA SE ASIGNAN JUNTAS.
                 // Antes iban en dos `if` independientes, así que al pasar de
                 // "Cadete B" a un equipo sin subcategoría quedaba "Alevín B":
@@ -669,10 +701,48 @@ function _launchWithRole(role) {
                 // del documento; machacarla con null los dejaría sin equipo.
                 // Al cambiar de equipo la entrada siempre la trae, que es el
                 // caso que había que arreglar.
-                const _catRol = roleEntry.category || roleEntry.categoryLabel || '';
+                let _catRol = roleEntry.category || roleEntry.categoryLabel || '';
+                let _subRol = roleEntry.subcategory || null;
+
+                // ══════════════════════════════════════════════════════
+                //  ⚠️⚠️ v627 · LA FORMA CANÓNICA, Y SÓLO PARA EL ENTE
+                //
+                //  El registro de un entrenador de club guarda la plaza como
+                //  `category:'regional'` + `subcategory:'A'` (index.html:492,
+                //  el desplegable de alta). `indAnadirMiEquipo` —el "➕ Añadir
+                //  equipo" del ente, v598— guardaba en cambio la clave COMBINADA
+                //  `category:'regional_a'`. Las dos formas dan teamIds
+                //  distintos: `…__regional__a` frente a `…__regional-a__a`.
+                //
+                //  🔑 Se normaliza aquí SÓLO para los roles que NO son
+                //  'user'/'coach'. NO se toca la rama del entrenador de club, y
+                //  el motivo está escrito en utils.js sobre `cronosMyTeam`:
+                //  cambiar ese criterio MOVERÍA el teamId de usuarios reales y
+                //  dejaría su plantilla publicada huérfana. Un perfil de legado
+                //  que caiga en `categoryLabel` ('Regional A') se movería de
+                //  sitio sin que nada fallase a gritos. El ente no corre ese
+                //  riesgo: hasta hoy NO tenía teamId ninguno (`me.category`
+                //  vacía), así que aquí no se mueve nada — se estrena.
+                //
+                //  La causa de raíz se corrige en `indAnadirMiEquipo`, que ya
+                //  escribe la forma canónica, y las plazas viejas las migra el
+                //  propio panel. Esto es la red por si alguna se escapa.
+                // ══════════════════════════════════════════════════════
+                if (_catRol && role !== 'user' && role !== 'coach' &&
+                    typeof window.ctNormCat === 'function') {
+                    const _catCanon = window.ctNormCat(_catRol);
+                    if (_catCanon) {
+                        if (!_subRol) {
+                            const _m = String(_catRol).match(/_([abc])$/i);
+                            if (_m) _subRol = _m[1].toUpperCase();
+                        }
+                        _catRol = _catCanon;
+                    }
+                }
+
                 if (_catRol) {
                     me.category    = _catRol;
-                    me.subcategory = roleEntry.subcategory || null;
+                    me.subcategory = _subRol;
                 }
                 // El equipo activo queda anotado para que el selector del
                 // panel sepa cuál está abierto (y lo marque).

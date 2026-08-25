@@ -608,9 +608,53 @@ console.log('\n── PARTE 12 · panel de Direccion ──');
     // exige modo modal: el coach EMBEBIDO tampoco lo pinta, y asi no puede
     // destruir el panel anfitrion si algun dia se cablea esa via (hoy muerta,
     // declarada en 16q/16r/16s).
-    ok('12l · y su boton "Volver" sigue siendo solo para el COACH, y solo en modal',
-       /role === 'coach' && isModalMode \?/.test(comms) &&
+    // ⚠️ ACTUALIZADA EN LA v626, y por PETICION EXPRESA del autor
+    // (implementar.txt 2026-08-25, punto 2): «al acceder a la opcion de
+    // mensajes no hay forma de volver atras hacia el panel del ente
+    // individual». El Administrador Individual SI tiene ahora "Volver".
+    //
+    // 🔑 LO QUE EL GUARD PROTEGE NO CAMBIA, Y AHORA SE MIDE EJECUTANDO en vez
+    // de por la forma del `?:`. Lo que no puede pasar sigue siendo lo mismo:
+    // que el Director/Coordinador/Padre —que ven la mensajeria EMBEBIDA dentro
+    // de su panel— reciban un "Volver" que destruiria el anfitrion que la
+    // contiene. Un guard de forma habria seguido en rojo pidiendo el defecto
+    // (la leccion de feedback_guard_desfasado_desorienta).
+    ok('12l · su boton "Volver" lo decide _umHayVuelta, no un `?:` cableado',
+       /_umHayVuelta\(role, isModalMode\)/.test(comms) &&
        !/role === 'coach' \? `[\s\S]{0,200}?onclick="openUnifiedCommsMenu\(\)"/.test(comms));
+    {
+        const hayVuelta = _cargarUmHayVuelta(comms, true);   // con pila: canGoBack = true
+        ok('12l-a · el COACH lo conserva (modal)',           hayVuelta('coach', true) === true);
+        ok('12l-b · 🔴 el Director NUNCA (embebido ni modal)',
+           hayVuelta('director', false) === false && hayVuelta('director', true) === false);
+        ok('12l-c · 🔴 tampoco el Coordinador ni el Padre',
+           hayVuelta('coordinator', true) === false && hayVuelta('parent', true) === false);
+        ok('12l-d · 🔑 y el Administrador Individual SI, en modal (v626)',
+           hayVuelta('admin_individual', true) === true);
+        ok('12l-e · ⚠️ pero NUNCA embebido, que ahi lo posee el anfitrion',
+           hayVuelta('admin_individual', false) === false);
+        const sinPila = _cargarUmHayVuelta(comms, false);    // pila vacia: no hay atras
+        ok('12l-f · ⚠️⚠️ sin pantalla anterior en la pila NO se ofrece "Volver"',
+           sinPila('admin_individual', true) === false,
+           'navBack() con la pila en un solo nivel cae en navExit(), que solo OCULTA el modal: ' +
+           'un "Volver" que deja la pantalla en negro es peor que no tenerlo');
+    }
+}
+
+// Extrae _umHayVuelta del fuente real y la ejecuta en un sandbox. `puedeVolver`
+// es lo que devolvera window.navCanGoBack().
+function _cargarUmHayVuelta(src, puedeVolver) {
+    const i = src.indexOf('function _umHayVuelta');
+    if (i < 0) return () => 'NO ENCONTRADA';
+    // Hasta el cierre de la funcion: la primera linea que empieza por '}'.
+    const fin = src.indexOf('\n}', i);
+    const cuerpo = src.slice(i, fin + 2);
+    const sb = { console: { log() {}, warn() {} } };
+    sb.window = sb;
+    sb.navCanGoBack = () => puedeVolver;
+    vm.createContext(sb);
+    vm.runInContext(cuerpo + '\nthis._f = _umHayVuelta;', sb);
+    return sb._f;
 }
 
 // ═══════ PARTE 13 · recorridos del panel de Direccion ═══════
@@ -914,8 +958,12 @@ console.log('\n── PARTE 16 · motor de mensajeria unificada ──');
     // ── Volver y ✕: dos botones, dos funciones ──
     ok('16l · el "Volver" del coach usa navBack()',
        /onclick="navBack\(\)"/.test(cuerpoRender));
-    ok('16m · y solo se pinta en modo MODAL (embebido lo posee el anfitrion)',
-       /role === 'coach' && isModalMode \?/.test(cuerpoRender));
+    // v626 · La condicion se mudo a _umHayVuelta (ver 12l y sus subcasos, que
+    // la EJECUTAN). Aqui se comprueba que el motor la consulta de verdad y que
+    // el modo modal sigue siendo condicion necesaria.
+    ok('16m · y quien decide pintarlo es _umHayVuelta(role, isModalMode)',
+       /_umHayVuelta\(role, isModalMode\)/.test(cuerpoRender) &&
+       /if \(!isModalMode\) return false;/.test(um));
     // ⚠️ v405: era navExit(). El autor eligio esa forma en la ronda 7, pero bajo
     // MI premisa de que navExit() era "salida limpia" — y resulto ser lo que
     // dejaba el campo a la vista. Corregida la premisa, corregida la eleccion.

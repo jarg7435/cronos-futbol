@@ -468,8 +468,13 @@ console.log('\n12) 🔄 v604 · Director ↔ Coordinador en vivo (punto 5)');
     ok('12i · adoptar la ajena teniendo cambios propios PREGUNTA antes',
        /if \(st\.sucio && !confirm\('Vas a cargar la versión de otra persona/.test(CQ));
 
+    // v626 · El contenedor dejó de estar cableado (lo comparten el panel de
+    // Dirección y el del Ente Individual), así que la comprobación se hace
+    // contra `_cqCont()`. Lo que el guard vigila NO cambia: que un contenedor
+    // que ya no existe dé de baja al oyente en vez de dejarlo repintando el
+    // hueco de otra sección.
     ok('12j · ⚠️ si el contenedor ya no está, el oyente se da de baja solo',
-       /if \(!document\.getElementById\('staff-dashboard-content'\)\) \{ _cqDesconectar\(\); return; \}/.test(CQ));
+       /if \(!_cqCont\(\)\) \{ _cqDesconectar\(\); return; \}/.test(CQ));
 
     ok('12k · un corte de la escucha se registra pero no rompe la pantalla',
        /la escucha en vivo se cortó/.test(CQ));

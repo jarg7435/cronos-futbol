@@ -755,6 +755,39 @@ async function openIndividualAdminMessaging(tab, targetContainerId) {
 }
 window.openIndividualAdminMessaging = openIndividualAdminMessaging;
 
+// ════════════════════════════════════════════════════════════════════
+//  🔙 v626 · ¿ESTA PANTALLA DE MENSAJES TIENE UN "ATRÁS" AL QUE VOLVER?
+//
+//  Encargo del autor (implementar.txt, 2026-08-25, punto 2): «al acceder a la
+//  opción de mensajes no hay forma de volver atrás hacia el panel del ente
+//  individual, ya que el único botón existente te saca por completo de la
+//  sesión y obliga a volver a entrar».
+//
+//  Y era literal: el "← Volver" se pintaba SÓLO para `role === 'coach'`. Al
+//  Administrador Individual le quedaba el ✕, que llama a `navExitToRoles()`
+//  —el selector de roles— o sea, salir del rol.
+//
+//  🔑 LA CONDICIÓN NO SE AMPLÍA A OJO. Un "Volver" sólo sirve si hay una
+//  pantalla anterior en la pila; si no la hay, `navBack()` cae en `navExit()`
+//  y lo único que hace es ocultar el modal: un botón "Volver" que deja la
+//  pantalla en negro es peor que no tener botón. Por eso se pregunta a
+//  `navCanGoBack()` cuando existe, y los roles listados son la red de
+//  seguridad para el caso de que nav-stack.js no haya cargado.
+//
+//  ⚠️ SÓLO EN MODO MODAL. Embebido (Director, Coordinador, Padres) esta vista
+//  vive DENTRO del panel anfitrión, que ya tiene su propia vuelta: un segundo
+//  "Volver" ahí desharía la pantalla que lo contiene.
+// ════════════════════════════════════════════════════════════════════
+function _umHayVuelta(role, isModalMode) {
+    if (!isModalMode) return false;
+    // El Entrenador se queda EXACTAMENTE como hasta la v625: su botón no se
+    // toca. Añadir aquí la comprobación de la pila habría cambiado, sin que
+    // nadie lo pidiera, una pantalla que hoy funciona.
+    if (role === 'coach') return true;
+    if (role !== 'admin_individual') return false;
+    return (typeof window.navCanGoBack === 'function') ? !!window.navCanGoBack() : true;
+}
+
 // ── MOTOR PRINCIPAL: Renderizado de la Interfaz Unificada ─────────────
 async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
@@ -864,10 +897,11 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
                 <h2 style="margin:0;font-size:1.05rem;color:white;font-weight:700;">Mensajes</h2>
             </div>
             <div style="display:flex;gap:0.5rem;align-items:center;">
-                ${role === 'coach' && isModalMode ? `
+                ${_umHayVuelta(role, isModalMode) ? `
                 <button onclick="navBack()" class="btn"
-                    style="font-size:0.75rem;padding:0.35rem 0.8rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:6px;">
-                    ← Volver
+                    style="font-size:0.75rem;padding:0.35rem 0.8rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:6px;"
+                    title="${role === 'admin_individual' ? 'Volver a tu panel sin cerrar la sesión' : 'Volver a la pantalla anterior'}">
+                    ${role === 'admin_individual' ? '← Volver al Menú' : '← Volver'}
                 </button>` : ''}
                 <button onclick="_loadUnifiedContactList((window._umState&&window._umState.activeTab)||'${tab}')" class="btn"
                     style="font-size:0.75rem;padding:0.35rem 0.8rem;background:var(--glass);color:var(--text-muted);border-radius:6px;">

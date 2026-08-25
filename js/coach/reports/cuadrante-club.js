@@ -499,10 +499,64 @@ async function _cqFilasPorDefecto(clubId) {
         return { id: _cqIdFilaEquipo(clubId, cat, sub), tipo: 'equipo', cat, sub, label: _cqLabelEquipo(cat, sub) };
     }).filter(f => f.id);
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔴 v626 · SI NO HAY NINGUNA PLANTILLA PUBLICADA, SE MIRAN LAS PLAZAS
+    //
+    //  Las filas salían SÓLO de `clubs/{id}/team_rosters`, o sea de los equipos
+    //  con plantilla ya publicada. Para un club veterano eso es correcto; para
+    //  un Ente Individual recién creado es una pantalla vacía el primer día:
+    //  su equipo existe —es su plaza, la que eligió en "⚽ Mi Equipo"— pero
+    //  todavía no ha publicado ninguna plantilla. Y una herramienta que se
+    //  estrena en blanco parece rota, no nueva.
+    //
+    //  🔑 SÓLO CUANDO NO HAY NADA. Con una sola plantilla publicada mandan las
+    //  plantillas, exactamente como hasta hoy: para los clubes que ya lo usan
+    //  no cambia una fila. Y sólo se paga la consulta a `users` la PRIMERA vez
+    //  que se abre el cuadrante, porque a partir de ahí las filas se guardan en
+    //  el documento del club (CQ_DOC_FILAS).
+    //
+    //  ⚠️ El criterio de "quién lleva equipo" NO se reescribe aquí: es
+    //  `CRONOS_ROLES_CON_EQUIPO` (utils.js, v598), la lista única del proyecto.
+    //  Es lo que hace que cuente también el rol 'individual' del ente, que es
+    //  entrenador y administrador a la vez.
+    // ════════════════════════════════════════════════════════════════
+    if (!filas.length) {
+        try {
+            const dePlazas = await _cqFilasDePlazas(clubId);
+            dePlazas.forEach(f => filas.push(f));
+        } catch (e) {
+            console.warn('[Cuadrante] no se pudieron derivar las filas de las plazas:', e && e.message ? e.message : e);
+        }
+    }
+
     filas.sort((a, b) => {
         const ia = CQ_ORDEN_CAT.indexOf(a.cat), ib = CQ_ORDEN_CAT.indexOf(b.cat);
         if (ia !== ib) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
         return String(a.sub).localeCompare(String(b.sub));
+    });
+    return filas;
+}
+
+// Los equipos que se deducen de las PLAZAS de la entidad: una fila por
+// categoría+subcategoría distinta, sin repetir. Ni inventa equipos ni depende
+// de que nadie haya publicado una plantilla.
+async function _cqFilasDePlazas(clubId) {
+    const lista = await _cqEntrenadoresDelClub(clubId);
+    const vistos = {};
+    const filas  = [];
+    lista.forEach(r => {
+        // ⚠️ La categoría llega de DOS formas históricas ('alevin' + sub, o
+        // 'alevin_a' de una pieza). Se normalizan las dos con los mismos
+        // resolutores que usa el resto del proyecto: el id de la fila tiene que
+        // salir IDÉNTICO al que calcula cronosMyTeamId() en el panel del
+        // entrenador, o su fila del cuadrante no le aparecería nunca.
+        const cat = (typeof window.ctNormCat === 'function') ? window.ctNormCat(r.cat || '') : (r.cat || '');
+        const sub = (typeof window.ctNormSubcat === 'function') ? window.ctNormSubcat(r.sub || '') : (r.sub || '');
+        if (!cat) return;
+        const id = _cqIdFilaEquipo(clubId, cat, sub);
+        if (!id || vistos[id]) return;
+        vistos[id] = true;
+        filas.push({ id, tipo: 'equipo', cat, sub, label: _cqLabelEquipo(cat, sub) });
     });
     return filas;
 }
@@ -572,10 +626,47 @@ async function _cqGuardar(clubId, datos) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  🧩 v626 · DÓNDE SE PINTA EL CUADRANTE (deja de estar cableado)
+//
+//  Encargo del autor (implementar.txt, 2026-08-25, punto 1): «llevar e integrar
+//  de forma íntegra la opción de cuadrante que ya tenemos implementada y
+//  funcionando en los clubes, adaptándola por completo al entorno y
+//  funcionamiento del ente individual».
+//
+//  🔑 EL MÓDULO NO SE DUPLICA, SE DESPEGA DE SU ANFITRIÓN. La pantalla estaba
+//  atada a `#staff-dashboard-content` —el cuerpo del panel de Dirección— en
+//  CINCO sitios. Copiar el fichero para el ente habría creado la segunda
+//  fuente de verdad que este proyecto lleva pagando desde la v511: dos
+//  cuadrantes que divergen a la primera corrección. Así que el contenedor pasa
+//  a ser un ARGUMENTO de entrada y el ente pinta el MISMO módulo dentro de su
+//  propio panel.
+//
+//  ⚠️ SE FIJA EN CADA ENTRADA, NO SE HEREDA. `_sdLoadCuadrante()` sin argumento
+//  vuelve SIEMPRE al contenedor del panel de Dirección: si el valor se quedara
+//  pegado de una sesión anterior, un director que entrase después del ente
+//  pintaría su cuadrante en un div que ya no existe y vería la pantalla vacía
+//  sin un solo error en consola.
+// ════════════════════════════════════════════════════════════════════
+const CQ_CONT_DEFECTO = 'staff-dashboard-content';
+function _cqContId() { return window._cqContenedorId || CQ_CONT_DEFECTO; }
+function _cqCont()   { return document.getElementById(_cqContId()); }
+
+// ¿Estamos en un Ente Individual? Cambia SÓLO cómo se llama a las cosas: un
+// entrenador administrador individual no tiene "club", tiene su entidad. La
+// mecánica (documento, filas, celdas, envío) es exactamente la misma.
+function _cqEsEnte() {
+    const me  = window._cronosCurrentUser || {};
+    const rol = me._activeRole || me.role || '';
+    return rol === 'individual' || rol === 'individual_admin' || rol === 'admin_individual';
+}
+function _cqPalabraEntidad() { return _cqEsEnte() ? 'de tu entidad' : 'del club'; }
+
+// ════════════════════════════════════════════════════════════════════
 //  PANTALLA
 // ════════════════════════════════════════════════════════════════════
-async function _sdLoadCuadrante() {
-    const container = document.getElementById('staff-dashboard-content');
+async function _sdLoadCuadrante(contenedorId) {
+    window._cqContenedorId = contenedorId || CQ_CONT_DEFECTO;
+    const container = _cqCont();
     if (!container) return;
     const me     = window._cronosCurrentUser || {};
     const clubId = window._testRoleClubId || me.clubId || '';
@@ -664,7 +755,9 @@ window._sdRecargarCuadrante = function () {
     const st = window._cqState;
     if (!st) return;
     st.calendario = null;
-    if (document.getElementById('staff-dashboard-content')) _sdLoadCuadrante();
+    // v626 · Se repinta EN SU SITIO: el mismo contenedor desde el que se abrió
+    // (el panel de Dirección o el del ente), no el de por defecto.
+    if (_cqCont()) _sdLoadCuadrante(_cqContId());
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -731,7 +824,7 @@ function _cqLlegaCambio(snap, weekKey) {
     const st = window._cqState;
 
     // El contenedor ya no está (se salió del panel): baja y fuera.
-    if (!document.getElementById('staff-dashboard-content')) { _cqDesconectar(); return; }
+    if (!_cqCont()) { _cqDesconectar(); return; }
     // Se cambió de semana mientras venía el dato.
     if (!st.doc || st.doc.weekKey !== weekKey) return;
     if (!snap.exists()) return;
@@ -799,7 +892,7 @@ window.cqDescartarAvisoRemoto = function () {
 };
 
 function _cqPintar() {
-    const container = document.getElementById('staff-dashboard-content');
+    const container = _cqCont();
     if (!container) return;
     const st    = window._cqState;
     const d     = st.doc;
@@ -832,10 +925,12 @@ function _cqPintar() {
     // ── Cabecera: semana, vistas y acciones ─────────────────────────
     html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.9rem;">' +
         '<div>' +
-            '<div style="font-size:1rem;font-weight:700;color:white;">🗓️ Cuadrante semanal del club' +
+            '<div style="font-size:1rem;font-weight:700;color:white;">🗓️ Cuadrante semanal ' + _cqPalabraEntidad() +
             (alcance ? ' · <span style="color:#d2a8ff;">' + _cqE(window._cronosCoordScopeLabel(alcance)) + '</span>' : '') +
             '</div>' +
-            '<div style="font-size:0.72rem;color:var(--text-muted);">Entrenamientos, espacios del campo y partidos · la pauta que siguen los entrenadores</div>' +
+            '<div style="font-size:0.72rem;color:var(--text-muted);">Entrenamientos, espacios del campo y partidos · ' +
+            (_cqEsEnte() ? 'la pauta de tus equipos, y la ves al montar tu semana'
+                         : 'la pauta que siguen los entrenadores') + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">' +
             '<button class="btn" onclick="cqSemana(-1)" style="padding:0.3rem 0.6rem;font-size:0.85rem;">◀</button>' +
@@ -964,7 +1059,8 @@ function _cqHtmlEquipos(lunes) {
         return '<div style="text-align:center;padding:3.5rem 1rem;color:var(--text-muted);line-height:1.8;">' +
             '<div style="font-size:2.5rem;margin-bottom:0.5rem;">🗓️</div>' +
             'Todavía no hay ninguna fila en el cuadrante.<br>' +
-            '<span style="font-size:0.8rem;">Las filas salen de los equipos con plantilla publicada. ' +
+            '<span style="font-size:0.8rem;">Las filas salen de ' +
+            (_cqEsEnte() ? 'tus equipos (los de "⚽ Mi Equipo")' : 'los equipos con plantilla publicada') + '. ' +
             'También puedes añadir filas que no son equipos (academia, porteros, fisio).</span>' +
             '<div style="margin-top:1rem;">' + _cqBotonesFila() + '</div></div>';
     }
@@ -1523,7 +1619,7 @@ function _cqTeclas(ev) {
     if (!ev.ctrlKey && !ev.metaKey) return;
     const st = window._cqState;
     if (!st || !st.doc) return;
-    if (!document.getElementById('staff-dashboard-content')) return;
+    if (!_cqCont()) return;
     if (document.getElementById('cq-overlay')) return;
     const a = document.activeElement;
     if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || '')) return;
@@ -2551,18 +2647,36 @@ async function _cqEntrenadoresDelClub(clubId) {
         if (u.status && u.status !== 'active') return;
         if (u.isAuthorized === false) return;
 
+        // ⚠️ v626 · "QUIÉN LLEVA EQUIPO" SE PREGUNTA A LA LISTA ÚNICA.
+        //  Aquí decía `role === 'user' || role === 'coach'` a mano, y eso dejaba
+        //  FUERA al Entrenador Administrador Individual, cuyo rol se escribe
+        //  'individual'. Consecuencia medida: en un ente sin ayudante, "📤
+        //  ENVIAR A ENTRENADORES" no encontraba a nadie, el cuadrante nunca se
+        //  sellaba con `publicadoEn` y por tanto NO aparecía en su propia
+        //  Planificación Semanal (cronosCuadranteClubDeMiEquipo lo exige). El
+        //  ente habría podido rellenar la parrilla y no verla en ningún sitio.
+        //  `CRONOS_ROLES_CON_EQUIPO` (utils.js, v598) es la lista que ya usan el
+        //  candado de los dos equipos y el selector de equipo: no se inventa un
+        //  tercer criterio, se reutiliza el que hay. Para un club no cambia
+        //  nada — 'individual' y 'admin_individual' no existen en un club.
+        const _rolesEq = window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach', 'individual', 'admin_individual'];
+
         // Una persona puede llevar DOS equipos (un F7 y un F11): la unidad es
         // la PLAZA, no el rol. Se lista una fila por plaza y se deduplica por
         // uid en el momento de enviar.
         const plazas = (Array.isArray(u.allRoles) ? u.allRoles : [])
-            .filter(r => r && (r.role === 'user' || r.role === 'coach') &&
-                         String(r.clubId || '') === String(clubId) && r.isAuthorized !== false);
+            .filter(r => r && _rolesEq.indexOf(r.role) >= 0 &&
+                         String(r.clubId || r.individualEntityId || '') === String(clubId) &&
+                         r.isAuthorized !== false);
 
         const nombre = (typeof window.cronosNombreUsuario === 'function')
             ? window.cronosNombreUsuario(u) : (u.displayName || u.email || dd.id);
 
         if (!plazas.length) {
-            if (u.role === 'user' || u.role === 'coach') {
+            // v626 · Mismo criterio que arriba: el rol raíz también se juzga con
+            // la lista única, para no perder al ente (rol 'individual') cuyas
+            // plazas no estén en `allRoles`.
+            if (_rolesEq.indexOf(u.role) >= 0) {
                 out.push({ uid: dd.id, nombre, email: u.email || '', cat: u.category || '', sub: u.subcategory || '' });
             }
             return;
@@ -2609,7 +2723,11 @@ window.cqAbrirEnvio = async function () {
     if (!lista.length) {
         body.innerHTML = '<div style="padding:1.5rem;color:var(--text-muted);line-height:1.7;">' +
             'No hay entrenadores activos a los que enviar.<br>' +
-            '<span style="font-size:0.76rem;">Se dan de alta desde <strong>✉️ Secretaría</strong> o desde el panel del administrador del club.</span></div>';
+            '<span style="font-size:0.76rem;">' +
+            (_cqEsEnte()
+                ? 'Elige tu equipo en <strong>⚽ Mi Equipo</strong>: sin equipo asignado no hay a quién enviarle la semana.'
+                : 'Se dan de alta desde <strong>✉️ Secretaría</strong> o desde el panel del administrador del club.') +
+            '</span></div>';
         const ok = document.getElementById('cq-env-ok'); if (ok) ok.style.display = 'none';
         return;
     }
@@ -2624,7 +2742,10 @@ window.cqAbrirEnvio = async function () {
     body.innerHTML =
         '<div style="font-size:0.74rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.7rem;' +
              'background:rgba(88,166,255,0.05);border:1px solid rgba(88,166,255,0.15);border-radius:8px;padding:0.5rem 0.7rem;">' +
-            'Cada entrenador verá el cuadrante del club <strong style="color:#58a6ff;">encima de su Planificación Semanal</strong>, ' +
+            (_cqEsEnte()
+                ? 'Cada entrenador —tú incluido, que llevas equipo— verá este cuadrante '
+                : 'Cada entrenador verá el cuadrante del club ') +
+            '<strong style="color:#58a6ff;">encima de su Planificación Semanal</strong>, ' +
             'con los espacios y horarios que le has asignado.</div>' +
         '<label style="display:flex;align-items:center;gap:0.45rem;font-size:0.78rem;color:white;font-weight:700;cursor:pointer;' +
                'padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:0.35rem;">' +

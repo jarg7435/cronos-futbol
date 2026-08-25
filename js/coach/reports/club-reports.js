@@ -555,7 +555,11 @@ window.switchStaffTab = async (tab) => {
                 '⚠️ El módulo de Cuadrante no está disponible. Recarga el panel.</div>';
             return;
         }
-        await window._sdLoadCuadrante();
+        // v626 · El contenedor va EXPLÍCITO. El cuadrante ya no lo tiene
+        // cableado (lo comparte con el panel del Ente Individual), y decirlo
+        // aquí es lo que garantiza que esta pantalla lo recupere aunque el
+        // ente lo haya apuntado antes a su propio panel en la misma sesión.
+        await window._sdLoadCuadrante('staff-dashboard-content');
         return;
     }
 
