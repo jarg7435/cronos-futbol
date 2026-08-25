@@ -1087,19 +1087,14 @@ function confirmSubstitutionWith(fieldPlayer) {
     if (!pendingSubstitution) return;
     const inPlayer = pendingSubstitution.player;
 
-    // 🟨 Normativa de la categoría (Cadete, Juvenil, Regional y Regional FEM).
-    //    Un cambio individual suelto es UNA ventana; si el entrenador quiere
-    //    que dos cuenten como una sola, los hace en modo GRUPAL. Avisa y deja
-    //    decidir — nunca bloquea, ver la cabecera de sub-rules.js.
-    if (window.CronosSubRules && typeof window.CronosSubRules.confirmarYRegistrar === 'function') {
-        const _nom = (id) => { const p = players.find(x => x.id === id); return p ? (p.name || 'Ese jugador') : 'Ese jugador'; };
-        if (!window.CronosSubRules.confirmarYRegistrar(inPlayer.team, [fieldPlayer.id], [inPlayer.id], _nom)) {
-            cancelPendingSubstitution();
-            return;
-        }
-    }
-
-    handleSmartSwap(pendingSubstitution.player, fieldPlayer);
+    // 🟨 La normativa de la categoría YA NO SE COMPRUEBA AQUÍ: la aplica
+    //    `handleSmartSwap`, que es el punto por el que pasan las CUATRO vías
+    //    de sustitución (ésta, el GRUPAL y las dos de arrastrar y soltar).
+    //    En v622 se engancharon los llamantes y las de arrastrar quedaron sin
+    //    control — el autor hizo seis cambios en un Juvenil sin ver el aviso.
+    //    Dejarla también aquí contaría el cambio DOS veces.
+    const _swapHecho = handleSmartSwap(pendingSubstitution.player, fieldPlayer);
+    if (_swapHecho === false) { cancelPendingSubstitution(); return; }
     cancelPendingSubstitution();
     renderPlayers();
     // Commit síncrono del evento crítico antes de sincronizar con Firestore.

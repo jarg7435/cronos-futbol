@@ -313,6 +313,51 @@ function handleSmartSwap(dragged, target, forcedSubId) {
     }
     if (target.cards === 'roja') { alert("No se puede realizar cambios con un jugador expulsado."); return; }
 
+    // ════════════════════════════════════════════════════════════════
+    //  🟨 NORMATIVA DE LA CATEGORÍA — Y AQUÍ, QUE ES EL ORIGEN
+    // ════════════════════════════════════════════════════════════════
+    //  🔴 REPORTE DEL AUTOR (2026-08-25): en un Juvenil hizo SEIS cambios y el
+    //  aviso de los 5 no salió nunca. La causa no eran las reglas de v622,
+    //  que estaban bien: era que NO SE LLAMABAN.
+    //
+    //  `handleSmartSwap` tiene CUATRO llamantes —el toque para seleccionar
+    //  (player-actions.js), el modo GRUPAL (ui/render.js) y los DOS de
+    //  arrastrar y soltar (aquí mismo, líneas ~180 y ~289)— y en v622 sólo se
+    //  engancharon los dos primeros. Arrastrando un jugador, la comprobación
+    //  no existía.
+    //
+    //  🔑 Por eso va AQUÍ y no en los llamantes: es el único punto por el que
+    //  pasan las cuatro vías. Es la misma lección de v624 con el rol de
+    //  familias —la puerta va en el ORIGEN— pisada dos veces en dos días.
+    //
+    //  ⚠️ SÓLO SI ES UNA SUSTITUCIÓN DE VERDAD: uno en el campo y otro en el
+    //  banquillo. Permutar dos que ya están en el campo es un cambio de
+    //  posición, y reordenar la banca tampoco es un cambio (misma regla que
+    //  usa el registro de movimientos, más abajo). Contar esas permutas
+    //  gastaría el cupo sin que nadie hubiera sustituido a nadie.
+    //
+    //  ⚠️ Y el GRUPAL se salta esto a propósito: ya preguntó UNA vez por toda
+    //  la ventana antes de entrar en su bucle. Sin la marca, un grupal de tres
+    //  gastaría tres ventanas en vez de una.
+    //  ⚠️ `typeof window` y no `window` a secas: este fichero se carga también
+    //     en arneses de prueba que no montan `window` (test_pizarra_sincroniza
+    //     lo hizo saltar), y una sustitución no puede depender de eso.
+    if (typeof window !== 'undefined' && !window._cronosSubEnLote &&
+        window.CronosSubRules && typeof window.CronosSubRules.confirmarYRegistrar === 'function') {
+        const entra = (dragged.status === 'bench') ? dragged : ((target.status === 'bench') ? target : null);
+        const sale  = (dragged.status === 'field') ? dragged : ((target.status === 'field') ? target : null);
+        // Los dos han de existir y ser distintos: eso descarta las permutas.
+        if (entra && sale && entra !== sale) {
+            const _nom = (id) => {
+                const p = (window.players || []).find(x => x.id === id);
+                return p ? (p.name || 'Ese jugador') : 'Ese jugador';
+            };
+            // Devuelve FALSE al cancelar para que quien llame pueda deshacer
+            // su propio estado (la selección pendiente del toque, p. ej.).
+            if (!window.CronosSubRules.confirmarYRegistrar(entra.team, [sale.id], [entra.id], _nom)) return false;
+        }
+    }
+
     const oldDraggedStatus = dragged.status;
     const oldDraggedX = dragged.x;
     const oldDraggedY = dragged.y;

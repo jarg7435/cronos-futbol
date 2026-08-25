@@ -215,14 +215,46 @@ console.log('\nPARTE 6 · el cableado y lo que NO debe contar');
 ok('6a · ⚠️ el modulo NO lee el registro de movimientos',
    !/\.history\b/.test(RULES) && !/logMovement/.test(RULES),
    'contaria los Sale (DESCANSO) automaticos como cambios');
-ok('6b · el cambio individual lo consulta',
-   /confirmSubstitutionWith[\s\S]{0,600}CronosSubRules\.confirmarYRegistrar/.test(ACT));
-ok('6c · el cambio grupal lo consulta',
+// ══════════════════════════════════════════════════════════════════
+//  🔴🔴 v625 · LA PUERTA VA EN EL ORIGEN, Y ESTO ES LO QUE FALLO
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (2026-08-25): en un Juvenil hizo SEIS cambios y el aviso
+//  de los 5 NO salio. Las reglas de v622 estaban bien; lo que fallaba es que
+//  no se llamaban. `handleSmartSwap` tiene CUATRO llamantes —el toque, el
+//  GRUPAL y LOS DOS DE ARRASTRAR Y SOLTAR— y v622 engancho solo los dos
+//  primeros. Arrastrando, no habia comprobacion.
+const DRAG = sinCom(fs.readFileSync(path.join(RAIZ, 'js/ui/drag-drop.js'), 'utf8'));
+const _cuerpoSwap = (function () {
+    const i = DRAG.indexOf('function handleSmartSwap');
+    return i === -1 ? '' : DRAG.slice(i, i + 2600);
+})();
+ok('6b · 🔑🔑 la normativa se comprueba en handleSmartSwap (el ORIGEN)',
+   /CronosSubRules\.confirmarYRegistrar\(/.test(_cuerpoSwap),
+   'con la puerta en los llamantes, arrastrar se saltaba la norma');
+ok('6b-bis · …y el toque delega en el, sin comprobar por su cuenta',
+   /handleSmartSwap\(pendingSubstitution\.player, fieldPlayer\)/.test(ACT) &&
+   !/CronosSubRules\.confirmarYRegistrar/.test(ACT),
+   'comprobarlo tambien alli contaria el cambio DOS veces');
+ok('6b-ter · las CUATRO vias pasan por handleSmartSwap',
+   (DRAG.match(/handleSmartSwap\(/g) || []).length >= 3 &&   // definicion + 2 arrastres
+   /handleSmartSwap\(/.test(ACT) && /handleSmartSwap\(/.test(RENDER));
+ok('6c · el cambio grupal pregunta UNA vez por toda la ventana',
    /executeGroupSubstitution[\s\S]{0,900}CronosSubRules\.confirmarYRegistrar/.test(RENDER));
 // ⚠️ Si se cancela, no puede quedarse a medias.
 ok('6d · ⚠️ al cancelar el grupal no se ejecuta ningun swap',
-   /confirmarYRegistrar[\s\S]{0,500}return;[\s\S]{0,300}handleSmartSwap/.test(RENDER),
+   /confirmarYRegistrar[\s\S]{0,600}return;[\s\S]{0,900}handleSmartSwap/.test(RENDER),
    'el return tiene que ir ANTES del bucle de swaps');
+// 🔒 La marca de lote: sin ella un grupal de tres gastaria TRES ventanas.
+ok('6d-bis · 🔒 el grupal marca el lote para que el origen no cobre por pareja',
+   /_cronosSubEnLote = true/.test(RENDER) && /!window\._cronosSubEnLote/.test(DRAG));
+ok('6d-ter · ⚠️ …y la marca se limpia en `finally`',
+   /finally \{[\s\S]{0,300}_cronosSubEnLote = false/.test(RENDER),
+   'si un swap lanzara, el resto del partido dejaria de comprobar en silencio');
+// ⚠️ Permutar dos del campo, o reordenar la banca, NO es un cambio.
+ok('6d-quater · ⚠️ una permuta no gasta cupo (uno del campo y otro del banquillo)',
+   /status === 'bench'\) \? dragged : \(\(target\.status === 'bench'\)/.test(_cuerpoSwap) &&
+   /entra && sale && entra !== sale/.test(_cuerpoSwap),
+   'contar permutas gastaria el cupo sin sustituir a nadie');
 ok('6e · reiniciar el partido pone el cupo a cero',
    /CronosSubRules\.reset\(\)/.test(MOV), 'si no, la jornada siguiente arranca sin cambios');
 ok('6f · el modulo se carga en index.html', /js\/match\/events\/sub-rules\.js/.test(SRC_HTML));
@@ -238,9 +270,14 @@ ok('6g · …antes que player-actions.js',
 ok('6h · y esta en el precache del Service Worker',
    /'\.\/js\/match\/events\/sub-rules\.js'/.test(SRC_SW));
 // Las dos puertas lo llaman con guarda: sin el modulo, la app sigue igual.
-ok('6i · ⚠️ las dos puertas usan guarda typeof (sin el modulo no se rompe nada)',
-   /typeof window\.CronosSubRules\.confirmarYRegistrar === 'function'/.test(ACT) &&
+ok('6i · ⚠️ las puertas usan guarda typeof (sin el modulo no se rompe nada)',
+   /typeof window\.CronosSubRules\.confirmarYRegistrar === 'function'/.test(DRAG) &&
    /typeof window\.CronosSubRules\.confirmarYRegistrar === 'function'/.test(RENDER));
+// ⚠️ Y `typeof window`, no `window` a secas: drag-drop.js se carga en arneses
+//    que no montan `window` (test_pizarra_sincroniza reventaba con un
+//    ReferenceError). Una sustitucion no puede depender de eso.
+ok('6i-bis · ⚠️ y no se asume que `window` exista',
+   /typeof window !== 'undefined' && !window\._cronosSubEnLote/.test(DRAG));
 
 console.log('\n------------------------------------------------------------');
 console.log('Resultado: ' + ok_ + '/' + n + ' pruebas superadas.');

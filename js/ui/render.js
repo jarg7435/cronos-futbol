@@ -140,6 +140,13 @@ function executeGroupSubstitution(team) {
         }
     }
 
+    // 🔒 MARCA DE LOTE. `handleSmartSwap` comprueba la normativa por su cuenta
+    //    —es el origen por el que pasan las cuatro vías— pero aquí ya se
+    //    preguntó UNA vez por toda la ventana. Sin esta marca, un grupal de
+    //    tres gastaría TRES ventanas en vez de una, que es justo lo contrario
+    //    de para lo que sirve el modo grupal.
+    window._cronosSubEnLote = true;
+    try {
     for (let i = 0; i < count; i++) {
         const outPlayer = players.find(p => p.id === outArr[i]);
         const inPlayer  = players.find(p => p.id === inArr[i]);
@@ -158,6 +165,11 @@ function executeGroupSubstitution(team) {
             // arregló el propio handleSmartSwap ("v240: SIEMPRE registrar el
             // cambio, no solo si isRunning"), así que esta llamada sobraba.
         }
+    }
+    } finally {
+        // ⚠️ En `finally`: si un swap lanzara, la marca se quedaría puesta y el
+        //    resto del partido dejaría de comprobar la normativa en silencio.
+        window._cronosSubEnLote = false;
     }
     // v240: flush inmediato tras el cambio grupal para que llegue a Firestore YA.
     if (typeof window.liveSyncFlushNow === 'function') {
