@@ -342,8 +342,32 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
            /register=true/.test(url) && !/invite=true/.test(url), url);
         ok('13c · lleva el correo, el rol y el club dentro',
            /email=ana%40x\.com/.test(url) && /role=coordinator/.test(url) && /clubName=CD\+Prueba|clubName=CD%20Prueba/.test(url), url);
-        ok('13d · 🔑 y el enlace del MENSAJE es el mismo que el de pantalla',
-           els['sec-preview'].textContent.includes(url));
+        // ⚠️ ACTUALIZADA EN LA v630, y por PETICIÓN EXPRESA del autor
+        // (implementar.txt 2026-08-25, punto 1): «elimina la línea de texto con
+        // el enlace suelto del primer párrafo [...] de esta forma evitamos
+        // repeticiones innecesarias». En el CORREO el enlace ya viaja dos veces
+        // dentro del HTML (el botón y la frase de respaldo), así que el cuerpo
+        // ya no lo repite.
+        //
+        // 🔑 LO QUE ESTA PARTE VINO A PROTEGER NO CAMBIA. El defecto de v594
+        // era que el enlace se construía en DOS sitios con parámetros distintos
+        // y el del mensaje era el flojo (`invite=true`). Eso se sigue midiendo:
+        // en WhatsApp —donde el enlace SÍ va en el cuerpo, porque no hay botón—
+        // tiene que ser exactamente el mismo que el de pantalla.
+        ok('13d · ⚠️ v630 · en EMAIL el cuerpo ya NO repite el enlace',
+           !els['sec-preview'].textContent.includes(url),
+           'lo llevan el botón y la frase de respaldo del HTML (functions/index.js)');
+    }
+    {
+        const { sandbox, els } = buildSandbox({
+            secMethod: 'whatsapp',
+            elements: { 'sec-email': { value: 'ana@x.com' }, 'sec-role': { value: 'coordinator' }, 'sec-club': { value: 'CD Prueba' } },
+        });
+        sandbox.window.saUpdateInviteTemplate();
+        const url = els['sec-link'].value;
+        ok('13d-wa · 🔑 en WhatsApp el enlace del MENSAJE sigue siendo el de pantalla',
+           !!url && els['sec-preview'].textContent.includes(url),
+           'ahí es el ÚNICO camino: no hay botón ni frase de respaldo · ' + url);
     }
     {
         // Cambiar un dato del formulario tiene que mover el enlace: enseñar

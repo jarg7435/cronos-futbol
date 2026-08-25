@@ -360,16 +360,72 @@ window.secPlantillaFabrica = function(metodo, clubName) {
                'Completa tu registro y accede a la app aquí:\n{enlace}\n\n' +
                '¡Un saludo!';
     }
+    // ══════════════════════════════════════════════════════════════════
+    //  ✉️ v630 · EL CUERPO DEL CORREO YA NO REPITE EL ENLACE
+    //
+    //  Encargo del autor (implementar.txt, 2026-08-25, punto 1): «elimina la
+    //  línea de texto con el enlace suelto del primer párrafo. Deja el cuerpo
+    //  del mensaje, seguido únicamente del botón principal de acción y, justo
+    //  debajo, la frase de respaldo. De esta forma evitamos repeticiones».
+    //
+    //  🔑 Y ES QUE EL ENLACE APARECÍA TRES VECES. El HTML del correo
+    //  (functions/index.js:1330) ya pone el botón «Completar Registro /
+    //  Acceder» Y debajo «Si el botón no funciona, copia y pega este enlace».
+    //  Meterlo además dentro del cuerpo era la tercera copia. Se quitan las dos
+    //  líneas —la frase de entrada y el `🔗 {enlace}`— porque una sin la otra
+    //  deja un «entra por este enlace:» apuntando a nada.
+    //
+    //  ⚠️ SÓLO EN EL CORREO. En WhatsApp NO hay botón ni frase de respaldo: ahí
+    //  `{enlace}` es el ÚNICO camino y se queda donde está (arriba).
+    // ══════════════════════════════════════════════════════════════════
     return 'Hola, {nombre}:\n\n' +
            'Te damos la bienvenida a Chronos Fútbol. Has sido invitado a unirte a nuestra plataforma como {rol}' +
            (club ? ' del club ' + club : '') + '.\n\n' +
            'Chronos Fútbol es una aplicación diseñada para el fútbol base: ayuda a que directiva, cuerpo técnico y familias ' +
            'compartan un mismo espacio de trabajo y disfruten al máximo de este deporte.\n\n' +
-           'Para acceder directamente a la plataforma (con pantalla completa e instalación automática en tu móvil), ' +
-           'entra por este enlace:\n\n' +
-           '🔗 {enlace}\n\n' +
+           'Pulsa el botón de abajo para completar tu registro: el correo, el rol y el club ya te vendrán rellenos ' +
+           'y sólo tendrás que elegir tu contraseña.\n\n' +
            '¡Muchas gracias por tu implicación y bienvenido a bordo!\n\n' +
            firma;
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  ✉️ v630 · QUITAR EL ENLACE REPETIDO DE UNA PLANTILLA YA GUARDADA
+//
+//  Cambiar la plantilla de fábrica NO arregla a quien ya pulsó «Guardar
+//  plantilla»: la suya vive en `clubs/{clubId}.inviteTemplate` (o en
+//  localStorage para el SuperAdmin) y sigue trayendo el párrafo viejo. Y no se
+//  le puede reescribir por las bravas: es SU texto.
+//
+//  🔑 Lo que sí es objetivo: en un correo, un `{enlace}` suelto en el cuerpo es
+//  **por definición** una repetición, porque el botón y la frase de respaldo lo
+//  llevan siempre. Así que en el método EMAIL se retira esa línea al componer
+//  —y con ella la frase que la introducía, si termina en dos puntos, para no
+//  dejar un «entra por este enlace:» huérfano—.
+//
+//  ⚠️ NO TOCA EL TEXTO GUARDADO, sólo lo que se manda y lo que se previsualiza,
+//  y los dos pasan por aquí para que lo que ve sea exactamente lo que sale.
+//  ⚠️ NO SE APLICA A WHATSAPP: allí `{enlace}` es el único camino.
+// ════════════════════════════════════════════════════════════════════
+window.secQuitarEnlaceRepetido = function (texto) {
+    var lineas = String(texto == null ? '' : texto).split('\n');
+    var fuera = [];
+    for (var i = 0; i < lineas.length; i++) {
+        var l = lineas[i];
+        // ¿Es una línea cuyo ÚNICO contenido es el enlace? (admite el 🔗 y
+        // cualquier adorno no alfanumérico delante).
+        var soloEnlace = /^[^\p{L}\p{N}]*\{enlace\}[^\p{L}\p{N}]*$/u.test(l.trim()) && l.trim() !== '';
+        if (!soloEnlace) { fuera.push(l); continue; }
+        // Se quita también la frase que la presentaba: la última línea con
+        // texto de las ya aceptadas, si acaba en ':'.
+        for (var j = fuera.length - 1; j >= 0; j--) {
+            if (fuera[j].trim() === '') continue;
+            if (/:\s*$/.test(fuera[j])) fuera.splice(j, 1);
+            break;
+        }
+    }
+    // Se colapsan los huecos que dejan las líneas retiradas.
+    return fuera.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 };
 
 // ── Cargar la plantilla guardada del club (o la local del SuperAdmin) ──
@@ -455,8 +511,20 @@ window.saUpdateInvitePreview = function() {
     if (link) link.value = datos.enlace;
     const secBody = document.getElementById('sec-body');
     const prev = document.getElementById('sec-preview');
-    if (prev) prev.textContent = window.secRenderPlantilla(secBody ? secBody.value : '', datos);
+    // ✉️ v630 · La vista previa pasa por el MISMO filtro que el envío. Si sólo
+    // lo hiciera uno de los dos, lo que se ve no sería lo que sale — y eso es
+    // peor que la repetición que se venía a quitar.
+    if (prev) prev.textContent = window.secRenderPlantilla(
+        _secCuerpoParaEnviar(secBody ? secBody.value : ''), datos);
 };
+
+// El cuerpo tal y como va a salir: en EMAIL, sin el enlace repetido.
+function _secCuerpoParaEnviar(texto) {
+    const metodo = document.querySelector('input[name="sec-method"]:checked')?.value || 'email';
+    if (metodo !== 'email' || typeof window.secQuitarEnlaceRepetido !== 'function') return texto;
+    return window.secQuitarEnlaceRepetido(texto);
+}
+window._secCuerpoParaEnviar = _secCuerpoParaEnviar;
 
 // Restablecer el mensaje al predeterminado de fábrica
 // ⚠️ Restablece a FÁBRICA, no a lo guardado: es la salida de emergencia
@@ -582,8 +650,10 @@ window.saSendInviteEmail = async function() {
     // 🔑 SE ENVÍA LA PLANTILLA YA SUSTITUIDA, no las marcas: el servidor no
     // sabe nada de {nombre} y mandaría el correo con las llaves dentro.
     const datos   = _secDatosActuales();
+    // ✉️ v630 · Sin el enlace repetido: el HTML del correo ya pone el botón y
+    // la frase de respaldo (functions/index.js:1330). Ver secQuitarEnlaceRepetido.
     const body    = window.secRenderPlantilla(
-        document.getElementById('sec-body')?.value || '', datos).trim();
+        _secCuerpoParaEnviar(document.getElementById('sec-body')?.value || ''), datos).trim();
 
     if (!to) { _saToast('⚠️ El email de destino es obligatorio', 3000); return; }
 

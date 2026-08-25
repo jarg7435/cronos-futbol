@@ -2640,7 +2640,7 @@
 //          las ramas de director y coordinador que anadio v610/v611 se AVERIABAN
 //          en el simulador y nadie las probaba. 8 casos nuevos -> 46/46.
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v629';
+const CACHE_NAME = 'cronos-cache-v630';
 
 const ASSETS = [
     './',
@@ -2669,6 +2669,7 @@ const ASSETS = [
     './js/services/auth/role-launch.js',
     './js/services/auth-improvements.js',
     './js/services/auth/password.js',
+    './js/services/auth/invite-prefill.js',
     './js/services/firestore-sync.js',
     './js/services/firestore-storage.js',
     './js/services/offline-manager.js',
