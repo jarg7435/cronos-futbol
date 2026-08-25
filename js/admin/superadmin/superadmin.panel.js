@@ -227,6 +227,10 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     <button id="sa-tab-billing"     onclick="saTab('billing')"     style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">💳 Facturación</button>
     <button id="sa-tab-extras"      onclick="saTab('extras')"      style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">⚙️ Extras</button>
     <button id="sa-tab-messages"    onclick="saTab('messages')"    style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">✉️ Mensajes</button>
+    <!-- 🩺 v628 · Entrar en el panel de cualquier usuario para diagnosticar.
+         Va la ÚLTIMA a propósito: es la más delicada del panel y no debe
+         quedar pegada a "Clubes", que es donde se trabaja todos los días. -->
+    <button id="sa-tab-diagnostico" onclick="saTab('diagnostico')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🩺 Diagnóstico</button>
 </div>
 <div id="sa-body" style="flex:1;overflow-y:auto;padding:1.1rem;-webkit-overflow-scrolling:touch;"></div>`;
     document.body.appendChild(panel);
@@ -250,7 +254,7 @@ window.saTab = function saTab(tab) {
     // no recorre hacia atrás ocho clics de pestaña.
     if (typeof navScreen === 'function') navScreen('saTab', tab);
 
-    ['clubs','individuals','requests','secretary','trash','billing','extras','messages'].forEach(t => {
+    ['clubs','individuals','requests','secretary','trash','billing','extras','messages','diagnostico'].forEach(t => {
         const b = document.getElementById('sa-tab-'+t);
         if (!b) return;
         b.style.borderBottomColor = (t===tab)?'#58a6ff':'transparent';
@@ -264,6 +268,17 @@ window.saTab = function saTab(tab) {
     else if (tab==='billing')     saBilling();
     else if (tab==='extras')      saExtras();
     else if (tab==='messages')    saMessages();
+    // 🩺 v628 · js/admin/superadmin/diagnostico.js. Con guarda `typeof`
+    // como el resto: si el fichero no cargó, se dice POR QUE en vez de
+    // dejar la pestana muda (la doctrina de v598).
+    else if (tab==='diagnostico') {
+        if (typeof window.saDiagnostico === 'function') window.saDiagnostico();
+        else {
+            const _b = document.getElementById('sa-body');
+            if (_b) _b.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">'+
+                '⚠️ El modulo de Diagnostico no esta disponible. Recarga el panel.</div>';
+        }
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -298,7 +313,34 @@ window.saTab = function saTab(tab) {
 
 window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newStatus, clubId) {
     var stLabels = {active:'activar',blocked:'bloquear',removed:'dar de baja'};
-    if (!confirm('\u00bf' + (stLabels[newStatus]||newStatus) + ' a ' + email + '?')) return;
+    // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    //  \ud83d\udcdd v628 \u00b7 BLOQUEAR Y DAR DE BAJA EXIGEN MOTIVO
+    //
+    //  Encargo del autor: \u00abel sistema debe requerir o permitir justificar el
+    //  motivo de la baja, guardando un registro del motivo\u00bb. Se ha elegido
+    //  REQUERIRLO, no permitirlo: un motivo opcional no se escribe nunca, y
+    //  la baja es la \u00fanica acci\u00f3n irreversible del panel.
+    //
+    //  \u26a0\ufe0f REACTIVAR NO PIDE MOTIVO. Devolver el acceso a alguien no necesita
+    //  justificarse; quit\u00e1rselo, s\u00ed. Por eso el `confirm` de siempre se queda
+    //  para 'active' en vez de mandarlo todo por el mismo sitio.
+    //
+    //  El di\u00e1logo vive en js/admin/superadmin/diagnostico.js. Si ese fichero
+    //  no carg\u00f3 NO se sigue a ciegas: se avisa y se para. Dar de baja sin
+    //  registro es justo lo que se ha venido a evitar.
+    // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    var _motivo = null;
+    if (newStatus === 'blocked' || newStatus === 'removed') {
+        if (typeof window._saPedirMotivo !== 'function') {
+            alert('\u26a0\ufe0f El m\u00f3dulo de motivos no est\u00e1 cargado.\n\n' +
+                  'No se puede dar de baja ni bloquear sin dejar registro. Recarga el panel.');
+            return;
+        }
+        _motivo = await window._saPedirMotivo(email, newStatus);
+        if (!_motivo) return;                 // cancelado en el di\u00e1logo
+    } else if (!confirm('\u00bf' + (stLabels[newStatus]||newStatus) + ' a ' + email + '?')) {
+        return;
+    }
     _saShowSpinner('Procesando\u2026');
     // Detect active tab for correct refresh after operation
     var _activeTab = 'clubs';
@@ -310,6 +352,26 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
         const uData = uSnap.exists() ? uSnap.data() : {};
         const realUid = uData.uid || uid;
         const realEmail = uData.email || email;
+
+        // 📝 v628 · EL MOTIVO SE ESCRIBE ANTES DE TOCAR EL ESTADO.
+        //  El camino de la baja definitiva BORRA el documento del usuario
+        //  (`deleteDoc` más abajo). Registrar después sería registrar sobre algo
+        //  que ya no existe — por eso el motivo va también al documento del
+        //  propio SuperAdmin, que sobrevive a la baja (ver diagnostico.js).
+        //  ⚠️ Si el registro falla, NO se sigue: es preferible no ejecutar la
+        //  baja a ejecutarla sin dejar rastro de por qué.
+        if (_motivo) {
+            try {
+                await window._saRegistrarMotivo(
+                    { db: db, doc: doc, getDoc: getDoc, updateDoc: updateDoc },
+                    uid, realEmail, newStatus, clubId, _motivo, uData);
+            } catch (regErr) {
+                _saHideSpinner();
+                alert('⛔ No se ha podido guardar el motivo, así que la operación se cancela.\n\n' +
+                      (regErr && regErr.message ? regErr.message : regErr));
+                return;
+            }
+        }
         // FIX: Detect if this is an individual entity user for entity cleanup
         const _isIndividualUser = uData.role === 'individual' || uData.role === 'admin_individual'
             || uData.role === 'entrenador_individual' || uData.role === 'parent_individual'
