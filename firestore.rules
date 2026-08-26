@@ -460,11 +460,55 @@ service cloud.firestore {
       // permitidos deja intacto ese alta —que escribe isAuthorized:false y
       // status:'pending_individual'— y cierra la escalada igual.
       // La concesion real la sigue haciendo EXCLUSIVAMENTE el Admin SDK.
+      // ══════════════════════════════════════════════════════════════════
+      //  🔴🔴🔴 SEC-C1b (2026-08-25) · EL `role` TAMBIEN SE FIJA EN EL CREATE
+      //
+      //  Auditoria de seguridad con usuarios reales ya en produccion. SEC-C1
+      //  cerro `isAuthorized` y `status` fijando sus VALORES... y dejo `role`
+      //  libre. En `allow update` si esta prohibido (ver el hasAny de abajo);
+      //  en el create no habia nada.
+      //
+      //  🔑 POR SI SOLO NO CONCEDE NADA EN LAS REGLAS —isSuperAdmin() mira el
+      //  TOKEN, que solo escribe el Admin SDK—, pero la Cloud Function
+      //  `setCustomClaims` decide quien es SuperAdmin leyendo ESTE campo del
+      //  DOCUMENTO (functions/index.js:112, `callerData?.role`). La cadena
+      //  medida, sin usar siquiera la aplicacion:
+      //    1. alta con cualquier correo (el registro es publico);
+      //    2. setDoc de su PROPIO doc con role:'superadmin' (esto lo permitia);
+      //    3. llamada a setCustomClaims -> la funcion lee el doc, ve
+      //       'superadmin' y CONCEDE EL CLAIM DE VERDAD;
+      //    4. y su rama `if (role === 'superadmin')` le activa la cuenta.
+      //  Con el token refrescado, isSuperAdmin() pasa a ser cierto AQUI.
+      //
+      //  ⚠️ ES UNA LISTA NEGRA DE DOS VALORES, NO UNA LISTA BLANCA, Y A
+      //  PROPOSITO. Una lista blanca tendria que enumerar todos los roles que
+      //  un alta escribe legitimamente ('user', 'parent', 'director',
+      //  'coordinator', 'club_admin', 'individual', 'parent_individual',
+      //  'entrenador_individual', 'admin_individual'...) y olvidarse de UNO
+      //  dejaria sin registrarse a ese perfil, en produccion y en silencio.
+      //  Aqui solo se cierra lo que de verdad escala: 'superadmin' (la puerta
+      //  de setCustomClaims) y 'admin' (que `sendInviteEmail` trata como SA).
+      //
+      //  ⚠️ EL ALTA REAL DEL SUPERADMIN NO SE ROMPE: auth.js le pone
+      //  role:'superadmin' e isAuthorized:true, pero su correo esta en
+      //  cronos_config/superadmins, asi que entra por la PRIMERA rama
+      //  (isSuperAdmin()) y ni siquiera llega a esta comprobacion.
+      //
+      //  ⚠️ LO QUE ESTO NO ARREGLA: `sendInviteEmail` y `registerStaffUid`
+      //  siguen fiandose del `role` del documento sin exigir isAuthorized, asi
+      //  que un doc auto-creado con role:'director' todavia les vale. No es
+      //  escalada de datos (las reglas exigen isAuthorized+status para
+      //  isClubDirectorOf), pero hay que cerrarlo en el lado de las functions.
+      //
+      //  Cubierto por scripts/test_sec_role_escalation.js, que ejecuta los
+      //  MISMOS casos contra las reglas SIN el parche y CON el parche.
+      // ══════════════════════════════════════════════════════════════════
       allow create: if isAuth() && (
         isSuperAdmin() ||
         (request.auth.uid == userId
          && request.resource.data.get('isAuthorized', false) == false
-         && request.resource.data.get('status', '') != 'active')
+         && request.resource.data.get('status', '') != 'active'
+         && !(request.resource.data.get('role', '') in ['superadmin', 'admin']))
       );
       // FIX (multi-rol): se permite que el usuario actualice su propio
       // 'allRoles' para AÑADIR roles PENDIENTES (necesario para el flujo
@@ -1241,7 +1285,15 @@ service cloud.firestore {
         isSuperAdmin() ||
         request.auth.uid == resource.data.get('userId', null)
       );
-      allow create: if isAuth();
+      // 🔴 SEC-M01 (auditoria 2026-08-25) · antes: `if isAuth()`. Cualquiera
+      // podia dejar constancia de una baja que no habia hecho, apuntando a
+      // quien quisiera: contamina el unico rastro que queda de una accion
+      // irreversible.
+      // 🔑 `requestedBy` YA lo escribe el unico creador real
+      // (js/admin/club/panel.js:2648, `requestedBy: me.uid`), asi que atarlo
+      // al remitente no cambia una sola linea del cliente.
+      allow create: if isAuth() &&
+                       request.resource.data.get('requestedBy', null) == request.auth.uid;
       allow update: if isSuperAdmin();
       allow delete: if isSuperAdmin();
     }
@@ -1284,7 +1336,47 @@ service cloud.firestore {
     // legítimo y elimina la fuga de datos.
     // ============================================================
     match /live_matches/{matchId} {
-      allow read: if isRegisteredUser();
+      // ══════════════════════════════════════════════════════════════
+      //  🔴🔴 SEC-A2 (auditoria 2026-08-25) · ACOTADO AL CLUB
+      //
+      //  Antes: `allow read: if isRegisteredUser()`, que es CUALQUIER usuario
+      //  autenticado con isAuthorized:true — sin mirar su club. O sea que un
+      //  padre de un club leia los partidos en vivo de TODOS los demas: alias
+      //  de menores, dorsales, correo del entrenador, goles, tarjetas y
+      //  LESIONES. El propio comentario de v-anterior enumera esa PII.
+      //
+      //  🔑 Y ERAN ENUMERABLES: `live_index` tenia la misma regla y ES la
+      //  lista, asi que se sacaban todos los matchId de todos los clubes y con
+      //  ellos se leian los documentos gordos. No habia que adivinar nada.
+      //
+      //  El arreglo anterior cerro "cualquiera en Internet". No cerro
+      //  "cualquier usuario de OTRO club", que es el aislamiento por entidad
+      //  que promete privacy.html.
+      //
+      //  ⚠️ LAS TRES RAMAS SON LAS TRES CONSULTAS QUE YA HACE EL VISOR desde
+      //  v431/v433 (`clubId`, `createdBy`, `coachEmail`, fusionadas por id).
+      //  Si se quita una, la lista de Partidos en Vivo se queda a medias: en
+      //  Firestore una consulta se DENIEGA ENTERA si la regla no puede
+      //  demostrar que todo lo que devuelve es legible.
+      //
+      //  ⚠️ SE USA `.get(campo, null)` Y NO EL ACCESO DIRECTO, y esto se
+      //  MIDIO en vez de suponerlo. La primera version escribio
+      //  `resource.data.clubId` creyendo que el analizador de consultas de
+      //  Firestore solo reconoce el acceso directo para casar la regla con los
+      //  `where`. Es FALSO: desplegadas las dos formas y lanzadas las consultas
+      //  reales contra produccion con el token de un usuario normal, las seis
+      //  comprobaciones dan lo mismo. Asi que manda el invariante de v438
+      //  —nunca acceso directo, porque una clave ausente LANZA— que ademas
+      //  fija el guard scripts/test_rules_no_direct_access.js.
+      // ══════════════════════════════════════════════════════════════
+      allow read: if isRegisteredUser() && (
+        isSuperAdmin() ||
+        sameClub(resource.data.get('clubId', null)) ||
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        userDocClubId(resource.data.get('clubId', null)) ||
+        resource.data.get('createdBy', null) == request.auth.uid ||
+        (('email' in request.auth.token) && resource.data.get('coachEmail', null) == request.auth.token.email)
+      );
 
       // ══════════════════════════════════════════════════════════════
       // v434 · INMUTABILIDAD DEL PARTIDO TERMINADO
@@ -1495,7 +1587,47 @@ service cloud.firestore {
     // Lo que SI se replica es el candado de congelado, para que un partido
     // terminado no se pueda hacer parecer que sigue en juego en la lista.
     match /live_index/{matchId} {
-      allow read: if isRegisteredUser();
+      // ══════════════════════════════════════════════════════════════
+      //  🔴🔴 SEC-A2 (auditoria 2026-08-25) · ACOTADO AL CLUB
+      //
+      //  Antes: `allow read: if isRegisteredUser()`, que es CUALQUIER usuario
+      //  autenticado con isAuthorized:true — sin mirar su club. O sea que un
+      //  padre de un club leia los partidos en vivo de TODOS los demas: alias
+      //  de menores, dorsales, correo del entrenador, goles, tarjetas y
+      //  LESIONES. El propio comentario de v-anterior enumera esa PII.
+      //
+      //  🔑 Y ERAN ENUMERABLES: `live_index` tenia la misma regla y ES la
+      //  lista, asi que se sacaban todos los matchId de todos los clubes y con
+      //  ellos se leian los documentos gordos. No habia que adivinar nada.
+      //
+      //  El arreglo anterior cerro "cualquiera en Internet". No cerro
+      //  "cualquier usuario de OTRO club", que es el aislamiento por entidad
+      //  que promete privacy.html.
+      //
+      //  ⚠️ LAS TRES RAMAS SON LAS TRES CONSULTAS QUE YA HACE EL VISOR desde
+      //  v431/v433 (`clubId`, `createdBy`, `coachEmail`, fusionadas por id).
+      //  Si se quita una, la lista de Partidos en Vivo se queda a medias: en
+      //  Firestore una consulta se DENIEGA ENTERA si la regla no puede
+      //  demostrar que todo lo que devuelve es legible.
+      //
+      //  ⚠️ SE USA `.get(campo, null)` Y NO EL ACCESO DIRECTO, y esto se
+      //  MIDIO en vez de suponerlo. La primera version escribio
+      //  `resource.data.clubId` creyendo que el analizador de consultas de
+      //  Firestore solo reconoce el acceso directo para casar la regla con los
+      //  `where`. Es FALSO: desplegadas las dos formas y lanzadas las consultas
+      //  reales contra produccion con el token de un usuario normal, las seis
+      //  comprobaciones dan lo mismo. Asi que manda el invariante de v438
+      //  —nunca acceso directo, porque una clave ausente LANZA— que ademas
+      //  fija el guard scripts/test_rules_no_direct_access.js.
+      // ══════════════════════════════════════════════════════════════
+      allow read: if isRegisteredUser() && (
+        isSuperAdmin() ||
+        sameClub(resource.data.get('clubId', null)) ||
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        userDocClubId(resource.data.get('clubId', null)) ||
+        resource.data.get('createdBy', null) == request.auth.uid ||
+        (('email' in request.auth.token) && resource.data.get('coachEmail', null) == request.auth.token.email)
+      );
 
       // Mismo criterio de "cuando esta cerrado" que live_matches, sobre los
       // campos que el indice si copia (status/finishedAt/updatedAt).
@@ -1573,6 +1705,29 @@ service cloud.firestore {
       allow read, write: if isAuth() && request.auth.uid == userId;
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 SEC-A1a (auditoria 2026-08-25) · LOS REGISTROS PRIVADOS DEL SA
+    //
+    //  La v628 guardo `saBajasLog` (bajas con su MOTIVO) y `saDiagnosticoLog`
+    //  (cada acceso al panel de otro usuario) dentro de `users/{saUid}`. Y ese
+    //  documento lo lee CUALQUIER usuario autenticado (`users` tiene
+    //  `read: if isAuth()`), asi que el motivo por el que se dio de baja a una
+    //  persona —"impago de cuotas"— era legible por todo el mundo. Dato
+    //  personal de un tercero, y en contra de lo que promete privacy.html.
+    //
+    //  🔑 SE MUEVE EL DATO A UNA SUBCOLECCION CON DUENYO, en vez de esperar a
+    //  poder acotar la lectura de `users` entera —que toca muchas pantallas y
+    //  es un cambio de radio grande—. Misma forma que `cronos_data`, que ya
+    //  resuelve exactamente este problema desde hace tiempo.
+    //
+    //  ⚠️ SIN ESTA REGLA la subcoleccion caeria en el catch-all del final
+    //  (`allow read, write: if false`) y el registro dejaria de escribirse:
+    //  el modo diagnostico se NIEGA a entrar si no puede registrar el acceso.
+    // ══════════════════════════════════════════════════════════════════
+    match /users/{userId}/sa_privado/{docId} {
+      allow read, write: if isAuth() && request.auth.uid == userId;
+    }
+
     // ============================================================
     // COLECCIÓN: offline_events
     // SEC-007: Validate userUid on create
@@ -1591,8 +1746,30 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴 SEC-M02 (auditoria 2026-08-25) · LA REGLA DE ABAJO NO HACIA NADA
+    //
+    //  SEC-012 anadio `match /cronos_config/superadmins` con `read: if
+    //  isSuperAdmin()` creyendo que ACOTABA el documento. No lo acotaba: en
+    //  Firestore las reglas SE SUMAN, y una coincidencia mas especifica NO
+    //  anula a la general. Con el comodin de aqui diciendo `read: if isAuth()`,
+    //  CUALQUIER usuario autenticado seguia leyendo la lista de correos del
+    //  SuperAdmin — que es la raiz de confianza de isSuperAdminEmail().
+    //
+    //  🔑 SE ARREGLA EN EL COMODIN, que es donde estaba el agujero: se le
+    //  excluye ese id. La regla especifica de abajo pasa a ser la unica via.
+    //
+    //  ⚠️ NO SE PUEDE CERRAR `cronos_config` ENTERO: `cronos_config/access`
+    //  guarda el codigo de acceso y lo lee app-init.js con cualquier sesion.
+    //
+    //  ⚠️ Y NO ROMPE AL PROPIO SUPERADMIN. `loadSuperAdminEmails` (auth.js:570)
+    //  ya trata `permission-denied` como el caso normal de antes del login, y
+    //  el SuperAdmin autenticado pasa por su claim. Ademas `isSuperAdminEmail()`
+    //  lee el documento con `get()` DESDE LAS REGLAS, que no depende del
+    //  permiso de lectura del cliente: la autorizacion del SA sigue intacta.
+    // ══════════════════════════════════════════════════════════════════
     match /cronos_config/{configId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && configId != 'superadmins';
       allow write: if isSuperAdmin();
     }
 
@@ -1638,7 +1815,16 @@ service cloud.firestore {
         request.auth.uid == resource.data.get('userId', null) ||
         sameClubAsDoc(resource.data.get('clubId', null))
       );
-      allow create: if isAuth();
+      // 🔴 SEC-M01 (auditoria 2026-08-25) · antes: `if isAuth()` SIN VALIDAR
+      // NADA. Cualquier usuario podia crear un aviso con `userId` y `clubId`
+      // arbitrarios: avisos falsos entregados dentro de la app a quien
+      // quisiera, con la marca del producto detras.
+      // 🔑 Y NO ROMPE NADA: esta coleccion NO la escribe el cliente en ningun
+      // sitio — medido con grep sobre todo js/, cero escrituras. La llena el
+      // trigger `syncUserChanges` (functions/index.js) con el Admin SDK, que
+      // NO pasa por las reglas. Se deja al SuperAdmin por si algun dia hace
+      // falta una via manual, en vez de cerrarla del todo.
+      allow create: if isSuperAdmin();
       allow update: if isAuth() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.get('userId', null)
@@ -1655,7 +1841,19 @@ service cloud.firestore {
         request.auth.uid == resource.data.get('userId', null) ||
         sameClubAsDoc(resource.data.get('clubId', null))
       );
-      allow create: if isAuth();
+      // 🔴 SEC-M01 (auditoria 2026-08-25) · antes: `if isAuth()`. Cualquiera
+      // podia pedir plazas A NOMBRE DE OTRO CLUB, y la solicitud aparecia en
+      // el panel del SuperAdmin como legitima.
+      // 🔑 Ahora el clubId de la solicitud tiene que ser el SUYO. Se usan los
+      // mismos predicados que el resto del fichero, asi que el flujo real
+      // (js/services/user-management.js, que lee `clubs/{clubId}` antes de
+      // escribir) sigue pasando: quien pide plazas pertenece a ese club.
+      allow create: if isAuth() && (
+        isSuperAdmin() ||
+        sameClub(request.resource.data.get('clubId', null)) ||
+        sameClubAsDoc(request.resource.data.get('clubId', null)) ||
+        userDocClubId(request.resource.data.get('clubId', null))
+      );
       allow update: if isAuth() && (
         isSuperAdmin() ||
         sameClubAsDoc(resource.data.get('clubId', null))

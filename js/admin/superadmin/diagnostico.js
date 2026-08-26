@@ -68,13 +68,20 @@
 //
 //   · El MOTIVO va al documento del usuario (`statusReason`, `statusReasonCode`,
 //     `statusChangedBy/At`, `statusHistory[]`).
-//   · Y TAMBIÉN al documento del PROPIO SUPERADMIN (`saBajasLog[]`), porque la
-//     baja definitiva BORRA el documento del usuario (`deleteDoc` en el camino
-//     B de saSetClubUserStatus): sin esta segunda copia, el motivo de la única
+//   · Y TAMBIÉN al registro PRIVADO del SuperAdmin —
+//     `users/{saUid}/sa_privado/bajas`— porque la baja definitiva BORRA el
+//     documento del usuario (`deleteDoc` en el camino B de
+//     saSetClubUserStatus): sin esta segunda copia, el motivo de la única
 //     acción irreversible se perdería con ella.
-//   · Los ACCESOS de diagnóstico van a `saDiagnosticoLog[]`, también en el
-//     documento del SA, y se escriben ANTES de armar el bloqueo de escritura
-//     (después ya no se podría escribir nada).
+//   · Los ACCESOS de diagnóstico van a `users/{saUid}/sa_privado/diagnostico`,
+//     y se escriben ANTES de armar el bloqueo de escritura (después ya no se
+//     podría escribir nada).
+//
+//   🔒 v631 · LOS DOS ESTABAN EN LA RAÍZ DEL DOCUMENTO DEL SA Y SE MOVIERON.
+//   La regla de `users` es `allow read: if isAuth()`, así que el motivo de una
+//   baja —«impago de cuotas»— y la lista de accesos de diagnóstico los leía
+//   CUALQUIER usuario con una cuenta. Lo destapó la auditoría del 2026-08-25;
+//   lo había introducido esta misma v628. Ver _saRegistroAnadir.
 //
 //  🔑 NO se usa `audit_logs`: su regla es `allow write: if false` —sólo el
 //  Admin SDK escribe ahí— y cualquier colección NUEVA caería en el catch-all
@@ -108,9 +115,67 @@
         throw new Error('Firebase no inicializado. Recarga la página.');
     }
 
-    // Tope del registro guardado en el documento del SA. Un array sin tope
-    // acabaría engordando un documento que se lee en cada arranque suyo.
+    // Tope del registro. Un array sin tope acabaría engordando un documento
+    // que se lee a menudo.
     var DIAG_TOPE_REGISTRO = 200;
+
+    // ════════════════════════════════════════════════════════════════
+    //  🔒 SEC-A1a (auditoría 2026-08-25) · EL REGISTRO SE SACA DE `users`
+    //
+    //  La v628 guardaba `saBajasLog` y `saDiagnosticoLog` DENTRO de
+    //  `users/{saUid}`… y ese documento lo lee **cualquier usuario
+    //  autenticado**: la regla de `users` es `allow read: if isAuth()`. O sea
+    //  que el motivo por el que se dio de baja a una persona —«impago de
+    //  cuotas»— y la lista de todos los accesos de diagnóstico eran públicos
+    //  para cualquiera con una cuenta. Dato personal de un tercero, y justo lo
+    //  contrario de lo que promete privacy.html.
+    //
+    //  🔑 SE MUEVE EL DATO, en vez de esperar a poder acotar la lectura de
+    //  `users` entera —que toca muchas pantallas—. La subcolección
+    //  `users/{uid}/sa_privado/{doc}` tiene regla propia
+    //  (`request.auth.uid == userId`), la misma forma que `cronos_data`.
+    //
+    //  ⚠️ Y SE MIGRA LO YA ESCRITO. Dejar los arrays viejos en la raíz
+    //  mantendría la fuga abierta para siempre: se copian, se escriben en su
+    //  sitio nuevo y se BORRA el campo de la raíz con `deleteField`. Es
+    //  idempotente: la segunda vez no hay nada que migrar.
+    //
+    //  ⚠️ SI ALGO DE ESTO FALLA, PROPAGA. Quien llama decide, y los dos que
+    //  llaman ya tratan el fallo como motivo para NO seguir: una baja sin
+    //  registro se cancela, y el modo diagnóstico se niega a entrar.
+    // ════════════════════════════════════════════════════════════════
+    var DIAG_DOCS = { bajas: 'bajas', diagnostico: 'diagnostico' };
+    var DIAG_CAMPO_VIEJO = { bajas: 'saBajasLog', diagnostico: 'saDiagnosticoLog' };
+
+    async function _saRegistroAnadir(fsh, uid, tipo, entrada) {
+        var docId  = DIAG_DOCS[tipo];
+        var campoV = DIAG_CAMPO_VIEJO[tipo];
+        var ref    = fsh.doc(fsh.db, 'users', uid, 'sa_privado', docId);
+
+        var snap = await fsh.getDoc(ref);
+        var lista = (snap.exists() && Array.isArray((snap.data() || {}).entradas))
+            ? (snap.data() || {}).entradas.slice() : [];
+
+        // ── Migración de lo que escribió la v628 en la raíz ──────────
+        var raizSnap = await fsh.getDoc(fsh.doc(fsh.db, 'users', uid));
+        var raiz = raizSnap.exists() ? (raizSnap.data() || {}) : {};
+        var viejo = Array.isArray(raiz[campoV]) ? raiz[campoV] : null;
+        if (viejo && viejo.length) lista = viejo.concat(lista);
+
+        lista.push(entrada);
+        if (lista.length > DIAG_TOPE_REGISTRO) lista = lista.slice(lista.length - DIAG_TOPE_REGISTRO);
+
+        await fsh.setDoc(ref, { v: 1, entradas: lista, actualizado: new Date().toISOString() },
+                         { merge: false });
+
+        // Y se retira el campo de la raíz, que es lo que cerraba la fuga.
+        if (viejo && typeof fsh.deleteField === 'function') {
+            var borrado = {};
+            borrado[campoV] = fsh.deleteField();
+            await fsh.updateDoc(fsh.doc(fsh.db, 'users', uid), borrado);
+        }
+        return lista.length;
+    }
 
     // ════════════════════════════════════════════════════════════════
     //  PARTE 1 · EL MOTIVO DE LA BAJA
@@ -247,17 +312,14 @@
             statusHistory:    historia,
         });
 
-        // 2) En el documento del SuperAdmin (sobrevive A TODO).
+        // 2) En el registro PRIVADO del SuperAdmin (sobrevive A TODO).
+        //    🔒 v631 · `users/{saUid}/sa_privado/bajas`, no la raíz de su
+        //    documento: aquélla la lee cualquier usuario. Ver _saRegistroAnadir.
         if (me.uid) {
-            var mySnap = await fsh.getDoc(fsh.doc(fsh.db, 'users', me.uid));
-            var myData = mySnap.exists() ? (mySnap.data() || {}) : {};
-            var log = Array.isArray(myData.saBajasLog) ? myData.saBajasLog.slice() : [];
-            log.push({
+            await _saRegistroAnadir(fsh, me.uid, 'bajas', {
                 uid: uid, email: email || '', clubId: clubId || '',
                 status: newStatus, code: motivo.code, motivo: motivo.texto, at: ahora,
             });
-            if (log.length > DIAG_TOPE_REGISTRO) log = log.slice(log.length - DIAG_TOPE_REGISTRO);
-            await fsh.updateDoc(fsh.doc(fsh.db, 'users', me.uid), { saBajasLog: log });
         }
     };
 
@@ -724,15 +786,12 @@
         // entra: un acceso a los datos de otra persona sin dejar rastro es
         // exactamente lo que no puede pasar.
         try {
-            var mySnap = await fsh.getDoc(fsh.doc(fsh.db, 'users', meReal.uid));
-            var myData = mySnap.exists() ? (mySnap.data() || {}) : {};
-            var log = Array.isArray(myData.saDiagnosticoLog) ? myData.saDiagnosticoLog.slice() : [];
-            log.push({
+            // 🔒 v631 · en `users/{saUid}/sa_privado/diagnostico`, no en la raíz
+            //    de su documento: aquélla la lee cualquier usuario autenticado.
+            await _saRegistroAnadir(fsh, meReal.uid, 'diagnostico', {
                 uid: uid, email: uData.email || '', rol: rol,
                 clubId: clubId || uData.clubId || '', at: new Date().toISOString(),
             });
-            if (log.length > DIAG_TOPE_REGISTRO) log = log.slice(log.length - DIAG_TOPE_REGISTRO);
-            await fsh.updateDoc(fsh.doc(fsh.db, 'users', meReal.uid), { saDiagnosticoLog: log });
         } catch (e) {
             _dToast('⛔ No se pudo registrar el acceso, así que no se entra: ' +
                     (e && e.message ? e.message : e), 6000);

@@ -44,26 +44,42 @@ ok('2a · functions/index.js contiene _callerHasClubPermission', fnContent.inclu
 // Ejecutar _callerHasClubPermission en sandbox VM
 const sandbox = { exports: {} };
 vm.createContext(sandbox);
+// ⚠️ SEC-C1c (2026-08-26): _callerHasClubPermission ya no decide sola sobre el
+// rol de SuperAdmin —ese llega YA RESUELTO desde el token, en su tercer
+// argumento— y exige cuenta habilitada, asi que hay que llevarse tambien
+// _cuentaHabilitada al sandbox o la funcion revienta con ReferenceError.
 const codeToRun = `
+${fnContent.match(/function _cuentaHabilitada[\s\S]*?^\}/m)[0]}
 ${fnContent.match(/function _callerHasClubPermission[\s\S]*?^\}/m)[0]}
 `;
 vm.runInContext(codeToRun, sandbox);
 
 const callerHasPerm = sandbox._callerHasClubPermission;
 
-ok('2b · _callerHasClubPermission autoriza a superadmin', callerHasPerm({ exists: true, data: () => ({ role: 'superadmin' }) }, 'CLUB1') === true);
-ok('2c · _callerHasClubPermission autoriza a director del mismo club', callerHasPerm({ exists: true, data: () => ({ role: 'director', clubId: 'CLUB1' }) }, 'CLUB1') === true);
-ok('2d · _callerHasClubPermission autoriza a coordinator del mismo club', callerHasPerm({ exists: true, data: () => ({ role: 'coordinator', clubId: 'CLUB1' }) }, 'CLUB1') === true);
-ok('2e · _callerHasClubPermission autoriza a club_admin del mismo club', callerHasPerm({ exists: true, data: () => ({ role: 'club_admin', clubId: 'CLUB1' }) }, 'CLUB1') === true);
-ok('2f · _callerHasClubPermission rechaza rol en club distinto', callerHasPerm({ exists: true, data: () => ({ role: 'director', clubId: 'CLUB_OTRO' }) }, 'CLUB1') === false);
+// El staff de verdad: cuenta habilitada. Es lo que distingue a un director
+// real de una cuenta recien creada que se declara director.
+const vivo = (d) => ({ exists: true, data: () => Object.assign({ isAuthorized: true, status: 'active' }, d) });
+
+ok('2b · _callerHasClubPermission autoriza al superadmin (resuelto por token)', callerHasPerm(vivo({}), 'CLUB1', true) === true);
+ok('2c · _callerHasClubPermission autoriza a director del mismo club', callerHasPerm(vivo({ role: 'director', clubId: 'CLUB1' }), 'CLUB1', false) === true);
+ok('2d · _callerHasClubPermission autoriza a coordinator del mismo club', callerHasPerm(vivo({ role: 'coordinator', clubId: 'CLUB1' }), 'CLUB1', false) === true);
+ok('2e · _callerHasClubPermission autoriza a club_admin del mismo club', callerHasPerm(vivo({ role: 'club_admin', clubId: 'CLUB1' }), 'CLUB1', false) === true);
+ok('2f · _callerHasClubPermission rechaza rol en club distinto', callerHasPerm(vivo({ role: 'director', clubId: 'CLUB_OTRO' }), 'CLUB1', false) === false);
+// 🛡️ SEC-C1c · el caso que abria la puerta: documento AUTO-CREADO, sin aprobar.
+ok('2f2 · 🔴 rechaza una cuenta SIN HABILITAR que se declara club_admin del club',
+   callerHasPerm({ exists: true, data: () => ({ role: 'club_admin', clubId: 'CLUB1', isAuthorized: false, status: 'pending' }) }, 'CLUB1', false) === false);
+ok('2f3 · 🔴 y ya no basta con poner role:"superadmin" en el propio documento',
+   callerHasPerm({ exists: true, data: () => ({ role: 'superadmin' }) }, 'CLUB1', false) === false);
 ok('2g · _callerHasClubPermission evalúa allRoles para director/coordinador secundario', callerHasPerm({
     exists: true,
     data: () => ({
         role: 'coach',
         clubId: 'CLUB1',
+        // 🛡️ SEC-C1c: el documento del LLAMANTE tiene que estar habilitado.
+        isAuthorized: true, status: 'active',
         allRoles: [{ role: 'coordinator', clubId: 'CLUB1', status: 'active', isAuthorized: true }]
     })
-}, 'CLUB1') === true);
+}, 'CLUB1', false) === true);
 
 // 2h-2l · EL PUNTO CIEGO: club del objetivo SIN RESOLVER.
 //
@@ -85,8 +101,14 @@ ok('2k · rechaza allRoles sin clubId frente a un objetivo con club',
        role: 'coach',
        allRoles: [{ role: 'coordinator', status: 'active', isAuthorized: true }]
    }) }, 'CLUB1') === false);
+// ⚠️ ACTUALIZADA (SEC-C1c): el rol de SuperAdmin ya NO se deduce del
+// documento —lo escribia el propio usuario— sino que llega resuelto desde el
+// TOKEN en el tercer argumento. La intencion de 2l no cambia: con el club sin
+// resolver, el SuperAdmin sigue pasando y nadie mas.
 ok('2l · el superadmin sigue pasando aunque no haya club resuelto',
-   callerHasPerm({ exists: true, data: () => ({ role: 'superadmin' }) }, null) === true);
+   callerHasPerm({ exists: true, data: () => ({}) }, null, true) === true);
+ok('2l2 · 🔴 pero declararse superadmin en el propio documento ya no vale',
+   callerHasPerm({ exists: true, data: () => ({ role: 'superadmin' }) }, null, false) === false);
 
 // 2m · Y que la autorización no se alimente de lo que manda el cliente.
 ok('2m · deleteAuthUser no autoriza con el clubId enviado por el cliente',

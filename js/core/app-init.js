@@ -968,16 +968,43 @@ async function showFinishedMatches() {
 
         const finishedMap = new Map();
 
-        // 1. Cargar desde live_matches
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 SEC-A2 (auditoria 2026-08-25) · SE PREGUNTA POR LO PROPIO
+        //
+        //  Antes se descargaba la coleccion ENTERA y el filtro `isMyMatch` se
+        //  aplicaba en el navegador: para ver los partidos de uno se traian
+        //  los de todos los clubes, con alias de menores y lesiones dentro.
+        //
+        //  🔑 Son las MISMAS TRES CONDICIONES que ya usaba el filtro local
+        //  (club propio, creador, correo del entrenador), ahora como consultas.
+        //  Firestore no tiene OR entre campos distintos, asi que van tres
+        //  consultas fusionadas por id — el mismo patron que live.html desde
+        //  v431/v433, y las mismas tres ramas que admite la regla SEC-A2.
+        //  Sin este filtro la consulta se DENIEGA entera.
+        // ══════════════════════════════════════════════════════════════
         try {
-            const snapLive = await getDocs(collection(_db, 'live_matches'));
-            snapLive.forEach(d => {
-                const data = d.data() || {};
-                const isMyMatch = !me || data.createdBy === me.uid || data.coachEmail === me.email || (!clubId || data.clubId === clubId);
-                if (isMyMatch && (data.status === 'finished' || data.phase === 'finished' || data.matchPhase === 'finished')) {
-                    finishedMap.set(d.id, { id: d.id, source: 'live_matches', ...data });
-                }
-            });
+            const { query, where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const condiciones = [];
+            if (clubId)     condiciones.push(where('clubId', '==', clubId));
+            if (me?.uid)    condiciones.push(where('createdBy', '==', me.uid));
+            if (me?.email)  condiciones.push(where('coachEmail', '==', me.email));
+
+            const vistos = new Set();
+            for (const cond of condiciones) {
+                // ⚠️ Una consulta que falle NO puede tumbar a las otras dos: si
+                // falta un indice compuesto o el campo no existe, se sigue.
+                try {
+                    const snap = await getDocs(query(collection(_db, 'live_matches'), cond));
+                    snap.forEach(d => {
+                        if (vistos.has(d.id)) return;
+                        vistos.add(d.id);
+                        const data = d.data() || {};
+                        if (data.status === 'finished' || data.phase === 'finished' || data.matchPhase === 'finished') {
+                            finishedMap.set(d.id, { id: d.id, source: 'live_matches', ...data });
+                        }
+                    });
+                } catch (eC) { console.warn('Error live_matches (una condicion):', eC && eC.message); }
+            }
         } catch(e1) { console.warn('Error live_matches:', e1); }
 
         // 2. Cargar desde cronos_player_reports

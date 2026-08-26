@@ -237,13 +237,31 @@ console.log('\n3) 📝 El motivo es OBLIGATORIO y queda registrado');
     ok('3g · ⚠️ y si el registro falla, la operación se CANCELA',
        /catch \(regErr\) \{[\s\S]{0,300}?la operación se cancela[\s\S]{0,120}?return;/.test(SAP));
 
-    ok('3h · 🔑🔑 el motivo va también al documento del SUPERADMIN…',
-       /saBajasLog/.test(DIAG));
+    ok('3h · 🔑🔑 el motivo va también a un registro propio del SUPERADMIN…',
+       /_saRegistroAnadir\(fsh, me\.uid, 'bajas'/.test(DIAG));
     ok('3i · …porque la baja borra el del usuario y se lo llevaría con ella',
        /sobrevive A TODO|deleteDoc.*camino B|la baja definitiva BORRA el documento/i.test(DIAG));
 
-    ok('3j · ⚠️ el registro tiene tope (un array sin tope engorda el documento)',
-       /DIAG_TOPE_REGISTRO/.test(DIAG) && /log\.slice\(log\.length - DIAG_TOPE_REGISTRO\)/.test(DIAG));
+    // ⚠️ ACTUALIZADA EN LA v631 por la auditoría de seguridad. La v628 lo
+    // guardaba en la RAÍZ de `users/{saUid}`… que lee cualquier usuario
+    // autenticado (`users` tiene `read: if isAuth()`). O sea que el motivo de
+    // una baja —"impago de cuotas"— era público para todo el que tuviera
+    // cuenta. Ahora vive en `users/{uid}/sa_privado/{doc}`, con regla propia.
+    // La intención de 3h no cambia: el motivo sobrevive a la baja.
+    ok('3j · 🔴🔴 v631 · el registro YA NO está en la raíz del documento del SA',
+       !/updateDoc\([^)]*'users', (me|meReal)\.uid\)[\s\S]{0,80}?(saBajasLog|saDiagnosticoLog):/.test(DIAG),
+       'ahí lo leía cualquiera con una cuenta');
+    ok('3k · 🔑 sino en la subcolección privada `sa_privado`',
+       /'sa_privado', docId\)/.test(DIAG) &&
+       /match \/users\/\{userId\}\/sa_privado\/\{docId\}/.test(RULES),
+       'y con su regla, o caería en el catch-all y dejaría de escribirse');
+    ok('3l · ⚠️ y lo ya escrito en la raíz se MIGRA y se borra de allí',
+       /DIAG_CAMPO_VIEJO/.test(DIAG) && /deleteField\(\)/.test(DIAG),
+       'dejarlo mantendría la fuga abierta para siempre');
+
+    ok('3m · ⚠️ el registro tiene tope (un array sin tope engorda el documento)',
+       /DIAG_TOPE_REGISTRO/.test(DIAG) &&
+       /lista\.slice\(lista\.length - DIAG_TOPE_REGISTRO\)/.test(DIAG));
 }
 
 // ════════════════════════════════════════════════════════════════════

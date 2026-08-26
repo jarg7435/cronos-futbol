@@ -67,17 +67,77 @@ function _stripSensitiveFields(player) {
 // 🔑 La comparación es OBLIGATORIA: sin club resuelto no hay autorización.
 //    El superadmin ya ha salido antes; para todos los demás, "no sé de qué
 //    club es" tiene que significar NO, nunca SÍ.
-function _callerHasClubPermission(callerDoc, targetClubId) {
+/* ====================================================================== */
+/* 🛡️ SEC-C1c (auditoria 2026-08-26) · LA IDENTIDAD SE LEE DEL TOKEN,     */
+/*    NUNCA DEL DOCUMENTO                                                 */
+/*                                                                        */
+/* EL DEFECTO, y estaba repetido en CINCO funciones: todas decidian si    */
+/* quien llamaba era SuperAdmin —o administrador de un club— leyendo      */
+/* `users/{callerUid}.role`. Y ese documento LO ESCRIBE EL PROPIO USUARIO:*/
+/* la regla `allow create` de users deja crear el tuyo con los campos que */
+/* quieras salvo isAuthorized/status (y, desde SEC-C1b, salvo el `role`   */
+/* 'superadmin'/'admin'). El `clubId` del alta lo elige el propio usuario   */
+/* del desplegable, asi que no se restringe — pero YA NO CONCEDE NADA por   */
+/* si solo: los predicados que lo leen (userDocClubId, isClubDirectorOf,    */
+/* isClubCoordinatorOf) exigen isAuthorized:true, y desde aqui abajo        */
+/* tambien lo exige _cuentaHabilitada.                                      */
+/*                                                                        */
+/* O sea que una cuenta recien registrada podia declararse                */
+/* `role:'club_admin', clubId:'<club ajeno>'` y con eso pasar             */
+/* _callerHasClubPermission -> BORRAR cuentas de Auth de ese club         */
+/* (deleteAuthUser) o archivar a sus entrenadores.                        */
+/*                                                                        */
+/* 🔑 EL TOKEN NO SE PUEDE FALSIFICAR. Los custom claims solo los escribe */
+/* el Admin SDK, asi que `context.auth.token.role` es la unica fuente     */
+/* fiable. Como respaldo se admite el correo en cronos_config/superadmins,*/
+/* que es la misma lista que consultan las reglas (isSuperAdminEmail) y   */
+/* que tambien escribe solo un SuperAdmin.                                */
+/*                                                                        */
+/* ⚠️ Y PARA LO QUE SIGUE LEYENDOSE DEL DOCUMENTO —el club de un director,*/
+/* que no viaja en el token— se exige ademas CUENTA HABILITADA. Un        */
+/* documento recien creado nace con isAuthorized:false, asi que deja de   */
+/* servir para nada.                                                      */
+/* ====================================================================== */
+async function _esSuperAdmin(context) {
+  if (!context || !context.auth) return false;
+  const tk = context.auth.token || {};
+  if (tk.role === 'superadmin') return true;          // claim: no falsificable
+  const email = tk.email;
+  if (!email) return false;
+  try {
+    const snap = await admin.firestore().doc('cronos_config/superadmins').get();
+    const emails = (snap.exists && Array.isArray(snap.data().emails)) ? snap.data().emails : [];
+    return emails.includes(email);
+  } catch (e) {
+    // ⚠️ FALLA HACIA EL "NO". Aqui un error de lectura no puede conceder
+    // privilegios: es exactamente lo contrario de lo que hacen los extras.
+    console.warn('[_esSuperAdmin] no se pudo leer cronos_config/superadmins:', e.message);
+    return false;
+  }
+}
+
+/* Una cuenta que todavia no ha aprobado el SuperAdmin no autoriza NADA. */
+function _cuentaHabilitada(d) {
+  return !!d && d.isAuthorized === true &&
+         d.status !== 'removed' && d.status !== 'blocked' && d.status !== 'rejected';
+}
+
+/* `esSA` llega YA RESUELTO desde el token (ver _esSuperAdmin). Esta funcion
+   ya no decide sobre el rol de SuperAdmin por su cuenta. */
+function _callerHasClubPermission(callerDoc, targetClubId, esSA) {
+  if (esSA === true) return true;
   if (!callerDoc || !callerDoc.exists) return false;
   const callerData = callerDoc.data() || {};
-  const callerRole = callerData.role;
-  if (callerRole === 'superadmin') return true;
+
+  // 🛡️ SEC-C1c · sin cuenta habilitada no hay permiso por documento.
+  if (!_cuentaHabilitada(callerData)) return false;
 
   // Sin club de destino no se puede comprobar nada: se deniega.
   if (!targetClubId) return false;
   const objetivo = String(targetClubId);
 
   const validRoles = ['club_admin', 'individual_admin', 'director', 'coordinator'];
+  const callerRole = callerData.role;
   const callerClubId = callerData.clubId || callerData.individualEntityId;
 
   if (validRoles.includes(callerRole) && callerClubId && String(callerClubId) === objetivo) {
@@ -103,15 +163,12 @@ exports.setCustomClaims = functions.https.onCall(async (data, context) => {
     );
   }
 
-  const callerDoc = await admin.firestore()
-    .collection('users')
-    .doc(context.auth.uid)
-    .get();
-
-  const callerData = callerDoc.data();
-  const callerRole = callerData?.role || context.auth.token.role;
-
-  if (callerRole !== 'superadmin') {
+  /* 🛡️ SEC-C1c · ANTES esto leia `users/{caller}.role` — un campo que
+     escribe el propio usuario al registrarse. Era la segunda mitad de la
+     escalada a SuperAdmin: bastaba crearse el documento diciendo
+     'superadmin' y llamar aqui para recibir el claim DE VERDAD.
+     Ahora la identidad sale del TOKEN (o de cronos_config/superadmins). */
+  if (!(await _esSuperAdmin(context))) {
     throw new functions.https.HttpsError(
       'permission-denied',
       'Solo SuperAdmin puede asignar roles'
@@ -366,7 +423,7 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     console.warn('[deleteAuthUser] No se pudo resolver el club del objetivo:', e && e.message);
   }
 
-  if (!_callerHasClubPermission(callerDoc, targetClubId)) {
+  if (!_callerHasClubPermission(callerDoc, targetClubId, await _esSuperAdmin(context))) {
     throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
   }
 
@@ -576,11 +633,18 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
   const db = admin.firestore();
   const callerUid = context.auth.uid;
   const callerDoc = await db.collection('users').doc(callerUid).get();
-  if (!callerDoc.exists ||
-      !['superadmin', 'club_admin', 'individual_admin', 'director', 'coordinator'].includes(callerDoc.data().role)) {
+  /* 🛡️ SEC-C1c · el rol de SuperAdmin sale del TOKEN, y para los demas roles
+     —que si se leen del documento— se exige CUENTA HABILITADA. Sin esto, una
+     cuenta recien creada podia declararse 'club_admin' y archivar/borrar a los
+     entrenadores de un club ajeno. */
+  const _esSA = await _esSuperAdmin(context);
+  const _cd = callerDoc.exists ? (callerDoc.data() || {}) : {};
+  if (!_esSA && (!callerDoc.exists ||
+      !_cuentaHabilitada(_cd) ||
+      !['club_admin', 'individual_admin', 'director', 'coordinator'].includes(_cd.role))) {
     throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
   }
-  const callerRole = callerDoc.data().role;
+  const callerRole = _esSA ? 'superadmin' : _cd.role;
 
   const targetUid = data && data.uid;
   const targetEmail = data && data.email;
@@ -616,7 +680,7 @@ exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => 
     ((Array.isArray(target.allRoles) ? target.allRoles : [])
       .find((r) => r && r.clubId && r.status !== 'removed') || {}).clubId || null;
 
-  if (!_callerHasClubPermission(callerDoc, authClubId)) {
+  if (!_callerHasClubPermission(callerDoc, authClubId, _esSA)) {
     throw new functions.https.HttpsError('permission-denied', 'Solo puedes eliminar usuarios de tu club');
   }
 
@@ -1167,14 +1231,20 @@ exports.sendInviteEmail = functions
   /* invitaciones en nombre de otro club.                                 */
   /* ==================================================================== */
   const _cd = callerDoc.exists ? (callerDoc.data() || {}) : {};
-  const _esSA = ['superadmin', 'admin'].includes(_cd.role);
+  /* 🛡️ SEC-C1c · el SuperAdmin se reconoce por el TOKEN, no por el `role` del
+     documento —que escribe el propio usuario al registrarse—. Y para el resto
+     de vias se exige CUENTA HABILITADA: sin esto, una cuenta recien creada
+     podia declararse 'director' y mandar correos con la marca de la
+     plataforma a quien quisiera. */
+  const _esSA = await _esSuperAdmin(context);
+  const _habilitado = _cuentaHabilitada(_cd);
   /* Plaza VIVA de director o administrador de club (revocada no cuenta). */
   const _plazaStaff = (Array.isArray(_cd.allRoles) ? _cd.allRoles : []).find(
     (r) => r && ['director', 'club_admin'].includes(r.role) &&
            r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed'
   ) || null;
-  const _esStaffRaiz = ['director', 'club_admin'].includes(_cd.role);
-  const _puedeInvitar = _esSA || _esStaffRaiz || !!_plazaStaff;
+  const _esStaffRaiz = _habilitado && ['director', 'club_admin'].includes(_cd.role);
+  const _puedeInvitar = _esSA || _esStaffRaiz || (_habilitado && !!_plazaStaff);
 
   if (!callerDoc.exists || !_puedeInvitar) {
     /* Mensaje que dice QUE pasa, para que el cliente no tenga que adivinar. */
@@ -1189,7 +1259,39 @@ exports.sendInviteEmail = functions
     ? null
     : (_cd.clubName || (_plazaStaff && _plazaStaff.clubName) || null);
 
-  const { to, subject, role, inviterName } = data;
+  /* ==================================================================== */
+  /* 🛡️ SEC-DEP1 (auditoria 2026-08-26) · SANEADO DE CABECERAS DE CORREO   */
+  /*                                                                      */
+  /* `to` y `subject` llegaban del cliente y se pasaban TAL CUAL a         */
+  /* nodemailer. Con el aviso de seguridad abierto contra nodemailer       */
+  /* —"CRLF injection in Nodemailer List-* header comments"— eso es una    */
+  /* via de inyeccion de cabeceras: un salto de linea dentro del asunto    */
+  /* puede anadir destinatarios ocultos a un correo que sale con la marca  */
+  /* de la plataforma.                                                     */
+  /*                                                                      */
+  /* 🔑 SE ARREGLAN LAS DOS COSAS, no una: se sube nodemailer (que corrige */
+  /* la libreria) Y se sanea aqui (que corrige el dato). Depender solo de  */
+  /* la libreria deja el mismo agujero abierto para el siguiente aviso.    */
+  /* ==================================================================== */
+  const _sinSaltos = (t, max) => String(t == null ? '' : t)
+    /* CR, LF y los separadores de linea Unicode: los tres sirven para
+       partir una cabecera de correo en dos. Van con ESCAPE y no con el
+       caracter literal — un salto de linea de verdad dentro de un /.../
+       no es JavaScript valido. */
+    .replace(/[\r\n\u2028\u2029]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max || 200);
+
+  const to          = _sinSaltos(data && data.to, 254);       /* RFC 5321: 254 */
+  const subject     = _sinSaltos(data && data.subject, 200);
+  const role        = _sinSaltos(data && data.role, 60);
+  const inviterName = _sinSaltos(data && data.inviterName, 120);
+
+  /* Y el destinatario tiene que ser UN correo, no una lista ni un montaje. */
+  if (!/^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/.test(to)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Destinatario no valido');
+  }
 
   /* ==================================================================== */
   /* 🧹 v595 · EL MARCADOR RESIDUAL NO PUEDE LLEGAR NUNCA AL DESTINATARIO */
@@ -1429,6 +1531,16 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('not-found', 'Usuario no encontrado');
     }
     const userData = userDoc.data();
+
+    /* 🛡️ SEC-C1c · CUENTA HABILITADA ANTES QUE NADA. `userData.role` lo
+       escribe el propio usuario al registrarse, asi que la rama de la RAIZ
+       valia para una cuenta recien creada que se declarase 'director' y
+       registrarse como staff de un club ajeno. Un documento nuevo nace con
+       isAuthorized:false, de modo que este filtro lo deja fuera. */
+    if (!_cuentaHabilitada(userData)) {
+      throw new functions.https.HttpsError('permission-denied', 'Cuenta no habilitada');
+    }
+
     const hasRole = userData.role === role ||
       (userData.allRoles || []).some(r => r.role === role && r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed');
 
@@ -1553,8 +1665,8 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
     throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
 
-  const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-  if (!callerDoc.exists || callerDoc.data().role !== 'superadmin') {
+  /* 🛡️ SEC-C1c · identidad por TOKEN, no por el documento del usuario. */
+  if (!(await _esSuperAdmin(context))) {
     throw new functions.https.HttpsError('permission-denied', 'Solo SuperAdmin puede aprobar administradores individuales');
   }
 

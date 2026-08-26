@@ -123,13 +123,24 @@ function buildSandbox({
         db: noDb ? null : {},
         collection: (db, col) => ({ __col: col }),
         doc: (db, col, id) => ({ __col: col, __id: id }),
+        // ⚠️ SEC-A2 (2026-08-26) · EL ARNES YA FILTRA COMO FIRESTORE.
+        //  Desde SEC-A2 el modulo NO se descarga `live_matches` entero para
+        //  filtrar en el navegador: pregunta por club y por creador, y es el
+        //  SERVIDOR quien filtra (la regla deniega la consulta sin filtro).
+        //  Un arnes que siguiera devolviendo la coleccion entera ante un
+        //  `where` probaria un comportamiento que ya no existe.
+        where: (campo, op, valor) => ({ __w: { campo: campo, valor: valor } }),
+        query: (ref, ...conds) => ({ __col: ref.__col, __conds: conds.map(c => c.__w) }),
         getDocs: async (ref) => {
             if (ref.__col === 'live_matches' && failLive) throw new Error('live falló');
             if (ref.__col === 'cronos_player_reports' && failReports) throw new Error('reports falló');
             if (ref.__col === 'users' && failUsers) throw new Error('users falló');
             readCols.push(ref.__col);
             const st = store[ref.__col] || {};
-            const rows = Object.keys(st).map(id => [id, st[id]]);
+            let rows = Object.keys(st).map(id => [id, st[id]]);
+            if (ref.__conds && ref.__conds.length) {
+                rows = rows.filter(([, d]) => ref.__conds.every(w => d && d[w.campo] === w.valor));
+            }
             return { forEach: (cb) => rows.forEach(r => cb({ id: r[0], data: () => r[1] })) };
         },
         updateDoc: async (ref, data) => { written.push({ col: ref.__col, id: ref.__id, data }); },
@@ -182,8 +193,12 @@ function walk(dir, out) {
     ok('1a · es function declaration con export explícito a window',
         /^async function _renderFinishedMatchesTab\(\)/m.test(BLOCK)
         && /window\._renderFinishedMatchesTab\s*=\s*_renderFinishedMatchesTab;/.test(BLOCK));
-    ok('1b · usa _sdFS() dos veces',
-        (BLOCK.match(/await _sdFS\(\)/g) || []).length === 2,
+    // ⚠️ ACTUALIZADA (SEC-A2, 2026-08-26): la lectura de live_matches necesita
+    // ahora `query`/`where` —el servidor filtra, no el navegador— y eso anade
+    // una tercera llamada. Lo que 1b protege es que NO se multipliquen las
+    // aperturas de Firestore, asi que se fija el numero nuevo.
+    ok('1b · usa _sdFS() tres veces (la tercera trae query/where de SEC-A2)',
+        (BLOCK.match(/await _sdFS\(\)/g) || []).length === 3,
         (BLOCK.match(/await _sdFS\(\)/g) || []).length);
     {
         // A diferencia de los pasos 1 y 2, aquí el fan-in externo NO es cero:
@@ -269,13 +284,25 @@ function walk(dir, out) {
             h.includes('MiClub') && h.includes('MioPorCreador') && !h.includes('Ajeno'));
     }
     {
+        // ⚠️ ACTUALIZADA (SEC-A2, 2026-08-26) — y este cambio de comportamiento
+        // es DELIBERADO. Antes, un usuario sin clubId se descargaba la
+        // coleccion entera y veia los partidos de CUALQUIER club: era
+        // exactamente la fuga que SEC-A2 vino a cerrar, y hoy la regla ni
+        // siquiera dejaria pasar esa consulta. Sin clubId solo quedan los
+        // partidos que creo uno mismo.
         const { g, container } = buildSandbox({
             me: { uid: 'u1', role: 'director', _activeRole: 'director' },   // sin clubId
-            live: { A: { status: 'finished', clubId: 'cualquiera', homeName: 'SinClubIdTodo', createdAt: 1 } },
+            live: {
+                A: { status: 'finished', clubId: 'cualquiera', homeName: 'DeOtroClub', createdAt: 1 },
+                B: { status: 'finished', clubId: 'cualquiera', createdBy: 'u1', homeName: 'MioPorCreador', createdAt: 2 },
+            },
         });
         await g._renderFinishedMatchesTab();
-        ok('2f · sin clubId en el usuario, no filtra por club',
-            container.innerHTML.includes('SinClubIdTodo'));
+        ok('2f · 🔴 sin clubId ya NO se ven los partidos de otros clubes',
+            !container.innerHTML.includes('DeOtroClub'),
+            'era la fuga de SEC-A2: la coleccion entera al navegador');
+        ok('2f2 · pero los que creo uno mismo si',
+            container.innerHTML.includes('MioPorCreador'));
     }
     {
         const { g, container } = buildSandbox({

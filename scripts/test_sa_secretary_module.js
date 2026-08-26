@@ -532,8 +532,18 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         // _esSA` —o sea, al recrear el defecto exacto que reportó el autor—
         // TODAS las demás aserciones de esta parte seguían en verde, porque
         // sólo censaban que ciertas palabras estuvieran en el fichero.
+        // ⚠️ ACTUALIZADA (SEC-C1c, 2026-08-26): cada via exige ahora CUENTA
+        // HABILITADA, porque `_cd.role` lo escribe el propio usuario al
+        // registrarse y una cuenta nueva podia declararse 'director' para
+        // mandar correos con la marca de la plataforma. Lo que 17a2 protege
+        // —que la decision NO se reduzca al SuperAdmin— se sigue midiendo.
         ok('17a2 · 🔑🔑 la DECISIÓN no se reduce al SuperAdmin (recrear el defecto pone esto en rojo)',
-           /_puedeInvitar\s*=\s*_esSA\s*\|\|\s*_esStaffRaiz\s*\|\|\s*!!_plazaStaff/.test(bloque));
+           /_puedeInvitar\s*=\s*_esSA\s*\|\|\s*_esStaffRaiz\s*\|\|\s*\(_habilitado && !!_plazaStaff\)/.test(bloque));
+        ok('17a2b · 🛡️ y el SuperAdmin se resuelve por el TOKEN, no por el documento',
+           /const _esSA = await _esSuperAdmin\(context\);/.test(bloque) &&
+           !/\['superadmin', 'admin'\]\.includes\(_cd\.role\)/.test(bloque));
+        ok('17a2c · 🛡️ y una cuenta sin habilitar no puede invitar',
+           /_esStaffRaiz = _habilitado &&/.test(bloque));
         ok('17a3 · y la denegación cuelga de esa decisión',
            /if \(!callerDoc\.exists \|\| !_puedeInvitar\)/.test(bloque));
         ok('17b · admite director y club_admin', /'director',\s*'club_admin'/.test(bloque));

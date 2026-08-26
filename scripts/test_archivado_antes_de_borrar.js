@@ -38,8 +38,18 @@ ok('existe archiveAndDeleteCoach', /exports\.archiveAndDeleteCoach\s*=/.test(FN)
     const i = FN.indexOf('exports.archiveAndDeleteCoach');
     const cuerpo = FN.slice(i, FN.indexOf('\n});', i));
     ok('exige autenticación', /context\.auth/.test(cuerpo));
+    // ⚠️ ACTUALIZADA (SEC-C1c, 2026-08-26). Antes fijaba el literal de la
+    // lista de roles leida del DOCUMENTO. Ese `if` cambio: el SuperAdmin se
+    // resuelve por el TOKEN (no falsificable) y el resto de roles exigen
+    // ademas CUENTA HABILITADA — sin eso, una cuenta recien creada podia
+    // declararse 'club_admin' de un club ajeno y archivar a sus entrenadores.
+    // La intencion no cambia; se refuerza.
     ok('exige rol de administrador',
-        /\['superadmin', 'club_admin', 'individual_admin', 'director', 'coordinator'\]\.includes/.test(cuerpo));
+        /\['club_admin', 'individual_admin', 'director', 'coordinator'\]\.includes/.test(cuerpo));
+    ok('🛡️ y el SuperAdmin se resuelve por el TOKEN, no por el documento',
+        /const _esSA = await _esSuperAdmin\(context\);/.test(cuerpo));
+    ok('🛡️ y una cuenta sin habilitar NO autoriza',
+        /!_cuentaHabilitada\(_cd\)/.test(cuerpo));
     // El club se resuelve del LLAMANTE, no de lo que mande el cliente.
     ok('el club_admin solo puede borrar en SU club',
         /callerDoc\.data\(\)\.clubId/.test(cuerpo) && /Solo puedes eliminar usuarios de tu club/.test(cuerpo));

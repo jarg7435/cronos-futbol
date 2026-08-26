@@ -77,16 +77,48 @@ async function _renderFinishedMatchesTab() {
 
         const finishedMap = new Map(); // id -> matchData
 
-        // 1. Cargar desde live_matches
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 SEC-A2 (auditoria 2026-08-25) · SE PREGUNTA POR EL CLUB PROPIO
+        //
+        //  Antes: `getDocs(collection(db,'live_matches'))` — la coleccion
+        //  ENTERA— y el filtro `isMyClub` se aplicaba DESPUES, en el navegador.
+        //  O sea que para pintar los partidos del propio club se descargaban
+        //  los de todos los demas, con los alias de sus menores dentro.
+        //
+        //  🔑 DOBLE ARREGLO CON EL MISMO CAMBIO: cierra la fuga Y baja las
+        //  lecturas, que en este proyecto siempre han sido el techo (v431,
+        //  v576, v579). Y desde SEC-A2 la regla EXIGE el filtro: sin el, la
+        //  consulta se deniega entera.
+        //
+        //  ⚠️ SIN clubId NO SE PREGUNTA. Antes `!clubId` significaba "traelo
+        //  todo"; ahora eso seria justo lo que la regla rechaza. Se salta el
+        //  paso y la lista se completa con los informes de mas abajo.
+        // ══════════════════════════════════════════════════════════════
         try {
-            const snapLive = await getDocs(collection(db, 'live_matches'));
-            snapLive.forEach(d => {
-                const data = d.data() || {};
-                const isMyClub = !clubId || data.clubId === clubId || data.createdBy === me?.uid;
-                if (isMyClub && (data.status === 'finished' || data.phase === 'finished' || data.matchPhase === 'finished')) {
-                    finishedMap.set(d.id, { id: d.id, source: 'live_matches', ...data });
+            const { query, where } = await _sdFS();
+            // Las MISMAS dos condiciones que evaluaba el filtro local: el club
+            // propio y los partidos que creó uno mismo (que pueden llevar otro
+            // clubId). Firestore no tiene OR entre campos distintos, así que
+            // son dos consultas fusionadas por id — el patrón de live.html
+            // desde v431/v433, y las mismas ramas que admite la regla SEC-A2.
+            const condiciones = [];
+            if (clubId)   condiciones.push(where('clubId', '==', clubId));
+            if (me?.uid)  condiciones.push(where('createdBy', '==', me.uid));
+
+            for (const cond of condiciones) {
+                // ⚠️ Una consulta que falle no puede tumbar a la otra.
+                try {
+                    const snapLive = await getDocs(query(collection(db, 'live_matches'), cond));
+                    snapLive.forEach(d => {
+                        const data = d.data() || {};
+                        if (data.status === 'finished' || data.phase === 'finished' || data.matchPhase === 'finished') {
+                            finishedMap.set(d.id, { id: d.id, source: 'live_matches', ...data });
+                        }
+                    });
+                } catch (eC) {
+                    console.warn('[FinishedMatches] live_matches (una condición):', eC && eC.message);
                 }
-            });
+            }
         } catch(e1) {
             console.warn('[FinishedMatches] Error leyendo live_matches:', e1);
         }
